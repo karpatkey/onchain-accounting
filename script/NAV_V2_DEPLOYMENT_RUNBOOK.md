@@ -807,7 +807,7 @@ forge script script/deploy/06_Configure.s.sol \
   --account $DEPLOYER_NAME
 ```
 
-It configures both NAVCalculator (`addBalanceAdapters` / `addMetaBalanceAdapter` + `addMetaInstances`/`removeMetaInstances`) and BridgeEscrow (`authorizeAdapter` / `authorizeAdapterWithCallback`) in one run. If a Safe-based flow is required instead, use Option B (`ManageAdapters.s.sol`).
+It configures both NAVCalculator (`addBalanceAdapters` / `addMetaBalanceAdapter` + `addMetaInstances`/`removeMetaInstances`) and BridgeEscrow (`authorizeAdapter`) in one run. Per [ADR 0012](../docs/decisions/0012-bridge-provable-release-rearchitecture.md) there is no `authorizeAdapterWithCallback` — the escrow has no callback dispatcher and adapters authenticate inbound messages themselves. `06_Configure` also wires each adapter's trusted source senders **in the same run**: for every remote chain id in the adapter's `remoteChains` config it calls `setTrustedRemoteAdapter(remoteChainId, <sibling adapter identity>)` (the sibling shares this adapter's CREATE2 address), so no separate provenance-configuration step is required. If a Safe-based flow is required instead, use Option B (`ManageAdapters.s.sol`).
 
 ### Option B: Use `ManageAdapters.s.sol` (individual Safe TXs)
 
@@ -1034,7 +1034,7 @@ Bridge adapters exist to account for funds in-flight between chains (outbound: b
 
 **Does not block Alpha fund launch** — Alpha funds bridge inbound to Arbitrum and outbound from Base, both covered. Deploy on Optimism + Mainnet before using those chains as bridge sources. Gnosis doesn't have a cross-chain bridge product yet; its entry is a placeholder.
 
-Use `05_DeployBridgeAdapters.s.sol` to deploy. Bridge-adapter config (`enabled` + `initialize` args + optional `callbackSelector`, keyed by adapter name) is read from `script/config/contracts-deployment-config/bridge-adapters/<chainId>.json` — **not** from `chains/<chainId>.json`, which no longer carries a `bridgeAdapters` block. Re-run safety is the same as `03`/`04` — already-deployed entries are skipped.
+Use `05_DeployBridgeAdapters.s.sol` to deploy. Bridge-adapter config (`enabled` + `initialize` args, keyed by adapter name) is read from `script/config/contracts-deployment-config/bridge-adapters/<chainId>.json` — **not** from `chains/<chainId>.json`, which no longer carries a `bridgeAdapters` block. There is no `callbackSelector` config: per ADR 0012 the escrow has no callback dispatcher and adapters authenticate inbound messages directly (trusted source senders set via `setTrustedRemoteAdapter`). Re-run safety is the same as `03`/`04` — already-deployed entries are skipped.
 
 ### 5. Native xDAI coverage on Gnosis — deferred
 

@@ -71,7 +71,11 @@ forge script script/deploy/06_Configure.s.sol --chain-id 1 --broadcast --account
 
 ## 07_TransferAdminToSecurityCouncil.s.sol (run LAST)
 
-Grants `DEFAULT_ADMIN_ROLE` + `MANAGER` to `addresses.securityCouncil` on both proxies, revokes `MANAGER` from the deployer, and renounces the deployer's `DEFAULT_ADMIN_ROLE`. After this the council Safe is the sole admin/manager and the deployer holds nothing.
+Grants `DEFAULT_ADMIN_ROLE` + `MANAGER` to `addresses.securityCouncil` on both proxies (`NAVCalculator`, `BridgeEscrow`), revokes `MANAGER` from the deployer, and renounces the deployer's `DEFAULT_ADMIN_ROLE`.
+
+It also hands off **each deployed bridge adapter** (CCIP, Across, Stargate, Gnosis, CCTP, Superchain — `AccessControl` contracts, not proxies; addresses read from `deployments/<chainId>.json` under `bridgeAdapters`, skipping any not deployed). Per [ADR 0012](../../docs/decisions/0012-bridge-provable-release-rearchitecture.md) (M1/AC-6) the deployer EOA must not retain ADMIN/MANAGER on the adapters: for each, the council is granted `DEFAULT_ADMIN_ROLE` + `MANAGER`, the deployer's `MANAGER` is revoked, and the deployer's `DEFAULT_ADMIN_ROLE` is renounced. The council's adapter `MANAGER` is what subsequently gates `completeBridge` / `recoverStuckAssets` (and, on Superchain, `proveWithdrawal` / `finalizeWithdrawal`); admin gates `setTrustedRemoteAdapter`.
+
+After this the council Safe is the sole admin/manager on the proxies **and** the adapters, and the deployer holds nothing.
 
 ```bash
 DEPLOYER_EOA=0xYourDeployer \

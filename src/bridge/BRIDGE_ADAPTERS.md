@@ -1,18 +1,6 @@
 # Bridge Adapters: Architecture and Integration
 
-> ⚠️ **OUT OF DATE as of this PR (ADR 0012).** This PR removes the escrow `fallback()` dispatcher and the
-> `authorizeAdapterWithCallback` / `updateAdapterConfig` / `getCallbackAdapter` callback-registration APIs.
-> The sections below that describe the **fallback selector dispatcher** and **callback registration** (§5.3,
-> §5.4, the "callback path" in §7, and §10) no longer reflect the code:
-> - Adapters are authorized with **`authorizeAdapter(address)`** only — there is no callback selector to register.
-> - Completion in this PR is the **MANAGER path**: `adapter.completeBridge(messagePayload, protocolData)` →
->   base calls `BridgeEscrow.releaseByInvoiceId(messagePayload)` (release pays from the escrow balance and is
->   callable only by an authorized adapter; never via a public fallback, never by MANAGER directly).
-> - The trust-minimized **direct-receiver provenance** model (each adapter authenticates the real protocol
->   contract + source sender, funded per-invoice pass-through) and the full rewrite of this document land in
->   the follow-up adapter-provenance PR. See [ADR 0012](../../docs/decisions/0012-bridge-provable-release-rearchitecture.md).
-
-This document describes the bridge escrow and adapter architecture: message format, flows, existing adapters, and how to implement and register a new adapter.
+This document describes the bridge escrow and adapter architecture as implemented (post [ADR 0012](../../docs/decisions/0012-bridge-provable-release-rearchitecture.md)): message format, flows, existing adapters, and how to implement and register a new adapter.
 
 ---
 
@@ -20,16 +8,16 @@ This document describes the bridge escrow and adapter architecture: message form
 
 The bridge system consists of:
 
-- **BridgeEscrow:** Holds assets, creates invoices on deposit, and releases assets on the destination chain when a valid payload is presented. It is the single recipient address for all callback-based bridges. Only authorized accounts can deposit; only authorized adapters (or escrow managers) can trigger release.
-- **Bridge adapters:** Contracts that implement `IBridgeAdapter`. Each adapter integrates with one bridge protocol (Across, CCIP, CCTP, etc.). Adapters initiate transfers on the source chain and complete them on the destination chain; for some protocols the destination “completion” is automatic via a callback.
+- **BridgeEscrow:** Holds in-transit accounting on the source chain, creates invoices on deposit, and on the destination chain releases assets to the account named by a validated payload. It is **not** the cross-chain message recipient — each adapter is. Only authorized accounts can deposit; release is callable **only by an authorized adapter** (there is no public dispatcher, and MANAGER cannot call release directly).
+- **Bridge adapters:** Contracts that implement `IBridgeAdapter`. Each adapter integrates with one bridge protocol (Across, CCIP, CCTP, etc.). The adapter is the **direct on-chain recipient** of the inbound protocol message on the destination chain; it authenticates the message (genuine protocol contract + source chain + source sender) before releasing.
 
-All adapters use a single **message payload** format (invoice data). Release is always performed by `BridgeEscrow.releaseByInvoiceId(messagePayload)`, which validates the payload and sends assets to the account encoded in it.
+All adapters use a single **message payload** format (invoice data). Destination release is a **funded pass-through**: `BridgeEscrow.releaseByInvoiceId(messagePayload)` validates the payload and pulls the exact amount **from the calling adapter** (which holds the delivered funds), forwarding it to the account. The escrow never pays release from a standing balance, so one invoice can never be funded by another's tokens.
 
 ---
 
 ## 2. Token and data flow (depositAndBridge → completeBridge)
 
-The diagram below describes how tokens and the message payload move from an account on the source chain until completion on the destination chain. Two completion paths are shown: **callback-based** (protocol calls the escrow, escrow forwards to adapter, adapter calls `releaseByInvoiceId`) and **manager-only** (manager calls `adapter.completeBridge`, base calls `releaseByInvoiceId`).
+The diagram shows how tokens and the message payload move from an account on the source chain to completion on the destination chain. Two completion paths exist: **auto** (the genuine protocol contract calls the adapter's authenticated receiver, which funds + releases) and **manager** (a manager calls `adapter.completeBridge`, e.g. for attestation/finalization protocols, which then funds + releases).
 
 ```mermaid
 flowchart TB
@@ -40,10 +28,10 @@ flowchart TB
         BC[Bridge protocol contract]
 
         PS -->|"1. depositAndBridge(..., adapter)<br/>ERC20: transferFrom / Native: msg.value"| BE_S
-        BE_S -->|"2. Create invoice (BRIDGING)<br/>approve adapter or transfer native"| BE_S
+        BE_S -->|"2. Create invoice (BRIDGING), assign nonce<br/>approve adapter or transfer native"| BE_S
         BE_S -->|"3. bridge(messagePayload)"| AD_S
         AD_S -->|"4. Pull tokens (ERC20) / use value (native)"| BE_S
-        AD_S -->|"5. Call protocol deposit with recipient=escrow<br/>messagePayload in protocol message"| BC
+        AD_S -->|"5. Call protocol deposit with recipient = sibling adapter<br/>messagePayload in protocol message"| BC
     end
 
     subgraph CROSS["Cross-chain (protocol relayer / attestation)"]
@@ -51,29 +39,29 @@ flowchart TB
     end
 
     subgraph DEST["Destination chain"]
-        BE_D[BridgeEscrow]
         AD_D[Adapter]
-        PROTOCOL[Bridge protocol]
+        BE_D[BridgeEscrow]
+        PROTOCOL[Bridge protocol contract]
 
-        PROTOCOL -->|"7a. Callback path: send tokens to escrow,<br/>then call escrow with protocol callback"| BE_D
-        BE_D -->|"8a. fallback: adapter.call(msg.data)"| AD_D
-        AD_D -->|"9a. releaseByInvoiceId(messagePayload)"| BE_D
-        BE_D -->|"10. Transfer asset to account"| PS_D[Account]
+        PROTOCOL -->|"7a. Auto: deliver tokens to adapter,<br/>then call adapter's protocol receiver"| AD_D
+        AD_D -->|"8a. Authenticate protocol + source chain + source sender"| AD_D
+        AD_D -->|"9a. _fundAndRelease: approve escrow, releaseByInvoiceId"| BE_D
+        BE_D -->|"10. Pull amount from adapter, transfer to account"| PS_D[Account]
 
-        OP[Manager] -->|"7b. Manager path: completeBridge(messagePayload, protocolData)"| AD_D
-        AD_D -->|"8b. _completeBridge (e.g. mint to escrow)"| AD_D
-        AD_D -->|"9b. base calls releaseByInvoiceId(messagePayload)"| BE_D
-        BE_D -->|"10. Transfer asset to account"| PS_D
+        OP[Manager] -->|"7b. Manager: completeBridge(messagePayload, protocolData)"| AD_D
+        AD_D -->|"8b. _completeBridge (verify attestation / finalize); adapter now holds funds"| AD_D
+        AD_D -->|"9b. base _fundAndRelease → releaseByInvoiceId"| BE_D
+        BE_D -->|"10. Pull amount from adapter, transfer to account"| PS_D
     end
 
     SOURCE --> CROSS
     CROSS --> DEST
 ```
 
-- **Steps 1–5 (source):** Account deposits into the escrow; escrow creates the invoice, passes tokens to the adapter, and calls `adapter.bridge(messagePayload)`. The adapter sends the payload and initiates the bridge with the protocol, using the **escrow** as the recipient on the destination chain.
+- **Steps 1–5 (source):** Account deposits; escrow records the effective received amount (fee-on-transfer safe), assigns a per-account nonce, creates the `BRIDGING` invoice, hands tokens to the adapter, and calls `adapter.bridge(messagePayload)`. The adapter initiates the bridge with the **sibling adapter on the destination chain** (same address via CREATE2) as the recipient.
 - **Step 6:** The protocol moves tokens and (where applicable) the message to the destination chain.
-- **Path 7a–10 (callback):** The protocol sends tokens to the escrow and invokes the escrow with its callback. The escrow fallback forwards the call to the adapter; the adapter extracts the payload and calls `releaseByInvoiceId`; the escrow transfers the asset to the account.
-- **Path 7b–10 (manager):** A manager calls `adapter.completeBridge(messagePayload, protocolData)`. The adapter runs `_completeBridge` (e.g. mint to escrow); the base then calls `releaseByInvoiceId`; the escrow transfers the asset to the account.
+- **Path 7a–10 (auto):** The protocol delivers tokens to the adapter and calls the adapter's protocol receiver. The adapter authenticates `msg.sender == <real protocol contract>`, the source chain, and the source sender (`trustedRemoteAdapter`), then calls `_fundAndRelease`; the escrow pulls the amount from the adapter and transfers it to the account.
+- **Path 7b–10 (manager):** For protocols whose provenance is an attestation/proof (CCTP, Superchain), a manager calls `adapter.completeBridge`. `_completeBridge` verifies the attestation/withdrawal so the adapter holds the funds; the base then funds + releases.
 
 ---
 
@@ -83,19 +71,14 @@ Invoices are created only on the **source chain** and track a single bridge oper
 
 ### 3.1 Invoice lifecycle
 
-- **Creation:** When an authorized account calls `depositAndBridge`, the escrow creates an **invoice** with status `BRIDGING`. The invoice stores `invoiceId`, source/destination chain IDs, account, asset, amount, timestamp, adapter, and status. The invoice hash used as the storage key is derived from the checksum (first 24 bytes of `keccak256(invoiceId, amount, timestamp)`).
-- **BRIDGING:** The invoice remains in `BRIDGING` status while the transfer is in progress. The escrow maintains **in-transit** balance caches per safe and asset; these reflect the sum of amounts of all invoices in `BRIDGING` for that safe and asset. Active invoices for a safe are stored in `_activeInvoices[safe]` so UIs and bookkeeping can list them.
-- **Completion on the destination chain:** Completion does **not** update the source-chain invoice. On the destination chain there is no stored invoice; the escrow only validates the message payload in `releaseByInvoiceId` (checksum, timestamp, destination chain, authorized safe, registered asset) and marks `completedInvoices[invoiceHash] = true` on the **destination** escrow to prevent double-spend. The **source** chain invoice is still `BRIDGING` at this point.
-- **Closure on the source chain (markInvoiceCompleted):** Once a manager has confirmed that the transfer completed on the destination (e.g. assets were released to the account), a manager should call **`BridgeEscrow.markInvoiceCompleted(invoiceHashes)`** on the **source** chain. This function:
-  - Requires `MANAGER` role on the escrow.
-  - For each provided `invoiceHash`: if the invoice exists and its status is `BRIDGING`, it sets status to `COMPLETED`, sets `completedInvoices[invoiceHash] = true`, decrements the in-transit balance caches, and removes the invoice from the safe’s active list. If the invoice is missing or not in `BRIDGING`, that hash is skipped and reported in `InvoiceCompletionFailed`.
-  - This closes the invoice on the source chain and updates bookkeeping (in-transit balances, active invoice list) so the source ledger reflects that the bridge is done.
-
-So the full closure of an invoice is: (1) **destination:** `releaseByInvoiceId` (or the callback/completeBridge path that triggers it) releases the assets and marks completion on the destination escrow; (2) **source:** a manager calls `markInvoiceCompleted(invoiceHashes)` on the source escrow to move the invoice from `BRIDGING` to `COMPLETED` and update in-transit state.
+- **Creation:** When an authorized account calls `depositAndBridge`, the escrow assigns a **per-account nonce** (`bridgeNonce(account)`, monotonic) and creates an **invoice** with status `BRIDGING`. The invoice stores `invoiceId`, source/destination chain IDs, account, asset, amount, nonce, timestamp, adapter, and status. The invoice hash (storage key) is derived from the checksum (first 24 bytes of `keccak256(invoiceId, amount, timestamp, nonce)`). The nonce makes invoice identity unique per operation.
+- **BRIDGING:** The invoice stays `BRIDGING` while in transit. The escrow maintains **in-transit** balance caches per account and asset (sum of `BRIDGING` invoice amounts). Decrements are unguarded — an underflow is an invariant breach and reverts rather than being silently swallowed. Active invoices for an account are in `_activeInvoices[account]`.
+- **Completion on the destination chain:** Completion does **not** update the source-chain invoice. On the destination there is no stored invoice; the escrow validates the payload in `releaseByInvoiceId` (checksum incl. nonce, timestamp, destination chain, authorized account, registered asset) and sets `completedInvoices[invoiceHash] = true` on the **destination** escrow to prevent replay.
+- **Closure on the source chain (markInvoiceCompleted):** Once a manager confirms destination completion, they call **`markInvoiceCompleted(invoiceHashes)`** on the **source** chain (MANAGER-gated). For each `BRIDGING` invoice it sets `COMPLETED`, sets `completedInvoices`, decrements in-transit caches, and removes the invoice from the active list. Missing/non-`BRIDGING` hashes are skipped and reported in `InvoiceCompletionFailed`.
 
 ### 3.2 Other outcomes
 
-- **Cancellation:** A manager can call `cancelInvoice(invoiceHash)` on the source chain when the invoice is still in `BRIDGING`. The escrow returns the assets (if still held) to the account, sets status to `CANCELLED`, updates in-transit balances, and removes the invoice from the active list.
+- **Cancellation:** A manager can call `cancelInvoice(invoiceHash)` on the source chain while the invoice is `BRIDGING` (full CEI, `nonReentrant`). The escrow returns the assets to the account, sets `CANCELLED`, decrements in-transit balances, and removes the invoice from the active list.
 
 ---
 
@@ -105,17 +88,18 @@ Payloads are produced and consumed by `InvoiceDataLib` in `src/bridge/InvoiceDat
 
 ### 4.1 Encoded form
 
-`messagePayload` is `abi.encode(invoiceId, amount, meta)` where:
+`messagePayload` is `abi.encode(invoiceId, amount, nonce, meta)` (4 slots) where:
 
 - **invoiceId** (bytes32): Packed as `sourceChainId` (3 bytes) | `destinationChainId` (3 bytes) | `account` (20 bytes) | `assetSymbol` (6 bytes). Chain IDs are `uint24`; asset symbol is right-padded bytes6 (e.g. `"USDC  "`).
-- **amount** (uint256): Amount being bridged.
-- **meta** (bytes32): High 8 bytes = `timestamp` (uint64); low 24 bytes = **checksum24** (first 24 bytes of `keccak256(abi.encodePacked(invoiceId, amount, timestamp))`).
+- **amount** (uint256): Amount being bridged (the effective received amount on deposit).
+- **nonce** (uint256): Per-account monotonic nonce, unique per bridge operation.
+- **meta** (bytes32): High 8 bytes = `timestamp` (uint64); low 24 bytes = **checksum24** (first 24 bytes of `keccak256(abi.encodePacked(invoiceId, amount, timestamp, nonce))`).
 
-BridgeEscrow generates this payload in `depositAndBridge` and validates checksum and timestamp in `releaseByInvoiceId`. Adapters must not alter the payload; they pass it through to the bridge protocol and, on completion, pass the same payload to `releaseByInvoiceId`.
+The checksum is an **integrity + replay** key, not an authenticator (all inputs are public). Provenance is enforced by the adapter layer (§7). BridgeEscrow generates the payload in `depositAndBridge` and validates checksum + timestamp in `releaseByInvoiceId`. Adapters must not alter the payload; they pass it through to the protocol and, on completion, pass the same payload to `releaseByInvoiceId`.
 
 ### 4.2 Struct form
 
-`InvoiceDataLib.InvoiceData` has: `invoiceId`, `sourceChainId`, `destinationChainId`, `account`, `assetSymbol`, `amount`, `timestamp`, `checksum24`. Use `InvoiceDataLib.decode(messagePayload)` and `InvoiceDataLib.encode(data)` to convert to and from bytes.
+`InvoiceDataLib.InvoiceData` has: `invoiceId`, `sourceChainId`, `destinationChainId`, `account`, `assetSymbol`, `amount`, `nonce`, `timestamp`, `checksum24`. Use `InvoiceDataLib.decode(messagePayload)` / `InvoiceDataLib.encode(data)` to convert, and `InvoiceDataLib.calculateChecksum(invoiceId, amount, timestamp, nonce)` for the checksum (single source of truth).
 
 ---
 
@@ -123,174 +107,119 @@ BridgeEscrow generates this payload in `depositAndBridge` and validates checksum
 
 ### 5.1 Roles and access
 
-- **DEFAULT_ADMIN_ROLE:** Authorize/revoke accounts and adapters, configure adapter callbacks, pause, emergency withdraw, authorize upgrades.
-- **MANAGER:** Call `releaseByInvoiceId` (and thus complete bridges when the adapter forwards to the escrow), cancel invoices, `markInvoiceCompleted`, register/unregister assets.
+- **DEFAULT_ADMIN_ROLE:** Authorize/revoke accounts and adapters, register/unregister assets are MANAGER (see below), pause, `emergencyWithdraw` (recipient-restricted to an authorized account, while paused), authorize UUPS upgrades.
+- **MANAGER:** `cancelInvoice`, `markInvoiceCompleted`, `registerAsset`/`unregisterAsset`. **MANAGER cannot call `releaseByInvoiceId`** — release is adapter-only.
 
 ### 5.2 Core flows
 
 **Deposit and bridge (source chain)**
 
-1. An authorized account calls `depositAndBridge(destinationChainId, assetSymbol, amount, adapter)` (payable if the asset is native).
-2. Escrow checks: safe authorized, adapter authorized, asset registered, `destinationChainId != chainId`, `amount > 0`. For native asset, `msg.value == amount`; for ERC20, it pulls tokens from the safe.
-3. Escrow creates an invoice, updates in-transit balances, then either transfers native to the adapter or approves the adapter for ERC20, and calls `IBridgeAdapter(adapter).bridge(messagePayload)`.
-4. The adapter initiates the cross-chain transfer (see section 7).
+1. An authorized account calls `depositAndBridge(destinationChainId, assetSymbol, amount, adapter)` (payable for native; `msg.value` must be 0 for ERC20).
+2. Escrow checks: account authorized, adapter authorized, asset registered, `destinationChainId != chainId`, `amount > 0`. For native, `msg.value == amount`; for ERC20 it pulls tokens and records the **effective received delta** (fee-on-transfer safe; rejects zero-delta).
+3. Escrow assigns the per-account nonce, creates the invoice, updates in-transit balances, then transfers native to the adapter or approves the adapter for ERC20, and calls `IBridgeAdapter(adapter).bridge(messagePayload)`. `depositAndBridge` is `nonReentrant`.
 
-**Release (destination chain)**
+**Release (destination chain) — funded pass-through**
 
-1. Someone must call `releaseByInvoiceId(messagePayload)`. Caller must be an authorized adapter or an account with MANAGER role.
-2. Escrow decodes the payload, validates timestamp (must be in the past), validates checksum, ensures `destinationChainId == chainId`, ensures the decoded account is authorized, ensures the asset symbol is registered, and that the invoice hash has not already been completed.
-3. Escrow marks the invoice completed, transfers the asset (native or ERC20) to the account from the payload, and emits events.
+1. Callable **only by an authorized adapter** (`nonReentrant`, `payable`). There is no fallback dispatcher and MANAGER cannot call it, so the path is unreachable to an attacker.
+2. Escrow decodes the payload; validates timestamp (past), checksum (incl. nonce), `destinationChainId == chainId`, the account is authorized, the asset is registered, and the invoice hash is not already completed.
+3. Escrow marks the invoice completed, then **pulls `amount` from the calling adapter** (ERC20: `safeTransferFrom(adapter, account)`; native: requires `msg.value == amount`, forwards to the account) and emits events. The escrow holds no standing pool for release.
 
-So on the destination chain the escrow must hold the assets (or receive them during the same call, e.g. CCTP mint) before `releaseByInvoiceId` is called.
+### 5.3 Adapter authorization
 
-### 5.3 Callback dispatch (fallback)
+- **authorizeAdapter(adapter):** Adds the adapter to the authorized set (verified via ERC165 `supportsInterface(IBridgeAdapter)`). Required before the adapter can be used in `depositAndBridge` or call `releaseByInvoiceId`.
+- **revokeAdapter(adapter):** Removes the adapter from the authorized set.
+- **getAuthorizedAdapters():** Returns the authorized adapter set.
 
-BridgeEscrow has a **fallback** that forwards any call to a registered adapter:
+There is **no callback/selector registration** on the escrow (the old `authorizeAdapterWithCallback` / `updateAdapterConfig` / `_callbackAdapters` / `fallback()` mechanism was removed in ADR 0012). Adapters receive protocol callbacks directly and authenticate them.
 
-- Storage: `_callbackAdapters[selector] = adapter` (one adapter per function selector).
-- On an unknown selector, the fallback looks up `adapter = _callbackAdapters[msg.sig]`. If zero, it reverts. Otherwise it executes `adapter.call(msg.data)` and bubbles up revert data on failure.
-
-So the **recipient** of callback-based bridges is always the BridgeEscrow. When the protocol (e.g. Across, CCIP) calls the escrow with its callback (e.g. `handleAcrossMessage`, `ccipReceive`), the escrow forwards the same calldata to the adapter registered for that selector. The adapter must then validate the caller is the escrow, extract the message payload, and call `releaseByInvoiceId(messagePayload)` (and optionally store payloads, emit events, etc.).
-
-### 5.4 Adapter registration and callback config
-
-- **authorizeAdapter(adapter):** Adds the adapter to the authorized set. Required before the adapter can be used in `depositAndBridge` or as a caller to `releaseByInvoiceId`.
-- **authorizeAdapterWithCallback(adapter, selector):** Authorizes the adapter and sets `_callbackAdapters[selector] = adapter`. Use when the adapter is the one that implements the protocol callback for that selector. Cannot be used if the adapter is already authorized (use `updateAdapterConfig` for that).
-- **updateAdapterConfig(adapter, selector):** For an already-authorized adapter, sets or clears its callback: if `selector != 0`, registers this adapter for that selector (and clears any previous selector for this adapter); if `selector == 0`, clears the adapter’s callback registration.
-- **revokeAdapter(adapter):** Removes the adapter from the authorized set and clears its callback registration if any.
-- **getCallbackAdapter(selector):** Returns the adapter address registered for a given callback selector.
-
-Assets must be registered per symbol via `registerAsset(symbol, assetAddress)`. Native tokens use `address(0)`; the escrow still distinguishes “registered native” from “unregistered” via `registeredAssets()`.
+Assets must be registered per symbol via `registerAsset(symbol, assetAddress)` (native uses `address(0)`; re-pointing a symbol with active invoices is rejected).
 
 ---
 
 ## 6. BridgeAdapter Base
 
-Adapters inherit `BridgeAdapter` in `src/bridge/BridgeAdapter.sol` and implement the abstract logic.
+Adapters inherit `BridgeAdapter` in `src/bridge/BridgeAdapter.sol`.
 
 ### 6.1 Entry points (inherited)
 
-- **bridge(messagePayload):** Only callable by `bridgeEscrow`. Decodes payload with `InvoiceDataLib.decode`, calls `_bridge(data)`, emits `BridgeInitiated`.
-- **completeBridge(messagePayload, protocolData):** Only callable by accounts with `MANAGER` role. Requires non-empty `messagePayload`. Calls `_completeBridge(messagePayload, protocolData)`, then always calls `IBridgeEscrow(bridgeEscrow).releaseByInvoiceId(messagePayload)`, then emits `BridgeCompleted`.
+- **bridge(messagePayload):** Only callable by `bridgeEscrow`. Decodes the payload, calls `_bridge(data)`, emits `BridgeInitiated`.
+- **completeBridge(messagePayload, protocolData):** Only callable by `MANAGER`. Calls `_completeBridge(...)` (protocol verification; adapter must end holding the delivered funds), then resolves the asset via `escrow.assetRegistry(symbol)` and calls `_fundAndRelease`, then emits `BridgeCompleted`.
 
-So `releaseByInvoiceId` is always invoked by the base `completeBridge`. Adapters must not call `releaseByInvoiceId` from `_completeBridge`; they only perform protocol-specific completion (e.g. pull attestation, mint, or transfer tokens to escrow). For callback-based flows, the adapter’s protocol callback calls `releaseByInvoiceId` directly (see below).
+### 6.2 Provenance config + funding helper
 
-### 6.2 What adapters implement
+- **trustedRemoteAdapter[uint64 sourceKey] → bytes32** + **setTrustedRemoteAdapter(sourceKey, remote)** (admin): the allowlist of trusted sibling adapters on remote chains. The `sourceKey` is the remote chain's **standard chain id** for every adapter — each adapter translates its protocol-specific source identifier (CCIP selector, LZ eid, CCTP domain, AMB/OP xDomain sender) back to the standard chain id internally before this lookup, so callers always key by the plain chain id. The value is the remote adapter identity (use `_toBytes32(addr)`; with CREATE2 same-address this equals the adapter's own address).
+- **_fundAndRelease(messagePayload, asset, amount):** Hands the escrow exactly `amount` of `asset` and triggers release. ERC20: `forceApprove(escrow, amount)` → `releaseByInvoiceId` (escrow pulls) → reset approval to 0. Native: `releaseByInvoiceId{value: amount}`. The adapter must already hold the delivered funds.
 
-- **_bridge(InvoiceDataLib.InvoiceData memory data):** Initiate the cross-chain transfer. Use `data` to encode the message payload for the protocol. Set the protocol's recipient to `bridgeEscrow` so that on the destination chain the escrow receives tokens and/or the callback. For ERC20, the escrow has already approved the adapter in `depositAndBridge`, so the adapter pulls from the escrow and then interacts with the bridge (e.g. approves and calls the bridge contract).
-- **_completeBridge(messagePayload, protocolData):** Protocol-specific completion when a manager calls `completeBridge`. For example: validate and apply attestation, mint to escrow, or record state. Do not call `releaseByInvoiceId` here; the base does it after `_completeBridge` returns.
+### 6.3 What adapters implement
 
-Optional helper:
+- **_bridge(InvoiceDataLib.InvoiceData memory data):** Initiate the transfer. Encode the payload, pull ERC20 from the escrow (already approved in `depositAndBridge`), and set the protocol's destination recipient to **`address(this)`** (the sibling adapter). Carry the payload in the protocol message.
+- **_completeBridge(messagePayload, protocolData):** Manager-path protocol verification (e.g. CCTP attestation, Superchain finalize). Do not call `releaseByInvoiceId`/`_fundAndRelease` directly — the base funds + releases after `_completeBridge` returns. The auto path (the protocol receiver below) calls `_fundAndRelease` itself.
+- **The protocol receiver** (e.g. `ccipReceive`, `handleV3AcrossMessage`, `lzCompose`, `onTokenTransfer`): authenticate `msg.sender == <real protocol contract>` + source chain + `trustedRemoteAdapter`, verify the delivered token/amount match the invoice, then `_fundAndRelease`. Mark it `nonReentrant`.
 
-- **_transferTokensToEscrow(invoiceId, asset, amount):** Transfers tokens (native or ERC20) from the adapter to the escrow and emits `TokensTransferredToEscrow`. Use in `_completeBridge` when the protocol delivers tokens to the adapter and the manager completes via `completeBridge`; then the base will call `releaseByInvoiceId`, and the escrow will already hold the tokens.
+### 6.4 Roles
 
-### 6.3 Roles
+- **DEFAULT_ADMIN_ROLE:** Adapter configuration (protocol contracts, mappings, `setTrustedRemoteAdapter`).
+- **MANAGER:** `completeBridge`, `recoverStuckAssets` (recipient restricted to the escrow or an authorized account). Granted to the security council at deploy by `07`.
 
-- **DEFAULT_ADMIN_ROLE:** Typically granted to the deployer; used for adapter configuration (e.g. set bridge contract, fee, chain mappings).
-- **MANAGER:** Required to call `completeBridge` and `recoverStuckAssets`. Should be granted to the same manager set that NAVCalculator and BridgeEscrow use for operational management.
+### 6.5 Native tokens
 
-### 6.4 Native tokens
-
-The base provides `_isNativeToken(token)` which returns true for `address(0)` and for `NATIVE_ADDRESS_ERC7528` (0xEeee...). Use it when deciding whether to pull ERC20 from the escrow or use `msg.value` / escrow’s native transfer.
+`_isNativeToken(token)` returns true for `address(0)` and `NATIVE_ADDRESS_ERC7528` (0xEeee…).
 
 ---
 
-## 7. Completion Flows: Callback-Based vs Manager-Only
+## 7. Completion Flows: per-protocol provenance
 
-### 7.1 Callback-based (Across, CCIP, Stargate, Gnosis)
+On the source chain every adapter sets the protocol's destination recipient to its **sibling adapter** (`address(this)`, same address across chains via CREATE2). On the destination chain the adapter authenticates the inbound message before releasing.
 
-- On the source chain the adapter sets the protocol’s recipient to **BridgeEscrow** (e.g. Across `recipient`, CCIP `receiver`, Stargate `toAddress`, Gnosis `receiver`).
-- On the destination chain the protocol sends tokens to the escrow and then calls the escrow with a protocol-specific function (e.g. `handleAcrossMessage`, `ccipReceive`, `lzReceive`, `onTokenTransfer`).
-- BridgeEscrow has no functions with those selectors, so the **fallback** runs and forwards the call to the adapter registered for that selector (via `updateAdapterConfig` or `authorizeAdapterWithCallback`).
-- The adapter’s implementation of that function must:
-  1. Require `msg.sender == bridgeEscrow`.
-  2. Extract the message payload from the protocol-specific arguments.
-  3. Optionally store the payload (e.g. in `messagePayloads[invoiceId]`).
-  4. Call `IBridgeEscrow(bridgeEscrow).releaseByInvoiceId(messagePayload)`.
+| Protocol | Authentic destination entry | Authenticated `msg.sender` | Source authentication |
+|---|---|---|---|
+| **CCIP** | `ccipReceive(Any2EVMMessage)` | `== router` | `selectorToChainId[sourceChainSelector]` + `message.sender == trustedRemoteAdapter` |
+| **Across (V3)** | `handleV3AcrossMessage(tokenSent, amount, relayer, message)` | `== spokePool` | `tokenSent`/`amount` bound to the invoice; `trustedRemoteAdapter` per source chain |
+| **Stargate (V2)** | `lzCompose(from, guid, message, …)` | `== endpoint` | `srcEid` + `composeFrom == trustedRemoteAdapter` |
+| **Gnosis** | `onTokenTransfer(from, value, data)` (ERC677) | `== omnibridge` | `amb.messageSender() == trustedRemoteAdapter` + `amb.messageSourceChainId()` |
+| **CCTP** | manager `completeBridge`; `messageTransmitter.receiveMessage` | n/a (Circle attestation) | CCTP message body (burnToken/amount/mintRecipient/sourceDomain) bound to invoice; nonce dedup |
+| **Superchain** | L1→L2 via `L2CrossDomainMessenger`; L2→L1 via `OptimismPortal` | `== l2Messenger` (+ `xDomainMessageSender == trustedRemoteAdapter`); withdrawals proof-gated | messenger xDomain sender; portal Merkle proof + real OP withdrawal hash |
 
-So the adapter implements the protocol callback, but when the bridge calls the escrow, the escrow forwards to the adapter; the adapter then triggers release. Tokens are already at the escrow when the callback runs. The same adapter also implements `_completeBridge` for the manager path (e.g. manual relay or missing callback); in that case tokens are usually already at the escrow and `_completeBridge` only updates state and/or emits events before the base calls `releaseByInvoiceId`.
-
-### 7.2 Manager-only (CCTP, Superchain)
-
-- No protocol callback is registered on the escrow for these adapters.
-- On the destination chain, a manager calls `adapter.completeBridge(messagePayload, protocolData)`.
-- In `_completeBridge` the adapter does protocol-specific work (e.g. CCTP: receive message and mint to escrow; Superchain: finalize withdrawal so escrow receives funds). The base then calls `releaseByInvoiceId(messagePayload)`.
-
-For CCTP, the escrow is typically the mint recipient, so tokens land at the escrow and the adapter only triggers mint + release. For Superchain L1↔L2, the escrow is the receiver; completion may involve proving/finalizing a withdrawal so the escrow receives funds before release.
+In all cases the protocol delivers the tokens to the adapter, the adapter authenticates, and `_fundAndRelease` hands the escrow the exact amount and releases to the account. The checksum + `completedInvoices` replay guard remain as defense-in-depth.
 
 ---
 
 ## 8. Implemented Adapters
 
-| Adapter                  | Protocol       | Recipient   | Callback (selector → adapter)        | Completion path(s) |
-|--------------------------|----------------|------------|--------------------------------------|--------------------|
-| AcrossBridgeAdapter      | Across         | BridgeEscrow | handleAcrossMessage → adapter        | Callback or manager completeBridge |
-| CcipBridgeAdapter        | CCIP           | BridgeEscrow | ccipReceive → adapter                | Callback or manager completeBridge |
-| StargateBridgeAdapter    | Stargate       | BridgeEscrow | lzReceive → adapter                  | Callback or manager completeBridge |
-| GnosisBridgeAdapter      | Gnosis Omnibridge | BridgeEscrow | onTokenTransfer → adapter         | Callback or manager completeBridge |
-| CctpBridgeAdapter        | CCTP (Circle)  | BridgeEscrow | —                                   | Manager completeBridge (mint to escrow then release) |
-| SuperchainBridgeAdapter  | Optimism L1/L2 | BridgeEscrow | —                                   | Manager completeBridge (and prove/finalize for L2→L1) |
+| Adapter | Protocol | Dest recipient | Auto receiver | Provenance |
+|---|---|---|---|---|
+| AcrossBridgeAdapter | Across V3 | adapter (self) | `handleV3AcrossMessage` | spokePool + token/amount binding |
+| CcipBridgeAdapter | CCIP | adapter (self) | `ccipReceive` | router + selector + source sender |
+| StargateBridgeAdapter | Stargate V2 | adapter (self) | `lzCompose` | endpoint + srcEid + composeFrom |
+| GnosisBridgeAdapter | Gnosis Omnibridge | adapter (self) | `onTokenTransfer` (ERC677) | omnibridge + AMB sender/source chain |
+| CctpBridgeAdapter | CCTP (Circle) | adapter (self) | — (manager) | Circle attestation + message-body binding + nonce dedup |
+| SuperchainBridgeAdapter | Optimism L1/L2 | adapter (self) | `completeDeposit` (L1→L2) | xDomainMessageSender; portal proof + real OP hash (L2→L1) |
 
-Across, CCIP, Stargate, and Gnosis must be registered with the escrow callback config for their respective selectors so the fallback forwards to the correct adapter.
+Each adapter's `trustedRemoteAdapter` must be configured per source chain so inbound messages are authenticated.
 
 ---
 
 ## 9. How to Create a New Adapter
 
-### 9.1 Contract layout
+1. Inherit `BridgeAdapter` and (optionally) a protocol-specific interface. Add storage for protocol contracts and correlation mappings.
+2. Implement `initialize(...)` that calls `super._initializeBridgeAdapter(admin_, bridgeEscrow_, providerName_, version_)`, sets protocol contracts, and configures chain mappings.
+3. Implement **`_bridge(InvoiceDataLib.InvoiceData memory data)`:** encode the payload (`InvoiceDataLib.encode`), resolve the asset (`IBridgeEscrow(bridgeEscrow).assetRegistry(InvoiceDataLib.bytes6ToStr(data.assetSymbol))`), pull ERC20 from the escrow, set the protocol recipient to **`address(this)`**, and call the protocol with the payload in its message.
+4. Implement the **protocol receiver** (auto path): authenticate `msg.sender == <protocol contract>` + source chain + `trustedRemoteAdapter`, verify delivered token/amount vs the invoice, then `_fundAndRelease(messagePayload, asset, amount)`. Mark it `nonReentrant`. Override `supportsInterface` if you implement a protocol receiver interface.
+5. Implement **`_completeBridge(messagePayload, protocolData)`** (manager path) for attestation/proof protocols: verify and ensure the adapter holds the funds; do **not** call release (the base funds + releases after).
+6. Expose view functions your UI/managers need (e.g. `getMessagePayload`). Use shared errors/constants from `src/errors.sol` / `src/constants.sol`.
 
-1. Create a new contract that inherits `BridgeAdapter` and (optionally) a protocol-specific interface.
-2. Add storage for protocol contracts and any mappings you need (e.g. message ID → invoice ID).
-3. Implement a custom `initialize(...)` that:
-   - Calls `super._initializeBridgeAdapter(admin_, bridgeEscrow_, providerName_, version_)` (the base initializer, which grants `DEFAULT_ADMIN_ROLE` to `admin_` and pins the escrow, provider name, and version),
-   - Sets protocol contracts and config,
-   - Grants `MANAGER` role to the intended manager(s).
-
-4. Implement **`_bridge(InvoiceDataLib.InvoiceData memory data)`:**
-   - Encode payload: `bytes memory messagePayload = InvoiceDataLib.encode(data)`.
-   - Get asset: `address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(InvoiceDataLib.bytes6ToStr(data.assetSymbol))` (`assetRegistry` takes a `string` symbol, so convert the `bytes6` symbol first).
-   - If not native, pull tokens from escrow (it has already approved the adapter in `depositAndBridge`): `IERC20(asset).safeTransferFrom(bridgeEscrow, address(this), data.amount)`.
-   - Set the protocol’s recipient to `bridgeEscrow` so the escrow receives funds and/or the callback on the destination chain.
-   - Call the protocol’s deposit/transfer function with the message payload (or its encoded form).
-   - Store any IDs you need for correlation (e.g. deposit ID, nonce) and optionally `messagePayloads[data.invoiceId] = messagePayload`.
-
-5. Implement **`_completeBridge(bytes calldata messagePayload, bytes calldata protocolData)`:**
-   - Decode `messagePayload` if you need invoice fields.
-   - Perform protocol-specific completion (e.g. receiveMessage + mint for CCTP, or just validate and store if tokens are already at the escrow).
-   - If tokens land at the adapter, call `_transferTokensToEscrow(data.invoiceId, asset, data.amount)` so the escrow holds them before the base calls `releaseByInvoiceId`.
-   - Do not call `releaseByInvoiceId`; the base does that after `_completeBridge` returns.
-
-6. **If your protocol has a destination callback** (e.g. `myProtocolReceive(...)`):
-   - Implement that function on the adapter.
-   - In it: require `msg.sender == bridgeEscrow`, extract the message payload from the args, optionally store it, then call `IBridgeEscrow(bridgeEscrow).releaseByInvoiceId(messagePayload)`.
-   - You will register this function’s selector with the escrow so the fallback forwards to your adapter (see section 10).
-
-7. Expose any view functions your UI or managers need (e.g. `getMessagePayload(invoiceId)`). Override `supportsInterface` if you implement a protocol interface (e.g. ERC165 for the protocol's receiver interface).
-
-8. Use the shared errors and constants from `src/errors.sol` and `src/constants.sol` where applicable.
-
-### 9.2 Initialization and upgradeability
-
-Adapters are **non-upgradeable**. They are deployed with plain `new ...` (see `05_DeployBridgeAdapters.s.sol`) and initialized once: `BridgeAdapter._initializeBridgeAdapter` uses a simple boolean guard (`_initialized`) rather than OpenZeppelin `Initializable`, so a second call reverts. Do not add a constructor, `_disableInitializers()`, or the `initializer` modifier — none are needed. (BridgeEscrow itself **is** UUPS-upgradeable, with `_authorizeUpgrade` gated by `DEFAULT_ADMIN_ROLE`; the adapters are not.)
+Adapters are **non-upgradeable**: deployed via the canonical CREATE2 deployer (`0x4e59…4956C`) in `05_DeployBridgeAdapters.s.sol`, so each adapter's address is **identical on every chain** (ADR 0012 D7 — the same-address guarantee `trustedRemoteAdapter` relies on); the script asserts the on-chain address equals the predicted deterministic address. They are initialized once via the base `_initialized` boolean guard (args passed to `initialize`, so the creation bytecode carries no per-chain data). No constructor `_disableInitializers` / `initializer` modifier. (BridgeEscrow itself is UUPS-upgradeable, `_authorizeUpgrade` gated by `DEFAULT_ADMIN_ROLE`.)
 
 ---
 
 ## 10. How to Configure an Adapter in BridgeEscrow
 
-> **Where bridge-adapter deploy config lives.** Per-chain bridge-adapter config — `enabled`, the `initialize` args, and the optional `callbackSelector` — lives in `script/config/contracts-deployment-config/bridge-adapters/<chainId>.json`, keyed by adapter name. It is read by `05_DeployBridgeAdapters.s.sol`. (It is no longer carried in a `bridgeAdapters` block in `script/config/chains/<chainId>.json`.)
+> Per-chain bridge-adapter deploy config (`enabled`, `initialize` args) lives in `script/config/contracts-deployment-config/bridge-adapters/<chainId>.json`, read by `05_DeployBridgeAdapters.s.sol`.
 
-1. **Deploy the adapter** (plain `new ...`, no proxy — adapters are non-upgradeable) and run your adapter's `initialize(...)` with admin, escrow address, protocol contracts, and version (from `contracts-deployment-config/bridge-adapters/<chainId>.json`). Grant `MANAGER` role to the manager address(es) that will call `completeBridge` when needed.
+1. **Deploy the adapter** and run `initialize(...)`.
+2. **Authorize on the escrow:** `BridgeEscrow.authorizeAdapter(adapter)` (admin) — enables `depositAndBridge` and lets the adapter call `releaseByInvoiceId`.
+3. **Configure trusted remotes:** for each source chain, `adapter.setTrustedRemoteAdapter(sourceKey, remoteAdapterIdentity)` (admin) so inbound messages are authenticated. With CREATE2 same-address deployment the remote identity is the adapter's own address.
+4. **Register assets** on both source and destination escrows: `BridgeEscrow.registerAsset(symbol, assetAddress)`.
+5. **Roles:** `07_TransferAdminToSecurityCouncil` hands each adapter's `DEFAULT_ADMIN_ROLE` + `MANAGER` to the security council and renounces the deployer. The council's adapter `MANAGER` gates `completeBridge`, `recoverStuckAssets`, and (Superchain) `proveWithdrawal`/`finalizeWithdrawal`.
 
-2. **Authorize the adapter on the escrow:**  
-   As admin, call `BridgeEscrow.authorizeAdapter(adapter)` so the adapter can be used in `depositAndBridge` and can call `releaseByInvoiceId`.
-
-3. **If the adapter implements a protocol callback** (e.g. Across, CCIP, Stargate, Gnosis):
-   - Either call `BridgeEscrow.authorizeAdapterWithCallback(adapter, callbackSelector)` when first authorizing (e.g. `AcrossBridgeAdapter.handleAcrossMessage.selector`),  
-   - Or, if the adapter was already authorized, call `BridgeEscrow.updateAdapterConfig(adapter, callbackSelector)` to register that selector → adapter.
-   - The callback selector must be the one the bridge protocol uses when it calls the escrow (e.g. `ccipReceive`, `lzReceive`, `onTokenTransfer`). Use `bytes4(0)` in `updateAdapterConfig` to clear the callback for that adapter.
-
-4. **Ensure assets are registered** on both source and destination escrows: `BridgeEscrow.registerAsset(symbol, assetAddress)` (use `address(0)` for native on chains where the escrow supports it).
-
-5. **Manager role:** The same or a separate manager that will call `adapter.completeBridge(...)` on the destination chain must have `MANAGER` role on the **adapter**. The escrow's `MANAGER` role is used for `releaseByInvoiceId` when called directly (e.g. by a backend) and for cancel/mark-completed; typically the adapter is the one that calls `releaseByInvoiceId` (either from its callback or from the base `completeBridge`), so the adapter's `MANAGER` role is what gates `completeBridge`.
-
-After this, accounts can call `depositAndBridge(..., adapter)` and, on the destination chain, either the protocol callback path (for callback-based adapters with registered selector) or the manager calling `adapter.completeBridge(messagePayload, protocolData)` will trigger release.
+After this, accounts call `depositAndBridge(..., adapter)`; on the destination chain either the authenticated protocol receiver (auto) or a manager calling `adapter.completeBridge(messagePayload, protocolData)` triggers the funded release.

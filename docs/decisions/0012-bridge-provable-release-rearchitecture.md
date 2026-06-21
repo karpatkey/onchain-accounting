@@ -133,6 +133,16 @@ Extend `07_TransferAdminToSecurityCouncil` (or add a step) to grant the security
 - **Tests:** the CRITICAL PoC flips from drain-succeeds to **revert** (kept as regression); unit tests rewritten to the new auth model; fork tests added for every adapter against the real protocol contracts (Phase 4).
 - **Scope/risk:** this is the largest single change to the bridge. It is sequenced (escrow → base → per-adapter) with build + targeted tests green at each step, behind two approval gates (this ADR, and the audit register already reviewed).
 
+## Implementation notes (as shipped)
+
+The design above is the decision record; a few details were tightened or simplified during implementation. The authoritative description of the shipped code is `src/bridge/BRIDGE_ADAPTERS.md`. Notable divergences:
+
+- **Funded pass-through, not a destination pool.** Release was implemented as a funded pass-through: `releaseByInvoiceId` pulls the exact `amount` from the calling adapter (which holds the delivered funds) and forwards it to the account. The escrow holds no standing destination balance, so the proposed **per-asset claimable** accounting and **destination invoice record** were not needed and were dropped. There is no **DISPATCHED** status — the source invoice lifecycle is `BRIDGING → COMPLETED | CANCELLED`; the destination escrow records only `completedInvoices[invoiceHash]` for replay protection.
+- **Release is adapter-only.** The caller check was tightened from "authorized adapter || MANAGER" to **authorized adapter only** — MANAGER cannot call `releaseByInvoiceId` directly.
+- **New escrow/base state actually added:** `trustedRemoteAdapter` (on the adapter base, not the escrow) and the per-account invoice **nonce** (folded into the invoice identity + checksum; payload is 4 slots: `invoiceId`, `amount`, `nonce`, `meta`).
+- **Adapters deploy via canonical CREATE2 (same address on every chain).** `05_DeployBridgeAdapters.s.sol` deploys each adapter through the canonical CREATE2 deployer (`0x4e59…4956C`) under a pinned salt and **asserts** the on-chain address equals the predicted deterministic address (reverts otherwise). This enforces the same-address guarantee (D7) that `trustedRemoteAdapter`, the CCTP `mintRecipient`/`destinationCaller`, and the Superchain `receiver` rely on. Adapters take their args via `initialize`, so the creation bytecode carries no per-chain data.
+- **Config/scripts:** `authorizeAdapterWithCallback` and the `callbackSelector` config are gone from the escrow and from `script/manage/AuthorizeBridgeAdapters.s.sol` (which now authorizes via `authorizeAdapter` only). `setTrustedRemoteAdapter` is wired by `06_Configure.s.sol`: for each remote chain id in an adapter's `remoteChains` config it calls `setTrustedRemoteAdapter(remoteChainId, bytes32(uint256(uint160(adapter))))` (the sibling shares this adapter's CREATE2 address). `07_TransferAdminToSecurityCouncil.s.sol` hands each deployed bridge adapter's `DEFAULT_ADMIN_ROLE` + `MANAGER` to the security council.
+
 ## Alternatives considered
 
 - **ACL the fallback only** (minimal patch): rejected — leaves source-sender unauthenticated and the dead-code protocol checks in place; does not make release provable.

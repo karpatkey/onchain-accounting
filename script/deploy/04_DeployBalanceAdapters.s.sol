@@ -93,6 +93,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // --- ERC-4626 wrappers (one thin adapter per wrapper; generic ERC4626WrapBalanceAdapter) ---
         _deployIfEnabled("ERC4626Wrap_waEthLidoGHO"); // Mainnet — Aave V3 Lido stata-token wrap of aEthLidoGHO
         _deployIfEnabled("ERC4626Wrap_sGHO"); // Mainnet — Aave sGHO savings vault (GHO underlying)
+        _deployIfEnabled("ERC4626Wrap_RWIV"); // Mainnet — Nexus Mutual RWI Vault (USDC underlying)
 
         // --- Gearbox Markets (Mainnet — ETH Alpha) ---
         _deployIfEnabled("GearboxMarketsMeta"); // Meta-adapter: all Gearbox markets; market set on NAV (ADR 0010)

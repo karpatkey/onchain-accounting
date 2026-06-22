@@ -373,7 +373,8 @@ function groupBySubLabel(
 }
 
 /// Group a protocol's combined legs by positionId (the on-chain instance coordinate — e.g. a StakeWise vault),
-/// preserving emission order. For CDP-style protocols where one instance carries both a supply/staking leg and a
+/// preserving the order of the input array (the caller passes supply legs then borrow legs, so within a vault the
+/// supply/staking leg renders before the borrow leg). For CDP-style protocols where one instance carries both a supply/staking leg and a
 /// borrow leg, this renders the matched legs together under one vault header instead of splitting them across the
 /// protocol's Supply and Borrow sections. `label` is the instance's display name when the adapter's
 /// describePosition() returns one, else null — the vault header then falls back to the full address from the key.

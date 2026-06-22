@@ -1,12 +1,29 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 /// Renders a full address (monospace) with an inline copy button. Used everywhere an address is shown so the
 /// dashboard never truncates — addresses are always fully visible and one-click copyable. `break-all` lets the
 /// address wrap gracefully inside narrow cells rather than overflow.
 export function CopyableAddress({ value, className = '' }: { value: string; className?: string }) {
   const [copied, setCopied] = useState(false)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Clear any pending reset before scheduling a new one, so rapid copies don't let an earlier timeout flip the
+  // indicator back early. Also clear on unmount.
+  function copy() {
+    navigator.clipboard.writeText(value).catch(() => {})
+    setCopied(true)
+    if (timer.current) clearTimeout(timer.current)
+    timer.current = setTimeout(() => setCopied(false), 1200)
+  }
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current)
+    },
+    [],
+  )
+
   return (
     <span className={`inline-flex items-center gap-1 font-mono break-all ${className}`}>
       {value}
@@ -16,17 +33,13 @@ export function CopyableAddress({ value, className = '' }: { value: string; clas
         tabIndex={0}
         onClick={(e) => {
           e.stopPropagation()
-          navigator.clipboard.writeText(value).catch(() => {})
-          setCopied(true)
-          setTimeout(() => setCopied(false), 1200)
+          copy()
         }}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault()
             e.stopPropagation()
-            navigator.clipboard.writeText(value).catch(() => {})
-            setCopied(true)
-            setTimeout(() => setCopied(false), 1200)
+            copy()
           }
         }}
         title={copied ? 'Copied' : 'Copy address'}

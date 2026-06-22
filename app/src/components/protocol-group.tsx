@@ -3,6 +3,7 @@
 import { Fragment } from 'react'
 import type { OnchainPosition } from '@/hooks/use-account-positions'
 import { TokenLogo } from '@/components/token-logo'
+import { CopyableAddress } from '@/components/copyable-address'
 import { formatAmount, formatPrice, formatUsd } from '@/lib/format'
 import {
   EthCircleColor,
@@ -99,7 +100,7 @@ function getProtocolImgIcon(protocol: string): string | null {
 
 function WalletIcon() {
   return (
-    <svg className="w-6 h-6 text-neutral-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <svg className="w-6 h-6 text-neutral-700 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 12V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2h14a2 2 0 002-2v-2" />
       <path d="M16 12h5v4h-5a2 2 0 010-4z" />
       <circle cx="16" cy="14" r="0.75" fill="currentColor" stroke="none" />
@@ -154,11 +155,15 @@ function PositionRow({
   chainId,
   sectionTotal,
   withdrawalsByKey,
+  kindLabel,
 }: {
   pos: OnchainPosition
   chainId: number
   sectionTotal: bigint
   withdrawalsByKey?: WithdrawalsByKey
+  // Optional inline leg tag (Staking / Borrow / …) rendered on the row itself. Used by the per-vault layout
+  // so each line is self-labelled instead of relying on a separate sub-header above it.
+  kindLabel?: { text: string; isDebt: boolean }
 }) {
   const pct = pctOfSection(pos.value, sectionTotal)
   // Per-request drill-down for withdrawal-queue legs (Lido NFT ids / Stader request ids). The adapter
@@ -176,6 +181,15 @@ function PositionRow({
       <tr className="border-t border-neutral-200 hover:bg-neutral-50 transition-colors">
         <td className="py-2.5 px-4 text-sm font-medium text-neutral-950">
           <div className="flex items-center gap-1.5">
+            {kindLabel && (
+              <span
+                className={`inline-block shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                  kindLabel.isDebt ? 'bg-rose-100 text-rose-700' : 'bg-green-100 text-green-700'
+                }`}
+              >
+                {kindLabel.text}
+              </span>
+            )}
             <TokenLogo symbol={pos.underlyingAsset.symbol} address={pos.underlyingAsset.asset} chainId={chainId} />
             {pos.underlyingAsset.symbol}
           </div>
@@ -209,7 +223,7 @@ function PositionRow({
           <tr key={req.id.toString()} className="border-t border-neutral-100 bg-neutral-100/70">
             <td className="py-2 px-4 pl-9 text-xs text-neutral-700">
               <div className="flex items-center gap-2">
-                <span className="text-neutral-400">↳</span>
+                <span className="text-neutral-700">↳</span>
                 <span className="font-mono font-medium text-neutral-800">#{req.id.toString()}</span>
                 <span
                   className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
@@ -358,6 +372,49 @@ function groupBySubLabel(
   return out
 }
 
+/// Group a protocol's combined legs by positionId (the on-chain instance coordinate — e.g. a StakeWise vault),
+/// preserving emission order. For CDP-style protocols where one instance carries both a supply/staking leg and a
+/// borrow leg, this renders the matched legs together under one vault header instead of splitting them across the
+/// protocol's Supply and Borrow sections. The label is the instance's display name (vault name, or the short
+/// positionId fallback set in use-account-positions when describePosition() is empty).
+/// Recover the full instance address from a positionId for display. `abi.encode(address)` is a 32-byte word
+/// with the address in the low 20 bytes (24 leading hex zeros) → return the checksummable 0x address; for other
+/// id shapes (e.g. Morpho marketId, Uniswap NFT tuple) return the full positionId hex unchanged.
+function fullAddressFromPositionId(positionId: string): string {
+  const hex = positionId.startsWith('0x') ? positionId.slice(2) : positionId
+  if (hex.length === 64 && /^0{24}/.test(hex)) return `0x${hex.slice(24)}`
+  return positionId
+}
+
+function groupByVault(
+  positions: OnchainPosition[],
+): Array<{ key: string; label: string | null; positions: OnchainPosition[] }> {
+  const out: Array<{ key: string; label: string | null; positions: OnchainPosition[] }> = []
+  const idx = new Map<string, number>()
+  for (const pos of positions) {
+    const key =
+      pos.positionId && pos.positionId !== '0x' ? pos.positionId.toLowerCase() : pos.balanceOracle.toLowerCase()
+    const i = idx.get(key)
+    if (i !== undefined) out[i].positions.push(pos)
+    else {
+      idx.set(key, out.length)
+      out.push({ key, label: extractPoolLabel(pos.positionDetail), positions: [pos] })
+    }
+  }
+  return out
+}
+
+/// True when some positionId carries BOTH a supply (non-debt) and a borrow (debt) leg — a true collateralised
+/// position (StakeWise vault, Euler/Morpho market). For these, grouping by vault reads far better than the
+/// protocol-wide Supply / Borrow split. Protocols without matched legs (wallet, supply-only, Aave cross-asset)
+/// fall through to the default layout.
+function hasMatchedVaultLegs(supply: OnchainPosition[], borrow: OnchainPosition[]): boolean {
+  const supplyIds = new Set(
+    supply.map((p) => p.positionId?.toLowerCase()).filter((id): id is string => !!id && id !== '0x'),
+  )
+  return borrow.some((p) => !!p.positionId && supplyIds.has(p.positionId.toLowerCase()))
+}
+
 function PoolSubHeader({ label, total, isDebt }: { label: string; total: bigint | null; isDebt: boolean }) {
   return (
     <tr>
@@ -379,9 +436,9 @@ function TypeSubHeader({ label, total, isDebt }: { label: string; total: bigint;
   return (
     <tr>
       <td colSpan={5} className="p-0">
-        <div className="pl-14 pr-4 py-0.5 flex items-center justify-between">
-          <span className="text-[10px] font-medium uppercase tracking-wider text-neutral-400">{label}</span>
-          <span className={`text-[10px] tabular-nums ${isDebt ? 'text-rose-700' : 'text-neutral-500'}`}>
+        <div className="pl-11 pr-4 py-0.5 flex items-center justify-between">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-700">{label}</span>
+          <span className={`text-[11px] tabular-nums font-medium ${isDebt ? 'text-rose-700' : 'text-neutral-700'}`}>
             {formatUsd(total)}
           </span>
         </div>
@@ -480,6 +537,69 @@ function PositionSection({
   )
 }
 
+/// Per-vault layout for collateralised protocols (StakeWise V3, Euler, Morpho markets): group every leg by
+/// positionId so each vault renders as one block with its matched Staking/Supply + Borrow lines, rather than
+/// the protocol-wide Supply / Borrow split. The vault header shows the instance label (name or short address)
+/// and its net value (collateral − debt).
+function VaultSections({
+  positions,
+  chainId,
+  withdrawalsByKey,
+}: {
+  positions: OnchainPosition[]
+  chainId: number
+  withdrawalsByKey?: WithdrawalsByKey
+}) {
+  const vaults = groupByVault(positions)
+  // Section totals for the per-row % column (a leg's share of the protocol's supply vs borrow), kept consistent
+  // with the default layout.
+  const supplyTotal = positions.filter((p) => !p.isDebt).reduce((s, p) => s + p.value, 0n)
+  const borrowTotal = positions.filter((p) => p.isDebt).reduce((s, p) => s + p.value, 0n)
+  return (
+    <>
+      {vaults.map((v, vi) => {
+        const net = v.positions.reduce((s, p) => s + p.value, 0n)
+        const fullId = fullAddressFromPositionId(v.key)
+        return (
+          <Fragment key={`vault-${v.key}-${vi}`}>
+            {/* Vault block start: a thick top divider + tinted header clearly bounds each vault. Shows the real
+                vault name when the adapter exposes one, then always the full instance address (copyable). */}
+            <tr>
+              <td colSpan={5} className="p-0">
+                <div
+                  className={`flex items-center justify-between gap-3 bg-neutral-100 px-4 py-1.5 ${
+                    vi === 0 ? 'border-t border-neutral-200' : 'border-t-2 border-neutral-300'
+                  }`}
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    {v.label && <span className="text-xs font-semibold text-neutral-900">{v.label}</span>}
+                    <CopyableAddress value={fullId} className="text-[11px] text-neutral-700" />
+                  </span>
+                  <span
+                    className={`shrink-0 text-xs font-semibold tabular-nums ${net < 0n ? 'text-rose-700' : 'text-neutral-800'}`}
+                  >
+                    net {formatUsd(net)}
+                  </span>
+                </div>
+              </td>
+            </tr>
+            {v.positions.map((pos, i) => (
+              <PositionRow
+                key={`vault-${v.key}-${vi}-${i}`}
+                pos={pos}
+                chainId={chainId}
+                sectionTotal={pos.isDebt ? borrowTotal : supplyTotal}
+                withdrawalsByKey={withdrawalsByKey}
+                kindLabel={{ text: extractType(pos.positionDetail) ?? (pos.isDebt ? 'Borrow' : 'Supply'), isDebt: pos.isDebt }}
+              />
+            ))}
+          </Fragment>
+        )
+      })}
+    </>
+  )
+}
+
 export type ProtocolGroupData = {
   protocol: string
   chainId: number
@@ -535,11 +655,19 @@ export function ProtocolGroup({ group, totalPortfolioNav, withdrawalsByKey }: Pr
         </div>
       </div>
 
-      {/* Positions table — no repeated column headers */}
+      {/* Positions table — no repeated column headers. CDP-style protocols (a positionId with both a supply and
+          a borrow leg) render grouped by vault so the matched legs sit together; everything else keeps the
+          protocol-wide Supply / Borrow split. */}
       <table className="w-full">
         <tbody>
-          <PositionSection label="Supply" positions={supply} total={supplyTotal} isDebt={false} chainId={chainId} withdrawalsByKey={withdrawalsByKey} />
-          <PositionSection label="Borrow" positions={borrow} total={borrowTotal} isDebt={true} chainId={chainId} withdrawalsByKey={withdrawalsByKey} />
+          {hasMatchedVaultLegs(supply, borrow) ? (
+            <VaultSections positions={[...supply, ...borrow]} chainId={chainId} withdrawalsByKey={withdrawalsByKey} />
+          ) : (
+            <>
+              <PositionSection label="Supply" positions={supply} total={supplyTotal} isDebt={false} chainId={chainId} withdrawalsByKey={withdrawalsByKey} />
+              <PositionSection label="Borrow" positions={borrow} total={borrowTotal} isDebt={true} chainId={chainId} withdrawalsByKey={withdrawalsByKey} />
+            </>
+          )}
         </tbody>
       </table>
     </div>

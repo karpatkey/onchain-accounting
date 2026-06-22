@@ -18,6 +18,9 @@ export type OnchainPosition = {
   // Display fields synthesised from the typed-identity API + the adapter's IPositionDescribable layer.
   protocol: string
   positionDetail: string
+  // The on-chain position identity (abi.encode(...) per protocol). Legs of one logical position (e.g. a
+  // StakeWise vault's Staking + Borrow legs) share it, so the dashboard can group matched legs by vault.
+  positionId: string
 }
 
 // Raw tuple as returned by the typed-identity getAccountPositions (src/nav/INAVCalculator.sol :: Position).
@@ -154,7 +157,9 @@ export function useAccountPositions(account: `0x${string}` | undefined): { chain
       // Wallet rows (kind 0) group under one oracle sub-header; their describePosition() is just the token
       // symbol, so using it as `name` would render a misleading header (first token's symbol over a mixed-token
       // wallet group). The symbol is already shown per row — omit name for Wallet; keep it for protocol
-      // positions where it's a real label (e.g. "NFT #22279").
+      // positions where it's a real label (e.g. "NFT #22279"). When describePosition() is empty (e.g. StakeWise
+      // V3 Gnosis vaults don't implement name()), `name` stays unset — the per-vault layout groups by positionId
+      // and renders the full vault address from it, so no synthetic label is needed here.
       if (posLabel && p.positionKind !== 0) detail.name = posLabel
       return {
         underlyingAsset: p.underlyingAsset,
@@ -168,6 +173,7 @@ export function useAccountPositions(account: `0x${string}` | undefined): { chain
         stale: p.stale,
         protocol,
         positionDetail: Object.keys(detail).length > 0 ? JSON.stringify(detail) : '',
+        positionId: p.positionId,
       }
     })
     const result = posData?.[ci]

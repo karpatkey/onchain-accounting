@@ -31,7 +31,7 @@ export function ChainSidebar({ navResults, selectedChainId, onSelect }: ChainSid
 
   return (
     <div className="w-52 shrink-0 sticky top-4 self-start">
-      <p className="text-xs text-neutral-500 uppercase tracking-wider mb-2 px-2">Chains</p>
+      <p className="text-xs text-neutral-700 uppercase tracking-wider mb-2 px-2">Chains</p>
       <ul className="space-y-0.5">
 
         {/* All chains */}
@@ -50,7 +50,7 @@ export function ChainSidebar({ navResults, selectedChainId, onSelect }: ChainSid
               All Chains
             </span>
             {isLoading ? (
-              <span className="text-neutral-400 text-xs">…</span>
+              <span className="text-neutral-700 text-xs">…</span>
             ) : (
               <span className="tabular-nums text-xs">{formatUsd(totalNav)}</span>
             )}
@@ -77,22 +77,22 @@ export function ChainSidebar({ navResults, selectedChainId, onSelect }: ChainSid
                 isSelected
                   ? 'bg-neutral-300 text-neutral-950 font-semibold'
                   : isEmpty
-                  ? 'text-neutral-400 hover:bg-neutral-300/40 hover:text-neutral-600'
+                  ? 'text-neutral-700 hover:bg-neutral-300/40 hover:text-neutral-700'
                   : 'text-neutral-700 hover:bg-neutral-300/60 hover:text-neutral-950'
               }`}
             >
               <span className="flex items-center gap-2">
-                <Icon className={`w-5 h-5 ${isEmpty ? 'opacity-40' : ''}`} />
+                <Icon className={`w-5 h-5 ${isEmpty ? 'opacity-70' : ''}`} />
                 {label}
                 {nav?.sequencerDown && <span className="text-rose-700 text-[10px]">↓</span>}
               </span>
               <span className="flex items-center gap-1.5">
                 {chainLoading ? (
-                  <span className="text-neutral-400 text-xs">…</span>
+                  <span className="text-neutral-700 text-xs">…</span>
                 ) : (
                   <>
                     {!isEmpty && pct > 0 && (
-                      <span className="text-neutral-400 text-[10px]">{pct}%</span>
+                      <span className="text-neutral-700 text-[10px]">{pct}%</span>
                     )}
                     <span className={`tabular-nums text-xs ${nav?.stalePriceAssets.length ? 'text-orange-700' : ''}`}>
                       {formatUsd(nav?.value ?? 0n)}

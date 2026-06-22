@@ -353,10 +353,13 @@ contract ERC4626WrapBalanceAdapterForkTest_RWIV_RealHolder is BalanceAdapterTest
         assertEq(RWIV.balanceOf(HOLDER), EXPECTED_SHARES, "holder RWIV shares at pinned block");
     }
 
-    /// @notice convertToAssets and previewRedeem agree exactly at the pin — no exit fee/cooldown skew.
+    /// @notice convertToAssets and previewRedeem agree exactly at the pin — no exit fee/cooldown skew — and the
+    ///         holder's full balance is redeemable (`maxRedeem == balanceOf`), so no exit constraint makes
+    ///         `convertToAssets` over-report the realizable value.
     function test_realHolder_convertToAssets_equalsPreviewRedeem() public view {
         assertEq(RWIV.convertToAssets(EXPECTED_SHARES), EXPECTED_USDC, "convertToAssets at pinned block");
         assertEq(RWIV.previewRedeem(EXPECTED_SHARES), EXPECTED_USDC, "previewRedeem must equal convertToAssets");
+        assertEq(RWIV.maxRedeem(HOLDER), EXPECTED_SHARES, "maxRedeem == full balance (no exit constraint)");
     }
 
     /// @notice The adapter must report the holder's position as exactly the convertToAssets USDC value.

@@ -34,6 +34,7 @@ type RawPosition = {
   price: bigint
   priceDecimals: number
   stale: boolean
+  quoteAssetStale: boolean
   protocolId: `0x${string}`
   positionId: `0x${string}`
   positionKind: number

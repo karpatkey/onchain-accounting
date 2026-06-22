@@ -375,11 +375,11 @@ function groupBySubLabel(
 /// Group a protocol's combined legs by positionId (the on-chain instance coordinate — e.g. a StakeWise vault),
 /// preserving emission order. For CDP-style protocols where one instance carries both a supply/staking leg and a
 /// borrow leg, this renders the matched legs together under one vault header instead of splitting them across the
-/// protocol's Supply and Borrow sections. The label is the instance's display name (vault name, or the short
-/// positionId fallback set in use-account-positions when describePosition() is empty).
+/// protocol's Supply and Borrow sections. `label` is the instance's display name when the adapter's
+/// describePosition() returns one, else null — the vault header then falls back to the full address from the key.
 /// Recover the full instance address from a positionId for display. `abi.encode(address)` is a 32-byte word
-/// with the address in the low 20 bytes (24 leading hex zeros) → return the checksummable 0x address; for other
-/// id shapes (e.g. Morpho marketId, Uniswap NFT tuple) return the full positionId hex unchanged.
+/// with the address in the low 20 bytes (24 leading hex zeros) → return the 0x address (lowercased, since the
+/// positionId is); for other id shapes (e.g. Morpho marketId, Uniswap NFT tuple) return the full positionId hex.
 function fullAddressFromPositionId(positionId: string): string {
   const hex = positionId.startsWith('0x') ? positionId.slice(2) : positionId
   if (hex.length === 64 && /^0{24}/.test(hex)) return `0x${hex.slice(24)}`

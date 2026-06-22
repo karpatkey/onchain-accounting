@@ -138,15 +138,22 @@ function SearchPage({ onSearch }: { onSearch: (addr: `0x${string}`) => void }) {
             <p className="text-xs text-neutral-700 uppercase tracking-wider mb-2">Recent searches</p>
             <div className="space-y-1">
               {recents.map((r) => (
-                <button
+                <div
                   key={r.address}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   onClick={() => onSearch(r.address as `0x${string}`)}
-                  className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-white border border-neutral-300 hover:border-neutral-500 text-sm transition-colors shadow-[var(--shadow-1)]"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      onSearch(r.address as `0x${string}`)
+                    }
+                  }}
+                  className="w-full cursor-pointer flex items-center justify-between px-3 py-2 rounded-lg bg-white border border-neutral-300 hover:border-neutral-500 text-sm transition-colors shadow-[var(--shadow-1)]"
                 >
                   <CopyableAddress value={r.address} className="text-neutral-800" />
                   <span className="text-neutral-700 text-xs">{new Date(r.timestamp).toLocaleDateString()}</span>
-                </button>
+                </div>
               ))}
             </div>
           </div>

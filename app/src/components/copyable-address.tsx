@@ -16,7 +16,7 @@ export function CopyableAddress({ value, className = '' }: { value: string; clas
         tabIndex={0}
         onClick={(e) => {
           e.stopPropagation()
-          void navigator.clipboard.writeText(value)
+          navigator.clipboard.writeText(value).catch(() => {})
           setCopied(true)
           setTimeout(() => setCopied(false), 1200)
         }}
@@ -24,7 +24,7 @@ export function CopyableAddress({ value, className = '' }: { value: string; clas
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault()
             e.stopPropagation()
-            void navigator.clipboard.writeText(value)
+            navigator.clipboard.writeText(value).catch(() => {})
             setCopied(true)
             setTimeout(() => setCopied(false), 1200)
           }

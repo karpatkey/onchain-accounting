@@ -5,5 +5,14 @@
     "instances": [
       "0x57038C3e3Fe0a170BB72DE2fD56E98e4d1a69717"
     ]
+  },
+  "StakeWiseV3VaultsMeta": {
+    "enabled": true,
+    "$comment": "StakeWise V3 vaults on Gnosis (GNO staking + osGNO debt, both denominated in GNO). Instances are the Gnosis vault addresses held by balancer-dao (0x0EFc…fc89) and CoW (0x616d…0669): 0x00025c… + 0x2cd404… (balancer) and 0x4b4406… (balancer + cow). GNO + osGNO are registered+priced on Gnosis. Reconciled on NAV via addMetaInstances/removeMetaInstances.",
+    "instances": [
+      "0x00025C729A3364FaEf02c7D1F577068d87E90ba6",
+      "0x2Cd404D9d75436e7d6dDbCcc2fB9cF7C06941BF1",
+      "0x4b4406Ed8659D03423490D8b62a1639206dA0A7a"
+    ]
   }
 }

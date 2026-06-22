@@ -5,5 +5,14 @@
     "constructor": {
       "protocol": "Aave V3"
     }
+  },
+  "StakeWiseV3VaultsMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every StakeWise V3 vault on Gnosis. Emits a Staking leg (vault shares) and a Borrow leg (osGNO debt) per vault, both denominated in the underlying staking asset GNO. The active vault set is configured in nav-config/meta-balance-adapters/100.json (this deploy-config holds only the constructor args) and governed on NAVCalculator via addMetaInstances/removeMetaInstances. underlyingToken = GNO (Gnosis stakes GNO, mints osGNO). osTokenVaultController is the same Gnosis controller osGNO_PriceOracle uses. Identity derived on-chain: positionId = vault address; name = vault name().",
+    "constructor": {
+      "underlyingToken": "0x9C58BAcC331c9aa871AFD802DB6379a98e80CEdb",
+      "osTokenVaultController": "0x60B2053d7f2a0bBa70fe6CDd88FB47b579B9179a",
+      "protocol": "StakeWise V3"
+    }
   }
 }

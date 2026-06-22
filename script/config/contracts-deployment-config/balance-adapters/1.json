@@ -125,7 +125,7 @@
     "constructor": {
       "wrapper": "0xcAFeAA466736ac01e0AC9Ca72644beF348694731",
       "protocol": "Nexus Mutual",
-      "positionDetail": "{\"protocol\":\"Nexus Mutual\",\"product\":\"RWI Vault\",\"name\":\"RWIV\"",
+      "positionDetail": "{\"protocol\":\"Nexus Mutual\",\"product\":\"Vault\",\"name\":\"RWIV\"",
       "positionId": "0xcAFeAA466736ac01e0AC9Ca72644beF348694731"
     }
   },

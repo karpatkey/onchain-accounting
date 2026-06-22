@@ -126,6 +126,17 @@
       "yToXHeartbeat": "86400"
     }
   },
+  "LDO": {
+    "enabled": true,
+    "$comment": "LDO_PriceOracle: LDO/USD = LDO/ETH x ETH/USD (no LDO/USD Chainlink feed on mainnet). Held by KPK DAO (~$14k). Contract + deploy path (_deployLdo) already exist; this just enables it.",
+    "constructor": {
+      "ldo": "0x5A98FcBEA516Cf06857215779Fd812CA3beF1B32",
+      "ldoToEthChainlinkAddress": "0x4e844125952D32AcdF339BE976c98E22F6F318dB",
+      "ethToUsdChainlinkAddress": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+      "ldoToEthChainlinkHeartbeat": "86400",
+      "ethToUsdChainlinkHeartbeat": "3600"
+    }
+  },
   "ankrETH": {
     "enabled": true,
     "$comment": "ankrETH/USD = (ETH/USD) * 1e18 / ankrETH.ratio() (ratio is ankrETH-per-ETH).",

@@ -306,6 +306,26 @@
       }
     ]
   },
+  "UNI": {
+    "address": "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984",
+    "priceFeeds": [
+      {
+        "type": "Chainlink",
+        "address": "0x553303d460EE0afB37EdFf9bE42922D8FF63220e",
+        "heartbeat": 86400
+      }
+    ]
+  },
+  "LDO": {
+    "address": "0x5A98FcBEA516Cf06857215779Fd812CA3beF1B32",
+    "priceFeeds": [
+      {
+        "type": "Custom",
+        "feed": "LDO",
+        "heartbeat": 86400
+      }
+    ]
+  },
   "EIGEN": {
     "address": "0xec53bF9167f50cDEB3Ae105f56099aaaB9061F83",
     "priceFeeds": [

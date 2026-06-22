@@ -119,6 +119,16 @@
       "positionId": "0xE1753F2e00940cC31213dd92013cF019DFE4ca1d"
     }
   },
+  "ERC4626Wrap_RWIV": {
+    "enabled": true,
+    "$comment": "Nexus Mutual RWI Vault (RWIV, ERC-4626). RWIV.asset() returns USDC (6-dec); convertToAssets unwraps shares to USDC-equivalent. Held by the Nexus Mutual Safe (~$250k). At fork block 25373262, previewRedeem() == convertToAssets() exactly and maxRedeem() == full balance (no exit fee/cooldown), so convertToAssets does not over-report. Not Morpho — generic ERC4626Wrap is the right adapter.",
+    "constructor": {
+      "wrapper": "0xcAFeAA466736ac01e0AC9Ca72644beF348694731",
+      "protocol": "Nexus Mutual",
+      "positionDetail": "{\"protocol\":\"Nexus Mutual\",\"product\":\"Vault\",\"name\":\"RWIV\"",
+      "positionId": "0xcAFeAA466736ac01e0AC9Ca72644beF348694731"
+    }
+  },
   "ERC4626Wrap_waEthLidoGHO": {
     "enabled": true,
     "$comment": "Aave V3 Lido instance stata-token wrap of aEthLidoGHO. waEthLidoGHO.asset() returns GHO; convertToAssets unwraps shares to GHO-equivalent. ACCOUNT_11 holds ~$233 of this token. Production adapter not deployed yet \u2014 integration test deploys it ephemerally from this config block. Run script/deploy/04_DeployBalanceAdapters.s.sol post-PR-merge to deploy and write the address back into `deployed`.",

@@ -29,10 +29,10 @@ function truncate(value: string): string {
   return value
 }
 
-// Reproduces the portal's `text-muted-foreground/40 hover:text-foreground` exactly (this app has no
-// muted-foreground/foreground tokens): neutral-500 at 40% opacity, hover to near-black. Kept identical to
-// the kpk-agents client-portal chip so addresses read the same across apps.
-const ICON_CLASS = 'shrink-0 cursor-pointer p-0.5 text-neutral-500/40 hover:text-neutral-950 transition-colors rounded'
+// Copy/explorer icon styling. Geometry + behaviour are a faithful port of the kpk-agents client-portal chip;
+// the icon color is the one tweak: neutral-500 (hover neutral-950) instead of the portal's faint
+// `text-muted-foreground/40`, which was hard to read on this dashboard's lighter background.
+const ICON_CLASS = 'shrink-0 cursor-pointer p-0.5 text-neutral-500 hover:text-neutral-950 transition-colors rounded'
 
 /// Inline copy button. A `role=button` span (not a `<button>`) so it can nest inside clickable rows/triggers
 /// without invalid HTML. Clears any pending reset before scheduling a new one (rapid copies don't flip the

@@ -1,10 +1,9 @@
 'use client'
 
-import { Badge, Launch, Tooltip, TooltipContent, TooltipTrigger } from '@karpatkey/design-system'
+import { Badge, Tooltip, TooltipContent, TooltipTrigger } from '@karpatkey/design-system'
 import { useSequencer } from '@/hooks/use-sequencer'
-import { explorerAddressUrl } from '@/config/chains'
 import { formatAge, formatHeartbeat } from '@/lib/format'
-import { CopyableAddress } from '@/components/copyable-address'
+import { AddressChip } from '@/components/address-chip'
 
 const STALE_DAYS = 7n * 24n * 3600n
 
@@ -86,15 +85,7 @@ export function SequencerDetailCard({ chainId, feedAddress }: SequencerDetailCar
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-1.5">
           <span className="font-semibold text-sm text-neutral-950">Sequencer Feed</span>
-          <a
-            href={explorerAddressUrl(chainId, feedAddress)}
-            target="_blank"
-            rel="noreferrer"
-            className="text-neutral-700 hover:text-neutral-950 inline-flex items-center transition-colors"
-          >
-            <Launch className="w-3 h-3" />
-          </a>
-          <CopyableAddress value={feedAddress} className="text-xs text-neutral-700" />
+          <AddressChip address={feedAddress} chainId={chainId} className="text-xs text-neutral-700" />
         </div>
         <SequencerStatusBadge
           isLoading={isLoading}
@@ -122,7 +113,7 @@ export function SequencerDetailCard({ chainId, feedAddress }: SequencerDetailCar
         <StatCard
           label="Feed Address"
           value={
-            <CopyableAddress value={feedAddress} className="text-xs" />
+            <AddressChip address={feedAddress} chainId={chainId} className="text-xs" />
           }
         />
       </div>

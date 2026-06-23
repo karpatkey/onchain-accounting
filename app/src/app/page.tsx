@@ -12,7 +12,7 @@ import { useLidoWithdrawals, type LidoOracleRef } from '@/hooks/use-lido-withdra
 import { useStaderWithdrawals, type StaderOracleRef } from '@/hooks/use-stader-withdrawals'
 import { useKelpWithdrawals, type KelpOracleRef } from '@/hooks/use-kelp-withdrawals'
 import { useRefreshCooldown } from '@/hooks/use-refresh-cooldown'
-import { CopyableAddress } from '@/components/copyable-address'
+import { AddressChip } from '@/components/address-chip'
 
 // ─── Recent searches ─────────────────────────────────────────────────────────
 
@@ -151,7 +151,7 @@ function SearchPage({ onSearch }: { onSearch: (addr: `0x${string}`) => void }) {
                   }}
                   className="w-full cursor-pointer flex items-center justify-between px-3 py-2 rounded-lg bg-white border border-neutral-300 hover:border-neutral-500 text-sm transition-colors shadow-[var(--shadow-1)]"
                 >
-                  <CopyableAddress value={r.address} className="text-neutral-800" />
+                  <AddressChip address={r.address} className="text-neutral-800" />
                   <span className="text-neutral-700 text-xs">{new Date(r.timestamp).toLocaleDateString()}</span>
                 </div>
               ))}

@@ -3,7 +3,7 @@
 import { Fragment } from 'react'
 import type { OnchainPosition } from '@/hooks/use-account-positions'
 import { TokenLogo } from '@/components/token-logo'
-import { CopyableAddress } from '@/components/copyable-address'
+import { AddressChip } from '@/components/address-chip'
 import { formatAmount, formatPrice, formatUsd } from '@/lib/format'
 import {
   EthCircleColor,
@@ -574,7 +574,7 @@ function VaultSections({
                 >
                   <span className="flex min-w-0 items-center gap-2">
                     {v.label && <span className="text-xs font-semibold text-neutral-900">{v.label}</span>}
-                    <CopyableAddress value={fullId} className="text-[11px] text-neutral-700" />
+                    <AddressChip address={fullId} chainId={chainId} className="text-[11px] text-neutral-700" />
                   </span>
                   <span
                     className={`shrink-0 text-xs font-semibold tabular-nums ${net < 0n ? 'text-rose-700' : 'text-neutral-800'}`}

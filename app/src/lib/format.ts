@@ -88,7 +88,3 @@ export function isStaleWarning(updatedAt: bigint, heartbeat: bigint): boolean {
   const age = BigInt(Math.floor(Date.now() / 1000)) - updatedAt
   return age > (heartbeat * 8n) / 10n
 }
-
-export function shortenAddress(addr: string): string {
-  return `${addr.slice(0, 6)}…${addr.slice(-4)}`
-}

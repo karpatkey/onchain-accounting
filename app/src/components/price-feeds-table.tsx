@@ -18,7 +18,7 @@ import {
 import type { ChainPriceFeeds, PriceFeedInfo } from '@/hooks/use-price-feeds'
 import { TokenLogo } from '@/components/token-logo'
 import { formatAge, formatHeartbeat, formatPrice, isStaleWarning } from '@/lib/format'
-import { CopyableAddress } from '@/components/copyable-address'
+import { AddressChip } from '@/components/address-chip'
 import { explorerAddressUrl } from '@/config/chains'
 
 // Indices match the Solidity IPrices.PriceType enum: Chainlink=0, Redstone=1, API3=2, Custom=3.
@@ -220,7 +220,7 @@ export function PriceFeedsTable({ data, dense = false, filterStatus = 'all', sea
                 </Td>
                 <Td className={td}>
                   <div className="flex items-center gap-1.5">
-                    <CopyableAddress value={feed.priceFeed} className="text-sm" />
+                    <AddressChip address={feed.priceFeed} chainId={chainId} className="text-sm" />
                     {sharedWith.length > 0 && (
                       <Tooltip>
                         <TooltipTrigger className="cursor-default text-xs text-neutral-500">↔</TooltipTrigger>
@@ -229,14 +229,6 @@ export function PriceFeedsTable({ data, dense = false, filterStatus = 'all', sea
                         </TooltipContent>
                       </Tooltip>
                     )}
-                    <a
-                      href={explorerAddressUrl(chainId, feed.priceFeed)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="link-icon text-neutral-700 hover:text-neutral-950 inline-flex items-center"
-                    >
-                      <Launch className="w-3 h-3" />
-                    </a>
                   </div>
                 </Td>
                 <Td className={`text-right tabular-nums ${td}`}>

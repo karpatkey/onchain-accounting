@@ -40,11 +40,17 @@ export function CopyIconButton({ value, label = 'Copy address' }: { value: strin
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current) }, [])
 
   function copy() {
-    // `navigator.clipboard` is undefined in non-secure contexts — guard so the call can't throw.
-    navigator.clipboard?.writeText(value).catch(() => {})
-    setCopied(true)
-    if (timer.current) clearTimeout(timer.current)
-    timer.current = setTimeout(() => setCopied(false), 1200)
+    // `navigator.clipboard` is undefined in non-secure contexts. Only flip to "Copied!" once the write
+    // actually resolves, so the indicator never claims success on a rejected/absent clipboard.
+    const write = navigator.clipboard?.writeText(value)
+    if (!write) return
+    write
+      .then(() => {
+        setCopied(true)
+        if (timer.current) clearTimeout(timer.current)
+        timer.current = setTimeout(() => setCopied(false), 1200)
+      })
+      .catch(() => {})
   }
 
   return (

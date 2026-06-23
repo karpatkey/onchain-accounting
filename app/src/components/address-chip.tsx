@@ -24,7 +24,7 @@ function truncate(value: string): string {
   return value
 }
 
-const ICON_CLASS = 'shrink-0 cursor-pointer p-0.5 text-neutral-400 hover:text-neutral-900 transition-colors rounded'
+const ICON_CLASS = 'shrink-0 cursor-pointer p-0.5 text-neutral-600 hover:text-neutral-900 transition-colors rounded'
 
 /// Inline copy button. A `role=button` span (not a `<button>`) so it can nest inside clickable rows/triggers
 /// without invalid HTML. Clears any pending reset before scheduling a new one (rapid copies don't flip the

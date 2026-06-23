@@ -297,7 +297,7 @@ function PortfolioView({ account, onReset }: { account: `0x${string}`; onReset: 
             <a href={`/feeds?address=${account}`} className="text-neutral-700 hover:text-neutral-950 transition-colors">Price Feeds</a>
             <button
               type="button" onClick={handleRefresh} disabled={!canRefresh}
-              className={`tabular-nums transition-colors ${canRefresh ? 'text-neutral-700 hover:text-neutral-950' : 'text-neutral-700 cursor-not-allowed'}`}
+              className={`tabular-nums transition-colors ${canRefresh ? 'text-neutral-700 hover:text-neutral-950' : 'text-neutral-700 opacity-70 cursor-not-allowed'}`}
             >
               {canRefresh ? '↻ Refresh' : `↻ ${secondsLeft}s`}
             </button>

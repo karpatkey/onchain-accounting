@@ -564,7 +564,8 @@ function VaultSections({
         return (
           <Fragment key={`vault-${v.key}-${vi}`}>
             {/* Vault block start: a thick top divider + tinted header clearly bounds each vault. Shows the real
-                vault name when the adapter exposes one, then always the full instance address (copyable). */}
+                vault name when the adapter exposes one, then the instance address as a chip (truncated, with the
+                full value on hover + copy, and an explorer link when it's a 20-byte address). */}
             <tr>
               <td colSpan={5} className="p-0">
                 <div

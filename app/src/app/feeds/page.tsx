@@ -210,7 +210,7 @@ export default function FeedsPage() {
               className={`tabular-nums text-sm transition-colors ${
                 canRefresh
                   ? 'text-neutral-700 hover:text-neutral-950'
-                  : 'text-neutral-700 cursor-not-allowed'
+                  : 'text-neutral-700 opacity-70 cursor-not-allowed'
               } ${isRefreshing ? 'animate-spin' : ''}`}
             >
               ↻{canRefresh ? ' Refresh' : ` ${secondsLeft}s`}

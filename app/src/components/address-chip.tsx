@@ -58,13 +58,13 @@ export function CopyIconButton({ value, label = 'Copy address' }: { value: strin
       className={ICON_CLASS}
     >
       {copied ? (
-        <svg className="w-3.5 h-3.5" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-          <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+          <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       ) : (
-        <svg className="w-3.5 h-3.5" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-          <rect x="4" y="4" width="7" height="7" rx="1" stroke="currentColor" strokeWidth="1.6" />
-          <path d="M8 4V2a1 1 0 00-1-1H2a1 1 0 00-1 1v5a1 1 0 001 1h2" stroke="currentColor" strokeWidth="1.6" />
+        <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+          <rect x="4" y="4" width="7" height="7" rx="1" stroke="currentColor" strokeWidth="1.2" />
+          <path d="M8 4V2a1 1 0 00-1-1H2a1 1 0 00-1 1v5a1 1 0 001 1h2" stroke="currentColor" strokeWidth="1.2" />
         </svg>
       )}
     </span>
@@ -83,9 +83,9 @@ function ExplorerLink({ href, label = 'View on explorer' }: { href: string; labe
       onClick={(e) => e.stopPropagation()}
       className={ICON_CLASS}
     >
-      <svg className="w-3.5 h-3.5" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-        <path d="M5 2H2a1 1 0 00-1 1v7a1 1 0 001 1h7a1 1 0 001-1V8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-        <path d="M8 1h3v3M7 5l4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+        <path d="M5 2H2a1 1 0 00-1 1v7a1 1 0 001 1h7a1 1 0 001-1V8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+        <path d="M8 1h3v3M7 5l4-4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     </a>
   )

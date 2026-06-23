@@ -15,7 +15,9 @@ export const EXPLORER_URLS: Record<number, string> = {
 
 export function explorerAddressUrl(chainId: number, address: string): string {
   const base = EXPLORER_URLS[chainId]
-  return base ? `${base}/address/${address}` : '#'
+  // encodeURIComponent the address: it originates as user/URL text, so escape meta-characters before it
+  // becomes part of an href (neutralises the CodeQL js/xss-through-dom flow; base is a constant https URL).
+  return base ? `${base}/address/${encodeURIComponent(address)}` : '#'
 }
 
 // Production CREATE2 deployment address (same on every chain).

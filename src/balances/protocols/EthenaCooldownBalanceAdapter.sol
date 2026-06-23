@@ -148,6 +148,13 @@ contract EthenaCooldownBalanceAdapter is IBalanceAdapter, IPositionDescribable {
             return new INAVCalculator.PositionBalance[](0);
         }
 
+        // Cheap single read first: the common case is no cooldown, so bail before fetching/scanning
+        // the registered-asset list.
+        uint256 total = _pendingUsde(account);
+        if (total == 0) {
+            return new INAVCalculator.PositionBalance[](0);
+        }
+
         // Underlying must be registered in NAVCalculator for the position to count in NAV.
         INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
         INAVCalculator.Asset memory underlying;
@@ -160,11 +167,6 @@ contract EthenaCooldownBalanceAdapter is IBalanceAdapter, IPositionDescribable {
             }
         }
         if (!registered) {
-            return new INAVCalculator.PositionBalance[](0);
-        }
-
-        uint256 total = _pendingUsde(account);
-        if (total == 0) {
             return new INAVCalculator.PositionBalance[](0);
         }
 

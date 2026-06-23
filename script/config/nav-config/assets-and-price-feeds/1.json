@@ -6,6 +6,11 @@
         "type": "Chainlink",
         "address": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
         "heartbeat": 3600
+      },
+      {
+        "type": "API3",
+        "address": "0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473",
+        "heartbeat": 86400
       }
     ]
   },
@@ -16,6 +21,11 @@
         "type": "Chainlink",
         "address": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
         "heartbeat": 3600
+      },
+      {
+        "type": "API3",
+        "address": "0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473",
+        "heartbeat": 86400
       }
     ]
   },
@@ -113,8 +123,13 @@
   },
   "MORPHO": {
     "address": "0x58D97B57BB95320F9a05dC918Aef65434969c2B2",
-    "priceFeeds": [],
-    "note": "No oracle available"
+    "priceFeeds": [
+      {
+        "type": "API3",
+        "address": "0x79F8622D4E4773Fab6f5d4C98779D97baA1e906e",
+        "heartbeat": 86400
+      }
+    ]
   },
   "USDC": {
     "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
@@ -123,6 +138,11 @@
         "type": "Chainlink",
         "address": "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6",
         "heartbeat": 82800
+      },
+      {
+        "type": "API3",
+        "address": "0xD3C586Eec1C6C3eC41D276a23944dea080eDCf7f",
+        "heartbeat": 86400
       }
     ]
   },
@@ -142,6 +162,11 @@
       {
         "type": "Chainlink",
         "address": "0xdF2917806E30300537aEB49A7663062F4d1F2b5F",
+        "heartbeat": 86400
+      },
+      {
+        "type": "API3",
+        "address": "0x778673296f409853De85917009046529b3Eef0a7",
         "heartbeat": 86400
       }
     ]
@@ -323,6 +348,11 @@
         "type": "Chainlink",
         "address": "0xdbd020CAeF83eFd542f4De03e3cF0C28A4428bd5",
         "heartbeat": 3600
+      },
+      {
+        "type": "API3",
+        "address": "0xeBD595af56BeC336aA0F5233E82965c692B9599d",
+        "heartbeat": 86400
       }
     ]
   },
@@ -333,6 +363,11 @@
         "type": "Chainlink",
         "address": "0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c",
         "heartbeat": 3600
+      },
+      {
+        "type": "Redstone",
+        "address": "0xAB7f623fb2F6fea6601D4350FA0E2290663C28Fc",
+        "heartbeat": 86400
       }
     ]
   },

@@ -40,7 +40,8 @@ export function CopyIconButton({ value, label = 'Copy address' }: { value: strin
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current) }, [])
 
   function copy() {
-    navigator.clipboard.writeText(value).catch(() => {})
+    // `navigator.clipboard` is undefined in non-secure contexts — guard so the call can't throw.
+    navigator.clipboard?.writeText(value).catch(() => {})
     setCopied(true)
     if (timer.current) clearTimeout(timer.current)
     timer.current = setTimeout(() => setCopied(false), 1200)
@@ -121,7 +122,7 @@ export function AddressChip({
   return (
     <span className={`inline-flex items-center gap-0.5 font-mono align-baseline ${className}`}>
       <span title={address}>{full ? address : truncate(address)}</span>
-      <CopyIconButton value={address} />
+      <CopyIconButton value={address} label={isFullAddress(address) ? 'Copy address' : 'Copy'} />
       {explorer && <ExplorerLink href={explorer} />}
     </span>
   )
@@ -154,7 +155,7 @@ export function MultiChainAddressChip({
                 {meta && (
                   <img src={meta.logoUrl} alt={meta.label} className="w-3.5 h-3.5 rounded-full shrink-0 object-cover" />
                 )}
-                <ExplorerLink href={`${base}/address/${address}`} label={`View on ${meta?.label ?? 'chain'} explorer`} />
+                <ExplorerLink href={explorerAddressUrl(cid, address)} label={`View on ${meta?.label ?? 'chain'} explorer`} />
               </span>
             )
           })}

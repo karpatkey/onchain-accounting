@@ -1,7 +1,12 @@
 'use client'
 
 import { type ReactNode, useEffect, useRef, useState } from 'react'
-import { EXPLORER_URLS, explorerAddressUrl } from '@/config/chains'
+import { DEPLOYED_CHAINS, EXPLORER_URLS, explorerAddressUrl } from '@/config/chains'
+
+// chainId → { label, logoUrl } for the per-chain explorer icons in MultiChainAddressChip.
+const CHAIN_META = new Map<number, { label: string; logoUrl: string }>(
+  DEPLOYED_CHAINS.map((c) => [c.chain.id, { label: c.label, logoUrl: c.logoUrl }]),
+)
 
 // Address chip, ported from the kpk-agents client-portal (`address-chip.tsx`) so addresses render
 // consistently across our apps: a truncated `0x1234…abcd` body (full value on hover + copy), an inline
@@ -114,6 +119,43 @@ export function AddressChip({
       <span title={address}>{full ? address : truncate(address)}</span>
       <CopyIconButton value={address} />
       {explorer && <ExplorerLink href={explorer} />}
+    </span>
+  )
+}
+
+/// Address chip with one explorer link per chain — for a single address that exists on multiple chains
+/// (e.g. a Safe/EOA queried across networks). Ported from the portal's MultiChainAddressChip: truncated body
+/// + copy, then a `(chain-icon ↗)` pair per chainId, each pair tight (`gap-0.5`) and groups spaced (`gap-1.5`).
+export function MultiChainAddressChip({
+  address,
+  chainIds,
+  className = '',
+}: {
+  address: string
+  chainIds: number[]
+  className?: string
+}): ReactNode {
+  return (
+    <span className={`inline-flex items-center gap-2 font-mono align-baseline ${className}`}>
+      <span title={address}>{truncate(address)}</span>
+      <CopyIconButton value={address} />
+      {isFullAddress(address) && chainIds.length > 0 && (
+        <span className="inline-flex items-center gap-1.5">
+          {chainIds.map((cid) => {
+            const base = EXPLORER_URLS[cid]
+            if (!base) return null
+            const meta = CHAIN_META.get(cid)
+            return (
+              <span key={cid} className="inline-flex items-center gap-0.5">
+                {meta && (
+                  <img src={meta.logoUrl} alt={meta.label} className="w-3.5 h-3.5 rounded-full shrink-0 object-cover" />
+                )}
+                <ExplorerLink href={`${base}/address/${address}`} label={`View on ${meta?.label ?? 'chain'} explorer`} />
+              </span>
+            )
+          })}
+        </span>
+      )}
     </span>
   )
 }

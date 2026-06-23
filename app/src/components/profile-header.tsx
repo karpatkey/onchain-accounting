@@ -4,8 +4,7 @@ import { useState } from 'react'
 import { useEnsName } from 'wagmi'
 import type { ChainNav } from '@/hooks/use-account-nav'
 import { formatUsd } from '@/lib/format'
-import { AddressChip } from '@/components/address-chip'
-import { explorerAddressUrl } from '@/config/chains'
+import { MultiChainAddressChip } from '@/components/address-chip'
 import { DEPLOYED_CHAINS } from '@/config/chains'
 
 // Brand colours from chains config, keyed by chainId
@@ -123,37 +122,12 @@ export function ProfileHeader({ address, navResults, supplyTotal, borrowTotal }:
               {ensName && (
                 <p className="font-semibold text-neutral-950 text-sm leading-tight">{ensName}</p>
               )}
-              {/* Copy-only chip — explorer links per chain are rendered in the row below. */}
-              <AddressChip
+              {/* Account address: copy + one explorer link per chain it holds value on (mainnet while loading). */}
+              <MultiChainAddressChip
                 address={address}
+                chainIds={isLoading ? [1] : navResults.filter((r) => r.nav && r.nav.value > 0n).map((r) => r.chainId)}
                 className={`text-sm ${ensName ? 'text-neutral-700' : 'text-neutral-900 font-medium'}`}
               />
-              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                {isLoading ? (
-                  <a
-                    href={explorerAddressUrl(1, address)}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-xs text-neutral-700 hover:text-neutral-950 transition-colors"
-                  >
-                    ↗ Etherscan
-                  </a>
-                ) : (
-                  navResults
-                    .filter((r) => r.nav && r.nav.value > 0n)
-                    .map((r) => (
-                      <a
-                        key={r.chainId}
-                        href={explorerAddressUrl(r.chainId, address)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-xs text-neutral-700 hover:text-neutral-950 transition-colors"
-                      >
-                        ↗ {r.label}
-                      </a>
-                    ))
-                )}
-              </div>
             </div>
           </div>
 

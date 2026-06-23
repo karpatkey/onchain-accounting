@@ -301,6 +301,13 @@
     "positionId": "<UserWithdrawManager address>"
   },
 
+  "EthenaCooldown": {
+    "$perPositionFields": "type: Staking; single aggregated USDe leg for the account's sUSDe unstaking cooldown (emitted positionId is empty)",
+    "protocol": "Ethena",
+    "positionDetail": { "protocol": "Ethena", "product": "Staking", "name": "USDe Cooldown" },
+    "positionId": "<StakedUSDeV2 (sUSDe) address>"
+  },
+
   "KelpWithdrawalQueue": {
     "$perPositionFields": "type: Staking; one position per NAV-registered payout asset (stETH, ETHx, native ETH) discovered at runtime",
     "protocol": "Kelp",

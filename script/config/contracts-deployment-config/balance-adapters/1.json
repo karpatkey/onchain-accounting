@@ -567,6 +567,16 @@
       "positionId": "0x9F0491B32DBce587c50c4C43AB303b06478193A7"
     }
   },
+  "EthenaCooldown": {
+    "enabled": true,
+    "constructor": {
+      "stakedUSDe": "0x9D39A5DE30e57443BfF2A8307A4256c8797A3497",
+      "underlyingToken": "0x4c9EDD5852cd905f086C759E8383e09bff1E68B3",
+      "protocol": "Ethena",
+      "positionDetail": "{\"protocol\":\"Ethena\",\"product\":\"Staking\",\"name\":\"USDe Cooldown\"",
+      "positionId": "0x9D39A5DE30e57443BfF2A8307A4256c8797A3497"
+    }
+  },
   "KelpWithdrawalQueue": {
     "enabled": true,
     "constructor": {

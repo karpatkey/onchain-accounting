@@ -34,6 +34,7 @@ import {FluidVaultsMetaBalanceAdapter} from "../../src/balances/protocols/FluidV
 import {StaderWithdrawalQueueBalanceAdapter} from "../../src/balances/protocols/StaderWithdrawalQueue.sol";
 import {KelpWithdrawalQueueBalanceAdapter} from "../../src/balances/protocols/KelpWithdrawalQueue.sol";
 import {LidoWithdrawalQueueBalanceAdapter} from "../../src/balances/protocols/LidoWithdrawalQueue.sol";
+import {EthenaCooldownBalanceAdapter} from "../../src/balances/protocols/EthenaCooldownBalanceAdapter.sol";
 import {MerklRewardsBalanceAdapter} from "../../src/balances/protocols/MerklRewards.sol";
 import {UniswapV3PoolsMetaBalanceAdapter} from "../../src/balances/protocols/uniswap/UniswapV3PoolsMeta.sol";
 import {UniswapV2PoolsMetaBalanceAdapter} from "../../src/balances/protocols/uniswap/UniswapV2PoolsMeta.sol";
@@ -128,6 +129,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         // --- Lido (Mainnet only) — stETH withdrawal-queue balance adapter ---
         _deployIfEnabled("LidoWithdrawalQueue");
+
+        // --- Ethena (Mainnet only) — sUSDe unstaking-cooldown balance adapter ---
+        _deployIfEnabled("EthenaCooldown");
 
         // --- StakeWise V3 (Mainnet) — Genesis Vault deposit (osETH itself is now a Custom-priced ERC20, not a balance adapter) ---
         _deployIfEnabled("StakeWiseV3VaultsMeta"); // Meta-adapter: all StakeWise V3 vaults; vault set on NAV (ADR 0010)
@@ -318,6 +322,11 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // Stader withdrawal queue
         if (_equals(adapterName, "StaderWithdrawalQueue")) {
             return _deployStaderWithdrawalQueue(adapterName, navCalculator);
+        }
+
+        // Ethena sUSDe cooldown
+        if (_equals(adapterName, "EthenaCooldown")) {
+            return _deployEthenaCooldown(adapterName, navCalculator);
         }
 
         // Kelp DAO rsETH exit queue
@@ -648,6 +657,18 @@ contract DeployBalanceAdapters is BaseDeployScript {
         );
         StaderWithdrawalQueueBalanceAdapter adapter =
             new StaderWithdrawalQueueBalanceAdapter(userWithdrawalManager, underlyingToken, navCalculator);
+        return address(adapter);
+    }
+
+    function _deployEthenaCooldown(string memory adapterName, address navCalculator) internal returns (address) {
+        address stakedUSDe = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "stakedUSDe")
+        );
+        address underlyingToken = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
+        );
+        EthenaCooldownBalanceAdapter adapter =
+            new EthenaCooldownBalanceAdapter(stakedUSDe, underlyingToken, navCalculator);
         return address(adapter);
     }
 

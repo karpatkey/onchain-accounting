@@ -180,6 +180,9 @@
   "StaderWithdrawalQueue": {
     "enabled": true
   },
+  "EthenaCooldown": {
+    "enabled": true
+  },
   "KelpWithdrawalQueue": {
     "enabled": true
   },

@@ -1,0 +1,31 @@
+{
+  "protocol": "Ethena",
+  "adapter": "EthenaCooldownBalanceAdapter",
+  "chainId": 1,
+  "forkBlock": 25380000,
+  "contracts": {
+    "stakedUSDe": "0x9D39A5DE30e57443BfF2A8307A4256c8797A3497",
+    "underlyingToken_USDe": "0x4c9EDD5852cd905f086C759E8383e09bff1E68B3",
+    "silo": "0x7FC7c91D556B400AFa565013E3F32055a0713425"
+  },
+  "holderType": "seeded",
+  "seed": {
+    "steps": ["deal USDe -> holder", "approve sUSDe", "deposit(USDe) -> sUSDe shares", "cooldownShares(allShares)"],
+    "usdeSeeded": "10000e18",
+    "reason": "No KPK Safe held a live cooldown at the fork block (transient ~24h); seeding exercises real StakedUSDeV2 accounting."
+  },
+  "legs": [
+    {
+      "name": "sUSDe unstaking cooldown",
+      "asset": "USDe",
+      "amount": "cooldowns(holder).underlyingAmount",
+      "positionKind": "Supplied",
+      "isDebt": false,
+      "protocolId": "keccak256(\"ethena-cooldown\")",
+      "positionId": ""
+    }
+  ],
+  "groundTruth": "sUSDe.cooldowns(holder).underlyingAmount",
+  "delta": 0,
+  "tests": { "unit": 20, "fork": 5 }
+}

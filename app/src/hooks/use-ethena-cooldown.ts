@@ -48,24 +48,30 @@ export function useEthenaCooldown(
   const sUsdeByRef = refs.map((_, i) => meta.data?.[i * 2]?.result as `0x${string}` | undefined)
   const usdeByRef = refs.map((_, i) => meta.data?.[i * 2 + 1]?.result as `0x${string}` | undefined)
 
-  // Round 2: read the single cooldown struct per account on each sUSDe.
+  // Round 2: read the single cooldown struct per account — only for adapters whose sUSDe address
+  // resolved in round 1 (so we never issue a call against the zero address). Keep the original ref
+  // index so results map back to the right oracle/asset key.
+  const resolved = refs
+    .map((r, i) => ({ r, i, sUsde: sUsdeByRef[i] }))
+    .filter((x): x is { r: EthenaOracleRef; i: number; sUsde: `0x${string}` } => !!x.sUsde)
+
   const cooldowns = useReadContracts({
     allowFailure: true,
-    contracts: refs.map((r, i) => ({
-      address: sUsdeByRef[i] ?? '0x0000000000000000000000000000000000000000',
+    contracts: resolved.map(({ r, sUsde }) => ({
+      address: sUsde,
       abi: sUsdeAbi,
       functionName: 'cooldowns',
       args: [account ?? '0x0000000000000000000000000000000000000000'],
       chainId: r.chainId,
     })),
-    query: { enabled: !!account && refs.some((_, i) => !!sUsdeByRef[i]), refetchInterval: AUTOREFRESH_INTERVAL_MS },
+    query: { enabled: !!account && resolved.length > 0, refetchInterval: AUTOREFRESH_INTERVAL_MS },
   })
 
   const map = new Map<string, WithdrawalRequestRow[]>()
   const nowSec = BigInt(Math.floor(Date.now() / 1000))
-  refs.forEach((r, i) => {
+  resolved.forEach(({ r, i }, j) => {
     const usde = usdeByRef[i]
-    const res = cooldowns.data?.[i]?.result as readonly [bigint, bigint] | undefined
+    const res = cooldowns.data?.[j]?.result as readonly [bigint, bigint] | undefined
     if (!usde || !res) return
     const [cooldownEnd, underlyingAmount] = res
     if (underlyingAmount === 0n) return

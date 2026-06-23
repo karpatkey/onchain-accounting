@@ -591,9 +591,9 @@ function VaultSections({
                 </div>
               </td>
             </tr>
-            {v.positions.map((pos, i) => (
+            {v.positions.map((pos) => (
               <PositionRow
-                key={`vault-${v.key}-${vi}-${i}`}
+                key={`vault-${v.key}-${pos.positionId}-${pos.underlyingAsset.asset}-${extractType(pos.positionDetail) ?? (pos.isDebt ? 'borrow' : 'supply')}`}
                 pos={pos}
                 chainId={chainId}
                 sectionTotal={pos.isDebt ? borrowTotal : supplyTotal}

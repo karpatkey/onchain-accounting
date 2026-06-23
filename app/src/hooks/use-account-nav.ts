@@ -14,6 +14,7 @@ export type ChainNav = {
     timestamp: bigint
     stalePriceAssets: readonly { asset: `0x${string}`; symbol: string; decimals: number }[]
     sequencerDown: boolean
+    quoteAssetStale: boolean
   } | null
   isLoading: boolean
   isError: boolean

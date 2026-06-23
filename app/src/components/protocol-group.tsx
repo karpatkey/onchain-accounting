@@ -27,7 +27,10 @@ import {
 // re-derive the per-request detail and produce this shared shape. Keyed by chainId:oracle:asset (the asset
 // is required because a multi-asset adapter like Kelp emits several legs from one oracle, each with its own
 // requests — keying by oracle alone would cross-contaminate the legs).
-export type WithdrawalRequestRow = { id: bigint; ethOwed: bigint; isFinalized: boolean }
+// `label` overrides the default `#<id>` display for queues without a per-request id (Ethena cooldown:
+// one struct per account, so we show the claimable date instead). `isFinalized` drives the
+// Claimable/Pending badge for every queue (Ethena: claimable once the cooldown has elapsed).
+export type WithdrawalRequestRow = { id: bigint; ethOwed: bigint; isFinalized: boolean; label?: string }
 export type WithdrawalsByKey = Map<string, WithdrawalRequestRow[]>
 export const withdrawalsKey = (chainId: number, oracle: string, asset: string) =>
   `${chainId}:${oracle.toLowerCase()}:${asset.toLowerCase()}`
@@ -55,6 +58,8 @@ const PROTOCOL_ICONS: Record<string, React.ComponentType<{ className?: string }>
 // Protocols without a design-system CircleColor icon fall back to a CDN image keyed the same way.
 const PROTOCOL_IMG_ICONS: Record<string, string> = {
   pancakeswap: 'https://assets.coingecko.com/coins/images/12632/large/pancakeswap-cake-logo_(1).png',
+  ethena:
+    'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x4c9EDD5852cd905f086C759E8383e09bff1E68B3/logo.png',
 }
 
 const PROTOCOL_URLS: Record<string, string> = {
@@ -68,6 +73,7 @@ const PROTOCOL_URLS: Record<string, string> = {
   spark: 'https://spark.fi/',
   gearbox: 'https://app.gearbox.fi/',
   euler: 'https://app.euler.finance/',
+  ethena: 'https://app.ethena.fi/',
 }
 
 function getProtocolKey(protocol: string): string {
@@ -224,7 +230,7 @@ function PositionRow({
             <td className="py-2 px-4 pl-9 text-xs text-neutral-700">
               <div className="flex items-center gap-2">
                 <span className="text-neutral-700">↳</span>
-                <span className="font-mono font-medium text-neutral-800">#{req.id.toString()}</span>
+                <span className="font-mono font-medium text-neutral-800">{req.label ?? `#${req.id.toString()}`}</span>
                 <span
                   className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
                     req.isFinalized ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'

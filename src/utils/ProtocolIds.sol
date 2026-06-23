@@ -82,10 +82,12 @@ library ProtocolIds {
     // Generic ERC4626 wrapper
     bytes32 internal constant ERC4626 = keccak256("erc4626");
 
-    // Withdrawal queues
+    // Withdrawal / cooldown queues
+    // positionId is empty (`""`) for all of these — each adapter reports one aggregated leg per account.
     bytes32 internal constant STADER_WITHDRAWAL = keccak256("stader-withdrawal");
     bytes32 internal constant KELP_WITHDRAWAL = keccak256("kelp-withdrawal");
     bytes32 internal constant LIDO_WITHDRAWAL = keccak256("lido-withdrawal");
+    bytes32 internal constant ETHENA_COOLDOWN = keccak256("ethena-cooldown");
 
     // Merkl rewards distributor
     bytes32 internal constant MERKL = keccak256("merkl");

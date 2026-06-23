@@ -23,7 +23,7 @@
         "factory": "0x1Fe170311Cb13e3bfB96DeC8FAadcf97BF843381",
         "compute_fn": "computeCommunalApi3ReaderProxyV1Address(chainId, dapiName) — @api3/contracts npm package",
         "lookup": "https://market.api3.org",
-        "note": "Computed proxy addresses are chain-agnostic (same on every chain). 'deployed' reflects a latestRoundData() liveness check at api3_liveness_checked date — re-verify before registering, especially for entries marked deployed=false (API3 deploys new proxies continuously)."
+        "note": "Computed proxy addresses are chain-agnostic (same on every chain). 'deployed' reflects a latestRoundData() liveness check at api3_liveness_checked date — re-verify before registering, especially for entries marked deployed=false (API3 deploys new proxies continuously). api3_liveness_checked is the date of the last FULL catalogue sweep; it intentionally lags last_updated. Any API3 feed actually registered in nav-config (e.g. those added 2026-06-23: ETH/USD, USDC/USD, USDT/USD, BAL/USD, COMP/USD, MORPHO/USD) was individually re-verified live on-chain at registration time, satisfying the re-verify-before-registering rule."
       }
     }
   },

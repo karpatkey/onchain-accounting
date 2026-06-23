@@ -1,7 +1,7 @@
 {
   "_meta": {
     "description": "Catalogue of known price feed addresses per chain and token. Covers three on-chain AggregatorV3-compatible push providers: Chainlink, Redstone Classic Push, and API3 dAPI communal proxies.",
-    "last_updated": "2026-05-22",
+    "last_updated": "2026-06-23",
     "api3_liveness_checked": "2026-05-22",
     "how_to_use": "See src/prices/PRICE_ADAPTERS.md §11 for provider APIs and how to verify liveness before registering a feed. Use alongside script/config/nav-config/assets-and-price-feeds/<chainId>.json (which records currently registered feeds per deployment).",
     "providers": {
@@ -23,7 +23,7 @@
         "factory": "0x1Fe170311Cb13e3bfB96DeC8FAadcf97BF843381",
         "compute_fn": "computeCommunalApi3ReaderProxyV1Address(chainId, dapiName) — @api3/contracts npm package",
         "lookup": "https://market.api3.org",
-        "note": "Computed proxy addresses are chain-agnostic (same on every chain). 'deployed' reflects a latestRoundData() liveness check at api3_liveness_checked date — re-verify before registering, especially for entries marked deployed=false (API3 deploys new proxies continuously)."
+        "note": "Computed proxy addresses are chain-agnostic (same on every chain). 'deployed' reflects a latestRoundData() liveness check at api3_liveness_checked date — re-verify before registering, especially for entries marked deployed=false (API3 deploys new proxies continuously). api3_liveness_checked is the date of the last FULL catalogue sweep; it intentionally lags last_updated. Any API3 feed actually registered in nav-config (e.g. those added 2026-06-23: ETH/USD, USDC/USD, USDT/USD, BAL/USD, COMP/USD, MORPHO/USD) was individually re-verified live on-chain at registration time, satisfying the re-verify-before-registering rule."
       }
     }
   },
@@ -182,9 +182,14 @@
           "Chainlink": { "address": "0x4E155eD98aFE9034b7A5962f6C84c86d869daA9d", "pair": "RPL/USD", "decimals": 8, "heartbeat": 86400 },
           "API3": { "address": "0x3Ea9092ceDb54a080c021317cbfb64652652B755", "dapiName": "RPL/USD", "decimals": 18, "heartbeat": 86400, "deployed": false }
         },
+        "UNI": {
+          "address": "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984",
+          "note": "Chainlink UNI/USD is the only live mainnet provider. RedStone publishes UNI only on BNB Chain + Unichain (no Ethereum-mainnet push feed, confirmed 2026-06-23). No API3 UNI/USD dAPI proxy found deployed on mainnet.",
+          "Chainlink": { "address": "0x553303d460EE0afB37EdFf9bE42922D8FF63220e", "pair": "UNI/USD", "decimals": 8, "heartbeat": 86400 }
+        },
         "LDO": {
           "address": "0x5A98FcBEA516Cf06857215779Fd812CA3beF1B32",
-          "note": "No direct Chainlink LDO/USD feed — use Custom adapter (LDO_PriceOracle). Not yet registered in nav-config/assets-and-price-feeds/<chainId>.json.",
+          "note": "No direct Chainlink LDO/USD feed — priced via Custom adapter (LDO_PriceOracle = LDO/ETH x ETH/USD). API3 LDO/USD proxy is NOT deployed (confirmed no on-chain code 2026-06-23), so it cannot be used for redundancy yet.",
           "API3": { "address": "0x6305e1C926AcfCfd5f28136C988b17dC8ed26d3e", "dapiName": "LDO/USD", "decimals": 18, "heartbeat": 86400, "deployed": false }
         },
         "sDAI": {

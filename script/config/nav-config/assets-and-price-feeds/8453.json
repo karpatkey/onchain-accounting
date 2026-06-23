@@ -6,6 +6,11 @@
         "type": "Chainlink",
         "address": "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70",
         "heartbeat": 1200
+      },
+      {
+        "type": "API3",
+        "address": "0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473",
+        "heartbeat": 86400
       }
     ]
   },
@@ -16,6 +21,11 @@
         "type": "Chainlink",
         "address": "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70",
         "heartbeat": 1200
+      },
+      {
+        "type": "API3",
+        "address": "0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473",
+        "heartbeat": 86400
       }
     ]
   },
@@ -65,6 +75,11 @@
       {
         "type": "Chainlink",
         "address": "0x7e860098F58bBFC8648a4311b374B1D669a2bc6B",
+        "heartbeat": 86400
+      },
+      {
+        "type": "API3",
+        "address": "0xD3C586Eec1C6C3eC41D276a23944dea080eDCf7f",
         "heartbeat": 86400
       }
     ]

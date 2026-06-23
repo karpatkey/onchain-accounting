@@ -77,7 +77,11 @@ export function CopyIconButton({ value, label = 'Copy address' }: { value: strin
 }
 
 /// Explorer link. `<a>` keeps native navigation; stopPropagation prevents a wrapping clickable row from also firing.
+/// Only render for absolute https URLs — the href is built from an address that originates as user/URL text,
+/// so reject any non-https scheme (e.g. a `javascript:` URL) before it reaches the anchor sink. Explorer base
+/// URLs are all https, so legitimate links are unaffected.
 function ExplorerLink({ href, label = 'View on explorer' }: { href: string; label?: string }) {
+  if (!/^https:\/\//.test(href)) return null
   return (
     <a
       href={href}

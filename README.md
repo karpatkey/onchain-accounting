@@ -36,9 +36,8 @@ src/
 │   ├── PriceFeedLib.sol         # External library (EIP-170 size management)
 │   └── protocols/               # Custom price adapters (sDAI, wstETH, rsETH, osToken, …)
 ├── nav/                         # NAV calculator
-│   ├── NAVCalculator.sol        # UUPS upgradeable; inherits Prices + Balances
+│   ├── NAVCalculator.sol        # UUPS upgradeable; inherits Prices + Balances; verbose (labeled) position APIs
 │   ├── INAVCalculator.sol
-│   ├── NavLens.sol              # Stateless read helper; verbose (labeled) position APIs
 │   └── NavRegistryLib.sol       # External library for registry mutations (EIP-170)
 ├── bridge/                      # Cross-chain escrow and adapters
 │   ├── BridgeEscrow.sol
@@ -98,7 +97,7 @@ Balance adapters return **PositionBalance** (`balanceAsset`, `amount`, `isDebt`,
   - **Assets**: Registered via `registerAsset` (sets price feed + adds to asset registry). Additional feeds per asset via `addPriceFeed`; removal via `removePriceFeed` (cannot remove the last feed).
   - **Balance adapters**: Added with `addBalanceAdapters`; ERC165-checked for `IBalanceAdapter`. For meta-adapters, also call `addMetaInstances`/`removeMetaInstances` to configure the instance set (vault/pool/market addresses or raw bytes32 IDs).
 - **Query flow**: `getAccountNav(account, quoteAsset)` iterates all registered adapters, calls `getAdapterPositions` on each (with per-adapter try/catch), filters to registered assets, prices each position via `latestPrice` (freshest-wins), and returns **NAV** (`value`, `quoteAsset`, `timestamp`, `stalePriceAssets`, `sequencerDown`, `quoteAssetStale`). `getAccountPositions(account, quoteAsset)` returns the per-leg `Position[]` breakdown.
-- **Verbose APIs**: live on the separate stateless **`NavLens`** contract (`src/nav/NavLens.sol`), deployed alongside the NAVCalculator proxy. `getAccountPositionsVerbose` / `getAccountNavVerbose` bundle `protocolName` + `positionLabel` strings from each adapter's `IPositionDescribable` into `VerbosePosition`. For display only — use typed `protocolId`/`positionId`/`positionKind` for identity and reconciliation.
+- **Verbose APIs**: `getAccountPositionsVerbose` / `getAccountPositionsForAssetVerbose` / `getAccountNavVerbose` on `NAVCalculator` bundle `protocolName` + `positionLabel` strings from each adapter's `IPositionDescribable` into `VerbosePosition`. For display only — use typed `protocolId`/`positionId`/`positionKind` for identity and reconciliation.
 - **External libraries** (EIP-170): `PriceFeedLib` (price selection + feed management + the NAV/positions/health/value read-compute engine) and `NavRegistryLib` (asset + adapter registry mutations) are `DELEGATECALL`'d at deterministic CREATE2 addresses; `NAVCalculator` keeps only storage, admin mutations, and thin view wrappers. Deployed by scripts `01` before `NAVCalculator`.
 
 NAVCalculator is **UUPS upgradeable** and uses **AccessControl** (DEFAULT_ADMIN_ROLE, MANAGER).
@@ -188,7 +187,7 @@ FOUNDRY_PROFILE=slow forge test --match-path "test/**/fork/*.sol"
 
 - **Balances**: 22 meta-adapters + 11 per-instance singletons (plus the ERC20 default adapter) covering Aave, Morpho, Euler, Balancer, Uniswap, Compound, Curve, Convex, Aura, Fluid, Gearbox, StakeWise, Lido, Kelp, Stader, Sky, Cap, and more — all returning typed `PositionBalance` structs.
 - **Prices**: N feeds per asset (Chainlink / Redstone / API3 / Custom); freshest-wins selector; custom adapters cover LSTs, yield-bearing stables, RTokens, and cross-rates.
-- **NAV**: `NAVCalculator` (UUPS) = Prices + Balances. One contract registers assets + feeds + adapters and computes account NAV in any quote currency. The companion `NavLens` contract exposes human-readable position labels via `IPositionDescribable`.
+- **NAV**: `NAVCalculator` (UUPS) = Prices + Balances. One contract registers assets + feeds + adapters and computes account NAV in any quote currency, and exposes human-readable position labels via `IPositionDescribable` through its verbose read methods.
 - **Bridge**: Escrow + invoice system + adapters (Across, CCIP, CCTP, Stargate, Gnosis, Superchain); destination release via `releaseByInvoiceId`; source closure via `markInvoiceCompleted`.
 
 For bridge design, flows, and adding adapters, use **`src/bridge/BRIDGE_ADAPTERS.md`**.

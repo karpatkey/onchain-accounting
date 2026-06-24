@@ -592,7 +592,7 @@ Thin subclasses of UniswapV3/V2 adapters with different `npm`/`pair` addresses a
 
 ## `getAccountPositionsVerbose` — full return values by adapter
 
-`navLens.getAccountPositionsVerbose(account, address(0))` (USD quote) returns `VerbosePosition[]`.
+`navCalculator.getAccountPositionsVerbose(account, address(0))` (USD quote) returns `VerbosePosition[]`.
 Each entry wraps a `Position` (all `PositionBalance` fields + `value`, `price`, `priceDecimals`,
 `stale`, `quoteAsset`) with `protocolName` and `positionLabel` string labels.
 
@@ -1360,7 +1360,7 @@ const [rewardToken] = abi.decode(["address"], pos.positionId);
 
 ---
 
-## Human-readable labels — `IPositionDescribable` and `NavLens`
+## Human-readable labels — `IPositionDescribable` and verbose reads
 
 The typed fields are for machines. For human-readable display, two mechanisms exist:
 
@@ -1376,10 +1376,9 @@ interface IPositionDescribable {
 All adapters implement this. Meta-adapters derive the label on-chain from live state (ERC20
 symbols, vault names, pool composition). Per-instance adapters return static strings.
 
-### `NavLens` — verbose read side-car
+### Verbose read methods — on `NAVCalculator`
 
-[`src/nav/NavLens.sol`](../../src/nav/NavLens.sol) is a stateless read-only contract that
-wraps `NAVCalculator` and adds human-readable labels:
+`NAVCalculator` exposes verbose read methods that wrap the typed positions with human-readable labels:
 
 ```solidity
 struct VerbosePosition {
@@ -1388,9 +1387,9 @@ struct VerbosePosition {
     string   positionLabel; // e.g. "USDC/crvUSD gauge", "kpk ETH Prime V1 vault"
 }
 
-// Deployed alongside the NAVCalculator proxy (one NavLens per chain).
-navLens.getAccountPositionsVerbose(account, quoteAsset)
-navLens.getAccountNavVerbose(account, quoteAsset)  // NAV + all verbose positions in one call
+navCalculator.getAccountPositionsVerbose(account, quoteAsset)
+navCalculator.getAccountPositionsForAssetVerbose(account, asset, quoteAsset)
+navCalculator.getAccountNavVerbose(account, quoteAsset)  // NAV + all verbose positions in one call
 ```
 
 Labels come from each adapter's `IPositionDescribable` implementation. If an adapter doesn't

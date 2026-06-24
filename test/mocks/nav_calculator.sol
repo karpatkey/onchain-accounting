@@ -216,6 +216,23 @@ contract Mock_NAVCalculator is INAVCalculator {
         revert("Not implemented in mock");
     }
 
+    function getAccountPositionsVerbose(address, address) external pure override returns (VerbosePosition[] memory) {
+        revert("Not implemented in mock");
+    }
+
+    function getAccountPositionsForAssetVerbose(address, address, address)
+        external
+        pure
+        override
+        returns (VerbosePosition[] memory)
+    {
+        revert("Not implemented in mock");
+    }
+
+    function getAccountNavVerbose(address, address) external pure override returns (VerboseNAV memory) {
+        revert("Not implemented in mock");
+    }
+
     function getAssetsWithPositions(address) external pure override returns (address[] memory) {
         revert("Not implemented in mock");
     }

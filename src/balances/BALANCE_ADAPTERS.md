@@ -215,7 +215,7 @@ interface IPositionDescribable {
 }
 ```
 
-The verbose read methods on `NavLens` (`getAccountPositionsVerbose`, `getAccountNavVerbose`) call these via try/catch and bundle the strings into `VerbosePosition`. **These strings are for display only — never use them for identity, indexing, or reconciliation.** Use the typed `protocolId`, `positionId`, `positionKind` fields for those purposes.
+The verbose read methods on `NAVCalculator` (`getAccountPositionsVerbose`, `getAccountNavVerbose`) call these via a fail-open staticcall and bundle the strings into `VerbosePosition`. **These strings are for display only — never use them for identity, indexing, or reconciliation.** Use the typed `protocolId`, `positionId`, `positionKind` fields for those purposes.
 
 Meta-adapters derive labels on-chain from live state (ERC20 symbols, vault names, pool composition). Per-instance adapters return static strings.
 
@@ -435,6 +435,6 @@ See also `docs/howto/add-balance-adapter.md` for the end-to-end recipe.
 
 - Call **`NAVCalculator.getAccountNav(account, quoteAsset)`** to get the full NAV for the account in the given quote asset (`address(0)` for USD).
 - For per-position views, use `getAccountPositions(account, quoteAsset)` or `getAccountPositionsForAsset(account, asset, quoteAsset)` — same adapters, same flow.
-- For human-readable output, call verbose methods via `NavLens` (a stateless read-only wrapper that bundles `IPositionDescribable` labels).
+- For human-readable output, call the verbose methods on `NAVCalculator` (`getAccountPositionsVerbose` / `getAccountNavVerbose`), which bundle `IPositionDescribable` labels.
 
 No per-adapter "enable for this asset" step is required: all registered adapters are queried for every NAV call; filtering is by **registered assets** on the NAVCalculator side.

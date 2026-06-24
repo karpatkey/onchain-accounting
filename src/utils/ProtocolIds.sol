@@ -88,6 +88,7 @@ library ProtocolIds {
     bytes32 internal constant KELP_WITHDRAWAL = keccak256("kelp-withdrawal");
     bytes32 internal constant LIDO_WITHDRAWAL = keccak256("lido-withdrawal");
     bytes32 internal constant ETHENA_COOLDOWN = keccak256("ethena-cooldown");
+    bytes32 internal constant ETHERFI_WITHDRAWAL = keccak256("etherfi-withdrawal");
 
     // Merkl rewards distributor
     bytes32 internal constant MERKL = keccak256("merkl");

@@ -179,6 +179,43 @@ contract StakeWiseExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(adapter.positionsOf(holder).length, 0);
     }
 
+    function test_submitPositionsBatch_storesAcrossAccounts() public {
+        vault.setIndex(TICKET, 1);
+        vault.setRequest(holder, TICKET, TS, 0, 1 ether);
+        vault.setIndex(TICKET + 1, 1);
+        vault.setRequest(other, TICKET + 1, TS, 0, 2 ether);
+        address[] memory accounts = new address[](2);
+        accounts[0] = holder;
+        accounts[1] = other;
+        StakeWiseExitQueueBalanceAdapter.ExitPosition[][] memory positions =
+            new StakeWiseExitQueueBalanceAdapter.ExitPosition[][](2);
+        positions[0] = new StakeWiseExitQueueBalanceAdapter.ExitPosition[](1);
+        positions[0][0] = StakeWiseExitQueueBalanceAdapter.ExitPosition(address(vault), TICKET, TS);
+        positions[1] = new StakeWiseExitQueueBalanceAdapter.ExitPosition[](1);
+        positions[1][0] = StakeWiseExitQueueBalanceAdapter.ExitPosition(address(vault), TICKET + 1, TS);
+        adapter.submitPositionsBatch(accounts, positions);
+        assertEq(adapter.positionsOf(holder).length, 1);
+        assertEq(adapter.positionsOf(other).length, 1);
+        (uint256 a1,) = adapter.getAdapterBalanceForAsset(holder, NATIVE);
+        (uint256 a2,) = adapter.getAdapterBalanceForAsset(other, NATIVE);
+        assertEq(a1, 1 ether);
+        assertEq(a2, 2 ether);
+    }
+
+    function test_submitPositionsBatch_revertsOnLengthMismatch() public {
+        address[] memory accounts = new address[](2);
+        StakeWiseExitQueueBalanceAdapter.ExitPosition[][] memory positions =
+            new StakeWiseExitQueueBalanceAdapter.ExitPosition[][](1);
+        vm.expectRevert(ArrayLengthMismatch.selector);
+        adapter.submitPositionsBatch(accounts, positions);
+    }
+
+    function test_clearPosition_absentKey_noop() public {
+        // Clearing a never-submitted position is idempotent (no revert, no state change).
+        adapter.clearPosition(holder, address(vault), TICKET, TS);
+        assertEq(adapter.positionsOf(holder).length, 0);
+    }
+
     function test_clearPosition_andClearAccount() public {
         vault.setIndex(TICKET, 1);
         vault.setRequest(holder, TICKET, TS, 0, 1 ether);
@@ -316,6 +353,30 @@ contract StakeWiseExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(p[0].protocolId, ProtocolIds.STAKEWISE_EXIT);
         assertEq(p[0].positionId, "");
         assertEq(uint8(p[0].positionKind), uint8(PositionKind.Supplied));
+    }
+
+    function test_getAdapterBalances_shape() public {
+        vault.setIndex(TICKET, 1);
+        vault.setRequest(holder, TICKET, TS, 0, 2 ether);
+        adapter.submitPositions(holder, _claimable());
+        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = adapter.getAdapterBalances(holder);
+        assertEq(assets.length, 1);
+        assertEq(assets[0], NATIVE);
+        assertEq(amounts[0], 2 ether);
+        assertEq(isDebt[0], false);
+        // Zero owed → empty arrays.
+        (address[] memory a2,,) = adapter.getAdapterBalances(other);
+        assertEq(a2.length, 0);
+    }
+
+    function test_getAdapterPositions_assetFilterMatchesUnderlying() public {
+        vault.setIndex(TICKET, 1);
+        vault.setRequest(holder, TICKET, TS, 0, 2 ether);
+        adapter.submitPositions(holder, _claimable());
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, NATIVE);
+        assertEq(p.length, 1);
+        assertEq(p[0].amount, 2 ether);
+        assertEq(p[0].balanceAsset.asset, NATIVE);
     }
 
     function test_getAdapterPositions_assetFilterMismatch_empty() public {

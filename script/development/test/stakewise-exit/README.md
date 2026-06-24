@@ -23,7 +23,7 @@
 - `unsubmitted_reportsZero`, `submit_skipsTupleNotOwnedByAccount`, `submit_skipsUnregisteredVault` — negative cases vs the real contracts.
 
 ## 3. Unit test coverage
-`test/balances/protocols/StakeWiseExitQueue.t.sol` (25 tests, mock-only): constructor guards (×4), owner-gating + submit/dedup/clear (×4), valuation (claimable, fully-pending via convertToAssets, partially-exited sum, aggregation), ownership re-verify (wrong-receiver + claimed-after-submit drop), unregistered-vault drop, zero-owed drop, `try/catch` reverts on getExitQueueIndex / calculateExitedAssets / convertToAssets (→ drop, never revert), MAX_POSITIONS cap, unregistered-underlying branch, identity, ERC165, `underlyingAssetsSupported`. The mock forces the adapter to pass `type(uint256).max` when `idx < 0` (else it reverts), proving the fully-pending index logic.
+`test/balances/protocols/StakeWiseExitQueue.t.sol` (30 tests, mock-only): constructor guards (×4), owner-gating + submit/dedup/clear (×4), valuation (claimable, fully-pending via convertToAssets, partially-exited sum, aggregation), ownership re-verify (wrong-receiver + claimed-after-submit drop), unregistered-vault drop, zero-owed drop, `try/catch` reverts on getExitQueueIndex / calculateExitedAssets / convertToAssets (→ drop, never revert), MAX_POSITIONS cap, unregistered-underlying branch, identity, ERC165, `underlyingAssetsSupported`, submitPositionsBatch (+ ArrayLengthMismatch), getAdapterBalances shape, assetFilter-matches-underlying accept path, clearPosition absent-key no-op. The mock forces the adapter to pass `type(uint256).max` when `idx < 0` (else it reverts), proving the fully-pending index logic.
 
 ## 4. Adapter formula recap
 ```
@@ -71,4 +71,4 @@ bash script/development/app/sync-app-env.sh 1
 The Safe then shows a "StakeWise V3" group with a ~1000 ETH exit-queue leg.
 
 ## 10. Test verdict
-- Unit: **25/25 pass**. Fork: **6/6 pass** (strict delta 0 vs live read, both lifecycle states). `forge build`/`fmt` clean. Pin: balance-adapter (no prices-lib change) — CI's `LibraryPinConsistency` is the source of truth.
+- Unit: **30/30 pass**. Fork: **6/6 pass** (strict delta 0 vs live read, both lifecycle states). `forge build`/`fmt` clean. Pin: balance-adapter (no prices-lib change) — CI's `LibraryPinConsistency` is the source of truth.

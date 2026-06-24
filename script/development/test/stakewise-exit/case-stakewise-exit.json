@@ -45,5 +45,5 @@
   "delta": 0,
   "trustModel": "Mutable coordinate-only cache (ADR 0014); owner submits (vault, positionTicket, timestamp) tuples, adapter values from live reads. calculateExitedAssets(receiver=account) is the on-chain ownership check (wrong tuple → 0). VaultsRegistry membership checked at submit time. Owner can under-report only, never over-report.",
   "agent": "kpk-agents/agents/automations/accounting/ (submit-stakewise-positions, follow-up PR) — mirrors submit_merkl_proofs.py / the ether.fi submitter",
-  "tests": { "unit": 25, "fork": 6 }
+  "tests": { "unit": 30, "fork": 6 }
 }

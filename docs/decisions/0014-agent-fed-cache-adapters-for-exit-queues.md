@@ -1,6 +1,6 @@
 # 0014 — Agent-fed cache adapters for non-enumerable withdrawal/exit queues (ether.fi, StakeWise V3)
 
-**Status:** draft
+**Status:** accepted
 
 > Companion to [ADR 0007](0007-merkl-trust-minimized-cache.md) (Merkl). This generalises the owner-gated, on-chain-verified cache pattern to withdrawal/exit queues whose positions cannot be enumerated from a `view`, and specifies two concrete adapters.
 

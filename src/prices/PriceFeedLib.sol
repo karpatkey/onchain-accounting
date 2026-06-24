@@ -345,6 +345,73 @@ library PriceFeedLib {
         }
     }
 
+    /// @notice Computes the account NAV and the full enriched position list in a single adapter scan.
+    /// @dev Equivalent to calling `computeNav` and `computeAccountPositions` (with no asset filter) back to back,
+    ///      but scans `allAdapters` / builds the price-feed cache only once. `nav.value` is the sum of the
+    ///      per-position `value` fields (each computed by `_enrichPosition` via the same `_priceConversion`),
+    ///      so the two results are guaranteed consistent. The caller validates the quote asset before calling.
+    function computeNavAndPositions(
+        mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
+        mapping(address => uint256) storage assetIndex,
+        INAVCalculator.Asset[] storage registeredAssets,
+        address[] memory allAdapters,
+        uint256 metaInstanceTotal,
+        address account,
+        address quoteAsset,
+        bool sequencerDown,
+        string memory nativeTokenSymbol
+    ) external view returns (INAVCalculator.NAV memory nav, INAVCalculator.Position[] memory positions) {
+        nav.timestamp = uint64(block.timestamp);
+        QuoteAssetInfo memory quoteInfo =
+            _getQuoteAssetInfo(priceOracles, assetIndex, registeredAssets, quoteAsset, nativeTokenSymbol);
+        nav.quoteAsset = quoteInfo.assetStruct;
+        nav.quoteAssetStale = quoteInfo.stale;
+
+        uint256 assetCount = registeredAssets.length;
+        if (assetCount == 0) {
+            nav.stalePriceAssets = new INAVCalculator.Asset[](0);
+            positions = new INAVCalculator.Position[](0);
+            return (nav, positions); // value 0, sequencerDown false (no assets registered)
+        }
+
+        INAVCalculator.PositionBalance[] memory allPositions =
+            _getPositionBalances(allAdapters, metaInstanceTotal, assetIndex, assetCount, account, address(0));
+
+        nav.sequencerDown = sequencerDown;
+        if (allPositions.length == 0) {
+            nav.stalePriceAssets = new INAVCalculator.Asset[](0);
+            positions = new INAVCalculator.Position[](0);
+            return (nav, positions); // value 0
+        }
+
+        address[] memory assetsWithPositions = _extractUniqueAssets(allPositions);
+        PriceFeedCache[] memory priceFeeds = _buildPriceFeedCache(priceOracles, assetsWithPositions);
+        nav.stalePriceAssets = _buildStaleAssets(assetIndex, registeredAssets, priceFeeds);
+
+        uint256 length = allPositions.length;
+        positions = new INAVCalculator.Position[](length);
+        int256 totalValue = 0;
+        for (uint256 i = 0; i < length; i++) {
+            INAVCalculator.PositionBalance memory balance = allPositions[i];
+            INAVCalculator.Asset memory registered =
+                _getRegisteredAsset(assetIndex, registeredAssets, balance.balanceAsset.asset);
+            PriceFeedCache memory feed = _findPriceFeed(priceFeeds, balance.balanceAsset.asset);
+            positions[i] = _enrichPosition(
+                balance,
+                feed,
+                quoteInfo.assetStruct,
+                quoteInfo.price,
+                quoteInfo.priceDecimals,
+                quoteInfo.assetDecimals,
+                quoteInfo.stale,
+                registered.decimals,
+                registered.symbol
+            );
+            totalValue += positions[i].value;
+        }
+        nav.value = totalValue;
+    }
+
     /// @notice True if the account holds any non-zero position. Mirrors NAVCalculator.hasPositions (fail-open via
     ///         the per-adapter try/catch in `_getPositionBalances`).
     function hasPositions(

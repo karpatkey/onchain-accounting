@@ -267,17 +267,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         returns (INAVCalculator.Position[] memory positions)
     {
         _validateQuoteAsset(quoteAsset);
-        return PriceFeedLib.computeAccountPositions(
-            _priceOracles,
-            _assetIndex,
-            _registeredAssets,
-            getAllAdapters(),
-            _metaInstanceTotal,
-            account,
-            address(0),
-            quoteAsset,
-            _nativeTokenSymbol
-        );
+        return _computePositions(account, address(0), quoteAsset);
     }
 
     /// @inheritdoc INAVCalculator
@@ -288,17 +278,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     {
         _validateQuoteAsset(quoteAsset);
         _validateAssetFilter(asset);
-        return PriceFeedLib.computeAccountPositions(
-            _priceOracles,
-            _assetIndex,
-            _registeredAssets,
-            getAllAdapters(),
-            _metaInstanceTotal,
-            account,
-            asset,
-            quoteAsset,
-            _nativeTokenSymbol
-        );
+        return _computePositions(account, asset, quoteAsset);
     }
 
     /// @inheritdoc INAVCalculator
@@ -308,19 +288,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         returns (INAVCalculator.VerbosePosition[] memory)
     {
         _validateQuoteAsset(quoteAsset);
-        return _toVerbose(
-            PriceFeedLib.computeAccountPositions(
-                _priceOracles,
-                _assetIndex,
-                _registeredAssets,
-                getAllAdapters(),
-                _metaInstanceTotal,
-                account,
-                address(0),
-                quoteAsset,
-                _nativeTokenSymbol
-            )
-        );
+        return _toVerbose(_computePositions(account, address(0), quoteAsset));
     }
 
     /// @inheritdoc INAVCalculator
@@ -331,19 +299,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     {
         _validateQuoteAsset(quoteAsset);
         _validateAssetFilter(asset);
-        return _toVerbose(
-            PriceFeedLib.computeAccountPositions(
-                _priceOracles,
-                _assetIndex,
-                _registeredAssets,
-                getAllAdapters(),
-                _metaInstanceTotal,
-                account,
-                asset,
-                quoteAsset,
-                _nativeTokenSymbol
-            )
-        );
+        return _toVerbose(_computePositions(account, asset, quoteAsset));
     }
 
     /// @inheritdoc INAVCalculator
@@ -353,7 +309,10 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         returns (INAVCalculator.VerboseNAV memory verboseNav)
     {
         _validateQuoteAsset(quoteAsset);
-        verboseNav.nav = PriceFeedLib.computeNav(
+        // Single adapter scan produces both the NAV and the position list (see PriceFeedLib.computeNavAndPositions),
+        // avoiding the double scan of computing them separately.
+        INAVCalculator.Position[] memory positions;
+        (verboseNav.nav, positions) = PriceFeedLib.computeNavAndPositions(
             _priceOracles,
             _assetIndex,
             _registeredAssets,
@@ -364,18 +323,26 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             _isSequencerDown(),
             _nativeTokenSymbol
         );
-        verboseNav.positions = _toVerbose(
-            PriceFeedLib.computeAccountPositions(
-                _priceOracles,
-                _assetIndex,
-                _registeredAssets,
-                getAllAdapters(),
-                _metaInstanceTotal,
-                account,
-                address(0),
-                quoteAsset,
-                _nativeTokenSymbol
-            )
+        verboseNav.positions = _toVerbose(positions);
+    }
+
+    /// @notice Shared entry point for the (filtered) position read path. Keeps the long PriceFeedLib argument
+    ///         tuple in one place so the verbose and non-verbose getters cannot drift apart.
+    function _computePositions(address account, address assetFilter, address quoteAsset)
+        private
+        view
+        returns (INAVCalculator.Position[] memory)
+    {
+        return PriceFeedLib.computeAccountPositions(
+            _priceOracles,
+            _assetIndex,
+            _registeredAssets,
+            getAllAdapters(),
+            _metaInstanceTotal,
+            account,
+            assetFilter,
+            quoteAsset,
+            _nativeTokenSymbol
         );
     }
 
@@ -387,9 +354,11 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     {
         uint256 len = pos.length;
         verbose = new INAVCalculator.VerbosePosition[](len);
+        // protocolName() takes no args, so its calldata is identical for every position — encode it once.
+        bytes memory protocolNameCall = abi.encodeCall(IPositionDescribable.protocolName, ());
         for (uint256 i = 0; i < len; i++) {
             address adapter = pos[i].balanceAdapter;
-            string memory name = _safeString(adapter, abi.encodeCall(IPositionDescribable.protocolName, ()));
+            string memory name = _safeString(adapter, protocolNameCall);
             string memory label =
                 _safeString(adapter, abi.encodeCall(IPositionDescribable.describePosition, (pos[i].positionId)));
             verbose[i] = INAVCalculator.VerbosePosition({position: pos[i], protocolName: name, positionLabel: label});

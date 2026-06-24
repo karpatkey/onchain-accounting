@@ -135,7 +135,13 @@ export function useStakeWiseExitWithdrawals(
         chainId: p.chainId,
       } as const
     }),
-    query: { enabled: !!account && positions.length > 0 && !idxReads.isLoading, refetchInterval: AUTOREFRESH_INTERVAL_MS },
+    // Gate on the index read having landed for THIS positions set (length match): when the position set
+    // changes, idxReads briefly holds the prior render's data — skip rather than compute queryIdx from a
+    // mismatched index. Display-only; converges on the next refetch.
+    query: {
+      enabled: !!account && positions.length > 0 && idxReads.data?.length === positions.length,
+      refetchInterval: AUTOREFRESH_INTERVAL_MS,
+    },
   })
 
   // Round 4: value the still-queued remainder (leftTickets are vault shares) at the vault's current rate.
@@ -152,10 +158,16 @@ export function useStakeWiseExitWithdrawals(
         chainId: p.chainId,
       } as const
     }),
-    query: { enabled: positions.length > 0 && !calcReads.isLoading, refetchInterval: AUTOREFRESH_INTERVAL_MS },
+    query: {
+      enabled: positions.length > 0 && calcReads.data?.length === positions.length,
+      refetchInterval: AUTOREFRESH_INTERVAL_MS,
+    },
   })
 
   const map = new Map<string, WithdrawalRequestRow[]>()
+  // Only build rows once the exited-split read corresponds to the current positions set (length match);
+  // otherwise wait for the next render rather than pairing a position with another's stale result.
+  if (calcReads.data?.length !== positions.length) return map
   positions.forEach((p, j) => {
     const underlying = underlyingByRef[p.refIndex]
     const res = calcReads.data?.[j]?.result as readonly [bigint, bigint, bigint] | undefined
@@ -167,15 +179,15 @@ export function useStakeWiseExitWithdrawals(
     const ref = refs[p.refIndex]
     const key = withdrawalsKey(ref.chainId, ref.oracle, underlying)
     const rows = map.get(key) ?? []
-    // Identity = vault (AddressChip) + positionTicket (truncated, copyable). Claimable portion (exited, ready
-    // to withdraw) and/or still-queued portion; distinct ids so two rows from one partially-exited position
-    // don't collide on the table's React key.
+    // Identity = vault (AddressChip) + positionTicket (truncated, copyable). A partially-exited position emits
+    // both a claimable and a pending row; they share id (ticket) and are disambiguated by the renderer's
+    // vault:ticket:finalized key, so no `+1` id hack is needed.
     const ticket = p.ticket.toString()
     if (exitedAssets > 0n) {
       rows.push({ id: p.ticket, ethOwed: exitedAssets, isFinalized: true, address: p.vault, ticket })
     }
     if (queued > 0n) {
-      rows.push({ id: p.ticket + 1n, ethOwed: queued, isFinalized: false, address: p.vault, ticket })
+      rows.push({ id: p.ticket, ethOwed: queued, isFinalized: false, address: p.vault, ticket })
     }
     map.set(key, rows)
   })

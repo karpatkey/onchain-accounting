@@ -240,7 +240,10 @@ function PositionRow({
             : (pos.value * req.ethOwed) / totalOwed
         if (!isLast) allocatedSub += subValue
         return (
-          <tr key={req.id.toString()} className="border-t border-neutral-100 bg-neutral-100/70">
+          <tr
+            key={`${req.address ?? ''}:${req.id.toString()}:${req.isFinalized}`}
+            className="border-t border-neutral-100 bg-neutral-100/70"
+          >
             <td className="py-2 px-4 pl-9 text-xs text-neutral-700">
               <div className="flex items-center gap-2">
                 <span className="text-neutral-700">↳</span>

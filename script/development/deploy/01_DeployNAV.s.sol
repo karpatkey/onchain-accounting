@@ -6,7 +6,7 @@ import {console2} from "forge-std/console2.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {PriceFeedLib} from "src/prices/PriceFeedLib.sol";
-import {NavRegistryLib} from "src/nav/NavRegistryLib.sol";
+import {NAVRegistryLib} from "src/nav/NAVRegistryLib.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {MANAGER} from "src/constants.sol";
 
@@ -17,10 +17,10 @@ address constant NATIVE_ADDRESS = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeee
 /// @notice Deploys a fresh NAV implementation + ERC1967 proxy on the local anvil fork, then wires the native
 ///         asset's Chainlink price feed so getAccountNav/getAccountPositions return a value out of the gate.
 /// @dev MUST run under the DEFAULT foundry profile (NOT `dev`): current NAVCalculator DELEGATECALLs the external
-///      libraries `PriceFeedLib` + `NavRegistryLib`, and its bytecode is linked against their pinned CREATE2
+///      libraries `PriceFeedLib` + `NAVRegistryLib`, and its bytecode is linked against their pinned CREATE2
 ///      addresses (foundry.toml `[profile.default].libraries`). This script first deploys both libraries to those
 ///      pinned addresses via the canonical CREATE2 deployer (mirrors prod 01_2_DeployNAVImplementation), so the
-///      linked impl is valid and `initialize()` (which DELEGATECALLs NavRegistryLib) doesn't revert. The previous
+///      linked impl is valid and `initialize()` (which DELEGATECALLs NAVRegistryLib) doesn't revert. The previous
 ///      single-shot version compiled under `[profile.dev]` (libraries = [], i.e. auto-deploy), which shifted the
 ///      deployer nonce between simulation and broadcast and made the proxy point at a non-existent impl
 ///      (ERC1967InvalidImplementation). Pinned CREATE2 libs are nonce-independent and fix that.
@@ -42,7 +42,7 @@ contract DeployNAV is Script {
         // 1. Deploy the external libraries to their pinned CREATE2 addresses (NAVCalculator's bytecode, linked under
         //    the default profile, DELEGATECALLs them). Salt = keccak256(name ++ uint256(1)), matching prod.
         _create2Deploy("PriceFeedLib", 1, type(PriceFeedLib).creationCode);
-        _create2Deploy("NavRegistryLib", 1, type(NavRegistryLib).creationCode);
+        _create2Deploy("NavRegistryLib", 1, type(NAVRegistryLib).creationCode);
 
         // 2. Deploy the impl via CREATE2 too (NOT `new`): a deployer-nonce CREATE after the variable-count CREATE2
         //    factory calls above makes forge mis-predict the impl address between simulation and broadcast, so the

@@ -36,7 +36,7 @@ via_ir = true
 #     local forge will compute different pins.
 #   - bytecode_hash: the default ("ipfs") appends a hash of ALL source in the contract's import graph
 #     (comments included), so an unrelated doc/comment edit to e.g. PositionKind.sol — pulled in
-#     transitively by NavRegistryLib via INAVCalculator — would shift the library address. "none"
+#     transitively by NAVRegistryLib via INAVCalculator — would shift the library address. "none"
 #     drops that trailer, so the address tracks only the actual compiled code + compiler.
 # Any drift leaves NAVCalculator linked to an address with no code → init reverts on a fresh
 # deploy. CI's LibraryPinConsistency test re-derives both pins from current bytecode and fails if
@@ -52,11 +52,11 @@ bytecode_hash = "none"
 # NAVCalculator, so the Safe TX batch is self-contained.
 #   - PriceFeedLib   : price-feed selection/management (from Prices) PLUS NAVCalculator's read/compute engine
 #                      (NAV, positions, health, value) — see ADR 0010.
-#   - NavRegistryLib : asset-registry + balance-oracle-registry storage mutations (extracted from NAVCalculator /
+#   - NAVRegistryLib : asset-registry + balance-oracle-registry storage mutations (extracted from NAVCalculator /
 #                      Balances) to keep NAVCalculator under EIP-170. See ADR 0010.
 libraries = [
   "src/prices/PriceFeedLib.sol:PriceFeedLib:0x7Bc4AA9889312B6598C38B7926931E9371EA6053",
-  "src/nav/NavRegistryLib.sol:NavRegistryLib:0x2F1F6c17D64bE96F583D390be212aFCF8D0F102a",
+  "src/nav/NAVRegistryLib.sol:NAVRegistryLib:0x2F1F6c17D64bE96F583D390be212aFCF8D0F102a",
 ]
 
 # Treat compiler warnings as errors (fail build). Warnings from lib/ are ignored.
@@ -65,7 +65,7 @@ libraries = [
 ignored_warnings_from = ["lib"]
 
 # Dev-only profile for the local-anvil fork sim (script/development). Clears the library pins so
-# `forge script` AUTO-DEPLOYS + auto-links PriceFeedLib/NavRegistryLib instead of linking against the
+# `forge script` AUTO-DEPLOYS + auto-links PriceFeedLib/NAVRegistryLib instead of linking against the
 # fixed [profile.default] addresses. Those pins are only valid for the exact solc they were generated
 # under; a newer local solc produces different lib bytecode → different CREATE2 address → the linked
 # address has no code → init reverts. Auto-deploy sidesteps the mismatch on dev forks. Selected via

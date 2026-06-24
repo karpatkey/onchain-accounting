@@ -70,7 +70,7 @@ contract EulerVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     function _setupNav() internal {
         // Etch the pre-linked external libraries so NAVCalculator works on the fork.
         vm.etch(PRICE_FEED_LIB, vm.deployCode("PriceFeedLib.sol:PriceFeedLib").code);
-        vm.etch(NAV_REGISTRY_LIB, vm.deployCode("NavRegistryLib.sol:NavRegistryLib").code);
+        vm.etch(NAV_REGISTRY_LIB, vm.deployCode("NAVRegistryLib.sol:NAVRegistryLib").code);
 
         // Real NAVCalculator (L1: no sequencer uptime feed).
         vm.startPrank(admin);

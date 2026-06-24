@@ -3,7 +3,7 @@ pragma solidity ^0.8;
 
 /// @title LibraryPins
 /// @notice Single Solidity source of truth for the deterministic CREATE2 addresses that NAVCalculator's two
-///         external libraries (PriceFeedLib, NavRegistryLib) are pinned to in foundry.toml (`libraries`), plus
+///         external libraries (PriceFeedLib, NAVRegistryLib) are pinned to in foundry.toml (`libraries`), plus
 ///         the byte-scan helper used to assert NAVCalculator's creation bytecode is actually linked against them.
 /// @dev    foundry.toml's `libraries` array is the one copy of these addresses that cannot import a Solidity
 ///         constant (it's TOML), so it is cross-checked instead: LibraryPinConsistencyTest

@@ -5,16 +5,16 @@ import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
 import {NAVCalculator} from "../../src/nav/NAVCalculator.sol";
 import {BridgeEscrow} from "../../src/bridge/BridgeEscrow.sol";
 import {PriceFeedLib} from "../../src/prices/PriceFeedLib.sol";
-import {NavRegistryLib} from "../../src/nav/NavRegistryLib.sol";
+import {NAVRegistryLib} from "../../src/nav/NAVRegistryLib.sol";
 import {DeploySalts} from "./DeploySalts.sol";
 import {console2} from "forge-std/console2.sol";
 
 /// @title DeployImplementations
-/// @notice Deploys PriceFeedLib + NavRegistryLib (libraries), NAVCalculator, and BridgeEscrow implementations
+/// @notice Deploys PriceFeedLib + NAVRegistryLib (libraries), NAVCalculator, and BridgeEscrow implementations
 ///         (CREATE2) via an EOA broadcast.
 /// @dev Uses canonical CREATE2 deployer (0x4e59...) with calldata = salt || init_code (Arachnid format).
 ///      Run with --broadcast --account $DEPLOYER_NAME: deploys via the deployer EOA (skips any already deployed),
-///      then saves addresses. PriceFeedLib and NavRegistryLib must be deployed before NAVCalculator because
+///      then saves addresses. PriceFeedLib and NAVRegistryLib must be deployed before NAVCalculator because
 ///      NAVCalculator's bytecode references them via DELEGATECALL.
 contract DeployImplementations is BaseDeployScript {
     address internal constant CANONICAL_CREATE2_DEPLOYER = address(0x4e59b44847b379578588920cA78FbF26c0B4956C);
@@ -40,7 +40,7 @@ contract DeployImplementations is BaseDeployScript {
 
         ImplPlan memory plan = _computeImplPlan();
 
-        // EOA deploy: broadcast the four CREATE2 deploys (PriceFeedLib, NavRegistryLib, NAVCalculator impl,
+        // EOA deploy: broadcast the four CREATE2 deploys (PriceFeedLib, NAVRegistryLib, NAVCalculator impl,
         // BridgeEscrow impl) directly via the deployer private key. Same deterministic addresses on every chain.
         // Run once (e.g. on mainnet), then run 02 per chain for proxies + init.
         vm.startBroadcast();
@@ -57,7 +57,7 @@ contract DeployImplementations is BaseDeployScript {
             computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, plan.saltPriceFeedLib, plan.priceFeedLibBytecode);
 
         plan.saltNavRegistryLib = generateSalt("NavRegistryLib", 1);
-        plan.navRegistryLibBytecode = type(NavRegistryLib).creationCode;
+        plan.navRegistryLibBytecode = type(NAVRegistryLib).creationCode;
         plan.navRegistryLib =
             computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, plan.saltNavRegistryLib, plan.navRegistryLibBytecode);
 
@@ -84,10 +84,10 @@ contract DeployImplementations is BaseDeployScript {
         if (plan.navRegistryLib.code.length == 0) {
             (bool ok,) =
                 CANONICAL_CREATE2_DEPLOYER.call(abi.encodePacked(plan.saltNavRegistryLib, plan.navRegistryLibBytecode));
-            require(ok, "NavRegistryLib deploy failed");
-            console2.log("[OK] NavRegistryLib deployed at:", plan.navRegistryLib);
+            require(ok, "NAVRegistryLib deploy failed");
+            console2.log("[OK] NAVRegistryLib deployed at:", plan.navRegistryLib);
         } else {
-            console2.log("[SKIP] NavRegistryLib already at:", plan.navRegistryLib);
+            console2.log("[SKIP] NAVRegistryLib already at:", plan.navRegistryLib);
         }
 
         if (plan.navImpl.code.length == 0) {
@@ -117,7 +117,7 @@ contract DeployImplementations is BaseDeployScript {
         console2.log("\n=== Implementation Deployment ===");
         console2.log("Chain ID:", currentChainId);
         console2.log("  PriceFeedLib:", plan.priceFeedLib);
-        console2.log("  NavRegistryLib:", plan.navRegistryLib);
+        console2.log("  NAVRegistryLib:", plan.navRegistryLib);
         console2.log("  NAV Implementation:", plan.navImpl);
         console2.log("  Bridge Implementation:", plan.bridgeImpl);
         console2.log("Addresses saved to config. Run 02_DeployProxies.s.sol per chain.");

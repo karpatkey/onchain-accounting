@@ -627,16 +627,20 @@ function VaultSections({
                 </div>
               </td>
             </tr>
-            {v.positions.map((pos) => (
-              <PositionRow
-                key={`vault-${v.key}-${pos.positionId}-${pos.underlyingAsset.asset}-${extractType(pos.positionDetail) ?? (pos.isDebt ? 'borrow' : 'supply')}`}
-                pos={pos}
-                chainId={chainId}
-                sectionTotal={pos.isDebt ? borrowTotal : supplyTotal}
-                withdrawalsByKey={withdrawalsByKey}
-                kindLabel={{ text: extractType(pos.positionDetail) ?? (pos.isDebt ? 'Borrow' : 'Supply'), isDebt: pos.isDebt }}
-              />
-            ))}
+            {v.positions.map((pos) => {
+              // Parse the type once and reuse for both the key and the kind label (extractType does a JSON.parse).
+              const t = extractType(pos.positionDetail)
+              return (
+                <PositionRow
+                  key={`vault-${v.key}-${pos.positionId}-${pos.underlyingAsset.asset}-${t ?? (pos.isDebt ? 'borrow' : 'supply')}`}
+                  pos={pos}
+                  chainId={chainId}
+                  sectionTotal={pos.isDebt ? borrowTotal : supplyTotal}
+                  withdrawalsByKey={withdrawalsByKey}
+                  kindLabel={{ text: t ?? (pos.isDebt ? 'Borrow' : 'Supply'), isDebt: pos.isDebt }}
+                />
+              )
+            })}
           </Fragment>
         )
       })}

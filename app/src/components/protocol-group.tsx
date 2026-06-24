@@ -71,6 +71,7 @@ const PROTOCOL_IMG_ICONS: Record<string, string> = {
     'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x4c9EDD5852cd905f086C759E8383e09bff1E68B3/logo.png',
   'ether.fi': 'https://icons.llamao.fi/icons/protocols/ether.fi?w=48&h=48',
   stakewise: 'https://icons.llamao.fi/icons/protocols/stakewise?w=48&h=48',
+  nexus: 'https://icons.llamao.fi/icons/protocols/nexus-mutual?w=48&h=48',
 }
 
 const PROTOCOL_URLS: Record<string, string> = {
@@ -87,6 +88,7 @@ const PROTOCOL_URLS: Record<string, string> = {
   ethena: 'https://app.ethena.fi/',
   'ether.fi': 'https://app.ether.fi/',
   stakewise: 'https://app.stakewise.io/',
+  nexus: 'https://app.nexusmutual.io/',
 }
 
 function getProtocolKey(protocol: string): string {

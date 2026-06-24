@@ -192,6 +192,10 @@
   "MerklRewards": {
     "enabled": false
   },
+  "EtherFiWithdrawals": {
+    "enabled": true,
+    "$comment": "ether.fi withdrawal-queue cache adapter (ADR 0014). Registered via addBalanceAdapters; reports 0 until the kpk-agents submitter feeds tokenIds."
+  },
   "UniswapV3_WBTC_WETH_3000": {
     "enabled": false
   },

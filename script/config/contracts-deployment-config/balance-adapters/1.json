@@ -605,6 +605,18 @@
       "positionId": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae"
     }
   },
+  "EtherFiWithdrawals": {
+    "enabled": true,
+    "$comment": "ether.fi withdrawal-queue cache adapter (agent-fed; ADR 0014). Mutable id-cache, owner = chainConfig.admin (OIV Safe); the kpk-agents submitter feeds WithdrawRequestNFT tokenIds. Native-ETH denominated; values from live reads (finalized getClaimableAmount, else min(amountOfEEth, amountForShare)-fee) and re-verifies ownerOf every read. Reports 0 until the agent submits ids. 04 reads withdrawRequestNft/liquidityPool/underlyingToken; protocol/positionDetail/positionId are identity metadata (hardcoded in the contract).",
+    "constructor": {
+      "withdrawRequestNft": "0x7d5706f6ef3F89B3951E23e557CDFBC3239D4E2c",
+      "liquidityPool": "0x308861A430be4cce5502d0A12724771Fc6DaF216",
+      "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+      "protocol": "ether.fi",
+      "positionDetail": "{\"protocol\":\"ether.fi\",\"product\":\"Staking\",\"name\":\"ETH Withdrawal Queue\"",
+      "positionId": "0x7d5706f6ef3F89B3951E23e557CDFBC3239D4E2c"
+    }
+  },
   "UniswapV3_WBTC_WETH_3000": {
     "enabled": false,
     "constructor": {

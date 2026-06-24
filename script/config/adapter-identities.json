@@ -307,6 +307,12 @@
     "positionDetail": { "protocol": "Ethena", "product": "Staking", "name": "USDe Cooldown" },
     "positionId": "<StakedUSDeV2 (sUSDe) address>"
   },
+  "EtherFiWithdrawals": {
+    "$perPositionFields": "type: Staking; single aggregated native-ETH leg per account (in-flight ether.fi withdrawals; agent-fed id cache, emitted positionId is empty)",
+    "protocol": "ether.fi",
+    "positionDetail": { "protocol": "ether.fi", "product": "Staking", "name": "ETH Withdrawal Queue" },
+    "positionId": "<WithdrawRequestNFT address>"
+  },
 
   "KelpWithdrawalQueue": {
     "$perPositionFields": "type: Staking; one position per NAV-registered payout asset (stETH, ETHx, native ETH) discovered at runtime",

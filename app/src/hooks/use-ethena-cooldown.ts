@@ -33,8 +33,14 @@ const sUsdeAbi = [
 
 export function useEthenaCooldown(
   account: `0x${string}` | undefined,
-  refs: EthenaOracleRef[],
+  oracleRefs: EthenaOracleRef[],
 ): Map<string, WithdrawalRequestRow[]> {
+  // Stable, deterministic order (mirrors the Lido/Stader/Kelp hooks): if the caller's ref ordering churns
+  // across renders, an unsorted contracts array would re-key and trigger needless refetching.
+  const refs = [...oracleRefs].sort(
+    (a, b) => a.chainId - b.chainId || a.oracle.toLowerCase().localeCompare(b.oracle.toLowerCase()),
+  )
+
   // Round 1: resolve sUSDe + USDe per adapter.
   const meta = useReadContracts({
     allowFailure: true,

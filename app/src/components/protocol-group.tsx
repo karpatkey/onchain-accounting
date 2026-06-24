@@ -568,7 +568,9 @@ function VaultSections({
         const net = v.positions.reduce((s, p) => s + p.value, 0n)
         const fullId = fullAddressFromPositionId(v.key)
         return (
-          <Fragment key={`vault-${v.key}-${vi}`}>
+          // Key on the stable per-vault id only (groupByVault dedups on v.key); vi is used solely for the
+          // first-vs-rest border styling below, not for identity, so it must not be in the key.
+          <Fragment key={`vault-${v.key}`}>
             {/* Vault block start: a thick top divider + tinted header clearly bounds each vault. Shows the real
                 vault name when the adapter exposes one, then the instance address as a chip (truncated, with the
                 full value on hover + copy, and an explorer link when it's a 20-byte address). */}

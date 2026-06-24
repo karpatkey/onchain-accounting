@@ -1,0 +1,49 @@
+{
+  "protocol": "StakeWise V3",
+  "adapter": "StakeWiseExitQueueBalanceAdapter",
+  "chainId": 1,
+  "contracts": {
+    "vaultsRegistry": "0x3a0008a588772446f6e656133C2D5029CC4FC20E",
+    "genesisVault": "0xAC0F906E433d58FA868F936E8A43230473652885",
+    "underlyingToken_nativeETH": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"
+  },
+  "holderType": "real",
+  "holder": "0x4F2083f5fBede34C2714aFfb3105539775f7FE64",
+  "holderNote": "ENS DAO Safe — a KPK-managed account; entered the Genesis-vault exit queue at block 25375501.",
+  "position": {
+    "vault": "0xAC0F906E433d58FA868F936E8A43230473652885",
+    "positionTicket": "241843370089062440762194",
+    "timestamp": 1782159731
+  },
+  "discovery": "ExitQueueEntered(owner, receiver=holder, positionTicket, shares) on the vault — timestamp is the entry block's block.timestamp (part of the exit-request key). The same event scan the agent runs (no per-account view exists).",
+  "states": [
+    {
+      "name": "fully pending (not yet checkpointed)",
+      "forkBlock": 25376000,
+      "getExitQueueIndex": -1,
+      "valuation": "convertToAssets(leftShares) via the out-of-range index path (calculateExitedAssets with type(uint256).max returns leftShares = full queued shares, exitedAssets = 0)",
+      "amount": "999999999999999999999",
+      "amountApprox": "~1000 ETH"
+    },
+    {
+      "name": "checkpointed / claimable (unclaimed)",
+      "forkBlock": 25380000,
+      "getExitQueueIndex": 1465,
+      "valuation": "exitedAssets (leftShares = 0) — claimable as-is",
+      "amount": "1000033196791603018908",
+      "amountApprox": "~1000.03 ETH"
+    }
+  ],
+  "leg": {
+    "asset": "native ETH",
+    "positionKind": "Supplied",
+    "isDebt": false,
+    "protocolId": "keccak256(\"stakewise-exit\")",
+    "positionId": ""
+  },
+  "groundTruth": "calculateExitedAssets(holder, ticket, timestamp, idx).exitedAssets + (leftShares > 0 ? convertToAssets(leftShares) : 0), read live at each forkBlock; idx = getExitQueueIndex(ticket) (or type(uint256).max when -1).",
+  "delta": 0,
+  "trustModel": "Mutable coordinate-only cache (ADR 0014); owner submits (vault, positionTicket, timestamp) tuples, adapter values from live reads. calculateExitedAssets(receiver=account) is the on-chain ownership check (wrong tuple → 0). VaultsRegistry membership checked at submit time. Owner can under-report only, never over-report.",
+  "agent": "kpk-agents/agents/automations/accounting/ (submit-stakewise-positions, follow-up PR) — mirrors submit_merkl_proofs.py / the ether.fi submitter",
+  "tests": { "unit": 25, "fork": 6 }
+}

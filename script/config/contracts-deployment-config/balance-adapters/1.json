@@ -120,8 +120,8 @@
     }
   },
   "ERC4626Wrap_RWIV": {
-    "enabled": true,
-    "$comment": "Nexus Mutual RWI Vault (RWIV, ERC-4626). RWIV.asset() returns USDC (6-dec); convertToAssets unwraps shares to USDC-equivalent. Held by the Nexus Mutual Safe (~$250k). At fork block 25373262, previewRedeem() == convertToAssets() exactly and maxRedeem() == full balance (no exit fee/cooldown), so convertToAssets does not over-report. Not Morpho — generic ERC4626Wrap is the right adapter.",
+    "enabled": false,
+    "$comment": "DISABLED — superseded by RWIV_PriceOracle (custom price feed). With RWIV registered as a priced asset, registerAsset auto-adds it to ERC20DefaultAdapter, so the wallet adapter reports the direct RWIV holding at RWIV/USD (same convertToAssets value this wrap produced as USDC); keeping this enabled would double-count the Nexus Safe's ~$250k direct RWIV. The feed is required regardless so UniswapV3PoolsMeta can value the USDC/RWIV LP. See PR feat/rwiv-price-feed-univ3.",
     "constructor": {
       "wrapper": "0xcAFeAA466736ac01e0AC9Ca72644beF348694731",
       "protocol": "Nexus Mutual",

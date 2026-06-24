@@ -41,8 +41,8 @@
     "$comment": "Aave sGHO savings vault (ERC-4626). sGHO.asset() returns GHO; convertToAssets unwraps shares to GHO-equivalent. Held by the Alpha funds. At fork block 25230126, redeem() returned exactly convertToAssets() (no exit fee/cooldown), so convertToAssets does not over-report. Share price is >= 1 GHO (yield vault), not a 1:1 share/asset peg."
   },
   "ERC4626Wrap_RWIV": {
-    "enabled": true,
-    "$comment": "Nexus Mutual RWI Vault (RWIV, ERC-4626, USDC underlying). Held by the Nexus Mutual Safe (~$250k). asset()=USDC (already registered+priced); convertToAssets unwraps to USDC. previewRedeem==convertToAssets and maxRedeem==full balance at block 25373262 (no exit fee/cooldown). Registers via addBalanceAdapters."
+    "enabled": false,
+    "$comment": "DISABLED — superseded by the RWIV custom price feed (RWIV_PriceOracle). RWIV is now a registered priced asset (assets-and-price-feeds/1.json), and registerAsset auto-adds it to the ERC20DefaultAdapter inclusion list, so the wallet adapter already reports the direct RWIV holding at RWIV/USD (same convertToAssets value this wrap produced as USDC). Keeping this wrap enabled would DOUBLE-COUNT the Nexus Safe's ~$250k direct RWIV. The price feed was required anyway so UniswapV3PoolsMeta can value the USDC/RWIV LP (pool 0x764D5075). See PR feat/rwiv-price-feed-univ3."
   },
   "ERC4626Wrap_waEthLidoGHO": {
     "enabled": true,

@@ -60,6 +60,7 @@ const PROTOCOL_IMG_ICONS: Record<string, string> = {
   pancakeswap: 'https://assets.coingecko.com/coins/images/12632/large/pancakeswap-cake-logo_(1).png',
   ethena:
     'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x4c9EDD5852cd905f086C759E8383e09bff1E68B3/logo.png',
+  'ether.fi': 'https://icons.llamao.fi/icons/protocols/ether.fi?w=48&h=48',
 }
 
 const PROTOCOL_URLS: Record<string, string> = {
@@ -74,6 +75,7 @@ const PROTOCOL_URLS: Record<string, string> = {
   gearbox: 'https://app.gearbox.fi/',
   euler: 'https://app.euler.finance/',
   ethena: 'https://app.ethena.fi/',
+  'ether.fi': 'https://app.ether.fi/',
 }
 
 function getProtocolKey(protocol: string): string {

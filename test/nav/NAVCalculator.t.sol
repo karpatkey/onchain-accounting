@@ -1031,6 +1031,117 @@ contract NAVCalculatorTest is SuperTest {
         assertTrue(found, "Custom adapter position not found");
     }
 
+    // ============================================
+    // Verbose read tests (get*Verbose)
+    // ============================================
+
+    function test_getAccountPositionsVerbose_labels() public {
+        usdc.mint(safe, 10 ** usdc.decimals());
+
+        INAVCalculator.VerbosePosition[] memory verbose = nav.getAccountPositionsVerbose(safe, address(0));
+
+        assertEq(verbose.length, 1);
+        // Underlying position is identical to the non-verbose read.
+        assertEq(verbose[0].position.balanceAsset.asset, address(usdc));
+        assertEq(verbose[0].position.amount, 10 ** usdc.decimals());
+        assertEq(verbose[0].position.value, 1e8);
+        // Labels come from the default adapter's IPositionDescribable implementation.
+        assertEq(verbose[0].protocolName, "Wallet");
+        assertEq(verbose[0].positionLabel, "USDC");
+    }
+
+    function test_getAccountPositionsVerbose_matchesPlain() public {
+        usdc.mint(safe, 10 ** usdc.decimals());
+        dai.mint(safe, 10 ** dai.decimals());
+
+        INAVCalculator.Position[] memory plain = nav.getAccountPositions(safe, address(0));
+        INAVCalculator.VerbosePosition[] memory verbose = nav.getAccountPositionsVerbose(safe, address(0));
+
+        assertEq(verbose.length, plain.length);
+        for (uint256 i = 0; i < plain.length; i++) {
+            assertEq(verbose[i].position.balanceAsset.asset, plain[i].balanceAsset.asset);
+            assertEq(verbose[i].position.amount, plain[i].amount);
+            assertEq(verbose[i].position.value, plain[i].value);
+            assertEq(verbose[i].position.balanceAdapter, plain[i].balanceAdapter);
+        }
+    }
+
+    /// @dev An adapter that does not implement IPositionDescribable must yield empty label strings,
+    ///      not revert the whole verbose read (fail-open).
+    function test_getAccountPositionsVerbose_failOpenNoDescribable() public {
+        setupMockBalanceAdapter(address(usdc), int256(123 * 10 ** usdc.decimals()));
+
+        vm.startPrank(navCalculatorManager);
+        nav.addBalanceAdapters(aa(address(mockBalanceAdapter)));
+        vm.stopPrank();
+
+        INAVCalculator.VerbosePosition[] memory verbose = nav.getAccountPositionsVerbose(safe, address(0));
+
+        bool found;
+        for (uint256 i = 0; i < verbose.length; i++) {
+            if (verbose[i].position.balanceAdapter == address(mockBalanceAdapter)) {
+                assertEq(verbose[i].protocolName, "");
+                assertEq(verbose[i].positionLabel, "");
+                found = true;
+            }
+        }
+        assertTrue(found, "mock adapter position not found");
+    }
+
+    function test_getAccountPositionsForAssetVerbose() public {
+        usdc.mint(safe, 10 ** usdc.decimals());
+        dai.mint(safe, 10 ** dai.decimals());
+
+        INAVCalculator.VerbosePosition[] memory verbose =
+            nav.getAccountPositionsForAssetVerbose(safe, address(usdc), address(0));
+
+        assertTrue(verbose.length > 0);
+        for (uint256 i = 0; i < verbose.length; i++) {
+            assertEq(verbose[i].position.balanceAsset.asset, address(usdc));
+            assertEq(verbose[i].protocolName, "Wallet");
+            assertEq(verbose[i].positionLabel, "USDC");
+        }
+    }
+
+    function test_getAccountPositionsForAssetVerbose_invalidAsset() public {
+        address unregisteredAsset = makeAddr("unregistered");
+        vm.expectRevert(AssetNotFound.selector);
+        nav.getAccountPositionsForAssetVerbose(safe, unregisteredAsset, address(0));
+    }
+
+    function test_getAccountPositionsVerbose_invalidQuoteAsset() public {
+        usdc.mint(safe, 10 ** usdc.decimals());
+        address invalidQuote = makeAddr("invalid");
+        vm.expectRevert(abi.encodeWithSelector(PriceFeedNotSet.selector, invalidQuote));
+        nav.getAccountPositionsVerbose(safe, invalidQuote);
+    }
+
+    function test_getAccountPositionsVerbose_emptyAccount() public view {
+        INAVCalculator.VerbosePosition[] memory verbose = nav.getAccountPositionsVerbose(safe, address(0));
+        assertEq(verbose.length, 0);
+    }
+
+    function test_getAccountNavVerbose() public {
+        usdc.mint(safe, 10 ** usdc.decimals());
+        dai.mint(safe, 10 ** dai.decimals());
+
+        INAVCalculator.VerboseNAV memory v = nav.getAccountNavVerbose(safe, address(0));
+        INAVCalculator.NAV memory plainNav = nav.getAccountNav(safe, address(0));
+        INAVCalculator.VerbosePosition[] memory plainVerbose = nav.getAccountPositionsVerbose(safe, address(0));
+
+        // NAV leg matches getAccountNav.
+        assertEq(v.nav.value, plainNav.value);
+        assertEq(v.nav.quoteAsset.asset, plainNav.quoteAsset.asset);
+        assertEq(v.nav.sequencerDown, plainNav.sequencerDown);
+        // Position leg matches getAccountPositionsVerbose.
+        assertEq(v.positions.length, plainVerbose.length);
+        for (uint256 i = 0; i < v.positions.length; i++) {
+            assertEq(v.positions[i].position.balanceAsset.asset, plainVerbose[i].position.balanceAsset.asset);
+            assertEq(v.positions[i].protocolName, plainVerbose[i].protocolName);
+            assertEq(v.positions[i].positionLabel, plainVerbose[i].positionLabel);
+        }
+    }
+
     // Test 3: getAccountNav_multipleAssets
     function test_getAccountNav_multipleAssets() public {
         usdc.mint(safe, 10 ** usdc.decimals());

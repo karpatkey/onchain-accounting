@@ -9,6 +9,7 @@ import {IPrices, Prices} from "src/prices/Prices.sol";
 import {PriceFeedLib} from "src/prices/PriceFeedLib.sol";
 import {Balances} from "src/balances/Balances.sol";
 import {ERC20DefaultAdapter} from "src/balances/protocols/ERC20DefaultAdapter.sol";
+import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "./INAVCalculator.sol";
 import {NavRegistryLib} from "./NavRegistryLib.sol";
 
@@ -28,7 +29,8 @@ import "src/constants.sol";
 ///      library; the entry point should build and consume any heavy PositionBalance[]/Position[] arrays
 ///      *inside* the library, because returning them across the ABI boundary (and piecemeal helper extraction
 ///      generally) can cost more than the inlined body under `via_ir`. Always measure with a clean
-///      `forge build --sizes`.
+///      `forge build --sizes`. The verbose label-enrichment read path (`get*Verbose` + `_toVerbose`/`_safeString`)
+///      is inlined here rather than split into a separate lens contract; it fits within the remaining margin.
 contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeable, INAVCalculator, Prices, Balances {
     //
     // State
@@ -297,6 +299,127 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             quoteAsset,
             _nativeTokenSymbol
         );
+    }
+
+    /// @inheritdoc INAVCalculator
+    function getAccountPositionsVerbose(address account, address quoteAsset)
+        external
+        view
+        returns (INAVCalculator.VerbosePosition[] memory)
+    {
+        _validateQuoteAsset(quoteAsset);
+        return _toVerbose(
+            PriceFeedLib.computeAccountPositions(
+                _priceOracles,
+                _assetIndex,
+                _registeredAssets,
+                getAllAdapters(),
+                _metaInstanceTotal,
+                account,
+                address(0),
+                quoteAsset,
+                _nativeTokenSymbol
+            )
+        );
+    }
+
+    /// @inheritdoc INAVCalculator
+    function getAccountPositionsForAssetVerbose(address account, address asset, address quoteAsset)
+        external
+        view
+        returns (INAVCalculator.VerbosePosition[] memory)
+    {
+        _validateQuoteAsset(quoteAsset);
+        _validateAssetFilter(asset);
+        return _toVerbose(
+            PriceFeedLib.computeAccountPositions(
+                _priceOracles,
+                _assetIndex,
+                _registeredAssets,
+                getAllAdapters(),
+                _metaInstanceTotal,
+                account,
+                asset,
+                quoteAsset,
+                _nativeTokenSymbol
+            )
+        );
+    }
+
+    /// @inheritdoc INAVCalculator
+    function getAccountNavVerbose(address account, address quoteAsset)
+        external
+        view
+        returns (INAVCalculator.VerboseNAV memory verboseNav)
+    {
+        _validateQuoteAsset(quoteAsset);
+        verboseNav.nav = PriceFeedLib.computeNav(
+            _priceOracles,
+            _assetIndex,
+            _registeredAssets,
+            getAllAdapters(),
+            _metaInstanceTotal,
+            account,
+            quoteAsset,
+            _isSequencerDown(),
+            _nativeTokenSymbol
+        );
+        verboseNav.positions = _toVerbose(
+            PriceFeedLib.computeAccountPositions(
+                _priceOracles,
+                _assetIndex,
+                _registeredAssets,
+                getAllAdapters(),
+                _metaInstanceTotal,
+                account,
+                address(0),
+                quoteAsset,
+                _nativeTokenSymbol
+            )
+        );
+    }
+
+    /// @notice Enriches a Position[] with human-readable labels from IPositionDescribable on each adapter.
+    function _toVerbose(INAVCalculator.Position[] memory pos)
+        internal
+        view
+        returns (INAVCalculator.VerbosePosition[] memory verbose)
+    {
+        uint256 len = pos.length;
+        verbose = new INAVCalculator.VerbosePosition[](len);
+        for (uint256 i = 0; i < len; i++) {
+            address adapter = pos[i].balanceAdapter;
+            string memory name = _safeString(adapter, abi.encodeCall(IPositionDescribable.protocolName, ()));
+            string memory label =
+                _safeString(adapter, abi.encodeCall(IPositionDescribable.describePosition, (pos[i].positionId)));
+            verbose[i] = INAVCalculator.VerbosePosition({position: pos[i], protocolName: name, positionLabel: label});
+        }
+    }
+
+    /// @notice Fully fail-open string read: staticcalls `target` and returns the decoded string only when the
+    ///         returndata is a well-formed ABI string, otherwise "".
+    /// @dev A plain `try/catch` only catches a reverting call — it does NOT catch a *successful* call whose
+    ///      returndata cannot be decoded into `string` (e.g. a non-contract returning empty data, or a contract
+    ///      returning a malformed/short blob), which would revert the whole verbose read. This validates the
+    ///      ABI envelope (canonical 0x20 offset + length within bounds) before decoding so it can never revert.
+    function _safeString(address target, bytes memory callData) private view returns (string memory) {
+        (bool ok, bytes memory ret) = target.staticcall(callData);
+        if (!ok || ret.length < 64) return ""; // need at least offset(32) + length(32)
+        uint256 offset;
+        uint256 strLen;
+        assembly {
+            offset := mload(add(ret, 0x20))
+            strLen := mload(add(ret, 0x40))
+        }
+        // Canonical ABI string: offset == 0x20, and the full *padded* body must be present. abi.decode reads
+        // ceil32(strLen) bytes after the 64-byte (offset+length) header, so bounding on the raw strLen is not
+        // enough — a return with e.g. strLen=1, ret.length=65 would pass `ret.length >= 64+strLen` yet make
+        // abi.decode read 32 padded bytes past `ret` and revert (defeating fail-open). The `strLen > ret.length`
+        // guard also rules out a malicious huge strLen before the ceil32 add can overflow.
+        if (offset != 0x20 || strLen > ret.length) return "";
+        uint256 padded = (strLen + 31) & ~uint256(31);
+        if (ret.length < 64 + padded) return "";
+        return abi.decode(ret, (string));
     }
 
     /// @inheritdoc INAVCalculator

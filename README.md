@@ -38,7 +38,7 @@ src/
 ├── nav/                         # NAV calculator
 │   ├── NAVCalculator.sol        # UUPS upgradeable; inherits Prices + Balances; verbose (labeled) position APIs
 │   ├── INAVCalculator.sol
-│   └── NavRegistryLib.sol       # External library for registry mutations (EIP-170)
+│   └── NAVRegistryLib.sol       # External library for registry mutations (EIP-170)
 ├── bridge/                      # Cross-chain escrow and adapters
 │   ├── BridgeEscrow.sol
 │   ├── BridgeAdapter.sol        # Base for adapters
@@ -98,7 +98,7 @@ Balance adapters return **PositionBalance** (`balanceAsset`, `amount`, `isDebt`,
   - **Balance adapters**: Added with `addBalanceAdapters`; ERC165-checked for `IBalanceAdapter`. For meta-adapters, also call `addMetaInstances`/`removeMetaInstances` to configure the instance set (vault/pool/market addresses or raw bytes32 IDs).
 - **Query flow**: `getAccountNav(account, quoteAsset)` iterates all registered adapters, calls `getAdapterPositions` on each (with per-adapter try/catch), filters to registered assets, prices each position via `latestPrice` (freshest-wins), and returns **NAV** (`value`, `quoteAsset`, `timestamp`, `stalePriceAssets`, `sequencerDown`, `quoteAssetStale`). `getAccountPositions(account, quoteAsset)` returns the per-leg `Position[]` breakdown.
 - **Verbose APIs**: `getAccountPositionsVerbose` / `getAccountPositionsForAssetVerbose` / `getAccountNavVerbose` on `NAVCalculator` bundle `protocolName` + `positionLabel` strings from each adapter's `IPositionDescribable` into `VerbosePosition`. For display only — use typed `protocolId`/`positionId`/`positionKind` for identity and reconciliation.
-- **External libraries** (EIP-170): `PriceFeedLib` (price selection + feed management + the NAV/positions/health/value read-compute engine) and `NavRegistryLib` (asset + adapter registry mutations) are `DELEGATECALL`'d at deterministic CREATE2 addresses; `NAVCalculator` keeps only storage, admin mutations, and thin view wrappers. Deployed by scripts `01` before `NAVCalculator`.
+- **External libraries** (EIP-170): `PriceFeedLib` (price selection + feed management + the NAV/positions/health/value read-compute engine) and `NAVRegistryLib` (asset + adapter registry mutations) are `DELEGATECALL`'d at deterministic CREATE2 addresses; `NAVCalculator` keeps only storage, admin mutations, and thin view wrappers. Deployed by scripts `01` before `NAVCalculator`.
 
 NAVCalculator is **UUPS upgradeable** and uses **AccessControl** (DEFAULT_ADMIN_ROLE, MANAGER).
 

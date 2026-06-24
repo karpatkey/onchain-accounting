@@ -11,7 +11,7 @@ import {Balances} from "src/balances/Balances.sol";
 import {ERC20DefaultAdapter} from "src/balances/protocols/ERC20DefaultAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "./INAVCalculator.sol";
-import {NavRegistryLib} from "./NavRegistryLib.sol";
+import {NAVRegistryLib} from "./NAVRegistryLib.sol";
 
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
@@ -23,7 +23,7 @@ import "src/constants.sol";
 /// @author kpk
 /// @dev EIP-170 budget: this contract runs close to the 24,576-byte runtime limit (CI's `forge build --sizes`
 ///      enforces it). The read/compute engine (NAV, positions, health, value) and the registry storage-mutation
-///      loops are deliberately delegated to the external libraries `PriceFeedLib` and `NavRegistryLib`
+///      loops are deliberately delegated to the external libraries `PriceFeedLib` and `NAVRegistryLib`
 ///      (DELEGATECALL) to stay under it — NAVCalculator keeps only storage, admin mutations, and thin
 ///      view wrappers. When adding code here, watch the margin and prefer moving substantial loops into a
 ///      library; the entry point should build and consume any heavy PositionBalance[]/Position[] arrays
@@ -70,11 +70,11 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         // Pre-register native address in NAV/Pricing registry
         _registerAsset(NATIVE_ADDRESS);
         // Deploy ERC20Default adapter with native in inclusion list (constructor avoids callback to proxy during init).
-        // The `new` lives in NavRegistryLib (DELEGATECALL: address(this) is this proxy) so the adapter's creation
+        // The `new` lives in NAVRegistryLib (DELEGATECALL: address(this) is this proxy) so the adapter's creation
         // bytecode is embedded in that external library, not NAVCalculator's runtime — see ADR + deployDefaultAdapter.
         address[] memory initialAssets = new address[](1);
         initialAssets[0] = NATIVE_ADDRESS;
-        _setErc20DefaultAdapter(NavRegistryLib.deployDefaultAdapter(initialAssets));
+        _setErc20DefaultAdapter(NAVRegistryLib.deployDefaultAdapter(initialAssets));
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin_);
     }
@@ -482,12 +482,12 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     /// Fetches decimals and symbol: for NATIVE_ADDRESS uses 18 and _nativeTokenSymbol;
     /// otherwise requires ERC20-compatible (decimals() and symbol()) and reverts if not.
     function _registerAsset(address asset) internal {
-        NavRegistryLib.registerAsset(_registeredAssets, _assetIndex, asset, _nativeTokenSymbol);
+        NAVRegistryLib.registerAsset(_registeredAssets, _assetIndex, asset, _nativeTokenSymbol);
     }
 
     /// @notice Unregisters an asset from the NAV/Pricing registry
     function _unregisterAsset(address asset) internal {
-        NavRegistryLib.unregisterAsset(_registeredAssets, _assetIndex, asset);
+        NAVRegistryLib.unregisterAsset(_registeredAssets, _assetIndex, asset);
     }
 
     /// @notice Returns the registered Asset struct from the NAV/Pricing registry (single lookup for decimals + symbol).

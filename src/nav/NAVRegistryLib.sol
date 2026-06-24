@@ -13,7 +13,7 @@ import {ERC20DefaultAdapter} from "src/balances/protocols/ERC20DefaultAdapter.so
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
-/// @title NavRegistryLib
+/// @title NAVRegistryLib
 /// @notice External library for NAVCalculator's registry storage mutations (the asset registry + the balance-adapter
 ///         registry), extracted to keep NAVCalculator under EIP-170 (mirrors the PriceFeedLib pattern).
 /// @dev Functions are `external` so the library compiles as a separate artifact and is invoked via DELEGATECALL,
@@ -21,7 +21,7 @@ import "src/errors.sol";
 ///      CREATE2 address (see `foundry.toml`) and deployed by `01_2_DeployNAVImplementation.s.sol` before NAVCalculator.
 ///      Only the heavier, no-return mutations live here (register/unregister asset; add/remove adapter); the trivial
 ///      getters and the running counts / event emission stay inline in the caller (cheaper than crossing the boundary).
-library NavRegistryLib {
+library NAVRegistryLib {
     using ERC165Checker for address;
 
     /// @notice Native-asset sentinel (mirrors Balances.NATIVE_ADDRESS).
@@ -280,9 +280,9 @@ library NavRegistryLib {
     ///         DELEGATECALL overhead is immaterial.
     /// @dev    Currently UNCALLED: PR #73 moved NAVCalculator's read engine into `PriceFeedLib`, which does its
     ///         own dedup (`PriceFeedLib._extractUniqueAssets`). Retained here rather than removed because deleting
-    ///         it would change `NavRegistryLib`'s bytecode and force a second CREATE2-pin regeneration (foundry.toml
+    ///         it would change `NAVRegistryLib`'s bytecode and force a second CREATE2-pin regeneration (foundry.toml
     ///         + LibraryPins + ~15 etch sites) for no functional gain; safe to drop in any future change that
-    ///         already touches `NavRegistryLib`.
+    ///         already touches `NAVRegistryLib`.
     /// @param positions The position balances to scan
     /// @return uniqueAssets The distinct asset addresses
     function extractUniqueAssets(INAVCalculator.PositionBalance[] memory positions)

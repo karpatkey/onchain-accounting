@@ -3,7 +3,7 @@ pragma solidity ^0.8;
 
 import {Test} from "forge-std/Test.sol";
 import {PriceFeedLib} from "src/prices/PriceFeedLib.sol";
-import {NavRegistryLib} from "src/nav/NavRegistryLib.sol";
+import {NAVRegistryLib} from "src/nav/NAVRegistryLib.sol";
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {LibraryPins} from "script/utils/LibraryPins.sol";
 import {ConfigReader} from "script/utils/ConfigReader.sol";
@@ -32,9 +32,9 @@ contract LibraryPinConsistencyTest is Test {
     function test_navRegistryLib_pinMatchesCurrentBytecode() public pure {
         bytes32 salt = ConfigReader.computeSalt("NavRegistryLib", 1);
         address computed =
-            vm.computeCreate2Address(salt, keccak256(type(NavRegistryLib).creationCode), CANONICAL_CREATE2_DEPLOYER);
+            vm.computeCreate2Address(salt, keccak256(type(NAVRegistryLib).creationCode), CANONICAL_CREATE2_DEPLOYER);
         assertEq(
-            computed, LibraryPins.NAV_REGISTRY_LIB, "NavRegistryLib pin drift: regenerate LibraryPins + foundry.toml"
+            computed, LibraryPins.NAV_REGISTRY_LIB, "NAVRegistryLib pin drift: regenerate LibraryPins + foundry.toml"
         );
     }
 
@@ -51,7 +51,7 @@ contract LibraryPinConsistencyTest is Test {
         );
         assertTrue(
             LibraryPins.contains(code, LibraryPins.NAV_REGISTRY_LIB),
-            "NAVCalculator not linked against pinned NavRegistryLib (foundry.toml `libraries` drift?)"
+            "NAVCalculator not linked against pinned NAVRegistryLib (foundry.toml `libraries` drift?)"
         );
     }
 }

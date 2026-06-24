@@ -37,9 +37,12 @@ contract NexusStakedNxmBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     ///         hard gas bound on the scan loop.
     uint256 public constant MAX_TOKEN_SCAN = 5000;
 
-    /// @notice Upper bound on positions collected per account (sizes the working array). An account
-    ///         never approaches this; a holder with more would have the excess under-reported.
-    uint256 public constant MAX_POSITIONS_PER_ACCOUNT = 256;
+    /// @notice Upper bound on positions collected per account. Besides sizing the working array, this
+    ///         bounds the id count handed to `getAggregatedTokens` — which iterates each token's
+    ///         tranches, so an unbounded set could OOG inside the viewer (NOT caught by NAVCalculator's
+    ///         try/catch). 64 is generous headroom over a real account (the OIV Safes hold a handful);
+    ///         a holder with more would have the excess under-reported (never over-reported).
+    uint256 public constant MAX_POSITIONS_PER_ACCOUNT = 64;
 
     //
     // State
@@ -184,6 +187,7 @@ contract NexusStakedNxmBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         isDebt = new bool[](1);
         assets[0] = UNDERLYING_TOKEN;
         amounts[0] = total;
+        isDebt[0] = false;
     }
 
     /// @inheritdoc IBalanceAdapter

@@ -41,5 +41,5 @@
   "delta": 0,
   "protocolId": "keccak256(\"nexus-staking\")",
   "positionId": "",
-  "tests": { "unit": 21, "fork": 3 }
+  "tests": { "unit": 22, "fork": 3 }
 }

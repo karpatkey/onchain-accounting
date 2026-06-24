@@ -119,6 +119,11 @@ contract NexusStakedNxmBalanceAdapterTest is BalanceAdapterTestBase {
         new NexusStakedNxmBalanceAdapter(address(nft), address(viewer), address(0), address(balances));
     }
 
+    function test_constructor_revertsOnZeroNav() public {
+        vm.expectRevert(InvalidArguments.selector);
+        new NexusStakedNxmBalanceAdapter(address(nft), address(viewer), address(nxm), address(0));
+    }
+
     function test_constructor_revertsWhenNftNotContract() public {
         vm.expectRevert(bytes("StakingNFT must be a contract"));
         new NexusStakedNxmBalanceAdapter(makeAddr("eoa"), address(viewer), address(nxm), address(balances));

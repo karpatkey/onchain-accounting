@@ -19,7 +19,7 @@
 - `nonStaker_reportsZero` — a non-staking address reports nothing (scan finds no owned ids).
 
 ## 3. Unit test coverage
-`test/balances/protocols/NexusStakedNxm.t.sol` (21 tests, mock-only): constructor guards (×4), discovery + aggregation (owned-only, other-account-excluded, wrong-asset), `Staking`+`Rewards` leg identity, single-leg (no-rewards / no-stake) and empty cases, asset-filter match/mismatch, unregistered-underlying drop, `getAdapterBalances` shape, the `MAX_POSITIONS_PER_ACCOUNT` + `MAX_TOKEN_SCAN` caps, `try/catch` never-revert on `tokenInfo` / `totalSupply` / `getAggregatedTokens`, ERC165, `underlyingAssetsSupported`. The mock `StakingViewer` aggregates exactly the ids the adapter passes, so discovery → valuation is tested end-to-end.
+`test/balances/protocols/NexusStakedNxm.t.sol` (22 tests, mock-only): constructor guards (×4), discovery + aggregation (owned-only, other-account-excluded, wrong-asset), `Staking`+`Rewards` leg identity, single-leg (no-rewards / no-stake) and empty cases, asset-filter match/mismatch, unregistered-underlying drop, `getAdapterBalances` shape, the `MAX_POSITIONS_PER_ACCOUNT` + `MAX_TOKEN_SCAN` caps, `try/catch` never-revert on `tokenInfo` / `totalSupply` / `getAggregatedTokens`, ERC165, `underlyingAssetsSupported`. The mock `StakingViewer` aggregates exactly the ids the adapter passes, so discovery → valuation is tested end-to-end.
 
 ## 4. Adapter formula recap
 ```
@@ -61,4 +61,4 @@ bash script/development/app/sync-app-env.sh 1
 The Safe shows a "Nexus Mutual" group with a ~74,229 NXM Staked leg + ~228 NXM Rewards leg.
 
 ## 10. Test verdict
-- Unit: **21/21 pass**. Fork: **3/3 pass** (strict delta 0 vs live `getAggregatedTokens`). `forge build`/`fmt` clean. Pin: standalone adapter — confirm `LibraryPinConsistency` (CI is the authority).
+- Unit: **22/22 pass**. Fork: **3/3 pass** (strict delta 0 vs live `getAggregatedTokens`). `forge build`/`fmt` clean. Pin: standalone adapter — confirm `LibraryPinConsistency` (CI is the authority).

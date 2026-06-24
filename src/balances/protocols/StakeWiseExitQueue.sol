@@ -332,9 +332,8 @@ contract StakeWiseExitQueueBalanceAdapter is IBalanceAdapter, Ownable, IPosition
         // idx < 0 ⇒ fully pending; an out-of-range index yields (leftShares = full, exited = 0) with no revert.
         uint256 queryIdx = idx < 0 ? type(uint256).max : uint256(idx);
 
-        // In StakeWise's V2 exit queue the queue is share-denominated, so the returned `leftTickets` (still-queued
-        // remainder) is in vault shares — hence valued via `convertToAssets` below. `exitedAssets` is already in
-        // the underlying asset.
+        // StakeWise's exit queue is share-denominated, so the returned `leftTickets` (still-queued remainder) is in
+        // vault shares — hence valued via `convertToAssets` below. `exitedAssets` is already in the underlying asset.
         uint256 leftShares;
         uint256 exitedAssets;
         try v.calculateExitedAssets(account, positionTicket, timestamp, queryIdx) returns (

@@ -12,6 +12,7 @@ import { useLidoWithdrawals, type LidoOracleRef } from '@/hooks/use-lido-withdra
 import { useStaderWithdrawals, type StaderOracleRef } from '@/hooks/use-stader-withdrawals'
 import { useKelpWithdrawals, type KelpOracleRef } from '@/hooks/use-kelp-withdrawals'
 import { useEthenaCooldown, type EthenaOracleRef } from '@/hooks/use-ethena-cooldown'
+import { useStakeWiseExitWithdrawals, type StakeWiseExitOracleRef } from '@/hooks/use-stakewise-exit-withdrawals'
 import { useRefreshCooldown } from '@/hooks/use-refresh-cooldown'
 import { AddressChip } from '@/components/address-chip'
 
@@ -267,10 +268,31 @@ function PortfolioView({ account, onReset }: { account: `0x${string}`; onReset: 
     return refs
   }, [positionResults])
 
+  // StakeWise V3 exit-queue adapters the account touches — drives the per-position pending/claimable
+  // drill-down (display only; the adapter reports a single ETH leg). Filtered by protocolId, not protocol
+  // name: the exit-queue adapter shares the "StakeWise V3" name with the vaults meta-adapter, so the
+  // keccak256("stakewise-exit") slug is the only unambiguous discriminator.
+  const stakewiseExitOracles = useMemo<StakeWiseExitOracleRef[]>(() => {
+    const STAKEWISE_EXIT_PROTOCOL_ID = '0x304c70a6113f73971716dfe5604e9826967adbaad918beca2a7a1ac460a6b2b9'
+    const seen = new Set<string>()
+    const refs: StakeWiseExitOracleRef[] = []
+    for (const { chainId, positions } of positionResults) {
+      for (const p of positions) {
+        if (p.protocolId.toLowerCase() !== STAKEWISE_EXIT_PROTOCOL_ID) continue
+        const key = `${chainId}:${p.balanceOracle.toLowerCase()}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        refs.push({ chainId, oracle: p.balanceOracle })
+      }
+    }
+    return refs
+  }, [positionResults])
+
   const lidoWithdrawalsByKey = useLidoWithdrawals(account, lidoOracles)
   const staderWithdrawalsByKey = useStaderWithdrawals(account, staderOracles)
   const kelpWithdrawalsByKey = useKelpWithdrawals(account, kelpOracles)
   const ethenaWithdrawalsByKey = useEthenaCooldown(account, ethenaOracles)
+  const stakewiseExitWithdrawalsByKey = useStakeWiseExitWithdrawals(account, stakewiseExitOracles)
 
   // Merge the per-request drill-down maps into one. Keys are `${chainId}:${oracle}:${asset}`, unique per
   // (adapter, leg), so no collision. protocol-group looks each leg up by that asset-aware key.
@@ -280,8 +302,9 @@ function PortfolioView({ account, onReset }: { account: `0x${string}`; onReset: 
     for (const [k, v] of staderWithdrawalsByKey) m.set(k, v)
     for (const [k, v] of kelpWithdrawalsByKey) m.set(k, v)
     for (const [k, v] of ethenaWithdrawalsByKey) m.set(k, v)
+    for (const [k, v] of stakewiseExitWithdrawalsByKey) m.set(k, v)
     return m
-  }, [lidoWithdrawalsByKey, staderWithdrawalsByKey, kelpWithdrawalsByKey, ethenaWithdrawalsByKey])
+  }, [lidoWithdrawalsByKey, staderWithdrawalsByKey, kelpWithdrawalsByKey, ethenaWithdrawalsByKey, stakewiseExitWithdrawalsByKey])
 
   const totalPortfolioNav = navResults.reduce((s, r) => s + (r.nav?.value ?? 0n), 0n)
 

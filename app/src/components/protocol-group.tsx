@@ -3,7 +3,7 @@
 import { Fragment } from 'react'
 import type { OnchainPosition } from '@/hooks/use-account-positions'
 import { TokenLogo } from '@/components/token-logo'
-import { AddressChip } from '@/components/address-chip'
+import { AddressChip, CopyIconButton } from '@/components/address-chip'
 import { formatAmount, formatPrice, formatUsd } from '@/lib/format'
 import {
   EthCircleColor,
@@ -30,7 +30,17 @@ import {
 // `label` overrides the default `#<id>` display for queues without a per-request id (Ethena cooldown:
 // one struct per account, so we show the claimable date instead). `isFinalized` drives the
 // Claimable/Pending badge for every queue (Ethena: claimable once the cooldown has elapsed).
-export type WithdrawalRequestRow = { id: bigint; ethOwed: bigint; isFinalized: boolean; label?: string }
+// `label` overrides the default `#<id>` text for queues without a per-request id. `address` + `ticket` render
+// the position identity as a copyable AddressChip (the vault) plus a copyable truncated ticket — used by queues
+// (StakeWise exit) whose identity is a contract address + a long ticket that would otherwise be cut off.
+export type WithdrawalRequestRow = {
+  id: bigint
+  ethOwed: bigint
+  isFinalized: boolean
+  label?: string
+  address?: `0x${string}`
+  ticket?: string
+}
 export type WithdrawalsByKey = Map<string, WithdrawalRequestRow[]>
 export const withdrawalsKey = (chainId: number, oracle: string, asset: string) =>
   `${chainId}:${oracle.toLowerCase()}:${asset.toLowerCase()}`
@@ -61,6 +71,7 @@ const PROTOCOL_IMG_ICONS: Record<string, string> = {
   ethena:
     'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x4c9EDD5852cd905f086C759E8383e09bff1E68B3/logo.png',
   'ether.fi': 'https://icons.llamao.fi/icons/protocols/ether.fi?w=48&h=48',
+  stakewise: 'https://icons.llamao.fi/icons/protocols/stakewise?w=48&h=48',
 }
 
 const PROTOCOL_URLS: Record<string, string> = {
@@ -76,6 +87,7 @@ const PROTOCOL_URLS: Record<string, string> = {
   euler: 'https://app.euler.finance/',
   ethena: 'https://app.ethena.fi/',
   'ether.fi': 'https://app.ether.fi/',
+  stakewise: 'https://app.stakewise.io/',
 }
 
 function getProtocolKey(protocol: string): string {
@@ -232,7 +244,24 @@ function PositionRow({
             <td className="py-2 px-4 pl-9 text-xs text-neutral-700">
               <div className="flex items-center gap-2">
                 <span className="text-neutral-700">↳</span>
-                <span className="font-mono font-medium text-neutral-800">{req.label ?? `#${req.id.toString()}`}</span>
+                {req.address ? (
+                  // Position identity = vault (copyable AddressChip + explorer) · truncated ticket (copyable).
+                  // Both are long (20-byte address / 24-digit ticket) and would otherwise be cut off.
+                  <span className="inline-flex items-center gap-1.5">
+                    <AddressChip address={req.address} chainId={chainId} className="text-xs text-neutral-800" />
+                    {req.ticket && (
+                      <span className="inline-flex items-center gap-1 text-neutral-700">
+                        <span className="text-neutral-400">·</span>
+                        <span title={`ticket ${req.ticket}`} className="font-mono">
+                          #…{req.ticket.length > 6 ? req.ticket.slice(-6) : req.ticket}
+                        </span>
+                        <CopyIconButton value={req.ticket} label="Copy exit ticket" />
+                      </span>
+                    )}
+                  </span>
+                ) : (
+                  <span className="font-mono font-medium text-neutral-800">{req.label ?? `#${req.id.toString()}`}</span>
+                )}
                 <span
                   className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
                     req.isFinalized ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'

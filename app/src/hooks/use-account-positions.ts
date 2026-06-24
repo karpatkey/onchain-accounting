@@ -21,6 +21,10 @@ export type OnchainPosition = {
   // The on-chain position identity (abi.encode(...) per protocol). Legs of one logical position (e.g. a
   // StakeWise vault's Staking + Borrow legs) share it, so the dashboard can group matched legs by vault.
   positionId: string
+  // The machine-level protocol slug hash (keccak256, e.g. keccak256("stakewise-exit")). Not rendered — used
+  // as an unambiguous discriminator when the human `protocol` name is shared across adapters (e.g. the
+  // StakeWise V3 vaults meta and the StakeWise exit-queue adapter both report "StakeWise V3").
+  protocolId: `0x${string}`
 }
 
 // Raw tuple as returned by the typed-identity getAccountPositions (src/nav/INAVCalculator.sol :: Position).
@@ -175,6 +179,7 @@ export function useAccountPositions(account: `0x${string}` | undefined): { chain
         protocol,
         positionDetail: Object.keys(detail).length > 0 ? JSON.stringify(detail) : '',
         positionId: p.positionId,
+        protocolId: p.protocolId,
       }
     })
     const result = posData?.[ci]

@@ -27,8 +27,8 @@ Ship **two owner-gated cache adapters** — `EtherFiWithdrawalsBalanceAdapter` a
 
 - Storage: `mapping(address account => uint256[] ids)` + an index map for O(1) removal (mirror `MerklRewards._userTokens`/`_userTokenIdxPlus1`).
 - Mutators (`onlyOwner`, owner = the OIV Safe / agent role, same as Merkl):
-  - `submitPositions(address account, uint256[] ids)` — add candidate ids. Light write-time sanity check (id currently belongs to `account`); not load-bearing for correctness since reads re-verify.
-  - `clearPosition(address account, uint256 id)` / `clearAccount(account)` — GC claimed/stale ids. Idempotent; not required for correctness (stale ids read as 0).
+  - `submitTokenIds(address account, uint256[] ids)` (+ a batch variant) — add candidate ids. Light write-time sanity check (id currently belongs to `account`) + a per-account `MAX` cap so the read loop stays gas-bounded; not load-bearing for correctness since reads re-verify. (StakeWise's analog submits `positionTicket`s.)
+  - `clearTokenId(address account, uint256 id)` / `clearAccount(account)` — GC claimed/stale ids. Idempotent; not required for correctness (stale ids read as 0).
 - Reads: `getAdapterPositions(account, filter)` iterates the cached ids, **re-verifies ownership on-chain**, values each from a **live protocol read**, drops anything that fails (claimed/transferred/zero). Never reverts. Emits **one aggregated `Supplied` leg per account** — the sum across the account's live positions — denominated in the underlying staking asset (must be a registered NAV asset), matching the Lido/Stader/Kelp WQ family.
 - Identity: `protocolId = keccak256("etherfi-withdrawal")` / `keccak256("stakewise-exit")` (new slugs in `ProtocolIds.sol`); **`positionId` is empty (`""`) — account-global aggregation, like the other WQ adapters** (the cached ids are an internal coordinate, not emitted). Immutable.
 - Everything except the cache is immutable: queue/NPM/vault-registry addresses, NAVCalculator, identity. No upgrade path. No admin-injected amounts.
@@ -37,13 +37,13 @@ Ship **two owner-gated cache adapters** — `EtherFiWithdrawalsBalanceAdapter` a
 
 - Reads `WithdrawRequestNFT` (`0x7d57…4E2c`) — native-ETH-denominated (eETH unwinds to ETH).
 - Per cached `tokenId`: `ownerOf(tokenId) == account` (the on-chain ownership check; a claimed/transferred NFT is burned/moved → drop). Then value = `getClaimableAmount(tokenId)` if `isFinalized(tokenId)`, else the request's `amountOfEEth`/share-implied ETH from `getRequest(tokenId)` (mirror the Lido WQ adapter's finalized-vs-pending valuation). Leg: `Supplied`, asset = native ETH sentinel.
-- Agent: scans `Transfer(_, account, tokenId)` minus `Transfer(account, _, tokenId)` (verified working 2026-06-24: recovers live ids for holder `0xcFFab3…1Af4`) → `submitPositions`.
+- Agent: scans `Transfer(_, account, tokenId)` minus `Transfer(account, _, tokenId)` (verified working 2026-06-24: recovers live ids for holder `0xcFFab3…1Af4`) → `submitTokenIds`.
 
 ### StakeWiseExitQueueBalanceAdapter
 
 - Reads each registered StakeWise V3 vault (reuse the `StakeWiseV3VaultsMeta` instance set, or its own governed set) — staking-asset-denominated (ETH on mainnet, GNO on Gnosis).
 - Per cached `(vault, positionTicket)`: `idx = vault.getExitQueueIndex(ticket)`; `(leftTickets, exitedTickets, exitedAssets) = vault.calculateExitedAssets(account, ticket, block.timestamp, idx)`. **The `receiver=account` argument is the verification** — it returns non-zero only for tickets that genuinely belong to `account` (no `ownerOf` needed; a foreign ticket yields 0 → dropped). Value = `exitedAssets` (claimable) + the still-queued `leftTickets` converted to assets at the vault's current rate. Leg: `Supplied`, asset = staking asset.
-- Agent: scans `ExitQueueEntered(_, account, positionTicket, _)` per registered vault → `submitPositions`.
+- Agent: scans `ExitQueueEntered(_, account, positionTicket, _)` per registered vault → `submitTokenIds`.
 
 ### Config + ops
 
@@ -61,7 +61,7 @@ Ship **two owner-gated cache adapters** — `EtherFiWithdrawalsBalanceAdapter` a
 **Negative / watch:**
 - Two **more** mutable adapters (3rd + 4th). CLAUDE.md + `BALANCE_ADAPTERS.md` must list them alongside `MerklRewards`.
 - Owner trust extends to **completeness** only: if the agent stops/lags, those accounts under-report. Same posture + mitigation as Merkl (Karpatkey-ops SLA, runbook). Iron Law (cannot over-report) preserved — and here even tighter (no cached amounts).
-- Operational dependency + storage growth per (account, id); `clearPosition`/`clearAccount` are the GC primitives. Exit windows are short (~days), so churn is higher than Merkl — the agent must GC claimed ids promptly or storage drifts (harmless to correctness, just bloat).
+- Operational dependency + storage growth per (account, id); `clearTokenId`/`clearAccount` are the GC primitives. Exit windows are short (~days), so churn is higher than Merkl — the agent must GC claimed ids promptly or storage drifts (harmless to correctness, just bloat).
 - StakeWise valuation of the still-queued `leftTickets` leg needs care (the queued portion's asset conversion at the current vault rate) — pin it in the fork test with a real exiting holder.
 - ~$0 steady-state value: justified mainly because the agent framework already exists; prioritise behind the pure-on-chain gaps (Nexus $3.35M, Sablier $1.19M, kUSD/kETH $1.87M).
 

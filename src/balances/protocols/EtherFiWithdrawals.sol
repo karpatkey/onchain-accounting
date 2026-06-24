@@ -30,6 +30,12 @@ contract EtherFiWithdrawalsBalanceAdapter is IBalanceAdapter, Ownable, IPosition
 
     bytes32 private constant PROTOCOL_ID = ProtocolIds.ETHERFI_WITHDRAWAL;
 
+    /// @notice Hard cap on cached tokenIds per account. `_ethOwed` iterates the whole array on every NAV read,
+    ///         and an OOG there is NOT caught by NAVCalculator's try/catch — a bloated cache would brick the
+    ///         account's NAV scan. Bounding the cache at submit time keeps the read gas-bounded; the agent must
+    ///         GC claimed ids (`clearTokenId`) to stay under it. A real account never approaches 256 open requests.
+    uint256 public constant MAX_TOKEN_IDS = 256;
+
     /// @notice ether.fi WithdrawRequestNFT (mainnet `0x7d57…4E2c`). Source of ownership + per-request data.
     address public immutable WITHDRAW_REQUEST_NFT;
 
@@ -200,6 +206,11 @@ contract EtherFiWithdrawalsBalanceAdapter is IBalanceAdapter, Ownable, IPosition
         }
         if (account == address(0)) return new INAVCalculator.PositionBalance[](0);
 
+        // Cheap path first: bail before fetching/scanning getRegisteredAssets when there is nothing owed
+        // (the common case — no cached ids, or all stale/claimed).
+        uint256 total = _ethOwed(account);
+        if (total == 0) return new INAVCalculator.PositionBalance[](0);
+
         // Underlying must be registered in NAVCalculator for the position to count in NAV.
         INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
         INAVCalculator.Asset memory underlying;
@@ -212,9 +223,6 @@ contract EtherFiWithdrawalsBalanceAdapter is IBalanceAdapter, Ownable, IPosition
             }
         }
         if (!registered) return new INAVCalculator.PositionBalance[](0);
-
-        uint256 total = _ethOwed(account);
-        if (total == 0) return new INAVCalculator.PositionBalance[](0);
 
         positions = new INAVCalculator.PositionBalance[](1);
         positions[0] = INAVCalculator.PositionBalance({
@@ -234,6 +242,9 @@ contract EtherFiWithdrawalsBalanceAdapter is IBalanceAdapter, Ownable, IPosition
 
     function _addTokenId(address account, uint256 tokenId) internal {
         if (_tokenIdIdxPlus1[account][tokenId] != 0) return; // already cached
+        // Cap the cache so the per-account read loop stays gas-bounded (OOG there isn't caught by NAV). The
+        // owner must GC claimed ids to make room; a real account never approaches MAX_TOKEN_IDS open requests.
+        if (_tokenIds[account].length >= MAX_TOKEN_IDS) return;
         // Light hygiene: only store ids currently owned by `account`. Not load-bearing — reads re-verify.
         try IEtherFiWithdrawRequestNFT(WITHDRAW_REQUEST_NFT).ownerOf(tokenId) returns (address o) {
             if (o != account) return;

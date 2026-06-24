@@ -301,6 +301,17 @@ contract EtherFiWithdrawalsBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(amt, 0);
     }
 
+    function test_submit_capsAtMaxTokenIds() public {
+        uint256 cap = adapter.MAX_TOKEN_IDS();
+        uint256[] memory ids = new uint256[](cap + 5);
+        for (uint256 i = 0; i < cap + 5; i++) {
+            nft.setRequest(i + 1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
+            ids[i] = i + 1;
+        }
+        adapter.submitTokenIds(holder, ids);
+        assertEq(adapter.tokenIdsOf(holder).length, cap, "cache must be capped at MAX_TOKEN_IDS");
+    }
+
     function _ids(uint256 id) internal pure returns (uint256[] memory ids) {
         ids = new uint256[](1);
         ids[0] = id;

@@ -356,12 +356,22 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         verbose = new INAVCalculator.VerbosePosition[](len);
         // protocolName() takes no args, so its calldata is identical for every position — encode it once.
         bytes memory protocolNameCall = abi.encodeCall(IPositionDescribable.protocolName, ());
+        // protocolName() returns a per-adapter constant, and positions are grouped by adapter (PriceFeedLib
+        // concatenates each adapter's positions contiguously), so cache the last adapter's name and only
+        // re-staticcall when the adapter changes — one protocolName() call per distinct adapter, not per position.
+        // describePosition() varies by positionId, so it stays per-position.
+        address prevAdapter;
+        string memory prevName;
         for (uint256 i = 0; i < len; i++) {
             address adapter = pos[i].balanceAdapter;
-            string memory name = _safeString(adapter, protocolNameCall);
+            if (i == 0 || adapter != prevAdapter) {
+                prevName = _safeString(adapter, protocolNameCall);
+                prevAdapter = adapter;
+            }
             string memory label =
                 _safeString(adapter, abi.encodeCall(IPositionDescribable.describePosition, (pos[i].positionId)));
-            verbose[i] = INAVCalculator.VerbosePosition({position: pos[i], protocolName: name, positionLabel: label});
+            verbose[i] =
+                INAVCalculator.VerbosePosition({position: pos[i], protocolName: prevName, positionLabel: label});
         }
     }
 

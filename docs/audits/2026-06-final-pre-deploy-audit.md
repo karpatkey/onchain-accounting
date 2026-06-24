@@ -1,8 +1,8 @@
 # Final pre-deployment security audit (2026-06)
 
 Scope: **all of `src/`** — the core (NAVCalculator, PriceFeedLib, Prices, BaseCustomPriceFeed,
-Balances, MetaBalanceAdapter, NavRegistryLib, NavLens — since removed, its verbose reads inlined into
-NAVCalculator), **every** custom price feed in
+Balances, MetaBalanceAdapter, NAVRegistryLib (audited as `NavRegistryLib`, since renamed), NavLens
+(since removed, its verbose reads inlined into NAVCalculator)), **every** custom price feed in
 `src/prices/protocols/`, and **every** balance + meta-balance adapter (and their math libs) in
 `src/balances/protocols/`. **78 contracts** audited individually.
 

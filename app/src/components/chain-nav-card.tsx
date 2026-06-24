@@ -52,7 +52,7 @@ export function ChainNavCard({ data, isSelected, onClick }: ChainNavCardProps) {
         )}
 
         {!isLoading && !isError && !nav && (
-          <p className="text-sm text-muted-foreground">No data</p>
+          <p className="text-sm text-neutral-700">No data</p>
         )}
       </div>
     </button>

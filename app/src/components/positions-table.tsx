@@ -23,7 +23,7 @@ export function PositionsTable({ data }: PositionsTableProps) {
   const { positions, isLoading, isError } = data
 
   if (isLoading) {
-    return <p className="text-sm text-muted-foreground py-4">Loading positions…</p>
+    return <p className="text-sm text-neutral-700 py-4">Loading positions…</p>
   }
 
   if (isError) {
@@ -31,7 +31,7 @@ export function PositionsTable({ data }: PositionsTableProps) {
   }
 
   if (positions.length === 0) {
-    return <p className="text-sm text-muted-foreground py-4">No positions found for this address.</p>
+    return <p className="text-sm text-neutral-700 py-4">No positions found for this address.</p>
   }
 
   const sorted = [...positions].sort((a, b) => {
@@ -67,7 +67,7 @@ export function PositionsTable({ data }: PositionsTableProps) {
                 <Td className="capitalize text-sm">
                   {pos.protocol || '—'}
                 </Td>
-                <Td className="text-sm text-muted-foreground">
+                <Td className="text-sm text-neutral-700">
                   {pos.positionDetail || '—'}
                 </Td>
                 <Td className="text-right tabular-nums text-sm">

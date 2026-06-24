@@ -7,7 +7,7 @@ import {IBalances} from "./IBalances.sol";
 import {IBalanceAdapter} from "./IBalanceAdapter.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {EnumerableMap} from "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
-import {NavRegistryLib} from "src/nav/NavRegistryLib.sol";
+import {NAVRegistryLib} from "src/nav/NAVRegistryLib.sol";
 
 import {InvalidArguments} from "src/errors.sol";
 
@@ -140,9 +140,9 @@ abstract contract Balances is IBalances, Initializable {
 
     /// @inheritdoc IBalances
     function getAdaptersForAsset(address asset) public view override returns (address[] memory) {
-        // Loop + per-adapter try/catch delegated to NavRegistryLib (external library) to keep NAVCalculator
+        // Loop + per-adapter try/catch delegated to NAVRegistryLib (external library) to keep NAVCalculator
         // under EIP-170.
-        return NavRegistryLib.getAdaptersForAsset(_globalAdapters, asset);
+        return NAVRegistryLib.getAdaptersForAsset(_globalAdapters, asset);
     }
 
     //
@@ -152,12 +152,12 @@ abstract contract Balances is IBalances, Initializable {
     /// @notice Adds a single (non-meta) balance adapter globally.
     /// @dev Not on the production path — NAVCalculator registers through the batch `_addBalanceAdapters` /
     ///      `_addMetaBalanceAdapter`. Retained for the test harness (`addBalanceAdapterDirect`); kept thin so the
-    ///      single and batch validation stay equivalent (both delegate to `NavRegistryLib.addBalanceAdapter`).
+    ///      single and batch validation stay equivalent (both delegate to `NAVRegistryLib.addBalanceAdapter`).
     /// @param adapter The address of the adapter.
     function _addBalanceAdapter(address adapter) internal {
-        // Storage mutation + interface validation delegated to NavRegistryLib (external library, DELEGATECALL) to
+        // Storage mutation + interface validation delegated to NAVRegistryLib (external library, DELEGATECALL) to
         // keep NAVCalculator under EIP-170; the running count + event stay inline (cheaper than crossing the boundary).
-        NavRegistryLib.addBalanceAdapter(_isAdapterRegistered, _globalAdapters, _adapterTypes, adapter);
+        NAVRegistryLib.addBalanceAdapter(_isAdapterRegistered, _globalAdapters, _adapterTypes, adapter);
         balanceAdapterTotalCount++;
 
         // Emit event with address(0) for underlyingAsset since adapters are global
@@ -166,12 +166,12 @@ abstract contract Balances is IBalances, Initializable {
 
     /// @notice Registers a meta-adapter and seeds its instance set atomically (ADR 0010). The adapter must
     ///         implement IMetaBalanceAdapter; plain adapters use _addBalanceAdapter instead. Storage mutation +
-    ///         interface validation are delegated to NavRegistryLib; the running counts + event stay inline.
+    ///         interface validation are delegated to NAVRegistryLib; the running counts + event stay inline.
     /// @param adapter The meta-adapter to register.
     /// @param instances The instance coordinates to seed (may be empty).
     function _addMetaBalanceAdapter(address adapter, bytes32[] memory instances) internal {
-        // Storage mutation + BalanceAdapterAdded event delegated to NavRegistryLib; only the running counts inline.
-        _metaInstanceTotal += NavRegistryLib.addMetaBalanceAdapter(
+        // Storage mutation + BalanceAdapterAdded event delegated to NAVRegistryLib; only the running counts inline.
+        _metaInstanceTotal += NAVRegistryLib.addMetaBalanceAdapter(
             _isAdapterRegistered, _globalAdapters, _adapterTypes, _metaInstances, adapter, instances
         );
         balanceAdapterTotalCount++;
@@ -180,8 +180,8 @@ abstract contract Balances is IBalances, Initializable {
     /// @notice Removes the adapter from the global registry.
     /// @param adapter The address of the adapter.
     function _removeBalanceAdapter(address adapter) internal {
-        // Storage mutation + guards delegated to NavRegistryLib (see _addBalanceAdapter); count + event stay inline.
-        NavRegistryLib.removeBalanceAdapter(
+        // Storage mutation + guards delegated to NAVRegistryLib (see _addBalanceAdapter); count + event stay inline.
+        NAVRegistryLib.removeBalanceAdapter(
             _isAdapterRegistered, _globalAdapters, _adapterTypes, adapter, erc20DefaultAdapter
         );
         balanceAdapterTotalCount--;
@@ -196,19 +196,19 @@ abstract contract Balances is IBalances, Initializable {
     }
 
     /// @notice Batch-registers non-meta balance adapters. The loop + validation + per-adapter event are delegated
-    ///         to NavRegistryLib (external library, DELEGATECALL) to keep NAVCalculator under EIP-170; only the
+    ///         to NAVRegistryLib (external library, DELEGATECALL) to keep NAVCalculator under EIP-170; only the
     ///         running count stays inline.
     /// @param adapters The adapters to register.
     function _addBalanceAdapters(address[] calldata adapters) internal {
-        balanceAdapterTotalCount += NavRegistryLib.addBalanceAdapters(
+        balanceAdapterTotalCount += NAVRegistryLib.addBalanceAdapters(
             _isAdapterRegistered, _globalAdapters, _adapterTypes, adapters
         );
     }
 
-    /// @notice Batch-removes balance adapters. Loop + guards + per-adapter event delegated to NavRegistryLib.
+    /// @notice Batch-removes balance adapters. Loop + guards + per-adapter event delegated to NAVRegistryLib.
     /// @param adapters The adapters to remove.
     function _removeBalanceAdapters(address[] calldata adapters) internal {
-        balanceAdapterTotalCount -= NavRegistryLib.removeBalanceAdapters(
+        balanceAdapterTotalCount -= NAVRegistryLib.removeBalanceAdapters(
             _isAdapterRegistered, _globalAdapters, _adapterTypes, erc20DefaultAdapter, adapters
         );
     }
@@ -230,9 +230,9 @@ abstract contract Balances is IBalances, Initializable {
     /// @param adapter The registered adapter.
     /// @param instances The instance coordinates to add.
     function _addMetaInstances(address adapter, bytes32[] memory instances) internal {
-        // Loop + validation delegated to NavRegistryLib (external library, DELEGATECALL) to keep NAVCalculator
+        // Loop + validation delegated to NAVRegistryLib (external library, DELEGATECALL) to keep NAVCalculator
         // under EIP-170; only the running total stays inline.
-        _metaInstanceTotal += NavRegistryLib.addMetaInstances(_isAdapterRegistered, _metaInstances, adapter, instances);
+        _metaInstanceTotal += NAVRegistryLib.addMetaInstances(_isAdapterRegistered, _metaInstances, adapter, instances);
     }
 
     /// @notice Removes instance coordinates from a meta-adapter's set (ADR 0010). All-or-nothing: reverts with
@@ -242,8 +242,8 @@ abstract contract Balances is IBalances, Initializable {
     /// @param adapter The registered adapter.
     /// @param instances The instance coordinates to remove.
     function _removeMetaInstances(address adapter, bytes32[] memory instances) internal {
-        // Loop + validation delegated to NavRegistryLib (see _addMetaInstances); only the running total stays inline.
-        _metaInstanceTotal -= NavRegistryLib.removeMetaInstances(
+        // Loop + validation delegated to NAVRegistryLib (see _addMetaInstances); only the running total stays inline.
+        _metaInstanceTotal -= NAVRegistryLib.removeMetaInstances(
             _isAdapterRegistered, _metaInstances, adapter, instances
         );
     }

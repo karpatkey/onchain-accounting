@@ -17,7 +17,8 @@ import {
 } from '@karpatkey/design-system'
 import type { ChainPriceFeeds, PriceFeedInfo } from '@/hooks/use-price-feeds'
 import { TokenLogo } from '@/components/token-logo'
-import { formatAge, formatHeartbeat, formatPrice, isStaleWarning, shortenAddress } from '@/lib/format'
+import { formatAge, formatHeartbeat, formatPrice, isStaleWarning } from '@/lib/format'
+import { AddressChip } from '@/components/address-chip'
 import { explorerAddressUrl } from '@/config/chains'
 
 // Indices match the Solidity IPrices.PriceType enum: Chainlink=0, Redstone=1, API3=2, Custom=3.
@@ -110,7 +111,7 @@ function SortTh({
         className={`inline-flex items-center gap-1 ${justifyClass} w-full bg-transparent border-0 p-0 cursor-pointer select-none hover:text-neutral-950 font-[inherit] text-[inherit]`}
       >
         {children}
-        <span className={`text-[10px] ${isActive ? 'text-neutral-600' : 'text-neutral-300'}`}>
+        <span className={`text-[10px] ${isActive ? 'text-neutral-700' : 'text-neutral-500'}`}>
           {isActive ? (currentDir === 'asc' ? '↑' : '↓') : '↕'}
         </span>
       </button>
@@ -151,7 +152,7 @@ export function PriceFeedsTable({ data, dense = false, filterStatus = 'all', sea
   }
 
   if (isError) return <p className="text-sm text-destructive py-4">Failed to load price feeds.</p>
-  if (feeds.length === 0) return <p className="text-sm text-muted-foreground py-4">No registered assets found.</p>
+  if (feeds.length === 0) return <p className="text-sm text-neutral-700 py-4">No registered assets found.</p>
 
   // Build a map of priceFeed address → symbols that share it (for same-feed tooltip)
   const sharedFeedMap = new Map<string, string[]>()
@@ -169,7 +170,7 @@ export function PriceFeedsTable({ data, dense = false, filterStatus = 'all', sea
       ? `No assets matching "${searchQuery.trim()}"`
       : `No ${filterStatus} feeds on this chain`
     return (
-      <p className="text-sm text-neutral-500 py-6 text-center">{reason}.</p>
+      <p className="text-sm text-neutral-700 py-6 text-center">{reason}.</p>
     )
   }
 
@@ -206,7 +207,7 @@ export function PriceFeedsTable({ data, dense = false, filterStatus = 'all', sea
                       href={explorerAddressUrl(chainId, feed.asset.asset)}
                       target="_blank"
                       rel="noreferrer"
-                      className="link-icon text-neutral-400 hover:text-neutral-950 inline-flex items-center transition-colors"
+                      className="link-icon text-neutral-700 hover:text-neutral-950 inline-flex items-center transition-colors"
                     >
                       <Launch className="w-3 h-3" />
                     </a>
@@ -219,33 +220,21 @@ export function PriceFeedsTable({ data, dense = false, filterStatus = 'all', sea
                 </Td>
                 <Td className={td}>
                   <div className="flex items-center gap-1.5">
-                    <Tooltip>
-                      <TooltipTrigger className="font-mono text-sm cursor-default">
-                        {shortenAddress(feed.priceFeed)}
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <span className="font-mono">{feed.priceFeed}</span>
-                        {sharedWith.length > 0 && (
-                          <span className="block text-neutral-400 text-xs mt-1">
-                            Shared feed with {sharedWith.join(', ')}
-                          </span>
-                        )}
-                      </TooltipContent>
-                    </Tooltip>
-                    <a
-                      href={explorerAddressUrl(chainId, feed.priceFeed)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="link-icon text-neutral-500 hover:text-neutral-950 inline-flex items-center"
-                    >
-                      <Launch className="w-3 h-3" />
-                    </a>
+                    <AddressChip address={feed.priceFeed} chainId={chainId} className="text-sm" />
+                    {sharedWith.length > 0 && (
+                      <Tooltip>
+                        <TooltipTrigger className="cursor-default text-xs text-neutral-500">↔</TooltipTrigger>
+                        <TooltipContent>
+                          <span className="block text-neutral-700 text-xs">Shared feed with {sharedWith.join(', ')}</span>
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
                   </div>
                 </Td>
                 <Td className={`text-right tabular-nums ${td}`}>
                   {formatPrice(feed.price, feed.decimals)}
                 </Td>
-                <Td className={`text-right tabular-nums text-muted-foreground ${td}`}>
+                <Td className={`text-right tabular-nums text-neutral-700 ${td}`}>
                   {formatHeartbeat(feed.chainlinkHeartbeat)}
                 </Td>
                 <Td className={`text-right tabular-nums ${td}`}>
@@ -260,11 +249,11 @@ export function PriceFeedsTable({ data, dense = false, filterStatus = 'all', sea
                     </Tooltip>
                   ) : feed.priceType === PRICE_TYPE_CUSTOM ? (
                     <Tooltip>
-                      <TooltipTrigger className="cursor-default text-muted-foreground">Live</TooltipTrigger>
+                      <TooltipTrigger className="cursor-default text-neutral-700">Live</TooltipTrigger>
                       <TooltipContent>{CUSTOM_LIVE_TIP}</TooltipContent>
                     </Tooltip>
                   ) : (
-                    <span className="text-muted-foreground">—</span>
+                    <span className="text-neutral-700">—</span>
                   )}
                 </Td>
                 <Td className={`text-center ${td}`}>

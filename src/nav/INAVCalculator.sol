@@ -323,6 +323,31 @@ interface INAVCalculator is IBalances {
         view
         returns (Position[] memory positions);
 
+    /// @notice Returns all positions for `account` with human-readable labels.
+    /// @param account Account address.
+    /// @param quoteAsset Quote currency; address(0) for USD.
+    function getAccountPositionsVerbose(address account, address quoteAsset)
+        external
+        view
+        returns (VerbosePosition[] memory);
+
+    /// @notice Returns positions filtered by a single asset, with human-readable labels.
+    /// @param account Account address.
+    /// @param asset Asset to filter by (must be registered).
+    /// @param quoteAsset Quote currency; address(0) for USD.
+    function getAccountPositionsForAssetVerbose(address account, address asset, address quoteAsset)
+        external
+        view
+        returns (VerbosePosition[] memory);
+
+    /// @notice Returns the aggregate NAV and full verbose position breakdown in one call.
+    /// @param account Account address.
+    /// @param quoteAsset Quote currency; address(0) for USD.
+    function getAccountNavVerbose(address account, address quoteAsset)
+        external
+        view
+        returns (VerboseNAV memory verboseNav);
+
     /// @notice Returns the number of decimals used for USD values (e.g. 8).
     /// @return USD decimals.
     function usdDecimals() external view returns (uint8);

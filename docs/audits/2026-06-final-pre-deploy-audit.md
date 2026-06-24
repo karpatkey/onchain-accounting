@@ -1,7 +1,8 @@
 # Final pre-deployment security audit (2026-06)
 
 Scope: **all of `src/`** — the core (NAVCalculator, PriceFeedLib, Prices, BaseCustomPriceFeed,
-Balances, MetaBalanceAdapter, NavRegistryLib, NavLens), **every** custom price feed in
+Balances, MetaBalanceAdapter, NAVRegistryLib (audited as `NavRegistryLib`, since renamed), NavLens
+(since removed, its verbose reads inlined into NAVCalculator)), **every** custom price feed in
 `src/prices/protocols/`, and **every** balance + meta-balance adapter (and their math libs) in
 `src/balances/protocols/`. **78 contracts** audited individually.
 
@@ -72,6 +73,11 @@ a *reverting* call but **not** a *successful* call whose returndata can't be dec
 read. **Fix:** replaced both `try` calls with a `_safeString` low-level staticcall that validates the
 ABI string envelope (canonical `0x20` offset + length within the returned bytes) before decoding, so it
 can never revert. Display-only path; low impact, but the lens is meant to be robust.
+
+> **Post-audit note:** `NavLens` was subsequently removed and its verbose read path (including this
+> `_safeString` fix) inlined into `NAVCalculator` — the audited code now lives in
+> [`src/nav/NAVCalculator.sol`](../../src/nav/NAVCalculator.sol), `src/nav/NavLens.sol` no longer exists.
+> The fix described above is preserved verbatim.
 
 ### [3] Medium — `ETHPlus_Price`: freshness gate now reads the active basket
 `_minBasketLastSave` iterated `getPrimeBasket()` (the governance-configured target) while

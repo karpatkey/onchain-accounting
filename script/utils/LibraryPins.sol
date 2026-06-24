@@ -3,7 +3,7 @@ pragma solidity ^0.8;
 
 /// @title LibraryPins
 /// @notice Single Solidity source of truth for the deterministic CREATE2 addresses that NAVCalculator's two
-///         external libraries (PriceFeedLib, NavRegistryLib) are pinned to in foundry.toml (`libraries`), plus
+///         external libraries (PriceFeedLib, NAVRegistryLib) are pinned to in foundry.toml (`libraries`), plus
 ///         the byte-scan helper used to assert NAVCalculator's creation bytecode is actually linked against them.
 /// @dev    foundry.toml's `libraries` array is the one copy of these addresses that cannot import a Solidity
 ///         constant (it's TOML), so it is cross-checked instead: LibraryPinConsistencyTest
@@ -14,7 +14,7 @@ pragma solidity ^0.8;
 ///         for `vm.etch` (grep the old address: SuperTest, the integration base, the NAV/Morpho/Aave fork tests,
 ///         Prices.t, ERC20DefaultAdapter.t).
 library LibraryPins {
-    address internal constant PRICE_FEED_LIB = 0xCE494247C2eeA3Dfc44253d4f5B1B608cFb329c1;
+    address internal constant PRICE_FEED_LIB = 0x66642d5E374dc87B858955B236F720c2E7368a3f;
     address internal constant NAV_REGISTRY_LIB = 0x2F1F6c17D64bE96F583D390be212aFCF8D0F102a;
 
     /// @dev True if the 20-byte `needle` address appears verbatim anywhere in `haystack` — the linker embeds a

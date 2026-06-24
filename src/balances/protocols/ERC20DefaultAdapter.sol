@@ -39,7 +39,7 @@ contract ERC20DefaultAdapter is IBalanceAdapter, IPositionDescribable {
         require(navCalculator_ != address(0), "NAVCalculator cannot be zero address");
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
         // The seed list is NOT registry-checked here: this constructor is invoked by
-        // NavRegistryLib.deployDefaultAdapter *during NAVCalculator.initialize*, which runs inside the proxy's
+        // NAVRegistryLib.deployDefaultAdapter *during NAVCalculator.initialize*, which runs inside the proxy's
         // own constructor — at that point the proxy has no deployed code yet, so an external
         // NAV_CALCULATOR.isAssetRegistered(...) callback would revert with "call to non-contract". The only
         // caller seeds exactly [NATIVE_ADDRESS], which initialize registers one line before deploying this

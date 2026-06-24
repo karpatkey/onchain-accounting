@@ -24,7 +24,7 @@ These contracts have identical bytecode + constructor input on every chain, so C
 |---|---|---|
 | NAVCalculator implementation (salt v2) | `TBD` | UUPS impl, immutable post-deploy. |
 | NAVCalculator proxy (salt v3) | `TBD` | UUPS proxy, points at the impl above. The address every consumer should use. |
-| ERC20Default balance adapter | `TBD` | Auto-deployed inside `NAVCalculator.initialize()` via `NavRegistryLib.deployDefaultAdapter` (plain CREATE from the proxy, not CREATE2 — but identical across chains because the proxy address and its deploy nonce match everywhere). Reports wallet balances for every registered ERC20 + the native sentinel. |
+| ERC20Default balance adapter | `TBD` | Auto-deployed inside `NAVCalculator.initialize()` via `NAVRegistryLib.deployDefaultAdapter` (plain CREATE from the proxy, not CREATE2 — but identical across chains because the proxy address and its deploy nonce match everywhere). Reports wallet balances for every registered ERC20 + the native sentinel. |
 | `UUPSPlaceholder` impl (salt v3) | `TBD` | Used during atomic deploy as the temporary impl before `upgradeToAndCall(navImpl, initialize(...))`. Holds no state, no role. |
 
 ---

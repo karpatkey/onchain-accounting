@@ -106,7 +106,7 @@ Deployment is scripted and config-driven. Read [`script/DEPLOYMENT_SUMMARY.md`](
 
 The whole flow is **EOA-only** (deployer key + `--broadcast`; no Safe executes deploy/config). The deployer EOA holds admin + MANAGER throughout; the security-council Safe becomes admin only at the end (step 07).
 
-1. `01_DeployImplementations.s.sol` — libraries (PriceFeedLib, NavRegistryLib) + implementation contracts (NAVCalculator, BridgeEscrow), via EOA CREATE2.
+1. `01_DeployImplementations.s.sol` — libraries (PriceFeedLib, NAVRegistryLib) + implementation contracts (NAVCalculator, BridgeEscrow), via EOA CREATE2.
 2. `02_DeployProxies.s.sol` — UUPS proxies + atomic initialize + role grants (admin + MANAGER to `chainConfig.admin`/`manager` = the **deployer EOA**; the atomic deployer renounces its own admin).
 3. `03_DeployPriceFeeds.s.sol` — deploys per-chain custom price feed adapters; asset registration via `script/manage/RegisterAssets.s.sol`.
 4. `04_DeployBalanceAdapters.s.sol` — deploys per-chain balance adapters from `contracts-deployment-config/balance-adapters/<id>.json` (plain) and `contracts-deployment-config/meta-balance-adapters/<id>.json` (meta).

@@ -3,8 +3,9 @@ pragma solidity ^0.8;
 
 /// @title IPositionDescribable
 /// @notice Optional interface for balance adapters that can provide human-readable labels for their positions.
-/// @dev NAVCalculator's verbose read methods (`getAccountPositionsVerbose`, `getAccountNavVerbose`) call these
-///      via try/catch — adapters that do not implement this interface simply produce empty label strings.
+/// @dev NAVCalculator's verbose read methods (`getAccountPositionsVerbose`, `getAccountPositionsForAssetVerbose`,
+///      `getAccountNavVerbose`) call these via a fail-open staticcall — adapters that do not implement this
+///      interface simply produce empty label strings.
 ///      Clients MUST NOT use these strings for identity, indexing, or reconciliation; use the typed
 ///      `protocolId` / `positionId` / `PositionKind` fields on `PositionBalance` for those purposes.
 interface IPositionDescribable {

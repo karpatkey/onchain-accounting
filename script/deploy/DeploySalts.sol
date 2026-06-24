@@ -20,7 +20,7 @@ pragma solidity ^0.8;
 ///      `keccak256(abi.encodePacked(name, version))` — identical whether derived via `ConfigReader.computeSalt`
 ///      (scripts) or inline (atomic deployers).
 ///
-///      NOTE: the external-library salts (`PriceFeedLib`, `NavRegistryLib`, both version 1) are intentionally
+///      NOTE: the external-library salts (`PriceFeedLib`, `NAVRegistryLib`, both version 1) are intentionally
 ///      NOT centralized here — their addresses are separately pinned in `foundry.toml`/`LibraryPins.sol`, so
 ///      bumping them must be done in lockstep with a pin regeneration and is deliberately kept local to the
 ///      implementation scripts to avoid implying they are freely bumpable.

@@ -8,7 +8,7 @@ Status: accepted (introduced with PR A — the ERC20DefaultAdapter externalizati
 implementation behind the proxy, so its **runtime** bytecode must stay under the EIP-170
 24,576-byte limit (CI enforces it via `forge build --sizes`). Everything else either
 deploys standalone (balance adapters, custom price feeds — each its own contract, plain
-CREATE) or is an external library (PriceFeedLib, NavRegistryLib — separate bytecode,
+CREATE) or is an external library (PriceFeedLib, NAVRegistryLib — separate bytecode,
 DELEGATECALL). [ADR 0010](0010-meta-balance-adapters.md) already moved the read/compute
 engine and registry mutations into those libraries; after that work NAVCalculator measured
 **21,403 B** — only 3,173 B (13%) of headroom.
@@ -34,20 +34,20 @@ A review of where the remaining bytecode comes from found three classes of oppor
 ### PR A — Externalize the ERC20DefaultAdapter `new` (size; shipped)
 
 Move the `new ERC20DefaultAdapter(address(this), initialAssets)` out of
-`NAVCalculator.initialize` and into `NavRegistryLib.deployDefaultAdapter(...)`.
-NavRegistryLib is an external library invoked via DELEGATECALL, so inside it `address(this)`
+`NAVCalculator.initialize` and into `NAVRegistryLib.deployDefaultAdapter(...)`.
+NAVRegistryLib is an external library invoked via DELEGATECALL, so inside it `address(this)`
 is still the NAV proxy — the adapter's immutable `NAV_CALCULATOR` is pinned correctly and
 the proxy remains the CREATE deployer, so **behaviour is identical**. But the adapter's
-creation bytecode is now embedded in NavRegistryLib's bytecode, not NAVCalculator's.
+creation bytecode is now embedded in NAVRegistryLib's bytecode, not NAVCalculator's.
 
 Result (measured): **NAVCalculator 21,403 → 16,217 B** (headroom 3,173 → **8,359 B**, 13% →
-34%). NavRegistryLib 6,497 → 12,039 B (still well under the limit).
+34%). NAVRegistryLib 6,497 → 12,039 B (still well under the limit).
 
 This was chosen over the alternative of passing a pre-deployed adapter address into
 `initialize`: that would have changed the `initialize` signature and forced every deploy
 path and ~15 test setups to deploy the adapter against the proxy first (a reordering at
 each call site). The library route changes only two source files plus a **mechanical
-regeneration of NavRegistryLib's pinned CREATE2 address** (its bytecode changed): update
+regeneration of NAVRegistryLib's pinned CREATE2 address** (its bytecode changed): update
 `script/utils/LibraryPins.sol` + `foundry.toml` + the `vm.etch` sites, validated by
 `test/LibraryPinConsistency.t.sol`. See that test and `LibraryPins`'s NatSpec for the
 regeneration procedure.
@@ -75,15 +75,15 @@ outliers stay as-is: `ETHPlus_Price` (no Chainlink leg), `eETH_Price` (derived t
   and route around the lib. The per-adapter stash-unwrap logic in the Aura/Convex adapters
   builds on `safeAddr` but stays in the adapters — it is not itself a `StaticCallLib` helper.
 - `ArrayLib` for the trim-to-length copy-back: it ships `copySliceAddress` (plus
-  `intersection` / `deduplicateAddresses`) over **address** arrays, used today by NavRegistryLib
+  `intersection` / `deduplicateAddresses`) over **address** arrays, used today by NAVRegistryLib
   and PriceFeedLib. The analogous PositionBalance/uint copy-backs repeated across the leaf
   adapters are still inlined and remain a candidate for future helpers.
 
 ## Consequences
 
 - NAVCalculator has comfortable headroom (~8.3 KB) for future adapters/registry growth.
-- **Any change to NavRegistryLib's source now also shifts the ERC20DefaultAdapter creation
-  code's host**, so the pinned CREATE2 address must be regenerated on any NavRegistryLib
+- **Any change to NAVRegistryLib's source now also shifts the ERC20DefaultAdapter creation
+  code's host**, so the pinned CREATE2 address must be regenerated on any NAVRegistryLib
   edit (this was already true for the lib; the guard test catches it).
 - PRs B/C reduce duplication that has already produced real copy-paste bugs, at the cost of
   redeploying the affected (immutable, individually-audited) feeds/adapters — so they are

@@ -9,8 +9,9 @@ import {IPrices, Prices} from "src/prices/Prices.sol";
 import {PriceFeedLib} from "src/prices/PriceFeedLib.sol";
 import {Balances} from "src/balances/Balances.sol";
 import {ERC20DefaultAdapter} from "src/balances/protocols/ERC20DefaultAdapter.sol";
+import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "./INAVCalculator.sol";
-import {NavRegistryLib} from "./NavRegistryLib.sol";
+import {NAVRegistryLib} from "./NAVRegistryLib.sol";
 
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
@@ -22,13 +23,14 @@ import "src/constants.sol";
 /// @author kpk
 /// @dev EIP-170 budget: this contract runs close to the 24,576-byte runtime limit (CI's `forge build --sizes`
 ///      enforces it). The read/compute engine (NAV, positions, health, value) and the registry storage-mutation
-///      loops are deliberately delegated to the external libraries `PriceFeedLib` and `NavRegistryLib`
+///      loops are deliberately delegated to the external libraries `PriceFeedLib` and `NAVRegistryLib`
 ///      (DELEGATECALL) to stay under it — NAVCalculator keeps only storage, admin mutations, and thin
 ///      view wrappers. When adding code here, watch the margin and prefer moving substantial loops into a
 ///      library; the entry point should build and consume any heavy PositionBalance[]/Position[] arrays
 ///      *inside* the library, because returning them across the ABI boundary (and piecemeal helper extraction
 ///      generally) can cost more than the inlined body under `via_ir`. Always measure with a clean
-///      `forge build --sizes`.
+///      `forge build --sizes`. The verbose label-enrichment read path (`get*Verbose` + `_toVerbose`/`_safeString`)
+///      is inlined here rather than split into a separate lens contract; it fits within the remaining margin.
 contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeable, INAVCalculator, Prices, Balances {
     //
     // State
@@ -68,11 +70,11 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         // Pre-register native address in NAV/Pricing registry
         _registerAsset(NATIVE_ADDRESS);
         // Deploy ERC20Default adapter with native in inclusion list (constructor avoids callback to proxy during init).
-        // The `new` lives in NavRegistryLib (DELEGATECALL: address(this) is this proxy) so the adapter's creation
+        // The `new` lives in NAVRegistryLib (DELEGATECALL: address(this) is this proxy) so the adapter's creation
         // bytecode is embedded in that external library, not NAVCalculator's runtime — see ADR + deployDefaultAdapter.
         address[] memory initialAssets = new address[](1);
         initialAssets[0] = NATIVE_ADDRESS;
-        _setErc20DefaultAdapter(NavRegistryLib.deployDefaultAdapter(initialAssets));
+        _setErc20DefaultAdapter(NAVRegistryLib.deployDefaultAdapter(initialAssets));
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin_);
     }
@@ -265,17 +267,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         returns (INAVCalculator.Position[] memory positions)
     {
         _validateQuoteAsset(quoteAsset);
-        return PriceFeedLib.computeAccountPositions(
-            _priceOracles,
-            _assetIndex,
-            _registeredAssets,
-            getAllAdapters(),
-            _metaInstanceTotal,
-            account,
-            address(0),
-            quoteAsset,
-            _nativeTokenSymbol
-        );
+        return _computePositions(account, address(0), quoteAsset);
     }
 
     /// @inheritdoc INAVCalculator
@@ -286,6 +278,61 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     {
         _validateQuoteAsset(quoteAsset);
         _validateAssetFilter(asset);
+        return _computePositions(account, asset, quoteAsset);
+    }
+
+    /// @inheritdoc INAVCalculator
+    function getAccountPositionsVerbose(address account, address quoteAsset)
+        external
+        view
+        returns (INAVCalculator.VerbosePosition[] memory)
+    {
+        _validateQuoteAsset(quoteAsset);
+        return _toVerbose(_computePositions(account, address(0), quoteAsset));
+    }
+
+    /// @inheritdoc INAVCalculator
+    function getAccountPositionsForAssetVerbose(address account, address asset, address quoteAsset)
+        external
+        view
+        returns (INAVCalculator.VerbosePosition[] memory)
+    {
+        _validateQuoteAsset(quoteAsset);
+        _validateAssetFilter(asset);
+        return _toVerbose(_computePositions(account, asset, quoteAsset));
+    }
+
+    /// @inheritdoc INAVCalculator
+    function getAccountNavVerbose(address account, address quoteAsset)
+        external
+        view
+        returns (INAVCalculator.VerboseNAV memory verboseNav)
+    {
+        _validateQuoteAsset(quoteAsset);
+        // Single adapter scan produces both the NAV and the position list (see PriceFeedLib.computeNavAndPositions),
+        // avoiding the double scan of computing them separately.
+        INAVCalculator.Position[] memory positions;
+        (verboseNav.nav, positions) = PriceFeedLib.computeNavAndPositions(
+            _priceOracles,
+            _assetIndex,
+            _registeredAssets,
+            getAllAdapters(),
+            _metaInstanceTotal,
+            account,
+            quoteAsset,
+            _isSequencerDown(),
+            _nativeTokenSymbol
+        );
+        verboseNav.positions = _toVerbose(positions);
+    }
+
+    /// @notice Shared entry point for the (filtered) position read path. Keeps the long PriceFeedLib argument
+    ///         tuple in one place so the verbose and non-verbose getters cannot drift apart.
+    function _computePositions(address account, address assetFilter, address quoteAsset)
+        private
+        view
+        returns (INAVCalculator.Position[] memory)
+    {
         return PriceFeedLib.computeAccountPositions(
             _priceOracles,
             _assetIndex,
@@ -293,10 +340,65 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             getAllAdapters(),
             _metaInstanceTotal,
             account,
-            asset,
+            assetFilter,
             quoteAsset,
             _nativeTokenSymbol
         );
+    }
+
+    /// @notice Enriches a Position[] with human-readable labels from IPositionDescribable on each adapter.
+    function _toVerbose(INAVCalculator.Position[] memory pos)
+        internal
+        view
+        returns (INAVCalculator.VerbosePosition[] memory verbose)
+    {
+        uint256 len = pos.length;
+        verbose = new INAVCalculator.VerbosePosition[](len);
+        // protocolName() takes no args, so its calldata is identical for every position — encode it once.
+        bytes memory protocolNameCall = abi.encodeCall(IPositionDescribable.protocolName, ());
+        // protocolName() returns a per-adapter constant, and positions are grouped by adapter (PriceFeedLib
+        // concatenates each adapter's positions contiguously), so cache the last adapter's name and only
+        // re-staticcall when the adapter changes — one protocolName() call per distinct adapter, not per position.
+        // describePosition() varies by positionId, so it stays per-position.
+        address prevAdapter;
+        string memory prevName;
+        for (uint256 i = 0; i < len; i++) {
+            address adapter = pos[i].balanceAdapter;
+            if (i == 0 || adapter != prevAdapter) {
+                prevName = _safeString(adapter, protocolNameCall);
+                prevAdapter = adapter;
+            }
+            string memory label =
+                _safeString(adapter, abi.encodeCall(IPositionDescribable.describePosition, (pos[i].positionId)));
+            verbose[i] =
+                INAVCalculator.VerbosePosition({position: pos[i], protocolName: prevName, positionLabel: label});
+        }
+    }
+
+    /// @notice Fully fail-open string read: staticcalls `target` and returns the decoded string only when the
+    ///         returndata is a well-formed ABI string, otherwise "".
+    /// @dev A plain `try/catch` only catches a reverting call — it does NOT catch a *successful* call whose
+    ///      returndata cannot be decoded into `string` (e.g. a non-contract returning empty data, or a contract
+    ///      returning a malformed/short blob), which would revert the whole verbose read. This validates the
+    ///      ABI envelope (canonical 0x20 offset + length within bounds) before decoding so it can never revert.
+    function _safeString(address target, bytes memory callData) private view returns (string memory) {
+        (bool ok, bytes memory ret) = target.staticcall(callData);
+        if (!ok || ret.length < 64) return ""; // need at least offset(32) + length(32)
+        uint256 offset;
+        uint256 strLen;
+        assembly {
+            offset := mload(add(ret, 0x20))
+            strLen := mload(add(ret, 0x40))
+        }
+        // Canonical ABI string: offset == 0x20, and the full *padded* body must be present. abi.decode reads
+        // ceil32(strLen) bytes after the 64-byte (offset+length) header, so bounding on the raw strLen is not
+        // enough — a return with e.g. strLen=1, ret.length=65 would pass `ret.length >= 64+strLen` yet make
+        // abi.decode read 32 padded bytes past `ret` and revert (defeating fail-open). The `strLen > ret.length`
+        // guard also rules out a malicious huge strLen before the ceil32 add can overflow.
+        if (offset != 0x20 || strLen > ret.length) return "";
+        uint256 padded = (strLen + 31) & ~uint256(31);
+        if (ret.length < 64 + padded) return "";
+        return abi.decode(ret, (string));
     }
 
     /// @inheritdoc INAVCalculator
@@ -390,12 +492,12 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     /// Fetches decimals and symbol: for NATIVE_ADDRESS uses 18 and _nativeTokenSymbol;
     /// otherwise requires ERC20-compatible (decimals() and symbol()) and reverts if not.
     function _registerAsset(address asset) internal {
-        NavRegistryLib.registerAsset(_registeredAssets, _assetIndex, asset, _nativeTokenSymbol);
+        NAVRegistryLib.registerAsset(_registeredAssets, _assetIndex, asset, _nativeTokenSymbol);
     }
 
     /// @notice Unregisters an asset from the NAV/Pricing registry
     function _unregisterAsset(address asset) internal {
-        NavRegistryLib.unregisterAsset(_registeredAssets, _assetIndex, asset);
+        NAVRegistryLib.unregisterAsset(_registeredAssets, _assetIndex, asset);
     }
 
     /// @notice Returns the registered Asset struct from the NAV/Pricing registry (single lookup for decimals + symbol).

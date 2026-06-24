@@ -617,6 +617,18 @@
       "positionId": "0x7d5706f6ef3F89B3951E23e557CDFBC3239D4E2c"
     }
   },
+  "NexusStakedNxm": {
+    "enabled": true,
+    "$comment": "Nexus Mutual staked NXM (simple immutable view adapter; no agent). Discovers an account's StakingNFT positions by scanning tokenInfo(1..totalSupply) — the NFT is mint-only with a small global supply, so no per-owner enumeration / off-chain feeder is needed — and values them via StakingViewer.getAggregatedTokens into NXM-denominated Staking (active+expired) + Rewards legs. 04 reads stakingNft/stakingViewer/underlyingToken; protocol/positionDetail/positionId are identity metadata (hardcoded in the contract). NXM must be a registered+priced asset (PR #71).",
+    "constructor": {
+      "stakingNft": "0xcafea508a477D94c502c253A58239fb8F948e97f",
+      "stakingViewer": "0xcafea5c7d25a192ba70ECA0E2dB62F835c1cF81F",
+      "underlyingToken": "0xd7c49CEE7E9188cCa6AD8FF264C1DA2e69D4Cf3B",
+      "protocol": "Nexus Mutual",
+      "positionDetail": "{\"protocol\":\"Nexus Mutual\",\"product\":\"Staking\",\"name\":\"Staked NXM\"",
+      "positionId": "0xcafea508a477D94c502c253A58239fb8F948e97f"
+    }
+  },
   "UniswapV3_WBTC_WETH_3000": {
     "enabled": false,
     "constructor": {

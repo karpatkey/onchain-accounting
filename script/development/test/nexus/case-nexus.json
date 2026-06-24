@@ -1,0 +1,45 @@
+{
+  "protocol": "Nexus Mutual",
+  "adapter": "NexusStakedNxmBalanceAdapter",
+  "chainId": 1,
+  "forkBlock": 25388000,
+  "contracts": {
+    "stakingNFT": "0xcafea508a477D94c502c253A58239fb8F948e97f",
+    "stakingViewer": "0xcafea5c7d25a192ba70ECA0E2dB62F835c1cF81F",
+    "underlyingToken_NXM": "0xd7c49CEE7E9188cCa6AD8FF264C1DA2e69D4Cf3B"
+  },
+  "holderType": "real",
+  "holder": "0x8e53D04644E9ab0412a8c6bd228C84da7664cFE3",
+  "holderNote": "Nexus Mutual Safe — a KPK-managed account. Owns 5 StakingNFT positions across 5 pools.",
+  "positions": [
+    { "tokenId": 180, "poolId": 2 },
+    { "tokenId": 184, "poolId": 8 },
+    { "tokenId": 185, "poolId": 22 },
+    { "tokenId": 186, "poolId": 11 },
+    { "tokenId": 187, "poolId": 5 }
+  ],
+  "discovery": "StakingNFT is mint-only (no burn) with totalSupply=280 globally and no per-owner enumeration; the adapter scans tokenInfo(1..totalSupply) (bounded by MAX_TOKEN_SCAN) for owner==account. No off-chain agent. Cross-checked vs a Transfer(to=safe) event scan, which yields the same {180,184,185,186,187}.",
+  "legs": [
+    {
+      "name": "Staked NXM (active + expired stake across 5 pools)",
+      "asset": "NXM",
+      "positionKind": "Staking",
+      "isDebt": false,
+      "amount": "74229519750529478080348",
+      "amountApprox": "~74,229.5 NXM"
+    },
+    {
+      "name": "Accrued staking rewards",
+      "asset": "NXM",
+      "positionKind": "Rewards",
+      "isDebt": false,
+      "amount": "228254616240628948835",
+      "amountApprox": "~228.25 NXM"
+    }
+  ],
+  "groundTruth": "StakingViewer.getAggregatedTokens([180,184,185,186,187]) at forkBlock = (totalActiveStake 74229519750529478080348, totalExpiredStake 0, totalRewards 228254616240628948835). Staking leg = active+expired; Rewards leg = rewards. The adapter's scan-derived total equals this aggregate (delta 0).",
+  "delta": 0,
+  "protocolId": "keccak256(\"nexus-staking\")",
+  "positionId": "",
+  "tests": { "unit": 21, "fork": 3 }
+}

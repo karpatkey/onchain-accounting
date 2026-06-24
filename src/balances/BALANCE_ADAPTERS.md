@@ -215,7 +215,7 @@ interface IPositionDescribable {
 }
 ```
 
-The verbose read methods on `NAVCalculator` (`getAccountPositionsVerbose`, `getAccountNavVerbose`) call these via a fail-open staticcall and bundle the strings into `VerbosePosition`. **These strings are for display only — never use them for identity, indexing, or reconciliation.** Use the typed `protocolId`, `positionId`, `positionKind` fields for those purposes.
+The verbose read methods on `NAVCalculator` (`getAccountPositionsVerbose`, `getAccountPositionsForAssetVerbose`, `getAccountNavVerbose`) call these via a fail-open staticcall and bundle the strings into `VerbosePosition`. **These strings are for display only — never use them for identity, indexing, or reconciliation.** Use the typed `protocolId`, `positionId`, `positionKind` fields for those purposes.
 
 Meta-adapters derive labels on-chain from live state (ERC20 symbols, vault names, pool composition). Per-instance adapters return static strings.
 

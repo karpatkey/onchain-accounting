@@ -29,10 +29,12 @@ function truncate(value: string): string {
   return value
 }
 
-// Copy/explorer icon styling. Geometry + behaviour are a faithful port of the kpk-agents client-portal chip;
-// the icon color is the one tweak: neutral-500 (hover neutral-950) instead of the portal's faint
-// `text-muted-foreground/40`, which was hard to read on this dashboard's lighter background.
-const ICON_CLASS = 'shrink-0 cursor-pointer p-0.5 text-neutral-500 hover:text-neutral-950 transition-colors rounded'
+// Copy/explorer icon styling. Same glyph-only structure as the kpk-agents client-portal chip (no permanent
+// button box), with two background-adapted tweaks: the icon uses neutral-600 (hover neutral-900) instead of
+// the portal's `text-muted-foreground/40`, which washes out on this dashboard's lighter background; and a
+// hover-only background makes it read clearly as a clickable button without adding chrome at rest.
+const ICON_CLASS =
+  'shrink-0 cursor-pointer p-1 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-200 transition-colors rounded'
 
 /// Inline copy button. A `role=button` span (not a `<button>`) so it can nest inside clickable rows/triggers
 /// without invalid HTML. Clears any pending reset before scheduling a new one (rapid copies don't flip the
@@ -73,11 +75,11 @@ export function CopyIconButton({ value, label = 'Copy address' }: { value: strin
       className={ICON_CLASS}
     >
       {copied ? (
-        <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+        <svg className="w-3.5 h-3.5" viewBox="0 0 12 12" fill="none" aria-hidden="true">
           <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       ) : (
-        <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+        <svg className="w-3.5 h-3.5" viewBox="0 0 12 12" fill="none" aria-hidden="true">
           <rect x="4" y="4" width="7" height="7" rx="1" stroke="currentColor" strokeWidth="1.2" />
           <path d="M8 4V2a1 1 0 00-1-1H2a1 1 0 00-1 1v5a1 1 0 001 1h2" stroke="currentColor" strokeWidth="1.2" />
         </svg>
@@ -102,7 +104,7 @@ function ExplorerLink({ href, label = 'View on explorer' }: { href: string; labe
       onClick={(e) => e.stopPropagation()}
       className={ICON_CLASS}
     >
-      <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+      <svg className="w-3.5 h-3.5" viewBox="0 0 12 12" fill="none" aria-hidden="true">
         <path d="M5 2H2a1 1 0 00-1 1v7a1 1 0 001 1h7a1 1 0 001-1V8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
         <path d="M8 1h3v3M7 5l4-4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
@@ -129,7 +131,7 @@ export function AddressChip({
       ? explorerAddressUrl(chainId, address)
       : null
   return (
-    <span className={`inline-flex items-center gap-0.5 font-mono align-baseline ${className}`}>
+    <span className={`inline-flex items-center gap-1 font-mono align-baseline ${className}`}>
       <span title={address}>{full ? address : truncate(address)}</span>
       <CopyIconButton value={address} label={isFullAddress(address) ? 'Copy address' : 'Copy'} />
       {explorer && <ExplorerLink href={explorer} />}

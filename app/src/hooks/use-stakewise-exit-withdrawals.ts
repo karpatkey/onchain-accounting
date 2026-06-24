@@ -173,7 +173,12 @@ export function useStakeWiseExitWithdrawals(
     const res = calcReads.data?.[j]?.result as readonly [bigint, bigint, bigint] | undefined
     if (!underlying || !res) return
     const [leftShares, , exitedAssets] = res
-    const queued = (leftShares > 0n ? (queuedReads.data?.[j]?.result as bigint | undefined) : 0n) ?? 0n
+    // The pending portion needs convertToAssets(leftShares); if that read hasn't resolved yet, skip the whole
+    // position this render rather than show a partial breakdown (or hide a fully-pending one) — it converges on
+    // the next refetch.
+    const queuedRes = leftShares > 0n ? (queuedReads.data?.[j]?.result as bigint | undefined) : 0n
+    if (queuedRes === undefined) return
+    const queued = queuedRes
     if (exitedAssets === 0n && queued === 0n) return // claimed / stale
 
     const ref = refs[p.refIndex]

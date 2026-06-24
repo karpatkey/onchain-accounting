@@ -27,12 +27,11 @@ import {
 // re-derive the per-request detail and produce this shared shape. Keyed by chainId:oracle:asset (the asset
 // is required because a multi-asset adapter like Kelp emits several legs from one oracle, each with its own
 // requests — keying by oracle alone would cross-contaminate the legs).
-// `label` overrides the default `#<id>` display for queues without a per-request id (Ethena cooldown:
-// one struct per account, so we show the claimable date instead). `isFinalized` drives the
-// Claimable/Pending badge for every queue (Ethena: claimable once the cooldown has elapsed).
-// `label` overrides the default `#<id>` text for queues without a per-request id. `address` + `ticket` render
-// the position identity as a copyable AddressChip (the vault) plus a copyable truncated ticket — used by queues
-// (StakeWise exit) whose identity is a contract address + a long ticket that would otherwise be cut off.
+// `label` overrides the default `#<id>` display for queues without a per-request id (Ethena cooldown: one
+// struct per account, so we show the claimable date instead). `isFinalized` drives the Claimable/Pending badge
+// for every queue (Ethena: claimable once the cooldown has elapsed). `address` + `ticket` render the position
+// identity as a copyable AddressChip (the vault) plus a copyable truncated ticket — for queues (StakeWise exit)
+// whose identity is a contract address + a long ticket that would otherwise be cut off.
 export type WithdrawalRequestRow = {
   id: bigint
   ethOwed: bigint

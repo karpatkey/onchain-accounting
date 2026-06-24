@@ -26,7 +26,7 @@ function ChainHealthPill({ chainIdx, isActive }: { chainIdx: number; isActive: b
       className={`flex items-center gap-1.5 text-sm transition-colors ${
         isActive
           ? 'text-neutral-950 font-semibold'
-          : 'text-neutral-600 hover:text-neutral-950'
+          : 'text-neutral-700 hover:text-neutral-950'
       }`}
     >
       <img
@@ -36,10 +36,10 @@ function ChainHealthPill({ chainIdx, isActive }: { chainIdx: number; isActive: b
       />
       <span>{config.label}</span>
       {issueCount !== null && (
-        <span className="text-neutral-400">({data.assets.length})</span>
+        <span className="text-neutral-700">({data.assets.length})</span>
       )}
       {issueCount === null && (
-        <span className="text-neutral-400 text-xs">…</span>
+        <span className="text-neutral-700 text-xs">…</span>
       )}
       {issueCount !== null && issueCount > 0 && (
         <span className="bg-amber-100 text-amber-800 text-xs rounded-full px-2 py-0.5 font-medium">
@@ -92,7 +92,7 @@ function ChainFeedsSection({
           <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wide ${
             isL2
               ? 'bg-violet-100 text-violet-700'
-              : 'bg-neutral-100 text-neutral-500'
+              : 'bg-neutral-100 text-neutral-700'
           }`}>
             {isL2 ? 'L2' : 'L1'}
           </span>
@@ -103,7 +103,7 @@ function ChainFeedsSection({
           )}
         </div>
         {!data.isLoading && (
-          <span className="text-xs text-neutral-500">{data.assets.length} assets</span>
+          <span className="text-xs text-neutral-700">{data.assets.length} assets</span>
         )}
       </div>
 
@@ -115,7 +115,7 @@ function ChainFeedsSection({
             feedAddress={chainConfig.sequencerFeed}
           />
         ) : (
-          <p className="text-xs text-neutral-500">L1 — no sequencer feed</p>
+          <p className="text-xs text-neutral-700">L1 — no sequencer feed</p>
         )}
         <PriceFeedsTable data={data} dense={dense} filterStatus={filterStatus} searchQuery={searchQuery} />
       </div>
@@ -196,13 +196,13 @@ export default function FeedsPage() {
             </Link>
             <h1 className={`font-bold text-neutral-950 ${dense ? 'text-xl' : 'text-2xl'}`}>Price Feeds</h1>
             {!dense && (
-              <p className="text-sm text-neutral-500 mt-1">
+              <p className="text-sm text-neutral-700 mt-1">
                 Chainlink and custom feed health across all deployed chains.
               </p>
             )}
           </div>
           <div className="flex items-center gap-3 mt-1">
-            <span className="text-xs text-neutral-400">{lastRefreshedLabel}</span>
+            <span className="text-xs text-neutral-700">{lastRefreshedLabel}</span>
             <button
               type="button"
               onClick={handleRefresh}
@@ -210,7 +210,7 @@ export default function FeedsPage() {
               className={`tabular-nums text-sm transition-colors ${
                 canRefresh
                   ? 'text-neutral-700 hover:text-neutral-950'
-                  : 'text-neutral-400 cursor-not-allowed'
+                  : 'text-neutral-700 opacity-70 cursor-not-allowed'
               } ${isRefreshing ? 'animate-spin' : ''}`}
             >
               ↻{canRefresh ? ' Refresh' : ` ${secondsLeft}s`}
@@ -242,7 +242,7 @@ export default function FeedsPage() {
                   className={`px-3 py-1 rounded-md text-sm capitalize transition-colors ${
                     filterStatus === f
                       ? 'bg-neutral-950 text-white'
-                      : 'text-neutral-600 hover:text-neutral-950'
+                      : 'text-neutral-700 hover:text-neutral-950'
                   }`}
                 >
                   {f.charAt(0).toUpperCase() + f.slice(1)}
@@ -252,7 +252,7 @@ export default function FeedsPage() {
 
             {/* Warning threshold info */}
             <Tooltip>
-              <TooltipTrigger className="text-neutral-400 hover:text-neutral-600 text-sm cursor-default leading-none">ⓘ</TooltipTrigger>
+              <TooltipTrigger className="text-neutral-700 hover:text-neutral-700 text-sm cursor-default leading-none">ⓘ</TooltipTrigger>
               <TooltipContent className="max-w-xs">
                 <strong>Warning threshold:</strong> a feed is flagged as Warning when its last update is older than 80% of its Chainlink heartbeat interval — before it goes Stale.
               </TooltipContent>
@@ -268,10 +268,10 @@ export default function FeedsPage() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search assets…"
-                className="text-sm rounded-lg border border-neutral-300 bg-white px-3 py-1.5 pr-16 text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-400 w-44"
+                className="text-sm rounded-lg border border-neutral-300 bg-white px-3 py-1.5 pr-16 text-neutral-900 placeholder:text-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-400 w-44"
               />
               {!searchQuery && (
-                <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-neutral-400 font-mono bg-neutral-100 border border-neutral-200 rounded px-1 py-0.5">
+                <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-neutral-700 font-mono bg-neutral-100 border border-neutral-200 rounded px-1 py-0.5">
                   ⌘K
                 </span>
               )}
@@ -284,7 +284,7 @@ export default function FeedsPage() {
               className={`text-sm px-3 py-1.5 rounded-lg border transition-colors ${
                 dense
                   ? 'border-neutral-950 bg-neutral-950 text-white'
-                  : 'border-neutral-300 text-neutral-600 hover:text-neutral-950 hover:border-neutral-500'
+                  : 'border-neutral-300 text-neutral-700 hover:text-neutral-950 hover:border-neutral-500'
               }`}
             >
               {dense ? '⊟ Compact' : '⊞ Comfortable'}

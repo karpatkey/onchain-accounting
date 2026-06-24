@@ -11,7 +11,7 @@ export function SequencerBadge({ label, sequencerFeed, isDown }: SequencerBadgeP
 
   return (
     <div className="flex items-center gap-2">
-      <span className="text-sm font-medium text-muted-foreground">{label}</span>
+      <span className="text-sm font-medium text-neutral-700">{label}</span>
       <Badge variant={isDown ? 'negative' : 'positive'}>
         {isDown ? 'Sequencer Down' : 'Sequencer Up'}
       </Badge>

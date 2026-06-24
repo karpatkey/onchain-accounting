@@ -2,10 +2,9 @@
 
 import { useState } from 'react'
 import { useEnsName } from 'wagmi'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@karpatkey/design-system'
 import type { ChainNav } from '@/hooks/use-account-nav'
-import { formatUsd, shortenAddress } from '@/lib/format'
-import { explorerAddressUrl } from '@/config/chains'
+import { formatUsd } from '@/lib/format'
+import { MultiChainAddressChip } from '@/components/address-chip'
 import { DEPLOYED_CHAINS } from '@/config/chains'
 
 // Brand colours from chains config, keyed by chainId
@@ -76,18 +75,6 @@ function Blockie({ address }: { address: string }) {
   return <img src={src} alt="blockie" className="w-10 h-10 rounded-full shrink-0" />
 }
 
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false)
-  return (
-    <button
-      type="button"
-      onClick={() => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500) }}
-      className="text-neutral-500 hover:text-neutral-950 transition-colors text-xs px-1.5 py-0.5 rounded border border-neutral-300 hover:border-neutral-600"
-    >
-      {copied ? 'Copied' : 'Copy'}
-    </button>
-  )
-}
 
 // ─── Supply vs borrow bar ─────────────────────────────────────────────────────
 
@@ -135,47 +122,18 @@ export function ProfileHeader({ address, navResults, supplyTotal, borrowTotal }:
               {ensName && (
                 <p className="font-semibold text-neutral-950 text-sm leading-tight">{ensName}</p>
               )}
-              <Tooltip>
-                <TooltipTrigger className="cursor-default text-left">
-                  <span className={`font-mono text-sm ${ensName ? 'text-neutral-500' : 'text-neutral-900 font-medium'}`}>
-                    {shortenAddress(address)}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent><span className="font-mono">{address}</span></TooltipContent>
-              </Tooltip>
-              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                <CopyButton text={address} />
-                {isLoading ? (
-                  <a
-                    href={explorerAddressUrl(1, address)}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-xs text-neutral-500 hover:text-neutral-950 transition-colors"
-                  >
-                    ↗ Etherscan
-                  </a>
-                ) : (
-                  navResults
-                    .filter((r) => r.nav && r.nav.value > 0n)
-                    .map((r) => (
-                      <a
-                        key={r.chainId}
-                        href={explorerAddressUrl(r.chainId, address)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-xs text-neutral-500 hover:text-neutral-950 transition-colors"
-                      >
-                        ↗ {r.label}
-                      </a>
-                    ))
-                )}
-              </div>
+              {/* Account address: copy + one explorer link per chain it holds value on (mainnet while loading). */}
+              <MultiChainAddressChip
+                address={address}
+                chainIds={isLoading ? [1] : navResults.filter((r) => r.nav && r.nav.value > 0n).map((r) => r.chainId)}
+                className={`text-sm ${ensName ? 'text-neutral-700' : 'text-neutral-900 font-medium'}`}
+              />
             </div>
           </div>
 
           {/* NAV */}
           <div className="mb-3">
-            <p className="text-xs text-neutral-500 uppercase tracking-wider mb-1">Total Net Worth</p>
+            <p className="text-xs text-neutral-700 uppercase tracking-wider mb-1">Total Net Worth</p>
             {isLoading ? (
               <div className="h-10 w-44 bg-neutral-300 rounded animate-pulse" />
             ) : (
@@ -192,7 +150,7 @@ export function ProfileHeader({ address, navResults, supplyTotal, borrowTotal }:
                   <span className="text-rose-700 font-medium">↓ Borrow {formatUsd(borrowTotal)}</span>
                 )}
                 {borrowTotal > 0n && (
-                  <span className="text-neutral-600">Net {formatUsd(totalNav)}</span>
+                  <span className="text-neutral-700">Net {formatUsd(totalNav)}</span>
                 )}
               </div>
               {borrowTotal > 0n && <SupplyBorrowBar supplyTotal={supplyTotal} borrowTotal={borrowTotal} />}
@@ -207,7 +165,7 @@ export function ProfileHeader({ address, navResults, supplyTotal, borrowTotal }:
             <div className="flex flex-col gap-0.5 text-right">
               {navResults.filter((r) => r.nav && r.nav.value > 0n).map((r) => (
                 <div key={r.chainId} className="flex items-center gap-1.5 justify-end">
-                  <span className="text-[10px] text-neutral-500">{r.label}</span>
+                  <span className="text-[10px] text-neutral-700">{r.label}</span>
                   <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: CHAIN_COLORS[r.chainId] }} />
                 </div>
               ))}

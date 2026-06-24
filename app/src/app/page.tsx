@@ -11,8 +11,10 @@ import { useAccountPositions, type ChainPositions } from '@/hooks/use-account-po
 import { useLidoWithdrawals, type LidoOracleRef } from '@/hooks/use-lido-withdrawals'
 import { useStaderWithdrawals, type StaderOracleRef } from '@/hooks/use-stader-withdrawals'
 import { useKelpWithdrawals, type KelpOracleRef } from '@/hooks/use-kelp-withdrawals'
+import { useEthenaCooldown, type EthenaOracleRef } from '@/hooks/use-ethena-cooldown'
+import { useStakeWiseExitWithdrawals, type StakeWiseExitOracleRef } from '@/hooks/use-stakewise-exit-withdrawals'
 import { useRefreshCooldown } from '@/hooks/use-refresh-cooldown'
-import { shortenAddress } from '@/lib/format'
+import { AddressChip } from '@/components/address-chip'
 
 // ─── Recent searches ─────────────────────────────────────────────────────────
 
@@ -124,29 +126,36 @@ function SearchPage({ onSearch }: { onSearch: (addr: `0x${string}`) => void }) {
             value={value}
             onChange={(e) => { setValue(e.target.value); if (error) setError('') }}
             placeholder="Enter a 0x wallet address"
-            className="flex-1 bg-white border border-neutral-400 rounded-lg px-4 py-3 text-sm font-mono placeholder:text-neutral-500 text-neutral-950 focus:outline-none focus:border-neutral-700 transition-colors shadow-[var(--shadow-1)]"
+            className="flex-1 bg-white border border-neutral-400 rounded-lg px-4 py-3 text-sm font-mono placeholder:text-neutral-700 text-neutral-950 focus:outline-none focus:border-neutral-700 transition-colors shadow-[var(--shadow-1)]"
           />
           <button type="submit" className="bg-neutral-950 text-white rounded-lg px-5 py-3 text-sm font-semibold hover:bg-neutral-800 transition-colors">
             Search
           </button>
         </form>
         {error && <p className="text-rose-700 text-sm mt-2">{error}</p>}
-        <p className="text-xs text-neutral-500 mt-2 text-center">Enter an Ethereum-compatible wallet or Safe address</p>
+        <p className="text-xs text-neutral-700 mt-2 text-center">Enter an Ethereum-compatible wallet or Safe address</p>
 
         {recents.length > 0 && (
           <div className="mt-6">
-            <p className="text-xs text-neutral-500 uppercase tracking-wider mb-2">Recent searches</p>
+            <p className="text-xs text-neutral-700 uppercase tracking-wider mb-2">Recent searches</p>
             <div className="space-y-1">
               {recents.map((r) => (
-                <button
+                <div
                   key={r.address}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   onClick={() => onSearch(r.address as `0x${string}`)}
-                  className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-white border border-neutral-300 hover:border-neutral-500 text-sm transition-colors shadow-[var(--shadow-1)]"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      onSearch(r.address as `0x${string}`)
+                    }
+                  }}
+                  className="w-full cursor-pointer flex items-center justify-between px-3 py-2 rounded-lg bg-white border border-neutral-300 hover:border-neutral-500 text-sm transition-colors shadow-[var(--shadow-1)]"
                 >
-                  <span className="font-mono text-neutral-800">{shortenAddress(r.address)}</span>
-                  <span className="text-neutral-400 text-xs">{new Date(r.timestamp).toLocaleDateString()}</span>
-                </button>
+                  <AddressChip address={r.address} className="text-neutral-800" />
+                  <span className="text-neutral-700 text-xs">{new Date(r.timestamp).toLocaleDateString()}</span>
+                </div>
               ))}
             </div>
           </div>
@@ -242,9 +251,48 @@ function PortfolioView({ account, onReset }: { account: `0x${string}`; onReset: 
     return refs
   }, [positionResults])
 
+  // Ethena cooldown adapters the account touches — drives the cooling/ready-to-claim drill-down (display only;
+  // the adapter reports a single USDe leg). One cooldown per account, so each ref yields at most one row.
+  const ethenaOracles = useMemo<EthenaOracleRef[]>(() => {
+    const seen = new Set<string>()
+    const refs: EthenaOracleRef[] = []
+    for (const { chainId, positions } of positionResults) {
+      for (const p of positions) {
+        if (p.protocol !== 'Ethena') continue
+        const key = `${chainId}:${p.balanceOracle.toLowerCase()}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        refs.push({ chainId, oracle: p.balanceOracle })
+      }
+    }
+    return refs
+  }, [positionResults])
+
+  // StakeWise V3 exit-queue adapters the account touches — drives the per-position pending/claimable
+  // drill-down (display only; the adapter reports a single ETH leg). Filtered by protocolId, not protocol
+  // name: the exit-queue adapter shares the "StakeWise V3" name with the vaults meta-adapter, so the
+  // keccak256("stakewise-exit") slug is the only unambiguous discriminator.
+  const stakewiseExitOracles = useMemo<StakeWiseExitOracleRef[]>(() => {
+    const STAKEWISE_EXIT_PROTOCOL_ID = '0x304c70a6113f73971716dfe5604e9826967adbaad918beca2a7a1ac460a6b2b9'
+    const seen = new Set<string>()
+    const refs: StakeWiseExitOracleRef[] = []
+    for (const { chainId, positions } of positionResults) {
+      for (const p of positions) {
+        if (p.protocolId.toLowerCase() !== STAKEWISE_EXIT_PROTOCOL_ID) continue
+        const key = `${chainId}:${p.balanceOracle.toLowerCase()}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        refs.push({ chainId, oracle: p.balanceOracle })
+      }
+    }
+    return refs
+  }, [positionResults])
+
   const lidoWithdrawalsByKey = useLidoWithdrawals(account, lidoOracles)
   const staderWithdrawalsByKey = useStaderWithdrawals(account, staderOracles)
   const kelpWithdrawalsByKey = useKelpWithdrawals(account, kelpOracles)
+  const ethenaWithdrawalsByKey = useEthenaCooldown(account, ethenaOracles)
+  const stakewiseExitWithdrawalsByKey = useStakeWiseExitWithdrawals(account, stakewiseExitOracles)
 
   // Merge the per-request drill-down maps into one. Keys are `${chainId}:${oracle}:${asset}`, unique per
   // (adapter, leg), so no collision. protocol-group looks each leg up by that asset-aware key.
@@ -253,8 +301,10 @@ function PortfolioView({ account, onReset }: { account: `0x${string}`; onReset: 
     for (const [k, v] of lidoWithdrawalsByKey) m.set(k, v)
     for (const [k, v] of staderWithdrawalsByKey) m.set(k, v)
     for (const [k, v] of kelpWithdrawalsByKey) m.set(k, v)
+    for (const [k, v] of ethenaWithdrawalsByKey) m.set(k, v)
+    for (const [k, v] of stakewiseExitWithdrawalsByKey) m.set(k, v)
     return m
-  }, [lidoWithdrawalsByKey, staderWithdrawalsByKey, kelpWithdrawalsByKey])
+  }, [lidoWithdrawalsByKey, staderWithdrawalsByKey, kelpWithdrawalsByKey, ethenaWithdrawalsByKey, stakewiseExitWithdrawalsByKey])
 
   const totalPortfolioNav = navResults.reduce((s, r) => s + (r.nav?.value ?? 0n), 0n)
 
@@ -290,18 +340,18 @@ function PortfolioView({ account, onReset }: { account: `0x${string}`; onReset: 
             <a href={`/feeds?address=${account}`} className="text-neutral-700 hover:text-neutral-950 transition-colors">Price Feeds</a>
             <button
               type="button" onClick={handleRefresh} disabled={!canRefresh}
-              className={`tabular-nums transition-colors ${canRefresh ? 'text-neutral-700 hover:text-neutral-950' : 'text-neutral-400 cursor-not-allowed'}`}
+              className={`tabular-nums transition-colors ${canRefresh ? 'text-neutral-700 hover:text-neutral-950' : 'text-neutral-700 opacity-70 cursor-not-allowed'}`}
             >
               {canRefresh ? '↻ Refresh' : `↻ ${secondsLeft}s`}
             </button>
             <button
               type="button" onClick={() => exportCsv(positionResults, account)} disabled={isLoading}
               title="Export positions as CSV"
-              className="text-neutral-600 hover:text-neutral-950 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className="text-neutral-700 hover:text-neutral-950 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
             >
               ↓ CSV
             </button>
-            <button type="button" onClick={onReset} className="text-neutral-600 hover:text-neutral-950 transition-colors">✕</button>
+            <button type="button" onClick={onReset} className="text-neutral-700 hover:text-neutral-950 transition-colors">✕</button>
           </div>
         </div>
 
@@ -332,14 +382,14 @@ function PortfolioView({ account, onReset }: { account: `0x${string}`; onReset: 
                   className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
                     hideDust
                       ? 'bg-neutral-950 text-white border-neutral-950'
-                      : 'bg-white text-neutral-600 border-neutral-300 hover:border-neutral-500'
+                      : 'bg-white text-neutral-700 border-neutral-300 hover:border-neutral-500'
                   }`}
                 >
                   {hideDust ? '⊘ Hiding dust' : '⊙ Show all'}
                 </button>
               </div>
               {!isLoading && (
-                <span className="text-xs text-neutral-500">{groups.length} {groups.length === 1 ? 'position' : 'positions'}</span>
+                <span className="text-xs text-neutral-700">{groups.length} {groups.length === 1 ? 'position' : 'positions'}</span>
               )}
             </div>
 
@@ -352,7 +402,7 @@ function PortfolioView({ account, onReset }: { account: `0x${string}`; onReset: 
             )}
 
             {!isLoading && groups.length === 0 && (
-              <div className="text-center py-16 text-neutral-600 text-sm">
+              <div className="text-center py-16 text-neutral-700 text-sm">
                 {allGroups.length > 0
                   ? 'All positions are below the dust threshold ($1). Toggle "Show all" to see them.'
                   : `No positions found on ${selectedChainId ? 'this chain' : 'any chain'}.`

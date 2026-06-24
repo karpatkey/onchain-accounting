@@ -1,0 +1,33 @@
+{
+  "protocol": "ether.fi",
+  "adapter": "EtherFiWithdrawalsBalanceAdapter",
+  "chainId": 1,
+  "forkBlock": 25387000,
+  "contracts": {
+    "withdrawRequestNft": "0x7d5706f6ef3F89B3951E23e557CDFBC3239D4E2c",
+    "liquidityPool": "0x308861A430be4cce5502d0A12724771Fc6DaF216",
+    "underlyingToken_nativeETH": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"
+  },
+  "holderType": "real",
+  "holder": "0xcFFab3dFdCa60d838512c41a772e799b71dF1Af4",
+  "tokenIds": [80154],
+  "discovery": "Transfer(_, holder, tokenId) minus Transfer(holder, _, tokenId) on the WithdrawRequestNFT — the same event scan the agent runs (no per-owner view exists).",
+  "legs": [
+    {
+      "name": "ether.fi withdrawal #80154 (pending)",
+      "asset": "native ETH",
+      "amount": "253077459762665832",
+      "amountApprox": "~0.2531 ETH",
+      "valuation": "pending: min(amountOfEEth, LiquidityPool.amountForShare(shareOfEEth)) - feeGwei*1gwei; finalized: getClaimableAmount",
+      "positionKind": "Supplied",
+      "isDebt": false,
+      "protocolId": "keccak256(\"etherfi-withdrawal\")",
+      "positionId": ""
+    }
+  ],
+  "groundTruth": "min(WithdrawRequestNFT.getRequest(id).amountOfEEth, LiquidityPool.amountForShare(getRequest(id).shareOfEEth)) - getRequest(id).feeGwei*1gwei, read live at forkBlock",
+  "delta": 0,
+  "trustModel": "Mutable id-only cache (ADR 0014); owner submits tokenIds, adapter values from live reads + re-verifies ownerOf per read. Owner can under-report only, never over-report.",
+  "agent": "kpk-agents/agents/automations/accounting/ (submit-etherfi-positions, follow-up PR) — mirrors submit_merkl_proofs.py",
+  "tests": { "unit": 23, "fork": 4 }
+}

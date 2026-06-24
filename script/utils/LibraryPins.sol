@@ -10,9 +10,10 @@ pragma solidity ^0.8;
 ///         .test_navCalculator_creationCodeLinkedAgainstPins() asserts the addresses forge links into
 ///         NAVCalculator.creationCode (from foundry.toml) match PRICE_FEED_LIB / NAV_REGISTRY_LIB below. Both the
 ///         deploy guard (01_2_DeployNAVImplementation) and the CI guard import these. A pin regeneration updates
-///         this file and foundry.toml (the two canonical copies), plus any test that hardcodes the raw address
-///         for `vm.etch` (grep the old address: SuperTest, the integration base, the NAV/Morpho/Aave fork tests,
-///         Prices.t, ERC20DefaultAdapter.t).
+///         just these two canonical copies (this file + foundry.toml); call sites that `vm.etch` library code
+///         reference the constants here (`LibraryPins.PRICE_FEED_LIB` / `NAV_REGISTRY_LIB`), so they pick up the
+///         new value automatically. If a future call site hard-codes a raw address instead, grep the *constants*
+///         (not the literal) to find it.
 library LibraryPins {
     address internal constant PRICE_FEED_LIB = 0x7Bc4AA9889312B6598C38B7926931E9371EA6053;
     address internal constant NAV_REGISTRY_LIB = 0x2F1F6c17D64bE96F583D390be212aFCF8D0F102a;

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTestBase.sol";
+import {BalancesHarness} from "test/balances/Balances.t.sol";
 import {
     EtherFiWithdrawalsBalanceAdapter,
     IEtherFiWithdrawRequestNFT
@@ -22,6 +23,11 @@ contract MockWithdrawRequestNFT {
     mapping(uint256 => IEtherFiWithdrawRequestNFT.WithdrawRequest) private _req;
     mapping(uint256 => bool) private _finalized;
     mapping(uint256 => uint256) private _claimable;
+    bool public revertGetRequest;
+
+    function setRevertGetRequest(bool v) external {
+        revertGetRequest = v;
+    }
 
     function setRequest(
         uint256 id,
@@ -50,6 +56,7 @@ contract MockWithdrawRequestNFT {
     }
 
     function getRequest(uint256 id) external view returns (IEtherFiWithdrawRequestNFT.WithdrawRequest memory) {
+        require(!revertGetRequest, "getRequest reverted");
         return _req[id];
     }
 
@@ -69,12 +76,18 @@ contract MockWithdrawRequestNFT {
 /// @notice Minimal mock of ether.fi's LiquidityPool — `amountForShare` at a settable rate (wei per share, 1e18-scaled).
 contract MockLiquidityPool {
     uint256 public rateWad = 1e18; // 1 share = 1 ETH by default
+    bool public doRevert;
 
     function setRate(uint256 r) external {
         rateWad = r;
     }
 
+    function setRevert(bool v) external {
+        doRevert = v;
+    }
+
     function amountForShare(uint256 share) external view returns (uint256) {
+        require(!doRevert, "amountForShare reverted");
         return (share * rateWad) / 1e18;
     }
 }
@@ -255,6 +268,37 @@ contract EtherFiWithdrawalsBalanceAdapterTest is BalanceAdapterTestBase {
         address[] memory a = adapter.underlyingAssetsSupported();
         assertEq(a.length, 1);
         assertEq(a[0], NATIVE);
+    }
+
+    // ---- Registered-asset + live-read-revert branches (never-revert guarantee) ----
+
+    function test_unregisteredUnderlying_positionsEmpty_butBalanceStillOwed() public {
+        // Fresh NAV harness that does NOT register the native sentinel.
+        BalancesHarness freshNav = new BalancesHarness();
+        EtherFiWithdrawalsBalanceAdapter a2 =
+            new EtherFiWithdrawalsBalanceAdapter(address(nft), address(lp), NATIVE, address(freshNav), address(this));
+        nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
+        a2.submitTokenIds(holder, _ids(1));
+        // getAdapterPositions drops the leg (underlying not registered) — even though owed > 0.
+        assertEq(a2.getAdapterPositions(holder, address(0)).length, 0);
+        (uint256 amt,) = a2.getAdapterBalanceForAsset(holder, NATIVE);
+        assertEq(amt, 1 ether);
+    }
+
+    function test_pending_getRequestReverts_droppedNotReverted() public {
+        nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, false, 0); // pending
+        adapter.submitTokenIds(holder, _ids(1));
+        nft.setRevertGetRequest(true);
+        (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, NATIVE);
+        assertEq(amt, 0); // dropped to 0, scan did not revert
+    }
+
+    function test_pending_amountForShareReverts_droppedNotReverted() public {
+        nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, false, 0); // pending
+        adapter.submitTokenIds(holder, _ids(1));
+        lp.setRevert(true);
+        (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, NATIVE);
+        assertEq(amt, 0);
     }
 
     function _ids(uint256 id) internal pure returns (uint256[] memory ids) {

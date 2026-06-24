@@ -29,8 +29,8 @@ Ship **two owner-gated cache adapters** — `EtherFiWithdrawalsBalanceAdapter` a
 - Mutators (`onlyOwner`, owner = the OIV Safe / agent role, same as Merkl):
   - `submitPositions(address account, uint256[] ids)` — add candidate ids. Light write-time sanity check (id currently belongs to `account`); not load-bearing for correctness since reads re-verify.
   - `clearPosition(address account, uint256 id)` / `clearAccount(account)` — GC claimed/stale ids. Idempotent; not required for correctness (stale ids read as 0).
-- Reads: `getAdapterPositions(account, filter)` iterates the cached ids, **re-verifies ownership on-chain**, values each from a **live protocol read**, drops anything that fails (claimed/transferred/zero). Never reverts. Emits one `Supplied` leg per live position, denominated in the underlying staking asset (must be a registered NAV asset).
-- Identity: `protocolId = keccak256("etherfi-withdrawal")` / `keccak256("stakewise-exit")` (new slugs in `ProtocolIds.sol`); `positionId = abi.encode(queueContract, id)`. Immutable.
+- Reads: `getAdapterPositions(account, filter)` iterates the cached ids, **re-verifies ownership on-chain**, values each from a **live protocol read**, drops anything that fails (claimed/transferred/zero). Never reverts. Emits **one aggregated `Supplied` leg per account** — the sum across the account's live positions — denominated in the underlying staking asset (must be a registered NAV asset), matching the Lido/Stader/Kelp WQ family.
+- Identity: `protocolId = keccak256("etherfi-withdrawal")` / `keccak256("stakewise-exit")` (new slugs in `ProtocolIds.sol`); **`positionId` is empty (`""`) — account-global aggregation, like the other WQ adapters** (the cached ids are an internal coordinate, not emitted). Immutable.
 - Everything except the cache is immutable: queue/NPM/vault-registry addresses, NAVCalculator, identity. No upgrade path. No admin-injected amounts.
 
 ### EtherFiWithdrawalsBalanceAdapter

@@ -66,7 +66,7 @@ This deployment system uses an **EOA deployer** (`--broadcast`) with **CREATE2 d
 | `contracts-deployment-config/custom-price-feeds/{chainId}.json` | Custom price-oracle adapters to deploy (`enabled` + `constructor` args) |
 | `contracts-deployment-config/balance-adapters/{chainId}.json` & `contracts-deployment-config/meta-balance-adapters/{chainId}.json` | Plain / meta balance adapters to deploy (`enabled` + `constructor`) |
 | `nav-config/balance-adapters/{chainId}.json` & `nav-config/meta-balance-adapters/{chainId}.json` | Adapters to register on NAVCalculator (plain vs. meta; meta entries carry `instances` / `instancesRaw`) |
-| `script/config/deployments/{chainId}.json` | **Deployed-address state** — the *only* place deployed addresses are written. Populated by the deploy scripts as contracts land. Broadcast logs are no longer committed. For the NAV from-scratch redeploy every field here starts **TBD** (empty). |
+| `script/config/deployments/{chainId}.json` | **Deployed-address state** — the *only* place deployed addresses are written. Populated by the deploy scripts as contracts land (live as of the 2026-06-26 deploy). Broadcast logs are no longer committed. |
 | (No separate `dev-input.json`, `assets.json`, or `balance-adapters.json`) | All user input lives in `chains/{chainId}.json` (role `addresses`) plus the per-concern `contracts-deployment-config/` (with the `enabled` adapter flags) and `nav-config/` files above |
 
 ## Deployment Workflow
@@ -373,7 +373,7 @@ script/verify/verify-all.sh
 
 ### Deployment Records (`script/config/deployments/`)
 
-The per-chain `script/config/deployments/{chainId}.json` file is the **single source of truth for deployed addresses** — broadcast logs are no longer committed. For the NAV full redeploy, every address in these files starts **TBD** (empty) and is written back as each contract is redeployed from scratch.
+The per-chain `script/config/deployments/{chainId}.json` file is the **single source of truth for deployed addresses** — broadcast logs are no longer committed. These files were populated by the 2026-06-26 deploy; [`DEPLOYED_ADDRESSES.md`](DEPLOYED_ADDRESSES.md) is the human-readable mirror.
 
 ```
 script/config/deployments/

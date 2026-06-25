@@ -25,9 +25,9 @@ Step-by-step operational guide for deploying the NAV system — NAVCalculator, B
 
 NAV is a single, chain-local system. Each supported chain has:
 
-- **One NAVCalculator proxy** (UUPS) at the same canonical address on every chain (`TBD`). Any Safe can call `getAccountNav(safe, quoteAsset)` and get its NAV in USD or any registered quote asset.
-- **One BridgeEscrow proxy** (UUPS) at `TBD`. Tracks outbound/inbound bridge liquidity that would otherwise be invisible to the NAV.
-- **One default ERC20 balance adapter** at `TBD` — reports plain wallet balances for every registered ERC20 + the native coin.
+- **One NAVCalculator proxy** (UUPS) at the same canonical CREATE2 address on every chain (`0x29fD97910baf7E9502B5a561F0c04Cf2555535c4`). Any Safe can call `getAccountNav(safe, quoteAsset)` and get its NAV in USD or any registered quote asset.
+- **One default ERC20 balance adapter** at `0x06400f2AAe00692Bf71b3BCb7E26D74adf9749cC` (canonical, all chains) — reports plain wallet balances for every registered ERC20 + the native coin.
+- **(Optional) one BridgeEscrow proxy** — tracks inflight bridged-out liquidity. **Not deployed in the 2026-06-26 deployment** (bridge out of scope); the deploy uses the NAV-only `01_2` / `02_2` scripts.
 - **N custom price feed adapters** — one per Custom-priced asset. Implements `IPriceFeedCustom.getLatestPrice()`.
 - **N custom balance adapters** — one per protocol position (Aave V3 Core, Morpho vault, Curve gauge, etc.). Implements `IBalanceAdapter.getAdapterPositions()` / `getAdapterBalances()` / `getAdapterBalanceForAsset()`.
 
@@ -60,7 +60,7 @@ NAVCalculator and BridgeEscrow both use OpenZeppelin `AccessControlUpgradeable` 
 
 **Legacy path (`USE_LEGACY_DEPLOY=1`).** Initialization is `NAVCalculator.initialize(chainConfig.admin, ...)` directly — `chainConfig.admin` gets `DEFAULT_ADMIN_ROLE`. The broadcast sender (deployer EOA) does NOT hold any role afterwards. **The script logs a warning** that `MANAGER` must be granted via Safe TX from the admin (because `02_DeployProxies.s.sol` no longer attempts the grant). For tonight's deploy, prefer the atomic path; only use legacy if you have a specific reason.
 
-**On-chain state.** All past deployments have been wiped; there is no live NAV control plane until this redeploy completes. Every chain config must set `addresses.admin = addresses.manager` to the governance Safe `0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537` (verify it is a Safe — `cast code` returns bytecode, not `0x`) before broadcast, so the Safe holds both `DEFAULT_ADMIN_ROLE` and `MANAGER` from deploy time. Do not point admin/manager at a deployer EOA for production.
+**On-chain state.** The system is **deployed (2026-06-26) on all 5 production chains**; live addresses are in `script/config/deployments/<chainId>.json` + [`DEPLOYED_ADDRESSES.md`](DEPLOYED_ADDRESSES.md). For that deployment, admin + manager are held by the **deployer EOA** `0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72` with the `07` handoff to the security-council Safe `0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537` **deferred**. (The standard end-state is Safe-held admin/manager — `07` grants them and renounces the deployer's. When you need that immediately at deploy time instead of deferring, set `addresses.admin = addresses.manager` to the Safe before broadcast — verify it is a Safe via `cast code` returning bytecode, not `0x`.)
 
 **MANAGER-grant bug — FIXED in commit `d513f27` (2026-04-29).** The atomic path now grants MANAGER inside `AtomicProxyDeployer`'s constructor (where the deployer transiently holds `DEFAULT_ADMIN_ROLE`), so it works regardless of whether `chainConfig.admin` is an EOA or a Safe. The same commit also makes the deployer self-renounce its admin role at constructor end, closing the orphaned-admin cosmetic issue. The legacy path no longer attempts the grant from the deployer EOA — it logs a warning that MANAGER must be granted via Safe TX from the admin. **No workaround is required for tonight's redeploy.** Historical context: between 2026-04-20 and 2026-04-29 this was a blocking deploy bug with three documented workarounds in this runbook; PR #14's caveat callouts described those workarounds. They are now obsolete; flag remaining mentions for cleanup but do not act on them.
 
@@ -91,26 +91,23 @@ If any of these return the wrong result, **stop and fix** before proceeding. See
 
 ## Canonical addresses
 
-> **STATUS — all past deployments wiped; NAV is being redeployed from scratch (new bytecode).** No live addresses exist until this redeploy completes. Admin + manager on every NAV proxy will be held by the governance Safe `0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537` (same address on every chain). Deployer EOA holds no privileged role at end state. Per-chain inventory of every deployed address (proxies, impls, price-feed adapters, balance adapters, bridge adapters) lives in `script/config/deployments/<chainId>.json`, written by the deploy scripts.
+> **STATUS — deployed 2026-06-26 on all 5 production chains** (live + explorer-verified). The canonical CREATE2 layer is identical on every chain (below). **Roles:** admin + manager currently held by the **deployer EOA** `0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72` — the `07` handoff to the security-council Safe `0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537` is **deferred**. Per-chain custom feeds + balance adapters live in `script/config/deployments/<chainId>.json` and are mirrored in [`DEPLOYED_ADDRESSES.md`](DEPLOYED_ADDRESSES.md).
 
-### NAV
+### NAV (canonical CREATE2 — same address on every chain)
 
-| Component | Address | Chains |
-|-----------|---------|--------|
-| NAVCalculator Implementation | `TBD` | Same on all 5 chains (CREATE2). |
-| NAVCalculator Proxy (CREATE2) | `TBD` | Same on all 5 chains. The address every consumer should use. |
-| ERC20Default Balance Adapter | `TBD` | Same on all 5 chains (auto-deployed in `NAVCalculator.initialize`). |
-| `UUPSPlaceholder` impl | `TBD` | Same on all 5 chains. Used transiently during atomic deploy. |
-| Governance Safe (admin + manager on every NAV proxy) | `0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537` | Same on all 5 chains. |
+| Component | Address | Notes |
+|-----------|---------|-------|
+| NAVCalculator Proxy | `0x29fD97910baf7E9502B5a561F0c04Cf2555535c4` | The address every consumer should use. |
+| NAVCalculator Implementation | `0x5E65f6b4d3bAb60fd943E12Cb9Bd680Ed07A72A7` | UUPS impl. |
+| `PriceFeedLib` | `0x66642d5E374dc87B858955B236F720c2E7368a3f` | External library (foundry.toml pin). |
+| `NAVRegistryLib` | `0x2F1F6c17D64bE96F583D390be212aFCF8D0F102a` | External library (foundry.toml pin). |
+| ERC20Default Balance Adapter | `0x06400f2AAe00692Bf71b3BCb7E26D74adf9749cC` | Auto-deployed in `NAVCalculator.initialize`. |
+| `UUPSPlaceholder` impl | `0x85Ee38b0385D042918a59C01dB319b6eDdF7A8Cf` | Used transiently during atomic deploy. |
+| Deployer EOA (current admin + manager) | `0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72` | `07` council handoff deferred. |
 
 ### Bridge
 
-| Component | Address | Chains |
-|-----------|---------|--------|
-| BridgeEscrow Implementation | `TBD` | All 5 chains. |
-| BridgeEscrow Proxy (CREATE2) | `TBD` | All 5 |
-
-> When BridgeEscrow is required, follow the same atomic-deploy pattern: deploy the proxy via the atomic deployer, hand off roles to the governance Safe.
+**Not deployed** — bridge is out of scope (no `BridgeEscrow`); the deployment uses the NAV-only `01_2` / `02_2` scripts. If a BridgeEscrow is required later, follow the same atomic-deploy pattern: deploy the proxy via the atomic deployer, then hand off roles.
 
 > **Source of truth for per-chain deployed addresses:** `script/config/deployments/<chainId>.json`, written by the deploy scripts. `chains/<chainId>.json` no longer holds deployed addresses. Never rely on abbreviated addresses — always copy the full value from the deployments file for any chain-specific implementation exception.
 
@@ -225,7 +222,7 @@ If you're reading historical PR comments or older PR #14 versions that describe 
 
 7. **Confirm the per-chain ERC20Default Balance Adapter address** in `deployments/<chainId>.json` — this gets deployed during `NAVCalculator.initialize()`. Read the new address from the broadcast logs (`02_DeployProxies.s.sol` logs `ERC20Default adapter (from NAV init): 0x...`) or query the proxy directly via the public getter: `cast call <NAV_PROXY> "erc20DefaultAdapter()(address)" --rpc-url <RPC>`. The script writes it to `deployments/<chainId>.json` — verify in the diff before committing.
 
-8. **Confirm the new proxy + ERC20Default addresses landed in `deployments/<chainId>.json`.** The "Canonical addresses" table at the top of this runbook carries `TBD` for our contracts by design; the deployments file is the source of truth.
+8. **Confirm the new proxy + ERC20Default addresses landed in `deployments/<chainId>.json`.** The "Canonical addresses" table at the top of this runbook lists the canonical CREATE2 layer (same on every chain); the deployments file is the source of truth for per-chain feeds + adapters.
 
 9. **Update `docs/historical/oracle-migration-plan.md`** "Aspects to improve" — the `02_DeployProxies` MANAGER-grant bug entry should be marked as fixed in `d513f27` (already past tense in this runbook; align the historical plan to match).
 
@@ -831,7 +828,7 @@ forge script script/manage/ManageAdapters.s.sol \
 
 ### Option C: Direct broadcast (if sender has MANAGER)
 
-Call `addBalanceAdapters()` directly on the NAVCalculator proxy using `cast`. **Read the proxy address from the deployments file** rather than hardcoding — the runbook's Canonical addresses table carries `TBD` for our contracts by design:
+Call `addBalanceAdapters()` directly on the NAVCalculator proxy using `cast`. **Read the proxy address from the deployments file** (or use the canonical `0x29fD97910baf7E9502B5a561F0c04Cf2555535c4` from the Canonical addresses table) rather than hardcoding:
 
 ```bash
 NAV_PROXY=$(jq -r '.NAVCalculatorProxy' script/config/deployments/1.json)
@@ -924,7 +921,7 @@ forge script script/verify/VerifyEtherscan.s.sol \
 
 ## Phase 9: Post-Deployment Validation
 
-> **Setup once per chain.** All cast examples below use `$NAV_PROXY` and `$RPC` so they work for any chain (the Canonical addresses table carries `TBD` for our contracts — read the live address from the deployments file). Set both at the top:
+> **Setup once per chain.** All cast examples below use `$NAV_PROXY` and `$RPC` so they work for any chain (the NAV proxy is the canonical `0x29fD97910baf7E9502B5a561F0c04Cf2555535c4` on every chain; per-chain adapters/feeds live in the deployments file). Set both at the top:
 >
 > ```bash
 > CHAIN_ID=1                 # 1 / 42161 / 8453 / 10 / 100

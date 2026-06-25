@@ -321,6 +321,16 @@
       }
     ]
   },
+  "RWIV": {
+    "address": "0xCafEaa466736ac01e0AC9CA72644BeF348694731",
+    "priceFeeds": [
+      {
+        "type": "Custom",
+        "feed": "RWIV",
+        "heartbeat": 82800
+      }
+    ]
+  },
   "AAVE": {
     "address": "0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9",
     "priceFeeds": [

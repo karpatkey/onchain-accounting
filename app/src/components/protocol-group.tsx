@@ -438,6 +438,13 @@ function hasMatchedVaultLegs(supply: OnchainPosition[], borrow: OnchainPosition[
   return borrow.some((p) => !!p.positionId && supplyIds.has(p.positionId.toLowerCase()))
 }
 
+/// True when any leg is a lending-market position (Aave / Spark — label "<reserve> position (<market>)").
+/// These read best grouped by market (every reserve of a market in one card) even when no single reserve
+/// carries both a supply and a borrow leg, so route them to the per-vault (market-grouped) layout too.
+function hasLendingMarketLegs(positions: OnchainPosition[]): boolean {
+  return positions.some((p) => extractMarket(p.positionDetail) !== null)
+}
+
 function PoolSubHeader({ label, total, isDebt }: { label: string; total: bigint | null; isDebt: boolean }) {
   return (
     <tr>
@@ -702,7 +709,7 @@ export function ProtocolGroup({ group, totalPortfolioNav, withdrawalsByKey }: Pr
           protocol-wide Supply / Borrow split. */}
       <table className="w-full">
         <tbody>
-          {hasMatchedVaultLegs(supply, borrow) ? (
+          {hasMatchedVaultLegs(supply, borrow) || hasLendingMarketLegs([...supply, ...borrow]) ? (
             <VaultSections positions={[...supply, ...borrow]} chainId={chainId} withdrawalsByKey={withdrawalsByKey} />
           ) : (
             <>

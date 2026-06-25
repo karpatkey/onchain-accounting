@@ -38,6 +38,7 @@ import {EthenaCooldownBalanceAdapter} from "../../src/balances/protocols/EthenaC
 import {MerklRewardsBalanceAdapter} from "../../src/balances/protocols/MerklRewards.sol";
 import {EtherFiWithdrawalsBalanceAdapter} from "../../src/balances/protocols/EtherFiWithdrawals.sol";
 import {NexusStakedNxmBalanceAdapter} from "../../src/balances/protocols/NexusStakedNxm.sol";
+import {StakeWiseExitQueueBalanceAdapter} from "../../src/balances/protocols/StakeWiseExitQueue.sol";
 import {UniswapV3PoolsMetaBalanceAdapter} from "../../src/balances/protocols/uniswap/UniswapV3PoolsMeta.sol";
 import {UniswapV2PoolsMetaBalanceAdapter} from "../../src/balances/protocols/uniswap/UniswapV2PoolsMeta.sol";
 import {
@@ -146,6 +147,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         // --- Nexus Mutual staked NXM (brute-force view adapter: scans StakingNFT, values via StakingViewer) ---
         _deployIfEnabled("NexusStakedNxm");
+
+        // --- StakeWise V3 exit-queue cache adapter (agent-fed; ADR 0014) ---
+        _deployIfEnabled("StakeWiseExitQueue");
 
         // --- Uniswap V3 (meta-adapter: all pools; pool set on NAV, ADR 0010) ---
         _deployIfEnabled("UniswapV3PoolsMeta"); // Meta-adapter: all Uniswap V3 pools (Supply + Fees legs)
@@ -360,6 +364,11 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // Nexus Mutual staked NXM (simple immutable view adapter; no agent).
         if (_equals(adapterName, "NexusStakedNxm")) {
             return _deployNexusStakedNxm(adapterName, navCalculator);
+        }
+
+        // StakeWise V3 exit queue: ticket-cached exit-queue adapter (ADR 0014).
+        if (_equals(adapterName, "StakeWiseExitQueue")) {
+            return _deployStakeWiseExitQueue(adapterName, navCalculator);
         }
 
         // Uniswap/PancakeSwap meta-adapters (per-instance adapters removed — superseded by meta-adapters)
@@ -774,6 +783,24 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         NexusStakedNxmBalanceAdapter adapter =
             new NexusStakedNxmBalanceAdapter(stakingNft, stakingViewer, underlyingToken, navCalculator);
+        return address(adapter);
+    }
+
+    function _deployStakeWiseExitQueue(string memory adapterName, address navCalculator) internal returns (address) {
+        // Owner = chainConfig.admin (OIV Safe / agent role): the only caller of submitPositions / clearPosition. The
+        // adapter values from live on-chain reads and verifies each tuple belongs to the account via
+        // calculateExitedAssets(receiver=account), so the owner cannot fabricate amounts (under-report only). See
+        // docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md.
+        address vaultsRegistry = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vaultsRegistry")
+        );
+        address underlyingToken = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
+        );
+        require(chainConfig.admin != address(0), "StakeWiseExitQueue: chainConfig.admin (initialOwner) not configured");
+
+        StakeWiseExitQueueBalanceAdapter adapter =
+            new StakeWiseExitQueueBalanceAdapter(vaultsRegistry, underlyingToken, navCalculator, chainConfig.admin);
         return address(adapter);
     }
 

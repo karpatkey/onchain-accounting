@@ -320,6 +320,13 @@
     "positionId": "<StakingNFT address>"
   },
 
+  "StakeWiseExitQueue": {
+    "$perPositionFields": "type: Supplied; single aggregated native-ETH leg per account (in-flight StakeWise V3 exit-queue assets; agent-fed cache of (vault, positionTicket, timestamp) tuples, emitted positionId is empty)",
+    "protocol": "StakeWise V3",
+    "positionDetail": { "protocol": "StakeWise V3", "product": "Staking", "name": "Exit Queue" },
+    "positionId": "<VaultsRegistry address>"
+  },
+
   "KelpWithdrawalQueue": {
     "$perPositionFields": "type: Staking; one position per NAV-registered payout asset (stETH, ETHx, native ETH) discovered at runtime",
     "protocol": "Kelp",

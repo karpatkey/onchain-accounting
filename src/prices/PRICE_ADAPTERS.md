@@ -253,6 +253,7 @@ All in `src/prices/protocols/`. Pattern is one file per asset; L2-specific varia
 | `sUSDe_Price` | sUSDe | USDe/USD Chainlink × Ethena vault share rate |
 | `sXDAI_Price` | sXDAI | xDAI/USD Chainlink × Gnosis savings rate (Gnosis Chain only) |
 | `syrupUSDC_Price`, `syrupUSDC_L2_Price` | syrupUSDC | USDC/USD Chainlink × Maple syrup rate |
+| `RWIV_Price` | RWIV | USDC/USD Chainlink × Nexus RWI Vault share rate (`convertToAssets`) |
 
 ### Liquid (re)staking tokens
 

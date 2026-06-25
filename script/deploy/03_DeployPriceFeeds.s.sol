@@ -11,6 +11,7 @@ import {LDO_PriceOracle} from "../../src/prices/protocols/LDO_Price.sol";
 import {sUSDS_PriceOracle} from "../../src/prices/protocols/sUSDS_Price.sol";
 import {sUSDe_PriceOracle} from "../../src/prices/protocols/sUSDe_Price.sol";
 import {syrupUSDC_PriceOracle} from "../../src/prices/protocols/syrupUSDC_Price.sol";
+import {RWIV_PriceOracle} from "../../src/prices/protocols/RWIV_Price.sol";
 import {wstETH_PriceOracle} from "../../src/prices/protocols/wstETH_Price.sol";
 import {rETH_PriceOracle} from "../../src/prices/protocols/rETH_Price.sol";
 import {osToken_PriceOracle} from "../../src/prices/protocols/osToken_Price.sol";
@@ -109,6 +110,11 @@ contract DeployPriceFeeds is BaseDeployScript {
         // Deploy syrupUSDC Price Oracle
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "syrupUSDC")) {
             _deploySyrupUsdc();
+        }
+
+        // Deploy RWIV Price Oracle
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "RWIV")) {
+            _deployRwiv();
         }
 
         // Deploy wstETH Price Oracle
@@ -298,6 +304,24 @@ contract DeployPriceFeeds is BaseDeployScript {
         syrupUSDC_PriceOracle syrupUsdcAdapter = new syrupUSDC_PriceOracle(syrupUsdc, usdcUsdOracle, usdcUsdHeartbeat);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "syrupUSDC", address(syrupUsdcAdapter));
         console2.log("syrupUSDC_PriceOracle deployed at:", address(syrupUsdcAdapter));
+    }
+
+    function _deployRwiv() internal {
+        address deployed = _readAdapterDeployed("priceFeeds", "RWIV");
+        if (deployed != address(0)) {
+            console2.log("RWIV_PriceOracle already deployed at:", deployed);
+            return;
+        }
+
+        address rwiv = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "RWIV", "rwiv"));
+        address usdcUsdOracle =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "RWIV", "usdcToUsdChainlinkAddress"));
+        uint256 usdcUsdHeartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "RWIV", "usdcToUsdChainlinkHeartbeat"));
+
+        RWIV_PriceOracle rwivAdapter = new RWIV_PriceOracle(rwiv, usdcUsdOracle, usdcUsdHeartbeat);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "RWIV", address(rwivAdapter));
+        console2.log("RWIV_PriceOracle deployed at:", address(rwivAdapter));
     }
 
     function _deployEthx() internal {

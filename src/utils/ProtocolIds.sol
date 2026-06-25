@@ -23,7 +23,8 @@ pragma solidity ^0.8;
 ///        UNISWAP_V2 / PANCAKESWAP_V2     → (address pair)
 ///        COMPOUND_V3 / FLUID_FTOKENS     → (address market)
 ///        MERKL                           → (address rewardToken)
-///        DAI_DSR / STADER_WITHDRAWAL / KELP_WITHDRAWAL / LIDO_WITHDRAWAL → "" (account-global)
+///        DAI_DSR / STADER_WITHDRAWAL / KELP_WITHDRAWAL / LIDO_WITHDRAWAL
+///          / ETHENA_COOLDOWN / ETHERFI_WITHDRAWAL / STAKEWISE_EXIT → "" (account-global)
 ///        BRIDGE_ESCROW                   → (address escrow, address token)
 library ProtocolIds {
     bytes32 internal constant WALLET = keccak256("wallet");
@@ -89,6 +90,7 @@ library ProtocolIds {
     bytes32 internal constant LIDO_WITHDRAWAL = keccak256("lido-withdrawal");
     bytes32 internal constant ETHENA_COOLDOWN = keccak256("ethena-cooldown");
     bytes32 internal constant ETHERFI_WITHDRAWAL = keccak256("etherfi-withdrawal");
+    bytes32 internal constant STAKEWISE_EXIT = keccak256("stakewise-exit");
 
     // Merkl rewards distributor
     bytes32 internal constant MERKL = keccak256("merkl");

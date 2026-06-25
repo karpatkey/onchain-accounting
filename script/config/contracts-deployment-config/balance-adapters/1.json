@@ -617,6 +617,17 @@
       "positionId": "0x7d5706f6ef3F89B3951E23e557CDFBC3239D4E2c"
     }
   },
+  "StakeWiseExitQueue": {
+    "enabled": true,
+    "$comment": "StakeWise V3 exit-queue cache adapter (agent-fed; ADR 0014, sibling of EtherFiWithdrawals). Mutable cache of (vault, positionTicket, timestamp) tuples — never amounts — owner = chainConfig.admin (OIV Safe); the kpk-agents submitter feeds tuples discovered from ExitQueueEntered events. Native-ETH denominated (mainnet StakeWise vaults settle in ETH); values from live reads (calculateExitedAssets.exitedAssets + convertToAssets(leftShares)) with calculateExitedAssets(receiver=account) as the on-chain ownership check. Reports 0 until the agent submits tuples. 04 reads vaultsRegistry/underlyingToken; protocol/positionDetail/positionId are identity metadata (hardcoded in the contract).",
+    "constructor": {
+      "vaultsRegistry": "0x3a0008a588772446f6e656133C2D5029CC4FC20E",
+      "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+      "protocol": "StakeWise V3",
+      "positionDetail": "{\"protocol\":\"StakeWise V3\",\"product\":\"Staking\",\"name\":\"Exit Queue\"",
+      "positionId": "0x3a0008a588772446f6e656133C2D5029CC4FC20E"
+    }
+  },
   "UniswapV3_WBTC_WETH_3000": {
     "enabled": false,
     "constructor": {

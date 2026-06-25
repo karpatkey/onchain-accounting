@@ -172,14 +172,11 @@ contract DeployPriceFeeds is BaseDeployScript {
             _deployEthPlus();
         }
 
-        // Deploy osToken (StakeWise V3) custom price feeds — osETH on Mainnet, osGNO on Gnosis.
-        // osTokens are now Custom-priced ERC20s (held balance via ERC20DefaultAdapter, priced
-        // convertToAssets(1e18) * underlying/USD) rather than bespoke balance adapters.
+        // Deploy osETH (StakeWise V3) osToken custom price feed on Mainnet (osGNO is deployed in the
+        // Gnosis branch). osTokens are Custom-priced ERC20s (held balance via ERC20DefaultAdapter,
+        // priced convertToAssets(1e18) * underlying/USD) rather than bespoke balance adapters.
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "osETH")) {
             _deployOsToken("osETH");
-        }
-        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "osGNO")) {
-            _deployOsToken("osGNO");
         }
 
         // Deploy OETH CrossRate Price Oracle (OETH/USD = ETH/USD x OETH/ETH)

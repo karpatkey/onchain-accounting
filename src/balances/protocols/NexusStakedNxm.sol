@@ -205,11 +205,9 @@ contract NexusStakedNxmBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         }
         if (account == address(0)) return new INAVCalculator.PositionBalance[](0);
 
-        // Cheap path: bail before fetching/scanning getRegisteredAssets when nothing is owed.
-        (uint256 staking, uint256 rewards) = _stakeAndRewards(account);
-        if (staking == 0 && rewards == 0) return new INAVCalculator.PositionBalance[](0);
-
-        // NXM must be registered in NAVCalculator for the position to count in NAV.
+        // NXM must be registered in NAVCalculator for the position to count in NAV. Resolve its Asset
+        // record first, and bail before the (bounded but non-trivial) StakingNFT scan when the asset is
+        // unregistered — so an unregistered underlying costs a single registry read, not the full scan.
         INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
         INAVCalculator.Asset memory underlying;
         bool registered;
@@ -221,6 +219,9 @@ contract NexusStakedNxmBalanceAdapter is IBalanceAdapter, IPositionDescribable {
             }
         }
         if (!registered) return new INAVCalculator.PositionBalance[](0);
+
+        (uint256 staking, uint256 rewards) = _stakeAndRewards(account);
+        if (staking == 0 && rewards == 0) return new INAVCalculator.PositionBalance[](0);
 
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](2);
         uint256 count;

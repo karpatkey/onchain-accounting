@@ -391,6 +391,15 @@ function fullAddressFromPositionId(positionId: string): string {
   return positionId
 }
 
+/// A positionId reduces to a plain 20-byte address only for single-instance adapters (vaults, gauges,
+/// pools, comets). Tuple / hash ids — Aave & Spark `abi.encode(pool, reserve)`, Uniswap/PCS
+/// `abi.encode(npm, tokenId)`, Morpho `abi.encode(bytes32 marketId)`, Balancer V2 poolId — are NOT
+/// addresses and must not be rendered as a chip (they'd dump a raw 64/128-byte hex blob, or worse,
+/// mis-decode a tokenId as a fake address). For those the human label from positionDetail is the identity.
+function isPlainAddress(s: string): boolean {
+  return /^0x[0-9a-fA-F]{40}$/.test(s)
+}
+
 function groupByVault(
   positions: OnchainPosition[],
 ): Array<{ key: string; label: string | null; positions: OnchainPosition[] }> {
@@ -581,7 +590,19 @@ function VaultSections({
                 >
                   <span className="flex min-w-0 items-center gap-2">
                     {v.label && <span className="text-xs font-semibold text-neutral-900">{v.label}</span>}
-                    <AddressChip address={fullId} chainId={chainId} className="text-[11px] text-neutral-700" />
+                    {/* Only show the instance chip when the positionId is a real 20-byte address (a vault /
+                        pool / comet). Tuple / hash ids (Aave/Spark pool+reserve, Uniswap npm+tokenId, Morpho
+                        marketId, …) aren't addresses — the label above is their identity; rendering the raw
+                        positionId here would dump an unreadable hex blob. */}
+                    {isPlainAddress(fullId) ? (
+                      <AddressChip address={fullId} chainId={chainId} className="text-[11px] text-neutral-700" />
+                    ) : (
+                      !v.label && (
+                        <span className="font-mono text-[11px] text-neutral-500" title={fullId}>
+                          {`${fullId.slice(0, 10)}…${fullId.slice(-6)}`}
+                        </span>
+                      )
+                    )}
                   </span>
                   <span
                     className={`shrink-0 text-xs font-semibold tabular-nums ${net < 0n ? 'text-rose-700' : 'text-neutral-800'}`}

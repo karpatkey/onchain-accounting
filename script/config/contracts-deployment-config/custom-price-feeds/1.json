@@ -26,6 +26,17 @@
       "yToXHeartbeat": "86400"
     }
   },
+  "lsETH": {
+    "enabled": true,
+    "$comment": "Liquid Collective lsETH. CrossRate: lsETH/USD = ETH/USD x lsETH/ETH. yToXFeed is Chainlink 'LsETH / ETH Exchange Rate' (0xE858728e), the same feed Morpho's lsETH market oracle uses.",
+    "constructor": {
+      "underlyingAsset": "0x8c1BEd5b9a0928467c9B1341Da1D7BD5e10b6549",
+      "xToUsdFeed": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+      "yToXFeed": "0xE858728eB31a25C4AcCcE17d01B68dCFC3A0ED2C",
+      "xToUsdHeartbeat": "3600",
+      "yToXHeartbeat": "86400"
+    }
+  },
   "rETH": {
     "enabled": true,
     "constructor": {

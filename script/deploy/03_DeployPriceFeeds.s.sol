@@ -127,6 +127,11 @@ contract DeployPriceFeeds is BaseDeployScript {
             _deployStEth();
         }
 
+        // Deploy lsETH CrossRate Price Oracle (lsETH/USD = ETH/USD x lsETH/ETH)
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "lsETH")) {
+            _deployLsEth();
+        }
+
         // Deploy rETH Price Oracle
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "rETH")) {
             _deployREth();
@@ -167,14 +172,11 @@ contract DeployPriceFeeds is BaseDeployScript {
             _deployEthPlus();
         }
 
-        // Deploy osToken (StakeWise V3) custom price feeds — osETH on Mainnet, osGNO on Gnosis.
-        // osTokens are now Custom-priced ERC20s (held balance via ERC20DefaultAdapter, priced
-        // convertToAssets(1e18) * underlying/USD) rather than bespoke balance adapters.
+        // Deploy osETH (StakeWise V3) osToken custom price feed on Mainnet (osGNO is deployed in the
+        // Gnosis branch). osTokens are Custom-priced ERC20s (held balance via ERC20DefaultAdapter,
+        // priced convertToAssets(1e18) * underlying/USD) rather than bespoke balance adapters.
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "osETH")) {
             _deployOsToken("osETH");
-        }
-        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "osGNO")) {
-            _deployOsToken("osGNO");
         }
 
         // Deploy OETH CrossRate Price Oracle (OETH/USD = ETH/USD x OETH/ETH)
@@ -387,6 +389,28 @@ contract DeployPriceFeeds is BaseDeployScript {
             new CrossRatePriceAdapter(stEth, ethUsdFeed, stEthEthFeed, ethUsdHeartbeat, stEthEthHeartbeat);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "stETH", address(stEthAdapter));
         console2.log("stETH CrossRatePriceAdapter deployed at:", address(stEthAdapter));
+    }
+
+    function _deployLsEth() internal {
+        address deployed = _readAdapterDeployed("priceFeeds", "lsETH");
+        if (deployed != address(0)) {
+            console2.log("lsETH CrossRatePriceAdapter already deployed at:", deployed);
+            return;
+        }
+
+        // CrossRate: Y/USD = (X/USD) * (Y/X). For lsETH: Y = lsETH, X = ETH.
+        address lsEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "lsETH", "underlyingAsset"));
+        address ethUsdFeed = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "lsETH", "xToUsdFeed"));
+        address lsEthEthFeed = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "lsETH", "yToXFeed"));
+        uint256 ethUsdHeartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "lsETH", "xToUsdHeartbeat"));
+        uint256 lsEthEthHeartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "lsETH", "yToXHeartbeat"));
+
+        CrossRatePriceAdapter lsEthAdapter =
+            new CrossRatePriceAdapter(lsEth, ethUsdFeed, lsEthEthFeed, ethUsdHeartbeat, lsEthEthHeartbeat);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "lsETH", address(lsEthAdapter));
+        console2.log("lsETH CrossRatePriceAdapter deployed at:", address(lsEthAdapter));
     }
 
     function _deployREth() internal {
@@ -689,6 +713,11 @@ contract DeployPriceFeeds is BaseDeployScript {
         // Deploy wstETH_L2 Price Oracle (Gnosis uses Aave ratio provider feed, not Chainlink)
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "wstETH_L2")) {
             _deployWstEthL2();
+        }
+
+        // Deploy osGNO (StakeWise V3) osToken price feed: convertToAssets(1e18) [osGNO/GNO] x GNO/USD.
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "osGNO")) {
+            _deployOsToken("osGNO");
         }
 
         vm.stopBroadcast();

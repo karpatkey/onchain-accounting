@@ -313,6 +313,13 @@
     "positionDetail": { "protocol": "ether.fi", "product": "Staking", "name": "ETH Withdrawal Queue" },
     "positionId": "<WithdrawRequestNFT address>"
   },
+  "NexusStakedNxm": {
+    "$perPositionFields": "types: Staking (active+expired stake) + Rewards (accrued), both NXM-denominated; aggregated per account across all StakingNFT positions/pools (emitted positionId is empty)",
+    "protocol": "Nexus Mutual",
+    "positionDetail": { "protocol": "Nexus Mutual", "product": "Staking", "name": "Staked NXM" },
+    "positionId": "<StakingNFT address>"
+  },
+
   "StakeWiseExitQueue": {
     "$perPositionFields": "type: Supplied; single aggregated native-ETH leg per account (in-flight StakeWise V3 exit-queue assets; agent-fed cache of (vault, positionTicket, timestamp) tuples, emitted positionId is empty)",
     "protocol": "StakeWise V3",

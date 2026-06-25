@@ -37,6 +37,7 @@ import {LidoWithdrawalQueueBalanceAdapter} from "../../src/balances/protocols/Li
 import {EthenaCooldownBalanceAdapter} from "../../src/balances/protocols/EthenaCooldownBalanceAdapter.sol";
 import {MerklRewardsBalanceAdapter} from "../../src/balances/protocols/MerklRewards.sol";
 import {EtherFiWithdrawalsBalanceAdapter} from "../../src/balances/protocols/EtherFiWithdrawals.sol";
+import {NexusStakedNxmBalanceAdapter} from "../../src/balances/protocols/NexusStakedNxm.sol";
 import {StakeWiseExitQueueBalanceAdapter} from "../../src/balances/protocols/StakeWiseExitQueue.sol";
 import {UniswapV3PoolsMetaBalanceAdapter} from "../../src/balances/protocols/uniswap/UniswapV3PoolsMeta.sol";
 import {UniswapV2PoolsMetaBalanceAdapter} from "../../src/balances/protocols/uniswap/UniswapV2PoolsMeta.sol";
@@ -143,6 +144,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         // --- ether.fi withdrawal-queue cache adapter (agent-fed; ADR 0014) ---
         _deployIfEnabled("EtherFiWithdrawals");
+
+        // --- Nexus Mutual staked NXM (brute-force view adapter: scans StakingNFT, values via StakingViewer) ---
+        _deployIfEnabled("NexusStakedNxm");
 
         // --- StakeWise V3 exit-queue cache adapter (agent-fed; ADR 0014) ---
         _deployIfEnabled("StakeWiseExitQueue");
@@ -355,6 +359,11 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // ether.fi withdrawals: id-cached withdrawal-queue adapter (ADR 0014).
         if (_equals(adapterName, "EtherFiWithdrawals")) {
             return _deployEtherFiWithdrawals(adapterName, navCalculator);
+        }
+
+        // Nexus Mutual staked NXM (simple immutable view adapter; no agent).
+        if (_equals(adapterName, "NexusStakedNxm")) {
+            return _deployNexusStakedNxm(adapterName, navCalculator);
         }
 
         // StakeWise V3 exit queue: ticket-cached exit-queue adapter (ADR 0014).
@@ -756,6 +765,24 @@ contract DeployBalanceAdapters is BaseDeployScript {
         EtherFiWithdrawalsBalanceAdapter adapter = new EtherFiWithdrawalsBalanceAdapter(
             withdrawRequestNft, liquidityPool, underlyingToken, navCalculator, chainConfig.admin
         );
+        return address(adapter);
+    }
+
+    function _deployNexusStakedNxm(string memory adapterName, address navCalculator) internal returns (address) {
+        // Immutable view adapter (no agent): discovers an account's StakingNFT positions by scanning
+        // tokenInfo(1..totalSupply) and values them via StakingViewer.getAggregatedTokens. underlyingToken = NXM.
+        address stakingNft = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "stakingNft")
+        );
+        address stakingViewer = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "stakingViewer")
+        );
+        address underlyingToken = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
+        );
+
+        NexusStakedNxmBalanceAdapter adapter =
+            new NexusStakedNxmBalanceAdapter(stakingNft, stakingViewer, underlyingToken, navCalculator);
         return address(adapter);
     }
 

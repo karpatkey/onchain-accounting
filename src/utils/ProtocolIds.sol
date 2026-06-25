@@ -24,7 +24,7 @@ pragma solidity ^0.8;
 ///        COMPOUND_V3 / FLUID_FTOKENS     → (address market)
 ///        MERKL                           → (address rewardToken)
 ///        DAI_DSR / STADER_WITHDRAWAL / KELP_WITHDRAWAL / LIDO_WITHDRAWAL
-///          / ETHENA_COOLDOWN / ETHERFI_WITHDRAWAL / STAKEWISE_EXIT → "" (account-global)
+///          / ETHENA_COOLDOWN / ETHERFI_WITHDRAWAL / STAKEWISE_EXIT / NEXUS_STAKING → "" (account-global)
 ///        BRIDGE_ESCROW                   → (address escrow, address token)
 library ProtocolIds {
     bytes32 internal constant WALLET = keccak256("wallet");
@@ -53,6 +53,9 @@ library ProtocolIds {
 
     // StakeWise
     bytes32 internal constant STAKEWISE_V3 = keccak256("stakewise-v3");
+
+    // Nexus Mutual
+    bytes32 internal constant NEXUS_STAKING = keccak256("nexus-staking");
 
     // Gearbox
     bytes32 internal constant GEARBOX_V3 = keccak256("gearbox-v3");

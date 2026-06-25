@@ -98,22 +98,33 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev Label is "<reserve symbol> position (<market id>)" — the market id (e.g. "Aave Ethereum Market" vs
-    ///      "Aave V3 Lido Ethereum") distinguishes instances that share a reserve symbol, since protocolId is the
-    ///      same across all instances and positionId carries the market only as the pool address. Falls back to
-    ///      "<reserve symbol> position" when the market id is unavailable. `virtual` so the V2 subclass can override.
+    /// @dev Label is the Aave instance name — "Core Instance", "Prime Instance" or "<Chain> Instance"
+    ///      (e.g. "Gnosis Chain Instance", "Arbitrum Instance"). Every reserve of an instance shares this
+    ///      instance-level label; positionId still carries the reserve, so position identity is unchanged.
+    ///      Mapping lives in `_instanceName`. `virtual` so the V2 subclass can override.
     function describePosition(bytes calldata pid) external view virtual override returns (string memory) {
         if (pid.length < 64) return "";
-        (address pool, address reserve) = abi.decode(pid, (address, address));
-        string memory sym;
-        try IERC20Metadata(reserve).symbol() returns (string memory s) {
-            sym = s;
-        } catch {
-            return "";
+        (address pool,) = abi.decode(pid, (address, address));
+        return _instanceName(_marketId(pool));
+    }
+
+    /// @notice Maps an Aave `getMarketId()` string to the human instance name used as the display label.
+    /// @dev Mainnet hosts multiple instances (Core / Prime / V2) distinguished by market id; every other
+    ///      supported chain runs a single Aave instance, named by chain. Unknown chains/instances fall back
+    ///      to the raw canonical market id (or "" if that too is unavailable).
+    function _instanceName(string memory marketId) internal view returns (string memory) {
+        uint256 cid = block.chainid;
+        if (cid == 1) {
+            bytes32 h = keccak256(bytes(marketId));
+            if (h == keccak256(bytes("Aave V3 Lido Ethereum"))) return "Prime Instance";
+            if (h == keccak256(bytes("Aave genesis market"))) return "V2 Instance";
+            return "Core Instance";
         }
-        string memory market = _marketId(pool);
-        return
-            bytes(market).length == 0 ? string.concat(sym, " position") : string.concat(sym, " position (", market, ")");
+        if (cid == 10) return "Optimism Instance";
+        if (cid == 100) return "Gnosis Chain Instance";
+        if (cid == 42161) return "Arbitrum Instance";
+        if (cid == 8453) return "Base Instance";
+        return marketId;
     }
 
     /// @notice Resolves the instance's market id (for the display label) from its pool.

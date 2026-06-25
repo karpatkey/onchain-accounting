@@ -3,7 +3,7 @@
 > **Status: Completed — archival record as of 2026-04-17.**
 > All three PRs (#10, #11, #12) merged to `main`. Oracle migration scope is closed. This document is preserved as the authoritative history of *what* was ported, *why* specific divergences were accepted, and *which* follow-ups remain open.
 >
-> **For ongoing operational work** (deploying oracles, adding new protocols, registering new assets), see [`script/NAV_V2_DEPLOYMENT_RUNBOOK.md`](../../script/NAV_V2_DEPLOYMENT_RUNBOOK.md). The runbook is the living doc; this plan is the retrospective.
+> **For ongoing operational work** (deploying oracles, adding new protocols, registering new assets), see [`script/NAV_DEPLOYMENT_RUNBOOK.md`](../../script/NAV_DEPLOYMENT_RUNBOOK.md). The runbook is the living doc; this plan is the retrospective.
 
 > **Branches**: stacked PRs — see PR strategy below
 > **Source repo**: `karpatkey-tokenized-fund/contracts` (NAV v1)
@@ -135,7 +135,7 @@ Stacked PRs — each branch targets the previous one. As each PR merges to `main
 
 > Phase 3 reconciliation of existing migrations is spread across PRs — PR 1 handles AaveV3Instance/SparkLend, the rest are reconciled as part of each related PR. Each PR must leave the test suite fully green before merging.
 >
-> **On scope change (2026-04-16):** while reviewing `NAV_V2_DEPLOYMENT_RUNBOOK.md` we discovered that the per-oracle checklists in Phases 1c/1d did not include a "Deploy script" checkbox (Phases 1a/1b did), and Phase 2 did not track updates to `06_Configure.s.sol` or the full per-instance list for `04_DeployBalanceAdapters.s.sol`. Rather than creating a separate PR 4, the missing deploy-script work is folded back into the PR where the oracle lives (prices → PR 2, balances → PR 3), so each merged PR leaves its oracles actually deployable. See the Phase 1 and Phase 2 addendum sections below for the concrete task lists. Scope is limited to what the **ETH Alpha Fund** and **USD Alpha Fund** actually use — stale v1 entries (expired PT tokens, wound-down markets, unused StakeWise vaults, etc.) are intentionally excluded.
+> **On scope change (2026-04-16):** while reviewing `NAV_DEPLOYMENT_RUNBOOK.md` we discovered that the per-oracle checklists in Phases 1c/1d did not include a "Deploy script" checkbox (Phases 1a/1b did), and Phase 2 did not track updates to `06_Configure.s.sol` or the full per-instance list for `04_DeployBalanceAdapters.s.sol`. Rather than creating a separate PR 4, the missing deploy-script work is folded back into the PR where the oracle lives (prices → PR 2, balances → PR 3), so each merged PR leaves its oracles actually deployable. See the Phase 1 and Phase 2 addendum sections below for the concrete task lists. Scope is limited to what the **ETH Alpha Fund** and **USD Alpha Fund** actually use — stale v1 entries (expired PT tokens, wound-down markets, unused StakeWise vaults, etc.) are intentionally excluded.
 
 ---
 
@@ -998,7 +998,7 @@ Notes worth carrying into future migrations or large refactors.
 
 - **Every PR description should reference this plan document + which sections it covers.** PR #10/#11/#12 all did; makes the retrospective trivial to write.
 
-- **Don't let the runbook drift.** `NAV_V2_DEPLOYMENT_RUNBOOK.md` was stale within days of PR #12 merging (the "Known Gaps" section still listed gaps 1–3 as blocking when they were closed). Any PR that changes deploy scripts, adapter families, or role flow *must* update the runbook in the same PR.
+- **Don't let the runbook drift.** `NAV_DEPLOYMENT_RUNBOOK.md` was stale within days of PR #12 merging (the "Known Gaps" section still listed gaps 1–3 as blocking when they were closed). Any PR that changes deploy scripts, adapter families, or role flow *must* update the runbook in the same PR.
 
 ---
 
@@ -1006,7 +1006,7 @@ Notes worth carrying into future migrations or large refactors.
 
 Forward-looking guidance. The migration is closed — these are the workflows for additions.
 
-- **New Custom price oracle:** follow the ["How to add a new Custom price oracle"](../../script/NAV_V2_DEPLOYMENT_RUNBOOK.md#how-to-add-a-new-custom-price-oracle) section of the runbook.
-- **New balance adapter (protocol or instance):** follow the ["How to add a new balance adapter"](../../script/NAV_V2_DEPLOYMENT_RUNBOOK.md#how-to-add-a-new-balance-adapter) section of the runbook.
+- **New Custom price oracle:** follow the ["How to add a new Custom price oracle"](../../script/NAV_DEPLOYMENT_RUNBOOK.md#how-to-add-a-new-custom-price-oracle) section of the runbook.
+- **New balance adapter (protocol or instance):** follow the ["How to add a new balance adapter"](../../script/NAV_DEPLOYMENT_RUNBOOK.md#how-to-add-a-new-balance-adapter) section of the runbook.
 - **New fund on existing chains:** no code changes needed — just register assets on NAVCalculator (Phase 5 of the runbook) and ensure the relevant balance oracles are already registered. If the fund needs a protocol we don't yet support, add the adapter first.
 - **New chain:** see [`script/DEPLOYMENT_SUMMARY.md`](../../script/DEPLOYMENT_SUMMARY.md) for the CREATE2 + atomic-proxy flow. Add the chain config, run `01_DeployImplementations.s.sol`, `02_DeployProxies.s.sol`, then follow the runbook Phases 1–9.

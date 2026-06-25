@@ -1,15 +1,15 @@
-# NAV v2 Deployment Runbook
+# NAV Deployment Runbook
 
 > **⚠️ Deployment is now EOA-only.** A single deployer EOA runs every step with `--broadcast`; no Safe executes deploy/config txs. "Path A (Safe-TX bundles)" below is superseded — use the EOA path only. `06_Configure.s.sol` was rewritten as an EOA broadcast (commit `91a5992`); it now broadcasts `addBalanceAdapters`/`addMetaBalanceAdapter` + `addMetaInstances`/`removeMetaInstances` + bridge authorization directly, all idempotently. The final step is `07_TransferAdminToSecurityCouncil.s.sol`, which hands `DEFAULT_ADMIN_ROLE` + `MANAGER` on **both** the NAV and Bridge proxies to `addresses.securityCouncil` and renounces the deployer's roles. See `script/deploy/README.md` for the authoritative, current procedure.
 
-Step-by-step operational guide for deploying the NAV v2 system — NAVCalculator, BridgeEscrow, price oracles, balance adapters, bridge adapters — to any supported chain. This runbook is the source of truth for every NAV v2 deployment going forward, regardless of which fund (ETH Alpha, USD Alpha, kUSDprime, kREN, or any future fund) the deployment supports.
+Step-by-step operational guide for deploying the NAV system — NAVCalculator, BridgeEscrow, price oracles, balance adapters, bridge adapters — to any supported chain. This runbook is the source of truth for every NAV deployment going forward, regardless of which fund (ETH Alpha, USD Alpha, kUSDprime, kREN, or any future fund) the deployment supports.
 
 **Companion docs:**
 - [`DEPLOYMENT_SUMMARY.md`](DEPLOYMENT_SUMMARY.md) — architectural overview (CREATE2, atomic proxy deploy, Safe multisig control). Read first if you're new to the system.
 - [`docs/historical/oracle-migration-plan.md`](../docs/historical/oracle-migration-plan.md) — historical record of the v1 → v2 adapter migration, plus known follow-up improvements. Read if you want to understand why a particular adapter looks the way it does. Archival; for current ops, use this runbook.
 
 **When you use this runbook:**
-1. Deploying NAV v2 to a new chain for the first time.
+1. Deploying NAV to a new chain for the first time.
 2. Deploying additional price or balance adapters to an already-live chain.
 3. Registering new assets on a live NAVCalculator.
 4. Rotating MANAGER/DEFAULT_ADMIN roles.
@@ -21,9 +21,9 @@ Step-by-step operational guide for deploying the NAV v2 system — NAVCalculator
 
 ## System overview
 
-> **Note on addresses in this runbook.** All of OUR deployed-contract addresses are reset to `TBD` for the from-scratch NAV v2 redeploy. After broadcast, read the live addresses from `script/config/deployments/<chainId>.json` (`NAVCalculatorProxy` / `BridgeEscrowProxy` / per-chain `ERC20Default`). The deployments file is written by the deploy scripts and is the source of truth; this runbook intentionally carries no concrete addresses for our contracts.
+> **Note on addresses in this runbook.** This runbook intentionally carries no concrete addresses for our contracts — read the live addresses from `script/config/deployments/<chainId>.json` (`NAVCalculatorProxy` / per-chain `ERC20Default` / adapters / feeds), the source of truth written by the deploy scripts, or the human-readable mirror [`DEPLOYED_ADDRESSES.md`](DEPLOYED_ADDRESSES.md). The system was freshly deployed across all 5 production chains on **2026-06-26** (bridge out of scope, so no `BridgeEscrowProxy`; `07` council handoff deferred — admin + manager remain on the deployer EOA).
 
-NAV v2 is a single, chain-local system. Each supported chain has:
+NAV is a single, chain-local system. Each supported chain has:
 
 - **One NAVCalculator proxy** (UUPS) at the same canonical address on every chain (`TBD`). Any Safe can call `getAccountNav(safe, quoteAsset)` and get its NAV in USD or any registered quote asset.
 - **One BridgeEscrow proxy** (UUPS) at `TBD`. Tracks outbound/inbound bridge liquidity that would otherwise be invisible to the NAV.
@@ -60,13 +60,13 @@ NAVCalculator and BridgeEscrow both use OpenZeppelin `AccessControlUpgradeable` 
 
 **Legacy path (`USE_LEGACY_DEPLOY=1`).** Initialization is `NAVCalculator.initialize(chainConfig.admin, ...)` directly — `chainConfig.admin` gets `DEFAULT_ADMIN_ROLE`. The broadcast sender (deployer EOA) does NOT hold any role afterwards. **The script logs a warning** that `MANAGER` must be granted via Safe TX from the admin (because `02_DeployProxies.s.sol` no longer attempts the grant). For tonight's deploy, prefer the atomic path; only use legacy if you have a specific reason.
 
-**On-chain state.** All past deployments have been wiped; there is no live NAV v2 control plane until this redeploy completes. Every chain config must set `addresses.admin = addresses.manager` to the governance Safe `0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537` (verify it is a Safe — `cast code` returns bytecode, not `0x`) before broadcast, so the Safe holds both `DEFAULT_ADMIN_ROLE` and `MANAGER` from deploy time. Do not point admin/manager at a deployer EOA for production.
+**On-chain state.** All past deployments have been wiped; there is no live NAV control plane until this redeploy completes. Every chain config must set `addresses.admin = addresses.manager` to the governance Safe `0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537` (verify it is a Safe — `cast code` returns bytecode, not `0x`) before broadcast, so the Safe holds both `DEFAULT_ADMIN_ROLE` and `MANAGER` from deploy time. Do not point admin/manager at a deployer EOA for production.
 
 **MANAGER-grant bug — FIXED in commit `d513f27` (2026-04-29).** The atomic path now grants MANAGER inside `AtomicProxyDeployer`'s constructor (where the deployer transiently holds `DEFAULT_ADMIN_ROLE`), so it works regardless of whether `chainConfig.admin` is an EOA or a Safe. The same commit also makes the deployer self-renounce its admin role at constructor end, closing the orphaned-admin cosmetic issue. The legacy path no longer attempts the grant from the deployer EOA — it logs a warning that MANAGER must be granted via Safe TX from the admin. **No workaround is required for tonight's redeploy.** Historical context: between 2026-04-20 and 2026-04-29 this was a blocking deploy bug with three documented workarounds in this runbook; PR #14's caveat callouts described those workarounds. They are now obsolete; flag remaining mentions for cleanup but do not act on them.
 
 **Steady-state convention.** `chainConfig.admin` and `chainConfig.manager` should point to the **same Safe multisig** (the governance Safe `0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537`). Deployer EOA pays gas at deploy time and retains no ongoing NAV powers. This redeploy wires the Safe in from the start.
 
-**Why this matters (v1 precedent).** `karpatkey-tokenized-fund` ETH Alpha STAGE's NAVCalculator v1 ended up with MANAGER stuck on the deployer EOA and no `DEFAULT_ADMIN_ROLE` holder at all — leaving it upgrade-locked and requiring a full redeploy. NAV v2's access-control design is safer, and since `d513f27` the role grants are atomic with proxy initialization. Always run the post-deploy role validation below regardless — defence in depth.
+**Why this matters (v1 precedent).** `karpatkey-tokenized-fund` ETH Alpha STAGE's NAVCalculator v1 ended up with MANAGER stuck on the deployer EOA and no `DEFAULT_ADMIN_ROLE` holder at all — leaving it upgrade-locked and requiring a full redeploy. NAV's access-control design is safer, and since `d513f27` the role grants are atomic with proxy initialization. Always run the post-deploy role validation below regardless — defence in depth.
 
 **Post-deploy role validation** (run for every chain, every time you deploy):
 
@@ -91,9 +91,9 @@ If any of these return the wrong result, **stop and fix** before proceeding. See
 
 ## Canonical addresses
 
-> **STATUS — all past deployments wiped; NAV v2 is being redeployed from scratch (new bytecode).** No live addresses exist until this redeploy completes. Admin + manager on every NAV proxy will be held by the governance Safe `0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537` (same address on every chain). Deployer EOA holds no privileged role at end state. Per-chain inventory of every deployed address (proxies, impls, price-feed adapters, balance adapters, bridge adapters) lives in `script/config/deployments/<chainId>.json`, written by the deploy scripts.
+> **STATUS — all past deployments wiped; NAV is being redeployed from scratch (new bytecode).** No live addresses exist until this redeploy completes. Admin + manager on every NAV proxy will be held by the governance Safe `0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537` (same address on every chain). Deployer EOA holds no privileged role at end state. Per-chain inventory of every deployed address (proxies, impls, price-feed adapters, balance adapters, bridge adapters) lives in `script/config/deployments/<chainId>.json`, written by the deploy scripts.
 
-### NAV v2
+### NAV
 
 | Component | Address | Chains |
 |-----------|---------|--------|
@@ -244,7 +244,7 @@ All past deployments have been wiped from the configs. Any prior proxies that re
 
 ### R.4 Don't forget downstream
 
-- `karpatkey-tokenized-fund` — any deploy script that hardcodes the NAV v2 proxy addresses needs updating once the new addresses are in `deployments/<chainId>.json`.
+- `karpatkey-tokenized-fund` — any deploy script that hardcodes the NAV proxy addresses needs updating once the new addresses are in `deployments/<chainId>.json`.
 - `onchain-investment-vehicles` — same; check before re-deploying any Shares contract.
 - Internal monitoring / dashboards / docs — anywhere the old addresses are referenced.
 
@@ -306,7 +306,7 @@ The adapter migration PRs have all merged to `main`:
 | [#10](https://github.com/karpatkey/onchain-accounting/pull/10) | `feat/pr1-surgical-changes` | Base infrastructure changes | Merged 2026-04-17 (`f97f264`) ✓ |
 | [#11](https://github.com/karpatkey/onchain-accounting/pull/11) | `feat/pr2-price-oracles` | 16 custom price oracles + L2 deploy wiring | Merged 2026-04-17 (`369efd0`) ✓ |
 | [#12](https://github.com/karpatkey/onchain-accounting/pull/12) | `feat/pr3-balance-oracles` | 5 new balance adapters (MorphoVault, GearboxMarket, Cap, Curve, Convex) + per-instance deploy wiring | Merged 2026-04-17 (`f32d560`) ✓ |
-| [#13](https://github.com/karpatkey/onchain-accounting/pull/13) | `docs/nav-v2-runbook-update` | NAV v2 runbook + tracked migration plan + SparkLend dispatch fix | Merged 2026-04-24 (`849e3ff`) ✓ |
+| [#13](https://github.com/karpatkey/onchain-accounting/pull/13) | `docs/nav-v2-runbook-update` | NAV runbook + tracked migration plan + SparkLend dispatch fix | Merged 2026-04-24 (`849e3ff`) ✓ |
 | [#14](https://github.com/karpatkey/onchain-accounting/pull/14) | `feat/usd-alpha-token-registry` | USD Alpha token registry alignment + heartbeat fixes + redeploy guidance docs | Merged (`16c7c8f`) ✓ |
 
 ### 0.2 Environment setup
@@ -361,7 +361,7 @@ Open `script/config/chains/{chainId}.json` and confirm every field is correct fo
 
 Tick every box below before you broadcast on any chain. Each one has burned a past deployment:
 
-- [ ] **NAV v2 proxies have been redeployed with Safe admin/manager.** Verify with `cast code <safeAddr> --rpc-url <RPC>` returning bytecode, not `0x`, AND `hasRole(DEFAULT_ADMIN_ROLE, <safe>) = true` on both proxies. If admin/manager is not the governance Safe `0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537`, **stop and complete "Redeploying proxies" first** — Phase 4-9 against EOA-controlled proxies is single-key custody.
+- [ ] **NAV proxies have been redeployed with Safe admin/manager.** Verify with `cast code <safeAddr> --rpc-url <RPC>` returning bytecode, not `0x`, AND `hasRole(DEFAULT_ADMIN_ROLE, <safe>) = true` on both proxies. If admin/manager is not the governance Safe `0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537`, **stop and complete "Redeploying proxies" first** — Phase 4-9 against EOA-controlled proxies is single-key custody.
 - [ ] Branch you're deploying from is `main` (or a documented release tag). `git rev-parse HEAD` matches the commit you expect.
 - [ ] `forge build` passes clean (default profile — `foundry.toml` defines `default`, `dev`, `coverage`, and `slow`; there is no `local` profile here).
 - [ ] Non-fork tests pass: `forge test --no-match-path 'test/**/fork/*.sol'` → 716+ passing.
@@ -617,11 +617,11 @@ The `_deployIfEnabled(...)` calls in `run()` are the authoritative source. Most 
 
 Run per chain. Only adapters with `enabled: true` in config are deployed.
 
-> **When this phase is needed (and when it isn't).** Phase 3 builds NAV v2 versions of Custom price oracles. The fund-side repo (`karpatkey-tokenized-fund`) ships its own deployments of every Custom adapter we currently use, and those v1 deployments **satisfy the v2 `IPriceFeedCustom` interface** — verified empirically across all 18 deployed Custom adapters (see `docs/historical/oracle-migration-plan.md` → "Empirical confirmation"). For any asset whose `priceFeeds` entry in `nav-config/assets-and-price-feeds/<chainId>.json .<symbol>` already points at a working fund-side `address`, **deploying a NAV v2 copy is redundant** — both contracts return the same price for the same block, and NAV v2 just reads whatever address is in the registry.
+> **When this phase is needed (and when it isn't).** Phase 3 builds NAV versions of Custom price oracles. The fund-side repo (`karpatkey-tokenized-fund`) ships its own deployments of every Custom adapter we currently use, and those v1 deployments **satisfy the v2 `IPriceFeedCustom` interface** — verified empirically across all 18 deployed Custom adapters (see `docs/historical/oracle-migration-plan.md` → "Empirical confirmation"). For any asset whose `priceFeeds` entry in `nav-config/assets-and-price-feeds/<chainId>.json .<symbol>` already points at a working fund-side `address`, **deploying a NAV copy is redundant** — both contracts return the same price for the same block, and NAV just reads whatever address is in the registry.
 >
 > Running this phase only adds value when:
 > - You're onboarding a new adapter that the fund-side never deployed.
-> - You explicitly want NAV v2 to own its adapter stack independently of the fund repo (e.g. for an audit boundary).
+> - You explicitly want NAV to own its adapter stack independently of the fund repo (e.g. for an audit boundary).
 >
 > If neither applies, set `contracts-deployment-config/custom-price-feeds/<chainId>.json .<name>.enabled = false` (skips the deploy) and proceed to Phase 4. As of 2026-04-28 every `enabled: true` adapter falls in the redundant category — the matching token entries point at fund-side addresses — so Phase 3 can be skipped entirely for the current Alpha-fund deployment.
 
@@ -734,7 +734,7 @@ Deployed addresses are auto-saved to `script/config/deployments/{chainId}.json` 
 
 Assets (tokens) must be registered on NAVCalculator with their price feed (Chainlink or Custom adapter address). This is done via `RegisterAssets.s.sol`.
 
-> **This is the on-chain wiring step for price oracles.** `nav-config/assets-and-price-feeds/<chainId>.json` is just the source data. NAV v2 reads from its own `_priceOracles[asset]` mapping at runtime (`Prices.sol:32`); that mapping stays empty until `RegisterAssets.s.sol` writes to it via `NAVCalculator.registerAsset(asset, feed, priceType, heartbeat)` (first feed) and `addPriceFeed(...)` (subsequent feeds, ADR 0009). After this phase completes per chain, NAV's price stack is fully wired — every registered asset returns a price (or a `stale` flag) when queried. Phases 3 and 5 are independent: Phase 3 deploys *new* adapter contracts, Phase 5 *registers* the feed addresses from `nav-config/assets-and-price-feeds/<chainId>.json .<symbol>.priceFeeds` (whether a Chainlink `address`, a fund-side v1 Custom deployment, or a NAV v2 redeploy from Phase 3 — Custom-feed addresses are resolved from the deployments file by `feed` name).
+> **This is the on-chain wiring step for price oracles.** `nav-config/assets-and-price-feeds/<chainId>.json` is just the source data. NAV reads from its own `_priceOracles[asset]` mapping at runtime (`Prices.sol:32`); that mapping stays empty until `RegisterAssets.s.sol` writes to it via `NAVCalculator.registerAsset(asset, feed, priceType, heartbeat)` (first feed) and `addPriceFeed(...)` (subsequent feeds, ADR 0009). After this phase completes per chain, NAV's price stack is fully wired — every registered asset returns a price (or a `stale` flag) when queried. Phases 3 and 5 are independent: Phase 3 deploys *new* adapter contracts, Phase 5 *registers* the feed addresses from `nav-config/assets-and-price-feeds/<chainId>.json .<symbol>.priceFeeds` (whether a Chainlink `address`, a fund-side v1 Custom deployment, or a NAV redeploy from Phase 3 — Custom-feed addresses are resolved from the deployments file by `feed` name).
 
 ### 5.1 Review token list
 
@@ -1128,7 +1128,7 @@ A balance adapter returned a `PositionBalance` for an underlying asset that isn'
 
 ### Chainlink feed shows `answer <= 0`
 
-NAV v2 skips any feed whose answer is ≤ 0 during feed selection (`PriceFeedLib._selectFeedCore` — `if (answer <= 0) continue;`). If an asset has another non-stale feed, that one is used; if every registered feed fails the gate, the price is flagged stale and the asset contributes 0 to NAV. Usually indicates a broken feed or one that just reverted; check `latestRoundData()` directly and contact the adapter provider.
+NAV skips any feed whose answer is ≤ 0 during feed selection (`PriceFeedLib._selectFeedCore` — `if (answer <= 0) continue;`). If an asset has another non-stale feed, that one is used; if every registered feed fails the gate, the price is flagged stale and the asset contributes 0 to NAV. Usually indicates a broken feed or one that just reverted; check `latestRoundData()` directly and contact the adapter provider.
 
 ### `forge script` fails with `vm.writeJson: no such key`
 

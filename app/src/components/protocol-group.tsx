@@ -406,13 +406,22 @@ function groupByVault(
   const out: Array<{ key: string; label: string | null; positions: OnchainPosition[] }> = []
   const idx = new Map<string, number>()
   for (const pos of positions) {
-    const key =
-      pos.positionId && pos.positionId !== '0x' ? pos.positionId.toLowerCase() : pos.balanceOracle.toLowerCase()
+    // Lending markets (Aave / Spark) emit one positionId per reserve, but a market is a single position:
+    // group all of a market's reserve legs (collateral + borrow across every token) under one card keyed by
+    // the market. Everything else (vaults, gauges, Morpho markets, Uniswap NFTs) keeps its per-positionId
+    // identity. extractMarket() is non-null only for the "<reserve> position (<market>)" lending shape, so it
+    // cleanly selects Aave/Spark without catching Uniswap's (npm, tokenId) or Morpho's marketId positionIds.
+    const market = extractMarket(pos.positionDetail)
+    const key = market
+      ? `market:${market.toLowerCase()}`
+      : pos.positionId && pos.positionId !== '0x'
+        ? pos.positionId.toLowerCase()
+        : pos.balanceOracle.toLowerCase()
     const i = idx.get(key)
     if (i !== undefined) out[i].positions.push(pos)
     else {
       idx.set(key, out.length)
-      out.push({ key, label: pos.poolLabel, positions: [pos] })
+      out.push({ key, label: market ?? extractPoolLabel(pos.positionDetail), positions: [pos] })
     }
   }
   return out

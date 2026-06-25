@@ -324,8 +324,11 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
         address navProxy = _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltNavProxy, navProxyBytecode);
         address bridgeProxy = _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltBridgeProxy, bridgeProxyBytecode);
 
-        // Skip if proxies already deployed (e.g. on mainnet fork) — full flow is covered by broadcast
-        if (navProxy.code.length > 0 && bridgeProxy.code.length > 0) {
+        // Skip if either proxy is already deployed (e.g. on a mainnet fork after a real deploy). The
+        // NAV-only deploy path (02_2) deploys the NAV proxy without the Bridge proxy, so a both-or-neither
+        // check would miss that case and try to re-deploy the existing NAV proxy (reverts NotAuthorized).
+        // Full flow is covered by broadcast.
+        if (navProxy.code.length > 0 || bridgeProxy.code.length > 0) {
             console2.log(
                 "[SKIP] test_AtomicProxyDeployerFullFlowWhenProxiesEmpty: proxies already deployed at expected addresses"
             );

@@ -11,9 +11,6 @@
   "MorphoMarket_syrupUSDC_USDC": {
     "enabled": false
   },
-  "Aura_GHO_USDC_USDT": {
-    "enabled": false
-  },
   "BalancerV3_GHO_USDC_USDT": {
     "enabled": false
   },

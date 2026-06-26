@@ -33,7 +33,6 @@ import {BalancerV3PoolsMetaBalanceAdapter} from "src/balances/protocols/balancer
 import {BalancerV2PoolsMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV2PoolsMeta.sol";
 import {BalancerV2GaugesMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV2GaugesMeta.sol";
 import {BalancerV3GaugesMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV3GaugesMeta.sol";
-import {AuraRewardsMetaBalanceAdapter} from "src/balances/protocols/AuraRewardsMeta.sol";
 import {MerklRewardsBalanceAdapter, IMerklDistributor} from "src/balances/protocols/MerklRewards.sol";
 import {FluidFTokensMetaBalanceAdapter} from "src/balances/protocols/FluidFTokensMeta.sol";
 import {FluidVaultsMetaBalanceAdapter} from "src/balances/protocols/FluidVaultsMeta.sol";
@@ -617,9 +616,6 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_equals(name, "BalancerV2GaugesMeta")) {
             return _deployBalancerV2GaugesMeta(name, navAddr);
         }
-        if (_equals(name, "AuraRewardsMeta")) {
-            return _deployAuraRewardsMeta(name, navAddr);
-        }
         if (_equals(name, "MerklRewards")) {
             return _deployMerklRewards(name, navAddr);
         }
@@ -773,15 +769,6 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         address adapter = address(new MerklRewardsBalanceAdapter(distributor, navAddr, admin));
         _merklAdapter = adapter;
         return adapter;
-    }
-
-    function _deployAuraRewardsMeta(string memory name, address navAddr) internal returns (address) {
-        address booster =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "booster"));
-        address vault =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "balancerV2Vault"));
-        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        return address(new AuraRewardsMetaBalanceAdapter(booster, vault, protocol, navAddr));
     }
 
     function _deployAaveV2InstancesMeta(string memory name, address navAddr) internal returns (address) {

@@ -14,9 +14,6 @@
   "MorphoMarket_weETH_WETH": {
     "enabled": false
   },
-  "Aura_GHO_USDC": {
-    "enabled": false
-  },
   "BalancerV3_GHO_USDC": {
     "enabled": false
   },

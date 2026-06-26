@@ -287,30 +287,6 @@
       "positionId": "0x85B2b559bC2D21104C4DEFdd6EFcA8A20343361D"
     }
   },
-  "Aura_GHO_USDT_USDC": {
-    "enabled": false,
-    "constructor": {
-      "pool": "0x85B2b559bC2D21104C4DEFdd6EFcA8A20343361D",
-      "gauge": "0x9fdD52eFEb601E4Bc78b89C6490505B8aC637E9f",
-      "booster": "0xA57b8d98dAE62B26Ec3bcC4a365338157060B234",
-      "pid": "246",
-      "protocol": "Aura",
-      "positionDetail": "{\"protocol\":\"Aura\",\"product\":\"LP\",\"name\":\"Aave GHO/USDT/USDC\"",
-      "positionId": "0x85B2b559bC2D21104C4DEFdd6EFcA8A20343361D"
-    }
-  },
-  "Aura_rETH_WETH": {
-    "enabled": false,
-    "constructor": {
-      "pool": "0x1ea5870f7C037930CE1d5d8d9317c670e89e13E3",
-      "gauge": "0x62A66eB9aBf7a788F48D0ce7C0C065df9e09dA19",
-      "booster": "0xA57b8d98dAE62B26Ec3bcC4a365338157060B234",
-      "pid": "271",
-      "protocol": "Aura",
-      "positionDetail": "{\"protocol\":\"Aura\",\"product\":\"LP\",\"name\":\"rETH/Aave WETH\"",
-      "positionId": "0x1ea5870f7C037930CE1d5d8d9317c670e89e13E3"
-    }
-  },
   "Curve_weETH_WETH": {
     "enabled": false,
     "constructor": {

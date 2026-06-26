@@ -1,6 +1,6 @@
 # Balance-adapter coverage roadmap
 
-> **PR #47 (meta-adapter framework):** Coverage was expanded significantly. A family of immutable meta-adapters now covers every instance of the protocol families below (Morpho Vaults/Markets, Aave V3/V2, Balancer V3/V2 pools+gauges, Uniswap V3/V2, PancakeSwap V3/V2, Gearbox, Compound V3, Fluid fTokens/Vaults, StakeWise V3, Curve pools+gauges, Convex, Aura, Euler V2 — 22 meta-adapter contracts in `src/balances/protocols/`). The active instance set for each is governed on NAVCalculator via `addMetaInstances`/`removeMetaInstances` instead of deploying a contract per instance.
+> **PR #47 (meta-adapter framework):** Coverage was expanded significantly. A family of immutable meta-adapters now covers every instance of the protocol families below (Morpho Vaults/Markets, Aave V3/V2, Balancer V3/V2 pools+gauges, Uniswap V3/V2, PancakeSwap V3/V2, Gearbox, Compound V3, Fluid fTokens/Vaults, StakeWise V3, Curve pools+gauges, Convex, Euler V2 — 21 meta-adapter contracts in `src/balances/protocols/`). The active instance set for each is governed on NAVCalculator via `addMetaInstances`/`removeMetaInstances` instead of deploying a contract per instance.
 
 Living document. Tracks protocols and protocol features whose positions are **not yet** captured by NAVCalculator's balance adapters, with the goal of growing NAV coverage one PR at a time.
 
@@ -64,7 +64,6 @@ These are not queues but represent value that lives outside the wallet and is no
 ### Yield aggregator rewards
 
 - **Convex**: ✅ covered — `ConvexRewardsMeta` (meta-adapter, ADR 0010).
-- **Aura**: ✅ covered — `AuraRewardsMeta` (meta-adapter, ADR 0010).
 
 ### Yield / structured products
 

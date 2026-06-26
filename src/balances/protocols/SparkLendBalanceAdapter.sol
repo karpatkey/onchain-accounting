@@ -17,7 +17,8 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         Stable debt is ignored — Aave/Spark deprecated it; all active debt is variable.
 contract SparkLendBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     IProtocolDataProvider public immutable DATA_PROVIDER;
-    /// @notice Spark Pool address — used as the first element of `positionId`.
+    /// @notice Spark Pool address — used as the `positionId` (one position per instance; the reserve is not
+    ///         encoded — reserves are distinguished by `balanceAsset` + `positionKind`).
     address public immutable POOL;
     INAVCalculator public immutable NAV_CALCULATOR;
 
@@ -136,13 +137,15 @@ contract SparkLendBalanceAdapter is IBalanceAdapter, IPositionDescribable {
 
         INAVCalculator.PositionBalance[] memory tmp = new INAVCalculator.PositionBalance[](active.length * 2);
         uint256 n;
+        // positionId is the Spark Pool — one position per instance; reserves are distinguished by
+        // balanceAsset + positionKind (the reserve is NOT in positionId).
+        bytes memory pid = abi.encode(POOL);
         for (uint256 i; i < active.length; ++i) {
             address asset = active[i];
             (uint256 supply, uint256 debt, bool asCollateral) = _reserveData(account, asset);
             if (supply == 0 && debt == 0) continue;
 
             INAVCalculator.Asset memory meta = _assetMeta(asset, reg);
-            bytes memory pid = abi.encode(POOL, asset);
 
             if (supply > 0) {
                 tmp[n++] = INAVCalculator.PositionBalance({

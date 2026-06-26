@@ -8,7 +8,7 @@ pragma solidity ^0.8;
 ///
 ///      positionId schemas (all are `abi.encode(...)`):
 ///        WALLET                          → (address asset)
-///        AAVE_V3_LENDING / SPARK         → (address pool, address reserve)
+///        AAVE_V3_LENDING / SPARK_LEND    → (address pool) — one position per instance; reserve in balanceAsset
 ///        AAVE_V3_SAFETY_MODULE / UMBRELLA→ (address stakeToken)
 ///        MORPHO_VAULTS / GEARBOX_V3 / EULER_VAULTS / ERC4626 / STAKEWISE_V3 / FLUID_VAULTS → (address vault)
 ///        CAP                             → (address token: cUSD or stcUSD) — one leg per token

@@ -13,10 +13,10 @@ Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, pos
 | Adapter | `protocolId` slug | `positionId` schema | Leg | `PositionKind` | `isDebt` | `balanceAsset` |
 |---|---|---|---|---|---|---|
 | ERC20DefaultBalanceAdapter | `wallet` | `abi.encode(address asset)` | wallet balance | `Wallet` | false | the asset itself |
-| AaveV3InstancesMeta | `aave-v3-lending` | `abi.encode(address pool, address reserve)` | supply (collateral toggle off) | `Supplied` | false | reserve |
+| AaveV3InstancesMeta | `aave-v3-lending` | `abi.encode(address pool)` | supply (collateral toggle off) | `Supplied` | false | reserve |
 | | | | supply (collateral toggle on) | `Collateral` | false | reserve |
 | | | | variable debt | `Borrowed` | true | reserve |
-| SparkLend | `spark-lend` | `abi.encode(address pool, address reserve)` | same 3 legs as Aave V3 | `Supplied`/`Collateral`/`Borrowed` | f/f/t | reserve |
+| SparkLend | `spark-lend` | `abi.encode(address pool)` | same 3 legs as Aave V3 | `Supplied`/`Collateral`/`Borrowed` | f/f/t | reserve |
 | CompoundV3CometsMeta | `compound-v3` | `abi.encode(address comet)` | base supply (net > 0) | `Supplied` | false | base token |
 | | | | base borrow (net < 0) | `Borrowed` | true | base token |
 | | | | collateral balance | `Collateral` | false | collateral asset |

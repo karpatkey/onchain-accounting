@@ -3,7 +3,6 @@ pragma solidity ^0.8;
 
 import {MetaBalanceAdapter} from "../MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {IProtocolDataProvider} from "./SparkLendBalanceAdapter.sol";
@@ -49,6 +48,9 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
     {
         IProtocolDataProvider dp = IProtocolDataProvider(_toAddress(instance));
         address pool = _poolOf(dp);
+        // positionId is the instance Pool — one position per instance. The reserve is NOT in positionId; each
+        // reserve's legs are distinguished by balanceAsset + positionKind (multi-leg convention).
+        bytes memory pid = abi.encode(pool);
 
         IProtocolDataProvider.TokenData[] memory reserves = dp.getAllReservesTokens();
         // up to 3 legs per reserve: supply/collateral + variable debt + stable debt
@@ -64,9 +66,6 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
 
             (uint256 aTokenBalance, uint256 stableDebt, uint256 variableDebt,,,,,, bool usageAsCollateral) =
                 dp.getUserReserveData(asset, account);
-
-            // positionId is per-reserve (pool + asset); _instancePositionId does not apply.
-            bytes memory pid = abi.encode(pool, asset);
 
             if (aTokenBalance > 0) {
                 PositionKind kind = usageAsCollateral ? PositionKind.Collateral : PositionKind.Supplied;
@@ -98,22 +97,15 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev Returns `["Market Instance", <leaf>]`. The leaf is "<reserve symbol> position (<market id>)" — the
-    ///      market id (e.g. "Aave Ethereum Market" vs "Aave V3 Lido Ethereum") distinguishes instances that share a
-    ///      reserve symbol, since protocolId is the same across all instances and positionId carries the market only
-    ///      as the pool address. Falls back to "<reserve symbol> position" when the market id is unavailable, or ""
-    ///      when the reserve symbol is unreadable. Returns an empty array for a short positionId.
+    /// @dev Returns `["Market Instance", <market id>]` — the leaf is the instance's on-chain market id
+    ///      (e.g. "Aave Ethereum Market" vs "Aave V3 Lido Ethereum"), which distinguishes instances that share
+    ///      the same protocolId. positionId is the instance Pool, so the label is per-instance, not per-reserve
+    ///      (the reserve token lives in `balanceAsset`). Collapses to `["Market Instance"]` if the market id is
+    ///      unavailable; empty array for a short positionId. The governed-label mechanism will override the leaf.
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
-        if (pid.length < 64) return new string[](0);
-        (address pool, address reserve) = abi.decode(pid, (address, address));
-        string memory leaf = "";
-        try IERC20Metadata(reserve).symbol() returns (string memory sym) {
-            string memory market = _marketId(pool);
-            leaf = bytes(market).length == 0
-                ? string.concat(sym, " position")
-                : string.concat(sym, " position (", market, ")");
-        } catch {}
-        return _labels("Market Instance", leaf);
+        if (pid.length < 32) return new string[](0);
+        address pool = abi.decode(pid, (address));
+        return _labels("Market Instance", _marketId(pool));
     }
 
     /// @notice Resolves the instance's market id (for the display label) from its pool.

@@ -35,7 +35,7 @@ interface INAVCalculator is IBalances {
     /// @param protocolId `keccak256` of a canonical protocol slug (see `src/utils/ProtocolIds.sol`).
     ///        Selects the `positionId` ABI-decode schema — one slug implies exactly one schema.
     /// @param positionId ABI-encoded position identifier. Decode schema is determined by `protocolId`.
-    ///        e.g. for AAVE_V3_LENDING: `abi.encode(address pool, address reserve)`.
+    ///        e.g. for AAVE_V3_LENDING: `abi.encode(address pool)`.
     ///        Full schema table: see `src/utils/ProtocolIds.sol` and docs/howto/position-identity-schema.md.
     /// @param positionKind Semantic discriminator (Wallet / Supplied / Borrowed / Collateral / Staking / Rewards / Fees).
     ///        Together with `protocolId` and `positionId` forms the stable per-chain identity key

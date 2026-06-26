@@ -117,7 +117,7 @@ PositionBalance({
 #### `SparkLend` — lending supply
 
 ```solidity
-// Per-reserve: one positionId per (pool, reserve) pair.
+// One positionId per instance = abi.encode(pool); reserves are distinguished by balanceAsset + positionKind.
 // Other legs: Collateral (usageAsCollateralEnabled = true), Borrowed (variableDebt).
 PositionBalance({
     balanceAsset:  Asset({ asset: 0x6B17…1d0F, symbol: "DAI", decimals: 18 }),
@@ -125,7 +125,7 @@ PositionBalance({
     amount:        3_000e18,               // 3 000 DAI
     isDebt:        false,
     protocolId:    keccak256("spark-lend"),
-    positionId:    abi.encode(0x<SparkPool>, 0x6B17…1d0F),   // (pool, reserve)
+    positionId:    abi.encode(0x<SparkPool>),   // the Spark Pool (reserve is in balanceAsset)
     positionKind:  PositionKind.Supplied
 })
 ```
@@ -273,14 +273,15 @@ PositionBalance({
 #### `AaveV3InstancesMeta` — Aave V3 supply (any instance)
 
 ```solidity
-// Per-reserve: positionId = abi.encode(pool, reserve). Other legs: Collateral, Borrowed.
+// positionId = abi.encode(pool), one per instance. Reserves are distinguished by balanceAsset + positionKind.
+// Other legs: Collateral, Borrowed.
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xA0b8…6eB48, symbol: "USDC", decimals: 6 }),
     balanceAdapter: 0x<AaveV3InstancesMeta>,
     amount:        1_500_000_000,          // 1 500 USDC aToken balance
     isDebt:        false,
     protocolId:    keccak256("aave-v3-lending"),
-    positionId:    abi.encode(0x<AaveV3Pool>, 0xA0b8…6eB48),   // (pool, reserve)
+    positionId:    abi.encode(0x<AaveV3Pool>),   // the instance Pool (reserve is in balanceAsset)
     positionKind:  PositionKind.Supplied
 })
 ```
@@ -867,8 +868,8 @@ bytes32 protocolId = keccak256("aave-v3-lending");  // == ProtocolIds.AAVE_V3_LE
 | `protocolId` slug | `positionId` = `abi.encode(...)` |
 |---|---|
 | `wallet` | `(address asset)` |
-| `aave-v3-lending` | `(address pool, address reserve)` |
-| `spark-lend` | `(address pool, address reserve)` |
+| `aave-v3-lending` | `(address pool)` |
+| `spark-lend` | `(address pool)` |
 | `aave-v3-safety-module` | `(address stakeToken)` |
 | `aave-v3-umbrella` | `(address stakeToken)` |
 | `morpho-vaults` | `(address vault)` |
@@ -1015,11 +1016,13 @@ const [asset] = abi.decode(["address"], pos.positionId);
 
 #### Aave V3 / Spark — `aave-v3-lending` / `spark-lend`
 
-Per-reserve positionId: each supply, collateral, and borrow leg for the same reserve shares
-one positionId; different reserves have different positionIds.
+Per-instance positionId: every leg of the instance (all reserves, all kinds) shares one
+positionId = the pool. The reserve is the position's `balanceAsset.asset`; legs are
+distinguished by `balanceAsset` + `positionKind`.
 
 ```typescript
-const [pool, reserve] = abi.decode(["address", "address"], pos.positionId);
+const [pool] = abi.decode(["address"], pos.positionId);
+const reserve = pos.balanceAsset.asset; // the reserve is the position's asset, NOT in positionId
 // pool   — IPool (V3) / SparkPool
 // reserve — the underlying ERC20 (USDC, WETH, …)
 

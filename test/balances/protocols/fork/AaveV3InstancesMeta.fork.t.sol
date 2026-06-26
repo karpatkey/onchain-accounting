@@ -106,9 +106,10 @@ contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory refPos = perInstance.getAdapterPositions(USER, address(0));
 
         assertEq(metaPos.length, refPos.length, "same leg count as per-instance adapter");
-        // Same reserve iteration order; identical VALUE fields. positionId is the same Pool address for both, but
-        // the meta-adapter derives it lowercase (Strings.toHexString) while the per-instance adapter pins the
-        // checksummed config string — same address, different case, so compare case-insensitively.
+        // Same reserve iteration order; identical VALUE fields. positionId is `abi.encode(pool)` for both (the
+        // reserve is NOT encoded — it lives in balanceAsset): the meta resolves the pool from the instance
+        // DataProvider, the per-instance SparkLend adapter pins the same pool at construction, so the encodings
+        // are byte-identical.
         for (uint256 i = 0; i < metaPos.length; i++) {
             assertEq(metaPos[i].balanceAsset.asset, refPos[i].balanceAsset.asset, "asset");
             assertEq(metaPos[i].amount, refPos[i].amount, "amount");

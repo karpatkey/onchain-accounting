@@ -187,6 +187,9 @@ contract ERC20DefaultAdapter is IBalanceAdapter, IPositionDescribable {
                 }
             }
         }
+        // Fail-open: no derivable label → empty array (IPositionDescribable convention), not `[""]`,
+        // so consumers don't render a blank breadcrumb segment.
+        if (bytes(leaf).length == 0) return new string[](0);
         string[] memory out = new string[](1);
         out[0] = leaf;
         return out;

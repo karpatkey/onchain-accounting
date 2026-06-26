@@ -4,9 +4,9 @@ pragma solidity ^0.8.0;
 import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTestBase.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
 import {
-    EtherFiWithdrawalsBalanceAdapter,
+    EtherFiWithdrawalQueueBalanceAdapter,
     IEtherFiWithdrawRequestNFT
-} from "src/balances/protocols/EtherFiWithdrawalsBalanceAdapter.sol";
+} from "src/balances/protocols/EtherFiWithdrawalQueueBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
@@ -92,9 +92,9 @@ contract MockLiquidityPool {
     }
 }
 
-/// @title EtherFiWithdrawalsBalanceAdapter unit tests
-contract EtherFiWithdrawalsBalanceAdapterTest is BalanceAdapterTestBase {
-    EtherFiWithdrawalsBalanceAdapter public adapter;
+/// @title EtherFiWithdrawalQueueBalanceAdapter unit tests
+contract EtherFiWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
+    EtherFiWithdrawalQueueBalanceAdapter public adapter;
     MockWithdrawRequestNFT public nft;
     MockLiquidityPool public lp;
 
@@ -108,30 +108,33 @@ contract EtherFiWithdrawalsBalanceAdapterTest is BalanceAdapterTestBase {
         lp = new MockLiquidityPool();
         balances.addSupportedAssetForTest(NATIVE);
         // owner = this test contract, so it can submit ids.
-        adapter =
-            new EtherFiWithdrawalsBalanceAdapter(address(nft), address(lp), NATIVE, address(balances), address(this));
+        adapter = new EtherFiWithdrawalQueueBalanceAdapter(
+            address(nft), address(lp), NATIVE, address(balances), address(this)
+        );
     }
 
     // ---- Constructor ----
 
     function test_constructor_revertsOnZeroNft() public {
         vm.expectRevert(InvalidArguments.selector);
-        new EtherFiWithdrawalsBalanceAdapter(address(0), address(lp), NATIVE, address(balances), address(this));
+        new EtherFiWithdrawalQueueBalanceAdapter(address(0), address(lp), NATIVE, address(balances), address(this));
     }
 
     function test_constructor_revertsOnZeroLp() public {
         vm.expectRevert(InvalidArguments.selector);
-        new EtherFiWithdrawalsBalanceAdapter(address(nft), address(0), NATIVE, address(balances), address(this));
+        new EtherFiWithdrawalQueueBalanceAdapter(address(nft), address(0), NATIVE, address(balances), address(this));
     }
 
     function test_constructor_revertsOnZeroUnderlying() public {
         vm.expectRevert(InvalidArguments.selector);
-        new EtherFiWithdrawalsBalanceAdapter(address(nft), address(lp), address(0), address(balances), address(this));
+        new EtherFiWithdrawalQueueBalanceAdapter(
+            address(nft), address(lp), address(0), address(balances), address(this)
+        );
     }
 
     function test_constructor_revertsWhenNftNotContract() public {
         vm.expectRevert(bytes("WithdrawRequestNFT must be a contract"));
-        new EtherFiWithdrawalsBalanceAdapter(makeAddr("eoa"), address(lp), NATIVE, address(balances), address(this));
+        new EtherFiWithdrawalQueueBalanceAdapter(makeAddr("eoa"), address(lp), NATIVE, address(balances), address(this));
     }
 
     // ---- Ownership / submission ----
@@ -275,8 +278,9 @@ contract EtherFiWithdrawalsBalanceAdapterTest is BalanceAdapterTestBase {
     function test_unregisteredUnderlying_positionsEmpty_butBalanceStillOwed() public {
         // Fresh NAV harness that does NOT register the native sentinel.
         BalancesHarness freshNav = new BalancesHarness();
-        EtherFiWithdrawalsBalanceAdapter a2 =
-            new EtherFiWithdrawalsBalanceAdapter(address(nft), address(lp), NATIVE, address(freshNav), address(this));
+        EtherFiWithdrawalQueueBalanceAdapter a2 = new EtherFiWithdrawalQueueBalanceAdapter(
+            address(nft), address(lp), NATIVE, address(freshNav), address(this)
+        );
         nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
         a2.submitTokenIds(holder, _ids(1));
         // getAdapterPositions drops the leg (underlying not registered) — even though owed > 0.

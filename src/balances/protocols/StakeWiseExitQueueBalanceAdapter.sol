@@ -23,7 +23,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         **only the position coordinates, never amounts** — the owner cannot fabricate value; at worst it omits
 ///         a position (NAV under-counts), never over-counts.
 /// @dev Trust model and mutability rationale: see `docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md`
-///      (generalises the Merkl precedent, ADR 0007; sibling of `EtherFiWithdrawals`). One aggregated leg per
+///      (generalises the Merkl precedent, ADR 0007; sibling of `EtherFiWithdrawalQueue`). One aggregated leg per
 ///      account, denominated in the chain's staking asset (native ETH on mainnet). Mainnet only — every StakeWise
 ///      V3 vault there settles in ETH; do not deploy on a chain with a non-ETH staking asset against this
 ///      `underlyingToken`.

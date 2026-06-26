@@ -163,9 +163,13 @@ PositionBalance({
 })
 ```
 
-#### `Cap` — cUSD position
+#### `Cap` — cUSD + stcUSD (two legs)
+
+Two structurally distinct legs, each valued in USDC: the base synthetic dollar (cUSD) and the staked,
+yield-bearing savings token (stcUSD). The leg is identified by the token in `positionId`.
 
 ```solidity
+// Leg 1 — held cUSD (label ["Stablecoin", "cUSD"])
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xA0b8…6eB48, symbol: "USDC", decimals: 6 }),
     balanceAdapter: 0x<CapAdapter>,
@@ -173,6 +177,16 @@ PositionBalance({
     isDebt:        false,
     protocolId:    keccak256("cap"),
     positionId:    abi.encode(0x<cUSD>),   // Cap cUSD token address
+    positionKind:  PositionKind.Supplied
+})
+// Leg 2 — staked stcUSD (label ["Savings", "stcUSD"])
+PositionBalance({
+    balanceAsset:  Asset({ asset: 0xA0b8…6eB48, symbol: "USDC", decimals: 6 }),
+    balanceAdapter: 0x<CapAdapter>,
+    amount:        1_000_000_000,          // 1 000 USDC (stcUSD → cUSD → USDC)
+    isDebt:        false,
+    protocolId:    keccak256("cap"),
+    positionId:    abi.encode(0x<stcUSD>), // Cap stcUSD token address
     positionKind:  PositionKind.Supplied
 })
 ```
@@ -591,13 +605,14 @@ Scenario: 1 000 USDC staked in stkwaEthUSDC.v1 with 5 USDC rewards pending.
 | USDC  | 5      | +5          | `Rewards`    | `"Aave Umbrella"` | `"umbrella stake"`  |
 | **NAV** | | **+1 005** | | | |
 
-#### `Cap` — cUSD
+#### `Cap` — cUSD + stcUSD
 
-Scenario: 2 000 USDC deposited in Cap.
+Scenario: 2 000 cUSD held + 1 000 USDC-worth of staked stcUSD.
 
-| asset | amount | value (USD) | positionKind | protocolName | positionLabel       |
-|-------|--------|-------------|--------------|--------------|---------------------|
-| USDC  | 2 000  | +2 000      | `Supplied`   | `"Cap"`      | `"supply"`          |
+| asset | amount | value (USD) | positionKind | protocolName | positionLabels             |
+|-------|--------|-------------|--------------|--------------|----------------------------|
+| USDC  | 2 000  | +2 000      | `Supplied`   | `"Cap"`      | `["Stablecoin", "cUSD"]`   |
+| USDC  | 1 000  | +1 000      | `Supplied`   | `"Cap"`      | `["Savings", "stcUSD"]`    |
 
 #### `ERC4626Wrap` — wrapper
 
@@ -875,7 +890,7 @@ bytes32 protocolId = keccak256("aave-v3-lending");  // == ProtocolIds.AAVE_V3_LE
 | `pancakeswap-v3` | `(address npm, uint256 tokenId)` |
 | `pancakeswap-v2` | `(address pair)` |
 | `stakewise-v3` | `(address vault)` |
-| `cap` | `(address vault)` |
+| `cap` | `(address token)` — cUSD or stcUSD |
 | `erc4626` | `(address vault)` |
 | `merkl` | `(address rewardToken)` |
 | `nexus-mutual-staking` | `(uint256 tokenId, uint256 poolId)` |
@@ -1203,9 +1218,10 @@ const [pair] = abi.decode(["address"], pos.positionId);
 #### Cap — `cap`
 
 ```typescript
-const [vault] = abi.decode(["address"], pos.positionId);
-// vault — Cap cUSD token address
-// Supplied → account's cUSD redeemable value in underlying (USDC, etc.)
+const [token] = abi.decode(["address"], pos.positionId);
+// token — the Cap token: cUSD (held synthetic dollar) or stcUSD (staked savings)
+// Supplied → that leg's redeemable value in the underlying (USDC)
+// labels: ["Stablecoin", "cUSD"] for cUSD; ["Savings", "stcUSD"] for stcUSD
 ```
 
 #### ERC4626 wrapper — `erc4626`

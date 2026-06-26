@@ -44,7 +44,9 @@ import {KelpWithdrawalQueueBalanceAdapter} from "../../src/balances/protocols/Ke
 import {LidoWithdrawalQueueBalanceAdapter} from "../../src/balances/protocols/LidoWithdrawalQueueBalanceAdapter.sol";
 import {EthenaCooldownBalanceAdapter} from "../../src/balances/protocols/EthenaCooldownBalanceAdapter.sol";
 import {MerklRewardsBalanceAdapter} from "../../src/balances/protocols/MerklRewardsBalanceAdapter.sol";
-import {EtherFiWithdrawalsBalanceAdapter} from "../../src/balances/protocols/EtherFiWithdrawalsBalanceAdapter.sol";
+import {
+    EtherFiWithdrawalQueueBalanceAdapter
+} from "../../src/balances/protocols/EtherFiWithdrawalQueueBalanceAdapter.sol";
 import {
     NexusMutualStakingPoolsBalanceAdapter
 } from "../../src/balances/protocols/NexusMutualStakingPoolsBalanceAdapter.sol";
@@ -151,7 +153,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("MerklRewards");
 
         // --- ether.fi withdrawal-queue cache adapter (agent-fed; ADR 0014) ---
-        _deployIfEnabled("EtherFiWithdrawals");
+        _deployIfEnabled("EtherFiWithdrawalQueue");
 
         // --- Nexus Mutual staked NXM (brute-force view adapter: scans StakingNFT, values via StakingViewer) ---
         _deployIfEnabled("NexusMutualStakingPools");
@@ -345,8 +347,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         }
 
         // ether.fi withdrawals: id-cached withdrawal-queue adapter (ADR 0014).
-        if (_equals(adapterName, "EtherFiWithdrawals")) {
-            return _deployEtherFiWithdrawals(adapterName, navCalculator);
+        if (_equals(adapterName, "EtherFiWithdrawalQueue")) {
+            return _deployEtherFiWithdrawalQueue(adapterName, navCalculator);
         }
 
         // Nexus Mutual staked NXM (simple immutable view adapter; no agent).
@@ -693,7 +695,10 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(adapter);
     }
 
-    function _deployEtherFiWithdrawals(string memory adapterName, address navCalculator) internal returns (address) {
+    function _deployEtherFiWithdrawalQueue(string memory adapterName, address navCalculator)
+        internal
+        returns (address)
+    {
         // Owner = chainConfig.admin (OIV Safe / agent role): the only caller of submitTokenIds / clearTokenId. The
         // adapter values from live on-chain reads and re-verifies ownership every read, so the owner cannot
         // fabricate amounts (under-report only). See docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md.
@@ -706,9 +711,11 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address underlyingToken = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
         );
-        require(chainConfig.admin != address(0), "EtherFiWithdrawals: chainConfig.admin (initialOwner) not configured");
+        require(
+            chainConfig.admin != address(0), "EtherFiWithdrawalQueue: chainConfig.admin (initialOwner) not configured"
+        );
 
-        EtherFiWithdrawalsBalanceAdapter adapter = new EtherFiWithdrawalsBalanceAdapter(
+        EtherFiWithdrawalQueueBalanceAdapter adapter = new EtherFiWithdrawalQueueBalanceAdapter(
             withdrawRequestNft, liquidityPool, underlyingToken, navCalculator, chainConfig.admin
         );
         return address(adapter);

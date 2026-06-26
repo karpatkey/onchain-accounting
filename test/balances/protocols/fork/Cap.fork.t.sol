@@ -7,6 +7,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
 
 /// @title CapBalanceAdapter fork tests
 /// @notice Tests using real Cap Finance contracts on Ethereum mainnet
@@ -115,19 +116,40 @@ contract CapBalanceAdapterForkTest is BalanceAdapterTestBase {
     }
 
     function test_getAdapterPositions() public view {
+        // SAFE holds both cUSD and stcUSD → two structurally distinct legs.
         INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(SAFE, address(0));
+        assertEq(positions.length, 2, "cUSD + stcUSD legs");
 
-        assertEq(positions.length, 1, "Should have one position");
-        assertEq(positions[0].balanceAsset.asset, USDC);
-        assertEq(positions[0].amount, EXPECTED_USDC_AMOUNT, "Position amount should match expected");
-        assertFalse(positions[0].isDebt);
+        uint256 cUsdAmt;
+        uint256 stcUsdAmt;
+        bool sawCusd;
+        bool sawStcusd;
+        for (uint256 i = 0; i < positions.length; i++) {
+            assertEq(positions[i].balanceAsset.asset, USDC, "leg denominated in USDC");
+            assertFalse(positions[i].isDebt, "Cap legs are credit");
+            assertTrue(positions[i].positionKind == PositionKind.Supplied, "Supplied kind");
+            assertGt(positions[i].amount, 0, "non-zero leg");
+            if (keccak256(positions[i].positionId) == keccak256(abi.encode(CUSD))) {
+                cUsdAmt = positions[i].amount;
+                sawCusd = true;
+            } else if (keccak256(positions[i].positionId) == keccak256(abi.encode(STCUSD))) {
+                stcUsdAmt = positions[i].amount;
+                sawStcusd = true;
+            }
+        }
+        assertTrue(sawCusd, "cUSD leg present (positionId = cUSD)");
+        assertTrue(sawStcusd, "stcUSD leg present (positionId = stcUSD)");
+
+        // Per-leg amounts sum to the combined balance-getter figure (within burn-quote rounding).
+        (uint256 combined,) = adapter.getAdapterBalanceForAsset(SAFE, USDC);
+        assertEq(combined, EXPECTED_USDC_AMOUNT, "combined sanity");
+        assertApproxEqAbs(cUsdAmt + stcUsdAmt, combined, 2, "legs sum ~= combined (rounding only)");
     }
 
     function test_getAdapterPositions_withAssetFilter() public view {
-        // Filter by USDC — should return the position
+        // Filter by USDC — both legs are USDC, so both are returned
         INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(SAFE, USDC);
-        assertEq(positions.length, 1);
-        assertEq(positions[0].amount, EXPECTED_USDC_AMOUNT);
+        assertEq(positions.length, 2);
 
         // Filter by unrelated asset — should return empty
         INAVCalculator.PositionBalance[] memory empty = adapter.getAdapterPositions(SAFE, address(0xdead));

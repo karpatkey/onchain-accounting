@@ -55,12 +55,12 @@ if [ -z "$ADAPTER" ]; then
   echo "error: forge create produced no address (is the NAV a contract on this fork?)" >&2
   exit 1
 fi
-echo "  EtherFiWithdrawals: $ADAPTER"
+echo "  EtherFiWithdrawalQueue: $ADAPTER"
 
 cast send "$NAV" "addBalanceAdapters(address[])" "[$ADAPTER]" \
   --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" >/dev/null
 echo "  registered on NAV (addBalanceAdapters)"
 
-jq --arg a "$ADAPTER" '. + {"EtherFiWithdrawals": $a}' "$ADDR_FILE" > "$ADDR_FILE.tmp" && mv "$ADDR_FILE.tmp" "$ADDR_FILE"
+jq --arg a "$ADAPTER" '. + {"EtherFiWithdrawalQueue": $a}' "$ADDR_FILE" > "$ADDR_FILE.tmp" && mv "$ADDR_FILE.tmp" "$ADDR_FILE"
 echo "  recorded in $ADDR_FILE"
 echo "  -> next: submit-etherfi-positions.sh $CID   (agent step: submit the holder's real tokenId)"

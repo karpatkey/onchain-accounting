@@ -27,8 +27,8 @@ if ! command -v cast >/dev/null 2>&1; then export PATH="$HOME/.foundry/bin:$PATH
 PORT=$(jq -r ".\"$CID\".port" "$CHAINS_CFG")
 RPC="http://127.0.0.1:$PORT"
 ADDR_FILE="$STATE_DIR/$CID-addresses.json"
-ADAPTER=$(jq -r '.EtherFiWithdrawals' "$ADDR_FILE")
-[ "$ADAPTER" = "null" ] || [ -z "$ADAPTER" ] && { echo "error: EtherFiWithdrawals not in $ADDR_FILE — run deploy-etherfi-withdrawals.sh $CID first" >&2; exit 1; }
+ADAPTER=$(jq -r '.EtherFiWithdrawalQueue' "$ADDR_FILE")
+[ "$ADAPTER" = "null" ] || [ -z "$ADAPTER" ] && { echo "error: EtherFiWithdrawalQueue not in $ADDR_FILE — run deploy-etherfi-withdrawals.sh $CID first" >&2; exit 1; }
 
 # Build the uint256[] literal: [id1,id2,...]
 IDS_CSV=$(IFS=,; echo "${TOKEN_IDS[*]}")

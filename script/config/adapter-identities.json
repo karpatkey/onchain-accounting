@@ -242,10 +242,10 @@
   },
 
   "Cap": {
-    "$perPositionFields": "type: Supply",
+    "$perPositionFields": "type: Supply (two legs: held cUSD = Stablecoin, staked stcUSD = Savings; valued in USDC)",
     "protocol": "Cap",
-    "positionDetail": { "protocol": "Cap", "product": "Lending", "name": "<description>" },
-    "positionId": "<Cap market address>"
+    "positionDetail": { "protocol": "Cap", "product": "Savings", "name": "<cUSD | stcUSD>" },
+    "positionId": "<Cap token address: cUSD or stcUSD>"
   },
 
   "StakeWiseV3VaultsMeta": {
@@ -277,7 +277,7 @@
     "positionDetail": { "protocol": "Ethena", "product": "Staking", "name": "USDe Cooldown" },
     "positionId": "<StakedUSDeV2 (sUSDe) address>"
   },
-  "EtherFiWithdrawals": {
+  "EtherFiWithdrawalQueue": {
     "$perPositionFields": "type: Staking; single aggregated native-ETH leg per account (in-flight ether.fi withdrawals; agent-fed id cache, emitted positionId is empty)",
     "protocol": "ether.fi",
     "positionDetail": { "protocol": "ether.fi", "product": "Staking", "name": "ETH Withdrawal Queue" },

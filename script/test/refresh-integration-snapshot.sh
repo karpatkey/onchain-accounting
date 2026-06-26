@@ -538,7 +538,7 @@ if [[ "$debank_active" == "true" ]]; then
       #
       # Native token id from DeBank matches `debank_chain` (`eth`, `arb`, `xdai`, …) and
       # is accepted iff NAV registers the ERC-7528 native sentinel (0xEee…eEeE) for this
-      # chain — `ERC20DefaultAdapter._getBalanceForAsset` returns `account.balance` for it.
+      # chain — `ERC20DefaultBalanceAdapter._getBalanceForAsset` returns `account.balance` for it.
       tok_resp=$(debank_curl "https://pro-openapi.debank.com/v1/user/token_list?id=${addr}&chain_id=${debank_chain}&is_all=false")
       if [[ -z "$tok_resp" ]]; then
         echo "  [warn] $label chain $chain_id: token_list request failed; using protocol total only"

@@ -21,7 +21,7 @@ follow-up / team decision — deliberately not rushed into immutable contracts h
 
 | # | Sev | Contract | Finding | Status |
 |---|-----|----------|---------|--------|
-| 1 | **High** | ERC20DefaultAdapter | Assembly `balanceOf` reads stale calldata as a phantom balance on short/empty returndata | **Fixed** |
+| 1 | **High** | ERC20DefaultBalanceAdapter | Assembly `balanceOf` reads stale calldata as a phantom balance on short/empty returndata | **Fixed** |
 | 2 | **High** | UniswapV3PoolsMeta | LP principal/fees valued from manipulable `slot0` spot, not an oracle | **Fixed** |
 | 3 | Medium | ETHPlus_Price | Heartbeat checks the configured *prime* basket, not the active reference basket | **Fixed** |
 | 4 | Medium | AaveV2InstancesMeta | Aave V2 **stable-rate debt silently dropped** → understates debt, overstates NAV | **Fixed** |
@@ -31,7 +31,7 @@ follow-up / team decision — deliberately not rushed into immutable contracts h
 | 8 | Low | PriceFeedLib | Registered-but-feedless asset reverts the entire NAV/positions/health read | **Fixed** |
 | 9 | Low | PriceFeedLib | Stale non-USD quote feed silently returns NAV in USD instead of the quote currency | **Fixed** |
 | 10 | Low | AuraRewardsMeta | V3 boosted pools with two ERC4626 wrappers over the same underlying mis-counted | **Fixed** |
-| 11 | Low | ERC20DefaultAdapter | Constructor `initialAssets` added without registry-membership check | Acknowledged |
+| 11 | Low | ERC20DefaultBalanceAdapter | Constructor `initialAssets` added without registry-membership check | Acknowledged |
 | 12 | Low | StaderWithdrawalQueue | `MAX_REQUESTS_PROBED` cap can silently undercount (claimed ids never compacted) | Acknowledged |
 | 13 | Low | BalancerV3PoolsMeta | (same root cause as #6) duplicate-underlying emission | **Fixed** |
 | 14 | Low | UniswapV2PairLib | PancakeSwap V2 inherits Uniswap's `_mintFee` constants; PCS fee fraction differs | **Fixed** |
@@ -49,7 +49,7 @@ S3 inconsistent short-returndata guarding across libs (Medium), S4 fail-open mas
 
 ## Fixed in this PR
 
-### [1] High — `ERC20DefaultAdapter`: phantom balance from unchecked short returndata
+### [1] High — `ERC20DefaultBalanceAdapter`: phantom balance from unchecked short returndata
 The inline-assembly `balanceOf` did `staticcall(..., ptr, 0x20)` reusing the **calldata buffer** `ptr`
 as the output region and then `if success { tokenBalance := mload(ptr) }` — with **no `returndatasize`
 check**. A staticcall to a code-less address (or a token whose `balanceOf` returns void/short data)
@@ -168,7 +168,7 @@ caller requesting a non-USD quote can detect the USD fallback rather than silent
 
 ## Acknowledged (by-design / accepted constraint)
 
-- **[11]** `ERC20DefaultAdapter` constructor `initialAssets` skips the registry check — **confirmed
+- **[11]** `ERC20DefaultBalanceAdapter` constructor `initialAssets` skips the registry check — **confirmed
   by-design and now documented in-code.** A registry callback here is structurally impossible: the only
   caller is `NavRegistryLib.deployDefaultAdapter`, invoked from `NAVCalculator.initialize` *inside the
   proxy's own constructor*, when the proxy has no deployed code yet — an external

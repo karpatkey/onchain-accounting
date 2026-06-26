@@ -18,7 +18,7 @@
         "heartbeat": 86400
       }
     ],
-    "note": "Priced via osToken_PriceOracle (priceFeeds.osGNO.100): convertToAssets(1e18) [osGNO/GNO] * GNO/USD. Held osGNO is reported by ERC20DefaultAdapter. The pricefeed address is filled by 03_DeployPriceFeeds."
+    "note": "Priced via osToken_CustomPriceFeed (priceFeeds.osGNO.100): convertToAssets(1e18) [osGNO/GNO] * GNO/USD. Held osGNO is reported by ERC20DefaultBalanceAdapter. The pricefeed address is filled by 03_DeployPriceFeeds."
   },
   "WXDAI": {
     "address": "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d",

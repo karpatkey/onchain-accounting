@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {IPriceFeedCustom} from "src/prices/IPriceFeedCustom.sol";
+import {ICustomPriceFeed} from "src/prices/ICustomPriceFeed.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import {OracleArgumentChecks} from "src/utils/OracleArgumentChecks.sol";
@@ -14,14 +14,14 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 ///         protocol-supplied 18-decimal exchange rate, and returns the result in the base feed's decimals.
 ///         Concrete feeds implement only `_rate()` — the protocol's exchange rate as 18-decimal base-token
 ///         units per 1 `UNDERLYING` (e.g. ETH per rETH), i.e. the same orientation the multiply expects.
-/// @dev The 5 `IPriceFeedCustom` thunks, the immutables, the constructor validation, and the
+/// @dev The 5 `ICustomPriceFeed` thunks, the immutables, the constructor validation, and the
 ///      read/staleness/normalize math live here once, instead of being copy-pasted into ~17 feeds. The math is
 ///      identical to the former per-feed `_compute()`: `price = rate · baseAnswer / 1e18` (Math.Rounding.Floor),
 ///      stale when the base answer is non-positive, the base feed is past its heartbeat, or `_rate()` is 0.
 ///      Staleness uses `effectiveUpdatedAt = min(updatedAt, block.timestamp)` to avoid upstream-clock bias.
-///      Feeds whose rate is itself a Chainlink feed should use the generic `CrossRatePriceAdapter` instead;
+///      Feeds whose rate is itself a Chainlink feed should use the generic `CrossRate_CustomPriceFeed` instead;
 ///      feeds with no Chainlink base (e.g. ETHPlus) or a derived two-feed rate (e.g. eETH) stay bespoke.
-abstract contract BaseCustomPriceFeed is IPriceFeedCustom {
+abstract contract BaseCustomPriceFeed is ICustomPriceFeed {
     using Math for uint256;
 
     /// @notice The token this feed prices (returned by `underlyingAssetSupported`).
@@ -78,22 +78,22 @@ abstract contract BaseCustomPriceFeed is IPriceFeedCustom {
         price = rate.mulDiv(uint256(baseAnswer), 1e18, Math.Rounding.Floor);
     }
 
-    /// @inheritdoc IPriceFeedCustom
+    /// @inheritdoc ICustomPriceFeed
     function getLatestPrice() external view virtual override returns (uint256 price, bool stale) {
         (price, stale,,,,) = _compute();
     }
 
-    /// @inheritdoc IPriceFeedCustom
+    /// @inheritdoc ICustomPriceFeed
     function underlyingAssetSupported() external view virtual override returns (address) {
         return UNDERLYING;
     }
 
-    /// @inheritdoc IPriceFeedCustom
+    /// @inheritdoc ICustomPriceFeed
     function decimals() external view virtual override returns (uint8) {
         return _decimals;
     }
 
-    /// @inheritdoc IPriceFeedCustom
+    /// @inheritdoc ICustomPriceFeed
     function latestRoundData()
         external
         view
@@ -109,6 +109,6 @@ abstract contract BaseCustomPriceFeed is IPriceFeedCustom {
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure virtual override returns (bool) {
-        return interfaceId == type(IPriceFeedCustom).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(ICustomPriceFeed).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 }

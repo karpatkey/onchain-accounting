@@ -4,11 +4,11 @@ pragma solidity ^0.8.0;
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import {ERC20DefaultAdapter} from "src/balances/protocols/ERC20DefaultAdapter.sol";
+import {ERC20DefaultBalanceAdapter} from "src/balances/protocols/ERC20DefaultBalanceAdapter.sol";
 
 /// @title Mock_NAVCalculator
 /// @notice Mock implementation of INAVCalculator for adapter testing
-/// @dev Only implements the minimal interface methods needed by adapters (ERC20DefaultAdapter)
+/// @dev Only implements the minimal interface methods needed by adapters (ERC20DefaultBalanceAdapter)
 contract Mock_NAVCalculator is INAVCalculator {
     /// @notice Registered assets with their metadata
     struct AssetInfo {
@@ -34,7 +34,7 @@ contract Mock_NAVCalculator is INAVCalculator {
         _assets.push(AssetInfo({asset: asset, decimals: decimals, symbol: symbol}));
         _isRegistered[asset] = true;
         if (defaultAdapter != address(0)) {
-            ERC20DefaultAdapter(defaultAdapter).addSupportedAsset(asset);
+            ERC20DefaultBalanceAdapter(defaultAdapter).addSupportedAsset(asset);
         }
     }
 
@@ -46,7 +46,7 @@ contract Mock_NAVCalculator is INAVCalculator {
         _assets.push(AssetInfo({asset: asset, decimals: decimals, symbol: symbol}));
         _isRegistered[asset] = true;
         if (defaultAdapter != address(0)) {
-            ERC20DefaultAdapter(defaultAdapter).addSupportedAsset(asset);
+            ERC20DefaultBalanceAdapter(defaultAdapter).addSupportedAsset(asset);
         }
     }
 

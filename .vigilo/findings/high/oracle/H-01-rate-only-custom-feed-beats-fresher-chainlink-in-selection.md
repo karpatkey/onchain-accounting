@@ -34,7 +34,7 @@ The code contradicts this intent.
 
 When an asset has both a rate-only Custom adapter and a Chainlink/Redstone feed registered, the Custom adapter unconditionally wins the selection race. If the Custom adapter's underlying rate source (e.g. a protocol's internal cached value) becomes stale or manipulated while the Chainlink feed remains healthy, the system will report the Custom adapter's price and discard the healthy Chainlink price. This undermines the redundancy guarantee of the multi-feed design and can propagate a stale or manipulated rate-based price undetected.
 
-Adapters affected (those that return `updatedAt == 0` from `latestRoundData()`, i.e. rate-only feeds where the rate source carries no on-chain timestamp): none of the current adapters in scope return `0` from `latestRoundData()` — they all forward the Chainlink `updatedAt`. However, the documented contract for `IPriceFeedCustom.latestRoundData()` explicitly allows returning `(0,0,0,0,0)` for feeds with no oracle dependency, and the `PriceFeedLib` is designed to handle that case. Any future Custom adapter of this type will silently win against all Chainlink feeds.
+Adapters affected (those that return `updatedAt == 0` from `latestRoundData()`, i.e. rate-only feeds where the rate source carries no on-chain timestamp): none of the current adapters in scope return `0` from `latestRoundData()` — they all forward the Chainlink `updatedAt`. However, the documented contract for `ICustomPriceFeed.latestRoundData()` explicitly allows returning `(0,0,0,0,0)` for feeds with no oracle dependency, and the `PriceFeedLib` is designed to handle that case. Any future Custom adapter of this type will silently win against all Chainlink feeds.
 
 ## Attack Scenario
 

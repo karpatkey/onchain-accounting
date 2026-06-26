@@ -13,7 +13,7 @@ Onchain accounting infrastructure for portfolio NAV: **balances** (per-protocol 
 | Path | What lives here |
 |---|---|
 | `src/balances/` | Balance adapter interface (`IBalanceAdapter`) + abstract `Balances` registry + per-protocol adapter contracts. Adapters live either directly under `protocols/` (single-file) or in `protocols/<protocol>/` (multi-file). The factory pattern in [ADR 0001](docs/decisions/0001-balance-adapter-factory-pattern.md) is designed but not yet implemented; `src/balances/factories/` does not exist today. |
-| `src/prices/` | `IPrices`, `Prices` (abstract: Chainlink + custom feeds, staleness, L2 sequencer), `IPriceFeedCustom`, and per-asset custom price contracts under `protocols/`. |
+| `src/prices/` | `IPrices`, `Prices` (abstract: Chainlink + custom feeds, staleness, L2 sequencer), `ICustomPriceFeed`, and per-asset custom price contracts under `protocols/`. |
 | `src/nav/` | `NAVCalculator` (extends Prices + Balances) + `INAVCalculator`. |
 | `src/bridge/` | `BridgeEscrow` + `BridgeAdapter` base + per-protocol adapters under `adapters/` (Across, CCIP, CCTP, Stargate, Superchain, Gnosis). |
 | `src/utils/`, `src/errors.sol`, `src/constants.sol` | Shared helpers, errors, and constants. |

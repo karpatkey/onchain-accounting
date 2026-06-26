@@ -12,7 +12,7 @@ Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, pos
 
 | Adapter | `protocolId` slug | `positionId` schema | Leg | `PositionKind` | `isDebt` | `balanceAsset` |
 |---|---|---|---|---|---|---|
-| ERC20DefaultAdapter | `wallet` | `abi.encode(address asset)` | wallet balance | `Wallet` | false | the asset itself |
+| ERC20DefaultBalanceAdapter | `wallet` | `abi.encode(address asset)` | wallet balance | `Wallet` | false | the asset itself |
 | AaveV3InstancesMeta | `aave-v3-lending` | `abi.encode(address pool, address reserve)` | supply (collateral toggle off) | `Supplied` | false | reserve |
 | | | | supply (collateral toggle on) | `Collateral` | false | reserve |
 | | | | variable debt | `Borrowed` | true | reserve |
@@ -78,7 +78,7 @@ Emission-site counts across `src/balances/` (grep, 2026-06-26, post-assignment):
 
 | `PositionKind` | Emission sites | Emitting adapters |
 |---|---|---|
-| `Wallet` | 1 | ERC20DefaultAdapter only |
+| `Wallet` | 1 | ERC20DefaultBalanceAdapter only |
 | `Supplied` | 22 | lending supply, vaults, ERC-4626 wraps, unstaked LP, withdrawal/exit queues, Euler vaults |
 | `Borrowed` | 8 | Aave V3 (×2 sites), Spark, Compound V3, Morpho Markets, Fluid Vaults, StakeWise V3, Euler vaults |
 | `Collateral` | 6 | Aave V3, Spark, Compound V3, Morpho Markets, Fluid Vaults, Euler vaults |

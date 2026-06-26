@@ -10,8 +10,8 @@ import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
-import {sDAI_PriceOracle} from "src/prices/protocols/sDAI_Price.sol";
-import {sDAI_PriceOracle as sXDAI_PriceOracle} from "src/prices/protocols/sXDAI_Price.sol";
+import {sDAI_CustomPriceFeed} from "src/prices/protocols/sDAI_CustomPriceFeed.sol";
+import {sXDAI_CustomPriceFeed} from "src/prices/protocols/sXDAI_CustomPriceFeed.sol";
 
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/constants.sol";
@@ -23,8 +23,8 @@ abstract contract NAVCalculatorForkHarness is TestEnvConfigurator {
     IBalanceAdapter public aaveAdapter;
     IBalanceAdapter public compoundV3Comet;
     IBalanceAdapter public morphoBlueAdapter;
-    sXDAI_PriceOracle public savingsXdaiPrice;
-    sDAI_PriceOracle public sdaiPriceOracle;
+    sXDAI_CustomPriceFeed public savingsXdaiPrice;
+    sDAI_CustomPriceFeed public sdaiPriceOracle;
 
     NAVCalculator public nav;
 

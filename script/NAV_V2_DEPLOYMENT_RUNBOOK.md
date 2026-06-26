@@ -28,7 +28,7 @@ NAV v2 is a single, chain-local system. Each supported chain has:
 - **One NAVCalculator proxy** (UUPS) at the same canonical address on every chain (`TBD`). Any Safe can call `getAccountNav(safe, quoteAsset)` and get its NAV in USD or any registered quote asset.
 - **One BridgeEscrow proxy** (UUPS) at `TBD`. Tracks outbound/inbound bridge liquidity that would otherwise be invisible to the NAV.
 - **One default ERC20 balance adapter** at `TBD` — reports plain wallet balances for every registered ERC20 + the native coin.
-- **N custom price feed adapters** — one per Custom-priced asset. Implements `IPriceFeedCustom.getLatestPrice()`.
+- **N custom price feed adapters** — one per Custom-priced asset. Implements `ICustomPriceFeed.getLatestPrice()`.
 - **N custom balance adapters** — one per protocol position (Aave V3 Core, Morpho vault, Curve gauge, etc.). Implements `IBalanceAdapter.getAdapterPositions()` / `getAdapterBalances()` / `getAdapterBalanceForAsset()`.
 
 The NAVCalculator routes price lookups through an embedded `Prices` contract (Chainlink or Custom per asset) and position lookups through the registered balance adapters. Both are pluggable by adding/removing adapters — the proxy never needs to be upgraded to add new protocols.
@@ -223,7 +223,7 @@ If you're reading historical PR comments or older PR #14 versions that describe 
    ```
    Repeat for `BRIDGE_PROXY`. **Stop and fix** if any returns the wrong result.
 
-7. **Confirm the per-chain ERC20Default Balance Adapter address** in `deployments/<chainId>.json` — this gets deployed during `NAVCalculator.initialize()`. Read the new address from the broadcast logs (`02_DeployProxies.s.sol` logs `ERC20Default adapter (from NAV init): 0x...`) or query the proxy directly via the public getter: `cast call <NAV_PROXY> "erc20DefaultAdapter()(address)" --rpc-url <RPC>`. The script writes it to `deployments/<chainId>.json` — verify in the diff before committing.
+7. **Confirm the per-chain ERC20Default Balance Adapter address** in `deployments/<chainId>.json` — this gets deployed during `NAVCalculator.initialize()`. Read the new address from the broadcast logs (`02_DeployProxies.s.sol` logs `ERC20Default adapter (from NAV init): 0x...`) or query the proxy directly via the public getter: `cast call <NAV_PROXY> "erc20DefaultBalanceAdapter()(address)" --rpc-url <RPC>`. The script writes it to `deployments/<chainId>.json` — verify in the diff before committing.
 
 8. **Confirm the new proxy + ERC20Default addresses landed in `deployments/<chainId>.json`.** The "Canonical addresses" table at the top of this runbook carries `TBD` for our contracts by design; the deployments file is the source of truth.
 
@@ -432,8 +432,8 @@ The first entry in a token's `priceFeeds` array is set via `registerAsset`; any 
 | sUSDe | `sUSDe` | ✓ | `sUsde`, `usdeToUsdChainlinkAddress`, `usdeToUsdChainlinkHeartbeat` |
 | sUSDS | `sUSDS` | ✓ | `sUsds`, `usdsToUsdChainlinkAddress`, `usdsToUsdChainlinkHeartbeat` |
 | syrupUSDC | `syrupUSDC` | ✓ | `syrupUsdc`, `usdcToUsdChainlinkAddress`, `usdcToUsdChainlinkHeartbeat` |
-| stETH | `stETH` | ✓ | `underlyingAsset`, `xToUsdFeed`, `yToXFeed`, `xToUsdHeartbeat`, `yToXHeartbeat` (deploys `CrossRatePriceAdapter`) |
-| OETH | `OETH` | ✓ | `underlyingAsset`, `xToUsdFeed`, `yToXFeed`, `xToUsdHeartbeat`, `yToXHeartbeat` (deploys `CrossRatePriceAdapter`) |
+| stETH | `stETH` | ✓ | `underlyingAsset`, `xToUsdFeed`, `yToXFeed`, `xToUsdHeartbeat`, `yToXHeartbeat` (deploys `CrossRate_CustomPriceFeed`) |
+| OETH | `OETH` | ✓ | `underlyingAsset`, `xToUsdFeed`, `yToXFeed`, `xToUsdHeartbeat`, `yToXHeartbeat` (deploys `CrossRate_CustomPriceFeed`) |
 | ETHx | `ETHx` | ✓ | `ethx`, `stakePoolsManager`, `ethToUsdChainlinkOracle`, `ethToUsdChainlinkHeartbeat` |
 | ETHPlus | `ETHPlus` | ✓ | `ethPlus`, `reserveProtocolHeartbeat` |
 | osETH | `osETH` | ✓ | `osToken`, `osTokenVaultController`, `underlyingToUsdChainlinkOracle`, `underlyingToUsdChainlinkHeartbeat` |
@@ -456,15 +456,15 @@ Authoritative source: the `_deploy<Chain>PriceAdapters` functions in `03_DeployP
 
 | Adapter | Deployed on | Source file | Notes |
 |--------|-------------|-------------|-------|
-| `wstETH_L2` | Arbitrum, Base, Gnosis | `wstETH_L2_Price.sol` | Gnosis uses an Aave ratio provider in place of a Chainlink feed, same interface |
-| `cbETH_L2` | Base | `cbETH_L2_Price.sol` | |
-| `weETH_L2` | Arbitrum, Base | `weETH_L2_Price.sol` | |
-| `rsETH_L2` | Arbitrum | `rsETH_L2_Price.sol` | |
-| `ezETH_L2` | Arbitrum | `ezETH_L2_Price.sol` | Uses `xRenzoDeposit.getRate()`, different from Mainnet `ezETH` |
-| `syrupUSDC_L2` | Arbitrum | `syrupUSDC_L2_Price.sol` | |
-| `sXDAI` | Gnosis | `sXDAI_Price.sol` (its `sDAI_PriceOracle` contract is imported aliased as `sXDAI_PriceOracle` to dodge the name clash with mainnet `sDAI_Price.sol`) | |
-| `ezETH` | Mainnet | `ezETH_Price.sol` | Uses `restakeManager.calculateTVLs()` |
-| `ETHPlus` | Mainnet | `ETHPlus_Price.sol` | Wired in `_deployMainnetPriceAdapters()` via `_deployEthPlus()`, gated by `ConfigReader.isAdapterEnabled(..., "priceFeeds", "ETHPlus")`. Currently `enabled: true` in `custom-price-feeds/1.json`. Flip it to `enabled: false` if ETH Alpha switches ETHPlus to a Chainlink feed and you no longer want the Custom path. |
+| `wstETH_L2` | Arbitrum, Base, Gnosis | `wstETH_L2_CustomPriceFeed.sol` | Gnosis uses an Aave ratio provider in place of a Chainlink feed, same interface |
+| `cbETH_L2` | Base | `cbETH_L2_CustomPriceFeed.sol` | |
+| `weETH_L2` | Arbitrum, Base | `weETH_L2_CustomPriceFeed.sol` | |
+| `rsETH_L2` | Arbitrum | `rsETH_L2_CustomPriceFeed.sol` | |
+| `ezETH_L2` | Arbitrum | `ezETH_L2_CustomPriceFeed.sol` | Uses `xRenzoDeposit.getRate()`, different from Mainnet `ezETH` |
+| `syrupUSDC_L2` | Arbitrum | `syrupUSDC_L2_CustomPriceFeed.sol` | |
+| `sXDAI` | Gnosis | `sXDAI_CustomPriceFeed.sol` (its `sDAI_CustomPriceFeed` contract is imported aliased as `sXDAI_CustomPriceFeed` to dodge the name clash with mainnet `sDAI_CustomPriceFeed.sol`) | |
+| `ezETH` | Mainnet | `ezETH_CustomPriceFeed.sol` | Uses `restakeManager.calculateTVLs()` |
+| `ETHPlus` | Mainnet | `ETHPlus_CustomPriceFeed.sol` | Wired in `_deployMainnetPriceAdapters()` via `_deployEthPlus()`, gated by `ConfigReader.isAdapterEnabled(..., "priceFeeds", "ETHPlus")`. Currently `enabled: true` in `custom-price-feeds/1.json`. Flip it to `enabled: false` if ETH Alpha switches ETHPlus to a Chainlink feed and you no longer want the Custom path. |
 
 **Optimism has no Custom price adapters.** Alpha funds on OP use Chainlink feeds exclusively (`wstethToUsdChainlink`, `usdcToUsdChainlink`, `usdtToUsdChainlink`). `_deployOptimismPriceAdapters()` is an intentional no-op; if a future fund needs a Custom adapter on OP, add it there.
 
@@ -479,7 +479,7 @@ The asset/price-feed config and the chain configs both surface heartbeat values,
 | Location | Used by | What it does |
 |---|---|---|
 | `nav-config/assets-and-price-feeds/<chainId>.json .<symbol>.priceFeeds[].heartbeat` (number or string) | `RegisterAssets.s.sol` → `NAVCalculator.registerAsset(_, _, _, heartbeat)` for the first feed / `addPriceFeed(_, _, _, heartbeat)` for the rest → stored in `priceOracles[asset].chainlinkHeartbeat` | For `Chainlink`/`Redstone`/`API3`-typed entries: NAV checks `block.timestamp - latestRoundData().updatedAt >= heartbeat` and flags the feed stale if exceeded. For `Custom`-typed entries: the primary gate is `getLatestPrice().stale`; the registered heartbeat is then also applied as an external gate on `latestRoundData().updatedAt` (same `>=` check). |
-| `contracts-deployment-config/custom-price-feeds/<chainId>.json .<name>.constructor.<feed>Heartbeat` (string) | `03_DeployPriceFeeds.s.sol` → adapter constructor → stored in the adapter's immutable | Per-feed staleness threshold inside the Custom adapter's `getLatestPrice()`. Multi-feed adapters OR-check each one (`weETH_Price.sol:105-108`), so any single feed exceeding its heartbeat marks the whole price stale. |
+| `contracts-deployment-config/custom-price-feeds/<chainId>.json .<name>.constructor.<feed>Heartbeat` (string) | `03_DeployPriceFeeds.s.sol` → adapter constructor → stored in the adapter's immutable | Per-feed staleness threshold inside the Custom adapter's `getLatestPrice()`. Multi-feed adapters OR-check each one (`weETH_CustomPriceFeed.sol:105-108`), so any single feed exceeding its heartbeat marks the whole price stale. |
 
 **Conventions to follow (PR #14 baseline, all aligned to the fund-side):**
 
@@ -598,7 +598,7 @@ The `_deployIfEnabled(...)` calls in `run()` are the authoritative source. Most 
 
 **Rewards:** `MerklRewards` (mutable proof-verified per-(user,token) cache — ADR 0007)
 
-**StakeWise V3 pricing note:** osETH (Mainnet) and osGNO (Gnosis) are **Custom-priced ERC20s** via `osToken_PriceOracle` (`convertToAssets(1e18) × underlying/USD`); held osTokens are reported by `ERC20DefaultAdapter` (deployed by `03_DeployPriceFeeds` / registered by `RegisterAssets`, custom-feed keys `osETH` / `osGNO` in `contracts-deployment-config/custom-price-feeds/<chainId>.json`). The `StakeWiseV3VaultsMeta` adapter separately reports vault deposits net of minted-osToken debt (`vaultAssets - mintedOs`, denominated in ETH/GNO). Wired primarily for integration cross-checks; the Alpha funds do not currently use StakeWise.
+**StakeWise V3 pricing note:** osETH (Mainnet) and osGNO (Gnosis) are **Custom-priced ERC20s** via `osToken_CustomPriceFeed` (`convertToAssets(1e18) × underlying/USD`); held osTokens are reported by `ERC20DefaultBalanceAdapter` (deployed by `03_DeployPriceFeeds` / registered by `RegisterAssets`, custom-feed keys `osETH` / `osGNO` in `contracts-deployment-config/custom-price-feeds/<chainId>.json`). The `StakeWiseV3VaultsMeta` adapter separately reports vault deposits net of minted-osToken debt (`vaultAssets - mintedOs`, denominated in ETH/GNO). Wired primarily for integration cross-checks; the Alpha funds do not currently use StakeWise.
 
 **Explicitly not wired** (contracts exist in the repo but no Alpha fund needs them): `CompoundV3_*`, `AaveV3SafetyModule_stkAAVE`. If you need one later, add a `_deployIfEnabled("<Name>")` line to `run()`, add the deploy entry to `contracts-deployment-config/balance-adapters/<chainId>.json` (or `contracts-deployment-config/meta-balance-adapters/<chainId>.json` for a meta), and add the register entry to `nav-config/balance-adapters/<chainId>.json` (or `nav-config/meta-balance-adapters/<chainId>.json`) — `06_Configure.s.sol` reads that nav-config entry to register the adapter; otherwise the adapter deploys but never registers on NAVCalculator.
 
@@ -614,7 +614,7 @@ The `_deployIfEnabled(...)` calls in `run()` are the authoritative source. Most 
 
 Run per chain. Only adapters with `enabled: true` in config are deployed.
 
-> **When this phase is needed (and when it isn't).** Phase 3 builds NAV v2 versions of Custom price oracles. The fund-side repo (`karpatkey-tokenized-fund`) ships its own deployments of every Custom adapter we currently use, and those v1 deployments **satisfy the v2 `IPriceFeedCustom` interface** — verified empirically across all 18 deployed Custom adapters (see `docs/historical/oracle-migration-plan.md` → "Empirical confirmation"). For any asset whose `priceFeeds` entry in `nav-config/assets-and-price-feeds/<chainId>.json .<symbol>` already points at a working fund-side `address`, **deploying a NAV v2 copy is redundant** — both contracts return the same price for the same block, and NAV v2 just reads whatever address is in the registry.
+> **When this phase is needed (and when it isn't).** Phase 3 builds NAV v2 versions of Custom price oracles. The fund-side repo (`karpatkey-tokenized-fund`) ships its own deployments of every Custom adapter we currently use, and those v1 deployments **satisfy the v2 `ICustomPriceFeed` interface** — verified empirically across all 18 deployed Custom adapters (see `docs/historical/oracle-migration-plan.md` → "Empirical confirmation"). For any asset whose `priceFeeds` entry in `nav-config/assets-and-price-feeds/<chainId>.json .<symbol>` already points at a working fund-side `address`, **deploying a NAV v2 copy is redundant** — both contracts return the same price for the same block, and NAV v2 just reads whatever address is in the registry.
 >
 > Running this phase only adds value when:
 > - You're onboarding a new adapter that the fund-side never deployed.
@@ -1149,7 +1149,7 @@ Not actually a failure — Etherscan caches verified bytecode by hash. You can s
 
 Workflow for a brand-new adapter after the migration PRs are merged. Each step has a canonical reference file — mirror it.
 
-1. **Write the adapter** under `src/prices/protocols/<Name>_Price.sol`. Inherit `IPriceFeedCustom` (8-decimal USD output, `(uint256 price, bool stale)` return). Reference: `sDAI_Price.sol` for a simple ERC4626-style feed, `weETH_Price.sol` for a two-hop Chainlink composition.
+1. **Write the adapter** under `src/prices/protocols/<Name>_CustomPriceFeed.sol`. Inherit `ICustomPriceFeed` (8-decimal USD output, `(uint256 price, bool stale)` return). Reference: `sDAI_CustomPriceFeed.sol` for a simple ERC4626-style feed, `weETH_CustomPriceFeed.sol` for a two-hop Chainlink composition.
 2. **Write the unit test** under `test/prices/protocols/<Name>_Price.t.sol`. Minimum: constructor revert coverage for every invalid-argument path.
 3. **Write the fork test** under `test/prices/protocols/fork/<Name>_Price.fork.t.sol`. Pin a block, assert an exact price value, exercise the stale path by warping `block.timestamp` past the heartbeat.
 4. **Register the deploy config** in `contracts-deployment-config/custom-price-feeds/<chainId>.json .<Name>` with `enabled: true` and all constructor params, and reference it from the consuming token's `priceFeeds[]` (in `nav-config/assets-and-price-feeds/<chainId>.json`) via `{ type: Custom, feed: <Name> }`. Make sure `deployments/<chainId>.json` exists (at least `{}`) so `ConfigReader.writeAdapterAddress` has a file to write the deployed address to.

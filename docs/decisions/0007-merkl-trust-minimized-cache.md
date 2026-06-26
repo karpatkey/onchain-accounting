@@ -6,7 +6,7 @@
 
 Merkl (Angle Labs) distributes rewards via off-chain merkle trees. The on-chain Distributor at `0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae` (canonical address on every supported EVM chain) only stores **claimed** amounts: `mapping(address user => mapping(address token => Claim { uint208 amount, uint48 timestamp, bytes32 merkleRoot }))`. To learn a user's *unclaimed* allocation you need the merkle leaf and proof from the off-chain Merkl API — the contract has no view function for it.
 
-Without a Merkl adapter, NAV silently under-reports any portfolio that earns Merkl emissions (ARB DRIP, MORPHO campaigns, ANGLE, OP grants, etc.) until those rewards are claimed and land in the wallet (where `ERC20DefaultAdapter` picks them up). Building a Merkl-aware adapter bumps into a structural problem: a balance adapter is a `view` contract, but the data we need lives off-chain. Several options are on the table:
+Without a Merkl adapter, NAV silently under-reports any portfolio that earns Merkl emissions (ARB DRIP, MORPHO campaigns, ANGLE, OP grants, etc.) until those rewards are claimed and land in the wallet (where `ERC20DefaultBalanceAdapter` picks them up). Building a Merkl-aware adapter bumps into a structural problem: a balance adapter is a `view` contract, but the data we need lives off-chain. Several options are on the table:
 
 1. **Don't build the adapter.** Status quo. NAV under-reports; downstream products either tolerate the gap or claim more aggressively to materialize rewards in-wallet.
 2. **Trust the off-chain bot to inject *amounts* into the adapter.** Simple, but the bot owner could quietly inflate or suppress reported balances. Defeats the auditability purpose.

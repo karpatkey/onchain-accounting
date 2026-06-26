@@ -7,9 +7,9 @@
 # NexusStakedNxmBalanceAdapter is a simple immutable view adapter (no agent, no owner): it discovers an
 # account's StakingNFT positions by scanning tokenInfo(1..totalSupply) and values them via
 # StakingViewer.getAggregatedTokens into NXM-denominated Staking (active+expired) + Rewards legs.
-# NXM is priced by a custom RAMM feed (NXM_PriceOracle), which dev deploy.sh does NOT auto-register
+# NXM is priced by a custom RAMM feed (NXM_CustomPriceFeed), which dev deploy.sh does NOT auto-register
 # (it wires Chainlink assets only). So this helper, in order:
-#   1. deploys NXM_PriceOracle and registerAsset()s NXM with it (Custom price type),
+#   1. deploys NXM_CustomPriceFeed and registerAsset()s NXM with it (Custom price type),
 #   2. forge create's the adapter,
 #   3. addBalanceAdapters() on the dev NAV.
 # Requires deploy.sh to have run first. The Nexus Safe 0x8e53D04644E9ab0412a8c6bd228C84da7664cFE3 is a
@@ -56,24 +56,24 @@ echo "    underlying:    $NXM_TOKEN (NXM)"
 if cast call "$NAV" "isAssetRegistered(address)(bool)" "$NXM_TOKEN" --rpc-url "$RPC" 2>/dev/null | grep -qi true; then
   echo "  NXM already registered on NAV — skipping feed deploy"
 else
-  echo "--- deploy NXM_PriceOracle (RAMM book value * ETH/USD)"
+  echo "--- deploy NXM_CustomPriceFeed (RAMM book value * ETH/USD)"
   FEED_OUT=$(
-    forge create src/prices/protocols/NXM_Price.sol:NXM_PriceOracle \
+    forge create src/prices/protocols/NXM_CustomPriceFeed.sol:NXM_CustomPriceFeed \
       --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" --broadcast \
       --constructor-args "$NXM_TOKEN" "$NXM_RAMM" "$ETH_USD_ORACLE" "$ETH_USD_HEARTBEAT" 2>&1
   ) || true
   NXM_FEED=$(printf '%s\n' "$FEED_OUT" | grep -i "Deployed to:" | awk '{print $3}' || true)
   if [ -z "$NXM_FEED" ]; then
     printf '%s\n' "$FEED_OUT" | tail -30
-    echo "error: NXM_PriceOracle deploy failed (is RAMM live on this fork block?)" >&2
+    echo "error: NXM_CustomPriceFeed deploy failed (is RAMM live on this fork block?)" >&2
     exit 1
   fi
-  echo "  NXM_PriceOracle: $NXM_FEED"
+  echo "  NXM_CustomPriceFeed: $NXM_FEED"
   cast send "$NAV" "registerAsset(address,address,uint8,uint256)" \
     "$NXM_TOKEN" "$NXM_FEED" "$PRICE_TYPE_CUSTOM" "$ETH_USD_HEARTBEAT" \
     --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" >/dev/null
   echo "  registered NXM on NAV (Custom feed)"
-  jq --arg a "$NXM_FEED" '. + {"NXM_PriceOracle": $a}' "$ADDR_FILE" > "$ADDR_FILE.tmp" && mv "$ADDR_FILE.tmp" "$ADDR_FILE"
+  jq --arg a "$NXM_FEED" '. + {"NXM_CustomPriceFeed": $a}' "$ADDR_FILE" > "$ADDR_FILE.tmp" && mv "$ADDR_FILE.tmp" "$ADDR_FILE"
 fi
 
 # --- 2. adapter ------------------------------------------------------------------------------------------

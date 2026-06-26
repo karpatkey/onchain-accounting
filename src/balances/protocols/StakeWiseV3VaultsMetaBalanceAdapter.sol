@@ -47,7 +47,7 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceAdapter {
     IOsTokenVaultController public immutable OS_TOKEN_VAULT_CONTROLLER;
 
     /// @param underlyingToken_ The underlying staking asset (e.g. ETH sentinel on mainnet, GNO on Gnosis).
-    /// @param osTokenVaultController_ The chain's StakeWise OsTokenVaultController (same one osToken_PriceOracle uses).
+    /// @param osTokenVaultController_ The chain's StakeWise OsTokenVaultController (same one osToken_CustomPriceFeed uses).
     /// @param protocolName_ Human-readable protocol name (e.g. "StakeWise V3").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
     constructor(

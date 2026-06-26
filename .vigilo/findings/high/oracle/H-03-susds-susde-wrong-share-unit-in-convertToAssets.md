@@ -6,7 +6,7 @@
 
 ## Vulnerability Detail
 
-### `sUSDS_Price.sol` (lines 83–87)
+### `sUSDS_CustomPriceFeed.sol` (lines 83–87)
 
 ```solidity
 uint256 sUsdsToUsdsPrice = IERC4626(S_USDS).convertToAssets(10 ** _decimals);
@@ -22,7 +22,7 @@ price = sUsdsToUsdsPrice.mulDiv(usdsToUsdPrice.toUint256(), 10 ** _decimals, Mat
 
 The true price of sUSDS should be approximately $1.05 at current rates. The computed price is approximately $0.00000001 — a factor of ~10^8 lower.
 
-### `sUSDe_Price.sol` (lines 81–82)
+### `sUSDe_CustomPriceFeed.sol` (lines 81–82)
 
 Identical pattern:
 
@@ -39,8 +39,8 @@ sUSDe also has 18 decimals. Same `1e8` probe → same near-zero result.
 
 ## Root Cause
 
-- `sUSDS_Price.sol:83` — `10 ** _decimals` used as the share unit instead of `10 ** IERC4626(S_USDS).decimals()`
-- `sUSDe_Price.sol:81` — same root cause
+- `sUSDS_CustomPriceFeed.sol:83` — `10 ** _decimals` used as the share unit instead of `10 ** IERC4626(S_USDS).decimals()`
+- `sUSDe_CustomPriceFeed.sol:81` — same root cause
 
 The formula implicitly assumes the vault share decimals equal the Chainlink feed decimals, which is false for sUSDS and sUSDe.
 
@@ -70,7 +70,7 @@ This is a systemic miscalculation rather than an attacker-triggered event:
 Use the vault's own declared share decimals for the probe unit, not the Chainlink feed decimals:
 
 ```solidity
-// sUSDS_Price.sol — corrected _compute()
+// sUSDS_CustomPriceFeed.sol — corrected _compute()
 uint256 shareUnit = 10 ** IERC4626(S_USDS).decimals();          // 18 for sUSDS
 uint256 sUsdsToUsdsPrice = IERC4626(S_USDS).convertToAssets(shareUnit);
 // sUsdsToUsdsPrice is now in USDS-atom units (18 dec) per 1 sUSDS share (18 dec)
@@ -78,4 +78,4 @@ uint256 sUsdsToUsdsPrice = IERC4626(S_USDS).convertToAssets(shareUnit);
 price = sUsdsToUsdsPrice.mulDiv(usdsToUsdPrice.toUint256(), shareUnit, Math.Rounding.Floor);
 ```
 
-Apply the same fix to `sUSDe_Price.sol`.
+Apply the same fix to `sUSDe_CustomPriceFeed.sol`.

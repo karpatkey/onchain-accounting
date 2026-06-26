@@ -6,7 +6,7 @@ Living document. Tracks protocols and protocol features whose positions are **no
 
 The Stader withdrawal-queue adapter (`src/balances/protocols/StaderWithdrawalQueueBalanceAdapter.sol`) is the reference template for the **withdrawal-queue** family below: a single immutable adapter that enumerates an account's open requests on a protocol-specific manager and reports a single aggregated credit position in the underlying asset. Most LST queues fit that shape with cosmetic differences in enumeration (sequential ID vs. ERC721 NFT) and request struct layout.
 
-When picking the next protocol to add, prioritise by **whether kpk actually parks value there** rather than by protocol prominence — the catch-all `ERC20DefaultAdapter` already covers wallet ERC20 holdings, so a new adapter only earns its keep when there is value parked outside the wallet (a queue, a vault wrapper, a debt position).
+When picking the next protocol to add, prioritise by **whether kpk actually parks value there** rather than by protocol prominence — the catch-all `ERC20DefaultBalanceAdapter` already covers wallet ERC20 holdings, so a new adapter only earns its keep when there is value parked outside the wallet (a queue, a vault wrapper, a debt position).
 
 The system does not track deprecated protocols — once a protocol is no longer in active use, its adapter, config, and identity entries are deleted rather than left in a permanently-disabled state. Aave V2 was removed for this reason (as were Aura and Sky Savings in recent PRs).
 
@@ -14,7 +14,7 @@ The system does not track deprecated protocols — once a protocol is no longer 
 
 ## LST/LRT withdrawal queues
 
-The point of these adapters is to track value that has left the LST as ERC20 but hasn't yet returned as ETH/native. While in the queue the position is invisible to `ERC20DefaultAdapter`.
+The point of these adapters is to track value that has left the LST as ERC20 but hasn't yet returned as ETH/native. While in the queue the position is invisible to `ERC20DefaultBalanceAdapter`.
 
 | Protocol | Manager (mainnet) | Shape | Notes |
 |---|---|---|---|
@@ -26,7 +26,7 @@ The point of these adapters is to track value that has left the LST as ERC20 but
 | **Kelp (rsETH)** ✅ | `LRTWithdrawalManager` at `0x62De59c08eB5dAE4b7E6F7a8cAd3006d6965ec16` | Per-supported-asset deques: `userAssociatedNonces(asset, user) → (begin, end)` and `getUserWithdrawalRequest(asset, user, i) → (rsETHAmount, expectedAssetAmount, withdrawalStartBlock, userNonce)`. Payout-asset set discovered via `lrtConfig().getSupportedAssetList()` (stETH, ETHx, native ETH at time of writing). | Implemented in this repo (`KelpWithdrawalQueueBalanceAdapter.sol`): single multi-asset adapter, one credit position per NAV-registered payout asset. |
 | **Mantle (mETH)** | `Staking` contract; `unstakeRequest`/`claimUnstakeRequest` | Sequential `unstakeRequestId` per user; struct includes `mETHLocked`, `ethRequested`, `cumulativeETHRequested`, `blockNumber`. | Similar shape to Stader. |
 | **StakeWise V3 exit queue** | per-Vault `enterExitQueue(shares)` returning a position id | `StakeWiseV3VaultsMetaBalanceAdapter.sol` covers active vault positions only (`Staking` shares + `Borrowed` osToken legs); it does **not** read the exit queue. Shares that have entered the exit queue are not yet tracked end-to-end. | Not covered — needs a dedicated adapter or an added leg. |
-| **Rocket Pool (rETH)** — no adapter ✓ | n/a (rETH is a plain ERC20) | `RocketTokenRETH.burn()` pays ETH instantly from excess deposit-pool collateral, or **reverts** — there is no NFT / queue / pending-claim state for an adapter to read. | **No adapter needed (evaluated 2026-05).** rETH and RPL are registered, priced, and already wallet-covered by `ERC20DefaultAdapter` (rETH via `rETH_Price`, RPL via Chainlink; RPL rewards via `MerklRewards`), so nothing to add for token holdings. The only *non-tokenized* Rocket Pool positions are node-operator ones — staked RPL collateral, minipool bonded ETH, RPL rewards (`RocketNodeStaking` / minipools) — which the funds do not hold. Revisit only if a fund takes on RP node-operator exposure. |
+| **Rocket Pool (rETH)** — no adapter ✓ | n/a (rETH is a plain ERC20) | `RocketTokenRETH.burn()` pays ETH instantly from excess deposit-pool collateral, or **reverts** — there is no NFT / queue / pending-claim state for an adapter to read. | **No adapter needed (evaluated 2026-05).** rETH and RPL are registered, priced, and already wallet-covered by `ERC20DefaultBalanceAdapter` (rETH via `rETH_Price`, RPL via Chainlink; RPL rewards via `MerklRewards`), so nothing to add for token holdings. The only *non-tokenized* Rocket Pool positions are node-operator ones — staked RPL collateral, minipool bonded ETH, RPL rewards (`RocketNodeStaking` / minipools) — which the funds do not hold. Revisit only if a fund takes on RP node-operator exposure. |
 | **Coinbase (cbETH)** | n/a (centralised) | Off-chain wrap/unwrap. | No on-chain queue position. |
 
 ### Implementation notes (apply across the queue family)
@@ -72,7 +72,7 @@ These are not queues but represent value that lives outside the wallet and is no
 - **Pendle PT/YT**: principal-token (PT) and yield-token (YT) positions in markets and SY vaults. Each Pendle market issues distinct PT and YT ERC20s; the underlying value is non-trivial (PT depends on time-to-maturity, YT depends on accrued yield since last redemption). One adapter per market or per-LP.
 - **Yearn V3 vaults**: pure ERC4626; could reuse the `ERC4626Wrap` adapter or get a thin wrapper.
 - **Beefy vaults**: ERC4626-shaped, same pattern.
-- **Origin OETH/OUSD**: rebasing ERC20s — `ERC20DefaultAdapter` reports the current `balanceOf` correctly, but the rebasing semantic is worth a docs note.
+- **Origin OETH/OUSD**: rebasing ERC20s — `ERC20DefaultBalanceAdapter` reports the current `balanceOf` correctly, but the rebasing semantic is worth a docs note.
 - **Maple direct lending pools** (beyond syrupUSDC): pool tokens with withdrawal cooldowns.
 
 ### Money markets and credit

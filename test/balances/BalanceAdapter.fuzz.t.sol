@@ -7,14 +7,14 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalances} from "src/balances/IBalances.sol";
 import {Mock_CustomBalanceAdapter} from "test/mocks/balance_adapters.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
-import {ERC20DefaultAdapter} from "src/balances/protocols/ERC20DefaultAdapter.sol";
+import {ERC20DefaultBalanceAdapter} from "src/balances/protocols/ERC20DefaultBalanceAdapter.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
 
 /// @title Balance Adapter Fuzz Tests
 /// @notice Property-based fuzz tests for balance adapter adapters
 contract BalanceAdapterFuzzTest is Test {
     BalancesHarness public balances;
-    ERC20DefaultAdapter public erc20DefaultAdapter;
+    ERC20DefaultBalanceAdapter public erc20DefaultBalanceAdapter;
     Mock_CustomBalanceAdapter public customAdapter;
     Mock_ERC20 public usdc;
     Mock_ERC20 public dai;
@@ -25,7 +25,7 @@ contract BalanceAdapterFuzzTest is Test {
         // Etch NAVRegistryLib (pre-linked external lib, DELEGATECALL'd by Balances) at its deterministic address.
         vm.etch(LibraryPins.NAV_REGISTRY_LIB, vm.deployCode("NAVRegistryLib.sol:NAVRegistryLib").code);
         balances = new BalancesHarness();
-        erc20DefaultAdapter = balances.defaultAdapter();
+        erc20DefaultBalanceAdapter = balances.defaultAdapter();
         customAdapter = new Mock_CustomBalanceAdapter();
         customAdapter.setBalances(balances);
 
@@ -74,7 +74,7 @@ contract BalanceAdapterFuzzTest is Test {
         uint96 amount = uint96(bound(amountSeed, 1, type(uint96).max / 2));
 
         // Try to get balance - should not revert
-        (uint256 amount1,) = erc20DefaultAdapter.getAdapterBalanceForAsset(account, asset);
+        (uint256 amount1,) = erc20DefaultBalanceAdapter.getAdapterBalanceForAsset(account, asset);
 
         // If asset is registered, mint tokens and check again
         if (asset == address(usdc) || asset == address(dai)) {
@@ -84,12 +84,12 @@ contract BalanceAdapterFuzzTest is Test {
                 dai.mint(account, amount);
             }
 
-            (uint256 amount2, bool isDebt2) = erc20DefaultAdapter.getAdapterBalanceForAsset(account, asset);
+            (uint256 amount2, bool isDebt2) = erc20DefaultBalanceAdapter.getAdapterBalanceForAsset(account, asset);
 
             // Balance should have increased (and should still be credit/positive)
             assertGe(amount2, amount1, "Balance should increase after minting");
-            assertFalse(isDebt2, "ERC20DefaultAdapter should return credit (not debt)");
-            assertGt(amount2, 0, "ERC20DefaultAdapter should return positive amounts");
+            assertFalse(isDebt2, "ERC20DefaultBalanceAdapter should return credit (not debt)");
+            assertGt(amount2, 0, "ERC20DefaultBalanceAdapter should return positive amounts");
         }
     }
 
@@ -154,7 +154,7 @@ contract BalanceAdapterFuzzTest is Test {
 
         // Should not revert
         INAVCalculator.PositionBalance[] memory positions =
-            erc20DefaultAdapter.getAdapterPositions(account, assetFilter);
+            erc20DefaultBalanceAdapter.getAdapterPositions(account, assetFilter);
 
         // Verify no zero amounts
         for (uint256 i = 0; i < positions.length; i++) {
@@ -216,7 +216,7 @@ contract BalanceAdapterFuzzTest is Test {
 
         // Get balance
         (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) =
-            erc20DefaultAdapter.getAdapterBalances(account);
+            erc20DefaultBalanceAdapter.getAdapterBalances(account);
 
         // Arrays should have same length
         assertEq(assets.length, amounts.length, "Assets and amounts arrays should have same length");
@@ -228,7 +228,8 @@ contract BalanceAdapterFuzzTest is Test {
         }
 
         // Verify consistency with getAdapterPositions
-        INAVCalculator.PositionBalance[] memory positions = erc20DefaultAdapter.getAdapterPositions(account, address(0));
+        INAVCalculator.PositionBalance[] memory positions =
+            erc20DefaultBalanceAdapter.getAdapterPositions(account, address(0));
 
         int256 positionsSum = sumPositionBalances(positions);
         int256 balanceSum = 0;
@@ -250,9 +251,9 @@ contract BalanceAdapterFuzzTest is Test {
     /// @notice Fuzz test for underlyingAssetsSupported consistency
     function testFuzz_underlyingAssetsSupported_consistency() public view {
         // Query multiple times - should be consistent
-        address[] memory assets1 = erc20DefaultAdapter.underlyingAssetsSupported();
-        address[] memory assets2 = erc20DefaultAdapter.underlyingAssetsSupported();
-        address[] memory assets3 = erc20DefaultAdapter.underlyingAssetsSupported();
+        address[] memory assets1 = erc20DefaultBalanceAdapter.underlyingAssetsSupported();
+        address[] memory assets2 = erc20DefaultBalanceAdapter.underlyingAssetsSupported();
+        address[] memory assets3 = erc20DefaultBalanceAdapter.underlyingAssetsSupported();
 
         // Should all be same length
         assertEq(assets1.length, assets2.length, "Length should be consistent");
@@ -303,24 +304,25 @@ contract BalanceAdapterFuzzTest is Test {
         erc20Amount = bound(erc20Amount, 1, 1_000_000 * 10 ** usdc.decimals());
         customAmount = bound(customAmount, 1, 1_000_000 * 10 ** usdc.decimals());
 
-        // Mint to ERC20DefaultAdapter
+        // Mint to ERC20DefaultBalanceAdapter
         usdc.mint(account, erc20Amount);
 
         // Set in custom adapter (credit position)
         customAdapter.setBalance(address(usdc), account, customAmount, false);
 
         // Get balances from both
-        (uint256 erc20Amount_, bool erc20IsDebt) = erc20DefaultAdapter.getAdapterBalanceForAsset(account, address(usdc));
+        (uint256 erc20Amount_, bool erc20IsDebt) =
+            erc20DefaultBalanceAdapter.getAdapterBalanceForAsset(account, address(usdc));
         (uint256 customAmount_, bool customIsDebt) = customAdapter.getAdapterBalanceForAsset(account, address(usdc));
 
         // Both should be credit positions (positive amount, not debt)
-        assertGt(erc20Amount_, 0, "ERC20DefaultAdapter should return positive balance");
-        assertFalse(erc20IsDebt, "ERC20DefaultAdapter should be credit");
+        assertGt(erc20Amount_, 0, "ERC20DefaultBalanceAdapter should return positive balance");
+        assertFalse(erc20IsDebt, "ERC20DefaultBalanceAdapter should be credit");
         assertGt(customAmount_, 0, "Custom adapter should return positive balance");
         assertFalse(customIsDebt, "Custom adapter should be credit");
 
-        // ERC20DefaultAdapter should match minted amount
-        assertEq(erc20Amount_, erc20Amount, "ERC20DefaultAdapter should match minted amount");
+        // ERC20DefaultBalanceAdapter should match minted amount
+        assertEq(erc20Amount_, erc20Amount, "ERC20DefaultBalanceAdapter should match minted amount");
 
         // Custom adapter should match set amount
         assertEq(customAmount_, customAmount, "Custom adapter should match set amount");
@@ -333,11 +335,11 @@ contract BalanceAdapterFuzzTest is Test {
     /// @notice Fuzz test for zero address account
     function testFuzz_zeroAddressAccount(address asset) public view {
         // Zero address should return zero balance
-        (uint256 amount,) = erc20DefaultAdapter.getAdapterBalanceForAsset(address(0), asset);
+        (uint256 amount,) = erc20DefaultBalanceAdapter.getAdapterBalanceForAsset(address(0), asset);
         assertEq(amount, 0, "Zero address should return zero balance");
 
         INAVCalculator.PositionBalance[] memory positions =
-            erc20DefaultAdapter.getAdapterPositions(address(0), address(0));
+            erc20DefaultBalanceAdapter.getAdapterPositions(address(0), address(0));
         assertEq(positions.length, 0, "Zero address should return no positions");
     }
 
@@ -350,11 +352,11 @@ contract BalanceAdapterFuzzTest is Test {
         vm.assume(unregisteredAsset != balances.NATIVE_ADDRESS());
 
         // Unregistered asset should return zero balance
-        (uint256 amount,) = erc20DefaultAdapter.getAdapterBalanceForAsset(account, unregisteredAsset);
+        (uint256 amount,) = erc20DefaultBalanceAdapter.getAdapterBalanceForAsset(account, unregisteredAsset);
         assertEq(amount, 0, "Unregistered asset should return zero balance");
 
         INAVCalculator.PositionBalance[] memory positions =
-            erc20DefaultAdapter.getAdapterPositions(account, unregisteredAsset);
+            erc20DefaultBalanceAdapter.getAdapterPositions(account, unregisteredAsset);
         assertEq(positions.length, 0, "Unregistered asset should return no positions");
     }
 
@@ -369,7 +371,7 @@ contract BalanceAdapterFuzzTest is Test {
 
         // Should handle large balances without reverting
         (uint256 retrievedAmount, bool retrievedIsDebt) =
-            erc20DefaultAdapter.getAdapterBalanceForAsset(account, address(usdc));
+            erc20DefaultBalanceAdapter.getAdapterBalanceForAsset(account, address(usdc));
         assertEq(retrievedAmount, amount, "Should handle large balances");
         assertFalse(retrievedIsDebt, "Should be credit (not debt)");
     }

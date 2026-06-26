@@ -99,13 +99,13 @@ Protocol contract addresses are shown as `0x<Name>` to remain chain-agnostic.
 
 ### Per-instance adapters
 
-#### `ERC20DefaultAdapter` — wallet balance
+#### `ERC20DefaultBalanceAdapter` — wallet balance
 
 ```solidity
 // One leg per registered asset held directly in the account.
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xA0b8…6eB48, symbol: "USDC", decimals: 6 }),
-    balanceAdapter: 0x<ERC20DefaultAdapter>,
+    balanceAdapter: 0x<ERC20DefaultBalanceAdapter>,
     amount:        1_500_000_000,          // 1 500.000000 USDC
     isDebt:        false,
     protocolId:    keccak256("wallet"),
@@ -549,7 +549,7 @@ stETH = $2 480 · AAVE = $200 · CRV = $0.50 · CVX = $3 · BAL = $3 · COMP = $
 
 ### Per-instance adapters
 
-#### `ERC20DefaultAdapter` — wallet
+#### `ERC20DefaultBalanceAdapter` — wallet
 
 Scenario: account holds USDC, WETH, and DAI.
 
@@ -893,7 +893,7 @@ positions are NOT account-global — each uses `abi.encode(asset)` to identify t
 
 ```solidity
 enum PositionKind {
-    Wallet,     // plain ERC20 / native balance (ERC20DefaultAdapter)
+    Wallet,     // plain ERC20 / native balance (ERC20DefaultBalanceAdapter)
     Supplied,   // lending supply, vault shares, unstaked LP principal
     Borrowed,   // any debt position (isDebt = true)
     Collateral, // supply locked as collateral (e.g. Aave usageAsCollateralEnabled = true)
@@ -950,7 +950,7 @@ decodes use `AbiCoder.defaultAbiCoder()` from ethers.js. Protocol ID constants c
 
 | Adapter | `protocolId` slug | Legs emitted (`PositionKind`) |
 |---|---|---|
-| `ERC20DefaultAdapter` | `wallet` | `Wallet` |
+| `ERC20DefaultBalanceAdapter` | `wallet` | `Wallet` |
 | `AaveV3InstancesMeta` | `aave-v3-lending` | `Supplied`, `Collateral`, `Borrowed` |
 | `SparkLend` | `spark-lend` | `Supplied`, `Collateral`, `Borrowed` |
 | `AaveV3SafetyModule` | `aave-v3-safety-module` | `Staking`, `Rewards` |

@@ -98,7 +98,7 @@ contract VerifyEtherscan is BaseDeployScript {
             return (path, args);
         }
         if (_equals(name, "ERC20Default") || _startsWith(name, "ERC20Default_")) {
-            path = "src/balances/protocols/ERC20DefaultAdapter.sol:ERC20DefaultAdapter";
+            path = "src/balances/protocols/ERC20DefaultBalanceAdapter.sol:ERC20DefaultBalanceAdapter";
             address nav = _navOrDefault(navCalculator, name);
             if (nav == address(0)) return ("", "");
             address[] memory initialAssets = new address[](0);

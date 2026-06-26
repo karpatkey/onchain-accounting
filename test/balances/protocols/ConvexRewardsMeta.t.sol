@@ -433,7 +433,7 @@ contract ConvexRewardsMetaBalanceAdapterTest is Test {
         assertEq(assets.length, 4);
     }
 
-    // ─── describePosition ─────────────────────────────────────────────────────
+    // ─── positionLabels ───────────────────────────────────────────────────────
 
     function test_positionLabels_format() public view {
         string[] memory labels = meta.positionLabels(abi.encode(address(rewarder)));

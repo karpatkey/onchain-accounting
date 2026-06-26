@@ -106,10 +106,7 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
             string memory loanSym = _symbol(mp.loanToken);
             leaf = string.concat(collSym, "/", loanSym, " market");
         } catch {}
-        string[] memory out = new string[](2);
-        out[0] = "Market";
-        out[1] = leaf;
-        return out;
+        return _labels("Market", leaf);
     }
 
     /// @inheritdoc MetaBalanceAdapter

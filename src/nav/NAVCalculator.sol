@@ -416,8 +416,10 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     }
 
     /// @notice External ABI-decode shim so `_safeStringArray` can wrap a possibly-reverting `abi.decode` in
-    ///         try/catch (try/catch requires an external call). Not intended to be called directly.
-    function decodeStringArray(bytes calldata data) external pure returns (string[] memory) {
+    ///         try/catch (try/catch requires an external call). Internal-only: reverts unless the caller is
+    ///         this contract, so it is not a usable public API surface.
+    function decodeStringArray(bytes calldata data) external view returns (string[] memory) {
+        if (msg.sender != address(this)) revert NotAuthorized();
         return abi.decode(data, (string[]));
     }
 

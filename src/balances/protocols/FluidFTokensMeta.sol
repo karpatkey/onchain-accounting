@@ -73,9 +73,6 @@ contract FluidFTokensMetaBalanceAdapter is MetaBalanceAdapter {
         try IERC20Metadata(fToken).symbol() returns (string memory sym) {
             leaf = string.concat(sym, " supply");
         } catch {}
-        string[] memory out = new string[](2);
-        out[0] = "Lending";
-        out[1] = leaf;
-        return out;
+        return _labels("Lending", leaf);
     }
 }

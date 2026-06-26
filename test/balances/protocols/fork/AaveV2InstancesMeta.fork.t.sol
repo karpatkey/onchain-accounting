@@ -197,7 +197,7 @@ contract AaveV2InstancesMetaParityForkTest is BalanceAdapterTestBase {
         assertEq(p[0].protocolId, ProtocolIds.AAVE_V2_LENDING, "protocolId == keccak256('aave-v2-lending')");
     }
 
-    /// @notice describePosition surfaces the market id (resolved via the V2 getAddressesProvider() path), so the
+    /// @notice positionLabels surfaces the market id (resolved via the V2 getAddressesProvider() path), so the
     ///         label distinguishes the V2 genesis market from V3 Core/Lido.
     function test_positionLabels_includesMarket() public view {
         string[] memory labels = meta.positionLabels(abi.encode(LENDING_POOL, MAINNET_USDC));

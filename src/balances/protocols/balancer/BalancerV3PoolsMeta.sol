@@ -89,9 +89,6 @@ contract BalancerV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
         } catch {
             leaf = "";
         }
-        string[] memory out = new string[](2);
-        out[0] = "Liquidity Pool";
-        out[1] = leaf;
-        return out;
+        return _labels("Liquidity Pool", leaf);
     }
 }

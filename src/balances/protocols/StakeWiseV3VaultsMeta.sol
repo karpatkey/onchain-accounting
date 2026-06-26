@@ -119,10 +119,7 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceAdapter {
         try IERC20Metadata(vault).name() returns (string memory n) {
             leaf = n;
         } catch {}
-        string[] memory out = new string[](2);
-        out[0] = "Vaults";
-        out[1] = leaf;
-        return out;
+        return _labels("Vaults", leaf);
     }
 
     function _row(INAVCalculator.Asset memory asset, uint256 amount, bool isDebt, bytes memory pid, PositionKind kind)

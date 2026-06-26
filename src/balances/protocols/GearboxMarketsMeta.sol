@@ -75,9 +75,6 @@ contract GearboxMarketsMetaBalanceAdapter is MetaBalanceAdapter {
         try IERC20Metadata(market).name() returns (string memory n) {
             leaf = n;
         } catch {}
-        string[] memory out = new string[](2);
-        out[0] = "Market";
-        out[1] = leaf;
-        return out;
+        return _labels("Market", leaf);
     }
 }

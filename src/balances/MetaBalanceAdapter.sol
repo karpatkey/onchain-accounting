@@ -220,6 +220,27 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     // Shared helpers
     //
 
+    /// @notice Assembles the `[category, leaf]` label pair for `positionLabels`, applying the fail-open
+    ///         empty-leaf convention in one place (IPositionDescribable): a leaf that could not be derived
+    ///         (empty string, e.g. a reverting `name()`/`symbol()` read) is dropped so consumers never render
+    ///         a blank trailing breadcrumb segment, while the known `category` is preserved. If both are empty,
+    ///         returns an empty array. Mirrors `ERC20DefaultAdapter`'s single-segment collapse, generalised to
+    ///         the category+leaf shape every meta-adapter uses.
+    /// @dev Centralising this here keeps the convention identical across all meta-adapters instead of being
+    ///      re-decided per adapter; concrete adapters derive `leaf` then `return _labels("Category", leaf);`.
+    function _labels(string memory category, string memory leaf) internal pure returns (string[] memory) {
+        if (bytes(leaf).length == 0) {
+            if (bytes(category).length == 0) return new string[](0);
+            string[] memory only = new string[](1);
+            only[0] = category;
+            return only;
+        }
+        string[] memory out = new string[](2);
+        out[0] = category;
+        out[1] = leaf;
+        return out;
+    }
+
     /// @notice Decodes an address-keyed bytes32 instance coordinate into an address (vault / pool / DataProvider).
     /// @dev Reverts if the high 96 bits are non-zero rather than silently truncating, so a malformed coordinate
     ///      surfaces as an error (isolated per-instance by the fan-out) instead of querying a different address.

@@ -127,10 +127,7 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceAdapter {
         } catch {
             leaf = "";
         }
-        string[] memory out = new string[](2);
-        out[0] = "Staking Gauge";
-        out[1] = leaf;
-        return out;
+        return _labels("Staking Gauge", leaf);
     }
 
     //

@@ -41,7 +41,7 @@ contract AaveV2InstancesMetaBalanceAdapter is AaveV3InstancesMetaBalanceAdapter 
 
     /// @inheritdoc AaveV3InstancesMetaBalanceAdapter
     /// @dev V2's LendingPool exposes `getAddressesProvider()` rather than V3's `ADDRESSES_PROVIDER()`; the provider's
-    ///      `getMarketId()` (e.g. "Aave genesis market") is the same view as V3. describePosition is otherwise
+    ///      `getMarketId()` (e.g. "Aave genesis market") is the same view as V3. positionLabels is otherwise
     ///      inherited (reserve symbol from positionId), so it now reports "<symbol> position (<market id>)".
     function _marketId(address pool) internal view override returns (string memory) {
         try IAaveV2LendingPool(pool).getAddressesProvider() returns (address ap) {

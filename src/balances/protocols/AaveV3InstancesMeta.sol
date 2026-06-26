@@ -114,10 +114,7 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
                 ? string.concat(sym, " position")
                 : string.concat(sym, " position (", market, ")");
         } catch {}
-        string[] memory out = new string[](2);
-        out[0] = "Market Instance";
-        out[1] = leaf;
-        return out;
+        return _labels("Market Instance", leaf);
     }
 
     /// @notice Resolves the instance's market id (for the display label) from its pool.

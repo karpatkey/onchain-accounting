@@ -108,10 +108,7 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceAdapter {
         try IERC20Metadata(comet).name() returns (string memory n) {
             leaf = n;
         } catch {}
-        string[] memory out = new string[](2);
-        out[0] = "Market";
-        out[1] = leaf;
-        return out;
+        return _labels("Market", leaf);
     }
 
     function _eligible(address token, address assetFilter)

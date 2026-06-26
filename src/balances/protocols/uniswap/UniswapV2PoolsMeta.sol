@@ -115,10 +115,7 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
         address pair = abi.decode(pid, (address));
         (address token0, address token1,,) = UniswapV2PairLib.pairAmounts(pair, address(0));
         string memory leaf = string.concat(_symbol(token0), "/", _symbol(token1), " LP");
-        string[] memory out = new string[](2);
-        out[0] = "Liquidity Pool";
-        out[1] = leaf;
-        return out;
+        return _labels("Liquidity Pool", leaf);
     }
 
     /// @notice Reads an ERC20 symbol, falling back to "?" for non-standard tokens (e.g. bytes32 symbols).

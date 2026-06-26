@@ -242,7 +242,7 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
         assertGt(pos.length, 0, "good gauge still returned");
     }
 
-    // ─── describePosition ─────────────────────────────────────────────────────
+    // ─── positionLabels ───────────────────────────────────────────────────────
 
     function test_positionLabels_format() public view {
         string[] memory labels = meta.positionLabels(abi.encode(address(gauge)));

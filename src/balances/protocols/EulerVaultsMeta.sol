@@ -148,9 +148,6 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
         try IERC4626(vault).name() returns (string memory n) {
             leaf = n;
         } catch {}
-        string[] memory out = new string[](2);
-        out[0] = "Vault";
-        out[1] = leaf;
-        return out;
+        return _labels("Vault", leaf);
     }
 }

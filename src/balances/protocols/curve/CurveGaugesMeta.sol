@@ -206,10 +206,7 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
     function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
         if (pid.length < 32) return new string[](0);
         string memory leaf = _leaf(pid);
-        string[] memory out = new string[](2);
-        out[0] = "Staking Gauge";
-        out[1] = leaf;
-        return out;
+        return _labels("Staking Gauge", leaf);
     }
 
     /// @notice Derives the "TOKEN0/TOKEN1/… gauge" leaf from the gauge's pool coins ("" on failure).

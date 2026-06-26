@@ -194,7 +194,7 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
         }
     }
 
-    /// @notice describePosition returns a non-empty string from on-chain symbols.
+    /// @notice positionLabels returns a non-empty leaf from on-chain symbols.
     function test_positionLabels_crvUsdUsdc_gauge() public view {
         string[] memory labels = gaugesMeta.positionLabels(abi.encode(CRVUSD_USDC_GAUGE));
         assertEq(labels.length, 2);

@@ -260,7 +260,7 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
         assertEq(assets[1], address(dai));
     }
 
-    // ─── describePosition ─────────────────────────────────────────────────────
+    // ─── positionLabels ───────────────────────────────────────────────────────
 
     function test_positionLabels_formatsSymbols() public {
         address[] memory coins = new address[](2);

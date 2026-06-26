@@ -266,10 +266,7 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceAdapter {
     function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
         if (pid.length < 32) return new string[](0);
         string memory leaf = _leaf(pid);
-        string[] memory out = new string[](2);
-        out[0] = "Curve LP";
-        out[1] = leaf;
-        return out;
+        return _labels("Curve LP", leaf);
     }
 
     /// @notice Derives the "TOKEN0/TOKEN1/… Convex" leaf from the rewarder's Curve pool coins ("" on failure).

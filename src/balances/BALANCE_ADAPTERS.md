@@ -221,10 +221,12 @@ Meta-adapters derive labels on-chain from live state (ERC20 symbols, vault names
 
 ### 6.3 Assisted adapters (externally-fed) — `IAssistedBalanceAdapter`
 
-Most adapters derive a position purely from on-chain state. A few cannot: the data needed to value a position lives off-chain or is not enumerable from a `view` (Merkl distributes rewards via off-chain merkle trees; ether.fi / StakeWise withdrawal requests are keyed by per-account coordinates the contract does not index). For these, a trusted **assistant** submits verifiable data via transactions so the position becomes queryable. This is the third adapter family, peer to plain `BalanceAdapter`s and meta-adapters.
+Most adapters derive a position purely from on-chain state. A few cannot: the data needed to value a position lives off-chain or is not enumerable from a `view`. Merkl distributes rewards via off-chain merkle trees; ether.fi / StakeWise withdrawal requests are keyed by per-account coordinates the contract does not index; and NFT-position protocols (Uniswap V3, PancakeSwap V3, Nexus Mutual staking) hold positions as non-enumerable NFTs that are gas-prohibitive to discover by scanning every minted id. For these, a trusted **assistant** submits the position coordinates (token ids, request ids, proofs) via transactions so the position becomes queryable. This is the third adapter family, peer to plain `BalanceAdapter`s and meta-adapters.
 
 ```solidity
-interface IAssistedBalanceAdapter is IBalanceAdapter, IAccessControl {
+// IAccessControl is listed before IBalanceAdapter so the MRO matches AccessControl's
+// (OZ v5 IAccessControl is not IERC165); the reverse order fails C3 linearization.
+interface IAssistedBalanceAdapter is IAccessControl, IBalanceAdapter {
     function ASSISTANT_ROLE() external view returns (bytes32);
 }
 ```
@@ -236,7 +238,7 @@ The interface is deliberately minimal — it only *identifies* the family and ex
 
 Concrete adapters still implement `IBalanceAdapter` (and typically `IPositionDescribable`) themselves and gate their submit/clear mutators with `onlyRole(ASSISTANT_ROLE)`. They **must** uphold the family invariant: cache only position *coordinates* (never amounts), value every read live on-chain, and re-verify ownership per read — so a faulty or compromised assistant can only **under-report, never over-report**. See ADR `docs/decisions/0007-merkl-trust-minimized-cache.md` (Merkl, proof-verified cache) and `docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md` (ether.fi, StakeWise — id-only cache).
 
-The members of this family are `MerklRewardsBalanceAdapter`, `EtherFiWithdrawalsBalanceAdapter`, and `StakeWiseExitQueueBalanceAdapter`. (They currently use `Ownable`; migrating them onto this base is tracked separately.)
+**Current members** — `MerklRewardsBalanceAdapter`, `EtherFiWithdrawalsBalanceAdapter`, `StakeWiseExitQueueBalanceAdapter` — already follow this trust model but still use `Ownable`; migrating them onto this base is tracked separately. **Planned members**, currently scan- or meta-based and to be reworked to the assisted model so an assistant supplies the account's NFT token ids instead of brute-force scanning every minted id: Nexus Mutual staking, Uniswap V3, and PancakeSwap V3.
 
 ---
 

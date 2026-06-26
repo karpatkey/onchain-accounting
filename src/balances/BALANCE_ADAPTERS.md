@@ -219,6 +219,25 @@ The verbose read methods on `NAVCalculator` (`getAccountPositionsVerbose`, `getA
 
 Meta-adapters derive labels on-chain from live state (ERC20 symbols, vault names, pool composition). Per-instance adapters return static strings.
 
+### 6.3 Assisted adapters (externally-fed) — `IAssistedBalanceAdapter`
+
+Most adapters derive a position purely from on-chain state. A few cannot: the data needed to value a position lives off-chain or is not enumerable from a `view` (Merkl distributes rewards via off-chain merkle trees; ether.fi / StakeWise withdrawal requests are keyed by per-account coordinates the contract does not index). For these, a trusted **assistant** submits verifiable data via transactions so the position becomes queryable. This is the third adapter family, peer to plain `BalanceAdapter`s and meta-adapters.
+
+```solidity
+interface IAssistedBalanceAdapter is IBalanceAdapter, IAccessControl {
+    function ASSISTANT_ROLE() external view returns (bytes32);
+}
+```
+
+The interface is deliberately minimal — it only *identifies* the family and exposes the role; it does not prescribe the submit/verify surface (each protocol's data shape differs). The abstract `AssistedBalanceAdapter` base contributes only the access-control scaffolding via OpenZeppelin `AccessControl`:
+
+- **`DEFAULT_ADMIN_ROLE`** — administers (grants/revokes) `ASSISTANT_ROLE`. Held by the admin (e.g. the security-council Safe).
+- **`ASSISTANT_ROLE`** — authorized to submit the assistance. Held by the off-chain submitter (a kpk-agents automation).
+
+Concrete adapters still implement `IBalanceAdapter` (and typically `IPositionDescribable`) themselves and gate their submit/clear mutators with `onlyRole(ASSISTANT_ROLE)`. They **must** uphold the family invariant: cache only position *coordinates* (never amounts), value every read live on-chain, and re-verify ownership per read — so a faulty or compromised assistant can only **under-report, never over-report**. See ADR `docs/decisions/0007-merkl-trust-minimized-cache.md` (Merkl, proof-verified cache) and `docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md` (ether.fi, StakeWise — id-only cache).
+
+The members of this family are `MerklRewardsBalanceAdapter`, `EtherFiWithdrawalsBalanceAdapter`, and `StakeWiseExitQueueBalanceAdapter`. (They currently use `Ownable`; migrating them onto this base is tracked separately.)
+
 ---
 
 ## 7. Implemented adapters

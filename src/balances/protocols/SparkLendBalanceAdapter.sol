@@ -44,7 +44,7 @@ contract SparkLendBalanceAdapter is IBalanceAdapter, IPositionDescribable {
 
     function positionLabels(bytes calldata) external pure returns (string[] memory) {
         string[] memory out = new string[](2);
-        out[0] = "Market Instance";
+        out[0] = "Market";
         out[1] = "SparkLend";
         return out;
     }

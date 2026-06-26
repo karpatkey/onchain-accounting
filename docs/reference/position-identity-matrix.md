@@ -75,21 +75,21 @@ Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, pos
 
 ## PositionKind usage census
 
-Emission-site counts across `src/balances/` (grep, 2026-06-20, post-assignment):
+Emission-site counts across `src/balances/` (grep, 2026-06-26, post-assignment):
 
 | `PositionKind` | Emission sites | Emitting adapters |
 |---|---|---|
 | `Wallet` | 1 | ERC20DefaultAdapter only |
-| `Supplied` | 20 | lending supply, vaults, ERC-4626 wraps, savings, unstaked LP, withdrawal queues, Euler vaults |
-| `Borrowed` | 7 | Aave V2/V3, Spark, Compound V3, Morpho Markets, Fluid Vaults, StakeWise V3, Euler vaults |
+| `Supplied` | 23 | lending supply, vaults, ERC-4626 wraps, savings, unstaked LP, withdrawal/exit queues, Euler vaults |
+| `Borrowed` | 8 | Aave V3 (×2 sites), Spark, Compound V3, Morpho Markets, Fluid Vaults, StakeWise V3, Euler vaults |
 | `Collateral` | 6 | Aave V2/V3, Spark, Compound V3, Morpho Markets, Fluid Vaults, Euler vaults |
-| `Staking` | 9 | Safety Module, Umbrella, StakeWise V3, Balancer gauges ×2, Curve gauge, Convex, Aura (×2 sites) |
-| `Rewards` | 14 | SM, Umbrella, Compound V3, Balancer gauges ×2, Curve gauge, Convex, Aura, Merkl |
+| `Staking` | 10 | Safety Module, Umbrella, StakeWise V3, Nexus, Balancer gauges ×2, Curve gauge, Convex, Aura (×2 sites) |
+| `Rewards` | 15 | SM, Umbrella, Compound V3, Balancer gauges ×2, Curve gauge, Convex, Aura, Merkl, Nexus |
 | `Fees` | 2 | Uniswap V3 (PancakeSwap V3 inherits) |
 
 ## Other observable invariants
 
-- `isDebt == true` occurs **only** with `positionKind == Borrowed` at all 7 current emission sites. This correlation is observational: `isDebt` remains the canonical NAV-sign signal (per `PositionKind.sol`), so consumers should read it directly rather than infer sign from `positionKind`.
+- `isDebt == true` occurs **only** with `positionKind == Borrowed` at all 8 current emission sites. This correlation is observational: `isDebt` remains the canonical NAV-sign signal (per `PositionKind.sol`), so consumers should read it directly rather than infer sign from `positionKind`.
 - `Collateral` and `Staking` are always `isDebt == false`.
 - Empty `positionId` (`""`) marks account-global positions: DaiDsr and the three withdrawal queues. All other adapters encode at least one address (or `bytes32` poolId/marketId; Uniswap/PancakeSwap V3 add `uint256 tokenId`).
 - One `protocolId` slug ⇒ exactly one `positionId` decode schema, as required by the slug rules — no adapter violates this.

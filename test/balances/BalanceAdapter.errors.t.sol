@@ -8,7 +8,7 @@ import {IBalances} from "src/balances/IBalances.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Mock_CustomBalanceAdapter} from "test/mocks/balance_adapters.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
-import {ERC20DefaultAdapter} from "src/balances/protocols/ERC20DefaultAdapter.sol";
+import {ERC20DefaultBalanceAdapter} from "src/balances/protocols/ERC20DefaultBalanceAdapter.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
@@ -66,7 +66,7 @@ contract Mock_RevertingBalanceAdapter is IBalanceAdapter {
 /// @notice Tests error scenarios and graceful degradation
 contract BalanceAdapterErrorTest is Test {
     BalancesHarness public balances;
-    ERC20DefaultAdapter public erc20DefaultAdapter;
+    ERC20DefaultBalanceAdapter public erc20DefaultBalanceAdapter;
     Mock_RevertingBalanceAdapter public revertingAdapter;
     Mock_CustomBalanceAdapter public customAdapter;
     Mock_ERC20 public usdc;
@@ -77,7 +77,7 @@ contract BalanceAdapterErrorTest is Test {
         // Etch NAVRegistryLib (pre-linked external lib, DELEGATECALL'd by Balances) at its deterministic address.
         vm.etch(0x2F1F6c17D64bE96F583D390be212aFCF8D0F102a, vm.deployCode("NAVRegistryLib.sol:NAVRegistryLib").code);
         balances = new BalancesHarness();
-        erc20DefaultAdapter = balances.defaultAdapter();
+        erc20DefaultBalanceAdapter = balances.defaultAdapter();
         revertingAdapter = new Mock_RevertingBalanceAdapter();
         customAdapter = new Mock_CustomBalanceAdapter();
         customAdapter.setBalances(balances);
@@ -122,10 +122,11 @@ contract BalanceAdapterErrorTest is Test {
     /// @notice Test that zero address asset returns zero balance
     function test_RevertWhen_zeroAddressAsset() public view {
         // Zero address should return zero balance, not revert
-        (uint256 amount,) = erc20DefaultAdapter.getAdapterBalanceForAsset(alice, address(0));
+        (uint256 amount,) = erc20DefaultBalanceAdapter.getAdapterBalanceForAsset(alice, address(0));
         assertEq(amount, 0, "Zero address should return zero balance");
 
-        INAVCalculator.PositionBalance[] memory positions = erc20DefaultAdapter.getAdapterPositions(alice, address(0));
+        INAVCalculator.PositionBalance[] memory positions =
+            erc20DefaultBalanceAdapter.getAdapterPositions(alice, address(0));
         assertEq(positions.length, 0, "Zero address should return no positions");
     }
 
@@ -134,11 +135,11 @@ contract BalanceAdapterErrorTest is Test {
         address unregisteredAsset = makeAddr("unregistered");
 
         // Unregistered asset should return zero balance, not revert
-        (uint256 amount,) = erc20DefaultAdapter.getAdapterBalanceForAsset(alice, unregisteredAsset);
+        (uint256 amount,) = erc20DefaultBalanceAdapter.getAdapterBalanceForAsset(alice, unregisteredAsset);
         assertEq(amount, 0, "Unregistered asset should return zero balance");
 
         INAVCalculator.PositionBalance[] memory positions =
-            erc20DefaultAdapter.getAdapterPositions(alice, unregisteredAsset);
+            erc20DefaultBalanceAdapter.getAdapterPositions(alice, unregisteredAsset);
         assertEq(positions.length, 0, "Unregistered asset should return no positions");
     }
 
@@ -149,11 +150,11 @@ contract BalanceAdapterErrorTest is Test {
     /// @notice Test that zero address account returns zero balance
     function test_RevertWhen_zeroAddressAccount() public view {
         // Zero address account should return zero balance, not revert
-        (uint256 amount,) = erc20DefaultAdapter.getAdapterBalanceForAsset(address(0), address(usdc));
+        (uint256 amount,) = erc20DefaultBalanceAdapter.getAdapterBalanceForAsset(address(0), address(usdc));
         assertEq(amount, 0, "Zero address account should return zero balance");
 
         INAVCalculator.PositionBalance[] memory positions =
-            erc20DefaultAdapter.getAdapterPositions(address(0), address(0));
+            erc20DefaultBalanceAdapter.getAdapterPositions(address(0), address(0));
         assertEq(positions.length, 0, "Zero address account should return no positions");
     }
 
@@ -169,7 +170,7 @@ contract BalanceAdapterErrorTest is Test {
         usdc.mint(alice, largeAmount);
 
         // Should handle large balance without reverting
-        (uint256 amount, bool isDebt) = erc20DefaultAdapter.getAdapterBalanceForAsset(alice, address(usdc));
+        (uint256 amount, bool isDebt) = erc20DefaultBalanceAdapter.getAdapterBalanceForAsset(alice, address(usdc));
         assertEq(amount, uint256(largeAmount), "Should handle large balance");
         assertFalse(isDebt);
     }
@@ -250,9 +251,9 @@ contract BalanceAdapterErrorTest is Test {
         // Verify adapter is removed
         assertFalse(balances.isAdapterRegistered(address(revertingAdapter)), "Adapter should be removed");
 
-        // ERC20DefaultAdapter should still work
-        (uint256 amount,) = erc20DefaultAdapter.getAdapterBalanceForAsset(alice, address(usdc));
-        assertEq(amount, 1000 * 10 ** usdc.decimals(), "ERC20DefaultAdapter should still work");
+        // ERC20DefaultBalanceAdapter should still work
+        (uint256 amount,) = erc20DefaultBalanceAdapter.getAdapterBalanceForAsset(alice, address(usdc));
+        assertEq(amount, 1000 * 10 ** usdc.decimals(), "ERC20DefaultBalanceAdapter should still work");
     }
 
     // ============================================
@@ -269,13 +270,14 @@ contract BalanceAdapterErrorTest is Test {
         balances.addBalanceAdapterDirect(address(0), address(adapter2), IBalances.AdapterType.Custom);
         balances.addBalanceAdapterDirect(address(0), address(adapter3), IBalances.AdapterType.Custom);
 
-        // Don't mint any tokens (so ERC20DefaultAdapter has no positions)
+        // Don't mint any tokens (so ERC20DefaultBalanceAdapter has no positions)
 
-        // Query from ERC20DefaultAdapter - should return zero, not revert
-        (uint256 amount,) = erc20DefaultAdapter.getAdapterBalanceForAsset(alice, address(usdc));
+        // Query from ERC20DefaultBalanceAdapter - should return zero, not revert
+        (uint256 amount,) = erc20DefaultBalanceAdapter.getAdapterBalanceForAsset(alice, address(usdc));
         assertEq(amount, 0, "Should return zero balance when no positions");
 
-        INAVCalculator.PositionBalance[] memory positions = erc20DefaultAdapter.getAdapterPositions(alice, address(0));
+        INAVCalculator.PositionBalance[] memory positions =
+            erc20DefaultBalanceAdapter.getAdapterPositions(alice, address(0));
         assertEq(positions.length, 0, "Should return no positions");
     }
 
@@ -285,7 +287,7 @@ contract BalanceAdapterErrorTest is Test {
 
         // Filter by invalid asset should return empty array, not revert
         INAVCalculator.PositionBalance[] memory positions =
-            erc20DefaultAdapter.getAdapterPositions(alice, invalidFilter);
+            erc20DefaultBalanceAdapter.getAdapterPositions(alice, invalidFilter);
         assertEq(positions.length, 0, "Invalid filter should return empty array");
     }
 
@@ -296,7 +298,7 @@ contract BalanceAdapterErrorTest is Test {
 
         // Should return empty arrays, not revert
         (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) =
-            erc20DefaultAdapter.getAdapterBalances(emptyAccount);
+            erc20DefaultBalanceAdapter.getAdapterBalances(emptyAccount);
 
         assertEq(assets.length, 0, "Empty account should return empty assets");
         assertEq(amounts.length, 0, "Empty account should return empty amounts");

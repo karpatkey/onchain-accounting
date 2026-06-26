@@ -112,7 +112,7 @@
   },
   "ERC4626Wrap_RWIV": {
     "enabled": false,
-    "$comment": "DISABLED — superseded by RWIV_PriceOracle (custom price feed). With RWIV registered as a priced asset, registerAsset auto-adds it to ERC20DefaultAdapter, so the wallet adapter reports the direct RWIV holding at RWIV/USD (same convertToAssets value this wrap produced as USDC); keeping this enabled would double-count the Nexus Safe's ~$250k direct RWIV. The feed is required regardless so UniswapV3PoolsMeta can value the USDC/RWIV LP. See PR feat/rwiv-price-feed-univ3.",
+    "$comment": "DISABLED — superseded by RWIV_CustomPriceFeed (custom price feed). With RWIV registered as a priced asset, registerAsset auto-adds it to ERC20DefaultBalanceAdapter, so the wallet adapter reports the direct RWIV holding at RWIV/USD (same convertToAssets value this wrap produced as USDC); keeping this enabled would double-count the Nexus Safe's ~$250k direct RWIV. The feed is required regardless so UniswapV3PoolsMeta can value the USDC/RWIV LP. See PR feat/rwiv-price-feed-univ3.",
     "constructor": {
       "wrapper": "0xcAFeAA466736ac01e0AC9Ca72644beF348694731",
       "protocol": "Nexus Mutual",

@@ -8,7 +8,7 @@
 
 ```solidity
 // PriceFeedLib.sol:51-67
-try IPriceFeedCustom(cfg.priceFeed).getLatestPrice() returns (uint256 p, bool s) {
+try ICustomPriceFeed(cfg.priceFeed).getLatestPrice() returns (uint256 p, bool s) {
     customPrice = p;
     internalStale = s;
 } catch { continue; }
@@ -16,7 +16,7 @@ try IPriceFeedCustom(cfg.priceFeed).getLatestPrice() returns (uint256 p, bool s)
 if (internalStale || customPrice == 0) continue;
 rawPrice = customPrice.toInt256();
 
-try IPriceFeedCustom(cfg.priceFeed).latestRoundData() returns (
+try ICustomPriceFeed(cfg.priceFeed).latestRoundData() returns (
     uint80, int256, uint256, uint256 u, uint80
 ) {
     lrdUpdatedAt = u;
@@ -32,7 +32,7 @@ A Custom adapter contract has full control over both return values. If the adapt
 
 With `updatedAt = block.timestamp`, `effectiveTime = block.timestamp` is the maximum possible, and this feed will always win the freshest-feed race against any real Chainlink feed that has any non-zero age.
 
-Note: The `_validateFeedSupportInternal` check at registration time calls `supportsInterface(IPriceFeedCustom)` and verifies the type. However, it does not prevent a *registered* Custom adapter from being upgraded post-registration (e.g. if the adapter itself is a proxy) or from returning time-varying data.
+Note: The `_validateFeedSupportInternal` check at registration time calls `supportsInterface(ICustomPriceFeed)` and verifies the type. However, it does not prevent a *registered* Custom adapter from being upgraded post-registration (e.g. if the adapter itself is a proxy) or from returning time-varying data.
 
 ## Root Cause
 
@@ -48,6 +48,6 @@ The impact is that a feed can win the freshest-feed race without actually being 
 
 ## Mitigation
 
-Combine both calls into one: add a combined `getLatestPriceAndRoundData()` method to `IPriceFeedCustom` that atomically returns `(price, stale, updatedAt)` in a single call. This eliminates the two-call window. For backward compatibility, the existing interface can be preserved and `selectFeed` can call the combined method, falling back to two calls only for adapters that do not implement it.
+Combine both calls into one: add a combined `getLatestPriceAndRoundData()` method to `ICustomPriceFeed` that atomically returns `(price, stale, updatedAt)` in a single call. This eliminates the two-call window. For backward compatibility, the existing interface can be preserved and `selectFeed` can call the combined method, falling back to two calls only for adapters that do not implement it.
 
 Alternatively, validate that the `answer` returned by `latestRoundData()` equals the `price` returned by `getLatestPrice()`. A mismatch should cause the feed to be skipped.

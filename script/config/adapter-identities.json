@@ -2,7 +2,7 @@
   "$comment": "Canonical identity strings for each balance adapter family. These are the values to pass as constructor arguments (protocol, positionDetail, positionId) when deploying a new adapter instance. positionDetail is written as a partial JSON string — the deploy script appends the closing brace after adding chain-specific fields. positionId is typically the primary contract address the adapter reads from (e.g. dataProvider for Aave, comet for Compound, pool address for LP adapters). Exception: MorphoMarket derives positionId automatically from marketId and has no positionId constructor parameter.",
   "$positionDetail_convention": "protocol = bare protocol name (matches top-level protocol field). product = functional category (Lending, Staking, LP, Vault, Market, Rewards, Safety Module, Umbrella, Savings). name = human-readable instance label (market name, pool pair, vault name). Per-position fields (appended at emission time, not part of the constructor template): type = sub-classification that varies per emitted leg (e.g. Supply/Borrow/Collateral for lending, stkAAVE/stkABPT/stkABPTv2/stkGHO for Safety Module); token = per-leg token symbol for LP adapters (BalancerV3, Curve, Convex, PancakeSwapV3). The $perPositionFields key in each entry documents what the adapter appends at runtime.",
 
-  "ERC20DefaultAdapter": {
+  "ERC20DefaultBalanceAdapter": {
     "$comment": "Hardcoded in Solidity to protocol='wallet'. Not configurable.",
     "protocol": "wallet",
     "positionDetail": { "protocol": "wallet", "product": "Holding" },

@@ -23,7 +23,7 @@ BridgeEscrow + adapters ───┘  (independent — does not touch NAV/balanc
 | Module | Lives in | One-line job |
 |---|---|---|
 | **Balances** | `src/balances/` | Registry of balance adapters. Each adapter returns `PositionBalance[]` for an account. |
-| **Prices** | `src/prices/` | Per-asset price feeds (Chainlink + custom `IPriceFeedCustom`). Handles staleness + L2 sequencer. |
+| **Prices** | `src/prices/` | Per-asset price feeds (Chainlink + custom `ICustomPriceFeed`). Handles staleness + L2 sequencer. |
 | **NAV** | `src/nav/` | One contract that extends Prices + Balances, registers assets, and computes NAV. |
 | **Bridge** | `src/bridge/` | `BridgeEscrow` holds assets and tracks invoices; per-protocol adapters do the bridging. |
 
@@ -88,7 +88,7 @@ Read [`src/balances/BALANCE_ADAPTERS.md`](../src/balances/BALANCE_ADAPTERS.md) f
 
 Two flavors:
 - **Chainlink** — registered with `priceType = Chainlink` and a heartbeat for staleness. Most assets use this.
-- **Custom** — a contract implementing `IPriceFeedCustom` that derives a price (e.g., `sDAI_Price` combines DAI/USD with Maker's DSR `chi` ratio (sDAI/DAI); `wstETH_Price` reads stETH-per-token rate × stETH/ETH × ETH/USD). Used for receipt tokens, LP tokens, and synthetic rates. All custom feeds live under `src/prices/protocols/`.
+- **Custom** — a contract implementing `ICustomPriceFeed` that derives a price (e.g., `sDAI_Price` combines DAI/USD with Maker's DSR `chi` ratio (sDAI/DAI); `wstETH_Price` reads stETH-per-token rate × stETH/ETH × ETH/USD). Used for receipt tokens, LP tokens, and synthetic rates. All custom feeds live under `src/prices/protocols/`.
 
 L2 deployments check `chainlinkL2SequencerUptimeFeed`; if down or in grace period, prices are flagged stale.
 

@@ -9,7 +9,7 @@ decimals, but the mainnet LDO/ETH feed uses 18 decimals. The computation is corr
 reasoning about expected value ranges or writing test expectations.
 
 ## Root Cause
-`src/prices/protocols/LDO_Price.sol` — inline comment above the `mulDiv` call.
+`src/prices/protocols/LDO_CustomPriceFeed.sol` — inline comment above the `mulDiv` call.
 
 ## Mitigation
 Update the comment to reflect that the LDO/ETH feed uses 18 decimals (matching the feed's

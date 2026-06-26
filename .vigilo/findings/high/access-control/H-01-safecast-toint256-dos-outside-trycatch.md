@@ -10,7 +10,7 @@ The `selectFeed` loop processes each registered feed with per-feed `try/catch` p
 
 ```solidity
 // PriceFeedLib.sol:51-56  — try/catch ends here
-try IPriceFeedCustom(cfg.priceFeed).getLatestPrice() returns (uint256 p, bool s) {
+try ICustomPriceFeed(cfg.priceFeed).getLatestPrice() returns (uint256 p, bool s) {
     customPrice = p;
     internalStale = s;
 } catch {
@@ -51,7 +51,7 @@ The DoS is permanent until a MANAGER either removes the offending feed or unregi
 - The feed is either malicious (returns `type(uint256).max` intentionally) or buggy (e.g., a math overflow in the feed contract returns an astronomically large value post-registration)
 
 **Steps:**
-1. A feed implementing `IPriceFeedCustom` is registered via `NAVCalculator.addPriceFeed(asset, feed, heartbeat, PriceType.Custom)`. At registration time `getLatestPrice()` is never called — only `decimals()` and `supportsInterface` are checked (see `addFeed` in `PriceFeedLib.sol:148-177`).
+1. A feed implementing `ICustomPriceFeed` is registered via `NAVCalculator.addPriceFeed(asset, feed, heartbeat, PriceType.Custom)`. At registration time `getLatestPrice()` is never called — only `decimals()` and `supportsInterface` are checked (see `addFeed` in `PriceFeedLib.sol:148-177`).
 2. The feed begins returning `getLatestPrice() → (type(uint256).max, false)`.
 3. In `selectFeed`, the try/catch succeeds (the external call itself does not revert), `customPrice = type(uint256).max`, `internalStale = false`.
 4. Line 57 passes (`customPrice != 0`, not stale).
@@ -79,7 +79,7 @@ rawPrice = int256(customPrice);
 Alternatively, restructure the block so that the cast occurs inside or immediately after a dedicated try/catch:
 
 ```solidity
-try IPriceFeedCustom(cfg.priceFeed).getLatestPrice() returns (uint256 p, bool s) {
+try ICustomPriceFeed(cfg.priceFeed).getLatestPrice() returns (uint256 p, bool s) {
     if (s || p == 0 || p > uint256(type(int256).max)) continue;
     customPrice = p;
     internalStale = false;

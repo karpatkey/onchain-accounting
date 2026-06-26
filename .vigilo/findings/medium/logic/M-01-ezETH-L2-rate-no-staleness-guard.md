@@ -20,7 +20,7 @@ verifies only ETH/USD freshness (line 48). If the L1→L2 bridge is slow during 
 downtime recovery, or Renzo's keeper stops, `getRate()` returns a value that may be hours old.
 
 ## Root Cause
-`src/prices/protocols/ezETH_L2_Price.sol:49` — no timestamp check on the cross-chain rate.
+`src/prices/protocols/ezETH_L2_CustomPriceFeed.sol:49` — no timestamp check on the cross-chain rate.
 
 ## Impact
 NAV is computed from an stale ezETH/ETH rate × fresh ETH price. During high-volatility periods

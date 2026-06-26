@@ -14,7 +14,7 @@ function addFeed(...) external {
     // ...
     uint8 dec;
     if (priceType == IPrices.PriceType.Custom) {
-        dec = IPriceFeedCustom(priceFeed).decimals();  // only decimals() is called
+        dec = ICustomPriceFeed(priceFeed).decimals();  // only decimals() is called
     }
     // getLatestPrice() is NEVER called here
     configs.push(...);
@@ -25,7 +25,7 @@ function addFeed(...) external {
 
 ```solidity
 if (priceType == IPrices.PriceType.Custom) {
-    if (!priceFeed.supportsInterface(type(IPriceFeedCustom).interfaceId)) revert IPrices.InvalidPriceOracle();
+    if (!priceFeed.supportsInterface(type(ICustomPriceFeed).interfaceId)) revert IPrices.InvalidPriceOracle();
 }
 // no call to getLatestPrice(), no price or decimals sanity check
 ```
@@ -60,12 +60,12 @@ Add a liveness and bounds check for Custom feeds inside `addFeed` (or `_validate
 
 ```solidity
 if (priceType == IPrices.PriceType.Custom) {
-    (uint256 p, bool s) = IPriceFeedCustom(priceFeed).getLatestPrice();
+    (uint256 p, bool s) = ICustomPriceFeed(priceFeed).getLatestPrice();
     // Reject feeds that are already stale or return a price that would overflow int256
     if (s) revert IPrices.InvalidPriceOracle();          // currently stale
     if (p == 0) revert IPrices.InvalidPriceOracle();     // zero price
     if (p > uint256(type(int256).max)) revert IPrices.InvalidPriceOracle(); // overflow guard (see H-01)
-    dec = IPriceFeedCustom(priceFeed).decimals();
+    dec = ICustomPriceFeed(priceFeed).decimals();
 }
 ```
 

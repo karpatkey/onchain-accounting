@@ -2,10 +2,10 @@
 pragma solidity ^0.8.0;
 
 import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
-import {IPriceFeedCustom} from "src/prices/IPriceFeedCustom.sol";
+import {ICustomPriceFeed} from "src/prices/ICustomPriceFeed.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
-contract Mock_CustomPriceFeed is IPriceFeedCustom {
+contract Mock_CustomPriceFeed is ICustomPriceFeed {
     string name;
     address addressSupported;
     uint256 price;
@@ -41,7 +41,7 @@ contract Mock_CustomPriceFeed is IPriceFeedCustom {
     }
 
     function supportsInterface(bytes4 interfaceId) public pure override returns (bool) {
-        return interfaceId == type(IPriceFeedCustom).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(ICustomPriceFeed).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 }
 

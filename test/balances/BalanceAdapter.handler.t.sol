@@ -8,14 +8,14 @@ import {IBalances} from "src/balances/IBalances.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
 import {Mock_CustomBalanceAdapter} from "test/mocks/balance_adapters.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
-import {ERC20DefaultAdapter} from "src/balances/protocols/ERC20DefaultAdapter.sol";
+import {ERC20DefaultBalanceAdapter} from "src/balances/protocols/ERC20DefaultBalanceAdapter.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 /// @title Balance Adapter Handler for Stateful Invariant Testing
 /// @notice Handler contract that manages stateful operations for invariant testing
 contract BalanceAdapterHandler is Test {
     BalancesHarness public balances;
-    ERC20DefaultAdapter public erc20DefaultAdapter;
+    ERC20DefaultBalanceAdapter public erc20DefaultBalanceAdapter;
     Mock_CustomBalanceAdapter[] public customAdapters;
     Mock_ERC20[] public tokens;
 
@@ -37,7 +37,7 @@ contract BalanceAdapterHandler is Test {
 
     constructor() {
         balances = new BalancesHarness();
-        erc20DefaultAdapter = balances.defaultAdapter();
+        erc20DefaultBalanceAdapter = balances.defaultAdapter();
 
         // Initialize actors
         for (uint256 i = 0; i < 10; i++) {
@@ -85,8 +85,8 @@ contract BalanceAdapterHandler is Test {
         uint256 adapterIndex = bound(adapterSeed, 0, customAdapters.length - 1);
         address adapter = address(customAdapters[adapterIndex]);
 
-        // Cannot remove ERC20DefaultAdapter
-        if (adapter == address(erc20DefaultAdapter)) {
+        // Cannot remove ERC20DefaultBalanceAdapter
+        if (adapter == address(erc20DefaultBalanceAdapter)) {
             return;
         }
 
@@ -437,19 +437,19 @@ contract BalanceAdapterHandlerTest is Test {
         }
     }
 
-    /// @notice Invariant: ERC20DefaultAdapter always registered
-    function invariant_erc20DefaultAdapterAlwaysRegistered() external view {
+    /// @notice Invariant: ERC20DefaultBalanceAdapter always registered
+    function invariant_erc20DefaultBalanceAdapterAlwaysRegistered() external view {
         address[] memory allAdapters = handler.balances().getAllAdapters();
 
         bool found = false;
         for (uint256 i = 0; i < allAdapters.length; i++) {
-            if (allAdapters[i] == address(handler.erc20DefaultAdapter())) {
+            if (allAdapters[i] == address(handler.erc20DefaultBalanceAdapter())) {
                 found = true;
                 break;
             }
         }
 
-        assertTrue(found, "ERC20DefaultAdapter should always be registered");
+        assertTrue(found, "ERC20DefaultBalanceAdapter should always be registered");
     }
 
     /// @notice Invariant: Adapter count consistency

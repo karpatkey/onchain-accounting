@@ -23,7 +23,7 @@ import { explorerAddressUrl } from '@/config/chains'
 
 // Indices match the Solidity IPrices.PriceType enum: Chainlink=0, Redstone=1, API3=2, Custom=3.
 const PRICE_TYPES = ['Chainlink', 'Redstone', 'API3', 'Custom'] as const
-// Only Custom (IPriceFeedCustom) feeds use the updatedAt==0 "Live" sentinel.
+// Only Custom (ICustomPriceFeed) feeds use the updatedAt==0 "Live" sentinel.
 const PRICE_TYPE_CUSTOM = 3
 
 export type FilterStatus = 'all' | 'fresh' | 'warning'
@@ -120,7 +120,7 @@ function SortTh({
 }
 
 // Custom feeds: heartbeat and updatedAt are the worst-case across the feed's underlying
-// oracle(s) per IPriceFeedCustom.latestRoundData() convention. updatedAt == 0 is the
+// oracle(s) per ICustomPriceFeed.latestRoundData() convention. updatedAt == 0 is the
 // documented sentinel for "no trackable oracle dependency" (live on-chain rate) — see ADR 0010.
 const CUSTOM_LIVE_TIP = 'Live on-chain rate — no external oracle dependency.'
 

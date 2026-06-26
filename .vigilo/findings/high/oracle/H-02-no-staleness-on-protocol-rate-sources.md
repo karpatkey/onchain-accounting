@@ -6,10 +6,10 @@ Five adapters — `rETH_Price`, `wstETH_Price`, `cbETH_Price`, `rsETH_Price`, an
 
 ## Vulnerability Detail
 
-Pattern shared by all five adapters (example from `rETH_Price.sol`):
+Pattern shared by all five adapters (example from `rETH_CustomPriceFeed.sol`):
 
 ```solidity
-// rETH_Price.sol:66-73
+// rETH_CustomPriceFeed.sol:66-73
 (roundId, ethToUsdPrice, startedAt, updatedAt, answeredInRound) =
     ETH_TO_USD_CHAINLINK_ORACLE.latestRoundData();
 if (ethToUsdPrice <= 0) { return (0, true, ...); }
@@ -28,11 +28,11 @@ Affected files and rate sources:
 
 | File | Rate source | Function |
 |---|---|---|
-| `rETH_Price.sol:70` | Rocket Pool rETH contract | `getExchangeRate()` |
-| `wstETH_Price.sol:70` | Lido wstETH contract | `stEthPerToken()` |
-| `cbETH_Price.sol:70` | Coinbase cbETH contract | `exchangeRate()` |
-| `rsETH_Price.sol:80` | Kelp DAO rate provider | `getLatestRate()` |
-| `ETHx_Price.sol:82` | Stader StakePoolsManager | `getExchangeRate()` |
+| `rETH_CustomPriceFeed.sol:70` | Rocket Pool rETH contract | `getExchangeRate()` |
+| `wstETH_CustomPriceFeed.sol:70` | Lido wstETH contract | `stEthPerToken()` |
+| `cbETH_CustomPriceFeed.sol:70` | Coinbase cbETH contract | `exchangeRate()` |
+| `rsETH_CustomPriceFeed.sol:80` | Kelp DAO rate provider | `getLatestRate()` |
+| `ETHx_CustomPriceFeed.sol:82` | Stader StakePoolsManager | `getExchangeRate()` |
 
 ## Root Cause
 

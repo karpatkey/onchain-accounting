@@ -10,7 +10,7 @@ interface IPrices {
         Chainlink, // 0 — Chainlink AggregatorV3Interface (on-chain push)
         Redstone, // 1 — Redstone Classic Push (AggregatorV3-compatible, same read path as Chainlink)
         API3, // 2 — API3 dAPI via Api3ReaderProxyV1 (AggregatorV3-compatible, 18-dec proxy scaled to 8-dec at read)
-        Custom // 3 — custom IPriceFeedCustom adapter (internal staleness logic)
+        Custom // 3 — custom ICustomPriceFeed adapter (internal staleness logic)
     }
 
     /// @notice Struct representing a price feed configuration.

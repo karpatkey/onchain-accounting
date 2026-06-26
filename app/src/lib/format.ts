@@ -78,7 +78,7 @@ export function formatHeartbeat(seconds: bigint): string {
 }
 
 export function isStaleWarning(updatedAt: bigint, heartbeat: bigint): boolean {
-  // updatedAt == 0 is the documented IPriceFeedCustom sentinel for "no trackable oracle
+  // updatedAt == 0 is the documented ICustomPriceFeed sentinel for "no trackable oracle
   // dependency" (live on-chain rate, see ADR 0010). Such feeds have no heartbeat semantics —
   // bail before computing `block.timestamp - 0`, which would overflow into an enormous Number
   // when cast and falsely flag every live-rate feed as Warning. The dashboard renders these as

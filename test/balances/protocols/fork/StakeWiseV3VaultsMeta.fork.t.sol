@@ -25,7 +25,7 @@ contract StakeWiseV3VaultsMetaParityForkTest is BalanceAdapterTestBase {
 
     function _deploy() internal {
         balances = _deployBalancesForAdapter(GNO);
-        // Gnosis StakeWise OsTokenVaultController (same one osToken_PriceOracle uses for osGNO).
+        // Gnosis StakeWise OsTokenVaultController (same one osToken_CustomPriceFeed uses for osGNO).
         meta = new StakeWiseV3VaultsMetaBalanceAdapter(
             GNO, 0x60B2053d7f2a0bBa70fe6CDd88FB47b579B9179a, "StakeWise V3", address(balances)
         );

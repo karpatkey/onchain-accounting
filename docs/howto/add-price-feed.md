@@ -1,6 +1,6 @@
 # How to add a new price feed
 
-End-to-end walkthrough for adding price support for a new asset — either via a Chainlink feed directly or a custom price oracle (`IPriceFeedCustom`).
+End-to-end walkthrough for adding price support for a new asset — either via a Chainlink feed directly or a custom price oracle (`ICustomPriceFeed`).
 
 Read [`src/prices/PRICE_ADAPTERS.md`](../../src/prices/PRICE_ADAPTERS.md) first if you have not — it's the framework reference; this is the recipe.
 
@@ -93,27 +93,27 @@ If a Chainlink USD feed exists and is canonical, use Chainlink directly. Don't r
 
 | Pattern | Existing reference | When to use |
 |---|---|---|
-| `(rate × USD)` from a single Chainlink feed | `src/prices/protocols/sDAI_Price.sol` (DAI/USD × DSR `chi`) | Yield-bearing wrappers with an on-chain `chi`/`rate` field |
-| LST/LRT receipt token with `getExchangeRate`-style method | `src/prices/protocols/wstETH_Price.sol`, `rETH_Price.sol` | Liquid staking tokens whose redeem rate is exposed on-chain |
-| L2 mirror of an L1 rate | `src/prices/protocols/wstETH_L2_Price.sol`, `cbETH_L2_Price.sol` | Same asset, but the canonical rate lives on L1; reads a Chainlink-secured rate feed on L2 instead |
-| Two Chainlink feeds composed | `src/prices/protocols/CrossRate_Price.sol` | A/B × B/C when there's no direct A/USD feed |
-| Basket / aggregator | `src/prices/protocols/ETHPlus_Price.sol` | Reserve-style RTokens or other basket-derived prices |
+| `(rate × USD)` from a single Chainlink feed | `src/prices/protocols/sDAI_CustomPriceFeed.sol` (DAI/USD × DSR `chi`) | Yield-bearing wrappers with an on-chain `chi`/`rate` field |
+| LST/LRT receipt token with `getExchangeRate`-style method | `src/prices/protocols/wstETH_CustomPriceFeed.sol`, `rETH_CustomPriceFeed.sol` | Liquid staking tokens whose redeem rate is exposed on-chain |
+| L2 mirror of an L1 rate | `src/prices/protocols/wstETH_L2_CustomPriceFeed.sol`, `cbETH_L2_CustomPriceFeed.sol` | Same asset, but the canonical rate lives on L1; reads a Chainlink-secured rate feed on L2 instead |
+| Two Chainlink feeds composed | `src/prices/protocols/CrossRate_CustomPriceFeed.sol` | A/B × B/C when there's no direct A/USD feed |
+| Basket / aggregator | `src/prices/protocols/ETHPlus_CustomPriceFeed.sol` | Reserve-style RTokens or other basket-derived prices |
 
 Copy the closest match and rename. Don't deviate from the structure unless you need to — every feed in `src/prices/protocols/` follows the same shape.
 
 ### B.2 Write the contract
 
-File: `src/prices/protocols/<Asset>_Price.sol` (suffix `_L2_Price` for L2-specific variants).
+File: `src/prices/protocols/<Asset>_CustomPriceFeed.sol` (suffix `_L2_Price` for L2-specific variants).
 
 For the common "single Chainlink base feed × 18-decimal on-chain rate" case (rETH, cbETH, ezETH, rsETH, ETHx, osToken), extend `src/prices/BaseCustomPriceFeed.sol` and implement only `_rate()` — the staleness gate, decimals, `latestRoundData`, and the `rate × base / 1e18` math live in the base. Feeds with no Chainlink base (ETHPlus), a two-feed derived rate (eETH, wstETH), or a Chainlink-feed rate (use `CrossRate_Price`) stay bespoke and follow the self-contained skeleton below.
 
-Skeleton (bespoke yield-bearing pattern, à la `sDAI_Price.sol`; adjust for LST/LRT or cross-rate):
+Skeleton (bespoke yield-bearing pattern, à la `sDAI_CustomPriceFeed.sol`; adjust for LST/LRT or cross-rate):
 
 ```solidity
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-import {IPriceFeedCustom} from "src/prices/IPriceFeedCustom.sol";
+import {ICustomPriceFeed} from "src/prices/ICustomPriceFeed.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import {OracleArgumentChecks} from "src/utils/OracleArgumentChecks.sol";
@@ -121,7 +121,7 @@ import {OracleArgumentChecks} from "src/utils/OracleArgumentChecks.sol";
 /// @title <Asset> Custom Price Oracle
 /// @notice Returns the USD price of <Asset> as `<rate> * <underlying>/USD`.
 /// @author kpk
-contract MyAsset_PriceOracle is IPriceFeedCustom {
+contract MyAsset_CustomPriceFeed is ICustomPriceFeed {
     AggregatorV3Interface public immutable USD_CHAINLINK_ORACLE;
     address public immutable RATE_PROVIDER;
     address public immutable MY_ASSET;
@@ -180,7 +180,7 @@ contract MyAsset_PriceOracle is IPriceFeedCustom {
     function underlyingAssetSupported() external view returns (address) { return MY_ASSET; }
 
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
-        return interfaceId == type(IPriceFeedCustom).interfaceId
+        return interfaceId == type(ICustomPriceFeed).interfaceId
             || interfaceId == type(IERC165).interfaceId;
     }
 
@@ -195,7 +195,7 @@ Conventions:
 - **Pin every input as `immutable`** in the constructor. No setters.
 - **Use `OracleArgumentChecks`** for argument validation. Don't roll your own zero-checks.
 - **Return `(0, true)` on any failure path**, never revert. Stale prices propagate into NAV via `NAV.stalePriceAssets`.
-- **Implement `latestRoundData()`** as well as `getLatestPrice()`. `IPriceFeedCustom` requires both; `Prices.sol` reads price/staleness from `getLatestPrice()`, while `latestRoundData()` exists for callers inspecting underlying-oracle freshness (return the worst-case `updatedAt`, or `(0, 0, 0, 0, 0)` for feeds with no trackable oracle). Computing both from one private `_compute()` helper, as above, keeps them consistent.
+- **Implement `latestRoundData()`** as well as `getLatestPrice()`. `ICustomPriceFeed` requires both; `Prices.sol` reads price/staleness from `getLatestPrice()`, while `latestRoundData()` exists for callers inspecting underlying-oracle freshness (return the worst-case `updatedAt`, or `(0, 0, 0, 0, 0)` for feeds with no trackable oracle). Computing both from one private `_compute()` helper, as above, keeps them consistent.
 - **`decimals()`** returns the Chainlink feed's decimals (typically 8 for USD pairs). The custom feed's output must match this.
 - **Heartbeat applies to the Chainlink leg only**; the rate provider is on-chain and trusted. If the rate goes negative or zero, treat as stale.
 - **One asset per contract.** Even if two assets share the same recipe, deploy two contracts.
@@ -217,7 +217,7 @@ Cover, with mocked Chainlink + mocked rate provider:
 - **`decimals()`** returns the Chainlink feed's decimals.
 - **`underlyingAssetSupported()`** returns the asset address.
 - **`latestRoundData()`** returns the underlying oracle's round data (and `answer == 0` when stale).
-- **`supportsInterface`** returns true for `IPriceFeedCustom` and `IERC165`.
+- **`supportsInterface`** returns true for `ICustomPriceFeed` and `IERC165`.
 
 #### B.3.2 Fork test
 

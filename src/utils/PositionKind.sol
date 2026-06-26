@@ -10,7 +10,7 @@ pragma solidity ^0.8;
 ///      wrapped inside (e.g. gauge-staked LP); the inner exposure stays recoverable from
 ///      `protocolId`/`positionId`. LP principal sitting unstaked in the wallet is `Supplied`.
 enum PositionKind {
-    Wallet, // plain ERC20 / native-token balance held directly (ERC20DefaultAdapter)
+    Wallet, // plain ERC20 / native-token balance held directly (ERC20DefaultBalanceAdapter)
     Supplied, // credit deployed into a protocol: lending supply, vault shares, unstaked LP principal
     Borrowed, // debt owed to a protocol (isDebt = true)
     Collateral, // credit locked as collateral (e.g. Aave reserve with usageAsCollateralEnabled = true)

@@ -6,14 +6,14 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalances} from "src/balances/IBalances.sol";
 import {Mock_CustomBalanceAdapter} from "test/mocks/balance_adapters.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
-import {ERC20DefaultAdapter} from "src/balances/protocols/ERC20DefaultAdapter.sol";
+import {ERC20DefaultBalanceAdapter} from "src/balances/protocols/ERC20DefaultBalanceAdapter.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
 
 /// @title Balance Adapter Gas Benchmark Tests
 /// @notice Tests gas usage for various scenarios to establish performance baselines
 contract BalanceAdapterGasTest is Test {
     BalancesHarness public balances;
-    ERC20DefaultAdapter public erc20DefaultAdapter;
+    ERC20DefaultBalanceAdapter public erc20DefaultBalanceAdapter;
     Mock_CustomBalanceAdapter[] public customAdapters;
     Mock_ERC20[] public tokens;
 
@@ -23,7 +23,7 @@ contract BalanceAdapterGasTest is Test {
         // Etch NAVRegistryLib (pre-linked external lib, DELEGATECALL'd by Balances) at its deterministic address.
         vm.etch(0x2F1F6c17D64bE96F583D390be212aFCF8D0F102a, vm.deployCode("NAVRegistryLib.sol:NAVRegistryLib").code);
         balances = new BalancesHarness();
-        erc20DefaultAdapter = balances.defaultAdapter();
+        erc20DefaultBalanceAdapter = balances.defaultAdapter();
     }
 
     /// @notice Helper to generate large asset portfolio
@@ -86,7 +86,7 @@ contract BalanceAdapterGasTest is Test {
         usdc.mint(alice, 1000 * 10 ** 6);
 
         uint256 gasBefore = gasleft();
-        (uint256 amount,) = erc20DefaultAdapter.getAdapterBalanceForAsset(alice, address(usdc));
+        (uint256 amount,) = erc20DefaultBalanceAdapter.getAdapterBalanceForAsset(alice, address(usdc));
         uint256 gasUsed = gasBefore - gasleft();
 
         assertGt(amount, 0, "Should have positive balance");
@@ -100,7 +100,7 @@ contract BalanceAdapterGasTest is Test {
         // Don't mint tokens (zero balance)
 
         uint256 gasBefore = gasleft();
-        (uint256 amount,) = erc20DefaultAdapter.getAdapterBalanceForAsset(alice, address(usdc));
+        (uint256 amount,) = erc20DefaultBalanceAdapter.getAdapterBalanceForAsset(alice, address(usdc));
         uint256 gasUsed = gasBefore - gasleft();
 
         assertEq(amount, 0, "Should have zero balance");
@@ -123,13 +123,13 @@ contract BalanceAdapterGasTest is Test {
             // Generate portfolio
             generateLargePortfolio(assetCounts[i]);
 
-            // Mint tokens to alice for ERC20DefaultAdapter
+            // Mint tokens to alice for ERC20DefaultBalanceAdapter
             for (uint256 j = 0; j < tokens.length; j++) {
                 tokens[j].mint(alice, 1000 * 10 ** 18);
             }
 
             uint256 gasBefore = gasleft();
-            (address[] memory assets, uint256[] memory amounts,) = erc20DefaultAdapter.getAdapterBalances(alice);
+            (address[] memory assets, uint256[] memory amounts,) = erc20DefaultBalanceAdapter.getAdapterBalances(alice);
             uint256 gasUsed = gasBefore - gasleft();
 
             assertGe(assets.length, assetCounts[i], "Should have at least the new asset count");
@@ -158,7 +158,8 @@ contract BalanceAdapterGasTest is Test {
         dai.mint(alice, 2000 * 10 ** 18);
 
         uint256 gasBefore = gasleft();
-        INAVCalculator.PositionBalance[] memory positions = erc20DefaultAdapter.getAdapterPositions(alice, address(0));
+        INAVCalculator.PositionBalance[] memory positions =
+            erc20DefaultBalanceAdapter.getAdapterPositions(alice, address(0));
         uint256 gasUsed = gasBefore - gasleft();
 
         assertEq(positions.length, 2, "Should have 2 positions");
@@ -176,11 +177,11 @@ contract BalanceAdapterGasTest is Test {
         dai.mint(alice, 2000 * 10 ** 18);
 
         uint256 gasBeforeUnfiltered = gasleft();
-        erc20DefaultAdapter.getAdapterPositions(alice, address(0));
+        erc20DefaultBalanceAdapter.getAdapterPositions(alice, address(0));
         uint256 gasUnfiltered = gasBeforeUnfiltered - gasleft();
 
         uint256 gasBeforeFiltered = gasleft();
-        erc20DefaultAdapter.getAdapterPositions(alice, address(usdc));
+        erc20DefaultBalanceAdapter.getAdapterPositions(alice, address(usdc));
         uint256 gasFiltered = gasBeforeFiltered - gasleft();
 
         assertGt(gasUnfiltered, 0, "unfiltered gas measured");
@@ -206,7 +207,7 @@ contract BalanceAdapterGasTest is Test {
         for (uint256 i = 0; i < adapterCounts.length; i++) {
             // Setup adapters
             if (i > 0) {
-                setupMultipleAdapters(adapterCounts[i] - 1); // -1 because ERC20DefaultAdapter already exists
+                setupMultipleAdapters(adapterCounts[i] - 1); // -1 because ERC20DefaultBalanceAdapter already exists
             }
 
             Mock_ERC20 usdc = new Mock_ERC20("USDC", 6);
@@ -214,7 +215,7 @@ contract BalanceAdapterGasTest is Test {
             usdc.mint(alice, 1000 * 10 ** 6);
 
             uint256 gasBefore = gasleft();
-            (uint256 amount,) = erc20DefaultAdapter.getAdapterBalanceForAsset(alice, address(usdc));
+            (uint256 amount,) = erc20DefaultBalanceAdapter.getAdapterBalanceForAsset(alice, address(usdc));
             uint256 gasUsed = gasBefore - gasleft();
 
             assertGt(amount, 0, "Should have positive balance");
@@ -231,7 +232,7 @@ contract BalanceAdapterGasTest is Test {
         address emptyAccount = makeAddr("empty");
 
         uint256 gasBefore = gasleft();
-        (uint256 amount,) = erc20DefaultAdapter.getAdapterBalanceForAsset(emptyAccount, address(0));
+        (uint256 amount,) = erc20DefaultBalanceAdapter.getAdapterBalanceForAsset(emptyAccount, address(0));
         uint256 gasUsed = gasBefore - gasleft();
 
         assertEq(amount, 0, "Empty account should have zero balance");
@@ -246,7 +247,7 @@ contract BalanceAdapterGasTest is Test {
         usdc.mint(alice, 1000 * 10 ** 6);
 
         uint256 gasBefore = gasleft();
-        (uint256 amount,) = erc20DefaultAdapter.getAdapterBalanceForAsset(alice, address(usdc));
+        (uint256 amount,) = erc20DefaultBalanceAdapter.getAdapterBalanceForAsset(alice, address(usdc));
         uint256 gasUsed = gasBefore - gasleft();
 
         assertGt(amount, 0, "Should have positive balance");
@@ -260,7 +261,7 @@ contract BalanceAdapterGasTest is Test {
         generateLargePortfolio(20);
 
         uint256 gasBefore = gasleft();
-        address[] memory assets = erc20DefaultAdapter.underlyingAssetsSupported();
+        address[] memory assets = erc20DefaultBalanceAdapter.underlyingAssetsSupported();
         uint256 gasUsed = gasBefore - gasleft();
 
         assertGt(assets.length, 0, "Should have supported assets");
@@ -289,7 +290,7 @@ contract BalanceAdapterGasTest is Test {
             }
 
             uint256 gasBefore = gasleft();
-            erc20DefaultAdapter.getAdapterBalances(alice);
+            erc20DefaultBalanceAdapter.getAdapterBalances(alice);
             uint256 gasUsed = gasBefore - gasleft();
 
             uint256 gasPerAsset = gasUsed / assetCounts[i];

@@ -43,32 +43,32 @@ import {PancakeSwapV2PoolsMetaBalanceAdapter} from "src/balances/protocols/panca
 import {PancakeSwapV3PoolsMetaBalanceAdapter} from "src/balances/protocols/pancakeswap/PancakeSwapV3PoolsMeta.sol";
 
 // Price feed adapters (Mainnet)
-import {sDAI_PriceOracle} from "src/prices/protocols/sDAI_Price.sol";
-import {LDO_PriceOracle} from "src/prices/protocols/LDO_Price.sol";
-import {sUSDS_PriceOracle} from "src/prices/protocols/sUSDS_Price.sol";
-import {sUSDe_PriceOracle} from "src/prices/protocols/sUSDe_Price.sol";
-import {syrupUSDC_PriceOracle} from "src/prices/protocols/syrupUSDC_Price.sol";
-import {wstETH_PriceOracle} from "src/prices/protocols/wstETH_Price.sol";
-import {CrossRatePriceAdapter} from "src/prices/protocols/CrossRate_Price.sol";
-import {rETH_PriceOracle} from "src/prices/protocols/rETH_Price.sol";
-import {ankrETH_PriceOracle} from "src/prices/protocols/ankrETH_Price.sol";
-import {NXM_PriceOracle} from "src/prices/protocols/NXM_Price.sol";
-import {osToken_PriceOracle} from "src/prices/protocols/osToken_Price.sol";
-import {cbETH_PriceOracle} from "src/prices/protocols/cbETH_Price.sol";
-import {weETH_PriceOracle} from "src/prices/protocols/weETH_Price.sol";
-import {rsETH_PriceOracle} from "src/prices/protocols/rsETH_Price.sol";
-import {eETH_PriceOracle} from "src/prices/protocols/eETH_Price.sol";
-import {ezETH_PriceOracle} from "src/prices/protocols/ezETH_Price.sol";
-import {ETHx_PriceOracle} from "src/prices/protocols/ETHx_Price.sol";
-import {sDAI_PriceOracle as sXDAI_PriceOracle} from "src/prices/protocols/sXDAI_Price.sol";
+import {sDAI_CustomPriceFeed} from "src/prices/protocols/sDAI_CustomPriceFeed.sol";
+import {LDO_CustomPriceFeed} from "src/prices/protocols/LDO_CustomPriceFeed.sol";
+import {sUSDS_CustomPriceFeed} from "src/prices/protocols/sUSDS_CustomPriceFeed.sol";
+import {sUSDe_CustomPriceFeed} from "src/prices/protocols/sUSDe_CustomPriceFeed.sol";
+import {syrupUSDC_CustomPriceFeed} from "src/prices/protocols/syrupUSDC_CustomPriceFeed.sol";
+import {wstETH_CustomPriceFeed} from "src/prices/protocols/wstETH_CustomPriceFeed.sol";
+import {CrossRate_CustomPriceFeed} from "src/prices/protocols/CrossRate_CustomPriceFeed.sol";
+import {rETH_CustomPriceFeed} from "src/prices/protocols/rETH_CustomPriceFeed.sol";
+import {ankrETH_CustomPriceFeed} from "src/prices/protocols/ankrETH_CustomPriceFeed.sol";
+import {NXM_CustomPriceFeed} from "src/prices/protocols/NXM_CustomPriceFeed.sol";
+import {osToken_CustomPriceFeed} from "src/prices/protocols/osToken_CustomPriceFeed.sol";
+import {cbETH_CustomPriceFeed} from "src/prices/protocols/cbETH_CustomPriceFeed.sol";
+import {weETH_CustomPriceFeed} from "src/prices/protocols/weETH_CustomPriceFeed.sol";
+import {rsETH_CustomPriceFeed} from "src/prices/protocols/rsETH_CustomPriceFeed.sol";
+import {eETH_CustomPriceFeed} from "src/prices/protocols/eETH_CustomPriceFeed.sol";
+import {ezETH_CustomPriceFeed} from "src/prices/protocols/ezETH_CustomPriceFeed.sol";
+import {ETHx_CustomPriceFeed} from "src/prices/protocols/ETHx_CustomPriceFeed.sol";
+import {sXDAI_CustomPriceFeed} from "src/prices/protocols/sXDAI_CustomPriceFeed.sol";
 
 // Price feed adapters (L2)
-import {wstETH_L2_PriceOracle} from "src/prices/protocols/wstETH_L2_Price.sol";
-import {weETH_L2_PriceOracle} from "src/prices/protocols/weETH_L2_Price.sol";
-import {cbETH_L2_PriceOracle} from "src/prices/protocols/cbETH_L2_Price.sol";
-import {rsETH_L2_PriceOracle} from "src/prices/protocols/rsETH_L2_Price.sol";
-import {ezETH_L2_PriceOracle} from "src/prices/protocols/ezETH_L2_Price.sol";
-import {syrupUSDC_L2_PriceOracle} from "src/prices/protocols/syrupUSDC_L2_Price.sol";
+import {wstETH_L2_CustomPriceFeed} from "src/prices/protocols/wstETH_L2_CustomPriceFeed.sol";
+import {weETH_L2_CustomPriceFeed} from "src/prices/protocols/weETH_L2_CustomPriceFeed.sol";
+import {cbETH_L2_CustomPriceFeed} from "src/prices/protocols/cbETH_L2_CustomPriceFeed.sol";
+import {rsETH_L2_CustomPriceFeed} from "src/prices/protocols/rsETH_L2_CustomPriceFeed.sol";
+import {ezETH_L2_CustomPriceFeed} from "src/prices/protocols/ezETH_L2_CustomPriceFeed.sol";
+import {syrupUSDC_L2_CustomPriceFeed} from "src/prices/protocols/syrupUSDC_L2_CustomPriceFeed.sol";
 
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/constants.sol";
@@ -120,7 +120,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     ///         _registerAssetIfPossible: (1) fallback when an asset's Custom feed has no deployed
     ///         address (feed exists in code but not yet deployed to production); (2) override when a
     ///         prod address exists but has the old ERC165 ID (e.g. after latestRoundData() was added
-    ///         to IPriceFeedCustom). Key is the feed deploy name from assets.json's `priceFeeds[].feed`,
+    ///         to ICustomPriceFeed). Key is the feed deploy name from assets.json's `priceFeeds[].feed`,
     ///         resolved via ConfigReader.readAssetFeedName. Fork-only; production registration via
     ///         RegisterAssets.s.sol reads feeds from assets.json.
     mapping(string => address) internal _ephemeralPriceFeeds;
@@ -249,7 +249,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "sDAI", "daiToUsdChainlinkOracle"));
         uint256 daiUsdHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "sDAI", "daiToUsdChainlinkHeartbeat"));
-        return address(new sDAI_PriceOracle(sDai, dsrManager, daiUsd, daiUsdHb));
+        return address(new sDAI_CustomPriceFeed(sDai, dsrManager, daiUsd, daiUsdHb));
     }
 
     function _deployLdo() internal returns (address) {
@@ -262,7 +262,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "LDO", "ldoToEthChainlinkHeartbeat"));
         uint256 ethUsdHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "LDO", "ethToUsdChainlinkHeartbeat"));
-        return address(new LDO_PriceOracle(ldo, ldoEth, ethUsd, ldoEthHb, ethUsdHb));
+        return address(new LDO_CustomPriceFeed(ldo, ldoEth, ethUsd, ldoEthHb, ethUsdHb));
     }
 
     function _deploySusds() internal returns (address) {
@@ -271,7 +271,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "sUSDS", "usdsToUsdChainlinkAddress"));
         uint256 usdsUsdHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "sUSDS", "usdsToUsdChainlinkHeartbeat"));
-        return address(new sUSDS_PriceOracle(sUsds, usdsUsd, usdsUsdHb));
+        return address(new sUSDS_CustomPriceFeed(sUsds, usdsUsd, usdsUsdHb));
     }
 
     function _deploySUsde() internal returns (address) {
@@ -280,7 +280,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "sUSDe", "usdeToUsdChainlinkAddress"));
         uint256 usdeUsdHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "sUSDe", "usdeToUsdChainlinkHeartbeat"));
-        return address(new sUSDe_PriceOracle(sUsde, usdeUsd, usdeUsdHb));
+        return address(new sUSDe_CustomPriceFeed(sUsde, usdeUsd, usdeUsdHb));
     }
 
     function _deploySyrupUsdc() internal returns (address) {
@@ -289,7 +289,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "syrupUSDC", "usdcToUsdChainlinkAddress"));
         uint256 usdcUsdHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "syrupUSDC", "usdcToUsdChainlinkHeartbeat"));
-        return address(new syrupUSDC_PriceOracle(syrup, usdcUsd, usdcUsdHb));
+        return address(new syrupUSDC_CustomPriceFeed(syrup, usdcUsd, usdcUsdHb));
     }
 
     function _deployWstEth() internal returns (address) {
@@ -302,17 +302,17 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "wstETH", "stEthToEthChainlinkHeartbeat"));
         uint256 ethUsdHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "wstETH", "ethToUsdChainlinkHeartbeat"));
-        return address(new wstETH_PriceOracle(wstEth, stEthToEth, ethUsd, stEthToEthHb, ethUsdHb));
+        return address(new wstETH_CustomPriceFeed(wstEth, stEthToEth, ethUsd, stEthToEthHb, ethUsdHb));
     }
 
     function _deployStEth() internal returns (address) {
-        // stETH reuses the generic CrossRatePriceAdapter: stETH/USD = (ETH/USD) x (stETH/ETH).
+        // stETH reuses the generic CrossRate_CustomPriceFeed: stETH/USD = (ETH/USD) x (stETH/ETH).
         address underlying = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "underlyingAsset"));
         address xToUsd = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "xToUsdFeed"));
         address yToX = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "yToXFeed"));
         uint256 xToUsdHb = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "xToUsdHeartbeat"));
         uint256 yToXHb = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "yToXHeartbeat"));
-        return address(new CrossRatePriceAdapter(underlying, xToUsd, yToX, xToUsdHb, yToXHb));
+        return address(new CrossRate_CustomPriceFeed(underlying, xToUsd, yToX, xToUsdHb, yToXHb));
     }
 
     function _deployREth() internal returns (address) {
@@ -321,17 +321,17 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "rETH", "ethToUsdChainlinkOracle"));
         uint256 ethUsdHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "rETH", "ethToUsdChainlinkHeartbeat"));
-        return address(new rETH_PriceOracle(rEth, ethUsd, ethUsdHb));
+        return address(new rETH_CustomPriceFeed(rEth, ethUsd, ethUsdHb));
     }
 
     function _deployOeth() internal returns (address) {
-        // OETH reuses the generic CrossRatePriceAdapter: OETH/USD = (ETH/USD) x (OETH/ETH).
+        // OETH reuses the generic CrossRate_CustomPriceFeed: OETH/USD = (ETH/USD) x (OETH/ETH).
         address underlying = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "OETH", "underlyingAsset"));
         address xToUsd = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "OETH", "xToUsdFeed"));
         address yToX = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "OETH", "yToXFeed"));
         uint256 xToUsdHb = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "OETH", "xToUsdHeartbeat"));
         uint256 yToXHb = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "OETH", "yToXHeartbeat"));
-        return address(new CrossRatePriceAdapter(underlying, xToUsd, yToX, xToUsdHb, yToXHb));
+        return address(new CrossRate_CustomPriceFeed(underlying, xToUsd, yToX, xToUsdHb, yToXHb));
     }
 
     function _deployAnkrEth() internal returns (address) {
@@ -340,7 +340,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "ankrETH", "ethToUsdChainlinkOracle"));
         uint256 ethUsdHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "ankrETH", "ethToUsdChainlinkHeartbeat"));
-        return address(new ankrETH_PriceOracle(ankrEth, ethUsd, ethUsdHb));
+        return address(new ankrETH_CustomPriceFeed(ankrEth, ethUsd, ethUsdHb));
     }
 
     function _deployNxm() internal returns (address) {
@@ -358,7 +358,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         address ethUsd = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, name, "ethToUsdChainlinkOracle"));
         uint256 ethUsdHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, name, "ethToUsdChainlinkHeartbeat"));
-        return address(new NXM_PriceOracle(token, ramm, ethUsd, ethUsdHb));
+        return address(new NXM_CustomPriceFeed(token, ramm, ethUsd, ethUsdHb));
     }
 
     function _deployOsEth() internal returns (address) {
@@ -377,7 +377,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, name, "underlyingToUsdChainlinkOracle"));
         uint256 hb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, name, "underlyingToUsdChainlinkHeartbeat"));
-        return address(new osToken_PriceOracle(osToken, controller, underlyingUsd, hb));
+        return address(new osToken_CustomPriceFeed(osToken, controller, underlyingUsd, hb));
     }
 
     function _deployCbEth() internal returns (address) {
@@ -386,7 +386,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "cbETH", "ethToUsdChainlinkOracle"));
         uint256 ethUsdHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "cbETH", "ethToUsdChainlinkHeartbeat"));
-        return address(new cbETH_PriceOracle(cbEth, ethUsd, ethUsdHb));
+        return address(new cbETH_CustomPriceFeed(cbEth, ethUsd, ethUsdHb));
     }
 
     function _deployWeEth() internal returns (address) {
@@ -399,7 +399,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "weETH", "weEthToEthChainlinkHeartbeat"));
         uint256 ethUsdHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "weETH", "ethToUsdChainlinkHeartbeat"));
-        return address(new weETH_PriceOracle(weEth, weEthEth, ethUsd, weEthEthHb, ethUsdHb));
+        return address(new weETH_CustomPriceFeed(weEth, weEthEth, ethUsd, weEthEthHb, ethUsdHb));
     }
 
     function _deployRsEth() internal returns (address) {
@@ -409,7 +409,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "rsETH", "ethToUsdChainlinkOracle"));
         uint256 ethUsdHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "rsETH", "ethToUsdChainlinkHeartbeat"));
-        return address(new rsETH_PriceOracle(rsEth, rateProvider, ethUsd, ethUsdHb));
+        return address(new rsETH_CustomPriceFeed(rsEth, rateProvider, ethUsd, ethUsdHb));
     }
 
     function _deployEEth() internal returns (address) {
@@ -423,7 +423,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "eETH", "weEthToEthChainlinkHeartbeat"));
         uint256 ethUsdHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "eETH", "ethToUsdChainlinkHeartbeat"));
-        return address(new eETH_PriceOracle(eEth, weEth, weEthEth, ethUsd, weEthEthHb, ethUsdHb));
+        return address(new eETH_CustomPriceFeed(eEth, weEth, weEthEth, ethUsd, weEthEthHb, ethUsdHb));
     }
 
     function _deployEzEth() internal returns (address) {
@@ -434,7 +434,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "ezETH", "ethToUsdChainlinkOracle"));
         uint256 ethUsdHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "ezETH", "ethToUsdChainlinkHeartbeat"));
-        return address(new ezETH_PriceOracle(ezEth, restakeManager, ethUsd, ethUsdHb));
+        return address(new ezETH_CustomPriceFeed(ezEth, restakeManager, ethUsd, ethUsdHb));
     }
 
     function _deploySxdai() internal returns (address) {
@@ -443,7 +443,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "sXDAI", "xDaiToUsdChainlinkOracle"));
         uint256 xDaiUsdHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "sXDAI", "xDaiToUsdChainlinkHeartbeat"));
-        return address(new sXDAI_PriceOracle(sXdai, xDaiUsd, xDaiUsdHb));
+        return address(new sXDAI_CustomPriceFeed(sXdai, xDaiUsd, xDaiUsdHb));
     }
 
     function _deployWstEthL2() internal returns (address) {
@@ -456,7 +456,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "wstETH_L2", "wstEthToEthHeartbeat"));
         uint256 ethUsdHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "wstETH_L2", "ethToUsdChainlinkHeartbeat"));
-        return address(new wstETH_L2_PriceOracle(wstEth, wstEthEth, ethUsd, wstEthEthHb, ethUsdHb));
+        return address(new wstETH_L2_CustomPriceFeed(wstEth, wstEthEth, ethUsd, wstEthEthHb, ethUsdHb));
     }
 
     function _deployWeEthL2() internal returns (address) {
@@ -469,7 +469,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "weETH_L2", "weEthToEethHeartbeat"));
         uint256 ethUsdHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "weETH_L2", "ethToUsdChainlinkHeartbeat"));
-        return address(new weETH_L2_PriceOracle(weEth, weEthEth, ethUsd, weEthEthHb, ethUsdHb));
+        return address(new weETH_L2_CustomPriceFeed(weEth, weEthEth, ethUsd, weEthEthHb, ethUsdHb));
     }
 
     function _deployCbEthL2() internal returns (address) {
@@ -482,7 +482,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "cbETH_L2", "cbEthToEthHeartbeat"));
         uint256 ethUsdHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "cbETH_L2", "ethToUsdChainlinkHeartbeat"));
-        return address(new cbETH_L2_PriceOracle(cbEth, cbEthEth, ethUsd, cbEthEthHb, ethUsdHb));
+        return address(new cbETH_L2_CustomPriceFeed(cbEth, cbEthEth, ethUsd, cbEthEthHb, ethUsdHb));
     }
 
     function _deployRsEthL2() internal returns (address) {
@@ -495,7 +495,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "rsETH_L2", "rsEthToEthHeartbeat"));
         uint256 ethUsdHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "rsETH_L2", "ethToUsdChainlinkHeartbeat"));
-        return address(new rsETH_L2_PriceOracle(rsEth, rsEthEth, ethUsd, rsEthEthHb, ethUsdHb));
+        return address(new rsETH_L2_CustomPriceFeed(rsEth, rsEthEth, ethUsd, rsEthEthHb, ethUsdHb));
     }
 
     function _deployEzEthL2() internal returns (address) {
@@ -505,7 +505,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "ezETH_L2", "ethToUsdChainlinkOracle"));
         uint256 ethUsdHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "ezETH_L2", "ethToUsdChainlinkHeartbeat"));
-        return address(new ezETH_L2_PriceOracle(ezEth, xRenzo, ethUsd, ethUsdHb));
+        return address(new ezETH_L2_CustomPriceFeed(ezEth, xRenzo, ethUsd, ethUsdHb));
     }
 
     function _deploySyrupUsdcL2() internal returns (address) {
@@ -518,7 +518,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "syrupUSDC_L2", "syrupUsdcToUsdcHeartbeat"));
         uint256 usdcUsdHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "syrupUSDC_L2", "usdcToUsdChainlinkHeartbeat"));
-        return address(new syrupUSDC_L2_PriceOracle(syrup, syrupChainlink, usdcUsd, syrupHb, usdcUsdHb));
+        return address(new syrupUSDC_L2_CustomPriceFeed(syrup, syrupChainlink, usdcUsd, syrupHb, usdcUsdHb));
     }
 
     function _deployEthx() internal returns (address) {
@@ -529,7 +529,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "ETHx", "ethToUsdChainlinkOracle"));
         uint256 ethUsdHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "ETHx", "ethToUsdChainlinkHeartbeat"));
-        return address(new ETHx_PriceOracle(ethx, stakePoolsManager, ethUsd, ethUsdHb));
+        return address(new ETHx_CustomPriceFeed(ethx, stakePoolsManager, ethUsd, ethUsdHb));
     }
 
     // -----------------------------------------------------------------------
@@ -858,7 +858,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             address adapter;
             if (pt == IPrices.PriceType.Custom) {
                 // Ephemeral (new-code) feed deployed in this harness, keyed by the configured feed name. Preferred
-                // over any prod address because IPriceFeedCustom's ERC165 id changed (old deployments fail the check).
+                // over any prod address because ICustomPriceFeed's ERC165 id changed (old deployments fail the check).
                 adapter = _ephemeralPriceFeeds[ConfigReader.readAssetFeedName(vm, _chainId, symbol, i)];
             } else {
                 string memory fa = ConfigReader.readAssetFeedAddress(vm, _chainId, symbol, i);

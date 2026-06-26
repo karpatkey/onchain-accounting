@@ -2,8 +2,8 @@
 pragma solidity ^0.8;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
-import {CurvePoolsMetaBalanceAdapter} from "src/balances/protocols/curve/CurvePoolsMeta.sol";
-import {CurveGaugesMetaBalanceAdapter} from "src/balances/protocols/curve/CurveGaugesMeta.sol";
+import {CurvePoolsMetaBalanceAdapter} from "src/balances/protocols/curve/CurvePoolsMetaBalanceAdapter.sol";
+import {CurveGaugesMetaBalanceAdapter} from "src/balances/protocols/curve/CurveGaugesMetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 

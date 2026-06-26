@@ -2,7 +2,7 @@
 
 ## 1. Adapter under test
 
-`src/balances/protocols/ERC4626Wrap.sol` — the immutable generic `ERC4626WrapBalanceAdapter`, instantiated for **sGHO**. Constructor: `(wrapper, navCalculator)` where `wrapper = sGHO` (`0xE1753F2e00940cC31213dd92013cF019DFE4ca1d`) and the wrapper's `asset()` is **GHO** (`0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f`). The constructor **reverts unless GHO is already registered on NAVCalculator** — wiring errors are loud, not silently zero-valued. Identity is derived on-chain: `positionId = abi.encode(wrapper)`, `protocolId = keccak256("erc4626")`, `positionKind = Supplied`.
+`src/balances/protocols/ERC4626WrapBalanceAdapter.sol` — the immutable generic `ERC4626WrapBalanceAdapter`, instantiated for **sGHO**. Constructor: `(wrapper, navCalculator)` where `wrapper = sGHO` (`0xE1753F2e00940cC31213dd92013cF019DFE4ca1d`) and the wrapper's `asset()` is **GHO** (`0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f`). The constructor **reverts unless GHO is already registered on NAVCalculator** — wiring errors are loud, not silently zero-valued. Identity is derived on-chain: `positionId = abi.encode(wrapper)`, `protocolId = keccak256("erc4626")`, `positionKind = Supplied`.
 
 ### Inheritance + per-chain scope (Phase 0)
 
@@ -13,7 +13,7 @@
 
 ## 2. Existing fork test coverage
 
-`test/balances/protocols/fork/ERC4626Wrap.fork.t.sol` already had two sGHO suites:
+`test/balances/protocols/fork/ERC4626WrapBalanceAdapter.fork.t.sol` already had two sGHO suites:
 - `ERC4626WrapBalanceAdapterForkTest_sGHO` (block `25_220_000`) — synthetic: deals + deposits 100k GHO, asserts the adapter value ≈ `convertToAssets(shares)`, and — critically — **redeems 100% of the shares and asserts the GHO received ≈ the adapter-reported amount** (the no-exit-fee/cooldown proof).
 - `ERC4626WrapBalanceAdapterForkTest_sGHO_RealHolder` (block `25_230_126`) — pins a real holder's exact on-chain GHO value.
 
@@ -50,7 +50,7 @@ return PositionBalance(GHO, amount, isDebt=false, Supplied, positionId=abi.encod
 | sGHO vault (wrapper) | `0xE1753F2e00940cC31213dd92013cF019DFE4ca1d` |
 | Underlying (`asset()`) | GHO `0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f` |
 | Adapter under test | `ERC4626WrapBalanceAdapter` |
-| Fork-test contract | `ERC4626WrapBalanceAdapterForkTest_sGHO_RealHolder_Fresh` in `test/balances/protocols/fork/ERC4626Wrap.fork.t.sol` |
+| Fork-test contract | `ERC4626WrapBalanceAdapterForkTest_sGHO_RealHolder_Fresh` in `test/balances/protocols/fork/ERC4626WrapBalanceAdapter.fork.t.sol` |
 
 ## 6. Case files in this folder
 
@@ -111,5 +111,5 @@ bash script/development/app/sync-app-env.sh 1
 Run via:
 
 ```bash
-FOUNDRY_PROFILE=slow forge test --match-path "test/balances/protocols/fork/ERC4626Wrap.fork.t.sol" -vv
+FOUNDRY_PROFILE=slow forge test --match-path "test/balances/protocols/fork/ERC4626WrapBalanceAdapter.fork.t.sol" -vv
 ```

@@ -1,7 +1,7 @@
 {
   "protocol": "Euler",
-  "adapter": "src/balances/protocols/EulerVaultsMeta.sol",
-  "adapter_test": "test/balances/protocols/fork/EulerVaultsMeta.fork.t.sol",
+  "adapter": "src/balances/protocols/EulerVaultsMetaBalanceAdapter.sol",
+  "adapter_test": "test/balances/protocols/fork/EulerVaultsMetaBalanceAdapter.fork.t.sol",
   "test_contract": "EulerVaultsMetaBalanceAdapterForkTest",
   "chain": { "id": 1, "name": "mainnet" },
   "block": {
@@ -72,8 +72,8 @@
     "method": "direct-onchain-read + partial-redeem cross-check + real-borrower debtOf",
     "delta": 0,
     "notes": [
-      "Unit suite (test/balances/protocols/EulerVaultsMeta.t.sol): 16/16 pass — supply/collateral/borrow/asset-filter/registration/zero branches against mocks (core-eVault mock with debtOf + EVC for collateral classification, Earn mock without debtOf).",
-      "Fork suite (test/balances/protocols/fork/EulerVaultsMeta.fork.t.sol): 9/9 pass — EulerEarn aggregation, NAV routing, identity, asset filter, describePosition, redemption cross-check, real earn+lend+borrow account, and NAV debt-netting.",
+      "Unit suite (test/balances/protocols/EulerVaultsMetaBalanceAdapter.t.sol): 16/16 pass — supply/collateral/borrow/asset-filter/registration/zero branches against mocks (core-eVault mock with debtOf + EVC for collateral classification, Earn mock without debtOf).",
+      "Fork suite (test/balances/protocols/fork/EulerVaultsMetaBalanceAdapter.fork.t.sol): 9/9 pass — EulerEarn aggregation, NAV routing, identity, asset filter, describePosition, redemption cross-check, real earn+lend+borrow account, and NAV debt-netting.",
       "convertToAssets and ERC4626 redeem both round down, so realized WETH equals convertToAssets(redeemedShares) exactly (delta 0)."
     ]
   }

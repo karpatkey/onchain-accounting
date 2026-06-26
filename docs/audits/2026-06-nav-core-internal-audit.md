@@ -28,8 +28,8 @@ is read-only accounting), but one is a denial-of-service on the core NAV read pa
 ## 1 — High — NAV read buffer overflow bricks `getAccountNav` for an account
 
 **Files:** `src/prices/PriceFeedLib.sol` (`_getPositionBalances`),
-`src/balances/protocols/uniswap/UniswapV3PoolsMeta.sol`,
-`src/balances/protocols/pancakeswap/PancakeSwapV3PoolsMeta.sol`.
+`src/balances/protocols/uniswap/UniswapV3PoolsMetaBalanceAdapter.sol`,
+`src/balances/protocols/pancakeswap/PancakeSwapV3PoolsMetaBalanceAdapter.sol`.
 
 `_getPositionBalances` sized its scratch buffer as
 `2 * (totalAdapters + metaInstanceTotal) * assetCount`, assuming each
@@ -62,7 +62,7 @@ regardless of per-instance leg count.
 
 ## 2 — Medium — `SparkLend` per-asset filter only checks the first reserve
 
-**File:** `src/balances/protocols/SparkLend.sol:118-127`
+**File:** `src/balances/protocols/SparkLendBalanceAdapter.sol:118-127`
 
 The `assetFilter` membership scan placed `break;` outside the `if`, so the loop exited
 after iteration 0 and only ever compared `assetFilter` against `active[0]`. Any registered
@@ -80,7 +80,7 @@ off-chain reconciliation consumers.
 
 ## 3 — Low — `SparkLend.getAdapterBalances` marks every net position as debt
 
-**File:** `src/balances/protocols/SparkLend.sol:80-88`
+**File:** `src/balances/protocols/SparkLendBalanceAdapter.sol:80-88`
 
 The net amount was computed correctly for both branches but `isDebt` was hard-coded `true`,
 so a pure supplier (debt == 0) was reported as if it owed that amount — inverting the sign.
@@ -97,7 +97,7 @@ bug.
 ## 4 — Low — Aura/Convex `_instanceAssets` dedup loop emits duplicates
 
 **Files:** `src/balances/protocols/AuraRewardsMeta.sol:290-295`,
-`src/balances/protocols/ConvexRewardsMeta.sol:240-245`
+`src/balances/protocols/ConvexRewardsMetaBalanceAdapter.sol:240-245`
 
 The reward-token dedup loop had `break;` outside the `if`, so it only ever compared a
 candidate token against `rwd[0]` (the main reward token, BAL/CRV). An extra-reward token

@@ -1,7 +1,7 @@
 {
   "protocol": "Lido stETH Withdrawal Queue",
-  "adapter": "src/balances/protocols/LidoWithdrawalQueue.sol",
-  "adapter_test": "test/balances/protocols/fork/LidoWithdrawalQueue.fork.t.sol",
+  "adapter": "src/balances/protocols/LidoWithdrawalQueueBalanceAdapter.sol",
+  "adapter_test": "test/balances/protocols/fork/LidoWithdrawalQueueBalanceAdapter.fork.t.sol",
   "test_contract": "LidoWithdrawalQueueBalanceOracleForkTest_Fresh",
   "chain": { "id": 1, "name": "mainnet" },
   "block": {
@@ -59,6 +59,6 @@
   ],
   "ground_truth": {
     "method": "live WithdrawalQueueERC721 reads (NOT a Python re-derivation)",
-    "detail": "Both branches are pinned against the real Lido WithdrawalQueue at the fork block. PRIMARY: oracle == sum of amountOfStETH over the open un-finalized requests. SECONDARY: oracle == getClaimableEther of the finalized request given its checkpoint hint. Plus protocolId == keccak256('lido-withdrawal'), positionId == \"\" (account-global), PositionKind.Supplied, balanceOracle == address(this), and the leg denominated in the native-ETH sentinel. The amountOfStETH-vs-getClaimableEther divergence (negative-rebase haircut) is covered with mocks in the unit test (test/balances/protocols/LidoWithdrawalQueue.t.sol)."
+    "detail": "Both branches are pinned against the real Lido WithdrawalQueue at the fork block. PRIMARY: oracle == sum of amountOfStETH over the open un-finalized requests. SECONDARY: oracle == getClaimableEther of the finalized request given its checkpoint hint. Plus protocolId == keccak256('lido-withdrawal'), positionId == \"\" (account-global), PositionKind.Supplied, balanceOracle == address(this), and the leg denominated in the native-ETH sentinel. The amountOfStETH-vs-getClaimableEther divergence (negative-rebase haircut) is covered with mocks in the unit test (test/balances/protocols/LidoWithdrawalQueueBalanceAdapter.t.sol)."
   }
 }

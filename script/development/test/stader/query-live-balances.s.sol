@@ -3,7 +3,7 @@ pragma solidity ^0.8;
 
 import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
-import {StaderWithdrawalQueueBalanceAdapter} from "src/balances/protocols/StaderWithdrawalQueue.sol";
+import {StaderWithdrawalQueueBalanceAdapter} from "src/balances/protocols/StaderWithdrawalQueueBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title QueryStaderWithdrawalQueueLiveBalances

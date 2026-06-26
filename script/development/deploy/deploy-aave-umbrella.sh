@@ -44,7 +44,7 @@ echo "    rewardsController: $REWARDS_CONTROLLER"
 # Capture the full output non-fatally (under `set -e`, a piped grep no-match would otherwise abort
 # the script before the guard below runs and swallow the forge error).
 OUT=$(
-  forge create src/balances/protocols/AaveUmbrella.sol:AaveUmbrellaBalanceAdapter \
+  forge create src/balances/protocols/AaveUmbrellaBalanceAdapter.sol:AaveUmbrellaBalanceAdapter \
     --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" --broadcast \
     --constructor-args "$REWARDS_CONTROLLER" "$NAV" 2>&1
 ) || true

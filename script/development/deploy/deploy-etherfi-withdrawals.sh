@@ -45,7 +45,7 @@ echo "    underlyingToken:    $UNDERLYING_TOKEN (native ETH)"
 echo "    owner:              $DEV_DEPLOYER_ADDR (dev account #0)"
 
 OUT=$(
-  forge create src/balances/protocols/EtherFiWithdrawals.sol:EtherFiWithdrawalsBalanceAdapter \
+  forge create src/balances/protocols/EtherFiWithdrawalsBalanceAdapter.sol:EtherFiWithdrawalsBalanceAdapter \
     --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" --broadcast \
     --constructor-args "$WITHDRAW_REQUEST_NFT" "$LIQUIDITY_POOL" "$UNDERLYING_TOKEN" "$NAV" "$DEV_DEPLOYER_ADDR" 2>&1
 ) || true

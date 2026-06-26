@@ -3,7 +3,7 @@ pragma solidity ^0.8;
 
 import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
-import {KelpWithdrawalQueueBalanceAdapter} from "src/balances/protocols/KelpWithdrawalQueue.sol";
+import {KelpWithdrawalQueueBalanceAdapter} from "src/balances/protocols/KelpWithdrawalQueueBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title QueryKelpWithdrawalQueueLiveBalances

@@ -196,8 +196,11 @@ contract EulerVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         assertEq(none.length, 0);
     }
 
-    function test_describePosition_realVaultName() public view {
-        assertEq(adapter.describePosition(abi.encode(address(KPK_ETH_TERM))), "KPK ETH Yield Term");
+    function test_positionLabels_realVaultName() public view {
+        string[] memory labels = adapter.positionLabels(abi.encode(address(KPK_ETH_TERM)));
+        assertEq(labels.length, 2);
+        assertEq(labels[0], "Vault");
+        assertEq(labels[1], "KPK ETH Yield Term");
     }
 
     /// @notice Real account exercising all three Euler shapes in one query: an **earn** leg (EulerEarn KPK_ETH_Term,

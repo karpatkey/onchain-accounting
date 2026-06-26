@@ -262,13 +262,15 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
 
     // ─── describePosition ─────────────────────────────────────────────────────
 
-    function test_describePosition_formatsSymbols() public {
+    function test_positionLabels_formatsSymbols() public {
         address[] memory coins = new address[](2);
         coins[0] = address(usdc);
         coins[1] = address(dai);
         MockCurvePool pool = new MockCurvePool(coins);
 
-        string memory label = meta.describePosition(abi.encode(address(pool)));
-        assertEq(label, "USDC/DAI LP");
+        string[] memory labels = meta.positionLabels(abi.encode(address(pool)));
+        assertEq(labels.length, 2);
+        assertEq(labels[0], "Liquidity Pool");
+        assertEq(labels[1], "USDC/DAI LP");
     }
 }

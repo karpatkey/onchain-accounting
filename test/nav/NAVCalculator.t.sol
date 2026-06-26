@@ -1047,7 +1047,8 @@ contract NAVCalculatorTest is SuperTest {
         assertEq(verbose[0].position.value, 1e8);
         // Labels come from the default adapter's IPositionDescribable implementation.
         assertEq(verbose[0].protocolName, "Wallet");
-        assertEq(verbose[0].positionLabel, "USDC");
+        assertEq(verbose[0].labels.length, 1);
+        assertEq(verbose[0].labels[0], "USDC");
     }
 
     function test_getAccountPositionsVerbose_matchesPlain() public {
@@ -1081,7 +1082,7 @@ contract NAVCalculatorTest is SuperTest {
         for (uint256 i = 0; i < verbose.length; i++) {
             if (verbose[i].position.balanceAdapter == address(mockBalanceAdapter)) {
                 assertEq(verbose[i].protocolName, "");
-                assertEq(verbose[i].positionLabel, "");
+                assertEq(verbose[i].labels.length, 0);
                 found = true;
             }
         }
@@ -1099,7 +1100,8 @@ contract NAVCalculatorTest is SuperTest {
         for (uint256 i = 0; i < verbose.length; i++) {
             assertEq(verbose[i].position.balanceAsset.asset, address(usdc));
             assertEq(verbose[i].protocolName, "Wallet");
-            assertEq(verbose[i].positionLabel, "USDC");
+            assertEq(verbose[i].labels.length, 1);
+            assertEq(verbose[i].labels[0], "USDC");
         }
     }
 
@@ -1138,7 +1140,7 @@ contract NAVCalculatorTest is SuperTest {
         for (uint256 i = 0; i < v.positions.length; i++) {
             assertEq(v.positions[i].position.balanceAsset.asset, plainVerbose[i].position.balanceAsset.asset);
             assertEq(v.positions[i].protocolName, plainVerbose[i].protocolName);
-            assertEq(v.positions[i].positionLabel, plainVerbose[i].positionLabel);
+            assertEq(keccak256(abi.encode(v.positions[i].labels)), keccak256(abi.encode(plainVerbose[i].labels)));
         }
     }
 

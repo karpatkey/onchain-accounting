@@ -435,9 +435,11 @@ contract ConvexRewardsMetaBalanceAdapterTest is Test {
 
     // ─── describePosition ─────────────────────────────────────────────────────
 
-    function test_describePosition_format() public view {
-        string memory label = meta.describePosition(abi.encode(address(rewarder)));
-        assertEq(label, "USDC/WETH Convex");
+    function test_positionLabels_format() public view {
+        string[] memory labels = meta.positionLabels(abi.encode(address(rewarder)));
+        assertEq(labels.length, 2);
+        assertEq(labels[0], "Curve LP");
+        assertEq(labels[1], "USDC/WETH Convex");
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────

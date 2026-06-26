@@ -760,10 +760,12 @@ contract AuraRewardsMetaBalanceAdapterTest is Test {
 
     // ─── 16. describePosition format ─────────────────────────────────────────
 
-    function test_describePosition_format() public view {
-        string memory label = meta.describePosition(abi.encode(address(rewarder)));
+    function test_positionLabels_format() public view {
+        string[] memory labels = meta.positionLabels(abi.encode(address(rewarder)));
         // Tokens in pool order: tok0 = "GHO", tok1 = "USDC" → "GHO/USDC Aura"
-        assertEq(label, "GHO/USDC Aura");
+        assertEq(labels.length, 2);
+        assertEq(labels[0], "Balancer LP");
+        assertEq(labels[1], "GHO/USDC Aura");
     }
 
     // ─── 17. Balancer V2 pool support ────────────────────────────────────────

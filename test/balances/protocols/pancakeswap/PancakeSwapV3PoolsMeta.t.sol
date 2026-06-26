@@ -133,6 +133,9 @@ contract PancakeSwapV3PoolsMetaBalanceAdapterTest is Test {
             meta.getAdapterPositionsForInstances(alice, _instances(), address(0));
         assertGt(p.length, 0);
         assertEq(p[0].positionId, abi.encode(address(npm), uint256(1)));
-        assertEq(meta.describePosition(abi.encode(address(npm), uint256(1))), "NFT #1");
+        string[] memory labels = meta.positionLabels(abi.encode(address(npm), uint256(1)));
+        assertEq(labels.length, 2);
+        assertEq(labels[0], "Liquidity Pool");
+        assertEq(labels[1], "NFT #1");
     }
 }

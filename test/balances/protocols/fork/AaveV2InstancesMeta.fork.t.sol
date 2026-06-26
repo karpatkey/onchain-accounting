@@ -199,8 +199,10 @@ contract AaveV2InstancesMetaParityForkTest is BalanceAdapterTestBase {
 
     /// @notice describePosition surfaces the market id (resolved via the V2 getAddressesProvider() path), so the
     ///         label distinguishes the V2 genesis market from V3 Core/Lido.
-    function test_describePosition_includesMarket() public view {
-        string memory label = meta.describePosition(abi.encode(LENDING_POOL, MAINNET_USDC));
-        assertEq(label, "USDC position (Aave genesis market)", "label == '<symbol> position (<market id>)'");
+    function test_positionLabels_includesMarket() public view {
+        string[] memory labels = meta.positionLabels(abi.encode(LENDING_POOL, MAINNET_USDC));
+        assertEq(labels.length, 2);
+        assertEq(labels[0], "Market Instance");
+        assertEq(labels[1], "USDC position (Aave genesis market)", "labels[1] == '<symbol> position (<market id>)'");
     }
 }

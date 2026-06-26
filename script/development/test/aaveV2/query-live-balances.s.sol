@@ -49,7 +49,8 @@ contract QueryAaveV2LiveBalances is Script {
             console2.log("  amount:", p[i].amount);
             console2.log("  isDebt:", p[i].isDebt);
             console2.log("  kind:  ", uint256(p[i].positionKind));
-            console2.log("  label: ", meta.describePosition(p[i].positionId));
+            string[] memory ls = meta.positionLabels(p[i].positionId);
+            console2.log("  label: ", ls.length > 0 ? ls[ls.length - 1] : "");
         }
     }
 }

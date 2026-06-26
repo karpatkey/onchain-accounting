@@ -22,8 +22,9 @@ pragma solidity ^0.8;
 ///        UNISWAP_V2 / PANCAKESWAP_V2     → (address pair)
 ///        COMPOUND_V3 / FLUID_FTOKENS     → (address market)
 ///        MERKL                           → (address rewardToken)
+///        NEXUS_STAKING                   → (uint256 tokenId, uint256 poolId)
 ///        STADER_WITHDRAWAL / KELP_WITHDRAWAL / LIDO_WITHDRAWAL
-///          / ETHENA_COOLDOWN / ETHERFI_WITHDRAWAL / STAKEWISE_EXIT / NEXUS_STAKING → "" (account-global)
+///          / ETHENA_COOLDOWN / ETHERFI_WITHDRAWAL / STAKEWISE_EXIT → "" (account-global)
 ///        BRIDGE_ESCROW                   → (address escrow, address token)
 library ProtocolIds {
     bytes32 internal constant WALLET = keccak256("wallet");

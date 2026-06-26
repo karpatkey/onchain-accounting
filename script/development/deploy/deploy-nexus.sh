@@ -4,9 +4,10 @@
 # Usage:  deploy-nexus.sh <chainId>
 #   e.g.  deploy-nexus.sh 1
 #
-# NexusStakedNxmBalanceAdapter is a simple immutable view adapter (no agent, no owner): it discovers an
-# account's StakingNFT positions by scanning tokenInfo(1..totalSupply) and values them via
-# StakingViewer.getAggregatedTokens into NXM-denominated Staking (active+expired) + Rewards legs.
+# NexusMutualStakingPoolsBalanceAdapter is a simple immutable view adapter (no agent, no owner): it discovers
+# an account's StakingNFT positions by scanning tokenInfo(1..totalSupply) and values each via
+# StakingViewer.getTokens into per-NFT NXM-denominated Staking (active+expired) + Rewards legs
+# (positionId = abi.encode(tokenId, poolId)).
 # NXM is priced by a custom RAMM feed (NXM_CustomPriceFeed), which dev deploy.sh does NOT auto-register
 # (it wires Chainlink assets only). So this helper, in order:
 #   1. deploys NXM_CustomPriceFeed and registerAsset()s NXM with it (Custom price type),
@@ -77,9 +78,9 @@ else
 fi
 
 # --- 2. adapter ------------------------------------------------------------------------------------------
-echo "--- deploy NexusStakedNxmBalanceAdapter"
+echo "--- deploy NexusMutualStakingPoolsBalanceAdapter"
 OUT=$(
-  forge create src/balances/protocols/NexusStakedNxm.sol:NexusStakedNxmBalanceAdapter \
+  forge create src/balances/protocols/NexusMutualStakingPoolsBalanceAdapter.sol:NexusMutualStakingPoolsBalanceAdapter \
     --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" --broadcast \
     --constructor-args "$STAKING_NFT" "$STAKING_VIEWER" "$NXM_TOKEN" "$NAV" 2>&1
 ) || true
@@ -89,13 +90,13 @@ if [ -z "$ADAPTER" ]; then
   echo "error: forge create produced no address (is the NAV a contract on this fork?)" >&2
   exit 1
 fi
-echo "  NexusStakedNxm: $ADAPTER"
+echo "  NexusMutualStakingPools: $ADAPTER"
 
 # --- 3. register on NAV ----------------------------------------------------------------------------------
 cast send "$NAV" "addBalanceAdapters(address[])" "[$ADAPTER]" \
   --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" >/dev/null
 echo "  registered on NAV (addBalanceAdapters)"
 
-jq --arg a "$ADAPTER" '. + {"NexusStakedNxm": $a}' "$ADDR_FILE" > "$ADDR_FILE.tmp" && mv "$ADDR_FILE.tmp" "$ADDR_FILE"
+jq --arg a "$ADAPTER" '. + {"NexusMutualStakingPools": $a}' "$ADDR_FILE" > "$ADDR_FILE.tmp" && mv "$ADDR_FILE.tmp" "$ADDR_FILE"
 echo "  recorded in $ADDR_FILE"
 echo "  -> next: sync-app-env.sh $CID, then enter 0x8e53D04644E9ab0412a8c6bd228C84da7664cFE3 in the dashboard"

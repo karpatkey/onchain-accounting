@@ -10,22 +10,24 @@ import {InvalidArguments} from "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
-/// @title Nexus Mutual Staked NXM Balance Adapter
+/// @title Nexus Mutual Staking Pools Balance Adapter
 /// @author kpk
 /// @notice Reports an account's staked NXM across Nexus Mutual V2 staking pools, as NXM-denominated
-///         `Staking` (active + expired stake) and `Rewards` legs. Each stake is an ERC-721
-///         `StakingNFT` position; the NFT is not per-owner-enumerable and the StakingViewer exposes
-///         no owner→tokenIds view. But `StakingNFT` is **mint-only** (no burn), so its live tokenIds
-///         are exactly `1..totalSupply()` with a small, monotonic supply — this adapter discovers an
-///         account's positions by scanning `tokenInfo(id)` over that range for a matching owner, then
-///         values them in one call via `StakingViewer.getAggregatedTokens`.
+///         `Staking` (active + expired stake) and `Rewards` legs — emitted **per StakingNFT position**.
+///         Each stake is an ERC-721 `StakingNFT`; the NFT is not per-owner-enumerable and the
+///         StakingViewer exposes no owner→tokenIds view. But `StakingNFT` is **mint-only** (no burn),
+///         so its live tokenIds are exactly `1..totalSupply()` with a small, monotonic supply — this
+///         adapter discovers an account's positions by scanning `tokenInfo(id)` over that range for a
+///         matching owner, then values each via `StakingViewer.getTokens` (per-token active/expired
+///         stake + rewards). One holder can have several positions, possibly across several pools; each
+///         tokenId surfaces as its own leg(s), keyed by `positionId == abi.encode(tokenId, poolId)`.
 /// @dev Immutable; no off-chain agent. The scan cost grows with Nexus's **global** StakingNFT supply
 ///      (not the account's position count). `MAX_TOKEN_SCAN` bounds it so the read loop can't OOG
 ///      (which NAVCalculator's try/catch would NOT catch). If the global supply ever approaches the
 ///      cap, high-id positions would be under-reported — never over-reported — and the protocol should
-///      migrate to an agent-fed cache (the ADR-0014 pattern) before then. Single aggregated leg per
-///      kind, account-global (`positionId == ""`).
-contract NexusStakedNxmBalanceAdapter is IBalanceAdapter, IPositionDescribable {
+///      migrate to an agent-fed cache (the ADR-0014 pattern) before then. The no-arg balance getters
+///      (`getAdapterBalances`/`getAdapterBalanceForAsset`) still return the summed NXM total.
+contract NexusMutualStakingPoolsBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     //
     // Constants
     //
@@ -191,9 +193,9 @@ contract NexusStakedNxmBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     }
 
     /// @inheritdoc IBalanceAdapter
-    /// @notice Up to two NXM legs per account: `Staking` (active + expired stake) and `Rewards`
-    ///         (accrued), each `positionId == ""` (account-global). Zero legs are dropped; empty if
-    ///         NXM is unregistered or filtered out.
+    /// @notice Per StakingNFT position: a `Staking` (active + expired stake) and a `Rewards` (accrued)
+    ///         leg, each keyed by `positionId == abi.encode(tokenId, poolId)`. Zero legs are dropped;
+    ///         empty if NXM is unregistered, filtered out, or the account holds no positions.
     function getAdapterPositions(address account, address assetFilter)
         external
         view
@@ -220,13 +222,29 @@ contract NexusStakedNxmBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         }
         if (!registered) return new INAVCalculator.PositionBalance[](0);
 
-        (uint256 staking, uint256 rewards) = _stakeAndRewards(account);
-        if (staking == 0 && rewards == 0) return new INAVCalculator.PositionBalance[](0);
+        uint256[] memory ids = _ownedTokenIds(account);
+        if (ids.length == 0) return new INAVCalculator.PositionBalance[](0);
 
-        INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](2);
+        INexusStakingViewer.Token[] memory tokens;
+        try INexusStakingViewer(STAKING_VIEWER).getTokens(ids) returns (INexusStakingViewer.Token[] memory t) {
+            tokens = t;
+        } catch {
+            return new INAVCalculator.PositionBalance[](0);
+        }
+
+        // Up to two legs (Staking + Rewards) per owned tokenId.
+        INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](2 * tokens.length);
         uint256 count;
-        if (staking > 0) temp[count++] = _leg(underlying, staking, PositionKind.Staking);
-        if (rewards > 0) temp[count++] = _leg(underlying, rewards, PositionKind.Rewards);
+        for (uint256 i; i < tokens.length; ++i) {
+            // Active and expired stake are both staked NXM principal (expired tranches are no longer
+            // earning but remain withdrawable); rewards are accrued NXM.
+            uint256 staking = tokens[i].activeStake + tokens[i].expiredStake;
+            uint256 rewards = tokens[i].rewards;
+            if (staking == 0 && rewards == 0) continue;
+            bytes memory positionId = abi.encode(tokens[i].tokenId, tokens[i].poolId);
+            if (staking > 0) temp[count++] = _leg(underlying, staking, PositionKind.Staking, positionId);
+            if (rewards > 0) temp[count++] = _leg(underlying, rewards, PositionKind.Rewards, positionId);
+        }
 
         positions = new INAVCalculator.PositionBalance[](count);
         for (uint256 i; i < count; i++) {
@@ -234,7 +252,7 @@ contract NexusStakedNxmBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         }
     }
 
-    function _leg(INAVCalculator.Asset memory asset, uint256 amount, PositionKind kind)
+    function _leg(INAVCalculator.Asset memory asset, uint256 amount, PositionKind kind, bytes memory positionId)
         private
         view
         returns (INAVCalculator.PositionBalance memory)
@@ -245,7 +263,7 @@ contract NexusStakedNxmBalanceAdapter is IBalanceAdapter, IPositionDescribable {
             amount: amount,
             isDebt: false,
             protocolId: PROTOCOL_ID,
-            positionId: "",
+            positionId: positionId,
             positionKind: kind
         });
     }
@@ -261,7 +279,32 @@ interface INexusStakingNFT {
 }
 
 /// @notice Minimal interface for Nexus Mutual's StakingViewer.
+/// @dev `Token`/`Deposit` mirror the live StakingViewer ABI field-for-field (order matters for decoding);
+///      this adapter only reads `tokenId`, `poolId`, `activeStake`, `expiredStake`, `rewards`.
 interface INexusStakingViewer {
+    struct Deposit {
+        uint256 tokenId;
+        uint256 trancheId;
+        uint256 stake;
+        uint256 stakeShares;
+        uint256 reward;
+    }
+
+    /// @param tokenId The StakingNFT id.
+    /// @param poolId The staking pool the position belongs to (fixed at mint).
+    /// @param activeStake NXM actively staked for this token.
+    /// @param expiredStake NXM in expired tranches (still withdrawable).
+    /// @param rewards Accrued, unclaimed reward NXM.
+    /// @param deposits Per-tranche deposit breakdown (unused here; present for ABI parity).
+    struct Token {
+        uint256 tokenId;
+        uint256 poolId;
+        uint256 activeStake;
+        uint256 expiredStake;
+        uint256 rewards;
+        Deposit[] deposits;
+    }
+
     /// @param totalActiveStake NXM actively staked across the given tokens.
     /// @param totalExpiredStake NXM in expired tranches (still withdrawable).
     /// @param totalRewards Accrued, unclaimed reward NXM.
@@ -270,6 +313,9 @@ interface INexusStakingViewer {
         uint256 totalExpiredStake;
         uint256 totalRewards;
     }
+
+    /// @notice Per-token stake + rewards (in NXM) for each given StakingNFT tokenId.
+    function getTokens(uint256[] calldata tokenIds) external view returns (Token[] memory);
 
     /// @notice Aggregates stake + rewards (in NXM) across the given StakingNFT tokenIds.
     function getAggregatedTokens(uint256[] calldata tokenIds) external view returns (AggregatedTokens memory);

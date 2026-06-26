@@ -283,11 +283,11 @@
     "positionDetail": { "protocol": "ether.fi", "product": "Staking", "name": "ETH Withdrawal Queue" },
     "positionId": "<WithdrawRequestNFT address>"
   },
-  "NexusStakedNxm": {
-    "$perPositionFields": "types: Staking (active+expired stake) + Rewards (accrued), both NXM-denominated; aggregated per account across all StakingNFT positions/pools (emitted positionId is empty)",
+  "NexusMutualStakingPools": {
+    "$perPositionFields": "types: Staking (active+expired stake) + Rewards (accrued), both NXM-denominated; one Staking + one Rewards leg per StakingNFT tokenId the account owns (across pools); positionId = abi.encode(uint256 tokenId, uint256 poolId)",
     "protocol": "Nexus Mutual",
-    "positionDetail": { "protocol": "Nexus Mutual", "product": "Staking", "name": "Staked NXM" },
-    "positionId": "<StakingNFT address>"
+    "positionDetail": { "protocol": "Nexus Mutual", "product": "StakingPool" },
+    "positionId": "abi.encode(uint256 tokenId, uint256 poolId)"
   },
 
   "StakeWiseExitQueue": {

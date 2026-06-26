@@ -32,7 +32,7 @@ contract NexusMutualStakingPoolsBalanceAdapter is IBalanceAdapter, IPositionDesc
     // Constants
     //
 
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.NEXUS_STAKING;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.NEXUS_MUTUAL_STAKING;
 
     /// @notice Upper bound on the StakingNFT id range scanned per read. StakingNFT has no burn, so
     ///         live ids are exactly `1..totalSupply` (~280 today); this is generous headroom plus a

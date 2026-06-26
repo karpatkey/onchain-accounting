@@ -102,7 +102,7 @@ contract NexusMutualStakingPoolsBalanceAdapterForkTest is BalanceAdapterTestBase
         for (uint256 i; i < p.length; i++) {
             assertEq(p[i].balanceAsset.asset, NXM);
             assertEq(p[i].balanceAdapter, address(adapter));
-            assertEq(p[i].protocolId, ProtocolIds.NEXUS_STAKING);
+            assertEq(p[i].protocolId, ProtocolIds.NEXUS_MUTUAL_STAKING);
             assertFalse(p[i].isDebt);
             // positionId decodes to one of the Safe's known (tokenId, poolId) positions.
             (uint256 tokenId, uint256 poolId) = abi.decode(p[i].positionId, (uint256, uint256));

@@ -209,7 +209,7 @@ contract NexusMutualStakingPoolsBalanceAdapterTest is BalanceAdapterTestBase {
         for (uint256 i; i < 2; i++) {
             assertEq(p[i].balanceAsset.asset, address(nxm));
             assertEq(p[i].balanceAdapter, address(adapter));
-            assertEq(p[i].protocolId, ProtocolIds.NEXUS_STAKING);
+            assertEq(p[i].protocolId, ProtocolIds.NEXUS_MUTUAL_STAKING);
             assertEq(p[i].positionId, expectedId);
             assertEq(p[i].isDebt, false);
         }

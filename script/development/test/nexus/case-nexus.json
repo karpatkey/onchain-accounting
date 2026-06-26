@@ -40,7 +40,7 @@
   ],
   "groundTruth": "StakingViewer.getAggregatedTokens([180,184,185,186,187]) at forkBlock = (totalActiveStake 74229519750529478080348, totalExpiredStake 0, totalRewards 228254616240628948835). The adapter emits per-NFT legs via getTokens; the per-kind sums equal this aggregate (delta 0), and the no-arg total getter matches it too.",
   "delta": 0,
-  "protocolId": "keccak256(\"nexus-staking\")",
+  "protocolId": "keccak256(\"nexus-mutual-staking\")",
   "positionId": "abi.encode(uint256 tokenId, uint256 poolId)",
   "tests": { "unit": 24, "fork": 3 }
 }

@@ -44,18 +44,6 @@
       "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"weETH/WETH\""
     }
   },
-  "Aura_GHO_USDC": {
-    "enabled": false,
-    "constructor": {
-      "pool": "0x7AB124EC4029316c2A42F713828ddf2a192B36db",
-      "gauge": "0x70DB188E5953f67a4B16979a2ceA26248b315401",
-      "booster": "0x98Ef32edd24e2c92525E59afc4475C1242a30184",
-      "pid": "19",
-      "protocol": "Aura",
-      "positionDetail": "{\"protocol\":\"Aura\",\"product\":\"LP\",\"name\":\"Aave GHO/USDC\"",
-      "positionId": "0x7AB124EC4029316c2A42F713828ddf2a192B36db"
-    }
-  },
   "BalancerV3_GHO_USDC": {
     "enabled": false,
     "constructor": {

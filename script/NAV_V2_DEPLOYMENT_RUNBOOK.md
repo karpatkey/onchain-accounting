@@ -503,7 +503,7 @@ Balance adapter configuration is split across four per-chain files — **not** i
 
 ### 2.1 Add adapter entries
 
-> **Starting state:** for the from-scratch redeploy, these files define the adapter set per chain. Most multi-instance protocols are covered by a single meta-adapter (e.g. `AaveV3InstancesMeta`, `MorphoVaultsMeta`, `MorphoMarketsMeta`, `AuraRewardsMeta`, `CurveGaugesMeta`); any legacy per-instance keys (`AaveV3_Core`, `MorphoMarket_*`, `Aura_*`, etc.) that remain are `enabled: false` and superseded (ADR 0010). Before editing, review what's already there and either add a new instance to a meta-adapter's `instances`/`instancesRaw` set (in `nav-config/meta-balance-adapters/<chainId>.json`) or add a missing standalone adapter. `04_DeployBalanceAdapters.s.sol` deploys the intersection of (a) names in its `run()` list and (b) entries with `enabled: true` across `contracts-deployment-config/balance-adapters/<chainId>.json` (plain) and `contracts-deployment-config/meta-balance-adapters/<chainId>.json` (meta).
+> **Starting state:** for the from-scratch redeploy, these files define the adapter set per chain. Most multi-instance protocols are covered by a single meta-adapter (e.g. `AaveV3InstancesMeta`, `MorphoVaultsMeta`, `MorphoMarketsMeta`, `CurveGaugesMeta`); any legacy per-instance keys (`AaveV3_Core`, `MorphoMarket_*`, etc.) that remain are `enabled: false` and superseded (ADR 0010). Before editing, review what's already there and either add a new instance to a meta-adapter's `instances`/`instancesRaw` set (in `nav-config/meta-balance-adapters/<chainId>.json`) or add a missing standalone adapter. `04_DeployBalanceAdapters.s.sol` deploys the intersection of (a) names in its `run()` list and (b) entries with `enabled: true` across `contracts-deployment-config/balance-adapters/<chainId>.json` (plain) and `contracts-deployment-config/meta-balance-adapters/<chainId>.json` (meta).
 
 For each new adapter you want to **deploy** on a given chain, add an entry in `contracts-deployment-config/balance-adapters/<chainId>.json` (plain adapters) or `contracts-deployment-config/meta-balance-adapters/<chainId>.json` (meta adapters):
 
@@ -550,14 +550,12 @@ The deploy script (`04_DeployBalanceAdapters.s.sol`) supports these adapters:
 | `BalancerV3GaugesMeta` | `balancerMinter`, `protocol` | Mainnet |
 | `BalancerV2PoolsMeta` | `vault`, `protocol` | Mainnet |
 | `BalancerV2GaugesMeta` | `vault`, `balancerMinter`, `protocol` | Mainnet |
-| `AuraRewardsMeta` | `booster`, `balancerV2Vault`, `protocol` | Mainnet, Arbitrum, Base. AURA token resolved dynamically via `Booster.minter()` — do **not** add an `auraToken` config field. |
 | `CurvePoolsMeta` | `protocol` | Mainnet |
 | `CurveGaugesMeta` | `minter`, `crvToken`, `protocol` | Mainnet (pass `minter=address(0)` on L2) |
 | `ConvexRewardsMeta` | `booster`, `cvxToken`, `protocol` | Mainnet |
 | `StakeWiseV3VaultsMeta` | `underlyingToken`, `protocol` | Mainnet, Gnosis |
 | `Cap` | `cUsd`, `stcUsd`, `usdc` | Mainnet |
 | `DaiDsr` | `dai`, `dsrManager` | Mainnet |
-| `SkySavingsUsds` | `savingsUsds` | Mainnet |
 | `LidoWithdrawalQueue` | `withdrawalQueue`, `underlyingToken` | Mainnet |
 | `StaderWithdrawalQueue` | `userWithdrawalManager`, `underlyingToken` | Mainnet |
 | `KelpWithdrawalQueue` | `withdrawalManager`, `lrtConfig` | Mainnet |
@@ -577,7 +575,7 @@ To deploy additional instances (e.g., a new Curve gauge, or AaveV3 on a differen
 
 `04_DeployBalanceAdapters.s.sol`'s `run()` calls `_deployIfEnabled(<name>)` for every adapter name below, on every chain. Each call fires only if the adapter's `<name>.enabled == true` in `contracts-deployment-config/balance-adapters/<chainId>.json` (plain) or `contracts-deployment-config/meta-balance-adapters/<chainId>.json` (meta). This means the `run()` list is the **union** across chains; per-chain selection happens through those files.
 
-The `_deployIfEnabled(...)` calls in `run()` are the authoritative source. Most families are now single **meta-adapters** (ADR 0010); the legacy per-instance config keys (`AaveV3_Core`, `MorphoVault_*`, `MorphoMarket_*`, `GearboxMarket_*`, `BalancerV3_*`, `Aura_*`, `Curve_*`, `Convex_*`, `Fluid_*`, `CompoundV3_*`, `UniswapV3_*`, etc.) remain in the deploy config as `enabled: false` and are superseded by the metas. Each meta's active instance set lives on `NAVCalculator` (applied via `addMetaInstances`/`removeMetaInstances`, configured under `nav-config/meta-balance-adapters/<chainId>.json .<Meta>.instances`, or `instancesRaw` for the bytes32-keyed `MorphoMarketsMeta`).
+The `_deployIfEnabled(...)` calls in `run()` are the authoritative source. Most families are now single **meta-adapters** (ADR 0010); the legacy per-instance config keys (`AaveV3_Core`, `MorphoVault_*`, `MorphoMarket_*`, `GearboxMarket_*`, `BalancerV3_*`, `Curve_*`, `Convex_*`, `Fluid_*`, `CompoundV3_*`, `UniswapV3_*`, etc.) remain in the deploy config as `enabled: false` and are superseded by the metas. Each meta's active instance set lives on `NAVCalculator` (applied via `addMetaInstances`/`removeMetaInstances`, configured under `nav-config/meta-balance-adapters/<chainId>.json .<Meta>.instances`, or `instancesRaw` for the bytes32-keyed `MorphoMarketsMeta`).
 
 **Aave:** `AaveV2InstancesMeta`, `AaveV3InstancesMeta` (meta-adapters — DataProvider / instance sets via `addMetaInstances`/`removeMetaInstances`; the legacy per-market `AaveV3_Core`/`AaveV3_Prime`/`AaveV3_<chain>` keys are disabled in config and have no deploy path — Aave V3 is fully meta); standalone `SparkLend`, `AaveV3SafetyModule`, `AaveUmbrella`
 
@@ -589,7 +587,7 @@ The `_deployIfEnabled(...)` calls in `run()` are the authoritative source. Most 
 
 **Balancer:** `BalancerV3PoolsMeta`, `BalancerV3GaugesMeta`, `BalancerV2PoolsMeta`, `BalancerV2GaugesMeta`
 
-**Aura / Curve / Convex:** `AuraRewardsMeta`, `CurvePoolsMeta`, `CurveGaugesMeta`, `ConvexRewardsMeta` (one meta per family covering all pools/gauges/rewarders; instances via `addMetaInstances`/`removeMetaInstances`)
+**Curve / Convex:** `CurvePoolsMeta`, `CurveGaugesMeta`, `ConvexRewardsMeta` (one meta per family covering all pools/gauges/rewarders; instances via `addMetaInstances`/`removeMetaInstances`)
 
 **DEX LP:** `UniswapV3PoolsMeta`, `PancakeSwapV3PoolsMeta`, `PancakeSwapV2PoolsMeta` (`UniswapV2PoolsMeta` is implemented and dispatchable but not yet in `run()` / enabled on any chain)
 
@@ -603,7 +601,7 @@ The `_deployIfEnabled(...)` calls in `run()` are the authoritative source. Most 
 
 **StakeWise V3 pricing note:** osETH (Mainnet) and osGNO (Gnosis) are **Custom-priced ERC20s** via `osToken_PriceOracle` (`convertToAssets(1e18) × underlying/USD`); held osTokens are reported by `ERC20DefaultAdapter` (deployed by `03_DeployPriceFeeds` / registered by `RegisterAssets`, custom-feed keys `osETH` / `osGNO` in `contracts-deployment-config/custom-price-feeds/<chainId>.json`). The `StakeWiseV3VaultsMeta` adapter separately reports vault deposits net of minted-osToken debt (`vaultAssets - mintedOs`, denominated in ETH/GNO). Wired primarily for integration cross-checks; the Alpha funds do not currently use StakeWise.
 
-**Explicitly not wired** (contracts exist in the repo but no Alpha fund needs them): `CompoundV3_*`, `DaiDsr`, `SkySavingsUsds`, `AaveV3SafetyModule_stkAAVE`. If you need one later, add a `_deployIfEnabled("<Name>")` line to `run()`, add the deploy entry to `contracts-deployment-config/balance-adapters/<chainId>.json` (or `contracts-deployment-config/meta-balance-adapters/<chainId>.json` for a meta), and add the register entry to `nav-config/balance-adapters/<chainId>.json` (or `nav-config/meta-balance-adapters/<chainId>.json`) — `06_Configure.s.sol` reads that nav-config entry to register the adapter; otherwise the adapter deploys but never registers on NAVCalculator.
+**Explicitly not wired** (contracts exist in the repo but no Alpha fund needs them): `CompoundV3_*`, `DaiDsr`, `AaveV3SafetyModule_stkAAVE`. If you need one later, add a `_deployIfEnabled("<Name>")` line to `run()`, add the deploy entry to `contracts-deployment-config/balance-adapters/<chainId>.json` (or `contracts-deployment-config/meta-balance-adapters/<chainId>.json` for a meta), and add the register entry to `nav-config/balance-adapters/<chainId>.json` (or `nav-config/meta-balance-adapters/<chainId>.json`) — `06_Configure.s.sol` reads that nav-config entry to register the adapter; otherwise the adapter deploys but never registers on NAVCalculator.
 
 > **`ERC20Default` is special** — it's deployed inside `NAVCalculator.initialize()` (via `02_DeployProxies.s.sol`), not by `04_DeployBalanceAdapters.s.sol`. It auto-covers every asset registered on the NAVCalculator (wallet balances + native sentinel). Don't put it in the `run()` list.
 
@@ -894,7 +892,7 @@ forge script script/verify/VerifyEtherscan.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY"
 ```
 
-> **Known limitation — constructor-args builder is partial.** `VerifyEtherscan.s.sol._emitVerifyBalanceAdapters()` now drives the list from the deploy config (`ConfigReader.getEnabledAdapters(...)`), so it **does** iterate every enabled, deployed balance adapter — no longer a hardcoded name list. What is still partial is the constructor-args builder `_balanceAdapterPathAndArgs`, which only knows how to encode args for the adapter types it has been taught (today: the `AaveV3_`, `CompoundV3_`, `MorphoBlue_`, and `SparkLend(_)` prefix/exact cases, plus `DaiDsr`, `SkySavingsUsds`, and `ERC20Default(_)`). For any deployed adapter it can't build args for — including the meta-adapters (`AaveV3InstancesMeta`, `MorphoMarketsMeta`, `AuraRewardsMeta`, `CurveGaugesMeta`, etc.) — it emits a loud `[verify] no constructor-args mapping; verify manually:` notice with the address instead of silently skipping. When you add a new adapter type, extend `_balanceAdapterPathAndArgs` or run `forge verify-contract` manually for that instance. Tracked as a follow-up in `docs/historical/oracle-migration-plan.md` ("Aspects to improve").
+> **Known limitation — constructor-args builder is partial.** `VerifyEtherscan.s.sol._emitVerifyBalanceAdapters()` now drives the list from the deploy config (`ConfigReader.getEnabledAdapters(...)`), so it **does** iterate every enabled, deployed balance adapter — no longer a hardcoded name list. What is still partial is the constructor-args builder `_balanceAdapterPathAndArgs`, which only knows how to encode args for the adapter types it has been taught (today: the `SparkLend(_)` exact/prefix case, plus `DaiDsr` and `ERC20Default(_)` — the only standalone adapters with a 1:1 deploy-to-constructor mapping). For any deployed adapter it can't build args for — including all meta-adapters (`AaveV3InstancesMeta`, `CompoundV3CometsMeta`, `MorphoMarketsMeta`, `CurveGaugesMeta`, etc.) — it emits a loud `[verify] no constructor-args mapping; verify manually:` notice with the address instead of silently skipping. When you add a new adapter type, extend `_balanceAdapterPathAndArgs` or run `forge verify-contract` manually for that instance. Tracked as a follow-up in `docs/historical/oracle-migration-plan.md` ("Aspects to improve").
 
 ### 8.2 Run the printed commands
 
@@ -1104,7 +1102,7 @@ Phase 9: Post-deployment validation -- per chain
 
 ### "Unknown adapter type" in the `04_DeployBalanceAdapters.s.sol` output
 
-The dispatcher routes almost entirely by **exact match** (`_equals(adapterName, "<Name>")`, e.g. `Cap`, `DaiDsr`, `SkySavingsUsds`, `SparkLend`, and every `*Meta` adapter); only `SparkLend_` and `ERC4626Wrap_` are routed by prefix (`_startsWith`). If you see `Unknown adapter type: <Name>`, your config entry name doesn't exactly match a dispatch branch (and isn't covered by one of those two prefixes) — fix by adding the missing branch in `_deployAdapter`. When adding a new single-instance adapter, add an `_equals(adapterName, "<Name>")` branch; the `SparkLend` branch shows the combined exact-match + prefix pattern used for families that may later grow multiple instances:
+The dispatcher routes almost entirely by **exact match** (`_equals(adapterName, "<Name>")`, e.g. `Cap`, `DaiDsr`, `SparkLend`, and every `*Meta` adapter); only `SparkLend_` and `ERC4626Wrap_` are routed by prefix (`_startsWith`). If you see `Unknown adapter type: <Name>`, your config entry name doesn't exactly match a dispatch branch (and isn't covered by one of those two prefixes) — fix by adding the missing branch in `_deployAdapter`. When adding a new single-instance adapter, add an `_equals(adapterName, "<Name>")` branch; the `SparkLend` branch shows the combined exact-match + prefix pattern used for families that may later grow multiple instances:
 
 ```solidity
 if (_equals(adapterName, "SparkLend") || _startsWith(adapterName, "SparkLend_")) {
@@ -1187,7 +1185,7 @@ Workflow for adding a new protocol adapter or a new instance of an existing prot
 8. **Run full test suite.** `forge test` non-fork + fork must both be green before pushing.
 9. **Deploy + register on NAV** via Phases 4 and 6.
 
-> **Naming rule:** new balance adapter files use PascalCase. Meta-adapters (one contract per protocol covering many instances) use the `MetaBalanceAdapter` suffix (e.g. `AuraRewardsMetaBalanceAdapter`, `MorphoVaultsMetaBalanceAdapter`); per-instance singletons use descriptive names (e.g. `SparkLendBalanceAdapter`, `AaveV3SafetyModuleBalanceAdapter`). The `balanceOf` parameter must be named `account` (enforced pattern, not `safe`).
+> **Naming rule:** new balance adapter files use PascalCase. Meta-adapters (one contract per protocol covering many instances) use the `MetaBalanceAdapter` suffix (e.g. `ConvexRewardsMetaBalanceAdapter`, `MorphoVaultsMetaBalanceAdapter`); per-instance singletons use descriptive names (e.g. `SparkLendBalanceAdapter`, `AaveV3SafetyModuleBalanceAdapter`). The `balanceOf` parameter must be named `account` (enforced pattern, not `safe`).
 
 ---
 

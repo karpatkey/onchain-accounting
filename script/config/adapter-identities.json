@@ -1,6 +1,6 @@
 {
   "$comment": "Canonical identity strings for each balance adapter family. These are the values to pass as constructor arguments (protocol, positionDetail, positionId) when deploying a new adapter instance. positionDetail is written as a partial JSON string — the deploy script appends the closing brace after adding chain-specific fields. positionId is typically the primary contract address the adapter reads from (e.g. dataProvider for Aave, comet for Compound, pool address for LP adapters). Exception: MorphoMarket derives positionId automatically from marketId and has no positionId constructor parameter.",
-  "$positionDetail_convention": "protocol = bare protocol name (matches top-level protocol field). product = functional category (Lending, Staking, LP, Vault, Market, Rewards, Safety Module, Umbrella, Savings). name = human-readable instance label (market name, pool pair, vault name). Per-position fields (appended at emission time, not part of the constructor template): type = sub-classification that varies per emitted leg (e.g. Supply/Borrow/Collateral for lending, stkAAVE/stkABPT/stkABPTv2/stkGHO for Safety Module); token = per-leg token symbol for LP adapters (BalancerV3, Aura, Curve, Convex, PancakeSwapV3). The $perPositionFields key in each entry documents what the adapter appends at runtime.",
+  "$positionDetail_convention": "protocol = bare protocol name (matches top-level protocol field). product = functional category (Lending, Staking, LP, Vault, Market, Rewards, Safety Module, Umbrella, Savings). name = human-readable instance label (market name, pool pair, vault name). Per-position fields (appended at emission time, not part of the constructor template): type = sub-classification that varies per emitted leg (e.g. Supply/Borrow/Collateral for lending, stkAAVE/stkABPT/stkABPTv2/stkGHO for Safety Module); token = per-leg token symbol for LP adapters (BalancerV3, Curve, Convex, PancakeSwapV3). The $perPositionFields key in each entry documents what the adapter appends at runtime.",
 
   "ERC20DefaultAdapter": {
     "$comment": "Hardcoded in Solidity to protocol='wallet'. Not configurable.",
@@ -159,13 +159,6 @@
     "positionId": "<pool address>"
   },
 
-  "AuraRewardsMeta": {
-    "$comment": "Meta-adapter (ADR 0010): one immutable contract for the staked BPT + BAL/AURA/extra rewards of ALL Aura pools. Constructor takes (booster, balancerV2Vault, protocol, navCalculator); AURA is resolved dynamically via Booster.minter() — do NOT pass an auraToken arg. The active rewarder set lives on NAVCalculator (addMetaInstances/removeMetaInstances, configured in nav-config/meta-balance-adapters under AuraRewardsMeta.instances — each entry is the Aura BaseRewardPool/rewarder address). Identity derived on-chain: positionId = rewarder address hex. Supersedes the per-pool Aura adapter.",
-    "$perPositionFields": "type: Staking | Rewards (Staking=one leg per underlying pool token from the staked BPT share, decomposed via the Balancer V2 Vault; Rewards=BAL via the cliff schedule + AURA via the mint rate + extra reward tokens)",
-    "protocol": "Aura",
-    "positionDetail": { "protocol": "Aura", "product": "LP", "name": "<derived: BPT name()>" },
-    "positionId": "<derived: rewarder address>"
-  },
 
   "CurvePoolsMeta": {
     "$comment": "Meta-adapter (ADR 0010): one immutable contract for the wallet-held (unstaked) LP of ALL Curve pools. Constructor takes only (protocol, navCalculator). The active pool set lives on NAVCalculator (addMetaInstances/removeMetaInstances, configured in nav-config/meta-balance-adapters under CurvePoolsMeta.instances — each entry is the pool/LP-token address). Identity derived on-chain: positionId = pool address hex. Supersedes the per-pool Curve adapter's Supply legs.",
@@ -191,13 +184,6 @@
     "positionId": "<derived: rewarder address>"
   },
 
-  "Aura": {
-    "$superseded": "Superseded by AuraRewardsMeta (ADR 0010); per-pool deploys disabled in chain config.",
-    "$perPositionFields": "type: Staking (one position per underlying asset)",
-    "protocol": "Aura",
-    "positionDetail": { "protocol": "Aura", "product": "LP", "name": "<pool token pair>" },
-    "positionId": "<Aura rewards/booster address>"
-  },
 
   "Curve": {
     "$superseded": "Superseded by CurvePoolsMeta (Supply legs) + CurveGaugesMeta (Staking + Rewards legs) per ADR 0010; per-pool deploys disabled in chain config.",
@@ -417,12 +403,5 @@
     "protocol": "Sky",
     "positionDetail": { "protocol": "Sky", "product": "Savings", "name": "DAI Savings Rate" },
     "positionId": "<DSR pot address>"
-  },
-
-  "SkySavingsUsds": {
-    "$perPositionFields": "type: Supply",
-    "protocol": "Sky",
-    "positionDetail": { "protocol": "Sky", "product": "Savings", "name": "Sky Savings USDS" },
-    "positionId": "<sUSDS address>"
   }
 }

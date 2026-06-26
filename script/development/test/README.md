@@ -4,7 +4,7 @@ One folder per protocol. Each folder holds the **evidence pack** behind the stri
 
 ## Methodology (per protocol)
 
-Mirrors the original V1-migration verification standard used for Balancer V3 / Aura / Curve / Convex. The full methodology is captured in this file plus per-protocol READMEs under `<protocol>/`; the same notes are also kept in the maintainer's persistent memory under the slug `balance-adapter-verification-methodology` (not a file in the repo).
+Mirrors the original V1-migration verification standard used for Balancer V3 / Curve / Convex. The full methodology is captured in this file plus per-protocol READMEs under `<protocol>/`; the same notes are also kept in the maintainer's persistent memory under the slug `balance-adapter-verification-methodology` (not a file in the repo).
 
 ### Phase 0 — pre-test audit (do BEFORE the five steps below)
 

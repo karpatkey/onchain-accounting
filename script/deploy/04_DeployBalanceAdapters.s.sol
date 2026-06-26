@@ -11,7 +11,6 @@ import {AaveV3InstancesMetaBalanceAdapter} from "../../src/balances/protocols/Aa
 import {CompoundV3CometsMetaBalanceAdapter} from "../../src/balances/protocols/CompoundV3CometsMeta.sol";
 import {SparkLendBalanceAdapter} from "../../src/balances/protocols/SparkLend.sol";
 import {DaiDsrBalanceAdapter} from "../../src/balances/protocols/DaiDsr.sol";
-import {SkySavingsUsdsBalanceAdapter} from "../../src/balances/protocols/SkySavingsUsds.sol";
 import {MorphoVaultsMetaBalanceAdapter} from "../../src/balances/protocols/MorphoVaultsMeta.sol";
 import {MorphoMarketsMetaBalanceAdapter} from "../../src/balances/protocols/MorphoMarketsMeta.sol";
 import {ERC4626WrapBalanceAdapter} from "../../src/balances/protocols/ERC4626Wrap.sol";
@@ -27,7 +26,6 @@ import {BalancerV3PoolsMetaBalanceAdapter} from "../../src/balances/protocols/ba
 import {BalancerV3GaugesMetaBalanceAdapter} from "../../src/balances/protocols/balancer/BalancerV3GaugesMeta.sol";
 import {BalancerV2PoolsMetaBalanceAdapter} from "../../src/balances/protocols/balancer/BalancerV2PoolsMeta.sol";
 import {BalancerV2GaugesMetaBalanceAdapter} from "../../src/balances/protocols/balancer/BalancerV2GaugesMeta.sol";
-import {AuraRewardsMetaBalanceAdapter} from "../../src/balances/protocols/AuraRewardsMeta.sol";
 import {StakeWiseV3VaultsMetaBalanceAdapter} from "../../src/balances/protocols/StakeWiseV3VaultsMeta.sol";
 import {FluidFTokensMetaBalanceAdapter} from "../../src/balances/protocols/FluidFTokensMeta.sol";
 import {FluidVaultsMetaBalanceAdapter} from "../../src/balances/protocols/FluidVaultsMeta.sol";
@@ -108,9 +106,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("BalancerV2PoolsMeta"); // Meta-adapter: all Balancer V2 pools (wallet LP); poolId set on NAV
         _deployIfEnabled("BalancerV2GaugesMeta"); // Meta-adapter: all Balancer V2 gauges (staked LP + rewards); gauge set on NAV
 
-        // --- Aura meta-adapter (ADR 0010: AURA_REWARDS address; pool + AURA token resolved on-chain) ---
-        _deployIfEnabled("AuraRewardsMeta"); // Meta-adapter: all Aura pools; rewarder set on NAV
-
         // --- Curve meta-adapters (ADR 0010: pools = wallet LP, gauges = staked LP + CRV + rewards) ---
         _deployIfEnabled("CurvePoolsMeta"); // Meta-adapter: all Curve pools (wallet LP); pool set on NAV
         _deployIfEnabled("CurveGaugesMeta"); // Meta-adapter: all Curve gauges (staked LP + CRV + rewards); gauge set on NAV
@@ -161,9 +156,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("PancakeSwapV3PoolsMeta"); // Base — meta-adapter: all PancakeSwap V3 pools
 
         // ERC20Default is deployed in NAVCalculator.initialize() when the NAV proxy is set up (02_DeployProxies); it is not deployed here.
-        // DaiDsr and SkySavingsUsds adapters exist in this repo but are NOT used by either Alpha
-        // fund, so they are not wired here. StakeWiseV3* adapters are wired above so accounts
-        // holding osETH or Genesis-Vault deposits get full coverage in the integration report.
+        // The DaiDsr adapter exists in this repo but is NOT used by either Alpha fund, so it is not
+        // wired here. StakeWiseV3* adapters are wired above so accounts holding osETH or
+        // Genesis-Vault deposits get full coverage in the integration report.
 
         vm.stopBroadcast();
 
@@ -247,11 +242,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return _deployDaiDsr(navCalculator);
         }
 
-        // Sky Savings USDS
-        if (_equals(adapterName, "SkySavingsUsds")) {
-            return _deploySkySavingsUsds(navCalculator);
-        }
-
         // Morpho Vaults meta-adapter (per-instance adapters removed — superseded by MorphoVaultsMeta)
         if (_equals(adapterName, "MorphoVaultsMeta")) {
             return _deployMorphoVaultsMeta(adapterName, navCalculator);
@@ -312,10 +302,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
         }
         if (_equals(adapterName, "BalancerV2GaugesMeta")) {
             return _deployBalancerV2GaugesMeta(adapterName, navCalculator);
-        }
-
-        if (_equals(adapterName, "AuraRewardsMeta")) {
-            return _deployAuraRewardsMeta(adapterName, navCalculator);
         }
 
         // StakeWise V3 meta-adapter (per-instance adapters removed — superseded by StakeWiseV3VaultsMeta)
@@ -453,15 +439,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
         );
 
         DaiDsrBalanceAdapter adapter = new DaiDsrBalanceAdapter(dai, dsrManager, navCalculator);
-        return address(adapter);
-    }
-
-    function _deploySkySavingsUsds(address navCalculator) internal returns (address) {
-        address savingsUsds = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "SkySavingsUsds", "savingsUsds")
-        );
-
-        SkySavingsUsdsBalanceAdapter adapter = new SkySavingsUsdsBalanceAdapter(savingsUsds, navCalculator);
         return address(adapter);
     }
 
@@ -612,19 +589,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
         BalancerV2GaugesMetaBalanceAdapter adapter =
             new BalancerV2GaugesMetaBalanceAdapter(vault, balancerMinter, protocol, navCalculator);
         return address(adapter);
-    }
-
-    function _deployAuraRewardsMeta(string memory adapterName, address navCalculator) internal returns (address) {
-        address booster = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "booster")
-        );
-        address balancerV2Vault = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "balancerV2Vault")
-        );
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        // AURA token is resolved inside the constructor from Booster.minter().
-        return address(new AuraRewardsMetaBalanceAdapter(booster, balancerV2Vault, protocol, navCalculator));
     }
 
     /// @notice Deploys the StakeWise V3 vaults meta-adapter. Constructor takes (underlyingToken,

@@ -252,20 +252,6 @@ PositionBalance({
 })
 ```
 
-#### `SkySavingsUsds` — sUSDS
-
-```solidity
-PositionBalance({
-    balanceAsset:  Asset({ asset: 0xdC03…84F, symbol: "USDS", decimals: 18 }),
-    balanceAdapter: 0x<SkySavingsUsdsAdapter>,
-    amount:        5_000e18,               // 5 000 USDS (convertToAssets)
-    isDebt:        false,
-    protocolId:    keccak256("sky-savings"),
-    positionId:    abi.encode(0x<SavingsUSDS>),
-    positionKind:  PositionKind.Supplied
-})
-```
-
 #### `StaderWithdrawalQueue` — ETHx → ETH queue
 
 ```solidity
@@ -537,21 +523,6 @@ PositionBalance({
 })
 ```
 
-#### `AuraRewardsMeta` — Aura staked Balancer LP
-
-```solidity
-// Staked BPT decomposed into pool tokens. Other legs: Rewards (BAL, AURA, extras).
-PositionBalance({
-    balanceAsset:  Asset({ asset: 0xA0b8…6eB48, symbol: "USDC", decimals: 6 }),
-    balanceAdapter: 0x<AuraRewardsMeta>,
-    amount:        800_000_000,
-    isDebt:        false,
-    protocolId:    keccak256("aura"),
-    positionId:    abi.encode(0x<AuraBaseRewardPool4626>),
-    positionKind:  PositionKind.Staking
-})
-```
-
 #### `UniswapV3PoolsMeta` — Uniswap V3 NFT position
 
 ```solidity
@@ -602,7 +573,7 @@ The tables below show what the call returns for a representative account positio
 state; per-instance adapters return static strings.
 
 Assumed prices: USDC/DAI/GHO/USDS/crvUSD = $1 · WETH/ETH = $2 500 · wstETH = $2 900 ·
-stETH = $2 480 · AAVE = $200 · CRV = $0.50 · CVX = $3 · BAL = $3 · AURA = $2.50 · COMP = $50
+stETH = $2 480 · AAVE = $200 · CRV = $0.50 · CVX = $3 · BAL = $3 · COMP = $50
 
 ---
 
@@ -697,14 +668,6 @@ Scenario: 250 CRV unclaimed in Merkl distributor.
 | asset | amount | value (USD) | positionKind | protocolName | positionLabel |
 |-------|--------|-------------|--------------|--------------|---------------|
 | CRV   | 250    | +125        | `Rewards`    | `"Merkl"`    | `"claimable rewards"` |
-
-#### `SkySavingsUsds` — sUSDS
-
-Scenario: 5 000 USDS earning yield in sUSDS.
-
-| asset | amount | value (USD) | positionKind | protocolName | positionLabel |
-|-------|--------|-------------|--------------|--------------|---------------|
-| USDS  | 5 000  | +5 000      | `Supplied`   | `"Sky"`      | `"USDS savings"` |
 
 #### `StaderWithdrawalQueue` — pending unstake
 
@@ -885,18 +848,6 @@ Scenario: Convex-staked crvUSD/USDC LP with 100 CRV + 50 CVX rewards.
 | CVX    | 50     | +150        | `Rewards`    | `"Convex"`   | `"crvUSD/USDC Convex"`     |
 | **NAV** | | **+2 200** | | | |
 
-#### `AuraRewardsMeta`
-
-Scenario: Aura-staked USDC/WETH 50/50 BPT with 30 BAL + 40 AURA rewards.
-
-| asset | amount | value (USD) | positionKind | protocolName | positionLabel        |
-|-------|--------|-------------|--------------|--------------|----------------------|
-| USDC  | 800    | +800        | `Staking`    | `"Aura"`     | `"USDC/WETH Aura"`   |
-| WETH  | 0.32   | +800        | `Staking`    | `"Aura"`     | `"USDC/WETH Aura"`   |
-| BAL   | 30     | +90         | `Rewards`    | `"Aura"`     | `"USDC/WETH Aura"`   |
-| AURA  | 40     | +100        | `Rewards`    | `"Aura"`     | `"USDC/WETH Aura"`   |
-| **NAV** | | **+1 790** | | | |
-
 #### `UniswapV3PoolsMeta`
 
 Scenario: one NFT position (#12345) in the USDC/WETH 0.05% pool, in-range, with 20 USDC + 0.008 WETH in accrued fees.
@@ -966,7 +917,6 @@ bytes32 protocolId = keccak256("aave-v3-lending");  // == ProtocolIds.AAVE_V3_LE
 | `curve-pool` | `(address pool)` |
 | `curve-gauge` | `(address gauge)` |
 | `convex` | `(address rewarder)` |
-| `aura` | `(address auraRewards)` |
 | `uniswap-v3` | `(address npm, uint256 tokenId)` |
 | `uniswap-v2` | `(address pair)` |
 | `pancakeswap-v3` | `(address npm, uint256 tokenId)` |
@@ -975,7 +925,6 @@ bytes32 protocolId = keccak256("aave-v3-lending");  // == ProtocolIds.AAVE_V3_LE
 | `cap` | `(address vault)` |
 | `erc4626` | `(address vault)` |
 | `dai-dsr` | `""` (account-global) |
-| `sky-savings` | `(address savingsContract)` |
 | `merkl` | `(address rewardToken)` |
 | `stader-withdrawal` | `""` (account-global) |
 | `kelp-withdrawal` | `""` (account-global) |
@@ -997,7 +946,7 @@ enum PositionKind {
     Borrowed,   // any debt position (isDebt = true)
     Collateral, // supply locked as collateral (e.g. Aave usageAsCollateralEnabled = true)
     Staking,    // staking principal: tokens locked in a staking contract
-    Rewards,    // accrued but not yet claimed reward tokens (CRV, CVX, BAL, AURA, COMP, …)
+    Rewards,    // accrued but not yet claimed reward tokens (CRV, CVX, BAL, COMP, …)
     Fees        // uncollected protocol or LP fees (e.g. Uniswap V3 position fees)
 }
 ```
@@ -1070,13 +1019,11 @@ decodes use `AbiCoder.defaultAbiCoder()` from ethers.js. Protocol ID constants c
 | `CurvePoolsMeta` | `curve-pool` | `Supplied` |
 | `CurveGaugesMeta` | `curve-gauge` | `Staking`, `Rewards` |
 | `ConvexRewardsMeta` | `convex` | `Staking`, `Rewards` |
-| `AuraRewardsMeta` | `aura` | `Staking`, `Rewards` |
 | `UniswapV3PoolsMeta` / `PancakeSwapV3PoolsMeta` | `uniswap-v3` / `pancakeswap-v3` | `Supplied`, `Fees` |
 | `UniswapV2PoolsMeta` / `PancakeSwapV2PoolsMeta` | `uniswap-v2` / `pancakeswap-v2` | `Supplied` |
 | `Cap` | `cap` | `Supplied` |
 | `ERC4626Wrap` | `erc4626` | `Supplied` |
 | `DaiDsr` | `dai-dsr` | `Supplied` |
-| `SkySavingsUsds` | `sky-savings` | `Supplied` |
 | `MerklRewards` | `merkl` | `Rewards` |
 | `LidoWithdrawalQueue` | `lido-withdrawal` | `Supplied` |
 | `StaderWithdrawalQueue` | `stader-withdrawal` | `Supplied` |
@@ -1274,15 +1221,6 @@ const [rewarder] = abi.decode(["address"], pos.positionId);
 // Rewards  → CRV, CVX, and extra reward token legs
 ```
 
-#### Aura — `aura`
-
-```typescript
-const [auraRewards] = abi.decode(["address"], pos.positionId);
-// auraRewards — Aura BaseRewardPool4626 address
-// Staking  → one leg per Balancer pool token (staked BPT share)
-// Rewards  → BAL, AURA, and extra reward token legs
-```
-
 #### Uniswap V3 / PancakeSwap V3 — `uniswap-v3` / `pancakeswap-v3`
 
 Per-NFT positionId: each NFT (tokenId) gets its own positionId. Multiple NFTs in the same
@@ -1331,14 +1269,6 @@ const [wrapper] = abi.decode(["address"], pos.positionId);
 ```typescript
 // positionId = "" — account-global, one position per account
 // Supplied → DAI balance in the DSR (chi-adjusted)
-```
-
-#### Sky Savings (sUSDS) — `sky-savings`
-
-```typescript
-const [savingsContract] = abi.decode(["address"], pos.positionId);
-// savingsContract — SavingsUSDS contract address
-// Supplied → USDS balance (convertToAssets(balanceOf(account)))
 ```
 
 #### Merkl rewards — `merkl`

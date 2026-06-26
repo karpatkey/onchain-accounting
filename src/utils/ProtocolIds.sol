@@ -11,10 +11,9 @@ pragma solidity ^0.8;
 ///        AAVE_V3_LENDING / V2 / SPARK    → (address pool, address reserve)
 ///        AAVE_V3_SAFETY_MODULE / UMBRELLA→ (address stakeToken)
 ///        MORPHO_VAULTS / GEARBOX_V3 / EULER_VAULTS / CAP / ERC4626 / STAKEWISE_V3 / FLUID_VAULTS → (address vault)
-///        SKY_SAVINGS                     → (address savingsContract)
 ///        MORPHO_MARKETS                  → (bytes32 marketId)
 ///        BALANCER_V3_POOL                → (address pool)
-///        BALANCER_V3_GAUGE / V2_GAUGE / AURA           → (address gauge)
+///        BALANCER_V3_GAUGE / V2_GAUGE                  → (address gauge)
 ///        CONVEX                                         → (address rewarder)
 ///        CURVE_POOL                              → (address pool)
 ///        CURVE_GAUGE                             → (address gauge)
@@ -73,12 +72,11 @@ library ProtocolIds {
     // Spark
     bytes32 internal constant SPARK_LEND = keccak256("spark-lend");
 
-    // Curve / Convex / Aura
+    // Curve / Convex
     bytes32 internal constant CURVE = keccak256("curve"); // per-instance adapter (legacy)
     bytes32 internal constant CURVE_POOL = keccak256("curve-pool"); // wallet LP → (address pool)
     bytes32 internal constant CURVE_GAUGE = keccak256("curve-gauge"); // gauge-staked LP → (address gauge)
     bytes32 internal constant CONVEX = keccak256("convex");
-    bytes32 internal constant AURA = keccak256("aura");
 
     // Cap
     bytes32 internal constant CAP = keccak256("cap");
@@ -98,8 +96,7 @@ library ProtocolIds {
     // Merkl rewards distributor
     bytes32 internal constant MERKL = keccak256("merkl");
 
-    // Sky / DAI savings
-    bytes32 internal constant SKY_SAVINGS = keccak256("sky-savings");
+    // DAI savings
     bytes32 internal constant DAI_DSR = keccak256("dai-dsr");
 
     // Bridge escrow

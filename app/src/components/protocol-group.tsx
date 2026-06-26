@@ -322,7 +322,7 @@ function extractPoolLabel(positionDetail: string): string | null {
 }
 
 /// Aave instances expose canonical getMarketId() strings that don't match Aave's UI branding. Alias
-/// them to the familiar names for display only — the on-chain describePosition label stays canonical.
+/// them to the familiar names for display only — the on-chain positionLabels leaf stays canonical.
 const MARKET_ALIASES: Record<string, string> = {
   'Aave Ethereum Market': 'Core Market',
   'Aave V3 Lido Ethereum': 'Prime Market',
@@ -418,7 +418,7 @@ function groupBySubLabel(
 /// supply/staking leg renders before the borrow leg). For CDP-style protocols where one instance carries both a supply/staking leg and a
 /// borrow leg, this renders the matched legs together under one vault header instead of splitting them across the
 /// protocol's Supply and Borrow sections. `label` is the instance's display name when the adapter's
-/// describePosition() returns one, else null — the vault header then falls back to the full address from the key.
+/// positionLabels() returns one, else null — the vault header then falls back to the full address from the key.
 /// Recover the full instance address from a positionId for display. `abi.encode(address)` is a 32-byte word
 /// with the address in the low 20 bytes (24 leading hex zeros) → return the 0x address (lowercased, since the
 /// positionId is); for other id shapes (e.g. Morpho marketId, Uniswap NFT tuple) return the full positionId hex.

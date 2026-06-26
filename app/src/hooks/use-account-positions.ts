@@ -45,17 +45,19 @@ type RawPosition = {
 }
 
 // IPositionDescribable (src/balances/IPositionDescribable.sol) — the display layer. protocolName() returns the
-// human protocol name ("PancakeSwap V3"); describePosition(positionId) returns a per-position label ("NFT #22279").
-// The dashboard renders these rather than the machine-level protocolId (a keccak slug, e.g. pancakeswap-v3): the
-// slug and the human name are independent fields, so rendering never depends on the protocolId value.
+// human protocol name ("PancakeSwap V3"); positionLabels(positionId) returns an ordered hierarchy below the
+// protocol, leaf last (e.g. ["Liquidity Pool", "NFT #22279"]). The dashboard renders these rather than the
+// machine-level protocolId (a keccak slug, e.g. pancakeswap-v3): the slug and the human name are independent
+// fields, so rendering never depends on the protocolId value. (For now we render the leaf — the last element;
+// the full breadcrumb is a follow-up.)
 const describableAbi = [
   { name: 'protocolName', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'string' }] },
   {
-    name: 'describePosition',
+    name: 'positionLabels',
     type: 'function',
     stateMutability: 'view',
     inputs: [{ name: 'positionId', type: 'bytes' }],
-    outputs: [{ type: 'string' }],
+    outputs: [{ type: 'string[]' }],
   },
 ] as const
 
@@ -100,13 +102,13 @@ export function useAccountPositions(account: `0x${string}` | undefined): { chain
   })
 
   // Phase 2 — display labels from the adapter's IPositionDescribable. One protocolName() per (chain, oracle)
-  // and one describePosition() per distinct (chain, oracle, positionId). Multi-leg positions (e.g. Supply + Fees)
+  // and one positionLabels() per distinct (chain, oracle, positionId). Multi-leg positions (e.g. Supply + Fees)
   // share a positionId, so de-duping keeps the describe call-count proportional to logical positions, not legs.
   const describeKey = (chainId: number, oracle: string, positionId: string) =>
     `${chainId}:${oracle.toLowerCase()}:${positionId}`
   const nameContracts: { chainId: number; address: `0x${string}`; abi: typeof describableAbi; functionName: 'protocolName'; key: string }[] = []
   const seenNameKeys = new Set<string>()
-  const describeContracts: { chainId: number; address: `0x${string}`; abi: typeof describableAbi; functionName: 'describePosition'; args: readonly [`0x${string}`] }[] = []
+  const describeContracts: { chainId: number; address: `0x${string}`; abi: typeof describableAbi; functionName: 'positionLabels'; args: readonly [`0x${string}`] }[] = []
   const seenDescribeKeys = new Set<string>()
 
   rawByChain.forEach((positions, ci) => {
@@ -120,7 +122,7 @@ export function useAccountPositions(account: `0x${string}` | undefined): { chain
       const dKey = describeKey(chainId, p.balanceOracle, p.positionId)
       if (!seenDescribeKeys.has(dKey)) {
         seenDescribeKeys.add(dKey)
-        describeContracts.push({ chainId, address: p.balanceOracle, abi: describableAbi, functionName: 'describePosition', args: [p.positionId] })
+        describeContracts.push({ chainId, address: p.balanceOracle, abi: describableAbi, functionName: 'positionLabels', args: [p.positionId] })
       }
     }
   })
@@ -144,8 +146,11 @@ export function useAccountPositions(account: `0x${string}` | undefined): { chain
   const labelByDescribeKey = new Map<string, string>()
   describeContracts.forEach((c, i) => {
     const r = metaData?.[describeOffset + i]
-    if (r?.status === 'success' && typeof r.result === 'string' && r.result.length > 0) {
-      labelByDescribeKey.set(describeKey(c.chainId, c.address, c.args[0]), r.result)
+    // positionLabels returns an ordered hierarchy (leaf last). Render the leaf as the per-position label
+    // for now (matches the prior single-string behaviour); the full breadcrumb is a follow-up.
+    if (r?.status === 'success' && Array.isArray(r.result) && r.result.length > 0) {
+      const leaf = r.result[r.result.length - 1] as string
+      if (leaf.length > 0) labelByDescribeKey.set(describeKey(c.chainId, c.address, c.args[0]), leaf)
     }
   })
 
@@ -159,10 +164,10 @@ export function useAccountPositions(account: `0x${string}` | undefined): { chain
       // positionDetail JSON is parsed by extractType (type → Supply/Fees split) + extractPoolLabel (name → row label).
       const detail: Record<string, string> = {}
       if (type) detail.type = type
-      // Wallet rows (kind 0) group under one oracle sub-header; their describePosition() is just the token
+      // Wallet rows (kind 0) group under one oracle sub-header; their positionLabels() leaf is just the token
       // symbol, so using it as `name` would render a misleading header (first token's symbol over a mixed-token
       // wallet group). The symbol is already shown per row — omit name for Wallet; keep it for protocol
-      // positions where it's a real label (e.g. "NFT #22279"). When describePosition() is empty (e.g. StakeWise
+      // positions where it's a real label (e.g. "NFT #22279"). When positionLabels() is empty (e.g. StakeWise
       // V3 Gnosis vaults don't implement name()), `name` stays unset — the per-vault layout groups by positionId
       // and renders the full vault address from it, so no synthetic label is needed here.
       if (posLabel && p.positionKind !== 0) detail.name = posLabel

@@ -74,7 +74,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         // bytecode is embedded in that external library, not NAVCalculator's runtime — see ADR + deployDefaultAdapter.
         address[] memory initialAssets = new address[](1);
         initialAssets[0] = NATIVE_ADDRESS;
-        _setErc20DefaultAdapter(NAVRegistryLib.deployDefaultAdapter(initialAssets));
+        _setErc20DefaultBalanceAdapter(NAVRegistryLib.deployDefaultAdapter(initialAssets));
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin_);
     }
@@ -107,7 +107,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         _addPriceFeed(asset, priceFeed, chainlinkHeartbeat, priceType);
 
         // Add asset to default adapter's inclusion list so wallet balances are reported
-        ERC20DefaultBalanceAdapter(erc20DefaultAdapter).addSupportedAsset(asset);
+        ERC20DefaultBalanceAdapter(erc20DefaultBalanceAdapter).addSupportedAsset(asset);
 
         emit AssetRegistered(asset, _getRegisteredAsset(asset).decimals);
     }
@@ -177,14 +177,14 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     function excludeAssetFromDefaultAdapter(address asset) external {
         _requireManager();
         _requireAssetExists(asset);
-        ERC20DefaultBalanceAdapter(erc20DefaultAdapter).removeSupportedAsset(asset);
+        ERC20DefaultBalanceAdapter(erc20DefaultBalanceAdapter).removeSupportedAsset(asset);
     }
 
     /// @inheritdoc INAVCalculator
     function includeAssetInDefaultAdapter(address asset) external {
         _requireManager();
         _requireAssetExists(asset);
-        ERC20DefaultBalanceAdapter(erc20DefaultAdapter).addSupportedAsset(asset);
+        ERC20DefaultBalanceAdapter(erc20DefaultBalanceAdapter).addSupportedAsset(asset);
     }
 
     /// @inheritdoc INAVCalculator
@@ -199,7 +199,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         }
 
         // Remove from default adapter's inclusion list (idempotent if not present)
-        ERC20DefaultBalanceAdapter(erc20DefaultAdapter).removeSupportedAsset(underlyingAsset);
+        ERC20DefaultBalanceAdapter(erc20DefaultBalanceAdapter).removeSupportedAsset(underlyingAsset);
 
         // Remove the asset itself
         _unregisterAsset(underlyingAsset);

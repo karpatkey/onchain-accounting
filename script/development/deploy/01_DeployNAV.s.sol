@@ -64,7 +64,7 @@ contract DeployNAV is Script {
 
         vm.stopBroadcast();
 
-        address defaultAdapter = nav.erc20DefaultAdapter();
+        address defaultAdapter = nav.erc20DefaultBalanceAdapter();
 
         console2.log("native symbol:    ", nativeSymbol);
         console2.log("sequencer feed:   ", sequencerFeed);

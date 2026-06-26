@@ -281,7 +281,7 @@ contract NAVCalculatorInvariantTest is SuperTest {
         // Verify ERC20DefaultBalanceAdapter is always present
         bool foundErc20Default = false;
         for (uint256 i = 0; i < allAdapters.length; i++) {
-            if (allAdapters[i] == nav.erc20DefaultAdapter()) {
+            if (allAdapters[i] == nav.erc20DefaultBalanceAdapter()) {
                 foundErc20Default = true;
             }
 

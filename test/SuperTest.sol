@@ -112,7 +112,7 @@ abstract contract SuperTest is Test {
         );
         // Note: The native address balance adapter is handled by ERC20DefaultBalanceAdapter which is set up in initialize()
         // The ERC20DefaultBalanceAdapter automatically handles native balances, so we don't need to add it explicitly
-        // However, if tests need it, they can access it via nav.erc20DefaultAdapter()
+        // However, if tests need it, they can access it via nav.erc20DefaultBalanceAdapter()
 
         nav.registerAsset(address(usdc), address(usdcAdapter), IPrices.PriceType.Custom, type(uint256).max);
 

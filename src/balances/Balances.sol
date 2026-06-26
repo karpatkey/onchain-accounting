@@ -53,7 +53,7 @@ abstract contract Balances is IBalances, Initializable {
 
     /// @notice ERC20Default adapter singleton (automatically registered)
     /// @dev Set during initialization by derived contract
-    address public erc20DefaultAdapter;
+    address public erc20DefaultBalanceAdapter;
 
     /// @notice Per-adapter list of meta-adapter instance coordinates to query (e.g. vault addresses widened to
     ///         bytes32). This is the governed, mutable "which instances" registry that keeps adapters immutable.
@@ -74,7 +74,7 @@ abstract contract Balances is IBalances, Initializable {
     //
 
     /// @notice Initializer for UUPS proxy
-    /// @dev Derived contracts should deploy ERC20DefaultBalanceAdapter and call _setErc20DefaultAdapter()
+    /// @dev Derived contracts should deploy ERC20DefaultBalanceAdapter and call _setErc20DefaultBalanceAdapter()
     // solhint-disable-next-line func-name-mixedcase
     // forge-lint: disable-next-line(mixed-case-function)
     function __Balances_init() internal onlyInitializing {
@@ -90,16 +90,16 @@ abstract contract Balances is IBalances, Initializable {
     /// @notice Internal function to set and register the ERC20Default adapter
     /// @dev Called by derived contracts after deploying ERC20DefaultBalanceAdapter
     /// @param defaultAdapter The address of the deployed ERC20DefaultBalanceAdapter
-    function _setErc20DefaultAdapter(address defaultAdapter) internal {
-        if (erc20DefaultAdapter != address(0)) {
+    function _setErc20DefaultBalanceAdapter(address defaultAdapter) internal {
+        if (erc20DefaultBalanceAdapter != address(0)) {
             revert InvalidArguments(); // Already set
         }
-        erc20DefaultAdapter = defaultAdapter;
+        erc20DefaultBalanceAdapter = defaultAdapter;
 
         // Add to global adapter registry
-        _globalAdapters.push(erc20DefaultAdapter);
-        _adapterTypes[erc20DefaultAdapter] = AdapterType.Default; // ERC20Default handles both ERC20 and Native
-        _isAdapterRegistered[erc20DefaultAdapter] = true;
+        _globalAdapters.push(erc20DefaultBalanceAdapter);
+        _adapterTypes[erc20DefaultBalanceAdapter] = AdapterType.Default; // ERC20Default handles both ERC20 and Native
+        _isAdapterRegistered[erc20DefaultBalanceAdapter] = true;
     }
 
     //
@@ -182,7 +182,7 @@ abstract contract Balances is IBalances, Initializable {
     function _removeBalanceAdapter(address adapter) internal {
         // Storage mutation + guards delegated to NAVRegistryLib (see _addBalanceAdapter); count + event stay inline.
         NAVRegistryLib.removeBalanceAdapter(
-            _isAdapterRegistered, _globalAdapters, _adapterTypes, adapter, erc20DefaultAdapter
+            _isAdapterRegistered, _globalAdapters, _adapterTypes, adapter, erc20DefaultBalanceAdapter
         );
         balanceAdapterTotalCount--;
 
@@ -209,7 +209,7 @@ abstract contract Balances is IBalances, Initializable {
     /// @param adapters The adapters to remove.
     function _removeBalanceAdapters(address[] calldata adapters) internal {
         balanceAdapterTotalCount -= NAVRegistryLib.removeBalanceAdapters(
-            _isAdapterRegistered, _globalAdapters, _adapterTypes, erc20DefaultAdapter, adapters
+            _isAdapterRegistered, _globalAdapters, _adapterTypes, erc20DefaultBalanceAdapter, adapters
         );
     }
 

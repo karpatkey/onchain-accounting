@@ -16,7 +16,7 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 /// @notice Tests critical system invariants for balance adapter adapters
 contract BalanceAdapterInvariantTest is Test {
     BalancesHarness public balances;
-    ERC20DefaultBalanceAdapter public erc20DefaultAdapter;
+    ERC20DefaultBalanceAdapter public erc20DefaultBalanceAdapter;
     Mock_CustomBalanceAdapter public customAdapter1;
     Mock_CustomBalanceAdapter public customAdapter2;
     Mock_ERC20 public usdc;
@@ -30,7 +30,7 @@ contract BalanceAdapterInvariantTest is Test {
         // Etch NAVRegistryLib (pre-linked external lib, DELEGATECALL'd by Balances) at its deterministic address.
         vm.etch(0x2F1F6c17D64bE96F583D390be212aFCF8D0F102a, vm.deployCode("NAVRegistryLib.sol:NAVRegistryLib").code);
         balances = new BalancesHarness();
-        erc20DefaultAdapter = balances.defaultAdapter();
+        erc20DefaultBalanceAdapter = balances.defaultAdapter();
 
         // Create tokens
         usdc = new Mock_ERC20("USDC", 6);
@@ -191,7 +191,8 @@ contract BalanceAdapterInvariantTest is Test {
         // Don't mint DAI or WETH (zero balances)
 
         // Query positions
-        INAVCalculator.PositionBalance[] memory positions = erc20DefaultAdapter.getAdapterPositions(alice, address(0));
+        INAVCalculator.PositionBalance[] memory positions =
+            erc20DefaultBalanceAdapter.getAdapterPositions(alice, address(0));
 
         // Verify no zero balances
         for (uint256 i = 0; i < positions.length; i++) {
@@ -211,7 +212,8 @@ contract BalanceAdapterInvariantTest is Test {
         // Don't set DAI balance (zero)
 
         // Query from ERC20DefaultBalanceAdapter
-        INAVCalculator.PositionBalance[] memory positions1 = erc20DefaultAdapter.getAdapterPositions(alice, address(0));
+        INAVCalculator.PositionBalance[] memory positions1 =
+            erc20DefaultBalanceAdapter.getAdapterPositions(alice, address(0));
 
         // Query from customAdapter1
         INAVCalculator.PositionBalance[] memory positions2 = customAdapter1.getAdapterPositions(alice, address(0));
@@ -235,10 +237,11 @@ contract BalanceAdapterInvariantTest is Test {
         dai.mint(alice, 2000 * 10 ** dai.decimals());
 
         (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) =
-            erc20DefaultAdapter.getAdapterBalances(alice);
+            erc20DefaultBalanceAdapter.getAdapterBalances(alice);
         assertEq(assets.length, amounts.length, "assets and amounts length match");
 
-        INAVCalculator.PositionBalance[] memory positions = erc20DefaultAdapter.getAdapterPositions(alice, address(0));
+        INAVCalculator.PositionBalance[] memory positions =
+            erc20DefaultBalanceAdapter.getAdapterPositions(alice, address(0));
 
         // Sum positions
         int256 positionsSum = sumPositionBalances(positions);
@@ -299,11 +302,11 @@ contract BalanceAdapterInvariantTest is Test {
 
         // Get all positions
         INAVCalculator.PositionBalance[] memory allPositions =
-            erc20DefaultAdapter.getAdapterPositions(alice, address(0));
+            erc20DefaultBalanceAdapter.getAdapterPositions(alice, address(0));
 
         // Get filtered positions (USDC only)
         INAVCalculator.PositionBalance[] memory filteredPositions =
-            erc20DefaultAdapter.getAdapterPositions(alice, address(usdc));
+            erc20DefaultBalanceAdapter.getAdapterPositions(alice, address(usdc));
 
         // Filtered should be subset of all
         assertLe(filteredPositions.length, allPositions.length, "Filtered should be subset");
@@ -338,7 +341,7 @@ contract BalanceAdapterInvariantTest is Test {
 
         // Filter by non-existent asset
         INAVCalculator.PositionBalance[] memory filteredPositions =
-            erc20DefaultAdapter.getAdapterPositions(alice, nonExistentAsset);
+            erc20DefaultBalanceAdapter.getAdapterPositions(alice, nonExistentAsset);
 
         // Should return empty array
         assertEq(filteredPositions.length, 0, "Non-existent asset should return empty");
@@ -350,7 +353,7 @@ contract BalanceAdapterInvariantTest is Test {
 
     /// @notice Test that underlyingAssetsSupported matches queryable assets
     function test_invariant_supportedAssetsConsistency() public view {
-        address[] memory supportedAssets = erc20DefaultAdapter.underlyingAssetsSupported();
+        address[] memory supportedAssets = erc20DefaultBalanceAdapter.underlyingAssetsSupported();
 
         // All supported assets should be registered in balances
         for (uint256 i = 0; i < supportedAssets.length; i++) {
@@ -358,7 +361,7 @@ contract BalanceAdapterInvariantTest is Test {
         }
 
         for (uint256 i = 0; i < supportedAssets.length; i++) {
-            (uint256 amount,) = erc20DefaultAdapter.getAdapterBalanceForAsset(alice, supportedAssets[i]);
+            (uint256 amount,) = erc20DefaultBalanceAdapter.getAdapterBalanceForAsset(alice, supportedAssets[i]);
             // amount is always valid uint256 (non-negative magnitude)
             assertTrue(amount <= type(uint256).max, "amount in range");
         }
@@ -464,7 +467,8 @@ contract BalanceAdapterInvariantTest is Test {
     function test_invariant_metadataConsistency_erc20Default() public {
         usdc.mint(alice, 1000 * 10 ** usdc.decimals());
 
-        INAVCalculator.PositionBalance[] memory positions = erc20DefaultAdapter.getAdapterPositions(alice, address(0));
+        INAVCalculator.PositionBalance[] memory positions =
+            erc20DefaultBalanceAdapter.getAdapterPositions(alice, address(0));
 
         // ERC20DefaultBalanceAdapter should have specific metadata
         assertEq(positions.length, 1, "Should have one position");

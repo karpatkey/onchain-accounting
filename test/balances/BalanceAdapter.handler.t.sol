@@ -15,7 +15,7 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 /// @notice Handler contract that manages stateful operations for invariant testing
 contract BalanceAdapterHandler is Test {
     BalancesHarness public balances;
-    ERC20DefaultBalanceAdapter public erc20DefaultAdapter;
+    ERC20DefaultBalanceAdapter public erc20DefaultBalanceAdapter;
     Mock_CustomBalanceAdapter[] public customAdapters;
     Mock_ERC20[] public tokens;
 
@@ -37,7 +37,7 @@ contract BalanceAdapterHandler is Test {
 
     constructor() {
         balances = new BalancesHarness();
-        erc20DefaultAdapter = balances.defaultAdapter();
+        erc20DefaultBalanceAdapter = balances.defaultAdapter();
 
         // Initialize actors
         for (uint256 i = 0; i < 10; i++) {
@@ -86,7 +86,7 @@ contract BalanceAdapterHandler is Test {
         address adapter = address(customAdapters[adapterIndex]);
 
         // Cannot remove ERC20DefaultBalanceAdapter
-        if (adapter == address(erc20DefaultAdapter)) {
+        if (adapter == address(erc20DefaultBalanceAdapter)) {
             return;
         }
 
@@ -438,12 +438,12 @@ contract BalanceAdapterHandlerTest is Test {
     }
 
     /// @notice Invariant: ERC20DefaultBalanceAdapter always registered
-    function invariant_erc20DefaultAdapterAlwaysRegistered() external view {
+    function invariant_erc20DefaultBalanceAdapterAlwaysRegistered() external view {
         address[] memory allAdapters = handler.balances().getAllAdapters();
 
         bool found = false;
         for (uint256 i = 0; i < allAdapters.length; i++) {
-            if (allAdapters[i] == address(handler.erc20DefaultAdapter())) {
+            if (allAdapters[i] == address(handler.erc20DefaultBalanceAdapter())) {
                 found = true;
                 break;
             }

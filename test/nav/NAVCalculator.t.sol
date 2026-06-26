@@ -213,7 +213,7 @@ contract NAVCalculatorTest is SuperTest {
             if (allAdapters[i] == address(mockBalanceAdapter)) {
                 foundMockAdapter = true;
             }
-            if (allAdapters[i] == nav.erc20DefaultAdapter()) {
+            if (allAdapters[i] == nav.erc20DefaultBalanceAdapter()) {
                 foundErc20Default = true;
             }
         }
@@ -241,7 +241,7 @@ contract NAVCalculatorTest is SuperTest {
         nav.grantRole(MANAGER, navCalculatorManager);
         vm.stopPrank();
 
-        address erc20Adapter = nav.erc20DefaultAdapter();
+        address erc20Adapter = nav.erc20DefaultBalanceAdapter();
         vm.startPrank(alice);
         vm.expectRevert(NotAuthorized.selector);
         nav.addBalanceAdapters(aa(erc20Adapter));
@@ -469,7 +469,7 @@ contract NAVCalculatorTest is SuperTest {
         vm.prank(navCalculatorManager);
         nav.registerAsset(address(newToken), address(newTokenAdapter), IPrices.PriceType.Custom, type(uint256).max);
 
-        address defaultAdapter = nav.erc20DefaultAdapter();
+        address defaultAdapter = nav.erc20DefaultBalanceAdapter();
         address[] memory supported = IBalanceAdapter(defaultAdapter).underlyingAssetsSupported();
         bool found = false;
         for (uint256 i = 0; i < supported.length; i++) {
@@ -486,7 +486,7 @@ contract NAVCalculatorTest is SuperTest {
     }
 
     function test_excludeAssetFromDefaultAdapter_removesFromInclusionList() public {
-        address defaultAdapter = nav.erc20DefaultAdapter();
+        address defaultAdapter = nav.erc20DefaultBalanceAdapter();
         address[] memory adaptersBefore = nav.getAdaptersForAsset(address(usdc));
         bool hadDefaultBefore = false;
         for (uint256 i = 0; i < adaptersBefore.length; i++) {
@@ -514,7 +514,7 @@ contract NAVCalculatorTest is SuperTest {
         vm.prank(navCalculatorManager);
         nav.includeAssetInDefaultAdapter(address(usdc));
 
-        address defaultAdapter = nav.erc20DefaultAdapter();
+        address defaultAdapter = nav.erc20DefaultBalanceAdapter();
         address[] memory supported = IBalanceAdapter(defaultAdapter).underlyingAssetsSupported();
         bool found = false;
         for (uint256 i = 0; i < supported.length; i++) {
@@ -549,7 +549,7 @@ contract NAVCalculatorTest is SuperTest {
     }
 
     function test_unregisterAsset_removesFromDefaultAdapterInclusionList() public {
-        address defaultAdapter = nav.erc20DefaultAdapter();
+        address defaultAdapter = nav.erc20DefaultBalanceAdapter();
         address[] memory supportedBefore = IBalanceAdapter(defaultAdapter).underlyingAssetsSupported();
         uint256 countBefore = 0;
         for (uint256 i = 0; i < supportedBefore.length; i++) {
@@ -734,14 +734,14 @@ contract NAVCalculatorTest is SuperTest {
 
     function test_isAdapterRegistered() public {
         // ERC20DefaultBalanceAdapter should be registered
-        assertTrue(nav.isAdapterRegistered(nav.erc20DefaultAdapter()));
+        assertTrue(nav.isAdapterRegistered(nav.erc20DefaultBalanceAdapter()));
 
         // Random address should not be registered
         assertFalse(nav.isAdapterRegistered(makeAddr("random")));
     }
 
     function test_getAdapterType() public view {
-        IBalances.AdapterType adapterType = nav.getAdapterType(nav.erc20DefaultAdapter());
+        IBalances.AdapterType adapterType = nav.getAdapterType(nav.erc20DefaultBalanceAdapter());
         assertEq(uint8(adapterType), uint8(IBalances.AdapterType.Default));
     }
 
@@ -869,7 +869,7 @@ contract NAVCalculatorTest is SuperTest {
     function test_addBalanceAdapter_duplicate() public {
         vm.startPrank(navCalculatorManager);
         // ERC20DefaultBalanceAdapter is already registered, try to add it again - should revert with DuplicateBalanceAdapter
-        address erc20Adapter = nav.erc20DefaultAdapter();
+        address erc20Adapter = nav.erc20DefaultBalanceAdapter();
         vm.expectRevert(IBalances.DuplicateBalanceAdapter.selector);
         nav.addBalanceAdapters(aa(erc20Adapter));
         vm.stopPrank();
@@ -886,7 +886,7 @@ contract NAVCalculatorTest is SuperTest {
 
     function test_removeBalanceAdapter_nativeAddress() public {
         vm.startPrank(navCalculatorManager);
-        address adapter = nav.erc20DefaultAdapter();
+        address adapter = nav.erc20DefaultBalanceAdapter();
         // Cannot remove ERC20DefaultBalanceAdapter, it's protected
         vm.expectRevert(InvalidArguments.selector);
         nav.removeBalanceAdapters(aa(adapter));

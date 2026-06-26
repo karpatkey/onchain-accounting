@@ -246,7 +246,7 @@ contract DeployProxies is BaseDeployScript {
         console2.log("[OK] Both proxies verified with code");
 
         // Index ERC20Default adapter (created in NAVCalculator.initialize()) and write to config
-        address defaultAdapter = NAVCalculator(navProxy).erc20DefaultAdapter();
+        address defaultAdapter = NAVCalculator(navProxy).erc20DefaultBalanceAdapter();
         console2.log("  ERC20Default adapter (from NAV init):", defaultAdapter);
         if (defaultAdapter != address(0)) {
             if (shouldBroadcast) {

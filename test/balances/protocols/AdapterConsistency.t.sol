@@ -14,7 +14,7 @@ import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 /// @notice Tests that all adapters behave consistently across different adapter types
 contract AdapterConsistencyTest is Test {
     Mock_NAVCalculator public mockNav;
-    ERC20DefaultBalanceAdapter public erc20DefaultAdapter;
+    ERC20DefaultBalanceAdapter public erc20DefaultBalanceAdapter;
     Mock_CustomBalanceAdapter public customAdapter;
     Mock_ERC20 public usdc;
     Mock_ERC20 public dai;
@@ -29,10 +29,10 @@ contract AdapterConsistencyTest is Test {
         mockNav = new Mock_NAVCalculator();
 
         // Create ERC20DefaultBalanceAdapter with mock NAVCalculator
-        erc20DefaultAdapter = new ERC20DefaultBalanceAdapter(address(mockNav), new address[](0));
+        erc20DefaultBalanceAdapter = new ERC20DefaultBalanceAdapter(address(mockNav), new address[](0));
 
         // So that registerAsset also adds assets to the default adapter's inclusion list
-        mockNav.setDefaultAdapter(address(erc20DefaultAdapter));
+        mockNav.setDefaultAdapter(address(erc20DefaultBalanceAdapter));
 
         customAdapter = new Mock_CustomBalanceAdapter();
 
@@ -61,7 +61,7 @@ contract AdapterConsistencyTest is Test {
     function test_consistency_interfaceCompliance() public view {
         // Test both adapters
         IBalanceAdapter[] memory adapters = new IBalanceAdapter[](2);
-        adapters[0] = erc20DefaultAdapter;
+        adapters[0] = erc20DefaultBalanceAdapter;
         adapters[1] = customAdapter;
 
         if (adapters.length == 0) return;
@@ -100,7 +100,8 @@ contract AdapterConsistencyTest is Test {
         // Don't mint DAI (zero balance)
 
         // Query from ERC20DefaultBalanceAdapter
-        INAVCalculator.PositionBalance[] memory positions1 = erc20DefaultAdapter.getAdapterPositions(alice, address(0));
+        INAVCalculator.PositionBalance[] memory positions1 =
+            erc20DefaultBalanceAdapter.getAdapterPositions(alice, address(0));
 
         // Query from customAdapter
         customAdapter.setBalance(address(usdc), alice, 500 * 10 ** usdc.decimals(), false);
@@ -155,7 +156,8 @@ contract AdapterConsistencyTest is Test {
         customAdapter.setBalance(address(usdc), alice, 500 * 10 ** usdc.decimals(), false);
 
         // Get positions from both adapters
-        INAVCalculator.PositionBalance[] memory positions1 = erc20DefaultAdapter.getAdapterPositions(alice, address(0));
+        INAVCalculator.PositionBalance[] memory positions1 =
+            erc20DefaultBalanceAdapter.getAdapterPositions(alice, address(0));
         INAVCalculator.PositionBalance[] memory positions2 = customAdapter.getAdapterPositions(alice, address(0));
 
         // Both should have protocol and positionDetail
@@ -177,7 +179,7 @@ contract AdapterConsistencyTest is Test {
 
         // Test filtering with both adapters
         INAVCalculator.PositionBalance[] memory positions1 =
-            erc20DefaultAdapter.getAdapterPositions(alice, address(usdc));
+            erc20DefaultBalanceAdapter.getAdapterPositions(alice, address(usdc));
         INAVCalculator.PositionBalance[] memory positions2 = customAdapter.getAdapterPositions(alice, address(usdc));
 
         // All filtered positions should be for USDC
@@ -205,7 +207,7 @@ contract AdapterConsistencyTest is Test {
         address invalidAsset = makeAddr("invalid");
 
         // Both adapters should return zero for invalid asset, not revert
-        (uint256 amount1,) = erc20DefaultAdapter.getAdapterBalanceForAsset(alice, invalidAsset);
+        (uint256 amount1,) = erc20DefaultBalanceAdapter.getAdapterBalanceForAsset(alice, invalidAsset);
         (uint256 amount2,) = customAdapter.getAdapterBalanceForAsset(alice, invalidAsset);
 
         assertEq(amount1, 0, "ERC20DefaultBalanceAdapter should return zero for invalid asset");
@@ -213,7 +215,7 @@ contract AdapterConsistencyTest is Test {
 
         // Both should return empty arrays for invalid asset filter
         INAVCalculator.PositionBalance[] memory positions1 =
-            erc20DefaultAdapter.getAdapterPositions(alice, invalidAsset);
+            erc20DefaultBalanceAdapter.getAdapterPositions(alice, invalidAsset);
         INAVCalculator.PositionBalance[] memory positions2 = customAdapter.getAdapterPositions(alice, invalidAsset);
 
         assertEq(positions1.length, 0, "ERC20DefaultBalanceAdapter should return empty for invalid filter");
@@ -223,7 +225,7 @@ contract AdapterConsistencyTest is Test {
     /// @notice Test that all adapters handle zero address account consistently
     function test_consistency_zeroAddressAccount() public view {
         // Both adapters should return zero for zero address account
-        (uint256 amount1,) = erc20DefaultAdapter.getAdapterBalanceForAsset(address(0), address(usdc));
+        (uint256 amount1,) = erc20DefaultBalanceAdapter.getAdapterBalanceForAsset(address(0), address(usdc));
         (uint256 amount2,) = customAdapter.getAdapterBalanceForAsset(address(0), address(usdc));
 
         assertEq(amount1, 0, "ERC20DefaultBalanceAdapter should return zero for zero address");
@@ -241,7 +243,7 @@ contract AdapterConsistencyTest is Test {
 
         // Test both adapters
         IBalanceAdapter[] memory adapters = new IBalanceAdapter[](2);
-        adapters[0] = erc20DefaultAdapter;
+        adapters[0] = erc20DefaultBalanceAdapter;
         adapters[1] = customAdapter;
 
         // Set balances for custom adapter
@@ -291,7 +293,7 @@ contract AdapterConsistencyTest is Test {
     function test_consistency_supportedAssetsConsistency() public view {
         // Test both adapters
         IBalanceAdapter[] memory adapters = new IBalanceAdapter[](2);
-        adapters[0] = erc20DefaultAdapter;
+        adapters[0] = erc20DefaultBalanceAdapter;
         adapters[1] = customAdapter;
 
         for (uint256 i = 0; i < adapters.length; i++) {

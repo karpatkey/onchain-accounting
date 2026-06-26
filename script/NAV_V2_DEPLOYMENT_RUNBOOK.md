@@ -223,7 +223,7 @@ If you're reading historical PR comments or older PR #14 versions that describe 
    ```
    Repeat for `BRIDGE_PROXY`. **Stop and fix** if any returns the wrong result.
 
-7. **Confirm the per-chain ERC20Default Balance Adapter address** in `deployments/<chainId>.json` — this gets deployed during `NAVCalculator.initialize()`. Read the new address from the broadcast logs (`02_DeployProxies.s.sol` logs `ERC20Default adapter (from NAV init): 0x...`) or query the proxy directly via the public getter: `cast call <NAV_PROXY> "erc20DefaultAdapter()(address)" --rpc-url <RPC>`. The script writes it to `deployments/<chainId>.json` — verify in the diff before committing.
+7. **Confirm the per-chain ERC20Default Balance Adapter address** in `deployments/<chainId>.json` — this gets deployed during `NAVCalculator.initialize()`. Read the new address from the broadcast logs (`02_DeployProxies.s.sol` logs `ERC20Default adapter (from NAV init): 0x...`) or query the proxy directly via the public getter: `cast call <NAV_PROXY> "erc20DefaultBalanceAdapter()(address)" --rpc-url <RPC>`. The script writes it to `deployments/<chainId>.json` — verify in the diff before committing.
 
 8. **Confirm the new proxy + ERC20Default addresses landed in `deployments/<chainId>.json`.** The "Canonical addresses" table at the top of this runbook carries `TBD` for our contracts by design; the deployments file is the source of truth.
 

@@ -34,7 +34,7 @@ library NAVRegistryLib {
     /// @notice Deploys a fresh ERC20DefaultBalanceAdapter bound to the calling NAVCalculator and returns it.
     /// @dev This function does NOT enforce single-deploy semantics — each call deploys a new adapter. The
     ///      one-adapter invariant is enforced by the caller: NAVCalculator.initialize calls this exactly once and
-    ///      passes the result to `_setErc20DefaultAdapter`, which reverts if the default adapter is already set.
+    ///      passes the result to `_setErc20DefaultBalanceAdapter`, which reverts if the default adapter is already set.
     ///      Called via DELEGATECALL, so `address(this)` is the NAV proxy — the adapter's
     ///      immutable NAV_CALCULATOR is pinned to it and the proxy is the CREATE deployer. Housed here so the
     ///      adapter's ~5 KB creation bytecode is embedded in THIS external library rather than NAVCalculator's
@@ -164,15 +164,15 @@ library NAVRegistryLib {
     /// @param globalAdapters The global adapter list (storage ref)
     /// @param adapterTypes The adapter-type map (storage ref)
     /// @param adapter The adapter to remove
-    /// @param erc20DefaultAdapter The default-adapter singleton that may not be removed
+    /// @param erc20DefaultBalanceAdapter The default-adapter singleton that may not be removed
     function removeBalanceAdapter(
         mapping(address => bool) storage isAdapterRegistered,
         address[] storage globalAdapters,
         mapping(address => IBalances.AdapterType) storage adapterTypes,
         address adapter,
-        address erc20DefaultAdapter
+        address erc20DefaultBalanceAdapter
     ) external {
-        if (adapter == erc20DefaultAdapter) {
+        if (adapter == erc20DefaultBalanceAdapter) {
             revert InvalidArguments(); // Cannot remove ERC20DefaultBalanceAdapter
         }
         if (!isAdapterRegistered[adapter]) {
@@ -220,14 +220,14 @@ library NAVRegistryLib {
         mapping(address => bool) storage isAdapterRegistered,
         address[] storage globalAdapters,
         mapping(address => IBalances.AdapterType) storage adapterTypes,
-        address erc20DefaultAdapter,
+        address erc20DefaultBalanceAdapter,
         address[] calldata adapters
     ) external returns (uint256 count) {
         count = adapters.length;
         if (count == 0) revert InvalidArguments();
         for (uint256 i = 0; i < count; i++) {
             address adapter = adapters[i];
-            if (adapter == erc20DefaultAdapter) revert InvalidArguments();
+            if (adapter == erc20DefaultBalanceAdapter) revert InvalidArguments();
             if (!isAdapterRegistered[adapter]) revert IBalances.InvalidBalanceAdapter();
             uint256 len = globalAdapters.length;
             for (uint256 j = 0; j < len; j++) {

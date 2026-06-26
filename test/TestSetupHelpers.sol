@@ -22,7 +22,7 @@ contract BalancesHarnessForFork is Balances {
     constructor() initializer {
         __Balances_init();
         defaultAdapter = new ERC20DefaultBalanceAdapter(address(this), new address[](0));
-        _setErc20DefaultAdapter(address(defaultAdapter));
+        _setErc20DefaultBalanceAdapter(address(defaultAdapter));
     }
 
     function registerAssetForTest(address asset, uint8 decimals, string memory symbol) public {
@@ -182,7 +182,7 @@ abstract contract TestSetupHelpers is Test {
     /// @param balances The Balances contract instance
     /// @dev The native address should use the ERC20DefaultBalanceAdapter
     function ensureNativeBalanceAdapter(Balances balances) internal view {
-        if (!balances.isAdapterRegistered(balances.erc20DefaultAdapter())) {
+        if (!balances.isAdapterRegistered(balances.erc20DefaultBalanceAdapter())) {
             // This should not happen if ERC20DefaultBalanceAdapter is properly set up
             // But we check to provide a clear error message
             revert("Native balance adapter not initialized. ERC20DefaultBalanceAdapter should be set in constructor.");

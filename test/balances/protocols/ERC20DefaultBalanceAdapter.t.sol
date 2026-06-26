@@ -17,7 +17,7 @@ import "src/constants.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
-contract ERC20DefaultAdapterTest is Test {
+contract ERC20DefaultBalanceAdapterTest is Test {
     NAVCalculator public navCalculator;
     ERC20DefaultBalanceAdapter public adapter;
 
@@ -70,7 +70,7 @@ contract ERC20DefaultAdapterTest is Test {
         vm.stopPrank();
 
         // Create ERC20DefaultBalanceAdapter (it's already created by NAVCalculator, but we can get it)
-        adapter = ERC20DefaultBalanceAdapter(navCalculator.erc20DefaultAdapter());
+        adapter = ERC20DefaultBalanceAdapter(navCalculator.erc20DefaultBalanceAdapter());
     }
 
     function test_constructor() public view {
@@ -114,7 +114,7 @@ contract ERC20DefaultAdapterTest is Test {
         NAVCalculator emptyNav = NAVCalculator(navProxy);
         vm.stopPrank();
 
-        ERC20DefaultBalanceAdapter emptyAdapter = ERC20DefaultBalanceAdapter(emptyNav.erc20DefaultAdapter());
+        ERC20DefaultBalanceAdapter emptyAdapter = ERC20DefaultBalanceAdapter(emptyNav.erc20DefaultBalanceAdapter());
         address[] memory assets = emptyAdapter.underlyingAssetsSupported();
         assertEq(assets.length, 1, "Only native is in the default adapter before other assets are registered");
         assertEq(assets[0], NATIVE_ADDRESS);

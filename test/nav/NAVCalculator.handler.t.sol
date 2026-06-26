@@ -154,7 +154,7 @@ contract NAVCalculatorHandler is Test {
         address adapter = address(balanceAdapters[adapterIndex]);
 
         // Cannot remove ERC20DefaultBalanceAdapter
-        if (adapter == nav.erc20DefaultAdapter()) {
+        if (adapter == nav.erc20DefaultBalanceAdapter()) {
             return;
         }
 
@@ -381,12 +381,12 @@ contract NAVCalculatorHandlerTest is SuperTest {
     }
 
     /// @notice Invariant: ERC20DefaultBalanceAdapter always registered
-    function invariant_erc20DefaultAdapterAlwaysRegistered() external view {
+    function invariant_erc20DefaultBalanceAdapterAlwaysRegistered() external view {
         address[] memory allAdapters = nav.getAllAdapters();
 
         bool found = false;
         for (uint256 i = 0; i < allAdapters.length; i++) {
-            if (allAdapters[i] == nav.erc20DefaultAdapter()) {
+            if (allAdapters[i] == nav.erc20DefaultBalanceAdapter()) {
                 found = true;
                 break;
             }

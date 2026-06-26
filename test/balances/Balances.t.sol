@@ -26,7 +26,7 @@ contract BalancesHarness is Balances {
         __Balances_init();
         // Set up ERC20DefaultBalanceAdapter for native address support
         defaultAdapter = new ERC20DefaultBalanceAdapter(address(this), new address[](0));
-        _setErc20DefaultAdapter(address(defaultAdapter));
+        _setErc20DefaultBalanceAdapter(address(defaultAdapter));
     }
 
     /// @notice Adds an asset to the default adapter's inclusion list (for testing). Marks asset as registered so addSupportedAsset succeeds.
@@ -180,7 +180,9 @@ contract BalancesTest is Test {
 
         address[] memory adapters = balances.getAllAdapters();
         assertEq(adapters.length, 1, "Should have one adapter");
-        assertEq(adapters[0], balances.erc20DefaultAdapter(), "First adapter should be ERC20DefaultBalanceAdapter");
+        assertEq(
+            adapters[0], balances.erc20DefaultBalanceAdapter(), "First adapter should be ERC20DefaultBalanceAdapter"
+        );
     }
 
     function test_setAndGetERC20BalanceAdapter() public {
@@ -196,7 +198,7 @@ contract BalancesTest is Test {
 
         // Get balance from ERC20DefaultBalanceAdapter
         (uint256 amount, bool isDebt) =
-            IBalanceAdapter(balances.erc20DefaultAdapter()).getAdapterBalanceForAsset(alice, address(usdc));
+            IBalanceAdapter(balances.erc20DefaultBalanceAdapter()).getAdapterBalanceForAsset(alice, address(usdc));
         assertEq(amount, 1000);
         assertFalse(isDebt);
     }
@@ -231,7 +233,7 @@ contract BalancesTest is Test {
 
     function test_addBalanceAdapter_nativeAddress() public {
         address nativeAddress = balances.NATIVE_ADDRESS();
-        address adapter = balances.erc20DefaultAdapter();
+        address adapter = balances.erc20DefaultBalanceAdapter();
 
         vm.expectRevert(IBalances.DuplicateBalanceAdapter.selector);
         balances.addBalanceAdapterDirect(nativeAddress, adapter, IBalances.AdapterType.Default);
@@ -241,8 +243,8 @@ contract BalancesTest is Test {
         deal(alice, 1337);
 
         // Get balance from ERC20DefaultBalanceAdapter for native address
-        (uint256 amount, bool isDebt) =
-            IBalanceAdapter(balances.erc20DefaultAdapter()).getAdapterBalanceForAsset(alice, balances.NATIVE_ADDRESS());
+        (uint256 amount, bool isDebt) = IBalanceAdapter(balances.erc20DefaultBalanceAdapter())
+            .getAdapterBalanceForAsset(alice, balances.NATIVE_ADDRESS());
         assertEq(amount, 1337);
         assertFalse(isDebt);
     }
@@ -265,9 +267,9 @@ contract BalancesTest is Test {
         assertGt(adapters.length, 0, "Should still have ERC20DefaultBalanceAdapter for USDC");
     }
 
-    function test_removeBalanceAdapter_cantRemoveERC20DefaultAdapter() public {
+    function test_removeBalanceAdapter_cantRemoveERC20DefaultBalanceAdapter() public {
         // Cannot remove ERC20DefaultBalanceAdapter
-        address erc20Default = balances.erc20DefaultAdapter();
+        address erc20Default = balances.erc20DefaultBalanceAdapter();
         vm.expectRevert(InvalidArguments.selector);
         balances.unsetBalanceAdapter(address(0), erc20Default);
     }
@@ -275,7 +277,7 @@ contract BalancesTest is Test {
     function test_checkAdapterSupport_ERC20() public view {
         // checkBalanceAdapterSupport should pass for valid adapters, even if already registered
         // The duplicate check is now in _addBalanceAdapter, not in checkBalanceAdapterSupport
-        balances.checkBalanceAdapterSupport(balances.erc20DefaultAdapter());
+        balances.checkBalanceAdapterSupport(balances.erc20DefaultBalanceAdapter());
     }
 
     function test_checkAdapterSupport_Custom() public view {
@@ -318,7 +320,7 @@ contract BalancesTest is Test {
 
     function test_isAdapterRegistered() public {
         // ERC20DefaultBalanceAdapter should be registered
-        assertTrue(balances.isAdapterRegistered(balances.erc20DefaultAdapter()));
+        assertTrue(balances.isAdapterRegistered(balances.erc20DefaultBalanceAdapter()));
 
         // Random address should not be registered
         assertFalse(balances.isAdapterRegistered(makeAddr("random")));
@@ -374,7 +376,9 @@ contract BalancesTest is Test {
         address[] memory initialAdapters = balances.getAllAdapters();
         assertEq(initialAdapters.length, 1, "Should start with one adapter");
         assertEq(
-            initialAdapters[0], balances.erc20DefaultAdapter(), "First adapter should be ERC20DefaultBalanceAdapter"
+            initialAdapters[0],
+            balances.erc20DefaultBalanceAdapter(),
+            "First adapter should be ERC20DefaultBalanceAdapter"
         );
 
         vm.startPrank(admin);
@@ -383,12 +387,12 @@ contract BalancesTest is Test {
 
         address[] memory allAdapters = balances.getAllAdapters();
         assertEq(allAdapters.length, 2, "Should have two adapters");
-        assertEq(allAdapters[0], balances.erc20DefaultAdapter(), "First should be ERC20DefaultBalanceAdapter");
+        assertEq(allAdapters[0], balances.erc20DefaultBalanceAdapter(), "First should be ERC20DefaultBalanceAdapter");
         assertEq(allAdapters[1], address(customAdapter), "Second should be custom adapter");
     }
 
     function test_getAdapterType() public {
-        IBalances.AdapterType defaultType = balances.getAdapterType(balances.erc20DefaultAdapter());
+        IBalances.AdapterType defaultType = balances.getAdapterType(balances.erc20DefaultBalanceAdapter());
         assertEq(
             uint8(defaultType),
             uint8(IBalances.AdapterType.Default),
@@ -427,7 +431,7 @@ contract BalancesTest is Test {
             if (adapters[i] == address(customAdapter)) {
                 foundCustomAdapter = true;
             }
-            if (adapters[i] == balances.erc20DefaultAdapter()) {
+            if (adapters[i] == balances.erc20DefaultBalanceAdapter()) {
                 foundErc20Default = true;
             }
         }
@@ -454,8 +458,8 @@ contract BalancesTest is Test {
         assertEq(nativeAddress, address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE));
     }
 
-    function test_erc20DefaultAdapter() public view {
-        address defaultAdapter = balances.erc20DefaultAdapter();
+    function test_erc20DefaultBalanceAdapter() public view {
+        address defaultAdapter = balances.erc20DefaultBalanceAdapter();
         assertTrue(defaultAdapter != address(0));
     }
 

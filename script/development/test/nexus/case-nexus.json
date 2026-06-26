@@ -42,5 +42,5 @@
   "delta": 0,
   "protocolId": "keccak256(\"nexus-mutual-staking\")",
   "positionId": "abi.encode(uint256 tokenId, uint256 poolId)",
-  "tests": { "unit": 24, "fork": 3 }
+  "tests": { "unit": 26, "fork": 3 }
 }

@@ -8,7 +8,7 @@
 - **Why a view adapter and not the ADR-0014 agent-fed cache (spike, 2026-06-24):** `StakingNFT` (`0xcafea508…e97f`) is **not** per-owner-enumerable (`tokenOfOwnerByIndex` reverts) and `StakingViewer` (`0xcafea5c7…cF81F`) has **no** staker→tokenIds view (only manager methods + `get*(uint256[] tokenIds)`). That's the same NFT wall as ether.fi/StakeWise — **except** `StakingNFT` is **mint-only** (no `burn`) with a tiny, monotonic `totalSupply` (~280 globally), so live tokenIds are exactly `1..totalSupply`. The adapter therefore self-discovers by scanning `tokenInfo(id) -> (poolId, owner)` over that range — feasible on-chain (ether.fi's ~80k supply made this impossible). No off-chain feeder needed.
 
 ### Math branches
-- `_ownedTokenIds`: `totalSupply()` read (try/catch → 0 ids); scan `tokenInfo(1..min(totalSupply, MAX_TOKEN_SCAN))`, collect `owner == account` up to `MAX_POSITIONS_PER_ACCOUNT`; a reverting `tokenInfo` is caught and skipped. Cost scales with **global** supply (not the account's position count) — bounded by `MAX_TOKEN_SCAN` so the read loop can't OOG (NAV's try/catch wouldn't catch it).
+- `_ownedTokenIds`: `balanceOf(account)` fast-path first — **`0` ⇒ skip the scan entirely** (the common non-staker case in a NAV fan-out), else collect exactly `min(balanceOf, MAX_POSITIONS_PER_ACCOUNT)` tokens and **stop early** once found (a reverting/absent `balanceOf` falls back to the plain bounded scan). Then `totalSupply()` read (try/catch → 0 ids); scan `tokenInfo(1..min(totalSupply, MAX_TOKEN_SCAN))`, collect `owner == account`; a reverting `tokenInfo` is caught and skipped. The worst-case full scan (only on `balanceOf` revert) is bounded by `MAX_TOKEN_SCAN` so the read loop can't OOG (NAV's try/catch wouldn't catch it). `StakingNFT` is not ERC721Enumerable (no owner→tokenIds view), which is why discovery must scan at all.
 - `getAdapterPositions`: `assetFilter` mismatch → empty; NXM not registered → empty; else `StakingViewer.getTokens(ids)` (try/catch → empty) → for each token emit `Staking = activeStake + expiredStake` and `Rewards = rewards` (zeros dropped), `positionId = abi.encode(tokenId, poolId)`.
 - `getAdapterBalances` / `getAdapterBalanceForAsset` (no-arg): summed NXM total via `getAggregatedTokens(ids)` (try/catch → 0) → `active + expired + rewards`.
 
@@ -19,11 +19,13 @@
 - `nonStaker_reportsZero` — a non-staking address reports nothing (scan finds no owned ids).
 
 ## 3. Unit test coverage
-`test/balances/protocols/NexusMutualStakingPoolsBalanceAdapter.t.sol` (mock-only): constructor guards (×5), discovery + summed valuation (owned-only, other-account-excluded, wrong-asset), per-NFT `Staking`+`Rewards` leg identity (`positionId = abi.encode(tokenId, poolId)`), a **two-pool** case yielding distinct positionIds, single-leg (no-rewards / no-stake) and empty cases, asset-filter match/mismatch, unregistered-underlying drop, `getAdapterBalances` shape, the `MAX_POSITIONS_PER_ACCOUNT` + `MAX_TOKEN_SCAN` caps, `try/catch` never-revert on `tokenInfo` / `totalSupply` / `getTokens` / `getAggregatedTokens`, ERC165, `underlyingAssetsSupported`. The mock `StakingViewer` returns per-token structs for exactly the ids the adapter passes, so discovery → valuation is tested end-to-end.
+`test/balances/protocols/NexusMutualStakingPoolsBalanceAdapter.t.sol` (mock-only): constructor guards (×5), discovery + summed valuation (owned-only, other-account-excluded, wrong-asset), per-NFT `Staking`+`Rewards` leg identity (`positionId = abi.encode(tokenId, poolId)`), a **two-pool** case yielding distinct positionIds, single-leg (no-rewards / no-stake) and empty cases, asset-filter match/mismatch, unregistered-underlying drop, `getAdapterBalances` shape, the `MAX_POSITIONS_PER_ACCOUNT` + `MAX_TOKEN_SCAN` caps, the `balanceOf` fast-path (zero-balance skips the scan; `balanceOf` revert falls back to the full scan), `try/catch` never-revert on `tokenInfo` / `totalSupply` / `getTokens` / `getAggregatedTokens`, ERC165, `underlyingAssetsSupported`. The mock `StakingViewer` returns per-token structs for exactly the ids the adapter passes, so discovery → valuation is tested end-to-end.
 
 ## 4. Adapter formula recap
 ```
-ids = { id in 1..min(StakingNFT.totalSupply(), MAX_TOKEN_SCAN) : StakingNFT.tokenInfo(id).owner == account }
+if StakingNFT.balanceOf(account) == 0: return []      // non-staker fast-path, no scan
+target = min(StakingNFT.balanceOf(account), MAX_POSITIONS_PER_ACCOUNT)   // (cap if balanceOf reverts)
+ids = first `target` of { id in 1..min(StakingNFT.totalSupply(), MAX_TOKEN_SCAN) : StakingNFT.tokenInfo(id).owner == account }
 tokens = StakingViewer.getTokens(ids)            // per-token { tokenId, poolId, activeStake, expiredStake, rewards }
 for each t in tokens:
   Staking leg = t.activeStake + t.expiredStake (NXM)   // if > 0

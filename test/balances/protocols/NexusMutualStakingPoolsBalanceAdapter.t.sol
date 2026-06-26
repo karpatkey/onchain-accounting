@@ -25,6 +25,7 @@ contract MockStakingNFT {
     mapping(uint256 => address) private _owner;
     mapping(uint256 => uint256) private _pool;
     bool public revertSupply;
+    bool public revertBalance;
     uint256 public revertId; // 0 = none
 
     function setTotalSupply(uint256 s) external {
@@ -40,6 +41,10 @@ contract MockStakingNFT {
         revertSupply = v;
     }
 
+    function setRevertBalance(bool v) external {
+        revertBalance = v;
+    }
+
     function setRevertId(uint256 id) external {
         revertId = id;
     }
@@ -47,6 +52,14 @@ contract MockStakingNFT {
     function totalSupply() external view returns (uint256) {
         require(!revertSupply, "supply revert");
         return _supply;
+    }
+
+    /// @notice Standard ERC721 owned-count, derived from the seeded owners over 1..totalSupply.
+    function balanceOf(address owner) external view returns (uint256 c) {
+        require(!revertBalance, "balanceOf revert");
+        for (uint256 i = 1; i <= _supply; ++i) {
+            if (_owner[i] == owner) c++;
+        }
     }
 
     function tokenInfo(uint256 id) external view returns (uint256, address) {
@@ -355,6 +368,31 @@ contract NexusMutualStakingPoolsBalanceAdapterTest is BalanceAdapterTestBase {
         _seed(2, owned, 1, 100, 0, 5);
         viewer.setRevert(true);
         assertEq(adapter.getAdapterPositions(holder, address(0)).length, 0); // getTokens revert → empty
+    }
+
+    // ---- balanceOf fast-path ----
+
+    function test_zeroBalance_skipsScan() public {
+        // holder owns nothing; balanceOf == 0 short-circuits before the (here large) id scan.
+        nft.setTotalSupply(500);
+        for (uint256 i = 1; i <= 500; ++i) {
+            nft.setToken(i, 1, other);
+        }
+        assertEq(adapter.getAdapterPositions(holder, address(0)).length, 0);
+        (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, address(nxm));
+        assertEq(amt, 0);
+    }
+
+    function test_balanceOfReverts_fallsBackToScan() public {
+        uint256[] memory owned = new uint256[](1);
+        owned[0] = 3;
+        _seed(5, owned, 1, 100, 0, 7);
+        nft.setRevertBalance(true); // balanceOf unavailable → fall back to the bounded full scan
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
+        assertEq(p.length, 2); // still discovered via the scan
+        assertEq(p[0].positionId, abi.encode(uint256(3), uint256(1)));
+        (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, address(nxm));
+        assertEq(amt, 107);
     }
 
     // ---- Interface ----

@@ -21,11 +21,13 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         matching owner, then values each via `StakingViewer.getTokens` (per-token active/expired
 ///         stake + rewards). One holder can have several positions, possibly across several pools; each
 ///         tokenId surfaces as its own leg(s), keyed by `positionId == abi.encode(tokenId, poolId)`.
-/// @dev Immutable; no off-chain agent. The scan cost grows with Nexus's **global** StakingNFT supply
-///      (not the account's position count). `MAX_TOKEN_SCAN` bounds it so the read loop can't OOG
-///      (which NAVCalculator's try/catch would NOT catch). If the global supply ever approaches the
-///      cap, high-id positions would be under-reported — never over-reported — and the protocol should
-///      migrate to an agent-fed cache (the ADR-0014 pattern) before then. The no-arg balance getters
+/// @dev Immutable; no off-chain agent. A `balanceOf(account)` guard skips the scan entirely for
+///      non-stakers (the common case in a NAV fan-out) and stops it early once all of an account's
+///      tokens are found, so the worst-case full `1..MAX_TOKEN_SCAN` scan only happens on a `balanceOf`
+///      revert. `MAX_TOKEN_SCAN` bounds that worst case so the read loop can't OOG (which NAVCalculator's
+///      try/catch would NOT catch). If Nexus's **global** StakingNFT supply ever approaches the cap,
+///      high-id positions would be under-reported — never over-reported — and the protocol should migrate
+///      to an agent-fed cache (the ADR-0014 pattern) before then. The no-arg balance getters
 ///      (`getAdapterBalances`/`getAdapterBalanceForAsset`) still return the summed NXM total.
 contract NexusMutualStakingPoolsBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     //
@@ -93,9 +95,22 @@ contract NexusMutualStakingPoolsBalanceAdapter is IBalanceAdapter, IPositionDesc
 
     /// @dev tokenIds owned by `account`, discovered by scanning `tokenInfo(1..min(totalSupply, cap))`.
     ///      Never reverts: a failed `totalSupply`/`tokenInfo` read degrades to fewer ids (the adapter
-    ///      under-reports, never invents). Collection stops at `MAX_POSITIONS_PER_ACCOUNT`.
+    ///      under-reports, never invents).
+    ///      `StakingNFT` exposes no owner→tokenIds view (not ERC721Enumerable), so discovery must scan —
+    ///      but `balanceOf` gives the exact owned count, which lets us (1) skip the scan entirely for the
+    ///      common non-staker case (`balanceOf == 0`), and (2) stop as soon as we've collected all the
+    ///      account's tokens (`n == target`) instead of scanning to the end. A reverting/absent `balanceOf`
+    ///      falls back to the plain bounded scan. Collection is capped at `MAX_POSITIONS_PER_ACCOUNT`.
     function _ownedTokenIds(address account) internal view returns (uint256[] memory ids) {
         if (account == address(0)) return new uint256[](0);
+
+        // Owned count (StakingNFT is a standard ERC721). Skip the scan for non-stakers; otherwise bound the
+        // collection to exactly what the account owns (capped). Fall back to the cap if balanceOf is absent.
+        uint256 target = MAX_POSITIONS_PER_ACCOUNT;
+        try INexusStakingNFT(STAKING_NFT).balanceOf(account) returns (uint256 bal) {
+            if (bal == 0) return new uint256[](0); // owns nothing → no scan
+            if (bal < target) target = bal; // collect exactly `bal`, then stop early
+        } catch {}
 
         uint256 supply;
         try INexusStakingNFT(STAKING_NFT).totalSupply() returns (uint256 s) {
@@ -105,10 +120,10 @@ contract NexusMutualStakingPoolsBalanceAdapter is IBalanceAdapter, IPositionDesc
         }
         uint256 scanTo = supply < MAX_TOKEN_SCAN ? supply : MAX_TOKEN_SCAN;
 
-        uint256[] memory found = new uint256[](MAX_POSITIONS_PER_ACCOUNT);
+        uint256[] memory found = new uint256[](target);
         uint256 n;
-        // StakingNFT ids are 1-indexed and contiguous (mint-only).
-        for (uint256 id = 1; id <= scanTo && n < MAX_POSITIONS_PER_ACCOUNT; ++id) {
+        // StakingNFT ids are 1-indexed and contiguous (mint-only). Stop once all `target` are found.
+        for (uint256 id = 1; id <= scanTo && n < target; ++id) {
             try INexusStakingNFT(STAKING_NFT).tokenInfo(id) returns (uint256, address owner) {
                 if (owner == account) found[n++] = id;
             } catch {}
@@ -273,6 +288,10 @@ contract NexusMutualStakingPoolsBalanceAdapter is IBalanceAdapter, IPositionDesc
 interface INexusStakingNFT {
     /// @notice Total number of StakingNFTs minted; ids are 1..totalSupply (never burned).
     function totalSupply() external view returns (uint256);
+
+    /// @notice Number of StakingNFTs owned by `owner`. Used to skip the scan for non-stakers and to stop
+    ///         the scan early once all of an account's tokens are found (StakingNFT is not enumerable).
+    function balanceOf(address owner) external view returns (uint256);
 
     /// @notice The pool and owner of `tokenId`. Reverts for a non-existent id.
     function tokenInfo(uint256 tokenId) external view returns (uint256 poolId, address owner);

@@ -30,7 +30,7 @@ interface IV2Bpt {
 ///         directly from the Vault's live balances and the BPT supply (`balances[i] * staked / totalSupply`), so
 ///         this is a self-consistent adapter test (no per-instance V2 gauge adapter exists to parity against). The
 ///         BAL inflation math is byte-identical to BalancerV3GaugesMeta (real-staker fork-tested there); the
-///         staked-share decomposition uses the same BalancerV2PoolLib proven in BalancerV2PoolsMeta.fork.t.sol.
+///         staked-share decomposition uses the same BalancerV2PoolLib proven in BalancerV2PoolsMetaBalanceAdapter.fork.t.sol.
 contract BalancerV2GaugesMetaForkTest is BalanceAdapterTestBase {
     address public constant VAULT = 0xBA12222222228d8Ba445958a75a0704d566BF2C8;
     address public constant BALANCER_MINTER = 0x239e55F427D44C3cc793f49bFB507ebe76638a2b;

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8;
 
-// Mock contracts extracted from CompoundV3Comet.t.sol for use by CompoundV3CometsMeta.t.sol
+// Mock contracts extracted from CompoundV3Comet.t.sol for use by CompoundV3CometsMetaBalanceAdapter.t.sol
 
 /// @notice Rewards mock with a valid reward config so `_rewardOwed` follows the accrual path.
 ///         `accrued − claimed` is exposed via `setClaimed`. With `rescaleFactor=1, shouldUpscale=false`

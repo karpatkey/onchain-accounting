@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import {Id, MarketParams, Market, Position} from "morpho-blue/src/interfaces/IMorpho.sol";
 import {MarketParamsLib} from "morpho-blue/src/libraries/MarketParamsLib.sol";
 
-// Mock contracts extracted from MorphoMarket.t.sol for use by MorphoMarketsMeta.t.sol
+// Mock contracts extracted from MorphoMarket.t.sol for use by MorphoMarketsMetaBalanceAdapter.t.sol
 
 /// @notice Mock Morpho with configurable per-user `Position` and per-market `Market` state.
 /// @dev Implements only `idToMarketParams`, `position`, and `market` — the surface used by

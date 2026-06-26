@@ -24,11 +24,11 @@ Registration gating is asymmetric (same as sGHO / Aave Umbrella / Lido WQ): `get
 
 ## 2. Existing fork test coverage
 
-`test/balances/protocols/fork/StaderWithdrawalQueue.fork.t.sol` already had `StaderWithdrawalQueueBalanceAdapterForkTest` covering the **pending** branch against the real contract:
+`test/balances/protocols/fork/StaderWithdrawalQueueBalanceAdapter.fork.t.sol` already had `StaderWithdrawalQueueBalanceAdapterForkTest` covering the **pending** branch against the real contract:
 - un-finalized holder `0x5066bc62…` (id 8056, `ethExpected = 37.440331321957283515 ETH`, `ethFinalized = 0`) @ block `25_015_000`.
 - plus zero-address / unknown-holder / unsupported-asset / asset-filter-mismatch / interface / immutables.
 
-The unit test (`test/balances/protocols/StaderWithdrawalQueue.t.sol`) covers the mock-only edges: constructor reverts, `ethExpected` vs `ethFinalized` preference, **multi-request summing**, **claimed-skip** (`owner == 0`), unregistered underlying, and **both enumeration-end sentinels** (non-OOB panic → `UnexpectedPanic`; non-empty revert re-thrown).
+The unit test (`test/balances/protocols/StaderWithdrawalQueueBalanceAdapter.t.sol`) covers the mock-only edges: constructor reverts, `ethExpected` vs `ethFinalized` preference, **multi-request summing**, **claimed-skip** (`owner == 0`), unregistered underlying, and **both enumeration-end sentinels** (non-OOB panic → `UnexpectedPanic`; non-empty revert re-thrown).
 
 All kept as regression nets.
 
@@ -69,7 +69,7 @@ return PositionBalance(WETH, total, isDebt=false, Supplied, positionId="")   if 
 | Underlying (WETH) | `0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2` |
 | Queue state at block | nextRequestId 8219, nextRequestIdToFinalize 8215 (ids ≤ 8214 finalized, 8215–8218 pending) |
 | Adapter under test | `StaderWithdrawalQueueBalanceAdapter` |
-| Fork-test contract | `StaderWithdrawalQueueBalanceAdapterForkTest_Fresh` in `test/balances/protocols/fork/StaderWithdrawalQueue.fork.t.sol` |
+| Fork-test contract | `StaderWithdrawalQueueBalanceAdapterForkTest_Fresh` in `test/balances/protocols/fork/StaderWithdrawalQueueBalanceAdapter.fork.t.sol` |
 
 ## 6. Case files in this folder
 
@@ -111,7 +111,7 @@ The value is a live read of Stader's own UserWithdrawalManager — there is no c
 | `FINALIZED` (finalized) | `adapter == userWithdrawRequests(8214).ethFinalized`, which is **strictly less than** that request's `ethExpected` (…347 < …356) — proving the branch precedence. |
 | `MULTI` (two requests) | `adapter == userWithdrawRequests(8196).ethFinalized + userWithdrawRequests(8197).ethFinalized` — one aggregated leg, summed on-chain. |
 
-The claimed-skip (`owner == 0`) path is exercised with mocks in `test/balances/protocols/StaderWithdrawalQueue.t.sol` — a holder carrying a claimed-but-still-indexed id can't be relied on to exist at any given block. The tests also assert `protocolId == keccak256("stader-withdrawal")`, `positionId == ""`, `PositionKind.Supplied`, and `balanceAdapter == address(this)`.
+The claimed-skip (`owner == 0`) path is exercised with mocks in `test/balances/protocols/StaderWithdrawalQueueBalanceAdapter.t.sol` — a holder carrying a claimed-but-still-indexed id can't be relied on to exist at any given block. The tests also assert `protocolId == keccak256("stader-withdrawal")`, `positionId == ""`, `PositionKind.Supplied`, and `balanceAdapter == address(this)`.
 
 ## 9. Wiring the live dev-anvil dashboard
 
@@ -149,5 +149,5 @@ The position renders under **Stader** as a single **Supplied** leg denominated i
 Run via:
 
 ```
-FOUNDRY_PROFILE=slow forge test --match-path "test/balances/protocols/fork/StaderWithdrawalQueue.fork.t.sol" -vv
+FOUNDRY_PROFILE=slow forge test --match-path "test/balances/protocols/fork/StaderWithdrawalQueueBalanceAdapter.fork.t.sol" -vv
 ```

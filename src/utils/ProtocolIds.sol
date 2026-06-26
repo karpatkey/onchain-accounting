@@ -22,7 +22,7 @@ pragma solidity ^0.8;
 ///        UNISWAP_V3 / PANCAKESWAP_V3     → (address npm, uint256 tokenId)
 ///        UNISWAP_V2 / PANCAKESWAP_V2     → (address pair)
 ///        COMPOUND_V3 / FLUID_FTOKENS     → (address market)
-///        MERKL                           → (address rewardToken)
+///        MERKL                           → (address distributor) — reward token is in balanceAsset, not positionId
 ///        NEXUS_MUTUAL_STAKING            → (uint256 tokenId, uint256 poolId)
 ///        STADER_WITHDRAWAL / KELP_WITHDRAWAL / LIDO_WITHDRAWAL
 ///          / ETHENA_COOLDOWN / ETHERFI_WITHDRAWAL / STAKEWISE_EXIT → "" (account-global)

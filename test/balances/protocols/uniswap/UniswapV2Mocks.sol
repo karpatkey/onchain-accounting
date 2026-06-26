@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-// Mock contracts extracted from UniswapV2.t.sol for use by UniswapV2PoolsMeta.t.sol
+// Mock contracts extracted from UniswapV2.t.sol for use by UniswapV2PoolsMetaBalanceAdapter.t.sol
 
 /// @notice Minimal Uniswap V2 factory mock — settable `feeTo()`.
 contract MockUniswapV2Factory {

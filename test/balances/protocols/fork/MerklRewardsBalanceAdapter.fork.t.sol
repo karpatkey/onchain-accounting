@@ -9,7 +9,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 /// @notice Fork tests for `MerklRewardsBalanceAdapter`. Validates the adapter integrates cleanly with the real
 ///         Merkl Distributor on Ethereum mainnet — `getMerkleRoot()` returns non-zero, the public `claimed`
 ///         getter works, invalid proofs revert, and uncached reads return 0. The merkle proof-verification math
-///         itself is exhaustively tested with synthetic trees in `MerklRewards.t.sol`; capturing a real proof at
+///         itself is exhaustively tested with synthetic trees in `MerklRewardsBalanceAdapter.t.sol`; capturing a real proof at
 ///         a pinned block is brittle (Merkl rotates roots ~every 8h) and is left as a future enhancement.
 contract MerklRewardsBalanceAdapterForkTest is BalanceAdapterTestBase {
     /// @notice Merkl Distributor — same address on every supported EVM chain.

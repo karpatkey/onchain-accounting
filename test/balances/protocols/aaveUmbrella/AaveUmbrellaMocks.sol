@@ -5,7 +5,7 @@ pragma solidity ^0.8;
 /// @notice Minimal stand-ins for the live Umbrella surface the adapter discovers at runtime, so the
 ///         balance math (the ERC4626 walk + reward bare-reserve resolution + position emission) can
 ///         be exercised deterministically without a fork. The fork companion
-///         (test/balances/protocols/fork/AaveUmbrella.fork.t.sol) covers the real contracts.
+///         (test/balances/protocols/fork/AaveUmbrellaBalanceAdapter.fork.t.sol) covers the real contracts.
 /// @dev Conversions use a 1e18-scaled `rate` (assets per share); convertToAssets(0) == 0 so the
 ///      wrapper-detection probe in the adapter classifies MockErc4626Wrapper as a wrapper and a
 ///      plain Mock_ERC20 (no asset()/convertToAssets) as a bare reserve.

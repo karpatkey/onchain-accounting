@@ -246,7 +246,7 @@ PositionBalance({
     amount:        250e18,                 // 250 CRV unclaimed
     isDebt:        false,
     protocolId:    keccak256("merkl"),
-    positionId:    abi.encode(0xD533…cd52),  // reward token address
+    positionId:    abi.encode(0x3Ef3…D9Ae),  // Merkl Distributor (reward token is in balanceAsset)
     positionKind:  PositionKind.Rewards
 })
 ```
@@ -893,7 +893,7 @@ bytes32 protocolId = keccak256("aave-v3-lending");  // == ProtocolIds.AAVE_V3_LE
 | `stakewise-v3` | `(address vault)` |
 | `cap` | `(address token)` — cUSD or stcUSD |
 | `erc4626` | `(address vault)` |
-| `merkl` | `(address rewardToken)` |
+| `merkl` | `(address distributor)` — reward token in balanceAsset |
 | `nexus-mutual-staking` | `(uint256 tokenId, uint256 poolId)` |
 | `stader-withdrawal` | `""` (account-global) |
 | `kelp-withdrawal` | `""` (account-global) |
@@ -1238,8 +1238,8 @@ const [wrapper] = abi.decode(["address"], pos.positionId);
 #### Merkl rewards — `merkl`
 
 ```typescript
-const [rewardToken] = abi.decode(["address"], pos.positionId);
-// rewardToken — the ERC20 reward token
+const [distributor] = abi.decode(["address"], pos.positionId);
+// distributor — the Merkl Distributor (claim target); the reward token is in balanceAsset.asset
 // Rewards → unclaimed allocation (proof-cached; may be stale between proof updates)
 ```
 

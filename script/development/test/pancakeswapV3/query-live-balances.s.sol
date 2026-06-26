@@ -20,7 +20,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 ///          script/development/test/pancakeswapV3/query-live-balances.s.sol:QueryPancakeV3LiveBalances \
 ///          --rpc-url http://127.0.0.1:8545 -vv
 ///      For a registry-free dump at an exact archive block, read getAdapterPositionsForInstances in the fork test
-///      (test/balances/protocols/fork/PancakeSwapV3PoolsMeta.fork.t.sol), which deploys its own Balances harness.
+///      (test/balances/protocols/fork/PancakeSwapV3PoolsMetaBalanceAdapter.fork.t.sol), which deploys its own Balances harness.
 contract QueryPancakeV3LiveBalances is Script {
     address constant NPM = 0x46A15B0b27311cedF172AB29E4f4766fbE7F4364;
     address constant POOL = 0x6CA298D2983aB03Aa1dA7679389D955A4eFEE15C; // WETH/USDT 0.05%

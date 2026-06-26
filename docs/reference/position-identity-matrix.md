@@ -71,7 +71,7 @@ Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, pos
 | EthenaCooldownBalanceAdapter | `ethena-cooldown` | `""` (empty — account-global) | USDe in the sUSDe unstaking cooldown | `Supplied` | false | USDe |
 | NexusMutualStakingPools | `nexus-mutual-staking` | `abi.encode(uint256 tokenId, uint256 poolId)` | active + expired staked NXM (per StakingNFT) | `Staking` | false | NXM |
 | | | | claimable rewards (per StakingNFT) | `Rewards` | false | NXM |
-| MerklRewards | `merkl` | `abi.encode(address rewardToken)` | unclaimed rewards per token | `Rewards` | false | reward token |
+| MerklRewards | `merkl` | `abi.encode(address distributor)` | unclaimed rewards (one leg per reward token, distinguished by `balanceAsset`) | `Rewards` | false | reward token |
 
 ## PositionKind usage census
 

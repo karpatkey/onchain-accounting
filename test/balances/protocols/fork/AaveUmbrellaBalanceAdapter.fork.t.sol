@@ -64,7 +64,7 @@ contract AaveUmbrellaBalanceAdapterForkTest is BalanceAdapterTestBase {
     }
 
     // Real Mainnet holders, one per stake token (today's set). The WETH holder is also the legacy
-    // SM stkAAVE / stkABPTv2 holder used in test/balances/protocols/fork/AaveV3SafetyModule.fork.t.sol.
+    // SM stkAAVE / stkABPTv2 holder used in test/balances/protocols/fork/AaveV3SafetyModuleBalanceAdapter.fork.t.sol.
     address public constant STK_WA_USDC_HOLDER = 0xd0002c648CCa8DeE2f2b8D70D542Ccde8ad6EC03;
     address public constant STK_WA_USDT_HOLDER = 0x7FE4b2632f5AE6d930677D662AF26Bc0a06672b3;
     address public constant STK_WA_WETH_HOLDER = 0x000000000004444c5dc75cB358380D2e3dE08A90;

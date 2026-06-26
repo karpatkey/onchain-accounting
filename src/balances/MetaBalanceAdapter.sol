@@ -233,7 +233,7 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     ///      Override when the coordinate is a raw bytes32 (e.g. Morpho market IDs, Balancer V2 poolIds).
     ///      Adapters where positionId varies per leg rather than per instance do NOT use this hook —
     ///      they compute positionId inline in _instancePositions:
-    ///        - Aave V3 / Aave V2: abi.encode(pool, reserve) — one positionId per reserve
+    ///        - Aave V3: abi.encode(pool, reserve) — one positionId per reserve
     ///        - Uniswap V3 / PancakeSwap V3: abi.encode(npm, tokenId) — one positionId per NFT
     function _instancePositionId(bytes32 instance) internal view virtual returns (bytes memory) {
         return abi.encode(_toAddress(instance));

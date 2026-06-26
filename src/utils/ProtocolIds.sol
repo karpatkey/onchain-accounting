@@ -8,7 +8,7 @@ pragma solidity ^0.8;
 ///
 ///      positionId schemas (all are `abi.encode(...)`):
 ///        WALLET                          → (address asset)
-///        AAVE_V3_LENDING / V2 / SPARK    → (address pool, address reserve)
+///        AAVE_V3_LENDING / SPARK         → (address pool, address reserve)
 ///        AAVE_V3_SAFETY_MODULE / UMBRELLA→ (address stakeToken)
 ///        MORPHO_VAULTS / GEARBOX_V3 / EULER_VAULTS / CAP / ERC4626 / STAKEWISE_V3 / FLUID_VAULTS → (address vault)
 ///        MORPHO_MARKETS                  → (bytes32 marketId)
@@ -30,7 +30,6 @@ library ProtocolIds {
 
     // Aave family
     bytes32 internal constant AAVE_V3_LENDING = keccak256("aave-v3-lending");
-    bytes32 internal constant AAVE_V2_LENDING = keccak256("aave-v2-lending");
     bytes32 internal constant AAVE_V3_SAFETY_MODULE = keccak256("aave-v3-safety-module");
     bytes32 internal constant AAVE_V3_UMBRELLA = keccak256("aave-v3-umbrella");
 

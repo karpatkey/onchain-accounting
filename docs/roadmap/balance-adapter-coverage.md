@@ -1,12 +1,14 @@
 # Balance-adapter coverage roadmap
 
-> **PR #47 (meta-adapter framework):** Coverage was expanded significantly. A family of immutable meta-adapters now covers every instance of the protocol families below (Morpho Vaults/Markets, Aave V3/V2, Balancer V3/V2 pools+gauges, Uniswap V3/V2, PancakeSwap V3/V2, Gearbox, Compound V3, Fluid fTokens/Vaults, StakeWise V3, Curve pools+gauges, Convex, Euler V2 — 21 meta-adapter contracts in `src/balances/protocols/`). The active instance set for each is governed on NAVCalculator via `addMetaInstances`/`removeMetaInstances` instead of deploying a contract per instance.
+> **PR #47 (meta-adapter framework):** Coverage was expanded significantly. A family of immutable meta-adapters now covers every instance of the protocol families below (Morpho Vaults/Markets, Aave V3, Balancer V3/V2 pools+gauges, Uniswap V3/V2, PancakeSwap V3/V2, Gearbox, Compound V3, Fluid fTokens/Vaults, StakeWise V3, Curve pools+gauges, Convex, Euler V2 — 20 meta-adapter contracts in `src/balances/protocols/`). The active instance set for each is governed on NAVCalculator via `addMetaInstances`/`removeMetaInstances` instead of deploying a contract per instance.
 
 Living document. Tracks protocols and protocol features whose positions are **not yet** captured by NAVCalculator's balance adapters, with the goal of growing NAV coverage one PR at a time.
 
 The Stader withdrawal-queue adapter (`src/balances/protocols/StaderWithdrawalQueue.sol`) is the reference template for the **withdrawal-queue** family below: a single immutable adapter that enumerates an account's open requests on a protocol-specific manager and reports a single aggregated credit position in the underlying asset. Most LST queues fit that shape with cosmetic differences in enumeration (sequential ID vs. ERC721 NFT) and request struct layout.
 
 When picking the next protocol to add, prioritise by **whether kpk actually parks value there** rather than by protocol prominence — the catch-all `ERC20DefaultAdapter` already covers wallet ERC20 holdings, so a new adapter only earns its keep when there is value parked outside the wallet (a queue, a vault wrapper, a debt position).
+
+The system does not track deprecated protocols — once a protocol is no longer in active use, its adapter, config, and identity entries are deleted rather than left in a permanently-disabled state. Aave V2 was removed for this reason (as were Aura and Sky Savings in recent PRs).
 
 ---
 
@@ -78,7 +80,6 @@ These are not queues but represent value that lives outside the wallet and is no
 - **Morpho Vaults**: ✅ covered — `MorphoVaultsMeta` (meta-adapter, ADR 0010).
 - **Morpho Markets**: ✅ covered — `MorphoMarketsMeta` (meta-adapter, ADR 0010).
 - **Aave V3 (all instances)**: ✅ covered — `AaveV3InstancesMeta` (meta-adapter, ADR 0010).
-- **Aave V2**: ✅ covered — `AaveV2InstancesMeta` (meta-adapter, ADR 0010).
 - **Compound V3**: ✅ covered — `CompoundV3CometsMeta` (meta-adapter, ADR 0010).
 - **Gearbox**: ✅ covered — `GearboxMarketsMeta` (meta-adapter, ADR 0010).
 - **Fluid**: ✅ covered — `FluidFTokensMeta` (ERC4626 lending) + `FluidVaultsMeta` (T1 collateral/debt) meta-adapters (ADR 0010).

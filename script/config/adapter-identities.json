@@ -9,22 +9,6 @@
     "positionId": "0x0000000000000000000000000000000000000000"
   },
 
-  "AaveV2InstancesMeta": {
-    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Aave V2 instances. Thin subclass of AaveV3InstancesMeta (same DataProvider ABI; pool resolved via getLendingPool() instead of getPool()). Constructor takes (protocol, navCalculator). The active instance set lives on NAVCalculator (addMetaInstances/removeMetaInstances, configured in nav-config/meta-balance-adapters under AaveV2InstancesMeta.instances — instance ProtocolDataProvider addresses). Identity derived on-chain: positionId = abi.encode(LendingPool, reserve); name = describePosition() => \"<reserve symbol> position (<market id>)\" (e.g. \"USDC position (Aave genesis market)\"); market id via LendingPool.getAddressesProvider().getMarketId(). Supersedes the per-instance AaveV2Instance adapter.",
-    "$perPositionFields": "type: Supply | Borrow | Collateral (up to 2 rows per reserve — variable debt only, stable debt not reported)",
-    "protocol": "Aave V2",
-    "positionDetail": { "protocol": "Aave V2", "product": "Lending", "name": "<derived: \"<reserve symbol> position (<market id>)\">" }
-  },
-
-  "AaveV2Instance": {
-    "$superseded": "Superseded by AaveV2InstancesMeta (ADR 0010); per-instance deploys disabled in chain config.",
-    "$perPositionFields": "type: Supply | Borrow | Collateral",
-    "$deployedNote": "Existing deployments used the dataProvider address as positionId. Canonical target is the Pool address.",
-    "protocol": "Aave V2",
-    "positionDetail": { "protocol": "Aave V2", "product": "Lending", "name": "<market name>" },
-    "positionId": "<Pool address>"
-  },
-
   "AaveV3Instance": {
     "$superseded": "Superseded by AaveV3InstancesMeta (ADR 0010); per-market deploys disabled in chain config.",
     "$perPositionFields": "type: Supply | Borrow | Collateral",

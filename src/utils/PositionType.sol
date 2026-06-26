@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8;
 
 /// @notice String constants for the `type` field appended to every `positionDetail` JSON.

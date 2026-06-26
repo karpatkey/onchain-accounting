@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8;
 
 /// @title LayerZero V2 and Stargate V2 Interfaces

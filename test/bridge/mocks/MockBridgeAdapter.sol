@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8;
 
 import {BridgeAdapter} from "src/bridge/BridgeAdapter.sol";

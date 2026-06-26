@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: UNLICENSED
 // solhint-disable one-contract-per-file
 pragma solidity ^0.8.0;
 

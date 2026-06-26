@@ -1,0 +1,32 @@
+karpatkey Onchain Accounting — Source-Available License (All Rights Reserved)
+
+Copyright (c) 2026 karpatkey. All rights reserved.
+
+DRAFT — PENDING LEGAL REVIEW. The exact terms and the licensor entity name must
+be confirmed by legal before relying on this file.
+
+1. Purpose. This source code is published solely for transparency and to allow
+   independent review, audit, and verification of the smart contracts deployed
+   by karpatkey. Publication does not grant any license to use the code.
+
+2. No license granted. Except as stated in Section 4, no right or license is
+   granted, by implication, estoppel, or otherwise, to any person to use, copy,
+   modify, adapt, publish, distribute, sublicense, sell, deploy, host, offer as
+   a service, or create derivative works of this software or any part of it, in
+   source or binary form, for any purpose, without the prior express written
+   permission of karpatkey.
+
+3. Reservation of rights. All rights not expressly granted are reserved.
+
+4. Third-party components. Certain files incorporate third-party code licensed
+   under GPL-2.0-or-later (the Uniswap v3 math libraries and the adapters that
+   incorporate them — see the per-file SPDX-License-Identifier headers and
+   docs/decisions/0008-uniswap-v3-math-libs-gpl-license.md). Those files, and any
+   combined work incorporating them, are governed by GPL-2.0-or-later, not by
+   this license. Dependencies under lib/ retain their own licenses.
+
+5. No warranty. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+   EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO MERCHANTABILITY, FITNESS FOR
+   A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL KARPATKEY BE
+   LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM OR IN
+   CONNECTION WITH THE SOFTWARE OR ITS USE.

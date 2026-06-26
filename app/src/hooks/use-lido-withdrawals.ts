@@ -5,7 +5,7 @@ import { AUTOREFRESH_INTERVAL_MS } from '@/config/chains'
 
 // Per-NFT-id breakdown of a Lido withdrawal-queue position. The balance adapter aggregates all open
 // requests into a single ETH leg (positionId = "", account-global) — see the rationale in
-// src/balances/protocols/LidoWithdrawalQueue.sol. This hook re-derives the per-request detail directly
+// src/balances/protocols/LidoWithdrawalQueueBalanceAdapter.sol. This hook re-derives the per-request detail directly
 // from Lido's WithdrawalQueueERC721 for a *display-only* drill-down; it does not affect NAV.
 export type LidoWithdrawalRequest = {
   id: bigint

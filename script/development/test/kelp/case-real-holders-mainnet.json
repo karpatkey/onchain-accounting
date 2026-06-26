@@ -1,7 +1,7 @@
 {
   "protocol": "Kelp DAO rsETH Withdrawal Queue",
   "adapter": "src/balances/protocols/KelpWithdrawalQueueBalanceAdapter.sol",
-  "adapter_test": "test/balances/protocols/fork/KelpWithdrawalQueue.fork.t.sol",
+  "adapter_test": "test/balances/protocols/fork/KelpWithdrawalQueueBalanceAdapter.fork.t.sol",
   "test_contract": "KelpWithdrawalQueueBalanceOracleForkTest_Fresh",
   "chain": { "id": 1, "name": "mainnet" },
   "block": {
@@ -54,6 +54,6 @@
   ],
   "ground_truth": {
     "method": "live LRTWithdrawalManager reads (NOT a Python re-derivation)",
-    "detail": "Both legs are pinned against the real Kelp LRTWithdrawalManager at the fork block. stETH leg == sum of expectedAssetAmount over the holder's two open stETH requests; native-ETH leg == the single open native-ETH request's expectedAssetAmount. getOraclePositions emits exactly these two legs (ETHx skipped: no request + unregistered), each with protocolId == keccak256('kelp-withdrawal'), positionId == \"\" (account-global), PositionKind.Supplied, balanceOracle == address(this). Multi-request summing within an asset, multi-asset emission, the claimed-front-skip (deque pop), the 256 cap, and the registered-vs-unregistered drop are also covered with mocks in the unit test (test/balances/protocols/KelpWithdrawalQueue.t.sol)."
+    "detail": "Both legs are pinned against the real Kelp LRTWithdrawalManager at the fork block. stETH leg == sum of expectedAssetAmount over the holder's two open stETH requests; native-ETH leg == the single open native-ETH request's expectedAssetAmount. getOraclePositions emits exactly these two legs (ETHx skipped: no request + unregistered), each with protocolId == keccak256('kelp-withdrawal'), positionId == \"\" (account-global), PositionKind.Supplied, balanceOracle == address(this). Multi-request summing within an asset, multi-asset emission, the claimed-front-skip (deque pop), the 256 cap, and the registered-vs-unregistered drop are also covered with mocks in the unit test (test/balances/protocols/KelpWithdrawalQueueBalanceAdapter.t.sol)."
   }
 }

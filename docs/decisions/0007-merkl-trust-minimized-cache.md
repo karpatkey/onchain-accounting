@@ -67,7 +67,7 @@ Ship `MerklRewardsBalanceAdapter` (`src/balances/protocols/MerklRewardsBalanceAd
 ## Reference
 
 - Adapter: `src/balances/protocols/MerklRewardsBalanceAdapter.sol`
-- Tests: `test/balances/protocols/MerklRewards.t.sol` (unit, 40 tests including synthetic merkle trees), `test/balances/protocols/fork/MerklRewards.fork.t.sol` (Mainnet integration sanity)
+- Tests: `test/balances/protocols/MerklRewardsBalanceAdapter.t.sol` (unit, 40 tests including synthetic merkle trees), `test/balances/protocols/fork/MerklRewardsBalanceAdapter.fork.t.sol` (Mainnet integration sanity)
 - Merkl Distributor source (verified leaf encoding, `_verifyProof`, `getMerkleRoot`): https://github.com/AngleProtocol/merkl-contracts/blob/main/contracts/Distributor.sol
 - Merkl API (proof source for the bot): `https://api.merkl.xyz/v4/users/{address}/rewards?chainId={cid}`
 - Deploy schema: `script/config/contracts-deployment-config/balance-adapters/<id>.json` `MerklRewards.constructor` (`distributor`); owner = `addresses.admin` from `script/config/chains/<id>.json`.

@@ -62,6 +62,6 @@ Concretely:
 The multi-token design described above was reverted before it shipped, so the factory and migration-script files it proposed never existed. The pointers here are to the code as it stands today (the hardcoded immutable adapter from ADR 0005):
 
 - Adapter: `src/balances/protocols/AaveV3SafetyModuleBalanceAdapter.sol`
-- Tests: `test/balances/protocols/AaveV3SafetyModule.t.sol` (unit), `test/balances/protocols/fork/AaveV3SafetyModule.fork.t.sol` (fork)
+- Tests: `test/balances/protocols/AaveV3SafetyModuleBalanceAdapter.t.sol` (unit), `test/balances/protocols/fork/AaveV3SafetyModuleBalanceAdapter.fork.t.sol` (fork)
 - Superseded by: ADR [0005](0005-aave-safety-module-hardcoded-immutable.md)
 - Framework reference: ADR [0001](0001-balance-adapter-factory-pattern.md) (the factory pattern is designed but not yet shipped)

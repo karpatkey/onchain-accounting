@@ -3,7 +3,7 @@ pragma solidity ^0.8;
 
 import {IFluidVaultT1, IFluidVaultResolver} from "src/balances/protocols/FluidVaultLib.sol";
 
-// Mock contracts extracted from FluidVault.t.sol for use by FluidVaultsMeta.t.sol
+// Mock contracts extracted from FluidVault.t.sol for use by FluidVaultsMetaBalanceAdapter.t.sol
 
 /// @notice Programmable mock of a Fluid T1 vault contract. Returns a configurable `ConstantViews`
 ///         from `constantsView()` so tests can stage T1 / zero-token configurations.

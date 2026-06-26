@@ -5,7 +5,7 @@ import { AUTOREFRESH_INTERVAL_MS } from '@/config/chains'
 
 // Per-request-id breakdown of a Stader ETHx withdrawal-queue position. The balance adapter aggregates all
 // open requests into a single WETH leg (positionId = "", account-global) — see the rationale in
-// src/balances/protocols/StaderWithdrawalQueue.sol. This hook re-derives the per-request detail directly
+// src/balances/protocols/StaderWithdrawalQueueBalanceAdapter.sol. This hook re-derives the per-request detail directly
 // from Stader's UserWithdrawalManager for a *display-only* drill-down; it does not affect NAV.
 //
 // Stader's identifier is a sequential `requestId` (not an ERC721 NFT like Lido), enumerated via the

@@ -23,7 +23,7 @@ import "src/errors.sol";
 /// @notice Unit tests for the dynamic-discovery AaveUmbrellaBalanceAdapter.
 /// @dev The adapter discovers the full Umbrella stake-token set at runtime via
 ///      `RewardsController.getAllAssets()`. Behaviour against real Mainnet contracts is covered by
-///      the fork-test companion in `test/balances/protocols/fork/AaveUmbrella.fork.t.sol`. These
+///      the fork-test companion in `test/balances/protocols/fork/AaveUmbrellaBalanceAdapter.fork.t.sol`. These
 ///      unit tests cover the surface that doesn't depend on a live controller: constructor guards,
 ///      ERC165, and the zero-account / zero-asset early-exit shortcuts (which return empty results
 ///      before touching the controller, so they work even when the controller is a stub).

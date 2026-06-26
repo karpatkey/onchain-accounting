@@ -5,7 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {Balances} from "src/balances/Balances.sol";
 import {IPrices} from "src/prices/IPrices.sol";
-import {ERC20DefaultAdapter} from "src/balances/protocols/ERC20DefaultAdapter.sol";
+import {ERC20DefaultBalanceAdapter} from "src/balances/protocols/ERC20DefaultBalanceAdapter.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {aa} from "test/helpers/AdapterArray.sol";
@@ -14,14 +14,14 @@ import {aa} from "test/helpers/AdapterArray.sol";
 /// @dev Extends Balances and implements a minimal asset registry so it can stand in for NAVCalculator.
 ///      Adapters call getRegisteredAssets() etc.; this harness maintains its own _registeredAssets.
 contract BalancesHarnessForFork is Balances {
-    ERC20DefaultAdapter public defaultAdapter;
+    ERC20DefaultBalanceAdapter public defaultAdapter;
 
     INAVCalculator.Asset[] private _registeredAssets;
     mapping(address => uint256) private _assetIndex;
 
     constructor() initializer {
         __Balances_init();
-        defaultAdapter = new ERC20DefaultAdapter(address(this), new address[](0));
+        defaultAdapter = new ERC20DefaultBalanceAdapter(address(this), new address[](0));
         _setErc20DefaultAdapter(address(defaultAdapter));
     }
 
@@ -180,12 +180,12 @@ abstract contract TestSetupHelpers is Test {
 
     /// @notice Ensures native address has a balance adapter set up
     /// @param balances The Balances contract instance
-    /// @dev The native address should use the ERC20DefaultAdapter
+    /// @dev The native address should use the ERC20DefaultBalanceAdapter
     function ensureNativeBalanceAdapter(Balances balances) internal view {
         if (!balances.isAdapterRegistered(balances.erc20DefaultAdapter())) {
-            // This should not happen if ERC20DefaultAdapter is properly set up
+            // This should not happen if ERC20DefaultBalanceAdapter is properly set up
             // But we check to provide a clear error message
-            revert("Native balance adapter not initialized. ERC20DefaultAdapter should be set in constructor.");
+            revert("Native balance adapter not initialized. ERC20DefaultBalanceAdapter should be set in constructor.");
         }
     }
 
@@ -230,7 +230,7 @@ abstract contract TestSetupHelpers is Test {
     /// @param priceOracle The price oracle address
     /// @param priceType The price type
     /// @param heartbeat The chainlink heartbeat
-    /// @param balanceAdapter The balance adapter address (optional, ERC20DefaultAdapter is always available)
+    /// @param balanceAdapter The balance adapter address (optional, ERC20DefaultBalanceAdapter is always available)
     function setupCompleteAsset(
         NAVCalculator nav,
         address manager,
@@ -243,7 +243,7 @@ abstract contract TestSetupHelpers is Test {
         ensureAssetRegistered(nav, manager, asset, priceOracle, priceType, heartbeat);
         // Price feed is set during registration, but ensurePriceFeed will update if needed
         ensurePriceFeed(nav, manager, asset, priceOracle, priceType, heartbeat);
-        // Only add custom balance adapter if provided (ERC20DefaultAdapter is always available)
+        // Only add custom balance adapter if provided (ERC20DefaultBalanceAdapter is always available)
         if (balanceAdapter != address(0)) {
             ensureBalanceAdapter(nav, manager, balanceAdapter);
         }

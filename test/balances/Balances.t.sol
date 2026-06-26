@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import {Test} from "forge-std/Test.sol";
 import {IBalances} from "src/balances/IBalances.sol";
 import {Balances} from "src/balances/Balances.sol";
-import {ERC20DefaultAdapter} from "src/balances/protocols/ERC20DefaultAdapter.sol";
+import {ERC20DefaultBalanceAdapter} from "src/balances/protocols/ERC20DefaultBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -16,16 +16,16 @@ import {Mock_ERC20} from "test/mocks/tokens.sol";
 import "src/errors.sol";
 
 contract BalancesHarness is Balances {
-    ERC20DefaultAdapter public defaultAdapter;
+    ERC20DefaultBalanceAdapter public defaultAdapter;
 
-    /// @notice Test-only: track assets "registered" so ERC20DefaultAdapter.addSupportedAsset (which checks isAssetRegistered) succeeds.
+    /// @notice Test-only: track assets "registered" so ERC20DefaultBalanceAdapter.addSupportedAsset (which checks isAssetRegistered) succeeds.
     address[] private _testRegisteredList;
     mapping(address => bool) private _testRegistered;
 
     constructor() initializer {
         __Balances_init();
-        // Set up ERC20DefaultAdapter for native address support
-        defaultAdapter = new ERC20DefaultAdapter(address(this), new address[](0));
+        // Set up ERC20DefaultBalanceAdapter for native address support
+        defaultAdapter = new ERC20DefaultBalanceAdapter(address(this), new address[](0));
         _setErc20DefaultAdapter(address(defaultAdapter));
     }
 
@@ -176,11 +176,11 @@ contract BalancesTest is Test {
 
     function test_setup() public view {
         uint256 count = balances.getAdapterCount();
-        assertEq(count, 1, "Should have one balance adapter (ERC20DefaultAdapter)");
+        assertEq(count, 1, "Should have one balance adapter (ERC20DefaultBalanceAdapter)");
 
         address[] memory adapters = balances.getAllAdapters();
         assertEq(adapters.length, 1, "Should have one adapter");
-        assertEq(adapters[0], balances.erc20DefaultAdapter(), "First adapter should be ERC20DefaultAdapter");
+        assertEq(adapters[0], balances.erc20DefaultAdapter(), "First adapter should be ERC20DefaultBalanceAdapter");
     }
 
     function test_setAndGetERC20BalanceAdapter() public {
@@ -194,7 +194,7 @@ contract BalancesTest is Test {
         address[] memory adapters = balances.getAdaptersForAsset(address(usdc));
         assertGt(adapters.length, 0, "Should have at least one adapter supporting USDC");
 
-        // Get balance from ERC20DefaultAdapter
+        // Get balance from ERC20DefaultBalanceAdapter
         (uint256 amount, bool isDebt) =
             IBalanceAdapter(balances.erc20DefaultAdapter()).getAdapterBalanceForAsset(alice, address(usdc));
         assertEq(amount, 1000);
@@ -240,7 +240,7 @@ contract BalancesTest is Test {
     function test_getNativeBalance() public {
         deal(alice, 1337);
 
-        // Get balance from ERC20DefaultAdapter for native address
+        // Get balance from ERC20DefaultBalanceAdapter for native address
         (uint256 amount, bool isDebt) =
             IBalanceAdapter(balances.erc20DefaultAdapter()).getAdapterBalanceForAsset(alice, balances.NATIVE_ADDRESS());
         assertEq(amount, 1337);
@@ -259,14 +259,14 @@ contract BalancesTest is Test {
         // Verify custom adapter is no longer registered
         assertFalse(balances.isAdapterRegistered(address(customAdapter)), "Custom adapter should not be registered");
 
-        // ERC20DefaultAdapter should still be available for USDC
+        // ERC20DefaultBalanceAdapter should still be available for USDC
         address[] memory adapters = balances.getAdaptersForAsset(address(usdc));
-        // Should still have ERC20DefaultAdapter
-        assertGt(adapters.length, 0, "Should still have ERC20DefaultAdapter for USDC");
+        // Should still have ERC20DefaultBalanceAdapter
+        assertGt(adapters.length, 0, "Should still have ERC20DefaultBalanceAdapter for USDC");
     }
 
     function test_removeBalanceAdapter_cantRemoveERC20DefaultAdapter() public {
-        // Cannot remove ERC20DefaultAdapter
+        // Cannot remove ERC20DefaultBalanceAdapter
         address erc20Default = balances.erc20DefaultAdapter();
         vm.expectRevert(InvalidArguments.selector);
         balances.unsetBalanceAdapter(address(0), erc20Default);
@@ -317,7 +317,7 @@ contract BalancesTest is Test {
     // ============================================
 
     function test_isAdapterRegistered() public {
-        // ERC20DefaultAdapter should be registered
+        // ERC20DefaultBalanceAdapter should be registered
         assertTrue(balances.isAdapterRegistered(balances.erc20DefaultAdapter()));
 
         // Random address should not be registered
@@ -361,7 +361,7 @@ contract BalancesTest is Test {
 
     function test_getAdapterCount() public {
         uint256 initialCount = balances.getAdapterCount();
-        assertEq(initialCount, 1, "Should start with ERC20DefaultAdapter");
+        assertEq(initialCount, 1, "Should start with ERC20DefaultBalanceAdapter");
 
         vm.startPrank(admin);
         balances.addBalanceAdapterDirect(address(usdc), address(customAdapter), IBalances.AdapterType.Custom);
@@ -373,7 +373,9 @@ contract BalancesTest is Test {
     function test_getAllAdapters() public {
         address[] memory initialAdapters = balances.getAllAdapters();
         assertEq(initialAdapters.length, 1, "Should start with one adapter");
-        assertEq(initialAdapters[0], balances.erc20DefaultAdapter(), "First adapter should be ERC20DefaultAdapter");
+        assertEq(
+            initialAdapters[0], balances.erc20DefaultAdapter(), "First adapter should be ERC20DefaultBalanceAdapter"
+        );
 
         vm.startPrank(admin);
         balances.addBalanceAdapterDirect(address(usdc), address(customAdapter), IBalances.AdapterType.Custom);
@@ -381,13 +383,17 @@ contract BalancesTest is Test {
 
         address[] memory allAdapters = balances.getAllAdapters();
         assertEq(allAdapters.length, 2, "Should have two adapters");
-        assertEq(allAdapters[0], balances.erc20DefaultAdapter(), "First should be ERC20DefaultAdapter");
+        assertEq(allAdapters[0], balances.erc20DefaultAdapter(), "First should be ERC20DefaultBalanceAdapter");
         assertEq(allAdapters[1], address(customAdapter), "Second should be custom adapter");
     }
 
     function test_getAdapterType() public {
         IBalances.AdapterType defaultType = balances.getAdapterType(balances.erc20DefaultAdapter());
-        assertEq(uint8(defaultType), uint8(IBalances.AdapterType.Default), "ERC20DefaultAdapter should be Default type");
+        assertEq(
+            uint8(defaultType),
+            uint8(IBalances.AdapterType.Default),
+            "ERC20DefaultBalanceAdapter should be Default type"
+        );
 
         vm.startPrank(admin);
         balances.addBalanceAdapterDirect(address(usdc), address(customAdapter), IBalances.AdapterType.Custom);
@@ -412,7 +418,7 @@ contract BalancesTest is Test {
         // Get adapters that support USDC
         address[] memory adapters = balances.getAdaptersForAsset(address(usdc));
 
-        // Should include ERC20DefaultAdapter (supports all registered assets) and customAdapter
+        // Should include ERC20DefaultBalanceAdapter (supports all registered assets) and customAdapter
         assertGe(adapters.length, 1, "Should have at least one adapter supporting USDC");
 
         bool foundCustomAdapter = false;
@@ -426,7 +432,7 @@ contract BalancesTest is Test {
             }
         }
         assertTrue(foundCustomAdapter, "Should find customAdapter in supporting adapters");
-        assertTrue(foundErc20Default, "Should find ERC20DefaultAdapter in supporting adapters");
+        assertTrue(foundErc20Default, "Should find ERC20DefaultBalanceAdapter in supporting adapters");
     }
 
     function test_getAdaptersForAsset_noSupport() public {
@@ -434,8 +440,8 @@ contract BalancesTest is Test {
         address unsupportedAsset = makeAddr("unsupported");
         address[] memory adapters = balances.getAdaptersForAsset(unsupportedAsset);
 
-        // ERC20DefaultAdapter might still return it if the asset is registered
-        // But if not registered, should return empty or only ERC20DefaultAdapter
+        // ERC20DefaultBalanceAdapter might still return it if the asset is registered
+        // But if not registered, should return empty or only ERC20DefaultBalanceAdapter
         assertGe(adapters.length, 0, "Should return at least empty array");
     }
 

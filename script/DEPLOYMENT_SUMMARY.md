@@ -326,13 +326,13 @@ script/verify/verify-all.sh
 ## Adapter Types
 
 ### Price Adapters (Custom Price Feeds)
-- `sDAI_PriceOracle` - Savings DAI price
-- `LDO_PriceOracle` - Lido DAO token price
-- `sUSDS_PriceOracle` - Sky Savings USDS price
-- `CrossRatePriceAdapter` - Cross-rate calculations
+- `sDAI_CustomPriceFeed` - Savings DAI price
+- `LDO_CustomPriceFeed` - Lido DAO token price
+- `sUSDS_CustomPriceFeed` - Sky Savings USDS price
+- `CrossRate_CustomPriceFeed` - Cross-rate calculations
 
 ### Balance Adapters (Protocol Integrations)
-- `ERC20DefaultAdapter` - Wallet ERC20 + native, auto-registered at NAV initialization
+- `ERC20DefaultBalanceAdapter` - Wallet ERC20 + native, auto-registered at NAV initialization
 - `AaveV3InstancesMetaBalanceAdapter` - Aave V3 lending positions
 - `AaveV3SafetyModuleBalanceAdapter` - Aave V3 Safety Module (stkGHO etc.)
 - `AaveV2InstancesMetaBalanceAdapter` - Aave V2 aTokens (legacy)
@@ -350,7 +350,7 @@ script/verify/verify-all.sh
 - `CapBalanceAdapter` - Cap (cUSD + stcUSD aggregated → USDC)
 - `FluidFTokensMetaBalanceAdapter`, `FluidVaultsMetaBalanceAdapter` - Fluid lending + vaults
 - `GearboxMarketsMetaBalanceAdapter` - Gearbox kpk-curated markets
-- `StakeWiseV3VaultsMetaBalanceAdapter` - StakeWise V3 Genesis Vault (osETH/osGNO themselves are Custom-priced ERC20s via `osToken_PriceOracle`, not balance adapters)
+- `StakeWiseV3VaultsMetaBalanceAdapter` - StakeWise V3 Genesis Vault (osETH/osGNO themselves are Custom-priced ERC20s via `osToken_CustomPriceFeed`, not balance adapters)
 - `StaderWithdrawalQueueBalanceAdapter` - Stader pending unstake requests
 - `KelpWithdrawalQueueBalanceAdapter` - Kelp DAO rsETH exit queue (multi-asset; payout assets discovered via `lrtConfig().getSupportedAssetList()`)
 - `LidoWithdrawalQueueBalanceAdapter` - Lido stETH withdrawal queue (`WithdrawalQueueERC721`; sums open requests, reported as native ETH — the asset paid on claim)

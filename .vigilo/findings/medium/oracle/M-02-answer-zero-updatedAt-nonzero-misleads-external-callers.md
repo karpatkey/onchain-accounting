@@ -12,9 +12,9 @@ When `_compute()` returns `stale=true` (e.g. the Chainlink heartbeat has elapsed
 
 ## Vulnerability Detail
 
-The `IPriceFeedCustom` NatSpec documents `latestRoundData()` as returning the "worst-case underlying oracle for external observability." External tooling and monitoring scripts commonly treat `updatedAt` as the primary freshness signal and `answer == 0` as a secondary validity flag. But no standard interpretation treats `answer == 0` + `updatedAt = recent_timestamp` as "price is stale" — that combination conventionally means "price feed just returned zero," which is a data anomaly, not a freshness signal.
+The `ICustomPriceFeed` NatSpec documents `latestRoundData()` as returning the "worst-case underlying oracle for external observability." External tooling and monitoring scripts commonly treat `updatedAt` as the primary freshness signal and `answer == 0` as a secondary validity flag. But no standard interpretation treats `answer == 0` + `updatedAt = recent_timestamp` as "price is stale" — that combination conventionally means "price feed just returned zero," which is a data anomaly, not a freshness signal.
 
-Concrete example — `wstETH_Price.sol` when Chainlink ETH/USD is exactly at the heartbeat boundary:
+Concrete example — `wstETH_CustomPriceFeed.sol` when Chainlink ETH/USD is exactly at the heartbeat boundary:
 
 ```solidity
 // _compute returns:
@@ -35,23 +35,23 @@ For the dual-feed adapters (`eETH_Price`, `weETH_Price`, `LDO_Price`), the `upda
 
 ## Root Cause
 
-`latestRoundData()` in each adapter — the `answer = stale ? 0 : int256(price)` encoding does not propagate the staleness signal through the `updatedAt` field. The NatSpec for `IPriceFeedCustom.latestRoundData()` does not specify how staleness should be encoded in `updatedAt`, leaving this ambiguous.
+`latestRoundData()` in each adapter — the `answer = stale ? 0 : int256(price)` encoding does not propagate the staleness signal through the `updatedAt` field. The NatSpec for `ICustomPriceFeed.latestRoundData()` does not specify how staleness should be encoded in `updatedAt`, leaving this ambiguous.
 
 Affected files (all adapters expose this pattern):
-- `ezETH_Price.sol:89-93`
-- `eETH_Price.sol:137-146`
-- `sDAI_Price.sol:109-119` (mainnet)
-- `sUSDS_Price.sol:107-116`
-- `sUSDe_Price.sol:101-111`
-- `syrupUSDC_Price.sol:101-111`
-- `sXDAI_Price.sol:101-111`
-- `wstETH_Price.sol:92-102`
-- `rETH_Price.sol:92-102`
-- `cbETH_Price.sol:92-102`
-- `weETH_Price.sol:122-132`
-- `rsETH_Price.sol:102-112`
-- `ETHx_Price.sol:104-114`
-- `LDO_Price.sol:131-141`
+- `ezETH_CustomPriceFeed.sol:89-93`
+- `eETH_CustomPriceFeed.sol:137-146`
+- `sDAI_CustomPriceFeed.sol:109-119` (mainnet)
+- `sUSDS_CustomPriceFeed.sol:107-116`
+- `sUSDe_CustomPriceFeed.sol:101-111`
+- `syrupUSDC_CustomPriceFeed.sol:101-111`
+- `sXDAI_CustomPriceFeed.sol:101-111`
+- `wstETH_CustomPriceFeed.sol:92-102`
+- `rETH_CustomPriceFeed.sol:92-102`
+- `cbETH_CustomPriceFeed.sol:92-102`
+- `weETH_CustomPriceFeed.sol:122-132`
+- `rsETH_CustomPriceFeed.sol:102-112`
+- `ETHx_CustomPriceFeed.sol:104-114`
+- `LDO_CustomPriceFeed.sol:131-141`
 
 ## Impact
 
@@ -87,4 +87,4 @@ function latestRoundData() external view override returns (...) {
 }
 ```
 
-Update `IPriceFeedCustom` NatSpec to specify this convention explicitly so all future adapters follow it consistently.
+Update `ICustomPriceFeed` NatSpec to specify this convention explicitly so all future adapters follow it consistently.

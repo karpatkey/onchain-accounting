@@ -8,7 +8,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IBalances} from "src/balances/IBalances.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {IPriceFeedCustom} from "src/prices/IPriceFeedCustom.sol";
+import {ICustomPriceFeed} from "src/prices/ICustomPriceFeed.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {aa} from "test/helpers/AdapterArray.sol";
 
@@ -63,7 +63,7 @@ contract Mock_RevertingBalanceAdapter is IBalanceAdapter {
 
 /// @title Mock Reverting Price Oracle
 /// @notice Price oracle that reverts for testing error handling
-contract Mock_RevertingPriceOracle is IPriceFeedCustom {
+contract Mock_RevertingPriceOracle is ICustomPriceFeed {
     function getLatestPrice() external pure override returns (uint256, bool) {
         revert("Price oracle revert");
     }
@@ -81,13 +81,13 @@ contract Mock_RevertingPriceOracle is IPriceFeedCustom {
     }
 
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IPriceFeedCustom).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(ICustomPriceFeed).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 }
 
 /// @title Mock Malformed Price Oracle
 /// @notice Price oracle that returns invalid data
-contract Mock_MalformedPriceOracle is IPriceFeedCustom {
+contract Mock_MalformedPriceOracle is ICustomPriceFeed {
     function getLatestPrice() external pure override returns (uint256, bool) {
         // Return zero price (should be marked as stale)
         return (0, true);
@@ -106,7 +106,7 @@ contract Mock_MalformedPriceOracle is IPriceFeedCustom {
     }
 
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IPriceFeedCustom).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(ICustomPriceFeed).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 }
 
@@ -435,7 +435,7 @@ contract NAVCalculatorErrorTest is SuperTest {
         nav.addBalanceAdapters(aa(address(adapter3)));
         vm.stopPrank();
 
-        // Don't mint any tokens (so ERC20DefaultAdapter has no positions)
+        // Don't mint any tokens (so ERC20DefaultBalanceAdapter has no positions)
 
         // Should return zero NAV, not revert
         INAVCalculator.NAV memory navResult = nav.getAccountNav(safe, address(0));

@@ -74,7 +74,7 @@ abstract contract Balances is IBalances, Initializable {
     //
 
     /// @notice Initializer for UUPS proxy
-    /// @dev Derived contracts should deploy ERC20DefaultAdapter and call _setErc20DefaultAdapter()
+    /// @dev Derived contracts should deploy ERC20DefaultBalanceAdapter and call _setErc20DefaultAdapter()
     // solhint-disable-next-line func-name-mixedcase
     // forge-lint: disable-next-line(mixed-case-function)
     function __Balances_init() internal onlyInitializing {
@@ -88,8 +88,8 @@ abstract contract Balances is IBalances, Initializable {
     }
 
     /// @notice Internal function to set and register the ERC20Default adapter
-    /// @dev Called by derived contracts after deploying ERC20DefaultAdapter
-    /// @param defaultAdapter The address of the deployed ERC20DefaultAdapter
+    /// @dev Called by derived contracts after deploying ERC20DefaultBalanceAdapter
+    /// @param defaultAdapter The address of the deployed ERC20DefaultBalanceAdapter
     function _setErc20DefaultAdapter(address defaultAdapter) internal {
         if (erc20DefaultAdapter != address(0)) {
             revert InvalidArguments(); // Already set

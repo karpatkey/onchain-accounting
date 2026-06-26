@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 import {LibraryPins} from "script/utils/LibraryPins.sol";
 
 import {Test} from "forge-std/Test.sol";
-import {ERC20DefaultAdapter} from "src/balances/protocols/ERC20DefaultAdapter.sol";
+import {ERC20DefaultBalanceAdapter} from "src/balances/protocols/ERC20DefaultBalanceAdapter.sol";
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -19,7 +19,7 @@ import "src/errors.sol";
 
 contract ERC20DefaultAdapterTest is Test {
     NAVCalculator public navCalculator;
-    ERC20DefaultAdapter public adapter;
+    ERC20DefaultBalanceAdapter public adapter;
 
     Mock_ERC20 public usdc;
     Mock_ERC20 public dai;
@@ -69,8 +69,8 @@ contract ERC20DefaultAdapterTest is Test {
         navCalculator.registerAsset(address(weth), address(wethAdapter), IPrices.PriceType.Custom, type(uint256).max);
         vm.stopPrank();
 
-        // Create ERC20DefaultAdapter (it's already created by NAVCalculator, but we can get it)
-        adapter = ERC20DefaultAdapter(navCalculator.erc20DefaultAdapter());
+        // Create ERC20DefaultBalanceAdapter (it's already created by NAVCalculator, but we can get it)
+        adapter = ERC20DefaultBalanceAdapter(navCalculator.erc20DefaultAdapter());
     }
 
     function test_constructor() public view {
@@ -114,7 +114,7 @@ contract ERC20DefaultAdapterTest is Test {
         NAVCalculator emptyNav = NAVCalculator(navProxy);
         vm.stopPrank();
 
-        ERC20DefaultAdapter emptyAdapter = ERC20DefaultAdapter(emptyNav.erc20DefaultAdapter());
+        ERC20DefaultBalanceAdapter emptyAdapter = ERC20DefaultBalanceAdapter(emptyNav.erc20DefaultAdapter());
         address[] memory assets = emptyAdapter.underlyingAssetsSupported();
         assertEq(assets.length, 1, "Only native is in the default adapter before other assets are registered");
         assertEq(assets[0], NATIVE_ADDRESS);

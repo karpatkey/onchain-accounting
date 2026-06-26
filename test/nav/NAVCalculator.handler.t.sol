@@ -153,7 +153,7 @@ contract NAVCalculatorHandler is Test {
         uint256 adapterIndex = bound(adapterSeed, 0, balanceAdapters.length - 1);
         address adapter = address(balanceAdapters[adapterIndex]);
 
-        // Cannot remove ERC20DefaultAdapter
+        // Cannot remove ERC20DefaultBalanceAdapter
         if (adapter == nav.erc20DefaultAdapter()) {
             return;
         }
@@ -380,7 +380,7 @@ contract NAVCalculatorHandlerTest is SuperTest {
         }
     }
 
-    /// @notice Invariant: ERC20DefaultAdapter always registered
+    /// @notice Invariant: ERC20DefaultBalanceAdapter always registered
     function invariant_erc20DefaultAdapterAlwaysRegistered() external view {
         address[] memory allAdapters = nav.getAllAdapters();
 
@@ -392,7 +392,7 @@ contract NAVCalculatorHandlerTest is SuperTest {
             }
         }
 
-        assertTrue(found, "ERC20DefaultAdapter should always be registered");
+        assertTrue(found, "ERC20DefaultBalanceAdapter should always be registered");
     }
 
     /// @notice Invariant: Adapter count matches registry

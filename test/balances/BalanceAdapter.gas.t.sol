@@ -6,14 +6,14 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalances} from "src/balances/IBalances.sol";
 import {Mock_CustomBalanceAdapter} from "test/mocks/balance_adapters.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
-import {ERC20DefaultAdapter} from "src/balances/protocols/ERC20DefaultAdapter.sol";
+import {ERC20DefaultBalanceAdapter} from "src/balances/protocols/ERC20DefaultBalanceAdapter.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
 
 /// @title Balance Adapter Gas Benchmark Tests
 /// @notice Tests gas usage for various scenarios to establish performance baselines
 contract BalanceAdapterGasTest is Test {
     BalancesHarness public balances;
-    ERC20DefaultAdapter public erc20DefaultAdapter;
+    ERC20DefaultBalanceAdapter public erc20DefaultAdapter;
     Mock_CustomBalanceAdapter[] public customAdapters;
     Mock_ERC20[] public tokens;
 
@@ -123,7 +123,7 @@ contract BalanceAdapterGasTest is Test {
             // Generate portfolio
             generateLargePortfolio(assetCounts[i]);
 
-            // Mint tokens to alice for ERC20DefaultAdapter
+            // Mint tokens to alice for ERC20DefaultBalanceAdapter
             for (uint256 j = 0; j < tokens.length; j++) {
                 tokens[j].mint(alice, 1000 * 10 ** 18);
             }
@@ -206,7 +206,7 @@ contract BalanceAdapterGasTest is Test {
         for (uint256 i = 0; i < adapterCounts.length; i++) {
             // Setup adapters
             if (i > 0) {
-                setupMultipleAdapters(adapterCounts[i] - 1); // -1 because ERC20DefaultAdapter already exists
+                setupMultipleAdapters(adapterCounts[i] - 1); // -1 because ERC20DefaultBalanceAdapter already exists
             }
 
             Mock_ERC20 usdc = new Mock_ERC20("USDC", 6);

@@ -108,7 +108,7 @@
         "heartbeat": 3600
       }
     ],
-    "note": "Pricefeed left blank until 03_DeployPriceFeeds runs and writes the deployed ETHx_PriceOracle address back to chains/1.json.priceFeeds.ETHx.deployed; copy that into pricefeed before running RegisterAssets."
+    "note": "Pricefeed left blank until 03_DeployPriceFeeds runs and writes the deployed ETHx_CustomPriceFeed address back to chains/1.json.priceFeeds.ETHx.deployed; copy that into pricefeed before running RegisterAssets."
   },
   "osETH": {
     "address": "0xf1C9acDc66974dFB6dEcB12aA385b9cD01190E38",
@@ -119,7 +119,7 @@
         "heartbeat": 3600
       }
     ],
-    "note": "Priced via osToken_PriceOracle (priceFeeds.osETH.1): convertToAssets(1e18) [osETH/ETH] * ETH/USD. Held osETH is reported by ERC20DefaultAdapter (wallet balance). The pricefeed address is filled by 03_DeployPriceFeeds. Separate from the StakeWiseV3Vault osToken-debt leg (denominated in ETH)."
+    "note": "Priced via osToken_CustomPriceFeed (priceFeeds.osETH.1): convertToAssets(1e18) [osETH/ETH] * ETH/USD. Held osETH is reported by ERC20DefaultBalanceAdapter (wallet balance). The pricefeed address is filled by 03_DeployPriceFeeds. Separate from the StakeWiseV3Vault osToken-debt leg (denominated in ETH)."
   },
   "MORPHO": {
     "address": "0x58D97B57BB95320F9a05dC918Aef65434969c2B2",

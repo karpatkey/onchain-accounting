@@ -1,0 +1,47 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
+
+import {sUSDS_CustomPriceFeed} from "src/prices/protocols/sUSDS_CustomPriceFeed.sol";
+
+contract sUSDS_CustomPriceFeedTest is TestEnvConfigurator {
+    sUSDS_CustomPriceFeed sUsdsPriceOracle;
+    address sUsdsAddress;
+    address usdsToUsdChainlink;
+    uint256 heartbeat;
+
+    function setUp() public {
+        uint256 fork = createForkWithCadence(getAlchemyUrl("eth-mainnet"));
+        vm.selectFork(fork);
+        vm.rollFork(23_143_100);
+
+        sUsdsAddress = address(0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD);
+
+        usdsToUsdChainlink = address(0xfF30586cD0F29eD462364C7e81375FC0C71219b1);
+        heartbeat = 82_800;
+
+        sUsdsPriceOracle = new sUSDS_CustomPriceFeed(sUsdsAddress, usdsToUsdChainlink, heartbeat);
+    }
+
+    function test_getLatestPrice() public view {
+        (uint256 price, bool stale) = sUsdsPriceOracle.getLatestPrice();
+        assertEq(price, 106_298_946);
+        assertEq(stale, false);
+    }
+
+    function test_getLatestPriceStale() public {
+        vm.warp(block.timestamp + heartbeat);
+        (uint256 price, bool stale) = sUsdsPriceOracle.getLatestPrice();
+        assertEq(price, 0);
+        assertEq(stale, true);
+    }
+
+    function test_decimals() public view {
+        assertEq(sUsdsPriceOracle.decimals(), 8, "Decimals should match USDS/USD oracle");
+    }
+
+    function test_underlyingAssetSupported() public view {
+        assertEq(sUsdsPriceOracle.underlyingAssetSupported(), sUsdsAddress, "Underlying asset should match sUSDS token");
+    }
+}

@@ -8,7 +8,7 @@ import {IBalances} from "src/balances/IBalances.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
-import {ERC20DefaultAdapter} from "src/balances/protocols/ERC20DefaultAdapter.sol";
+import {ERC20DefaultBalanceAdapter} from "src/balances/protocols/ERC20DefaultBalanceAdapter.sol";
 
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
@@ -31,7 +31,7 @@ library NAVRegistryLib {
     // ERC20Default adapter factory
     // -------------------------------------------------------------------------
 
-    /// @notice Deploys a fresh ERC20DefaultAdapter bound to the calling NAVCalculator and returns it.
+    /// @notice Deploys a fresh ERC20DefaultBalanceAdapter bound to the calling NAVCalculator and returns it.
     /// @dev This function does NOT enforce single-deploy semantics — each call deploys a new adapter. The
     ///      one-adapter invariant is enforced by the caller: NAVCalculator.initialize calls this exactly once and
     ///      passes the result to `_setErc20DefaultAdapter`, which reverts if the default adapter is already set.
@@ -41,9 +41,9 @@ library NAVRegistryLib {
     ///      runtime code, keeping NAVCalculator well under EIP-170. `initialAssets` seeds the inclusion list
     ///      (e.g. NATIVE_ADDRESS) at construction without a callback to the still-initializing proxy.
     /// @param initialAssets Assets to pre-add to the adapter's inclusion list.
-    /// @return adapter The deployed ERC20DefaultAdapter address.
+    /// @return adapter The deployed ERC20DefaultBalanceAdapter address.
     function deployDefaultAdapter(address[] memory initialAssets) external returns (address adapter) {
-        return address(new ERC20DefaultAdapter(address(this), initialAssets));
+        return address(new ERC20DefaultBalanceAdapter(address(this), initialAssets));
     }
 
     // -------------------------------------------------------------------------
@@ -173,7 +173,7 @@ library NAVRegistryLib {
         address erc20DefaultAdapter
     ) external {
         if (adapter == erc20DefaultAdapter) {
-            revert InvalidArguments(); // Cannot remove ERC20DefaultAdapter
+            revert InvalidArguments(); // Cannot remove ERC20DefaultBalanceAdapter
         }
         if (!isAdapterRegistered[adapter]) {
             revert IBalances.InvalidBalanceAdapter();

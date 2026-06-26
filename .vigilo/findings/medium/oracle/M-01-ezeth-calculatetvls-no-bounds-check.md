@@ -2,12 +2,12 @@
 
 ## Summary
 
-`ezETH_PriceOracle._compute()` wraps `RESTAKE_MANAGER.calculateTVLs()` in a `try/catch` and uses the returned `totalTVL` unchecked to compute the ezETH/ETH rate. If the `RestakeManager` contract is upgraded, paused, or compromised, it can return any `totalTVL`. There is no lower bound, upper bound, or cross-check against an external independent price source for the TVL figure. The only guard against an obviously wrong value is the zero-supply check on ezETH.
+`ezETH_CustomPriceFeed._compute()` wraps `RESTAKE_MANAGER.calculateTVLs()` in a `try/catch` and uses the returned `totalTVL` unchecked to compute the ezETH/ETH rate. If the `RestakeManager` contract is upgraded, paused, or compromised, it can return any `totalTVL`. There is no lower bound, upper bound, or cross-check against an external independent price source for the TVL figure. The only guard against an obviously wrong value is the zero-supply check on ezETH.
 
 ## Vulnerability Detail
 
 ```solidity
-// ezETH_Price.sol:55-64
+// ezETH_CustomPriceFeed.sol:55-64
 try RESTAKE_MANAGER.calculateTVLs() returns (uint256[][] memory, uint256[] memory, uint256 totalTVL) {
     uint256 supply = IERC20(EZETH).totalSupply();
     if (supply == 0) { return (0, true, ...); }
@@ -33,7 +33,7 @@ This confirms that the TVL figure may reflect stale sub-oracle prices without th
 
 ## Root Cause
 
-`ezETH_Price.sol:55–64` — `totalTVL` from `calculateTVLs()` is used directly as the numerator in the price formula with no:
+`ezETH_CustomPriceFeed.sol:55–64` — `totalTVL` from `calculateTVLs()` is used directly as the numerator in the price formula with no:
 - Minimum TVL sanity check
 - Maximum TVL sanity check (e.g. totalTVL must be < totalSupply * MAX_RATE_ETH)
 - Independent reference price comparison
@@ -51,7 +51,7 @@ A compromised or upgraded Renzo `RestakeManager` can set `totalTVL` to any value
 1. Renzo's multisig governance is compromised (3-of-5 key theft, social engineering, etc.).
 2. Attacker upgrades `RestakeManager` to a version that returns `totalTVL = 100 * realTVL`.
 3. `calculateTVLs()` does not revert; it returns the inflated figure.
-4. `ezETH_PriceOracle` computes `ezEthRate = (100 * realTVL) * 1e18 / supply = 100 * realRate`.
+4. `ezETH_CustomPriceFeed` computes `ezEthRate = (100 * realTVL) * 1e18 / supply = 100 * realRate`.
 5. `getLatestPrice()` returns `(100 * realPrice, false)` — marked as non-stale.
 6. NAVCalculator prices ezETH at 100x real value.
 

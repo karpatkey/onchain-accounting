@@ -94,7 +94,7 @@ contract NAVCalculatorInvariantTest is SuperTest {
             adapters[i].setBalance(address(usdc), safe, uint256((i + 1) * 100 * 10 ** usdc.decimals()), false);
         }
 
-        // Also mint some USDC directly to safe (ERC20DefaultAdapter)
+        // Also mint some USDC directly to safe (ERC20DefaultBalanceAdapter)
         uint256 directBalance = 50 * 10 ** usdc.decimals();
         usdc.mint(safe, directBalance);
         totalExpectedBalance += SafeCast.toInt256(directBalance);
@@ -278,7 +278,7 @@ contract NAVCalculatorInvariantTest is SuperTest {
     function test_invariant_adapterRegistryConsistency() public view {
         address[] memory allAdapters = nav.getAllAdapters();
 
-        // Verify ERC20DefaultAdapter is always present
+        // Verify ERC20DefaultBalanceAdapter is always present
         bool foundErc20Default = false;
         for (uint256 i = 0; i < allAdapters.length; i++) {
             if (allAdapters[i] == nav.erc20DefaultAdapter()) {
@@ -294,7 +294,7 @@ contract NAVCalculatorInvariantTest is SuperTest {
             }
         }
 
-        assertTrue(foundErc20Default, "ERC20DefaultAdapter should always be registered");
+        assertTrue(foundErc20Default, "ERC20DefaultBalanceAdapter should always be registered");
     }
 
     /// @notice Test that all adapters can be queried without reverting

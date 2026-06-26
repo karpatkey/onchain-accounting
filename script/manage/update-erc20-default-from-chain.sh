@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fetches ERC20DefaultAdapter address from existing NAVCalculator proxies (forge cast call)
+# Fetches ERC20DefaultBalanceAdapter address from existing NAVCalculator proxies (forge cast call)
 # and updates script/config/chains/<chainId>.json balanceAdapters.ERC20Default.deployed.
 # Requires: cast (foundry), jq. Set ALCHEMY_API_KEY (or chain-specific RPC URLs) in .env or env.
 

@@ -9,7 +9,7 @@ This document describes the balance adapter architecture: how NAV is computed fr
 The balance system powers **Net Asset Value (NAV)** calculation by aggregating positions from multiple **balance adapters**:
 
 - **Balances (via NAVCalculator):** Holds a **global registry** of balance adapters and an **asset registry** (decimals, symbols). Assets are registered with a price feed so positions can be valued. Only registered assets contribute to NAV.
-- **Balance adapters:** Contracts implementing `IBalanceAdapter`. Each adapter reports **balance-only** positions (e.g. wallet ERC20/native, Compound supply/borrow, Aave positions) as `PositionBalance` structs — without pricing. One adapter is special: **ERC20DefaultAdapter**, which is deployed and registered automatically at initialization and reports wallet ERC20 and native balances for all registered assets.
+- **Balance adapters:** Contracts implementing `IBalanceAdapter`. Each adapter reports **balance-only** positions (e.g. wallet ERC20/native, Compound supply/borrow, Aave positions) as `PositionBalance` structs — without pricing. One adapter is special: **ERC20DefaultBalanceAdapter**, which is deployed and registered automatically at initialization and reports wallet ERC20 and native balances for all registered assets.
 - **NAVCalculator:** Extends Prices and Balances. It iterates over all registered adapters, calls `getAdapterPositions(account, assetFilter)` on each, filters positions by registered assets, enriches them with prices (value = amount × price, with sign from `isDebt`), and aggregates into a single NAV.
 
 So: **adapters only report balances; NAVCalculator adds prices and sums values.**
@@ -87,7 +87,7 @@ Defined in `INAVCalculator`. This is what every balance adapter returns.
 
 The stable per-chain identity key for caching and reconciliation is `(chainId, protocolId, positionId, balanceAsset.asset, positionKind)`. `balanceAdapter` is excluded — redeploying an adapter doesn't change the position.
 
-**Credits-only adapters** (e.g. ERC20DefaultAdapter, AaveV3SafetyModule) always report `isDebt: false`.
+**Credits-only adapters** (e.g. ERC20DefaultBalanceAdapter, AaveV3SafetyModule) always report `isDebt: false`.
 
 Pricing is **not** in this struct; NAVCalculator adds it when building full `Position` and NAV.
 
@@ -97,7 +97,7 @@ Defined in `src/utils/PositionKind.sol`.
 
 | Value         | Meaning |
 |---------------|---------|
-| `Wallet`      | Plain ERC20 / native-token balance held directly (ERC20DefaultAdapter). |
+| `Wallet`      | Plain ERC20 / native-token balance held directly (ERC20DefaultBalanceAdapter). |
 | `Supplied`    | Credit deployed into a protocol: lending supply, vault shares, unstaked LP principal. |
 | `Borrowed`    | Debt owed to a protocol (`isDebt = true`). |
 | `Collateral`  | Credit locked as collateral (e.g. Aave reserve with `usageAsCollateralEnabled = true`). Distinct from `Supplied` because it cannot be freely withdrawn. |
@@ -131,7 +131,7 @@ For building adapters, the only required output is **PositionBalance**; Position
 
 - **Global adapter registry:** `_globalAdapters[]`, `_adapterTypes[adapter]`, `_isAdapterRegistered[adapter]`. All adapters are in one flat list (no per-asset mapping for registration).
 - **Meta-adapter instance registry:** `_metaInstances[adapter]` — the per-adapter `bytes32[]` of instance coordinates a meta-adapter queries, plus the running total `_metaInstanceTotal`. See §6.1.
-- **ERC20DefaultAdapter:** Set once in NAVCalculator's `initialize()` via `_setErc20DefaultAdapter(address)`. It is pushed into `_globalAdapters` and marked `AdapterType.Default`.
+- **ERC20DefaultBalanceAdapter:** Set once in NAVCalculator's `initialize()` via `_setErc20DefaultAdapter(address)`. It is pushed into `_globalAdapters` and marked `AdapterType.Default`.
 
 The **asset registry** (decimals, symbols) lives on **NAVCalculator** (`_registeredAssets`, `_assetIndex`), not on `Balances`. NAVCalculator exposes `registerAsset(asset, priceFeed, priceType, chainlinkHeartbeat)` (MANAGER), which registers the asset and sets its price feed.
 
@@ -257,7 +257,7 @@ These adapters implement `IBalanceAdapter` directly (not `MetaBalanceAdapter`). 
 
 | Adapter | Description | Constructor | Notes |
 |---------|-------------|-------------|-------|
-| **ERC20DefaultAdapter** | Wallet ERC20 and native balances for all registered assets. protocolId = `WALLET`, positionId = `abi.encode(asset)`, kind = `Wallet`. Auto-registered at init. | `(navCalculator, initialAssets[])` | Default adapter; registered by `NAVCalculator.initialize`. |
+| **ERC20DefaultBalanceAdapter** | Wallet ERC20 and native balances for all registered assets. protocolId = `WALLET`, positionId = `abi.encode(asset)`, kind = `Wallet`. Auto-registered at init. | `(navCalculator, initialAssets[])` | Default adapter; registered by `NAVCalculator.initialize`. |
 | **AaveV3SafetyModule** | Aave V3 Safety Module stake tokens (stkAAVE, stkABPT, stkABPTv2, stkGHO). Stake-token set hardcoded at construction. Two legs per token: `Staking` (staking principal) + `Rewards` (claimable rewards). positionId = `abi.encode(stakeToken)`. | `(navCalculator)` | protocolId = `AAVE_V3_SAFETY_MODULE`. Mainnet only. |
 | **AaveUmbrella** | Aave Umbrella stake tokens discovered dynamically via `RewardsController.getAllAssets()`. Two legs per token: `Staking` + `Rewards` in the bare reserve. positionId = `abi.encode(stakeToken)`. Picks up new stake tokens via governance without redeploy. | `(rewardsController, navCalculator)` | protocolId = `AAVE_V3_UMBRELLA`. See `docs/decisions/0006-aave-umbrella-balance-adapter.md`. |
 | **Cap** | Cap protocol cUSD + stcUSD balances, aggregated and reported as USDC. positionId = `abi.encode(cUSD)`. | `(cUsd, stcUsd, usdc, navCalculator)` | protocolId = `CAP`. |
@@ -422,7 +422,7 @@ See also `docs/howto/add-balance-adapter.md` for the end-to-end recipe.
 
 ### 9.2 Default adapter (no extra config)
 
-- **ERC20DefaultAdapter** is deployed and registered automatically in **`NAVCalculator.initialize(...)`**. It reports wallet ERC20 and native balances for all assets returned by `NAVCalculator.getRegisteredAssets()`. No additional registration step.
+- **ERC20DefaultBalanceAdapter** is deployed and registered automatically in **`NAVCalculator.initialize(...)`**. It reports wallet ERC20 and native balances for all assets returned by `NAVCalculator.getRegisteredAssets()`. No additional registration step.
 
 ### 9.3 Adding custom adapters
 

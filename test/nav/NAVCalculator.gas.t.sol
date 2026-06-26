@@ -85,7 +85,7 @@ contract NAVCalculatorGasTest is SuperTest {
         assertGt(navResult.value, 0, "NAV should be positive");
         assertGt(gasUsed, 0, "gas measured");
 
-        // Gas usage documentation: For 50 assets with ERC20DefaultAdapter, gas usage is typically 50M-100M
+        // Gas usage documentation: For 50 assets with ERC20DefaultBalanceAdapter, gas usage is typically 50M-100M
         // Actual gas usage will be visible in test output for benchmarking purposes
     }
 
@@ -108,7 +108,7 @@ contract NAVCalculatorGasTest is SuperTest {
         assertGt(navResult.value, 0, "NAV should be positive");
         assertGt(gasUsed, 0, "gas measured");
 
-        // Gas usage documentation: For 100 assets with ERC20DefaultAdapter, gas usage is typically 200M-300M
+        // Gas usage documentation: For 100 assets with ERC20DefaultBalanceAdapter, gas usage is typically 200M-300M
         // Actual gas usage will be visible in test output for benchmarking purposes
     }
 
@@ -147,7 +147,7 @@ contract NAVCalculatorGasTest is SuperTest {
     function test_gasBenchmark_adapterCountImpact() public {
         usdc.mint(safe, 10 ** usdc.decimals());
 
-        // Test with 1 adapter (just ERC20DefaultAdapter)
+        // Test with 1 adapter (just ERC20DefaultBalanceAdapter)
         uint256 gasBefore1 = gasleft();
         INAVCalculator.NAV memory nav1 = nav.getAccountNav(safe, address(0));
         uint256 gas1 = gasBefore1 - gasleft();
@@ -352,7 +352,7 @@ contract NAVCalculatorGasTest is SuperTest {
         for (uint256 i = 0; i < adapterCounts.length; i++) {
             // Setup adapters
             if (i > 0) {
-                setupMultipleAdapters(adapterCounts[i] - 1, address(usdc)); // -1 because ERC20DefaultAdapter already exists
+                setupMultipleAdapters(adapterCounts[i] - 1, address(usdc)); // -1 because ERC20DefaultBalanceAdapter already exists
             }
 
             uint256 gasBefore = gasleft();

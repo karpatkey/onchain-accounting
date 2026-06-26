@@ -43,7 +43,7 @@ The companion is the top-level [`CLAUDE.md`](../CLAUDE.md) "Read this first by i
 | Doc | Subsystem |
 |---|---|
 | [`src/balances/BALANCE_ADAPTERS.md`](../src/balances/BALANCE_ADAPTERS.md) | Balance adapter architecture — `IBalanceAdapter`, `Balances` registry, all implemented adapters. |
-| [`src/prices/PRICE_ADAPTERS.md`](../src/prices/PRICE_ADAPTERS.md) | Price feed architecture — `Prices` registry, `IPriceFeedCustom`, all implemented custom feeds. |
+| [`src/prices/PRICE_ADAPTERS.md`](../src/prices/PRICE_ADAPTERS.md) | Price feed architecture — `Prices` registry, `ICustomPriceFeed`, all implemented custom feeds. |
 | [`src/bridge/BRIDGE_ADAPTERS.md`](../src/bridge/BRIDGE_ADAPTERS.md) | Bridge module — `BridgeEscrow` + per-protocol bridge adapters (CCIP, Across, CCTP, Stargate, Superchain, Gnosis). |
 
 ---

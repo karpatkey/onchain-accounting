@@ -10,7 +10,7 @@ uncaught revert, making every call that reads this token's price permanently rev
 ## Vulnerability Detail
 `PriceFeedLib.sol:51–58`:
 ```solidity
-try IPriceFeedCustom(cfg.priceFeed).getLatestPrice() returns (uint256 p, bool s) {
+try ICustomPriceFeed(cfg.priceFeed).getLatestPrice() returns (uint256 p, bool s) {
     customPrice = p;
     internalStale = s;
 } catch {

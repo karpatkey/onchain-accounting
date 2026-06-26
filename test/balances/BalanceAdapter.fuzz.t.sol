@@ -6,14 +6,14 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalances} from "src/balances/IBalances.sol";
 import {Mock_CustomBalanceAdapter} from "test/mocks/balance_adapters.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
-import {ERC20DefaultAdapter} from "src/balances/protocols/ERC20DefaultAdapter.sol";
+import {ERC20DefaultBalanceAdapter} from "src/balances/protocols/ERC20DefaultBalanceAdapter.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
 
 /// @title Balance Adapter Fuzz Tests
 /// @notice Property-based fuzz tests for balance adapter adapters
 contract BalanceAdapterFuzzTest is Test {
     BalancesHarness public balances;
-    ERC20DefaultAdapter public erc20DefaultAdapter;
+    ERC20DefaultBalanceAdapter public erc20DefaultAdapter;
     Mock_CustomBalanceAdapter public customAdapter;
     Mock_ERC20 public usdc;
     Mock_ERC20 public dai;
@@ -87,8 +87,8 @@ contract BalanceAdapterFuzzTest is Test {
 
             // Balance should have increased (and should still be credit/positive)
             assertGe(amount2, amount1, "Balance should increase after minting");
-            assertFalse(isDebt2, "ERC20DefaultAdapter should return credit (not debt)");
-            assertGt(amount2, 0, "ERC20DefaultAdapter should return positive amounts");
+            assertFalse(isDebt2, "ERC20DefaultBalanceAdapter should return credit (not debt)");
+            assertGt(amount2, 0, "ERC20DefaultBalanceAdapter should return positive amounts");
         }
     }
 
@@ -302,7 +302,7 @@ contract BalanceAdapterFuzzTest is Test {
         erc20Amount = bound(erc20Amount, 1, 1_000_000 * 10 ** usdc.decimals());
         customAmount = bound(customAmount, 1, 1_000_000 * 10 ** usdc.decimals());
 
-        // Mint to ERC20DefaultAdapter
+        // Mint to ERC20DefaultBalanceAdapter
         usdc.mint(account, erc20Amount);
 
         // Set in custom adapter (credit position)
@@ -313,13 +313,13 @@ contract BalanceAdapterFuzzTest is Test {
         (uint256 customAmount_, bool customIsDebt) = customAdapter.getAdapterBalanceForAsset(account, address(usdc));
 
         // Both should be credit positions (positive amount, not debt)
-        assertGt(erc20Amount_, 0, "ERC20DefaultAdapter should return positive balance");
-        assertFalse(erc20IsDebt, "ERC20DefaultAdapter should be credit");
+        assertGt(erc20Amount_, 0, "ERC20DefaultBalanceAdapter should return positive balance");
+        assertFalse(erc20IsDebt, "ERC20DefaultBalanceAdapter should be credit");
         assertGt(customAmount_, 0, "Custom adapter should return positive balance");
         assertFalse(customIsDebt, "Custom adapter should be credit");
 
-        // ERC20DefaultAdapter should match minted amount
-        assertEq(erc20Amount_, erc20Amount, "ERC20DefaultAdapter should match minted amount");
+        // ERC20DefaultBalanceAdapter should match minted amount
+        assertEq(erc20Amount_, erc20Amount, "ERC20DefaultBalanceAdapter should match minted amount");
 
         // Custom adapter should match set amount
         assertEq(customAmount_, customAmount, "Custom adapter should match set amount");

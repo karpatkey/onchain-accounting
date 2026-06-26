@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Register Custom-priced assets (IPriceFeedCustom adapters) directly via cast send, one tx per asset.
+# Register Custom-priced assets (ICustomPriceFeed adapters) directly via cast send, one tx per asset.
 # Companion to register-assets.sh, which handles only Chainlink-type assets and explicitly skips Custom.
 #
 # Usage:  register-custom-assets.sh <chainId>

@@ -6,7 +6,7 @@ import {ERC165Checker} from "@openzeppelin/contracts/utils/introspection/ERC165C
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 import {IPrices} from "./IPrices.sol";
-import {IPriceFeedCustom} from "./IPriceFeedCustom.sol";
+import {ICustomPriceFeed} from "./ICustomPriceFeed.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
@@ -91,7 +91,7 @@ library PriceFeedLib {
             if (cfg.priceType == IPrices.PriceType.Custom) {
                 uint256 customPrice;
                 bool internalStale;
-                try IPriceFeedCustom(cfg.priceFeed).getLatestPrice() returns (uint256 p, bool s) {
+                try ICustomPriceFeed(cfg.priceFeed).getLatestPrice() returns (uint256 p, bool s) {
                     customPrice = p;
                     internalStale = s;
                 } catch {
@@ -101,7 +101,7 @@ library PriceFeedLib {
                 if (customPrice > uint256(type(int256).max)) continue;
                 rawPrice = int256(customPrice);
                 uint256 lrdUpdatedAt;
-                try IPriceFeedCustom(cfg.priceFeed).latestRoundData() returns (
+                try ICustomPriceFeed(cfg.priceFeed).latestRoundData() returns (
                     uint80, int256, uint256, uint256 u, uint80
                 ) {
                     lrdUpdatedAt = u;
@@ -828,7 +828,7 @@ library PriceFeedLib {
 
         uint8 dec;
         if (priceType == IPrices.PriceType.Custom) {
-            dec = IPriceFeedCustom(priceFeed).decimals();
+            dec = ICustomPriceFeed(priceFeed).decimals();
         } else if (priceType == IPrices.PriceType.API3) {
             uint8 sourceDec = AggregatorV3Interface(priceFeed).decimals();
             if (sourceDec != 18) revert IPrices.InvalidPriceOracle();
@@ -908,12 +908,12 @@ library PriceFeedLib {
     function _validateFeedSupportInternal(address token, address priceFeed, IPrices.PriceType priceType) private view {
         if (priceFeed == address(0) || token == address(0)) revert IPrices.InvalidPriceOracle();
         if (priceType == IPrices.PriceType.Custom) {
-            if (!priceFeed.supportsInterface(type(IPriceFeedCustom).interfaceId)) revert IPrices.InvalidPriceOracle();
+            if (!priceFeed.supportsInterface(type(ICustomPriceFeed).interfaceId)) revert IPrices.InvalidPriceOracle();
         } else if (
             priceType == IPrices.PriceType.Chainlink || priceType == IPrices.PriceType.Redstone
                 || priceType == IPrices.PriceType.API3
         ) {
-            if (priceFeed.supportsInterface(type(IPriceFeedCustom).interfaceId)) {
+            if (priceFeed.supportsInterface(type(ICustomPriceFeed).interfaceId)) {
                 revert IPrices.InvalidPriceOracle();
             }
             (, int256 answer, uint256 startedAt, uint256 updatedAt,) =

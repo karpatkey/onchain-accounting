@@ -10,7 +10,7 @@ import {NAVRegistryLib} from "src/nav/NAVRegistryLib.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {MANAGER} from "src/constants.sol";
 
-/// @dev ERC-7528 native token sentinel — matches Balances.NATIVE_ADDRESS / ERC20DefaultAdapter.NATIVE_ADDRESS.
+/// @dev ERC-7528 native token sentinel — matches Balances.NATIVE_ADDRESS / ERC20DefaultBalanceAdapter.NATIVE_ADDRESS.
 address constant NATIVE_ADDRESS = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
 
 /// @title DeployNAV (development)
@@ -73,7 +73,7 @@ contract DeployNAV is Script {
         console2.log("admin/manager:    ", admin);
         console2.log("NAV impl:         ", address(impl));
         console2.log("NAV proxy:        ", address(proxy));
-        console2.log("ERC20DefaultAdapter:", defaultAdapter);
+        console2.log("ERC20DefaultBalanceAdapter:", defaultAdapter);
 
         // Marker line that deploy.sh greps to capture addresses.
         console2.log(

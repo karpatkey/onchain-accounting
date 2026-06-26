@@ -8,7 +8,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Mock_CustomBalanceAdapter} from "test/mocks/balance_adapters.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
-import {ERC20DefaultAdapter} from "src/balances/protocols/ERC20DefaultAdapter.sol";
+import {ERC20DefaultBalanceAdapter} from "src/balances/protocols/ERC20DefaultBalanceAdapter.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 
@@ -16,7 +16,7 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 /// @notice Tests critical system invariants for balance adapter adapters
 contract BalanceAdapterInvariantTest is Test {
     BalancesHarness public balances;
-    ERC20DefaultAdapter public erc20DefaultAdapter;
+    ERC20DefaultBalanceAdapter public erc20DefaultAdapter;
     Mock_CustomBalanceAdapter public customAdapter1;
     Mock_CustomBalanceAdapter public customAdapter2;
     Mock_ERC20 public usdc;
@@ -210,7 +210,7 @@ contract BalanceAdapterInvariantTest is Test {
         customAdapter1.setBalance(address(usdc), alice, 500 * 10 ** usdc.decimals(), false);
         // Don't set DAI balance (zero)
 
-        // Query from ERC20DefaultAdapter
+        // Query from ERC20DefaultBalanceAdapter
         INAVCalculator.PositionBalance[] memory positions1 = erc20DefaultAdapter.getAdapterPositions(alice, address(0));
 
         // Query from customAdapter1
@@ -218,7 +218,7 @@ contract BalanceAdapterInvariantTest is Test {
 
         // Verify no zero balances
         for (uint256 i = 0; i < positions1.length; i++) {
-            assertTrue(positions1[i].amount != 0, "ERC20DefaultAdapter: No zero amounts");
+            assertTrue(positions1[i].amount != 0, "ERC20DefaultBalanceAdapter: No zero amounts");
         }
         for (uint256 i = 0; i < positions2.length; i++) {
             assertTrue(positions2[i].amount != 0, "CustomAdapter1: No zero amounts");
@@ -460,13 +460,13 @@ contract BalanceAdapterInvariantTest is Test {
         }
     }
 
-    /// @notice Test that metadata is correct for ERC20DefaultAdapter
+    /// @notice Test that metadata is correct for ERC20DefaultBalanceAdapter
     function test_invariant_metadataConsistency_erc20Default() public {
         usdc.mint(alice, 1000 * 10 ** usdc.decimals());
 
         INAVCalculator.PositionBalance[] memory positions = erc20DefaultAdapter.getAdapterPositions(alice, address(0));
 
-        // ERC20DefaultAdapter should have specific metadata
+        // ERC20DefaultBalanceAdapter should have specific metadata
         assertEq(positions.length, 1, "Should have one position");
         assertEq(positions[0].protocolId, keccak256(bytes("wallet")), "ProtocolId should be wallet");
         assertEq(uint256(positions[0].positionKind), uint256(PositionKind.Wallet), "PositionKind should be Wallet");

@@ -7,8 +7,8 @@ import {AaveV3InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV3In
 import {AaveV3SafetyModuleBalanceAdapter} from "src/balances/protocols/AaveV3SafetyModule.sol";
 import {CompoundV3CometsMetaBalanceAdapter} from "src/balances/protocols/CompoundV3CometsMeta.sol";
 import {MorphoMarketsMetaBalanceAdapter} from "src/balances/protocols/MorphoMarketsMeta.sol";
-import {sDAI_PriceOracle} from "src/prices/protocols/sDAI_Price.sol";
-import {sUSDS_PriceOracle} from "src/prices/protocols/sUSDS_Price.sol";
+import {sDAI_CustomPriceFeed} from "src/prices/protocols/sDAI_CustomPriceFeed.sol";
+import {sUSDS_CustomPriceFeed} from "src/prices/protocols/sUSDS_CustomPriceFeed.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {aa} from "test/helpers/AdapterArray.sol";
@@ -48,7 +48,7 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
     // sUSDS price (USDS/USD Chainlink feed)
     address public usdsUsdChainlink = address(0xfF30586cD0F29eD462364C7e81375FC0C71219b1);
     uint256 public susdsHeartbeat = 82_800;
-    sUSDS_PriceOracle public susdsPriceOracle;
+    sUSDS_CustomPriceFeed public susdsPriceOracle;
 
     // Maker DSR
     address public dsrManager = address(0x373238337Bfe1146fb49989fc222523f83081dDb);
@@ -123,8 +123,8 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
     }
 
     function setupRegisterAssets() internal override {
-        sdaiPriceOracle = new sDAI_PriceOracle(sdai, dsrManager, ChainlinkPriceFeeds.daiUsdEthMainnet(), heartbeat);
-        susdsPriceOracle = new sUSDS_PriceOracle(susds, usdsUsdChainlink, susdsHeartbeat);
+        sdaiPriceOracle = new sDAI_CustomPriceFeed(sdai, dsrManager, ChainlinkPriceFeeds.daiUsdEthMainnet(), heartbeat);
+        susdsPriceOracle = new sUSDS_CustomPriceFeed(susds, usdsUsdChainlink, susdsHeartbeat);
 
         nav.registerAsset(usdc, ChainlinkPriceFeeds.usdcUsdEthMainnet(), IPrices.PriceType.Chainlink, heartbeat);
         nav.registerAsset(usdt, ChainlinkPriceFeeds.usdtUsdEthMainnet(), IPrices.PriceType.Chainlink, heartbeat);

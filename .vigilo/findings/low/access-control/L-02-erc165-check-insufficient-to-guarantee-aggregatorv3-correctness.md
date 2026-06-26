@@ -2,7 +2,7 @@
 
 ## Summary
 
-`_validateFeedSupportInternal` for `Chainlink`, `Redstone`, and `API3` feed types verifies only that the candidate address does **not** claim to implement `IPriceFeedCustom` via ERC-165, and that `latestRoundData()` returns non-future timestamps. It does not verify that the feed implements the full `AggregatorV3Interface` (e.g., a meaningful `decimals()` return, a non-reverting `getRoundData`). A minimalist contract that implements `latestRoundData()` returning zeros for `updatedAt`/`startedAt` — and any non-zero value for `answer` — can pass registration and silently fail in production.
+`_validateFeedSupportInternal` for `Chainlink`, `Redstone`, and `API3` feed types verifies only that the candidate address does **not** claim to implement `ICustomPriceFeed` via ERC-165, and that `latestRoundData()` returns non-future timestamps. It does not verify that the feed implements the full `AggregatorV3Interface` (e.g., a meaningful `decimals()` return, a non-reverting `getRoundData`). A minimalist contract that implements `latestRoundData()` returning zeros for `updatedAt`/`startedAt` — and any non-zero value for `answer` — can pass registration and silently fail in production.
 
 ## Vulnerability Detail
 
@@ -13,7 +13,7 @@
     priceType == IPrices.PriceType.Chainlink || priceType == IPrices.PriceType.Redstone
         || priceType == IPrices.PriceType.API3
 ) {
-    if (priceFeed.supportsInterface(type(IPriceFeedCustom).interfaceId)) {
+    if (priceFeed.supportsInterface(type(ICustomPriceFeed).interfaceId)) {
         revert IPrices.InvalidPriceOracle();
     }
     (,, uint256 startedAt, uint256 updatedAt,) = AggregatorV3Interface(priceFeed).latestRoundData();
@@ -24,7 +24,7 @@
 Observations:
 1. The `answer` field from `latestRoundData()` is not checked at registration time. A feed returning `answer = 0` passes validation but will be skipped in `selectFeed` (since `answer <= 0 → continue`) without any alert.
 2. A feed returning `updatedAt = 0` and `startedAt = 0` passes both checks (`0 > block.timestamp` is false) and can be registered. In `selectFeed`, `effectiveTime = 0`, and `block.timestamp - 0 >= chainlinkHeartbeat` will be true for any realistic heartbeat, making the feed always-stale and never useful.
-3. The check that the feed does NOT implement `IPriceFeedCustom` is a negative guard. It does not confirm the feed correctly implements `AggregatorV3Interface` beyond the single `latestRoundData()` call.
+3. The check that the feed does NOT implement `ICustomPriceFeed` is a negative guard. It does not confirm the feed correctly implements `AggregatorV3Interface` beyond the single `latestRoundData()` call.
 
 **Specific case: a "zero-answer" feed at registration that later provides valid prices** — this is not a bug. But the inverse (feed has valid answer at registration, later always returns `answer = 0`) is not caught until the feed stops contributing to `selectFeed` without notification.
 

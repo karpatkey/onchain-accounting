@@ -35,7 +35,7 @@ else:         return (winner.price, winner.decimals, false)
 |---|---|
 | `Chainlink`, `Redstone` | `AggregatorV3Interface.latestRoundData()` — `answer` is price, `updatedAt` is freshness timestamp |
 | `API3` | `AggregatorV3Interface.latestRoundData()` — `answer` is an 18-decimal dAPI value, divided by `1e10` to the canonical 8 decimals at read; `updatedAt` is freshness timestamp |
-| `Custom` | `IPriceFeedCustom.getLatestPrice()` for `(price, internalStale)` gate; then `latestRoundData()` for `updatedAt` (a revert is caught and treated as no-timestamp). `updatedAt == 0` means "no trackable oracle" → treated as `block.timestamp - 1` |
+| `Custom` | `ICustomPriceFeed.getLatestPrice()` for `(price, internalStale)` gate; then `latestRoundData()` for `updatedAt` (a revert is caught and treated as no-timestamp). `updatedAt == 0` means "no trackable oracle" → treated as `block.timestamp - 1` |
 
 ### Invariant: cannot remove last feed
 
@@ -81,6 +81,6 @@ Some on-chain rate-only adapters (e.g., pure DSR or exchange-rate feeds with no 
 - New feeds can be added per-asset without contract upgrades (MANAGER call).
 - The `Prices.sol` storage layout changed; this is acceptable because the system is pre-launch (no live state to migrate).
 - NAVCalculator's external API changes: `setPriceFeed` → `addPriceFeed`; `unsetPriceFeed` removed; `removePriceFeedAt` and `removePriceFeed` added.
-- Existing custom adapters (`IPriceFeedCustom`) are unaffected as feed implementations; they are registered as one feed among N for their asset.
+- Existing custom adapters (`ICustomPriceFeed`) are unaffected as feed implementations; they are registered as one feed among N for their asset.
 - `latestRoundData()` on custom feeds is now called by `Prices.sol` (for freshness comparison among multi-feed survivors). The documented convention of returning `updatedAt = min(constituent feed timestamps)` continues to be correct and is now load-bearing for freshness ranking.
 - **EIP-170 (24 576-byte bytecode limit):** The added `_selectFeed` loop and feed-management functions pushed `NAVCalculator` over the limit. This is resolved by extracting the heavy logic into `src/prices/PriceFeedLib.sol` — a Solidity `library` with all functions marked `external`, compiled as a separate artifact and called via `DELEGATECALL`. (The extraction was subsequently broadened to host the entire NAV read/compute engine, so `NAVCalculator` now sits comfortably under the limit — well below the tight margin it had immediately after this ADR landed — at `optimizer_runs = 200` with `via_ir = true`.)

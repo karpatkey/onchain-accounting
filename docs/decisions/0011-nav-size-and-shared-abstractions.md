@@ -1,6 +1,6 @@
 # 0011 — NAVCalculator size headroom + shared adapter/feed abstractions
 
-Status: accepted (introduced with PR A — the ERC20DefaultAdapter externalization; PRs B/C are follow-ups, now partially landed — `BaseCustomPriceFeed`, `StaticCallLib`, and `ArrayLib` have shipped, the `BalanceAdapter` base has not)
+Status: accepted (introduced with PR A — the ERC20DefaultBalanceAdapter externalization; PRs B/C are follow-ups, now partially landed — `BaseCustomPriceFeed`, `StaticCallLib`, and `ArrayLib` have shipped, the `BalanceAdapter` base has not)
 
 ## Context
 
@@ -18,9 +18,9 @@ A review of where the remaining bytecode comes from found three classes of oppor
 1. **NAVCalculator inherits `Prices` + `Balances`**, so their code is compiled into its
    bytecode — but both are now almost entirely thin wrappers over the external libs, so
    there is little left to extract there.
-2. **`NAVCalculator.initialize` ran `new ERC20DefaultAdapter(...)`.** A `new X()` embeds
+2. **`NAVCalculator.initialize` ran `new ERC20DefaultBalanceAdapter(...)`.** A `new X()` embeds
    `X`'s entire *creation* bytecode into the contract that contains the `new`. Because
-   `initialize` is a runtime function, ERC20DefaultAdapter's ~5 KB of creation code was
+   `initialize` is a runtime function, ERC20DefaultBalanceAdapter's ~5 KB of creation code was
    sitting in NAVCalculator's runtime bytecode, counting against EIP-170.
 3. **Pervasive copy-paste across the leaf balance adapters and the custom price feeds** —
    not a size problem for NAVCalculator (those contracts deploy standalone and are far
@@ -31,9 +31,9 @@ A review of where the remaining bytecode comes from found three classes of oppor
 
 ## Decision
 
-### PR A — Externalize the ERC20DefaultAdapter `new` (size; shipped)
+### PR A — Externalize the ERC20DefaultBalanceAdapter `new` (size; shipped)
 
-Move the `new ERC20DefaultAdapter(address(this), initialAssets)` out of
+Move the `new ERC20DefaultBalanceAdapter(address(this), initialAssets)` out of
 `NAVCalculator.initialize` and into `NAVRegistryLib.deployDefaultAdapter(...)`.
 NAVRegistryLib is an external library invoked via DELEGATECALL, so inside it `address(this)`
 is still the NAV proxy — the adapter's immutable `NAV_CALCULATOR` is pinned correctly and
@@ -54,7 +54,7 @@ regeneration procedure.
 
 ### PR B — `BaseCustomPriceFeed` (maintainability; follow-up)
 
-~24 of the 25 custom price feeds share an identical skeleton: the 5 `IPriceFeedCustom`
+~24 of the 25 custom price feeds share an identical skeleton: the 5 `ICustomPriceFeed`
 thunks, the immutables, the constructor with `OracleArgumentChecks`, and the Chainlink
 read + staleness preamble. Only the rate source and the multiply-and-normalize differ
 (usually 1–3 lines). Introduce an `abstract BaseCustomPriceFeed` carrying the shared surface
@@ -82,7 +82,7 @@ outliers stay as-is: `ETHPlus_Price` (no Chainlink leg), `eETH_Price` (derived t
 ## Consequences
 
 - NAVCalculator has comfortable headroom (~8.3 KB) for future adapters/registry growth.
-- **Any change to NAVRegistryLib's source now also shifts the ERC20DefaultAdapter creation
+- **Any change to NAVRegistryLib's source now also shifts the ERC20DefaultBalanceAdapter creation
   code's host**, so the pinned CREATE2 address must be regenerated on any NAVRegistryLib
   edit (this was already true for the lib; the guard test catches it).
 - PRs B/C reduce duplication that has already produced real copy-paste bugs, at the cost of

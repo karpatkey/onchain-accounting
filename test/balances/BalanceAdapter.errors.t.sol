@@ -8,7 +8,7 @@ import {IBalances} from "src/balances/IBalances.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Mock_CustomBalanceAdapter} from "test/mocks/balance_adapters.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
-import {ERC20DefaultAdapter} from "src/balances/protocols/ERC20DefaultAdapter.sol";
+import {ERC20DefaultBalanceAdapter} from "src/balances/protocols/ERC20DefaultBalanceAdapter.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
@@ -66,7 +66,7 @@ contract Mock_RevertingBalanceAdapter is IBalanceAdapter {
 /// @notice Tests error scenarios and graceful degradation
 contract BalanceAdapterErrorTest is Test {
     BalancesHarness public balances;
-    ERC20DefaultAdapter public erc20DefaultAdapter;
+    ERC20DefaultBalanceAdapter public erc20DefaultAdapter;
     Mock_RevertingBalanceAdapter public revertingAdapter;
     Mock_CustomBalanceAdapter public customAdapter;
     Mock_ERC20 public usdc;
@@ -250,9 +250,9 @@ contract BalanceAdapterErrorTest is Test {
         // Verify adapter is removed
         assertFalse(balances.isAdapterRegistered(address(revertingAdapter)), "Adapter should be removed");
 
-        // ERC20DefaultAdapter should still work
+        // ERC20DefaultBalanceAdapter should still work
         (uint256 amount,) = erc20DefaultAdapter.getAdapterBalanceForAsset(alice, address(usdc));
-        assertEq(amount, 1000 * 10 ** usdc.decimals(), "ERC20DefaultAdapter should still work");
+        assertEq(amount, 1000 * 10 ** usdc.decimals(), "ERC20DefaultBalanceAdapter should still work");
     }
 
     // ============================================
@@ -269,9 +269,9 @@ contract BalanceAdapterErrorTest is Test {
         balances.addBalanceAdapterDirect(address(0), address(adapter2), IBalances.AdapterType.Custom);
         balances.addBalanceAdapterDirect(address(0), address(adapter3), IBalances.AdapterType.Custom);
 
-        // Don't mint any tokens (so ERC20DefaultAdapter has no positions)
+        // Don't mint any tokens (so ERC20DefaultBalanceAdapter has no positions)
 
-        // Query from ERC20DefaultAdapter - should return zero, not revert
+        // Query from ERC20DefaultBalanceAdapter - should return zero, not revert
         (uint256 amount,) = erc20DefaultAdapter.getAdapterBalanceForAsset(alice, address(usdc));
         assertEq(amount, 0, "Should return zero balance when no positions");
 

@@ -878,6 +878,7 @@ bytes32 protocolId = keccak256("aave-v3-lending");  // == ProtocolIds.AAVE_V3_LE
 | `cap` | `(address vault)` |
 | `erc4626` | `(address vault)` |
 | `merkl` | `(address rewardToken)` |
+| `nexus-mutual-staking` | `(uint256 tokenId, uint256 poolId)` |
 | `stader-withdrawal` | `""` (account-global) |
 | `kelp-withdrawal` | `""` (account-global) |
 | `lido-withdrawal` | `""` (account-global) |
@@ -975,6 +976,7 @@ decodes use `AbiCoder.defaultAbiCoder()` from ethers.js. Protocol ID constants c
 | `Cap` | `cap` | `Supplied` |
 | `ERC4626Wrap` | `erc4626` | `Supplied` |
 | `MerklRewards` | `merkl` | `Rewards` |
+| `NexusMutualStakingPoolsBalanceAdapter` | `nexus-mutual-staking` | `Staking`, `Rewards` |
 | `LidoWithdrawalQueue` | `lido-withdrawal` | `Supplied` |
 | `StaderWithdrawalQueue` | `stader-withdrawal` | `Supplied` |
 | `KelpWithdrawalQueue` | `kelp-withdrawal` | `Supplied` |
@@ -1220,6 +1222,15 @@ const [wrapper] = abi.decode(["address"], pos.positionId);
 const [rewardToken] = abi.decode(["address"], pos.positionId);
 // rewardToken — the ERC20 reward token
 // Rewards → unclaimed allocation (proof-cached; may be stale between proof updates)
+```
+
+#### Nexus Mutual staking pools — `nexus-mutual-staking`
+
+```typescript
+const [tokenId, poolId] = abi.decode(["uint256", "uint256"], pos.positionId);
+// tokenId — the Nexus StakingNFT id (one position); poolId — the staking pool it belongs to
+// One Staking (active + expired stake) and one Rewards leg per tokenId, both NXM-denominated.
+// An account may hold several positions across several pools; each surfaces under its own positionId.
 ```
 
 #### Lido / Stader / Kelp withdrawal queues — `lido-withdrawal` / `stader-withdrawal` / `kelp-withdrawal`

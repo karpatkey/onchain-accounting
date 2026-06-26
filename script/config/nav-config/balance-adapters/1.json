@@ -187,9 +187,9 @@
     "enabled": true,
     "$comment": "ether.fi withdrawal-queue cache adapter (ADR 0014). Registered via addBalanceAdapters; reports 0 until the kpk-agents submitter feeds tokenIds."
   },
-  "NexusStakedNxm": {
+  "NexusMutualStakingPools": {
     "enabled": true,
-    "$comment": "Nexus Mutual staked NXM view adapter. Registered via addBalanceAdapters; reports the account's staked NXM (Staking + Rewards) discovered on-chain by scanning StakingNFT."
+    "$comment": "Nexus Mutual staking pools view adapter. Registered via addBalanceAdapters; reports the account's staked NXM (Staking + Rewards) per StakingNFT position (positionId=abi.encode(tokenId,poolId)), discovered on-chain by scanning StakingNFT."
   },
   "StakeWiseExitQueue": {
     "enabled": true,

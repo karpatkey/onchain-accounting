@@ -68,8 +68,8 @@ Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, pos
 | EtherFiWithdrawals | `etherfi-withdrawal` | `""` (empty — account-global) | in-flight withdrawal-queue ETH | `Supplied` | false | native ETH |
 | StakeWiseExitQueue | `stakewise-exit` | `""` (empty — account-global) | in-flight exit-queue assets | `Supplied` | false | native ETH |
 | EthenaCooldownBalanceAdapter | `ethena-cooldown` | `""` (empty — account-global) | USDe in the sUSDe unstaking cooldown | `Supplied` | false | USDe |
-| NexusStakedNxm | `nexus-staking` | `""` (empty — account-global) | active + expired staked NXM | `Staking` | false | NXM |
-| | | | claimable rewards | `Rewards` | false | NXM |
+| NexusMutualStakingPools | `nexus-mutual-staking` | `abi.encode(uint256 tokenId, uint256 poolId)` | active + expired staked NXM (per StakingNFT) | `Staking` | false | NXM |
+| | | | claimable rewards (per StakingNFT) | `Rewards` | false | NXM |
 | MerklRewards | `merkl` | `abi.encode(address rewardToken)` | unclaimed rewards per token | `Rewards` | false | reward token |
 
 ## PositionKind usage census
@@ -90,7 +90,7 @@ Emission-site counts across `src/balances/` (grep, 2026-06-26, post-assignment):
 
 - `isDebt == true` occurs **only** with `positionKind == Borrowed` at all 8 current emission sites. This correlation is observational: `isDebt` remains the canonical NAV-sign signal (per `PositionKind.sol`), so consumers should read it directly rather than infer sign from `positionKind`.
 - `Collateral` and `Staking` are always `isDebt == false`.
-- Empty `positionId` (`""`) marks account-global positions: Nexus staked NXM, the Ethena cooldown, and the withdrawal/exit queues (Lido, Kelp, Stader, ether.fi, StakeWise V3). All other adapters encode at least one address (or `bytes32` poolId/marketId; Uniswap/PancakeSwap V3 add `uint256 tokenId`).
+- Empty `positionId` (`""`) marks account-global positions: the Ethena cooldown and the withdrawal/exit queues (Lido, Kelp, Stader, ether.fi, StakeWise V3). All other adapters encode at least one address (or `bytes32` poolId/marketId; Uniswap/PancakeSwap V3 add `uint256 tokenId`, and Nexus Mutual staking encodes `(uint256 tokenId, uint256 poolId)` per StakingNFT).
 - One `protocolId` slug ⇒ exactly one `positionId` decode schema, as required by the slug rules — no adapter violates this.
 - Multi-leg adapters reuse the **same** `positionId` across their legs; legs are distinguished by `positionKind` (and `balanceAsset` for per-token legs), which is exactly why `positionKind` must be identity-stable.
 - The wallet-LP vs gauge-staked-LP pairing (Curve/Balancer pools metas vs gauges metas) is now distinguishable by kind alone: `Supplied` = liquid LP, `Staking` = behind an unstake.

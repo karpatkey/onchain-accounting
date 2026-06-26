@@ -12,8 +12,6 @@
       "supportedDeBankProtocols": [
         "aave2",
         "aave3",
-        "aura",
-        "aurafinance",
         "balancer3",
         "capapp",
         "compound3",
@@ -67,8 +65,6 @@
       "forkBlock": 47715211,
       "supportedDeBankProtocols": [
         "aave3",
-        "aura",
-        "aurafinance",
         "balancer3",
         "compound3",
         "etherfi",
@@ -84,8 +80,6 @@
       "forkBlock": 476509627,
       "supportedDeBankProtocols": [
         "aave3",
-        "aura",
-        "aurafinance",
         "balancer3",
         "compound3",
         "etherfi",

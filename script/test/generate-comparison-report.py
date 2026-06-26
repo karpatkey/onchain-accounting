@@ -102,7 +102,6 @@ NAV_PROTOCOL_TO_DEBANK_IDS: dict[str, list[str]] = {
     "Spark": ["spark"],
     "Curve": ["curve"],
     "Convex": ["convex"],
-    "Aura": ["aurafinance"],
     "Merkl": ["merkl"],
     "Fluid": ["fluid"],
     "Cap": ["capapp"],

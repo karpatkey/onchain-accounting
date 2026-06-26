@@ -56,12 +56,5 @@
       "0xd98Be00b5D27fc98112BdE293e487f8D4cA57d07",
       "0x6f7D514bbD4aFf3BcD1140B7344b32f063dEe486"
     ]
-  },
-  "AuraRewardsMeta": {
-    "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aura pool. Instance coordinate = AURA_REWARDS (BaseRewardPool4626) address, resolved via rewarder.pid() \u2192 Booster.poolInfo(pid).lptoken. AURA token auto-detected from Booster.minter(). Supersedes per-instance Aura_* adapters, disabled below.",
-    "instances": [
-      "0x627305fF273640e0468D3c5DFE4FC2Adb1D013e8"
-    ]
   }
 }

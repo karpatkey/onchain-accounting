@@ -240,13 +240,13 @@ ConfigReader.writeAdapterAddress(vm, chainId, "balanceAdapters", "AaveV3_USDC", 
 ### ✅ Selective Deployment
 Enable/disable adapters per chain in `contracts-deployment-config/balance-adapters/{chainId}.json`:
 ```jsonc
-// In contracts-deployment-config/balance-adapters/1.json (Mainnet) - enable DAI DSR
-"DaiDsr": {
+// In contracts-deployment-config/balance-adapters/1.json (Mainnet) - enable Sky USDS savings
+"SkySavingsUsds": {
   "enabled": true
 }
 
-// In contracts-deployment-config/balance-adapters/42161.json (Arbitrum) - disable DAI DSR (doesn't exist there)
-"DaiDsr": {
+// In contracts-deployment-config/balance-adapters/42161.json (Arbitrum) - disable Sky USDS savings (doesn't exist there)
+"SkySavingsUsds": {
   "enabled": false
 }
 ```

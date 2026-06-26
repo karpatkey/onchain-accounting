@@ -35,7 +35,6 @@ Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, pos
 | | | | core-eVault debt (`debtOf`) | `Borrowed` | true | `vault.asset()` |
 | ERC4626Wrap | `erc4626` | `abi.encode(address wrapper)` | wrapper shares (`convertToAssets`) | `Supplied` | false | `wrapper.asset()` |
 | Cap | `cap` | `abi.encode(address cUSD)` | cUSD + stcUSD combined | `Supplied` | false | USDC |
-| DaiDsr | `dai-dsr` | `""` (empty — account-global) | DSR deposit | `Supplied` | false | DAI |
 | SkySavingsUsds | `sky-savings` | `abi.encode(address sUSDS)` | sUSDS shares | `Supplied` | false | USDS |
 | AaveV3SafetyModule | `aave-v3-safety-module` | `abi.encode(address stakeToken)` | staked principal (per stake token) | `Staking` | false | staked token (AAVE/GHO/ABPT…) |
 | | | | claimable SM rewards | `Rewards` | false | AAVE |
@@ -88,7 +87,7 @@ Emission-site counts across `src/balances/` (grep, 2026-06-26, post-assignment):
 
 - `isDebt == true` occurs **only** with `positionKind == Borrowed` at all 7 current emission sites. This correlation is observational: `isDebt` remains the canonical NAV-sign signal (per `PositionKind.sol`), so consumers should read it directly rather than infer sign from `positionKind`.
 - `Collateral` and `Staking` are always `isDebt == false`.
-- Empty `positionId` (`""`) marks account-global positions: DaiDsr and the three withdrawal queues. All other adapters encode at least one address (or `bytes32` poolId/marketId; Uniswap/PancakeSwap V3 add `uint256 tokenId`).
+- Empty `positionId` (`""`) marks account-global positions: the three withdrawal queues. All other adapters encode at least one address (or `bytes32` poolId/marketId; Uniswap/PancakeSwap V3 add `uint256 tokenId`).
 - One `protocolId` slug ⇒ exactly one `positionId` decode schema, as required by the slug rules — no adapter violates this.
 - Multi-leg adapters reuse the **same** `positionId` across their legs; legs are distinguished by `positionKind` (and `balanceAsset` for per-token legs), which is exactly why `positionKind` must be identity-stable.
 - The wallet-LP vs gauge-staked-LP pairing (Curve/Balancer pools metas vs gauges metas) is now distinguishable by kind alone: `Supplied` = liquid LP, `Staking` = behind an unstake.

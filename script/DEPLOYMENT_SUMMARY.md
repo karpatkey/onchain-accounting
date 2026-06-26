@@ -348,7 +348,6 @@ script/verify/verify-all.sh
 - `CurvePoolsMetaBalanceAdapter`, `CurveGaugesMetaBalanceAdapter` - Curve LPs + gauges
 - `ConvexRewardsMetaBalanceAdapter` - Convex staking
 - `CapBalanceAdapter` - Cap (cUSD + stcUSD aggregated → USDC)
-- `DaiDsrBalanceAdapter` - DAI Savings Rate
 - `SkySavingsUsdsBalanceAdapter` - Sky USDS savings (sUSDS)
 - `FluidFTokensMetaBalanceAdapter`, `FluidVaultsMetaBalanceAdapter` - Fluid lending + vaults
 - `GearboxMarketsMetaBalanceAdapter` - Gearbox kpk-curated markets

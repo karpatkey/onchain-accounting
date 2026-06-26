@@ -23,7 +23,7 @@ pragma solidity ^0.8;
 ///        UNISWAP_V2 / PANCAKESWAP_V2     → (address pair)
 ///        COMPOUND_V3 / FLUID_FTOKENS     → (address market)
 ///        MERKL                           → (address rewardToken)
-///        DAI_DSR / STADER_WITHDRAWAL / KELP_WITHDRAWAL / LIDO_WITHDRAWAL
+///        STADER_WITHDRAWAL / KELP_WITHDRAWAL / LIDO_WITHDRAWAL
 ///          / ETHENA_COOLDOWN / ETHERFI_WITHDRAWAL / STAKEWISE_EXIT / NEXUS_STAKING → "" (account-global)
 ///        BRIDGE_ESCROW                   → (address escrow, address token)
 library ProtocolIds {
@@ -99,7 +99,6 @@ library ProtocolIds {
 
     // Sky / DAI savings
     bytes32 internal constant SKY_SAVINGS = keccak256("sky-savings");
-    bytes32 internal constant DAI_DSR = keccak256("dai-dsr");
 
     // Bridge escrow
     bytes32 internal constant BRIDGE_ESCROW = keccak256("bridge-escrow");

@@ -398,13 +398,6 @@
     "positionId": "<pair address>"
   },
 
-  "DaiDsr": {
-    "$perPositionFields": "type: Supply",
-    "protocol": "Sky",
-    "positionDetail": { "protocol": "Sky", "product": "Savings", "name": "DAI Savings Rate" },
-    "positionId": "<DSR pot address>"
-  },
-
   "SkySavingsUsds": {
     "$perPositionFields": "type: Supply",
     "protocol": "Sky",

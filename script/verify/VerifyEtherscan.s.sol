@@ -124,17 +124,6 @@ contract VerifyEtherscan is BaseDeployScript {
             args = abi.encode(morpho, marketId, protocol, nav);
             return (path, args);
         }
-        if (_equals(name, "DaiDsr")) {
-            path = "src/balances/protocols/DaiDsr.sol:DaiDsrBalanceAdapter";
-            address dai = _parseAddr("balanceAdapters", name, "dai", address(0));
-            address dsrManager = _parseAddr("balanceAdapters", name, "dsrManager", address(0));
-            string memory protocol = _readParam("balanceAdapters", name, "protocol");
-            string memory positionDetail = _readParam("balanceAdapters", name, "positionDetail");
-            address nav = _navOrDefault(navCalculator, name);
-            if (dai == address(0) || nav == address(0)) return ("", "");
-            args = abi.encode(dai, dsrManager, protocol, positionDetail, nav);
-            return (path, args);
-        }
         if (_equals(name, "SkySavingsUsds")) {
             path = "src/balances/protocols/SkySavingsUsds.sol:SkySavingsUsdsBalanceAdapter";
             address savingsUsds = _parseAddr("balanceAdapters", name, "savingsUsds", address(0));

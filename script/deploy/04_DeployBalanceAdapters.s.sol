@@ -10,7 +10,6 @@ import {AaveV2InstancesMetaBalanceAdapter} from "../../src/balances/protocols/Aa
 import {AaveV3InstancesMetaBalanceAdapter} from "../../src/balances/protocols/AaveV3InstancesMeta.sol";
 import {CompoundV3CometsMetaBalanceAdapter} from "../../src/balances/protocols/CompoundV3CometsMeta.sol";
 import {SparkLendBalanceAdapter} from "../../src/balances/protocols/SparkLend.sol";
-import {DaiDsrBalanceAdapter} from "../../src/balances/protocols/DaiDsr.sol";
 import {SkySavingsUsdsBalanceAdapter} from "../../src/balances/protocols/SkySavingsUsds.sol";
 import {MorphoVaultsMetaBalanceAdapter} from "../../src/balances/protocols/MorphoVaultsMeta.sol";
 import {MorphoMarketsMetaBalanceAdapter} from "../../src/balances/protocols/MorphoMarketsMeta.sol";
@@ -157,8 +156,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("PancakeSwapV3PoolsMeta"); // Base — meta-adapter: all PancakeSwap V3 pools
 
         // ERC20Default is deployed in NAVCalculator.initialize() when the NAV proxy is set up (02_DeployProxies); it is not deployed here.
-        // DaiDsr and SkySavingsUsds adapters exist in this repo but are NOT used by either Alpha
-        // fund, so they are not wired here. StakeWiseV3* adapters are wired above so accounts
+        // SkySavingsUsds adapter exists in this repo but is NOT used by either Alpha
+        // fund, so it is not wired here. StakeWiseV3* adapters are wired above so accounts
         // holding osETH or Genesis-Vault deposits get full coverage in the integration report.
 
         vm.stopBroadcast();
@@ -236,11 +235,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // Morpho Markets meta-adapter (per-instance adapters removed — superseded by MorphoMarketsMeta)
         if (_equals(adapterName, "MorphoMarketsMeta")) {
             return _deployMorphoMarketsMeta(adapterName, navCalculator);
-        }
-
-        // DAI DSR
-        if (_equals(adapterName, "DaiDsr")) {
-            return _deployDaiDsr(navCalculator);
         }
 
         // Sky Savings USDS
@@ -434,17 +428,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
 
         MorphoMarketsMetaBalanceAdapter adapter = new MorphoMarketsMetaBalanceAdapter(morpho, protocol, navCalculator);
-        return address(adapter);
-    }
-
-    function _deployDaiDsr(address navCalculator) internal returns (address) {
-        address dai =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "DaiDsr", "dai"));
-        address dsrManager = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "DaiDsr", "dsrManager")
-        );
-
-        DaiDsrBalanceAdapter adapter = new DaiDsrBalanceAdapter(dai, dsrManager, navCalculator);
         return address(adapter);
     }
 

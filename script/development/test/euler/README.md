@@ -2,7 +2,7 @@
 
 ## 1. Adapter under test
 
-`src/balances/protocols/EulerVaultsMeta.sol` — the immutable `EulerVaultsMetaBalanceAdapter`, a meta-adapter (ADR 0010). Constructor: `(protocolName, navCalculator)` — no per-vault constructor args; the active vault set lives on NAVCalculator (`addMetaInstances`/`removeMetaInstances`, configured in `nav-config/meta-balance-adapters/<chainId>.json` under `EulerVaultsMeta.instances` — vault addresses). Identity is derived on-chain: `positionId = abi.encode(address(vault))` (shared by both legs), `protocolId = keccak256("euler-vaults")`, `positionKind ∈ {Supplied, Collateral, Borrowed}`. A human-readable label is available off the struct via `describePosition(positionId)` → `vault.name()`.
+`src/balances/protocols/EulerVaultsMetaBalanceAdapter.sol` — the immutable `EulerVaultsMetaBalanceAdapter`, a meta-adapter (ADR 0010). Constructor: `(protocolName, navCalculator)` — no per-vault constructor args; the active vault set lives on NAVCalculator (`addMetaInstances`/`removeMetaInstances`, configured in `nav-config/meta-balance-adapters/<chainId>.json` under `EulerVaultsMeta.instances` — vault addresses). Identity is derived on-chain: `positionId = abi.encode(address(vault))` (shared by both legs), `protocolId = keccak256("euler-vaults")`, `positionKind ∈ {Supplied, Collateral, Borrowed}`. A human-readable label is available off the struct via `describePosition(positionId)` → `vault.name()`.
 
 ### Inheritance + per-chain scope (Phase 0)
 

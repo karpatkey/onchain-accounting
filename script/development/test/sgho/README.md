@@ -2,7 +2,7 @@
 
 ## 1. Adapter under test
 
-`src/balances/protocols/ERC4626Wrap.sol` — the immutable generic `ERC4626WrapBalanceAdapter`, instantiated for **sGHO**. Constructor: `(wrapper, navCalculator)` where `wrapper = sGHO` (`0xE1753F2e00940cC31213dd92013cF019DFE4ca1d`) and the wrapper's `asset()` is **GHO** (`0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f`). The constructor **reverts unless GHO is already registered on NAVCalculator** — wiring errors are loud, not silently zero-valued. Identity is derived on-chain: `positionId = abi.encode(wrapper)`, `protocolId = keccak256("erc4626")`, `positionKind = Supplied`.
+`src/balances/protocols/ERC4626WrapBalanceAdapter.sol` — the immutable generic `ERC4626WrapBalanceAdapter`, instantiated for **sGHO**. Constructor: `(wrapper, navCalculator)` where `wrapper = sGHO` (`0xE1753F2e00940cC31213dd92013cF019DFE4ca1d`) and the wrapper's `asset()` is **GHO** (`0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f`). The constructor **reverts unless GHO is already registered on NAVCalculator** — wiring errors are loud, not silently zero-valued. Identity is derived on-chain: `positionId = abi.encode(wrapper)`, `protocolId = keccak256("erc4626")`, `positionKind = Supplied`.
 
 ### Inheritance + per-chain scope (Phase 0)
 

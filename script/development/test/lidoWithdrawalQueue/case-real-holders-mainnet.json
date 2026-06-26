@@ -1,6 +1,6 @@
 {
   "protocol": "Lido stETH Withdrawal Queue",
-  "adapter": "src/balances/protocols/LidoWithdrawalQueue.sol",
+  "adapter": "src/balances/protocols/LidoWithdrawalQueueBalanceAdapter.sol",
   "adapter_test": "test/balances/protocols/fork/LidoWithdrawalQueue.fork.t.sol",
   "test_contract": "LidoWithdrawalQueueBalanceOracleForkTest_Fresh",
   "chain": { "id": 1, "name": "mainnet" },

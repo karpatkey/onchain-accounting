@@ -1,6 +1,6 @@
 {
   "protocol": "Euler",
-  "adapter": "src/balances/protocols/EulerVaultsMeta.sol",
+  "adapter": "src/balances/protocols/EulerVaultsMetaBalanceAdapter.sol",
   "adapter_test": "test/balances/protocols/fork/EulerVaultsMeta.fork.t.sol",
   "test_contract": "EulerVaultsMetaBalanceAdapterForkTest",
   "chain": { "id": 1, "name": "mainnet" },

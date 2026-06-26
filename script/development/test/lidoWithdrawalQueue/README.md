@@ -2,7 +2,7 @@
 
 ## 1. Adapter under test
 
-`src/balances/protocols/LidoWithdrawalQueue.sol` — the immutable `LidoWithdrawalQueueBalanceAdapter`. Constructor: `(withdrawalQueue, underlyingToken, navCalculator)` where `withdrawalQueue = Lido WithdrawalQueueERC721` (`0x889edC2eDab5f40e902b864aD4d7AdE8E412F9B1`) and `underlyingToken =` the **native-ETH sentinel** (`0xEeee…eEEeE`). Identity is derived on-chain: `positionId = ""` (account-global — a holder has at most one aggregate queue position), `protocolId = keccak256("lido-withdrawal")`, `positionKind = Supplied`.
+`src/balances/protocols/LidoWithdrawalQueueBalanceAdapter.sol` — the immutable `LidoWithdrawalQueueBalanceAdapter`. Constructor: `(withdrawalQueue, underlyingToken, navCalculator)` where `withdrawalQueue = Lido WithdrawalQueueERC721` (`0x889edC2eDab5f40e902b864aD4d7AdE8E412F9B1`) and `underlyingToken =` the **native-ETH sentinel** (`0xEeee…eEEeE`). Identity is derived on-chain: `positionId = ""` (account-global — a holder has at most one aggregate queue position), `protocolId = keccak256("lido-withdrawal")`, `positionKind = Supplied`.
 
 ### Inheritance + per-chain scope (Phase 0)
 

@@ -44,7 +44,7 @@ echo "    underlyingToken: $UNDERLYING_TOKEN (native ETH)"
 echo "    owner:           $DEV_DEPLOYER_ADDR (dev account #0)"
 
 OUT=$(
-  forge create src/balances/protocols/StakeWiseExitQueue.sol:StakeWiseExitQueueBalanceAdapter \
+  forge create src/balances/protocols/StakeWiseExitQueueBalanceAdapter.sol:StakeWiseExitQueueBalanceAdapter \
     --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" --broadcast \
     --constructor-args "$VAULTS_REGISTRY" "$UNDERLYING_TOKEN" "$NAV" "$DEV_DEPLOYER_ADDR" 2>&1
 ) || true

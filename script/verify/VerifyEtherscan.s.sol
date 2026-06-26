@@ -90,7 +90,7 @@ contract VerifyEtherscan is BaseDeployScript {
         // intentionally fall through to the "verify manually" notice (§8.1) rather than being built here. Only
         // adapters with a 1:1 deploy-to-constructor mapping get an args builder below.
         if (_equals(name, "SparkLend") || _startsWith(name, "SparkLend_")) {
-            path = "src/balances/protocols/SparkLend.sol:SparkLendBalanceAdapter";
+            path = "src/balances/protocols/SparkLendBalanceAdapter.sol:SparkLendBalanceAdapter";
             address dataProvider = _parseAddr("balanceAdapters", name, "dataProvider", address(0));
             address nav = _navOrDefault(navCalculator, name);
             if (dataProvider == address(0) || nav == address(0)) return ("", "");

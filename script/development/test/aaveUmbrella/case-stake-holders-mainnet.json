@@ -1,6 +1,6 @@
 {
   "protocol": "Aave Umbrella",
-  "adapter": "src/balances/protocols/AaveUmbrella.sol",
+  "adapter": "src/balances/protocols/AaveUmbrellaBalanceAdapter.sol",
   "adapter_test": "test/balances/protocols/fork/AaveUmbrella.fork.t.sol",
   "test_contract": "AaveUmbrellaBalanceOracleForkTest",
   "unit_test": "test/balances/protocols/AaveUmbrella.t.sol::AaveUmbrellaBalanceMathTest",

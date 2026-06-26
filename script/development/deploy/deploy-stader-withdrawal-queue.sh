@@ -46,7 +46,7 @@ echo "    underlyingToken:       $UNDERLYING_TOKEN (WETH)"
 # Capture the full output non-fatally (under `set -e`, a piped grep no-match would otherwise abort
 # the script before the guard below runs and swallow the forge error).
 OUT=$(
-  forge create src/balances/protocols/StaderWithdrawalQueue.sol:StaderWithdrawalQueueBalanceAdapter \
+  forge create src/balances/protocols/StaderWithdrawalQueueBalanceAdapter.sol:StaderWithdrawalQueueBalanceAdapter \
     --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" --broadcast \
     --constructor-args "$USER_WITHDRAWAL_MANAGER" "$UNDERLYING_TOKEN" "$NAV" 2>&1
 ) || true

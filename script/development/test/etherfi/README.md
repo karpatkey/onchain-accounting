@@ -1,7 +1,7 @@
 # ether.fi Withdrawal Queue — balance-adapter verification
 
 ## 1. Adapter under test
-`EtherFiWithdrawalsBalanceAdapter` (`src/balances/protocols/EtherFiWithdrawals.sol`). Reports the in-flight ETH owed to an account in ether.fi's withdrawal queue (eETH/weETH burned on `requestWithdraw`, ETH claimable from a `WithdrawRequestNFT`).
+`EtherFiWithdrawalsBalanceAdapter` (`src/balances/protocols/EtherFiWithdrawalsBalanceAdapter.sol`). Reports the in-flight ETH owed to an account in ether.fi's withdrawal queue (eETH/weETH burned on `requestWithdraw`, ETH claimable from a `WithdrawRequestNFT`).
 
 ### Inheritance + per-chain scope (Phase 0)
 - Implements `IBalanceAdapter` + `IPositionDescribable` directly, **plus `Ownable`** — the 3rd documented mutable-cache adapter (after Merkl), per **ADR 0014**. The mutability is a per-account `tokenId` cache only; identity + all addresses are immutable.

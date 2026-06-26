@@ -2,7 +2,7 @@
 
 ## 1. Adapter under test
 
-`src/balances/protocols/KelpWithdrawalQueue.sol` — the immutable `KelpWithdrawalQueueBalanceAdapter`. Constructor: `(withdrawalManager, navCalculator)` where `withdrawalManager = Kelp LRTWithdrawalManager` (`0x62De59c08eB5dAE4b7E6F7a8cAd3006d6965ec16`). Identity is derived on-chain: `positionId = ""` (account-global), `protocolId = keccak256("kelp-withdrawal")`, `positionKind = Supplied`.
+`src/balances/protocols/KelpWithdrawalQueueBalanceAdapter.sol` — the immutable `KelpWithdrawalQueueBalanceAdapter`. Constructor: `(withdrawalManager, navCalculator)` where `withdrawalManager = Kelp LRTWithdrawalManager` (`0x62De59c08eB5dAE4b7E6F7a8cAd3006d6965ec16`). Identity is derived on-chain: `positionId = ""` (account-global), `protocolId = keccak256("kelp-withdrawal")`, `positionKind = Supplied`.
 
 ### Inheritance + per-chain scope (Phase 0)
 

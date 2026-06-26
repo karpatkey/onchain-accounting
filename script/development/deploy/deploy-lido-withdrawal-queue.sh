@@ -46,7 +46,7 @@ echo "    underlyingToken: $UNDERLYING_TOKEN (native ETH)"
 # Capture the full output non-fatally (under `set -e`, a piped grep no-match would otherwise abort
 # the script before the guard below runs and swallow the forge error).
 OUT=$(
-  forge create src/balances/protocols/LidoWithdrawalQueue.sol:LidoWithdrawalQueueBalanceAdapter \
+  forge create src/balances/protocols/LidoWithdrawalQueueBalanceAdapter.sol:LidoWithdrawalQueueBalanceAdapter \
     --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" --broadcast \
     --constructor-args "$WITHDRAWAL_QUEUE" "$UNDERLYING_TOKEN" "$NAV" 2>&1
 ) || true

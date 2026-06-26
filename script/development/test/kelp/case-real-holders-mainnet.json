@@ -1,6 +1,6 @@
 {
   "protocol": "Kelp DAO rsETH Withdrawal Queue",
-  "adapter": "src/balances/protocols/KelpWithdrawalQueue.sol",
+  "adapter": "src/balances/protocols/KelpWithdrawalQueueBalanceAdapter.sol",
   "adapter_test": "test/balances/protocols/fork/KelpWithdrawalQueue.fork.t.sol",
   "test_contract": "KelpWithdrawalQueueBalanceOracleForkTest_Fresh",
   "chain": { "id": 1, "name": "mainnet" },

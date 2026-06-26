@@ -403,12 +403,5 @@
     "protocol": "Sky",
     "positionDetail": { "protocol": "Sky", "product": "Savings", "name": "DAI Savings Rate" },
     "positionId": "<DSR pot address>"
-  },
-
-  "SkySavingsUsds": {
-    "$perPositionFields": "type: Supply",
-    "protocol": "Sky",
-    "positionDetail": { "protocol": "Sky", "product": "Savings", "name": "Sky Savings USDS" },
-    "positionId": "<sUSDS address>"
   }
 }

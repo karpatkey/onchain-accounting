@@ -87,7 +87,7 @@ Defined in `INAVCalculator`. This is what every balance adapter returns.
 
 The stable per-chain identity key for caching and reconciliation is `(chainId, protocolId, positionId, balanceAsset.asset, positionKind)`. `balanceAdapter` is excluded — redeploying an adapter doesn't change the position.
 
-**Credits-only adapters** (e.g. ERC20DefaultAdapter, DaiDsr, AaveV3SafetyModule, SkySavingsUsds) always report `isDebt: false`.
+**Credits-only adapters** (e.g. ERC20DefaultAdapter, DaiDsr, AaveV3SafetyModule) always report `isDebt: false`.
 
 Pricing is **not** in this struct; NAVCalculator adds it when building full `Position` and NAV.
 
@@ -223,7 +223,7 @@ Meta-adapters derive labels on-chain from live state (ERC20 symbols, vault names
 
 ## 7. Implemented adapters
 
-### 7.1 Meta-adapters (22)
+### 7.1 Meta-adapters (21)
 
 Meta-adapters extend `MetaBalanceAdapter`. The instance set is configured on NAVCalculator via `addMetaInstances`/`removeMetaInstances`.
 
@@ -251,7 +251,7 @@ Meta-adapters extend `MetaBalanceAdapter`. The instance set is configured on NAV
 | **PancakeSwapV3PoolsMeta** | Subclass of `UniswapV3PoolsMeta` overriding `slot0` for PancakeSwap V3's `uint32 feeProtocol`. Own NonfungiblePositionManager. | `(positionManager, protocolName, navCalculator)` | `PancakeSwapV3PoolsMeta`; pools under `instances`. |
 | **PancakeSwapV2PoolsMeta** | Thin subclass of `UniswapV2PoolsMeta` (PancakeSwap V2 is a byte-for-byte V2 fork). | `(protocolName, navCalculator)` | `PancakeSwapV2PoolsMeta`; pairs under `instances`. |
 
-### 7.2 Per-instance singleton adapters (12)
+### 7.2 Per-instance singleton adapters (15)
 
 These adapters implement `IBalanceAdapter` directly (not `MetaBalanceAdapter`). Each is a single immutable deployment. Constructors take only protocol-specific addresses and `navCalculator`. Identity is expressed via a compile-time `bytes32` constant (`PROTOCOL_ID = ProtocolIds.<CONSTANT>`) and `positionId` computed at query time via `abi.encode(...)`.
 
@@ -263,12 +263,12 @@ These adapters implement `IBalanceAdapter` directly (not `MetaBalanceAdapter`). 
 | **Cap** | Cap protocol cUSD + stcUSD balances, aggregated and reported as USDC. positionId = `abi.encode(cUSD)`. | `(cUsd, stcUsd, usdc, navCalculator)` | protocolId = `CAP`. |
 | **DaiDsr** | DAI Savings Rate. positionId = `""` (account-global). `Supplied` kind. | `(dai, dsrManager, navCalculator)` | protocolId = `DAI_DSR`. |
 | **ERC4626Wrap** | Generic ERC-4626 wrapper: reports `convertToAssets(balanceOf(account))` denominated in `wrapper.asset()`. Constructor reverts if `asset()` is not NAV-registered. Used for Aave V3 stata-tokens (`waEth*` family), the Aave sGHO savings vault, and other thin ERC-4626 wrappers. positionId = `abi.encode(wrapper)`. `Supplied` kind. | `(wrapper, navCalculator)` | protocolId = `ERC4626`. One deployment per wrapper; config key prefix `ERC4626Wrap_` (in `contracts-deployment-config/balance-adapters/<chainId>.json` and `nav-config/balance-adapters/<chainId>.json`). |
+| **EthenaCooldownBalanceAdapter** | USDe owed to an account in the sUSDe unstaking cooldown. Reads the single per-account `UserCooldown` slot on `StakedUSDeV2` (`cooldowns(account)` → `{cooldownEnd, underlyingAmount}`) and reports `underlyingAmount` as one position denominated in USDe; non-zero only while an unstake is in flight. positionId = `""` (account-global). `Supplied` kind. | `(stakedUSDe, underlyingToken, navCalculator)` | protocolId = `ETHENA_COOLDOWN`. Mainnet only. |
 | **KelpWithdrawalQueue** | Kelp DAO rsETH exit queue (`LRTWithdrawalManager`). Sums each account's open requests' `expectedAssetAmount` per payout asset. Payout-asset set discovered at runtime. positionId = `""` (account-global). `Supplied` kind. | `(withdrawalManager, navCalculator)` | protocolId = `KELP_WITHDRAWAL`. Mainnet only. |
 | **LidoWithdrawalQueue** | Lido `WithdrawalQueueERC721`. Open (un-claimed) withdrawal requests summed into a native-ETH credit. Finalized → exact claimable ETH (`getClaimableEther`); not finalized → `amountOfStETH`. positionId = `""` (account-global). `Supplied` kind. | `(withdrawalQueue, underlyingToken, navCalculator)` | protocolId = `LIDO_WITHDRAWAL`. Mainnet only. |
 | **MerklRewards** | Merkl (Angle Labs) **unclaimed** rewards via on-chain proof verification. Per-(user, token) merkle-proof cache, `onlyOwner` writes, proofs verified against the live Distributor root. positionId = `abi.encode(rewardToken)`. `Rewards` kind. | `(distributor, navCalculator, initialOwner)` | protocolId = `MERKL`. A documented mutable-cache adapter (see `docs/decisions/0007-merkl-trust-minimized-cache.md`). |
 | **EtherFiWithdrawals** | ether.fi in-flight withdrawal-queue ETH. `onlyOwner` cache of per-account `WithdrawRequestNFT` tokenIds (**ids only, never amounts**); values each live (`getClaimableAmount` / `getRequest`+`amountForShare`) and re-verifies `ownerOf` per read. One aggregated native-ETH leg/account, positionId `""`. `Supplied` kind. | `(withdrawRequestNft, liquidityPool, underlyingToken, navCalculator, initialOwner)` | protocolId = `ETHERFI_WITHDRAWAL`. Mutable-cache adapter, agent-fed (see `docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md`). The owner can only under-report, never over-report. |
 | **NexusStakedNxm** | Nexus Mutual V2 staked NXM across all staking pools. Discovers an account's `StakingNFT` positions by scanning `tokenInfo(1..totalSupply)` (the NFT is mint-only with a small global supply — no per-owner enumeration / agent needed), then `StakingViewer.getAggregatedTokens` totals them into a `Staking` leg (active + expired stake) + a `Rewards` leg, both NXM. positionId = `""` (account-global). | `(stakingNft, stakingViewer, underlyingToken, navCalculator)` | protocolId = `NEXUS_STAKING`. Mainnet only; underlying = NXM (priced PR #71). Scan bounded by `MAX_TOKEN_SCAN`; migrate to an agent-fed cache (ADR 0014) if Nexus's global StakingNFT supply ever approaches the cap. |
-| **SkySavingsUsds** | Sky savings USDS. positionId = `abi.encode(savingsUsds)`. `Supplied` kind. | `(savingsUsds, navCalculator)` | protocolId = `SKY_SAVINGS`. |
 | **StakeWiseExitQueue** | StakeWise V3 in-flight exit-queue assets. `onlyOwner` cache of per-account `(vault, positionTicket, timestamp)` tuples (**coordinates only, never amounts**); values each live as `calculateExitedAssets(account,…).exitedAssets + convertToAssets(leftShares)` (out-of-range index path for fully-pending positions), with `calculateExitedAssets(receiver=account)` as the on-chain ownership check and a `VaultsRegistry` membership check at submit time. One aggregated native-ETH leg/account, positionId `""`. `Supplied` kind. | `(vaultsRegistry, underlyingToken, navCalculator, initialOwner)` | protocolId = `STAKEWISE_EXIT`. Mainnet only. Mutable-cache adapter, agent-fed, sibling of `EtherFiWithdrawals` (see `docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md`). The owner can only under-report, never over-report. |
 | **SparkLend** | Spark lending positions. Two legs per reserve (`Supplied`/`Collateral` + `Borrowed`). positionId = `abi.encode(pool, reserve)`. | `(dataProvider, navCalculator)` | protocolId = `SPARK_LEND`. Standalone adapter mirroring the Aave V3 lending pattern (same `ProtocolDataProvider` ABI). |
 | **StaderWithdrawalQueue** | Stader `UserWithdrawalManager` pending unstake requests. Sums `ethFinalized` (or `ethExpected` pre-finalization) for an account's open requests as a single underlying-token credit. positionId = `""` (account-global). `Supplied` kind. | `(userWithdrawalManager, underlyingToken, navCalculator)` | protocolId = `STADER_WITHDRAWAL`. Mainnet only; underlying configured to WETH. |

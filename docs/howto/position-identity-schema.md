@@ -252,20 +252,6 @@ PositionBalance({
 })
 ```
 
-#### `SkySavingsUsds` — sUSDS
-
-```solidity
-PositionBalance({
-    balanceAsset:  Asset({ asset: 0xdC03…84F, symbol: "USDS", decimals: 18 }),
-    balanceAdapter: 0x<SkySavingsUsdsAdapter>,
-    amount:        5_000e18,               // 5 000 USDS (convertToAssets)
-    isDebt:        false,
-    protocolId:    keccak256("sky-savings"),
-    positionId:    abi.encode(0x<SavingsUSDS>),
-    positionKind:  PositionKind.Supplied
-})
-```
-
 #### `StaderWithdrawalQueue` — ETHx → ETH queue
 
 ```solidity
@@ -683,14 +669,6 @@ Scenario: 250 CRV unclaimed in Merkl distributor.
 |-------|--------|-------------|--------------|--------------|---------------|
 | CRV   | 250    | +125        | `Rewards`    | `"Merkl"`    | `"claimable rewards"` |
 
-#### `SkySavingsUsds` — sUSDS
-
-Scenario: 5 000 USDS earning yield in sUSDS.
-
-| asset | amount | value (USD) | positionKind | protocolName | positionLabel |
-|-------|--------|-------------|--------------|--------------|---------------|
-| USDS  | 5 000  | +5 000      | `Supplied`   | `"Sky"`      | `"USDS savings"` |
-
 #### `StaderWithdrawalQueue` — pending unstake
 
 Scenario: 0.5 WETH pending from ETHx unstake.
@@ -947,7 +925,6 @@ bytes32 protocolId = keccak256("aave-v3-lending");  // == ProtocolIds.AAVE_V3_LE
 | `cap` | `(address vault)` |
 | `erc4626` | `(address vault)` |
 | `dai-dsr` | `""` (account-global) |
-| `sky-savings` | `(address savingsContract)` |
 | `merkl` | `(address rewardToken)` |
 | `stader-withdrawal` | `""` (account-global) |
 | `kelp-withdrawal` | `""` (account-global) |
@@ -1047,7 +1024,6 @@ decodes use `AbiCoder.defaultAbiCoder()` from ethers.js. Protocol ID constants c
 | `Cap` | `cap` | `Supplied` |
 | `ERC4626Wrap` | `erc4626` | `Supplied` |
 | `DaiDsr` | `dai-dsr` | `Supplied` |
-| `SkySavingsUsds` | `sky-savings` | `Supplied` |
 | `MerklRewards` | `merkl` | `Rewards` |
 | `LidoWithdrawalQueue` | `lido-withdrawal` | `Supplied` |
 | `StaderWithdrawalQueue` | `stader-withdrawal` | `Supplied` |
@@ -1293,14 +1269,6 @@ const [wrapper] = abi.decode(["address"], pos.positionId);
 ```typescript
 // positionId = "" — account-global, one position per account
 // Supplied → DAI balance in the DSR (chi-adjusted)
-```
-
-#### Sky Savings (sUSDS) — `sky-savings`
-
-```typescript
-const [savingsContract] = abi.decode(["address"], pos.positionId);
-// savingsContract — SavingsUSDS contract address
-// Supplied → USDS balance (convertToAssets(balanceOf(account)))
 ```
 
 #### Merkl rewards — `merkl`

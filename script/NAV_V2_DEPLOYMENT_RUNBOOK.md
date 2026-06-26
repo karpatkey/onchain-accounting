@@ -556,7 +556,6 @@ The deploy script (`04_DeployBalanceAdapters.s.sol`) supports these adapters:
 | `StakeWiseV3VaultsMeta` | `underlyingToken`, `protocol` | Mainnet, Gnosis |
 | `Cap` | `cUsd`, `stcUsd`, `usdc` | Mainnet |
 | `DaiDsr` | `dai`, `dsrManager` | Mainnet |
-| `SkySavingsUsds` | `savingsUsds` | Mainnet |
 | `LidoWithdrawalQueue` | `withdrawalQueue`, `underlyingToken` | Mainnet |
 | `StaderWithdrawalQueue` | `userWithdrawalManager`, `underlyingToken` | Mainnet |
 | `KelpWithdrawalQueue` | `withdrawalManager`, `lrtConfig` | Mainnet |
@@ -602,7 +601,7 @@ The `_deployIfEnabled(...)` calls in `run()` are the authoritative source. Most 
 
 **StakeWise V3 pricing note:** osETH (Mainnet) and osGNO (Gnosis) are **Custom-priced ERC20s** via `osToken_PriceOracle` (`convertToAssets(1e18) × underlying/USD`); held osTokens are reported by `ERC20DefaultAdapter` (deployed by `03_DeployPriceFeeds` / registered by `RegisterAssets`, custom-feed keys `osETH` / `osGNO` in `contracts-deployment-config/custom-price-feeds/<chainId>.json`). The `StakeWiseV3VaultsMeta` adapter separately reports vault deposits net of minted-osToken debt (`vaultAssets - mintedOs`, denominated in ETH/GNO). Wired primarily for integration cross-checks; the Alpha funds do not currently use StakeWise.
 
-**Explicitly not wired** (contracts exist in the repo but no Alpha fund needs them): `CompoundV3_*`, `DaiDsr`, `SkySavingsUsds`, `AaveV3SafetyModule_stkAAVE`. If you need one later, add a `_deployIfEnabled("<Name>")` line to `run()`, add the deploy entry to `contracts-deployment-config/balance-adapters/<chainId>.json` (or `contracts-deployment-config/meta-balance-adapters/<chainId>.json` for a meta), and add the register entry to `nav-config/balance-adapters/<chainId>.json` (or `nav-config/meta-balance-adapters/<chainId>.json`) — `06_Configure.s.sol` reads that nav-config entry to register the adapter; otherwise the adapter deploys but never registers on NAVCalculator.
+**Explicitly not wired** (contracts exist in the repo but no Alpha fund needs them): `CompoundV3_*`, `DaiDsr`, `AaveV3SafetyModule_stkAAVE`. If you need one later, add a `_deployIfEnabled("<Name>")` line to `run()`, add the deploy entry to `contracts-deployment-config/balance-adapters/<chainId>.json` (or `contracts-deployment-config/meta-balance-adapters/<chainId>.json` for a meta), and add the register entry to `nav-config/balance-adapters/<chainId>.json` (or `nav-config/meta-balance-adapters/<chainId>.json`) — `06_Configure.s.sol` reads that nav-config entry to register the adapter; otherwise the adapter deploys but never registers on NAVCalculator.
 
 > **`ERC20Default` is special** — it's deployed inside `NAVCalculator.initialize()` (via `02_DeployProxies.s.sol`), not by `04_DeployBalanceAdapters.s.sol`. It auto-covers every asset registered on the NAVCalculator (wallet balances + native sentinel). Don't put it in the `run()` list.
 
@@ -893,7 +892,7 @@ forge script script/verify/VerifyEtherscan.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY"
 ```
 
-> **Known limitation — constructor-args builder is partial.** `VerifyEtherscan.s.sol._emitVerifyBalanceAdapters()` now drives the list from the deploy config (`ConfigReader.getEnabledAdapters(...)`), so it **does** iterate every enabled, deployed balance adapter — no longer a hardcoded name list. What is still partial is the constructor-args builder `_balanceAdapterPathAndArgs`, which only knows how to encode args for the adapter types it has been taught (today: the `AaveV3_`, `CompoundV3_`, `MorphoBlue_`, and `SparkLend(_)` prefix/exact cases, plus `DaiDsr`, `SkySavingsUsds`, and `ERC20Default(_)`). For any deployed adapter it can't build args for — including the meta-adapters (`AaveV3InstancesMeta`, `MorphoMarketsMeta`, `CurveGaugesMeta`, etc.) — it emits a loud `[verify] no constructor-args mapping; verify manually:` notice with the address instead of silently skipping. When you add a new adapter type, extend `_balanceAdapterPathAndArgs` or run `forge verify-contract` manually for that instance. Tracked as a follow-up in `docs/historical/oracle-migration-plan.md` ("Aspects to improve").
+> **Known limitation — constructor-args builder is partial.** `VerifyEtherscan.s.sol._emitVerifyBalanceAdapters()` now drives the list from the deploy config (`ConfigReader.getEnabledAdapters(...)`), so it **does** iterate every enabled, deployed balance adapter — no longer a hardcoded name list. What is still partial is the constructor-args builder `_balanceAdapterPathAndArgs`, which only knows how to encode args for the adapter types it has been taught (today: the `SparkLend(_)` exact/prefix case, plus `DaiDsr` and `ERC20Default(_)` — the only standalone adapters with a 1:1 deploy-to-constructor mapping). For any deployed adapter it can't build args for — including all meta-adapters (`AaveV3InstancesMeta`, `CompoundV3CometsMeta`, `MorphoMarketsMeta`, `CurveGaugesMeta`, etc.) — it emits a loud `[verify] no constructor-args mapping; verify manually:` notice with the address instead of silently skipping. When you add a new adapter type, extend `_balanceAdapterPathAndArgs` or run `forge verify-contract` manually for that instance. Tracked as a follow-up in `docs/historical/oracle-migration-plan.md` ("Aspects to improve").
 
 ### 8.2 Run the printed commands
 
@@ -1103,7 +1102,7 @@ Phase 9: Post-deployment validation -- per chain
 
 ### "Unknown adapter type" in the `04_DeployBalanceAdapters.s.sol` output
 
-The dispatcher routes almost entirely by **exact match** (`_equals(adapterName, "<Name>")`, e.g. `Cap`, `DaiDsr`, `SkySavingsUsds`, `SparkLend`, and every `*Meta` adapter); only `SparkLend_` and `ERC4626Wrap_` are routed by prefix (`_startsWith`). If you see `Unknown adapter type: <Name>`, your config entry name doesn't exactly match a dispatch branch (and isn't covered by one of those two prefixes) — fix by adding the missing branch in `_deployAdapter`. When adding a new single-instance adapter, add an `_equals(adapterName, "<Name>")` branch; the `SparkLend` branch shows the combined exact-match + prefix pattern used for families that may later grow multiple instances:
+The dispatcher routes almost entirely by **exact match** (`_equals(adapterName, "<Name>")`, e.g. `Cap`, `DaiDsr`, `SparkLend`, and every `*Meta` adapter); only `SparkLend_` and `ERC4626Wrap_` are routed by prefix (`_startsWith`). If you see `Unknown adapter type: <Name>`, your config entry name doesn't exactly match a dispatch branch (and isn't covered by one of those two prefixes) — fix by adding the missing branch in `_deployAdapter`. When adding a new single-instance adapter, add an `_equals(adapterName, "<Name>")` branch; the `SparkLend` branch shows the combined exact-match + prefix pattern used for families that may later grow multiple instances:
 
 ```solidity
 if (_equals(adapterName, "SparkLend") || _startsWith(adapterName, "SparkLend_")) {

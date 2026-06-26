@@ -101,8 +101,8 @@
     }
   },
   "ERC4626Wrap_sGHO": {
-    "enabled": true,
-    "$comment": "Aave sGHO savings vault (ERC-4626). sGHO.asset() returns GHO; convertToAssets unwraps shares to GHO-equivalent. Held by the Alpha funds. At fork block 25230126, redeem() returned exactly convertToAssets() (no exit fee/cooldown), so convertToAssets does not over-report. Share price is >= 1 GHO (yield vault), not a 1:1 share/asset peg.",
+    "enabled": false,
+    "$comment": "DISABLED — superseded by the sGHO custom price feed (sGHO_CustomPriceFeed). sGHO is now a registered priced asset (assets-and-price-feeds/1.json), and registerAsset auto-adds it to the ERC20DefaultBalanceAdapter inclusion list, so the wallet adapter already reports the direct sGHO holding at sGHO/USD (= GHO/USD x convertToAssets, the same value this wrap produced as GHO). Keeping this wrap enabled would DOUBLE-COUNT the Alpha funds' sGHO. Constructor args retained for reference if ever re-enabled.",
     "constructor": {
       "wrapper": "0xE1753F2e00940cC31213dd92013cF019DFE4ca1d",
       "protocol": "Aave",

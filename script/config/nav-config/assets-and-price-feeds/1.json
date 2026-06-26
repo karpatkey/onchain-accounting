@@ -336,6 +336,16 @@
       }
     ]
   },
+  "sGHO": {
+    "address": "0xE1753F2e00940cC31213dd92013cF019DFE4ca1d",
+    "priceFeeds": [
+      {
+        "type": "Custom",
+        "feed": "sGHO",
+        "heartbeat": 86400
+      }
+    ]
+  },
   "AAVE": {
     "address": "0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9",
     "priceFeeds": [

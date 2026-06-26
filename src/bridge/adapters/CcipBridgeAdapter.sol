@@ -20,7 +20,7 @@ import "src/errors.sol";
 ///      CREATE2). The CCIP Router calls `ccipReceive` directly on the adapter; the adapter authenticates the
 ///      router, the source chain selector and the source sender against `trustedRemoteAdapter`, then funds the
 ///      escrow and releases (funded pass-through, ADR 0012).
-/// @author kpk
+/// @author KPK
 contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
     using SafeERC20 for IERC20;
 

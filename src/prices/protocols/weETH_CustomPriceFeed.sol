@@ -14,7 +14,7 @@ import "src/errors.sol";
 /// @notice Returns the USD price of weETH by combining Chainlink's weETH/ETH feed with Chainlink's ETH/USD feed.
 /// @dev The price is computed as `price = (weETH/ETH) * (ETH/USD)`, where both feeds are from Chainlink.
 ///      Both heartbeats are checked independently; if either feed is stale the result is marked stale.
-/// @author kpk
+/// @author KPK
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
 contract weETH_CustomPriceFeed is ICustomPriceFeed {
     //

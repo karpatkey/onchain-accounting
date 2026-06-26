@@ -9,7 +9,7 @@ pragma solidity ^0.8;
 ///           - IStargate.sendToken / Ticket — Stargate V2 `IStargate.sol`
 ///           - ILayerZeroComposer.lzCompose — LayerZero V2 endpoint compose callback
 ///           - OFTComposeMsgCodec — LayerZero V2 compose-message codec
-/// @author kpk
+/// @author KPK
 
 // ============================================================================
 // LayerZero V2 OFT types (mirror @layerzerolabs/.../oft/interfaces/IOFT.sol)

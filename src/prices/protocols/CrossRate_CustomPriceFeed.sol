@@ -11,7 +11,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 /// @title Cross-Rate Price Adapter
 /// @notice Computes Y/USD from Chainlink X/USD and Y/X feeds: price = (X/USD) * (Y/X) / 10^yToXDecimals.
 /// @dev Use when no direct Y/USD feed exists; the base asset X has a USD feed and Y is quoted in X.
-/// @author kpk
+/// @author KPK
 contract CrossRate_CustomPriceFeed is ICustomPriceFeed {
     using SafeCast for uint256;
     using SafeCast for int256;

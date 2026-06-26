@@ -19,7 +19,7 @@ interface IAavePoolAddressesProvider {
 }
 
 /// @title Aave V3 Instances Meta Balance Adapter
-/// @author kpk
+/// @author KPK
 /// @notice One immutable adapter that reports an account's lending positions across *any* Aave V3 instance (Core,
 ///         Prime, an L2 market, …). The set of instances to query is configured on NAVCalculator and passed as
 ///         `bytes32` coordinates — here each coordinate is the instance's **ProtocolDataProvider address** (widened

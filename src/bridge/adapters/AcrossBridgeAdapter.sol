@@ -19,7 +19,7 @@ import "src/errors.sol";
 ///      delivered token+amount against the invoice, verifies the source against `trustedRemoteAdapter`, then
 ///      funds the escrow and releases (funded pass-through, ADR 0012). Across exposes no source-sender on the
 ///      fill, so source authentication binds the payload's `sourceChainId` to the configured trusted remote.
-/// @author kpk
+/// @author KPK
 contract AcrossBridgeAdapter is BridgeAdapter, IAcrossBridgeAdapter {
     using SafeERC20 for IERC20;
 

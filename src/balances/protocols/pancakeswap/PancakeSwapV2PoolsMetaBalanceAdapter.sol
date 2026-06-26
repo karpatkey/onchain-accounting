@@ -5,7 +5,7 @@ import {UniswapV2PoolsMetaBalanceAdapter} from "src/balances/protocols/uniswap/U
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title PancakeSwap V2 Pools Meta Balance Adapter
-/// @author kpk
+/// @author KPK
 /// @notice Meta-adapter for PancakeSwap V2 pairs. PancakeSwap V2 shares the Uniswap V2 Pair/Factory ABI and
 ///         pro-rata math, so this is a thin subclass of the Uniswap V2 pools meta-adapter. It differs in ONE
 ///         respect: PancakeSwap's protocol-fee fraction is not Uniswap's, so its `_mintFee` mints a different

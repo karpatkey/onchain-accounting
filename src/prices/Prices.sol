@@ -15,7 +15,7 @@ import "src/errors.sol";
 /// @dev The read path applies a per-feed staleness gate and then picks the feed with the largest
 /// effectiveUpdatedAt (clamped to block.timestamp to avoid upstream-clock bias). stale=true
 /// is returned only when every registered feed fails the staleness gate.
-/// @author kpk
+/// @author KPK
 abstract contract Prices is IPrices, Initializable {
     //
     // Libraries

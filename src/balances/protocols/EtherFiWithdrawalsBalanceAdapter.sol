@@ -13,7 +13,7 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title ether.fi Withdrawals Balance Adapter (id-cached)
-/// @author kpk
+/// @author KPK
 /// @notice Reports the in-flight ETH owed to an account in ether.fi's withdrawal queue. Requesting a withdrawal
 ///         burns eETH/weETH and mints a `WithdrawRequestNFT`; the queued ETH is then invisible to NAV (the NFT is
 ///         not `ERC721Enumerable` and exposes no owner→tokenIds view, so a pure-view adapter cannot discover the

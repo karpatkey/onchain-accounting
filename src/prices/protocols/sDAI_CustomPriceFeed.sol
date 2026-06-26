@@ -15,7 +15,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 ///      The function multiplies these values and scales by `10**RATIO_DECIMALS` (1e27) so the result has `_decimals`.
 ///      Freshness is enforced only on the Chainlink feed using `DAI_to_USD_chainlinkHeartbeat`; if the feed is stale
 ///      or any input is non-positive, the function returns `(0, true)` to signal staleness.
-/// @author kpk
+/// @author KPK
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
 contract sDAI_CustomPriceFeed is ICustomPriceFeed {
     using Math for uint256;

@@ -17,7 +17,7 @@ import "src/errors.sol";
 ///      age check. If Renzo's L1→L2 keeper lags (e.g., during sequencer downtime recovery) the returned
 ///      rate may be stale without this adapter detecting it. This is an architectural constraint of
 ///      xRenzoDeposit not exposing a rate timestamp; the L1 adapter carries an analogous limitation.
-/// @author kpk
+/// @author KPK
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
 contract ezETH_L2_CustomPriceFeed is ICustomPriceFeed {
     using Math for uint256;

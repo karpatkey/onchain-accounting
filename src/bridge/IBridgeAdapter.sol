@@ -3,7 +3,7 @@ pragma solidity ^0.8;
 
 /// @title IBridgeAdapter Interface
 /// @notice Interface for bridge adapter implementations
-/// @author kpk
+/// @author KPK
 interface IBridgeAdapter {
     //
     // Errors

@@ -20,7 +20,7 @@ import "src/constants.sol";
 ///      calls `BridgeEscrow.releaseByInvoiceId` (re-validated by the escrow). The follow-up adapter-provenance
 ///      PR makes each adapter the direct on-chain recipient that authenticates the real protocol message +
 ///      source sender and funds the escrow per-invoice.
-/// @author kpk
+/// @author KPK
 abstract contract BridgeAdapter is AccessControl, ReentrancyGuard, IBridgeAdapter {
     using SafeERC20 for IERC20;
 

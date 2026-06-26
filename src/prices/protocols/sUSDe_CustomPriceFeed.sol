@@ -22,7 +22,7 @@ import "src/errors.sol";
 ///        yields the exchange rate (totalAssets/totalSupply); the result has `_decimals` decimals.
 ///      Freshness is enforced on the Chainlink feed using `USDE_TO_USD_CHAINLINK_HEARTBEAT`.
 ///      If the feed is stale or the quoted Chainlink price is non-positive, the function returns `(0, true)`.
-/// @author kpk
+/// @author KPK
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
 contract sUSDe_CustomPriceFeed is ICustomPriceFeed {
     //

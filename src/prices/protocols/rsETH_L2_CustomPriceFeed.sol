@@ -13,7 +13,7 @@ import "src/errors.sol";
 /// @title rsETH L2 Custom Price Oracle
 /// @notice Returns the USD price of rsETH on L2 by combining Chainlink rsETH/ETH × Chainlink ETH/USD.
 /// @dev price = (rsETH/ETH) * (ETH/USD). Both heartbeats checked independently.
-/// @author kpk
+/// @author KPK
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
 contract rsETH_L2_CustomPriceFeed is ICustomPriceFeed {
     using SafeCast for int256;

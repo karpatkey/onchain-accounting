@@ -5,7 +5,7 @@ import {IBalanceAdapter} from "./IBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title IMetaBalanceAdapter
-/// @author kpk
+/// @author KPK
 /// @notice Interface for *meta* balance adapter adapters: a single immutable adapter that can report positions
 ///         for an arbitrary number of instances of one protocol (e.g. every Morpho vault, every Balancer pool).
 /// @dev A meta-adapter is universal and instance-stateless — it holds no list of "active" instances and has no

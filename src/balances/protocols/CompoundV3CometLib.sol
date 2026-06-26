@@ -71,7 +71,7 @@ interface CometInterface {
 }
 
 /// @title CompoundV3CometLib
-/// @author kpk
+/// @author KPK
 /// @notice Shared read math for the Compound V3 meta-adapter. Given a Comet (market), the chain's CometRewards,
 ///         the expected reward token, and an account, it returns the account's base supply/borrow (present value
 ///         with interest accrued to `block.timestamp`), every collateral balance, and the unclaimed reward amount.

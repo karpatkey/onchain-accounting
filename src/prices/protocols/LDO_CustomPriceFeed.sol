@@ -14,7 +14,7 @@ import "src/errors.sol";
 /// @notice This contract provides the price of LDO.
 /// @dev The price is calculated by fetching the LDO/ETH price from a Chainlink oracle, and then converting it to USD
 /// using another Chainlink oracle for ETH/USD.
-/// @author kpk
+/// @author KPK
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
 contract LDO_CustomPriceFeed is ICustomPriceFeed {
     //

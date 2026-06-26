@@ -13,7 +13,7 @@ import {BalancerV2PoolLib, IBalancerV2Pool} from "src/balances/protocols/balance
 // solhint-disable func-name-mixedcase
 
 /// @title Balancer V2 Gauges Meta Balance Adapter
-/// @author kpk
+/// @author KPK
 /// @notice One immutable adapter that reports an account's **gauge-staked** Balancer V2 LP plus claimable rewards
 ///         across *any* gauge — the staked liquidity (valued via the Vault's pool balances) and BAL + extra gauge
 ///         rewards. Wallet-held (unstaked) LP is the separate BalancerV2PoolsMetaBalanceAdapter. The instance

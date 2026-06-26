@@ -10,7 +10,7 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title Ethena Cooldown Balance Adapter
-/// @author kpk
+/// @author KPK
 /// @notice Reports the USDe owed to an account that is in the sUSDe unstaking cooldown.
 /// @dev When a holder calls `cooldownShares`/`cooldownAssets` on StakedUSDeV2, the sUSDe is burned and the
 ///      underlying USDe is moved to a silo, recorded against the holder as a single `UserCooldown`

@@ -19,7 +19,7 @@ import "src/errors.sol";
 ///      source (`amb.messageSender()` == the trusted remote adapter, `amb.messageSourceChainId()` == the expected
 ///      source chain), verifies that the delivered token+amount match the invoice, then funds the escrow and
 ///      releases (funded pass-through, ADR 0012). There is no escrow fallback dispatcher.
-/// @author kpk
+/// @author KPK
 contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
     using SafeERC20 for IERC20;
 

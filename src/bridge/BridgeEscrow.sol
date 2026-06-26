@@ -27,7 +27,7 @@ import "src/constants.sol";
 ///      MANAGER driving adapter.completeBridge with a forged payload can release from it — full closure
 ///      (per-adapter provenance + per-invoice funded pass-through, H9/D4, so release draws only the funds the
 ///      genuine delivery brought in) arrives with the recipient→adapter change in the follow-up PR.
-/// @author kpk
+/// @author KPK
 contract BridgeEscrow is
     AccessControlUpgradeable,
     UUPSUpgradeable,

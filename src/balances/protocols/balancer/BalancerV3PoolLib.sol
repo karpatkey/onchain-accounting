@@ -5,7 +5,7 @@ import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IStablePool} from "src/balances/protocols/balancer/IBalancerV3.sol";
 
 /// @title BalancerV3PoolLib
-/// @author kpk
+/// @author KPK
 /// @notice Shared pool-share math for the Balancer V3 meta-adapters (pools + gauges). Given a BPT amount, computes
 ///         the account's share of each underlying pool token, unwrapping ERC4626 pool tokens to their underlying.
 /// @dev Internal library (inlined into the adapters). Mirrors the math of the original combined

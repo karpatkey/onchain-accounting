@@ -8,7 +8,7 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title Morpho Vaults Meta Balance Adapter
-/// @author kpk
+/// @author KPK
 /// @notice One immutable adapter that reports the underlying-asset balance for an account's position in *any*
 ///         Morpho ERC4626 vault. The set of vaults to query is configured on NAVCalculator (per-adapter,
 ///         MANAGER-gated) and passed in as `bytes32` instance coordinates (vault addresses widened to bytes32).

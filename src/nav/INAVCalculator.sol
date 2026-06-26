@@ -10,7 +10,7 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 ///         balance adapters, and NAV/position queries in one or more quote currencies.
 /// @dev Extends IBalances for adapter registry and IPrices for price feed types. Implementations are typically
 ///      UUPS-upgradeable and use AccessControl (MANAGER for mutations, DEFAULT_ADMIN_ROLE for upgrades).
-/// @author kpk
+/// @author KPK
 interface INAVCalculator is IBalances {
     //
     // Structs

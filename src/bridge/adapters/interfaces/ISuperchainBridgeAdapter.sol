@@ -8,7 +8,7 @@ import {IL1StandardBridge, IL2StandardBridge, IOptimismPortal} from "./ISupercha
 /// @notice Interface for Superchain (Optimism Canonical Bridge) Adapter
 /// @dev Documents all events, errors, and public functions for the Superchain bridge adapter
 /// @dev Supports Optimism, Base, Unichain, and other Superchain networks
-/// @author kpk
+/// @author KPK
 interface ISuperchainBridgeAdapter is IBridgeAdapter {
     //
     // Events

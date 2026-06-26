@@ -11,7 +11,7 @@ import "src/errors.sol";
 ///         ETH/USD.
 /// @dev Shared skeleton (staleness, decimals, latestRoundData, the `rate × ETH/USD / 1e18` math) lives in
 ///      BaseCustomPriceFeed; this feed supplies only the Stader exchange rate via `_rate()`.
-/// @author kpk
+/// @author KPK
 /* solhint-disable contract-name-camelcase */
 contract ETHx_CustomPriceFeed is BaseCustomPriceFeed {
     /// @notice Stader StakePoolsManager (rate provider).

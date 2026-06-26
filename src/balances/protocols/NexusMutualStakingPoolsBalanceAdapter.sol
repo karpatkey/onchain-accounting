@@ -11,7 +11,7 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title Nexus Mutual Staking Pools Balance Adapter
-/// @author kpk
+/// @author KPK
 /// @notice Reports an account's staked NXM across Nexus Mutual V2 staking pools, as NXM-denominated
 ///         `Staking` (active + expired stake) and `Rewards` legs — emitted **per StakingNFT position**.
 ///         Each stake is an ERC-721 `StakingNFT`; the NFT is not per-owner-enumerable and the

@@ -10,7 +10,7 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 import {CurvePoolLib} from "./curve/CurvePoolLib.sol";
 
 /// @title ConvexRewardsMetaBalanceAdapter
-/// @author kpk
+/// @author KPK
 /// @notice One immutable adapter that reports an account's Convex-staked Curve LP positions across
 ///         any configured Convex pool, plus all claimable rewards (CRV, CVX, and extra tokens).
 ///

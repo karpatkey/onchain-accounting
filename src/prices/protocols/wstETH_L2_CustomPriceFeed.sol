@@ -14,7 +14,7 @@ import "src/errors.sol";
 /// @notice Returns the USD price of wstETH on L2 by combining Chainlink's wstETH/ETH feed with Chainlink's ETH/USD feed.
 /// @dev The price is computed as `price = (wstETH/ETH) * (ETH/USD)`, where both feeds are from Chainlink.
 ///      Both heartbeats are checked independently; if either feed is stale the result is marked stale.
-/// @author kpk
+/// @author KPK
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
 contract wstETH_L2_CustomPriceFeed is ICustomPriceFeed {
     //

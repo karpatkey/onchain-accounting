@@ -30,7 +30,7 @@ import "src/errors.sol";
 ///      composing OApp (`_from == stargatePool`), the source eid and the source sibling adapter (`composeFrom
 ///      == trustedRemoteAdapter[srcChainId]`), verifies the delivered token+amount against the invoice, then
 ///      funds the escrow and releases (funded pass-through). There is no V1 `swap`/bare `lzReceive` path.
-/// @author kpk
+/// @author KPK
 contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
     using SafeERC20 for IERC20;
     using OFTComposeMsgCodec for bytes;

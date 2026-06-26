@@ -13,7 +13,7 @@ import "src/errors.sol";
 /// @title syrupUSDC L2 Custom Price Oracle
 /// @notice Returns the USD price of syrupUSDC on L2 using Chainlink syrupUSDC/USDC x Chainlink USDC/USD.
 /// @dev price = (syrupUSDC/USDC) * (USDC/USD). Both heartbeats checked independently.
-/// @author kpk
+/// @author KPK
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
 contract syrupUSDC_L2_CustomPriceFeed is ICustomPriceFeed {
     using SafeCast for int256;

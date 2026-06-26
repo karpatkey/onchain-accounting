@@ -66,7 +66,7 @@ interface INonfungiblePositionManager {
 }
 
 /// @title UniswapV3PoolLib
-/// @author kpk
+/// @author KPK
 /// @notice Shared read math for the Uniswap V3 meta-adapter (and PancakeSwap V3 fork). Given a pool, the
 ///         NonfungiblePositionManager, an account, and a pool `slot0` snapshot, it scans the account's NFT
 ///         positions in that pool and aggregates principal (liquidity → token amounts) and unclaimed fees.

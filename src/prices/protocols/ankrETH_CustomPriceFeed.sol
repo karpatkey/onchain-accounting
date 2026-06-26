@@ -15,7 +15,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 ///      - `ratio` comes from the ankrETH contract's `ratio()` function (18 decimals, ankrETH-per-ETH)
 ///      - `ETH/USD` comes from Chainlink oracle (8 decimals)
 ///      Result is scaled to 8 decimals: `price = ETH/USD * 1e18 / ratio`.
-/// @author kpk
+/// @author KPK
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
 contract ankrETH_CustomPriceFeed is ICustomPriceFeed {
     using Math for uint256;

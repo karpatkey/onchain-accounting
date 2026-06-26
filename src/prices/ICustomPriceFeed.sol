@@ -5,7 +5,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 /// @title ICustomPriceFeed
 /// @notice This interface defines the standard functions for a custom price feed.
-/// @author kpk
+/// @author KPK
 interface ICustomPriceFeed is IERC165 {
     /// @notice Returns the latest price for the underlying asset, and whether the price is stale
     /// (only relevant when this custom price feed makes use of an external oracle)

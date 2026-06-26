@@ -10,7 +10,7 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title Kelp DAO rsETH Withdrawal Queue Balance Adapter
-/// @author kpk
+/// @author KPK
 /// @notice Reports assets owed to an account from open requests in Kelp DAO's rsETH exit queue
 ///         (the `LRTWithdrawalManager`).
 /// @dev When a user unstakes rsETH, the rsETH is burned and a per-(asset, user) withdrawal request

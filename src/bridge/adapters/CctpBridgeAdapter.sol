@@ -18,7 +18,7 @@ import {InvalidArguments} from "src/errors.sol";
 ///      USDC mints directly to this adapter (mintRecipient == destinationCaller == address(this));
 ///      _completeBridge then forwards the minted USDC to the escrow, and the base BridgeAdapter
 ///      releases it to the account via releaseByInvoiceId AFTER _completeBridge returns.
-/// @author kpk
+/// @author KPK
 contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
     using SafeERC20 for IERC20;
 

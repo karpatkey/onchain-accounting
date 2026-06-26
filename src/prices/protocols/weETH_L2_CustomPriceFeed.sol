@@ -13,7 +13,7 @@ import "src/errors.sol";
 /// @title weETH L2 Custom Price Oracle
 /// @notice Returns the USD price of weETH on L2 by combining Chainlink weETH/eETH × Chainlink ETH/USD.
 /// @dev price = (weETH/eETH) * (ETH/USD). Assumes eETH ≈ ETH 1:1. Both heartbeats checked independently.
-/// @author kpk
+/// @author KPK
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
 contract weETH_L2_CustomPriceFeed is ICustomPriceFeed {
     using SafeCast for int256;

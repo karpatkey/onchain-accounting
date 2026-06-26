@@ -12,7 +12,7 @@ import {NAVRegistryLib} from "src/nav/NAVRegistryLib.sol";
 import {InvalidArguments} from "src/errors.sol";
 
 /// @title Balances
-/// @author kpk
+/// @author KPK
 /// @notice Manages the balance adapters for different tokens and their latest balances.
 abstract contract Balances is IBalances, Initializable {
     //

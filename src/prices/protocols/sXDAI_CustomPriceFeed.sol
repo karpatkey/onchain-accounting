@@ -20,7 +20,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 ///        the function returns `(0, true)`.
 ///      - Multiplication/division is performed via `Math.mulDiv(..., Math.Rounding.Floor)` so the result is
 ///        scaled back to `_decimals` and rounded down.
-/// @author kpk
+/// @author KPK
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
 contract sXDAI_CustomPriceFeed is ICustomPriceFeed {
     //

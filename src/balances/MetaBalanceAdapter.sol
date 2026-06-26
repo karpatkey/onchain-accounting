@@ -8,7 +8,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 /// @title MetaBalanceAdapter
-/// @author kpk
+/// @author KPK
 /// @notice Abstract base for meta balance adapter adapters — one immutable adapter serving every instance of a
 ///         protocol. Concrete adapters implement two hooks (`_instancePositions`, `_instanceAssets`); this base
 ///         provides the ERC165 wiring, the empty no-arg `IBalanceAdapter` methods, the per-instance fan-out

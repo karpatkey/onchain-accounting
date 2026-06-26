@@ -9,7 +9,7 @@ import "src/errors.sol";
 
 /// @title Custom Oracle Argument Checks
 /// @notice Library for checking common custom oracle constructor arguments
-/// @author kpk
+/// @author KPK
 library OracleArgumentChecks {
     /// @notice Ensures a numeric argument is non-zero.
     /// @param number The number to validate (must be > 0).

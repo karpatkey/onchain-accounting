@@ -7,7 +7,7 @@ import {BaseCustomPriceFeed} from "src/prices/BaseCustomPriceFeed.sol";
 /// @notice USD price of rETH = `rETH.getExchangeRate()` (ETH per rETH, 18 dec) × Chainlink ETH/USD.
 /// @dev Shared skeleton (staleness, decimals, latestRoundData, the `rate × ETH/USD / 1e18` math) lives in
 ///      BaseCustomPriceFeed; this feed supplies only the rETH exchange rate via `_rate()`.
-/// @author kpk
+/// @author KPK
 /* solhint-disable contract-name-camelcase */
 contract rETH_CustomPriceFeed is BaseCustomPriceFeed {
     /// @param rEth_ The address of the rETH token.

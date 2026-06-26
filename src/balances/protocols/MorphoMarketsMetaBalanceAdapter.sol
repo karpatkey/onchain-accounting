@@ -11,7 +11,7 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title Morpho Markets Meta Balance Adapter
-/// @author kpk
+/// @author KPK
 /// @notice One immutable adapter that reports an account's positions on *any* Morpho Blue market. The set of
 ///         markets to query is configured on NAVCalculator (per-adapter, MANAGER-gated) and passed as `bytes32`
 ///         instance coordinates — here the coordinate is the Morpho **marketId** itself (used directly, not an

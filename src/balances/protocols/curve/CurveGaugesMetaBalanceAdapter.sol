@@ -8,7 +8,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {CurvePoolLib} from "./CurvePoolLib.sol";
 
 /// @title CurveGaugesMetaBalanceAdapter
-/// @author kpk
+/// @author KPK
 /// @notice One immutable adapter that reports an account's **gauge-staked** LP position across any
 ///         configured Curve gauge, plus all claimable rewards (CRV and extra tokens).
 ///

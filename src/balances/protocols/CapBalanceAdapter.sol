@@ -32,7 +32,7 @@ interface IStcUsd {
 }
 
 /// @title Cap Protocol Balance Adapter
-/// @author kpk
+/// @author KPK
 /// @notice Returns the USDC-equivalent balance for an account's Cap Finance positions (cUSD + stcUSD).
 /// @dev Combines cUSD and stcUSD positions into a single USDC amount:
 ///      1. Reads cUSD balance directly via ERC20.balanceOf

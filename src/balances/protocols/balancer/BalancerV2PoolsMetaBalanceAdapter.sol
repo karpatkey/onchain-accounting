@@ -9,7 +9,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {BalancerV2PoolLib, IBalancerV2Pool} from "src/balances/protocols/balancer/BalancerV2PoolLib.sol";
 
 /// @title Balancer V2 Pools Meta Balance Adapter
-/// @author kpk
+/// @author KPK
 /// @notice One immutable adapter that reports an account's **wallet-held** (unstaked) Balancer V2 pool liquidity
 ///         across *any* pool — the AMM-supplied LP only (gauge-staked LP + rewards are the separate
 ///         BalancerV2GaugesMeta adapter). The instance coordinate is the pool's **`bytes32` poolId, used directly**

@@ -7,7 +7,7 @@ import {IOmnibridge, IAMB} from "./IGnosisInterfaces.sol";
 /// @title IGnosisBridgeAdapter Interface
 /// @notice Interface for Gnosis Bridge Adapter
 /// @dev Documents all events, errors, and public functions for the Gnosis Omnibridge adapter
-/// @author kpk
+/// @author KPK
 interface IGnosisBridgeAdapter is IBridgeAdapter {
     //
     // Events

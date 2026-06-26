@@ -3,7 +3,7 @@ pragma solidity ^0.8;
 
 /// @title IBridgeEscrow Interface
 /// @notice Interface for BridgeEscrow contract
-/// @author kpk
+/// @author KPK
 /// @dev Contract Invariants:
 ///      - `_inTransitBalances[safe][asset]` equals the sum of amounts from all BRIDGING invoices for that safe and asset
 ///      - `_inTransitBalancesAllAccounts[asset]` equals the sum of `_inTransitBalances[safe][asset]` across all safes

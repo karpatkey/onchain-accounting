@@ -9,7 +9,7 @@ import {BaseCustomPriceFeed} from "src/prices/BaseCustomPriceFeed.sol";
 /// @dev Shared skeleton (staleness, decimals, latestRoundData, the `rate × base / 1e18` math) lives in
 ///      BaseCustomPriceFeed; the base feed here is the <underlying>/USD oracle and `_rate()` is the
 ///      osToken→underlying conversion rate.
-/// @author kpk
+/// @author KPK
 /* solhint-disable contract-name-camelcase */
 contract osToken_CustomPriceFeed is BaseCustomPriceFeed {
     /// @notice StakeWise OsTokenVaultController exposing convertToAssets.

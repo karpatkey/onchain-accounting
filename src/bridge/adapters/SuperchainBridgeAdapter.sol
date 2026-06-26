@@ -32,7 +32,7 @@ import "src/errors.sol";
 ///          withdrawal hash (`keccak256(abi.encode(nonce, sender, target, value, gasLimit, data))`,
 ///          matching `Hashing.hashWithdrawal`) and only completes once the portal reports the withdrawal
 ///          proven, then finalizes it (the portal delivers the ETH to this adapter as the withdrawal target).
-/// @author kpk
+/// @author KPK
 contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     using SafeERC20 for IERC20;
 

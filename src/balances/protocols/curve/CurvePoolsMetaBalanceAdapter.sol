@@ -8,7 +8,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {CurvePoolLib} from "./CurvePoolLib.sol";
 
 /// @title CurvePoolsMetaBalanceAdapter
-/// @author kpk
+/// @author KPK
 /// @notice One immutable adapter that reports an account's **wallet-held** (unstaked) LP position
 ///         across any configured Curve pool, decomposed pro-rata into the pool's underlying tokens.
 ///

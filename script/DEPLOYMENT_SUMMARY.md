@@ -335,7 +335,6 @@ script/verify/verify-all.sh
 - `ERC20DefaultBalanceAdapter` - Wallet ERC20 + native, auto-registered at NAV initialization
 - `AaveV3InstancesMetaBalanceAdapter` - Aave V3 lending positions
 - `AaveV3SafetyModuleBalanceAdapter` - Aave V3 Safety Module (stkGHO etc.)
-- `AaveV2InstancesMetaBalanceAdapter` - Aave V2 aTokens (legacy)
 - `AaveUmbrellaBalanceAdapter` - Aave Umbrella stake tokens
 - `CompoundV3CometsMetaBalanceAdapter` - Compound V3 (Comet) base + collateral + rewards
 - `MorphoMarketsMetaBalanceAdapter` - Morpho direct market positions

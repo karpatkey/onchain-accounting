@@ -15,7 +15,6 @@ import {IPrices} from "src/prices/IPrices.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 
 // Balance adapters
-import {AaveV2InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV2InstancesMeta.sol";
 import {CompoundV3CometsMetaBalanceAdapter} from "src/balances/protocols/CompoundV3CometsMeta.sol";
 import {SparkLendBalanceAdapter} from "src/balances/protocols/SparkLend.sol";
 import {MorphoVaultsMetaBalanceAdapter} from "src/balances/protocols/MorphoVaultsMeta.sol";
@@ -619,9 +618,6 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_equals(name, "MerklRewards")) {
             return _deployMerklRewards(name, navAddr);
         }
-        if (_equals(name, "AaveV2InstancesMeta")) {
-            return _deployAaveV2InstancesMeta(name, navAddr);
-        }
         if (_equals(name, "FluidFTokensMeta")) {
             return _deployFluidFTokensMeta(name, navAddr);
         }
@@ -769,11 +765,6 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         address adapter = address(new MerklRewardsBalanceAdapter(distributor, navAddr, admin));
         _merklAdapter = adapter;
         return adapter;
-    }
-
-    function _deployAaveV2InstancesMeta(string memory name, address navAddr) internal returns (address) {
-        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        return address(new AaveV2InstancesMetaBalanceAdapter(protocol, navAddr));
     }
 
     function _deployFluidFTokensMeta(string memory name, address navAddr) internal returns (address) {

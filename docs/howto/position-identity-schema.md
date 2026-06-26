@@ -271,21 +271,6 @@ PositionBalance({
 })
 ```
 
-#### `AaveV2InstancesMeta` — Aave V2 supply (any instance)
-
-```solidity
-// Identical schema to AaveV3InstancesMeta; pool resolved via getLendingPool() instead of getPool().
-PositionBalance({
-    balanceAsset:  Asset({ asset: 0xA0b8…6eB48, symbol: "USDC", decimals: 6 }),
-    balanceAdapter: 0x<AaveV2InstancesMeta>,
-    amount:        1_500_000_000,
-    isDebt:        false,
-    protocolId:    keccak256("aave-v2-lending"),
-    positionId:    abi.encode(0x<AaveV2LendingPool>, 0xA0b8…6eB48),
-    positionKind:  PositionKind.Supplied
-})
-```
-
 #### `MorphoVaultsMeta` — MetaMorpho vault supply
 
 ```solidity
@@ -669,14 +654,6 @@ Scenario: 1 500 USDC supplied (not collateral), 1 WETH as collateral, 500 USDC b
 | USDC  | 500    | −500        | `Borrowed`   | `"Aave V3"`  | `"USDC position"` |
 | **NAV** | | **+3 500** | | | |
 
-#### `AaveV2InstancesMeta`
-
-Scenario: 1 500 USDC supplied on Aave V2 mainnet.
-
-| asset | amount | value (USD) | positionKind | protocolName | positionLabel     |
-|-------|--------|-------------|--------------|--------------|-------------------|
-| USDC  | 1 500  | +1 500      | `Supplied`   | `"Aave V2"`  | `"USDC position"` |
-
 #### `MorphoVaultsMeta`
 
 Scenario: 5 000 USDC supplied in Steakhouse USDC MetaMorpho vault.
@@ -876,7 +853,6 @@ bytes32 protocolId = keccak256("aave-v3-lending");  // == ProtocolIds.AAVE_V3_LE
 |---|---|
 | `wallet` | `(address asset)` |
 | `aave-v3-lending` | `(address pool, address reserve)` |
-| `aave-v2-lending` | `(address pool, address reserve)` |
 | `spark-lend` | `(address pool, address reserve)` |
 | `aave-v3-safety-module` | `(address stakeToken)` |
 | `aave-v3-umbrella` | `(address stakeToken)` |
@@ -976,7 +952,6 @@ decodes use `AbiCoder.defaultAbiCoder()` from ethers.js. Protocol ID constants c
 |---|---|---|
 | `ERC20DefaultBalanceAdapter` | `wallet` | `Wallet` |
 | `AaveV3InstancesMeta` | `aave-v3-lending` | `Supplied`, `Collateral`, `Borrowed` |
-| `AaveV2InstancesMeta` | `aave-v2-lending` | `Supplied`, `Collateral`, `Borrowed` |
 | `SparkLend` | `spark-lend` | `Supplied`, `Collateral`, `Borrowed` |
 | `AaveV3SafetyModule` | `aave-v3-safety-module` | `Staking`, `Rewards` |
 | `AaveUmbrella` | `aave-v3-umbrella` | `Staking`, `Rewards` |
@@ -1021,14 +996,14 @@ const [asset] = abi.decode(["address"], pos.positionId);
 // positionKind = Wallet
 ```
 
-#### Aave V3 / Aave V2 / Spark — `aave-v3-lending` / `aave-v2-lending` / `spark-lend`
+#### Aave V3 / Spark — `aave-v3-lending` / `spark-lend`
 
 Per-reserve positionId: each supply, collateral, and borrow leg for the same reserve shares
 one positionId; different reserves have different positionIds.
 
 ```typescript
 const [pool, reserve] = abi.decode(["address", "address"], pos.positionId);
-// pool   — IPool (V3) / ILendingPool (V2) / SparkPool
+// pool   — IPool (V3) / SparkPool
 // reserve — the underlying ERC20 (USDC, WETH, …)
 
 // Action routing:

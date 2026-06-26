@@ -92,7 +92,6 @@ Meta-adapters (one immutable contract per protocol class; active instances gover
 
 | Adapter | Address |
 |---|---|
-| `AaveV2InstancesMeta` | `TBD` |
 | `AaveV3InstancesMeta` | `TBD` |
 | `BalancerV3GaugesMeta` | `TBD` |
 | `BalancerV3PoolsMeta` | `TBD` |

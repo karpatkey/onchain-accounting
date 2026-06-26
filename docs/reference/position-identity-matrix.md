@@ -16,7 +16,6 @@ Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, pos
 | AaveV3InstancesMeta | `aave-v3-lending` | `abi.encode(address pool, address reserve)` | supply (collateral toggle off) | `Supplied` | false | reserve |
 | | | | supply (collateral toggle on) | `Collateral` | false | reserve |
 | | | | variable debt | `Borrowed` | true | reserve |
-| AaveV2InstancesMeta | `aave-v2-lending` | `abi.encode(address pool, address reserve)` | same 3 legs as Aave V3 | `Supplied`/`Collateral`/`Borrowed` | f/f/t | reserve |
 | SparkLend | `spark-lend` | `abi.encode(address pool, address reserve)` | same 3 legs as Aave V3 | `Supplied`/`Collateral`/`Borrowed` | f/f/t | reserve |
 | CompoundV3CometsMeta | `compound-v3` | `abi.encode(address comet)` | base supply (net > 0) | `Supplied` | false | base token |
 | | | | base borrow (net < 0) | `Borrowed` | true | base token |
@@ -82,7 +81,7 @@ Emission-site counts across `src/balances/` (grep, 2026-06-26, post-assignment):
 | `Wallet` | 1 | ERC20DefaultBalanceAdapter only |
 | `Supplied` | 22 | lending supply, vaults, ERC-4626 wraps, unstaked LP, withdrawal/exit queues, Euler vaults |
 | `Borrowed` | 8 | Aave V3 (×2 sites), Spark, Compound V3, Morpho Markets, Fluid Vaults, StakeWise V3, Euler vaults |
-| `Collateral` | 6 | Aave V2/V3, Spark, Compound V3, Morpho Markets, Fluid Vaults, Euler vaults |
+| `Collateral` | 6 | Aave V3, Spark, Compound V3, Morpho Markets, Fluid Vaults, Euler vaults |
 | `Staking` | 8 | Safety Module, Umbrella, StakeWise V3, Nexus staked NXM, Balancer gauges ×2, Curve gauge, Convex |
 | `Rewards` | 12 | SM, Umbrella, Nexus staked NXM, Compound V3, Balancer gauges ×2, Curve gauge, Convex, Merkl |
 | `Fees` | 2 | Uniswap V3 (PancakeSwap V3 inherits) |

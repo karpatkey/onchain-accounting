@@ -86,7 +86,6 @@ with open(WALLET_AGGREGATING_ADAPTERS_JSON) as _wa_f:
 # Maps NAV adapter `protocol` prefixes to DeBank protocol short-IDs.
 # Longer prefixes take priority over shorter ones.
 NAV_PROTOCOL_TO_DEBANK_IDS: dict[str, list[str]] = {
-    "Aave V2": ["aave2"],
     # Old protocol strings (deployed adapters; kept for backward compat until redeployed)
     "Aave Umbrella": ["aave3"],
     # DeBank reports stkAAVE (Safety Module) under aave2, not aave3 — include aave2 so

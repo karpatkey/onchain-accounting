@@ -9,6 +9,7 @@ pragma solidity ^0.8;
 ///      enter/exit the position. A position exited via unstake is `Staking` regardless of what is
 ///      wrapped inside (e.g. gauge-staked LP); the inner exposure stays recoverable from
 ///      `protocolId`/`positionId`. LP principal sitting unstaked in the wallet is `Supplied`.
+/// @author KPK
 enum PositionKind {
     Wallet, // plain ERC20 / native-token balance held directly (ERC20DefaultBalanceAdapter)
     Supplied, // credit deployed into a protocol: lending supply, vault shares, unstaked LP principal

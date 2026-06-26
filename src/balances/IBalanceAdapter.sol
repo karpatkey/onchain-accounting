@@ -8,6 +8,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 /// @notice Standard interface for balance adapter adapters (both default and custom)
 /// @dev All balance adapters must implement this interface to work with the adapter-centric aggregation system
 /// @dev Extends ERC165 to allow on‐chain discovery with `supportsInterface`.
+/// @author KPK
 interface IBalanceAdapter is IERC165 {
     /// @notice Get all positions from this adapter for an account
     /// @param account The account to query

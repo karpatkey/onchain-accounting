@@ -4,6 +4,7 @@ pragma solidity ^0.8;
 /// @notice String constants for the `type` field appended to every `positionDetail` JSON.
 /// @dev Import this library in balance adapters instead of inlining string literals.
 ///      Every constant here is a valid JSON string value (no quotes, no braces).
+/// @author KPK
 library PositionType {
     string internal constant SUPPLY = "Supply";
     string internal constant BORROW = "Borrow";

@@ -9,6 +9,7 @@ import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transpa
 ///      The proxy is deployed with a placeholder implementation and a ProxyAdmin owned by Safe.
 ///      Use ProxyAdmin.upgradeAndCall() to upgrade from placeholder to real implementation.
 /// @custom:security Uses OpenZeppelin's battle-tested TransparentUpgradeableProxy pattern.
+/// @author KPK
 contract TransparentProxy is TransparentUpgradeableProxy {
     /// @param placeholderImplementation The placeholder implementation address (e.g., Empty contract)
     /// @param initialOwner The owner of the ProxyAdmin contract (typically Safe multisig)

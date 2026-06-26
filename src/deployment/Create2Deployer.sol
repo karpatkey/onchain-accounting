@@ -5,6 +5,7 @@ pragma solidity ^0.8.28;
 /// @notice Stateless CREATE2 deployment library designed for Safe delegatecall usage
 /// @dev When Safe delegatecalls this contract, CREATE2 executes in Safe's context,
 ///      making Safe the deployer and enabling deterministic addresses across chains
+/// @author KPK
 contract Create2Deployer {
     /// @notice Emitted when a contract is deployed via CREATE2
     /// @param deployed The address of the deployed contract

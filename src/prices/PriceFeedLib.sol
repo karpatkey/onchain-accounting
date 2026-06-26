@@ -28,6 +28,7 @@ import "src/constants.sol";
 ///      counter-productive under `via_ir`). NAV reads are off-chain eth_call, so the DELEGATECALL overhead is
 ///      immaterial.
 ///      Pre-linked at a deterministic CREATE2 address (see `foundry.toml`).
+/// @author KPK
 library PriceFeedLib {
     using ERC165Checker for address;
     using SafeCast for uint256;

@@ -7,6 +7,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /// @title Balancer V3 Gauge Interface
 /// @notice Interface for interacting with Balancer V3 liquidity gauges
+/// @author KPK
 interface IGaugeV3 is IERC20 {
     /// @notice Returns the address of the LP token that can be staked in this gauge
     /// @return The address of the LP token

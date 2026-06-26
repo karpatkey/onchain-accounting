@@ -8,6 +8,7 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 /// @notice UUPS-compatible placeholder implementation for proxy deployment
 /// @dev This placeholder allows upgrades without authorization checks (since it's temporary)
 ///      The real implementation will have proper _authorizeUpgrade checks
+/// @author KPK
 contract UUPSPlaceholder is Initializable, UUPSUpgradeable {
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {

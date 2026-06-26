@@ -224,7 +224,7 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     ///         empty-leaf convention in one place (IPositionDescribable): a leaf that could not be derived
     ///         (empty string, e.g. a reverting `name()`/`symbol()` read) is dropped so consumers never render
     ///         a blank trailing breadcrumb segment, while the known `category` is preserved. If both are empty,
-    ///         returns an empty array. Mirrors `ERC20DefaultAdapter`'s single-segment collapse, generalised to
+    ///         returns an empty array. Mirrors `ERC20DefaultBalanceAdapter`'s single-segment collapse, generalised to
     ///         the category+leaf shape every meta-adapter uses.
     /// @dev Centralising this here keeps the convention identical across all meta-adapters instead of being
     ///      re-decided per adapter; concrete adapters derive `leaf` then `return _labels("Category", leaf);`.

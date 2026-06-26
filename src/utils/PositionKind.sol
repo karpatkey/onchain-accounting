@@ -14,7 +14,7 @@ enum PositionKind {
     Supplied, // credit deployed into a protocol: lending supply, vault shares, unstaked LP principal
     Borrowed, // debt owed to a protocol (isDebt = true)
     Collateral, // credit locked as collateral (e.g. Aave reserve with usageAsCollateralEnabled = true)
-    Staking, // staking principal: tokens locked behind an unstake action (Safety Module, Umbrella, StakeWise vaults, gauge/Convex/Aura-staked LP)
-    Rewards, // accrued but not yet claimed reward tokens (e.g. CRV, CVX, BAL, AURA, COMP)
+    Staking, // staking principal: tokens locked behind an unstake action (Safety Module, Umbrella, StakeWise vaults, gauge/Convex-staked LP)
+    Rewards, // accrued but not yet claimed reward tokens (e.g. CRV, CVX, BAL, COMP)
     Fees // uncollected protocol or LP fees (e.g. Uniswap V3 position fees)
 }

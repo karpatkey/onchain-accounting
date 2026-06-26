@@ -96,12 +96,6 @@
   "BalancerV3_GHO_USDT_USDC": {
     "enabled": false
   },
-  "Aura_GHO_USDT_USDC": {
-    "enabled": false
-  },
-  "Aura_rETH_WETH": {
-    "enabled": false
-  },
   "Curve_weETH_WETH": {
     "enabled": false
   },

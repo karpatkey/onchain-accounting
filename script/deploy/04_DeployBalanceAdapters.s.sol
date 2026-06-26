@@ -26,7 +26,6 @@ import {BalancerV3PoolsMetaBalanceAdapter} from "../../src/balances/protocols/ba
 import {BalancerV3GaugesMetaBalanceAdapter} from "../../src/balances/protocols/balancer/BalancerV3GaugesMeta.sol";
 import {BalancerV2PoolsMetaBalanceAdapter} from "../../src/balances/protocols/balancer/BalancerV2PoolsMeta.sol";
 import {BalancerV2GaugesMetaBalanceAdapter} from "../../src/balances/protocols/balancer/BalancerV2GaugesMeta.sol";
-import {AuraRewardsMetaBalanceAdapter} from "../../src/balances/protocols/AuraRewardsMeta.sol";
 import {StakeWiseV3VaultsMetaBalanceAdapter} from "../../src/balances/protocols/StakeWiseV3VaultsMeta.sol";
 import {FluidFTokensMetaBalanceAdapter} from "../../src/balances/protocols/FluidFTokensMeta.sol";
 import {FluidVaultsMetaBalanceAdapter} from "../../src/balances/protocols/FluidVaultsMeta.sol";
@@ -106,9 +105,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("BalancerV3GaugesMeta"); // Meta-adapter: all Balancer V3 gauges (staked LP + rewards); gauge set on NAV
         _deployIfEnabled("BalancerV2PoolsMeta"); // Meta-adapter: all Balancer V2 pools (wallet LP); poolId set on NAV
         _deployIfEnabled("BalancerV2GaugesMeta"); // Meta-adapter: all Balancer V2 gauges (staked LP + rewards); gauge set on NAV
-
-        // --- Aura meta-adapter (ADR 0010: AURA_REWARDS address; pool + AURA token resolved on-chain) ---
-        _deployIfEnabled("AuraRewardsMeta"); // Meta-adapter: all Aura pools; rewarder set on NAV
 
         // --- Curve meta-adapters (ADR 0010: pools = wallet LP, gauges = staked LP + CRV + rewards) ---
         _deployIfEnabled("CurvePoolsMeta"); // Meta-adapter: all Curve pools (wallet LP); pool set on NAV
@@ -306,10 +302,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
         }
         if (_equals(adapterName, "BalancerV2GaugesMeta")) {
             return _deployBalancerV2GaugesMeta(adapterName, navCalculator);
-        }
-
-        if (_equals(adapterName, "AuraRewardsMeta")) {
-            return _deployAuraRewardsMeta(adapterName, navCalculator);
         }
 
         // StakeWise V3 meta-adapter (per-instance adapters removed — superseded by StakeWiseV3VaultsMeta)
@@ -597,19 +589,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
         BalancerV2GaugesMetaBalanceAdapter adapter =
             new BalancerV2GaugesMetaBalanceAdapter(vault, balancerMinter, protocol, navCalculator);
         return address(adapter);
-    }
-
-    function _deployAuraRewardsMeta(string memory adapterName, address navCalculator) internal returns (address) {
-        address booster = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "booster")
-        );
-        address balancerV2Vault = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "balancerV2Vault")
-        );
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        // AURA token is resolved inside the constructor from Booster.minter().
-        return address(new AuraRewardsMetaBalanceAdapter(booster, balancerV2Vault, protocol, navCalculator));
     }
 
     /// @notice Deploys the StakeWise V3 vaults meta-adapter. Constructor takes (underlyingToken,

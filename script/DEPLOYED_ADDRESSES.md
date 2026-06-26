@@ -94,7 +94,6 @@ Meta-adapters (one immutable contract per protocol class; active instances gover
 |---|---|
 | `AaveV2InstancesMeta` | `TBD` |
 | `AaveV3InstancesMeta` | `TBD` |
-| `AuraRewardsMeta` | `TBD` |
 | `BalancerV3GaugesMeta` | `TBD` |
 | `BalancerV3PoolsMeta` | `TBD` |
 | `CompoundV3CometsMeta` | `TBD` |
@@ -138,7 +137,6 @@ Meta-adapters (one immutable contract per protocol class; active instances gover
 | Adapter | Address |
 |---|---|
 | `AaveV3InstancesMeta` | `TBD` |
-| `AuraRewardsMeta` | `TBD` |
 | `BalancerV3GaugesMeta` | `TBD` |
 | `BalancerV3PoolsMeta` | `TBD` |
 | `CompoundV3CometsMeta` | `TBD` |
@@ -172,7 +170,6 @@ Meta-adapters (one immutable contract per protocol class; active instances gover
 | Adapter | Address |
 |---|---|
 | `AaveV3InstancesMeta` | `TBD` |
-| `AuraRewardsMeta` | `TBD` |
 | `BalancerV3GaugesMeta` | `TBD` |
 | `BalancerV3PoolsMeta` | `TBD` |
 | `CompoundV3CometsMeta` | `TBD` |

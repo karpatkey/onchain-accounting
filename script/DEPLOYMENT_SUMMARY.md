@@ -345,7 +345,6 @@ script/verify/verify-all.sh
 - `SparkLendBalanceAdapter` - Spark Lend positions
 - `BalancerV2PoolsMetaBalanceAdapter`, `BalancerV2GaugesMetaBalanceAdapter` - Balancer V2 LPs + gauges
 - `BalancerV3PoolsMetaBalanceAdapter`, `BalancerV3GaugesMetaBalanceAdapter` - Balancer V3 LPs + gauges
-- `AuraRewardsMetaBalanceAdapter` - Aura vault/LP positions
 - `CurvePoolsMetaBalanceAdapter`, `CurveGaugesMetaBalanceAdapter` - Curve LPs + gauges
 - `ConvexRewardsMetaBalanceAdapter` - Convex staking
 - `CapBalanceAdapter` - Cap (cUSD + stcUSD aggregated → USDC)

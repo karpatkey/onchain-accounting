@@ -101,7 +101,7 @@ Defined in `src/utils/PositionKind.sol`.
 | `Supplied`    | Credit deployed into a protocol: lending supply, vault shares, unstaked LP principal. |
 | `Borrowed`    | Debt owed to a protocol (`isDebt = true`). |
 | `Collateral`  | Credit locked as collateral (e.g. Aave reserve with `usageAsCollateralEnabled = true`). Distinct from `Supplied` because it cannot be freely withdrawn. |
-| `Staking`     | Principal locked behind an unstake action (Safety Module, Umbrella, StakeWise vaults, gauge/Convex/Aura-staked LP). The kind reflects the outermost action family; the inner exposure stays recoverable from `protocolId`/`positionId`. |
+| `Staking`     | Principal locked behind an unstake action (Safety Module, Umbrella, StakeWise vaults, gauge/Convex-staked LP). The kind reflects the outermost action family; the inner exposure stays recoverable from `protocolId`/`positionId`. |
 | `Rewards`     | Accrued but not yet claimed reward tokens (CRV, CVX, BAL, …). |
 | `Fees`        | Uncollected protocol or LP fees (e.g. Uniswap V3 position fees). |
 
@@ -231,7 +231,6 @@ Meta-adapters extend `MetaBalanceAdapter`. The instance set is configured on NAV
 |---------|-------------|-------------|------------------|
 | **AaveV3InstancesMeta** | All Aave V3 instances (Core, Prime, …). Instance coordinate = ProtocolDataProvider address. Up to 2 rows per reserve (`Supplied`/`Collateral` + `Borrowed`). Identity: positionId = `abi.encode(pool, reserve)`. | `(protocolName, navCalculator)` | `AaveV3InstancesMeta`; DataProviders under `instances`. |
 | **AaveV2InstancesMeta** | All Aave V2 instances. Thin subclass of `AaveV3InstancesMeta` (same DataProvider ABI; pool resolved via `getLendingPool()`). Instance coordinate = ProtocolDataProvider address. Identity: positionId = `abi.encode(pool, reserve)`. | `(protocolName, navCalculator)` | `AaveV2InstancesMeta`; DataProviders under `instances`. |
-| **AuraRewardsMeta** | All Aura gauge staked LP + claimable BAL/AURA rewards. Instance coordinate = auraRewards address (resolved from Booster pid at query time). positionId = `abi.encode(auraRewards)`. | `(booster, balancerV2Vault, protocolName, navCalculator)` | `AuraRewardsMeta`; pids / reward addresses under `instances`. |
 | **BalancerV2PoolsMeta** | Wallet-held (unstaked) LP for all Balancer V2 pools. Instance coordinate = raw bytes32 poolId. positionId = `abi.encode(bytes32 poolId)`. One `Supplied` leg per underlying token. | `(vault, protocolName, navCalculator)` | `BalancerV2PoolsMeta`; poolIds under `instancesRaw`. |
 | **BalancerV2GaugesMeta** | Gauge-staked LP + rewards for all Balancer V2 gauges. Instance coordinate = gauge address. positionId = `abi.encode(gauge)`. One `Staking` leg per underlying token + `Rewards` legs (BAL + extras). | `(vault, balancerMinter, protocolName, navCalculator)` | `BalancerV2GaugesMeta`; gauges under `instances`. |
 | **BalancerV3PoolsMeta** | Wallet-held (unstaked) LP for all Balancer V3 pools. Instance coordinate = pool/BPT address. positionId = `abi.encode(pool)`. One `Supplied` leg per underlying token. | `(protocolName, navCalculator)` | `BalancerV3PoolsMeta`; pools under `instances`. |
@@ -322,7 +321,7 @@ Protocol adapters typically take **NAVCalculator** in the constructor to read th
 | Lending supply as collateral | `Collateral` |
 | Debt | `Borrowed` |
 | Vault shares, unstaked LP principal | `Supplied` |
-| Principal exited via unstake (staking contracts, gauge/Convex/Aura-staked LP) | `Staking` |
+| Principal exited via unstake (staking contracts, gauge/Convex-staked LP) | `Staking` |
 | Unclaimed reward tokens | `Rewards` |
 | Uncollected LP/protocol fees | `Fees` |
 

@@ -51,13 +51,6 @@
       "0x46e6b214b524310239732D51387075E0e70970bf"
     ]
   },
-  "AuraRewardsMeta": {
-    "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aura pool. Instance coordinate = AURA_REWARDS (BaseRewardPool4626) address, resolved via rewarder.pid() \u2192 Booster.poolInfo(pid).lptoken. AURA token auto-detected from Booster.minter(). Supersedes per-instance Aura_* adapters, disabled below.",
-    "instances": [
-      "0x28a002a98F4DA7A7B541b5e4d7a42E0F64E4aeF1"
-    ]
-  },
   "PancakeSwapV3PoolsMeta": {
     "enabled": false,
     "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every PancakeSwap V3 pool (Supply + Fees legs). NonfungiblePositionManager pinned in the constructor; the active pool set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below). Identity derived on-chain: positionId = abi.encode(NonfungiblePositionManager, tokenId) per NFT position. Supersedes the per-pool PancakeSwapV3_* adapters. Disabled for the same reason as below: COW on Base has no feed, so the COW leg would be silently dropped. Enable once COW is priced.",

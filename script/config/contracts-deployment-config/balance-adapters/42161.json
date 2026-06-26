@@ -35,18 +35,6 @@
       "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"syrupUSDC/USDC\""
     }
   },
-  "Aura_GHO_USDC_USDT": {
-    "enabled": false,
-    "constructor": {
-      "pool": "0x19B001e6Bc2d89154c18e2216eec5C8c6047b6d8",
-      "gauge": "0x915475b32983b7EB1235c1b6752149b454f81ad8",
-      "booster": "0x98Ef32edd24e2c92525E59afc4475C1242a30184",
-      "pid": "99",
-      "protocol": "Aura",
-      "positionDetail": "{\"protocol\":\"Aura\",\"product\":\"LP\",\"name\":\"Aave GHO/USDC/USDT\"",
-      "positionId": "0x19B001e6Bc2d89154c18e2216eec5C8c6047b6d8"
-    }
-  },
   "BalancerV3_GHO_USDC_USDT": {
     "enabled": false,
     "constructor": {

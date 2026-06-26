@@ -60,7 +60,7 @@ Everything that goes wrong in NAV is one of three things:
 
 ## 4. Balance adapters: the framework
 
-Every balance source — wallet ERC20 holdings, Aave supply/borrow, Compound V3, Morpho, Curve, Aura, Safety Module, etc. — is a contract that implements `IBalanceAdapter` (in `src/balances/IBalanceAdapter.sol`):
+Every balance source — wallet ERC20 holdings, Aave supply/borrow, Compound V3, Morpho, Curve, Safety Module, etc. — is a contract that implements `IBalanceAdapter` (in `src/balances/IBalanceAdapter.sol`):
 
 ```solidity
 function getAdapterPositions(address account, address assetFilter) external view returns (PositionBalance[]);

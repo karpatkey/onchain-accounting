@@ -64,10 +64,6 @@ Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, pos
 | | | | earned CRV | `Rewards` | false | CRV |
 | | | | derived CVX (cliff schedule) | `Rewards` | false | CVX |
 | | | | extra reward tokens | `Rewards` | false | reward token |
-| AuraRewardsMeta | `aura` | `abi.encode(address auraRewards)` | staked per-token principal | `Staking` | false | Balancer pool token |
-| | | | earned BAL | `Rewards` | false | BAL |
-| | | | extra reward tokens | `Rewards` | false | reward token |
-| | | | derived AURA | `Rewards` | false | AURA |
 | StaderWithdrawalQueue | `stader-withdrawal` | `""` (empty — account-global) | ETH owed from open requests | `Supplied` | false | WETH |
 | KelpWithdrawalQueue | `kelp-withdrawal` | `""` (empty — account-global) | owed per payout asset | `Supplied` | false | each supported asset |
 | LidoWithdrawalQueue | `lido-withdrawal` | `""` (empty — account-global) | claimable + pending ETH | `Supplied` | false | native ETH |
@@ -83,8 +79,8 @@ Emission-site counts across `src/balances/` (grep, 2026-06-26, post-assignment):
 | `Supplied` | 23 | lending supply, vaults, ERC-4626 wraps, savings, unstaked LP, withdrawal/exit queues, Euler vaults |
 | `Borrowed` | 8 | Aave V3 (×2 sites), Spark, Compound V3, Morpho Markets, Fluid Vaults, StakeWise V3, Euler vaults |
 | `Collateral` | 6 | Aave V2/V3, Spark, Compound V3, Morpho Markets, Fluid Vaults, Euler vaults |
-| `Staking` | 10 | Safety Module, Umbrella, StakeWise V3, Nexus, Balancer gauges ×2, Curve gauge, Convex, Aura (×2 sites) |
-| `Rewards` | 15 | SM, Umbrella, Compound V3, Balancer gauges ×2, Curve gauge, Convex, Aura, Merkl, Nexus |
+| `Staking` | 8 | Safety Module, Umbrella, StakeWise V3, Nexus staked NXM, Balancer gauges ×2, Curve gauge, Convex |
+| `Rewards` | 12 | SM, Umbrella, Nexus staked NXM, Compound V3, Balancer gauges ×2, Curve gauge, Convex, Merkl |
 | `Fees` | 2 | Uniswap V3 (PancakeSwap V3 inherits) |
 
 ## Other observable invariants

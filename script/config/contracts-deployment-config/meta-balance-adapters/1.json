@@ -67,15 +67,6 @@
       "protocol": "Balancer V2"
     }
   },
-  "AuraRewardsMeta": {
-    "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aura pool. Instance coordinate = AURA_REWARDS (BaseRewardPool4626) address, resolved via rewarder.pid() \u2192 Booster.poolInfo(pid).lptoken. AURA token auto-detected from Booster.minter(). Supersedes per-instance Aura_* adapters, disabled below.",
-    "constructor": {
-      "booster": "0xA57b8d98dAE62B26Ec3bcC4a365338157060B234",
-      "balancerV2Vault": "0xBA12222222228d8Ba445958a75a0704d566BF2C8",
-      "protocol": "Aura"
-    }
-  },
   "CurvePoolsMeta": {
     "enabled": true,
     "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving wallet-held LP for every configured Curve pool. Instance coordinate = pool address. Supersedes wallet-LP reporting in per-instance Curve_* adapters, disabled below.",

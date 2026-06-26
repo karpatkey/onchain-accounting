@@ -38,7 +38,6 @@ contract GnosisForkNAVCalculatorTest is NAVCalculatorForkHarness {
     address public reth = address(0x62bc7c5d5ae154b0b64784332B8B0F4309926990); // bridged rETH
     address public wbtc = address(0xD7cd100056B477C08B419a28E976D8Ade354251a);
     address public safeToken = address(0xD4e420bb47071Ee2e8d256dCaBf675805A28002a); // SAFE
-    address public aura = address(0x1509706A6c66ca5494570e15DFE7B6B5c0df2e88);
     address public cow = address(0x177127622c4A00F3d409B75571e12cB3c8973d3c); // COW (CoW Protocol)
     address public bal = address(0x7eF541E2a22058048904fE5744f9c7E4C57AF717);
     address public usdc = address(0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83); // Circle USDC (native on Gnosis)
@@ -123,7 +122,7 @@ contract GnosisForkNAVCalculatorTest is NAVCalculatorForkHarness {
         // Stablecoins — USDC/USD, USDT/USD
         nav.registerAsset(usdc, usdcUsdChainlink, IPrices.PriceType.Chainlink, heartbeat);
         nav.registerAsset(usdt, usdtUsdChainlink, IPrices.PriceType.Chainlink, heartbeat);
-        // reth, safeToken, aura, cow: no matching feed in list — not registered
+        // reth, safeToken, cow: no matching feed in list — not registered
     }
 
     function setupBalanceAdapter() internal override {

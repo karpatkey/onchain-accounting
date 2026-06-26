@@ -600,10 +600,10 @@ Scenario: 500 AAVE in stkAAVE with 10 AAVE rewards accrued.
 
 Scenario: 1 000 USDC staked in stkwaEthUSDC.v1 with 5 USDC rewards pending.
 
-| asset | amount | value (USD) | positionKind | protocolName      | positionLabel       |
-|-------|--------|-------------|--------------|-------------------|---------------------|
-| USDC  | 1 000  | +1 000      | `Staking`    | `"Aave Umbrella"` | `"umbrella stake"`  |
-| USDC  | 5      | +5          | `Rewards`    | `"Aave Umbrella"` | `"umbrella stake"`  |
+| asset | amount | value (USD) | positionKind | protocolName      | positionLabels        |
+|-------|--------|-------------|--------------|-------------------|-----------------------|
+| USDC  | 1 000  | +1 000      | `Staking`    | `"Aave Umbrella"` | `["Umbrella Module"]` |
+| USDC  | 5      | +5          | `Rewards`    | `"Aave Umbrella"` | `["Umbrella Module"]` |
 | **NAV** | | **+1 005** | | | |
 
 #### `Cap` — cUSD + stcUSD

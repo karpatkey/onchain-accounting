@@ -171,8 +171,10 @@ contract NexusMutualStakingPoolsBalanceAdapter is IBalanceAdapter, IPositionDesc
         return "Nexus Mutual";
     }
 
-    function describePosition(bytes calldata) external pure returns (string memory) {
-        return "Staked NXM";
+    function positionLabels(bytes calldata) external pure returns (string[] memory) {
+        string[] memory out = new string[](1);
+        out[0] = "Staking";
+        return out;
     }
 
     /// @inheritdoc IBalanceAdapter

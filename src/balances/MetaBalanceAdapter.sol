@@ -59,8 +59,9 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     }
 
     /// @inheritdoc IPositionDescribable
-    /// @dev Concrete adapters must override — derives a human-readable label from the encoded instance coordinate.
-    function describePosition(bytes calldata positionId) external view virtual override returns (string memory);
+    /// @dev Concrete adapters must override — derives the label hierarchy (below protocol, leaf last) from the
+    ///      encoded instance coordinate, e.g. `["Market", "wstETH/USDC"]`.
+    function positionLabels(bytes calldata positionId) external view virtual override returns (string[] memory);
 
     //
     // IBalanceAdapter
@@ -219,6 +220,27 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     // Shared helpers
     //
 
+    /// @notice Assembles the `[category, leaf]` label pair for `positionLabels`, applying the fail-open
+    ///         empty-leaf convention in one place (IPositionDescribable): a leaf that could not be derived
+    ///         (empty string, e.g. a reverting `name()`/`symbol()` read) is dropped so consumers never render
+    ///         a blank trailing breadcrumb segment, while the known `category` is preserved. If both are empty,
+    ///         returns an empty array. Mirrors `ERC20DefaultBalanceAdapter`'s single-segment collapse, generalised to
+    ///         the category+leaf shape every meta-adapter uses.
+    /// @dev Centralising this here keeps the convention identical across all meta-adapters instead of being
+    ///      re-decided per adapter; concrete adapters derive `leaf` then `return _labels("Category", leaf);`.
+    function _labels(string memory category, string memory leaf) internal pure returns (string[] memory) {
+        if (bytes(leaf).length == 0) {
+            if (bytes(category).length == 0) return new string[](0);
+            string[] memory only = new string[](1);
+            only[0] = category;
+            return only;
+        }
+        string[] memory out = new string[](2);
+        out[0] = category;
+        out[1] = leaf;
+        return out;
+    }
+
     /// @notice Decodes an address-keyed bytes32 instance coordinate into an address (vault / pool / DataProvider).
     /// @dev Reverts if the high 96 bits are non-zero rather than silently truncating, so a malformed coordinate
     ///      surfaces as an error (isolated per-instance by the fan-out) instead of querying a different address.
@@ -231,9 +253,10 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     /// @notice Returns the positionId bytes for a given instance coordinate.
     /// @dev Default: encodes the instance as an address (address-keyed protocols).
     ///      Override when the coordinate is a raw bytes32 (e.g. Morpho market IDs, Balancer V2 poolIds).
-    ///      Adapters where positionId varies per leg rather than per instance do NOT use this hook —
+    ///      Adapters whose positionId is not the default-encoded instance coordinate do NOT use this hook —
     ///      they compute positionId inline in _instancePositions:
-    ///        - Aave V3: abi.encode(pool, reserve) — one positionId per reserve
+    ///        - Aave V3: abi.encode(pool) — the instance Pool resolved from the DataProvider coordinate
+    ///          (one positionId per instance; reserves are distinguished by balanceAsset + positionKind)
     ///        - Uniswap V3 / PancakeSwap V3: abi.encode(npm, tokenId) — one positionId per NFT
     function _instancePositionId(bytes32 instance) internal view virtual returns (bytes memory) {
         return abi.encode(_toAddress(instance));

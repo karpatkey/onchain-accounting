@@ -251,6 +251,7 @@ All in `src/prices/protocols/`. Pattern is one file per asset; L2-specific varia
 | `sDAI_Price` | sDAI | DAI/USD Chainlink × DSR `pot.chi()` (RAY-scaled) |
 | `sUSDS_Price` | sUSDS | USDS/USD Chainlink × Sky savings rate |
 | `sUSDe_Price` | sUSDe | USDe/USD Chainlink × Ethena vault share rate |
+| `sGHO_Price` | sGHO | GHO/USD Chainlink × Aave sGHO vault share rate (`convertToAssets`) |
 | `sXDAI_Price` | sXDAI | xDAI/USD Chainlink × Gnosis savings rate (Gnosis Chain only) |
 | `syrupUSDC_Price`, `syrupUSDC_L2_Price` | syrupUSDC | USDC/USD Chainlink × Maple syrup rate |
 | `RWIV_Price` | RWIV | USDC/USD Chainlink × Nexus RWI Vault share rate (`convertToAssets`) |

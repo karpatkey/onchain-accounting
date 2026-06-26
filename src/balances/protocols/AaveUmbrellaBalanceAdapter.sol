@@ -100,8 +100,10 @@ contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         return "Aave Umbrella";
     }
 
-    function describePosition(bytes calldata) external pure returns (string memory) {
-        return "umbrella stake";
+    function positionLabels(bytes calldata) external pure returns (string[] memory) {
+        string[] memory out = new string[](1);
+        out[0] = "Umbrella Module";
+        return out;
     }
 
     //

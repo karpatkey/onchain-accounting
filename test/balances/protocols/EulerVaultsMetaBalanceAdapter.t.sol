@@ -243,9 +243,16 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
         assertEq(assets[1], address(weth));
     }
 
-    function test_describePosition_returnsVaultName() public view {
-        assertEq(adapter.describePosition(abi.encode(address(vaultB))), "KPK ETH Yield Term");
-        assertEq(adapter.describePosition(abi.encode(address(vaultA))), "KPK RWA USDC");
+    function test_positionLabels_returnsVaultName() public view {
+        string[] memory labelsB = adapter.positionLabels(abi.encode(address(vaultB)));
+        assertEq(labelsB.length, 2);
+        assertEq(labelsB[0], "Vault");
+        assertEq(labelsB[1], "KPK ETH Yield Term");
+
+        string[] memory labelsA = adapter.positionLabels(abi.encode(address(vaultA)));
+        assertEq(labelsA.length, 2);
+        assertEq(labelsA[0], "Vault");
+        assertEq(labelsA[1], "KPK RWA USDC");
     }
 
     // ----- borrow (debt) leg, core eVaults -----

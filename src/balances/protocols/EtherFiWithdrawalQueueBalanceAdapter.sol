@@ -23,7 +23,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         under-counts), never over-counts.
 /// @dev Trust model and mutability rationale: see `docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md`
 ///      (generalises the Merkl precedent, ADR 0007). One aggregated native-ETH `Supplied` leg per account.
-contract EtherFiWithdrawalsBalanceAdapter is IBalanceAdapter, Ownable, IPositionDescribable {
+contract EtherFiWithdrawalQueueBalanceAdapter is IBalanceAdapter, Ownable, IPositionDescribable {
     //
     // State
     //
@@ -155,8 +155,10 @@ contract EtherFiWithdrawalsBalanceAdapter is IBalanceAdapter, Ownable, IPosition
         return "ether.fi";
     }
 
-    function describePosition(bytes calldata) external pure returns (string memory) {
-        return "ETH Withdrawal Queue";
+    function positionLabels(bytes calldata) external pure returns (string[] memory) {
+        string[] memory out = new string[](1);
+        out[0] = "eETH Withdrawal Queue";
+        return out;
     }
 
     /// @inheritdoc IBalanceAdapter

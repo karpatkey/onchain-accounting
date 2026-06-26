@@ -166,8 +166,10 @@ contract MerklRewardsBalanceAdapter is IBalanceAdapter, Ownable, IPositionDescri
         return "Merkl";
     }
 
-    function describePosition(bytes calldata) external pure returns (string memory) {
-        return "claimable rewards";
+    function positionLabels(bytes calldata) external pure returns (string[] memory) {
+        string[] memory out = new string[](1);
+        out[0] = "Claimable Rewards";
+        return out;
     }
 
     /// @inheritdoc IBalanceAdapter
@@ -250,7 +252,11 @@ contract MerklRewardsBalanceAdapter is IBalanceAdapter, Ownable, IPositionDescri
                 amount: bal,
                 isDebt: false,
                 protocolId: PROTOCOL_ID,
-                positionId: abi.encode(address(token)),
+                // positionId is the Distributor (the claim target / trust anchor), NOT the reward token —
+                // the token is already carried by `balanceAsset`, so encoding it here would be redundant with
+                // the reconciliation key. Multiple reward tokens claimed from the same Distributor share this
+                // positionId and are distinguished by `balanceAsset.asset` (same model as Aave V3 = abi.encode(pool)).
+                positionId: abi.encode(DISTRIBUTOR),
                 positionKind: PositionKind.Rewards
             });
         }

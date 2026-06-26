@@ -119,8 +119,10 @@ contract AaveV3SafetyModuleBalanceAdapter is IBalanceAdapter, IPositionDescribab
         return "Aave V3";
     }
 
-    function describePosition(bytes calldata) external pure returns (string memory) {
-        return "safety module";
+    function positionLabels(bytes calldata) external pure returns (string[] memory) {
+        string[] memory out = new string[](1);
+        out[0] = "Safety Module";
+        return out;
     }
 
     //

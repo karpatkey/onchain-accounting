@@ -4,7 +4,7 @@
 # Usage:  deploy-etherfi-withdrawals.sh <chainId>
 #   e.g.  deploy-etherfi-withdrawals.sh 1
 #
-# EtherFiWithdrawalsBalanceAdapter is a mutable, owner-gated cache adapter (ADR 0014): an off-chain agent
+# EtherFiWithdrawalQueueBalanceAdapter is a mutable, owner-gated cache adapter (ADR 0014): an off-chain agent
 # submits the account's WithdrawRequestNFT tokenIds and the adapter values them from live on-chain reads.
 # This helper `forge create`s it (owner = anvil account #0, so submit-etherfi-positions.sh can feed it) and
 # calls addBalanceAdapters on the dev NAV. Native ETH must be registered (deploy.sh wires the native feed).
@@ -45,7 +45,7 @@ echo "    underlyingToken:    $UNDERLYING_TOKEN (native ETH)"
 echo "    owner:              $DEV_DEPLOYER_ADDR (dev account #0)"
 
 OUT=$(
-  forge create src/balances/protocols/EtherFiWithdrawalsBalanceAdapter.sol:EtherFiWithdrawalsBalanceAdapter \
+  forge create src/balances/protocols/EtherFiWithdrawalQueueBalanceAdapter.sol:EtherFiWithdrawalQueueBalanceAdapter \
     --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" --broadcast \
     --constructor-args "$WITHDRAW_REQUEST_NFT" "$LIQUIDITY_POOL" "$UNDERLYING_TOKEN" "$NAV" "$DEV_DEPLOYER_ADDR" 2>&1
 ) || true
@@ -55,12 +55,12 @@ if [ -z "$ADAPTER" ]; then
   echo "error: forge create produced no address (is the NAV a contract on this fork?)" >&2
   exit 1
 fi
-echo "  EtherFiWithdrawals: $ADAPTER"
+echo "  EtherFiWithdrawalQueue: $ADAPTER"
 
 cast send "$NAV" "addBalanceAdapters(address[])" "[$ADAPTER]" \
   --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" >/dev/null
 echo "  registered on NAV (addBalanceAdapters)"
 
-jq --arg a "$ADAPTER" '. + {"EtherFiWithdrawals": $a}' "$ADDR_FILE" > "$ADDR_FILE.tmp" && mv "$ADDR_FILE.tmp" "$ADDR_FILE"
+jq --arg a "$ADAPTER" '. + {"EtherFiWithdrawalQueue": $a}' "$ADDR_FILE" > "$ADDR_FILE.tmp" && mv "$ADDR_FILE.tmp" "$ADDR_FILE"
 echo "  recorded in $ADDR_FILE"
 echo "  -> next: submit-etherfi-positions.sh $CID   (agent step: submit the holder's real tokenId)"

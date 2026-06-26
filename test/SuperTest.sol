@@ -80,7 +80,7 @@ abstract contract SuperTest is Test {
         // In tests there's no chain state, so etch the runtime code there so DELEGATECALL succeeds.
         address priceFeedLibImpl = vm.deployCode("PriceFeedLib.sol:PriceFeedLib");
         vm.etch(LibraryPins.PRICE_FEED_LIB, priceFeedLibImpl.code);
-        vm.etch(0x2F1F6c17D64bE96F583D390be212aFCF8D0F102a, vm.deployCode("NAVRegistryLib.sol:NAVRegistryLib").code);
+        vm.etch(LibraryPins.NAV_REGISTRY_LIB, vm.deployCode("NAVRegistryLib.sol:NAVRegistryLib").code);
 
         vm.warp(block.timestamp + 2 hours); // To pass the L2 sequencer default grace period set at deployment
         usdcAdapter = new Mock_CustomPriceFeed("USDC", address(usdc), 100_000_000, 8);

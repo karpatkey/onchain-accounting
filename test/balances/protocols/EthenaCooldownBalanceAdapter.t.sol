@@ -83,8 +83,10 @@ contract EthenaCooldownBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(assets[0], address(usde));
     }
 
-    function test_describePosition() public view {
-        assertEq(adapter.describePosition(""), "Ethena unstaking cooldown (USDe)");
+    function test_positionLabels() public view {
+        string[] memory labels = adapter.positionLabels("");
+        assertEq(labels.length, 1);
+        assertEq(labels[0], "Unstaking Cooldown");
     }
 
     // ---- getAdapterBalanceForAsset ----

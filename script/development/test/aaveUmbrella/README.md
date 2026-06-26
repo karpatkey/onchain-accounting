@@ -2,7 +2,7 @@
 
 ## 1. Adapter under test
 
-`src/balances/protocols/AaveUmbrellaBalanceAdapter.sol` — the immutable `AaveUmbrellaBalanceAdapter`. Constructor: `(rewardsController, navCalculator)`. It pins **only** the Umbrella `RewardsController` as a trust anchor and discovers everything else at runtime — the full stake-token set, each stake token's bare reserve, and the reward-token→bare-reserve mapping. Identity is derived on-chain: `positionId = abi.encode(stakeToken)`, `protocolId = keccak256("aave-v3-umbrella")`, label `"umbrella stake"`.
+`src/balances/protocols/AaveUmbrellaBalanceAdapter.sol` — the immutable `AaveUmbrellaBalanceAdapter`. Constructor: `(rewardsController, navCalculator)`. It pins **only** the Umbrella `RewardsController` as a trust anchor and discovers everything else at runtime — the full stake-token set, each stake token's bare reserve, and the reward-token→bare-reserve mapping. Identity is derived on-chain: `positionId = abi.encode(stakeToken)`, `protocolId = keccak256("aave-v3-umbrella")`, `positionLabels = ["Umbrella Module"]`.
 
 ### Inheritance + per-chain scope (Phase 0)
 
@@ -25,7 +25,7 @@
 
 ## 2. Existing fork test coverage
 
-`test/balances/protocols/fork/AaveUmbrellaBalanceAdapter.fork.t.sol` → `AaveUmbrellaBalanceAdapterForkTest` already covers, at the pinned block, against four real holders (one per stake token):
+`test/balances/protocols/fork/AaveUmbrella.fork.t.sol` → `AaveUmbrellaBalanceAdapterForkTest` already covers, at the pinned block, against four real holders (one per stake token):
 - holders have non-zero stake balances; `underlyingAssetsSupported` dedupes to the registered bare reserves;
 - every stake token reports the same RewardsController;
 - per-holder `getAdapterBalanceForAsset` equals an independent staked+rewards recomputation (§8);
@@ -36,7 +36,7 @@ All kept as regression nets.
 
 ## 3. What this case adds
 
-- **Mock-based unit test** (`test/balances/protocols/AaveUmbrellaBalanceAdapter.t.sol` → `AaveUmbrellaBalanceMathTest`, + `aaveUmbrella/AaveUmbrellaMocks.sol`) — closes the both-unit-and-fork convention gap. Drives the ERC4626 walk (two-hop vs one-hop), reward bare-reserve resolution (aToken vs plain), leg emission/identity, zero-leg skipping, dedup across stake tokens sharing a reserve, and the documented asymmetry (balance methods report an unregistered reserve; `getAdapterPositions` skips it). 11 tests, no fork.
+- **Mock-based unit test** (`test/balances/protocols/AaveUmbrella.t.sol` → `AaveUmbrellaBalanceMathTest`, + `aaveUmbrella/AaveUmbrellaMocks.sol`) — closes the both-unit-and-fork convention gap. Drives the ERC4626 walk (two-hop vs one-hop), reward bare-reserve resolution (aToken vs plain), leg emission/identity, zero-leg skipping, dedup across stake tokens sharing a reserve, and the documented asymmetry (balance methods report an unregistered reserve; `getAdapterPositions` skips it). 11 tests, no fork.
 - **Fork block** set to the verification block `25_287_877` — the fork test and this README's §7 figures pin the **same** block. The live dev-anvil dashboard (§9) forks at *latest* and is a sanity check that drifts from these numbers by design.
 - This evidence pack: the per-leg ground truth for a comprehensive all-four-stake-token holder, plus a dashboard wiring helper.
 
@@ -82,8 +82,8 @@ Slashing-correct automatically: Umbrella stake tokens reduce `totalAssets` (not 
 | Block timestamp | 1781104487 (`0x6a297f67`) — **2026-06-10 15:14:47 UTC** |
 | RewardsController (trust anchor) | `0x4655Ce3D625a63d30bA704087E52B4C31E38188B` |
 | Adapter under test | `AaveUmbrellaBalanceAdapter` |
-| Fork-test contract | `AaveUmbrellaBalanceAdapterForkTest` in `test/balances/protocols/fork/AaveUmbrellaBalanceAdapter.fork.t.sol` |
-| Unit-test contract | `AaveUmbrellaBalanceMathTest` in `test/balances/protocols/AaveUmbrellaBalanceAdapter.t.sol` |
+| Fork-test contract | `AaveUmbrellaBalanceAdapterForkTest` in `test/balances/protocols/fork/AaveUmbrella.fork.t.sol` |
+| Unit-test contract | `AaveUmbrellaBalanceMathTest` in `test/balances/protocols/AaveUmbrella.t.sol` |
 
 ## 6. Case files in this folder
 
@@ -165,6 +165,6 @@ The deployed adapter address is recorded in `script/development/state/1-addresse
 Run via:
 
 ```bash
-forge test --match-path "test/balances/protocols/AaveUmbrellaBalanceAdapter.t.sol"
-FOUNDRY_PROFILE=slow forge test --match-path "test/balances/protocols/fork/AaveUmbrellaBalanceAdapter.fork.t.sol" -vv
+forge test --match-path "test/balances/protocols/AaveUmbrella.t.sol"
+FOUNDRY_PROFILE=slow forge test --match-path "test/balances/protocols/fork/AaveUmbrella.fork.t.sol" -vv
 ```

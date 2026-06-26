@@ -81,8 +81,6 @@ Plain (single-instance) adapters:
 | `AaveUmbrella` | `TBD` |
 | `AaveV3SafetyModule` | `TBD` |
 | `Cap` | `TBD` |
-| `ERC4626Wrap_sGHO` | `TBD` |
-| `ERC4626Wrap_waEthLidoGHO` | `TBD` |
 | `KelpWithdrawalQueue` | `TBD` |
 | `LidoWithdrawalQueue` | `TBD` |
 | `SparkLend` | `TBD` |

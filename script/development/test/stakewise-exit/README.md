@@ -4,7 +4,7 @@
 `StakeWiseExitQueueBalanceAdapter` (`src/balances/protocols/StakeWiseExitQueueBalanceAdapter.sol`). Reports the in-flight assets owed to an account in StakeWise V3's exit queue (`enterExitQueue(shares, receiver)` moves vault shares into the queue and returns a `positionTicket`; the queued value is claimable once validator exits complete).
 
 ### Inheritance + per-chain scope (Phase 0)
-- Implements `IBalanceAdapter` + `IPositionDescribable` directly, **plus `Ownable`** — the 4th documented mutable-cache adapter (after Merkl + ether.fi), per **ADR 0014** (sibling of `EtherFiWithdrawals`). The mutability is a per-account `(vault, positionTicket, timestamp)` cache only; identity + all addresses are immutable.
+- Implements `IBalanceAdapter` + `IPositionDescribable` directly, **plus `Ownable`** — the 4th documented mutable-cache adapter (after Merkl + ether.fi), per **ADR 0014** (sibling of `EtherFiWithdrawalQueue`). The mutability is a per-account `(vault, positionTicket, timestamp)` cache only; identity + all addresses are immutable.
 - **Mainnet (1) only.** Every StakeWise V3 vault on mainnet settles in ETH, so the single `underlyingToken` (native-ETH sentinel) is correct. Do not deploy against this underlying on a chain with a non-ETH staking asset (e.g. GNO on Gnosis).
 
 ### Math branches (`_owedForPosition`)

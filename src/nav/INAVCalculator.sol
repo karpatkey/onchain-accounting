@@ -35,7 +35,7 @@ interface INAVCalculator is IBalances {
     /// @param protocolId `keccak256` of a canonical protocol slug (see `src/utils/ProtocolIds.sol`).
     ///        Selects the `positionId` ABI-decode schema — one slug implies exactly one schema.
     /// @param positionId ABI-encoded position identifier. Decode schema is determined by `protocolId`.
-    ///        e.g. for AAVE_V3_LENDING: `abi.encode(address pool, address reserve)`.
+    ///        e.g. for AAVE_V3_LENDING: `abi.encode(address pool)`.
     ///        Full schema table: see `src/utils/ProtocolIds.sol` and docs/howto/position-identity-schema.md.
     /// @param positionKind Semantic discriminator (Wallet / Supplied / Borrowed / Collateral / Staking / Rewards / Fees).
     ///        Together with `protocolId` and `positionId` forms the stable per-chain identity key
@@ -89,7 +89,10 @@ interface INAVCalculator is IBalances {
     struct VerbosePosition {
         Position position;
         string protocolName; // e.g. "Aave V3", "Morpho"
-        string positionLabel; // e.g. "USDC supply", "USDC/WETH 0.05% LP"
+        // Ordered display hierarchy BELOW the protocol, leaf last (arbitrary depth, may be empty), e.g.
+        // ["Market", "wstETH/USDC"] or ["Liquidity Pool", "WETH/USDC 0.05%", "NFT #12345"]. Full breadcrumb
+        // = [protocolName, ...labels]. Sourced from IPositionDescribable.positionLabels; display only.
+        string[] labels;
     }
 
     /// @notice NAV snapshot bundled with a full verbose position breakdown.

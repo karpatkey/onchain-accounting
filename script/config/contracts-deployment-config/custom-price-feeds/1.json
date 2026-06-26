@@ -135,6 +135,15 @@
       "usdcToUsdChainlinkHeartbeat": "82800"
     }
   },
+  "sGHO": {
+    "enabled": true,
+    "$comment": "Aave sGHO savings vault — ERC-4626 share, GHO underlying. Priced GHO/USD (Chainlink) x convertToAssets(10^decimals)/10^decimals (same pattern as RWIV/syrupUSDC). Makes sGHO a registered priced asset, so registerAsset auto-adds it to ERC20DefaultBalanceAdapter and the wallet adapter reports the direct sGHO holding at sGHO/USD — no balance adapter needed.",
+    "constructor": {
+      "sgho": "0xE1753F2e00940cC31213dd92013cF019DFE4ca1d",
+      "ghoToUsdChainlinkAddress": "0x3f12643D3f6f874d39C2a4c9f2Cd6f2DbAC877FC",
+      "ghoToUsdChainlinkHeartbeat": "86400"
+    }
+  },
   "OETH": {
     "enabled": true,
     "$comment": "CrossRate: OETH/USD = ETH/USD x OETH/ETH (Chainlink). underlyingAsset=OETH (Y), xToUsdFeed=ETH/USD (X), yToXFeed=OETH/ETH.",

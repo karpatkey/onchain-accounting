@@ -149,8 +149,10 @@ contract LidoWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
         return "Lido";
     }
 
-    function describePosition(bytes calldata) external pure returns (string memory) {
-        return "stETH withdrawal queue";
+    function positionLabels(bytes calldata) external pure returns (string[] memory) {
+        string[] memory out = new string[](1);
+        out[0] = "stETH Withdrawal Queue";
+        return out;
     }
 
     /// @inheritdoc IBalanceAdapter

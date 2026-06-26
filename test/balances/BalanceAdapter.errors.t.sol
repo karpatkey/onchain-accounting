@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.0;
+import {LibraryPins} from "script/utils/LibraryPins.sol";
 
 import {Test} from "forge-std/Test.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
@@ -75,7 +76,7 @@ contract BalanceAdapterErrorTest is Test {
 
     function setUp() public {
         // Etch NAVRegistryLib (pre-linked external lib, DELEGATECALL'd by Balances) at its deterministic address.
-        vm.etch(0x2F1F6c17D64bE96F583D390be212aFCF8D0F102a, vm.deployCode("NAVRegistryLib.sol:NAVRegistryLib").code);
+        vm.etch(LibraryPins.NAV_REGISTRY_LIB, vm.deployCode("NAVRegistryLib.sol:NAVRegistryLib").code);
         balances = new BalancesHarness();
         erc20DefaultBalanceAdapter = balances.defaultAdapter();
         revertingAdapter = new Mock_RevertingBalanceAdapter();

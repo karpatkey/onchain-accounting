@@ -1,9 +1,10 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 /// @title Array Library
 /// @notice Shared array operations for address arrays: slice/copy, deduplication, and intersection.
 ///         Used by NAVCalculator and balance adapters.
+/// @author KPK
 library ArrayLib {
     /// @notice Copies the first `count` elements of `src` into a new array of length `count`.
     /// @param src Source array (length must be >= count).

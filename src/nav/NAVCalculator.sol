@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -20,7 +20,7 @@ import "src/constants.sol";
 
 /// @title NAV Calculator
 /// @notice NAV Calculator.
-/// @author kpk
+/// @author KPK
 /// @dev EIP-170 budget: this contract runs close to the 24,576-byte runtime limit (CI's `forge build --sizes`
 ///      enforces it). The read/compute engine (NAV, positions, health, value) and the registry storage-mutation
 ///      loops are deliberately delegated to the external libraries `PriceFeedLib` and `NAVRegistryLib`

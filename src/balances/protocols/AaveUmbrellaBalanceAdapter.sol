@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -12,7 +12,7 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title Aave Umbrella Balance Adapter (multi-token, dynamic discovery)
-/// @author kpk
+/// @author KPK
 /// @notice Reports balances across every Aave Umbrella stake token registered with a single
 ///         `RewardsController` (the protocol's trust anchor, pinned at construction). For each
 ///         stake position the adapter emits up to two `PositionBalance` entries:

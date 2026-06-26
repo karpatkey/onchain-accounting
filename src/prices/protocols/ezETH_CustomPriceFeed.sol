@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {BaseCustomPriceFeed} from "src/prices/BaseCustomPriceFeed.sol";
@@ -14,7 +14,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 /// @dev Staleness gap: calculateTVLs() reads Renzo's internal oracles, whose freshness is not independently
 ///      checked here. Only the ETH/USD Chainlink heartbeat is verified. This is an architectural constraint of
 ///      Renzo on mainnet; the L2 adapter (ezETH_L2_Price) avoids this by using xRenzoDeposit.getRate() directly.
-/// @author kpk
+/// @author KPK
 /* solhint-disable contract-name-camelcase */
 contract ezETH_CustomPriceFeed is BaseCustomPriceFeed {
     using Math for uint256;

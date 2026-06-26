@@ -1,8 +1,8 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 /// @title BalancerV2PoolLib
-/// @author kpk
+/// @author KPK
 /// @notice Shared pool-share math for the Balancer V2 meta-adapters (pools + gauges). Given a pool's `bytes32`
 ///         poolId and a BPT amount, computes the account's pro-rata share of each underlying pool token by
 ///         reading the Vault's live balances.

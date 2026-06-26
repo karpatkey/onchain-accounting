@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 /// @notice Canonical `protocolId` constants for every balance adapter family.
@@ -26,6 +26,7 @@ pragma solidity ^0.8;
 ///        STADER_WITHDRAWAL / KELP_WITHDRAWAL / LIDO_WITHDRAWAL
 ///          / ETHENA_COOLDOWN / ETHERFI_WITHDRAWAL / STAKEWISE_EXIT → "" (account-global)
 ///        BRIDGE_ESCROW                   → (address escrow, address token)
+/// @author KPK
 library ProtocolIds {
     bytes32 internal constant WALLET = keccak256("wallet");
 

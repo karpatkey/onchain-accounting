@@ -1,11 +1,11 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {Types} from "@optimism/libraries/Types.sol";
 
 /// @title Superchain (Optimism) Bridge Interfaces
 /// @notice Aggregated interfaces for Optimism Superchain canonical bridge integration
-/// @author kpk
+/// @author KPK
 
 // ============================================================================
 // Optimism L1 Standard Bridge Interface

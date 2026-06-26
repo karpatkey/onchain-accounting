@@ -1,9 +1,9 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 /// @title IPrices Interface
 /// @notice Interface for managing price feeds for different tokens.
-/// @author kpk
+/// @author KPK
 interface IPrices {
     /// @notice Enum representing the type of price feed.
     enum PriceType {

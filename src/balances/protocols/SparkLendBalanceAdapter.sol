@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {IBalanceAdapter} from "../IBalanceAdapter.sol";
@@ -10,7 +10,7 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title Spark Lend Balance Adapter
-/// @author kpk
+/// @author KPK
 /// @notice Reports per-reserve Supply/Collateral and Borrow positions for an account in Spark Lend.
 ///         Reads the reserve list from the Protocol Data Provider and emits up to two legs per
 ///         reserve (aToken balance → Supplied/Collateral, variable debt → Borrowed).

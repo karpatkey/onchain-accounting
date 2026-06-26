@@ -110,7 +110,7 @@ For the common "single Chainlink base feed × 18-decimal on-chain rate" case (rE
 Skeleton (bespoke yield-bearing pattern, à la `sDAI_CustomPriceFeed.sol`; adjust for LST/LRT or cross-rate):
 
 ```solidity
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {ICustomPriceFeed} from "src/prices/ICustomPriceFeed.sol";

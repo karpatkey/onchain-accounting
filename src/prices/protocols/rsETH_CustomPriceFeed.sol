@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {BaseCustomPriceFeed} from "src/prices/BaseCustomPriceFeed.sol";
@@ -9,7 +9,7 @@ import {OracleArgumentChecks} from "src/utils/OracleArgumentChecks.sol";
 ///         ETH/USD.
 /// @dev Shared skeleton (staleness, decimals, latestRoundData, the `rate × ETH/USD / 1e18` math) lives in
 ///      BaseCustomPriceFeed; this feed supplies only the rsETH rate via `_rate()`.
-/// @author kpk
+/// @author KPK
 /* solhint-disable contract-name-camelcase */
 contract rsETH_CustomPriceFeed is BaseCustomPriceFeed {
     /// @notice Kelp DAO Multi-Chain Rate Provider (rsETH/ETH rate).

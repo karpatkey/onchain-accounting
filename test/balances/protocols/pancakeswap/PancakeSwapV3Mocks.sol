@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 /// @notice Minimal PancakeSwap V3 pool mock — identical to the Uniswap V3 pool mock except `slot0()` returns

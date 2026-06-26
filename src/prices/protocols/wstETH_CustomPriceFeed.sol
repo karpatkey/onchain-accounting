@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.0;
 
 import {ICustomPriceFeed} from "src/prices/ICustomPriceFeed.sol";
@@ -22,7 +22,7 @@ import "src/errors.sol";
 ///      Using the real stETH/ETH rate (rather than assuming stETH == ETH 1:1) keeps the price accurate and lets
 ///      ETH/USD cancel cleanly when NAV is quoted in ETH — the same pattern the L2 variant uses with a wstETH/ETH
 ///      feed.
-/// @author kpk
+/// @author KPK
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
 contract wstETH_CustomPriceFeed is ICustomPriceFeed {
     //

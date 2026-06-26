@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {MetaBalanceAdapter} from "../../MetaBalanceAdapter.sol";
@@ -10,7 +10,7 @@ import {IStablePool} from "src/balances/protocols/balancer/IBalancerV3.sol";
 import {BalancerV3PoolLib} from "./BalancerV3PoolLib.sol";
 
 /// @title Balancer V3 Pools Meta Balance Adapter
-/// @author kpk
+/// @author KPK
 /// @notice One immutable adapter that reports an account's **wallet-held** (unstaked) Balancer V3 pool liquidity
 ///         across *any* pool — the AMM-supplied LP only, no gauge staking and no rewards (those are the separate
 ///         BalancerV3GaugesMetaBalanceAdapter). The instance coordinate is the pool (BPT) address, widened to bytes32.

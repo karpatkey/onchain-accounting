@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
@@ -9,7 +9,7 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title Fluid fTokens Meta Balance Adapter
-/// @author kpk
+/// @author KPK
 /// @notice One immutable adapter that reports an account's supply position in *any* Fluid fToken (ERC4626
 ///         lending vault) — `convertToAssets(balanceOf(account))` emitted as a single `Supplied` leg in the
 ///         fToken's underlying. The instance coordinate is the fToken address, widened to bytes32; the active

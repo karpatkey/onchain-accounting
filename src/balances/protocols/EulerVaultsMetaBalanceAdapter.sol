@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {MetaBalanceAdapter} from "../MetaBalanceAdapter.sol";
@@ -24,7 +24,7 @@ interface IEVC {
 }
 
 /// @title Euler Vaults Meta Balance Adapter
-/// @author kpk
+/// @author KPK
 /// @notice One immutable adapter that reports an account's position in *any* Euler V2 ERC4626 vault — both the
 ///         EulerEarn aggregator vaults (the "Earn" product) and the core eVaults (EVK, the "Lend/Borrow" product).
 ///         The set of vaults to query is configured on NAVCalculator (per-adapter, MANAGER-gated) and passed in as

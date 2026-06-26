@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.0;
 
 // Mock contracts extracted from UniswapV2.t.sol for use by UniswapV2PoolsMetaBalanceAdapter.t.sol

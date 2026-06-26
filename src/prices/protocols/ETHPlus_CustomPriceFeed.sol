@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.0;
 
 import {ICustomPriceFeed} from "src/prices/ICustomPriceFeed.sol";
@@ -29,7 +29,7 @@ import "src/errors.sol";
 /// @dev latestRoundData() exposes updatedAt = min(lastSave()) for external observability.
 ///      Prices.sol does not call it for staleness — that is handled entirely in getLatestPrice().
 ///
-/// @author kpk
+/// @author KPK
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
 contract ETHPlus_CustomPriceFeed is ICustomPriceFeed {
     using Math for uint256;

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {ERC165Checker} from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
@@ -12,7 +12,7 @@ import {NAVRegistryLib} from "src/nav/NAVRegistryLib.sol";
 import {InvalidArguments} from "src/errors.sol";
 
 /// @title Balances
-/// @author kpk
+/// @author KPK
 /// @notice Manages the balance adapters for different tokens and their latest balances.
 abstract contract Balances is IBalances, Initializable {
     //

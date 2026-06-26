@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {BaseCustomPriceFeed} from "src/prices/BaseCustomPriceFeed.sol";
@@ -7,7 +7,7 @@ import {BaseCustomPriceFeed} from "src/prices/BaseCustomPriceFeed.sol";
 /// @notice USD price of cbETH = `cbETH.exchangeRate()` (ETH per cbETH, 18 dec) × Chainlink ETH/USD.
 /// @dev Shared skeleton (staleness, decimals, latestRoundData, the `rate × ETH/USD / 1e18` math) lives in
 ///      BaseCustomPriceFeed; this feed supplies only the cbETH exchange rate via `_rate()`.
-/// @author kpk
+/// @author KPK
 /* solhint-disable contract-name-camelcase */
 contract cbETH_CustomPriceFeed is BaseCustomPriceFeed {
     /// @param cbEth_ The address of the cbETH token.

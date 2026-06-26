@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -19,7 +19,7 @@ import "src/errors.sol";
 ///      delivered token+amount against the invoice, verifies the source against `trustedRemoteAdapter`, then
 ///      funds the escrow and releases (funded pass-through, ADR 0012). Across exposes no source-sender on the
 ///      fill, so source authentication binds the payload's `sourceChainId` to the configured trusted remote.
-/// @author kpk
+/// @author KPK
 contract AcrossBridgeAdapter is BridgeAdapter, IAcrossBridgeAdapter {
     using SafeERC20 for IERC20;
 

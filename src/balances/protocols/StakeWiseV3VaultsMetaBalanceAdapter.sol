@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
@@ -27,7 +27,7 @@ interface IOsTokenVaultController {
 }
 
 /// @title StakeWise V3 Vaults Meta Balance Adapter
-/// @author kpk
+/// @author KPK
 /// @notice One immutable adapter that reports an account's StakeWise V3 vault positions across *any* vault on a
 ///         chain — emitting two gross legs per vault: `Staking` (vault shares → underlying) and `Borrowed` (minted
 ///         osToken debt → underlying). The instance coordinate is the vault address, widened to bytes32; the

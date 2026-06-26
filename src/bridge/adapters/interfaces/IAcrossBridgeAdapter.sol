@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {IBridgeAdapter} from "../../IBridgeAdapter.sol";
@@ -7,7 +7,7 @@ import {IAcrossV3Receiver, ISpokePool} from "./IAcrossInterfaces.sol";
 /// @title IAcrossBridgeAdapter Interface
 /// @notice Interface for Across Protocol V3 Bridge Adapter
 /// @dev Documents all events, errors, and public functions for the Across adapter (ADR 0012, V3 flow).
-/// @author kpk
+/// @author KPK
 interface IAcrossBridgeAdapter is IBridgeAdapter, IAcrossV3Receiver {
     //
     // Events

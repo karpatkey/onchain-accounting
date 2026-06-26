@@ -1,8 +1,8 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 /// @title StaticCallLib
-/// @author kpk
+/// @author KPK
 /// @notice Best-effort view-call helpers for reading from possibly-noncompliant external contracts: a staticcall
 ///         that decodes a uint256/address and never reverts on a failed/short call.
 /// @dev Consolidates the staticcall+decode wrappers that were copy-pasted — and had begun to drift — across

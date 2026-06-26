@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
@@ -21,7 +21,7 @@ interface IUniswapV2Factory {
 }
 
 /// @title UniswapV2PairLib
-/// @author kpk
+/// @author KPK
 /// @notice Shared read math for the Uniswap V2 meta-adapter (and PancakeSwap V2 fork). Given a pair and an
 ///         account, returns the LP holder's dilution-adjusted pro-rata share of both reserves.
 /// @dev Contains the pair balance calculation logic so the

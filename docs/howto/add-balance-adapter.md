@@ -60,7 +60,7 @@ Slug rules: lowercase ASCII, kebab-case, include the major version. Document the
 ### 1.3 Per-instance adapter skeleton
 
 ```solidity
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";

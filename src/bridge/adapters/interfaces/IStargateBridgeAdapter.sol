@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {IBridgeAdapter} from "../../IBridgeAdapter.sol";
@@ -10,7 +10,7 @@ import {ILayerZeroComposer} from "./IStargateInterfaces.sol";
 ///      (ADR 0012): the genuine LayerZero V2 Endpoint calls `lzCompose` on the adapter after Stargate
 ///      delivers the tokens to it; the adapter authenticates the endpoint, the source eid and the source
 ///      sibling adapter against `trustedRemoteAdapter`, then funds the escrow and releases.
-/// @author kpk
+/// @author KPK
 interface IStargateBridgeAdapter is IBridgeAdapter, ILayerZeroComposer {
     //
     // Events

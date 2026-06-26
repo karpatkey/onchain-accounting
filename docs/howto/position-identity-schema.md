@@ -201,7 +201,7 @@ PositionBalance({
     amount:        1_000e18,               // 1 000 GHO (convertToAssets of share balance)
     isDebt:        false,
     protocolId:    keccak256("erc4626"),
-    positionId:    abi.encode(0x<waEthLidoGHO>),  // wrapper address
+    positionId:    abi.encode(0x<wrapper>),  // ERC-4626 wrapper address
     positionKind:  PositionKind.Supplied
 })
 ```
@@ -617,7 +617,7 @@ Scenario: 2 000 cUSD held + 1 000 USDC-worth of staked stcUSD.
 
 #### `ERC4626Wrap` — wrapper
 
-Scenario: waEthLidoGHO wrapper holding 1 000 GHO equivalent.
+Scenario: an ERC-4626 wrapper holding 1 000 GHO equivalent.
 
 | asset | amount | value (USD) | positionKind | protocolName | positionLabel |
 |-------|--------|-------------|--------------|--------------|---------------|
@@ -1231,7 +1231,7 @@ const [token] = abi.decode(["address"], pos.positionId);
 
 ```typescript
 const [wrapper] = abi.decode(["address"], pos.positionId);
-// wrapper — ERC4626 share token (e.g. waEthLidoGHO stata-token)
+// wrapper — ERC4626 share token (e.g. an Aave stata-token or Nexus RWI Vault share)
 // Supplied → convertToAssets(balanceOf(account)) in wrapper.asset()
 ```
 

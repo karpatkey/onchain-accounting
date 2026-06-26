@@ -592,7 +592,7 @@ The `_deployIfEnabled(...)` calls in `run()` are the authoritative source. Most 
 
 **StakeWise V3:** `StakeWiseV3VaultsMeta` (vault deposits net of minted-osToken debt — see the osETH/osGNO pricing note below)
 
-**ERC-4626 wrappers:** `ERC4626Wrap_waEthLidoGHO`, `ERC4626Wrap_sGHO`
+**ERC-4626 wrappers:** `ERC4626Wrap_RWIV`
 
 **Withdrawal queues:** `StaderWithdrawalQueue`, `KelpWithdrawalQueue`, `LidoWithdrawalQueue`
 

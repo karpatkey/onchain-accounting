@@ -17,8 +17,8 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         underlying. Reports the account's holding as `convertToAssets(balanceOf(account))`
 ///         denominated in `asset()`. The position is emitted with `type = Supply` (the wrapper
 ///         represents a credit position in the underlying).
-/// @dev    Designed for thin wrappers like Aave V3 stata-tokens (`staticATokenLM` — e.g.
-///         `waEthLidoGHO`), Maker-DAI savings wrappers, and any ERC-4626 vault whose share price
+/// @dev    Designed for thin wrappers like Aave V3 stata-tokens (`staticATokenLM`),
+///         Maker-DAI savings wrappers, and any ERC-4626 vault whose share price
 ///         is derived purely from `convertToAssets`. Morpho ERC-4626 vaults have their own
 ///         dedicated meta-adapter (`MorphoVaultsMeta`) because the chain-config catalog tracks
 ///         Morpho vaults as a distinct family.
@@ -58,7 +58,7 @@ contract ERC4626WrapBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     // Constructor
     //
 
-    /// @param wrapper_ The address of the ERC-4626 wrapper (e.g. `waEthLidoGHO`).
+    /// @param wrapper_ The address of the ERC-4626 wrapper (e.g. a Nexus Mutual RWI Vault share).
     /// @param navCalculator_ The address of the NAVCalculator contract for asset registry access.
     /// @dev    Constructor enforces that `WRAPPER.asset()` is registered with NAVCalculator at
     ///         deploy time. Deploying an adapter whose underlying lacks a price feed is a useless

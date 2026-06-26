@@ -108,8 +108,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("EulerVaultsMeta"); // Meta-adapter: all Euler V2 vaults (EulerEarn + core eVaults); supply/collateral + borrow legs; instance set on NAV (ADR 0010)
 
         // --- ERC-4626 wrappers (one thin adapter per wrapper; generic ERC4626WrapBalanceAdapter) ---
-        _deployIfEnabled("ERC4626Wrap_waEthLidoGHO"); // Mainnet — Aave V3 Lido stata-token wrap of aEthLidoGHO
-        _deployIfEnabled("ERC4626Wrap_sGHO"); // Mainnet — Aave sGHO savings vault (GHO underlying)
         _deployIfEnabled("ERC4626Wrap_RWIV"); // Mainnet — Nexus Mutual RWI Vault (USDC underlying)
 
         // --- Gearbox Markets (Mainnet — ETH Alpha) ---

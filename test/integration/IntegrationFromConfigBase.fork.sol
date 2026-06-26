@@ -56,6 +56,7 @@ import {LDO_CustomPriceFeed} from "src/prices/protocols/LDO_CustomPriceFeed.sol"
 import {sUSDS_CustomPriceFeed} from "src/prices/protocols/sUSDS_CustomPriceFeed.sol";
 import {sUSDe_CustomPriceFeed} from "src/prices/protocols/sUSDe_CustomPriceFeed.sol";
 import {syrupUSDC_CustomPriceFeed} from "src/prices/protocols/syrupUSDC_CustomPriceFeed.sol";
+import {sGHO_CustomPriceFeed} from "src/prices/protocols/sGHO_CustomPriceFeed.sol";
 import {wstETH_CustomPriceFeed} from "src/prices/protocols/wstETH_CustomPriceFeed.sol";
 import {CrossRate_CustomPriceFeed} from "src/prices/protocols/CrossRate_CustomPriceFeed.sol";
 import {rETH_CustomPriceFeed} from "src/prices/protocols/rETH_CustomPriceFeed.sol";
@@ -208,6 +209,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             _tryDeployPriceFeed("LDO", _deployLdo);
             _tryDeployPriceFeed("sUSDS", _deploySusds);
             _tryDeployPriceFeed("sUSDe", _deploySUsde);
+            _tryDeployPriceFeed("sGHO", _deploySgho);
             _tryDeployPriceFeed("syrupUSDC", _deploySyrupUsdc);
             _tryDeployPriceFeed("wstETH", _deployWstEth);
             _tryDeployPriceFeed("stETH", _deployStEth);
@@ -289,6 +291,15 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         uint256 usdeUsdHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "sUSDe", "usdeToUsdChainlinkHeartbeat"));
         return address(new sUSDe_CustomPriceFeed(sUsde, usdeUsd, usdeUsdHb));
+    }
+
+    function _deploySgho() internal returns (address) {
+        address sgho = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "sGHO", "sgho"));
+        address ghoUsd =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "sGHO", "ghoToUsdChainlinkAddress"));
+        uint256 ghoUsdHb =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "sGHO", "ghoToUsdChainlinkHeartbeat"));
+        return address(new sGHO_CustomPriceFeed(sgho, ghoUsd, ghoUsdHb));
     }
 
     function _deploySyrupUsdc() internal returns (address) {

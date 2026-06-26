@@ -348,7 +348,6 @@ script/verify/verify-all.sh
 - `CurvePoolsMetaBalanceAdapter`, `CurveGaugesMetaBalanceAdapter` - Curve LPs + gauges
 - `ConvexRewardsMetaBalanceAdapter` - Convex staking
 - `CapBalanceAdapter` - Cap (cUSD + stcUSD aggregated → USDC)
-- `DaiDsrBalanceAdapter` - DAI Savings Rate
 - `FluidFTokensMetaBalanceAdapter`, `FluidVaultsMetaBalanceAdapter` - Fluid lending + vaults
 - `GearboxMarketsMetaBalanceAdapter` - Gearbox kpk-curated markets
 - `StakeWiseV3VaultsMetaBalanceAdapter` - StakeWise V3 Genesis Vault (osETH/osGNO themselves are Custom-priced ERC20s via `osToken_PriceOracle`, not balance adapters)

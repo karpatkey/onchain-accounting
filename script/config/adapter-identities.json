@@ -396,12 +396,5 @@
     "protocol": "PancakeSwap V2",
     "positionDetail": { "protocol": "PancakeSwap V2", "product": "LP", "name": "<token0/token1>" },
     "positionId": "<pair address>"
-  },
-
-  "DaiDsr": {
-    "$perPositionFields": "type: Supply",
-    "protocol": "Sky",
-    "positionDetail": { "protocol": "Sky", "product": "Savings", "name": "DAI Savings Rate" },
-    "positionId": "<DSR pot address>"
   }
 }

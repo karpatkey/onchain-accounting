@@ -550,11 +550,11 @@ Thin subclasses of UniswapV3/V2 adapters with different `npm`/`pair` addresses a
 
 `navCalculator.getAccountPositionsVerbose(account, address(0))` (USD quote) returns `VerbosePosition[]`.
 Each entry wraps a `Position` (all `PositionBalance` fields + `value`, `price`, `priceDecimals`,
-`stale`, `quoteAsset`) with `protocolName` and `positionLabels` string labels.
+`stale`, `quoteAsset`) with `protocolName` and `labels` (`string[]`, sourced from each adapter's `positionLabels(bytes)` method).
 
 The tables below show what the call returns for a representative account position in each protocol.
 **`value (USD)`** is the signed contribution to NAV (negative = debt). Labels (`protocolName`,
-`positionLabels`) come from `IPositionDescribable` — meta-adapters derive them on-chain from live
+`labels`) come from `IPositionDescribable` — meta-adapters derive them on-chain from live
 state; per-instance adapters return static strings.
 
 Assumed prices: USDC/DAI/GHO/USDS/crvUSD = $1 · WETH/ETH = $2 500 · wstETH = $2 900 ·
@@ -568,7 +568,7 @@ stETH = $2 480 · AAVE = $200 · CRV = $0.50 · CVX = $3 · BAL = $3 · COMP = $
 
 Scenario: account holds USDC, WETH, and DAI.
 
-| asset | amount | value (USD) | positionKind | protocolName | positionLabels |
+| asset | amount | value (USD) | positionKind | protocolName | labels |
 |-------|--------|-------------|--------------|--------------|---------------|
 | USDC  | 1 500  | +1 500      | `Wallet`     | `"Wallet"`   | `["USDC"]`      |
 | WETH  | 1.0    | +2 500      | `Wallet`     | `"Wallet"`   | `["WETH"]`      |
@@ -579,7 +579,7 @@ Scenario: account holds USDC, WETH, and DAI.
 
 Scenario: 1 500 USDC supplied (no collateral flag), 1 WETH as collateral, 500 USDC borrowed.
 
-| asset | amount | value (USD) | positionKind  | protocolName | positionLabels       |
+| asset | amount | value (USD) | positionKind  | protocolName | labels       |
 |-------|--------|-------------|---------------|--------------|---------------------|
 | USDC  | 1 500  | +1 500      | `Supplied`    | `"Spark"`    | `["Market", "SparkLend"]` |
 | WETH  | 1.0    | +2 500      | `Collateral`  | `"Spark"`    | `["Market", "SparkLend"]` |
@@ -590,7 +590,7 @@ Scenario: 1 500 USDC supplied (no collateral flag), 1 WETH as collateral, 500 US
 
 Scenario: 500 AAVE in stkAAVE with 10 AAVE rewards accrued.
 
-| asset | amount | value (USD) | positionKind | protocolName                | positionLabels       |
+| asset | amount | value (USD) | positionKind | protocolName                | labels       |
 |-------|--------|-------------|--------------|------------------------------|---------------------|
 | AAVE  | 500    | +100 000    | `Staking`    | `"Aave V3"`                  | `["Safety Module"]`   |
 | AAVE  | 10     | +2 000      | `Rewards`    | `"Aave V3"`                  | `["Safety Module"]`   |
@@ -600,7 +600,7 @@ Scenario: 500 AAVE in stkAAVE with 10 AAVE rewards accrued.
 
 Scenario: 1 000 USDC staked in stkwaEthUSDC.v1 with 5 USDC rewards pending.
 
-| asset | amount | value (USD) | positionKind | protocolName      | positionLabels        |
+| asset | amount | value (USD) | positionKind | protocolName      | labels        |
 |-------|--------|-------------|--------------|-------------------|-----------------------|
 | USDC  | 1 000  | +1 000      | `Staking`    | `"Aave Umbrella"` | `["Umbrella Module"]` |
 | USDC  | 5      | +5          | `Rewards`    | `"Aave Umbrella"` | `["Umbrella Module"]` |
@@ -610,7 +610,7 @@ Scenario: 1 000 USDC staked in stkwaEthUSDC.v1 with 5 USDC rewards pending.
 
 Scenario: 2 000 cUSD held + 1 000 USDC-worth of staked stcUSD.
 
-| asset | amount | value (USD) | positionKind | protocolName | positionLabels             |
+| asset | amount | value (USD) | positionKind | protocolName | labels             |
 |-------|--------|-------------|--------------|--------------|----------------------------|
 | USDC  | 2 000  | +2 000      | `Supplied`   | `"Cap"`      | `["Stablecoin", "cUSD"]`   |
 | USDC  | 1 000  | +1 000      | `Staking`    | `"Cap"`      | `["Savings", "stcUSD"]`    |
@@ -619,7 +619,7 @@ Scenario: 2 000 cUSD held + 1 000 USDC-worth of staked stcUSD.
 
 Scenario: an ERC-4626 wrapper holding 1 000 GHO equivalent.
 
-| asset | amount | value (USD) | positionKind | protocolName | positionLabels |
+| asset | amount | value (USD) | positionKind | protocolName | labels |
 |-------|--------|-------------|--------------|--------------|---------------|
 | GHO   | 1 000  | +1 000      | `Supplied`   | `"ERC4626"`  | `["Vault"]` |
 
@@ -627,7 +627,7 @@ Scenario: an ERC-4626 wrapper holding 1 000 GHO equivalent.
 
 Scenario: 2 stETH pending claim in Kelp queue.
 
-| asset  | amount | value (USD) | positionKind | protocolName | positionLabels |
+| asset  | amount | value (USD) | positionKind | protocolName | labels |
 |--------|--------|-------------|--------------|--------------|---------------|
 | stETH  | 2.0    | +4 960      | `Supplied`   | `"Kelp DAO"` | `["rsETH Withdrawal Queue"]` |
 
@@ -635,7 +635,7 @@ Scenario: 2 stETH pending claim in Kelp queue.
 
 Scenario: 1 ETH finalized and waiting to be claimed.
 
-| asset | amount | value (USD) | positionKind | protocolName | positionLabels |
+| asset | amount | value (USD) | positionKind | protocolName | labels |
 |-------|--------|-------------|--------------|--------------|---------------|
 | ETH   | 1.0    | +2 500      | `Supplied`   | `"Lido"`     | `["stETH Withdrawal Queue"]` |
 
@@ -643,7 +643,7 @@ Scenario: 1 ETH finalized and waiting to be claimed.
 
 Scenario: 250 CRV unclaimed in Merkl distributor.
 
-| asset | amount | value (USD) | positionKind | protocolName | positionLabels |
+| asset | amount | value (USD) | positionKind | protocolName | labels |
 |-------|--------|-------------|--------------|--------------|---------------|
 | CRV   | 250    | +125        | `Rewards`    | `"Merkl"`    | `["Claimable Rewards"]` |
 
@@ -651,7 +651,7 @@ Scenario: 250 CRV unclaimed in Merkl distributor.
 
 Scenario: 0.5 WETH pending from ETHx unstake.
 
-| asset | amount | value (USD) | positionKind | protocolName | positionLabels |
+| asset | amount | value (USD) | positionKind | protocolName | labels |
 |-------|--------|-------------|--------------|--------------|---------------|
 | WETH  | 0.5    | +1 250      | `Supplied`   | `"Stader"`   | `["ETHx Withdrawal Queue"]` |
 
@@ -663,7 +663,7 @@ Scenario: 0.5 WETH pending from ETHx unstake.
 
 Scenario: 1 500 USDC supplied (not collateral), 1 WETH as collateral, 500 USDC borrowed — all on Aave V3 Core.
 
-| asset | amount | value (USD) | positionKind | protocolName | positionLabels     |
+| asset | amount | value (USD) | positionKind | protocolName | labels     |
 |-------|--------|-------------|--------------|--------------|-------------------|
 | USDC  | 1 500  | +1 500      | `Supplied`   | `"Aave V3"`  | `["Market Instance", "Aave V3 Ethereum"]` |
 | WETH  | 1.0    | +2 500      | `Collateral` | `"Aave V3"`  | `["Market Instance", "Aave V3 Ethereum"]` |
@@ -674,7 +674,7 @@ Scenario: 1 500 USDC supplied (not collateral), 1 WETH as collateral, 500 USDC b
 
 Scenario: 5 000 USDC supplied in Steakhouse USDC MetaMorpho vault.
 
-| asset | amount | value (USD) | positionKind | protocolName | positionLabels        |
+| asset | amount | value (USD) | positionKind | protocolName | labels        |
 |-------|--------|-------------|--------------|--------------|----------------------|
 | USDC  | 5 000  | +5 000      | `Supplied`   | `"Morpho"`   | `["Vault", "Steakhouse USDC"]`  |
 
@@ -682,7 +682,7 @@ Scenario: 5 000 USDC supplied in Steakhouse USDC MetaMorpho vault.
 
 Scenario: 2 wstETH as collateral, 1 000 USDC borrowed — in a wstETH/USDC market.
 
-| asset   | amount | value (USD) | positionKind | protocolName | positionLabels           |
+| asset   | amount | value (USD) | positionKind | protocolName | labels           |
 |---------|--------|-------------|--------------|--------------|-------------------------|
 | wstETH  | 2.0    | +5 800      | `Collateral` | `"Morpho"`   | `["Market", "wstETH/USDC market"]`  |
 | USDC    | 1 000  | −1 000      | `Borrowed`   | `"Morpho"`   | `["Market", "wstETH/USDC market"]`  |
@@ -692,7 +692,7 @@ Scenario: 2 wstETH as collateral, 1 000 USDC borrowed — in a wstETH/USDC marke
 
 Scenario: 4 000 USDC supplied in an Euler V2 vault (not enabled as EVC collateral).
 
-| asset | amount | value (USD) | positionKind | protocolName | positionLabels        |
+| asset | amount | value (USD) | positionKind | protocolName | labels        |
 |-------|--------|-------------|--------------|--------------|----------------------|
 | USDC  | 4 000  | +4 000      | `Supplied`   | `"Euler"`    | `["Vault", "Euler USDC vault"]` |
 
@@ -700,7 +700,7 @@ Scenario: 4 000 USDC supplied in an Euler V2 vault (not enabled as EVC collatera
 
 Scenario: 1 000 USDC in Gearbox USDC farming pool.
 
-| asset | amount | value (USD) | positionKind | protocolName  | positionLabels          |
+| asset | amount | value (USD) | positionKind | protocolName  | labels          |
 |-------|--------|-------------|--------------|---------------|------------------------|
 | USDC  | 1 000  | +1 000      | `Supplied`   | `"Gearbox"`   | `["Market", "Gearbox USDC Farm"]`  |
 
@@ -708,7 +708,7 @@ Scenario: 1 000 USDC in Gearbox USDC farming pool.
 
 Scenario: 1 000 USDC in Fluid fUSDC.
 
-| asset | amount | value (USD) | positionKind | protocolName | positionLabels  |
+| asset | amount | value (USD) | positionKind | protocolName | labels  |
 |-------|--------|-------------|--------------|--------------|----------------|
 | USDC  | 1 000  | +1 000      | `Supplied`   | `"Fluid"`    | `["Lending", "fUSDC supply"]` |
 
@@ -716,7 +716,7 @@ Scenario: 1 000 USDC in Fluid fUSDC.
 
 Scenario: 1 WETH collateral, 500 USDC debt in a Fluid T1 vault.
 
-| asset | amount | value (USD) | positionKind | protocolName | positionLabels     |
+| asset | amount | value (USD) | positionKind | protocolName | labels     |
 |-------|--------|-------------|--------------|--------------|-------------------|
 | WETH  | 1.0    | +2 500      | `Collateral` | `"Fluid"`    | `["Vault", "ETH-USDC vault"]` |
 | USDC  | 500    | −500        | `Borrowed`   | `"Fluid"`    | `["Vault", "ETH-USDC vault"]` |
@@ -726,7 +726,7 @@ Scenario: 1 WETH collateral, 500 USDC debt in a Fluid T1 vault.
 
 Scenario: 2 000 USDC supplied (base asset), 0.5 WETH as collateral, 10 COMP rewards — in cUSDCv3.
 
-| asset | amount | value (USD) | positionKind | protocolName     | positionLabels          |
+| asset | amount | value (USD) | positionKind | protocolName     | labels          |
 |-------|--------|-------------|--------------|------------------|------------------------|
 | USDC  | 2 000  | +2 000      | `Supplied`   | `"Compound V3"`  | `["Market", "Compound USDC"]`      |
 | WETH  | 0.5    | +1 250      | `Collateral` | `"Compound V3"`  | `["Market", "Compound USDC"]`      |
@@ -737,7 +737,7 @@ Scenario: 2 000 USDC supplied (base asset), 0.5 WETH as collateral, 10 COMP rewa
 
 Scenario: 2 ETH staked, 0.5 ETH equivalent minted as osETH (debt).
 
-| asset | amount | value (USD) | positionKind | protocolName      | positionLabels        |
+| asset | amount | value (USD) | positionKind | protocolName      | labels        |
 |-------|--------|-------------|--------------|-------------------|----------------------|
 | ETH   | 2.0    | +5 000      | `Staking`    | `"StakeWise V3"`  | `["Vaults", "Chorus One vault"]` |
 | ETH   | 0.5    | −1 250      | `Borrowed`   | `"StakeWise V3"`  | `["Vaults", "Chorus One vault"]` |
@@ -747,7 +747,7 @@ Scenario: 2 ETH staked, 0.5 ETH equivalent minted as osETH (debt).
 
 Scenario: wallet holds BPT representing 800 USDC + 0.32 WETH in a Balancer V3 USDC/WETH pool.
 
-| asset | amount | value (USD) | positionKind | protocolName    | positionLabels        |
+| asset | amount | value (USD) | positionKind | protocolName    | labels        |
 |-------|--------|-------------|--------------|-----------------|----------------------|
 | USDC  | 800    | +800        | `Supplied`   | `"Balancer V3"` | `["Liquidity Pool", "USDC/WETH 50/50"]`  |
 | WETH  | 0.32   | +800        | `Supplied`   | `"Balancer V3"` | `["Liquidity Pool", "USDC/WETH 50/50"]`  |
@@ -757,7 +757,7 @@ Scenario: wallet holds BPT representing 800 USDC + 0.32 WETH in a Balancer V3 US
 
 Scenario: staked BPT in gauge for a USDC/WETH pool, with 50 BAL rewards accrued.
 
-| asset | amount | value (USD) | positionKind | protocolName    | positionLabels           |
+| asset | amount | value (USD) | positionKind | protocolName    | labels           |
 |-------|--------|-------------|--------------|-----------------|-------------------------|
 | USDC  | 800    | +800        | `Staking`    | `"Balancer V3"` | `["Staking Gauge", "USDC/WETH gauge"]`     |
 | WETH  | 0.32   | +800        | `Staking`    | `"Balancer V3"` | `["Staking Gauge", "USDC/WETH gauge"]`     |
@@ -768,7 +768,7 @@ Scenario: staked BPT in gauge for a USDC/WETH pool, with 50 BAL rewards accrued.
 
 Scenario: wallet holds V2 BPT representing 800 USDC + 0.32 WETH.
 
-| asset | amount | value (USD) | positionKind | protocolName    | positionLabels       |
+| asset | amount | value (USD) | positionKind | protocolName    | labels       |
 |-------|--------|-------------|--------------|-----------------|---------------------|
 | USDC  | 800    | +800        | `Supplied`   | `"Balancer V2"` | `["Liquidity Pool", "Balancer USDC/WETH"]` |
 | WETH  | 0.32   | +800        | `Supplied`   | `"Balancer V2"` | `["Liquidity Pool", "Balancer USDC/WETH"]` |
@@ -778,7 +778,7 @@ Scenario: wallet holds V2 BPT representing 800 USDC + 0.32 WETH.
 
 Scenario: staked V2 BPT with 50 BAL rewards.
 
-| asset | amount | value (USD) | positionKind | protocolName    | positionLabels           |
+| asset | amount | value (USD) | positionKind | protocolName    | labels           |
 |-------|--------|-------------|--------------|-----------------|-------------------------|
 | USDC  | 800    | +800        | `Staking`    | `"Balancer V2"` | `["Staking Gauge", "50USDC-50WETH gauge"]` |
 | WETH  | 0.32   | +800        | `Staking`    | `"Balancer V2"` | `["Staking Gauge", "50USDC-50WETH gauge"]` |
@@ -789,7 +789,7 @@ Scenario: staked V2 BPT with 50 BAL rewards.
 
 Scenario: wallet holds LP representing 1 000 crvUSD + 1 000 USDC in a crvUSD/USDC pool.
 
-| asset  | amount | value (USD) | positionKind | protocolName | positionLabels       |
+| asset  | amount | value (USD) | positionKind | protocolName | labels       |
 |--------|--------|-------------|--------------|--------------|---------------------|
 | crvUSD | 1 000  | +1 000      | `Supplied`   | `"Curve"`    | `["Liquidity Pool", "crvUSD/USDC LP"]`  |
 | USDC   | 1 000  | +1 000      | `Supplied`   | `"Curve"`    | `["Liquidity Pool", "crvUSD/USDC LP"]`  |
@@ -799,7 +799,7 @@ Scenario: wallet holds LP representing 1 000 crvUSD + 1 000 USDC in a crvUSD/USD
 
 Scenario: staked gauge LP (same pool as above) with 100 CRV rewards.
 
-| asset  | amount | value (USD) | positionKind | protocolName | positionLabels          |
+| asset  | amount | value (USD) | positionKind | protocolName | labels          |
 |--------|--------|-------------|--------------|--------------|------------------------|
 | crvUSD | 1 000  | +1 000      | `Staking`    | `"Curve"`    | `["Staking Gauge", "crvUSD/USDC gauge"]`  |
 | USDC   | 1 000  | +1 000      | `Staking`    | `"Curve"`    | `["Staking Gauge", "crvUSD/USDC gauge"]`  |
@@ -810,7 +810,7 @@ Scenario: staked gauge LP (same pool as above) with 100 CRV rewards.
 
 Scenario: Convex-staked crvUSD/USDC LP with 100 CRV + 50 CVX rewards.
 
-| asset  | amount | value (USD) | positionKind | protocolName | positionLabels              |
+| asset  | amount | value (USD) | positionKind | protocolName | labels              |
 |--------|--------|-------------|--------------|--------------|----------------------------|
 | crvUSD | 1 000  | +1 000      | `Staking`    | `"Convex"`   | `["Curve LP", "crvUSD/USDC Convex"]`     |
 | USDC   | 1 000  | +1 000      | `Staking`    | `"Convex"`   | `["Curve LP", "crvUSD/USDC Convex"]`     |
@@ -822,7 +822,7 @@ Scenario: Convex-staked crvUSD/USDC LP with 100 CRV + 50 CVX rewards.
 
 Scenario: one NFT position (#12345) in the USDC/WETH 0.05% pool, in-range, with 20 USDC + 0.008 WETH in accrued fees.
 
-| asset | amount  | value (USD) | positionKind | protocolName   | positionLabels  |
+| asset | amount  | value (USD) | positionKind | protocolName   | labels  |
 |-------|---------|-------------|--------------|----------------|----------------|
 | USDC  | 600     | +600        | `Supplied`   | `"Uniswap V3"` | `["Liquidity Pool", "NFT #12345"]` |
 | WETH  | 0.24    | +600        | `Supplied`   | `"Uniswap V3"` | `["Liquidity Pool", "NFT #12345"]` |
@@ -834,7 +834,7 @@ Scenario: one NFT position (#12345) in the USDC/WETH 0.05% pool, in-range, with 
 
 Scenario: wallet holds USDC/WETH V2 pair LP representing 700 USDC + 0.28 WETH.
 
-| asset | amount | value (USD) | positionKind | protocolName   | positionLabels     |
+| asset | amount | value (USD) | positionKind | protocolName   | labels     |
 |-------|--------|-------------|--------------|----------------|-------------------|
 | USDC  | 700    | +700        | `Supplied`   | `"Uniswap V2"` | `["Liquidity Pool", "USDC/WETH LP"]`  |
 | WETH  | 0.28   | +700        | `Supplied`   | `"Uniswap V2"` | `["Liquidity Pool", "USDC/WETH LP"]`  |

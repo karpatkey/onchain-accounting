@@ -89,7 +89,10 @@ interface INAVCalculator is IBalances {
     struct VerbosePosition {
         Position position;
         string protocolName; // e.g. "Aave V3", "Morpho"
-        string positionLabel; // e.g. "USDC supply", "USDC/WETH 0.05% LP"
+        // Ordered display hierarchy BELOW the protocol, leaf last (arbitrary depth, may be empty), e.g.
+        // ["Market", "wstETH/USDC"] or ["Liquidity Pool", "WETH/USDC 0.05%", "NFT #12345"]. Full breadcrumb
+        // = [protocolName, ...labels]. Sourced from IPositionDescribable.positionLabels; display only.
+        string[] labels;
     }
 
     /// @notice NAV snapshot bundled with a full verbose position breakdown.

@@ -109,11 +109,16 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    function describePosition(bytes calldata pid) external view override returns (string memory) {
-        if (pid.length < 32) return "";
+    /// @dev Returns `["Liquidity Pool", "sym0/sym1 LP"]`; leaf derived on-chain from the pair's token symbols.
+    function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
+        if (pid.length < 32) return new string[](0);
         address pair = abi.decode(pid, (address));
         (address token0, address token1,,) = UniswapV2PairLib.pairAmounts(pair, address(0));
-        return string.concat(_symbol(token0), "/", _symbol(token1), " LP");
+        string memory leaf = string.concat(_symbol(token0), "/", _symbol(token1), " LP");
+        string[] memory out = new string[](2);
+        out[0] = "Liquidity Pool";
+        out[1] = leaf;
+        return out;
     }
 
     /// @notice Reads an ERC20 symbol, falling back to "?" for non-standard tokens (e.g. bytes32 symbols).

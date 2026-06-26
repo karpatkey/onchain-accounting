@@ -174,8 +174,10 @@ contract StakeWiseExitQueueBalanceAdapter is IBalanceAdapter, Ownable, IPosition
         return "StakeWise V3";
     }
 
-    function describePosition(bytes calldata) external pure returns (string memory) {
-        return "Exit Queue";
+    function positionLabels(bytes calldata) external pure returns (string[] memory) {
+        string[] memory out = new string[](1);
+        out[0] = "Exit Queue";
+        return out;
     }
 
     /// @inheritdoc IBalanceAdapter

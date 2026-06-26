@@ -166,8 +166,10 @@ contract MerklRewardsBalanceAdapter is IBalanceAdapter, Ownable, IPositionDescri
         return "Merkl";
     }
 
-    function describePosition(bytes calldata) external pure returns (string memory) {
-        return "claimable rewards";
+    function positionLabels(bytes calldata) external pure returns (string[] memory) {
+        string[] memory out = new string[](1);
+        out[0] = "Claimable Rewards";
+        return out;
     }
 
     /// @inheritdoc IBalanceAdapter

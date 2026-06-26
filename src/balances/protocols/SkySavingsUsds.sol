@@ -109,8 +109,10 @@ contract SkySavingsUsdsBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         return "Sky";
     }
 
-    function describePosition(bytes calldata) external pure returns (string memory) {
-        return "USDS savings";
+    function positionLabels(bytes calldata) external pure returns (string[] memory) {
+        string[] memory out = new string[](1);
+        out[0] = "sUSDS Savings";
+        return out;
     }
 
     //

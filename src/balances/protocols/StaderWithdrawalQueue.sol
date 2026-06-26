@@ -142,8 +142,10 @@ contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescri
         return "Stader";
     }
 
-    function describePosition(bytes calldata) external pure returns (string memory) {
-        return "ETHx withdrawal queue";
+    function positionLabels(bytes calldata) external pure returns (string[] memory) {
+        string[] memory out = new string[](1);
+        out[0] = "ETHx Withdrawal Queue";
+        return out;
     }
 
     /// @inheritdoc IBalanceAdapter

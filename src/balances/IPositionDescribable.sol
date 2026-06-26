@@ -5,7 +5,7 @@ pragma solidity ^0.8;
 /// @notice Optional interface for balance adapters that can provide human-readable labels for their positions.
 /// @dev NAVCalculator's verbose read methods (`getAccountPositionsVerbose`, `getAccountPositionsForAssetVerbose`,
 ///      `getAccountNavVerbose`) call these via a fail-open staticcall — adapters that do not implement this
-///      interface simply produce empty label strings.
+///      interface simply produce an empty label set.
 ///      Clients MUST NOT use these strings for identity, indexing, or reconciliation; use the typed
 ///      `protocolId` / `positionId` / `PositionKind` fields on `PositionBalance` for those purposes.
 interface IPositionDescribable {
@@ -14,9 +14,13 @@ interface IPositionDescribable {
     ///      (the protocol name is the same regardless of which instance is being described).
     function protocolName() external view returns (string memory);
 
-    /// @notice Human-readable label for a single position identified by `positionId`.
+    /// @notice Ordered, arbitrary-depth display hierarchy for a single position, BELOW the protocol level.
+    ///         Index 0 is the broadest level (category) and the last element is the position leaf, e.g.
+    ///         `["Market", "wstETH/USDC"]`, `["Liquidity Pool", "WETH/USDC 0.05%", "NFT #12345"]`, or
+    ///         `["Safety Module"]` when the category itself is the leaf. The full breadcrumb a consumer
+    ///         renders is `[protocolName(), ...positionLabels(positionId)]`.
     /// @param positionId The ABI-encoded position identifier (same bytes as `PositionBalance.positionId`).
-    /// @return A short display string, e.g. "USDC supply", "USDC/WETH 0.05% LP", "Steakhouse USDC vault".
-    ///         Empty string is acceptable if a description cannot be derived.
-    function describePosition(bytes calldata positionId) external view returns (string memory);
+    /// @return An array of display segments. An empty array is acceptable when no label can be derived.
+    ///         Depth varies by adapter and position; consumers must not assume a fixed length.
+    function positionLabels(bytes calldata positionId) external view returns (string[] memory);
 }

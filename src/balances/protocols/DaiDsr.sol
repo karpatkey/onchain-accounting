@@ -184,8 +184,10 @@ contract DaiDsrBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         return "MakerDAO";
     }
 
-    function describePosition(bytes calldata) external pure returns (string memory) {
-        return "DAI savings rate";
+    function positionLabels(bytes calldata) external pure returns (string[] memory) {
+        string[] memory out = new string[](1);
+        out[0] = "DAI Savings Rate";
+        return out;
     }
 
     //

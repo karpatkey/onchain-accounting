@@ -99,14 +99,19 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    function describePosition(bytes calldata pid) external view override returns (string memory) {
-        if (pid.length < 32) return "";
+    /// @dev Returns `["Market", <leaf>]` where the leaf is the comet's ERC20 name ("" if unreadable). Returns an
+    ///      empty array for a short positionId.
+    function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
+        if (pid.length < 32) return new string[](0);
         address comet = abi.decode(pid, (address));
+        string memory leaf = "";
         try IERC20Metadata(comet).name() returns (string memory n) {
-            return n;
-        } catch {
-            return "";
-        }
+            leaf = n;
+        } catch {}
+        string[] memory out = new string[](2);
+        out[0] = "Market";
+        out[1] = leaf;
+        return out;
     }
 
     function _eligible(address token, address assetFilter)

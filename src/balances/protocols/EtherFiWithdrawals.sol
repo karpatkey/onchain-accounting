@@ -155,8 +155,10 @@ contract EtherFiWithdrawalsBalanceAdapter is IBalanceAdapter, Ownable, IPosition
         return "ether.fi";
     }
 
-    function describePosition(bytes calldata) external pure returns (string memory) {
-        return "ETH Withdrawal Queue";
+    function positionLabels(bytes calldata) external pure returns (string[] memory) {
+        string[] memory out = new string[](1);
+        out[0] = "Withdrawal Queue";
+        return out;
     }
 
     /// @inheritdoc IBalanceAdapter

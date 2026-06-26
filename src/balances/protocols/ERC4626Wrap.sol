@@ -96,8 +96,10 @@ contract ERC4626WrapBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         return "ERC4626";
     }
 
-    function describePosition(bytes calldata) external pure returns (string memory) {
-        return "vault supply";
+    function positionLabels(bytes calldata) external pure returns (string[] memory) {
+        string[] memory out = new string[](1);
+        out[0] = "Vault";
+        return out;
     }
 
     //

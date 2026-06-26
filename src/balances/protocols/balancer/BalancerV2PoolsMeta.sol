@@ -90,13 +90,19 @@ contract BalancerV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    function describePosition(bytes calldata pid) external view override returns (string memory) {
+    /// @dev Returns `["Liquidity Pool", <BPT name>]`; the leaf is "" if the BPT's `name()` reverts.
+    function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
         bytes32 poolId = abi.decode(pid, (bytes32));
         address bpt = address(uint160(uint256(poolId) >> 96));
+        string memory leaf;
         try IERC20Metadata(bpt).name() returns (string memory n) {
-            return n;
+            leaf = n;
         } catch {
-            return "";
+            leaf = "";
         }
+        string[] memory out = new string[](2);
+        out[0] = "Liquidity Pool";
+        out[1] = leaf;
+        return out;
     }
 }

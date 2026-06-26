@@ -181,9 +181,14 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    function describePosition(bytes calldata pid) external view override returns (string memory) {
+    /// @dev Returns `["Liquidity Pool", "NFT #<tokenId>"]`.
+    function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
         (, uint256 tokenId) = abi.decode(pid, (address, uint256));
-        return string.concat("NFT #", tokenId.toString());
+        string memory leaf = string.concat("NFT #", tokenId.toString());
+        string[] memory out = new string[](2);
+        out[0] = "Liquidity Pool";
+        out[1] = leaf;
+        return out;
     }
 
     function _row(INAVCalculator.Asset memory asset, uint256 amount, bytes memory positionId, PositionKind kind)

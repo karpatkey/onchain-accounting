@@ -98,22 +98,26 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev Label is "<reserve symbol> position (<market id>)" — the market id (e.g. "Aave Ethereum Market" vs
-    ///      "Aave V3 Lido Ethereum") distinguishes instances that share a reserve symbol, since protocolId is the
-    ///      same across all instances and positionId carries the market only as the pool address. Falls back to
-    ///      "<reserve symbol> position" when the market id is unavailable. `virtual` so the V2 subclass can override.
-    function describePosition(bytes calldata pid) external view virtual override returns (string memory) {
-        if (pid.length < 64) return "";
+    /// @dev Returns `["Market Instance", <leaf>]`. The leaf is "<reserve symbol> position (<market id>)" — the
+    ///      market id (e.g. "Aave Ethereum Market" vs "Aave V3 Lido Ethereum") distinguishes instances that share a
+    ///      reserve symbol, since protocolId is the same across all instances and positionId carries the market only
+    ///      as the pool address. Falls back to "<reserve symbol> position" when the market id is unavailable, or ""
+    ///      when the reserve symbol is unreadable. Returns an empty array for a short positionId. `virtual` so the V2
+    ///      subclass can override.
+    function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
+        if (pid.length < 64) return new string[](0);
         (address pool, address reserve) = abi.decode(pid, (address, address));
-        string memory sym;
-        try IERC20Metadata(reserve).symbol() returns (string memory s) {
-            sym = s;
-        } catch {
-            return "";
-        }
-        string memory market = _marketId(pool);
-        return
-            bytes(market).length == 0 ? string.concat(sym, " position") : string.concat(sym, " position (", market, ")");
+        string memory leaf = "";
+        try IERC20Metadata(reserve).symbol() returns (string memory sym) {
+            string memory market = _marketId(pool);
+            leaf = bytes(market).length == 0
+                ? string.concat(sym, " position")
+                : string.concat(sym, " position (", market, ")");
+        } catch {}
+        string[] memory out = new string[](2);
+        out[0] = "Market Instance";
+        out[1] = leaf;
+        return out;
     }
 
     /// @notice Resolves the instance's market id (for the display label) from its pool.

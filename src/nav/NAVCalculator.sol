@@ -359,7 +359,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         // protocolName() returns a per-adapter constant, and positions are grouped by adapter (PriceFeedLib
         // concatenates each adapter's positions contiguously), so cache the last adapter's name and only
         // re-staticcall when the adapter changes — one protocolName() call per distinct adapter, not per position.
-        // describePosition() varies by positionId, so it stays per-position.
+        // positionLabels() varies by positionId, so it stays per-position.
         address prevAdapter;
         string memory prevName;
         for (uint256 i = 0; i < len; i++) {
@@ -368,10 +368,9 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
                 prevName = _safeString(adapter, protocolNameCall);
                 prevAdapter = adapter;
             }
-            string memory label =
-                _safeString(adapter, abi.encodeCall(IPositionDescribable.describePosition, (pos[i].positionId)));
-            verbose[i] =
-                INAVCalculator.VerbosePosition({position: pos[i], protocolName: prevName, positionLabel: label});
+            string[] memory labels =
+                _safeStringArray(adapter, abi.encodeCall(IPositionDescribable.positionLabels, (pos[i].positionId)));
+            verbose[i] = INAVCalculator.VerbosePosition({position: pos[i], protocolName: prevName, labels: labels});
         }
     }
 
@@ -399,6 +398,27 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         uint256 padded = (strLen + 31) & ~uint256(31);
         if (ret.length < 64 + padded) return "";
         return abi.decode(ret, (string));
+    }
+
+    /// @notice Fail-open `string[]` read for `positionLabels`: staticcalls `target` and decodes a `string[]`,
+    ///         returning an empty array on a failed/short call or any decode failure rather than reverting the
+    ///         whole verbose read. A `string[]` has nested offsets/lengths that are impractical to validate
+    ///         inline (as `_safeString` does for a flat string), so the possibly-reverting `abi.decode` is
+    ///         isolated behind a try/catch — which needs an external call boundary (`decodeStringArray`).
+    function _safeStringArray(address target, bytes memory callData) private view returns (string[] memory) {
+        (bool ok, bytes memory ret) = target.staticcall(callData);
+        if (!ok || ret.length < 64) return new string[](0); // need at least offset(32) + length(32)
+        try this.decodeStringArray(ret) returns (string[] memory arr) {
+            return arr;
+        } catch {
+            return new string[](0);
+        }
+    }
+
+    /// @notice External ABI-decode shim so `_safeStringArray` can wrap a possibly-reverting `abi.decode` in
+    ///         try/catch (try/catch requires an external call). Not intended to be called directly.
+    function decodeStringArray(bytes calldata data) external pure returns (string[] memory) {
+        return abi.decode(data, (string[]));
     }
 
     /// @inheritdoc INAVCalculator

@@ -95,8 +95,10 @@ contract CapBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         return "Cap";
     }
 
-    function describePosition(bytes calldata) external pure returns (string memory) {
-        return "supply";
+    function positionLabels(bytes calldata) external pure returns (string[] memory) {
+        string[] memory out = new string[](1);
+        out[0] = "Supply";
+        return out;
     }
 
     //

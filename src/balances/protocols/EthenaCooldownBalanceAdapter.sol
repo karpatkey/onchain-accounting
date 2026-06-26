@@ -97,8 +97,10 @@ contract EthenaCooldownBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     }
 
     /// @inheritdoc IPositionDescribable
-    function describePosition(bytes calldata) external pure returns (string memory) {
-        return "Ethena unstaking cooldown (USDe)";
+    function positionLabels(bytes calldata) external pure returns (string[] memory) {
+        string[] memory out = new string[](1);
+        out[0] = "Unstaking Cooldown";
+        return out;
     }
 
     /// @inheritdoc IBalanceAdapter

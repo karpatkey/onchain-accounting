@@ -316,8 +316,18 @@ contract AuraRewardsMetaBalanceAdapter is MetaBalanceAdapter {
     // ─── IPositionDescribable ─────────────────────────────────────────────────
 
     /// @inheritdoc MetaBalanceAdapter
-    function describePosition(bytes calldata pid) external view override returns (string memory) {
-        if (pid.length < 32) return "";
+    /// @dev Returns `["Balancer LP", "TOKEN0/TOKEN1/… Aura"]`; leaf derived on-chain from pool-token symbols ("" on failure).
+    function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
+        if (pid.length < 32) return new string[](0);
+        string memory leaf = _leaf(pid);
+        string[] memory out = new string[](2);
+        out[0] = "Balancer LP";
+        out[1] = leaf;
+        return out;
+    }
+
+    /// @notice Derives the "TOKEN0/TOKEN1/… Aura" leaf from the rewarder's Balancer pool tokens ("" on failure).
+    function _leaf(bytes calldata pid) private view returns (string memory) {
         address auraRewards = abi.decode(pid, (address));
         IStablePool pool = _poolOf(auraRewards);
         if (address(pool) == address(0)) return "";

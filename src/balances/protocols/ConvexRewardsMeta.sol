@@ -262,8 +262,18 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceAdapter {
     // ─── IPositionDescribable ─────────────────────────────────────────────────
 
     /// @inheritdoc MetaBalanceAdapter
-    function describePosition(bytes calldata pid) external view override returns (string memory) {
-        if (pid.length < 32) return "";
+    /// @dev Returns `["Curve LP", "TOKEN0/TOKEN1/… Convex"]`; leaf derived on-chain from coin symbols ("" on failure).
+    function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
+        if (pid.length < 32) return new string[](0);
+        string memory leaf = _leaf(pid);
+        string[] memory out = new string[](2);
+        out[0] = "Curve LP";
+        out[1] = leaf;
+        return out;
+    }
+
+    /// @notice Derives the "TOKEN0/TOKEN1/… Convex" leaf from the rewarder's Curve pool coins ("" on failure).
+    function _leaf(bytes calldata pid) private view returns (string memory) {
         address rewarder = abi.decode(pid, (address));
         address lpToken = _lpTokenOf(rewarder);
         if (lpToken == address(0)) return "";

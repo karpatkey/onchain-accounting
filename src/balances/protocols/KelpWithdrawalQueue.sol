@@ -129,8 +129,10 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
         return "Kelp DAO";
     }
 
-    function describePosition(bytes calldata) external pure returns (string memory) {
-        return "rsETH withdrawal queue";
+    function positionLabels(bytes calldata) external pure returns (string[] memory) {
+        string[] memory out = new string[](1);
+        out[0] = "rsETH Withdrawal Queue";
+        return out;
     }
 
     /// @inheritdoc IBalanceAdapter

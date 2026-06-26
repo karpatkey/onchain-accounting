@@ -1,6 +1,6 @@
 {
   "protocol": "Stader ETHx Withdrawal Queue",
-  "adapter": "src/balances/protocols/StaderWithdrawalQueue.sol",
+  "adapter": "src/balances/protocols/StaderWithdrawalQueueBalanceAdapter.sol",
   "adapter_test": "test/balances/protocols/fork/StaderWithdrawalQueue.fork.t.sol",
   "test_contract": "StaderWithdrawalQueueBalanceOracleForkTest_Fresh",
   "chain": { "id": 1, "name": "mainnet" },

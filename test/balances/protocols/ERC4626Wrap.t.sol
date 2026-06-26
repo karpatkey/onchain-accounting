@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
-import {ERC4626WrapBalanceAdapter} from "src/balances/protocols/ERC4626Wrap.sol";
+import {ERC4626WrapBalanceAdapter} from "src/balances/protocols/ERC4626WrapBalanceAdapter.sol";
 import {MockBalances} from "test/mocks/MockBalances.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";

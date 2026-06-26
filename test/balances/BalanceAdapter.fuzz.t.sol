@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
+import {LibraryPins} from "script/utils/LibraryPins.sol";
 
 import {Test} from "forge-std/Test.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -22,7 +23,7 @@ contract BalanceAdapterFuzzTest is Test {
 
     function setUp() public {
         // Etch NAVRegistryLib (pre-linked external lib, DELEGATECALL'd by Balances) at its deterministic address.
-        vm.etch(0xecE7c2c96aa467FEb8c706bE03F0Ca23C715d04a, vm.deployCode("NAVRegistryLib.sol:NAVRegistryLib").code);
+        vm.etch(LibraryPins.NAV_REGISTRY_LIB, vm.deployCode("NAVRegistryLib.sol:NAVRegistryLib").code);
         balances = new BalancesHarness();
         erc20DefaultAdapter = balances.defaultAdapter();
         customAdapter = new Mock_CustomBalanceAdapter();

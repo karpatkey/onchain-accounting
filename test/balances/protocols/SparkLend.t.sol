@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTestBase.sol";
-import {SparkLendBalanceAdapter} from "src/balances/protocols/SparkLend.sol";
+import {SparkLendBalanceAdapter} from "src/balances/protocols/SparkLendBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 contract MockAavePoolAddressesProvider {

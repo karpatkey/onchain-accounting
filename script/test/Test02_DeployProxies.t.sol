@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
+import {LibraryPins} from "script/utils/LibraryPins.sol";
 
 import {TestEnvConfigurator} from "../../test/TestEnvConfigurator.sol";
 import {ConfigReader} from "../utils/ConfigReader.sol";
@@ -57,7 +58,7 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
 
         // NAVRegistryLib is pre-linked at this deterministic CREATE2 address (foundry.toml) and DELEGATECALL'd by
         // NAVCalculator/Balances. It is not deployed on the fork, so etch its runtime code there for proxy init/upgrade.
-        vm.etch(0xecE7c2c96aa467FEb8c706bE03F0Ca23C715d04a, vm.deployCode("NAVRegistryLib.sol:NAVRegistryLib").code);
+        vm.etch(LibraryPins.NAV_REGISTRY_LIB, vm.deployCode("NAVRegistryLib.sol:NAVRegistryLib").code);
     }
 
     /// @notice Test that different EOAs deploy proxies to the same addresses

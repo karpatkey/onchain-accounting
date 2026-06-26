@@ -5,9 +5,9 @@ import {
     AaveV3InstancesMetaBalanceAdapter,
     IAaveAddressesProviderSource,
     IAavePoolAddressesProvider
-} from "src/balances/protocols/AaveV3InstancesMeta.sol";
+} from "src/balances/protocols/AaveV3InstancesMetaBalanceAdapter.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
-import {IProtocolDataProvider} from "src/balances/protocols/SparkLend.sol";
+import {IProtocolDataProvider} from "src/balances/protocols/SparkLendBalanceAdapter.sol";
 
 /// @title Aave V2 Instances Meta Balance Adapter
 /// @author kpk

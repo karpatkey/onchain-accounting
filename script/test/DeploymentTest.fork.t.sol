@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
+import {LibraryPins} from "script/utils/LibraryPins.sol";
 
 import {TestEnvConfigurator} from "../../test/TestEnvConfigurator.sol";
 import {Create2Deployer} from "../../src/deployment/Create2Deployer.sol";
@@ -29,7 +30,7 @@ contract DeploymentTest is TestEnvConfigurator {
         // NAVRegistryLib is pre-linked at this deterministic CREATE2 address (foundry.toml) and DELEGATECALL'd by
         // NAVCalculator during initialize() (registerAsset for the native asset). Etch its runtime code there so the
         // proxy-init tests below find it (mirrors how the other NAVCalculator tests etch the pre-linked libraries).
-        vm.etch(0xecE7c2c96aa467FEb8c706bE03F0Ca23C715d04a, vm.deployCode("NAVRegistryLib.sol:NAVRegistryLib").code);
+        vm.etch(LibraryPins.NAV_REGISTRY_LIB, vm.deployCode("NAVRegistryLib.sol:NAVRegistryLib").code);
     }
 
     /// @notice Test Create2Deployer deployment

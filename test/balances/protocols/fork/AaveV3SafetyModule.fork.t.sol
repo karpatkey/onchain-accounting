@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
-import {AaveV3SafetyModuleBalanceAdapter, IStakeToken} from "src/balances/protocols/AaveV3SafetyModule.sol";
+import {AaveV3SafetyModuleBalanceAdapter, IStakeToken} from "src/balances/protocols/AaveV3SafetyModuleBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 

@@ -43,7 +43,7 @@ echo "    wrapper: $SGHO_WRAPPER"
 # Capture the full output non-fatally (under `set -e`, a piped grep no-match would otherwise abort
 # the script before the guard below runs and swallow the forge error).
 OUT=$(
-  forge create src/balances/protocols/ERC4626Wrap.sol:ERC4626WrapBalanceAdapter \
+  forge create src/balances/protocols/ERC4626WrapBalanceAdapter.sol:ERC4626WrapBalanceAdapter \
     --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" --broadcast \
     --constructor-args "$SGHO_WRAPPER" "$NAV" 2>&1
 ) || true

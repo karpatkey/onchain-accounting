@@ -1,6 +1,6 @@
 {
   "protocol": "sGHO (Aave Savings GHO)",
-  "adapter": "src/balances/protocols/ERC4626Wrap.sol",
+  "adapter": "src/balances/protocols/ERC4626WrapBalanceAdapter.sol",
   "adapter_test": "test/balances/protocols/fork/ERC4626Wrap.fork.t.sol",
   "test_contract": "ERC4626WrapBalanceOracleForkTest_sGHO_RealHolder_Fresh",
   "chain": { "id": 1, "name": "mainnet" },

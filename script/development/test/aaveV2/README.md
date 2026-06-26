@@ -2,7 +2,7 @@
 
 ## 1. Adapter under test
 
-`src/balances/protocols/AaveV2InstancesMeta.sol` — the immutable `AaveV2InstancesMetaBalanceAdapter` meta-adapter (ADR 0010): one adapter serves every Aave V2 instance, with the active instance set seeded on NAVCalculator at registration via `addMetaBalanceAdapter(adapter, instances)` and adjusted incrementally via `addMetaInstances`/`removeMetaInstances`. Constructor: `(protocolName, navCalculator)`. Identity is derived on-chain (positionId = `abi.encode(LendingPool, reserve)`; label = `<reserve symbol> position (<market id>)`).
+`src/balances/protocols/AaveV2InstancesMetaBalanceAdapter.sol` — the immutable `AaveV2InstancesMetaBalanceAdapter` meta-adapter (ADR 0010): one adapter serves every Aave V2 instance, with the active instance set seeded on NAVCalculator at registration via `addMetaBalanceAdapter(adapter, instances)` and adjusted incrementally via `addMetaInstances`/`removeMetaInstances`. Constructor: `(protocolName, navCalculator)`. Identity is derived on-chain (positionId = `abi.encode(LendingPool, reserve)`; label = `<reserve symbol> position (<market id>)`).
 
 ### Inheritance + per-chain scope (Phase 0)
 

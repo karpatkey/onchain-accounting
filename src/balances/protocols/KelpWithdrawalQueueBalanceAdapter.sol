@@ -19,7 +19,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      pending claim on the manager. This adapter surfaces it: for every asset Kelp supports it sums
 ///      the account's open requests (`expectedAssetAmount`) and emits one credit position per asset.
 ///      The supported-asset set is discovered at runtime from `lrtConfig().getSupportedAssetList()`
-///      rather than hardcoded, mirroring the dynamic-discovery pattern in `AaveUmbrella.sol`.
+///      rather than hardcoded, mirroring the dynamic-discovery pattern in `AaveUmbrellaBalanceAdapter.sol`.
 contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     //
     // Constants

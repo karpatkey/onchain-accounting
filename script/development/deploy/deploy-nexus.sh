@@ -79,7 +79,7 @@ fi
 # --- 2. adapter ------------------------------------------------------------------------------------------
 echo "--- deploy NexusStakedNxmBalanceAdapter"
 OUT=$(
-  forge create src/balances/protocols/NexusStakedNxm.sol:NexusStakedNxmBalanceAdapter \
+  forge create src/balances/protocols/NexusStakedNxmBalanceAdapter.sol:NexusStakedNxmBalanceAdapter \
     --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" --broadcast \
     --constructor-args "$STAKING_NFT" "$STAKING_VIEWER" "$NXM_TOKEN" "$NAV" 2>&1
 ) || true

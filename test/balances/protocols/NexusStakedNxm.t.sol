@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTestBase.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
-import {NexusStakedNxmBalanceAdapter} from "src/balances/protocols/NexusStakedNxm.sol";
+import {NexusStakedNxmBalanceAdapter} from "src/balances/protocols/NexusStakedNxmBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";

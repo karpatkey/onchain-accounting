@@ -1,6 +1,6 @@
 {
   "protocol": "PancakeSwap V3",
-  "adapter": "src/balances/protocols/pancakeswap/PancakeSwapV3PoolsMeta.sol",
+  "adapter": "src/balances/protocols/pancakeswap/PancakeSwapV3PoolsMetaBalanceAdapter.sol",
   "adapter_test": "test/balances/protocols/fork/PancakeSwapV3PoolsMeta.fork.t.sol",
   "test_contract": "PancakeSwapV3PoolsMetaParityForkTest",
   "companion_test": "test/balances/protocols/fork/PancakeSwapV3PoolsMeta.Base.fork.t.sol (PancakeSwapV3PoolsMetaParityForkTest_Base — closed position, no-revert only)",

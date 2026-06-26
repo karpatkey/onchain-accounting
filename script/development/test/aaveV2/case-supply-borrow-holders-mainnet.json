@@ -1,6 +1,6 @@
 {
   "protocol": "Aave V2",
-  "adapter": "src/balances/protocols/AaveV2InstancesMeta.sol",
+  "adapter": "src/balances/protocols/AaveV2InstancesMetaBalanceAdapter.sol",
   "adapter_test": "test/balances/protocols/fork/AaveV2InstancesMeta.fork.t.sol",
   "test_contract": "AaveV2InstancesMetaParityForkTest",
   "chain": { "id": 1, "name": "mainnet" },

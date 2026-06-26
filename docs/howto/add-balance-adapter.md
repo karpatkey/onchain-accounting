@@ -26,7 +26,7 @@ Before writing code, answer:
 
 If the protocol has **many fungible instances** (Morpho vaults/markets, Balancer pools/gauges, Aave instances, Uniswap V3/V2 pools), prefer a **meta-adapter** over one contract per instance:
 
-- **Per-instance** (the default skeleton below): pin the pool/market/vault address in the constructor. One deployed contract per instance. Right for singletons (DAI DSR, a withdrawal queue, SparkLend) or one-off adapters with unusual constructor args.
+- **Per-instance** (the default skeleton below): pin the pool/market/vault address in the constructor. One deployed contract per instance. Right for singletons (a savings vault, a withdrawal queue, SparkLend) or one-off adapters with unusual constructor args.
 - **Meta-adapter** (`IMetaBalanceAdapter` / `MetaBalanceAdapter`): one immutable contract for *all* instances of the protocol; the active set is configured on NAVCalculator via `addMetaInstances`/`removeMetaInstances` (a `MANAGER` TX), not by deploying more contracts. Extend `MetaBalanceAdapter` and implement `_instancePositions(account, instance, assetFilter)` + `_instanceAssets(instance)`. Optionally override `_instancePositionId(bytes32 instance)` to customise positionId encoding — the default is `abi.encode(_toAddress(instance))` (address-keyed protocols); override with `abi.encode(instance)` for raw-bytes32 coordinates (Morpho marketIds, Balancer V2 poolIds); adapters where positionId varies per leg (Aave V3/V2 per-reserve, Uniswap V3 per-NFT) skip the hook and build positionId inline. Adding a pool/vault later is a config TX, not a deploy. See `GearboxMarketsMeta.sol`, §6.1 of `src/balances/BALANCE_ADAPTERS.md`, and [ADR 0010](../decisions/0010-meta-balance-adapters.md). Meta-adapters still take **no admin functions** — the governed state lives on NAVCalculator.
 
 Today 21 meta-adapters cover all major multi-instance protocols (Aave V2/V3, Compound V3, Morpho Vaults/Markets, Euler V2, Gearbox, Balancer V2/V3 pools + gauges, Curve pools + gauges, Convex, Fluid fTokens + Vaults, StakeWise V3, Uniswap V2/V3, PancakeSwap V2/V3). For a new multi-instance protocol, a meta-adapter is almost always the right choice.
@@ -162,7 +162,7 @@ contract MyProtocolBalanceAdapter is IBalanceAdapter, IPositionDescribable {
 Reuse patterns from existing adapters:
 
 - **Per-instance, multi-asset (supply + borrow legs):** `src/balances/protocols/SparkLend.sol`.
-- **Per-instance, single-asset vault:** `src/balances/protocols/Cap.sol`, `src/balances/protocols/DaiDsr.sol`.
+- **Per-instance, single-asset vault:** `src/balances/protocols/Cap.sol`, `src/balances/protocols/ERC4626Wrap.sol`.
 - **Meta-adapter, single-leg:** `src/balances/protocols/GearboxMarketsMeta.sol`, `src/balances/protocols/MorphoVaultsMeta.sol`.
 - **Meta-adapter, multi-leg (LP + rewards):** `src/balances/protocols/curve/CurveGaugesMeta.sol`, `src/balances/protocols/balancer/BalancerV3GaugesMeta.sol`.
 

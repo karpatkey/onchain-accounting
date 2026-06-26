@@ -7,7 +7,6 @@ import {AaveV3InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV3In
 import {AaveV3SafetyModuleBalanceAdapter} from "src/balances/protocols/AaveV3SafetyModule.sol";
 import {CompoundV3CometsMetaBalanceAdapter} from "src/balances/protocols/CompoundV3CometsMeta.sol";
 import {MorphoMarketsMetaBalanceAdapter} from "src/balances/protocols/MorphoMarketsMeta.sol";
-import {DaiDsrBalanceAdapter} from "src/balances/protocols/DaiDsr.sol";
 import {sDAI_PriceOracle} from "src/prices/protocols/sDAI_Price.sol";
 import {sUSDS_PriceOracle} from "src/prices/protocols/sUSDS_Price.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -15,7 +14,7 @@ import {IPrices} from "src/prices/IPrices.sol";
 import {aa} from "test/helpers/AdapterArray.sol";
 
 contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
-    /// @notice Safe with Aave V3, Compound V3, Morpho, DSR positions on Ethereum Mainnet (same as base harness default)
+    /// @notice Safe with Aave V3, Compound V3, Morpho positions on Ethereum Mainnet (same as base harness default)
     address public constant MAINNET_SAFE = 0xCE74fa7A7dEe1d7640540bd752Bee784BE831b4F;
 
     // Native and wrapped ETH
@@ -53,7 +52,6 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
 
     // Maker DSR
     address public dsrManager = address(0x373238337Bfe1146fb49989fc222523f83081dDb);
-    address public dsr = address(0x373238337Bfe1146fb49989fc222523f83081dDb);
 
     /// @dev Pinned to a known-good block. Forking at latest is fragile: when a Chainlink feed
     ///      (or its proxy) gets replaced, the bare `latestRoundData()` call starts reverting
@@ -148,11 +146,9 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
         compoundV3Comet =
             new CompoundV3CometsMetaBalanceAdapter(compoundRewardContract, compound, "Compound V3", address(nav));
         morphoBlueAdapter = new MorphoMarketsMetaBalanceAdapter(morphoBlue, "Morpho", address(nav));
-        daiDsr = new DaiDsrBalanceAdapter(dai, dsr, address(nav));
 
         // Non-meta adapters register via the plain batch path.
         nav.addBalanceAdapters(aa(address(smAdapter)));
-        nav.addBalanceAdapters(aa(address(daiDsr)));
 
         // Meta-adapters register via addMetaBalanceAdapter (atomic register + seed). The Compound/Morpho metas
         // carry no instances in this test, so they register with an empty set (contribute nothing).

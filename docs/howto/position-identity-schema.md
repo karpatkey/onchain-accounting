@@ -54,7 +54,7 @@ decode `positionId` without runtime sniffing. Constants in `src/utils/ProtocolId
 **`positionId`** — `bytes`
 
 `abi.encode(...)` of the stable on-chain key for this position. Empty (`""`) for
-account-global positions (DAI DSR, withdrawal queues). The schema is uniquely determined by
+account-global positions (withdrawal queues). The schema is uniquely determined by
 `protocolId`; full table below.
 
 **`positionKind`** — `PositionKind`
@@ -173,21 +173,6 @@ PositionBalance({
     isDebt:        false,
     protocolId:    keccak256("cap"),
     positionId:    abi.encode(0x<cUSD>),   // Cap cUSD token address
-    positionKind:  PositionKind.Supplied
-})
-```
-
-#### `DaiDsr` — DAI Savings Rate
-
-```solidity
-// Account-global: positionId = "" (one DSR position per account).
-PositionBalance({
-    balanceAsset:  Asset({ asset: 0x6B17…1d0F, symbol: "DAI", decimals: 18 }),
-    balanceAdapter: 0x<DaiDsrAdapter>,
-    amount:        3_000e18,               // 3 000 DAI (chi-adjusted)
-    isDebt:        false,
-    protocolId:    keccak256("dai-dsr"),
-    positionId:    "",
     positionKind:  PositionKind.Supplied
 })
 ```
@@ -629,14 +614,6 @@ Scenario: 2 000 USDC deposited in Cap.
 |-------|--------|-------------|--------------|--------------|---------------------|
 | USDC  | 2 000  | +2 000      | `Supplied`   | `"Cap"`      | `"supply"`          |
 
-#### `DaiDsr` — DAI Savings Rate
-
-Scenario: 3 000 DAI earning DSR.
-
-| asset | amount | value (USD) | positionKind | protocolName | positionLabel       |
-|-------|--------|-------------|--------------|--------------|---------------------|
-| DAI   | 3 000  | +3 000      | `Supplied`   | `"MakerDAO"` | `"DAI savings rate"` |
-
 #### `ERC4626Wrap` — wrapper
 
 Scenario: waEthLidoGHO wrapper holding 1 000 GHO equivalent.
@@ -924,7 +901,6 @@ bytes32 protocolId = keccak256("aave-v3-lending");  // == ProtocolIds.AAVE_V3_LE
 | `stakewise-v3` | `(address vault)` |
 | `cap` | `(address vault)` |
 | `erc4626` | `(address vault)` |
-| `dai-dsr` | `""` (account-global) |
 | `merkl` | `(address rewardToken)` |
 | `stader-withdrawal` | `""` (account-global) |
 | `kelp-withdrawal` | `""` (account-global) |
@@ -932,7 +908,7 @@ bytes32 protocolId = keccak256("aave-v3-lending");  // == ProtocolIds.AAVE_V3_LE
 | `bridge-escrow` | `(address escrow, address token)` |
 
 **Empty positionId** means the position is account-global for that protocol — there is only ever
-one such position per account (e.g. DAI Savings Rate, Lido withdrawal queue). Note: `wallet`
+one such position per account (e.g. the Lido withdrawal queue). Note: `wallet`
 positions are NOT account-global — each uses `abi.encode(asset)` to identify the specific token.
 
 ---
@@ -1023,7 +999,6 @@ decodes use `AbiCoder.defaultAbiCoder()` from ethers.js. Protocol ID constants c
 | `UniswapV2PoolsMeta` / `PancakeSwapV2PoolsMeta` | `uniswap-v2` / `pancakeswap-v2` | `Supplied` |
 | `Cap` | `cap` | `Supplied` |
 | `ERC4626Wrap` | `erc4626` | `Supplied` |
-| `DaiDsr` | `dai-dsr` | `Supplied` |
 | `MerklRewards` | `merkl` | `Rewards` |
 | `LidoWithdrawalQueue` | `lido-withdrawal` | `Supplied` |
 | `StaderWithdrawalQueue` | `stader-withdrawal` | `Supplied` |
@@ -1262,13 +1237,6 @@ const [vault] = abi.decode(["address"], pos.positionId);
 const [wrapper] = abi.decode(["address"], pos.positionId);
 // wrapper — ERC4626 share token (e.g. waEthLidoGHO stata-token)
 // Supplied → convertToAssets(balanceOf(account)) in wrapper.asset()
-```
-
-#### DAI Savings Rate — `dai-dsr`
-
-```typescript
-// positionId = "" — account-global, one position per account
-// Supplied → DAI balance in the DSR (chi-adjusted)
 ```
 
 #### Merkl rewards — `merkl`

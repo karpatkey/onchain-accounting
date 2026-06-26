@@ -82,12 +82,12 @@ Defined in `INAVCalculator`. This is what every balance adapter returns.
 | `amount`        | `uint256`     | **Always positive.** Nominal amount in asset decimals. |
 | `isDebt`        | `bool`        | `true` = debt (subtract from NAV), `false` = credit (add to NAV). Canonical NAV-sign signal. |
 | `protocolId`    | `bytes32`     | `keccak256` of a canonical protocol slug (see `src/utils/ProtocolIds.sol`). Selects the `positionId` ABI-decode schema — one slug implies exactly one schema. |
-| `positionId`    | `bytes`       | `abi.encode(...)` of the position's stable key. Decode schema is determined by `protocolId`. e.g. for `aave-v3-lending`: `abi.encode(address pool, address reserve)`. Empty bytes for account-global positions (DAI DSR, Lido withdrawal queue, etc.). Full schema table: `src/utils/ProtocolIds.sol` and `docs/howto/position-identity-schema.md`. |
+| `positionId`    | `bytes`       | `abi.encode(...)` of the position's stable key. Decode schema is determined by `protocolId`. e.g. for `aave-v3-lending`: `abi.encode(address pool, address reserve)`. Empty bytes for account-global positions (Lido withdrawal queue, etc.). Full schema table: `src/utils/ProtocolIds.sol` and `docs/howto/position-identity-schema.md`. |
 | `positionKind`  | `PositionKind`| Semantic discriminator: `Wallet` / `Supplied` / `Borrowed` / `Collateral` / `Staking` / `Rewards` / `Fees`. See `src/utils/PositionKind.sol`. |
 
 The stable per-chain identity key for caching and reconciliation is `(chainId, protocolId, positionId, balanceAsset.asset, positionKind)`. `balanceAdapter` is excluded — redeploying an adapter doesn't change the position.
 
-**Credits-only adapters** (e.g. ERC20DefaultAdapter, DaiDsr, AaveV3SafetyModule) always report `isDebt: false`.
+**Credits-only adapters** (e.g. ERC20DefaultAdapter, AaveV3SafetyModule) always report `isDebt: false`.
 
 Pricing is **not** in this struct; NAVCalculator adds it when building full `Position` and NAV.
 
@@ -251,7 +251,7 @@ Meta-adapters extend `MetaBalanceAdapter`. The instance set is configured on NAV
 | **PancakeSwapV3PoolsMeta** | Subclass of `UniswapV3PoolsMeta` overriding `slot0` for PancakeSwap V3's `uint32 feeProtocol`. Own NonfungiblePositionManager. | `(positionManager, protocolName, navCalculator)` | `PancakeSwapV3PoolsMeta`; pools under `instances`. |
 | **PancakeSwapV2PoolsMeta** | Thin subclass of `UniswapV2PoolsMeta` (PancakeSwap V2 is a byte-for-byte V2 fork). | `(protocolName, navCalculator)` | `PancakeSwapV2PoolsMeta`; pairs under `instances`. |
 
-### 7.2 Per-instance singleton adapters (15)
+### 7.2 Per-instance singleton adapters (14)
 
 These adapters implement `IBalanceAdapter` directly (not `MetaBalanceAdapter`). Each is a single immutable deployment. Constructors take only protocol-specific addresses and `navCalculator`. Identity is expressed via a compile-time `bytes32` constant (`PROTOCOL_ID = ProtocolIds.<CONSTANT>`) and `positionId` computed at query time via `abi.encode(...)`.
 
@@ -261,7 +261,6 @@ These adapters implement `IBalanceAdapter` directly (not `MetaBalanceAdapter`). 
 | **AaveV3SafetyModule** | Aave V3 Safety Module stake tokens (stkAAVE, stkABPT, stkABPTv2, stkGHO). Stake-token set hardcoded at construction. Two legs per token: `Staking` (staking principal) + `Rewards` (claimable rewards). positionId = `abi.encode(stakeToken)`. | `(navCalculator)` | protocolId = `AAVE_V3_SAFETY_MODULE`. Mainnet only. |
 | **AaveUmbrella** | Aave Umbrella stake tokens discovered dynamically via `RewardsController.getAllAssets()`. Two legs per token: `Staking` + `Rewards` in the bare reserve. positionId = `abi.encode(stakeToken)`. Picks up new stake tokens via governance without redeploy. | `(rewardsController, navCalculator)` | protocolId = `AAVE_V3_UMBRELLA`. See `docs/decisions/0006-aave-umbrella-balance-adapter.md`. |
 | **Cap** | Cap protocol cUSD + stcUSD balances, aggregated and reported as USDC. positionId = `abi.encode(cUSD)`. | `(cUsd, stcUsd, usdc, navCalculator)` | protocolId = `CAP`. |
-| **DaiDsr** | DAI Savings Rate. positionId = `""` (account-global). `Supplied` kind. | `(dai, dsrManager, navCalculator)` | protocolId = `DAI_DSR`. |
 | **ERC4626Wrap** | Generic ERC-4626 wrapper: reports `convertToAssets(balanceOf(account))` denominated in `wrapper.asset()`. Constructor reverts if `asset()` is not NAV-registered. Used for Aave V3 stata-tokens (`waEth*` family), the Aave sGHO savings vault, and other thin ERC-4626 wrappers. positionId = `abi.encode(wrapper)`. `Supplied` kind. | `(wrapper, navCalculator)` | protocolId = `ERC4626`. One deployment per wrapper; config key prefix `ERC4626Wrap_` (in `contracts-deployment-config/balance-adapters/<chainId>.json` and `nav-config/balance-adapters/<chainId>.json`). |
 | **EthenaCooldownBalanceAdapter** | USDe owed to an account in the sUSDe unstaking cooldown. Reads the single per-account `UserCooldown` slot on `StakedUSDeV2` (`cooldowns(account)` → `{cooldownEnd, underlyingAmount}`) and reports `underlyingAmount` as one position denominated in USDe; non-zero only while an unstake is in flight. positionId = `""` (account-global). `Supplied` kind. | `(stakedUSDe, underlyingToken, navCalculator)` | protocolId = `ETHENA_COOLDOWN`. Mainnet only. |
 | **KelpWithdrawalQueue** | Kelp DAO rsETH exit queue (`LRTWithdrawalManager`). Sums each account's open requests' `expectedAssetAmount` per payout asset. Payout-asset set discovered at runtime. positionId = `""` (account-global). `Supplied` kind. | `(withdrawalManager, navCalculator)` | protocolId = `KELP_WITHDRAWAL`. Mainnet only. |

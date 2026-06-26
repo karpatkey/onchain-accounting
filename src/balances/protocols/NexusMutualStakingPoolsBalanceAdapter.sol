@@ -93,9 +93,9 @@ contract NexusMutualStakingPoolsBalanceAdapter is IBalanceAdapter, IPositionDesc
     // Balance computation
     //
 
-    /// @dev tokenIds owned by `account`, discovered by scanning `tokenInfo(1..min(totalSupply, cap))`.
-    ///      Never reverts: a failed `totalSupply`/`tokenInfo` read degrades to fewer ids (the adapter
-    ///      under-reports, never invents).
+    /// @dev tokenIds owned by `account`, discovered by scanning `tokenInfo` over `min(totalSupply, cap)..1`
+    ///      (descending — see the loop comment). Never reverts: a failed `totalSupply`/`tokenInfo` read
+    ///      degrades to fewer ids (the adapter under-reports, never invents).
     ///      `StakingNFT` exposes no owner→tokenIds view (not ERC721Enumerable), so discovery must scan —
     ///      but `balanceOf` gives the exact owned count, which lets us (1) skip the scan entirely for the
     ///      common non-staker case (`balanceOf == 0`), and (2) stop as soon as we've collected all the
@@ -122,8 +122,11 @@ contract NexusMutualStakingPoolsBalanceAdapter is IBalanceAdapter, IPositionDesc
 
         uint256[] memory found = new uint256[](target);
         uint256 n;
-        // StakingNFT ids are 1-indexed and contiguous (mint-only). Stop once all `target` are found.
-        for (uint256 id = 1; id <= scanTo && n < target; ++id) {
+        // StakingNFT ids are 1-indexed and contiguous (mint-only). Scan DESCENDING (newest first): ids are
+        // minted chronologically, so an account's positions cluster at recent (high) ids — combined with the
+        // `n == target` early-exit this reaches a typical staker's tokens in far fewer iterations. Order does
+        // not affect correctness (the full range is still covered in the worst case) or identity.
+        for (uint256 id = scanTo; id >= 1 && n < target; --id) {
             try INexusStakingNFT(STAKING_NFT).tokenInfo(id) returns (uint256, address owner) {
                 if (owner == account) found[n++] = id;
             } catch {}

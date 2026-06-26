@@ -229,6 +229,7 @@ contract NexusMutualStakingPoolsBalanceAdapterTest is BalanceAdapterTestBase {
     }
 
     /// @dev Two positions in two different pools → 4 legs, each keyed by its own (tokenId, poolId).
+    ///      Discovery scans descending (newest id first), so token 2 is emitted before token 1.
     function test_positions_twoPools_distinctPositionIds() public {
         nft.setTotalSupply(3);
         nft.setToken(1, 7, holder);
@@ -239,16 +240,16 @@ contract NexusMutualStakingPoolsBalanceAdapterTest is BalanceAdapterTestBase {
 
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
         assertEq(p.length, 4); // (Staking+Rewards) x 2 tokens
+        // token 2 → pool 9 (scanned first, descending)
+        assertEq(p[0].positionId, abi.encode(uint256(2), uint256(9)));
+        assertEq(p[1].positionId, abi.encode(uint256(2), uint256(9)));
+        assertEq(p[0].amount, 200);
+        assertEq(p[1].amount, 2);
         // token 1 → pool 7
-        assertEq(p[0].positionId, abi.encode(uint256(1), uint256(7)));
-        assertEq(p[1].positionId, abi.encode(uint256(1), uint256(7)));
-        assertEq(p[0].amount, 100);
-        assertEq(p[1].amount, 1);
-        // token 2 → pool 9
-        assertEq(p[2].positionId, abi.encode(uint256(2), uint256(9)));
-        assertEq(p[3].positionId, abi.encode(uint256(2), uint256(9)));
-        assertEq(p[2].amount, 200);
-        assertEq(p[3].amount, 2);
+        assertEq(p[2].positionId, abi.encode(uint256(1), uint256(7)));
+        assertEq(p[3].positionId, abi.encode(uint256(1), uint256(7)));
+        assertEq(p[2].amount, 100);
+        assertEq(p[3].amount, 1);
     }
 
     function test_positions_onlyStakingWhenNoRewards() public {

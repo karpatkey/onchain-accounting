@@ -8,7 +8,7 @@
 - **Why a view adapter and not the ADR-0014 agent-fed cache (spike, 2026-06-24):** `StakingNFT` (`0xcafea508…e97f`) is **not** per-owner-enumerable (`tokenOfOwnerByIndex` reverts) and `StakingViewer` (`0xcafea5c7…cF81F`) has **no** staker→tokenIds view (only manager methods + `get*(uint256[] tokenIds)`). That's the same NFT wall as ether.fi/StakeWise — **except** `StakingNFT` is **mint-only** (no `burn`) with a tiny, monotonic `totalSupply` (~280 globally), so live tokenIds are exactly `1..totalSupply`. The adapter therefore self-discovers by scanning `tokenInfo(id) -> (poolId, owner)` over that range — feasible on-chain (ether.fi's ~80k supply made this impossible). No off-chain feeder needed.
 
 ### Math branches
-- `_ownedTokenIds`: `balanceOf(account)` fast-path first — **`0` ⇒ skip the scan entirely** (the common non-staker case in a NAV fan-out), else collect exactly `min(balanceOf, MAX_POSITIONS_PER_ACCOUNT)` tokens and **stop early** once found (a reverting/absent `balanceOf` falls back to the plain bounded scan). Then `totalSupply()` read (try/catch → 0 ids); scan `tokenInfo(1..min(totalSupply, MAX_TOKEN_SCAN))`, collect `owner == account`; a reverting `tokenInfo` is caught and skipped. The worst-case full scan (only on `balanceOf` revert) is bounded by `MAX_TOKEN_SCAN` so the read loop can't OOG (NAV's try/catch wouldn't catch it). `StakingNFT` is not ERC721Enumerable (no owner→tokenIds view), which is why discovery must scan at all.
+- `_ownedTokenIds`: `balanceOf(account)` fast-path first — **`0` ⇒ skip the scan entirely** (the common non-staker case in a NAV fan-out), else collect exactly `min(balanceOf, MAX_POSITIONS_PER_ACCOUNT)` tokens and **stop early** once found (a reverting/absent `balanceOf` falls back to the plain bounded scan). Then `totalSupply()` read (try/catch → 0 ids); scan `tokenInfo` **descending** over `min(totalSupply, MAX_TOKEN_SCAN)..1` (newest ids first — positions cluster at recent ids, so the early-exit triggers sooner), collect `owner == account`; a reverting `tokenInfo` is caught and skipped. The worst-case full scan (only on `balanceOf` revert) is bounded by `MAX_TOKEN_SCAN` so the read loop can't OOG (NAV's try/catch wouldn't catch it). `StakingNFT` is not ERC721Enumerable (no owner→tokenIds view), which is why discovery must scan at all.
 - `getAdapterPositions`: `assetFilter` mismatch → empty; NXM not registered → empty; else `StakingViewer.getTokens(ids)` (try/catch → empty) → for each token emit `Staking = activeStake + expiredStake` and `Rewards = rewards` (zeros dropped), `positionId = abi.encode(tokenId, poolId)`.
 - `getAdapterBalances` / `getAdapterBalanceForAsset` (no-arg): summed NXM total via `getAggregatedTokens(ids)` (try/catch → 0) → `active + expired + rewards`.
 
@@ -25,7 +25,7 @@
 ```
 if StakingNFT.balanceOf(account) == 0: return []      // non-staker fast-path, no scan
 target = min(StakingNFT.balanceOf(account), MAX_POSITIONS_PER_ACCOUNT)   // (cap if balanceOf reverts)
-ids = first `target` of { id in 1..min(StakingNFT.totalSupply(), MAX_TOKEN_SCAN) : StakingNFT.tokenInfo(id).owner == account }
+ids = first `target`, scanning id = min(StakingNFT.totalSupply(), MAX_TOKEN_SCAN) down to 1, of { id : StakingNFT.tokenInfo(id).owner == account }
 tokens = StakingViewer.getTokens(ids)            // per-token { tokenId, poolId, activeStake, expiredStake, rewards }
 for each t in tokens:
   Staking leg = t.activeStake + t.expiredStake (NXM)   // if > 0

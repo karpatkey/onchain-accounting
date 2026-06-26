@@ -39,9 +39,8 @@ contract MockAssistedAdapter is AssistedBalanceAdapter {
         return new address[](0);
     }
 
-    function supportsInterface(bytes4 interfaceId) public view override(AssistedBalanceAdapter) returns (bool) {
-        return interfaceId == type(IBalanceAdapter).interfaceId || super.supportsInterface(interfaceId);
-    }
+    // No supportsInterface override needed — the base advertises IBalanceAdapter, so this minimal concrete
+    // (which implements no IPositionDescribable) registers as-is.
 }
 
 contract AssistedBalanceAdapterTest is Test {

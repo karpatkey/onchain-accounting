@@ -5,6 +5,7 @@ import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 import {IAssistedBalanceAdapter} from "src/balances/IAssistedBalanceAdapter.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
@@ -32,9 +33,13 @@ abstract contract AssistedBalanceAdapter is IAssistedBalanceAdapter, AccessContr
     }
 
     /// @inheritdoc IERC165
-    /// @dev Reconciles ERC-165 across {AccessControl} (which advertises {IAccessControl}/{IERC165}) and this family's
-    ///      marker. Concrete adapters override again to add `IBalanceAdapter` / `IPositionDescribable`, calling `super`.
+    /// @dev Reconciles ERC-165 across {AccessControl} (which advertises {IAccessControl}/{IERC165}) and this family.
+    ///      Advertises {IBalanceAdapter} too — every assisted adapter is one (via {IAssistedBalanceAdapter}), and the
+    ///      registry (`Balances.checkBalanceAdapterSupport`) requires it — so concrete adapters register without
+    ///      re-overriding. A concrete adapter that also implements {IPositionDescribable} overrides again to add it,
+    ///      calling `super`.
     function supportsInterface(bytes4 interfaceId) public view virtual override(AccessControl, IERC165) returns (bool) {
-        return interfaceId == type(IAssistedBalanceAdapter).interfaceId || super.supportsInterface(interfaceId);
+        return interfaceId == type(IAssistedBalanceAdapter).interfaceId
+            || interfaceId == type(IBalanceAdapter).interfaceId || super.supportsInterface(interfaceId);
     }
 }

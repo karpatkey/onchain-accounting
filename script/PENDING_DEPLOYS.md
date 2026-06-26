@@ -39,7 +39,7 @@ ETHx was the only custom feed in the *original incremental gap* (below). In the 
 
 ### 1.2 Pending balance adapters — Mainnet (chain 1)
 
-> **⚠ Pre-ADR-0010 listing.** The per-instance keys in this section (`CompoundV3_USDC`, `Fluid_fToken_*`, `Fluid_Vault_*`, `MorphoMarket_*`, `MorphoVault_*`, `GearboxMarket_*`, `StakeWiseV3Vault_*`, `AaveV2_Mainnet`, `UniswapV3_*`) reflect the original audit. They are **disabled** (`enabled: false`) in the current `contracts-deployment-config/balance-adapters/1.json` — the live deploy set replaced them with **meta-adapters** per [ADR 0010](../docs/decisions/0010-meta-balance-adapters.md): `CompoundV3CometsMeta`, `FluidFTokensMeta`, `FluidVaultsMeta`, `MorphoMarketsMeta`, `MorphoVaultsMeta`, `GearboxMarketsMeta`, `StakeWiseV3VaultsMeta`, `AaveV2InstancesMeta`, `UniswapV3PoolsMeta`, etc. (plus the still-plain `AaveUmbrella`, `AaveV3SafetyModule`, `Cap`, `SparkLend`, `ERC4626Wrap_*`, `*WithdrawalQueue`). The §6 audit script unions both deploy folders, so re-run it for the authoritative enabled set; the tables below are kept only as the family-level coverage map.
+> **⚠ Pre-ADR-0010 listing.** The per-instance keys in this section (`CompoundV3_USDC`, `Fluid_fToken_*`, `Fluid_Vault_*`, `MorphoMarket_*`, `MorphoVault_*`, `GearboxMarket_*`, `StakeWiseV3Vault_*`, `UniswapV3_*`) reflect the original audit. They are **disabled** (`enabled: false`) in the current `contracts-deployment-config/balance-adapters/1.json` — the live deploy set replaced them with **meta-adapters** per [ADR 0010](../docs/decisions/0010-meta-balance-adapters.md): `CompoundV3CometsMeta`, `FluidFTokensMeta`, `FluidVaultsMeta`, `MorphoMarketsMeta`, `MorphoVaultsMeta`, `GearboxMarketsMeta`, `StakeWiseV3VaultsMeta`, `UniswapV3PoolsMeta`, etc. (plus the still-plain `AaveUmbrella`, `AaveV3SafetyModule`, `Cap`, `SparkLend`, `ERC4626Wrap_*`, `*WithdrawalQueue`). The §6 audit script unions both deploy folders, so re-run it for the authoritative enabled set; the tables below are kept only as the family-level coverage map.
 
 Sorted by family.
 
@@ -68,13 +68,12 @@ Sorted by family.
 | `Fluid_Vault_weETH_wstETH` | |
 | `Fluid_Vault_sUSDe_USDC` | |
 
-**Aave family (3)**
+**Aave family (2)**
 
 | Key | Notes |
 |---|---|
 | `AaveV3SafetyModule` | stkGHO. In the NAV v2 redeploy this is deployed fresh (TBD) under this key; there is no longer a separate production `AaveV3SafetyModule_stkGHO` to reconcile against (all prior deployment evidence is wiped). Confirm the config uses the single `AaveV3SafetyModule` key before broadcasting. |
 | `AaveUmbrella` | Aave V4 Umbrella stake tokens (stkwaEthUSDC.v1, stkwaEthUSDT.v1, stkwaEthWETH.v1, stkGHO.v1). Discovers available stake tokens dynamically via `RewardsController.getAllAssets()`. |
-| `AaveV2_Mainnet` | aTokens only — V2 lending. `aave2` is now in `supportedDeBankProtocols` for chain 1 (DeBank reports stkAAVE under `aave2`); the comparison-report's `aave2` matcher pairs against both V2 lending and the Safety Module. Canonical `positionId` source: Pool address (not dataProvider). |
 
 **StakeWise V3 (3)**
 

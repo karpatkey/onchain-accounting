@@ -1,7 +1,4 @@
 {
-  "AaveV2_Mainnet": {
-    "enabled": false
-  },
   "AaveV3_Core": {
     "enabled": false
   },

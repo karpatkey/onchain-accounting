@@ -1,13 +1,4 @@
 {
-  "AaveV2_Mainnet": {
-    "enabled": false,
-    "constructor": {
-      "dataProvider": "0x057835Ad21a177dbdd3090bB1CAE03EaCF78Fc6d",
-      "protocol": "Aave V2",
-      "positionDetail": "{\"protocol\":\"Aave V2\",\"product\":\"Lending\",\"name\":\"Mainnet Market\"",
-      "positionId": "0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9"
-    }
-  },
   "AaveV3_Core": {
     "enabled": false,
     "constructor": {

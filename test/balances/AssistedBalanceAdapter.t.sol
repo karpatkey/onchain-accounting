@@ -125,5 +125,6 @@ contract AssistedBalanceAdapterTest is Test {
         assertTrue(adapter.supportsInterface(type(IAccessControl).interfaceId), "IAccessControl");
         assertTrue(adapter.supportsInterface(type(IERC165).interfaceId), "IERC165");
         assertFalse(adapter.supportsInterface(0xffffffff), "must reject 0xffffffff");
+        assertFalse(adapter.supportsInterface(0x12345678), "must reject an unrelated interfaceId");
     }
 }

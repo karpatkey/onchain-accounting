@@ -75,7 +75,7 @@ contract BalanceAdapterErrorTest is Test {
 
     function setUp() public {
         // Etch NAVRegistryLib (pre-linked external lib, DELEGATECALL'd by Balances) at its deterministic address.
-        vm.etch(0x2F1F6c17D64bE96F583D390be212aFCF8D0F102a, vm.deployCode("NAVRegistryLib.sol:NAVRegistryLib").code);
+        vm.etch(0xecE7c2c96aa467FEb8c706bE03F0Ca23C715d04a, vm.deployCode("NAVRegistryLib.sol:NAVRegistryLib").code);
         balances = new BalancesHarness();
         erc20DefaultAdapter = balances.defaultAdapter();
         revertingAdapter = new Mock_RevertingBalanceAdapter();

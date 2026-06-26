@@ -57,7 +57,7 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
 
         // NAVRegistryLib is pre-linked at this deterministic CREATE2 address (foundry.toml) and DELEGATECALL'd by
         // NAVCalculator/Balances. It is not deployed on the fork, so etch its runtime code there for proxy init/upgrade.
-        vm.etch(0x2F1F6c17D64bE96F583D390be212aFCF8D0F102a, vm.deployCode("NAVRegistryLib.sol:NAVRegistryLib").code);
+        vm.etch(0xecE7c2c96aa467FEb8c706bE03F0Ca23C715d04a, vm.deployCode("NAVRegistryLib.sol:NAVRegistryLib").code);
     }
 
     /// @notice Test that different EOAs deploy proxies to the same addresses

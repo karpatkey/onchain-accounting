@@ -251,7 +251,7 @@ Meta-adapters extend `MetaBalanceAdapter`. The instance set is configured on NAV
 | **PancakeSwapV3PoolsMeta** | Subclass of `UniswapV3PoolsMeta` overriding `slot0` for PancakeSwap V3's `uint32 feeProtocol`. Own NonfungiblePositionManager. | `(positionManager, protocolName, navCalculator)` | `PancakeSwapV3PoolsMeta`; pools under `instances`. |
 | **PancakeSwapV2PoolsMeta** | Thin subclass of `UniswapV2PoolsMeta` (PancakeSwap V2 is a byte-for-byte V2 fork). | `(protocolName, navCalculator)` | `PancakeSwapV2PoolsMeta`; pairs under `instances`. |
 
-### 7.2 Per-instance singleton adapters (15)
+### 7.2 Per-instance singleton adapters (14)
 
 These adapters implement `IBalanceAdapter` directly (not `MetaBalanceAdapter`). Each is a single immutable deployment. Constructors take only protocol-specific addresses and `navCalculator`. Identity is expressed via a compile-time `bytes32` constant (`PROTOCOL_ID = ProtocolIds.<CONSTANT>`) and `positionId` computed at query time via `abi.encode(...)`.
 

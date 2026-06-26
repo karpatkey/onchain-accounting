@@ -80,7 +80,7 @@ Emission-site counts across `src/balances/` (grep, 2026-06-26, post-assignment):
 | `PositionKind` | Emission sites | Emitting adapters |
 |---|---|---|
 | `Wallet` | 1 | ERC20DefaultAdapter only |
-| `Supplied` | 23 | lending supply, vaults, ERC-4626 wraps, savings, unstaked LP, withdrawal/exit queues, Euler vaults |
+| `Supplied` | 22 | lending supply, vaults, ERC-4626 wraps, unstaked LP, withdrawal/exit queues, Euler vaults |
 | `Borrowed` | 8 | Aave V3 (×2 sites), Spark, Compound V3, Morpho Markets, Fluid Vaults, StakeWise V3, Euler vaults |
 | `Collateral` | 6 | Aave V2/V3, Spark, Compound V3, Morpho Markets, Fluid Vaults, Euler vaults |
 | `Staking` | 8 | Safety Module, Umbrella, StakeWise V3, Nexus staked NXM, Balancer gauges ×2, Curve gauge, Convex |

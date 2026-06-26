@@ -33,8 +33,9 @@ import {LidoWithdrawalQueueBalanceAdapter} from "../../src/balances/protocols/Li
 import {EthenaCooldownBalanceAdapter} from "../../src/balances/protocols/EthenaCooldownBalanceAdapter.sol";
 import {MerklRewardsBalanceAdapter} from "../../src/balances/protocols/MerklRewards.sol";
 import {EtherFiWithdrawalsBalanceAdapter} from "../../src/balances/protocols/EtherFiWithdrawals.sol";
-import {NexusMutualStakingPoolsBalanceAdapter} from
-    "../../src/balances/protocols/NexusMutualStakingPoolsBalanceAdapter.sol";
+import {
+    NexusMutualStakingPoolsBalanceAdapter
+} from "../../src/balances/protocols/NexusMutualStakingPoolsBalanceAdapter.sol";
 import {StakeWiseExitQueueBalanceAdapter} from "../../src/balances/protocols/StakeWiseExitQueue.sol";
 import {UniswapV3PoolsMetaBalanceAdapter} from "../../src/balances/protocols/uniswap/UniswapV3PoolsMeta.sol";
 import {UniswapV2PoolsMetaBalanceAdapter} from "../../src/balances/protocols/uniswap/UniswapV2PoolsMeta.sol";

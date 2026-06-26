@@ -3,7 +3,10 @@ pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
 import {BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
-import {NexusStakedNxmBalanceAdapter, INexusStakingViewer} from "src/balances/protocols/NexusStakedNxmBalanceAdapter.sol";
+import {
+    NexusStakedNxmBalanceAdapter,
+    INexusStakingViewer
+} from "src/balances/protocols/NexusStakedNxmBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";

@@ -30,8 +30,12 @@ import {AaveV3SafetyModuleBalanceAdapter} from "src/balances/protocols/AaveV3Saf
 import {AaveUmbrellaBalanceAdapter} from "src/balances/protocols/AaveUmbrellaBalanceAdapter.sol";
 import {BalancerV3PoolsMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV3PoolsMetaBalanceAdapter.sol";
 import {BalancerV2PoolsMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV2PoolsMetaBalanceAdapter.sol";
-import {BalancerV2GaugesMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV2GaugesMetaBalanceAdapter.sol";
-import {BalancerV3GaugesMetaBalanceAdapter} from "src/balances/protocols/balancer/BalancerV3GaugesMetaBalanceAdapter.sol";
+import {
+    BalancerV2GaugesMetaBalanceAdapter
+} from "src/balances/protocols/balancer/BalancerV2GaugesMetaBalanceAdapter.sol";
+import {
+    BalancerV3GaugesMetaBalanceAdapter
+} from "src/balances/protocols/balancer/BalancerV3GaugesMetaBalanceAdapter.sol";
 import {MerklRewardsBalanceAdapter, IMerklDistributor} from "src/balances/protocols/MerklRewardsBalanceAdapter.sol";
 import {FluidFTokensMetaBalanceAdapter} from "src/balances/protocols/FluidFTokensMetaBalanceAdapter.sol";
 import {FluidVaultsMetaBalanceAdapter} from "src/balances/protocols/FluidVaultsMetaBalanceAdapter.sol";
@@ -39,8 +43,12 @@ import {StaderWithdrawalQueueBalanceAdapter} from "src/balances/protocols/Stader
 import {StakeWiseV3VaultsMetaBalanceAdapter} from "src/balances/protocols/StakeWiseV3VaultsMetaBalanceAdapter.sol";
 import {UniswapV3PoolsMetaBalanceAdapter} from "src/balances/protocols/uniswap/UniswapV3PoolsMetaBalanceAdapter.sol";
 import {UniswapV2PoolsMetaBalanceAdapter} from "src/balances/protocols/uniswap/UniswapV2PoolsMetaBalanceAdapter.sol";
-import {PancakeSwapV2PoolsMetaBalanceAdapter} from "src/balances/protocols/pancakeswap/PancakeSwapV2PoolsMetaBalanceAdapter.sol";
-import {PancakeSwapV3PoolsMetaBalanceAdapter} from "src/balances/protocols/pancakeswap/PancakeSwapV3PoolsMetaBalanceAdapter.sol";
+import {
+    PancakeSwapV2PoolsMetaBalanceAdapter
+} from "src/balances/protocols/pancakeswap/PancakeSwapV2PoolsMetaBalanceAdapter.sol";
+import {
+    PancakeSwapV3PoolsMetaBalanceAdapter
+} from "src/balances/protocols/pancakeswap/PancakeSwapV3PoolsMetaBalanceAdapter.sol";
 
 // Price feed adapters (Mainnet)
 import {sDAI_PriceOracle} from "src/prices/protocols/sDAI_Price.sol";

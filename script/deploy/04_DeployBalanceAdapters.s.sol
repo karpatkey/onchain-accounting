@@ -20,14 +20,26 @@ import {CurveGaugesMetaBalanceAdapter} from "../../src/balances/protocols/curve/
 import {ConvexRewardsMetaBalanceAdapter} from "../../src/balances/protocols/ConvexRewardsMetaBalanceAdapter.sol";
 import {AaveV3SafetyModuleBalanceAdapter} from "../../src/balances/protocols/AaveV3SafetyModuleBalanceAdapter.sol";
 import {AaveUmbrellaBalanceAdapter} from "../../src/balances/protocols/AaveUmbrellaBalanceAdapter.sol";
-import {BalancerV3PoolsMetaBalanceAdapter} from "../../src/balances/protocols/balancer/BalancerV3PoolsMetaBalanceAdapter.sol";
-import {BalancerV3GaugesMetaBalanceAdapter} from "../../src/balances/protocols/balancer/BalancerV3GaugesMetaBalanceAdapter.sol";
-import {BalancerV2PoolsMetaBalanceAdapter} from "../../src/balances/protocols/balancer/BalancerV2PoolsMetaBalanceAdapter.sol";
-import {BalancerV2GaugesMetaBalanceAdapter} from "../../src/balances/protocols/balancer/BalancerV2GaugesMetaBalanceAdapter.sol";
-import {StakeWiseV3VaultsMetaBalanceAdapter} from "../../src/balances/protocols/StakeWiseV3VaultsMetaBalanceAdapter.sol";
+import {
+    BalancerV3PoolsMetaBalanceAdapter
+} from "../../src/balances/protocols/balancer/BalancerV3PoolsMetaBalanceAdapter.sol";
+import {
+    BalancerV3GaugesMetaBalanceAdapter
+} from "../../src/balances/protocols/balancer/BalancerV3GaugesMetaBalanceAdapter.sol";
+import {
+    BalancerV2PoolsMetaBalanceAdapter
+} from "../../src/balances/protocols/balancer/BalancerV2PoolsMetaBalanceAdapter.sol";
+import {
+    BalancerV2GaugesMetaBalanceAdapter
+} from "../../src/balances/protocols/balancer/BalancerV2GaugesMetaBalanceAdapter.sol";
+import {
+    StakeWiseV3VaultsMetaBalanceAdapter
+} from "../../src/balances/protocols/StakeWiseV3VaultsMetaBalanceAdapter.sol";
 import {FluidFTokensMetaBalanceAdapter} from "../../src/balances/protocols/FluidFTokensMetaBalanceAdapter.sol";
 import {FluidVaultsMetaBalanceAdapter} from "../../src/balances/protocols/FluidVaultsMetaBalanceAdapter.sol";
-import {StaderWithdrawalQueueBalanceAdapter} from "../../src/balances/protocols/StaderWithdrawalQueueBalanceAdapter.sol";
+import {
+    StaderWithdrawalQueueBalanceAdapter
+} from "../../src/balances/protocols/StaderWithdrawalQueueBalanceAdapter.sol";
 import {KelpWithdrawalQueueBalanceAdapter} from "../../src/balances/protocols/KelpWithdrawalQueueBalanceAdapter.sol";
 import {LidoWithdrawalQueueBalanceAdapter} from "../../src/balances/protocols/LidoWithdrawalQueueBalanceAdapter.sol";
 import {EthenaCooldownBalanceAdapter} from "../../src/balances/protocols/EthenaCooldownBalanceAdapter.sol";
@@ -35,8 +47,12 @@ import {MerklRewardsBalanceAdapter} from "../../src/balances/protocols/MerklRewa
 import {EtherFiWithdrawalsBalanceAdapter} from "../../src/balances/protocols/EtherFiWithdrawalsBalanceAdapter.sol";
 import {NexusStakedNxmBalanceAdapter} from "../../src/balances/protocols/NexusStakedNxmBalanceAdapter.sol";
 import {StakeWiseExitQueueBalanceAdapter} from "../../src/balances/protocols/StakeWiseExitQueueBalanceAdapter.sol";
-import {UniswapV3PoolsMetaBalanceAdapter} from "../../src/balances/protocols/uniswap/UniswapV3PoolsMetaBalanceAdapter.sol";
-import {UniswapV2PoolsMetaBalanceAdapter} from "../../src/balances/protocols/uniswap/UniswapV2PoolsMetaBalanceAdapter.sol";
+import {
+    UniswapV3PoolsMetaBalanceAdapter
+} from "../../src/balances/protocols/uniswap/UniswapV3PoolsMetaBalanceAdapter.sol";
+import {
+    UniswapV2PoolsMetaBalanceAdapter
+} from "../../src/balances/protocols/uniswap/UniswapV2PoolsMetaBalanceAdapter.sol";
 import {
     PancakeSwapV2PoolsMetaBalanceAdapter
 } from "../../src/balances/protocols/pancakeswap/PancakeSwapV2PoolsMetaBalanceAdapter.sol";

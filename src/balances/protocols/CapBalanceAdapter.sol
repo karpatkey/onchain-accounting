@@ -162,7 +162,8 @@ contract CapBalanceAdapter is IBalanceAdapter, IPositionDescribable {
 
     /// @inheritdoc IBalanceAdapter
     /// @notice Returns up to two USDC-denominated positions — the cUSD leg and the stcUSD leg — skipping any
-    ///         leg with a zero balance. Both legs are `Supplied`; identity is the leg's token via positionId.
+    ///         leg with a zero balance. cUSD (held synthetic dollar) is `Supplied`; stcUSD (staked cUSD) is
+    ///         `Staking`. Identity is the leg's token via positionId.
     function getAdapterPositions(address account, address assetFilter)
         external
         view
@@ -201,7 +202,7 @@ contract CapBalanceAdapter is IBalanceAdapter, IPositionDescribable {
                 isDebt: false,
                 protocolId: PROTOCOL_ID,
                 positionId: abi.encode(address(STCUSD)),
-                positionKind: PositionKind.Supplied
+                positionKind: PositionKind.Staking
             });
         }
     }

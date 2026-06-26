@@ -187,7 +187,7 @@ PositionBalance({
     isDebt:        false,
     protocolId:    keccak256("cap"),
     positionId:    abi.encode(0x<stcUSD>), // Cap stcUSD token address
-    positionKind:  PositionKind.Supplied
+    positionKind:  PositionKind.Staking   // stcUSD is staked cUSD
 })
 ```
 
@@ -613,7 +613,7 @@ Scenario: 2 000 cUSD held + 1 000 USDC-worth of staked stcUSD.
 | asset | amount | value (USD) | positionKind | protocolName | positionLabels             |
 |-------|--------|-------------|--------------|--------------|----------------------------|
 | USDC  | 2 000  | +2 000      | `Supplied`   | `"Cap"`      | `["Stablecoin", "cUSD"]`   |
-| USDC  | 1 000  | +1 000      | `Supplied`   | `"Cap"`      | `["Savings", "stcUSD"]`    |
+| USDC  | 1 000  | +1 000      | `Staking`    | `"Cap"`      | `["Savings", "stcUSD"]`    |
 
 #### `ERC4626Wrap` — wrapper
 
@@ -989,7 +989,7 @@ decodes use `AbiCoder.defaultAbiCoder()` from ethers.js. Protocol ID constants c
 | `ConvexRewardsMeta` | `convex` | `Staking`, `Rewards` |
 | `UniswapV3PoolsMeta` / `PancakeSwapV3PoolsMeta` | `uniswap-v3` / `pancakeswap-v3` | `Supplied`, `Fees` |
 | `UniswapV2PoolsMeta` / `PancakeSwapV2PoolsMeta` | `uniswap-v2` / `pancakeswap-v2` | `Supplied` |
-| `Cap` | `cap` | `Supplied` |
+| `Cap` | `cap` | `Supplied` (cUSD), `Staking` (stcUSD) |
 | `ERC4626Wrap` | `erc4626` | `Supplied` |
 | `MerklRewards` | `merkl` | `Rewards` |
 | `NexusMutualStakingPoolsBalanceAdapter` | `nexus-mutual-staking` | `Staking`, `Rewards` |

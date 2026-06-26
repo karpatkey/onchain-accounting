@@ -84,55 +84,26 @@ contract VerifyEtherscan is BaseDeployScript {
         view
         returns (string memory path, bytes memory args)
     {
-        if (_startsWith(name, "AaveV3_")) {
-            path = "src/balances/protocols/AaveV3InstancesMeta.sol:AaveV3InstancesMetaBalanceAdapter";
-            address dataProvider = _parseAddr("balanceAdapters", name, "dataProvider", address(0));
-            string memory protocol = _readParam("balanceAdapters", name, "protocol");
-            address nav = _navOrDefault(navCalculator, name);
-            if (dataProvider == address(0) || nav == address(0)) return ("", "");
-            args = abi.encode(dataProvider, protocol, nav);
-            return (path, args);
-        }
-        if (_startsWith(name, "CompoundV3_")) {
-            path = "src/balances/protocols/CompoundV3Comet.sol:CompoundV3Comet";
-            address compoundRewards = _parseAddr("balanceAdapters", name, "compoundRewards", address(0));
-            address comet = _parseAddr("balanceAdapters", name, "comet", address(0));
-            address rewardToken = _parseAddr("balanceAdapters", name, "rewardToken", address(0));
-            string memory protocol = _readParam("balanceAdapters", name, "protocol");
-            address nav = _navOrDefault(navCalculator, name);
-            if (compoundRewards == address(0) || nav == address(0)) return ("", "");
-            args = abi.encode(compoundRewards, comet, rewardToken, protocol, nav);
-            return (path, args);
-        }
+        // AaveV3, CompoundV3 and Morpho are meta-adapters (AaveV3InstancesMeta / CompoundV3CometsMeta /
+        // MorphoMarketsMeta). Their per-instance keys (AaveV3_*, CompoundV3_*, MorphoBlue_*) are NAV instance
+        // coordinates, not standalone deployments, and the metas deploy under their own names — so they
+        // intentionally fall through to the "verify manually" notice (§8.1) rather than being built here. Only
+        // adapters with a 1:1 deploy-to-constructor mapping get an args builder below.
         if (_equals(name, "SparkLend") || _startsWith(name, "SparkLend_")) {
             path = "src/balances/protocols/SparkLend.sol:SparkLendBalanceAdapter";
             address dataProvider = _parseAddr("balanceAdapters", name, "dataProvider", address(0));
-            string memory protocol = _readParam("balanceAdapters", name, "protocol");
             address nav = _navOrDefault(navCalculator, name);
             if (dataProvider == address(0) || nav == address(0)) return ("", "");
-            args = abi.encode(dataProvider, protocol, nav);
-            return (path, args);
-        }
-        if (_startsWith(name, "MorphoBlue_")) {
-            path = "src/balances/protocols/MorphoMarketsMeta.sol:MorphoMarketsMetaBalanceAdapter";
-            address morpho = _parseAddr("balanceAdapters", name, "morpho", address(0));
-            string memory marketIdStr = _readParam("balanceAdapters", name, "marketId");
-            bytes32 marketId = bytes(marketIdStr).length == 0 ? bytes32(0) : vm.parseBytes32(marketIdStr);
-            string memory protocol = _readParam("balanceAdapters", name, "protocol");
-            address nav = _navOrDefault(navCalculator, name);
-            if (morpho == address(0) || nav == address(0)) return ("", "");
-            args = abi.encode(morpho, marketId, protocol, nav);
+            args = abi.encode(dataProvider, nav); // SparkLendBalanceAdapter(dataProvider, navCalculator)
             return (path, args);
         }
         if (_equals(name, "DaiDsr")) {
             path = "src/balances/protocols/DaiDsr.sol:DaiDsrBalanceAdapter";
             address dai = _parseAddr("balanceAdapters", name, "dai", address(0));
             address dsrManager = _parseAddr("balanceAdapters", name, "dsrManager", address(0));
-            string memory protocol = _readParam("balanceAdapters", name, "protocol");
-            string memory positionDetail = _readParam("balanceAdapters", name, "positionDetail");
             address nav = _navOrDefault(navCalculator, name);
             if (dai == address(0) || nav == address(0)) return ("", "");
-            args = abi.encode(dai, dsrManager, protocol, positionDetail, nav);
+            args = abi.encode(dai, dsrManager, nav); // DaiDsrBalanceAdapter(dai, dsrManager, navCalculator)
             return (path, args);
         }
         if (_equals(name, "ERC20Default") || _startsWith(name, "ERC20Default_")) {

@@ -36,7 +36,6 @@ Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, pos
 | ERC4626Wrap | `erc4626` | `abi.encode(address wrapper)` | wrapper shares (`convertToAssets`) | `Supplied` | false | `wrapper.asset()` |
 | Cap | `cap` | `abi.encode(address cUSD)` | cUSD + stcUSD combined | `Supplied` | false | USDC |
 | DaiDsr | `dai-dsr` | `""` (empty — account-global) | DSR deposit | `Supplied` | false | DAI |
-| SkySavingsUsds | `sky-savings` | `abi.encode(address sUSDS)` | sUSDS shares | `Supplied` | false | USDS |
 | AaveV3SafetyModule | `aave-v3-safety-module` | `abi.encode(address stakeToken)` | staked principal (per stake token) | `Staking` | false | staked token (AAVE/GHO/ABPT…) |
 | | | | claimable SM rewards | `Rewards` | false | AAVE |
 | AaveUmbrella | `aave-v3-umbrella` | `abi.encode(address stakeToken)` | staked principal | `Staking` | false | bare reserve |
@@ -81,7 +80,7 @@ Emission-site counts across `src/balances/` (grep, 2026-06-20, post-assignment):
 | `PositionKind` | Emission sites | Emitting adapters |
 |---|---|---|
 | `Wallet` | 1 | ERC20DefaultAdapter only |
-| `Supplied` | 21 | lending supply, vaults, ERC-4626 wraps, savings, unstaked LP, withdrawal queues, Euler vaults |
+| `Supplied` | 20 | lending supply, vaults, ERC-4626 wraps, savings, unstaked LP, withdrawal queues, Euler vaults |
 | `Borrowed` | 7 | Aave V2/V3, Spark, Compound V3, Morpho Markets, Fluid Vaults, StakeWise V3, Euler vaults |
 | `Collateral` | 6 | Aave V2/V3, Spark, Compound V3, Morpho Markets, Fluid Vaults, Euler vaults |
 | `Staking` | 9 | Safety Module, Umbrella, StakeWise V3, Balancer gauges ×2, Curve gauge, Convex, Aura (×2 sites) |

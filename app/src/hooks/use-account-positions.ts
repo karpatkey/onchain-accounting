@@ -103,7 +103,7 @@ export function useAccountPositions(account: `0x${string}` | undefined): { chain
 
   // Phase 2 — display labels from the adapter's IPositionDescribable. One protocolName() per (chain, oracle)
   // and one positionLabels() per distinct (chain, oracle, positionId). Multi-leg positions (e.g. Supply + Fees)
-  // share a positionId, so de-duping keeps the describe call-count proportional to logical positions, not legs.
+  // share a positionId, so de-duping keeps the positionLabels call-count proportional to logical positions, not legs.
   const describeKey = (chainId: number, oracle: string, positionId: string) =>
     `${chainId}:${oracle.toLowerCase()}:${positionId}`
   const nameContracts: { chainId: number; address: `0x${string}`; abi: typeof describableAbi; functionName: 'protocolName'; key: string }[] = []

@@ -223,7 +223,7 @@ Meta-adapters derive labels on-chain from live state (ERC20 symbols, vault names
 
 ## 7. Implemented adapters
 
-### 7.1 Meta-adapters (22)
+### 7.1 Meta-adapters (21)
 
 Meta-adapters extend `MetaBalanceAdapter`. The instance set is configured on NAVCalculator via `addMetaInstances`/`removeMetaInstances`.
 

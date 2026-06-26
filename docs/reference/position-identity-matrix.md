@@ -1,6 +1,6 @@
 # Position-identity matrix — every leg every balance adapter can emit
 
-Verified against `src/balances/` emission code on 2026-06-20 (includes the `PositionKind.Staking` assignment pass and the Euler V2 vaults meta-adapter). Companion to [`docs/howto/position-identity-schema.md`](../howto/position-identity-schema.md), which defines the schema; this file enumerates the **actual value space** each adapter populates.
+Verified against `src/balances/` emission code on 2026-06-26 (includes the Nexus, Ethena cooldown, ether.fi and StakeWise V3 exit-queue adapters; Aura removed). Companion to [`docs/howto/position-identity-schema.md`](../howto/position-identity-schema.md), which defines the schema; this file enumerates the **actual value space** each adapter populates.
 
 ## How a position is identified
 
@@ -67,6 +67,11 @@ Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, pos
 | StaderWithdrawalQueue | `stader-withdrawal` | `""` (empty — account-global) | ETH owed from open requests | `Supplied` | false | WETH |
 | KelpWithdrawalQueue | `kelp-withdrawal` | `""` (empty — account-global) | owed per payout asset | `Supplied` | false | each supported asset |
 | LidoWithdrawalQueue | `lido-withdrawal` | `""` (empty — account-global) | claimable + pending ETH | `Supplied` | false | native ETH |
+| EtherFiWithdrawals | `etherfi-withdrawal` | `""` (empty — account-global) | in-flight withdrawal-queue ETH | `Supplied` | false | native ETH |
+| StakeWiseExitQueue | `stakewise-exit` | `""` (empty — account-global) | in-flight exit-queue assets | `Supplied` | false | native ETH |
+| EthenaCooldownBalanceAdapter | `ethena-cooldown` | `""` (empty — account-global) | USDe in the sUSDe unstaking cooldown | `Supplied` | false | USDe |
+| NexusStakedNxm | `nexus-staking` | `""` (empty — account-global) | active + expired staked NXM | `Staking` | false | NXM |
+| | | | claimable rewards | `Rewards` | false | NXM |
 | MerklRewards | `merkl` | `abi.encode(address rewardToken)` | unclaimed rewards per token | `Rewards` | false | reward token |
 
 ## PositionKind usage census

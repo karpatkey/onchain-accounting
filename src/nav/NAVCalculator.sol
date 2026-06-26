@@ -374,6 +374,11 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         }
     }
 
+    /// @notice Gas stipend for the `decodeStringArray` shim (see `_safeStringArray`). Generous for any legitimate
+    ///         label array (a handful of short strings decode in well under this) yet small enough that a
+    ///         pathological declared length OOGs within a bounded budget instead of starving the verbose read.
+    uint256 private constant _LABEL_DECODE_GAS = 1_000_000;
+
     /// @notice Fully fail-open string read: staticcalls `target` and returns the decoded string only when the
     ///         returndata is a well-formed ABI string, otherwise "".
     /// @dev A plain `try/catch` only catches a reverting call — it does NOT catch a *successful* call whose
@@ -405,10 +410,15 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     ///         whole verbose read. A `string[]` has nested offsets/lengths that are impractical to validate
     ///         inline (as `_safeString` does for a flat string), so the possibly-reverting `abi.decode` is
     ///         isolated behind a try/catch — which needs an external call boundary (`decodeStringArray`).
+    /// @dev The decode shim is called with a bounded gas stipend (`_LABEL_DECODE_GAS`) so a buggy/malicious
+    ///      adapter cannot defeat the fail-open guarantee: returndata declaring a huge `string[]` length would
+    ///      force unbounded memory expansion in `abi.decode` and burn ~63/64 of the remaining gas before
+    ///      reverting, starving the rest of the verbose read. Capping the stipend contains that to one position
+    ///      (the catch then returns `[]`). Legitimate label arrays are tiny (≪ the cap).
     function _safeStringArray(address target, bytes memory callData) private view returns (string[] memory) {
         (bool ok, bytes memory ret) = target.staticcall(callData);
         if (!ok || ret.length < 64) return new string[](0); // need at least offset(32) + length(32)
-        try this.decodeStringArray(ret) returns (string[] memory arr) {
+        try this.decodeStringArray{gas: _LABEL_DECODE_GAS}(ret) returns (string[] memory arr) {
             return arr;
         } catch {
             return new string[](0);

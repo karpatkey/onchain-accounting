@@ -83,7 +83,7 @@ contract Enum {
 }
 
 /// @title      Helper contract that can execute and approve Safe transactions
-/// @author KPK
+/// @author     KPK
 /// @notice     Deploy this contract as a temporary owner of a Safe.
 ///             It can dispatch transactions (using its smart-contract
 ///             signature) and then remove itself from the owner list.

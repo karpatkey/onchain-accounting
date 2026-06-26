@@ -1369,12 +1369,14 @@ The typed fields are for machines. For human-readable display, two mechanisms ex
 ```solidity
 interface IPositionDescribable {
     function protocolName() external view returns (string memory); // "Aave V3", "Morpho", …
-    function describePosition(bytes calldata positionId) external view returns (string memory); // "USDC supply"
+    // Ordered hierarchy below the protocol, leaf last, e.g. ["Market", "wstETH/USDC"].
+    function positionLabels(bytes calldata positionId) external view returns (string[] memory);
 }
 ```
 
-All adapters implement this. Meta-adapters derive the label on-chain from live state (ERC20
-symbols, vault names, pool composition). Per-instance adapters return static strings.
+All adapters implement this. Meta-adapters derive the hierarchy on-chain from live state (ERC20
+symbols, vault names, pool composition) and return `[category, …leaf]`. Per-instance adapters return
+a fixed array.
 
 ### Verbose read methods — on `NAVCalculator`
 
@@ -1384,7 +1386,7 @@ symbols, vault names, pool composition). Per-instance adapters return static str
 struct VerbosePosition {
     Position position;     // full enriched position (typed identity + pricing)
     string   protocolName; // e.g. "Curve", "Morpho"
-    string   positionLabel; // e.g. "USDC/crvUSD gauge", "kpk ETH Prime V1 vault"
+    string[] labels;       // ordered hierarchy below protocol, leaf last, e.g. ["Staking Gauge", "USDC/crvUSD"]
 }
 
 navCalculator.getAccountPositionsVerbose(account, quoteAsset)
@@ -1392,9 +1394,10 @@ navCalculator.getAccountPositionsForAssetVerbose(account, asset, quoteAsset)
 navCalculator.getAccountNavVerbose(account, quoteAsset)  // NAV + all verbose positions in one call
 ```
 
-Labels come from each adapter's `IPositionDescribable` implementation. If an adapter doesn't
-implement it, both fields are empty strings. **Never use these strings for identity, indexing,
-or reconciliation** — they are display-only and may change as labels evolve.
+Labels come from each adapter's `IPositionDescribable` implementation; the full breadcrumb is
+`[protocolName, ...labels]`. If an adapter doesn't implement it, `protocolName` is empty and
+`labels` is an empty array. **Never use these strings for identity, indexing, or reconciliation**
+— they are display-only and may change as labels evolve.
 
 ---
 
@@ -1417,8 +1420,9 @@ When implementing a new balance adapter:
    - ERC20 wallet balance → `Wallet`
 4. Implement `IPositionDescribable` to provide human-readable labels:
    - `protocolName()` — static `pure` string for per-instance adapters; same constant for meta-adapters
-   - `describePosition(bytes positionId)` — derive on-chain for meta-adapters (decode positionId,
-     read token symbols); static string for per-instance adapters
+   - `positionLabels(bytes positionId) → string[]` — ordered hierarchy below protocol, leaf last. Derive
+     on-chain for meta-adapters (decode positionId, read token symbols) returning `[category, …leaf]`; a
+     fixed array for per-instance adapters
 5. Update this table above and the `ProtocolIds` schema comment.
 
 See [`howto/add-balance-adapter.md`](add-balance-adapter.md) for the full end-to-end recipe.

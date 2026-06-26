@@ -118,7 +118,7 @@ Adapters should use the same `Asset` notion as the rest of the system; protocol 
 ### 3.4 Position and NAV (enriched, from NAVCalculator)
 
 - **Position:** Like `PositionBalance` plus `quoteAsset`, `value` (signed), `price`, `priceDecimals`, `stale`. This is the enriched form returned by NAVCalculator for per-position views.
-- **VerbosePosition:** Wraps `Position` with `protocolName` and `positionLabel` strings sourced from the adapter's `IPositionDescribable` implementation. For display only — never use for identity or indexing.
+- **VerbosePosition:** Wraps `Position` with a `protocolName` string and a `labels` **string array** (`positionLabels`, an ordered hierarchy below the protocol, leaf last — e.g. `["Market", "wstETH/USDC"]`), sourced from the adapter's `IPositionDescribable` implementation. The full breadcrumb is `[protocolName, ...labels]`. For display only — never use for identity or indexing.
 - **NAV:** Total `value` in `quoteAsset`, `timestamp`, list of assets with stale prices, sequencer-down flag.
 
 For building adapters, the only required output is **PositionBalance**; Position and NAV are computed by NAVCalculator.
@@ -211,13 +211,14 @@ All adapters implement `IPositionDescribable`:
 ```solidity
 interface IPositionDescribable {
     function protocolName() external view returns (string memory); // e.g. "Aave V3", "Morpho"
-    function describePosition(bytes calldata positionId) external view returns (string memory); // e.g. "USDC supply"
+    // Ordered hierarchy below the protocol, leaf last, e.g. ["Market", "wstETH/USDC"].
+    function positionLabels(bytes calldata positionId) external view returns (string[] memory);
 }
 ```
 
-The verbose read methods on `NAVCalculator` (`getAccountPositionsVerbose`, `getAccountPositionsForAssetVerbose`, `getAccountNavVerbose`) call these via a fail-open staticcall and bundle the strings into `VerbosePosition`. **These strings are for display only — never use them for identity, indexing, or reconciliation.** Use the typed `protocolId`, `positionId`, `positionKind` fields for those purposes.
+The verbose read methods on `NAVCalculator` (`getAccountPositionsVerbose`, `getAccountPositionsForAssetVerbose`, `getAccountNavVerbose`) call these via a fail-open staticcall and bundle them into `VerbosePosition` (`protocolName` + the `labels` array). The full breadcrumb is `[protocolName, ...labels]`. **These strings are for display only — never use them for identity, indexing, or reconciliation.** Use the typed `protocolId`, `positionId`, `positionKind` fields for those purposes.
 
-Meta-adapters derive labels on-chain from live state (ERC20 symbols, vault names, pool composition). Per-instance adapters return static strings.
+Meta-adapters derive the label hierarchy on-chain from live state (ERC20 symbols, vault names, pool composition); each returns `[category, …leaf]`. Per-instance adapters return a fixed array.
 
 ---
 
@@ -309,9 +310,9 @@ Protocol adapters typically take **NAVCalculator** in the constructor to read th
 
 7. Implement **`supportsInterface(bytes4)`**: return `true` for `type(IBalanceAdapter).interfaceId` and `type(IERC165).interfaceId`.
 
-8. Implement **`IPositionDescribable`** (`protocolName()` and `describePosition(bytes)`):
-   - Per-instance adapters return `pure` static strings.
-   - Meta-adapters decode `positionId` and read token symbols on-chain.
+8. Implement **`IPositionDescribable`** (`protocolName()` and `positionLabels(bytes) → string[]`):
+   - Per-instance adapters return a `pure` fixed array (e.g. `["Safety Module"]`).
+   - Meta-adapters decode `positionId`, read token symbols on-chain, and return `[category, …leaf]`.
 
 ### 8.2 PositionKind assignment
 
@@ -375,7 +376,10 @@ contract MyProtocolBalanceAdapter is IBalanceAdapter, IPositionDescribable {
 
     // IPositionDescribable
     function protocolName() external pure returns (string memory) { return "My Protocol"; }
-    function describePosition(bytes calldata) external pure returns (string memory) { return "supply"; }
+    function positionLabels(bytes calldata) external pure returns (string[] memory out) {
+        out = new string[](1);
+        out[0] = "Supply";
+    }
 
     // IBalanceAdapter — simple getters
     function getAdapterBalances(address account)

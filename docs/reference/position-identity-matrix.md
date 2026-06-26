@@ -1,6 +1,6 @@
 # Position-identity matrix — every leg every balance adapter can emit
 
-Verified against `src/balances/` emission code on 2026-06-20 (includes the `PositionKind.Staking` assignment pass and the Euler V2 vaults meta-adapter). Companion to [`docs/howto/position-identity-schema.md`](../howto/position-identity-schema.md), which defines the schema; this file enumerates the **actual value space** each adapter populates.
+Verified against `src/balances/` emission code on 2026-06-26 (includes the Nexus, Ethena cooldown, ether.fi and StakeWise V3 exit-queue adapters; Aura removed). Companion to [`docs/howto/position-identity-schema.md`](../howto/position-identity-schema.md), which defines the schema; this file enumerates the **actual value space** each adapter populates.
 
 ## How a position is identified
 
@@ -35,7 +35,6 @@ Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, pos
 | | | | core-eVault debt (`debtOf`) | `Borrowed` | true | `vault.asset()` |
 | ERC4626Wrap | `erc4626` | `abi.encode(address wrapper)` | wrapper shares (`convertToAssets`) | `Supplied` | false | `wrapper.asset()` |
 | Cap | `cap` | `abi.encode(address cUSD)` | cUSD + stcUSD combined | `Supplied` | false | USDC |
-| SkySavingsUsds | `sky-savings` | `abi.encode(address sUSDS)` | sUSDS shares | `Supplied` | false | USDS |
 | AaveV3SafetyModule | `aave-v3-safety-module` | `abi.encode(address stakeToken)` | staked principal (per stake token) | `Staking` | false | staked token (AAVE/GHO/ABPT…) |
 | | | | claimable SM rewards | `Rewards` | false | AAVE |
 | AaveUmbrella | `aave-v3-umbrella` | `abi.encode(address stakeToken)` | staked principal | `Staking` | false | bare reserve |
@@ -67,6 +66,11 @@ Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, pos
 | StaderWithdrawalQueue | `stader-withdrawal` | `""` (empty — account-global) | ETH owed from open requests | `Supplied` | false | WETH |
 | KelpWithdrawalQueue | `kelp-withdrawal` | `""` (empty — account-global) | owed per payout asset | `Supplied` | false | each supported asset |
 | LidoWithdrawalQueue | `lido-withdrawal` | `""` (empty — account-global) | claimable + pending ETH | `Supplied` | false | native ETH |
+| EtherFiWithdrawals | `etherfi-withdrawal` | `""` (empty — account-global) | in-flight withdrawal-queue ETH | `Supplied` | false | native ETH |
+| StakeWiseExitQueue | `stakewise-exit` | `""` (empty — account-global) | in-flight exit-queue assets | `Supplied` | false | native ETH |
+| EthenaCooldownBalanceAdapter | `ethena-cooldown` | `""` (empty — account-global) | USDe in the sUSDe unstaking cooldown | `Supplied` | false | USDe |
+| NexusStakedNxm | `nexus-staking` | `""` (empty — account-global) | active + expired staked NXM | `Staking` | false | NXM |
+| | | | claimable rewards | `Rewards` | false | NXM |
 | MerklRewards | `merkl` | `abi.encode(address rewardToken)` | unclaimed rewards per token | `Rewards` | false | reward token |
 
 ## PositionKind usage census
@@ -76,8 +80,8 @@ Emission-site counts across `src/balances/` (grep, 2026-06-26, post-assignment):
 | `PositionKind` | Emission sites | Emitting adapters |
 |---|---|---|
 | `Wallet` | 1 | ERC20DefaultAdapter only |
-| `Supplied` | 21 | lending supply, vaults, ERC-4626 wraps, savings, unstaked LP, withdrawal queues, Euler vaults |
-| `Borrowed` | 7 | Aave V2/V3, Spark, Compound V3, Morpho Markets, Fluid Vaults, StakeWise V3, Euler vaults |
+| `Supplied` | 23 | lending supply, vaults, ERC-4626 wraps, savings, unstaked LP, withdrawal/exit queues, Euler vaults |
+| `Borrowed` | 8 | Aave V3 (×2 sites), Spark, Compound V3, Morpho Markets, Fluid Vaults, StakeWise V3, Euler vaults |
 | `Collateral` | 6 | Aave V2/V3, Spark, Compound V3, Morpho Markets, Fluid Vaults, Euler vaults |
 | `Staking` | 8 | Safety Module, Umbrella, StakeWise V3, Nexus staked NXM, Balancer gauges ×2, Curve gauge, Convex |
 | `Rewards` | 12 | SM, Umbrella, Nexus staked NXM, Compound V3, Balancer gauges ×2, Curve gauge, Convex, Merkl |
@@ -85,9 +89,9 @@ Emission-site counts across `src/balances/` (grep, 2026-06-26, post-assignment):
 
 ## Other observable invariants
 
-- `isDebt == true` occurs **only** with `positionKind == Borrowed` at all 7 current emission sites. This correlation is observational: `isDebt` remains the canonical NAV-sign signal (per `PositionKind.sol`), so consumers should read it directly rather than infer sign from `positionKind`.
+- `isDebt == true` occurs **only** with `positionKind == Borrowed` at all 8 current emission sites. This correlation is observational: `isDebt` remains the canonical NAV-sign signal (per `PositionKind.sol`), so consumers should read it directly rather than infer sign from `positionKind`.
 - `Collateral` and `Staking` are always `isDebt == false`.
-- Empty `positionId` (`""`) marks account-global positions: the three withdrawal queues. All other adapters encode at least one address (or `bytes32` poolId/marketId; Uniswap/PancakeSwap V3 add `uint256 tokenId`).
+- Empty `positionId` (`""`) marks account-global positions: Nexus staked NXM, the Ethena cooldown, and the withdrawal/exit queues (Lido, Kelp, Stader, ether.fi, StakeWise V3). All other adapters encode at least one address (or `bytes32` poolId/marketId; Uniswap/PancakeSwap V3 add `uint256 tokenId`).
 - One `protocolId` slug ⇒ exactly one `positionId` decode schema, as required by the slug rules — no adapter violates this.
 - Multi-leg adapters reuse the **same** `positionId` across their legs; legs are distinguished by `positionKind` (and `balanceAsset` for per-token legs), which is exactly why `positionKind` must be identity-stable.
 - The wallet-LP vs gauge-staked-LP pairing (Curve/Balancer pools metas vs gauges metas) is now distinguishable by kind alone: `Supplied` = liquid LP, `Staking` = behind an unstake.

@@ -162,7 +162,7 @@ contract MyProtocolBalanceAdapter is IBalanceAdapter, IPositionDescribable {
 Reuse patterns from existing adapters:
 
 - **Per-instance, multi-asset (supply + borrow legs):** `src/balances/protocols/SparkLend.sol`.
-- **Per-instance, single-asset vault:** `src/balances/protocols/Cap.sol`, `src/balances/protocols/SkySavingsUsds.sol`.
+- **Per-instance, single-asset vault:** `src/balances/protocols/Cap.sol`, `src/balances/protocols/ERC4626Wrap.sol`.
 - **Meta-adapter, single-leg:** `src/balances/protocols/GearboxMarketsMeta.sol`, `src/balances/protocols/MorphoVaultsMeta.sol`.
 - **Meta-adapter, multi-leg (LP + rewards):** `src/balances/protocols/curve/CurveGaugesMeta.sol`, `src/balances/protocols/balancer/BalancerV3GaugesMeta.sol`.
 

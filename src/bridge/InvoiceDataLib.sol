@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
@@ -11,7 +11,7 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 ///      The `nonce` is a per-(account) monotonic counter included in the checksum preimage so that
 ///      invoice identity is unique per bridge operation (see ADR 0012). The checksum is
 ///      `bytes24(keccak256(invoiceId, amount, timestamp, nonce))`.
-/// @author kpk
+/// @author KPK
 library InvoiceDataLib {
     /// @notice Converts a bytes6 symbol (e.g. right-padded "USDC  ") to a string, trimming trailing spaces and null bytes
     function bytes6ToStr(bytes6 symbol) public pure returns (string memory) {

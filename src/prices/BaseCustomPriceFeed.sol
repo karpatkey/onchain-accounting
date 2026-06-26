@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {ICustomPriceFeed} from "src/prices/ICustomPriceFeed.sol";
@@ -8,7 +8,7 @@ import {OracleArgumentChecks} from "src/utils/OracleArgumentChecks.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @title BaseCustomPriceFeed
-/// @author kpk
+/// @author KPK
 /// @notice Shared skeleton for the "exchange-rate × Chainlink-base" custom price feeds: it reads a base Chainlink
 ///         feed (typically ETH/USD, 8 decimals), applies the standard staleness gate, multiplies by a
 ///         protocol-supplied 18-decimal exchange rate, and returns the result in the base feed's decimals.

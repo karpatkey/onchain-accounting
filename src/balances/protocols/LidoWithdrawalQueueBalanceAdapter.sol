@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {IBalanceAdapter} from "../IBalanceAdapter.sol";
@@ -10,7 +10,7 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title Lido Withdrawal Queue Balance Adapter
-/// @author kpk
+/// @author KPK
 /// @notice Reports the ETH owed to an account from open requests in Lido's `WithdrawalQueueERC721`.
 /// @dev When a user requests an unstake, stETH is locked and an ERC721 request id is minted. The
 ///      claim pays out **native ETH** (the stETH is burned), so the position is denominated in ETH —

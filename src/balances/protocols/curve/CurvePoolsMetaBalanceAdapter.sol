@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {MetaBalanceAdapter} from "../../MetaBalanceAdapter.sol";
@@ -8,7 +8,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {CurvePoolLib} from "./CurvePoolLib.sol";
 
 /// @title CurvePoolsMetaBalanceAdapter
-/// @author kpk
+/// @author KPK
 /// @notice One immutable adapter that reports an account's **wallet-held** (unstaked) LP position
 ///         across any configured Curve pool, decomposed pro-rata into the pool's underlying tokens.
 ///

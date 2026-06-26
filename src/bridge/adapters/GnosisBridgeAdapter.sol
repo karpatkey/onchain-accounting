@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -19,7 +19,7 @@ import "src/errors.sol";
 ///      source (`amb.messageSender()` == the trusted remote adapter, `amb.messageSourceChainId()` == the expected
 ///      source chain), verifies that the delivered token+amount match the invoice, then funds the escrow and
 ///      releases (funded pass-through, ADR 0012). There is no escrow fallback dispatcher.
-/// @author kpk
+/// @author KPK
 contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
     using SafeERC20 for IERC20;
 

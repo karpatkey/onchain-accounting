@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -13,7 +13,7 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title StakeWise V3 Exit-Queue Balance Adapter (ticket-cached)
-/// @author kpk
+/// @author KPK
 /// @notice Reports the in-flight assets owed to an account in StakeWise V3's exit queue. Calling
 ///         `enterExitQueue(shares, receiver)` moves vault shares into the queue and returns a `positionTicket`;
 ///         the queued value is then invisible to NAV (a position is identified only by that ticket — emitted in

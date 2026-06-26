@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.0;
 
 import {ICustomPriceFeed} from "src/prices/ICustomPriceFeed.sol";
@@ -21,7 +21,7 @@ import "src/errors.sol";
 ///      The returned price is the RAMM book value per NXM-unit, assigned to the token passed as `token_`. Deploy one
 ///      instance per priced token: NXM itself, and/or wNXM — the transferable wrapper that a Nexus member can unwrap
 ///      1:1 to NXM, so book value is realizable for a member holder (matching how data aggregators price wNXM).
-/// @author kpk
+/// @author KPK
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
 contract NXM_CustomPriceFeed is ICustomPriceFeed {
     using Math for uint256;

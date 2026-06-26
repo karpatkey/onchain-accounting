@@ -1,5 +1,5 @@
 // OracleChecks.sol
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
@@ -9,7 +9,7 @@ import "src/errors.sol";
 
 /// @title Custom Oracle Argument Checks
 /// @notice Library for checking common custom oracle constructor arguments
-/// @author kpk
+/// @author KPK
 library OracleArgumentChecks {
     /// @notice Ensures a numeric argument is non-zero.
     /// @param number The number to validate (must be > 0).

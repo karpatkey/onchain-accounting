@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {IBalanceAdapter} from "../IBalanceAdapter.sol";
@@ -31,7 +31,7 @@ interface IStcUsd {
 }
 
 /// @title Cap Protocol Balance Adapter
-/// @author kpk
+/// @author KPK
 /// @notice Returns the USDC-equivalent balances for an account's Cap positions, as two structurally distinct
 ///         legs: the base synthetic dollar (cUSD) and the staked, yield-bearing savings token (stcUSD).
 /// @dev Each leg is valued independently in USDC and emitted as its own `PositionBalance` (positionId =

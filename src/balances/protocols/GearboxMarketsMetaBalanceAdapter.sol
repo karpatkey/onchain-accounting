@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
@@ -9,7 +9,7 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title Gearbox Markets Meta Balance Adapter
-/// @author kpk
+/// @author KPK
 /// @notice One immutable adapter that reports an account's supply position in *any* Gearbox V3 ERC4626 farming
 ///         pool — `convertToAssets(balanceOf(account))` emitted as a single `Supplied` leg in the pool's underlying.
 ///         The instance coordinate is the market (pool) address, widened to bytes32; the active market set lives

@@ -1,9 +1,9 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 /// @title Gnosis Bridge Interfaces
 /// @notice Aggregated interfaces for Gnosis Omnibridge and AMB integration
-/// @author kpk
+/// @author KPK
 
 // ============================================================================
 // Gnosis AMB Interface

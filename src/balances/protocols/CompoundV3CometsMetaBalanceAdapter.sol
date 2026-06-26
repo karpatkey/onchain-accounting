@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
@@ -10,7 +10,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {CompoundV3CometLib} from "src/balances/protocols/CompoundV3CometLib.sol";
 
 /// @title Compound V3 Comets Meta Balance Adapter
-/// @author kpk
+/// @author KPK
 /// @notice One immutable adapter that reports an account's position in *any* Compound V3 (Comet) market — the
 ///         base-token supply (`Supplied`) or borrow (`Borrowed`), every `Collateral` leg, and unclaimed `Earned`
 ///         rewards (COMP). The instance coordinate is the comet address, widened to bytes32; the active comet set

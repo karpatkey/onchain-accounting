@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
@@ -21,6 +21,7 @@ import "src/errors.sol";
 ///      CREATE2 address (see `foundry.toml`) and deployed by `01_2_DeployNAVImplementation.s.sol` before NAVCalculator.
 ///      Only the heavier, no-return mutations live here (register/unregister asset; add/remove adapter); the trivial
 ///      getters and the running counts / event emission stay inline in the caller (cheaper than crossing the boundary).
+/// @author KPK
 library NAVRegistryLib {
     using ERC165Checker for address;
 

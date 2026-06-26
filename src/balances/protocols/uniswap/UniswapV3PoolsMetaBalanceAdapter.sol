@@ -18,7 +18,7 @@ import {FixedPoint128} from "src/balances/protocols/uniswap/lib/FixedPoint128.so
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @title Uniswap V3 Pools Meta Balance Adapter
-/// @author kpk
+/// @author KPK
 /// @notice One immutable adapter that reports an account's Uniswap V3 LP across *any* pool — both the in-range
 ///         liquidity (`Supplied`) and the unclaimed fees (`Earned`) of the account's NFT positions. The instance
 ///         coordinate is the pool address, widened to bytes32; the active pool set lives on NAVCalculator

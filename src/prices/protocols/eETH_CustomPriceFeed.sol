@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.0;
 
 import {ICustomPriceFeed} from "src/prices/ICustomPriceFeed.sol";
@@ -17,7 +17,7 @@ import "src/errors.sol";
 ///      - `weETH/ETH` comes from Chainlink weETH/ETH oracle (18 decimals)
 ///      - `eETH/weETH` comes from weETH contract's `getRate()` function (18 decimals, eETH per weETH)
 ///      - `ETH/USD` comes from Chainlink oracle (8 decimals)
-/// @author kpk
+/// @author KPK
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
 contract eETH_CustomPriceFeed is ICustomPriceFeed {
     //

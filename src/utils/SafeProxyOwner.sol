@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 // solhint-disable one-contract-per-file
 pragma solidity ^0.8.0;
 
@@ -83,7 +83,7 @@ contract Enum {
 }
 
 /// @title      Helper contract that can execute and approve Safe transactions
-/// @author     kpk
+/// @author     KPK
 /// @notice     Deploy this contract as a temporary owner of a Safe.
 ///             It can dispatch transactions (using its smart-contract
 ///             signature) and then remove itself from the owner list.

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -13,7 +13,7 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title Merkl Rewards Balance Adapter (proof-cached)
-/// @author kpk
+/// @author KPK
 /// @notice Reports a user's *unclaimed* Merkl reward balances. Merkl distributes rewards via off-chain merkle trees;
 ///         only cumulative *claimed* amounts live on-chain. To make pending allocations queryable from a `view`
 ///         function, this adapter caches per-(user, token) cumulative allocations submitted via `submitProof`. Each

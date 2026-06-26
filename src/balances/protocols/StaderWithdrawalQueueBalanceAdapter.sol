@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {IBalanceAdapter} from "../IBalanceAdapter.sol";
@@ -10,7 +10,7 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title Stader Withdrawal Queue Balance Adapter
-/// @author kpk
+/// @author KPK
 /// @notice Reports ETH owed to an account from open requests in Stader's UserWithdrawalManager.
 /// @dev When a user requests an unstake, ETHx is burned and a sequential request id is recorded.
 ///      Until claimed, the value lives as ETH owed by the manager. This adapter sums all of the

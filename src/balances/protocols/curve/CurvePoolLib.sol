@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 /// @title CurvePoolLib
@@ -36,7 +36,7 @@ pragma solidity ^0.8;
 ///        - RewardsOnlyGauge: extra rewards only, no CRV Minter integration
 ///        - ChildGauge (L2): extra rewards, CRV claimed via ChildGaugeFactory; skip Minter
 ///
-/// @author kpk
+/// @author KPK
 library CurvePoolLib {
     uint256 internal constant MAX_COINS = 8;
 

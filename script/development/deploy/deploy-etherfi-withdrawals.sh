@@ -4,7 +4,7 @@
 # Usage:  deploy-etherfi-withdrawals.sh <chainId>
 #   e.g.  deploy-etherfi-withdrawals.sh 1
 #
-# EtherFiWithdrawalsBalanceAdapter is a mutable, owner-gated cache adapter (ADR 0014): an off-chain agent
+# EtherFiWithdrawalQueueBalanceAdapter is a mutable, owner-gated cache adapter (ADR 0014): an off-chain agent
 # submits the account's WithdrawRequestNFT tokenIds and the adapter values them from live on-chain reads.
 # This helper `forge create`s it (owner = anvil account #0, so submit-etherfi-positions.sh can feed it) and
 # calls addBalanceAdapters on the dev NAV. Native ETH must be registered (deploy.sh wires the native feed).
@@ -45,7 +45,7 @@ echo "    underlyingToken:    $UNDERLYING_TOKEN (native ETH)"
 echo "    owner:              $DEV_DEPLOYER_ADDR (dev account #0)"
 
 OUT=$(
-  forge create src/balances/protocols/EtherFiWithdrawalsBalanceAdapter.sol:EtherFiWithdrawalsBalanceAdapter \
+  forge create src/balances/protocols/EtherFiWithdrawalQueueBalanceAdapter.sol:EtherFiWithdrawalQueueBalanceAdapter \
     --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" --broadcast \
     --constructor-args "$WITHDRAW_REQUEST_NFT" "$LIQUIDITY_POOL" "$UNDERLYING_TOKEN" "$NAV" "$DEV_DEPLOYER_ADDR" 2>&1
 ) || true

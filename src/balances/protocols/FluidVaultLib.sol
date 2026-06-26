@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 /// @notice Minimal Fluid T1 vault interface — just the static `constantsView` getter we use to
@@ -51,7 +51,7 @@ interface IFluidVaultResolver {
 }
 
 /// @title FluidVaultLib
-/// @author kpk
+/// @author KPK
 /// @notice Shared read math for the Fluid T1 vaults meta-adapter. Resolves a vault's collateral/debt tokens and
 ///         aggregates an account's collateral/debt across its NFT positions in that vault.
 /// @dev Ports the Fluid vault 's `constantsView` token read + `_aggregateUserPositions` /

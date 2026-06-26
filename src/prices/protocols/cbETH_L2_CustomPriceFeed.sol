@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.0;
 
 import {ICustomPriceFeed} from "src/prices/ICustomPriceFeed.sol";
@@ -13,7 +13,7 @@ import "src/errors.sol";
 /// @title cbETH L2 Custom Price Oracle
 /// @notice Returns the USD price of cbETH on L2 by combining Chainlink cbETH/ETH × Chainlink ETH/USD.
 /// @dev price = (cbETH/ETH) * (ETH/USD). Both heartbeats checked independently.
-/// @author kpk
+/// @author KPK
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
 contract cbETH_L2_CustomPriceFeed is ICustomPriceFeed {
     using SafeCast for int256;

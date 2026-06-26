@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.0;
 
 import {ICustomPriceFeed} from "src/prices/ICustomPriceFeed.sol";
@@ -22,7 +22,7 @@ import "src/errors.sol";
 ///        so the returned USD price has `_decimals` decimals.
 ///      Freshness is enforced on the Chainlink feed using `GHO_TO_USD_CHAINLINK_HEARTBEAT`.
 ///      If the feed is stale or the quoted Chainlink price is non-positive, the function returns `(0, true)`.
-/// @author kpk
+/// @author KPK
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
 contract sGHO_CustomPriceFeed is ICustomPriceFeed {
     //

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
@@ -9,7 +9,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {FluidVaultLib} from "src/balances/protocols/FluidVaultLib.sol";
 
 /// @title Fluid Vaults Meta Balance Adapter
-/// @author kpk
+/// @author KPK
 /// @notice One immutable adapter that reports an account's collateral + debt across *any* Fluid T1 vault — a
 ///         `Collateral` leg (supply) and a `Borrowed` leg (debt) per vault, aggregated over the account's NFT
 ///         positions. The instance coordinate is the vault address, widened to bytes32; the active vault set

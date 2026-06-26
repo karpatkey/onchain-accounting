@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
@@ -9,7 +9,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {UniswapV2PairLib} from "src/balances/protocols/uniswap/UniswapV2PairLib.sol";
 
 /// @title Uniswap V2 Pools Meta Balance Adapter
-/// @author kpk
+/// @author KPK
 /// @notice One immutable adapter that reports an account's Uniswap V2 LP across *any* pair — the dilution-adjusted
 ///         pro-rata share of both reserves, emitted as one `Supply` leg per token. The instance coordinate is the
 ///         pair address, widened to bytes32; the active pair set lives on NAVCalculator (`addMetaInstances`).

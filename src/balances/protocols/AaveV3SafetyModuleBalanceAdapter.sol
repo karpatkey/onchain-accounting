@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -12,7 +12,7 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title Aave v3 Safety Module Balance Adapter (multi-token, hardcoded)
-/// @author kpk
+/// @author KPK
 /// @notice Reports balances across every known legacy Aave V3 Safety Module stake token for a given account, currently:
 ///         `stkAAVE`, `stkABPT` (Balancer V1 BPT), `stkABPTv2` (Balancer V2 AAVE/wstETH BPT), and `stkGHO`. The Safety
 ///         Module set is a small, slow-moving, on-chain-discovery-free list (Aave does not publish an on-chain registry

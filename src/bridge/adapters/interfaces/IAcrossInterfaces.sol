@@ -1,10 +1,10 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 /// @title Across Protocol V3 Interfaces
 /// @notice Aggregated interfaces for Across Protocol V3 SpokePool integration
 /// @dev Across migrated to the V3 deposit/fill flow (`depositV3` + `handleV3AcrossMessage`). See ADR 0012 (D3).
-/// @author kpk
+/// @author KPK
 
 // ============================================================================
 // Across V3 Message Handler Interface

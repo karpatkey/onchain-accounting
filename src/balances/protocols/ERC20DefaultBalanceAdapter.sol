@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -17,6 +17,7 @@ import "src/errors.sol";
 /// @dev This adapter reads the asset registry from NAVCalculator and returns balance-only positions for all registered assets
 /// @dev Returns PositionBalance structs (balance-only data) without pricing information.
 /// @dev NAVCalculator enriches these positions with pricing data to create full Position structs.
+/// @author KPK
 contract ERC20DefaultBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     using EnumerableSet for EnumerableSet.AddressSet;
 

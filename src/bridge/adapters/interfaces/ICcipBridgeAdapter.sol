@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {IBridgeAdapter} from "../../IBridgeAdapter.sol";
@@ -9,7 +9,7 @@ import {Client} from "@chainlink/src/v0.8/ccip/libraries/Client.sol";
 /// @title ICcipBridgeAdapter Interface
 /// @notice Interface for CCIP Bridge Adapter
 /// @dev Documents all events, errors, and public functions for the Chainlink CCIP adapter
-/// @author kpk
+/// @author KPK
 interface ICcipBridgeAdapter is IBridgeAdapter, IAny2EVMMessageReceiver {
     //
     // Events

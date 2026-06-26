@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {MetaBalanceAdapter} from "../MetaBalanceAdapter.sol";
@@ -18,7 +18,7 @@ interface IAavePoolAddressesProvider {
 }
 
 /// @title Aave V3 Instances Meta Balance Adapter
-/// @author kpk
+/// @author KPK
 /// @notice One immutable adapter that reports an account's lending positions across *any* Aave V3 instance (Core,
 ///         Prime, an L2 market, …). The set of instances to query is configured on NAVCalculator and passed as
 ///         `bytes32` coordinates — here each coordinate is the instance's **ProtocolDataProvider address** (widened
@@ -101,7 +101,7 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
     ///      (e.g. "Aave Ethereum Market" vs "Aave V3 Lido Ethereum"), which distinguishes instances that share
     ///      the same protocolId. positionId is the instance Pool, so the label is per-instance, not per-reserve
     ///      (the reserve token lives in `balanceAsset`). Collapses to `["Market Instance"]` if the market id is
-    ///      unavailable; empty array for a short positionId. The governed-label mechanism will override the leaf.
+    ///      unavailable; empty array for a short positionId.
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
         if (pid.length < 32) return new string[](0);
         address pool = abi.decode(pid, (address));

@@ -1,11 +1,11 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 pragma solidity ^0.8;
 
 import {UniswapV3PoolsMetaBalanceAdapter} from "src/balances/protocols/uniswap/UniswapV3PoolsMetaBalanceAdapter.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title PancakeSwap V3 Pools Meta Balance Adapter
-/// @author kpk
+/// @author KPK
 /// @notice Meta-adapter for PancakeSwap V3 pools. PancakeSwap V3 is a Uniswap V3 fork sharing every view this
 ///         adapter reads. Historically this subclass also overrode `_slot0` because PancakeSwap declares
 ///         `slot0().feeProtocol` as `uint32` (vs Uniswap V3's `uint8`) and Solidity 0.8's strict decoder rejects

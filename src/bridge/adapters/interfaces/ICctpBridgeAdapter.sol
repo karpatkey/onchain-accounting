@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 import {IBridgeAdapter} from "../../IBridgeAdapter.sol";
@@ -8,7 +8,7 @@ import {IMessageTransmitter} from "@chainlink/src/v0.8/ccip/pools/USDC/IMessageT
 /// @title ICctpBridgeAdapter Interface
 /// @notice Interface for CCTP Bridge Adapter
 /// @dev Documents all events, errors, and public functions for the Circle CCTP adapter
-/// @author kpk
+/// @author KPK
 interface ICctpBridgeAdapter is IBridgeAdapter {
     //
     // Events

@@ -931,7 +931,7 @@ bytes32 protocolId = keccak256("aave-v3-lending");  // == ProtocolIds.AAVE_V3_LE
 | `bridge-escrow` | `(address escrow, address token)` |
 
 **Empty positionId** means the position is account-global for that protocol — there is only ever
-one such position per account (e.g. DAI Savings Rate, Lido withdrawal queue). Note: `wallet`
+one such position per account (e.g. the Lido withdrawal queue). Note: `wallet`
 positions are NOT account-global — each uses `abi.encode(asset)` to identify the specific token.
 
 ---

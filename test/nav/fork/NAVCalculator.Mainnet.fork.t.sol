@@ -14,7 +14,7 @@ import {IPrices} from "src/prices/IPrices.sol";
 import {aa} from "test/helpers/AdapterArray.sol";
 
 contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
-    /// @notice Safe with Aave V3, Compound V3, Morpho, DSR positions on Ethereum Mainnet (same as base harness default)
+    /// @notice Safe with Aave V3, Compound V3, Morpho positions on Ethereum Mainnet (same as base harness default)
     address public constant MAINNET_SAFE = 0xCE74fa7A7dEe1d7640540bd752Bee784BE831b4F;
 
     // Native and wrapped ETH

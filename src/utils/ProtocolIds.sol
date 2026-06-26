@@ -97,7 +97,7 @@ library ProtocolIds {
     // Merkl rewards distributor
     bytes32 internal constant MERKL = keccak256("merkl");
 
-    // Sky / DAI savings
+    // Sky savings
     bytes32 internal constant SKY_SAVINGS = keccak256("sky-savings");
 
     // Bridge escrow

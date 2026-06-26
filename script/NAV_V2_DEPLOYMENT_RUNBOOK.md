@@ -576,7 +576,7 @@ To deploy additional instances (e.g., a new Curve gauge, or AaveV3 on a differen
 
 The `_deployIfEnabled(...)` calls in `run()` are the authoritative source. Most families are now single **meta-adapters** (ADR 0010); the legacy per-instance config keys (`AaveV3_Core`, `MorphoVault_*`, `MorphoMarket_*`, `GearboxMarket_*`, `BalancerV3_*`, `Curve_*`, `Convex_*`, `Fluid_*`, `CompoundV3_*`, `UniswapV3_*`, etc.) remain in the deploy config as `enabled: false` and are superseded by the metas. Each meta's active instance set lives on `NAVCalculator` (applied via `addMetaInstances`/`removeMetaInstances`, configured under `nav-config/meta-balance-adapters/<chainId>.json .<Meta>.instances`, or `instancesRaw` for the bytes32-keyed `MorphoMarketsMeta`).
 
-**Aave:** `AaveV2InstancesMeta`, `AaveV3InstancesMeta` (meta-adapters — DataProvider / instance sets via `addMetaInstances`/`removeMetaInstances`; the legacy per-market `AaveV3_Core`/`AaveV3_Prime`/`AaveV3_<chain>` keys are disabled in config and have no deploy path — Aave V3 is fully meta); standalone `SparkLend`, `AaveV3SafetyModule`, `AaveUmbrella`
+**Aave:** `AaveV3InstancesMeta` (meta-adapter — DataProvider / instance sets via `addMetaInstances`/`removeMetaInstances`; the legacy per-market `AaveV3_Core`/`AaveV3_Prime`/`AaveV3_<chain>` keys are disabled in config and have no deploy path — Aave V3 is fully meta); standalone `SparkLend`, `AaveV3SafetyModule`, `AaveUmbrella`
 
 **Other lending / yield:** `Cap`, `CompoundV3CometsMeta`, `FluidFTokensMeta`, `FluidVaultsMeta`, `EulerVaultsMeta` (Euler V2 EulerEarn + core eVaults — supply/collateral + borrow legs; instance set on NAV)
 

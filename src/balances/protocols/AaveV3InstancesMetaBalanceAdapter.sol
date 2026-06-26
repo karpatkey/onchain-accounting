@@ -38,9 +38,9 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
     /// @inheritdoc MetaBalanceAdapter
     /// @dev `instance` is the instance's ProtocolDataProvider. Emits up to three rows per registered reserve:
     ///      Supply/Collateral (aToken balance), variable Borrow, and stable Borrow. Aave V3 deprecated NEW stable
-    ///      borrows but legacy stable debt can persist, and the Aave V2 subclass inherits this — so both the
-    ///      variable and stable debt legs are emitted whenever positive (dropping stable debt understates debt and
-    ///      overstates NAV). Skips unregistered reserves and respects assetFilter.
+    ///      borrows but legacy stable debt can persist — so both the variable and stable debt legs are emitted
+    ///      whenever positive (dropping stable debt understates debt and overstates NAV). Skips unregistered reserves
+    ///      and respects assetFilter.
     function _instancePositions(address account, bytes32 instance, address assetFilter)
         internal
         view
@@ -102,9 +102,8 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
     ///      market id (e.g. "Aave Ethereum Market" vs "Aave V3 Lido Ethereum") distinguishes instances that share a
     ///      reserve symbol, since protocolId is the same across all instances and positionId carries the market only
     ///      as the pool address. Falls back to "<reserve symbol> position" when the market id is unavailable, or ""
-    ///      when the reserve symbol is unreadable. Returns an empty array for a short positionId. `virtual` so the V2
-    ///      subclass can override.
-    function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
+    ///      when the reserve symbol is unreadable. Returns an empty array for a short positionId.
+    function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
         if (pid.length < 64) return new string[](0);
         (address pool, address reserve) = abi.decode(pid, (address, address));
         string memory leaf = "";
@@ -118,9 +117,9 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @notice Resolves the instance's market id (for the display label) from its pool.
-    /// @dev V3 Pool exposes `ADDRESSES_PROVIDER()`; the V2 subclass overrides to use `getAddressesProvider()`.
+    /// @dev V3 Pool exposes `ADDRESSES_PROVIDER()`.
     ///      Best-effort: returns "" if the pool/provider does not expose the views (label then drops the market).
-    function _marketId(address pool) internal view virtual returns (string memory) {
+    function _marketId(address pool) internal view returns (string memory) {
         try IAaveAddressesProviderSource(pool).ADDRESSES_PROVIDER() returns (address ap) {
             try IAavePoolAddressesProvider(ap).getMarketId() returns (string memory m) {
                 return m;
@@ -133,14 +132,13 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @notice Resolves the instance's Pool address (used as first element of positionId).
-    /// @dev `virtual` so the Aave V2 subclass can resolve the pool via `getLendingPool()` instead of `getPool()`
-    ///      (V2's LendingPoolAddressesProvider uses the former).
-    function _poolOf(IProtocolDataProvider dp) internal view virtual returns (address) {
+    /// @dev V3's LendingPoolAddressesProvider resolves the pool via `getPool()`.
+    function _poolOf(IProtocolDataProvider dp) internal view returns (address) {
         return IAavePoolAddressesProvider(IAaveAddressesProviderSource(address(dp)).ADDRESSES_PROVIDER()).getPool();
     }
 
-    /// @notice Returns the protocol id constant for this adapter. Virtual so subclasses can override.
-    function _getProtocolId() internal view virtual returns (bytes32) {
+    /// @notice Returns the protocol id constant for this adapter.
+    function _getProtocolId() internal view returns (bytes32) {
         return PROTOCOL_ID;
     }
 

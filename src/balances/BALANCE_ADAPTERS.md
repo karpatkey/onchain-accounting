@@ -224,14 +224,13 @@ Meta-adapters derive the label hierarchy on-chain from live state (ERC20 symbols
 
 ## 7. Implemented adapters
 
-### 7.1 Meta-adapters (21)
+### 7.1 Meta-adapters (20)
 
 Meta-adapters extend `MetaBalanceAdapter`. The instance set is configured on NAVCalculator via `addMetaInstances`/`removeMetaInstances`.
 
 | Adapter | Description | Constructor | Config key (deploy: `contracts-deployment-config/meta-balance-adapters/<chainId>.json`; register: `nav-config/meta-balance-adapters/<chainId>.json`) |
 |---------|-------------|-------------|------------------|
 | **AaveV3InstancesMeta** | All Aave V3 instances (Core, Prime, …). Instance coordinate = ProtocolDataProvider address. Up to 2 rows per reserve (`Supplied`/`Collateral` + `Borrowed`). Identity: positionId = `abi.encode(pool, reserve)`. | `(protocolName, navCalculator)` | `AaveV3InstancesMeta`; DataProviders under `instances`. |
-| **AaveV2InstancesMeta** | All Aave V2 instances. Thin subclass of `AaveV3InstancesMeta` (same DataProvider ABI; pool resolved via `getLendingPool()`). Instance coordinate = ProtocolDataProvider address. Identity: positionId = `abi.encode(pool, reserve)`. | `(protocolName, navCalculator)` | `AaveV2InstancesMeta`; DataProviders under `instances`. |
 | **BalancerV2PoolsMeta** | Wallet-held (unstaked) LP for all Balancer V2 pools. Instance coordinate = raw bytes32 poolId. positionId = `abi.encode(bytes32 poolId)`. One `Supplied` leg per underlying token. | `(vault, protocolName, navCalculator)` | `BalancerV2PoolsMeta`; poolIds under `instancesRaw`. |
 | **BalancerV2GaugesMeta** | Gauge-staked LP + rewards for all Balancer V2 gauges. Instance coordinate = gauge address. positionId = `abi.encode(gauge)`. One `Staking` leg per underlying token + `Rewards` legs (BAL + extras). | `(vault, balancerMinter, protocolName, navCalculator)` | `BalancerV2GaugesMeta`; gauges under `instances`. |
 | **BalancerV3PoolsMeta** | Wallet-held (unstaked) LP for all Balancer V3 pools. Instance coordinate = pool/BPT address. positionId = `abi.encode(pool)`. One `Supplied` leg per underlying token. | `(protocolName, navCalculator)` | `BalancerV3PoolsMeta`; pools under `instances`. |

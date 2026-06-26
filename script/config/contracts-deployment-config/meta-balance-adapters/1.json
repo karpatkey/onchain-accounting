@@ -1,11 +1,4 @@
 {
-  "AaveV2InstancesMeta": {
-    "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aave V2 instance. Thin subclass of AaveV3InstancesMeta (same DataProvider ABI; pool resolved via getLendingPool()). The active instance set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below \u2014 each entry is the instance ProtocolDataProvider). positionId derived on-chain = the instance LendingPool; name = LendingPoolAddressesProvider.getMarketId(). Supersedes the per-instance AaveV2_* adapters, disabled below.",
-    "constructor": {
-      "protocol": "Aave V2"
-    }
-  },
   "AaveV3InstancesMeta": {
     "enabled": true,
     "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aave V3 instance. The active instance set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below \u2014 each entry is the instance ProtocolDataProvider). Supersedes the per-instance AaveV3_* adapters, disabled below. positionId derived on-chain = the instance Pool; name = PoolAddressesProvider.getMarketId().",

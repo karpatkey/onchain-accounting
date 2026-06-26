@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 /// @notice Minimal Fluid T1 vault interface — just the static `constantsView` getter we use to

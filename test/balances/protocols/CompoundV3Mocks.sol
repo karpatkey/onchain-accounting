@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
 // Mock contracts extracted from CompoundV3Comet.t.sol for use by CompoundV3CometsMetaBalanceAdapter.t.sol

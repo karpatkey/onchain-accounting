@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.0;
 
 /// @notice Minimal interface for Circle's TokenMessengerV2 on EVM chains

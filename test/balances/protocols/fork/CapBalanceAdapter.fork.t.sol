@@ -127,12 +127,13 @@ contract CapBalanceAdapterForkTest is BalanceAdapterTestBase {
         for (uint256 i = 0; i < positions.length; i++) {
             assertEq(positions[i].balanceAsset.asset, USDC, "leg denominated in USDC");
             assertFalse(positions[i].isDebt, "Cap legs are credit");
-            assertTrue(positions[i].positionKind == PositionKind.Supplied, "Supplied kind");
             assertGt(positions[i].amount, 0, "non-zero leg");
             if (keccak256(positions[i].positionId) == keccak256(abi.encode(CUSD))) {
+                assertTrue(positions[i].positionKind == PositionKind.Supplied, "cUSD is Supplied");
                 cUsdAmt = positions[i].amount;
                 sawCusd = true;
             } else if (keccak256(positions[i].positionId) == keccak256(abi.encode(STCUSD))) {
+                assertTrue(positions[i].positionKind == PositionKind.Staking, "stcUSD is Staking");
                 stcUsdAmt = positions[i].amount;
                 sawStcusd = true;
             }

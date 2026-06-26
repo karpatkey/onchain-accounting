@@ -326,13 +326,15 @@ contract NexusMutualStakingPoolsBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(amt, cap); // collection capped at MAX_POSITIONS_PER_ACCOUNT (1 active each)
     }
 
-    function test_beyondMaxScan_notDiscovered() public {
-        uint256 scan = adapter.MAX_TOKEN_SCAN();
-        nft.setTotalSupply(scan + 3);
-        nft.setToken(scan + 2, 1, holder); // owned, but id beyond the scan bound
-        viewer.setToken(scan + 2, 1, 999, 0, 0);
+    function test_highId_discoveredNoScanCap() public {
+        // No fixed scan cap: a high-id position (beyond the old 5000 bound) is still discovered. The
+        // descending scan + balanceOf early-exit finds it in one iteration here (it's the newest id).
+        uint256 highId = 6000;
+        nft.setTotalSupply(highId);
+        nft.setToken(highId, 1, holder);
+        viewer.setToken(highId, 1, 123, 0, 0);
         (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, address(nxm));
-        assertEq(amt, 0); // not discovered (id > MAX_TOKEN_SCAN)
+        assertEq(amt, 123); // found despite id > the former 5000 cap
     }
 
     function test_tokenInfoReverts_skipped_notReverted() public {

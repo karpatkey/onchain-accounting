@@ -18,7 +18,7 @@
     { "tokenId": 186, "poolId": 11 },
     { "tokenId": 187, "poolId": 5 }
   ],
-  "discovery": "StakingNFT is mint-only (no burn) with totalSupply=280 globally and no per-owner enumeration; the adapter scans tokenInfo(1..totalSupply) (bounded by MAX_TOKEN_SCAN) for owner==account. No off-chain agent. Cross-checked vs a Transfer(to=safe) event scan, which yields the same {180,184,185,186,187}.",
+  "discovery": "StakingNFT is mint-only (no burn) with totalSupply=280 globally and no per-owner enumeration; the adapter scans tokenInfo descending over totalSupply..1 for owner==account (balanceOf guard skips non-stakers and early-exits stakers; no fixed scan cap). No off-chain agent. Cross-checked vs a Transfer(to=safe) event scan, which yields the same {180,184,185,186,187}.",
   "legsNote": "One Staking (activeStake+expiredStake) + one Rewards leg are emitted PER position (per tokenId), keyed by positionId = abi.encode(tokenId, poolId). The amounts below are the SUMS across all 5 positions (what the no-arg balance getters return and what the per-NFT legs add back up to).",
   "legsAggregate": [
     {

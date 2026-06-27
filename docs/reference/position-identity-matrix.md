@@ -63,12 +63,12 @@ Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, pos
 | | | | earned CRV | `Rewards` | false | CRV |
 | | | | derived CVX (cliff schedule) | `Rewards` | false | CVX |
 | | | | extra reward tokens | `Rewards` | false | reward token |
-| StaderWithdrawalQueue | `stader-withdrawal` | `""` (empty — account-global) | ETH owed from open requests | `Supplied` | false | WETH |
-| KelpWithdrawalQueue | `kelp-withdrawal` | `""` (empty — account-global) | owed per payout asset | `Supplied` | false | each supported asset |
-| LidoWithdrawalQueue | `lido-withdrawal` | `""` (empty — account-global) | claimable + pending ETH | `Supplied` | false | native ETH |
-| EtherFiWithdrawalQueue | `etherfi-withdrawal` | `""` (empty — account-global) | in-flight withdrawal-queue ETH | `Supplied` | false | native ETH |
-| StakeWiseV3ExitQueue | `stakewise-exit` | `""` (empty — account-global) | in-flight exit-queue assets | `Supplied` | false | native ETH |
-| EthenaCooldownBalanceAdapter | `ethena-cooldown` | `""` (empty — account-global) | USDe in the sUSDe unstaking cooldown | `Supplied` | false | USDe |
+| StaderWithdrawalQueue | `stader-withdrawal` | `abi.encode(address userWithdrawalManager)` (account-global anchor) | ETH owed from open requests | `Supplied` | false | WETH |
+| KelpWithdrawalQueue | `kelp-withdrawal` | `abi.encode(address withdrawalManager)` (account-global anchor) | owed per payout asset | `Supplied` | false | each supported asset |
+| LidoWithdrawalQueue | `lido-withdrawal` | `abi.encode(address withdrawalQueue)` (account-global anchor) | claimable + pending ETH | `Supplied` | false | native ETH |
+| EtherFiWithdrawalQueue | `etherfi-withdrawal` | `abi.encode(address withdrawRequestNFT)` (account-global anchor) | in-flight withdrawal-queue ETH | `Supplied` | false | native ETH |
+| StakeWiseV3ExitQueue | `stakewise-exit` | `abi.encode(address vaultsRegistry)` (account-global anchor) | in-flight exit-queue assets | `Supplied` | false | native ETH |
+| EthenaCooldownBalanceAdapter | `ethena-cooldown` | `abi.encode(address sUSDe)` (account-global anchor) | USDe in the sUSDe unstaking cooldown | `Supplied` | false | USDe |
 | NexusMutualStakingPools | `nexus-mutual-staking` | `abi.encode(uint256 tokenId, uint256 poolId)` | active + expired staked NXM (per StakingNFT) | `Staking` | false | NXM |
 | | | | claimable rewards (per StakingNFT) | `Rewards` | false | NXM |
 | MerklRewards | `merkl` | `abi.encode(address distributor)` | unclaimed rewards (one leg per reward token, distinguished by `balanceAsset`) | `Rewards` | false | reward token |
@@ -91,7 +91,7 @@ Emission-site counts across `src/balances/` (grep, 2026-06-26, post-assignment):
 
 - `isDebt == true` occurs **only** with `positionKind == Borrowed` at all 8 current emission sites. This correlation is observational: `isDebt` remains the canonical NAV-sign signal (per `PositionKind.sol`), so consumers should read it directly rather than infer sign from `positionKind`.
 - `Collateral` and `Staking` are always `isDebt == false`.
-- Empty `positionId` (`""`) marks account-global positions: the Ethena cooldown and the withdrawal/exit queues (Lido, Kelp, Stader, ether.fi, StakeWise V3). All other adapters encode at least one address (or `bytes32` poolId/marketId; Uniswap/PancakeSwap V3 add `uint256 tokenId`, and Nexus Mutual staking encodes `(uint256 tokenId, uint256 poolId)` per StakingNFT).
+- **Account-global** positions — the Ethena cooldown and the withdrawal/exit queues (Lido, Kelp, Stader, ether.fi, StakeWise V3) — encode their immutable anchor contract: `abi.encode(address <queue/manager>)`. There is one aggregated leg per account, so the anchor (not a per-request id) is the positionId; the owed asset lives in `balanceAsset`. All other adapters encode at least one address (or `bytes32` poolId/marketId; Uniswap/PancakeSwap V3 add `uint256 tokenId`, and Nexus Mutual staking encodes `(uint256 tokenId, uint256 poolId)` per StakingNFT). No adapter emits an empty `positionId`.
 - One `protocolId` slug ⇒ exactly one `positionId` decode schema, as required by the slug rules — no adapter violates this.
 - Multi-leg adapters reuse the **same** `positionId` across their legs; legs are distinguished by `positionKind` (and `balanceAsset` for per-token legs), which is exactly why `positionKind` must be identity-stable.
 - The wallet-LP vs gauge-staked-LP pairing (Curve/Balancer pools metas vs gauges metas) is now distinguishable by kind alone: `Supplied` = liquid LP, `Staking` = behind an unstake.

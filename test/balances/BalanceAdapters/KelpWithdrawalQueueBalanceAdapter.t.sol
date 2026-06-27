@@ -238,7 +238,7 @@ contract KelpWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         for (uint256 i = 0; i < positions.length; i++) {
             assertEq(positions[i].balanceAdapter, address(adapter));
             assertFalse(positions[i].isDebt);
-            assertEq(positions[i].positionId, "");
+            assertEq(positions[i].positionId, abi.encode(address(adapter.WITHDRAWAL_MANAGER())));
         }
     }
 

@@ -35,11 +35,13 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
     {}
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev `instance` is the instance's ProtocolDataProvider. Emits up to three rows per registered reserve:
-    ///      Supply/Collateral (aToken balance), variable Borrow, and stable Borrow. Aave V3 deprecated NEW stable
-    ///      borrows but legacy stable debt can persist — so both the variable and stable debt legs are emitted
-    ///      whenever positive (dropping stable debt understates debt and overstates NAV). Skips unregistered reserves
-    ///      and respects assetFilter.
+    /// @dev `instance` is the instance's ProtocolDataProvider. Emits up to two rows per registered reserve:
+    ///      Supply/Collateral (aToken balance) and Borrow. Aave V3 deprecated NEW stable borrows but legacy stable
+    ///      debt can persist, so the Borrow leg is `variableDebt + stableDebt` (dropping stable debt would understate
+    ///      debt and overstate NAV). The two debt kinds are summed into ONE `Borrowed` leg rather than emitted
+    ///      separately: they would otherwise share the same `(protocolId, positionId, balanceAsset, positionKind)`
+    ///      key and collide, and the sum is what NAV needs anyway. Skips unregistered reserves and respects
+    ///      assetFilter.
     function _instancePositions(address account, bytes32 instance, address assetFilter)
         internal
         view
@@ -53,8 +55,8 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
         bytes memory pid = abi.encode(pool);
 
         IProtocolDataProvider.TokenData[] memory reserves = dp.getAllReservesTokens();
-        // up to 3 legs per reserve: supply/collateral + variable debt + stable debt
-        INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](reserves.length * 3);
+        // up to 2 legs per reserve: supply/collateral + one Borrow (variable + stable summed)
+        INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](reserves.length * 2);
         uint256 count;
 
         for (uint256 i = 0; i < reserves.length; i++) {
@@ -71,11 +73,12 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
                 PositionKind kind = usageAsCollateral ? PositionKind.Collateral : PositionKind.Supplied;
                 temp[count++] = _row(assetInfo, aTokenBalance, false, pid, kind);
             }
-            if (variableDebt > 0) {
-                temp[count++] = _row(assetInfo, variableDebt, true, pid, PositionKind.Borrowed);
-            }
-            if (stableDebt > 0) {
-                temp[count++] = _row(assetInfo, stableDebt, true, pid, PositionKind.Borrowed);
+            // Sum variable + legacy stable debt into a single Borrowed leg. Emitting them separately would
+            // produce two rows with an identical reconciliation key (same pool positionId, same reserve
+            // balanceAsset, same Borrowed kind), which is not univocal.
+            uint256 totalDebt = variableDebt + stableDebt;
+            if (totalDebt > 0) {
+                temp[count++] = _row(assetInfo, totalDebt, true, pid, PositionKind.Borrowed);
             }
         }
 

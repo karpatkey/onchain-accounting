@@ -213,7 +213,11 @@ contract KelpWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTestBa
             assertEq(positions[i].balanceAdapter, address(oracle));
             assertFalse(positions[i].isDebt);
             assertEq(positions[i].protocolId, ProtocolIds.KELP_WITHDRAWAL);
-            assertEq(positions[i].positionId.length, 0, "account-global positionId is empty");
+            assertEq(
+                positions[i].positionId,
+                abi.encode(address(oracle.WITHDRAWAL_MANAGER())),
+                "account-global positionId is the WithdrawalManager anchor"
+            );
             assertEq(uint256(positions[i].positionKind), uint256(PositionKind.Supplied));
         }
     }

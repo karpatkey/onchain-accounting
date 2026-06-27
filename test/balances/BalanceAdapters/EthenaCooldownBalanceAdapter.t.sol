@@ -185,7 +185,11 @@ contract EthenaCooldownBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(positions[0].amount, 4242e18);
         assertFalse(positions[0].isDebt);
         assertEq(positions[0].protocolId, ProtocolIds.ETHENA_COOLDOWN);
-        assertEq(positions[0].positionId.length, 0, "positionId is empty for the aggregated cooldown leg");
+        assertEq(
+            positions[0].positionId,
+            abi.encode(address(adapter.STAKED_USDE())),
+            "positionId is the sUSDe anchor for the aggregated cooldown leg"
+        );
         assertEq(uint8(positions[0].positionKind), uint8(PositionKind.Supplied));
     }
 }

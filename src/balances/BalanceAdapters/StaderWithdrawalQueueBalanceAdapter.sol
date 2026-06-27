@@ -226,7 +226,9 @@ contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescri
             amount: total,
             isDebt: false,
             protocolId: PROTOCOL_ID,
-            positionId: "",
+            // Anchored on the UserWithdrawalManager (the claim target / immutable anchor); the owed
+            // asset lives in `balanceAsset`, so the manager address is the non-redundant coordinate.
+            positionId: abi.encode(address(USER_WITHDRAWAL_MANAGER)),
             positionKind: PositionKind.Supplied
         });
     }

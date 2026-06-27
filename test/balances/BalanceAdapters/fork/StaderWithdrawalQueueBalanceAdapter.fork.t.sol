@@ -171,7 +171,11 @@ contract StaderWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTest
         assertEq(positions[0].amount, PENDING_EXPECTED_ETH);
         assertFalse(positions[0].isDebt);
         assertEq(positions[0].protocolId, ProtocolIds.STADER_WITHDRAWAL);
-        assertEq(positions[0].positionId.length, 0, "account-global positionId is empty");
+        assertEq(
+            positions[0].positionId,
+            abi.encode(address(oracle.USER_WITHDRAWAL_MANAGER())),
+            "account-global positionId is the UserWithdrawalManager anchor"
+        );
         assertEq(uint256(positions[0].positionKind), uint256(PositionKind.Supplied));
     }
 
@@ -208,7 +212,11 @@ contract StaderWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTest
         assertEq(positions[0].balanceAsset.asset, MAINNET_WETH);
         assertEq(positions[0].amount, MULTI_EXPECTED_ETH);
         assertEq(positions[0].protocolId, ProtocolIds.STADER_WITHDRAWAL);
-        assertEq(positions[0].positionId.length, 0, "account-global positionId is empty");
+        assertEq(
+            positions[0].positionId,
+            abi.encode(address(oracle.USER_WITHDRAWAL_MANAGER())),
+            "account-global positionId is the UserWithdrawalManager anchor"
+        );
         assertEq(uint256(positions[0].positionKind), uint256(PositionKind.Supplied));
     }
 }

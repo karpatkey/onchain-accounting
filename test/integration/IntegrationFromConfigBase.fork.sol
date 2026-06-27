@@ -1046,6 +1046,10 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     /// @dev Enumerates `account`'s NFTs on `npm` and submits them to the assisted adapter. Tolerant: a reverting
     ///      enumeration (non-enumerable NPM, etc.) just leaves that account unseeded.
     function _submitOwnedNftIds(address adapter, address npm, address account) internal {
+        // Fail-open against a no-code NPM: a high-level call to an address with no code reverts via Solidity's
+        // extcodesize check, which try/catch does NOT catch — guard explicitly so a misconfigured NPM leaves the
+        // account unseeded instead of reverting the whole integration setup.
+        if (npm.code.length == 0) return;
         uint256 bal;
         try INonfungiblePositionManager(npm).balanceOf(account) returns (uint256 b) {
             bal = b;

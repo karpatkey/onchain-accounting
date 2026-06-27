@@ -189,7 +189,7 @@
   },
   "UniswapV3Pools": {
     "enabled": true,
-    "$comment": "Uniswap V3 pools assisted adapter (agent-fed NFT tokenId cache; ADR 0015). Registered via addBalanceAdapters; reports the account's Uniswap V3 LP (Supplied liquidity + Fees) per NFT position (positionId=abi.encode(npm,tokenId)), valued live on-chain (oracle-reconstructed price, not slot0) from agent-submitted tokenIds with ownerOf re-verified per read. Reports 0 until the kpk-agents submitter feeds tokenIds."
+    "$comment": "Uniswap V3 pools assisted adapter (agent-fed NFT tokenId cache; ADR 0015). Registered via addBalanceAdapters; reports the account's Uniswap V3 LP (Supplied liquidity + Fees) per NFT position (positionId=abi.encode(pool) (NFT id in display labels)), valued live on-chain (oracle-reconstructed price, not slot0) from agent-submitted tokenIds with ownerOf re-verified per read. Reports 0 until the kpk-agents submitter feeds tokenIds."
   },
   "UniswapV3_WBTC_WETH_3000": {
     "enabled": false

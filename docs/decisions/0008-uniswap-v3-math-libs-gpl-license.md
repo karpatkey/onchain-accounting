@@ -4,7 +4,7 @@
 
 ## Context
 
-The Uniswap V3 balance adapter (`src/balances/protocols/uniswap/UniswapV3PoolsMetaBalanceAdapter.sol`) needs three pieces of math from Uniswap to compute principal liquidity and unclaimed fees from a position's `(liquidity, tickLower, tickUpper)` plus the pool's `slot0` and `feeGrowth*` state:
+The Uniswap V3 balance adapter (`src/balances/AssistedBalanceAdapters/UniswapV3PoolsMetaBalanceAdapter.sol`) needs three pieces of math from Uniswap to compute principal liquidity and unclaimed fees from a position's `(liquidity, tickLower, tickUpper)` plus the pool's `slot0` and `feeGrowth*` state:
 
 - `TickMath.getSqrtRatioAtTick(int24)` — exponential-of-tick polynomial with ~20 magic constants.
 - `LiquidityAmounts.getAmountsForLiquidity(...)` — concentrated-liquidity formula.
@@ -22,7 +22,7 @@ Three options were on the table:
 
 ## Decision
 
-Take **option 1**. Place `TickMath.sol`, `LiquidityAmounts.sol`, and `FixedPoint128.sol` under `src/balances/protocols/uniswap/lib/`, each carrying `// SPDX-License-Identifier: GPL-2.0-or-later` (verbatim from upstream) and a short header noting the port (replace `FullMath.mulDiv` with OpenZeppelin's `Math.mulDiv`, wrap `getSqrtRatioAtTick` in `unchecked` to preserve the 0.7 wrapping semantics, drop `getTickAtSqrtRatio` because the adapter doesn't need it). Because the adapter imports and links those libs, the adapter file itself also carries `// SPDX-License-Identifier: GPL-2.0-or-later` — there is no MIT file in this compilation unit.
+Take **option 1**. Place `TickMath.sol`, `LiquidityAmounts.sol`, and `FixedPoint128.sol` under `src/balances/MetaBalanceAdapters/uniswap/lib/`, each carrying `// SPDX-License-Identifier: GPL-2.0-or-later` (verbatim from upstream) and a short header noting the port (replace `FullMath.mulDiv` with OpenZeppelin's `Math.mulDiv`, wrap `getSqrtRatioAtTick` in `unchecked` to preserve the 0.7 wrapping semantics, drop `getTickAtSqrtRatio` because the adapter doesn't need it). Because the adapter imports and links those libs, the adapter file itself also carries `// SPDX-License-Identifier: GPL-2.0-or-later` — there is no MIT file in this compilation unit.
 
 Rationale:
 
@@ -49,7 +49,7 @@ Rationale:
 
 For *any* future balance adapter that needs to inline upstream math from a non-permissively-licensed source:
 
-- Place the files under `src/balances/protocols/<protocol>/lib/` (one folder per protocol).
+- Place the files under `src/balances/{BalanceAdapters,MetaBalanceAdapters,AssistedBalanceAdapters}/lib/` (one folder per protocol).
 - Preserve the upstream `SPDX-License-Identifier` verbatim — do not relicense them as MIT.
 - Add a short `@dev` header to each file documenting the port (which functions were copied, which were dropped, what was substituted, and the upstream URL).
 - Reference this ADR.
@@ -66,6 +66,6 @@ Rather than ship a duplicate ~500-line `PancakeSwapV3PoolsMetaBalanceAdapter`, P
 Implications for this ADR:
 
 - The GPL-2.0-or-later combined-work obligation flows through inheritance the same way it flows through direct calls. `PancakeSwapV3PoolsMetaBalanceAdapter` consumes `TickMath`/`LiquidityAmounts`/`FixedPoint128` transitively via the parent and is therefore part of the same combined work. As of the 2026-06-26 license sweep its own header is `// SPDX-License-Identifier: GPL-2.0-or-later` (changed from `MIT`) so the per-file tag now matches the combined-work reality. (The tag was never what created the obligation: anyone redistributing the compiled fork adapter — or its source set, which pulls in the GPL parent and libs — is bound by GPL-2.0-or-later regardless of the header.)
-- The convention "any future Uniswap-math consumer should reuse `lib/` rather than re-inlining" extends to fork adapters: they should reuse `src/balances/protocols/uniswap/lib/*` rather than copying the libs into `protocols/<fork>/lib/`. PancakeSwap V3 is the first such consumer.
+- The convention "any future Uniswap-math consumer should reuse `lib/` rather than re-inlining" extends to fork adapters: they should reuse `src/balances/MetaBalanceAdapters/uniswap/lib/*` rather than copying the libs into `protocols/<fork>/lib/`. PancakeSwap V3 is the first such consumer.
 - The `virtual` hook is intentionally narrow (single internal helper) so the GPL-bearing math stays in the parent. Future fork adapters that diverge in similar tightly-scoped ways (different pool ABI fields, different NPM, etc.) should follow the same pattern: virtualize the smallest hook that isolates the divergence.
 - (2026-06-26, PR #120) The repo's first-party license has since moved from MIT to **BUSL-1.1** (see the root `LICENSE`). The MIT references in the original analysis above describe the repo state when this ADR was written; the move does not affect the GPL files — GPL-2.0-or-later still governs them and any combined work that incorporates them.

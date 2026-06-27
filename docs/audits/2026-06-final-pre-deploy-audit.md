@@ -4,7 +4,7 @@ Scope: **all of `src/`** — the core (NAVCalculator, PriceFeedLib, Prices, Base
 Balances, MetaBalanceAdapter, NAVRegistryLib (audited as `NavRegistryLib`, since renamed), NavLens
 (since removed, its verbose reads inlined into NAVCalculator)), **every** custom price feed in
 `src/prices/protocols/`, and **every** balance + meta-balance adapter (and their math libs) in
-`src/balances/protocols/`. **78 contracts** audited individually.
+`src/balances/{BalanceAdapters,MetaBalanceAdapters,AssistedBalanceAdapters}/`. **78 contracts** audited individually.
 
 Method: one deep specialist review per contract (category-tuned lenses — access-control / oracle /
 logic-precision / reentrancy-DoS / cross-chain for core; exchange-rate-orientation / decimals /

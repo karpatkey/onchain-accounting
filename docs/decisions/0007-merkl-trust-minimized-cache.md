@@ -16,7 +16,7 @@ Option 3 is the only path that preserves the framework's "anyone can verify the 
 
 ## Decision
 
-Ship `MerklRewardsBalanceAdapter` (`src/balances/protocols/MerklRewardsBalanceAdapter.sol`) as the **second documented mutable adapter**, scoped narrowly to a **proof-verified per-(user, token) allocation cache**. Concretely:
+Ship `MerklRewardsBalanceAdapter` (`src/balances/AssistedBalanceAdapters/MerklRewardsBalanceAdapter.sol`) as the **second documented mutable adapter**, scoped narrowly to a **proof-verified per-(user, token) allocation cache**. Concretely:
 
 - Storage: `mapping(address user => mapping(address token => CachedAllocation { uint256 cumulativeAmount, bytes32 root, uint64 submittedAt }))` plus a per-user enumeration list.
 - Mutators (`onlyOwner`):
@@ -66,7 +66,7 @@ Ship `MerklRewardsBalanceAdapter` (`src/balances/protocols/MerklRewardsBalanceAd
 
 ## Reference
 
-- Adapter: `src/balances/protocols/MerklRewardsBalanceAdapter.sol`
+- Adapter: `src/balances/AssistedBalanceAdapters/MerklRewardsBalanceAdapter.sol`
 - Tests: `test/balances/protocols/MerklRewardsBalanceAdapter.t.sol` (unit, 40 tests including synthetic merkle trees), `test/balances/protocols/fork/MerklRewardsBalanceAdapter.fork.t.sol` (Mainnet integration sanity)
 - Merkl Distributor source (verified leaf encoding, `_verifyProof`, `getMerkleRoot`): https://github.com/AngleProtocol/merkl-contracts/blob/main/contracts/Distributor.sol
 - Merkl API (proof source for the bot): `https://api.merkl.xyz/v4/users/{address}/rewards?chainId={cid}`

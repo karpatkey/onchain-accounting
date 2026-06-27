@@ -10,7 +10,7 @@ The Umbrella set on Mainnet today (verified via `RewardsController.getAllAssets(
 
 ## Decision
 
-Ship a new, separate `AaveUmbrellaBalanceAdapter` (`src/balances/protocols/AaveUmbrellaBalanceAdapter.sol`). The adapter is fully **immutable** and **write-function-free**, but unlike ADR 0005 (legacy SM, where Aave does not publish an on-chain registry) **no stake-token, waToken, aToken, or reserve addresses are pinned in source**. The constructor takes only:
+Ship a new, separate `AaveUmbrellaBalanceAdapter` (`src/balances/BalanceAdapters/AaveUmbrellaBalanceAdapter.sol`). The adapter is fully **immutable** and **write-function-free**, but unlike ADR 0005 (legacy SM, where Aave does not publish an on-chain registry) **no stake-token, waToken, aToken, or reserve addresses are pinned in source**. The constructor takes only:
 
 ```solidity
 constructor(address rewardsController, address navCalculator)
@@ -94,7 +94,7 @@ When refreshing fork blocks, re-verify these addresses still hold positions; if 
 
 ## Reference
 
-- Adapter: `src/balances/protocols/AaveUmbrellaBalanceAdapter.sol`
+- Adapter: `src/balances/BalanceAdapters/AaveUmbrellaBalanceAdapter.sol`
 - Tests: `test/balances/protocols/AaveUmbrellaBalanceAdapter.t.sol` (unit), `test/balances/protocols/fork/AaveUmbrellaBalanceAdapter.fork.t.sol` (fork)
 - Deploy schema: `script/config/contracts-deployment-config/balance-adapters/1.json` `AaveUmbrella` (`04_DeployBalanceAdapters.s.sol` reads only `rewardsController` from this object; `navCalculator` is injected by the script)
 - Aave Umbrella source: <https://github.com/aave-dao/aave-umbrella>

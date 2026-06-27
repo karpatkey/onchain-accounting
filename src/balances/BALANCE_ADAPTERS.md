@@ -238,7 +238,7 @@ The interface is deliberately minimal — it only *identifies* the family and ex
 
 Concrete adapters still implement `IBalanceAdapter` (and typically `IPositionDescribable`) themselves and gate their submit/clear mutators with `onlyRole(ASSISTANT_ROLE)`. They **must** uphold the family invariant: cache only position *coordinates* (never amounts), value every read live on-chain, and re-verify ownership per read — so a faulty or compromised assistant can only **under-report, never over-report**. See ADR `docs/decisions/0007-merkl-trust-minimized-cache.md` (Merkl, proof-verified cache) and `docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md` (ether.fi, StakeWise — id-only cache).
 
-**Current members** — `MerklRewardsBalanceAdapter`, `EtherFiWithdrawalsBalanceAdapter`, `StakeWiseExitQueueBalanceAdapter` — already follow this trust model but still use `Ownable`; migrating them onto this base is tracked separately. **Planned members**, currently scan- or meta-based and to be reworked to the assisted model so an assistant supplies the account's NFT token ids instead of brute-force scanning every minted id: Nexus Mutual staking, Uniswap V3, and PancakeSwap V3.
+**Members on the base** — `MerklRewardsBalanceAdapter`, `EtherFiWithdrawalsBalanceAdapter`, `StakeWiseExitQueueBalanceAdapter` — extend `AssistedBalanceAdapter` (migrated off `Ownable`). **Also bundled in `AssistedBalanceAdapters/`** but not yet on the base — relocated here ahead of their agent-fed discovery rework (an assistant will supply the account's NFT token ids instead of brute-force scanning every minted id; they remain meta/scan-based for now): `UniswapV3PoolsMetaBalanceAdapter`, `PancakeSwapV3PoolsMetaBalanceAdapter`, `NexusMutualStakingPoolsBalanceAdapter`.
 
 ---
 
@@ -424,8 +424,8 @@ For a **meta-adapter**, extend `MetaBalanceAdapter` and implement `_instancePosi
 
 ### 8.4 Testing expectations
 
-- Unit tests (mock-only): `test/balances/protocols/<Adapter>.t.sol`
-- Fork tests against a real holder at a pinned block: `test/balances/protocols/fork/<Adapter>.fork.t.sol`
+- Unit tests (mock-only): `test/balances/<family>/<Adapter>.t.sol`
+- Fork tests against a real holder at a pinned block: `test/balances/<family>/fork/<Adapter>.fork.t.sol`
 - Run fork tests with: `FOUNDRY_PROFILE=slow forge test --match-path "test/**/fork/*.sol"`
 
 See also `docs/howto/add-balance-adapter.md` for the end-to-end recipe.

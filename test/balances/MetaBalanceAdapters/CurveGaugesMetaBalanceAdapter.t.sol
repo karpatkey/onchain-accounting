@@ -242,11 +242,13 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
         assertGt(pos.length, 0, "good gauge still returned");
     }
 
-    // ─── describePosition ─────────────────────────────────────────────────────
+    // ─── positionLabels ───────────────────────────────────────────────────────
 
-    function test_describePosition_format() public view {
-        string memory label = meta.describePosition(abi.encode(address(gauge)));
-        assertEq(label, "USDC/DAI gauge");
+    function test_positionLabels_format() public view {
+        string[] memory labels = meta.positionLabels(abi.encode(address(gauge)));
+        assertEq(labels.length, 2);
+        assertEq(labels[0], "Staking Gauge");
+        assertEq(labels[1], "USDC/DAI gauge");
     }
 
     // ─── underlyingAssetsSupported ────────────────────────────────────────────

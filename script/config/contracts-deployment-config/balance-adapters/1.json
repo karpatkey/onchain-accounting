@@ -100,16 +100,6 @@
       "positionId": "0xa877d5BB0274dCcBA8556154a30E1cA4021a275f"
     }
   },
-  "ERC4626Wrap_sGHO": {
-    "enabled": true,
-    "$comment": "Aave sGHO savings vault (ERC-4626). sGHO.asset() returns GHO; convertToAssets unwraps shares to GHO-equivalent. Held by the Alpha funds. At fork block 25230126, redeem() returned exactly convertToAssets() (no exit fee/cooldown), so convertToAssets does not over-report. Share price is >= 1 GHO (yield vault), not a 1:1 share/asset peg.",
-    "constructor": {
-      "wrapper": "0xE1753F2e00940cC31213dd92013cF019DFE4ca1d",
-      "protocol": "Aave",
-      "positionDetail": "{\"protocol\":\"Aave\",\"product\":\"Savings\",\"name\":\"sGHO\"",
-      "positionId": "0xE1753F2e00940cC31213dd92013cF019DFE4ca1d"
-    }
-  },
   "ERC4626Wrap_RWIV": {
     "enabled": false,
     "$comment": "DISABLED — superseded by RWIV_CustomPriceFeed (custom price feed). With RWIV registered as a priced asset, registerAsset auto-adds it to ERC20DefaultBalanceAdapter, so the wallet adapter reports the direct RWIV holding at RWIV/USD (same convertToAssets value this wrap produced as USDC); keeping this enabled would double-count the Nexus Safe's ~$250k direct RWIV. The feed is required regardless so UniswapV3PoolsMeta can value the USDC/RWIV LP. See PR feat/rwiv-price-feed-univ3.",
@@ -118,16 +108,6 @@
       "protocol": "Nexus Mutual",
       "positionDetail": "{\"protocol\":\"Nexus Mutual\",\"product\":\"Vault\",\"name\":\"RWIV\"",
       "positionId": "0xcAFeAA466736ac01e0AC9Ca72644beF348694731"
-    }
-  },
-  "ERC4626Wrap_waEthLidoGHO": {
-    "enabled": true,
-    "$comment": "Aave V3 Lido instance stata-token wrap of aEthLidoGHO. waEthLidoGHO.asset() returns GHO; convertToAssets unwraps shares to GHO-equivalent. ACCOUNT_11 holds ~$233 of this token. Production adapter not deployed yet \u2014 integration test deploys it ephemerally from this config block. Run script/deploy/04_DeployBalanceAdapters.s.sol post-PR-merge to deploy and write the address back into `deployed`.",
-    "constructor": {
-      "wrapper": "0xC71Ea051a5F82c67ADcF634c36FFE6334793D24C",
-      "protocol": "Aave V3",
-      "positionDetail": "{\"protocol\":\"Aave V3\",\"product\":\"Lending\",\"name\":\"Prime Instance (LidoGHO stata wrap)\"",
-      "positionId": "0xC71Ea051a5F82c67ADcF634c36FFE6334793D24C"
     }
   },
   "MorphoMarket_wstETH_USDC": {
@@ -572,7 +552,7 @@
       "positionId": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae"
     }
   },
-  "EtherFiWithdrawals": {
+  "EtherFiWithdrawalQueue": {
     "enabled": true,
     "$comment": "ether.fi withdrawal-queue cache adapter (agent-fed; ADR 0014). Mutable id-cache, owner = chainConfig.admin (OIV Safe); the kpk-agents submitter feeds WithdrawRequestNFT tokenIds. Native-ETH denominated; values from live reads (finalized getClaimableAmount, else min(amountOfEEth, amountForShare)-fee) and re-verifies ownerOf every read. Reports 0 until the agent submits ids. 04 reads withdrawRequestNft/liquidityPool/underlyingToken; protocol/positionDetail/positionId are identity metadata (hardcoded in the contract).",
     "constructor": {
@@ -598,7 +578,7 @@
   },
   "StakeWiseExitQueue": {
     "enabled": true,
-    "$comment": "StakeWise V3 exit-queue cache adapter (agent-fed; ADR 0014, sibling of EtherFiWithdrawals). Mutable cache of (vault, positionTicket, timestamp) tuples — never amounts — owner = chainConfig.admin (OIV Safe); the kpk-agents submitter feeds tuples discovered from ExitQueueEntered events. Native-ETH denominated (mainnet StakeWise vaults settle in ETH); values from live reads (calculateExitedAssets.exitedAssets + convertToAssets(leftShares)) with calculateExitedAssets(receiver=account) as the on-chain ownership check. Reports 0 until the agent submits tuples. 04 reads vaultsRegistry/underlyingToken; protocol/positionDetail/positionId are identity metadata (hardcoded in the contract).",
+    "$comment": "StakeWise V3 exit-queue cache adapter (agent-fed; ADR 0014, sibling of EtherFiWithdrawalQueue). Mutable cache of (vault, positionTicket, timestamp) tuples — never amounts — owner = chainConfig.admin (OIV Safe); the kpk-agents submitter feeds tuples discovered from ExitQueueEntered events. Native-ETH denominated (mainnet StakeWise vaults settle in ETH); values from live reads (calculateExitedAssets.exitedAssets + convertToAssets(leftShares)) with calculateExitedAssets(receiver=account) as the on-chain ownership check. Reports 0 until the agent submits tuples. 04 reads vaultsRegistry/underlyingToken; protocol/positionDetail/positionId are identity metadata (hardcoded in the contract).",
     "constructor": {
       "vaultsRegistry": "0x3a0008a588772446f6e656133C2D5029CC4FC20E",
       "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",

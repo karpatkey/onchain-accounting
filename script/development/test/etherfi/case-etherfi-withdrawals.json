@@ -1,6 +1,6 @@
 {
   "protocol": "ether.fi",
-  "adapter": "EtherFiWithdrawalsBalanceAdapter",
+  "adapter": "EtherFiWithdrawalQueueBalanceAdapter",
   "chainId": 1,
   "forkBlock": 25387000,
   "contracts": {

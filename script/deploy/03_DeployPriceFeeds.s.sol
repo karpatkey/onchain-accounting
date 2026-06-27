@@ -12,6 +12,7 @@ import {sUSDS_CustomPriceFeed} from "../../src/prices/protocols/sUSDS_CustomPric
 import {sUSDe_CustomPriceFeed} from "../../src/prices/protocols/sUSDe_CustomPriceFeed.sol";
 import {syrupUSDC_CustomPriceFeed} from "../../src/prices/protocols/syrupUSDC_CustomPriceFeed.sol";
 import {RWIV_CustomPriceFeed} from "../../src/prices/protocols/RWIV_CustomPriceFeed.sol";
+import {sGHO_CustomPriceFeed} from "../../src/prices/protocols/sGHO_CustomPriceFeed.sol";
 import {wstETH_CustomPriceFeed} from "../../src/prices/protocols/wstETH_CustomPriceFeed.sol";
 import {rETH_CustomPriceFeed} from "../../src/prices/protocols/rETH_CustomPriceFeed.sol";
 import {osToken_CustomPriceFeed} from "../../src/prices/protocols/osToken_CustomPriceFeed.sol";
@@ -115,6 +116,11 @@ contract DeployPriceFeeds is BaseDeployScript {
         // Deploy RWIV Price Oracle
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "RWIV")) {
             _deployRwiv();
+        }
+
+        // Deploy sGHO Price Oracle
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "sGHO")) {
+            _deploySgho();
         }
 
         // Deploy wstETH Price Oracle
@@ -325,6 +331,24 @@ contract DeployPriceFeeds is BaseDeployScript {
         RWIV_CustomPriceFeed rwivAdapter = new RWIV_CustomPriceFeed(rwiv, usdcUsdOracle, usdcUsdHeartbeat);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "RWIV", address(rwivAdapter));
         console2.log("RWIV_CustomPriceFeed deployed at:", address(rwivAdapter));
+    }
+
+    function _deploySgho() internal {
+        address deployed = _readAdapterDeployed("priceFeeds", "sGHO");
+        if (deployed != address(0)) {
+            console2.log("sGHO_CustomPriceFeed already deployed at:", deployed);
+            return;
+        }
+
+        address sgho = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sGHO", "sgho"));
+        address ghoUsdOracle =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sGHO", "ghoToUsdChainlinkAddress"));
+        uint256 ghoUsdHeartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "sGHO", "ghoToUsdChainlinkHeartbeat"));
+
+        sGHO_CustomPriceFeed sghoAdapter = new sGHO_CustomPriceFeed(sgho, ghoUsdOracle, ghoUsdHeartbeat);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "sGHO", address(sghoAdapter));
+        console2.log("sGHO_CustomPriceFeed deployed at:", address(sghoAdapter));
     }
 
     function _deployEthx() internal {

@@ -149,7 +149,7 @@ Stacked PRs — each branch targets the previous one. As each PR merges to `main
   - Curve: `ICurveLPToken`, `ICurveGauge`, `ICurveMinter` — defined inline in `Curve.sol`
   - Convex: `IConvexRewarder`, `IRewardsDistributor`, `IConvexToken` etc. — defined inline in `Convex.sol`
   - Gearbox: `IVault` — defined inline in `GearboxMarket.sol`
-  - Cap: `ICUsd`, `IStcUSD` — defined inline in `Cap.sol`
+  - Cap: `ICUsd`, `IStcUSD` — defined inline in `CapBalanceAdapter.sol`
   - ETH+: `IRToken`, `IMain`, `IBasketHandler` — defined inline in `ETHPlus_Price.sol`
 - [ ] Confirm `.env` has all required RPC URLs for fork tests: `MAINNET_URL`, `ARBITRUM_URL`, `BASE_URL`, `OP_URL`, `GNOSIS_URL`
 
@@ -463,8 +463,8 @@ Single asset, `convertToAssets(shares)` → one `PositionBalance` per supported 
 
 ### 2b — Protocol-specific moderate
 
-- [x] **`Cap.sol`** — Cap Finance cUSD + stcUSD positions → USDC equivalent
-  - Source: `src/balances/protocols/Cap.sol`
+- [x] **`CapBalanceAdapter.sol`** — Cap Finance cUSD + stcUSD positions → USDC equivalent
+  - Source: `src/balances/protocols/CapBalanceAdapter.sol`
   - Logic: `cUSD.balanceOf(account)` + `stcUSD.getBurnAmount(stcUSD.balanceOf(account))`
   - Supported assets: USDC (both positions denominated in USDC)
   - Constructor: `(cUSD, stcUSD, protocol, navCalculator)`
@@ -841,8 +841,8 @@ Legend: ✅ Parity confirmed | ⚠️ Intentional divergence (documented) | ❌ 
 | Oracle | Src parity | Notes |
 |--------|-----------|-------|
 | `AaveV3Instance.sol` | ⚠️ | Stable debt omitted (Aave v3 deprecated); rewards removed (inactive); collateral labels added — all intentional (reconciled Phase 3) |
-| `AaveV3SafetyModule.sol` | ✅ | Naming conventions only (reconciled Phase 3) |
-| `SparkLend.sol` | ⚠️ | Rewards removed (no active campaigns Oct 2024+) — intentional (reconciled Phase 3) |
+| `AaveV3SafetyModuleBalanceAdapter.sol` | ✅ | Naming conventions only (reconciled Phase 3) |
+| `SparkLendBalanceAdapter.sol` | ⚠️ | Rewards removed (no active campaigns Oct 2024+) — intentional (reconciled Phase 3) |
 | `MorphoMarket.sol` | ⚠️ | OA handles supply/borrow independently — improvement over KTF short-circuit (reconciled Phase 3) |
 | `BalancerV3.sol` | ⚠️ | Multiple intentional improvements: `previewRedeem` fix, non-ERC4626 else-branch, try/catch, L2 fallback, underflow guard (reconciled Phase 3 + Round 4 fix) |
 | `Aura.sol` | ⚠️ | L2 support restored 2026-04-16 (commit `62fcdee`): dynamic AURA resolution via `Booster.minter()`/`L2Coordinator.auraOFT()`, `IS_MAINNET` flag, `calculateL2AuraMint`. Constructor dropped `auraToken_` (8→7 params). Plus ERC4626 fix, try/catch on stash wrapper, more defensive gauge/pool validation (reconciled Phase 3). |
@@ -852,7 +852,7 @@ Legend: ✅ Parity confirmed | ⚠️ Intentional divergence (documented) | ❌ 
 | `SkySavingsUsds.sol` | ⚠️ | Bug fix: `_positionDetail` field now used instead of hardcoded string (reconciled Phase 3) |
 | `MorphoVault.sol` | ⚠️ | OA hoists `_calculateBalance` outside loop (improvement); Round 4 Copilot fix |
 | `GearboxMarket.sol` | ⚠️ | OA hoists `_calculateBalance` outside loop (improvement); Round 4 Copilot fix |
-| `Cap.sol` | ✅ | Logic identical |
+| `CapBalanceAdapter.sol` | ✅ | Logic identical |
 | `Curve.sol` | ⚠️ | CRV lower-bound uses `integrate_fraction − minted`; OA adds `return 0` when `minted()` fails (intentional improvement); hardcoded mainnet addresses (established pattern) |
 | `Convex.sol` | ⚠️ | CVX only returned via stash wrapper — intentional design (no stash = no CVX; see Copilot Round 3 decline rationale); `lpToken_` passed explicitly |
 | `ERC20DefaultOracle.sol` | — | New in OA — no KTF counterpart |

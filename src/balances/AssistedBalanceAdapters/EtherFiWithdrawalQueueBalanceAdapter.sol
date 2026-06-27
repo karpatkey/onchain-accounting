@@ -17,15 +17,15 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @notice Reports the in-flight ETH owed to an account in ether.fi's withdrawal queue. Requesting a withdrawal
 ///         burns eETH/weETH and mints a `WithdrawRequestNFT`; the queued ETH is then invisible to NAV (the NFT is
 ///         not `ERC721Enumerable` and exposes no owner→tokenIds view, so a pure-view adapter cannot discover the
-///         positions). An off-chain assistant (the `ASSISTANT_ROLE` holder) submits the account's `tokenId`s via
-///         `submitTokenIds`; this adapter then values them entirely from live on-chain reads, re-verifying ownership
-///         on every read. The cache stores **only ids, never amounts**, so the assistant cannot fabricate value — at
-///         worst it omits an id (NAV under-counts), never over-counts.
-/// @dev Trust model and mutability rationale: see `docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md`
-///      (generalises the Merkl precedent, ADR 0007). One aggregated native-ETH `Supplied` leg per account.
-///      Access control comes from {AssistedBalanceAdapter}: `DEFAULT_ADMIN_ROLE` administers roles and
-///      `ASSISTANT_ROLE` gates the submit/clear mutators.
-contract EtherFiWithdrawalsBalanceAdapter is AssistedBalanceAdapter, IPositionDescribable {
+///         positions). An off-chain assistant (holder of `ASSISTANT_ROLE`) submits the account's `tokenId`s via
+///         `submitTokenIds`; this adapter then values them entirely from live on-chain reads, re-verifying ownership on
+///         every read. The cache stores **only ids, never amounts**, so the assistant cannot fabricate value — at worst it omits an id (NAV
+///         under-counts), never over-counts.
+/// @dev Access control comes from {AssistedBalanceAdapter}: `DEFAULT_ADMIN_ROLE` administers roles and `ASSISTANT_ROLE`
+///      gates the submit/clear mutators. Trust model and mutability rationale: see
+///      `docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md` (generalises the Merkl precedent, ADR 0007).
+///      One aggregated native-ETH `Supplied` leg per account.
+contract EtherFiWithdrawalQueueBalanceAdapter is AssistedBalanceAdapter, IPositionDescribable {
     //
     // State
     //
@@ -34,7 +34,7 @@ contract EtherFiWithdrawalsBalanceAdapter is AssistedBalanceAdapter, IPositionDe
 
     /// @notice Hard cap on cached tokenIds per account. `_ethOwed` iterates the whole array on every NAV read,
     ///         and an OOG there is NOT caught by NAVCalculator's try/catch — a bloated cache would brick the
-    ///         account's NAV scan. Bounding the cache at submit time keeps the read gas-bounded; the agent must
+    ///         account's NAV scan. Bounding the cache at submit time keeps the read gas-bounded; the assistant must
     ///         GC claimed ids (`clearTokenId`) to stay under it. A real account never approaches 256 open requests.
     uint256 public constant MAX_TOKEN_IDS = 256;
 
@@ -72,9 +72,9 @@ contract EtherFiWithdrawalsBalanceAdapter is AssistedBalanceAdapter, IPositionDe
     /// @param liquidityPool_      ether.fi LiquidityPool (for `amountForShare`). Must be a contract.
     /// @param underlyingToken_    Payout asset (native-ETH sentinel).
     /// @param navCalculator_      NAVCalculator. Must be a contract.
-    /// @param admin_              Holder of `DEFAULT_ADMIN_ROLE` — administers `ASSISTANT_ROLE`. Required.
-    /// @param assistant_          Initial `ASSISTANT_ROLE` holder authorized to submit/clear tokenIds (the OIV Safe /
-    ///                            agent role). Optional (pass `address(0)` to grant later via `admin_`).
+    /// @param admin_              Holder of `DEFAULT_ADMIN_ROLE` (administers `ASSISTANT_ROLE`). Required.
+    /// @param assistant_          Initial holder of `ASSISTANT_ROLE`, authorized to submit/clear tokenIds (the assistant
+    ///                            agent). Optional (pass `address(0)` to grant later via `admin_`).
     constructor(
         address withdrawRequestNft_,
         address liquidityPool_,
@@ -114,7 +114,10 @@ contract EtherFiWithdrawalsBalanceAdapter is AssistedBalanceAdapter, IPositionDe
     }
 
     /// @notice Batch variant across accounts. `accounts` and `tokenIds` must have the same length.
-    function submitTokenIdsBatch(address[] calldata accounts, uint256[][] calldata tokenIds) external onlyRole(ASSISTANT_ROLE) {
+    function submitTokenIdsBatch(address[] calldata accounts, uint256[][] calldata tokenIds)
+        external
+        onlyRole(ASSISTANT_ROLE)
+    {
         if (accounts.length != tokenIds.length) revert ArrayLengthMismatch();
         for (uint256 i; i < accounts.length; ++i) {
             if (accounts[i] == address(0)) revert InvalidArguments();
@@ -151,8 +154,6 @@ contract EtherFiWithdrawalsBalanceAdapter is AssistedBalanceAdapter, IPositionDe
     }
 
     /// @inheritdoc IERC165
-    /// @dev Adds {IPositionDescribable} on top of the family interfaces advertised by {AssistedBalanceAdapter}
-    ///      ({IAssistedBalanceAdapter}, {IBalanceAdapter}, {IAccessControl}, {IERC165}).
     function supportsInterface(bytes4 interfaceId) public view override(AssistedBalanceAdapter) returns (bool) {
         return interfaceId == type(IPositionDescribable).interfaceId || super.supportsInterface(interfaceId);
     }
@@ -161,8 +162,10 @@ contract EtherFiWithdrawalsBalanceAdapter is AssistedBalanceAdapter, IPositionDe
         return "ether.fi";
     }
 
-    function describePosition(bytes calldata) external pure returns (string memory) {
-        return "ETH Withdrawal Queue";
+    function positionLabels(bytes calldata) external pure returns (string[] memory) {
+        string[] memory out = new string[](1);
+        out[0] = "eETH Withdrawal Queue";
+        return out;
     }
 
     /// @inheritdoc IBalanceAdapter
@@ -249,7 +252,7 @@ contract EtherFiWithdrawalsBalanceAdapter is AssistedBalanceAdapter, IPositionDe
     function _addTokenId(address account, uint256 tokenId) internal {
         if (_tokenIdIdxPlus1[account][tokenId] != 0) return; // already cached
         // Cap the cache so the per-account read loop stays gas-bounded (OOG there isn't caught by NAV). The
-        // owner must GC claimed ids to make room; a real account never approaches MAX_TOKEN_IDS open requests.
+        // assistant must GC claimed ids to make room; a real account never approaches MAX_TOKEN_IDS open requests.
         if (_tokenIds[account].length >= MAX_TOKEN_IDS) return;
         // Light hygiene: only store ids currently owned by `account`. Not load-bearing — reads re-verify.
         try IEtherFiWithdrawRequestNFT(WITHDRAW_REQUEST_NFT).ownerOf(tokenId) returns (address o) {

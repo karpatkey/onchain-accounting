@@ -27,7 +27,7 @@ contract EulerVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     // External libraries pre-linked at deterministic CREATE2 addresses (foundry.toml). Etch their runtime on the fork
     // so NAVCalculator's pricing/registry DELEGATECALLs succeed.
     address constant PRICE_FEED_LIB = LibraryPins.PRICE_FEED_LIB;
-    address constant NAV_REGISTRY_LIB = 0x2F1F6c17D64bE96F583D390be212aFCF8D0F102a;
+    address constant NAV_REGISTRY_LIB = LibraryPins.NAV_REGISTRY_LIB;
 
     // kpk-curated Euler V2 EulerEarn vaults (ERC4626 yield aggregators, not core EVK eVaults) on mainnet.
     IERC4626 public constant KPK_ETH_TERM = IERC4626(0xB6D6D89ad4b4D61C15a293e28b74f77F6817fF48); // WETH
@@ -196,8 +196,11 @@ contract EulerVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         assertEq(none.length, 0);
     }
 
-    function test_describePosition_realVaultName() public view {
-        assertEq(adapter.describePosition(abi.encode(address(KPK_ETH_TERM))), "KPK ETH Yield Term");
+    function test_positionLabels_realVaultName() public view {
+        string[] memory labels = adapter.positionLabels(abi.encode(address(KPK_ETH_TERM)));
+        assertEq(labels.length, 2);
+        assertEq(labels[0], "Vault");
+        assertEq(labels[1], "KPK ETH Yield Term");
     }
 
     /// @notice Real account exercising all three Euler shapes in one query: an **earn** leg (EulerEarn KPK_ETH_Term,

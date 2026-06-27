@@ -19,7 +19,7 @@ The shipped withdrawal-queue adapters (Lido/Stader/Kelp) work only because those
 
 ## Decision
 
-Ship **two owner-gated cache adapters** — `EtherFiWithdrawalsBalanceAdapter` and `StakeWiseExitQueueBalanceAdapter` — as the **third and fourth documented mutable adapters** (after `MerklRewards`, ADR 0007). Each pairs with an off-chain submitter agent in `kpk-agents` that mirrors `submit_merkl_proofs.py`.
+Ship **two owner-gated cache adapters** — `EtherFiWithdrawalQueueBalanceAdapter` and `StakeWiseExitQueueBalanceAdapter` — as the **third and fourth documented mutable adapters** (after `MerklRewards`, ADR 0007). Each pairs with an off-chain submitter agent in `kpk-agents` that mirrors `submit_merkl_proofs.py`.
 
 **Key refinement over Merkl — the cache stores *ids only*, never amounts.** Merkl caches a `(cumulativeAmount, root)` verified at write time. Here the cache stores only the **candidate id set** per account; the **amount is read live on every NAV read** and re-verified to still belong to the account. The agent therefore cannot influence the reported value *at all* — only the set of positions checked. Failure mode is strictly under-report (agent omits/lags an id), never over-report. This is a *stronger* trust model than Merkl's.
 
@@ -33,7 +33,7 @@ Ship **two owner-gated cache adapters** — `EtherFiWithdrawalsBalanceAdapter` a
 - Identity: `protocolId = keccak256("etherfi-withdrawal")` / `keccak256("stakewise-exit")` (new slugs in `ProtocolIds.sol`); **`positionId` is empty (`""`) — account-global aggregation, like the other WQ adapters** (the cached ids are an internal coordinate, not emitted). Immutable.
 - Everything except the cache is immutable: queue/NPM/vault-registry addresses, NAVCalculator, identity. No upgrade path. No admin-injected amounts.
 
-### EtherFiWithdrawalsBalanceAdapter
+### EtherFiWithdrawalQueueBalanceAdapter
 
 - Reads `WithdrawRequestNFT` (`0x7d57…4E2c`) — native-ETH-denominated (eETH unwinds to ETH).
 - Per cached `tokenId`: `ownerOf(tokenId) == account` (the on-chain ownership check; a claimed/transferred NFT is burned/moved → drop). Then value = `getClaimableAmount(tokenId)` if `isFinalized(tokenId)`, else the request's `amountOfEEth`/share-implied ETH from `getRequest(tokenId)` (mirror the Lido WQ adapter's finalized-vs-pending valuation). Leg: `Supplied`, asset = native ETH sentinel.

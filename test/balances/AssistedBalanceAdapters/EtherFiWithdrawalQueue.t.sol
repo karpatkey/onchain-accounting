@@ -4,9 +4,10 @@ pragma solidity ^0.8.0;
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
 import {
-    EtherFiWithdrawalsBalanceAdapter,
+    EtherFiWithdrawalQueueBalanceAdapter,
     IEtherFiWithdrawRequestNFT
-} from "src/balances/AssistedBalanceAdapters/EtherFiWithdrawalsBalanceAdapter.sol";
+} from "src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueBalanceAdapter.sol";
+import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
@@ -92,9 +93,9 @@ contract MockLiquidityPool {
     }
 }
 
-/// @title EtherFiWithdrawalsBalanceAdapter unit tests
-contract EtherFiWithdrawalsBalanceAdapterTest is BalanceAdapterTestBase {
-    EtherFiWithdrawalsBalanceAdapter public adapter;
+/// @title EtherFiWithdrawalQueueBalanceAdapter unit tests
+contract EtherFiWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
+    EtherFiWithdrawalQueueBalanceAdapter public adapter;
     MockWithdrawRequestNFT public nft;
     MockLiquidityPool public lp;
 
@@ -108,7 +109,7 @@ contract EtherFiWithdrawalsBalanceAdapterTest is BalanceAdapterTestBase {
         lp = new MockLiquidityPool();
         balances.addSupportedAssetForTest(NATIVE);
         // admin = assistant = this test contract, so it can submit ids.
-        adapter = new EtherFiWithdrawalsBalanceAdapter(
+        adapter = new EtherFiWithdrawalQueueBalanceAdapter(
             address(nft), address(lp), NATIVE, address(balances), address(this), address(this)
         );
     }
@@ -117,35 +118,35 @@ contract EtherFiWithdrawalsBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_constructor_revertsOnZeroNft() public {
         vm.expectRevert(InvalidArguments.selector);
-        new EtherFiWithdrawalsBalanceAdapter(
+        new EtherFiWithdrawalQueueBalanceAdapter(
             address(0), address(lp), NATIVE, address(balances), address(this), address(this)
         );
     }
 
     function test_constructor_revertsOnZeroLp() public {
         vm.expectRevert(InvalidArguments.selector);
-        new EtherFiWithdrawalsBalanceAdapter(
+        new EtherFiWithdrawalQueueBalanceAdapter(
             address(nft), address(0), NATIVE, address(balances), address(this), address(this)
         );
     }
 
     function test_constructor_revertsOnZeroUnderlying() public {
         vm.expectRevert(InvalidArguments.selector);
-        new EtherFiWithdrawalsBalanceAdapter(
+        new EtherFiWithdrawalQueueBalanceAdapter(
             address(nft), address(lp), address(0), address(balances), address(this), address(this)
         );
     }
 
     function test_constructor_revertsWhenNftNotContract() public {
         vm.expectRevert(bytes("WithdrawRequestNFT must be a contract"));
-        new EtherFiWithdrawalsBalanceAdapter(
+        new EtherFiWithdrawalQueueBalanceAdapter(
             makeAddr("eoa"), address(lp), NATIVE, address(balances), address(this), address(this)
         );
     }
 
     // ---- Access control / submission ----
 
-    function test_submit_onlyAssistant() public {
+    function test_submit_onlyAssistantRole() public {
         uint256[] memory ids = _ids(1);
         vm.prank(other);
         vm.expectRevert(
@@ -154,6 +155,28 @@ contract EtherFiWithdrawalsBalanceAdapterTest is BalanceAdapterTestBase {
             )
         );
         adapter.submitTokenIds(holder, ids);
+    }
+
+    function test_assistantRole_grantedToConstructorArg() public view {
+        assertTrue(adapter.hasRole(adapter.ASSISTANT_ROLE(), address(this)));
+        assertTrue(adapter.hasRole(adapter.DEFAULT_ADMIN_ROLE(), address(this)));
+        assertFalse(adapter.hasRole(adapter.ASSISTANT_ROLE(), other));
+    }
+
+    function test_admin_canGrantAssistantRole() public {
+        // A fresh adapter with `this` as admin only (no initial assistant); `other` is granted later by the admin.
+        EtherFiWithdrawalQueueBalanceAdapter a2 = new EtherFiWithdrawalQueueBalanceAdapter(
+            address(nft), address(lp), NATIVE, address(balances), address(this), address(0)
+        );
+        bytes32 role = a2.ASSISTANT_ROLE();
+        assertFalse(a2.hasRole(role, other));
+        a2.grantRole(role, other);
+        assertTrue(a2.hasRole(role, other));
+
+        nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
+        vm.prank(other);
+        a2.submitTokenIds(holder, _ids(1));
+        assertEq(a2.tokenIdsOf(holder).length, 1);
     }
 
     function test_submit_storesOwnedId_andDedups() public {
@@ -288,7 +311,7 @@ contract EtherFiWithdrawalsBalanceAdapterTest is BalanceAdapterTestBase {
     function test_unregisteredUnderlying_positionsEmpty_butBalanceStillOwed() public {
         // Fresh NAV harness that does NOT register the native sentinel.
         BalancesHarness freshNav = new BalancesHarness();
-        EtherFiWithdrawalsBalanceAdapter a2 = new EtherFiWithdrawalsBalanceAdapter(
+        EtherFiWithdrawalQueueBalanceAdapter a2 = new EtherFiWithdrawalQueueBalanceAdapter(
             address(nft), address(lp), NATIVE, address(freshNav), address(this), address(this)
         );
         nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);

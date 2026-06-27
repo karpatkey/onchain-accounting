@@ -26,6 +26,6 @@ Role separation replaces the single `Ownable` owner: the **admin** (e.g. the sec
 ## Consequences
 
 - The exception adapters get a named, consistent home. New assisted adapters extend one base instead of re-deriving the pattern.
-- **Members.** Current: `MerklRewardsBalanceAdapter`, `EtherFiWithdrawalsBalanceAdapter`, `StakeWiseExitQueueBalanceAdapter` (today `Ownable`; migrating onto this base, with their off-chain submitters repointed to the new role, is tracked with the redeploy second pass). Planned: Nexus Mutual staking, Uniswap V3, PancakeSwap V3 — currently scan- or meta-based, to be reworked so an assistant supplies the account's NFT token ids instead of brute-force scanning.
+- **Members.** Current: `MerklRewardsBalanceAdapter`, `EtherFiWithdrawalQueueBalanceAdapter`, `StakeWiseExitQueueBalanceAdapter` (today `Ownable`; migrating onto this base, with their off-chain submitters repointed to the new role, is tracked with the redeploy second pass). Planned: Nexus Mutual staking, Uniswap V3, PancakeSwap V3 — currently scan- or meta-based, to be reworked so an assistant supplies the account's NFT token ids instead of brute-force scanning.
 - This base is introduced ahead of its consumers, so no shipped adapter inherits it yet; the immutability rule is unaffected until the migration lands.
 - Supersedes the per-adapter framing in ADRs 0007 and 0014 only in that those adapters now have a shared family; their trust-model reasoning still stands.

@@ -6,7 +6,6 @@ import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {ArrayLib} from "src/utils/ArrayLib.sol";
 import {InvalidArguments} from "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -33,11 +32,14 @@ interface IStcUsd {
 
 /// @title Cap Protocol Balance Adapter
 /// @author KPK
-/// @notice Returns the USDC-equivalent balance for an account's Cap Finance positions (cUSD + stcUSD).
-/// @dev Combines cUSD and stcUSD positions into a single USDC amount:
-///      1. Reads cUSD balance directly via ERC20.balanceOf
-///      2. Converts stcUSD shares to cUSD via ERC4626 convertToAssets
-///      3. Calls ICUsd.getBurnAmount on the combined cUSD total to get the USDC equivalent
+/// @notice Returns the USDC-equivalent balances for an account's Cap positions, as two structurally distinct
+///         legs: the base synthetic dollar (cUSD) and the staked, yield-bearing savings token (stcUSD).
+/// @dev Each leg is valued independently in USDC and emitted as its own `PositionBalance` (positionId =
+///      `abi.encode(token)`), so a consumer can tell held cUSD apart from staked stcUSD:
+///      - cUSD:   ERC20.balanceOf → `ICUsd.getBurnAmount` → USDC.            Label `["Stablecoin", "cUSD"]`.
+///      - stcUSD: ERC20.balanceOf → ERC4626 `convertToAssets` → cUSD → `getBurnAmount` → USDC. `["Savings", "stcUSD"]`.
+///      The no-arg balance getters (`getAdapterBalances`/`getAdapterBalanceForAsset`) still report the combined
+///      USDC total for the USDC asset; only the NAV `getAdapterPositions` path splits the legs.
 contract CapBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     //
     // State
@@ -95,8 +97,24 @@ contract CapBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         return "Cap";
     }
 
-    function describePosition(bytes calldata) external pure returns (string memory) {
-        return "supply";
+    /// @inheritdoc IPositionDescribable
+    /// @dev Branches on the positionId token: `["Stablecoin", "cUSD"]` for the cUSD leg,
+    ///      `["Savings", "stcUSD"]` for the staked stcUSD leg. Empty array for anything else.
+    function positionLabels(bytes calldata positionId) external view returns (string[] memory) {
+        if (positionId.length < 32) return new string[](0);
+        address token = abi.decode(positionId, (address));
+        string[] memory out = new string[](2);
+        if (token == address(STCUSD)) {
+            out[0] = "Savings";
+            out[1] = "stcUSD";
+            return out;
+        }
+        if (token == address(CUSD)) {
+            out[0] = "Stablecoin";
+            out[1] = "cUSD";
+            return out;
+        }
+        return new string[](0);
     }
 
     //
@@ -143,57 +161,78 @@ contract CapBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     }
 
     /// @inheritdoc IBalanceAdapter
-    /// @notice Returns the combined cUSD + stcUSD position as a single USDC-denominated PositionBalance.
+    /// @notice Returns up to two USDC-denominated positions — the cUSD leg and the stcUSD leg — skipping any
+    ///         leg with a zero balance. cUSD (held synthetic dollar) is `Supplied`; stcUSD (staked cUSD) is
+    ///         `Staking`. Identity is the leg's token via positionId.
     function getAdapterPositions(address account, address assetFilter)
         external
         view
         override
         returns (INAVCalculator.PositionBalance[] memory positions)
     {
-        address[] memory supportedAssets = this.underlyingAssetsSupported();
-        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
-        address[] memory registeredAssets = new address[](reg.length);
-        for (uint256 i = 0; i < reg.length; i++) {
-            registeredAssets[i] = reg[i].asset;
-        }
-
-        address[] memory registeredSupportedAssets = ArrayLib.intersection(supportedAssets, registeredAssets);
-
-        if (registeredSupportedAssets.length == 0) {
-            return new INAVCalculator.PositionBalance[](0);
-        }
-
-        // assetFilter: if set and doesn't match USDC, return empty
+        // Only the USDC asset is reported; if it isn't registered (or filtered out), nothing to emit.
+        (INAVCalculator.Asset memory underlyingAsset, bool found) = _getAssetInfo(USDC);
+        if (!found) return new INAVCalculator.PositionBalance[](0);
         if (assetFilter != address(0) && assetFilter != USDC) {
             return new INAVCalculator.PositionBalance[](0);
         }
 
-        uint256 balance = _calculateBalance(account);
-        if (balance == 0) {
-            return new INAVCalculator.PositionBalance[](0);
+        uint256 cUsdUsdc = _cUsdLegUsdc(account);
+        uint256 stcUsdUsdc = _stcUsdLegUsdc(account);
+
+        uint256 n = (cUsdUsdc > 0 ? 1 : 0) + (stcUsdUsdc > 0 ? 1 : 0);
+        positions = new INAVCalculator.PositionBalance[](n);
+        uint256 k = 0;
+        if (cUsdUsdc > 0) {
+            positions[k++] = INAVCalculator.PositionBalance({
+                balanceAsset: underlyingAsset,
+                balanceAdapter: address(this),
+                amount: cUsdUsdc,
+                isDebt: false,
+                protocolId: PROTOCOL_ID,
+                positionId: abi.encode(address(CUSD)),
+                positionKind: PositionKind.Supplied
+            });
         }
-
-        INAVCalculator.Asset memory underlyingAsset = _getAssetInfo(USDC);
-
-        positions = new INAVCalculator.PositionBalance[](1);
-        positions[0] = INAVCalculator.PositionBalance({
-            balanceAsset: underlyingAsset,
-            balanceAdapter: address(this),
-            amount: balance,
-            isDebt: false,
-            protocolId: PROTOCOL_ID,
-            positionId: abi.encode(address(CUSD)),
-            positionKind: PositionKind.Supplied
-        });
+        if (stcUsdUsdc > 0) {
+            positions[k++] = INAVCalculator.PositionBalance({
+                balanceAsset: underlyingAsset,
+                balanceAdapter: address(this),
+                amount: stcUsdUsdc,
+                isDebt: false,
+                protocolId: PROTOCOL_ID,
+                positionId: abi.encode(address(STCUSD)),
+                positionKind: PositionKind.Staking
+            });
+        }
     }
 
     //
     // Internal Helpers
     //
 
-    /// @notice Computes the USDC equivalent of the account's combined cUSD and stcUSD holdings.
-    /// @dev Converts stcUSD shares → cUSD via convertToAssets, then converts total cUSD → USDC
-    ///      via ICUsd.getBurnAmount. Returns 0 if the account holds no Cap positions.
+    /// @notice USDC equivalent of the account's directly-held cUSD (0 if none).
+    function _cUsdLegUsdc(address account) internal view returns (uint256) {
+        uint256 cUsdBalance = IERC20(address(CUSD)).balanceOf(account);
+        if (cUsdBalance == 0) return 0;
+        (uint256 usdcAmount,) = CUSD.getBurnAmount(USDC, cUsdBalance);
+        return usdcAmount;
+    }
+
+    /// @notice USDC equivalent of the account's staked stcUSD (shares → cUSD → USDC; 0 if none).
+    function _stcUsdLegUsdc(address account) internal view returns (uint256) {
+        uint256 stcUsdBalance = IERC20(address(STCUSD)).balanceOf(account);
+        if (stcUsdBalance == 0) return 0;
+        uint256 cUsdEquiv = STCUSD.convertToAssets(stcUsdBalance);
+        if (cUsdEquiv == 0) return 0;
+        (uint256 usdcAmount,) = CUSD.getBurnAmount(USDC, cUsdEquiv);
+        return usdcAmount;
+    }
+
+    /// @notice Combined USDC equivalent of cUSD + stcUSD; used by the no-arg balance getters.
+    /// @dev Quotes the burn on the *combined* cUSD total in one call (cUSD balance + stcUSD→cUSD), so the
+    ///      aggregate getter stays exact. The NAV `getAdapterPositions` path values each leg separately (the
+    ///      two may differ from this combined figure by at most burn-quote rounding).
     function _calculateBalance(address account) internal view returns (uint256) {
         uint256 cUsdBalance = IERC20(address(CUSD)).balanceOf(account);
         uint256 stcUsdBalance = IERC20(address(STCUSD)).balanceOf(account);
@@ -210,12 +249,13 @@ contract CapBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         return usdcAmount;
     }
 
-    /// @notice Looks up asset metadata from the NAVCalculator registry
-    function _getAssetInfo(address asset) internal view returns (INAVCalculator.Asset memory) {
+    /// @notice Looks up asset metadata from the NAVCalculator registry.
+    /// @return asset The Asset struct (zeroed if not found). found True if the asset is registered.
+    function _getAssetInfo(address asset) internal view returns (INAVCalculator.Asset memory, bool found) {
         INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
         for (uint256 i = 0; i < reg.length; i++) {
-            if (reg[i].asset == asset) return reg[i];
+            if (reg[i].asset == asset) return (reg[i], true);
         }
-        revert("Asset not found in NAVCalculator");
+        return (INAVCalculator.Asset({asset: address(0), symbol: "", decimals: 0}), false);
     }
 }

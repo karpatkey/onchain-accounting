@@ -8,9 +8,10 @@ pragma solidity ^0.8;
 ///
 ///      positionId schemas (all are `abi.encode(...)`):
 ///        WALLET                          → (address asset)
-///        AAVE_V3_LENDING / SPARK         → (address pool, address reserve)
+///        AAVE_V3_LENDING / SPARK_LEND    → (address pool) — one position per instance; reserve in balanceAsset
 ///        AAVE_V3_SAFETY_MODULE / UMBRELLA→ (address stakeToken)
-///        MORPHO_VAULTS / GEARBOX_V3 / EULER_VAULTS / CAP / ERC4626 / STAKEWISE_V3 / FLUID_VAULTS → (address vault)
+///        MORPHO_VAULTS / GEARBOX_V3 / EULER_VAULTS / ERC4626 / STAKEWISE_V3 / FLUID_VAULTS → (address vault)
+///        CAP                             → (address token: cUSD or stcUSD) — one leg per token
 ///        MORPHO_MARKETS                  → (bytes32 marketId)
 ///        BALANCER_V3_POOL                → (address pool)
 ///        BALANCER_V3_GAUGE / V2_GAUGE                  → (address gauge)
@@ -21,7 +22,7 @@ pragma solidity ^0.8;
 ///        UNISWAP_V3 / PANCAKESWAP_V3     → (address npm, uint256 tokenId)
 ///        UNISWAP_V2 / PANCAKESWAP_V2     → (address pair)
 ///        COMPOUND_V3 / FLUID_FTOKENS     → (address market)
-///        MERKL                           → (address rewardToken)
+///        MERKL                           → (address distributor) — reward token is in balanceAsset, not positionId
 ///        NEXUS_MUTUAL_STAKING            → (uint256 tokenId, uint256 poolId)
 ///        STADER_WITHDRAWAL / KELP_WITHDRAWAL / LIDO_WITHDRAWAL
 ///          / ETHENA_COOLDOWN / ETHERFI_WITHDRAWAL / STAKEWISE_EXIT → "" (account-global)

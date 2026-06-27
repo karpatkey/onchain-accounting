@@ -172,15 +172,28 @@ contract ERC20DefaultBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         return "Wallet";
     }
 
-    function describePosition(bytes calldata positionId) external view returns (string memory) {
-        if (positionId.length == 0) return "";
-        address addr = abi.decode(positionId, (address));
-        if (addr == NATIVE_ADDRESS) return "native";
-        try IERC20Metadata(addr).symbol() returns (string memory sym) {
-            return sym;
-        } catch {
-            return "";
+    function positionLabels(bytes calldata positionId) external view returns (string[] memory) {
+        string memory leaf;
+        if (positionId.length == 0) {
+            leaf = "";
+        } else {
+            address addr = abi.decode(positionId, (address));
+            if (addr == NATIVE_ADDRESS) {
+                leaf = "native";
+            } else {
+                try IERC20Metadata(addr).symbol() returns (string memory sym) {
+                    leaf = sym;
+                } catch {
+                    leaf = "";
+                }
+            }
         }
+        // Fail-open: no derivable label → empty array (IPositionDescribable convention), not `[""]`,
+        // so consumers don't render a blank breadcrumb segment.
+        if (bytes(leaf).length == 0) return new string[](0);
+        string[] memory out = new string[](1);
+        out[0] = leaf;
+        return out;
     }
 
     //

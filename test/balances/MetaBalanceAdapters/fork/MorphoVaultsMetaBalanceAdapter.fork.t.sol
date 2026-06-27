@@ -62,7 +62,7 @@ contract MorphoVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         // Etch the pre-linked PriceFeedLib so pricing works on the fork.
         address priceFeedLibImpl = vm.deployCode("PriceFeedLib.sol:PriceFeedLib");
         vm.etch(PRICE_FEED_LIB, priceFeedLibImpl.code);
-        vm.etch(0x2F1F6c17D64bE96F583D390be212aFCF8D0F102a, vm.deployCode("NAVRegistryLib.sol:NAVRegistryLib").code);
+        vm.etch(LibraryPins.NAV_REGISTRY_LIB, vm.deployCode("NAVRegistryLib.sol:NAVRegistryLib").code);
 
         // Real NAVCalculator (L1: no sequencer uptime feed).
         vm.startPrank(admin);

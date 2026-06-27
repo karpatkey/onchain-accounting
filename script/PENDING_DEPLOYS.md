@@ -95,7 +95,6 @@ Sorted by family.
 |---|---|
 | `StaderWithdrawalQueue` | Stader UserWithdrawalManager pending unstake requests |
 | `UniswapV3_WBTC_WETH_3000` | Mainnet Uni V3 WBTC/WETH 0.3% pool. No current test-account exposure. |
-| `ERC4626Wrap_waEthLidoGHO` | Aave V3 Prime stata-token wrap (`0xC71Ea051…`). Generic `ERC4626WrapBalanceAdapter`. Underlying = GHO (must be registered first). Covers ACCOUNT_11's ~$233 wallet position previously invisible to `AaveV3_Prime.getUserReserveData`. |
 
 ### 1.3 Pending balance adapters — L2 chains
 

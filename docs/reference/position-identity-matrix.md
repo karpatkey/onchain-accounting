@@ -13,10 +13,10 @@ Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, pos
 | Adapter | `protocolId` slug | `positionId` schema | Leg | `PositionKind` | `isDebt` | `balanceAsset` |
 |---|---|---|---|---|---|---|
 | ERC20DefaultBalanceAdapter | `wallet` | `abi.encode(address asset)` | wallet balance | `Wallet` | false | the asset itself |
-| AaveV3InstancesMeta | `aave-v3-lending` | `abi.encode(address pool, address reserve)` | supply (collateral toggle off) | `Supplied` | false | reserve |
+| AaveV3InstancesMeta | `aave-v3-lending` | `abi.encode(address pool)` | supply (collateral toggle off) | `Supplied` | false | reserve |
 | | | | supply (collateral toggle on) | `Collateral` | false | reserve |
 | | | | variable debt | `Borrowed` | true | reserve |
-| SparkLend | `spark-lend` | `abi.encode(address pool, address reserve)` | same 3 legs as Aave V3 | `Supplied`/`Collateral`/`Borrowed` | f/f/t | reserve |
+| SparkLend | `spark-lend` | `abi.encode(address pool)` | same 3 legs as Aave V3 | `Supplied`/`Collateral`/`Borrowed` | f/f/t | reserve |
 | CompoundV3CometsMeta | `compound-v3` | `abi.encode(address comet)` | base supply (net > 0) | `Supplied` | false | base token |
 | | | | base borrow (net < 0) | `Borrowed` | true | base token |
 | | | | collateral balance | `Collateral` | false | collateral asset |
@@ -33,7 +33,8 @@ Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, pos
 | | | | supply (EVC collateral on) | `Collateral` | false | `vault.asset()` |
 | | | | core-eVault debt (`debtOf`) | `Borrowed` | true | `vault.asset()` |
 | ERC4626Wrap | `erc4626` | `abi.encode(address wrapper)` | wrapper shares (`convertToAssets`) | `Supplied` | false | `wrapper.asset()` |
-| Cap | `cap` | `abi.encode(address cUSD)` | cUSD + stcUSD combined | `Supplied` | false | USDC |
+| Cap | `cap` | `abi.encode(address cUSD)` | held cUSD (Stablecoin) | `Supplied` | false | USDC |
+| | | `abi.encode(address stcUSD)` | staked stcUSD (Savings) | `Staking` | false | USDC |
 | AaveV3SafetyModule | `aave-v3-safety-module` | `abi.encode(address stakeToken)` | staked principal (per stake token) | `Staking` | false | staked token (AAVE/GHO/ABPT…) |
 | | | | claimable SM rewards | `Rewards` | false | AAVE |
 | AaveUmbrella | `aave-v3-umbrella` | `abi.encode(address stakeToken)` | staked principal | `Staking` | false | bare reserve |
@@ -65,12 +66,12 @@ Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, pos
 | StaderWithdrawalQueue | `stader-withdrawal` | `""` (empty — account-global) | ETH owed from open requests | `Supplied` | false | WETH |
 | KelpWithdrawalQueue | `kelp-withdrawal` | `""` (empty — account-global) | owed per payout asset | `Supplied` | false | each supported asset |
 | LidoWithdrawalQueue | `lido-withdrawal` | `""` (empty — account-global) | claimable + pending ETH | `Supplied` | false | native ETH |
-| EtherFiWithdrawals | `etherfi-withdrawal` | `""` (empty — account-global) | in-flight withdrawal-queue ETH | `Supplied` | false | native ETH |
+| EtherFiWithdrawalQueue | `etherfi-withdrawal` | `""` (empty — account-global) | in-flight withdrawal-queue ETH | `Supplied` | false | native ETH |
 | StakeWiseExitQueue | `stakewise-exit` | `""` (empty — account-global) | in-flight exit-queue assets | `Supplied` | false | native ETH |
 | EthenaCooldownBalanceAdapter | `ethena-cooldown` | `""` (empty — account-global) | USDe in the sUSDe unstaking cooldown | `Supplied` | false | USDe |
 | NexusMutualStakingPools | `nexus-mutual-staking` | `abi.encode(uint256 tokenId, uint256 poolId)` | active + expired staked NXM (per StakingNFT) | `Staking` | false | NXM |
 | | | | claimable rewards (per StakingNFT) | `Rewards` | false | NXM |
-| MerklRewards | `merkl` | `abi.encode(address rewardToken)` | unclaimed rewards per token | `Rewards` | false | reward token |
+| MerklRewards | `merkl` | `abi.encode(address distributor)` | unclaimed rewards (one leg per reward token, distinguished by `balanceAsset`) | `Rewards` | false | reward token |
 
 ## PositionKind usage census
 

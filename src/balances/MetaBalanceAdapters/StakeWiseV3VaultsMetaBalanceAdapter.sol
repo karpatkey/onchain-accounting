@@ -110,14 +110,16 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    function describePosition(bytes calldata pid) external view override returns (string memory) {
-        if (pid.length < 32) return "";
+    /// @dev Returns `["Vaults", <leaf>]` where the leaf is the vault's ERC20 name ("" if unreadable). Returns an
+    ///      empty array for a short positionId.
+    function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
+        if (pid.length < 32) return new string[](0);
         address vault = abi.decode(pid, (address));
+        string memory leaf = "";
         try IERC20Metadata(vault).name() returns (string memory n) {
-            return n;
-        } catch {
-            return "";
-        }
+            leaf = n;
+        } catch {}
+        return _labels("Vaults", leaf);
     }
 
     function _row(INAVCalculator.Asset memory asset, uint256 amount, bool isDebt, bytes memory pid, PositionKind kind)

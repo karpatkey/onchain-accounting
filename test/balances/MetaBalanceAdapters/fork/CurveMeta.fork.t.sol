@@ -194,15 +194,19 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
         }
     }
 
-    /// @notice describePosition returns a non-empty string from on-chain symbols.
-    function test_describePosition_crvUsdUsdc_gauge() public view {
-        string memory label = gaugesMeta.describePosition(abi.encode(CRVUSD_USDC_GAUGE));
-        assertGt(bytes(label).length, 0);
+    /// @notice positionLabels returns a non-empty leaf from on-chain symbols.
+    function test_positionLabels_crvUsdUsdc_gauge() public view {
+        string[] memory labels = gaugesMeta.positionLabels(abi.encode(CRVUSD_USDC_GAUGE));
+        assertEq(labels.length, 2);
+        assertEq(labels[0], "Staking Gauge");
+        assertGt(bytes(labels[1]).length, 0);
     }
 
-    function test_describePosition_threepool() public view {
-        string memory label = poolsMeta.describePosition(abi.encode(THREEPOOL));
-        assertGt(bytes(label).length, 0);
+    function test_positionLabels_threepool() public view {
+        string[] memory labels = poolsMeta.positionLabels(abi.encode(THREEPOOL));
+        assertEq(labels.length, 2);
+        assertEq(labels[0], "Liquidity Pool");
+        assertGt(bytes(labels[1]).length, 0);
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────

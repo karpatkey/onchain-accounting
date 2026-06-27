@@ -71,13 +71,15 @@ contract MorphoVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    function describePosition(bytes calldata pid) external view override returns (string memory) {
-        if (pid.length < 32) return "";
+    /// @dev Returns `["Vault", <leaf>]` where the leaf is the vault's ERC4626 name ("" if unreadable). Returns an
+    ///      empty array for a short positionId.
+    function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
+        if (pid.length < 32) return new string[](0);
         address vault = abi.decode(pid, (address));
+        string memory leaf = "";
         try IERC4626(vault).name() returns (string memory n) {
-            return n;
-        } catch {
-            return "";
-        }
+            leaf = n;
+        } catch {}
+        return _labels("Vault", leaf);
     }
 }

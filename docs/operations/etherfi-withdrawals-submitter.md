@@ -1,6 +1,6 @@
 # ether.fi withdrawals submitter bot — operator's guide
 
-The `EtherFiWithdrawalsBalanceAdapter` (`src/balances/AssistedBalanceAdapters/EtherFiWithdrawalsBalanceAdapter.sol`) reports a portfolio's in-flight ETH in ether.fi's withdrawal queue by reading an on-chain cache of candidate `WithdrawRequestNFT` `tokenId`s per account. The NFT is **not enumerable**, so an off-chain bot discovers the account's tokenIds and submits them. Crucially, the cache stores **only ids, never amounts** — the adapter values each id entirely from live on-chain reads (`getClaimableAmount` / `getRequest` + `LiquidityPool.amountForShare`) and re-verifies `ownerOf` on every read. The bot cannot fabricate value; at worst it omits an id (NAV under-reports), never over-reports. See [`docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md`](../decisions/0014-agent-fed-cache-adapters-for-exit-queues.md) for the trust model (generalises Merkl/ADR 0007).
+The `EtherFiWithdrawalQueueBalanceAdapter` (`src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueBalanceAdapter.sol`) reports a portfolio's in-flight ETH in ether.fi's withdrawal queue by reading an on-chain cache of candidate `WithdrawRequestNFT` `tokenId`s per account. The NFT is **not enumerable**, so an off-chain bot discovers the account's tokenIds and submits them. Crucially, the cache stores **only ids, never amounts** — the adapter values each id entirely from live on-chain reads (`getClaimableAmount` / `getRequest` + `LiquidityPool.amountForShare`) and re-verifies `ownerOf` on every read. The bot cannot fabricate value; at worst it omits an id (NAV under-reports), never over-reports. See [`docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md`](../decisions/0014-agent-fed-cache-adapters-for-exit-queues.md) for the trust model (generalises Merkl/ADR 0007).
 
 This file is the contract between the on-chain adapter and the ops process that feeds it. The bot lives in `kpk-agents` (`agents/automations/accounting/`), mirroring `submit_merkl_proofs.py`.
 
@@ -31,7 +31,7 @@ i.e. ERC-721 `Transfer` events where `to == account`, minus those where `from ==
 |---|---|---|
 | **Account list** | Operator config | EVM addresses to track (the OIV per-chain accounts that use ether.fi). |
 | **Chains** | Operator config | ether.fi withdrawals are **mainnet (1)** only today. |
-| **Adapter address** | `script/config/deployments/1.json` → `balanceAdapters.EtherFiWithdrawals` | Read at startup; refresh on redeploy. |
+| **Adapter address** | `script/config/deployments/1.json` → `balanceAdapters.EtherFiWithdrawalQueue` | Read at startup; refresh on redeploy. |
 | **Owner key** | Operator secret store | Owns the adapter (`chainConfig.admin` = OIV Safe). Submit via the Safe Transaction Service / a granted Zodiac role, same as the Merkl bot. |
 
 The `WithdrawRequestNFT` + `LiquidityPool` addresses and all valuation/verification rules are pinned in the adapter; the bot does not need them beyond event scanning.

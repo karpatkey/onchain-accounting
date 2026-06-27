@@ -115,7 +115,12 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
     /// @dev V3 Pool exposes `ADDRESSES_PROVIDER()`.
     ///      Best-effort: returns "" if the pool/provider does not expose the views (label then drops the market).
     function _marketId(address pool) internal view returns (string memory) {
+        // Fail-open against a no-code address: Solidity's high-level call inserts an extcodesize check that reverts
+        // *past* try/catch when the target has no code, so guard explicitly. This matters now that labels are derived
+        // on the getAdapterPositions hot path — an unguarded revert here would drop the whole instance's positions.
+        if (pool.code.length == 0) return "";
         try IAaveAddressesProviderSource(pool).ADDRESSES_PROVIDER() returns (address ap) {
+            if (ap.code.length == 0) return "";
             try IAavePoolAddressesProvider(ap).getMarketId() returns (string memory m) {
                 return m;
             } catch {

@@ -86,7 +86,7 @@ Defined in `INAVCalculator`. This is what every balance adapter returns.
 | `positionKind`  | `PositionKind`| Semantic discriminator: `Wallet` / `Supplied` / `Borrowed` / `Collateral` / `Staking` / `Rewards` / `Fees`. See `src/utils/PositionKind.sol`. |
 | `isLocked`      | `bool`        | `true` if the leg is not withdrawable now (a pending withdrawal request, or a staked amount in/awaiting its unstaking cooldown); `false` if fully liquid. "Partial = locked". **Part of the identity key** — the claimable and locked legs of a withdrawal queue share one static `positionId`, so `isLocked` is what keeps them distinct. `false` for all non-queue/non-cooldown adapters. See ADR 0016. |
 
-The stable per-chain identity key for caching and reconciliation is `(chainId, protocolId, positionId, balanceAsset.asset, positionKind, isLocked)`. `balanceAdapter` is excluded — redeploying an adapter doesn't change the position; `isDebt` is excluded — it is derivable from `positionKind == Borrowed`.
+The stable per-chain identity key for caching and reconciliation is `(chainId, protocolId, positionId, balanceAsset.asset, positionKind, isLocked)`. `balanceAdapter` is excluded — redeploying an adapter doesn't change the position; `isDebt` is excluded — it is the canonical NAV-sign field, read directly (do **not** infer it from `positionKind`).
 
 **Credits-only adapters** (e.g. ERC20DefaultBalanceAdapter, AaveV3SafetyModule) always report `isDebt: false`.
 

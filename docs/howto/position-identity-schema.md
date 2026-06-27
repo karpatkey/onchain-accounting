@@ -1039,7 +1039,7 @@ claimable leg (`isLocked=false`) and a locked leg (`isLocked=true`) that share t
 
 **Excluded from the key by design:**
 - `balanceAdapter` — provenance only; redeploying an adapter doesn't change the position
-- `isDebt` — derivable from `positionKind == Borrowed`
+- `isDebt` — the canonical NAV-sign field; read it directly, do not infer it from `positionKind`
 
 ---
 

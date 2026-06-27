@@ -119,7 +119,11 @@ abstract contract BridgeAdapter is AccessControl, ReentrancyGuard, IBridgeAdapte
     ///      verification (e.g. CCTP attestation, OP withdrawal finalization) and ensures the adapter holds
     ///      the delivered `amount` of the asset; the base then funds the escrow and releases atomically
     ///      (funded pass-through, ADR 0012).
-    function completeBridge(bytes calldata messagePayload, bytes calldata protocolData) external override {
+    function completeBridge(bytes calldata messagePayload, bytes calldata protocolData)
+        external
+        override
+        nonReentrant
+    {
         if (!hasRole(MANAGER_ROLE, msg.sender)) revert NotAuthorized();
         if (messagePayload.length == 0) revert InvalidCompletionData();
         InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);

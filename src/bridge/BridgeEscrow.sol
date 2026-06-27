@@ -188,6 +188,13 @@ contract BridgeEscrow is
 
         IBridgeAdapter(adapter).bridge(messagePayload);
 
+        // Defense-in-depth: clear any residual allowance the adapter did not pull (mirrors the
+        // approve→use→reset-to-0 pattern in BridgeAdapter._fundAndRelease). A well-behaved adapter pulls
+        // exactly `effectiveAmount`, leaving 0; this guarantees no standing approval survives the call.
+        if (!_isNativeToken(asset)) {
+            IERC20(asset).forceApprove(adapter, 0);
+        }
+
         return invoiceHash;
     }
 
@@ -509,7 +516,12 @@ contract BridgeEscrow is
     }
 
     /// @notice Revokes authorization for a bridge adapter
+    /// @dev Reverts if the adapter still has in-flight (BRIDGING) invoices it dispatched. Symmetric with
+    ///      `revokeAccount`: revoking an adapter mid-dispatch would orphan those invoices (their
+    ///      source-chain recovery and the matching destination release both route through the adapter),
+    ///      so the revoke is blocked until they settle.
     function revokeAdapter(address adapter) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (_hasActiveInvoicesForAdapter(adapter)) revert AdapterHasActiveInvoices(adapter);
         _authorizedAdapters.remove(adapter);
         emit AdapterRevoked(adapter);
     }
@@ -709,6 +721,21 @@ contract BridgeEscrow is
             for (uint256 j = 0; j < activeInvoiceHashes.length; j++) {
                 bytes6 invoiceAssetSymbol = bytes6(uint48(uint256(invoices[activeInvoiceHashes[j]].invoiceId)));
                 if (invoiceAssetSymbol == assetSymbol) return true;
+            }
+        }
+        return false;
+    }
+
+    /// @notice Checks if a bridge adapter has any in-flight (BRIDGING) invoices it dispatched.
+    /// @dev Iterates authorized accounts' active invoices (admin-only caller, same pattern as
+    ///      `_hasActiveInvoicesForAsset`). `_activeInvoices` only ever holds BRIDGING hashes.
+    function _hasActiveInvoicesForAdapter(address adapter) internal view returns (bool) {
+        uint256 safeCount = _authorizedAccounts.length();
+        for (uint256 i = 0; i < safeCount; i++) {
+            address safe = _authorizedAccounts.at(i);
+            bytes32[] memory activeInvoiceHashes = _activeInvoices[safe];
+            for (uint256 j = 0; j < activeInvoiceHashes.length; j++) {
+                if (invoices[activeInvoiceHashes[j]].adapter == adapter) return true;
             }
         }
         return false;

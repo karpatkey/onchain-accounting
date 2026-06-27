@@ -204,6 +204,11 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
         INAVCalculator.PositionBalance[] memory tmp = new INAVCalculator.PositionBalance[](supported.length);
         uint256 count;
 
+        // Anchored on the WithdrawalManager (the claim target / immutable anchor); the owed asset lives in
+        // `balanceAsset`, so the manager address is the non-redundant coordinate. Hoisted out of the loop —
+        // it is constant across every leg.
+        bytes memory pid = abi.encode(address(WITHDRAWAL_MANAGER));
+
         for (uint256 i = 0; i < supported.length; i++) {
             address asset = supported[i];
             if (assetFilter != address(0) && assetFilter != asset) {
@@ -226,9 +231,7 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
                 amount: owed,
                 isDebt: false,
                 protocolId: PROTOCOL_ID,
-                // Anchored on the WithdrawalManager (the claim target / immutable anchor); the owed
-                // asset lives in `balanceAsset`, so the manager address is the non-redundant coordinate.
-                positionId: abi.encode(address(WITHDRAWAL_MANAGER)),
+                positionId: pid,
                 positionKind: PositionKind.Supplied
             });
         }

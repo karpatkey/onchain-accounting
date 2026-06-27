@@ -150,7 +150,8 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
             isDebt: isDebt,
             protocolId: _getProtocolId(),
             positionId: pid,
-            positionKind: kind
+            positionKind: kind,
+            labels: new string[](0)
         });
     }
 }

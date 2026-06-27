@@ -244,7 +244,8 @@ contract EtherFiWithdrawalQueueBalanceAdapter is AssistedBalanceAdapter, IPositi
             // Anchored on the WithdrawRequestNFT (the claim target / immutable anchor); the owed asset
             // lives in `balanceAsset`, so the NFT contract address is the non-redundant coordinate.
             positionId: abi.encode(WITHDRAW_REQUEST_NFT),
-            positionKind: PositionKind.Supplied
+            positionKind: PositionKind.Supplied,
+            labels: new string[](0)
         });
     }
 

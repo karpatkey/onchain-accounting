@@ -389,7 +389,8 @@ contract MyProtocolBalanceAdapter is IBalanceAdapter, IPositionDescribable {
             isDebt: false,
             protocolId: PROTOCOL_ID,
             positionId: abi.encode(address(PROTOCOL)),
-            positionKind: PositionKind.Supplied
+            positionKind: PositionKind.Supplied,
+        labels: new string[](0)
         });
         return out;
     }

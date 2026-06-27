@@ -155,7 +155,8 @@ contract SparkLendBalanceAdapter is IBalanceAdapter, IPositionDescribable {
                     isDebt: false,
                     protocolId: ProtocolIds.SPARK_LEND,
                     positionId: pid,
-                    positionKind: asCollateral ? PositionKind.Collateral : PositionKind.Supplied
+                    positionKind: asCollateral ? PositionKind.Collateral : PositionKind.Supplied,
+                    labels: new string[](0)
                 });
             }
             if (debt > 0) {
@@ -166,7 +167,8 @@ contract SparkLendBalanceAdapter is IBalanceAdapter, IPositionDescribable {
                     isDebt: true,
                     protocolId: ProtocolIds.SPARK_LEND,
                     positionId: pid,
-                    positionKind: PositionKind.Borrowed
+                    positionKind: PositionKind.Borrowed,
+                    labels: new string[](0)
                 });
             }
         }

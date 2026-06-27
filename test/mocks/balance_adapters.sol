@@ -204,7 +204,8 @@ contract Mock_CustomBalanceAdapter is IBalanceAdapter {
                     isDebt: debt,
                     protocolId: bytes32(0),
                     positionId: abi.encode(address(this)),
-                    positionKind: debt ? PositionKind.Borrowed : PositionKind.Supplied
+                    positionKind: debt ? PositionKind.Borrowed : PositionKind.Supplied,
+                    labels: new string[](0)
                 });
 
                 positionCount++;

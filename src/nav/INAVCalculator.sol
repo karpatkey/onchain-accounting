@@ -40,6 +40,11 @@ interface INAVCalculator is IBalances {
     /// @param positionKind Semantic discriminator (Wallet / Supplied / Borrowed / Collateral / Staking / Rewards / Fees).
     ///        Together with `protocolId` and `positionId` forms the stable per-chain identity key
     ///        `(chainId, protocolId, positionId, balanceAsset.asset, positionKind)`.
+    /// @param labels Optional adapter-supplied display hierarchy (below `protocolName`, leaf last). When non-empty it
+    ///        is used verbatim by the verbose reads; when empty (the default for most adapters) the verbose path
+    ///        falls back to `IPositionDescribable.positionLabels(positionId)`. This channel exists for adapters whose
+    ///        label depends on per-leg data NOT recoverable from `positionId` alone (e.g. the NFT id of a Uniswap V3 /
+    ///        Nexus position whose `positionId` is the pool address). Display only — never used for identity.
     struct PositionBalance {
         Asset balanceAsset;
         address balanceAdapter;
@@ -48,6 +53,7 @@ interface INAVCalculator is IBalances {
         bytes32 protocolId;
         bytes positionId;
         PositionKind positionKind;
+        string[] labels;
     }
 
     /// @notice Enriched position including pricing and quote-currency value.
@@ -80,12 +86,16 @@ interface INAVCalculator is IBalances {
         bytes32 protocolId;
         bytes positionId;
         PositionKind positionKind;
+        // Adapter-supplied display labels copied from PositionBalance; consumed by the verbose reads (else they
+        // fall back to positionLabels(positionId)). Display only — never used for identity. See PositionBalance.
+        string[] labels;
     }
 
     /// @notice Position enriched with human-readable display labels.
-    /// @dev Returned by verbose read methods. Labels are sourced from the adapter's IPositionDescribable
-    ///      implementation (if present) and are empty strings otherwise. MUST NOT be used for identity,
-    ///      indexing, or reconciliation — use the typed fields on `position` for those purposes.
+    /// @dev Returned by verbose read methods. Labels are sourced from the position's own `labels` field when the
+    ///      adapter populated it, otherwise from the adapter's `IPositionDescribable.positionLabels(positionId)`
+    ///      (empty if neither is present). MUST NOT be used for identity, indexing, or reconciliation — use the typed
+    ///      fields on `position` for those purposes.
     struct VerbosePosition {
         Position position;
         string protocolName; // e.g. "Aave V3", "Morpho"

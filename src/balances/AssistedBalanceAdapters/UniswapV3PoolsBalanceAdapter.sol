@@ -19,6 +19,14 @@ import {
 import {TickMath} from "src/balances/MetaBalanceAdapters/uniswap/lib/TickMath.sol";
 import {LiquidityAmounts} from "src/balances/MetaBalanceAdapters/uniswap/lib/LiquidityAmounts.sol";
 
+/// @notice Minimal Uniswap V3 factory interface — resolves the canonical pool address for a `(token0, token1, fee)`
+///         triple. PancakeSwap V3's factory shares this `getPool` signature, so the assisted subclass needs no
+///         override. Each fee tier is its own deployed pool contract, so the pool address uniquely identifies the
+///         pair+fee — which is why it is used as the `positionId`.
+interface IUniswapV3Factory {
+    function getPool(address tokenA, address tokenB, uint24 fee) external view returns (address pool);
+}
+
 /// @title Uniswap V3 Pools Balance Adapter (id-cached, assisted)
 /// @author KPK
 /// @notice Reports an account's Uniswap V3 LP across *any* pool — both the in-range liquidity (`Supplied`) and the
@@ -27,8 +35,10 @@ import {LiquidityAmounts} from "src/balances/MetaBalanceAdapters/uniswap/lib/Liq
 ///         account holds, an off-chain assistant (holder of `ASSISTANT_ROLE`) submits the account's `tokenId`s via
 ///         `submitTokenIds`. This adapter then values them entirely from live on-chain reads, re-verifying NFT
 ///         ownership on every read. The cache stores **only ids, never amounts** — a faulty or compromised assistant
-///         cannot fabricate value; at worst it omits an id (NAV under-counts), never over-counts. Each NFT gets its
-///         own positionId = abi.encode(npm, tokenId).
+///         cannot fabricate value; at worst it omits an id (NAV under-counts), never over-counts. positionId is the
+///         **pool contract address** (`abi.encode(factory.getPool(token0, token1, fee))`) — each fee tier is its own
+///         deployed pool, so it uniquely identifies the pair+fee. The NFT id is not in positionId; it is surfaced as
+///         the last adapter-supplied display **label** (`["Liquidity Pool", "<pool>", "NFT #<id>"]`).
 /// @dev Access control comes from {AssistedBalanceAdapter}: `DEFAULT_ADMIN_ROLE` administers roles and
 ///      `ASSISTANT_ROLE` gates the submit/clear mutators. `submitTokenIds` **reverts** `NotTokenOwner` for any id not
 ///      currently owned by the account (fail-loud writes); reads instead **discard** an id whose ownership changed or
@@ -64,6 +74,10 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
 
     /// @notice The Uniswap V3 NonfungiblePositionManager (chain-level constant; same for all V3 pools on a chain).
     address public immutable POSITION_MANAGER;
+
+    /// @notice The Uniswap V3 factory (read once from the NPM at construction). Resolves the pool address used as
+    ///         the `positionId` via `getPool(token0, token1, fee)`.
+    address public immutable FACTORY;
 
     /// @notice NAVCalculator reference, used for the registered-asset registry and oracle price reads.
     INAVCalculator public immutable NAV_CALCULATOR;
@@ -106,6 +120,7 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
         require(positionManager_.code.length > 0, "PositionManager must be a contract");
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
         POSITION_MANAGER = positionManager_;
+        FACTORY = INonfungiblePositionManager(positionManager_).factory();
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
         _protocolName = protocolName_;
     }
@@ -165,8 +180,8 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
     }
 
     /// @notice Protocol identifier reported on every emitted position. `virtual` so byte-compatible forks
-    ///         (PancakeSwap V3) report their own slug while sharing the `(address npm, uint256 tokenId)`
-    ///         positionId schema. Defaults to `uniswap-v3`.
+    ///         (PancakeSwap V3) report their own slug while sharing the `abi.encode(address pool)` positionId
+    ///         schema. Defaults to `uniswap-v3`.
     function _protocolId() internal pure virtual returns (bytes32) {
         return ProtocolIds.UNISWAP_V3;
     }
@@ -184,12 +199,16 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
     }
 
     /// @inheritdoc IPositionDescribable
-    /// @dev Returns `["Liquidity Pool", "NFT #<tokenId>"]`.
+    /// @dev Fallback only — the per-leg labels (including the NFT id) are supplied on each `PositionBalance.labels`
+    ///      and consumed directly by the verbose reads. `positionId` is `abi.encode(pool)`, which carries no tokenId,
+    ///      so this fallback returns `["Liquidity Pool", "<pool address>"]` (no NFT id). Fail-open on a malformed id.
     function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
-        if (pid.length < 64) return new string[](0); // fail-open on malformed positionId (decodes (address, uint256))
-        (, uint256 tokenId) = abi.decode(pid, (address, uint256));
-        string memory leaf = string.concat("NFT #", tokenId.toString());
-        return _labels("Liquidity Pool", leaf);
+        if (pid.length < 32) return new string[](0); // fail-open on malformed positionId (decodes (address))
+        address pool = abi.decode(pid, (address));
+        string[] memory out = new string[](2);
+        out[0] = "Liquidity Pool";
+        out[1] = Strings.toHexString(pool);
+        return out;
     }
 
     /// @inheritdoc IBalanceAdapter
@@ -306,7 +325,8 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
         (
             ,,
             address token0,
-            address token1,,
+            address token1,
+            uint24 fee,
             int24 tickLower,
             int24 tickUpper,
             uint128 liquidity,,,
@@ -333,9 +353,12 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
             uint256(pd0.price), pd0.decimals, a0.decimals, uint256(pd1.price), pd1.decimals, a1.decimals
         );
 
-        // positionId is per-NFT: each tokenId is an independently managed position (its own tick range and
-        // liquidity), same pattern as Aave V3/V2 per-reserve.
-        bytes memory positionId = abi.encode(POSITION_MANAGER, tokenId);
+        // positionId = the pool contract address (each (token0, token1, fee) is its own deployed Uniswap V3 pool).
+        // The NFT id is NOT in the positionId; it rides in the display labels (built once per NFT below).
+        address pool = IUniswapV3Factory(FACTORY).getPool(token0, token1, fee);
+        bytes memory positionId = abi.encode(pool);
+        // Labels: [category, pool address, NFT id] — NFT id last (per-leg, adapter-supplied; see _toVerbose).
+        string[] memory labels = _labels(pool, tokenId);
 
         // Principal split: tick-boundary sqrt ratios for the in-range amount calc, valued off the
         // oracle-reconstructed sqrtPriceX96 (not the manipulable slot0; `sqrtPriceX96 < getSqrtRatioAtTick(t)` is
@@ -350,18 +373,28 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
 
         // Fees: report only the position's settled `tokensOwed` (audit M-A1 — the uncollected-since-poke component
         // is deliberately NOT computed; see the contract-level @dev).
-        if (f0reg && liq0 > 0) temp[count++] = _row(a0, liq0, positionId, PositionKind.Supplied);
-        if (f1reg && liq1 > 0) temp[count++] = _row(a1, liq1, positionId, PositionKind.Supplied);
-        if (f0reg && tokensOwed0 > 0) temp[count++] = _row(a0, tokensOwed0, positionId, PositionKind.Fees);
-        if (f1reg && tokensOwed1 > 0) temp[count++] = _row(a1, tokensOwed1, positionId, PositionKind.Fees);
+        if (f0reg && liq0 > 0) temp[count++] = _row(a0, liq0, positionId, PositionKind.Supplied, labels);
+        if (f1reg && liq1 > 0) temp[count++] = _row(a1, liq1, positionId, PositionKind.Supplied, labels);
+        if (f0reg && tokensOwed0 > 0) temp[count++] = _row(a0, tokensOwed0, positionId, PositionKind.Fees, labels);
+        if (f1reg && tokensOwed1 > 0) temp[count++] = _row(a1, tokensOwed1, positionId, PositionKind.Fees, labels);
         return count;
     }
 
-    function _row(INAVCalculator.Asset memory asset, uint256 amount, bytes memory positionId, PositionKind kind)
-        private
-        view
-        returns (INAVCalculator.PositionBalance memory)
-    {
+    /// @dev `["Liquidity Pool", "<pool address>", "NFT #<tokenId>"]` — the per-leg display hierarchy.
+    function _labels(address pool, uint256 tokenId) private pure returns (string[] memory out) {
+        out = new string[](3);
+        out[0] = "Liquidity Pool";
+        out[1] = Strings.toHexString(pool);
+        out[2] = string.concat("NFT #", tokenId.toString());
+    }
+
+    function _row(
+        INAVCalculator.Asset memory asset,
+        uint256 amount,
+        bytes memory positionId,
+        PositionKind kind,
+        string[] memory labels
+    ) private view returns (INAVCalculator.PositionBalance memory) {
         return INAVCalculator.PositionBalance({
             balanceAsset: asset,
             balanceAdapter: address(this),
@@ -369,7 +402,8 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
             isDebt: false,
             protocolId: _protocolId(),
             positionId: positionId,
-            positionKind: kind
+            positionKind: kind,
+            labels: labels
         });
     }
 

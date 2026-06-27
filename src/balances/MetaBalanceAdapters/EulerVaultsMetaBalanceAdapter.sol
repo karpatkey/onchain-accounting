@@ -98,7 +98,8 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
                 isDebt: false,
                 protocolId: PROTOCOL_ID,
                 positionId: positionId,
-                positionKind: _supplyKind(account, vaultAddr)
+                positionKind: _supplyKind(account, vaultAddr),
+                labels: new string[](0)
             });
         }
         if (debt > 0) {
@@ -109,7 +110,8 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
                 isDebt: true,
                 protocolId: PROTOCOL_ID,
                 positionId: positionId,
-                positionKind: PositionKind.Borrowed
+                positionKind: PositionKind.Borrowed,
+                labels: new string[](0)
             });
         }
         return positions;

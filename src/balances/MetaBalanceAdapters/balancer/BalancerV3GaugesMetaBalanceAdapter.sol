@@ -284,7 +284,8 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceAdapter {
             isDebt: false,
             protocolId: PROTOCOL_ID,
             positionId: positionId,
-            positionKind: kind
+            positionKind: kind,
+            labels: new string[](0)
         });
     }
 

@@ -237,7 +237,8 @@ contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
                     isDebt: false,
                     protocolId: PROTOCOL_ID,
                     positionId: abi.encode(address(stk)),
-                    positionKind: PositionKind.Staking
+                    positionKind: PositionKind.Staking,
+                    labels: new string[](0)
                 });
             }
 
@@ -251,7 +252,8 @@ contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
                     isDebt: false,
                     protocolId: PROTOCOL_ID,
                     positionId: abi.encode(address(stk)),
-                    positionKind: PositionKind.Rewards
+                    positionKind: PositionKind.Rewards,
+                    labels: new string[](0)
                 });
             }
         }

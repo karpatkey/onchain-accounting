@@ -266,7 +266,8 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
             // Anchored on the VaultsRegistry (the immutable anchor); the owed asset lives in
             // `balanceAsset`, so the registry address is the non-redundant coordinate.
             positionId: abi.encode(VAULTS_REGISTRY),
-            positionKind: PositionKind.Supplied
+            positionKind: PositionKind.Supplied,
+            labels: new string[](0)
         });
     }
 

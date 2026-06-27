@@ -755,6 +755,7 @@ library PriceFeedLib {
             protocolId: balance.protocolId,
             positionId: balance.positionId,
             positionKind: balance.positionKind,
+            labels: balance.labels,
             quoteAsset: quoteAssetStruct,
             value: value,
             price: priceFeed.price,

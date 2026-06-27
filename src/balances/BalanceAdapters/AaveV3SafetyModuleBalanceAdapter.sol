@@ -223,7 +223,8 @@ contract AaveV3SafetyModuleBalanceAdapter is IBalanceAdapter, IPositionDescribab
                             isDebt: false,
                             protocolId: PROTOCOL_ID,
                             positionId: abi.encode(address(r.stakeToken)),
-                            positionKind: PositionKind.Staking
+                            positionKind: PositionKind.Staking,
+                            labels: new string[](0)
                         });
                     }
                 }
@@ -242,7 +243,8 @@ contract AaveV3SafetyModuleBalanceAdapter is IBalanceAdapter, IPositionDescribab
                             isDebt: false,
                             protocolId: PROTOCOL_ID,
                             positionId: abi.encode(address(r.stakeToken)),
-                            positionKind: PositionKind.Rewards
+                            positionKind: PositionKind.Rewards,
+                            labels: new string[](0)
                         });
                     }
                 }

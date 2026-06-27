@@ -262,7 +262,8 @@ contract ERC20DefaultBalanceAdapter is IBalanceAdapter, IPositionDescribable {
                     isDebt: false,
                     protocolId: PROTOCOL_ID,
                     positionId: abi.encode(asset),
-                    positionKind: PositionKind.Wallet
+                    positionKind: PositionKind.Wallet,
+                    labels: new string[](0)
                 });
 
                 positionCount++;

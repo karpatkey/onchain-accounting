@@ -71,6 +71,13 @@ contract MockPositionManager {
     mapping(address => uint256[]) internal _ownerTokens;
     mapping(uint256 => address) internal _tokenOwner;
 
+    /// @notice The Uniswap V3 factory the adapter reads in its constructor (and queries for pool addresses).
+    address public factory;
+
+    function setFactory(address factory_) external {
+        factory = factory_;
+    }
+
     function mint(address owner, uint256 tokenId, PositionData memory data) external {
         _positions[tokenId] = data;
         _ownerTokens[owner].push(tokenId);
@@ -135,6 +142,24 @@ contract MockPositionManager {
             p.tokensOwed0,
             p.tokensOwed1
         );
+    }
+}
+
+/// @notice Minimal Uniswap V3 factory mock — maps `(token0, token1, fee)` to a pool address (the adapter uses the
+///         pool address as the positionId via `getPool`).
+contract MockUniswapV3Factory {
+    mapping(bytes32 => address) internal _pools;
+
+    function _key(address t0, address t1, uint24 fee) internal pure returns (bytes32) {
+        return keccak256(abi.encode(t0, t1, fee));
+    }
+
+    function setPool(address t0, address t1, uint24 fee, address pool) external {
+        _pools[_key(t0, t1, fee)] = pool;
+    }
+
+    function getPool(address t0, address t1, uint24 fee) external view returns (address) {
+        return _pools[_key(t0, t1, fee)];
     }
 }
 

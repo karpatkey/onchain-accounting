@@ -368,8 +368,12 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
                 prevName = _safeString(adapter, protocolNameCall);
                 prevAdapter = adapter;
             }
-            string[] memory labels =
-                _safeStringArray(adapter, abi.encodeCall(IPositionDescribable.positionLabels, (pos[i].positionId)));
+            // Prefer adapter-supplied per-leg labels (carried on the position); these exist for adapters whose label
+            // depends on data not recoverable from positionId alone (e.g. an NFT id behind a pool-address positionId).
+            // Otherwise fall back to IPositionDescribable.positionLabels(positionId).
+            string[] memory labels = pos[i].labels.length > 0
+                ? pos[i].labels
+                : _safeStringArray(adapter, abi.encodeCall(IPositionDescribable.positionLabels, (pos[i].positionId)));
             verbose[i] = INAVCalculator.VerbosePosition({position: pos[i], protocolName: prevName, labels: labels});
         }
     }

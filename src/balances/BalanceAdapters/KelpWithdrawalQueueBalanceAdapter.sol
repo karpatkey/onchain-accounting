@@ -232,7 +232,8 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
                 isDebt: false,
                 protocolId: PROTOCOL_ID,
                 positionId: pid,
-                positionKind: PositionKind.Supplied
+                positionKind: PositionKind.Supplied,
+                labels: new string[](0)
             });
         }
 

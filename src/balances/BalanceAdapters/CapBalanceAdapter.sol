@@ -191,7 +191,8 @@ contract CapBalanceAdapter is IBalanceAdapter, IPositionDescribable {
                 isDebt: false,
                 protocolId: PROTOCOL_ID,
                 positionId: abi.encode(address(CUSD)),
-                positionKind: PositionKind.Supplied
+                positionKind: PositionKind.Supplied,
+                labels: new string[](0)
             });
         }
         if (stcUsdUsdc > 0) {
@@ -202,7 +203,8 @@ contract CapBalanceAdapter is IBalanceAdapter, IPositionDescribable {
                 isDebt: false,
                 protocolId: PROTOCOL_ID,
                 positionId: abi.encode(address(STCUSD)),
-                positionKind: PositionKind.Staking
+                positionKind: PositionKind.Staking,
+                labels: new string[](0)
             });
         }
     }

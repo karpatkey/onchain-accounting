@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
@@ -23,8 +24,9 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         (`StakingViewer.getTokens`), re-verifying ownership on every read via `StakingNFT.tokenInfo`. The cache
 ///         stores **only ids, never amounts** — a faulty or compromised assistant cannot fabricate value; at worst
 ///         it omits an id (NAV under-counts), never over-counts. One holder can have several positions, possibly
-///         across several pools; each tokenId surfaces as its own leg(s), keyed by
-///         `positionId == abi.encode(tokenId, poolId)`.
+///         across several pools. positionId is the **staking-pool contract address**
+///         (`abi.encode(StakingViewer.stakingPool(poolId))`); the NFT id is surfaced as the last display **label**
+///         (`["Staking", "<pool>", "NFT #<id>"]`), not in positionId.
 /// @dev Access control comes from {AssistedBalanceAdapter}: `DEFAULT_ADMIN_ROLE` administers roles and
 ///      `ASSISTANT_ROLE` gates the submit/clear mutators. `submitTokenIds` **reverts** `NotTokenOwner` for any id
 ///      whose `tokenInfo` owner is not the account (fail-loud writes); reads instead **discard** an id no longer
@@ -32,6 +34,8 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      The no-arg balance getters (`getAdapterBalances`/`getAdapterBalanceForAsset`) return the summed NXM total
 ///      across the account's owned, cached positions.
 contract NexusMutualStakingPoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescribable {
+    using Strings for uint256;
+
     //
     // Constants
     //
@@ -183,9 +187,16 @@ contract NexusMutualStakingPoolsBalanceAdapter is AssistedBalanceAdapter, IPosit
         return "Nexus Mutual";
     }
 
-    function positionLabels(bytes calldata) external pure returns (string[] memory) {
-        string[] memory out = new string[](1);
+    /// @inheritdoc IPositionDescribable
+    /// @dev Fallback only — the per-leg labels (including the NFT id) are supplied on each `PositionBalance.labels`
+    ///      and consumed directly by the verbose reads. `positionId` is `abi.encode(pool)`, which carries no tokenId,
+    ///      so this fallback returns `["Staking", "<pool address>"]` (no NFT id). Fail-open on a malformed id.
+    function positionLabels(bytes calldata pid) external pure returns (string[] memory) {
+        if (pid.length < 32) return new string[](0);
+        address pool = abi.decode(pid, (address));
+        string[] memory out = new string[](2);
         out[0] = "Staking";
+        out[1] = Strings.toHexString(pool);
         return out;
     }
 
@@ -222,8 +233,9 @@ contract NexusMutualStakingPoolsBalanceAdapter is AssistedBalanceAdapter, IPosit
 
     /// @inheritdoc IBalanceAdapter
     /// @notice Per StakingNFT position: a `Staking` (active + expired stake) and a `Rewards` (accrued) leg, each
-    ///         keyed by `positionId == abi.encode(tokenId, poolId)`. Zero legs are dropped; ids no longer owned by
-    ///         `account` are discarded. Empty if NXM is unregistered, filtered out, or the account holds no positions.
+    ///         keyed by `positionId == abi.encode(stakingPoolAddress)` (NFT id in the labels). Zero legs are dropped;
+    ///         ids no longer owned by `account` are discarded. Empty if NXM is unregistered, filtered out, or the
+    ///         account holds no positions.
     function getAdapterPositions(address account, address assetFilter)
         external
         view
@@ -269,9 +281,19 @@ contract NexusMutualStakingPoolsBalanceAdapter is AssistedBalanceAdapter, IPosit
             uint256 staking = tokens[i].activeStake + tokens[i].expiredStake;
             uint256 rewards = tokens[i].rewards;
             if (staking == 0 && rewards == 0) continue;
-            bytes memory positionId = abi.encode(tokens[i].tokenId, tokens[i].poolId);
-            if (staking > 0) temp[count++] = _leg(underlying, staking, PositionKind.Staking, positionId);
-            if (rewards > 0) temp[count++] = _leg(underlying, rewards, PositionKind.Rewards, positionId);
+            // positionId = the staking-pool contract address (deterministic per poolId). Skip the token if the pool
+            // can't be resolved (under-report). The tokenId is NOT in positionId; it rides in the display labels.
+            address pool;
+            try INexusStakingViewer(STAKING_VIEWER).stakingPool(tokens[i].poolId) returns (address p) {
+                pool = p;
+            } catch {
+                continue;
+            }
+            if (pool == address(0)) continue;
+            bytes memory positionId = abi.encode(pool);
+            string[] memory labels = _labels(pool, tokens[i].tokenId);
+            if (staking > 0) temp[count++] = _leg(underlying, staking, PositionKind.Staking, positionId, labels);
+            if (rewards > 0) temp[count++] = _leg(underlying, rewards, PositionKind.Rewards, positionId, labels);
         }
 
         positions = new INAVCalculator.PositionBalance[](count);
@@ -352,11 +374,21 @@ contract NexusMutualStakingPoolsBalanceAdapter is AssistedBalanceAdapter, IPosit
         }
     }
 
-    function _leg(INAVCalculator.Asset memory asset, uint256 amount, PositionKind kind, bytes memory positionId)
-        private
-        view
-        returns (INAVCalculator.PositionBalance memory)
-    {
+    /// @dev `["Staking", "<pool address>", "NFT #<tokenId>"]` — the per-leg display hierarchy.
+    function _labels(address pool, uint256 tokenId) private pure returns (string[] memory out) {
+        out = new string[](3);
+        out[0] = "Staking";
+        out[1] = Strings.toHexString(pool);
+        out[2] = string.concat("NFT #", tokenId.toString());
+    }
+
+    function _leg(
+        INAVCalculator.Asset memory asset,
+        uint256 amount,
+        PositionKind kind,
+        bytes memory positionId,
+        string[] memory labels
+    ) private view returns (INAVCalculator.PositionBalance memory) {
         return INAVCalculator.PositionBalance({
             balanceAsset: asset,
             balanceAdapter: address(this),
@@ -364,7 +396,8 @@ contract NexusMutualStakingPoolsBalanceAdapter is AssistedBalanceAdapter, IPosit
             isDebt: false,
             protocolId: PROTOCOL_ID,
             positionId: positionId,
-            positionKind: kind
+            positionKind: kind,
+            labels: labels
         });
     }
 }
@@ -416,4 +449,7 @@ interface INexusStakingViewer {
 
     /// @notice Aggregates stake + rewards (in NXM) across the given StakingNFT tokenIds.
     function getAggregatedTokens(uint256[] calldata tokenIds) external view returns (AggregatedTokens memory);
+
+    /// @notice The (deterministic) staking-pool contract address for `poolId`. Used as the `positionId`.
+    function stakingPool(uint256 poolId) external view returns (address);
 }

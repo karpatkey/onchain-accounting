@@ -9,7 +9,7 @@ pragma solidity ^0.8;
 ///      positionId schemas (all are `abi.encode(...)`):
 ///        WALLET                          → (address asset)
 ///        AAVE_V3_LENDING / SPARK_LEND    → (address pool) — one position per instance; reserve in balanceAsset
-///        AAVE_V3_SAFETY_MODULE / UMBRELLA→ (address stakeToken)
+///        AAVE_V3_SAFETY_MODULE / UMBRELLA→ live stake (address stakeToken); unstaking-cooldown leg (address stakeToken, uint8 1)
 ///        MORPHO_VAULTS / GEARBOX_V3 / EULER_VAULTS / ERC4626 / STAKEWISE_V3 / FLUID_VAULTS → (address vault)
 ///        CAP                             → (address token: cUSD or stcUSD) — one leg per token
 ///        MORPHO_MARKETS                  → (bytes32 marketId)
@@ -24,13 +24,15 @@ pragma solidity ^0.8;
 ///        COMPOUND_V3 / FLUID_FTOKENS     → (address market)
 ///        MERKL                           → (address distributor) — reward token is in balanceAsset, not positionId
 ///        NEXUS_MUTUAL_STAKING            → (uint256 tokenId, uint256 poolId)
-///        STADER_WITHDRAWAL              → (address userWithdrawalManager) — account-global anchor
-///        KELP_WITHDRAWAL                → (address withdrawalManager)      — account-global anchor
-///        LIDO_WITHDRAWAL                → (address withdrawalQueue)        — account-global anchor
-///        ETHENA_COOLDOWN                → (address sUSDe)                  — account-global anchor
-///        ETHERFI_WITHDRAWAL             → (address withdrawRequestNFT)     — account-global anchor
-///        STAKEWISE_EXIT                 → (address vaultsRegistry)         — account-global anchor
-///          (for all six: one aggregated leg per account; owed asset is in balanceAsset, not positionId)
+///        STADER_WITHDRAWAL              → (address userWithdrawalManager) — static coordinate
+///        KELP_WITHDRAWAL                → (address asset)                 — static, per payout asset
+///        LIDO_WITHDRAWAL                → (address withdrawalQueue)        — static coordinate
+///        ETHENA_COOLDOWN                → (address sUSDe)                  — static coordinate
+///        ETHERFI_WITHDRAWAL             → (address withdrawRequestNFT)     — static coordinate
+///        STAKEWISE_EXIT                 → (address vault)                 — static, per vault
+///          (for these: a static positionId with up to two legs — claimable (isLocked=false) + locked
+///           (isLocked=true) — sharing it, told apart by isLocked; owed asset is in balanceAsset. isLocked
+///           is part of the identity key. See docs/decisions/0016-islocked-position-status.md.)
 ///        BRIDGE_ESCROW                   → (address escrow, address token)
 /// @author KPK
 library ProtocolIds {

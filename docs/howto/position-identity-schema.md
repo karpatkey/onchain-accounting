@@ -211,14 +211,15 @@ PositionBalance({
 #### `KelpWithdrawalQueue` — rsETH exit queue
 
 ```solidity
-// Sums all open requests per asset; positionId = "" (per-asset legs, not per-request).
+// Sums all open requests per asset; positionId = abi.encode(WithdrawalManager) — account-global
+// anchor, shared across the per-asset legs (told apart by balanceAsset), not per-request.
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xae7a…2Ca0, symbol: "stETH", decimals: 18 }),
     balanceAdapter: 0x<KelpWithdrawalQueueAdapter>,
     amount:        2e18,                   // 2 stETH owed across open requests
     isDebt:        false,
     protocolId:    keccak256("kelp-withdrawal"),
-    positionId:    "",
+    positionId:    abi.encode(0x<KelpWithdrawalManager>),  // Kelp LRTWithdrawalManager (account-global anchor)
     positionKind:  PositionKind.Supplied
 })
 ```
@@ -233,7 +234,7 @@ PositionBalance({
     amount:        1e18,                   // 1 ETH owed on finalization
     isDebt:        false,
     protocolId:    keccak256("lido-withdrawal"),
-    positionId:    "",
+    positionId:    abi.encode(0x<LidoWithdrawalQueue>),  // Lido WithdrawalQueueERC721 (account-global anchor)
     positionKind:  PositionKind.Supplied
 })
 ```
@@ -263,7 +264,7 @@ PositionBalance({
     amount:        5e17,                   // 0.5 WETH owed
     isDebt:        false,
     protocolId:    keccak256("stader-withdrawal"),
-    positionId:    "",
+    positionId:    abi.encode(0x<StaderUserWithdrawalManager>),  // Stader UserWithdrawalManager (account-global anchor)
     positionKind:  PositionKind.Supplied
 })
 ```

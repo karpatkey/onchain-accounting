@@ -185,6 +185,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // --- StakeWise V3 exit-queue cache adapter (agent-fed; ADR 0014) ---
         _deployIfEnabled("StakeWiseV3ExitQueue");
 
+        // --- Uniswap V2 (meta-adapter: all pairs; pair set on NAV, ADR 0010) ---
+        _deployIfEnabled("UniswapV2PoolsMeta"); // Meta-adapter: all Uniswap V2 pairs (shares the PancakeSwap V2 dispatch)
+
         // --- Uniswap V3 (meta-adapter: all pools; pool set on NAV, ADR 0010) ---
         _deployIfEnabled("UniswapV3PoolsMeta"); // Meta-adapter: all Uniswap V3 pools (Supply + Fees legs)
 
@@ -777,7 +780,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address underlyingToken = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
         );
-        require(chainConfig.admin != address(0), "StakeWiseV3ExitQueue: chainConfig.admin (initialOwner) not configured");
+        require(
+            chainConfig.admin != address(0), "StakeWiseV3ExitQueue: chainConfig.admin (initialOwner) not configured"
+        );
 
         StakeWiseV3ExitQueueBalanceAdapter adapter = new StakeWiseV3ExitQueueBalanceAdapter(
             vaultsRegistry, underlyingToken, navCalculator, chainConfig.admin, chainConfig.admin

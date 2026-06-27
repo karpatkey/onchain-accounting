@@ -213,6 +213,14 @@ function PositionRow({
             )}
             <TokenLogo symbol={pos.underlyingAsset.symbol} address={pos.underlyingAsset.asset} chainId={chainId} />
             {pos.underlyingAsset.symbol}
+            {pos.isLocked && (
+              <span
+                className="inline-block shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-700"
+                title="Not withdrawable yet — pending withdrawal request or unstaking cooldown"
+              >
+                Locked
+              </span>
+            )}
           </div>
         </td>
         <td className="py-2.5 px-4 text-sm text-right tabular-nums text-neutral-700">

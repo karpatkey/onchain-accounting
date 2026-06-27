@@ -203,7 +203,8 @@ contract EtherFiWithdrawalQueueBalanceAdapter is AssistedBalanceAdapter, IPositi
 
     /// @inheritdoc IBalanceAdapter
     /// @notice One aggregated native-ETH `Supplied` leg = total ETH owed across the account's live, owned, valid
-    ///         ether.fi withdrawal requests. `positionId` is empty (account-global, like the other WQ adapters).
+    ///         ether.fi withdrawal requests. `positionId = abi.encode(WITHDRAW_REQUEST_NFT)` (account-global,
+    ///         keyed on the queue's immutable claim contract, like the other WQ adapters).
     function getAdapterPositions(address account, address assetFilter)
         external
         view
@@ -240,7 +241,9 @@ contract EtherFiWithdrawalQueueBalanceAdapter is AssistedBalanceAdapter, IPositi
             amount: total,
             isDebt: false,
             protocolId: PROTOCOL_ID,
-            positionId: "",
+            // Anchored on the WithdrawRequestNFT (the claim target / immutable anchor); the owed asset
+            // lives in `balanceAsset`, so the NFT contract address is the non-redundant coordinate.
+            positionId: abi.encode(WITHDRAW_REQUEST_NFT),
             positionKind: PositionKind.Supplied
         });
     }

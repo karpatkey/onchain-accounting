@@ -233,7 +233,9 @@ contract LidoWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
             amount: total,
             isDebt: false,
             protocolId: PROTOCOL_ID,
-            positionId: "",
+            // Anchored on the WithdrawalQueue (the claim target / immutable anchor); the owed asset
+            // lives in `balanceAsset`, so the queue address is the non-redundant coordinate.
+            positionId: abi.encode(address(WITHDRAWAL_QUEUE)),
             positionKind: PositionKind.Supplied
         });
     }

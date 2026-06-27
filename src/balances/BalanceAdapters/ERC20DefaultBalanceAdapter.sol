@@ -257,15 +257,16 @@ contract ERC20DefaultBalanceAdapter is IBalanceAdapter, IPositionDescribable {
 
                 // Build position (balance-only, pricing will be added by NAVCalculator)
                 // ERC20DefaultBalanceAdapter always returns credit positions: isDebt = false, amount in uint256
+                bytes memory positionId = abi.encode(asset); // encode once, reuse for positionId + labels
                 tempPositions[positionCount] = INAVCalculator.PositionBalance({
                     balanceAsset: underlyingAsset,
                     balanceAdapter: address(this),
                     amount: balance,
                     isDebt: false,
                     protocolId: PROTOCOL_ID,
-                    positionId: abi.encode(asset),
+                    positionId: positionId,
                     positionKind: PositionKind.Wallet,
-                    labels: _legLabels(abi.encode(asset))
+                    labels: _legLabels(positionId)
                 });
 
                 positionCount++;

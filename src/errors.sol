@@ -8,6 +8,7 @@ error NotChainlinkOracle();
 
 // Assisted balance-adapter errors
 error NotTokenOwner(address account, uint256 tokenId);
+error TokenIdCacheFull(address account, uint256 maxTokenIds);
 
 // Bridge-specific errors
 error InvoiceNotFound();

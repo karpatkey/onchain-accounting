@@ -7,7 +7,7 @@ import {IAssistedBalanceAdapter} from "src/balances/IAssistedBalanceAdapter.sol"
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {NotTokenOwner} from "src/errors.sol";
+import {NotTokenOwner, TokenIdCacheFull} from "src/errors.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
@@ -282,5 +282,50 @@ contract UniswapV3PoolsBalanceAdapterTest is Test {
         adapter.clearAccount(alice);
         assertEq(adapter.tokenIdsOf(alice).length, 0);
         assertEq(adapter.getAdapterPositions(alice, address(0)).length, 0);
+    }
+
+    /// @notice Blast-radius isolation: when one pool's token reverts in getPriceData (registered asset, feeds
+    ///         removed), only THAT NFT is dropped — the account's other Uniswap V3 LP still reports. Without the
+    ///         per-position try/catch the revert would escape getAdapterPositions and (under PriceFeedLib's single
+    ///         per-adapter catch) zero out the account's entire Uniswap V3 set.
+    function test_read_priceFeedRevert_dropsOnlyThatPool() public {
+        // WBTC pairs only in NFT 1 (poolA); make its feed read revert like the real NAVCalculator's PriceFeedNotSet.
+        nav.setPriceReverts(address(wbtc), true);
+
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(alice, address(0));
+        // NFT 1 (WBTC/WETH) dropped; NFT 2 (USDC/WETH) survives — the call does NOT revert.
+        assertEq(p.length, 4, "only the unpriced pool's NFT is dropped");
+        for (uint256 i = 0; i < p.length; i++) {
+            assertEq(p[i].positionId, abi.encode(address(poolB)), "surviving legs are poolB's");
+            assertEq(p[i].labels[2], "NFT #2");
+        }
+    }
+
+    /// @notice Writes are fail-loud at the cap: an owned id past MAX_TOKEN_IDS reverts TokenIdCacheFull rather than
+    ///         being silently dropped (which would silently under-count the account's NAV).
+    function test_perAccountCap_revertsWhenFull() public {
+        adapter.clearAccount(alice); // start empty (setUp seeded ids 1,2)
+        uint256 cap = adapter.MAX_TOKEN_IDS();
+
+        // Fill the cache to exactly MAX_TOKEN_IDS with owned NFTs (all in poolA's pair; ownerOf == alice is all the
+        // cap path needs). ids 1,2 were minted in setUp, so reuse them and mint the rest.
+        uint256[] memory ids = new uint256[](cap);
+        for (uint256 i = 0; i < cap; i++) {
+            uint256 id = i + 1;
+            if (id > 2) _mint(id, address(wbtc), address(weth), 3000, 1_000_000, 0, 0);
+            ids[i] = id;
+        }
+        adapter.submitTokenIds(alice, ids);
+        assertEq(adapter.tokenIdsOf(alice).length, cap);
+
+        // One more owned id past the cap is fail-loud.
+        uint256 overflowId = cap + 1;
+        _mint(overflowId, address(wbtc), address(weth), 3000, 1_000_000, 0, 0);
+        vm.expectRevert(abi.encodeWithSelector(TokenIdCacheFull.selector, alice, cap));
+        adapter.submitTokenIds(alice, _id(overflowId));
+
+        // Re-submitting an already-cached id while full is still an idempotent no-op (dedup precedes the cap check).
+        adapter.submitTokenIds(alice, _id(1));
+        assertEq(adapter.tokenIdsOf(alice).length, cap);
     }
 }

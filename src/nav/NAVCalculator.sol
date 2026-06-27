@@ -359,7 +359,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         // protocolName() returns a per-adapter constant, and positions are grouped by adapter (PriceFeedLib
         // concatenates each adapter's positions contiguously), so cache the last adapter's name and only
         // re-staticcall when the adapter changes — one protocolName() call per distinct adapter, not per position.
-        // positionLabels() varies by positionId, so it stays per-position.
+        // Labels are no longer fetched here: they ride on each PositionBalance (single mechanism; see below).
         address prevAdapter;
         string memory prevName;
         for (uint256 i = 0; i < len; i++) {

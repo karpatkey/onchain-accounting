@@ -294,10 +294,12 @@ contract NexusMutualStakingPoolsBalanceAdapter is AssistedBalanceAdapter, IPosit
     //
 
     function _addTokenId(address account, uint256 tokenId) internal {
-        if (_tokenIdIdxPlus1[account][tokenId] != 0) return; // already cached
+        if (_tokenIdIdxPlus1[account][tokenId] != 0) return; // already cached (idempotent no-op)
         // Cap the cache so the per-account read loop stays gas-bounded (OOG there isn't caught by NAV). The assistant
-        // must GC closed positions to make room; a real account never approaches MAX_TOKEN_IDS positions.
-        if (_tokenIds[account].length >= MAX_TOKEN_IDS) return;
+        // must GC closed positions (`clearTokenId`) to make room; a real account never approaches MAX_TOKEN_IDS
+        // positions. **Revert** rather than silently dropping the id — writes are fail-loud (like the ownership check
+        // below), so a full cache surfaces to the assistant instead of silently omitting an owned position.
+        if (_tokenIds[account].length >= MAX_TOKEN_IDS) revert TokenIdCacheFull(account, MAX_TOKEN_IDS);
         // Fail-loud ownership check: a non-owned id is a caller mistake. `tokenInfo` reverts for a non-existent id;
         // surface that as NotTokenOwner too.
         try INexusStakingNFT(STAKING_NFT).tokenInfo(tokenId) returns (uint256, address owner) {

@@ -367,20 +367,32 @@ contract NexusMutualStakingPoolsBalanceAdapterTest is BalanceAdapterTestBase {
 
     // ---- Caps + never-revert ----
 
-    function test_perAccountCap_limitsCachedTokens() public {
+    function test_perAccountCap_revertsWhenFull() public {
         uint256 cap = adapter.MAX_TOKEN_IDS();
-        uint256 n = cap + 5;
-        uint256[] memory ids = new uint256[](n);
-        for (uint256 i = 0; i < n; i++) {
+        uint256[] memory ids = new uint256[](cap);
+        for (uint256 i = 0; i < cap; i++) {
             uint256 id = i + 1;
             nft.setToken(id, 1, holder); // holder owns ALL
             viewer.setToken(id, 1, 1, 0, 0); // 1 active each
             ids[i] = id;
         }
-        adapter.submitTokenIds(holder, ids); // excess beyond cap is silently not stored
+        adapter.submitTokenIds(holder, ids); // fills the cache to exactly MAX_TOKEN_IDS
         assertEq(adapter.tokenIdsOf(holder).length, cap);
-        (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, address(nxm));
-        assertEq(amt, cap); // 1 active each, capped
+
+        // One more owned id past the cap is fail-loud: revert TokenIdCacheFull rather than silently dropping it.
+        uint256 overflowId = cap + 1;
+        nft.setToken(overflowId, 1, holder);
+        viewer.setToken(overflowId, 1, 1, 0, 0);
+        uint256[] memory more = new uint256[](1);
+        more[0] = overflowId;
+        vm.expectRevert(abi.encodeWithSelector(TokenIdCacheFull.selector, holder, cap));
+        adapter.submitTokenIds(holder, more);
+
+        // Re-submitting an already-cached id while full is still an idempotent no-op (dedup precedes the cap check).
+        uint256[] memory dup = new uint256[](1);
+        dup[0] = ids[0];
+        adapter.submitTokenIds(holder, dup);
+        assertEq(adapter.tokenIdsOf(holder).length, cap);
     }
 
     function test_viewerReverts_balanceZero() public {

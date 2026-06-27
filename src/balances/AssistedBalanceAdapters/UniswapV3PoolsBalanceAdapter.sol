@@ -240,12 +240,17 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
         uint256[] memory ids = _tokenIds[account];
         if (ids.length == 0) return new INAVCalculator.PositionBalance[](0);
 
+        // Fetch the registry snapshot ONCE for the whole read (not once per NFT): the loop below resolves every
+        // position's tokens from this single in-memory array, so the read stays O(NFTs + registrySize) rather than
+        // O(NFTs × registrySize) — important on an account near MAX_TOKEN_IDS with a large registry.
+        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
+
         // Up to 4 legs per NFT (liq0, liq1, fee0, fee1).
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](ids.length * 4);
         uint256 count;
 
         for (uint256 i; i < ids.length; ++i) {
-            count = _appendPositionLegs(account, ids[i], assetFilter, temp, count);
+            count = _appendPositionLegs(account, reg, ids[i], assetFilter, temp, count);
         }
 
         INAVCalculator.PositionBalance[] memory positions = new INAVCalculator.PositionBalance[](count);
@@ -260,10 +265,12 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
     //
 
     function _addTokenId(address account, uint256 tokenId) internal {
-        if (_tokenIdIdxPlus1[account][tokenId] != 0) return; // already cached
+        if (_tokenIdIdxPlus1[account][tokenId] != 0) return; // already cached (idempotent no-op)
         // Cap the cache so the per-account read loop stays gas-bounded (OOG there isn't caught by NAV). The assistant
-        // must GC closed positions to make room; a real account never approaches MAX_TOKEN_IDS open positions.
-        if (_tokenIds[account].length >= MAX_TOKEN_IDS) return;
+        // must GC closed positions (`clearTokenId`) to make room; a real account never approaches MAX_TOKEN_IDS open
+        // positions. **Revert** rather than silently dropping the id — writes are fail-loud (like the ownership
+        // check below), so a full cache surfaces to the assistant instead of silently omitting an owned position.
+        if (_tokenIds[account].length >= MAX_TOKEN_IDS) revert TokenIdCacheFull(account, MAX_TOKEN_IDS);
         // Fail-loud ownership check: a non-owned (or burned) id is a caller mistake. `ownerOf` reverts for a
         // non-existent token; surface that as NotTokenOwner too.
         try INonfungiblePositionManager(POSITION_MANAGER).ownerOf(tokenId) returns (address o) {
@@ -301,6 +308,7 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
     ///      `token0/token1/fee` from `positions(tokenId)` so no pool address is needed.
     function _appendPositionLegs(
         address account,
+        INAVCalculator.Asset[] memory reg,
         uint256 tokenId,
         address assetFilter,
         INAVCalculator.PositionBalance[] memory temp,
@@ -327,9 +335,7 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
 
         // Both tokens must be registered: valuing the LP split needs *both* oracle prices, regardless of which
         // leg(s) `assetFilter` ultimately emits. `assetFilter` only gates emission below (f0reg/f1reg).
-        // Fetch+scan the registry ONCE per NFT and resolve both tokens from that in-memory array (avoids 2× registry
-        // fetch/scan per NFT — keeps the bounded read loop cheap on accounts near MAX_TOKEN_IDS).
-        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
+        // `reg` is the registry snapshot fetched once by `getAdapterPositions`; resolve both tokens from it.
         (INAVCalculator.Asset memory a0, bool reg0) = _findAsset(reg, token0);
         (INAVCalculator.Asset memory a1, bool reg1) = _findAsset(reg, token1);
         if (!reg0 || !reg1) return count;
@@ -340,8 +346,22 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
         // [2] Reconstruct the price from the registered oracles instead of reading the manipulable slot0. Drop the
         // position if either feed is missing/zero/stale — an LP can't be valued manipulation-safely without both
         // fair prices (the stale asset is already surfaced in NAV.stalePriceAssets).
-        INAVCalculator.PriceFeedData memory pd0 = NAV_CALCULATOR.getPriceData(token0);
-        INAVCalculator.PriceFeedData memory pd1 = NAV_CALCULATOR.getPriceData(token1);
+        // `getPriceData` REVERTS (`PriceFeedNotSet`) for a registered asset whose feeds were all removed; catch it
+        // and discard only THIS position. Without the guard the revert escapes `getAdapterPositions`, where
+        // PriceFeedLib's single per-adapter try/catch would drop the account's ENTIRE Uniswap V3 LP set rather than
+        // the one unpriced pool — re-establishing the per-position isolation the old meta-adapter had per instance.
+        INAVCalculator.PriceFeedData memory pd0;
+        INAVCalculator.PriceFeedData memory pd1;
+        try NAV_CALCULATOR.getPriceData(token0) returns (INAVCalculator.PriceFeedData memory _pd0) {
+            pd0 = _pd0;
+        } catch {
+            return count;
+        }
+        try NAV_CALCULATOR.getPriceData(token1) returns (INAVCalculator.PriceFeedData memory _pd1) {
+            pd1 = _pd1;
+        } catch {
+            return count;
+        }
         if (pd0.price <= 0 || pd1.price <= 0 || pd0.stale || pd1.stale) return count;
         uint160 sqrtPriceX96 = UniswapV3PoolLib.sqrtPriceX96FromOraclePrices(
             uint256(pd0.price), pd0.decimals, a0.decimals, uint256(pd1.price), pd1.decimals, a1.decimals

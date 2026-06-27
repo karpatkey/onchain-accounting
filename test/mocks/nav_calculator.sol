@@ -199,6 +199,7 @@ contract Mock_NAVCalculator is INAVCalculator {
     /// @notice Settable price surface for adapters that read oracle prices (e.g. UniswapV3PoolsMeta after [2]).
     ///         Unset assets return price 0 / stale=false → treated as unpriceable by such adapters.
     mapping(address => PriceFeedData) private _priceData;
+    mapping(address => bool) private _priceReverts;
 
     function setAssetPrice(address asset, int256 price, uint8 decimals) external {
         PriceFeedData memory d;
@@ -208,7 +209,14 @@ contract Mock_NAVCalculator is INAVCalculator {
         _priceData[asset] = d;
     }
 
+    /// @notice Make getPriceData(asset) REVERT, emulating the real NAVCalculator's PriceFeedNotSet for a registered
+    ///         asset whose feeds were all removed (exercises consumers' try/catch around getPriceData).
+    function setPriceReverts(address asset, bool reverts_) external {
+        _priceReverts[asset] = reverts_;
+    }
+
     function getPriceData(address asset) external view override returns (PriceFeedData memory) {
+        if (_priceReverts[asset]) revert("PriceFeedNotSet");
         return _priceData[asset];
     }
 

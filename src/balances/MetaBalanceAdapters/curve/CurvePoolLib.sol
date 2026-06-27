@@ -209,10 +209,18 @@ library CurvePoolLib {
     function coinSymbols(address[] memory coins) internal view returns (string memory result) {
         for (uint256 i; i < coins.length; ++i) {
             string memory sym;
-            try IERC20Symbol(coins[i]).symbol() returns (string memory s) {
-                sym = s;
-            } catch {
+            // Fail-open against a no-code coin (e.g. Curve's native-ETH sentinel 0xEEee…EEeE): a high-level call to a
+            // codeless address reverts via Solidity's extcodesize check, which try/catch does NOT catch — and this
+            // runs on the getAdapterPositions hot path (via _legLabels), so an unguarded revert would drop the whole
+            // pool/gauge position from NAV. Guard explicitly and fall back to "?" like the catch arm.
+            if (coins[i].code.length == 0) {
                 sym = "?";
+            } else {
+                try IERC20Symbol(coins[i]).symbol() returns (string memory s) {
+                    sym = s;
+                } catch {
+                    sym = "?";
+                }
             }
             result = i == 0 ? sym : string.concat(result, "/", sym);
         }

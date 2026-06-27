@@ -38,8 +38,14 @@ interface INAVCalculator is IBalances {
     ///        e.g. for AAVE_V3_LENDING: `abi.encode(address pool)`.
     ///        Full schema table: see `src/utils/ProtocolIds.sol` and docs/howto/position-identity-schema.md.
     /// @param positionKind Semantic discriminator (Wallet / Supplied / Borrowed / Collateral / Staking / Rewards / Fees).
-    ///        Together with `protocolId` and `positionId` forms the stable per-chain identity key
-    ///        `(chainId, protocolId, positionId, balanceAsset.asset, positionKind)`.
+    ///        Together with `protocolId`, `positionId` and `isLocked` forms the stable per-chain identity key
+    ///        `(chainId, protocolId, positionId, balanceAsset.asset, positionKind, isLocked)`.
+    /// @param isLocked True if this leg is NOT withdrawable right now (the pending portion of a withdrawal queue, or a
+    ///        staked amount in/awaiting its unstaking cooldown); false if fully liquid / claimable now. Withdrawal-queue
+    ///        and cooldown adapters keep a STATIC, timeless `positionId` (the queue/manager/asset/vault/stake-token
+    ///        coordinate) and split an account's holding into up to two legs — a claimable leg (`isLocked=false`) and a
+    ///        locked leg (`isLocked=true`) — that share that positionId and are distinguished by `isLocked`. Hence
+    ///        `isLocked` is **part of the identity key**. `false` for every adapter except withdrawal-queue / cooldown legs.
     /// @param labels Adapter-supplied display hierarchy (below `protocolName`, leaf last), e.g.
     ///        `["Market", "wstETH/USDC"]` or `["Liquidity Pool", "0x…pool", "NFT #123"]`. Every adapter fills this on
     ///        each emitted position; the verbose reads use it verbatim (the single label mechanism — there is no
@@ -54,6 +60,7 @@ interface INAVCalculator is IBalances {
         bytes32 protocolId;
         bytes positionId;
         PositionKind positionKind;
+        bool isLocked;
         string[] labels;
     }
 
@@ -71,6 +78,7 @@ interface INAVCalculator is IBalances {
     /// @param protocolId `keccak256` protocol slug. Copied from PositionBalance.
     /// @param positionId ABI-encoded position identifier. Copied from PositionBalance.
     /// @param positionKind Semantic discriminator. Copied from PositionBalance.
+    /// @param isLocked True if the leg is not withdrawable now (pending/cooling). Copied from PositionBalance.
     struct Position {
         Asset balanceAsset;
         address balanceAdapter;
@@ -87,6 +95,7 @@ interface INAVCalculator is IBalances {
         bytes32 protocolId;
         bytes positionId;
         PositionKind positionKind;
+        bool isLocked;
         // Adapter-supplied display labels copied from PositionBalance; consumed verbatim by the verbose reads.
         // Display only — never used for identity. See PositionBalance.
         string[] labels;

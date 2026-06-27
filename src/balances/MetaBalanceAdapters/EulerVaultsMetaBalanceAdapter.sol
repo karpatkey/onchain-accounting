@@ -99,6 +99,7 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
                 protocolId: PROTOCOL_ID,
                 positionId: positionId,
                 positionKind: _supplyKind(account, vaultAddr),
+                isLocked: false,
                 labels: _legLabels(positionId)
             });
         }
@@ -111,6 +112,7 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
                 protocolId: PROTOCOL_ID,
                 positionId: positionId,
                 positionKind: PositionKind.Borrowed,
+                isLocked: false,
                 labels: _legLabels(positionId)
             });
         }

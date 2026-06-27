@@ -7,8 +7,71 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.sol";
 import {AaveV3SafetyModuleBalanceAdapter} from "src/balances/BalanceAdapters/AaveV3SafetyModuleBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
+import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
+import {Mock_ERC20} from "test/mocks/tokens.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
+
+/// @notice Minimal StakedTokenV3-shaped mock exposing the cooldown ABI the adapter optionally reads
+///         (`stakersCooldowns`, `getCooldownSeconds`, `UNSTAKE_WINDOW`) plus the balance/redeem/rewards
+///         getters. `vm.etch`ed onto one Safety Module stake-token constant so the adapter's hardcoded
+///         table resolves to this code.
+contract MockStakeTokenV3 {
+    mapping(address => uint256) public balanceOf;
+    mapping(address => uint256) private _rewards;
+    mapping(address => uint40) private _cdTimestamp;
+    mapping(address => uint216) private _cdAmount;
+    uint256 private _cooldownSeconds;
+    uint256 private _unstakeWindow;
+    // NOTE: field initializers don't survive `vm.etch` (only runtime code is copied, not constructor-set
+    // storage), so the redeem rate is configured explicitly via `setRate` after etching.
+    uint256 private _rateWad;
+
+    function setBalance(address account, uint256 shares) external {
+        balanceOf[account] = shares;
+    }
+
+    function setRate(uint256 rateWad_) external {
+        _rateWad = rateWad_;
+    }
+
+    function setRewards(address account, uint256 amount) external {
+        _rewards[account] = amount;
+    }
+
+    function setCooldown(address account, uint40 ts, uint216 amount) external {
+        _cdTimestamp[account] = ts;
+        _cdAmount[account] = amount;
+    }
+
+    function setWindows(uint256 cooldownSeconds_, uint256 unstakeWindow_) external {
+        _cooldownSeconds = cooldownSeconds_;
+        _unstakeWindow = unstakeWindow_;
+    }
+
+    function previewRedeem(uint256 shares) external view returns (uint256) {
+        return (shares * _rateWad) / 1e18;
+    }
+
+    function getTotalRewardsBalance(address staker) external view returns (uint256) {
+        return _rewards[staker];
+    }
+
+    function stakersCooldowns(address account) external view returns (uint40, uint216) {
+        return (_cdTimestamp[account], _cdAmount[account]);
+    }
+
+    function getCooldownSeconds() external view returns (uint256) {
+        return _cooldownSeconds;
+    }
+
+    // solhint-disable-next-line func-name-mixedcase
+    function UNSTAKE_WINDOW() external view returns (uint256) {
+        return _unstakeWindow;
+    }
+}
 
 /// @title AaveV3SafetyModuleBalanceAdapterTest
 /// @notice Unit tests for the hardcoded multi-token AaveV3SafetyModuleBalanceAdapter.
@@ -111,5 +174,106 @@ contract AaveV3SafetyModuleBalanceAdapterTest is BalanceAdapterTestBase {
         assertTrue(adapter.supportsInterface(type(IBalanceAdapter).interfaceId));
         assertTrue(adapter.supportsInterface(type(IERC165).interfaceId));
         assertFalse(adapter.supportsInterface(bytes4(0xdeadbeef)));
+    }
+
+    // ─── Cooldown split / isLocked (mocked stake token via vm.etch) ────────────
+    //
+    // The adapter's stake-token addresses are compile-time constants. We etch a StakedTokenV3-shaped
+    // mock onto STK_GHO (staked = GHO, reward = AAVE) and drive getAdapterPositions filtered to GHO so
+    // only stkGHO's staked legs are evaluated (the other three constants remain untouched EOAs).
+
+    /// @dev Etch the cooldown mock onto STK_GHO, register GHO so the staked leg counts in NAV, and return a
+    ///      handle to drive the etched mock's state.
+    function _etchStkGho() internal returns (MockStakeTokenV3 stk) {
+        MockStakeTokenV3 impl = new MockStakeTokenV3();
+        vm.etch(adapter.STK_GHO(), address(impl).code);
+        stk = MockStakeTokenV3(adapter.STK_GHO());
+        stk.setRate(1e18); // 1 share = 1 staked token (field initializers don't survive vm.etch)
+        balances.addSupportedAssetForTest(adapter.GHO()); // staked token of stkGHO; must be registered to emit
+    }
+
+    function test_getAdapterPositions_noCooldown_singleLockedLeg() public {
+        MockStakeTokenV3 stk = _etchStkGho();
+        stk.setBalance(alice, 1000e18); // no cooldown set → entire balance is active stake (non-withdrawable)
+        stk.setWindows(7 days, 2 days);
+
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, adapter.GHO());
+        assertEq(positions.length, 1, "no cooldown -> a single locked stake leg");
+        assertEq(positions[0].balanceAsset.asset, adapter.GHO());
+        assertEq(uint8(positions[0].positionKind), uint8(PositionKind.Staking));
+        assertEq(positions[0].amount, 1000e18);
+        assertTrue(positions[0].isLocked, "active stake -> non-withdrawable -> locked");
+        assertEq(positions[0].positionId, abi.encode(adapter.STK_GHO()), "staking leg positionId = stake token");
+        assertEq(positions[0].protocolId, ProtocolIds.AAVE_V3_SAFETY_MODULE);
+    }
+
+    function test_getAdapterPositions_cooldownInWindow_unlockedLeg() public {
+        MockStakeTokenV3 stk = _etchStkGho();
+        stk.setBalance(alice, 1000e18);
+        stk.setWindows(7 days, 2 days);
+        // Cooldown over 300 shares; activated 7 days + a bit ago → now inside the unstake window → withdrawable.
+        vm.warp(1_000_000);
+        stk.setCooldown(alice, uint40(block.timestamp - 7 days - 1 hours), uint216(300e18));
+
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, adapter.GHO());
+        assertEq(positions.length, 2, "locked (rest) + unlocked (in-window cooldown) legs");
+
+        // Both legs share positionId = abi.encode(stakeToken); they are told apart by isLocked.
+        bytes memory expectedId = abi.encode(adapter.STK_GHO());
+        uint256 locked;
+        uint256 unlocked;
+        bool sawLocked;
+        bool sawUnlocked;
+        for (uint256 i; i < positions.length; ++i) {
+            INAVCalculator.PositionBalance memory p = positions[i];
+            assertEq(p.balanceAsset.asset, adapter.GHO());
+            assertEq(uint8(p.positionKind), uint8(PositionKind.Staking));
+            assertFalse(p.isDebt);
+            assertEq(p.positionId, expectedId, "both staking legs share the stake-token positionId");
+            if (p.isLocked) {
+                locked = p.amount;
+                sawLocked = true;
+            } else {
+                unlocked = p.amount;
+                sawUnlocked = true;
+            }
+        }
+        assertTrue(sawLocked && sawUnlocked, "both legs present");
+        assertEq(locked, 700e18, "locked = balance - in-window cooldown shares");
+        assertEq(unlocked, 300e18, "unlocked = in-window cooldown shares");
+
+        // NAV-total invariance: the two staking legs sum to the full staked principal (rate 1, rewards=0).
+        (uint256 agg,) = adapter.getAdapterBalanceForAsset(alice, adapter.GHO());
+        assertEq(locked + unlocked, agg, "sum of staking legs == aggregate staked balance");
+    }
+
+    function test_getAdapterPositions_cooldownCooling_allLocked() public {
+        MockStakeTokenV3 stk = _etchStkGho();
+        stk.setBalance(alice, 1000e18);
+        stk.setWindows(7 days, 2 days);
+        // Cooldown just activated → unlockStart is in the future → still cooling → entire balance non-withdrawable.
+        vm.warp(1_000_000);
+        stk.setCooldown(alice, uint40(block.timestamp), uint216(400e18));
+
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, adapter.GHO());
+        assertEq(positions.length, 1, "cooling cooldown is not withdrawable -> a single locked leg");
+        assertEq(positions[0].positionId, abi.encode(adapter.STK_GHO()));
+        assertTrue(positions[0].isLocked, "still cooling -> locked");
+        assertEq(positions[0].amount, 1000e18, "active stake + cooling cooldown both locked");
+    }
+
+    function test_getAdapterPositions_cooldownExpiredPastWindow_allLocked() public {
+        MockStakeTokenV3 stk = _etchStkGho();
+        stk.setBalance(alice, 1000e18);
+        stk.setWindows(7 days, 2 days);
+        // Activated long ago -> past cooldown AND past the unstake window -> re-locked.
+        vm.warp(100 days);
+        stk.setCooldown(alice, uint40(block.timestamp - 30 days), uint216(250e18));
+
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, adapter.GHO());
+        assertEq(positions.length, 1, "past the unstake window -> a single locked leg");
+        assertEq(positions[0].positionId, abi.encode(adapter.STK_GHO()));
+        assertTrue(positions[0].isLocked, "past the unstake window -> re-locked");
+        assertEq(positions[0].amount, 1000e18, "active stake + expired cooldown both locked");
     }
 }

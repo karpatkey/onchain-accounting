@@ -28,10 +28,20 @@ contract MockErc4626Wrapper {
 /// @notice Umbrella stake token (ERC4626 vault): balanceOf + convertToAssets + asset(). `asset` may be a
 ///         wrapper (wa* family → two-hop walk) or a bare reserve directly (stkGHO-style → one hop).
 contract MockUmbrellaStakeToken {
+    /// @notice Mirrors `IUmbrellaStakeToken.CooldownSnapshot` so the adapter's `getStakerCooldown` read decodes.
+    struct CooldownSnapshot {
+        uint192 amount;
+        uint32 endOfCooldown;
+        uint32 withdrawalWindow;
+    }
+
     address public immutable asset;
     uint256 public immutable rate;
     string public symbol;
     mapping(address => uint256) public balanceOf;
+
+    mapping(address => CooldownSnapshot) private _cooldown;
+    bool public cooldownAbiEnabled; // when false, getStakerCooldown reverts (degrades to single live leg)
 
     constructor(address asset_, uint256 rate_, string memory symbol_) {
         asset = asset_;
@@ -41,6 +51,17 @@ contract MockUmbrellaStakeToken {
 
     function setBalance(address account, uint256 shares) external {
         balanceOf[account] = shares;
+    }
+
+    /// @notice Activate an unstaking cooldown for `account`. Implicitly enables the cooldown ABI.
+    function setCooldown(address account, uint192 amount, uint32 endOfCooldown, uint32 withdrawalWindow) external {
+        _cooldown[account] = CooldownSnapshot(amount, endOfCooldown, withdrawalWindow);
+        cooldownAbiEnabled = true;
+    }
+
+    function getStakerCooldown(address user) external view returns (CooldownSnapshot memory) {
+        require(cooldownAbiEnabled, "no cooldown ABI");
+        return _cooldown[user];
     }
 
     function convertToAssets(uint256 shares) external view returns (uint256) {

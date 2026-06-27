@@ -44,8 +44,9 @@ Every `PositionBalance` now carries typed identity fields instead of free-form s
 | Field | Type | What to put |
 |---|---|---|
 | `protocolId` | `bytes32` | A constant from `src/utils/ProtocolIds.sol` — `keccak256` of a lowercase kebab-case slug. Add a new constant if needed (see §1.2). |
-| `positionId` | `bytes` | `abi.encode(keyAddress)` or `abi.encode(a, b)` computed at query time. See the schema comments in `ProtocolIds.sol` for the canonical shape per protocol family. |
+| `positionId` | `bytes` | `abi.encode(keyAddress)` or `abi.encode(a, b)` computed at query time, of the **static, timeless** key (never a per-request id). See the schema comments in `ProtocolIds.sol` for the canonical shape per protocol family. |
 | `positionKind` | `PositionKind` | Enum from `src/utils/PositionKind.sol`: `Wallet`, `Supplied`, `Borrowed`, `Collateral`, `Staking`, `Rewards`, or `Fees`. |
+| `isLocked` | `bool` | `true` if the leg is not withdrawable now (pending withdrawal / unstaking cooldown); `false` if liquid. `false` for most adapters. Withdrawal-queue / cooldown adapters split a holding into a claimable (`false`) and a locked (`true`) leg sharing one static `positionId` — `isLocked` is part of the identity key. |
 
 ### 1.2 Adding a new ProtocolIds constant
 
@@ -140,6 +141,7 @@ contract MyProtocolBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         //     protocolId: PROTOCOL_ID,
         //     positionId: abi.encode(PROTOCOL_CONTRACT, asset),
         //     positionKind: PositionKind.Supplied,
+        //     isLocked: false  // true only for the pending leg of a withdrawal queue / cooldown
         //     labels: _supplyLabels(assetMeta.symbol)  // string[] display hierarchy below protocolName, leaf last
         // });
     }

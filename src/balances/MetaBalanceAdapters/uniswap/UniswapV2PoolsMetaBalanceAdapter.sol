@@ -105,6 +105,7 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
             protocolId: _protocolId(),
             positionId: positionId,
             positionKind: PositionKind.Supplied,
+            isLocked: false,
             labels: _legLabels(positionId)
         });
     }

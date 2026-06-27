@@ -136,8 +136,11 @@ contract EthenaCooldownBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     }
 
     /// @inheritdoc IBalanceAdapter
-    /// @notice Returns the account's pending cooldown as a single balance-only position.
-    /// @dev Dropped (empty array) if the underlying asset is not registered in NAVCalculator or the amount is 0.
+    /// @notice Returns the account's pending cooldown as a single balance-only position with `isLocked`.
+    /// @dev One leg (sUSDe keeps a single cooldown record per account). `isLocked = false` once the cooldown has
+    ///      elapsed (`block.timestamp >= cooldownEnd`) or cooldown is disabled (`cooldownDuration == 0`, funds
+    ///      immediately withdrawable); otherwise still cooling → locked. Dropped (empty array) if the underlying asset
+    ///      is not registered in NAVCalculator or the amount is 0.
     function getAdapterPositions(address account, address assetFilter)
         external
         view
@@ -148,11 +151,14 @@ contract EthenaCooldownBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         if (assetFilter != address(0) && assetFilter != UNDERLYING_TOKEN) {
             return new INAVCalculator.PositionBalance[](0);
         }
+        if (account == address(0)) {
+            return new INAVCalculator.PositionBalance[](0);
+        }
 
         // Cheap single read first: the common case is no cooldown, so bail before fetching/scanning
         // the registered-asset list.
-        uint256 total = _pendingUsde(account);
-        if (total == 0) {
+        (uint104 cooldownEnd, uint152 underlyingAmount) = STAKED_USDE.cooldowns(account);
+        if (underlyingAmount == 0) {
             return new INAVCalculator.PositionBalance[](0);
         }
 
@@ -171,17 +177,29 @@ contract EthenaCooldownBalanceAdapter is IBalanceAdapter, IPositionDescribable {
             return new INAVCalculator.PositionBalance[](0);
         }
 
+        // Claimable once cooled down, or when cooldown is disabled (duration 0 ⇒ instant withdraw). Else cooling.
+        // The owed amount is already known from `cooldowns()`, so a `cooldownDuration()` revert (ABI variance)
+        // must not drop the whole position — fall back to the time gate alone (conservative: treats a disabled
+        // cooldown as still cooling, i.e. under-reports claimability, never over-reports).
+        bool unlocked = block.timestamp >= cooldownEnd;
+        if (!unlocked) {
+            try STAKED_USDE.cooldownDuration() returns (uint24 duration) {
+                if (duration == 0) unlocked = true;
+            } catch {}
+        }
+
         positions = new INAVCalculator.PositionBalance[](1);
         positions[0] = INAVCalculator.PositionBalance({
             balanceAsset: underlying,
             balanceAdapter: address(this),
-            amount: total,
+            amount: uint256(underlyingAmount),
             isDebt: false,
             protocolId: PROTOCOL_ID,
             // Anchored on StakedUSDeV2 / sUSDe (the cooldown holder & claim target); the owed asset
             // lives in `balanceAsset`, so the sUSDe address is the non-redundant coordinate.
             positionId: abi.encode(address(STAKED_USDE)),
             positionKind: PositionKind.Supplied,
+            isLocked: !unlocked,
             labels: _legLabels()
         });
     }
@@ -192,4 +210,7 @@ contract EthenaCooldownBalanceAdapter is IBalanceAdapter, IPositionDescribable {
 ///      `UserCooldown { uint104 cooldownEnd; uint152 underlyingAmount; }`.
 interface IStakedUSDeV2 {
     function cooldowns(address account) external view returns (uint104 cooldownEnd, uint152 underlyingAmount);
+
+    /// @notice Cooldown period in seconds. Zero disables cooldown (redeem/withdraw become instant).
+    function cooldownDuration() external view returns (uint24);
 }

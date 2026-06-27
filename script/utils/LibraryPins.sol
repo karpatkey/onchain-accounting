@@ -15,8 +15,8 @@ pragma solidity ^0.8;
 ///         new value automatically. If a future call site hard-codes a raw address instead, grep the *constants*
 ///         (not the literal) to find it.
 library LibraryPins {
-    address internal constant PRICE_FEED_LIB = 0x33043997e88A6877a9Bbe342e0af190f50Fc6808;
-    address internal constant NAV_REGISTRY_LIB = 0x0Df086e35c633043900178366dA547DdD46316E1;
+    address internal constant PRICE_FEED_LIB = 0x9FAEC5351a0F0921721284BE3A5320e68E12353a;
+    address internal constant NAV_REGISTRY_LIB = 0x2b46e301c33990A7056ca86367037843E52f2447;
 
     /// @dev True if the 20-byte `needle` address appears verbatim anywhere in `haystack` — the linker embeds a
     ///      pinned library's address directly in the linked creation bytecode.

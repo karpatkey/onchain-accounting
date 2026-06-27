@@ -191,6 +191,7 @@ contract CapBalanceAdapter is IBalanceAdapter, IPositionDescribable {
                 protocolId: PROTOCOL_ID,
                 positionId: abi.encode(address(CUSD)),
                 positionKind: PositionKind.Supplied,
+                isLocked: false,
                 labels: _legLabels(abi.encode(address(CUSD)))
             });
         }
@@ -203,6 +204,7 @@ contract CapBalanceAdapter is IBalanceAdapter, IPositionDescribable {
                 protocolId: PROTOCOL_ID,
                 positionId: abi.encode(address(STCUSD)),
                 positionKind: PositionKind.Staking,
+                isLocked: false,
                 labels: _legLabels(abi.encode(address(STCUSD)))
             });
         }

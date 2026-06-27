@@ -146,6 +146,7 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
             protocolId: PROTOCOL_ID,
             positionId: pid,
             positionKind: kind,
+            isLocked: false,
             labels: _legLabels(pid)
         });
     }

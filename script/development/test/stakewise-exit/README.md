@@ -13,7 +13,7 @@
 - `idx >= 0` → `calculateExitedAssets(account, ticket, ts, idx)` → `exitedAssets` (claimable) `+ convertToAssets(leftShares)` (still-queued remainder).
 - `calculateExitedAssets(receiver = account, …)` returns `(0,0,0)` for a tuple that is not the account's exit request (wrong receiver/timestamp/ticket, or claimed) → `0`. **This is the on-chain ownership check** (no `ownerOf` exists for exit positions).
 - Every external read is `try/catch`→0 so the scan never reverts.
-- `getAdapterPositions`: `assetFilter` mismatch → empty; native ETH not registered → empty; total `0` → empty; else **one aggregated native-ETH leg** (sum across cached positions), `positionId=""` (like Lido/Stader/Kelp/ether.fi).
+- `getAdapterPositions`: `assetFilter` mismatch → empty; native ETH not registered → empty; total `0` → empty; else, **per vault**, up to two native-ETH legs — claimable (`exitedAssets`, `isLocked=false`) + locked (`convertToAssets(leftShares)`, `isLocked=true`) — sharing the static `positionId = abi.encode(address vault)` (ADR 0016; like Lido/Stader/Kelp/ether.fi).
 
 ## 2. Fork test coverage
 `test/balances/AssistedBalanceAdapters/fork/StakeWiseV3ExitQueueBalanceAdapter.fork.t.sol` (6 tests, `FOUNDRY_PROFILE=slow`):
@@ -27,13 +27,18 @@
 
 ## 4. Adapter formula recap
 ```
-owed(account) = Σ over cached (vault, ticket, ts) of:
+for each cached (vault, ticket, ts):
     idx = vault.getExitQueueIndex(ticket)
     queryIdx = idx < 0 ? type(uint256).max : uint256(idx)
     (leftShares, _, exitedAssets) = vault.calculateExitedAssets(account, ticket, ts, queryIdx)
-    exitedAssets + (leftShares > 0 ? vault.convertToAssets(leftShares) : 0)
-position = PositionBalance{ balanceAsset: native ETH (registered), amount: owed, isDebt: false,
-  protocolId: keccak256("stakewise-exit"), positionId: "", positionKind: Supplied }
+    claimable[vault] += exitedAssets                                    # exited → claimable leg
+    locked[vault]    += (leftShares > 0 ? vault.convertToAssets(leftShares) : 0)   # queued → locked leg
+# static positionId PER VAULT, split into up to two legs sharing it (ADR 0016):
+for each vault: pid = abi.encode(address(vault))
+  if claimable[vault] > 0: emit PositionBalance{ native ETH, claimable[vault], isDebt:false,
+    protocolId: keccak256("stakewise-exit"), positionId: pid, positionKind: Supplied, isLocked: false }
+  if locked[vault]    > 0: emit PositionBalance{ native ETH, locked[vault],    isDebt:false,
+    protocolId: keccak256("stakewise-exit"), positionId: pid, positionKind: Supplied, isLocked: true }
 ```
 Native ETH (`0xEeee…EEeE`) is a registered NAV asset, so NAVCalculator prices the leg. **The cache stores coordinates only — never amounts** — so the owner can only under-report, never over-report (ADR 0014).
 
@@ -51,7 +56,7 @@ Real holder **`0x4F2083f5fBede34C2714aFfb3105539775f7FE64`** (ENS DAO Safe — a
 | `0x4F20…FE64` | claimable | 25,380,000 | native ETH | `1000033196791603018908` (~1000.03 ETH) | Supplied | false |
 
 ### 7b. Per-asset summary
-One aggregated native-ETH leg per account = Σ of its live, account-owned exit positions; nothing otherwise.
+Up to two native-ETH legs per vault (claimable + locked, sharing one static positionId per vault) — Σ of its live, account-owned exit positions split into exited vs queued; nothing otherwise.
 
 ## 8. Ground-truth cross-check
 - **On-chain (fork test):** `adapter.getAdapterBalanceForAsset(holder, ETH)` **== `exitedAssets + convertToAssets(leftShares)`** read live from the vault, delta **0**, at both lifecycle blocks.

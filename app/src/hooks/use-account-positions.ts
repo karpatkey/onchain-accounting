@@ -25,6 +25,9 @@ export type OnchainPosition = {
   // as an unambiguous discriminator when the human `protocol` name is shared across adapters (e.g. the
   // StakeWise V3 vaults meta and the StakeWise exit-queue adapter both report "StakeWise V3").
   protocolId: `0x${string}`
+  // True if this leg is not withdrawable now (a pending withdrawal-queue request, or a staked amount in/awaiting
+  // its unstaking cooldown). False for fully-liquid legs and for every non-queue/non-cooldown adapter.
+  isLocked: boolean
 }
 
 // Raw tuple as returned by the typed-identity getAccountPositions (src/nav/INAVCalculator.sol :: Position).
@@ -42,6 +45,7 @@ type RawPosition = {
   protocolId: `0x${string}`
   positionId: `0x${string}`
   positionKind: number
+  isLocked: boolean
 }
 
 // IPositionDescribable (src/balances/IPositionDescribable.sol) — the display layer. protocolName() returns the
@@ -185,6 +189,7 @@ export function useAccountPositions(account: `0x${string}` | undefined): { chain
         positionDetail: Object.keys(detail).length > 0 ? JSON.stringify(detail) : '',
         positionId: p.positionId,
         protocolId: p.protocolId,
+        isLocked: p.isLocked,
       }
     })
     const result = posData?.[ci]

@@ -386,6 +386,7 @@ contract NexusMutualStakingPoolsBalanceAdapter is AssistedBalanceAdapter, IPosit
             protocolId: PROTOCOL_ID,
             positionId: positionId,
             positionKind: kind,
+            isLocked: false,
             labels: labels
         });
     }

@@ -420,6 +420,7 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
             protocolId: _protocolId(),
             positionId: positionId,
             positionKind: kind,
+            isLocked: false, // LP liquidity + settled fees are always withdrawable now
             labels: labels
         });
     }

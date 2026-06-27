@@ -286,6 +286,7 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceAdapter {
             protocolId: PROTOCOL_ID,
             positionId: positionId,
             positionKind: kind,
+            isLocked: false,
             labels: _legLabels(positionId)
         });
     }

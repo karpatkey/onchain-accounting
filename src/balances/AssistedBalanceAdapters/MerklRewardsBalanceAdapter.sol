@@ -265,6 +265,7 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
                 // positionId and are distinguished by `balanceAsset.asset` (same model as Aave V3 = abi.encode(pool)).
                 positionId: abi.encode(DISTRIBUTOR),
                 positionKind: PositionKind.Rewards,
+                isLocked: false,
                 labels: _legLabels()
             });
         }

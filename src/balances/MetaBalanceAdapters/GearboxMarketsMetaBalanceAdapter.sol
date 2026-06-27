@@ -55,6 +55,7 @@ contract GearboxMarketsMetaBalanceAdapter is MetaBalanceAdapter {
             protocolId: PROTOCOL_ID,
             positionId: _instancePositionId(instance),
             positionKind: PositionKind.Supplied,
+            isLocked: false,
             labels: _legLabels(_instancePositionId(instance))
         });
         return positions;

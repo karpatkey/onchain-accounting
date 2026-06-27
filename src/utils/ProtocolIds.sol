@@ -9,7 +9,10 @@ pragma solidity ^0.8;
 ///      positionId schemas (all are `abi.encode(...)`):
 ///        WALLET                          → (address asset)
 ///        AAVE_V3_LENDING / SPARK_LEND    → (address pool) — one position per instance; reserve in balanceAsset
-///        AAVE_V3_SAFETY_MODULE / UMBRELLA→ (address stakeToken)
+///        AAVE_V3_SAFETY_MODULE / UMBRELLA→ (address stakeToken) for BOTH staking legs (no discriminator);
+///                                          isLocked=non-withdrawable splits them — active stake is LOCKED
+///                                          (isLocked=true), only a cooldown elapsed-and-in-window is UNLOCKED;
+///                                          the reward leg shares it too, told apart by positionKind=Rewards
 ///        MORPHO_VAULTS / GEARBOX_V3 / EULER_VAULTS / ERC4626 / STAKEWISE_V3 / FLUID_VAULTS → (address vault)
 ///        CAP                             → (address token: cUSD or stcUSD) — one leg per token
 ///        MORPHO_MARKETS                  → (bytes32 marketId)
@@ -24,13 +27,15 @@ pragma solidity ^0.8;
 ///        COMPOUND_V3 / FLUID_FTOKENS     → (address market)
 ///        MERKL                           → (address distributor) — reward token is in balanceAsset, not positionId
 ///        NEXUS_MUTUAL_STAKING            → (uint256 tokenId, uint256 poolId)
-///        STADER_WITHDRAWAL              → (address userWithdrawalManager) — account-global anchor
-///        KELP_WITHDRAWAL                → (address withdrawalManager)      — account-global anchor
-///        LIDO_WITHDRAWAL                → (address withdrawalQueue)        — account-global anchor
-///        ETHENA_COOLDOWN                → (address sUSDe)                  — account-global anchor
-///        ETHERFI_WITHDRAWAL             → (address withdrawRequestNFT)     — account-global anchor
-///        STAKEWISE_EXIT                 → (address vaultsRegistry)         — account-global anchor
-///          (for all six: one aggregated leg per account; owed asset is in balanceAsset, not positionId)
+///        STADER_WITHDRAWAL              → (address userWithdrawalManager) — static coordinate
+///        KELP_WITHDRAWAL                → (address withdrawalManager)     — static coordinate; payout asset in balanceAsset
+///        LIDO_WITHDRAWAL                → (address withdrawalQueue)        — static coordinate
+///        ETHENA_COOLDOWN                → (address sUSDe)                  — static coordinate
+///        ETHERFI_WITHDRAWAL             → (address withdrawRequestNFT)     — static coordinate
+///        STAKEWISE_EXIT                 → (address vault)                 — static, per vault
+///          (for these: a static positionId with up to two legs — claimable (isLocked=false) + locked
+///           (isLocked=true) — sharing it, told apart by isLocked; owed asset is in balanceAsset. isLocked
+///           is part of the identity key. See docs/decisions/0016-islocked-position-status.md.)
 ///        BRIDGE_ESCROW                   → (address escrow, address token)
 /// @author KPK
 library ProtocolIds {
@@ -92,8 +97,9 @@ library ProtocolIds {
     bytes32 internal constant ERC4626 = keccak256("erc4626");
 
     // Withdrawal / cooldown queues
-    // Each adapter reports one aggregated leg per account; positionId = `abi.encode(<anchor contract>)`
-    // (the queue/manager — Lido queue, Stader/Kelp manager, ether.fi NFT, StakeWise registry, sUSDe).
+    // positionId = `abi.encode(<anchor contract>)` (the queue/manager — Lido queue, Stader/Kelp
+    // manager, ether.fi NFT, StakeWise vault, sUSDe). Up to two legs share it, told apart by
+    // isLocked (the owed/payout asset is in balanceAsset, not the positionId).
     bytes32 internal constant STADER_WITHDRAWAL = keccak256("stader-withdrawal");
     bytes32 internal constant KELP_WITHDRAWAL = keccak256("kelp-withdrawal");
     bytes32 internal constant LIDO_WITHDRAWAL = keccak256("lido-withdrawal");

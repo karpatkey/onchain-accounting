@@ -111,6 +111,7 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceAdapter {
                                 protocolId: PROTOCOL_ID,
                                 positionId: pid,
                                 positionKind: PositionKind.Staking,
+                                isLocked: false,
                                 labels: _legLabels(pid)
                             });
                         }
@@ -135,6 +136,7 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceAdapter {
                         protocolId: PROTOCOL_ID,
                         positionId: pid,
                         positionKind: PositionKind.Rewards,
+                        isLocked: false,
                         labels: _legLabels(pid)
                     });
                 }
@@ -155,6 +157,7 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceAdapter {
                         protocolId: PROTOCOL_ID,
                         positionId: pid,
                         positionKind: PositionKind.Rewards,
+                        isLocked: false,
                         labels: _legLabels(pid)
                     });
                 }
@@ -202,6 +205,7 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceAdapter {
                     protocolId: PROTOCOL_ID,
                     positionId: pid,
                     positionKind: PositionKind.Rewards,
+                    isLocked: false,
                     labels: _legLabels(pid)
                 });
             }

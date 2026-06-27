@@ -64,6 +64,7 @@ contract BalancerV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
                 protocolId: PROTOCOL_ID,
                 positionId: positionId,
                 positionKind: PositionKind.Supplied,
+                isLocked: false,
                 labels: _legLabels(positionId)
             });
         }

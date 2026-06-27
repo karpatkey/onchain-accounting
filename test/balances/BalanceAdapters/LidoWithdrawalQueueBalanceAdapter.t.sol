@@ -267,11 +267,60 @@ contract LidoWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(positions.length, 0, "Filter mismatch should produce empty");
 
         positions = adapter.getAdapterPositions(alice, address(weth));
+        // A single not-finalized request → one locked leg only.
         assertEq(positions.length, 1);
         assertEq(positions[0].balanceAsset.asset, address(weth));
         assertEq(positions[0].balanceAdapter, address(adapter));
         assertEq(positions[0].amount, 5e18);
         assertFalse(positions[0].isDebt);
+        assertTrue(positions[0].isLocked, "not-finalized request -> locked leg");
+        assertEq(positions[0].positionId, abi.encode(address(queue)), "static positionId = withdrawal queue");
+    }
+
+    function test_getAdapterPositions_claimableOnlyLeg() public {
+        // A single finalized request → one claimable leg (isLocked = false).
+        queue.pushFinalizedRequest(alice, 1, 3e18, 2.9e18);
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(weth));
+        assertEq(positions.length, 1);
+        assertEq(positions[0].amount, 2.9e18, "claimable leg uses exact getClaimableEther");
+        assertFalse(positions[0].isLocked, "finalized request -> claimable leg");
+        assertEq(positions[0].positionId, abi.encode(address(queue)));
+    }
+
+    function test_getAdapterPositions_mixedClaimableAndLocked() public {
+        // One finalized (claimable) + one pending (locked) request → two legs sharing the static positionId,
+        // told apart by isLocked. NAV total must equal the old single-aggregate (_ethOwed).
+        queue.pushFinalizedRequest(alice, 1, 3e18, 2.9e18); // claimable 2.9
+        queue.pushRequest(alice, 2, 1.5e18, false); // locked 1.5
+
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(weth));
+        assertEq(positions.length, 2, "claimable + locked legs");
+
+        bytes memory expectedId = abi.encode(address(queue));
+        uint256 claimable;
+        uint256 locked;
+        bool sawClaimable;
+        bool sawLocked;
+        for (uint256 i = 0; i < positions.length; i++) {
+            assertEq(positions[i].balanceAsset.asset, address(weth));
+            assertEq(positions[i].balanceAdapter, address(adapter));
+            assertFalse(positions[i].isDebt);
+            assertEq(positions[i].positionId, expectedId, "both legs share the static positionId");
+            if (positions[i].isLocked) {
+                locked += positions[i].amount;
+                sawLocked = true;
+            } else {
+                claimable += positions[i].amount;
+                sawClaimable = true;
+            }
+        }
+        assertTrue(sawClaimable && sawLocked, "exactly one claimable + one locked leg present");
+        assertEq(claimable, 2.9e18, "claimable leg amount");
+        assertEq(locked, 1.5e18, "locked leg amount");
+
+        // NAV-total invariance: legs sum to the aggregate balance method's total.
+        (uint256 agg,) = adapter.getAdapterBalanceForAsset(alice, address(weth));
+        assertEq(claimable + locked, agg, "sum of legs == old aggregate");
     }
 
     function test_getAdapterPositions_emptyWhenAssetUnregistered() public {

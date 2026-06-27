@@ -266,6 +266,7 @@ contract ERC20DefaultBalanceAdapter is IBalanceAdapter, IPositionDescribable {
                     protocolId: PROTOCOL_ID,
                     positionId: positionId,
                     positionKind: PositionKind.Wallet,
+                    isLocked: false,
                     labels: _legLabels(positionId)
                 });
 

@@ -156,6 +156,7 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
             protocolId: _getProtocolId(),
             positionId: pid,
             positionKind: kind,
+            isLocked: false,
             labels: _legLabels(pid)
         });
     }

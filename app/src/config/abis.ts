@@ -54,6 +54,7 @@ export const navCalcAbi = [
           { name: 'protocolId', type: 'bytes32' },
           { name: 'positionId', type: 'bytes' },
           { name: 'positionKind', type: 'uint8' },
+          { name: 'isLocked', type: 'bool' },
         ],
       },
     ],

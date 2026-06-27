@@ -277,4 +277,40 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
         assertEq(labels[0], "Liquidity Pool");
         assertEq(labels[1], "USDC/DAI LP");
     }
+
+    // ─── no-code coin (native-ETH sentinel) regression ──────────────────────────
+
+    /// @notice Regression: a Curve pool can hold the native-ETH sentinel 0xEEee…EEeE, a codeless address.
+    ///         `CurvePoolLib.coinSymbols` builds labels on the getAdapterPositions hot path; a high-level
+    ///         `symbol()` call on a codeless address reverts via Solidity's extcodesize check, which try/catch
+    ///         does NOT catch. Before the `code.length == 0` guard that revert bubbled up and dropped the WHOLE
+    ///         position. Assert the position is STILL returned and the sentinel coin's label falls back to "?".
+    function test_noCodeCoin_ethSentinel_positionNotDropped() public {
+        address ethSentinel = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE; // codeless
+        // Register the sentinel as a valued asset (e.g. native ETH) so its leg is emitted.
+        nav.registerAsset(ethSentinel, 18, "ETH");
+
+        address[] memory coins = new address[](2);
+        coins[0] = address(usdc);
+        coins[1] = ethSentinel; // no code → unguarded symbol() would revert past try/catch
+        MockCurvePool pool = new MockCurvePool(coins);
+        pool.setPoolBalance(0, 500e6); // 500 USDC
+        pool.setPoolBalance(1, 500e18); // 500 ETH-equiv
+        pool.setTotalSupply(1_000e18);
+        pool.setWalletBalance(alice, 100e18); // 10% of pool
+
+        INAVCalculator.PositionBalance[] memory pos =
+            meta.getAdapterPositionsForInstances(alice, _instance(address(pool)), address(0));
+
+        // The key assertion: the position is NOT dropped.
+        assertEq(pos.length, 2);
+        assertEq(pos[0].balanceAsset.asset, address(usdc));
+        assertEq(pos[1].balanceAsset.asset, ethSentinel);
+
+        // Labels are well-formed; the sentinel coin's symbol falls back to "?".
+        string[] memory labels = pos[0].labels;
+        assertEq(labels.length, 2);
+        assertEq(labels[0], "Liquidity Pool");
+        assertEq(labels[1], "USDC/? LP");
+    }
 }

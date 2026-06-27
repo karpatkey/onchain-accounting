@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
 import {CapBalanceAdapter} from "src/balances/BalanceAdapters/CapBalanceAdapter.sol";
-import {MockBalances} from "test/mocks/MockBalances.sol";
+import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -50,7 +50,7 @@ contract MockUsdc {
 
 /// @title CapBalanceAdapter unit tests (no fork)
 contract CapBalanceAdapterTest is Test {
-    MockBalances mockBalances;
+    Mock_NAVCalculator nav;
     MockCUsd mockCUsd;
     MockStcUsd mockStcUsd;
     MockUsdc mockUsdc;
@@ -59,12 +59,12 @@ contract CapBalanceAdapterTest is Test {
     address alice = makeAddr("alice");
 
     function setUp() public {
-        mockBalances = new MockBalances();
+        nav = new Mock_NAVCalculator();
         mockUsdc = new MockUsdc();
         mockCUsd = new MockCUsd(address(mockUsdc));
         mockStcUsd = new MockStcUsd();
-        adapter =
-            new CapBalanceAdapter(address(mockCUsd), address(mockStcUsd), address(mockUsdc), address(mockBalances));
+        nav.registerAsset(address(mockUsdc), 6, "USDC");
+        adapter = new CapBalanceAdapter(address(mockCUsd), address(mockStcUsd), address(mockUsdc), address(nav));
     }
 
     // ============================================
@@ -73,22 +73,22 @@ contract CapBalanceAdapterTest is Test {
 
     function test_constructor_invalidArgs_zeroCUsd() public {
         vm.expectRevert(InvalidArguments.selector);
-        new CapBalanceAdapter(address(0), address(mockStcUsd), address(mockUsdc), address(mockBalances));
+        new CapBalanceAdapter(address(0), address(mockStcUsd), address(mockUsdc), address(nav));
     }
 
     function test_constructor_invalidArgs_zeroStcUsd() public {
         vm.expectRevert(InvalidArguments.selector);
-        new CapBalanceAdapter(address(mockCUsd), address(0), address(mockUsdc), address(mockBalances));
+        new CapBalanceAdapter(address(mockCUsd), address(0), address(mockUsdc), address(nav));
     }
 
     function test_constructor_invalidArgs_zeroUsdc() public {
         vm.expectRevert(InvalidArguments.selector);
-        new CapBalanceAdapter(address(mockCUsd), address(mockStcUsd), address(0), address(mockBalances));
+        new CapBalanceAdapter(address(mockCUsd), address(mockStcUsd), address(0), address(nav));
     }
 
     function test_constructor_invalidArgs_nonContractCUsd() public {
         vm.expectRevert("cUSD must be a contract");
-        new CapBalanceAdapter(address(0xdead), address(mockStcUsd), address(mockUsdc), address(mockBalances));
+        new CapBalanceAdapter(address(0xdead), address(mockStcUsd), address(mockUsdc), address(nav));
     }
 
     function test_constructor_invalidArgs_nonContractNavCalculator() public {
@@ -100,7 +100,7 @@ contract CapBalanceAdapterTest is Test {
         assertEq(address(adapter.CUSD()), address(mockCUsd));
         assertEq(address(adapter.STCUSD()), address(mockStcUsd));
         assertEq(adapter.USDC(), address(mockUsdc));
-        assertEq(address(adapter.NAV_CALCULATOR()), address(mockBalances));
+        assertEq(address(adapter.NAV_CALCULATOR()), address(nav));
     }
 
     // ============================================
@@ -192,8 +192,53 @@ contract CapBalanceAdapterTest is Test {
     // ============================================
 
     function test_getAdapterPositions_unknownAccount_returnsEmpty() public view {
-        // MockBalances.getRegisteredAssets() returns [] — USDC not registered, so nothing is emitted
+        // USDC is registered, but alice holds no cUSD/stcUSD, so no legs are emitted
         INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(0));
         assertEq(positions.length, 0);
+    }
+
+    function test_getAdapterPositions_usdcUnregistered_returnsEmpty() public {
+        // If USDC is not registered the whole position is skipped, regardless of holdings
+        nav.unregisterAssetHelper(address(mockUsdc));
+        mockCUsd.setBalance(alice, 100e18);
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(0));
+        assertEq(positions.length, 0);
+    }
+
+    function test_getAdapterPositions_cUsdLeg_labels() public {
+        mockCUsd.setBalance(alice, 100e18);
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(0));
+        assertEq(positions.length, 1);
+
+        assertEq(positions[0].positionId, abi.encode(address(mockCUsd)));
+        string[] memory labels = positions[0].labels;
+        assertEq(labels.length, 2);
+        assertEq(labels[0], "Stablecoin");
+        assertEq(labels[1], "cUSD");
+    }
+
+    function test_getAdapterPositions_stcUsdLeg_labels() public {
+        mockStcUsd.setBalance(alice, 50e18);
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(0));
+        assertEq(positions.length, 1);
+
+        assertEq(positions[0].positionId, abi.encode(address(mockStcUsd)));
+        string[] memory labels = positions[0].labels;
+        assertEq(labels.length, 2);
+        assertEq(labels[0], "Savings");
+        assertEq(labels[1], "stcUSD");
+    }
+
+    function test_getAdapterPositions_bothLegs_labels() public {
+        mockCUsd.setBalance(alice, 100e18);
+        mockStcUsd.setBalance(alice, 50e18);
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(0));
+        assertEq(positions.length, 2);
+
+        // Leg 0 = cUSD (Stablecoin), leg 1 = stcUSD (Savings) — emission order in the adapter
+        assertEq(positions[0].labels[0], "Stablecoin");
+        assertEq(positions[0].labels[1], "cUSD");
+        assertEq(positions[1].labels[0], "Savings");
+        assertEq(positions[1].labels[1], "stcUSD");
     }
 }

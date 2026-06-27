@@ -121,6 +121,9 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
         POSITION_MANAGER = positionManager_;
         FACTORY = INonfungiblePositionManager(positionManager_).factory();
+        // Fail deployment early on a misconfigured NPM: a zero/EOA factory would make every getPool() call revert
+        // (ABI-decode on empty returndata) and brick this adapter's NAV reads.
+        require(FACTORY.code.length > 0, "Factory must be a contract");
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
         _protocolName = protocolName_;
     }
@@ -224,7 +227,8 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
     /// @inheritdoc IBalanceAdapter
     /// @dev For each cached tokenId still owned by `account`, emits up to 4 legs: `Supplied` x2 (in-range liquidity)
     ///      and `Fees` x2 (settled `tokensOwed`) — dropping zeros, unregistered/unpriced assets, and ids no longer
-    ///      owned, respecting `assetFilter`. Each NFT gets its own positionId = abi.encode(npm, tokenId).
+    ///      owned, respecting `assetFilter`. positionId = abi.encode(pool) (the stable pool address); the NFT id is a
+    ///      display-only `labels` entry (an account's NFTs in the same pool share the positionId).
     function getAdapterPositions(address account, address assetFilter)
         external
         view
@@ -323,8 +327,11 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
 
         // Both tokens must be registered: valuing the LP split needs *both* oracle prices, regardless of which
         // leg(s) `assetFilter` ultimately emits. `assetFilter` only gates emission below (f0reg/f1reg).
-        (INAVCalculator.Asset memory a0, bool reg0) = _getAssetInfo(token0);
-        (INAVCalculator.Asset memory a1, bool reg1) = _getAssetInfo(token1);
+        // Fetch+scan the registry ONCE per NFT and resolve both tokens from that in-memory array (avoids 2× registry
+        // fetch/scan per NFT — keeps the bounded read loop cheap on accounts near MAX_TOKEN_IDS).
+        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
+        (INAVCalculator.Asset memory a0, bool reg0) = _findAsset(reg, token0);
+        (INAVCalculator.Asset memory a1, bool reg1) = _findAsset(reg, token1);
         if (!reg0 || !reg1) return count;
         bool f0reg = assetFilter == address(0) || assetFilter == token0;
         bool f1reg = assetFilter == address(0) || assetFilter == token1;
@@ -401,28 +408,18 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
     // Internal — registry helpers (previously inherited from MetaBalanceAdapter)
     //
 
-    /// @notice Looks up an asset's registry metadata.
+    /// @notice Looks up an asset's metadata in a pre-fetched registry snapshot (so the caller scans the registry
+    ///         once per NFT and resolves both pool tokens from the same in-memory array).
     /// @return asset The Asset struct (zeroed if not found).
     /// @return found True if the asset is registered in NAVCalculator.
-    function _getAssetInfo(address asset) internal view returns (INAVCalculator.Asset memory, bool found) {
-        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
+    function _findAsset(INAVCalculator.Asset[] memory reg, address asset)
+        private
+        pure
+        returns (INAVCalculator.Asset memory, bool found)
+    {
         for (uint256 i = 0; i < reg.length; i++) {
             if (reg[i].asset == asset) return (reg[i], true);
         }
         return (INAVCalculator.Asset({asset: address(0), symbol: "", decimals: 0}), false);
-    }
-
-    /// @notice Assembles the `[category, leaf]` label pair, applying the fail-open empty-leaf convention.
-    function _labels(string memory category, string memory leaf) internal pure returns (string[] memory) {
-        if (bytes(leaf).length == 0) {
-            if (bytes(category).length == 0) return new string[](0);
-            string[] memory only = new string[](1);
-            only[0] = category;
-            return only;
-        }
-        string[] memory out = new string[](2);
-        out[0] = category;
-        out[1] = leaf;
-        return out;
     }
 }

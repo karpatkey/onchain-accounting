@@ -29,7 +29,8 @@ contract PancakeSwapV3PoolsBalanceAdapter is UniswapV3PoolsBalanceAdapter {
 
     /// @inheritdoc UniswapV3PoolsBalanceAdapter
     /// @dev Reports the `pancakeswap-v3` slug (vs the inherited `uniswap-v3`) so the typed reconciliation key
-    ///      distinguishes PancakeSwap V3 LP from Uniswap V3 LP. Same positionId schema (address npm, uint256 tokenId).
+    ///      distinguishes PancakeSwap V3 LP from Uniswap V3 LP. Same positionId schema as the base —
+    ///      `abi.encode(pool)` (the pool address; NFT id in the display labels).
     function _protocolId() internal pure override returns (bytes32) {
         return ProtocolIds.PANCAKESWAP_V3;
     }

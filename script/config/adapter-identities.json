@@ -290,7 +290,7 @@
     "positionId": "abi.encode(uint256 tokenId, uint256 poolId)"
   },
 
-  "StakeWiseExitQueue": {
+  "StakeWiseV3ExitQueue": {
     "$perPositionFields": "type: Supplied; single aggregated native-ETH leg per account (in-flight StakeWise V3 exit-queue assets; agent-fed cache of (vault, positionTicket, timestamp) tuples, emitted positionId is empty)",
     "protocol": "StakeWise V3",
     "positionDetail": { "protocol": "StakeWise V3", "product": "Staking", "name": "Exit Queue" },

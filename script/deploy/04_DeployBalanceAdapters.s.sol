@@ -75,8 +75,8 @@ import {
     NexusMutualStakingPoolsBalanceAdapter
 } from "../../src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsBalanceAdapter.sol";
 import {
-    StakeWiseExitQueueBalanceAdapter
-} from "../../src/balances/AssistedBalanceAdapters/StakeWiseExitQueueBalanceAdapter.sol";
+    StakeWiseV3ExitQueueBalanceAdapter
+} from "../../src/balances/AssistedBalanceAdapters/StakeWiseV3ExitQueueBalanceAdapter.sol";
 import {
     UniswapV3PoolsMetaBalanceAdapter
 } from "../../src/balances/AssistedBalanceAdapters/UniswapV3PoolsMetaBalanceAdapter.sol";
@@ -183,7 +183,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("NexusMutualStakingPools");
 
         // --- StakeWise V3 exit-queue cache adapter (agent-fed; ADR 0014) ---
-        _deployIfEnabled("StakeWiseExitQueue");
+        _deployIfEnabled("StakeWiseV3ExitQueue");
 
         // --- Uniswap V3 (meta-adapter: all pools; pool set on NAV, ADR 0010) ---
         _deployIfEnabled("UniswapV3PoolsMeta"); // Meta-adapter: all Uniswap V3 pools (Supply + Fees legs)
@@ -381,8 +381,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         }
 
         // StakeWise V3 exit queue: ticket-cached exit-queue adapter (ADR 0014).
-        if (_equals(adapterName, "StakeWiseExitQueue")) {
-            return _deployStakeWiseExitQueue(adapterName, navCalculator);
+        if (_equals(adapterName, "StakeWiseV3ExitQueue")) {
+            return _deployStakeWiseV3ExitQueue(adapterName, navCalculator);
         }
 
         // Uniswap/PancakeSwap meta-adapters (per-instance adapters removed — superseded by meta-adapters)
@@ -766,7 +766,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(adapter);
     }
 
-    function _deployStakeWiseExitQueue(string memory adapterName, address navCalculator) internal returns (address) {
+    function _deployStakeWiseV3ExitQueue(string memory adapterName, address navCalculator) internal returns (address) {
         // Owner = chainConfig.admin (OIV Safe / agent role): the only caller of submitPositions / clearPosition. The
         // adapter values from live on-chain reads and verifies each tuple belongs to the account via
         // calculateExitedAssets(receiver=account), so the owner cannot fabricate amounts (under-report only). See
@@ -777,9 +777,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address underlyingToken = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
         );
-        require(chainConfig.admin != address(0), "StakeWiseExitQueue: chainConfig.admin (initialOwner) not configured");
+        require(chainConfig.admin != address(0), "StakeWiseV3ExitQueue: chainConfig.admin (initialOwner) not configured");
 
-        StakeWiseExitQueueBalanceAdapter adapter = new StakeWiseExitQueueBalanceAdapter(
+        StakeWiseV3ExitQueueBalanceAdapter adapter = new StakeWiseV3ExitQueueBalanceAdapter(
             vaultsRegistry, underlyingToken, navCalculator, chainConfig.admin, chainConfig.admin
         );
         return address(adapter);

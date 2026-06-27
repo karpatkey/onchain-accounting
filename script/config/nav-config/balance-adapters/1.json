@@ -183,7 +183,7 @@
     "enabled": true,
     "$comment": "Nexus Mutual staking pools view adapter. Registered via addBalanceAdapters; reports the account's staked NXM (Staking + Rewards) per StakingNFT position (positionId=abi.encode(tokenId,poolId)), discovered on-chain by scanning StakingNFT."
   },
-  "StakeWiseExitQueue": {
+  "StakeWiseV3ExitQueue": {
     "enabled": true,
     "$comment": "StakeWise V3 exit-queue cache adapter (ADR 0014). Registered via addBalanceAdapters; reports 0 until the kpk-agents submitter feeds (vault, positionTicket, timestamp) tuples."
   },

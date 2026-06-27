@@ -34,7 +34,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      zero exit request and is dropped — this is the on-chain verification (no `ownerOf` exists for exit
 ///      positions). The `vaultsRegistry` membership check at submit time is light hygiene only; correctness does
 ///      not depend on it.
-contract StakeWiseExitQueueBalanceAdapter is AssistedBalanceAdapter, IPositionDescribable {
+contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPositionDescribable {
     //
     // Types
     //

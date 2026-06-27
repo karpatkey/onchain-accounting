@@ -4,14 +4,14 @@ pragma solidity ^0.8.0;
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
 import {BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
 import {
-    StakeWiseExitQueueBalanceAdapter,
+    StakeWiseV3ExitQueueBalanceAdapter,
     IStakeWiseExitVault
-} from "src/balances/AssistedBalanceAdapters/StakeWiseExitQueueBalanceAdapter.sol";
+} from "src/balances/AssistedBalanceAdapters/StakeWiseV3ExitQueueBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
-/// @title StakeWiseExitQueueBalanceAdapterForkTest
+/// @title StakeWiseV3ExitQueueBalanceAdapterForkTest
 /// @notice Fork test against StakeWise's real Genesis vault + VaultsRegistry on mainnet.
 /// @dev Exit positions aren't enumerable, so the agent (here, the test acting as owner) submits a real
 ///      (vault, positionTicket, timestamp) tuple; the adapter values it entirely from live on-chain reads. The
@@ -22,7 +22,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///        - PENDING_BLOCK: not yet checkpointed (`getExitQueueIndex == -1`); valued via the still-queued shares
 ///          using the out-of-range-index path (the subtle branch ADR 0014 flagged).
 ///      Both states are asserted against an independent live recompute (delta 0) AND a pinned value.
-contract StakeWiseExitQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
+contract StakeWiseV3ExitQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
     address public constant VAULTS_REGISTRY = 0x3a0008a588772446f6e656133C2D5029CC4FC20E;
     address public constant GENESIS_VAULT = 0xAC0F906E433d58FA868F936E8A43230473652885;
     /// @dev ERC-7528 native-ETH sentinel — what StakeWise mainnet vaults settle in and how the adapter denominates.
@@ -41,7 +41,7 @@ contract StakeWiseExitQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
     uint256 public constant PENDING_BLOCK = 25_376_000;
     uint256 public constant EXPECTED_PENDING = 999_999_999_999_999_999_999; // ~1000 ETH still queued
 
-    StakeWiseExitQueueBalanceAdapter public adapter;
+    StakeWiseV3ExitQueueBalanceAdapter public adapter;
 
     function setUp() public override {
         super.setUp();
@@ -57,11 +57,11 @@ contract StakeWiseExitQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
 
     /// @dev Deploy a fresh balances harness (native ETH registered) + adapter at the current fork block. Re-called
     ///      after rolling so reads happen against the right block without cross-fork persistence ambiguity.
-    function _freshAdapter() internal returns (StakeWiseExitQueueBalanceAdapter) {
+    function _freshAdapter() internal returns (StakeWiseV3ExitQueueBalanceAdapter) {
         balances = new BalancesHarnessForFork();
         balances.registerAssetForTest(NATIVE_ETH, 18, "ETH");
         // admin = assistant = this test, so it plays the agent and submits the real tuple.
-        return new StakeWiseExitQueueBalanceAdapter(
+        return new StakeWiseV3ExitQueueBalanceAdapter(
             VAULTS_REGISTRY, NATIVE_ETH, address(balances), address(this), address(this)
         );
     }
@@ -76,9 +76,9 @@ contract StakeWiseExitQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
     }
 
     function _submit() internal {
-        StakeWiseExitQueueBalanceAdapter.ExitPosition[] memory p =
-            new StakeWiseExitQueueBalanceAdapter.ExitPosition[](1);
-        p[0] = StakeWiseExitQueueBalanceAdapter.ExitPosition(GENESIS_VAULT, TICKET, ENTRY_TS);
+        StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[] memory p =
+            new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[](1);
+        p[0] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(GENESIS_VAULT, TICKET, ENTRY_TS);
         adapter.submitPositions(HOLDER, p);
     }
 
@@ -135,9 +135,9 @@ contract StakeWiseExitQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
     function test_submit_skipsTupleNotOwnedByAccount() public {
         // Submitting the real tuple under a different account → calculateExitedAssets(stranger,…) == 0 → skipped.
         address stranger = makeAddr("stranger");
-        StakeWiseExitQueueBalanceAdapter.ExitPosition[] memory p =
-            new StakeWiseExitQueueBalanceAdapter.ExitPosition[](1);
-        p[0] = StakeWiseExitQueueBalanceAdapter.ExitPosition(GENESIS_VAULT, TICKET, ENTRY_TS);
+        StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[] memory p =
+            new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[](1);
+        p[0] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(GENESIS_VAULT, TICKET, ENTRY_TS);
         adapter.submitPositions(stranger, p);
         assertEq(adapter.positionsOf(stranger).length, 0);
         (uint256 amount,) = adapter.getAdapterBalanceForAsset(stranger, NATIVE_ETH);
@@ -146,9 +146,9 @@ contract StakeWiseExitQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
 
     function test_submit_skipsUnregisteredVault() public {
         // A non-StakeWise address is rejected at write (VaultsRegistry.vaults == false).
-        StakeWiseExitQueueBalanceAdapter.ExitPosition[] memory p =
-            new StakeWiseExitQueueBalanceAdapter.ExitPosition[](1);
-        p[0] = StakeWiseExitQueueBalanceAdapter.ExitPosition(MAINNET_WETH, TICKET, ENTRY_TS);
+        StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[] memory p =
+            new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[](1);
+        p[0] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(MAINNET_WETH, TICKET, ENTRY_TS);
         adapter.submitPositions(HOLDER, p);
         assertEq(adapter.positionsOf(HOLDER).length, 0);
     }

@@ -4,8 +4,8 @@ pragma solidity ^0.8.0;
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
 import {
-    StakeWiseExitQueueBalanceAdapter
-} from "src/balances/AssistedBalanceAdapters/StakeWiseExitQueueBalanceAdapter.sol";
+    StakeWiseV3ExitQueueBalanceAdapter
+} from "src/balances/AssistedBalanceAdapters/StakeWiseV3ExitQueueBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
@@ -101,9 +101,9 @@ contract MockVaultsRegistry {
     }
 }
 
-/// @title StakeWiseExitQueueBalanceAdapter unit tests
-contract StakeWiseExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
-    StakeWiseExitQueueBalanceAdapter public adapter;
+/// @title StakeWiseV3ExitQueueBalanceAdapter unit tests
+contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
+    StakeWiseV3ExitQueueBalanceAdapter public adapter;
     MockStakeWiseVault public vault;
     MockVaultsRegistry public registry;
 
@@ -121,7 +121,7 @@ contract StakeWiseExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         registry.setVault(address(vault), true);
         balances.addSupportedAssetForTest(NATIVE);
         // admin = assistant = this test contract, so it can submit positions.
-        adapter = new StakeWiseExitQueueBalanceAdapter(
+        adapter = new StakeWiseV3ExitQueueBalanceAdapter(
             address(registry), NATIVE, address(balances), address(this), address(this)
         );
     }
@@ -130,24 +130,24 @@ contract StakeWiseExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_constructor_revertsOnZeroRegistry() public {
         vm.expectRevert(InvalidArguments.selector);
-        new StakeWiseExitQueueBalanceAdapter(address(0), NATIVE, address(balances), address(this), address(this));
+        new StakeWiseV3ExitQueueBalanceAdapter(address(0), NATIVE, address(balances), address(this), address(this));
     }
 
     function test_constructor_revertsOnZeroUnderlying() public {
         vm.expectRevert(InvalidArguments.selector);
-        new StakeWiseExitQueueBalanceAdapter(
+        new StakeWiseV3ExitQueueBalanceAdapter(
             address(registry), address(0), address(balances), address(this), address(this)
         );
     }
 
     function test_constructor_revertsOnZeroNav() public {
         vm.expectRevert(InvalidArguments.selector);
-        new StakeWiseExitQueueBalanceAdapter(address(registry), NATIVE, address(0), address(this), address(this));
+        new StakeWiseV3ExitQueueBalanceAdapter(address(registry), NATIVE, address(0), address(this), address(this));
     }
 
     function test_constructor_revertsWhenRegistryNotContract() public {
         vm.expectRevert(bytes("VaultsRegistry must be a contract"));
-        new StakeWiseExitQueueBalanceAdapter(makeAddr("eoa"), NATIVE, address(balances), address(this), address(this));
+        new StakeWiseV3ExitQueueBalanceAdapter(makeAddr("eoa"), NATIVE, address(balances), address(this), address(this));
     }
 
     // ---- Access control / submission ----
@@ -167,7 +167,7 @@ contract StakeWiseExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         vault.setRequest(holder, TICKET, TS, 0, 1 ether); // claimable
         adapter.submitPositions(holder, _claimable());
         adapter.submitPositions(holder, _claimable()); // dedup
-        StakeWiseExitQueueBalanceAdapter.ExitPosition[] memory cached = adapter.positionsOf(holder);
+        StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[] memory cached = adapter.positionsOf(holder);
         assertEq(cached.length, 1);
         assertEq(cached[0].vault, address(vault));
         assertEq(cached[0].positionTicket, TICKET);
@@ -197,12 +197,12 @@ contract StakeWiseExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         address[] memory accounts = new address[](2);
         accounts[0] = holder;
         accounts[1] = other;
-        StakeWiseExitQueueBalanceAdapter.ExitPosition[][] memory positions =
-            new StakeWiseExitQueueBalanceAdapter.ExitPosition[][](2);
-        positions[0] = new StakeWiseExitQueueBalanceAdapter.ExitPosition[](1);
-        positions[0][0] = StakeWiseExitQueueBalanceAdapter.ExitPosition(address(vault), TICKET, TS);
-        positions[1] = new StakeWiseExitQueueBalanceAdapter.ExitPosition[](1);
-        positions[1][0] = StakeWiseExitQueueBalanceAdapter.ExitPosition(address(vault), TICKET + 1, TS);
+        StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[][] memory positions =
+            new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[][](2);
+        positions[0] = new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[](1);
+        positions[0][0] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(address(vault), TICKET, TS);
+        positions[1] = new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[](1);
+        positions[1][0] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(address(vault), TICKET + 1, TS);
         adapter.submitPositionsBatch(accounts, positions);
         assertEq(adapter.positionsOf(holder).length, 1);
         assertEq(adapter.positionsOf(other).length, 1);
@@ -214,8 +214,8 @@ contract StakeWiseExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_submitPositionsBatch_revertsOnLengthMismatch() public {
         address[] memory accounts = new address[](2);
-        StakeWiseExitQueueBalanceAdapter.ExitPosition[][] memory positions =
-            new StakeWiseExitQueueBalanceAdapter.ExitPosition[][](1);
+        StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[][] memory positions =
+            new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[][](1);
         vm.expectRevert(ArrayLengthMismatch.selector);
         adapter.submitPositionsBatch(accounts, positions);
     }
@@ -231,10 +231,10 @@ contract StakeWiseExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         vault.setRequest(holder, TICKET, TS, 0, 1 ether);
         vault.setIndex(TICKET + 1, 1);
         vault.setRequest(holder, TICKET + 1, TS, 0, 2 ether);
-        StakeWiseExitQueueBalanceAdapter.ExitPosition[] memory two =
-            new StakeWiseExitQueueBalanceAdapter.ExitPosition[](2);
-        two[0] = StakeWiseExitQueueBalanceAdapter.ExitPosition(address(vault), TICKET, TS);
-        two[1] = StakeWiseExitQueueBalanceAdapter.ExitPosition(address(vault), TICKET + 1, TS);
+        StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[] memory two =
+            new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[](2);
+        two[0] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(address(vault), TICKET, TS);
+        two[1] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(address(vault), TICKET + 1, TS);
         adapter.submitPositions(holder, two);
         adapter.clearPosition(holder, address(vault), TICKET, TS);
         assertEq(adapter.positionsOf(holder).length, 1);
@@ -297,10 +297,10 @@ contract StakeWiseExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         vault.setRequest(holder, TICKET, TS, 0, 1 ether);
         vault.setIndex(TICKET + 1, 1);
         vault.setRequest(holder, TICKET + 1, TS, 0, 3 ether);
-        StakeWiseExitQueueBalanceAdapter.ExitPosition[] memory two =
-            new StakeWiseExitQueueBalanceAdapter.ExitPosition[](2);
-        two[0] = StakeWiseExitQueueBalanceAdapter.ExitPosition(address(vault), TICKET, TS);
-        two[1] = StakeWiseExitQueueBalanceAdapter.ExitPosition(address(vault), TICKET + 1, TS);
+        StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[] memory two =
+            new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[](2);
+        two[0] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(address(vault), TICKET, TS);
+        two[1] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(address(vault), TICKET + 1, TS);
         adapter.submitPositions(holder, two);
         (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, NATIVE);
         assertEq(amt, 4 ether);
@@ -337,12 +337,12 @@ contract StakeWiseExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_submit_capsAtMaxPositions() public {
         uint256 cap = adapter.MAX_POSITIONS();
-        StakeWiseExitQueueBalanceAdapter.ExitPosition[] memory many =
-            new StakeWiseExitQueueBalanceAdapter.ExitPosition[](cap + 5);
+        StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[] memory many =
+            new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[](cap + 5);
         for (uint256 i = 0; i < cap + 5; i++) {
             vault.setIndex(i + 1, 1);
             vault.setRequest(holder, i + 1, TS, 0, 1 ether);
-            many[i] = StakeWiseExitQueueBalanceAdapter.ExitPosition(address(vault), i + 1, TS);
+            many[i] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(address(vault), i + 1, TS);
         }
         adapter.submitPositions(holder, many);
         assertEq(adapter.positionsOf(holder).length, cap, "cache must be capped at MAX_POSITIONS");
@@ -415,7 +415,7 @@ contract StakeWiseExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
     function test_unregisteredUnderlying_positionsEmpty_butBalanceStillOwed() public {
         // Fresh NAV harness that does NOT register the native sentinel.
         BalancesHarness freshNav = new BalancesHarness();
-        StakeWiseExitQueueBalanceAdapter a2 = new StakeWiseExitQueueBalanceAdapter(
+        StakeWiseV3ExitQueueBalanceAdapter a2 = new StakeWiseV3ExitQueueBalanceAdapter(
             address(registry), NATIVE, address(freshNav), address(this), address(this)
         );
         vault.setIndex(TICKET, 1);
@@ -426,8 +426,8 @@ contract StakeWiseExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(amt, 1 ether);
     }
 
-    function _claimable() internal view returns (StakeWiseExitQueueBalanceAdapter.ExitPosition[] memory p) {
-        p = new StakeWiseExitQueueBalanceAdapter.ExitPosition[](1);
-        p[0] = StakeWiseExitQueueBalanceAdapter.ExitPosition(address(vault), TICKET, TS);
+    function _claimable() internal view returns (StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[] memory p) {
+        p = new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[](1);
+        p[0] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(address(vault), TICKET, TS);
     }
 }

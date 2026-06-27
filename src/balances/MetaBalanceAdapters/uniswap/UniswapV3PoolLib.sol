@@ -3,9 +3,9 @@ pragma solidity ^0.8;
 
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
-import {TickMath} from "src/balances/protocols/uniswap/lib/TickMath.sol";
-import {LiquidityAmounts} from "src/balances/protocols/uniswap/lib/LiquidityAmounts.sol";
-import {FixedPoint128} from "src/balances/protocols/uniswap/lib/FixedPoint128.sol";
+import {TickMath} from "src/balances/MetaBalanceAdapters/uniswap/lib/TickMath.sol";
+import {LiquidityAmounts} from "src/balances/MetaBalanceAdapters/uniswap/lib/LiquidityAmounts.sol";
+import {FixedPoint128} from "src/balances/MetaBalanceAdapters/uniswap/lib/FixedPoint128.sol";
 
 /// @notice Minimal Uniswap V3 pool interface (only the views this adapter needs).
 interface IUniswapV3Pool {

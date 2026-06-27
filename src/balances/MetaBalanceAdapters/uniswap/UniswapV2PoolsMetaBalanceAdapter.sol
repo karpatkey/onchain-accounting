@@ -6,7 +6,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
-import {UniswapV2PairLib} from "src/balances/protocols/uniswap/UniswapV2PairLib.sol";
+import {UniswapV2PairLib} from "src/balances/MetaBalanceAdapters/uniswap/UniswapV2PairLib.sol";
 
 /// @title Uniswap V2 Pools Meta Balance Adapter
 /// @author KPK

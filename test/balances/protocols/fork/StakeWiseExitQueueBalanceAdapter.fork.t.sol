@@ -6,7 +6,7 @@ import {BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
 import {
     StakeWiseExitQueueBalanceAdapter,
     IStakeWiseExitVault
-} from "src/balances/protocols/StakeWiseExitQueueBalanceAdapter.sol";
+} from "src/balances/AssistedBalanceAdapters/StakeWiseExitQueueBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";

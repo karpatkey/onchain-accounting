@@ -6,7 +6,7 @@ import {BalancesHarness} from "test/balances/Balances.t.sol";
 import {
     EtherFiWithdrawalsBalanceAdapter,
     IEtherFiWithdrawRequestNFT
-} from "src/balances/protocols/EtherFiWithdrawalsBalanceAdapter.sol";
+} from "src/balances/AssistedBalanceAdapters/EtherFiWithdrawalsBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";

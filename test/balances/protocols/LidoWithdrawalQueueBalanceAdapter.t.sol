@@ -5,7 +5,7 @@ import {BalanceAdapterTestBase} from "test/balances/protocols/BalanceAdapterTest
 import {
     LidoWithdrawalQueueBalanceAdapter,
     ILidoWithdrawalQueue
-} from "src/balances/protocols/LidoWithdrawalQueueBalanceAdapter.sol";
+} from "src/balances/BalanceAdapters/LidoWithdrawalQueueBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";

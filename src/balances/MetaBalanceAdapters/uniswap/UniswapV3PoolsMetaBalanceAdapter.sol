@@ -11,10 +11,10 @@ import {
     IUniswapV3Pool,
     INonfungiblePositionManager,
     UniswapV3PoolLib
-} from "src/balances/protocols/uniswap/UniswapV3PoolLib.sol";
-import {TickMath} from "src/balances/protocols/uniswap/lib/TickMath.sol";
-import {LiquidityAmounts} from "src/balances/protocols/uniswap/lib/LiquidityAmounts.sol";
-import {FixedPoint128} from "src/balances/protocols/uniswap/lib/FixedPoint128.sol";
+} from "src/balances/MetaBalanceAdapters/uniswap/UniswapV3PoolLib.sol";
+import {TickMath} from "src/balances/MetaBalanceAdapters/uniswap/lib/TickMath.sol";
+import {LiquidityAmounts} from "src/balances/MetaBalanceAdapters/uniswap/lib/LiquidityAmounts.sol";
+import {FixedPoint128} from "src/balances/MetaBalanceAdapters/uniswap/lib/FixedPoint128.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @title Uniswap V3 Pools Meta Balance Adapter

@@ -7,7 +7,7 @@ import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapte
 import {
     AaveV3SafetyModuleBalanceAdapter,
     IStakeToken
-} from "src/balances/protocols/AaveV3SafetyModuleBalanceAdapter.sol";
+} from "src/balances/BalanceAdapters/AaveV3SafetyModuleBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 

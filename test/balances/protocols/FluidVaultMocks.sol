@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
-import {IFluidVaultT1, IFluidVaultResolver} from "src/balances/protocols/FluidVaultLib.sol";
+import {IFluidVaultT1, IFluidVaultResolver} from "src/balances/MetaBalanceAdapters/FluidVaultLib.sol";
 
 // Mock contracts extracted from FluidVault.t.sol for use by FluidVaultsMetaBalanceAdapter.t.sol
 

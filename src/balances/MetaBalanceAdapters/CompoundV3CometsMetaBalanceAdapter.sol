@@ -7,7 +7,7 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
-import {CompoundV3CometLib} from "src/balances/protocols/CompoundV3CometLib.sol";
+import {CompoundV3CometLib} from "src/balances/MetaBalanceAdapters/CompoundV3CometLib.sol";
 
 /// @title Compound V3 Comets Meta Balance Adapter
 /// @author KPK

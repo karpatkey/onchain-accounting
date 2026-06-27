@@ -1,51 +1,60 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
-import {MetaBalanceAdapter} from "../../MetaBalanceAdapter.sol";
+import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
-import {IStablePool, IGaugeV3, IBalancerMinter, ITokenAdmin} from "src/balances/protocols/balancer/IBalancerV3.sol";
-import {BalancerV3PoolLib} from "./BalancerV3PoolLib.sol";
+import {IGaugeV3, IBalancerMinter, ITokenAdmin} from "src/balances/MetaBalanceAdapters/balancer/IBalancerV3.sol";
+import {BalancerV2PoolLib, IBalancerV2Pool} from "src/balances/MetaBalanceAdapters/balancer/BalancerV2PoolLib.sol";
 
 // solhint-disable func-name-mixedcase
 
-/// @title Balancer V3 Gauges Meta Balance Adapter
+/// @title Balancer V2 Gauges Meta Balance Adapter
 /// @author KPK
-/// @notice One immutable adapter that reports an account's **gauge-staked** Balancer V3 LP plus claimable rewards
-///         across *any* gauge — the staked liquidity (valued via the gauge's LP token / pool) and BAL + extra
-///         gauge rewards. Wallet-held (unstaked) LP is the separate BalancerV3PoolsMetaBalanceAdapter. The instance
-///         coordinate is the gauge address, widened to bytes32. Emits `Staking` legs per pool token and `Rewards`
-///         legs per reward token. See ADR 0010.
-contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceAdapter {
+/// @notice One immutable adapter that reports an account's **gauge-staked** Balancer V2 LP plus claimable rewards
+///         across *any* gauge — the staked liquidity (valued via the Vault's pool balances) and BAL + extra gauge
+///         rewards. Wallet-held (unstaked) LP is the separate BalancerV2PoolsMetaBalanceAdapter. The instance
+///         coordinate is the gauge address, widened to bytes32. Emits `Staking` legs per underlying pool token and
+///         `Rewards` legs per reward token. The Balancer V2 Vault and BalancerMinter are the chain-level constants
+///         pinned in the constructor. See ADR 0010.
+/// @dev Balancer V2 and V3 share the same liquidity-gauge + BalancerMinter design, so the BAL reward math is
+///      identical to `BalancerV3GaugesMeta`; the only difference is the staked-share computation, which for V2
+///      reads the Vault's pool balances (`BalancerV2PoolLib`) rather than V3's per-pool scaled data.
+contract BalancerV2GaugesMetaBalanceAdapter is MetaBalanceAdapter {
     using SafeCast for uint256;
     using SafeCast for int128;
-    using BalancerV3PoolLib for IStablePool;
 
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.BALANCER_V3_GAUGE;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.BALANCER_V2_GAUGE;
 
     /// @notice One week in seconds (gauge inflation accounting boundary).
     uint256 public constant WEEK = 7 * 86_400;
 
-    /// @notice Balancer Minter (mints BAL); used to resolve the BAL token, token admin, and minted amounts.
+    /// @notice The Balancer V2 Vault (custodies every pool's tokens; chain-level constant).
+    address public immutable VAULT;
+
+    /// @notice Balancer Minter (mints BAL); resolves the BAL token, token admin, and minted amounts.
     IBalancerMinter public immutable BALANCER_MINTER;
 
+    /// @param vault_ The Balancer V2 Vault address.
     /// @param balancerMinter_ Address of the Balancer Minter contract.
-    /// @param protocolName_ Protocol identifier (e.g. "Balancer V3").
+    /// @param protocolName_ Protocol identifier (e.g. "Balancer V2").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(address balancerMinter_, string memory protocolName_, address navCalculator_)
+    constructor(address vault_, address balancerMinter_, string memory protocolName_, address navCalculator_)
         MetaBalanceAdapter(protocolName_, navCalculator_)
     {
+        require(vault_.code.length > 0, "Vault must be a contract");
         require(balancerMinter_.code.length > 0, "BalancerMinter must be a contract");
+        VAULT = vault_;
         BALANCER_MINTER = IBalancerMinter(balancerMinter_);
     }
 
     /// @inheritdoc MetaBalanceAdapter
     /// @dev `instance` is the gauge address. Emits a Staking leg per registered pool token (the account's staked
-    ///      BPT share) plus a Rewards leg per registered reward token (BAL via the minter + the gauge's extra
-    ///      reward tokens). Skips unregistered tokens and respects assetFilter.
+    ///      BPT share, via the Vault) plus a Rewards leg per registered reward token (BAL via the minter + the
+    ///      gauge's extra reward tokens). Skips unregistered tokens and respects assetFilter.
     function _instancePositions(address account, bytes32 instance, address assetFilter)
         internal
         view
@@ -53,29 +62,31 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceAdapter {
         returns (INAVCalculator.PositionBalance[] memory)
     {
         IGaugeV3 gauge = IGaugeV3(_toAddress(instance));
-        IStablePool pool = IStablePool(gauge.lp_token());
+        address bpt = gauge.lp_token();
         bytes memory positionId = _instancePositionId(instance);
 
-        address[] memory tokens = pool.poolTokens();
-        // Worst case: one Staking leg per pool token + one Rewards leg per (pool token also a reward) + BAL +
-        // extras. Size generously; trim at the end.
         uint256 rewardCount = _rewardCount(gauge);
+
+        // Staking legs: account's staked-BPT share of each underlying pool token (via the Vault). The poolId is only
+        // needed to read the Vault balances, so resolve it lazily inside the staked branch (skips the read at 0 stake).
+        uint256 staked = gauge.balanceOf(account);
+        address[] memory tokens;
+        uint256[] memory amounts;
+        if (staked != 0) {
+            bytes32 poolId = IBalancerV2Pool(bpt).getPoolId();
+            (tokens, amounts) = BalancerV2PoolLib.shares(VAULT, poolId, bpt, staked);
+        }
+
         INAVCalculator.PositionBalance[] memory temp =
             new INAVCalculator.PositionBalance[](tokens.length + rewardCount + 1);
         uint256 count;
 
-        // Staking legs: account's staked-BPT share of each pool token.
-        uint256 staked = gauge.balanceOf(account);
-        if (staked != 0) {
-            for (uint256 i = 0; i < tokens.length; i++) {
-                address token = tokens[i];
-                if (assetFilter != address(0) && token != assetFilter) continue;
-                (INAVCalculator.Asset memory assetInfo, bool found) = _getAssetInfo(token);
-                if (!found) continue;
-                uint256 amount = pool.poolBalanceOfIndexed(staked, i);
-                if (amount == 0) continue;
-                temp[count++] = _row(assetInfo, amount, positionId, PositionKind.Staking);
-            }
+        for (uint256 i = 0; i < tokens.length; i++) {
+            if (amounts[i] == 0) continue;
+            if (assetFilter != address(0) && tokens[i] != assetFilter) continue;
+            (INAVCalculator.Asset memory assetInfo, bool found) = _getAssetInfo(tokens[i]);
+            if (!found) continue;
+            temp[count++] = _row(assetInfo, amounts[i], positionId, PositionKind.Staking);
         }
 
         // Rewards legs: BAL (minted via the minter) + the gauge's extra reward tokens.
@@ -98,7 +109,8 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceAdapter {
     /// @dev Pool tokens (the staked LP's underlyings) plus the gauge's reward tokens and BAL.
     function _instanceAssets(bytes32 instance) internal view override returns (address[] memory assets) {
         IGaugeV3 gauge = IGaugeV3(_toAddress(instance));
-        address[] memory tokens = IStablePool(gauge.lp_token()).poolTokens();
+        address bpt = gauge.lp_token();
+        address[] memory tokens = BalancerV2PoolLib.poolTokens(VAULT, IBalancerV2Pool(bpt).getPoolId(), bpt);
         uint256 rewardCount = _rewardCount(gauge);
 
         assets = new address[](tokens.length + rewardCount + 1);
@@ -111,7 +123,6 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceAdapter {
             if (rt != address(0)) assets[n++] = rt;
         }
         assets[n++] = BALANCER_MINTER.getBalancerToken();
-        // Trim
         assembly {
             mstore(assets, n)
         }
@@ -128,7 +139,7 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     //
-    // Reward math (ported from the combined BalancerV3 adapter; operate on a passed-in gauge)
+    // Reward math (identical to BalancerV3GaugesMeta — V2/V3 gauges share the BalancerMinter inflation design)
     //
 
     /// @notice Claimable extra-reward-token amount for `account` on `gauge` (0 if unsupported/failed).
@@ -155,7 +166,6 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @notice Emulates the gauge `_checkpoint` integrate_fraction update for `user` (mainnet inflation model).
-    /// @dev External so claimableBal can isolate a revert via try/catch. View-only (no state changes).
     function calculateIntegrateFraction(address user, IGaugeV3 gauge) public view returns (uint256) {
         uint256 period = gauge.period().toUint256();
         uint128 period128 = period.toUint128();
@@ -208,7 +218,6 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @notice Emulates the gauge integrate_fraction update for `user` (L2 inflation model: per-week rate mapping).
-    /// @dev External so claimableBal can isolate a revert via try/catch. View-only.
     function calculateIntegrateFractionL2(address user, IGaugeV3 gauge) public view returns (uint256) {
         uint256 period = gauge.period().toUint256();
         uint128 period128 = period.toUint128();
@@ -247,7 +256,6 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceAdapter {
     // Internal helpers
     //
 
-    /// @notice Appends a Rewards leg for `token` if non-zero, registered, and passing the asset filter.
     function _addReward(
         INAVCalculator.PositionBalance[] memory temp,
         uint256 count,

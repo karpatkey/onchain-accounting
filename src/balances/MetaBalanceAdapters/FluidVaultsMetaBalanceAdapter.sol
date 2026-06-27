@@ -6,7 +6,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
-import {FluidVaultLib} from "src/balances/protocols/FluidVaultLib.sol";
+import {FluidVaultLib} from "src/balances/MetaBalanceAdapters/FluidVaultLib.sol";
 
 /// @title Fluid Vaults Meta Balance Adapter
 /// @author KPK

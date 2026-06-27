@@ -7,7 +7,7 @@ import {
     EtherFiWithdrawalsBalanceAdapter,
     IEtherFiWithdrawRequestNFT,
     IEtherFiLiquidityPool
-} from "src/balances/protocols/EtherFiWithdrawalsBalanceAdapter.sol";
+} from "src/balances/AssistedBalanceAdapters/EtherFiWithdrawalsBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";

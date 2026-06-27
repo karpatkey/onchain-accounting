@@ -2,7 +2,7 @@
 pragma solidity ^0.8;
 
 import {BalanceAdapterTestBase} from "test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol";
-import {ConvexRewardsMetaBalanceAdapter} from "src/balances/protocols/ConvexRewardsMetaBalanceAdapter.sol";
+import {ConvexRewardsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/ConvexRewardsMetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";

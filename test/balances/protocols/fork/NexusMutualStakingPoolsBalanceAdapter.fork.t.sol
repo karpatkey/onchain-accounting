@@ -6,7 +6,7 @@ import {BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
 import {
     NexusMutualStakingPoolsBalanceAdapter,
     INexusStakingViewer
-} from "src/balances/protocols/NexusMutualStakingPoolsBalanceAdapter.sol";
+} from "src/balances/BalanceAdapters/NexusMutualStakingPoolsBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";

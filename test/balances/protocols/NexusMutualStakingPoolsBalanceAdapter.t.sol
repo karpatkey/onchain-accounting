@@ -7,7 +7,7 @@ import {Mock_ERC20} from "test/mocks/tokens.sol";
 import {
     NexusMutualStakingPoolsBalanceAdapter,
     INexusStakingViewer
-} from "src/balances/protocols/NexusMutualStakingPoolsBalanceAdapter.sol";
+} from "src/balances/BalanceAdapters/NexusMutualStakingPoolsBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";

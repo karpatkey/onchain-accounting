@@ -53,9 +53,9 @@ These are not queues but represent value that lives outside the wallet and is no
 
 - **Balancer V3 pools + gauges**: ✅ covered — `BalancerV3PoolsMeta` + `BalancerV3GaugesMeta` (meta-adapters, ADR 0010).
 - **Balancer V2 pools + gauges**: ✅ covered — `BalancerV2PoolsMeta` + `BalancerV2GaugesMeta` (meta-adapters, ADR 0010).
-- **Uniswap V3**: ✅ covered — `UniswapV3PoolsMeta` (meta-adapter, ADR 0010).
+- **Uniswap V3**: ✅ covered — `UniswapV3Pools` (assisted adapter, ADR 0015; agent-fed NFT tokenId cache).
 - **Uniswap V2**: ✅ covered — `UniswapV2PoolsMeta` (meta-adapter, ADR 0010).
-- **PancakeSwap V3**: ✅ covered — `PancakeSwapV3PoolsMeta` (meta-adapter, ADR 0010).
+- **PancakeSwap V3**: ✅ covered — `PancakeSwapV3Pools` (assisted adapter, ADR 0015; subclass of `UniswapV3Pools`).
 - **PancakeSwap V2**: ✅ covered — `PancakeSwapV2PoolsMeta` (meta-adapter, ADR 0010).
 - **Curve pools + gauges**: ✅ covered — `CurvePoolsMeta` + `CurveGaugesMeta` (meta-adapters, ADR 0010).
 

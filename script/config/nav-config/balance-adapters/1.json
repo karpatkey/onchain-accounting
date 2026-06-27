@@ -35,7 +35,7 @@
   },
   "ERC4626Wrap_RWIV": {
     "enabled": false,
-    "$comment": "DISABLED — superseded by the RWIV custom price feed (RWIV_CustomPriceFeed). RWIV is now a registered priced asset (assets-and-price-feeds/1.json), and registerAsset auto-adds it to the ERC20DefaultBalanceAdapter inclusion list, so the wallet adapter already reports the direct RWIV holding at RWIV/USD (same convertToAssets value this wrap produced as USDC). Keeping this wrap enabled would DOUBLE-COUNT the Nexus Safe's ~$250k direct RWIV. The price feed was required anyway so UniswapV3PoolsMeta can value the USDC/RWIV LP (pool 0x764D5075). See PR feat/rwiv-price-feed-univ3."
+    "$comment": "DISABLED — superseded by the RWIV custom price feed (RWIV_CustomPriceFeed). RWIV is now a registered priced asset (assets-and-price-feeds/1.json), and registerAsset auto-adds it to the ERC20DefaultBalanceAdapter inclusion list, so the wallet adapter already reports the direct RWIV holding at RWIV/USD (same convertToAssets value this wrap produced as USDC). Keeping this wrap enabled would DOUBLE-COUNT the Nexus Safe's ~$250k direct RWIV. The price feed was required anyway so UniswapV3Pools can value the USDC/RWIV LP (pool 0x764D5075). See PR feat/rwiv-price-feed-univ3."
   },
   "MorphoMarket_wstETH_USDC": {
     "enabled": false
@@ -181,11 +181,15 @@
   },
   "NexusMutualStakingPools": {
     "enabled": true,
-    "$comment": "Nexus Mutual staking pools view adapter. Registered via addBalanceAdapters; reports the account's staked NXM (Staking + Rewards) per StakingNFT position (positionId=abi.encode(tokenId,poolId)), discovered on-chain by scanning StakingNFT."
+    "$comment": "Nexus Mutual staking pools assisted adapter (agent-fed; ADR 0015). Registered via addBalanceAdapters; reports the account's staked NXM (Staking + Rewards) per StakingNFT position (positionId=abi.encode(tokenId,poolId)), valued live on-chain from agent-submitted tokenIds (ownership re-verified per read). Reports 0 until the kpk-agents submitter feeds tokenIds."
   },
   "StakeWiseV3ExitQueue": {
     "enabled": true,
     "$comment": "StakeWise V3 exit-queue cache adapter (ADR 0014). Registered via addBalanceAdapters; reports 0 until the kpk-agents submitter feeds (vault, positionTicket, timestamp) tuples."
+  },
+  "UniswapV3Pools": {
+    "enabled": true,
+    "$comment": "Uniswap V3 pools assisted adapter (agent-fed NFT tokenId cache; ADR 0015). Registered via addBalanceAdapters; reports the account's Uniswap V3 LP (Supplied liquidity + Fees) per NFT position (positionId=abi.encode(npm,tokenId)), valued live on-chain (oracle-reconstructed price, not slot0) from agent-submitted tokenIds with ownerOf re-verified per read. Reports 0 until the kpk-agents submitter feeds tokenIds."
   },
   "UniswapV3_WBTC_WETH_3000": {
     "enabled": false

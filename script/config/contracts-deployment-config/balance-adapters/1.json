@@ -102,7 +102,7 @@
   },
   "ERC4626Wrap_RWIV": {
     "enabled": false,
-    "$comment": "DISABLED — superseded by RWIV_CustomPriceFeed (custom price feed). With RWIV registered as a priced asset, registerAsset auto-adds it to ERC20DefaultBalanceAdapter, so the wallet adapter reports the direct RWIV holding at RWIV/USD (same convertToAssets value this wrap produced as USDC); keeping this enabled would double-count the Nexus Safe's ~$250k direct RWIV. The feed is required regardless so UniswapV3PoolsMeta can value the USDC/RWIV LP. See PR feat/rwiv-price-feed-univ3.",
+    "$comment": "DISABLED — superseded by RWIV_CustomPriceFeed (custom price feed). With RWIV registered as a priced asset, registerAsset auto-adds it to ERC20DefaultBalanceAdapter, so the wallet adapter reports the direct RWIV holding at RWIV/USD (same convertToAssets value this wrap produced as USDC); keeping this enabled would double-count the Nexus Safe's ~$250k direct RWIV. The feed is required regardless so UniswapV3Pools can value the USDC/RWIV LP. See PR feat/rwiv-price-feed-univ3.",
     "constructor": {
       "wrapper": "0xcAFeAA466736ac01e0AC9Ca72644beF348694731",
       "protocol": "Nexus Mutual",
@@ -566,7 +566,7 @@
   },
   "NexusMutualStakingPools": {
     "enabled": true,
-    "$comment": "Nexus Mutual staking pools (simple immutable view adapter; no agent). Discovers an account's StakingNFT positions by scanning tokenInfo(1..totalSupply) — the NFT is mint-only with a small global supply, so no per-owner enumeration / off-chain feeder is needed — and values each via StakingViewer.getTokens into per-NFT NXM-denominated Staking (active+expired) + Rewards legs, positionId=abi.encode(tokenId,poolId). 04 reads stakingNft/stakingViewer/underlyingToken; protocol/positionDetail/positionId are identity metadata. NXM must be a registered+priced asset (PR #71).",
+    "$comment": "Nexus Mutual staking pools (assisted adapter; agent-fed, ADR 0015). The assistant submits an account's StakingNFT tokenIds via submitTokenIds (admin+assistant = chainConfig.admin at deploy; ASSISTANT_ROLE submits, DEFAULT_ADMIN_ROLE administers); the adapter caches ids only (never amounts), values each via StakingViewer.getTokens into per-NFT NXM-denominated Staking (active+expired) + Rewards legs (positionId=abi.encode(tokenId,poolId)), and re-verifies ownership via tokenInfo on every read (assistant can only under-report). 04 reads stakingNft/stakingViewer/underlyingToken; protocol/positionDetail/positionId are identity metadata. NXM must be a registered+priced asset (PR #71). Reports 0 until the agent submits ids.",
     "constructor": {
       "stakingNft": "0xcafea508a477D94c502c253A58239fb8F948e97f",
       "stakingViewer": "0xcafea5c7d25a192ba70ECA0E2dB62F835c1cF81F",
@@ -585,6 +585,14 @@
       "protocol": "StakeWise V3",
       "positionDetail": "{\"protocol\":\"StakeWise V3\",\"product\":\"Staking\",\"name\":\"Exit Queue\"",
       "positionId": "0x3a0008a588772446f6e656133C2D5029CC4FC20E"
+    }
+  },
+  "UniswapV3Pools": {
+    "enabled": true,
+    "$comment": "Uniswap V3 pools (assisted adapter; agent-fed NFT tokenId cache, ADR 0015). The assistant submits an account's NFT tokenIds via submitTokenIds (admin+assistant = chainConfig.admin at deploy; ASSISTANT_ROLE submits, DEFAULT_ADMIN_ROLE administers); the adapter caches ids only (never amounts), values each NFT from live on-chain reads (in-range liquidity via an oracle-reconstructed sqrtPriceX96 — never the manipulable slot0 — plus settled tokensOwed fees), and re-verifies ownerOf on every read (assistant can only under-report). NonfungiblePositionManager pinned in the constructor. positionId = abi.encode(npm, tokenId) per NFT; legs are Supplied (liquidity) + Fees (tokensOwed). 04 reads positionManager/protocol. Supersedes the per-pool UniswapV3_* adapters, disabled below. Reports 0 until the agent submits ids.",
+    "constructor": {
+      "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+      "protocol": "Uniswap V3"
     }
   },
   "UniswapV3_WBTC_WETH_3000": {

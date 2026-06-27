@@ -6,6 +6,9 @@ error InvalidArgumentsWithContext(string context);
 error NotAuthorized();
 error NotChainlinkOracle();
 
+// Assisted balance-adapter errors
+error NotTokenOwner(address account, uint256 tokenId);
+
 // Bridge-specific errors
 error InvoiceNotFound();
 error InvoiceAlreadyExists();

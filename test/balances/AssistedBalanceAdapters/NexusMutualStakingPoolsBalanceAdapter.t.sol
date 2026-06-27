@@ -9,57 +9,30 @@ import {
     INexusStakingViewer
 } from "src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {IAssistedBalanceAdapter} from "src/balances/IAssistedBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
+import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
-/// @notice Minimal mock of Nexus's StakingNFT — mint-only ERC-721 with `totalSupply()` +
-///         `tokenInfo(id) -> (poolId, owner)`. Unset ids return (0, address(0)) (skipped by the
-///         adapter); `setRevertId` makes one id revert to exercise the try/catch.
+/// @notice Minimal mock of Nexus's StakingNFT — `tokenInfo(id) -> (poolId, owner)`. Unset ids return
+///         (0, address(0)); `setRevertId` makes one id revert to exercise the read-time try/catch.
 contract MockStakingNFT {
-    uint256 private _supply;
     mapping(uint256 => address) private _owner;
     mapping(uint256 => uint256) private _pool;
-    bool public revertSupply;
-    bool public revertBalance;
     uint256 public revertId; // 0 = none
-
-    function setTotalSupply(uint256 s) external {
-        _supply = s;
-    }
 
     function setToken(uint256 id, uint256 poolId, address owner) external {
         _pool[id] = poolId;
         _owner[id] = owner;
     }
 
-    function setRevertSupply(bool v) external {
-        revertSupply = v;
-    }
-
-    function setRevertBalance(bool v) external {
-        revertBalance = v;
-    }
-
     function setRevertId(uint256 id) external {
         revertId = id;
-    }
-
-    function totalSupply() external view returns (uint256) {
-        require(!revertSupply, "supply revert");
-        return _supply;
-    }
-
-    /// @notice Standard ERC721 owned-count, derived from the seeded owners over 1..totalSupply.
-    function balanceOf(address owner) external view returns (uint256 c) {
-        require(!revertBalance, "balanceOf revert");
-        for (uint256 i = 1; i <= _supply; ++i) {
-            if (_owner[i] == owner) c++;
-        }
     }
 
     function tokenInfo(uint256 id) external view returns (uint256, address) {
@@ -118,7 +91,7 @@ contract MockStakingViewer {
     }
 }
 
-/// @title NexusMutualStakingPoolsBalanceAdapter unit tests
+/// @title NexusMutualStakingPoolsBalanceAdapter unit tests (assisted, agent-fed)
 contract NexusMutualStakingPoolsBalanceAdapterTest is BalanceAdapterTestBase {
     NexusMutualStakingPoolsBalanceAdapter public adapter;
     MockStakingNFT public nft;
@@ -128,79 +101,90 @@ contract NexusMutualStakingPoolsBalanceAdapterTest is BalanceAdapterTestBase {
     address holder = makeAddr("holder");
     address other = makeAddr("other");
 
+    bytes32 constant ASSISTANT_ROLE = keccak256("ASSISTANT_ROLE");
+
     function setUp() public override {
         super.setUp();
         nft = new MockStakingNFT();
         viewer = new MockStakingViewer();
         nxm = _createAndRegisterToken("NXM", 18);
-        adapter =
-            new NexusMutualStakingPoolsBalanceAdapter(address(nft), address(viewer), address(nxm), address(balances));
+        // admin + assistant = this test, so it can submit/clear tokenIds.
+        adapter = new NexusMutualStakingPoolsBalanceAdapter(
+            address(nft), address(viewer), address(nxm), address(balances), address(this), address(this)
+        );
     }
 
     // ---- Constructor ----
 
     function test_constructor_revertsOnZeroNft() public {
         vm.expectRevert(InvalidArguments.selector);
-        new NexusMutualStakingPoolsBalanceAdapter(address(0), address(viewer), address(nxm), address(balances));
+        new NexusMutualStakingPoolsBalanceAdapter(
+            address(0), address(viewer), address(nxm), address(balances), address(this), address(this)
+        );
     }
 
     function test_constructor_revertsOnZeroViewer() public {
         vm.expectRevert(InvalidArguments.selector);
-        new NexusMutualStakingPoolsBalanceAdapter(address(nft), address(0), address(nxm), address(balances));
+        new NexusMutualStakingPoolsBalanceAdapter(
+            address(nft), address(0), address(nxm), address(balances), address(this), address(this)
+        );
     }
 
     function test_constructor_revertsOnZeroUnderlying() public {
         vm.expectRevert(InvalidArguments.selector);
-        new NexusMutualStakingPoolsBalanceAdapter(address(nft), address(viewer), address(0), address(balances));
+        new NexusMutualStakingPoolsBalanceAdapter(
+            address(nft), address(viewer), address(0), address(balances), address(this), address(this)
+        );
     }
 
     function test_constructor_revertsOnZeroNav() public {
         vm.expectRevert(InvalidArguments.selector);
-        new NexusMutualStakingPoolsBalanceAdapter(address(nft), address(viewer), address(nxm), address(0));
+        new NexusMutualStakingPoolsBalanceAdapter(
+            address(nft), address(viewer), address(nxm), address(0), address(this), address(this)
+        );
     }
 
     function test_constructor_revertsWhenNftNotContract() public {
         vm.expectRevert(bytes("StakingNFT must be a contract"));
-        new NexusMutualStakingPoolsBalanceAdapter(makeAddr("eoa"), address(viewer), address(nxm), address(balances));
+        new NexusMutualStakingPoolsBalanceAdapter(
+            makeAddr("eoa"), address(viewer), address(nxm), address(balances), address(this), address(this)
+        );
     }
 
-    // ---- Discovery + valuation ----
-
-    /// @dev Seed `supply` tokens, assign `ownedIds` to `holder` in pool `pool` (rest to `other`), value each owned.
-    function _seed(uint256 supply, uint256[] memory ownedIds, uint256 pool, uint256 a, uint256 e, uint256 r) internal {
-        nft.setTotalSupply(supply);
-        for (uint256 i = 1; i <= supply; ++i) {
-            nft.setToken(i, pool, other);
-        }
-        for (uint256 i; i < ownedIds.length; ++i) {
-            nft.setToken(ownedIds[i], pool, holder);
-            viewer.setToken(ownedIds[i], pool, a, e, r);
-        }
+    function test_roles_grantedToConstructorArgs() public view {
+        assertTrue(adapter.hasRole(ASSISTANT_ROLE, address(this)));
+        assertTrue(adapter.hasRole(adapter.DEFAULT_ADMIN_ROLE(), address(this)));
+        assertFalse(adapter.hasRole(ASSISTANT_ROLE, other));
     }
 
-    function test_discoversOwnedTokensAndAggregates() public {
-        uint256[] memory owned = new uint256[](2);
-        owned[0] = 2;
-        owned[1] = 5;
-        _seed(6, owned, 1, 100, 10, 3); // each owned: 100 active + 10 expired + 3 rewards
+    // ---- Discovery (agent-fed) + valuation ----
+
+    /// @dev Seed an owned token for `holder` in pool `pool`, value it, and submit its id to the cache.
+    function _seedOne(uint256 id, uint256 pool, uint256 a, uint256 e, uint256 r) internal {
+        nft.setToken(id, pool, holder);
+        viewer.setToken(id, pool, a, e, r);
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = id;
+        adapter.submitTokenIds(holder, ids);
+    }
+
+    function test_submittedTokensAggregate() public {
+        _seedOne(2, 1, 100, 10, 3);
+        _seedOne(5, 1, 100, 10, 3); // each owned: 100 active + 10 expired + 3 rewards
         (uint256 amt, bool d) = adapter.getAdapterBalanceForAsset(holder, address(nxm));
         // staking = (100+10)*2 = 220; rewards = 3*2 = 6; total = 226
         assertEq(amt, 226);
         assertEq(d, false);
     }
 
-    function test_otherAccountNotPickedUp() public {
-        uint256[] memory owned = new uint256[](1);
-        owned[0] = 3;
-        _seed(6, owned, 1, 100, 0, 5);
+    function test_unsubmittedAccount_zero() public {
+        _seedOne(3, 1, 100, 0, 5);
         (uint256 amt,) = adapter.getAdapterBalanceForAsset(other, address(nxm));
-        assertEq(amt, 0); // `other` owns the non-seeded tokens (active 0) → 0 staked
+        assertEq(amt, 0); // `other` has no submitted ids
     }
 
     function test_balanceForWrongAsset_zero() public {
-        uint256[] memory owned = new uint256[](1);
-        owned[0] = 1;
-        _seed(2, owned, 1, 100, 0, 0);
+        _seedOne(1, 1, 100, 0, 0);
         (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, address(weth));
         assertEq(amt, 0);
     }
@@ -208,9 +192,7 @@ contract NexusMutualStakingPoolsBalanceAdapterTest is BalanceAdapterTestBase {
     // ---- getAdapterPositions: per-NFT legs + identity ----
 
     function test_positions_stakingAndRewardsLegs() public {
-        uint256[] memory owned = new uint256[](1);
-        owned[0] = 4;
-        _seed(5, owned, 7, 100, 20, 7); // pool 7
+        _seedOne(4, 7, 100, 20, 7); // pool 7
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
         assertEq(p.length, 2);
         // leg 0 = Staking (active+expired = 120), leg 1 = Rewards (7)
@@ -228,34 +210,34 @@ contract NexusMutualStakingPoolsBalanceAdapterTest is BalanceAdapterTestBase {
         }
     }
 
-    /// @dev Two positions in two different pools → 4 legs, each keyed by its own (tokenId, poolId).
-    ///      Discovery scans descending (newest id first), so token 2 is emitted before token 1.
+    /// @dev Two positions in two different pools → 4 legs, each keyed by its own (tokenId, poolId). Read order
+    ///      follows the cache (submission) order: token 1 then token 2.
     function test_positions_twoPools_distinctPositionIds() public {
-        nft.setTotalSupply(3);
         nft.setToken(1, 7, holder);
         viewer.setToken(1, 7, 100, 0, 1);
         nft.setToken(2, 9, holder);
         viewer.setToken(2, 9, 200, 0, 2);
-        nft.setToken(3, 7, other);
+        uint256[] memory ids = new uint256[](2);
+        ids[0] = 1;
+        ids[1] = 2;
+        adapter.submitTokenIds(holder, ids);
 
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
         assertEq(p.length, 4); // (Staking+Rewards) x 2 tokens
-        // token 2 → pool 9 (scanned first, descending)
-        assertEq(p[0].positionId, abi.encode(uint256(2), uint256(9)));
-        assertEq(p[1].positionId, abi.encode(uint256(2), uint256(9)));
-        assertEq(p[0].amount, 200);
-        assertEq(p[1].amount, 2);
-        // token 1 → pool 7
-        assertEq(p[2].positionId, abi.encode(uint256(1), uint256(7)));
-        assertEq(p[3].positionId, abi.encode(uint256(1), uint256(7)));
-        assertEq(p[2].amount, 100);
-        assertEq(p[3].amount, 1);
+        // token 1 → pool 7 (cache order)
+        assertEq(p[0].positionId, abi.encode(uint256(1), uint256(7)));
+        assertEq(p[1].positionId, abi.encode(uint256(1), uint256(7)));
+        assertEq(p[0].amount, 100);
+        assertEq(p[1].amount, 1);
+        // token 2 → pool 9
+        assertEq(p[2].positionId, abi.encode(uint256(2), uint256(9)));
+        assertEq(p[3].positionId, abi.encode(uint256(2), uint256(9)));
+        assertEq(p[2].amount, 200);
+        assertEq(p[3].amount, 2);
     }
 
     function test_positions_onlyStakingWhenNoRewards() public {
-        uint256[] memory owned = new uint256[](1);
-        owned[0] = 1;
-        _seed(2, owned, 3, 50, 0, 0);
+        _seedOne(1, 3, 50, 0, 0);
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
         assertEq(p.length, 1);
         assertEq(uint8(p[0].positionKind), uint8(PositionKind.Staking));
@@ -264,47 +246,40 @@ contract NexusMutualStakingPoolsBalanceAdapterTest is BalanceAdapterTestBase {
     }
 
     function test_positions_onlyRewardsWhenNoStake() public {
-        uint256[] memory owned = new uint256[](1);
-        owned[0] = 1;
-        _seed(2, owned, 3, 0, 0, 9);
+        _seedOne(1, 3, 0, 0, 9);
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
         assertEq(p.length, 1);
         assertEq(uint8(p[0].positionKind), uint8(PositionKind.Rewards));
         assertEq(p[0].amount, 9);
     }
 
-    function test_positions_emptyWhenNothing() public {
-        nft.setTotalSupply(3);
-        for (uint256 i = 1; i <= 3; i++) {
-            nft.setToken(i, 1, other);
-        }
+    function test_positions_emptyWhenNothingSubmitted() public view {
         assertEq(adapter.getAdapterPositions(holder, address(0)).length, 0);
     }
 
     function test_positions_assetFilterMatch_andMismatch() public {
-        uint256[] memory owned = new uint256[](1);
-        owned[0] = 1;
-        _seed(2, owned, 1, 100, 0, 0);
+        _seedOne(1, 1, 100, 0, 0);
         assertEq(adapter.getAdapterPositions(holder, address(nxm)).length, 1); // match → leg
         assertEq(adapter.getAdapterPositions(holder, address(weth)).length, 0); // mismatch → empty
     }
 
     function test_unregisteredUnderlying_positionsEmpty_butBalanceOwed() public {
         BalancesHarness freshNav = new BalancesHarness();
-        NexusMutualStakingPoolsBalanceAdapter a2 =
-            new NexusMutualStakingPoolsBalanceAdapter(address(nft), address(viewer), address(nxm), address(freshNav));
-        uint256[] memory owned = new uint256[](1);
-        owned[0] = 1;
-        _seed(2, owned, 1, 100, 0, 5);
+        NexusMutualStakingPoolsBalanceAdapter a2 = new NexusMutualStakingPoolsBalanceAdapter(
+            address(nft), address(viewer), address(nxm), address(freshNav), address(this), address(this)
+        );
+        nft.setToken(1, 1, holder);
+        viewer.setToken(1, 1, 100, 0, 5);
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = 1;
+        a2.submitTokenIds(holder, ids);
         assertEq(a2.getAdapterPositions(holder, address(0)).length, 0); // NXM not registered → dropped
         (uint256 amt,) = a2.getAdapterBalanceForAsset(holder, address(nxm));
         assertEq(amt, 105); // balance still computed
     }
 
     function test_getAdapterBalances_shape() public {
-        uint256[] memory owned = new uint256[](1);
-        owned[0] = 2;
-        _seed(3, owned, 1, 100, 0, 5);
+        _seedOne(2, 1, 100, 0, 5);
         (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = adapter.getAdapterBalances(holder);
         assertEq(assets.length, 1);
         assertEq(assets[0], address(nxm));
@@ -312,97 +287,104 @@ contract NexusMutualStakingPoolsBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(isDebt[0], false);
     }
 
-    // ---- Caps + never-revert ----
+    // ---- Assisted-cache behaviour ----
 
-    function test_perAccountCap_limitsCollectedTokens() public {
-        uint256 cap = adapter.MAX_POSITIONS_PER_ACCOUNT();
-        uint256 supply = cap + 5;
-        nft.setTotalSupply(supply);
-        for (uint256 i = 1; i <= supply; i++) {
-            nft.setToken(i, 1, holder); // holder owns ALL
-            viewer.setToken(i, 1, 1, 0, 0); // 1 active each
-        }
-        (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, address(nxm));
-        assertEq(amt, cap); // collection capped at MAX_POSITIONS_PER_ACCOUNT (1 active each)
+    function test_submit_onlyAssistantRole() public {
+        nft.setToken(1, 1, holder);
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = 1;
+        vm.prank(other);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, other, ASSISTANT_ROLE)
+        );
+        adapter.submitTokenIds(holder, ids);
     }
 
-    function test_highId_discoveredNoScanCap() public {
-        // No fixed scan cap: a high-id position (beyond the old 5000 bound) is still discovered. The
-        // descending scan + balanceOf early-exit finds it in one iteration here (it's the newest id).
-        uint256 highId = 6000;
-        nft.setTotalSupply(highId);
-        nft.setToken(highId, 1, holder);
-        viewer.setToken(highId, 1, 123, 0, 0);
-        (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, address(nxm));
-        assertEq(amt, 123); // found despite id > the former 5000 cap
+    /// @notice Writes are fail-loud: submitting an id not owned by the account reverts NotTokenOwner.
+    function test_submit_revertsOnNonOwnedId() public {
+        nft.setToken(1, 1, other); // owned by `other`, not holder
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = 1;
+        vm.expectRevert(abi.encodeWithSelector(NotTokenOwner.selector, holder, uint256(1)));
+        adapter.submitTokenIds(holder, ids);
     }
 
-    function test_tokenInfoReverts_skipped_notReverted() public {
-        uint256[] memory owned = new uint256[](2);
-        owned[0] = 2;
-        owned[1] = 4;
-        _seed(5, owned, 1, 100, 0, 0);
+    /// @notice Reads are fail-open: an id transferred away after submission is silently discarded.
+    function test_read_discardsTransferredId() public {
+        _seedOne(1, 1, 100, 0, 0);
+        _seedOne(2, 1, 200, 0, 0);
+        nft.setToken(1, 1, other); // token 1 moves to `other`
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
+        assertEq(p.length, 1, "transferred token discarded; remaining token reported");
+        assertEq(p[0].positionId, abi.encode(uint256(2), uint256(1)));
+        (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, address(nxm));
+        assertEq(amt, 200);
+    }
+
+    /// @notice Reads are fail-open: an id whose tokenInfo reverts is silently discarded.
+    function test_read_discardsRevertingId() public {
+        _seedOne(2, 1, 100, 0, 0);
+        _seedOne(4, 1, 100, 0, 0);
         nft.setRevertId(2); // tokenInfo(2) reverts → skipped
         (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, address(nxm));
         assertEq(amt, 100); // only token 4 counted
     }
 
-    function test_totalSupplyReverts_zero() public {
-        uint256[] memory owned = new uint256[](1);
-        owned[0] = 1;
-        _seed(2, owned, 1, 100, 0, 0);
-        nft.setRevertSupply(true);
+    function test_clearTokenId() public {
+        _seedOne(1, 1, 100, 0, 0);
+        _seedOne(2, 1, 200, 0, 0);
+        adapter.clearTokenId(holder, 1);
+        assertEq(adapter.tokenIdsOf(holder).length, 1);
+        (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, address(nxm));
+        assertEq(amt, 200);
+    }
+
+    function test_clearAccount() public {
+        _seedOne(1, 1, 100, 0, 0);
+        adapter.clearAccount(holder);
+        assertEq(adapter.tokenIdsOf(holder).length, 0);
         (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, address(nxm));
         assertEq(amt, 0);
     }
 
+    // ---- Caps + never-revert ----
+
+    function test_perAccountCap_limitsCachedTokens() public {
+        uint256 cap = adapter.MAX_TOKEN_IDS();
+        uint256 n = cap + 5;
+        uint256[] memory ids = new uint256[](n);
+        for (uint256 i = 0; i < n; i++) {
+            uint256 id = i + 1;
+            nft.setToken(id, 1, holder); // holder owns ALL
+            viewer.setToken(id, 1, 1, 0, 0); // 1 active each
+            ids[i] = id;
+        }
+        adapter.submitTokenIds(holder, ids); // excess beyond cap is silently not stored
+        assertEq(adapter.tokenIdsOf(holder).length, cap);
+        (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, address(nxm));
+        assertEq(amt, cap); // 1 active each, capped
+    }
+
     function test_viewerReverts_balanceZero() public {
-        uint256[] memory owned = new uint256[](1);
-        owned[0] = 1;
-        _seed(2, owned, 1, 100, 0, 0);
+        _seedOne(1, 1, 100, 0, 0);
         viewer.setRevert(true);
         (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, address(nxm));
         assertEq(amt, 0);
     }
 
     function test_viewerReverts_positionsEmpty() public {
-        uint256[] memory owned = new uint256[](1);
-        owned[0] = 1;
-        _seed(2, owned, 1, 100, 0, 5);
+        _seedOne(1, 1, 100, 0, 5);
         viewer.setRevert(true);
         assertEq(adapter.getAdapterPositions(holder, address(0)).length, 0); // getTokens revert → empty
-    }
-
-    // ---- balanceOf fast-path ----
-
-    function test_zeroBalance_skipsScan() public {
-        // holder owns nothing; balanceOf == 0 short-circuits before the (here large) id scan.
-        nft.setTotalSupply(500);
-        for (uint256 i = 1; i <= 500; ++i) {
-            nft.setToken(i, 1, other);
-        }
-        assertEq(adapter.getAdapterPositions(holder, address(0)).length, 0);
-        (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, address(nxm));
-        assertEq(amt, 0);
-    }
-
-    function test_balanceOfReverts_fallsBackToScan() public {
-        uint256[] memory owned = new uint256[](1);
-        owned[0] = 3;
-        _seed(5, owned, 1, 100, 0, 7);
-        nft.setRevertBalance(true); // balanceOf unavailable → fall back to the bounded full scan
-        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
-        assertEq(p.length, 2); // still discovered via the scan
-        assertEq(p[0].positionId, abi.encode(uint256(3), uint256(1)));
-        (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, address(nxm));
-        assertEq(amt, 107);
     }
 
     // ---- Interface ----
 
     function test_supportsInterface() public view {
+        assertTrue(adapter.supportsInterface(type(IAssistedBalanceAdapter).interfaceId));
         assertTrue(adapter.supportsInterface(type(IBalanceAdapter).interfaceId));
         assertTrue(adapter.supportsInterface(type(IPositionDescribable).interfaceId));
+        assertTrue(adapter.supportsInterface(type(IAccessControl).interfaceId));
         assertTrue(adapter.supportsInterface(type(IERC165).interfaceId));
     }
 

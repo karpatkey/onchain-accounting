@@ -42,10 +42,11 @@ interface IUniswapV3Pool {
         );
 }
 
-/// @notice Minimal NPM interface (ERC721Enumerable surface + `positions`).
+/// @notice Minimal NPM interface (ERC721Enumerable surface + `ownerOf` + `positions`).
 interface INonfungiblePositionManager {
     function balanceOf(address owner) external view returns (uint256);
     function tokenOfOwnerByIndex(address owner, uint256 index) external view returns (uint256);
+    function ownerOf(uint256 tokenId) external view returns (address);
     function positions(uint256 tokenId)
         external
         view

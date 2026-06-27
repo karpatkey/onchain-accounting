@@ -164,5 +164,13 @@
       "positionDetail": "{\"protocol\":\"PancakeSwap V3\",\"product\":\"LP\",\"name\":\"WETH/COW 0.25%\"",
       "positionId": "0xfe5291Ac7Ac2b81a40c0ba6980308212037828aF"
     }
+  },
+  "PancakeSwapV3Pools": {
+    "enabled": false,
+    "$comment": "PancakeSwap V3 pools (assisted adapter; agent-fed NFT tokenId cache, ADR 0015; subclass of UniswapV3Pools differing only in protocol-id slug). The assistant submits an account's NFT tokenIds via submitTokenIds (admin+assistant = chainConfig.admin at deploy); the adapter caches ids only, values each NFT from live on-chain reads (oracle-reconstructed sqrtPriceX96, not slot0; + settled tokensOwed) and re-verifies ownerOf per read. positionId = abi.encode(npm, tokenId). 04 reads positionManager/protocol. Disabled: COW on Base has no feed, so the COW leg would be silently dropped. Enable once COW is priced.",
+    "constructor": {
+      "positionManager": "0x46A15B0b27311cedF172AB29E4f4766fbE7F4364",
+      "protocol": "PancakeSwap V3"
+    }
   }
 }

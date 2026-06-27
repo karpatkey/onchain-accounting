@@ -69,10 +69,23 @@ contract MockPositionManager {
 
     mapping(uint256 => PositionData) internal _positions;
     mapping(address => uint256[]) internal _ownerTokens;
+    mapping(uint256 => address) internal _tokenOwner;
 
     function mint(address owner, uint256 tokenId, PositionData memory data) external {
         _positions[tokenId] = data;
         _ownerTokens[owner].push(tokenId);
+        _tokenOwner[tokenId] = owner;
+    }
+
+    /// @notice Reassign ownership of an existing tokenId (simulates an NFT transfer). Does NOT update the
+    ///         `_ownerTokens` enumeration — tests exercise the id-cache + `ownerOf` re-verification path.
+    function setOwner(uint256 tokenId, address owner) external {
+        _tokenOwner[tokenId] = owner;
+    }
+
+    /// @notice Burn a tokenId so `ownerOf` reverts (simulates a closed/burned position).
+    function burn(uint256 tokenId) external {
+        delete _tokenOwner[tokenId];
     }
 
     function balanceOf(address owner) external view returns (uint256) {
@@ -81,6 +94,12 @@ contract MockPositionManager {
 
     function tokenOfOwnerByIndex(address owner, uint256 index) external view returns (uint256) {
         return _ownerTokens[owner][index];
+    }
+
+    function ownerOf(uint256 tokenId) external view returns (address) {
+        address o = _tokenOwner[tokenId];
+        require(o != address(0), "ERC721: invalid token ID");
+        return o;
     }
 
     function positions(uint256 tokenId)

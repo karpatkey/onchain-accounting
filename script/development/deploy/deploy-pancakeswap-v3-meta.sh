@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
-# Deploy + register the PancakeSwap V3 pools meta-adapter on a running dev anvil fork.
+# Deploy + register the PancakeSwap V3 pools assisted adapter on a running dev anvil fork (ADR 0015).
 #
-# Usage:  deploy-pancakeswap-v3-meta.sh <chainId> <pool[,pool2,...]>
-#   e.g.  deploy-pancakeswap-v3-meta.sh 1 0x1445F32D1A74872bA41f3D8cF4022E9996120b31
+# Usage:  deploy-pancakeswap-v3-meta.sh <chainId> [account] [tokenId,tokenId2,...]
+#   e.g.  deploy-pancakeswap-v3-meta.sh 1 0x783C3255340f8Ba524452A9BE5d12a77e9Ce1F53 12345,67890
 #
 # Requires deploy.sh to have run first (NAV proxy must exist in state/<chainId>-addresses.json).
-# Registers + seeds the meta-adapter with a single atomic addMetaBalanceAdapter(adapter, instances)
-# call (ADR 0010), mirroring script/deploy/06_Configure.s.sol.
+# Registers the adapter via addBalanceAdapters and, if an account + tokenIds are given, seeds them via
+# submitTokenIds (the deployer holds ASSISTANT_ROLE on the dev fork). The adapter reports 0 until ids are fed.
 set -euo pipefail
 
 CID=${1:?chainId required}
-POOLS=${2:?comma-separated pool address(es) required}
+ACCOUNT=${2:-}
+TOKEN_IDS=${3:-}
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 DEV_DIR="$REPO_ROOT/script/development"
@@ -37,16 +38,17 @@ ADDR_FILE="$STATE_DIR/$CID-addresses.json"
 NAV=$(jq -r '.NAVCalculatorProxy' "$ADDR_FILE")
 if [ "$NAV" = "null" ] || [ -z "$NAV" ]; then echo "error: no NAVCalculatorProxy in $ADDR_FILE" >&2; exit 1; fi
 
-echo "=== deploy PancakeSwap V3 meta  chain=$CID NAV=$NAV NPM=$NPM"
-echo "    pools: $POOLS"
+echo "=== deploy PancakeSwap V3 assisted  chain=$CID NAV=$NAV NPM=$NPM"
+echo "    account: ${ACCOUNT:-<none>}  tokenIds: ${TOKEN_IDS:-<none>}"
 
 out=$(
   DEV_NAV_PROXY="$NAV" \
   DEV_NPM="$NPM" \
   DEV_PROTOCOL_NAME="$PROTOCOL_NAME" \
-  DEV_POOLS="$POOLS" \
+  DEV_ACCOUNT="$ACCOUNT" \
+  DEV_TOKEN_IDS="$TOKEN_IDS" \
   FOUNDRY_PROFILE=dev \
-  forge script "$DEPLOY_DIR/deploy-pancakeswap-v3-meta.s.sol:DeployPancakeSwapV3Meta" \
+  forge script "$DEPLOY_DIR/deploy-pancakeswap-v3-meta.s.sol:DeployPancakeSwapV3" \
     --rpc-url "$RPC" \
     --private-key "$DEV_PRIVATE_KEY" \
     --sender "$DEV_DEPLOYER_ADDR" \
@@ -60,8 +62,8 @@ if [ -z "$line" ]; then
   exit 1
 fi
 adapter=$(echo "$line" | awk '{print $2}')
-echo "  PancakeSwapV3PoolsMeta: $adapter"
+echo "  PancakeSwapV3Pools: $adapter"
 
 # Persist into the addresses file for the app / later reference.
-jq --arg a "$adapter" '. + {PancakeSwapV3PoolsMeta: $a}' "$ADDR_FILE" > "$ADDR_FILE.tmp" && mv "$ADDR_FILE.tmp" "$ADDR_FILE"
+jq --arg a "$adapter" '. + {PancakeSwapV3Pools: $a}' "$ADDR_FILE" > "$ADDR_FILE.tmp" && mv "$ADDR_FILE.tmp" "$ADDR_FILE"
 echo "  -> recorded in $ADDR_FILE"

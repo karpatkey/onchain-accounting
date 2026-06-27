@@ -150,16 +150,6 @@
       "0x15639e82d2072fa510e5d2b5f0db361c823bcad3"
     ]
   },
-  "UniswapV3PoolsMeta": {
-    "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Uniswap V3 pool (Supply + Fees legs from the account's NFT positions). NonfungiblePositionManager pinned in the constructor; the active pool set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below). Identity derived on-chain: positionId = pool address; name = sym0/sym1 feeTier. Supersedes the per-pool UniswapV3_* adapters, disabled below.",
-    "instances": [
-      "0xCBCdF9626bC03E24f779434178A73a0B4bad62eD",
-      "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640",
-      "0x4e68Ccd3E89f51C3074ca5072bbAC773960dFa36",
-      "0x764D50759FF278b7CfB2E0e8464B742E9aB40C97"
-    ]
-  },
   "EulerVaultsMeta": {
     "enabled": true,
     "$comment": "Euler V2 vaults held by KPK DAO/Foundation: KPK_ETH_Term (WETH) + kpk_RWA_USDC (USDC) — both EulerEarn (Earn) aggregator vaults today, supply-only. Both underlyings already registered. The adapter also handles core eVaults (Lend/Borrow): add future Euler vaults here.",

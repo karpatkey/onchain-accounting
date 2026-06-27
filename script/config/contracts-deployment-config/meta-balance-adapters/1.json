@@ -118,14 +118,6 @@
       "protocol": "StakeWise V3"
     }
   },
-  "UniswapV3PoolsMeta": {
-    "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Uniswap V3 pool (Supply + Fees legs from the account's NFT positions). NonfungiblePositionManager pinned in the constructor; the active pool set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below). Identity derived on-chain: positionId = pool address; name = sym0/sym1 feeTier. Supersedes the per-pool UniswapV3_* adapters, disabled below.",
-    "constructor": {
-      "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
-      "protocol": "Uniswap V3"
-    }
-  },
   "EulerVaultsMeta": {
     "enabled": true,
     "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Euler V2 ERC4626 vault \u2014 EulerEarn aggregators (Earn) and core eVaults (Lend/Borrow). Active vault set lives on NAVCalculator via addMetaInstances (from nav-config). Emits a Supply leg (convertToAssets) and, for core eVaults the account borrows from, a Borrow leg (debtOf).",

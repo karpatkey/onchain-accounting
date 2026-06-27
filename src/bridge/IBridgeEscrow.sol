@@ -66,6 +66,10 @@ interface IBridgeEscrow {
     /// @param account The account address
     error AccountHasActiveInvoices(address account);
 
+    /// @notice Thrown when attempting to revoke an adapter that still has in-flight (BRIDGING) invoices
+    /// @param adapter The bridge adapter address
+    error AdapterHasActiveInvoices(address adapter);
+
     /// @notice Thrown when attempting to unregister a symbol that was never registered
     /// @param symbol The asset symbol (string)
     error AssetNotRegistered(string symbol);

@@ -301,6 +301,45 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
         assertFalse(bridgeEscrow.isAuthorizedAdapter(address(mockAdapter)), "Adapter should be revoked");
     }
 
+    /// @notice Audit M-10b: revoking an adapter with in-flight (BRIDGING) invoices it dispatched must revert,
+    ///         symmetric with `revokeAccount`'s active-invoice guard.
+    function test_revokeAdapter_revertsWithActiveInvoices() public {
+        _approveToken(address(usdc), address(bridgeEscrow), BRIDGE_AMOUNT);
+        vm.prank(account);
+        bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, BRIDGE_AMOUNT, address(mockAdapter));
+
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(IBridgeEscrow.AdapterHasActiveInvoices.selector, address(mockAdapter)));
+        bridgeEscrow.revokeAdapter(address(mockAdapter));
+        assertTrue(bridgeEscrow.isAuthorizedAdapter(address(mockAdapter)), "Adapter should still be authorized");
+    }
+
+    /// @notice Audit M-10b: once the in-flight invoice settles, the adapter can be revoked.
+    function test_revokeAdapter_succeedsAfterInvoiceCompleted() public {
+        _approveToken(address(usdc), address(bridgeEscrow), BRIDGE_AMOUNT);
+        vm.prank(account);
+        bytes32 invoiceHash =
+            bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, BRIDGE_AMOUNT, address(mockAdapter));
+
+        bytes32[] memory hashes = new bytes32[](1);
+        hashes[0] = invoiceHash;
+        vm.prank(admin);
+        bridgeEscrow.markInvoiceCompleted(hashes);
+
+        vm.prank(admin);
+        bridgeEscrow.revokeAdapter(address(mockAdapter));
+        assertFalse(bridgeEscrow.isAuthorizedAdapter(address(mockAdapter)), "Adapter should be revoked");
+    }
+
+    /// @notice Audit M-12: `depositAndBridge` resets the adapter's ERC20 allowance to 0 after dispatch, so no
+    ///         standing approval survives the call (MockBridgeAdapter._bridge is a no-op and pulls nothing).
+    function test_depositAndBridge_resetsAdapterAllowance() public {
+        _approveToken(address(usdc), address(bridgeEscrow), BRIDGE_AMOUNT);
+        vm.prank(account);
+        bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, BRIDGE_AMOUNT, address(mockAdapter));
+        assertEq(usdc.allowance(address(bridgeEscrow), address(mockAdapter)), 0, "Adapter allowance must be reset to 0");
+    }
+
     // ============ Pause / emergencyWithdraw ============
 
     function test_pauseAndUnpause() public {

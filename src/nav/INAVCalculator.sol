@@ -40,6 +40,11 @@ interface INAVCalculator is IBalances {
     /// @param positionKind Semantic discriminator (Wallet / Supplied / Borrowed / Collateral / Staking / Rewards / Fees).
     ///        Together with `protocolId` and `positionId` forms the stable per-chain identity key
     ///        `(chainId, protocolId, positionId, balanceAsset.asset, positionKind)`.
+    /// @param isLocked True if this leg is NOT withdrawable right now (a withdrawal-queue request still pending, or a
+    ///        staked amount in/awaiting its unstaking cooldown); false if fully liquid / claimable now. A leg counts as
+    ///        liquid only when its entire amount is withdrawable — any pending/cooling/partial portion is reported as
+    ///        locked ("partial = locked"). Attribute only — NOT part of the identity key. `false` for every adapter
+    ///        except the withdrawal-queue / unstaking-cooldown legs.
     struct PositionBalance {
         Asset balanceAsset;
         address balanceAdapter;
@@ -48,6 +53,7 @@ interface INAVCalculator is IBalances {
         bytes32 protocolId;
         bytes positionId;
         PositionKind positionKind;
+        bool isLocked;
     }
 
     /// @notice Enriched position including pricing and quote-currency value.
@@ -64,6 +70,7 @@ interface INAVCalculator is IBalances {
     /// @param protocolId `keccak256` protocol slug. Copied from PositionBalance.
     /// @param positionId ABI-encoded position identifier. Copied from PositionBalance.
     /// @param positionKind Semantic discriminator. Copied from PositionBalance.
+    /// @param isLocked True if the leg is not withdrawable now (pending/cooling). Copied from PositionBalance.
     struct Position {
         Asset balanceAsset;
         address balanceAdapter;
@@ -80,6 +87,7 @@ interface INAVCalculator is IBalances {
         bytes32 protocolId;
         bytes positionId;
         PositionKind positionKind;
+        bool isLocked;
     }
 
     /// @notice Position enriched with human-readable display labels.

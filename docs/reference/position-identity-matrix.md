@@ -35,9 +35,11 @@ Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, pos
 | ERC4626Wrap | `erc4626` | `abi.encode(address wrapper)` | wrapper shares (`convertToAssets`) | `Supplied` | false | `wrapper.asset()` |
 | Cap | `cap` | `abi.encode(address cUSD)` | held cUSD (Stablecoin) | `Supplied` | false | USDC |
 | | | `abi.encode(address stcUSD)` | staked stcUSD (Savings) | `Staking` | false | USDC |
-| AaveV3SafetyModule | `aave-v3-safety-module` | `abi.encode(address stakeToken)` | staked principal (per stake token) | `Staking` | false | staked token (AAVE/GHO/ABPT…) |
+| AaveV3SafetyModule | `aave-v3-safety-module` | `abi.encode(address stakeToken)` | live (free) staked principal | `Staking` | false | staked token (AAVE/GHO/ABPT…) |
+| | | `abi.encode(address stakeToken, uint8 1)` | unstaking-cooldown principal — `isLocked` unless in unstake window | `Staking` | false | staked token |
 | | | | claimable SM rewards | `Rewards` | false | AAVE |
-| AaveUmbrella | `aave-v3-umbrella` | `abi.encode(address stakeToken)` | staked principal | `Staking` | false | bare reserve |
+| AaveUmbrella | `aave-v3-umbrella` | `abi.encode(address stakeToken)` | live (free) staked principal | `Staking` | false | bare reserve |
+| | | `abi.encode(address stakeToken, uint8 1)` | unstaking-cooldown principal — `isLocked` unless in withdrawal window | `Staking` | false | bare reserve |
 | | | | claimable rewards | `Rewards` | false | bare reserve of reward |
 | StakeWiseV3VaultsMeta | `stakewise-v3` | `abi.encode(address vault)` | vault stake (shares → assets) | `Staking` | false | ETH (mainnet) / GNO (Gnosis) |
 | | | | minted osToken debt | `Borrowed` | true | same underlying |
@@ -63,12 +65,12 @@ Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, pos
 | | | | earned CRV | `Rewards` | false | CRV |
 | | | | derived CVX (cliff schedule) | `Rewards` | false | CVX |
 | | | | extra reward tokens | `Rewards` | false | reward token |
-| StaderWithdrawalQueue | `stader-withdrawal` | `abi.encode(address userWithdrawalManager)` (account-global anchor) | ETH owed from open requests | `Supplied` | false | WETH |
-| KelpWithdrawalQueue | `kelp-withdrawal` | `abi.encode(address withdrawalManager)` (account-global anchor) | owed per payout asset | `Supplied` | false | each supported asset |
-| LidoWithdrawalQueue | `lido-withdrawal` | `abi.encode(address withdrawalQueue)` (account-global anchor) | claimable + pending ETH | `Supplied` | false | native ETH |
-| EtherFiWithdrawalQueue | `etherfi-withdrawal` | `abi.encode(address withdrawRequestNFT)` (account-global anchor) | in-flight withdrawal-queue ETH | `Supplied` | false | native ETH |
-| StakeWiseV3ExitQueue | `stakewise-exit` | `abi.encode(address vaultsRegistry)` (account-global anchor) | in-flight exit-queue assets | `Supplied` | false | native ETH |
-| EthenaCooldownBalanceAdapter | `ethena-cooldown` | `abi.encode(address sUSDe)` (account-global anchor) | USDe in the sUSDe unstaking cooldown | `Supplied` | false | USDe |
+| StaderWithdrawalQueue | `stader-withdrawal` | `abi.encode(uint256 requestId)` (one leg per request) | ETH owed — `isLocked` until finalized | `Supplied` | false | WETH |
+| KelpWithdrawalQueue | `kelp-withdrawal` | `abi.encode(address asset, uint256 userNonce)` (one leg per request) | owed per request — `isLocked` until cursor + delay pass | `Supplied` | false | each supported asset |
+| LidoWithdrawalQueue | `lido-withdrawal` | `abi.encode(uint256 requestId)` (one leg per NFT) | ETH owed — `isLocked` until finalized | `Supplied` | false | native ETH |
+| EtherFiWithdrawalQueue | `etherfi-withdrawal` | `abi.encode(uint256 tokenId)` (one leg per NFT) | ETH owed — `isLocked` until finalized | `Supplied` | false | native ETH |
+| StakeWiseV3ExitQueue | `stakewise-exit` | `abi.encode(address vault, uint256 ticket, uint256 ts)` (one leg per ticket) | assets owed — `isLocked` until fully exited | `Supplied` | false | native ETH |
+| EthenaCooldownBalanceAdapter | `ethena-cooldown` | `abi.encode(address sUSDe)` (single cooldown leg) | USDe cooling — `isLocked` until cooldown elapsed | `Supplied` | false | USDe |
 | NexusMutualStakingPools | `nexus-mutual-staking` | `abi.encode(uint256 tokenId, uint256 poolId)` | active + expired staked NXM (per StakingNFT) | `Staking` | false | NXM |
 | | | | claimable rewards (per StakingNFT) | `Rewards` | false | NXM |
 | MerklRewards | `merkl` | `abi.encode(address distributor)` | unclaimed rewards (one leg per reward token, distinguished by `balanceAsset`) | `Rewards` | false | reward token |

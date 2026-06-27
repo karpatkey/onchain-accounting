@@ -60,7 +60,7 @@ flowchart LR
 **Steps in code:**
 
 1. **getAllAdapters()** — Returns the global list of adapters (ERC20Default plus any custom adapters added via `addBalanceAdapters`, and any meta-adapters added via `addMetaBalanceAdapter`).
-2. **For each adapter** — `adapter.getAdapterPositions(account, address(0))` returns an array of `PositionBalance` (balance asset, amount, isDebt, protocolId, positionId, positionKind). Unsupported adapters are skipped (try/catch).
+2. **For each adapter** — `adapter.getAdapterPositions(account, address(0))` returns an array of `PositionBalance` (balance asset, amount, isDebt, protocolId, positionId, positionKind, isLocked). Unsupported adapters are skipped (try/catch).
 3. **Filter** — Skip positions whose `balanceAsset.asset` is not in the asset registry.
 4. **Enrich** — For each position: look up price (from Prices), compute USD value = amount × price (sign by `isDebt`: subtract for debt), then convert to quote asset if `quoteAsset != address(0)`.
 5. **Aggregate** — Sum all position values → `totalValue`; build `NAV` (value, quoteAsset, timestamp, stale assets, sequencer down).
@@ -82,10 +82,11 @@ Defined in `INAVCalculator`. This is what every balance adapter returns.
 | `amount`        | `uint256`     | **Always positive.** Nominal amount in asset decimals. |
 | `isDebt`        | `bool`        | `true` = debt (subtract from NAV), `false` = credit (add to NAV). Canonical NAV-sign signal. |
 | `protocolId`    | `bytes32`     | `keccak256` of a canonical protocol slug (see `src/utils/ProtocolIds.sol`). Selects the `positionId` ABI-decode schema — one slug implies exactly one schema. |
-| `positionId`    | `bytes`       | `abi.encode(...)` of the position's stable key. Decode schema is determined by `protocolId`. e.g. for `aave-v3-lending`: `abi.encode(address pool)`. Account-global positions (Lido withdrawal queue, etc.) encode their immutable anchor contract, `abi.encode(address <queue/manager>)`. Full schema table: `src/utils/ProtocolIds.sol` and `docs/howto/position-identity-schema.md`. |
+| `positionId`    | `bytes`       | `abi.encode(...)` of the position's stable key. Decode schema is determined by `protocolId`. e.g. for `aave-v3-lending`: `abi.encode(address pool)`. Withdrawal-queue / cooldown adapters emit **one leg per request** keyed by its per-request coordinate (NFT id / ticket / `(asset, nonce)`); see the schema table for each. Full schema table: `src/utils/ProtocolIds.sol` and `docs/howto/position-identity-schema.md`. |
 | `positionKind`  | `PositionKind`| Semantic discriminator: `Wallet` / `Supplied` / `Borrowed` / `Collateral` / `Staking` / `Rewards` / `Fees`. See `src/utils/PositionKind.sol`. |
+| `isLocked`      | `bool`        | `true` if the leg is not withdrawable now (a pending withdrawal request, or a staked amount in/awaiting its unstaking cooldown); `false` if fully liquid. "Partial = locked". **Attribute only — NOT part of the identity key.** `false` for all non-queue/non-cooldown adapters. See ADR 0016. |
 
-The stable per-chain identity key for caching and reconciliation is `(chainId, protocolId, positionId, balanceAsset.asset, positionKind)`. `balanceAdapter` is excluded — redeploying an adapter doesn't change the position.
+The stable per-chain identity key for caching and reconciliation is `(chainId, protocolId, positionId, balanceAsset.asset, positionKind)` — `isLocked` is an attribute and is **not** part of it. `balanceAdapter` is excluded — redeploying an adapter doesn't change the position.
 
 **Credits-only adapters** (e.g. ERC20DefaultBalanceAdapter, AaveV3SafetyModule) always report `isDebt: false`.
 
@@ -387,7 +388,8 @@ contract MyProtocolBalanceAdapter is IBalanceAdapter, IPositionDescribable {
             isDebt: false,
             protocolId: PROTOCOL_ID,
             positionId: abi.encode(address(PROTOCOL)),
-            positionKind: PositionKind.Supplied
+            positionKind: PositionKind.Supplied,
+            isLocked: false
         });
         return out;
     }

@@ -922,8 +922,8 @@ rather than overloading an existing one.
 | `wallet` | `(address asset)` |
 | `aave-v3-lending` | `(address pool)` |
 | `spark-lend` | `(address pool)` |
-| `aave-v3-safety-module` | `(address stakeToken)` |
-| `aave-v3-umbrella` | `(address stakeToken)` |
+| `aave-v3-safety-module` | live stake `(address stakeToken)`; unstaking-cooldown leg `(address stakeToken, uint8 1)` |
+| `aave-v3-umbrella` | live stake `(address stakeToken)`; unstaking-cooldown leg `(address stakeToken, uint8 1)` |
 | `morpho-vaults` | `(address vault)` |
 | `morpho-markets` | `(bytes32 marketId)` |
 | `euler-vaults` | `(address vault)` |
@@ -947,12 +947,12 @@ rather than overloading an existing one.
 | `erc4626` | `(address vault)` |
 | `merkl` | `(address distributor)` — reward token in balanceAsset |
 | `nexus-mutual-staking` | `(uint256 tokenId, uint256 poolId)` |
-| `stader-withdrawal` | `(address userWithdrawalManager)` — account-global anchor |
-| `kelp-withdrawal` | `(address withdrawalManager)` — account-global anchor |
-| `lido-withdrawal` | `(address withdrawalQueue)` — account-global anchor |
-| `etherfi-withdrawal` | `(address withdrawRequestNFT)` — account-global anchor |
-| `stakewise-exit` | `(address vaultsRegistry)` — account-global anchor |
-| `ethena-cooldown` | `(address sUSDe)` — account-global anchor |
+| `stader-withdrawal` | `(uint256 requestId)` — one leg per request; `isLocked` per request |
+| `kelp-withdrawal` | `(address asset, uint256 userNonce)` — one leg per request; `isLocked` per request |
+| `lido-withdrawal` | `(uint256 requestId)` — one leg per NFT request; `isLocked` per request |
+| `etherfi-withdrawal` | `(uint256 tokenId)` — one leg per NFT; `isLocked` per request |
+| `stakewise-exit` | `(address vault, uint256 positionTicket, uint256 timestamp)` — one leg per ticket; `isLocked` per ticket |
+| `ethena-cooldown` | `(address sUSDe)` — single cooldown leg; `isLocked` while still cooling |
 | `bridge-escrow` | `(address escrow, address token)` |
 
 **Account-global positionId** means there is only ever one such position per account for that

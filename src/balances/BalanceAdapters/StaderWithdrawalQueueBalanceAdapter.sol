@@ -13,8 +13,9 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @author KPK
 /// @notice Reports ETH owed to an account from open requests in Stader's UserWithdrawalManager.
 /// @dev When a user requests an unstake, ETHx is burned and a sequential request id is recorded.
-///      Until claimed, the value lives as ETH owed by the manager. This adapter sums all of the
-///      account's open requests into a single position denominated in `UNDERLYING_TOKEN` (typically WETH).
+///      Until claimed, the value lives as ETH owed by the manager. This adapter emits one position per
+///      open request, denominated in `UNDERLYING_TOKEN` (typically WETH), each carrying
+///      `isLocked = (ethFinalized == 0)` (pending vs claimable). The balance methods report the summed total.
 contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     //
     // Errors
@@ -186,8 +187,11 @@ contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescri
     }
 
     /// @inheritdoc IBalanceAdapter
-    /// @notice Returns balance-only positions for the account's open withdrawal requests.
-    /// @dev Single aggregated PositionBalance, dropped if the underlying asset is not registered in NAVCalculator.
+    /// @notice Returns ONE position per open withdrawal request, addressable by its `requestId`.
+    /// @dev `positionId = abi.encode(requestId)`, `isLocked = (ethFinalized == 0)` (a not-yet-finalized request is
+    ///      pending/locked; a finalized one is claimable). Per-request amount = `ethFinalized` if finalized else
+    ///      `ethExpected` — matching `_ethOwed`'s sum. Claimed entries (owner == address(0)) are skipped. Same OOB
+    ///      enumeration as `_ethOwed`. Dropped entirely if the underlying asset is not registered in NAVCalculator.
     function getAdapterPositions(address account, address assetFilter)
         external
         view
@@ -198,39 +202,74 @@ contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescri
         if (assetFilter != address(0) && assetFilter != UNDERLYING_TOKEN) {
             return new INAVCalculator.PositionBalance[](0);
         }
+        if (account == address(0)) {
+            return new INAVCalculator.PositionBalance[](0);
+        }
 
         // Underlying must be registered in NAVCalculator for the position to count in NAV.
-        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
         INAVCalculator.Asset memory underlying;
-        bool registered;
-        for (uint256 i = 0; i < reg.length; i++) {
-            if (reg[i].asset == UNDERLYING_TOKEN) {
-                underlying = reg[i];
-                registered = true;
-                break;
+        {
+            INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
+            bool registered;
+            for (uint256 i = 0; i < reg.length; i++) {
+                if (reg[i].asset == UNDERLYING_TOKEN) {
+                    underlying = reg[i];
+                    registered = true;
+                    break;
+                }
+            }
+            if (!registered) {
+                return new INAVCalculator.PositionBalance[](0);
             }
         }
-        if (!registered) {
-            return new INAVCalculator.PositionBalance[](0);
+
+        INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](MAX_REQUESTS_PROBED);
+        uint256 n;
+        for (uint256 i = 0; i < MAX_REQUESTS_PROBED; i++) {
+            try USER_WITHDRAWAL_MANAGER.requestIdsByUserAddress(account, i) returns (uint256 requestId) {
+                (address owner,, uint256 ethExpected, uint256 ethFinalized,) =
+                    USER_WITHDRAWAL_MANAGER.userWithdrawRequests(requestId);
+                if (owner == address(0)) {
+                    // Already claimed (storage deleted) but id may linger in the index array — skip.
+                    continue;
+                }
+                uint256 owed = ethFinalized > 0 ? ethFinalized : ethExpected;
+                if (owed == 0) {
+                    continue;
+                }
+                temp[n++] = INAVCalculator.PositionBalance({
+                    balanceAsset: underlying,
+                    balanceAdapter: address(this),
+                    amount: owed,
+                    isDebt: false,
+                    protocolId: PROTOCOL_ID,
+                    // Per-request id — each withdrawal request is its own addressable leg.
+                    positionId: abi.encode(requestId),
+                    positionKind: PositionKind.Supplied,
+                    // Pending until its batch is finalized (ethFinalized set) → locked; finalized → claimable.
+                    isLocked: ethFinalized == 0
+                });
+            } catch Panic(uint256 panicCode) {
+                // 0x32 = array index out of bounds — list exhausted.
+                if (panicCode == 0x32) {
+                    break;
+                }
+                revert UnexpectedPanic(panicCode);
+            } catch (bytes memory data) {
+                // Legacy getter: bare empty revert is the OOB sentinel; anything else is a real error.
+                if (data.length == 0) {
+                    break;
+                }
+                assembly {
+                    revert(add(data, 0x20), mload(data))
+                }
+            }
         }
 
-        uint256 total = _ethOwed(account);
-        if (total == 0) {
-            return new INAVCalculator.PositionBalance[](0);
+        positions = new INAVCalculator.PositionBalance[](n);
+        for (uint256 i = 0; i < n; i++) {
+            positions[i] = temp[i];
         }
-
-        positions = new INAVCalculator.PositionBalance[](1);
-        positions[0] = INAVCalculator.PositionBalance({
-            balanceAsset: underlying,
-            balanceAdapter: address(this),
-            amount: total,
-            isDebt: false,
-            protocolId: PROTOCOL_ID,
-            // Anchored on the UserWithdrawalManager (the claim target / immutable anchor); the owed
-            // asset lives in `balanceAsset`, so the manager address is the non-redundant coordinate.
-            positionId: abi.encode(address(USER_WITHDRAWAL_MANAGER)),
-            positionKind: PositionKind.Supplied
-        });
     }
 }
 

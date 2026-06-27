@@ -224,9 +224,12 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
     }
 
     /// @inheritdoc IBalanceAdapter
-    /// @notice One aggregated staking-asset `Supplied` leg = total assets owed across the account's live,
-    ///         account-owned exit positions. `positionId = abi.encode(VAULTS_REGISTRY)` (account-global,
-    ///         keyed on the immutable anchor, like the other WQ adapters).
+    /// @notice Returns ONE staking-asset `Supplied` leg per cached exit position, addressable by `(vault, ticket, ts)`.
+    /// @dev `positionId = abi.encode(vault, positionTicket, timestamp)`. Each position is valued live from on-chain
+    ///      reads (`_owedForPosition`) and carries `isLocked` under the "partial = locked" rule: unlocked only when the
+    ///      position is fully exited (no shares still queued), otherwise locked. Positions not owned by `account` /
+    ///      claimed value to 0 and are skipped — the assistant can only under-report. Dropped entirely if the
+    ///      underlying asset is not registered in NAVCalculator.
     function getAdapterPositions(address account, address assetFilter)
         external
         view
@@ -238,36 +241,49 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
         }
         if (account == address(0)) return new INAVCalculator.PositionBalance[](0);
 
-        // Cheap path first: bail before fetching/scanning getRegisteredAssets when there is nothing owed
-        // (the common case — no cached positions, or all stale/claimed).
-        uint256 total = _assetsOwed(account);
-        if (total == 0) return new INAVCalculator.PositionBalance[](0);
+        ExitPosition[] memory list = _positions[account];
+        if (list.length == 0) return new INAVCalculator.PositionBalance[](0);
 
         // Underlying must be registered in NAVCalculator for the position to count in NAV.
-        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
         INAVCalculator.Asset memory underlying;
-        bool registered;
-        for (uint256 i = 0; i < reg.length; i++) {
-            if (reg[i].asset == UNDERLYING_TOKEN) {
-                underlying = reg[i];
-                registered = true;
-                break;
+        {
+            INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
+            bool registered;
+            for (uint256 i = 0; i < reg.length; i++) {
+                if (reg[i].asset == UNDERLYING_TOKEN) {
+                    underlying = reg[i];
+                    registered = true;
+                    break;
+                }
             }
+            if (!registered) return new INAVCalculator.PositionBalance[](0);
         }
-        if (!registered) return new INAVCalculator.PositionBalance[](0);
 
-        positions = new INAVCalculator.PositionBalance[](1);
-        positions[0] = INAVCalculator.PositionBalance({
-            balanceAsset: underlying,
-            balanceAdapter: address(this),
-            amount: total,
-            isDebt: false,
-            protocolId: PROTOCOL_ID,
-            // Anchored on the VaultsRegistry (the immutable anchor); the owed asset lives in
-            // `balanceAsset`, so the registry address is the non-redundant coordinate.
-            positionId: abi.encode(VAULTS_REGISTRY),
-            positionKind: PositionKind.Supplied
-        });
+        INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](list.length);
+        uint256 n;
+        for (uint256 i = 0; i < list.length; i++) {
+            (uint256 owed, bool locked) =
+                _owedForPosition(account, list[i].vault, list[i].positionTicket, list[i].timestamp);
+            if (owed == 0) {
+                continue;
+            }
+            temp[n++] = INAVCalculator.PositionBalance({
+                balanceAsset: underlying,
+                balanceAdapter: address(this),
+                amount: owed,
+                isDebt: false,
+                protocolId: PROTOCOL_ID,
+                // Per-position coordinate — each exit ticket is its own addressable leg.
+                positionId: abi.encode(list[i].vault, list[i].positionTicket, list[i].timestamp),
+                positionKind: PositionKind.Supplied,
+                isLocked: locked
+            });
+        }
+
+        positions = new INAVCalculator.PositionBalance[](n);
+        for (uint256 i = 0; i < n; i++) {
+            positions[i] = temp[i];
+        }
     }
 
     //
@@ -287,7 +303,8 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
         } catch {
             return;
         }
-        if (_owedForPosition(account, position.vault, position.positionTicket, position.timestamp) == 0) return;
+        (uint256 owed,) = _owedForPosition(account, position.vault, position.positionTicket, position.timestamp);
+        if (owed == 0) return;
 
         _positions[account].push(position);
         _positionIdxPlus1[account][key] = _positions[account].length;
@@ -317,12 +334,13 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
     function _assetsOwed(address account) internal view returns (uint256 total) {
         ExitPosition[] memory list = _positions[account];
         for (uint256 i; i < list.length; ++i) {
-            total += _owedForPosition(account, list[i].vault, list[i].positionTicket, list[i].timestamp);
+            (uint256 owed,) = _owedForPosition(account, list[i].vault, list[i].positionTicket, list[i].timestamp);
+            total += owed;
         }
     }
 
-    /// @dev Assets owed for a single exit position, or 0 if it does not belong to `account` / is claimed / invalid.
-    ///      Mirrors StakeWise's own queue math:
+    /// @dev Assets owed for a single exit position and whether it is locked. `owed` is 0 (and `locked` false) if the
+    ///      position does not belong to `account` / is claimed / invalid. Mirrors StakeWise's own queue math:
     ///        - `idx = getExitQueueIndex(ticket)`; `idx == -1` ⇒ not yet checkpointed (fully pending). Passing an
     ///          out-of-range index to `calculateExitedAssets` makes it return `(left = full queued shares, 0, 0)`
     ///          without reverting (see ExitQueue.calculateExitedAssets early-return), so the still-queued portion
@@ -331,10 +349,15 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
     ///          remainder, valued at the vault's current rate.
     ///      `calculateExitedAssets(receiver = account, …)` returns zero for a tuple that is not the account's exit
     ///      request, which is the on-chain ownership verification. All external reads try/catch to 0.
+    ///      `locked` applies the "partial = locked" rule: a position is claimable (unlocked) only when it is FULLY
+    ///      exited (no shares still queued and a non-zero exited portion). Any still-queued remainder, or a
+    ///      not-yet-checkpointed position, keeps the whole leg locked. NOTE: StakeWise also enforces a ~24h
+    ///      `claimExitedAssets` delay after `timestamp` that this does not yet gate on (no public getter for the
+    ///      vault's claim delay is confirmed) — see ADR; omitting it can only mark a leg claimable slightly early.
     function _owedForPosition(address account, address vault, uint256 positionTicket, uint256 timestamp)
         internal
         view
-        returns (uint256)
+        returns (uint256 owed, bool locked)
     {
         IStakeWiseExitVault v = IStakeWiseExitVault(vault);
 
@@ -342,7 +365,7 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
         try v.getExitQueueIndex(positionTicket) returns (int256 i) {
             idx = i;
         } catch {
-            return 0;
+            return (0, false);
         }
         // idx < 0 ⇒ fully pending; an out-of-range index yields (leftShares = full, exited = 0) with no revert.
         uint256 queryIdx = idx < 0 ? type(uint256).max : uint256(idx);
@@ -357,7 +380,7 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
             leftShares = leftTickets;
             exitedAssets = exited;
         } catch {
-            return 0;
+            return (0, false);
         }
 
         uint256 queued;
@@ -365,10 +388,12 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
             try v.convertToAssets(leftShares) returns (uint256 a) {
                 queued = a;
             } catch {
-                return 0;
+                return (0, false);
             }
         }
-        return exitedAssets + queued;
+        owed = exitedAssets + queued;
+        // Claimable only when fully exited; any still-queued remainder (or nothing exited yet) → locked.
+        locked = leftShares > 0 || exitedAssets == 0;
     }
 
     function _key(address vault, uint256 positionTicket, uint256 timestamp) private pure returns (bytes32) {

@@ -110,7 +110,8 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
                                 isDebt: false,
                                 protocolId: PROTOCOL_ID,
                                 positionId: pid,
-                                positionKind: PositionKind.Staking
+                                positionKind: PositionKind.Staking,
+                                isLocked: false
                             });
                         }
                     }
@@ -132,7 +133,8 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
                         isDebt: false,
                         protocolId: PROTOCOL_ID,
                         positionId: pid,
-                        positionKind: PositionKind.Rewards
+                        positionKind: PositionKind.Rewards,
+                        isLocked: false
                     });
                 }
             }
@@ -158,7 +160,8 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
                 isDebt: false,
                 protocolId: PROTOCOL_ID,
                 positionId: pid,
-                positionKind: PositionKind.Rewards
+                positionKind: PositionKind.Rewards,
+                isLocked: false
             });
         }
 

@@ -177,7 +177,8 @@ contract ERC4626WrapBalanceAdapter is IBalanceAdapter, IPositionDescribable {
             isDebt: false,
             protocolId: PROTOCOL_ID,
             positionId: abi.encode(address(WRAPPER)),
-            positionKind: PositionKind.Supplied
+            positionKind: PositionKind.Supplied,
+            isLocked: false
         });
     }
 

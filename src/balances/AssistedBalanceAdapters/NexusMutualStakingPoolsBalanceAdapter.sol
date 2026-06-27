@@ -280,7 +280,8 @@ contract NexusMutualStakingPoolsBalanceAdapter is IBalanceAdapter, IPositionDesc
             isDebt: false,
             protocolId: PROTOCOL_ID,
             positionId: positionId,
-            positionKind: kind
+            positionKind: kind,
+            isLocked: false
         });
     }
 }

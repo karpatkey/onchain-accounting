@@ -48,8 +48,10 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      `totalSupply` constant when slashing fires, so the chained `convertToAssets` walk is
 ///      automatically post-slash-correct without extra accounting.
 ///
-///      Cooldown / unstake-window state does not affect `balanceOf`, so this adapter reports total
-///      staked principal regardless of which window the user is in.
+///      Cooldown / unstake-window state does not affect `balanceOf`. The balance methods report total staked
+///      principal regardless of window, but `getAdapterPositions` splits the principal into a live-stake leg
+///      (`isLocked=false`) and, when a cooldown is active, an unstaking leg (`isLocked=false` only inside the
+///      withdrawal window) — read from `getStakerCooldown`. Total value is unchanged; only the legs are split.
 contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     /// @dev Gas forwarded to single-word probes (`asset()`, `convertToAssets(uint256)`,
     ///      `UNDERLYING_ASSET_ADDRESS()`). 30k covers a normal SLOAD-and-return path comfortably
@@ -214,8 +216,8 @@ contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         INAVCalculator.Asset[] memory registered = NAV_CALCULATOR.getRegisteredAssets();
         address[] memory stakeTokens = REWARDS_CONTROLLER.getAllAssets();
 
-        // Worst case: 2 positions per stake token (Staked + Rewards).
-        INAVCalculator.PositionBalance[] memory tmp = new INAVCalculator.PositionBalance[](stakeTokens.length * 2);
+        // Worst case: 3 positions per stake token (free stake + unstaking cooldown + Rewards).
+        INAVCalculator.PositionBalance[] memory tmp = new INAVCalculator.PositionBalance[](stakeTokens.length * 3);
         uint256 count;
 
         for (uint256 i; i < stakeTokens.length; ++i) {
@@ -227,18 +229,46 @@ contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
             INAVCalculator.Asset memory assetMeta = _findRegisteredAsset(registered, bare);
             if (assetMeta.asset == address(0)) continue;
 
-            // Staked-token leg.
-            uint256 stakedAmount = _stakedUnderlying(stk, account);
-            if (stakedAmount != 0) {
-                tmp[count++] = INAVCalculator.PositionBalance({
-                    balanceAsset: assetMeta,
-                    balanceAdapter: address(this),
-                    amount: stakedAmount,
-                    isDebt: false,
-                    protocolId: PROTOCOL_ID,
-                    positionId: abi.encode(address(stk)),
-                    positionKind: PositionKind.Staking
-                });
+            // Staked-token leg(s): split into a live (free) stake and, if a cooldown is active, an unstaking leg.
+            {
+                uint256 balShares = IUmbrellaStakeToken(stk).balanceOf(account);
+                (uint256 freeShares, uint256 cooldownShares, bool inWindow) =
+                    _umbrellaCooldownSplit(stk, account, balShares);
+
+                // Live stake — not in a withdrawal process → not locked.
+                if (freeShares != 0) {
+                    uint256 amt = _sharesToUnderlying(stk, freeShares);
+                    if (amt != 0) {
+                        tmp[count++] = INAVCalculator.PositionBalance({
+                            balanceAsset: assetMeta,
+                            balanceAdapter: address(this),
+                            amount: amt,
+                            isDebt: false,
+                            protocolId: PROTOCOL_ID,
+                            positionId: abi.encode(address(stk)),
+                            positionKind: PositionKind.Staking,
+                            isLocked: false
+                        });
+                    }
+                }
+
+                // Unstaking (cooldown) leg — locked while cooling/expired, claimable inside the unstake window.
+                if (cooldownShares != 0) {
+                    uint256 amt = _sharesToUnderlying(stk, cooldownShares);
+                    if (amt != 0) {
+                        tmp[count++] = INAVCalculator.PositionBalance({
+                            balanceAsset: assetMeta,
+                            balanceAdapter: address(this),
+                            amount: amt,
+                            isDebt: false,
+                            protocolId: PROTOCOL_ID,
+                            // Distinct coordinate from the live-stake leg (uint8 1 = unstaking).
+                            positionId: abi.encode(address(stk), uint8(1)),
+                            positionKind: PositionKind.Staking,
+                            isLocked: !inWindow
+                        });
+                    }
+                }
             }
 
             // Rewards leg.
@@ -251,7 +281,8 @@ contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
                     isDebt: false,
                     protocolId: PROTOCOL_ID,
                     positionId: abi.encode(address(stk)),
-                    positionKind: PositionKind.Rewards
+                    positionKind: PositionKind.Rewards,
+                    isLocked: false
                 });
             }
         }
@@ -266,12 +297,16 @@ contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     // Internal — balance math
     //
 
-    /// @dev Translate the user's stake-token shares into the bare reserve via at most one ERC4626
-    ///      wrapper hop. Returns 0 when the user has no shares (skips the hops).
+    /// @dev Translate the user's full stake-token balance into the bare reserve. Returns 0 when no shares.
     function _stakedUnderlying(address stakeToken, address account) internal view returns (uint256) {
-        uint256 amount = IUmbrellaStakeToken(stakeToken).balanceOf(account);
-        if (amount == 0) return 0;
-        amount = IUmbrellaStakeToken(stakeToken).convertToAssets(amount);
+        return _sharesToUnderlying(stakeToken, IUmbrellaStakeToken(stakeToken).balanceOf(account));
+    }
+
+    /// @dev Translate a specific stake-token share amount into the bare reserve via at most one ERC4626
+    ///      wrapper hop. Returns 0 when `shares` is 0 (skips the hops).
+    function _sharesToUnderlying(address stakeToken, uint256 shares) internal view returns (uint256) {
+        if (shares == 0) return 0;
+        uint256 amount = IUmbrellaStakeToken(stakeToken).convertToAssets(shares);
 
         // First-level asset: e.g. `stkwaEthUSDC.asset() = waEthUSDC`, or `stkGHO.asset() = GHO`.
         address firstLevel = _safeAsset(stakeToken);
@@ -283,6 +318,41 @@ contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
             return IERC4626Like(firstLevel).convertToAssets(amount);
         }
         return amount;
+    }
+
+    /// @dev Splits an account's stake-token shares into a free (live-stake) portion and an unstaking (cooldown)
+    ///      portion, and reports whether the cooldown is inside its claim window. Reads Umbrella's per-user cooldown
+    ///      snapshot (`getStakerCooldown` → `(amount, endOfCooldown, withdrawalWindow)`; the window is snapshotted per
+    ///      cooldown, so it is read from the struct, not a global getter). Any read failure degrades gracefully to
+    ///      "entire balance is free, no cooldown leg".
+    /// @return freeShares Shares not committed to a cooldown (live stake).
+    /// @return cooldownShares Shares committed to the active cooldown (= min(cooldown amount, balance)).
+    /// @return inWindow True iff the cooldown has elapsed and is still within its withdrawal window (claimable now).
+    function _umbrellaCooldownSplit(address stakeToken, address account, uint256 balShares)
+        internal
+        view
+        returns (uint256 freeShares, uint256 cooldownShares, bool inWindow)
+    {
+        if (balShares == 0) {
+            return (0, 0, false);
+        }
+
+        IUmbrellaStakeToken.CooldownSnapshot memory s;
+        try IUmbrellaStakeToken(stakeToken).getStakerCooldown(account) returns (
+            IUmbrellaStakeToken.CooldownSnapshot memory snap
+        ) {
+            s = snap;
+        } catch {
+            return (balShares, 0, false);
+        }
+        if (s.amount == 0) {
+            return (balShares, 0, false); // no active cooldown
+        }
+
+        cooldownShares = uint256(s.amount) < balShares ? uint256(s.amount) : balShares;
+        freeShares = balShares - cooldownShares;
+        inWindow =
+            block.timestamp >= s.endOfCooldown && block.timestamp <= uint256(s.endOfCooldown) + s.withdrawalWindow;
     }
 
     /// @dev Pull `(rewardTokens[], amounts[])` from the controller, then for each reward token
@@ -400,8 +470,20 @@ contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
 /// @notice Minimal interface for an Aave Umbrella stake token (ERC4626 vault with slashing semantics).
 /// @dev Reference impl: https://github.com/aave-dao/aave-umbrella/blob/main/src/contracts/stakeToken/StakeToken.sol
 interface IUmbrellaStakeToken {
+    /// @notice Per-user cooldown snapshot. `amount` shares become redeemable in
+    ///         `[endOfCooldown, endOfCooldown + withdrawalWindow]`; the window is snapshotted at cooldown time.
+    struct CooldownSnapshot {
+        uint192 amount;
+        uint32 endOfCooldown;
+        uint32 withdrawalWindow;
+    }
+
     function balanceOf(address account) external view returns (uint256);
     function convertToAssets(uint256 shares) external view returns (uint256);
+
+    /// @notice The account's cooldown snapshot. A zero `amount` means no active cooldown.
+    /// @dev Older/other stake-token versions may not expose this ABI; callers must tolerate a call/decode failure.
+    function getStakerCooldown(address user) external view returns (CooldownSnapshot memory);
 }
 
 /// @notice Generic ERC4626-shaped reader used to walk wrapper layers without binding to a

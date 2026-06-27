@@ -47,11 +47,11 @@ import {MerklRewardsBalanceAdapter} from "../../src/balances/AssistedBalanceAdap
 import {EtherFiWithdrawalsBalanceAdapter} from "../../src/balances/AssistedBalanceAdapters/EtherFiWithdrawalsBalanceAdapter.sol";
 import {
     NexusMutualStakingPoolsBalanceAdapter
-} from "../../src/balances/BalanceAdapters/NexusMutualStakingPoolsBalanceAdapter.sol";
+} from "../../src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsBalanceAdapter.sol";
 import {StakeWiseExitQueueBalanceAdapter} from "../../src/balances/AssistedBalanceAdapters/StakeWiseExitQueueBalanceAdapter.sol";
 import {
     UniswapV3PoolsMetaBalanceAdapter
-} from "../../src/balances/MetaBalanceAdapters/uniswap/UniswapV3PoolsMetaBalanceAdapter.sol";
+} from "../../src/balances/AssistedBalanceAdapters/UniswapV3PoolsMetaBalanceAdapter.sol";
 import {
     UniswapV2PoolsMetaBalanceAdapter
 } from "../../src/balances/MetaBalanceAdapters/uniswap/UniswapV2PoolsMetaBalanceAdapter.sol";
@@ -60,7 +60,7 @@ import {
 } from "../../src/balances/MetaBalanceAdapters/pancakeswap/PancakeSwapV2PoolsMetaBalanceAdapter.sol";
 import {
     PancakeSwapV3PoolsMetaBalanceAdapter
-} from "../../src/balances/MetaBalanceAdapters/pancakeswap/PancakeSwapV3PoolsMetaBalanceAdapter.sol";
+} from "../../src/balances/AssistedBalanceAdapters/PancakeSwapV3PoolsMetaBalanceAdapter.sol";
 
 /// @title DeployBalanceAdapters
 /// @notice Deploys balance adapter adapters based on per-chain configuration
@@ -689,7 +689,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         require(chainConfig.admin != address(0), "MerklRewards: chainConfig.admin (initialOwner) not configured");
 
         MerklRewardsBalanceAdapter adapter =
-            new MerklRewardsBalanceAdapter(distributor, navCalculator, chainConfig.admin);
+            new MerklRewardsBalanceAdapter(distributor, navCalculator, chainConfig.admin, chainConfig.admin);
         return address(adapter);
     }
 
@@ -709,7 +709,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         require(chainConfig.admin != address(0), "EtherFiWithdrawals: chainConfig.admin (initialOwner) not configured");
 
         EtherFiWithdrawalsBalanceAdapter adapter = new EtherFiWithdrawalsBalanceAdapter(
-            withdrawRequestNft, liquidityPool, underlyingToken, navCalculator, chainConfig.admin
+            withdrawRequestNft, liquidityPool, underlyingToken, navCalculator, chainConfig.admin, chainConfig.admin
         );
         return address(adapter);
     }
@@ -749,7 +749,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         require(chainConfig.admin != address(0), "StakeWiseExitQueue: chainConfig.admin (initialOwner) not configured");
 
         StakeWiseExitQueueBalanceAdapter adapter =
-            new StakeWiseExitQueueBalanceAdapter(vaultsRegistry, underlyingToken, navCalculator, chainConfig.admin);
+            new StakeWiseExitQueueBalanceAdapter(vaultsRegistry, underlyingToken, navCalculator, chainConfig.admin, chainConfig.admin);
         return address(adapter);
     }
 

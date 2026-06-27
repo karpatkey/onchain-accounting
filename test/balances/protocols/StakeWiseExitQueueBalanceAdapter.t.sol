@@ -8,7 +8,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
@@ -118,37 +118,42 @@ contract StakeWiseExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         registry = new MockVaultsRegistry();
         registry.setVault(address(vault), true);
         balances.addSupportedAssetForTest(NATIVE);
-        // owner = this test contract, so it can submit positions.
-        adapter = new StakeWiseExitQueueBalanceAdapter(address(registry), NATIVE, address(balances), address(this));
+        // admin = assistant = this test contract, so it can submit positions.
+        adapter =
+            new StakeWiseExitQueueBalanceAdapter(address(registry), NATIVE, address(balances), address(this), address(this));
     }
 
     // ---- Constructor ----
 
     function test_constructor_revertsOnZeroRegistry() public {
         vm.expectRevert(InvalidArguments.selector);
-        new StakeWiseExitQueueBalanceAdapter(address(0), NATIVE, address(balances), address(this));
+        new StakeWiseExitQueueBalanceAdapter(address(0), NATIVE, address(balances), address(this), address(this));
     }
 
     function test_constructor_revertsOnZeroUnderlying() public {
         vm.expectRevert(InvalidArguments.selector);
-        new StakeWiseExitQueueBalanceAdapter(address(registry), address(0), address(balances), address(this));
+        new StakeWiseExitQueueBalanceAdapter(address(registry), address(0), address(balances), address(this), address(this));
     }
 
     function test_constructor_revertsOnZeroNav() public {
         vm.expectRevert(InvalidArguments.selector);
-        new StakeWiseExitQueueBalanceAdapter(address(registry), NATIVE, address(0), address(this));
+        new StakeWiseExitQueueBalanceAdapter(address(registry), NATIVE, address(0), address(this), address(this));
     }
 
     function test_constructor_revertsWhenRegistryNotContract() public {
         vm.expectRevert(bytes("VaultsRegistry must be a contract"));
-        new StakeWiseExitQueueBalanceAdapter(makeAddr("eoa"), NATIVE, address(balances), address(this));
+        new StakeWiseExitQueueBalanceAdapter(makeAddr("eoa"), NATIVE, address(balances), address(this), address(this));
     }
 
-    // ---- Ownership / submission ----
+    // ---- Access control / submission ----
 
-    function test_submit_onlyOwner() public {
+    function test_submit_onlyAssistant() public {
         vm.prank(other);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, other));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, other, keccak256("ASSISTANT_ROLE")
+            )
+        );
         adapter.submitPositions(holder, _claimable());
     }
 
@@ -405,8 +410,9 @@ contract StakeWiseExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
     function test_unregisteredUnderlying_positionsEmpty_butBalanceStillOwed() public {
         // Fresh NAV harness that does NOT register the native sentinel.
         BalancesHarness freshNav = new BalancesHarness();
-        StakeWiseExitQueueBalanceAdapter a2 =
-            new StakeWiseExitQueueBalanceAdapter(address(registry), NATIVE, address(freshNav), address(this));
+        StakeWiseExitQueueBalanceAdapter a2 = new StakeWiseExitQueueBalanceAdapter(
+            address(registry), NATIVE, address(freshNav), address(this), address(this)
+        );
         vault.setIndex(TICKET, 1);
         vault.setRequest(holder, TICKET, TS, 0, 1 ether);
         a2.submitPositions(holder, _claimable());

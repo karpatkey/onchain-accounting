@@ -2,8 +2,8 @@
 pragma solidity ^0.8;
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
+import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -20,8 +20,8 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         the `ExitQueueEntered` event — and there is no per-account enumeration, so a pure-view adapter cannot
 ///         discover the positions). An off-chain agent submits each `(vault, positionTicket, timestamp)` tuple via
 ///         `submitPositions`; this adapter then values them entirely from live on-chain reads. The cache stores
-///         **only the position coordinates, never amounts** — the owner cannot fabricate value; at worst it omits
-///         a position (NAV under-counts), never over-counts.
+///         **only the position coordinates, never amounts** — a holder of `ASSISTANT_ROLE` cannot fabricate value;
+///         at worst it omits a position (NAV under-counts), never over-counts.
 /// @dev Trust model and mutability rationale: see `docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md`
 ///      (generalises the Merkl precedent, ADR 0007; sibling of `EtherFiWithdrawals`). One aggregated leg per
 ///      account, denominated in the chain's staking asset (native ETH on mainnet). Mainnet only — every StakeWise
@@ -34,7 +34,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      zero exit request and is dropped — this is the on-chain verification (no `ownerOf` exists for exit
 ///      positions). The `vaultsRegistry` membership check at submit time is light hygiene only; correctness does
 ///      not depend on it.
-contract StakeWiseExitQueueBalanceAdapter is IBalanceAdapter, Ownable, IPositionDescribable {
+contract StakeWiseExitQueueBalanceAdapter is AssistedBalanceAdapter, IPositionDescribable {
     //
     // Types
     //
@@ -71,7 +71,7 @@ contract StakeWiseExitQueueBalanceAdapter is IBalanceAdapter, Ownable, IPosition
     /// @notice NAVCalculator — used to look up the registered staking-asset metadata when emitting positions.
     INAVCalculator public immutable NAV_CALCULATOR;
 
-    /// @notice Cached exit positions per account (the only thing the owner supplies).
+    /// @notice Cached exit positions per account (the only thing the assistant supplies).
     mapping(address account => ExitPosition[] positions) private _positions;
 
     /// @dev `idxPlus1` = index of the position in `_positions[account]` plus 1, keyed by the tuple hash. Zero ⇒ not
@@ -93,10 +93,16 @@ contract StakeWiseExitQueueBalanceAdapter is IBalanceAdapter, Ownable, IPosition
     /// @param vaultsRegistry_ StakeWise VaultsRegistry. Must be a contract.
     /// @param underlyingToken_ Payout asset (native-ETH sentinel on mainnet).
     /// @param navCalculator_   NAVCalculator. Must be a contract.
-    /// @param initialOwner_    Owner authorized to submit/clear positions (the OIV Safe / agent role).
-    constructor(address vaultsRegistry_, address underlyingToken_, address navCalculator_, address initialOwner_)
-        Ownable(initialOwner_)
-    {
+    /// @param admin_     Holder of `DEFAULT_ADMIN_ROLE` — administers `ASSISTANT_ROLE`. Required.
+    /// @param assistant_ Initial holder of `ASSISTANT_ROLE`, authorized to submit/clear positions (the agent role).
+    ///                   Optional (pass `address(0)` to grant later via `admin_`).
+    constructor(
+        address vaultsRegistry_,
+        address underlyingToken_,
+        address navCalculator_,
+        address admin_,
+        address assistant_
+    ) AssistedBalanceAdapter(admin_, assistant_) {
         if (vaultsRegistry_ == address(0) || underlyingToken_ == address(0) || navCalculator_ == address(0)) {
             revert InvalidArguments();
         }
@@ -109,14 +115,14 @@ contract StakeWiseExitQueueBalanceAdapter is IBalanceAdapter, Ownable, IPosition
     }
 
     //
-    // Mutators (onlyOwner)
+    // Mutators (onlyRole(ASSISTANT_ROLE))
     //
 
     /// @notice Add candidate exit positions for `account`. Idempotent (dedup by tuple hash). Positions whose vault
     ///         is not in the VaultsRegistry, or that do not currently resolve to a non-zero owed amount for
     ///         `account`, are skipped at write time as light hygiene; correctness does not depend on it — reads
     ///         re-verify and value only live, account-owned positions.
-    function submitPositions(address account, ExitPosition[] calldata positions) external onlyOwner {
+    function submitPositions(address account, ExitPosition[] calldata positions) external onlyRole(ASSISTANT_ROLE) {
         if (account == address(0)) revert InvalidArguments();
         for (uint256 i; i < positions.length; ++i) {
             _addPosition(account, positions[i]);
@@ -124,7 +130,10 @@ contract StakeWiseExitQueueBalanceAdapter is IBalanceAdapter, Ownable, IPosition
     }
 
     /// @notice Batch variant across accounts. `accounts` and `positions` must have the same length.
-    function submitPositionsBatch(address[] calldata accounts, ExitPosition[][] calldata positions) external onlyOwner {
+    function submitPositionsBatch(address[] calldata accounts, ExitPosition[][] calldata positions)
+        external
+        onlyRole(ASSISTANT_ROLE)
+    {
         if (accounts.length != positions.length) revert ArrayLengthMismatch();
         for (uint256 i; i < accounts.length; ++i) {
             if (accounts[i] == address(0)) revert InvalidArguments();
@@ -137,7 +146,7 @@ contract StakeWiseExitQueueBalanceAdapter is IBalanceAdapter, Ownable, IPosition
     /// @notice Drop a cached position. Idempotent. GC for claimed positions (stale tuples already read as 0).
     function clearPosition(address account, address vault, uint256 positionTicket, uint256 timestamp)
         external
-        onlyOwner
+        onlyRole(ASSISTANT_ROLE)
     {
         bytes32 key = _key(vault, positionTicket, timestamp);
         if (_positionIdxPlus1[account][key] == 0) return;
@@ -146,7 +155,7 @@ contract StakeWiseExitQueueBalanceAdapter is IBalanceAdapter, Ownable, IPosition
     }
 
     /// @notice Drop all cached positions for `account`.
-    function clearAccount(address account) external onlyOwner {
+    function clearAccount(address account) external onlyRole(ASSISTANT_ROLE) {
         ExitPosition[] storage list = _positions[account];
         for (uint256 i; i < list.length; ++i) {
             delete _positionIdxPlus1[account][_key(list[i].vault, list[i].positionTicket, list[i].timestamp)];
@@ -165,9 +174,10 @@ contract StakeWiseExitQueueBalanceAdapter is IBalanceAdapter, Ownable, IPosition
     }
 
     /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IPositionDescribable).interfaceId
-            || interfaceId == type(IERC165).interfaceId;
+    /// @dev Adds {IPositionDescribable} on top of the family's base advertisement
+    ///      ({IAssistedBalanceAdapter}/{IBalanceAdapter}/{IAccessControl}/{IERC165}).
+    function supportsInterface(bytes4 interfaceId) public view override(AssistedBalanceAdapter) returns (bool) {
+        return interfaceId == type(IPositionDescribable).interfaceId || super.supportsInterface(interfaceId);
     }
 
     function protocolName() external pure returns (string memory) {
@@ -262,7 +272,7 @@ contract StakeWiseExitQueueBalanceAdapter is IBalanceAdapter, Ownable, IPosition
     function _addPosition(address account, ExitPosition calldata position) internal {
         bytes32 key = _key(position.vault, position.positionTicket, position.timestamp);
         if (_positionIdxPlus1[account][key] != 0) return; // already cached
-        // Cap the cache so the per-account read loop stays gas-bounded (OOG there isn't caught by NAV). The owner
+        // Cap the cache so the per-account read loop stays gas-bounded (OOG there isn't caught by NAV). The assistant
         // must GC claimed positions to make room; a real account never approaches MAX_POSITIONS open exits.
         if (_positions[account].length >= MAX_POSITIONS) return;
         // Light hygiene: only store vaults the registry knows and tuples that resolve to a live owed amount for

@@ -2,8 +2,8 @@
 pragma solidity ^0.8;
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
+import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -17,13 +17,15 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @notice Reports the in-flight ETH owed to an account in ether.fi's withdrawal queue. Requesting a withdrawal
 ///         burns eETH/weETH and mints a `WithdrawRequestNFT`; the queued ETH is then invisible to NAV (the NFT is
 ///         not `ERC721Enumerable` and exposes no owner→tokenIds view, so a pure-view adapter cannot discover the
-///         positions). An off-chain agent submits the account's `tokenId`s via `submitTokenIds`; this adapter then
-///         values them entirely from live on-chain reads, re-verifying ownership on every read. The cache stores
-///         **only ids, never amounts**, so the owner cannot fabricate value — at worst it omits an id (NAV
-///         under-counts), never over-counts.
+///         positions). An off-chain assistant (the `ASSISTANT_ROLE` holder) submits the account's `tokenId`s via
+///         `submitTokenIds`; this adapter then values them entirely from live on-chain reads, re-verifying ownership
+///         on every read. The cache stores **only ids, never amounts**, so the assistant cannot fabricate value — at
+///         worst it omits an id (NAV under-counts), never over-counts.
 /// @dev Trust model and mutability rationale: see `docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md`
 ///      (generalises the Merkl precedent, ADR 0007). One aggregated native-ETH `Supplied` leg per account.
-contract EtherFiWithdrawalsBalanceAdapter is IBalanceAdapter, Ownable, IPositionDescribable {
+///      Access control comes from {AssistedBalanceAdapter}: `DEFAULT_ADMIN_ROLE` administers roles and
+///      `ASSISTANT_ROLE` gates the submit/clear mutators.
+contract EtherFiWithdrawalsBalanceAdapter is AssistedBalanceAdapter, IPositionDescribable {
     //
     // State
     //
@@ -48,7 +50,7 @@ contract EtherFiWithdrawalsBalanceAdapter is IBalanceAdapter, Ownable, IPosition
     /// @notice NAVCalculator — used to look up the registered native-ETH Asset metadata when emitting positions.
     INAVCalculator public immutable NAV_CALCULATOR;
 
-    /// @notice Candidate withdrawal-request tokenIds cached per account (the only thing the owner supplies).
+    /// @notice Candidate withdrawal-request tokenIds cached per account (the only thing the assistant supplies).
     mapping(address account => uint256[] tokenIds) private _tokenIds;
 
     /// @dev `idxPlus1` = index of `tokenId` in `_tokenIds[account]` plus 1. Zero ⇒ not present (dedup + O(1) removal).
@@ -70,14 +72,17 @@ contract EtherFiWithdrawalsBalanceAdapter is IBalanceAdapter, Ownable, IPosition
     /// @param liquidityPool_      ether.fi LiquidityPool (for `amountForShare`). Must be a contract.
     /// @param underlyingToken_    Payout asset (native-ETH sentinel).
     /// @param navCalculator_      NAVCalculator. Must be a contract.
-    /// @param initialOwner_       Owner authorized to submit/clear tokenIds (the OIV Safe / agent role).
+    /// @param admin_              Holder of `DEFAULT_ADMIN_ROLE` — administers `ASSISTANT_ROLE`. Required.
+    /// @param assistant_          Initial `ASSISTANT_ROLE` holder authorized to submit/clear tokenIds (the OIV Safe /
+    ///                            agent role). Optional (pass `address(0)` to grant later via `admin_`).
     constructor(
         address withdrawRequestNft_,
         address liquidityPool_,
         address underlyingToken_,
         address navCalculator_,
-        address initialOwner_
-    ) Ownable(initialOwner_) {
+        address admin_,
+        address assistant_
+    ) AssistedBalanceAdapter(admin_, assistant_) {
         if (
             withdrawRequestNft_ == address(0) || liquidityPool_ == address(0) || underlyingToken_ == address(0)
                 || navCalculator_ == address(0)
@@ -95,13 +100,13 @@ contract EtherFiWithdrawalsBalanceAdapter is IBalanceAdapter, Ownable, IPosition
     }
 
     //
-    // Mutators (onlyOwner)
+    // Mutators (onlyRole(ASSISTANT_ROLE))
     //
 
     /// @notice Add candidate withdrawal-request tokenIds for `account`. Idempotent (dedup). Ids not currently owned
     ///         by `account` are skipped at write time as light hygiene; correctness does not depend on it — reads
     ///         re-verify ownership every time and value only live, owned, valid requests.
-    function submitTokenIds(address account, uint256[] calldata tokenIds) external onlyOwner {
+    function submitTokenIds(address account, uint256[] calldata tokenIds) external onlyRole(ASSISTANT_ROLE) {
         if (account == address(0)) revert InvalidArguments();
         for (uint256 i; i < tokenIds.length; ++i) {
             _addTokenId(account, tokenIds[i]);
@@ -109,7 +114,7 @@ contract EtherFiWithdrawalsBalanceAdapter is IBalanceAdapter, Ownable, IPosition
     }
 
     /// @notice Batch variant across accounts. `accounts` and `tokenIds` must have the same length.
-    function submitTokenIdsBatch(address[] calldata accounts, uint256[][] calldata tokenIds) external onlyOwner {
+    function submitTokenIdsBatch(address[] calldata accounts, uint256[][] calldata tokenIds) external onlyRole(ASSISTANT_ROLE) {
         if (accounts.length != tokenIds.length) revert ArrayLengthMismatch();
         for (uint256 i; i < accounts.length; ++i) {
             if (accounts[i] == address(0)) revert InvalidArguments();
@@ -120,14 +125,14 @@ contract EtherFiWithdrawalsBalanceAdapter is IBalanceAdapter, Ownable, IPosition
     }
 
     /// @notice Drop a cached tokenId. Idempotent. GC for claimed/transferred requests (stale ids already read as 0).
-    function clearTokenId(address account, uint256 tokenId) external onlyOwner {
+    function clearTokenId(address account, uint256 tokenId) external onlyRole(ASSISTANT_ROLE) {
         if (_tokenIdIdxPlus1[account][tokenId] == 0) return;
         _removeTokenId(account, tokenId);
         emit TokenIdCleared(account, tokenId);
     }
 
     /// @notice Drop all cached tokenIds for `account`.
-    function clearAccount(address account) external onlyOwner {
+    function clearAccount(address account) external onlyRole(ASSISTANT_ROLE) {
         uint256[] storage ids = _tokenIds[account];
         for (uint256 i; i < ids.length; ++i) {
             delete _tokenIdIdxPlus1[account][ids[i]];
@@ -146,9 +151,10 @@ contract EtherFiWithdrawalsBalanceAdapter is IBalanceAdapter, Ownable, IPosition
     }
 
     /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IPositionDescribable).interfaceId
-            || interfaceId == type(IERC165).interfaceId;
+    /// @dev Adds {IPositionDescribable} on top of the family interfaces advertised by {AssistedBalanceAdapter}
+    ///      ({IAssistedBalanceAdapter}, {IBalanceAdapter}, {IAccessControl}, {IERC165}).
+    function supportsInterface(bytes4 interfaceId) public view override(AssistedBalanceAdapter) returns (bool) {
+        return interfaceId == type(IPositionDescribable).interfaceId || super.supportsInterface(interfaceId);
     }
 
     function protocolName() external pure returns (string memory) {

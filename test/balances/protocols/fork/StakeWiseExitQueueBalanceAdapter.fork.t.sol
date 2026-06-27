@@ -60,8 +60,10 @@ contract StakeWiseExitQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
     function _freshAdapter() internal returns (StakeWiseExitQueueBalanceAdapter) {
         balances = new BalancesHarnessForFork();
         balances.registerAssetForTest(NATIVE_ETH, 18, "ETH");
-        // owner = this test, so it plays the agent and submits the real tuple.
-        return new StakeWiseExitQueueBalanceAdapter(VAULTS_REGISTRY, NATIVE_ETH, address(balances), address(this));
+        // admin = assistant = this test, so it plays the agent and submits the real tuple.
+        return new StakeWiseExitQueueBalanceAdapter(
+            VAULTS_REGISTRY, NATIVE_ETH, address(balances), address(this), address(this)
+        );
     }
 
     /// @dev Independent live recompute of the position, mirroring the adapter's queue math.

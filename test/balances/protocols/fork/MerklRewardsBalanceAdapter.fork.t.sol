@@ -26,7 +26,8 @@ contract MerklRewardsBalanceAdapterForkTest is BalanceAdapterTestBase {
     function _setupFork() internal override {
         fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK);
         balances = _deployBalancesForAdapter(MAINNET_DAI); // any registered asset; ARB isn't on Mainnet's NAV
-        adapter = new MerklRewardsBalanceAdapter(MERKL_DISTRIBUTOR, address(balances), owner);
+        // admin = assistant = `owner`.
+        adapter = new MerklRewardsBalanceAdapter(MERKL_DISTRIBUTOR, address(balances), owner, owner);
     }
 
     // ============================================
@@ -59,7 +60,8 @@ contract MerklRewardsBalanceAdapterForkTest is BalanceAdapterTestBase {
     function test_adapter_immutableStateMatchesConstructor() public view {
         assertEq(adapter.DISTRIBUTOR(), MERKL_DISTRIBUTOR);
         assertEq(address(adapter.NAV_CALCULATOR()), address(balances));
-        assertEq(adapter.owner(), owner);
+        assertTrue(adapter.hasRole(adapter.DEFAULT_ADMIN_ROLE(), owner));
+        assertTrue(adapter.hasRole(adapter.ASSISTANT_ROLE(), owner));
     }
 
     function test_adapter_uncachedReadReturnsZero() public view {

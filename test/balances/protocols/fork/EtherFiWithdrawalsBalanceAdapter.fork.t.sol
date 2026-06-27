@@ -40,9 +40,9 @@ contract EtherFiWithdrawalsBalanceAdapterForkTest is BalanceAdapterTestBase {
         balances = new BalancesHarnessForFork();
         balances.registerAssetForTest(NATIVE_ETH, 18, "ETH");
 
-        // owner = this test, so it plays the agent and submits the real tokenId.
+        // admin = assistant = this test, so it plays the agent and submits the real tokenId.
         adapter = new EtherFiWithdrawalsBalanceAdapter(
-            WITHDRAW_REQUEST_NFT, LIQUIDITY_POOL, NATIVE_ETH, address(balances), address(this)
+            WITHDRAW_REQUEST_NFT, LIQUIDITY_POOL, NATIVE_ETH, address(balances), address(this), address(this)
         );
     }
 

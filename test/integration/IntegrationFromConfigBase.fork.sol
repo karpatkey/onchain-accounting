@@ -41,14 +41,14 @@ import {FluidFTokensMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/F
 import {FluidVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/FluidVaultsMetaBalanceAdapter.sol";
 import {StaderWithdrawalQueueBalanceAdapter} from "src/balances/BalanceAdapters/StaderWithdrawalQueueBalanceAdapter.sol";
 import {StakeWiseV3VaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/StakeWiseV3VaultsMetaBalanceAdapter.sol";
-import {UniswapV3PoolsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/uniswap/UniswapV3PoolsMetaBalanceAdapter.sol";
+import {UniswapV3PoolsMetaBalanceAdapter} from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsMetaBalanceAdapter.sol";
 import {UniswapV2PoolsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/uniswap/UniswapV2PoolsMetaBalanceAdapter.sol";
 import {
     PancakeSwapV2PoolsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/pancakeswap/PancakeSwapV2PoolsMetaBalanceAdapter.sol";
 import {
     PancakeSwapV3PoolsMetaBalanceAdapter
-} from "src/balances/MetaBalanceAdapters/pancakeswap/PancakeSwapV3PoolsMetaBalanceAdapter.sol";
+} from "src/balances/AssistedBalanceAdapters/PancakeSwapV3PoolsMetaBalanceAdapter.sol";
 
 // Price feed adapters (Mainnet)
 import {sDAI_CustomPriceFeed} from "src/prices/protocols/sDAI_CustomPriceFeed.sol";
@@ -770,7 +770,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         // script/deploy/04_DeployBalanceAdapters.s.sol::_deployMerklRewards.
         address distributor =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "distributor"));
-        address adapter = address(new MerklRewardsBalanceAdapter(distributor, navAddr, admin));
+        address adapter = address(new MerklRewardsBalanceAdapter(distributor, navAddr, admin, admin));
         _merklAdapter = adapter;
         return adapter;
     }

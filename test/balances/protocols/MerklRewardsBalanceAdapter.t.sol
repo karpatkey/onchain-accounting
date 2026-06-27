@@ -6,6 +6,7 @@ import {MerklRewardsBalanceAdapter, IMerklDistributor} from "src/balances/Assist
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
@@ -68,7 +69,8 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
         op = _createAndRegisterToken("OP", 18);
         morpho = _createAndRegisterToken("MORPHO", 18);
 
-        adapter = new MerklRewardsBalanceAdapter(address(distributor), address(balances), owner);
+        // admin = assistant = `owner`, so `owner` can submit/clear allocations.
+        adapter = new MerklRewardsBalanceAdapter(address(distributor), address(balances), owner, owner);
     }
 
     // ============================================
@@ -125,28 +127,29 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_constructor_revertsOnZeroDistributor() public {
         vm.expectRevert(InvalidArguments.selector);
-        new MerklRewardsBalanceAdapter(address(0), address(balances), owner);
+        new MerklRewardsBalanceAdapter(address(0), address(balances), owner, owner);
     }
 
     function test_constructor_revertsOnZeroNavCalculator() public {
         vm.expectRevert(InvalidArguments.selector);
-        new MerklRewardsBalanceAdapter(address(distributor), address(0), owner);
+        new MerklRewardsBalanceAdapter(address(distributor), address(0), owner, owner);
     }
 
     function test_constructor_revertsOnNonContractDistributor() public {
         vm.expectRevert("Distributor must be a contract");
-        new MerklRewardsBalanceAdapter(makeAddr("eoa"), address(balances), owner);
+        new MerklRewardsBalanceAdapter(makeAddr("eoa"), address(balances), owner, owner);
     }
 
     function test_constructor_revertsOnNonContractNavCalculator() public {
         vm.expectRevert("NAVCalculator must be a contract");
-        new MerklRewardsBalanceAdapter(address(distributor), makeAddr("eoa"), owner);
+        new MerklRewardsBalanceAdapter(address(distributor), makeAddr("eoa"), owner, owner);
     }
 
     function test_constructor_setsImmutableState() public view {
         assertEq(adapter.DISTRIBUTOR(), address(distributor));
         assertEq(address(adapter.NAV_CALCULATOR()), address(balances));
-        assertEq(adapter.owner(), owner);
+        assertTrue(adapter.hasRole(adapter.DEFAULT_ADMIN_ROLE(), owner));
+        assertTrue(adapter.hasRole(adapter.ASSISTANT_ROLE(), owner));
     }
 
     // ============================================
@@ -364,12 +367,16 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
         adapter.submitProof(alice, address(arb), 50 ether, emptyProof);
     }
 
-    function test_submitProof_revertsOnNonOwner() public {
+    function test_submitProof_revertsOnNonAssistant() public {
         bytes32 leaf = _leaf(alice, address(arb), 100 ether);
         distributor.setRoot(leaf);
         bytes32[] memory emptyProof = new bytes32[](0);
 
-        vm.expectRevert(); // OwnableUnauthorizedAccount
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, stranger, keccak256("ASSISTANT_ROLE")
+            )
+        );
         vm.prank(stranger);
         adapter.submitProof(alice, address(arb), 100 ether, emptyProof);
     }
@@ -482,9 +489,13 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
         adapter.clearAllocation(alice, address(arb));
     }
 
-    function test_clearAllocation_revertsOnNonOwner() public {
+    function test_clearAllocation_revertsOnNonAssistant() public {
         _seedAllocation(alice, address(arb), 100 ether);
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, stranger, keccak256("ASSISTANT_ROLE")
+            )
+        );
         vm.prank(stranger);
         adapter.clearAllocation(alice, address(arb));
     }
@@ -640,15 +651,17 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
     }
 
     // ============================================
-    // Ownership
+    // Access control — role administration
     // ============================================
 
-    function test_transferOwnership_works() public {
+    function test_adminCanGrantAssistantRole_grantee_canSubmit() public {
+        // Admin (`owner`) grants ASSISTANT_ROLE to a fresh actor.
+        bytes32 role = adapter.ASSISTANT_ROLE();
         vm.prank(owner);
-        adapter.transferOwnership(stranger);
-        assertEq(adapter.owner(), stranger);
+        adapter.grantRole(role, stranger);
+        assertTrue(adapter.hasRole(role, stranger));
 
-        // New owner can submit
+        // The new assistant can submit.
         bytes32 leaf = _leaf(alice, address(arb), 100 ether);
         distributor.setRoot(leaf);
         bytes32[] memory emptyProof = new bytes32[](0);

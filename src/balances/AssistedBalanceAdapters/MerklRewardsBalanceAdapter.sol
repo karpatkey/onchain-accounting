@@ -2,8 +2,8 @@
 pragma solidity ^0.8;
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
+import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -17,11 +17,13 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @notice Reports a user's *unclaimed* Merkl reward balances. Merkl distributes rewards via off-chain merkle trees;
 ///         only cumulative *claimed* amounts live on-chain. To make pending allocations queryable from a `view`
 ///         function, this adapter caches per-(user, token) cumulative allocations submitted via `submitProof`. Each
-///         submission is verified against the live Distributor merkle root, so even the cache's owner cannot
-///         fabricate amounts. The owner is trusted only to keep the cache fresh; failure to do so makes NAV
-///         under-count rewards but never over-count.
-/// @dev Trust model and mutability rationale: see `docs/decisions/0007-merkl-trust-minimized-cache.md`.
-contract MerklRewardsBalanceAdapter is IBalanceAdapter, Ownable, IPositionDescribable {
+///         submission is verified against the live Distributor merkle root, so even the `ASSISTANT_ROLE` holder
+///         cannot fabricate amounts. The assistant is trusted only to keep the cache fresh; failure to do so makes
+///         NAV under-count rewards but never over-count.
+/// @dev Access control follows the assisted-adapter family ({AssistedBalanceAdapter}): `DEFAULT_ADMIN_ROLE`
+///      administers roles and `ASSISTANT_ROLE` is authorized to submit/clear allocations. Trust model and
+///      mutability rationale: see `docs/decisions/0007-merkl-trust-minimized-cache.md`.
+contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescribable {
     //
     // Type Definitions
     //
@@ -91,8 +93,12 @@ contract MerklRewardsBalanceAdapter is IBalanceAdapter, Ownable, IPositionDescri
 
     /// @param distributor_     The Merkl Distributor address. Must be a contract.
     /// @param navCalculator_   The NAVCalculator address. Must be a contract.
-    /// @param initialOwner_    Owner authorized to call `submitProof` / `clearAllocation`. Should be the OIV Safe.
-    constructor(address distributor_, address navCalculator_, address initialOwner_) Ownable(initialOwner_) {
+    /// @param admin_           Holder of `DEFAULT_ADMIN_ROLE` — administers (grants/revokes) `ASSISTANT_ROLE`. Required.
+    /// @param assistant_       Holder of `ASSISTANT_ROLE` — authorized to call `submitProof` / `clearAllocation`.
+    ///                         Optional (pass `address(0)` to grant later via `admin_`). Should be the OIV Safe.
+    constructor(address distributor_, address navCalculator_, address admin_, address assistant_)
+        AssistedBalanceAdapter(admin_, assistant_)
+    {
         if (distributor_ == address(0) || navCalculator_ == address(0)) {
             revert InvalidArguments();
         }
@@ -104,7 +110,7 @@ contract MerklRewardsBalanceAdapter is IBalanceAdapter, Ownable, IPositionDescri
     }
 
     //
-    // Mutators (onlyOwner)
+    // Mutators (onlyRole(ASSISTANT_ROLE))
     //
 
     /// @notice Verify a Merkl proof and cache the resulting allocation for `(user, token)`.
@@ -115,7 +121,7 @@ contract MerklRewardsBalanceAdapter is IBalanceAdapter, Ownable, IPositionDescri
     /// @param proof            Merkle proof from the Merkl API. Verified against `Distributor.getMerkleRoot()`.
     function submitProof(address user, address token, uint256 cumulativeAmount, bytes32[] calldata proof)
         external
-        onlyOwner
+        onlyRole(ASSISTANT_ROLE)
     {
         _submitProof(user, token, cumulativeAmount, proof);
     }
@@ -126,7 +132,7 @@ contract MerklRewardsBalanceAdapter is IBalanceAdapter, Ownable, IPositionDescri
         address[] calldata tokens,
         uint256[] calldata cumulativeAmounts,
         bytes32[][] calldata proofs
-    ) external onlyOwner {
+    ) external onlyRole(ASSISTANT_ROLE) {
         uint256 n = users.length;
         if (tokens.length != n || cumulativeAmounts.length != n || proofs.length != n) revert ArrayLengthMismatch();
         for (uint256 i; i < n; ++i) {
@@ -137,7 +143,7 @@ contract MerklRewardsBalanceAdapter is IBalanceAdapter, Ownable, IPositionDescri
     /// @notice Drop a cached allocation. Idempotent.
     /// @dev Useful to garbage-collect tokens that the user has fully claimed or that Merkl no longer distributes.
     ///      Not required for correctness — stale entries already read as 0 from `getAdapterBalanceForAsset`.
-    function clearAllocation(address user, address token) external onlyOwner {
+    function clearAllocation(address user, address token) external onlyRole(ASSISTANT_ROLE) {
         if (user == address(0) || token == address(0)) revert InvalidArguments();
         if (allocations[user][token].submittedAt == 0) return; // nothing to clear
         delete allocations[user][token];
@@ -157,9 +163,10 @@ contract MerklRewardsBalanceAdapter is IBalanceAdapter, Ownable, IPositionDescri
     }
 
     /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IPositionDescribable).interfaceId
-            || interfaceId == type(IERC165).interfaceId;
+    /// @dev Adds {IPositionDescribable} on top of the interfaces advertised by {AssistedBalanceAdapter}
+    ///      ({IAssistedBalanceAdapter}, {IBalanceAdapter}, {IAccessControl}, {IERC165}).
+    function supportsInterface(bytes4 interfaceId) public view override(AssistedBalanceAdapter) returns (bool) {
+        return interfaceId == type(IPositionDescribable).interfaceId || super.supportsInterface(interfaceId);
     }
 
     function protocolName() external pure returns (string memory) {
@@ -275,8 +282,8 @@ contract MerklRewardsBalanceAdapter is IBalanceAdapter, Ownable, IPositionDescri
         if (!_verifyMerklProof(leaf, proof, root)) revert InvalidProof();
 
         // Defense in depth: Merkl's tree generator guarantees per-(user, token) cumulative amounts are monotonic.
-        // A regression suggests the submitter is feeding stale or wrong data; reject loudly. Owner can clear and
-        // resubmit if they really need to override.
+        // A regression suggests the submitter is feeding stale or wrong data; reject loudly. The assistant can clear
+        // and resubmit if they really need to override.
         CachedAllocation storage a = allocations[user][token];
         if (cumulativeAmount < a.cumulativeAmount) revert AmountRegression();
 

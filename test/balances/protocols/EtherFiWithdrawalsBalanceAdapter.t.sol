@@ -11,7 +11,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
@@ -107,39 +107,52 @@ contract EtherFiWithdrawalsBalanceAdapterTest is BalanceAdapterTestBase {
         nft = new MockWithdrawRequestNFT();
         lp = new MockLiquidityPool();
         balances.addSupportedAssetForTest(NATIVE);
-        // owner = this test contract, so it can submit ids.
-        adapter =
-            new EtherFiWithdrawalsBalanceAdapter(address(nft), address(lp), NATIVE, address(balances), address(this));
+        // admin = assistant = this test contract, so it can submit ids.
+        adapter = new EtherFiWithdrawalsBalanceAdapter(
+            address(nft), address(lp), NATIVE, address(balances), address(this), address(this)
+        );
     }
 
     // ---- Constructor ----
 
     function test_constructor_revertsOnZeroNft() public {
         vm.expectRevert(InvalidArguments.selector);
-        new EtherFiWithdrawalsBalanceAdapter(address(0), address(lp), NATIVE, address(balances), address(this));
+        new EtherFiWithdrawalsBalanceAdapter(
+            address(0), address(lp), NATIVE, address(balances), address(this), address(this)
+        );
     }
 
     function test_constructor_revertsOnZeroLp() public {
         vm.expectRevert(InvalidArguments.selector);
-        new EtherFiWithdrawalsBalanceAdapter(address(nft), address(0), NATIVE, address(balances), address(this));
+        new EtherFiWithdrawalsBalanceAdapter(
+            address(nft), address(0), NATIVE, address(balances), address(this), address(this)
+        );
     }
 
     function test_constructor_revertsOnZeroUnderlying() public {
         vm.expectRevert(InvalidArguments.selector);
-        new EtherFiWithdrawalsBalanceAdapter(address(nft), address(lp), address(0), address(balances), address(this));
+        new EtherFiWithdrawalsBalanceAdapter(
+            address(nft), address(lp), address(0), address(balances), address(this), address(this)
+        );
     }
 
     function test_constructor_revertsWhenNftNotContract() public {
         vm.expectRevert(bytes("WithdrawRequestNFT must be a contract"));
-        new EtherFiWithdrawalsBalanceAdapter(makeAddr("eoa"), address(lp), NATIVE, address(balances), address(this));
+        new EtherFiWithdrawalsBalanceAdapter(
+            makeAddr("eoa"), address(lp), NATIVE, address(balances), address(this), address(this)
+        );
     }
 
-    // ---- Ownership / submission ----
+    // ---- Access control / submission ----
 
-    function test_submit_onlyOwner() public {
+    function test_submit_onlyAssistant() public {
         uint256[] memory ids = _ids(1);
         vm.prank(other);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, other));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, other, keccak256("ASSISTANT_ROLE")
+            )
+        );
         adapter.submitTokenIds(holder, ids);
     }
 
@@ -275,8 +288,9 @@ contract EtherFiWithdrawalsBalanceAdapterTest is BalanceAdapterTestBase {
     function test_unregisteredUnderlying_positionsEmpty_butBalanceStillOwed() public {
         // Fresh NAV harness that does NOT register the native sentinel.
         BalancesHarness freshNav = new BalancesHarness();
-        EtherFiWithdrawalsBalanceAdapter a2 =
-            new EtherFiWithdrawalsBalanceAdapter(address(nft), address(lp), NATIVE, address(freshNav), address(this));
+        EtherFiWithdrawalsBalanceAdapter a2 = new EtherFiWithdrawalsBalanceAdapter(
+            address(nft), address(lp), NATIVE, address(freshNav), address(this), address(this)
+        );
         nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
         a2.submitTokenIds(holder, _ids(1));
         // getAdapterPositions drops the leg (underlying not registered) — even though owed > 0.

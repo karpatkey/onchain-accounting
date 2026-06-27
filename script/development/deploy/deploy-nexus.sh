@@ -7,7 +7,8 @@
 # NexusMutualStakingPoolsBalanceAdapter is a simple immutable view adapter (no agent, no owner): it discovers
 # an account's StakingNFT positions by scanning tokenInfo(1..totalSupply) and values each via
 # StakingViewer.getTokens into per-NFT NXM-denominated Staking (active+expired) + Rewards legs
-# (positionId = abi.encode(tokenId, poolId)).
+# (positionId = abi.encode(address stakingPool), where stakingPool = StakingViewer.stakingPool(poolId);
+#  the StakingNFT tokenId is a display-only entry in PositionBalance.labels).
 # NXM is priced by a custom RAMM feed (NXM_CustomPriceFeed), which dev deploy.sh does NOT auto-register
 # (it wires Chainlink assets only). So this helper, in order:
 #   1. deploys NXM_CustomPriceFeed and registerAsset()s NXM with it (Custom price type),

@@ -13,7 +13,7 @@ The verification quality depends on this. Skipping it lets bugs hide where the a
 **A. Read the adapter source thoroughly.**
 - Class hierarchy: is it a direct `IBalanceAdapter` implementer or a subclass? If subclass, list every `override` — each override is a verification surface the parent's test does NOT cover. List every purely-inherited method — those are transitively covered.
   - `PancakeSwapV2PoolsMetaBalanceAdapter is UniswapV2PoolsMetaBalanceAdapter` → thin subclass: constructor + a `_protocolId()` override returning the `pancakeswap-v2` slug; no math change. Verification: balance logic inherited from Uni V2, skip.
-  - `PancakeSwapV3PoolsMetaBalanceAdapter is UniswapV3PoolsMetaBalanceAdapter` → overrides only `_slot0()` (the `uint32 feeProtocol` ABI shim) and `_protocolId()`. Verification: minimal test exercising the overrides only.
+  - `PancakeSwapV3PoolsBalanceAdapter is UniswapV3PoolsBalanceAdapter` → overrides only `_slot0()` (the `uint32 feeProtocol` ABI shim) and `_protocolId()`. Verification: minimal test exercising the overrides only.
   - `SparkLendBalanceAdapter is IBalanceAdapter, IPositionDescribable` → a standalone implementer (not an Aave subclass); check the source for the leg-emission branches and treat accordingly.
 - Math branches: enumerate every `if` that affects the returned amount. Each branch needs a test case OR a documented reason it can't be exercised on a real chain. Uni V2 example: `feeTo == 0`, `feeTo != 0 && kLast == 0`, `feeTo != 0 && kLast != 0 && rootK > rootKLast`.
 - Immutable constructor args: pin in setUp + assert in a `test_immutables_*` smoke test (catches deployment-config drift).
@@ -48,7 +48,7 @@ Once Phase 0 has produced a scope decision, these five steps **must happen in pa
 
 Drift envelope on the side channel = (now − pinned block timestamp). If you pinned at a fresh block (a few minutes back), the app-vs-(Debank/protocol-UI) gap is bounded by minutes of natural pool activity, which is normally sub-bp at the dollar scale. Larger gaps need an explanation before the protocol can be marked verified.
 
-Use **two reference surfaces, not one**: Debank for a quick aggregate sanity check, and the **protocol's own UI** for the authoritative per-position numbers. They serve different purposes — Debank can silently omit or merge positions, while the protocol UI shows exactly what the protocol itself reports (e.g. PancakeSwap's UI distinguishes a *farmed* NFT from an in-wallet LP NFT — a distinction that directly exposed the MasterChefV3 coverage gap for `PancakeSwapV3PoolsMeta`). When the two references disagree, the protocol UI wins; if the adapter matches neither, that's a finding.
+Use **two reference surfaces, not one**: Debank for a quick aggregate sanity check, and the **protocol's own UI** for the authoritative per-position numbers. They serve different purposes — Debank can silently omit or merge positions, while the protocol UI shows exactly what the protocol itself reports (e.g. PancakeSwap's UI distinguishes a *farmed* NFT from an in-wallet LP NFT — a distinction that directly exposed the MasterChefV3 coverage gap for `PancakeSwapV3PoolsBalanceAdapter`). When the two references disagree, the protocol UI wins; if the adapter matches neither, that's a finding.
 
 ### Hard constraints
 

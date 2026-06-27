@@ -188,11 +188,12 @@ contract AaveV3SafetyModuleBalanceAdapter is IBalanceAdapter, IPositionDescribab
     }
 
     /// @inheritdoc IBalanceAdapter
-    /// @notice Returns up to three PositionBalances per stake token: a live-stake `Staking` leg (`isLocked=false`), an
-    ///         unstaking-cooldown `Staking` leg when a cooldown is active (`isLocked=false` only inside the unstake
-    ///         window), and a reward leg. The unstaking leg is distinguished from the live-stake leg by its positionId
-    ///         (`abi.encode(stakeToken, uint8 1)`). Stake tokens without the V3 cooldown ABI report a single
-    ///         live-stake leg (no split), exactly as before.
+    /// @notice Returns up to three PositionBalances per stake token, all under `positionId = abi.encode(stakeToken)`:
+    ///         a locked `Staking` leg (`isLocked=true`) = the non-withdrawable amount (active stake + a cooldown that
+    ///         is still cooling or past its window), an unlocked `Staking` leg (`isLocked=false`) = a cooldown that has
+    ///         elapsed and is inside the unstake window (withdrawable now), and a reward leg (`Rewards`). The two
+    ///         staking legs share the positionId and are told apart by `isLocked`; the reward leg by `positionKind`.
+    ///         Stake tokens without the V3 cooldown ABI report a single locked staking leg (no unlocked portion).
     /// @dev For stkAAVE the stake and reward legs share the same asset (AAVE); they are told apart by positionKind.
     function getAdapterPositions(address account, address assetFilter)
         external
@@ -212,17 +213,38 @@ contract AaveV3SafetyModuleBalanceAdapter is IBalanceAdapter, IPositionDescribab
         for (uint256 i; i < recs.length; ++i) {
             StakeTokenRecord memory r = recs[i];
 
-            // Staked-token leg(s): split into a live (free) stake and, if a cooldown is active, an unstaking leg.
+            // Staked-token leg(s): split by withdrawability. isLocked = non-withdrawable. The ONLY withdrawable
+            // portion is a cooldown that has elapsed and is inside the unstake window; everything else (active
+            // stake, plus a cooldown still cooling or past the window) is non-withdrawable → locked. Both legs
+            // share `positionId = abi.encode(stakeToken)` and are told apart by `isLocked`.
             if (_passesFilter(r.stakedToken, assetFilter)) {
                 INAVCalculator.Asset memory assetMeta = _findRegisteredAsset(registered, r.stakedToken);
                 if (assetMeta.asset != address(0)) {
                     uint256 balShares = IStakeToken(r.stakeToken).balanceOf(account);
-                    (uint256 freeShares, uint256 cooldownShares, bool inWindow) =
-                        _cooldownSplit(r.stakeToken, account, balShares);
+                    (, uint256 cooldownShares, bool inWindow) = _cooldownSplit(r.stakeToken, account, balShares);
+                    uint256 unlockedShares = inWindow ? cooldownShares : 0;
+                    uint256 lockedShares = balShares - unlockedShares;
 
-                    // Live stake — not in a withdrawal process → not locked.
-                    if (freeShares != 0) {
-                        uint256 amt = IStakeToken(r.stakeToken).previewRedeem(freeShares);
+                    // Locked = non-withdrawable (active stake + cooling/expired cooldown).
+                    if (lockedShares != 0) {
+                        uint256 amt = IStakeToken(r.stakeToken).previewRedeem(lockedShares);
+                        if (amt != 0) {
+                            tmp[count++] = INAVCalculator.PositionBalance({
+                                balanceAsset: assetMeta,
+                                balanceAdapter: address(this),
+                                amount: amt,
+                                isDebt: false,
+                                protocolId: PROTOCOL_ID,
+                                positionId: abi.encode(address(r.stakeToken)),
+                                positionKind: PositionKind.Staking,
+                                isLocked: true
+                            });
+                        }
+                    }
+
+                    // Unlocked = withdrawable now (cooldown elapsed and inside the unstake window).
+                    if (unlockedShares != 0) {
+                        uint256 amt = IStakeToken(r.stakeToken).previewRedeem(unlockedShares);
                         if (amt != 0) {
                             tmp[count++] = INAVCalculator.PositionBalance({
                                 balanceAsset: assetMeta,
@@ -233,24 +255,6 @@ contract AaveV3SafetyModuleBalanceAdapter is IBalanceAdapter, IPositionDescribab
                                 positionId: abi.encode(address(r.stakeToken)),
                                 positionKind: PositionKind.Staking,
                                 isLocked: false
-                            });
-                        }
-                    }
-
-                    // Unstaking (cooldown) leg — locked while cooling/expired, claimable inside the unstake window.
-                    if (cooldownShares != 0) {
-                        uint256 amt = IStakeToken(r.stakeToken).previewRedeem(cooldownShares);
-                        if (amt != 0) {
-                            tmp[count++] = INAVCalculator.PositionBalance({
-                                balanceAsset: assetMeta,
-                                balanceAdapter: address(this),
-                                amount: amt,
-                                isDebt: false,
-                                protocolId: PROTOCOL_ID,
-                                // Distinct coordinate from the live-stake leg (uint8 1 = unstaking).
-                                positionId: abi.encode(address(r.stakeToken), uint8(1)),
-                                positionKind: PositionKind.Staking,
-                                isLocked: !inWindow
                             });
                         }
                     }

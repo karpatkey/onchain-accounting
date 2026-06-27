@@ -17,8 +17,10 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      is recorded denominated in the LST the user chose to receive (stETH, ETHx or native ETH).
 ///      Until claimed, that value is invisible to wallet/receipt-token adapters — it only lives as a
 ///      pending claim on the manager. This adapter surfaces it: for every asset Kelp supports it emits up
-///      to two positions under a single static per-asset positionId (`abi.encode(asset)`) — a claimable
-///      leg (`isLocked = false`) and a locked/pending leg (`isLocked = true`). A request counts as
+///      to two positions under a single static positionId (`abi.encode(withdrawalManager)`) — a claimable
+///      leg (`isLocked = false`) and a locked/pending leg (`isLocked = true`). The payout asset lives in
+///      `balanceAsset.asset` (so it is not duplicated in the positionId); legs are told apart by
+///      `balanceAsset.asset` + `isLocked`. A request counts as
 ///      claimable only once the asset's lock cursor has passed the nonce AND the block delay has elapsed
 ///      (both gates, matching `completeWithdrawal`). The balance methods report the per-asset summed
 ///      total. The supported-asset set is discovered at runtime from
@@ -189,9 +191,10 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
     }
 
     /// @inheritdoc IBalanceAdapter
-    /// @notice Returns up to TWO positions PER asset under a single static per-asset positionId — one claimable
-    ///         (`isLocked = false`) and one locked/pending (`isLocked = true`).
-    /// @dev Both legs of an asset share `positionId = abi.encode(asset)` and are distinguished only by `isLocked`.
+    /// @notice Returns up to TWO positions PER asset under the static `positionId = abi.encode(withdrawalManager)` —
+    ///         one claimable (`isLocked = false`) and one locked/pending (`isLocked = true`).
+    /// @dev All legs share `positionId = abi.encode(withdrawalManager)`; the payout asset is in `balanceAsset.asset`,
+    ///      so legs are distinguished by `balanceAsset.asset` + `isLocked` (the asset is not duplicated in positionId).
     ///      For each supported+registered asset, the account's open requests are aggregated into two sums: a request
     ///      is claimable (feeds the claimable leg) only when BOTH gates pass: the asset's lock cursor has advanced
     ///      past its nonce (`userNonce < nextLockedNonce(asset)`) AND the per-request block delay has elapsed
@@ -252,7 +255,10 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
                 }
             }
 
-            bytes memory positionId = abi.encode(asset);
+            // Static positionId = the WithdrawalManager (the immutable anchor). The payout asset is already in
+            // `balanceAsset.asset` (part of the identity key), so it is NOT duplicated in the positionId; the two
+            // legs per asset are told apart by `balanceAsset.asset` + `isLocked`.
+            bytes memory positionId = abi.encode(address(WITHDRAWAL_MANAGER));
             if (claimable > 0) {
                 temp[n++] = INAVCalculator.PositionBalance({
                     balanceAsset: underlying,

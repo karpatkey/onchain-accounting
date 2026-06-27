@@ -263,17 +263,38 @@ contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescri
     }
 
     /// @dev Up to two `Supplied` legs sharing the static positionId, distinguished by isLocked. Zero legs omitted.
-    function _statusLegs(INAVCalculator.Asset memory underlying, bytes memory positionId, uint256 claimable, uint256 locked)
-        internal view returns (INAVCalculator.PositionBalance[] memory positions)
-    {
+    function _statusLegs(
+        INAVCalculator.Asset memory underlying,
+        bytes memory positionId,
+        uint256 claimable,
+        uint256 locked
+    ) internal view returns (INAVCalculator.PositionBalance[] memory positions) {
         uint256 nLegs = (claimable > 0 ? 1 : 0) + (locked > 0 ? 1 : 0);
         positions = new INAVCalculator.PositionBalance[](nLegs);
         uint256 j;
         if (claimable > 0) {
-            positions[j++] = INAVCalculator.PositionBalance({balanceAsset: underlying, balanceAdapter: address(this), amount: claimable, isDebt: false, protocolId: PROTOCOL_ID, positionId: positionId, positionKind: PositionKind.Supplied, isLocked: false});
+            positions[j++] = INAVCalculator.PositionBalance({
+                balanceAsset: underlying,
+                balanceAdapter: address(this),
+                amount: claimable,
+                isDebt: false,
+                protocolId: PROTOCOL_ID,
+                positionId: positionId,
+                positionKind: PositionKind.Supplied,
+                isLocked: false
+            });
         }
         if (locked > 0) {
-            positions[j++] = INAVCalculator.PositionBalance({balanceAsset: underlying, balanceAdapter: address(this), amount: locked, isDebt: false, protocolId: PROTOCOL_ID, positionId: positionId, positionKind: PositionKind.Supplied, isLocked: true});
+            positions[j++] = INAVCalculator.PositionBalance({
+                balanceAsset: underlying,
+                balanceAdapter: address(this),
+                amount: locked,
+                isDebt: false,
+                protocolId: PROTOCOL_ID,
+                positionId: positionId,
+                positionKind: PositionKind.Supplied,
+                isLocked: true
+            });
         }
     }
 }

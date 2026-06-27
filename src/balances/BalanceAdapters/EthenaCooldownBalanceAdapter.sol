@@ -179,7 +179,15 @@ contract EthenaCooldownBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         }
 
         // Claimable once cooled down, or when cooldown is disabled (duration 0 ⇒ instant withdraw). Else cooling.
-        bool unlocked = block.timestamp >= cooldownEnd || STAKED_USDE.cooldownDuration() == 0;
+        // The owed amount is already known from `cooldowns()`, so a `cooldownDuration()` revert (ABI variance)
+        // must not drop the whole position — fall back to the time gate alone (conservative: treats a disabled
+        // cooldown as still cooling, i.e. under-reports claimability, never over-reports).
+        bool unlocked = block.timestamp >= cooldownEnd;
+        if (!unlocked) {
+            try STAKED_USDE.cooldownDuration() returns (uint24 duration) {
+                if (duration == 0) unlocked = true;
+            } catch {}
+        }
 
         positions = new INAVCalculator.PositionBalance[](1);
         positions[0] = INAVCalculator.PositionBalance({

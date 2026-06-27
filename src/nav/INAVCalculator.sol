@@ -40,11 +40,12 @@ interface INAVCalculator is IBalances {
     /// @param positionKind Semantic discriminator (Wallet / Supplied / Borrowed / Collateral / Staking / Rewards / Fees).
     ///        Together with `protocolId` and `positionId` forms the stable per-chain identity key
     ///        `(chainId, protocolId, positionId, balanceAsset.asset, positionKind)`.
-    /// @param labels Optional adapter-supplied display hierarchy (below `protocolName`, leaf last). When non-empty it
-    ///        is used verbatim by the verbose reads; when empty (the default for most adapters) the verbose path
-    ///        falls back to `IPositionDescribable.positionLabels(positionId)`. This channel exists for adapters whose
-    ///        label depends on per-leg data NOT recoverable from `positionId` alone (e.g. the NFT id of a Uniswap V3 /
-    ///        Nexus position whose `positionId` is the pool address). Display only — never used for identity.
+    /// @param labels Adapter-supplied display hierarchy (below `protocolName`, leaf last), e.g.
+    ///        `["Market", "wstETH/USDC"]` or `["Liquidity Pool", "0x…pool", "NFT #123"]`. Every adapter fills this on
+    ///        each emitted position; the verbose reads use it verbatim (the single label mechanism — there is no
+    ///        `positionLabels` fallback). May be empty when no label can be derived. Display only — never used for
+    ///        identity (this is where ephemeral data such as a Uniswap V3 NFT id lives, since `positionId` is the
+    ///        stable pool address).
     struct PositionBalance {
         Asset balanceAsset;
         address balanceAdapter;
@@ -86,22 +87,21 @@ interface INAVCalculator is IBalances {
         bytes32 protocolId;
         bytes positionId;
         PositionKind positionKind;
-        // Adapter-supplied display labels copied from PositionBalance; consumed by the verbose reads (else they
-        // fall back to positionLabels(positionId)). Display only — never used for identity. See PositionBalance.
+        // Adapter-supplied display labels copied from PositionBalance; consumed verbatim by the verbose reads.
+        // Display only — never used for identity. See PositionBalance.
         string[] labels;
     }
 
     /// @notice Position enriched with human-readable display labels.
-    /// @dev Returned by verbose read methods. Labels are sourced from the position's own `labels` field when the
-    ///      adapter populated it, otherwise from the adapter's `IPositionDescribable.positionLabels(positionId)`
-    ///      (empty if neither is present). MUST NOT be used for identity, indexing, or reconciliation — use the typed
+    /// @dev Returned by verbose read methods. Labels are the position's own `labels` field (every adapter fills it;
+    ///      the single label mechanism). MUST NOT be used for identity, indexing, or reconciliation — use the typed
     ///      fields on `position` for those purposes.
     struct VerbosePosition {
         Position position;
         string protocolName; // e.g. "Aave V3", "Morpho"
         // Ordered display hierarchy BELOW the protocol, leaf last (arbitrary depth, may be empty), e.g.
-        // ["Market", "wstETH/USDC"] or ["Liquidity Pool", "WETH/USDC 0.05%", "NFT #12345"]. Full breadcrumb
-        // = [protocolName, ...labels]. Sourced from IPositionDescribable.positionLabels; display only.
+        // ["Market", "wstETH/USDC"] or ["Liquidity Pool", "0x…pool", "NFT #12345"]. Full breadcrumb
+        // = [protocolName, ...labels]. Copied from PositionBalance.labels (adapter-supplied); display only.
         string[] labels;
     }
 

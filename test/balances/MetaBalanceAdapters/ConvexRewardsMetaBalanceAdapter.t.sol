@@ -435,8 +435,13 @@ contract ConvexRewardsMetaBalanceAdapterTest is Test {
 
     // ─── positionLabels ───────────────────────────────────────────────────────
 
-    function test_positionLabels_format() public view {
-        string[] memory labels = meta.positionLabels(abi.encode(address(rewarder)));
+    function test_positionLabels_format() public {
+        rewarder.setStaked(alice, 100e18);
+
+        INAVCalculator.PositionBalance[] memory pos =
+            meta.getAdapterPositionsForInstances(alice, _instance(address(rewarder)), address(0));
+        assertGt(pos.length, 0);
+        string[] memory labels = pos[0].labels;
         assertEq(labels.length, 2);
         assertEq(labels[0], "Curve LP");
         assertEq(labels[1], "USDC/WETH Convex");

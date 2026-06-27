@@ -172,7 +172,7 @@ contract ERC20DefaultBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         return "Wallet";
     }
 
-    function positionLabels(bytes calldata positionId) external view returns (string[] memory) {
+    function _legLabels(bytes memory positionId) private view returns (string[] memory) {
         string memory leaf;
         if (positionId.length == 0) {
             leaf = "";
@@ -263,7 +263,7 @@ contract ERC20DefaultBalanceAdapter is IBalanceAdapter, IPositionDescribable {
                     protocolId: PROTOCOL_ID,
                     positionId: abi.encode(asset),
                     positionKind: PositionKind.Wallet,
-                    labels: new string[](0)
+                    labels: _legLabels(abi.encode(asset))
                 });
 
                 positionCount++;

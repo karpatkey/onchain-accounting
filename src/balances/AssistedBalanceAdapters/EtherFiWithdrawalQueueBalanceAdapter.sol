@@ -162,7 +162,7 @@ contract EtherFiWithdrawalQueueBalanceAdapter is AssistedBalanceAdapter, IPositi
         return "ether.fi";
     }
 
-    function positionLabels(bytes calldata) external pure returns (string[] memory) {
+    function _legLabels() private pure returns (string[] memory) {
         string[] memory out = new string[](1);
         out[0] = "eETH Withdrawal Queue";
         return out;
@@ -245,7 +245,7 @@ contract EtherFiWithdrawalQueueBalanceAdapter is AssistedBalanceAdapter, IPositi
             // lives in `balanceAsset`, so the NFT contract address is the non-redundant coordinate.
             positionId: abi.encode(WITHDRAW_REQUEST_NFT),
             positionKind: PositionKind.Supplied,
-            labels: new string[](0)
+            labels: _legLabels()
         });
     }
 

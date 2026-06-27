@@ -43,7 +43,7 @@ contract SparkLendBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         return "Spark";
     }
 
-    function positionLabels(bytes calldata) external pure returns (string[] memory) {
+    function _legLabels() private pure returns (string[] memory) {
         string[] memory out = new string[](2);
         out[0] = "Market";
         out[1] = "SparkLend";
@@ -156,7 +156,7 @@ contract SparkLendBalanceAdapter is IBalanceAdapter, IPositionDescribable {
                     protocolId: ProtocolIds.SPARK_LEND,
                     positionId: pid,
                     positionKind: asCollateral ? PositionKind.Collateral : PositionKind.Supplied,
-                    labels: new string[](0)
+                    labels: _legLabels()
                 });
             }
             if (debt > 0) {
@@ -168,7 +168,7 @@ contract SparkLendBalanceAdapter is IBalanceAdapter, IPositionDescribable {
                     protocolId: ProtocolIds.SPARK_LEND,
                     positionId: pid,
                     positionKind: PositionKind.Borrowed,
-                    labels: new string[](0)
+                    labels: _legLabels()
                 });
             }
         }

@@ -96,7 +96,7 @@ contract ERC4626WrapBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         return "ERC4626";
     }
 
-    function positionLabels(bytes calldata) external pure returns (string[] memory) {
+    function _legLabels() private pure returns (string[] memory) {
         string[] memory out = new string[](1);
         out[0] = "Vault";
         return out;
@@ -178,7 +178,7 @@ contract ERC4626WrapBalanceAdapter is IBalanceAdapter, IPositionDescribable {
             protocolId: PROTOCOL_ID,
             positionId: abi.encode(address(WRAPPER)),
             positionKind: PositionKind.Supplied,
-            labels: new string[](0)
+            labels: _legLabels()
         });
     }
 

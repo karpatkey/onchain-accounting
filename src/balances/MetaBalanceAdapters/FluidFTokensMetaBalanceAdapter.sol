@@ -53,7 +53,7 @@ contract FluidFTokensMetaBalanceAdapter is MetaBalanceAdapter {
             protocolId: PROTOCOL_ID,
             positionId: _instancePositionId(instance),
             positionKind: PositionKind.Supplied,
-            labels: new string[](0)
+            labels: _legLabels(_instancePositionId(instance))
         });
         return positions;
     }
@@ -64,12 +64,12 @@ contract FluidFTokensMetaBalanceAdapter is MetaBalanceAdapter {
         assets[0] = IERC4626(_toAddress(instance)).asset();
     }
 
-    /// @inheritdoc MetaBalanceAdapter
+    /// @dev Per-leg display labels, filled on every emitted PositionBalance.labels.
     /// @dev Returns `["Lending", <leaf>]` where the leaf is "<fToken symbol> supply" ("" if unreadable). Returns an
     ///      empty array for a short positionId.
-    function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
-        if (pid.length < 32) return new string[](0);
-        address fToken = abi.decode(pid, (address));
+    function _legLabels(bytes memory positionId) private view returns (string[] memory) {
+        if (positionId.length < 32) return new string[](0);
+        address fToken = abi.decode(positionId, (address));
         string memory leaf = "";
         try IERC20Metadata(fToken).symbol() returns (string memory sym) {
             leaf = string.concat(sym, " supply");

@@ -129,7 +129,7 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
         return "Kelp DAO";
     }
 
-    function positionLabels(bytes calldata) external pure returns (string[] memory) {
+    function _legLabels() private pure returns (string[] memory) {
         string[] memory out = new string[](1);
         out[0] = "rsETH Withdrawal Queue";
         return out;
@@ -233,7 +233,7 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
                 protocolId: PROTOCOL_ID,
                 positionId: pid,
                 positionKind: PositionKind.Supplied,
-                labels: new string[](0)
+                labels: _legLabels()
             });
         }
 

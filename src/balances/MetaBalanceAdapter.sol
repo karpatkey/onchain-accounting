@@ -58,11 +58,6 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
         return _protocolName;
     }
 
-    /// @inheritdoc IPositionDescribable
-    /// @dev Concrete adapters must override — derives the label hierarchy (below protocol, leaf last) from the
-    ///      encoded instance coordinate, e.g. `["Market", "wstETH/USDC"]`.
-    function positionLabels(bytes calldata positionId) external view virtual override returns (string[] memory);
-
     //
     // IBalanceAdapter
     //

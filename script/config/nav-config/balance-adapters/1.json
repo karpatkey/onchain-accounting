@@ -181,7 +181,7 @@
   },
   "NexusMutualStakingPools": {
     "enabled": true,
-    "$comment": "Nexus Mutual staking pools assisted adapter (agent-fed; ADR 0015). Registered via addBalanceAdapters; reports the account's staked NXM (Staking + Rewards) per StakingNFT position (positionId=abi.encode(tokenId,poolId)), valued live on-chain from agent-submitted tokenIds (ownership re-verified per read). Reports 0 until the kpk-agents submitter feeds tokenIds."
+    "$comment": "Nexus Mutual staking pools assisted adapter (agent-fed; ADR 0015). Registered via addBalanceAdapters; reports the account's staked NXM (Staking + Rewards) per StakingNFT position (positionId=abi.encode(stakingPoolAddress); the StakingNFT id is a display-only label), valued live on-chain from agent-submitted tokenIds (ownership re-verified per read). Reports 0 until the kpk-agents submitter feeds tokenIds."
   },
   "StakeWiseV3ExitQueue": {
     "enabled": true,

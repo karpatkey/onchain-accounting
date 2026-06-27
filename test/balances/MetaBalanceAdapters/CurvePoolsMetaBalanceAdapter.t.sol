@@ -267,8 +267,12 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
         coins[0] = address(usdc);
         coins[1] = address(dai);
         MockCurvePool pool = new MockCurvePool(coins);
+        pool.setWalletBalance(alice, 100e18);
 
-        string[] memory labels = meta.positionLabels(abi.encode(address(pool)));
+        INAVCalculator.PositionBalance[] memory pos =
+            meta.getAdapterPositionsForInstances(alice, _instance(address(pool)), address(0));
+        assertGt(pos.length, 0);
+        string[] memory labels = pos[0].labels;
         assertEq(labels.length, 2);
         assertEq(labels[0], "Liquidity Pool");
         assertEq(labels[1], "USDC/DAI LP");

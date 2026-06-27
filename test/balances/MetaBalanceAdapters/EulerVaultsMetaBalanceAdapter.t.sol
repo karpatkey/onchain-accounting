@@ -243,16 +243,26 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
         assertEq(assets[1], address(weth));
     }
 
-    function test_positionLabels_returnsVaultName() public view {
-        string[] memory labelsB = adapter.positionLabels(abi.encode(address(vaultB)));
-        assertEq(labelsB.length, 2);
-        assertEq(labelsB[0], "Vault");
-        assertEq(labelsB[1], "KPK ETH Yield Term");
+    function test_positionLabels_returnsVaultName() public {
+        vaultA.setBalance(alice, 1_000_000);
+        vaultB.setBalance(alice, 1e18);
 
-        string[] memory labelsA = adapter.positionLabels(abi.encode(address(vaultA)));
+        INAVCalculator.PositionBalance[] memory pos =
+            adapter.getAdapterPositionsForInstances(alice, _instances(), address(0));
+        assertEq(pos.length, 2);
+
+        // pos[0] = vaultA, pos[1] = vaultB
+        assertEq(pos[0].positionId, abi.encode(address(vaultA)));
+        string[] memory labelsA = pos[0].labels;
         assertEq(labelsA.length, 2);
         assertEq(labelsA[0], "Vault");
         assertEq(labelsA[1], "KPK RWA USDC");
+
+        assertEq(pos[1].positionId, abi.encode(address(vaultB)));
+        string[] memory labelsB = pos[1].labels;
+        assertEq(labelsB.length, 2);
+        assertEq(labelsB[0], "Vault");
+        assertEq(labelsB[1], "KPK ETH Yield Term");
     }
 
     // ----- borrow (debt) leg, core eVaults -----

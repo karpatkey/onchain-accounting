@@ -149,7 +149,7 @@ contract LidoWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
         return "Lido";
     }
 
-    function positionLabels(bytes calldata) external pure returns (string[] memory) {
+    function _legLabels() private pure returns (string[] memory) {
         string[] memory out = new string[](1);
         out[0] = "stETH Withdrawal Queue";
         return out;
@@ -237,7 +237,7 @@ contract LidoWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
             // lives in `balanceAsset`, so the queue address is the non-redundant coordinate.
             positionId: abi.encode(address(WITHDRAWAL_QUEUE)),
             positionKind: PositionKind.Supplied,
-            labels: new string[](0)
+            labels: _legLabels()
         });
     }
 }

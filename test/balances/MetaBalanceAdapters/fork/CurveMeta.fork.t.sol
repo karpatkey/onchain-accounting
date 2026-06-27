@@ -194,16 +194,28 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
         }
     }
 
-    /// @notice positionLabels returns a non-empty leaf from on-chain symbols.
+    /// @notice Emitted positions carry a non-empty leaf label built from on-chain symbols.
     function test_positionLabels_crvUsdUsdc_gauge() public view {
-        string[] memory labels = gaugesMeta.positionLabels(abi.encode(CRVUSD_USDC_GAUGE));
+        uint256 staked = _gaugeBalance(CRVUSD_USDC_GAUGE, CRVUSD_USDC_STAKER);
+        if (staked == 0) return;
+
+        INAVCalculator.PositionBalance[] memory pos =
+            gaugesMeta.getAdapterPositionsForInstances(CRVUSD_USDC_STAKER, _gauge(CRVUSD_USDC_GAUGE), address(0));
+        assertGt(pos.length, 0);
+        string[] memory labels = pos[0].labels;
         assertEq(labels.length, 2);
         assertEq(labels[0], "Staking Gauge");
         assertGt(bytes(labels[1]).length, 0);
     }
 
     function test_positionLabels_threepool() public view {
-        string[] memory labels = poolsMeta.positionLabels(abi.encode(THREEPOOL));
+        uint256 walletLp = _lpBalance(THREEPOOL, THREEPOOL_HOLDER);
+        if (walletLp == 0) return;
+
+        INAVCalculator.PositionBalance[] memory pos =
+            poolsMeta.getAdapterPositionsForInstances(THREEPOOL_HOLDER, _pool(THREEPOOL), address(0));
+        assertGt(pos.length, 0);
+        string[] memory labels = pos[0].labels;
         assertEq(labels.length, 2);
         assertEq(labels[0], "Liquidity Pool");
         assertGt(bytes(labels[1]).length, 0);

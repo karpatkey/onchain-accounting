@@ -84,7 +84,7 @@ Defined in `INAVCalculator`. This is what every balance adapter returns.
 | `protocolId`    | `bytes32`     | `keccak256` of a canonical protocol slug (see `src/utils/ProtocolIds.sol`). Selects the `positionId` ABI-decode schema — one slug implies exactly one schema. |
 | `positionId`    | `bytes`       | `abi.encode(...)` of the position's stable key. Decode schema is determined by `protocolId`. e.g. for `aave-v3-lending`: `abi.encode(address pool)`. Account-global positions (Lido withdrawal queue, etc.) encode their immutable anchor contract, `abi.encode(address <queue/manager>)`. Full schema table: `src/utils/ProtocolIds.sol` and `docs/howto/position-identity-schema.md`. |
 | `positionKind`  | `PositionKind`| Semantic discriminator: `Wallet` / `Supplied` / `Borrowed` / `Collateral` / `Staking` / `Rewards` / `Fees`. See `src/utils/PositionKind.sol`. |
-| `labels`        | `string[]`    | **Optional** adapter-supplied display hierarchy (below `protocolName`, leaf last). Empty for most adapters → the verbose reads fall back to `IPositionDescribable.positionLabels(positionId)`. Populated when a label needs per-leg data not recoverable from `positionId` alone — e.g. the NFT id of a Uniswap V3 / Nexus position whose `positionId` is the pool address. **Display only; never part of identity.** |
+| `labels`        | `string[]`    | Adapter-filled display hierarchy below `protocolName` (leaf last), derived on-chain (ERC20 symbols, vault/pool names, etc.). **Every adapter fills this directly** — it is the single label mechanism (there is no `positionLabels` method, no fallback); the verbose reads surface it verbatim. May carry per-leg data not recoverable from `positionId` alone — e.g. the NFT id of a Uniswap V3 / Nexus position whose `positionId` is the pool address. **Display only; never part of identity.** |
 
 The stable per-chain identity key for caching and reconciliation is `(chainId, protocolId, positionId, balanceAsset.asset, positionKind)`. `balanceAdapter` is excluded — redeploying an adapter doesn't change the position.
 
@@ -119,7 +119,7 @@ Adapters should use the same `Asset` notion as the rest of the system; protocol 
 ### 3.4 Position and NAV (enriched, from NAVCalculator)
 
 - **Position:** Like `PositionBalance` plus `quoteAsset`, `value` (signed), `price`, `priceDecimals`, `stale`. This is the enriched form returned by NAVCalculator for per-position views.
-- **VerbosePosition:** Wraps `Position` with a `protocolName` string and a `labels` **string array** (an ordered hierarchy below the protocol, leaf last — e.g. `["Market", "wstETH/USDC"]`). Labels come from the position's own `labels` field when the adapter populated it (e.g. Uniswap V3 / Nexus, which encode the pool in `positionId` and put the NFT id in the label), otherwise from the adapter's `IPositionDescribable.positionLabels(positionId)`. The full breadcrumb is `[protocolName, ...labels]`. For display only — never use for identity or indexing.
+- **VerbosePosition:** Wraps `Position` with a `protocolName` string (from `IPositionDescribable`) and a `labels` **string array** (an ordered hierarchy below the protocol, leaf last — e.g. `["Market", "wstETH/USDC"]`). `labels` is the adapter-filled `PositionBalance.labels` surfaced verbatim — every adapter fills it directly (e.g. Uniswap V3 / Nexus encode the pool in `positionId` and put the NFT id in the last label). The full breadcrumb is `[protocolName, ...labels]`. For display only — never use for identity or indexing.
 - **NAV:** Total `value` in `quoteAsset`, `timestamp`, list of assets with stale prices, sequencer-down flag.
 
 For building adapters, the only required output is **PositionBalance**; Position and NAV are computed by NAVCalculator.
@@ -207,19 +207,17 @@ Most adapters pin a single instance (one vault, one pool, one market) in their c
 
 ### 6.2 Human-readable labels — `IPositionDescribable`
 
-All adapters implement `IPositionDescribable`:
+All adapters implement `IPositionDescribable` (which now declares only `protocolName()`):
 
 ```solidity
 interface IPositionDescribable {
     function protocolName() external view returns (string memory); // e.g. "Aave V3", "Morpho"
-    // Ordered hierarchy below the protocol, leaf last, e.g. ["Market", "wstETH/USDC"].
-    function positionLabels(bytes calldata positionId) external view returns (string[] memory);
 }
 ```
 
-The verbose read methods on `NAVCalculator` (`getAccountPositionsVerbose`, `getAccountPositionsForAssetVerbose`, `getAccountNavVerbose`) call these via a fail-open staticcall and bundle them into `VerbosePosition` (`protocolName` + the `labels` array). The full breadcrumb is `[protocolName, ...labels]`. **These strings are for display only — never use them for identity, indexing, or reconciliation.** Use the typed `protocolId`, `positionId`, `positionKind` fields for those purposes.
+The display hierarchy below the protocol is the `labels` array each adapter fills **directly on every `PositionBalance`** it returns (`string[]`, leaf last, e.g. `["Market", "wstETH/USDC"]`) — this is the single label mechanism (no `positionLabels` method, no fallback). The verbose read methods on `NAVCalculator` (`getAccountPositionsVerbose`, `getAccountPositionsForAssetVerbose`, `getAccountNavVerbose`) read `protocolName()` via a fail-open staticcall and surface the position's own `labels` verbatim, bundling both into `VerbosePosition` (`protocolName` + the `labels` array). The full breadcrumb is `[protocolName, ...labels]`. **These strings are for display only — never use them for identity, indexing, or reconciliation.** Use the typed `protocolId`, `positionId`, `positionKind` fields for those purposes.
 
-Meta-adapters derive the label hierarchy on-chain from live state (ERC20 symbols, vault names, pool composition); each returns `[category, …leaf]`. Per-instance adapters return a fixed array.
+Meta-adapters derive the label hierarchy on-chain from live state (ERC20 symbols, vault names, pool composition); each fills `[category, …leaf]`. Per-instance adapters fill a fixed array.
 
 ### 6.3 Assisted adapters (externally-fed) — `IAssistedBalanceAdapter`
 
@@ -331,9 +329,9 @@ Protocol adapters typically take **NAVCalculator** in the constructor to read th
 
 7. Implement **`supportsInterface(bytes4)`**: return `true` for `type(IBalanceAdapter).interfaceId` and `type(IERC165).interfaceId`.
 
-8. Implement **`IPositionDescribable`** (`protocolName()` and `positionLabels(bytes) → string[]`):
-   - Per-instance adapters return a `pure` fixed array (e.g. `["Safety Module"]`).
-   - Meta-adapters decode `positionId`, read token symbols on-chain, and return `[category, …leaf]`.
+8. Implement **`IPositionDescribable.protocolName()`** and **fill `PositionBalance.labels`** on each returned position (the single label mechanism — there is no `positionLabels` method):
+   - Per-instance adapters fill a fixed array (e.g. `["Safety Module"]`).
+   - Meta-adapters derive labels on-chain (read token symbols, vault/pool names) and fill `[category, …leaf]`.
 
 ### 8.2 PositionKind assignment
 
@@ -391,14 +389,15 @@ contract MyProtocolBalanceAdapter is IBalanceAdapter, IPositionDescribable {
             protocolId: PROTOCOL_ID,
             positionId: abi.encode(address(PROTOCOL)),
             positionKind: PositionKind.Supplied,
-            labels: new string[](0) // optional display labels; empty → fall back to positionLabels(positionId)
+            labels: _labels() // display hierarchy below protocolName, leaf last; the single label mechanism
         });
         return out;
     }
 
-    // IPositionDescribable
+    // IPositionDescribable — only protocolName(); labels are filled on each PositionBalance above
     function protocolName() external pure returns (string memory) { return "My Protocol"; }
-    function positionLabels(bytes calldata) external pure returns (string[] memory out) {
+
+    function _labels() internal pure returns (string[] memory out) {
         out = new string[](1);
         out[0] = "Supply";
     }

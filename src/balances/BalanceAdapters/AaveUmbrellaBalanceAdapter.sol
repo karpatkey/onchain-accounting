@@ -100,7 +100,7 @@ contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         return "Aave Umbrella";
     }
 
-    function positionLabels(bytes calldata) external pure returns (string[] memory) {
+    function _legLabels() private pure returns (string[] memory) {
         string[] memory out = new string[](1);
         out[0] = "Umbrella Module";
         return out;
@@ -238,7 +238,7 @@ contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
                     protocolId: PROTOCOL_ID,
                     positionId: abi.encode(address(stk)),
                     positionKind: PositionKind.Staking,
-                    labels: new string[](0)
+                    labels: _legLabels()
                 });
             }
 
@@ -253,7 +253,7 @@ contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
                     protocolId: PROTOCOL_ID,
                     positionId: abi.encode(address(stk)),
                     positionKind: PositionKind.Rewards,
-                    labels: new string[](0)
+                    labels: _legLabels()
                 });
             }
         }

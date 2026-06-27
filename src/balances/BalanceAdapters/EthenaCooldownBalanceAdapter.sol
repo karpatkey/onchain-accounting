@@ -96,8 +96,7 @@ contract EthenaCooldownBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         return "Ethena";
     }
 
-    /// @inheritdoc IPositionDescribable
-    function positionLabels(bytes calldata) external pure returns (string[] memory) {
+    function _legLabels() private pure returns (string[] memory) {
         string[] memory out = new string[](1);
         out[0] = "Unstaking Cooldown";
         return out;
@@ -183,7 +182,7 @@ contract EthenaCooldownBalanceAdapter is IBalanceAdapter, IPositionDescribable {
             // lives in `balanceAsset`, so the sUSDe address is the non-redundant coordinate.
             positionId: abi.encode(address(STAKED_USDE)),
             positionKind: PositionKind.Supplied,
-            labels: new string[](0)
+            labels: _legLabels()
         });
     }
 }

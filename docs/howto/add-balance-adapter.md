@@ -107,24 +107,6 @@ contract MyProtocolBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         return "My Protocol";
     }
 
-    /// @inheritdoc IPositionDescribable
-    /// @dev `positionId` is `abi.encode(protocolContract, asset)`. Returns an ordered label hierarchy
-    ///      (broadest first, leaf last); an empty array when no label can be derived — never a `[""]`
-    ///      with a trailing blank segment.
-    function positionLabels(bytes calldata positionId) external view returns (string[] memory) {
-        if (positionId.length < 64) return new string[](0);
-        (, address asset) = abi.decode(positionId, (address, address));
-        string memory leaf;
-        try IERC20Metadata(asset).symbol() returns (string memory s) {
-            leaf = string.concat(s, " supply");
-        } catch {}
-        // Fail-open: no derivable label → empty array (IPositionDescribable convention), not `[""]`.
-        if (bytes(leaf).length == 0) return new string[](0);
-        string[] memory out = new string[](1);
-        out[0] = leaf;
-        return out;
-    }
-
     // ─── IBalanceAdapter ────────────────────────────────────────────────
 
     function underlyingAssetsSupported() external view returns (address[] memory) {
@@ -157,8 +139,16 @@ contract MyProtocolBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         //     isDebt: false,
         //     protocolId: PROTOCOL_ID,
         //     positionId: abi.encode(PROTOCOL_CONTRACT, asset),
-        //     positionKind: PositionKind.Supplied
+        //     positionKind: PositionKind.Supplied,
+        //     labels: _supplyLabels(assetMeta.symbol)  // string[] display hierarchy below protocolName, leaf last
         // });
+    }
+
+    /// @dev Build the display hierarchy that sits below `protocolName()` (leaf last), derived on-chain
+    ///      (ERC20 symbols, vault/pool names, etc.). Display only — never identity.
+    function _supplyLabels(string memory assetSymbol) internal pure returns (string[] memory out) {
+        out = new string[](1);
+        out[0] = string.concat(assetSymbol, " supply");
     }
 }
 ```
@@ -180,7 +170,7 @@ Conventions:
 - `balanceAdapter` is always `address(this)`. It is the audit trail.
 - For asset metadata on the `PositionBalance.balanceAsset` field, call `NAV_CALCULATOR.getRegisteredAssets()` and only emit positions for assets present in that list.
 - Use a **minimal interface** for each external protocol call — declare it at the bottom of the file (or in a sibling `I<Protocol>.sol`). Do not import the protocol's full library.
-- Implement `IPositionDescribable` (`protocolName()` pure, `positionLabels(bytes)` view returning a `string[]` label hierarchy). NAVCalculator's verbose read methods call these via try/catch, so they are non-breaking, but implementing them gives clients useful labels for free.
+- Implement `protocolName()` (the only method on `IPositionDescribable`) and fill `PositionBalance.labels` on each returned position — a `string[]` display hierarchy below `protocolName` (leaf last), derived on-chain (ERC20 symbols, vault/pool names, etc.). NAVCalculator's verbose read methods surface both verbatim; labels are display-only, never identity.
 
 ---
 

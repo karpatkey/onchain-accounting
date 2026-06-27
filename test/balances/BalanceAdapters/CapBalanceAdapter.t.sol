@@ -196,32 +196,4 @@ contract CapBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(0));
         assertEq(positions.length, 0);
     }
-
-    // ============================================
-    // positionLabels Tests
-    // ============================================
-
-    function test_positionLabels_cUsdLeg() public view {
-        string[] memory labels = adapter.positionLabels(abi.encode(address(mockCUsd)));
-        assertEq(labels.length, 2);
-        assertEq(labels[0], "Stablecoin");
-        assertEq(labels[1], "cUSD");
-    }
-
-    function test_positionLabels_stcUsdLeg() public view {
-        string[] memory labels = adapter.positionLabels(abi.encode(address(mockStcUsd)));
-        assertEq(labels.length, 2);
-        assertEq(labels[0], "Savings");
-        assertEq(labels[1], "stcUSD");
-    }
-
-    function test_positionLabels_unknownToken_empty() public view {
-        string[] memory labels = adapter.positionLabels(abi.encode(address(0xdead)));
-        assertEq(labels.length, 0);
-    }
-
-    function test_positionLabels_shortPositionId_empty() public view {
-        string[] memory labels = adapter.positionLabels(hex"00");
-        assertEq(labels.length, 0);
-    }
 }

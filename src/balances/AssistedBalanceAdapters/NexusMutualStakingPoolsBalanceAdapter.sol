@@ -187,19 +187,6 @@ contract NexusMutualStakingPoolsBalanceAdapter is AssistedBalanceAdapter, IPosit
         return "Nexus Mutual";
     }
 
-    /// @inheritdoc IPositionDescribable
-    /// @dev Fallback only — the per-leg labels (including the NFT id) are supplied on each `PositionBalance.labels`
-    ///      and consumed directly by the verbose reads. `positionId` is `abi.encode(pool)`, which carries no tokenId,
-    ///      so this fallback returns `["Staking", "<pool address>"]` (no NFT id). Fail-open on a malformed id.
-    function positionLabels(bytes calldata pid) external pure returns (string[] memory) {
-        if (pid.length < 32) return new string[](0);
-        address pool = abi.decode(pid, (address));
-        string[] memory out = new string[](2);
-        out[0] = "Staking";
-        out[1] = Strings.toHexString(pool);
-        return out;
-    }
-
     /// @inheritdoc IBalanceAdapter
     /// @notice Total NXM owed (stake + rewards). Net convenience getter; the split is in getAdapterPositions.
     function getAdapterBalanceForAsset(address account, address asset)

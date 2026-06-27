@@ -83,12 +83,12 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
         }
     }
 
-    /// @inheritdoc MetaBalanceAdapter
+    /// @dev Per-leg display labels, filled on every emitted PositionBalance.labels.
     /// @dev Returns `["Vault", <leaf>]` where the leaf is the vault's ERC20 name ("" if unreadable). Returns an
     ///      empty array for a short positionId.
-    function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
-        if (pid.length < 32) return new string[](0);
-        address vault = abi.decode(pid, (address));
+    function _legLabels(bytes memory positionId) private view returns (string[] memory) {
+        if (positionId.length < 32) return new string[](0);
+        address vault = abi.decode(positionId, (address));
         string memory leaf = "";
         try IERC20Metadata(vault).name() returns (string memory n) {
             leaf = n;
@@ -118,7 +118,7 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
             protocolId: PROTOCOL_ID,
             positionId: pid,
             positionKind: kind,
-            labels: new string[](0)
+            labels: _legLabels(pid)
         });
     }
 }

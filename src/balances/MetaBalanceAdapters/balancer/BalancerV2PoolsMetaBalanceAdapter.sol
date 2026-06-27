@@ -68,7 +68,7 @@ contract BalancerV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
                 protocolId: PROTOCOL_ID,
                 positionId: positionId,
                 positionKind: PositionKind.Supplied,
-                labels: new string[](0)
+                labels: _legLabels(positionId)
             });
         }
 
@@ -90,10 +90,10 @@ contract BalancerV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
         return BalancerV2PoolLib.poolTokens(VAULT, instance, BalancerV2PoolLib.bptOf(instance));
     }
 
-    /// @inheritdoc MetaBalanceAdapter
+    /// @dev Per-leg display labels, filled on every emitted PositionBalance.labels.
     /// @dev Returns `["Liquidity Pool", <BPT name>]`; the leaf is "" if the BPT's `name()` reverts.
-    function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
-        bytes32 poolId = abi.decode(pid, (bytes32));
+    function _legLabels(bytes memory positionId) private view returns (string[] memory) {
+        bytes32 poolId = abi.decode(positionId, (bytes32));
         address bpt = address(uint160(uint256(poolId) >> 96));
         string memory leaf;
         try IERC20Metadata(bpt).name() returns (string memory n) {

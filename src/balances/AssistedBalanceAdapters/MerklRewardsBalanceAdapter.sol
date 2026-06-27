@@ -173,7 +173,7 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
         return "Merkl";
     }
 
-    function positionLabels(bytes calldata) external pure returns (string[] memory) {
+    function _legLabels() private pure returns (string[] memory) {
         string[] memory out = new string[](1);
         out[0] = "Claimable Rewards";
         return out;
@@ -265,7 +265,7 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
                 // positionId and are distinguished by `balanceAsset.asset` (same model as Aave V3 = abi.encode(pool)).
                 positionId: abi.encode(DISTRIBUTOR),
                 positionKind: PositionKind.Rewards,
-                labels: new string[](0)
+                labels: _legLabels()
             });
         }
 

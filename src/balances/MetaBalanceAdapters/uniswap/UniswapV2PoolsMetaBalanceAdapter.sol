@@ -105,15 +105,15 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
             protocolId: _protocolId(),
             positionId: positionId,
             positionKind: PositionKind.Supplied,
-            labels: new string[](0)
+            labels: _legLabels(positionId)
         });
     }
 
-    /// @inheritdoc MetaBalanceAdapter
+    /// @dev Per-leg display labels, filled on every emitted PositionBalance.labels.
     /// @dev Returns `["Liquidity Pool", "sym0/sym1 LP"]`; leaf derived on-chain from the pair's token symbols.
-    function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
-        if (pid.length < 32) return new string[](0);
-        address pair = abi.decode(pid, (address));
+    function _legLabels(bytes memory positionId) private view returns (string[] memory) {
+        if (positionId.length < 32) return new string[](0);
+        address pair = abi.decode(positionId, (address));
         (address token0, address token1,,) = UniswapV2PairLib.pairAmounts(pair, address(0));
         string memory leaf = string.concat(_symbol(token0), "/", _symbol(token1), " LP");
         return _labels("Liquidity Pool", leaf);

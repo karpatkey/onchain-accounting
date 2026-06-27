@@ -83,8 +83,11 @@ contract EthenaCooldownBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(assets[0], address(usde));
     }
 
-    function test_positionLabels() public view {
-        string[] memory labels = adapter.positionLabels("");
+    function test_positionLabels() public {
+        staked.setCooldown(alice, uint104(block.timestamp + 1 days), 1234e18);
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(0));
+        assertEq(positions.length, 1);
+        string[] memory labels = positions[0].labels;
         assertEq(labels.length, 1);
         assertEq(labels[0], "Unstaking Cooldown");
     }

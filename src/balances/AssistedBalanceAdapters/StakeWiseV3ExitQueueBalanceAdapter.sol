@@ -184,7 +184,7 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
         return "StakeWise V3";
     }
 
-    function positionLabels(bytes calldata) external pure returns (string[] memory) {
+    function _legLabels() private pure returns (string[] memory) {
         string[] memory out = new string[](1);
         out[0] = "Exit Queue";
         return out;
@@ -267,7 +267,7 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
             // `balanceAsset`, so the registry address is the non-redundant coordinate.
             positionId: abi.encode(VAULTS_REGISTRY),
             positionKind: PositionKind.Supplied,
-            labels: new string[](0)
+            labels: _legLabels()
         });
     }
 

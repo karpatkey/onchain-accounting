@@ -122,9 +122,9 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceAdapter {
         }
     }
 
-    /// @inheritdoc MetaBalanceAdapter
+    /// @dev Per-leg display labels, filled on every emitted PositionBalance.labels.
     /// @dev Returns `["Staking Gauge", <gauge symbol>]`; the leaf is "" if the gauge's `symbol()` reverts.
-    function positionLabels(bytes calldata positionId) external view virtual override returns (string[] memory) {
+    function _legLabels(bytes memory positionId) private view returns (string[] memory) {
         address gauge = abi.decode(positionId, (address));
         string memory leaf;
         try IERC20Metadata(gauge).symbol() returns (string memory s) {
@@ -285,7 +285,7 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceAdapter {
             protocolId: PROTOCOL_ID,
             positionId: positionId,
             positionKind: kind,
-            labels: new string[](0)
+            labels: _legLabels(positionId)
         });
     }
 

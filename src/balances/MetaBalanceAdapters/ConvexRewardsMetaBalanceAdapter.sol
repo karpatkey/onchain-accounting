@@ -111,7 +111,7 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceAdapter {
                                 protocolId: PROTOCOL_ID,
                                 positionId: pid,
                                 positionKind: PositionKind.Staking,
-                                labels: new string[](0)
+                                labels: _legLabels(pid)
                             });
                         }
                     }
@@ -135,7 +135,7 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceAdapter {
                         protocolId: PROTOCOL_ID,
                         positionId: pid,
                         positionKind: PositionKind.Rewards,
-                        labels: new string[](0)
+                        labels: _legLabels(pid)
                     });
                 }
             }
@@ -155,7 +155,7 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceAdapter {
                         protocolId: PROTOCOL_ID,
                         positionId: pid,
                         positionKind: PositionKind.Rewards,
-                        labels: new string[](0)
+                        labels: _legLabels(pid)
                     });
                 }
             }
@@ -202,7 +202,7 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceAdapter {
                     protocolId: PROTOCOL_ID,
                     positionId: pid,
                     positionKind: PositionKind.Rewards,
-                    labels: new string[](0)
+                    labels: _legLabels(pid)
                 });
             }
         }
@@ -265,16 +265,16 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceAdapter {
 
     // ─── IPositionDescribable ─────────────────────────────────────────────────
 
-    /// @inheritdoc MetaBalanceAdapter
+    /// @dev Per-leg display labels, filled on every emitted PositionBalance.labels.
     /// @dev Returns `["Curve LP", "TOKEN0/TOKEN1/… Convex"]`; leaf derived on-chain from coin symbols ("" on failure).
-    function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
-        if (pid.length < 32) return new string[](0);
-        string memory leaf = _leaf(pid);
+    function _legLabels(bytes memory positionId) private view returns (string[] memory) {
+        if (positionId.length < 32) return new string[](0);
+        string memory leaf = _leaf(positionId);
         return _labels("Curve LP", leaf);
     }
 
     /// @notice Derives the "TOKEN0/TOKEN1/… Convex" leaf from the rewarder's Curve pool coins ("" on failure).
-    function _leaf(bytes calldata pid) private view returns (string memory) {
+    function _leaf(bytes memory pid) private view returns (string memory) {
         address rewarder = abi.decode(pid, (address));
         address lpToken = _lpTokenOf(rewarder);
         if (lpToken == address(0)) return "";

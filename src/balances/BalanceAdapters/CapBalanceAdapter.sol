@@ -97,10 +97,9 @@ contract CapBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         return "Cap";
     }
 
-    /// @inheritdoc IPositionDescribable
     /// @dev Branches on the positionId token: `["Stablecoin", "cUSD"]` for the cUSD leg,
     ///      `["Savings", "stcUSD"]` for the staked stcUSD leg. Empty array for anything else.
-    function positionLabels(bytes calldata positionId) external view returns (string[] memory) {
+    function _legLabels(bytes memory positionId) private view returns (string[] memory) {
         if (positionId.length < 32) return new string[](0);
         address token = abi.decode(positionId, (address));
         string[] memory out = new string[](2);
@@ -192,7 +191,7 @@ contract CapBalanceAdapter is IBalanceAdapter, IPositionDescribable {
                 protocolId: PROTOCOL_ID,
                 positionId: abi.encode(address(CUSD)),
                 positionKind: PositionKind.Supplied,
-                labels: new string[](0)
+                labels: _legLabels(abi.encode(address(CUSD)))
             });
         }
         if (stcUsdUsdc > 0) {
@@ -204,7 +203,7 @@ contract CapBalanceAdapter is IBalanceAdapter, IPositionDescribable {
                 protocolId: PROTOCOL_ID,
                 positionId: abi.encode(address(STCUSD)),
                 positionKind: PositionKind.Staking,
-                labels: new string[](0)
+                labels: _legLabels(abi.encode(address(STCUSD)))
             });
         }
     }

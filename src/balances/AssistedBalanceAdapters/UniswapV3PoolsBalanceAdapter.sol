@@ -198,19 +198,6 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
         return _protocolName;
     }
 
-    /// @inheritdoc IPositionDescribable
-    /// @dev Fallback only — the per-leg labels (including the NFT id) are supplied on each `PositionBalance.labels`
-    ///      and consumed directly by the verbose reads. `positionId` is `abi.encode(pool)`, which carries no tokenId,
-    ///      so this fallback returns `["Liquidity Pool", "<pool address>"]` (no NFT id). Fail-open on a malformed id.
-    function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
-        if (pid.length < 32) return new string[](0); // fail-open on malformed positionId (decodes (address))
-        address pool = abi.decode(pid, (address));
-        string[] memory out = new string[](2);
-        out[0] = "Liquidity Pool";
-        out[1] = Strings.toHexString(pool);
-        return out;
-    }
-
     /// @inheritdoc IBalanceAdapter
     /// @notice Open-universe adapter: Uniswap V3 LP can pair any registered assets, so the universe of supported
     ///         assets is not enumerable ahead of time and this returns an empty array (same rationale as
@@ -354,8 +341,11 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
         );
 
         // positionId = the pool contract address (each (token0, token1, fee) is its own deployed Uniswap V3 pool).
-        // The NFT id is NOT in the positionId; it rides in the display labels (built once per NFT below).
+        // The NFT id is NOT in the positionId; it rides in the display labels (built once per NFT below). Drop the
+        // position if the factory has no canonical pool for the triple (defensive: never emit a zero-pool identity
+        // that would collide across unrelated positions).
         address pool = IUniswapV3Factory(FACTORY).getPool(token0, token1, fee);
+        if (pool == address(0)) return count;
         bytes memory positionId = abi.encode(pool);
         // Labels: [category, pool address, NFT id] — NFT id last (per-leg, adapter-supplied; see _toVerbose).
         string[] memory labels = _labels(pool, tokenId);

@@ -119,7 +119,7 @@ contract AaveV3SafetyModuleBalanceAdapter is IBalanceAdapter, IPositionDescribab
         return "Aave V3";
     }
 
-    function positionLabels(bytes calldata) external pure returns (string[] memory) {
+    function _legLabels() private pure returns (string[] memory) {
         string[] memory out = new string[](1);
         out[0] = "Safety Module";
         return out;
@@ -224,7 +224,7 @@ contract AaveV3SafetyModuleBalanceAdapter is IBalanceAdapter, IPositionDescribab
                             protocolId: PROTOCOL_ID,
                             positionId: abi.encode(address(r.stakeToken)),
                             positionKind: PositionKind.Staking,
-                            labels: new string[](0)
+                            labels: _legLabels()
                         });
                     }
                 }
@@ -244,7 +244,7 @@ contract AaveV3SafetyModuleBalanceAdapter is IBalanceAdapter, IPositionDescribab
                             protocolId: PROTOCOL_ID,
                             positionId: abi.encode(address(r.stakeToken)),
                             positionKind: PositionKind.Rewards,
-                            labels: new string[](0)
+                            labels: _legLabels()
                         });
                     }
                 }

@@ -111,7 +111,7 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
                                 protocolId: PROTOCOL_ID,
                                 positionId: pid,
                                 positionKind: PositionKind.Staking,
-                                labels: new string[](0)
+                                labels: _legLabels(pid)
                             });
                         }
                     }
@@ -134,7 +134,7 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
                         protocolId: PROTOCOL_ID,
                         positionId: pid,
                         positionKind: PositionKind.Rewards,
-                        labels: new string[](0)
+                        labels: _legLabels(pid)
                     });
                 }
             }
@@ -161,7 +161,7 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
                 protocolId: PROTOCOL_ID,
                 positionId: pid,
                 positionKind: PositionKind.Rewards,
-                labels: new string[](0)
+                labels: _legLabels(pid)
             });
         }
 
@@ -204,16 +204,16 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
 
     // ─── IPositionDescribable ─────────────────────────────────────────────────
 
-    /// @inheritdoc MetaBalanceAdapter
+    /// @dev Per-leg display labels, filled on every emitted PositionBalance.labels.
     /// @dev Returns `["Staking Gauge", "TOKEN0/TOKEN1/… gauge"]`; leaf derived on-chain from coin symbols ("" on failure).
-    function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
-        if (pid.length < 32) return new string[](0);
-        string memory leaf = _leaf(pid);
+    function _legLabels(bytes memory positionId) private view returns (string[] memory) {
+        if (positionId.length < 32) return new string[](0);
+        string memory leaf = _leaf(positionId);
         return _labels("Staking Gauge", leaf);
     }
 
     /// @notice Derives the "TOKEN0/TOKEN1/… gauge" leaf from the gauge's pool coins ("" on failure).
-    function _leaf(bytes calldata pid) private view returns (string memory) {
+    function _leaf(bytes memory pid) private view returns (string memory) {
         address gauge = abi.decode(pid, (address));
         address lpToken = CurvePoolLib.gaugeLpToken(gauge);
         if (lpToken == address(0)) return "";

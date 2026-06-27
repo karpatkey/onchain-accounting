@@ -64,7 +64,7 @@ contract BalancerV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
                 protocolId: PROTOCOL_ID,
                 positionId: positionId,
                 positionKind: PositionKind.Supplied,
-                labels: new string[](0)
+                labels: _legLabels(positionId)
             });
         }
 
@@ -80,9 +80,9 @@ contract BalancerV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
         return IStablePool(_toAddress(instance)).poolTokens();
     }
 
-    /// @inheritdoc MetaBalanceAdapter
+    /// @dev Per-leg display labels, filled on every emitted PositionBalance.labels.
     /// @dev Returns `["Liquidity Pool", <pool name>]`; the leaf is "" if the pool's `name()` reverts.
-    function positionLabels(bytes calldata positionId) external view virtual override returns (string[] memory) {
+    function _legLabels(bytes memory positionId) private view returns (string[] memory) {
         address pool = abi.decode(positionId, (address));
         string memory leaf;
         try IERC20Metadata(pool).name() returns (string memory n) {

@@ -556,12 +556,12 @@ address, NFT id in labels; V2 positionId = pair address).
 
 `navCalculator.getAccountPositionsVerbose(account, address(0))` (USD quote) returns `VerbosePosition[]`.
 Each entry wraps a `Position` (all `PositionBalance` fields + `value`, `price`, `priceDecimals`,
-`stale`, `quoteAsset`) with `protocolName` and `labels` (`string[]`, sourced from each adapter's `positionLabels(bytes)` method).
+`stale`, `quoteAsset`) with `protocolName` (from `IPositionDescribable`) and `labels` (`string[]`, the display hierarchy each adapter fills directly on its returned `PositionBalance`).
 
 The tables below show what the call returns for a representative account position in each protocol.
-**`value (USD)`** is the signed contribution to NAV (negative = debt). Labels (`protocolName`,
-`labels`) come from `IPositionDescribable` — meta-adapters derive them on-chain from live
-state; per-instance adapters return static strings.
+**`value (USD)`** is the signed contribution to NAV (negative = debt). `protocolName` comes from
+`IPositionDescribable`; `labels` is the adapter-filled `PositionBalance.labels` (below `protocolName`,
+leaf last) — meta-adapters derive it on-chain from live state, per-instance adapters use static strings.
 
 Assumed prices: USDC/DAI/GHO/USDS/crvUSD = $1 · WETH/ETH = $2 500 · wstETH = $2 900 ·
 stETH = $2 480 · AAVE = $200 · CRV = $0.50 · CVX = $3 · BAL = $3 · COMP = $50
@@ -1331,21 +1331,23 @@ const [anchor] = abi.decode(["address"], pos.positionId);
 
 ## Human-readable labels — `IPositionDescribable` and verbose reads
 
-The typed fields are for machines. For human-readable display, two mechanisms exist:
+The typed fields are for machines. For human-readable display there is a **single mechanism**:
+`protocolName()` (from `IPositionDescribable`) plus the `labels` array each adapter fills directly on
+every `PositionBalance` it returns.
 
 ### `IPositionDescribable` (on each adapter)
 
 ```solidity
 interface IPositionDescribable {
     function protocolName() external view returns (string memory); // "Aave V3", "Morpho", …
-    // Ordered hierarchy below the protocol, leaf last, e.g. ["Market", "wstETH/USDC"].
-    function positionLabels(bytes calldata positionId) external view returns (string[] memory);
 }
 ```
 
-All adapters implement this. Meta-adapters derive the hierarchy on-chain from live state (ERC20
-symbols, vault names, pool composition) and return `[category, …leaf]`. Per-instance adapters return
-a fixed array.
+All adapters implement this — it now declares only `protocolName()`. The display hierarchy below the
+protocol is the adapter-filled `PositionBalance.labels` (`string[]`, leaf last, e.g. `["Market", "wstETH/USDC"]`).
+Meta-adapters derive it on-chain from live state (ERC20 symbols, vault names, pool composition) and
+return `[category, …leaf]`; per-instance adapters use a fixed array. (`positionLabels` was removed —
+there is no fallback.)
 
 ### Verbose read methods — on `NAVCalculator`
 
@@ -1363,18 +1365,20 @@ navCalculator.getAccountPositionsForAssetVerbose(account, asset, quoteAsset)
 navCalculator.getAccountNavVerbose(account, quoteAsset)  // NAV + all verbose positions in one call
 ```
 
-Labels come from each adapter's `IPositionDescribable` implementation; the full breadcrumb is
-`[protocolName, ...labels]`. If an adapter doesn't implement it, `protocolName` is empty and
-`labels` is an empty array. **Never use these strings for identity, indexing, or reconciliation**
-— they are display-only and may change as labels evolve.
+`protocolName` comes from each adapter's `IPositionDescribable.protocolName()`; `labels` is the
+adapter-filled `PositionBalance.labels` surfaced verbatim. The full breadcrumb is
+`[protocolName, ...PositionBalance.labels]`. If an adapter doesn't implement `IPositionDescribable`,
+`protocolName` is empty; `labels` is whatever the adapter put on the position (empty if none).
+**Never use these strings for identity, indexing, or reconciliation** — they are display-only and may
+change as labels evolve.
 
 ### Complete per-adapter schema
 
 The single source of truth tying together everything above — `protocolId`, `protocolName()`, the
-`positionLabels` breadcrumb, the `positionId` ABI schema, the `PositionKind` legs, and a worked
-example — for every balance adapter on `main`.
+adapter-filled `PositionBalance.labels` breadcrumb, the `positionId` ABI schema, the `PositionKind`
+legs, and a worked example — for every balance adapter on `main`.
 
-- **Full breadcrumb** = `[protocolName(), ...positionLabels(positionId)]`; the **leaf** is the last element.
+- **Full breadcrumb** = `[protocolName(), ...PositionBalance.labels]`; the **leaf** is the last element.
 - **`protocolId`** column is the `keccak256` slug (constants in [`src/utils/ProtocolIds.sol`](../../src/utils/ProtocolIds.sol)).
 - **Leaf source:** `const` = hardcoded literal · `derived` = read live from chain · `gov` = constructor arg.
   No leaf is governance-fed today; for meta-adapters only `protocolName()` (the breadcrumb root, marked ¹)
@@ -1383,7 +1387,7 @@ example — for every balance adapter on `main`.
 
 #### Plain adapters (`src/balances/BalanceAdapters/`)
 
-| Adapter | `protocolId` | `protocolName()` | `positionLabels` → (source) | `positionId` schema | `PositionKind` legs | Example breadcrumb |
+| Adapter | `protocolId` | `protocolName()` | `PositionBalance.labels` → (source) | `positionId` schema | `PositionKind` legs | Example breadcrumb |
 |---|---|---|---|---|---|---|
 | `ERC20DefaultBalanceAdapter` | `wallet` | `"Wallet"` | `[<symbol>]` (derived); `["native"]`; `[]` on revert | `abi.encode(address asset)` | Wallet | `["Wallet","USDC"]` |
 | `AaveUmbrellaBalanceAdapter` | `aave-v3-umbrella` | `"Aave Umbrella"` | `["Umbrella Module"]` (const) | `abi.encode(address stakeToken)` | Staking / Rewards | `["Aave Umbrella","Umbrella Module"]` |
@@ -1402,7 +1406,7 @@ example — for every balance adapter on `main`.
 `protocolName()` is a constructor arg (¹). Default `positionId` = base `_instancePositionId` (instance
 address widened → `abi.encode(address instance)`); overrides are flagged.
 
-| Adapter | `protocolId` | `protocolName()`¹ | `positionLabels` → (source) | `positionId` schema | `PositionKind` legs | Example breadcrumb |
+| Adapter | `protocolId` | `protocolName()`¹ | `PositionBalance.labels` → (source) | `positionId` schema | `PositionKind` legs | Example breadcrumb |
 |---|---|---|---|---|---|---|
 | `AaveV3InstancesMetaBalanceAdapter` | `aave-v3-lending` | `"Aave V3"` | `["Market Instance", <getMarketId()>]` (derived) | **override** `abi.encode(address pool)` | Collateral/Supplied / Borrowed | `["Aave V3","Market Instance","Aave Ethereum Market"]` |
 | `CompoundV3CometsMetaBalanceAdapter` | `compound-v3` | `"Compound V3"` | `["Market", <comet.name()>]` (derived) | `abi.encode(address comet)` | Supplied/Borrowed / Collateral / Rewards | `["Compound V3","Market","cUSDCv3"]` |
@@ -1425,7 +1429,7 @@ address widened → `abi.encode(address instance)`); overrides are flagged.
 
 #### Assisted adapters (`src/balances/AssistedBalanceAdapters/`)
 
-| Adapter | `protocolId` | `protocolName()` | `positionLabels` → (source) | `positionId` schema | `PositionKind` legs | Example breadcrumb |
+| Adapter | `protocolId` | `protocolName()` | `PositionBalance.labels` → (source) | `positionId` schema | `PositionKind` legs | Example breadcrumb |
 |---|---|---|---|---|---|---|
 | `MerklRewardsBalanceAdapter` | `merkl` | `"Merkl"` (const) | `["Claimable Rewards"]` (const) | `abi.encode(address DISTRIBUTOR)` | Rewards | `["Merkl","Claimable Rewards"]` |
 | `EtherFiWithdrawalQueueBalanceAdapter` | `etherfi-withdrawal` | `"ether.fi"` (const) | `["eETH Withdrawal Queue"]` (const) | `abi.encode(address withdrawRequestNFT)` | Supplied | `["ether.fi","eETH Withdrawal Queue"]` |
@@ -1501,11 +1505,13 @@ When implementing a new balance adapter:
    - Unclaimed reward tokens → `Rewards`
    - Uncollected LP/protocol fees → `Fees`
    - ERC20 wallet balance → `Wallet`
-4. Implement `IPositionDescribable` to provide human-readable labels:
-   - `protocolName()` — static `pure` string for per-instance adapters; same constant for meta-adapters
-   - `positionLabels(bytes positionId) → string[]` — ordered hierarchy below protocol, leaf last. Derive
-     on-chain for meta-adapters (decode positionId, read token symbols) returning `[category, …leaf]`; a
-     fixed array for per-instance adapters
+4. Provide human-readable labels:
+   - Implement `IPositionDescribable.protocolName()` — static `pure` string for per-instance adapters;
+     same constant (constructor arg) for meta-adapters
+   - Fill `PositionBalance.labels` on each returned position — a `string[]` hierarchy below the protocol,
+     leaf last. Derive on-chain for meta-adapters (read token symbols, vault/pool names) returning
+     `[category, …leaf]`; a fixed array for per-instance adapters. This is the single label mechanism —
+     there is no `positionLabels` method.
 5. Update this table above and the `ProtocolIds` schema comment.
 
 See [`howto/add-balance-adapter.md`](add-balance-adapter.md) for the full end-to-end recipe.

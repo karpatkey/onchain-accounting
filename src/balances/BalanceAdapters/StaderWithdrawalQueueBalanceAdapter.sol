@@ -142,7 +142,7 @@ contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescri
         return "Stader";
     }
 
-    function positionLabels(bytes calldata) external pure returns (string[] memory) {
+    function _legLabels() private pure returns (string[] memory) {
         string[] memory out = new string[](1);
         out[0] = "ETHx Withdrawal Queue";
         return out;
@@ -230,7 +230,7 @@ contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescri
             // asset lives in `balanceAsset`, so the manager address is the non-redundant coordinate.
             positionId: abi.encode(address(USER_WITHDRAWAL_MANAGER)),
             positionKind: PositionKind.Supplied,
-            labels: new string[](0)
+            labels: _legLabels()
         });
     }
 }

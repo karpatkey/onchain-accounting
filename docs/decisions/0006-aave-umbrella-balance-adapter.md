@@ -95,7 +95,7 @@ When refreshing fork blocks, re-verify these addresses still hold positions; if 
 ## Reference
 
 - Adapter: `src/balances/BalanceAdapters/AaveUmbrellaBalanceAdapter.sol`
-- Tests: `test/balances/protocols/AaveUmbrellaBalanceAdapter.t.sol` (unit), `test/balances/protocols/fork/AaveUmbrellaBalanceAdapter.fork.t.sol` (fork)
+- Tests: `test/balances/BalanceAdapters/AaveUmbrellaBalanceAdapter.t.sol` (unit), `test/balances/BalanceAdapters/fork/AaveUmbrellaBalanceAdapter.fork.t.sol` (fork)
 - Deploy schema: `script/config/contracts-deployment-config/balance-adapters/1.json` `AaveUmbrella` (`04_DeployBalanceAdapters.s.sol` reads only `rewardsController` from this object; `navCalculator` is injected by the script)
 - Aave Umbrella source: <https://github.com/aave-dao/aave-umbrella>
 - Companion ADR: [0005 — Aave V3 Safety Module: hardcoded stake-token list, immutable adapter](0005-aave-safety-module-hardcoded-immutable.md)

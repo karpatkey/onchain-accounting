@@ -15,7 +15,7 @@
 ## 2. Existing fork test coverage
 
 - `test/balances/protocols/fork/UniswapV3PoolsMeta.fork.t.sol` — the inherited math (principal/fee branches, identity, filter) on the real mainnet WBTC/WETH 0.3% pool. PancakeSwap V3 inherits all of it unchanged except `_slot0`.
-- `test/balances/protocols/fork/PancakeSwapV3PoolsMeta.Base.fork.t.sol` → `PancakeSwapV3PoolsMetaParityForkTest_Base` (pre-existing). Exercises the `_slot0` override on the real Base WETH/COW 0.25% pool, but the test holder's position is **closed** (liquidity 0) — so it only asserts the override **does not revert** and returns empty. It does not exercise the override on the principal-bearing path.
+- `test/balances/AssistedBalanceAdapters/fork/PancakeSwapV3PoolsMeta.Base.fork.t.sol` → `PancakeSwapV3PoolsMetaParityForkTest_Base` (pre-existing). Exercises the `_slot0` override on the real Base WETH/COW 0.25% pool, but the test holder's position is **closed** (liquidity 0) — so it only asserts the override **does not revert** and returns empty. It does not exercise the override on the principal-bearing path.
 
 Both kept untouched as regression nets.
 

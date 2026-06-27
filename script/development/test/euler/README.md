@@ -28,9 +28,9 @@ The EVC lookup is under try/catch, so a vault without `EVC()`/`getCollaterals` (
 
 ## 2. Existing test coverage
 
-Unit (`test/balances/protocols/EulerVaultsMetaBalanceAdapter.t.sol`, **16 cases**) covers every branch against mocks: ERC165, no-arg-methods-empty, multi-vault aggregation, asset filter, zero-balance skip, unregistered-asset skip, bad-instance isolation, empty-instances, `describePosition`, the borrow leg via a core-eVault mock with `debtOf` (supply+borrow, borrow-only, asset-filter), an Earn-shaped mock **without** `debtOf` proving the try/catch keeps the supply leg, and the Collateral-vs-Supplied classification via a mock EVC `getCollaterals`.
+Unit (`test/balances/MetaBalanceAdapters/EulerVaultsMetaBalanceAdapter.t.sol`, **16 cases**) covers every branch against mocks: ERC165, no-arg-methods-empty, multi-vault aggregation, asset filter, zero-balance skip, unregistered-asset skip, bad-instance isolation, empty-instances, `describePosition`, the borrow leg via a core-eVault mock with `debtOf` (supply+borrow, borrow-only, asset-filter), an Earn-shaped mock **without** `debtOf` proving the try/catch keeps the supply leg, and the Collateral-vs-Supplied classification via a mock EVC `getCollaterals`.
 
-Fork (`test/balances/protocols/fork/EulerVaultsMetaBalanceAdapter.fork.t.sol`, **9 cases**) re-checks against real vaults at the pinned block: EulerEarn supply aggregation + NAV routing, on-chain identity, asset filter, `describePosition`, the strict-equality redemption cross-check (§8), plus the Collateral classification + borrow (`debtOf`) leg + NAV debt-netting on a real core-eVault borrower (§3).
+Fork (`test/balances/MetaBalanceAdapters/fork/EulerVaultsMetaBalanceAdapter.fork.t.sol`, **9 cases**) re-checks against real vaults at the pinned block: EulerEarn supply aggregation + NAV routing, on-chain identity, asset filter, `describePosition`, the strict-equality redemption cross-check (§8), plus the Collateral classification + borrow (`debtOf`) leg + NAV debt-netting on a real core-eVault borrower (§3).
 
 All kept as regression nets.
 
@@ -77,7 +77,7 @@ emit Borrowed(asset, debt,     isDebt=true)   if debt > 0           # core-eVaul
 | eWETH-2 (core eVault, WETH) | `0xD8b27CF359b7D15710a5BE299AF6e7Bf904984C2` |
 | EVC | `0x0C9a3dd6b8F28529d72d7f9cE918D493519EE383` |
 | Adapter under test | `EulerVaultsMetaBalanceAdapter` |
-| Fork-test contract | `EulerVaultsMetaBalanceAdapterForkTest` in `test/balances/protocols/fork/EulerVaultsMetaBalanceAdapter.fork.t.sol` |
+| Fork-test contract | `EulerVaultsMetaBalanceAdapterForkTest` in `test/balances/MetaBalanceAdapters/fork/EulerVaultsMetaBalanceAdapter.fork.t.sol` |
 
 ## 6. Case files in this folder
 
@@ -175,6 +175,6 @@ cast send $NAV "addMetaInstances(address,bytes32[])" $ADAPTER \
 Run via:
 
 ```bash
-forge test --match-path "test/balances/protocols/EulerVaultsMetaBalanceAdapter.t.sol"
-FOUNDRY_PROFILE=slow forge test --match-path "test/balances/protocols/fork/EulerVaultsMetaBalanceAdapter.fork.t.sol" -vv
+forge test --match-path "test/balances/MetaBalanceAdapters/EulerVaultsMetaBalanceAdapter.t.sol"
+FOUNDRY_PROFILE=slow forge test --match-path "test/balances/MetaBalanceAdapters/fork/EulerVaultsMetaBalanceAdapter.fork.t.sol" -vv
 ```

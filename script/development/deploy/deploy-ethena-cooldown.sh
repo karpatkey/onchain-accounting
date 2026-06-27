@@ -41,7 +41,7 @@ echo "    stakedUSDe:      $STAKED_USDE (sUSDe)"
 echo "    underlyingToken: $UNDERLYING_TOKEN (USDe)"
 
 OUT=$(
-  forge create src/balances/protocols/EthenaCooldownBalanceAdapter.sol:EthenaCooldownBalanceAdapter \
+  forge create src/balances/BalanceAdapters/EthenaCooldownBalanceAdapter.sol:EthenaCooldownBalanceAdapter \
     --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" --broadcast \
     --constructor-args "$STAKED_USDE" "$UNDERLYING_TOKEN" "$NAV" 2>&1
 ) || true

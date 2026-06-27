@@ -46,7 +46,7 @@ echo "    withdrawalManager: $WITHDRAWAL_MANAGER"
 # Capture the full output non-fatally (under `set -e`, a piped grep no-match would otherwise abort
 # the script before the guard below runs and swallow the forge error).
 OUT=$(
-  forge create src/balances/protocols/KelpWithdrawalQueueBalanceAdapter.sol:KelpWithdrawalQueueBalanceAdapter \
+  forge create src/balances/BalanceAdapters/KelpWithdrawalQueueBalanceAdapter.sol:KelpWithdrawalQueueBalanceAdapter \
     --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" --broadcast \
     --constructor-args "$WITHDRAWAL_MANAGER" "$NAV" 2>&1
 ) || true

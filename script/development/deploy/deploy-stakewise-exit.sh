@@ -41,12 +41,12 @@ if [ "$NAV" = "null" ] || [ -z "$NAV" ]; then echo "error: no NAVCalculatorProxy
 echo "=== deploy StakeWise V3 exit-queue adapter  chain=$CID NAV=$NAV"
 echo "    vaultsRegistry:  $VAULTS_REGISTRY"
 echo "    underlyingToken: $UNDERLYING_TOKEN (native ETH)"
-echo "    owner:           $DEV_DEPLOYER_ADDR (dev account #0)"
+echo "    admin+assistant: $DEV_DEPLOYER_ADDR (dev account #0; admin=assistant for local)"
 
 OUT=$(
-  forge create src/balances/protocols/StakeWiseV3ExitQueueBalanceAdapter.sol:StakeWiseV3ExitQueueBalanceAdapter \
+  forge create src/balances/AssistedBalanceAdapters/StakeWiseV3ExitQueueBalanceAdapter.sol:StakeWiseV3ExitQueueBalanceAdapter \
     --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" --broadcast \
-    --constructor-args "$VAULTS_REGISTRY" "$UNDERLYING_TOKEN" "$NAV" "$DEV_DEPLOYER_ADDR" 2>&1
+    --constructor-args "$VAULTS_REGISTRY" "$UNDERLYING_TOKEN" "$NAV" "$DEV_DEPLOYER_ADDR" "$DEV_DEPLOYER_ADDR" 2>&1
 ) || true
 ADAPTER=$(printf '%s\n' "$OUT" | grep -i "Deployed to:" | awk '{print $3}' || true)
 if [ -z "$ADAPTER" ]; then

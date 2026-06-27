@@ -1,6 +1,6 @@
 {
   "protocol": "Uniswap V3",
-  "adapter": "src/balances/protocols/uniswap/UniswapV3Pool.sol",
+  "adapter": "src/balances/MetaBalanceAdapters/uniswap/UniswapV3Pool.sol",
   "adapter_test": "test/balances/protocols/fork/UniswapV3Pool.fork.t.sol",
   "test_contract": "UniswapV3PoolBalanceOracleForkTest_MultiHolder_LP",
   "chain": { "id": 1, "name": "mainnet" },

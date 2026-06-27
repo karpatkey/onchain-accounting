@@ -23,12 +23,12 @@ Registration gating is asymmetric (same as sGHO / Aave Umbrella): `getAdapterPos
 
 ## 2. Existing fork test coverage
 
-`test/balances/protocols/fork/LidoWithdrawalQueueBalanceAdapter.fork.t.sol` already had `LidoWithdrawalQueueBalanceAdapterForkTest` covering **both branches** against the real contract:
+`test/balances/BalanceAdapters/fork/LidoWithdrawalQueueBalanceAdapter.fork.t.sol` already had `LidoWithdrawalQueueBalanceAdapterForkTest` covering **both branches** against the real contract:
 - un-finalized holder `0x7170b89D…` (id 125680, `amountOfStETH = 2.67 ETH`) @ block `25_203_500`.
 - finalized-unclaimed holder `0xF74B44b0…` (`getClaimableEther = 4.871995… ETH`) @ block `25_200_000`.
 - plus empty / unknown-holder / unsupported-asset / asset-filter-mismatch / interface / immutables.
 
-The unit test (`test/balances/protocols/LidoWithdrawalQueueBalanceAdapter.t.sol`) covers the mock-only edges: constructor reverts, multi-request summing, the **negative-rebase divergence** (finalized claimable < amountOfStETH), unsorted finalized batch, skips-claimed, the cap boundary (exactly-at-cap sums / above-cap → 0), and unregistered underlying.
+The unit test (`test/balances/BalanceAdapters/LidoWithdrawalQueueBalanceAdapter.t.sol`) covers the mock-only edges: constructor reverts, multi-request summing, the **negative-rebase divergence** (finalized claimable < amountOfStETH), unsorted finalized batch, skips-claimed, the cap boundary (exactly-at-cap sums / above-cap → 0), and unregistered underlying.
 
 All kept as regression nets.
 
@@ -67,7 +67,7 @@ emit PositionBalance(ETH, total, isDebt=false, Supplied, positionId="")   if tot
 | Underlying (native ETH) | `0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE` |
 | Queue state at block | lastRequestId 127194, lastFinalizedRequestId 127171, lastCheckpointIndex 1123 |
 | Adapter under test | `LidoWithdrawalQueueBalanceAdapter` |
-| Fork-test contract | `LidoWithdrawalQueueBalanceAdapterForkTest_Fresh` in `test/balances/protocols/fork/LidoWithdrawalQueueBalanceAdapter.fork.t.sol` |
+| Fork-test contract | `LidoWithdrawalQueueBalanceAdapterForkTest_Fresh` in `test/balances/BalanceAdapters/fork/LidoWithdrawalQueueBalanceAdapter.fork.t.sol` |
 
 ## 6. Case files in this folder
 
@@ -106,7 +106,7 @@ The value is a live read of Lido's own WithdrawalQueue — there is no closed-fo
 | `PRIMARY` (un-finalized) | `adapter == Σ amountOfStETH` over the account's open un-claimed un-finalized requests (`getWithdrawalStatus`). |
 | `SECONDARY` (finalized) | `adapter == getClaimableEther([127164], findCheckpointHints([127164],1,1123))` — the exact ETH Lido would pay on claim. Here it equals `amountOfStETH` (no negative rebase), which is the normal case. |
 
-The **divergent** case (finalized `getClaimableEther < amountOfStETH` after a negative rebase) is exercised with mocks in `test/balances/protocols/LidoWithdrawalQueueBalanceAdapter.t.sol::test_getAdapterBalanceForAsset_finalizedUsesClaimableEth` — a real holder with a haircut can't be relied on to exist at any given block. The tests also assert `protocolId == keccak256("lido-withdrawal")`, `positionId == ""`, `PositionKind.Supplied`, and `balanceAdapter == address(this)`.
+The **divergent** case (finalized `getClaimableEther < amountOfStETH` after a negative rebase) is exercised with mocks in `test/balances/BalanceAdapters/LidoWithdrawalQueueBalanceAdapter.t.sol::test_getAdapterBalanceForAsset_finalizedUsesClaimableEth` — a real holder with a haircut can't be relied on to exist at any given block. The tests also assert `protocolId == keccak256("lido-withdrawal")`, `positionId == ""`, `PositionKind.Supplied`, and `balanceAdapter == address(this)`.
 
 ## 9. Wiring the live dev-anvil dashboard
 
@@ -143,5 +143,5 @@ The position renders under **Lido** as a single **Supplied** leg denominated in 
 Run via:
 
 ```bash
-FOUNDRY_PROFILE=slow forge test --match-path "test/balances/protocols/fork/LidoWithdrawalQueueBalanceAdapter.fork.t.sol" -vv
+FOUNDRY_PROFILE=slow forge test --match-path "test/balances/BalanceAdapters/fork/LidoWithdrawalQueueBalanceAdapter.fork.t.sol" -vv
 ```

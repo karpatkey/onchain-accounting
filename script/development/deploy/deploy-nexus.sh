@@ -80,7 +80,7 @@ fi
 # --- 2. adapter ------------------------------------------------------------------------------------------
 echo "--- deploy NexusMutualStakingPoolsBalanceAdapter"
 OUT=$(
-  forge create src/balances/protocols/NexusMutualStakingPoolsBalanceAdapter.sol:NexusMutualStakingPoolsBalanceAdapter \
+  forge create src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsBalanceAdapter.sol:NexusMutualStakingPoolsBalanceAdapter \
     --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" --broadcast \
     --constructor-args "$STAKING_NFT" "$STAKING_VIEWER" "$NXM_TOKEN" "$NAV" 2>&1
 ) || true

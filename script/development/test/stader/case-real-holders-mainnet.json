@@ -1,7 +1,7 @@
 {
   "protocol": "Stader ETHx Withdrawal Queue",
-  "adapter": "src/balances/protocols/StaderWithdrawalQueueBalanceAdapter.sol",
-  "adapter_test": "test/balances/protocols/fork/StaderWithdrawalQueueBalanceAdapter.fork.t.sol",
+  "adapter": "src/balances/BalanceAdapters/StaderWithdrawalQueueBalanceAdapter.sol",
+  "adapter_test": "test/balances/BalanceAdapters/fork/StaderWithdrawalQueueBalanceAdapter.fork.t.sol",
   "test_contract": "StaderWithdrawalQueueBalanceOracleForkTest_Fresh",
   "chain": { "id": 1, "name": "mainnet" },
   "block": {
@@ -77,6 +77,6 @@
   ],
   "ground_truth": {
     "method": "live UserWithdrawalManager reads (NOT a Python re-derivation)",
-    "detail": "All three holders are pinned against the real Stader UserWithdrawalManager at the fork block. PENDING: oracle == userWithdrawRequests(8218).ethExpected. FINALIZED: oracle == userWithdrawRequests(8214).ethFinalized, which is strictly less than that request's ethExpected (proving the branch precedence). MULTI: oracle == userWithdrawRequests(8196).ethFinalized + userWithdrawRequests(8197).ethFinalized (real on-chain multi-request summing into one aggregated leg). Plus protocolId == keccak256('stader-withdrawal'), positionId == \"\" (account-global), PositionKind.Supplied, balanceOracle == address(this), and the leg denominated in WETH. The claimed-skip (owner == 0) path is covered with mocks in the unit test (test/balances/protocols/StaderWithdrawalQueueBalanceAdapter.t.sol)."
+    "detail": "All three holders are pinned against the real Stader UserWithdrawalManager at the fork block. PENDING: oracle == userWithdrawRequests(8218).ethExpected. FINALIZED: oracle == userWithdrawRequests(8214).ethFinalized, which is strictly less than that request's ethExpected (proving the branch precedence). MULTI: oracle == userWithdrawRequests(8196).ethFinalized + userWithdrawRequests(8197).ethFinalized (real on-chain multi-request summing into one aggregated leg). Plus protocolId == keccak256('stader-withdrawal'), positionId == \"\" (account-global), PositionKind.Supplied, balanceOracle == address(this), and the leg denominated in WETH. The claimed-skip (owner == 0) path is covered with mocks in the unit test (test/balances/BalanceAdapters/StaderWithdrawalQueueBalanceAdapter.t.sol)."
   }
 }

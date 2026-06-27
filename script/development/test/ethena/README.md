@@ -12,12 +12,12 @@
 - `getAdapterPositions`: `assetFilter` mismatch → empty; USDe not registered on NAV → empty; pending amount `0` → empty; else one leg.
 
 ## 2. Fork test coverage
-`test/balances/protocols/fork/EthenaCooldownBalanceAdapter.fork.t.sol` (5 tests, `FOUNDRY_PROFILE=slow`, FORK_BLOCK 25,380,000):
+`test/balances/BalanceAdapters/fork/EthenaCooldownBalanceAdapter.fork.t.sol` (5 tests, `FOUNDRY_PROFILE=slow`, FORK_BLOCK 25,380,000):
 - `…matchesCooldown` (×3: `getAdapterBalanceForAsset` / `getAdapterPositions` / `getAdapterBalances`) — strict equality vs the seeded `cooldowns().underlyingAmount`.
 - `noCooldown_emptyPositions`, `zeroAddress` — empty/negative cases against the real fork.
 
 ## 3. Unit test coverage
-`test/balances/protocols/EthenaCooldownBalanceAdapter.t.sol` (20 tests, mock-only): constructor guards (×4), interface/describe (×3), `getAdapterBalanceForAsset` (×6 incl. active/elapsed cooldown), `getAdapterBalances` (×3), `getAdapterPositions` (×4 incl. unregistered-asset drop, asset filter, identity).
+`test/balances/BalanceAdapters/EthenaCooldownBalanceAdapter.t.sol` (20 tests, mock-only): constructor guards (×4), interface/describe (×3), `getAdapterBalanceForAsset` (×6 incl. active/elapsed cooldown), `getAdapterBalances` (×3), `getAdapterPositions` (×4 incl. unregistered-asset drop, asset filter, identity).
 
 ## 4. Adapter formula recap
 ```

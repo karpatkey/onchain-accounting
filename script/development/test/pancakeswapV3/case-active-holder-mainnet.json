@@ -1,9 +1,9 @@
 {
   "protocol": "PancakeSwap V3",
-  "adapter": "src/balances/protocols/pancakeswap/PancakeSwapV3PoolsMetaBalanceAdapter.sol",
-  "adapter_test": "test/balances/protocols/fork/PancakeSwapV3PoolsMetaBalanceAdapter.fork.t.sol",
+  "adapter": "src/balances/AssistedBalanceAdapters/PancakeSwapV3PoolsMetaBalanceAdapter.sol",
+  "adapter_test": "test/balances/AssistedBalanceAdapters/fork/PancakeSwapV3PoolsMetaBalanceAdapter.fork.t.sol",
   "test_contract": "PancakeSwapV3PoolsMetaParityForkTest",
-  "companion_test": "test/balances/protocols/fork/PancakeSwapV3PoolsMeta.Base.fork.t.sol (PancakeSwapV3PoolsMetaParityForkTest_Base — closed position, no-revert only)",
+  "companion_test": "test/balances/AssistedBalanceAdapters/fork/PancakeSwapV3PoolsMeta.Base.fork.t.sol (PancakeSwapV3PoolsMetaParityForkTest_Base — closed position, no-revert only)",
   "chain": { "id": 1, "name": "mainnet" },
   "block": {
     "number": 25274483,

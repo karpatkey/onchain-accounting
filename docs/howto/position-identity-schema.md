@@ -860,6 +860,55 @@ All constants live in [`src/utils/ProtocolIds.sol`](../../src/utils/ProtocolIds.
 bytes32 protocolId = keccak256("aave-v3-lending");  // == ProtocolIds.AAVE_V3_LENDING
 ```
 
+### Every `protocolId` — slug, constant, and what it identifies
+
+The complete set. The slug is the exact lowercase string fed to `keccak256`; the constant is its name
+in `ProtocolIds.sol`; "Emitted by" is the adapter that produces positions under that id. (`positionId`
+schemas are in the next section and in the per-adapter table above.)
+
+| Slug | `ProtocolIds` constant | Emitted by — what it identifies |
+|---|---|---|
+| `wallet` | `WALLET` | `ERC20DefaultBalanceAdapter` — a plain ERC20/native balance held in the account |
+| `aave-v3-lending` | `AAVE_V3_LENDING` | `AaveV3InstancesMetaBalanceAdapter` — supply/collateral/borrow on an Aave V3 market instance |
+| `spark-lend` | `SPARK_LEND` | `SparkLendBalanceAdapter` — supply/collateral/borrow on SparkLend |
+| `aave-v3-safety-module` | `AAVE_V3_SAFETY_MODULE` | `AaveV3SafetyModuleBalanceAdapter` — staked Safety Module principal + rewards |
+| `aave-v3-umbrella` | `AAVE_V3_UMBRELLA` | `AaveUmbrellaBalanceAdapter` — Umbrella stake-token principal + rewards |
+| `morpho-vaults` | `MORPHO_VAULTS` | `MorphoVaultsMetaBalanceAdapter` — MetaMorpho (ERC4626) vault supply |
+| `morpho-markets` | `MORPHO_MARKETS` | `MorphoMarketsMetaBalanceAdapter` — Morpho isolated-market collateral/supply/borrow |
+| `euler-vaults` | `EULER_VAULTS` | `EulerVaultsMetaBalanceAdapter` — Euler V2 vault supply/collateral/borrow |
+| `gearbox-v3` | `GEARBOX_V3` | `GearboxMarketsMetaBalanceAdapter` — Gearbox V3 passive-pool deposit |
+| `compound-v3` | `COMPOUND_V3` | `CompoundV3CometsMetaBalanceAdapter` — Compound V3 Comet base/collateral/rewards |
+| `fluid-ftokens` | `FLUID_FTOKENS` | `FluidFTokensMetaBalanceAdapter` — Fluid fToken (ERC4626) lending supply |
+| `fluid-vaults` | `FLUID_VAULTS` | `FluidVaultsMetaBalanceAdapter` — Fluid T1 vault collateral/borrow |
+| `balancer-v3-pool` | `BALANCER_V3_POOL` | `BalancerV3PoolsMetaBalanceAdapter` — wallet-held Balancer V3 LP |
+| `balancer-v3-gauge` | `BALANCER_V3_GAUGE` | `BalancerV3GaugesMetaBalanceAdapter` — gauge-staked Balancer V3 LP + rewards |
+| `balancer-v2-pool` | `BALANCER_V2_POOL` | `BalancerV2PoolsMetaBalanceAdapter` — wallet-held Balancer V2 LP |
+| `balancer-v2-gauge` | `BALANCER_V2_GAUGE` | `BalancerV2GaugesMetaBalanceAdapter` — gauge-staked Balancer V2 LP + rewards |
+| `curve-pool` | `CURVE_POOL` | `CurvePoolsMetaBalanceAdapter` — wallet-held Curve LP |
+| `curve-gauge` | `CURVE_GAUGE` | `CurveGaugesMetaBalanceAdapter` — gauge-staked Curve LP + rewards |
+| `curve` | `CURVE` | Legacy per-instance Curve adapter — superseded on mainnet by `curve-pool` / `curve-gauge` |
+| `convex` | `CONVEX` | `ConvexRewardsMetaBalanceAdapter` — Convex-staked Curve LP + CRV/CVX/extra rewards |
+| `uniswap-v3` | `UNISWAP_V3` | `UniswapV3PoolsMetaBalanceAdapter` — Uniswap V3 LP NFT liquidity + fees |
+| `uniswap-v2` | `UNISWAP_V2` | `UniswapV2PoolsMetaBalanceAdapter` — Uniswap V2 LP |
+| `pancakeswap-v3` | `PANCAKESWAP_V3` | `PancakeSwapV3PoolsMetaBalanceAdapter` — PancakeSwap V3 LP NFT liquidity + fees |
+| `pancakeswap-v2` | `PANCAKESWAP_V2` | `PancakeSwapV2PoolsMetaBalanceAdapter` — PancakeSwap V2 LP |
+| `stakewise-v3` | `STAKEWISE_V3` | `StakeWiseV3VaultsMetaBalanceAdapter` — StakeWise V3 vault stake + osToken debt |
+| `nexus-mutual-staking` | `NEXUS_MUTUAL_STAKING` | `NexusMutualStakingPoolsBalanceAdapter` — Nexus Mutual StakingNFT stake + rewards |
+| `cap` | `CAP` | `CapBalanceAdapter` — Cap cUSD (held) and stcUSD (staked) |
+| `erc4626` | `ERC4626` | `ERC4626WrapBalanceAdapter` — generic ERC4626 wrapper share |
+| `merkl` | `MERKL` | `MerklRewardsBalanceAdapter` — unclaimed (claimable) Merkl reward tokens |
+| `lido-withdrawal` | `LIDO_WITHDRAWAL` | `LidoWithdrawalQueueBalanceAdapter` — ETH owed from the Lido stETH withdrawal queue |
+| `stader-withdrawal` | `STADER_WITHDRAWAL` | `StaderWithdrawalQueueBalanceAdapter` — ETH owed from the Stader ETHx withdrawal queue |
+| `kelp-withdrawal` | `KELP_WITHDRAWAL` | `KelpWithdrawalQueueBalanceAdapter` — assets owed from the Kelp rsETH exit queue |
+| `etherfi-withdrawal` | `ETHERFI_WITHDRAWAL` | `EtherFiWithdrawalQueueBalanceAdapter` — ETH owed from the ether.fi eETH withdrawal queue |
+| `stakewise-exit` | `STAKEWISE_EXIT` | `StakeWiseV3ExitQueueBalanceAdapter` — assets owed from the StakeWise V3 exit queue |
+| `ethena-cooldown` | `ETHENA_COOLDOWN` | `EthenaCooldownBalanceAdapter` — USDe in the sUSDe unstaking cooldown |
+| `bridge-escrow` | `BRIDGE_ESCROW` | `BridgeEscrow` (bridge layer, **not** a balance adapter) — funds in flight across a bridge |
+
+Every slug maps to exactly one `positionId` schema — see the next section. Slugs are stable and
+version-qualified (`-v2` / `-v3`); a protocol upgrade that changes the position shape gets a new slug
+rather than overloading an existing one.
+
 ---
 
 ## `positionId` — which instance

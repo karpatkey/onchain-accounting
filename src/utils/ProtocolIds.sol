@@ -98,7 +98,7 @@ library ProtocolIds {
 
     // Withdrawal / cooldown queues
     // positionId = `abi.encode(<anchor contract>)` (the queue/manager — Lido queue, Stader/Kelp
-    // manager, ether.fi NFT, StakeWise registry, sUSDe). Up to two legs share it, told apart by
+    // manager, ether.fi NFT, StakeWise vault, sUSDe). Up to two legs share it, told apart by
     // isLocked (the owed/payout asset is in balanceAsset, not the positionId).
     bytes32 internal constant STADER_WITHDRAWAL = keccak256("stader-withdrawal");
     bytes32 internal constant KELP_WITHDRAWAL = keccak256("kelp-withdrawal");

@@ -89,8 +89,8 @@ split legs of the withdrawal-queue / cooldown adapters, which each emit a `Suppl
 
 | `PositionKind` | Emission sites | Emitting adapters |
 |---|---|---|
-| `Wallet` | 2 | ERC20DefaultBalanceAdapter |
-| `Supplied` | 28 | lending supply, vaults, ERC-4626 wraps, unstaked LP, withdrawal/exit queues (claimable + locked legs), Euler vaults |
+| `Wallet` | 1 | ERC20DefaultBalanceAdapter |
+| `Supplied` | 27 | lending supply, vaults, ERC-4626 wraps, unstaked LP, withdrawal/exit queues (claimable + locked legs), Euler vaults |
 | `Borrowed` | 7 | Aave V3, Spark, Compound V3, Morpho Markets, Fluid Vaults, StakeWise V3, Euler vaults |
 | `Collateral` | 6 | Aave V3, Spark, Compound V3, Morpho Markets, Fluid Vaults, Euler vaults |
 | `Staking` | 11 | Safety Module (locked + unlocked stake), Umbrella (locked + unlocked stake), StakeWise V3, Nexus staked NXM, Balancer gauges ×2, Curve gauge, Convex |

@@ -31,9 +31,12 @@ the app.
    `isLocked` must enter the identity key to keep the two legs distinct:
    `keccak256(abi.encode(chainId, protocolId, positionId, balanceAsset.asset, positionKind, isLocked))`.
 
-5. **Rule:** `isLocked = false` only when the leg is **fully liquid / withdrawable now**. The
-   claimable leg holds the withdrawable portion; the locked leg holds the pending / cooling
-   portion ("partial = locked" — any not-yet-withdrawable amount lands on the locked leg).
+5. **Uniform rule:** `isLocked = non-withdrawable`. `isLocked = false` only when the leg is
+   **fully liquid / withdrawable now**. The claimable leg holds the withdrawable portion; the
+   locked leg holds the pending / cooling portion ("partial = locked" — any not-yet-withdrawable
+   amount lands on the locked leg). For the staking-with-cooldown adapters (Aave SM, Umbrella) the
+   same rule applies: active stake is non-withdrawable (it needs a cooldown first) so it is
+   **locked**, and only a cooldown that has elapsed and is still in its window is unlocked.
 
 6. **All other adapters report `isLocked = false`** (single leg, unchanged).
 
@@ -55,12 +58,12 @@ performs the claimable/locked split.
 |---|---|---|
 | `lido-withdrawal` | `abi.encode(address withdrawalQueue)` | claimable + locked |
 | `stader-withdrawal` | `abi.encode(address userWithdrawalManager)` | claimable + locked |
-| `kelp-withdrawal` | `abi.encode(address asset)` (per payout asset) | claimable + locked, per asset |
+| `kelp-withdrawal` | `abi.encode(address withdrawalManager)` (payout asset in `balanceAsset`) | claimable + locked |
 | `stakewise-exit` | `abi.encode(address vault)` (per vault) | claimable (exited) + locked (queued), per vault |
 | `etherfi-withdrawal` | `abi.encode(address withdrawRequestNFT)` | claimable + locked |
 | `ethena-cooldown` | `abi.encode(address sUSDe)` | single leg, `isLocked` while cooling |
-| `aave-v3-safety-module` | live `abi.encode(address stakeToken)`; unstaking `abi.encode(address stakeToken, uint8 1)` | live (`isLocked=false`) + unstaking (`isLocked` unless in window) |
-| `aave-v3-umbrella` | live `abi.encode(address stakeToken)`; unstaking `abi.encode(address stakeToken, uint8 1)` | live (`isLocked=false`) + unstaking (`isLocked` unless in window) |
+| `aave-v3-safety-module` | `abi.encode(address stakeToken)` (both staking legs; reward leg too) | locked stake (`isLocked=true`) + unlocked stake (`isLocked=false`, cooldown elapsed-and-in-window) |
+| `aave-v3-umbrella` | `abi.encode(address stakeToken)` (both staking legs; reward leg too) | locked stake (`isLocked=true`) + unlocked stake (`isLocked=false`, cooldown elapsed-and-in-window) |
 
 ## Per-protocol claimable/locked predicate
 
@@ -70,19 +73,24 @@ The locked portion is the amount for which the predicate below is true.
 |---|---|
 | Lido | per request: locked while `!status.isFinalized` (claimed requests skipped) |
 | Stader | per request: locked while `ethFinalized == 0` |
-| Kelp | per request, per asset: locked while `!(userNonce < nextLockedNonce(asset) && block.number >= withdrawalStartBlock + withdrawalDelayBlocks())` |
+| Kelp | per request: locked while `!(userNonce < nextLockedNonce(asset) && block.number >= withdrawalStartBlock + withdrawalDelayBlocks())` |
 | StakeWise V3 | per vault: claimable = `exitedAssets`; locked = `convertToAssets(leftShares)` (partial = locked) |
 | ether.fi | per request: locked while `!isFinalized(tokenId)` |
 | Ethena | single cooldown: locked until `block.timestamp >= cooldownEnd` (or `cooldownDuration == 0`) |
-| Aave SM | live stake `isLocked=false`; unstaking leg locked unless inside the unstake window |
-| Umbrella | live stake `isLocked=false`; unstaking leg locked unless inside the withdrawal window |
+| Aave SM | active stake is non-withdrawable (needs cooldown) ⇒ locked; only a cooldown elapsed-and-in-window is the unlocked leg |
+| Umbrella | active stake is non-withdrawable (needs cooldown) ⇒ locked; only a cooldown elapsed-and-in-window is the unlocked leg |
 
-For the staking-with-cooldown adapters (Aave SM, Umbrella) the live stake stays one
-`Staking` leg (`isLocked=false`); a separate unstaking `Staking` leg appears only while a
-cooldown is active, distinguished from the live leg by `uint8 1` in its `positionId` (this is
-the one case where the two legs use *distinct* static positionIds rather than relying on
-`isLocked` alone). Stake tokens that do not expose the expected cooldown ABI degrade gracefully
-to a single live-stake leg (the cooldown reads are wrapped in try/catch).
+For the staking-with-cooldown adapters (Aave SM, Umbrella) the uniform rule `isLocked =
+non-withdrawable` applies just as it does to the queues: active stake cannot be withdrawn without
+first sitting out a cooldown, so it is **locked** (`isLocked=true`) — merged with any cooling or
+expired-but-out-of-window cooldown into a single locked `Staking` leg. Only a cooldown that has
+elapsed *and* is still inside its withdrawal window is withdrawable now, and forms the unlocked
+`Staking` leg (`isLocked=false`). Both staking legs share `positionId = abi.encode(stakeToken)`
+(no `uint8` discriminator); the `Rewards` leg shares it too and is told apart by
+`positionKind=Rewards`. This is exactly the same identity model as the queues — one static
+positionId, locked vs unlocked told apart by `isLocked` alone. Stake tokens that do not expose the
+expected cooldown ABI degrade gracefully to a single locked-stake leg (the cooldown reads are
+wrapped in try/catch).
 
 ## Per-request ids live in the app, not in identity
 

@@ -17,7 +17,7 @@ struct PositionBalance {
     bytes32      protocolId;     // keccak256("protocol-slug")
     bytes        positionId;     // abi.encode(...) — stable on-chain key
     PositionKind positionKind;   // Wallet | Supplied | Borrowed | Collateral | Staking | Rewards | Fees
-    bool         isLocked;       // true = not withdrawable now (pending/cooling); part of the key
+    bool         isLocked;       // true = not withdrawable now (pending withdrawal OR active/cooling stake); false = withdrawable now; part of the key
 }
 ```
 
@@ -67,9 +67,11 @@ Semantic category of the leg. Together with `protocolId`, `positionId`,
 
 **`isLocked`** — `bool`
 
-`true` when the leg is **not withdrawable right now** — the pending portion of a withdrawal
-queue, or a staked amount in / awaiting its unstaking cooldown. `false` when the leg is fully
-liquid / claimable now. The withdrawal-queue / cooldown adapters split an account's holding
+`true` = **not withdrawable now** (a pending withdrawal request, OR an active / cooling stake);
+`false` = **withdrawable now**. So the pending portion of a withdrawal queue and the active stake
+of a staking-with-cooldown adapter (Aave SM, Umbrella — active stake needs a cooldown before it can
+be withdrawn) are both locked; a finalized request or an in-window elapsed cooldown is unlocked.
+The withdrawal-queue / cooldown / staking-with-cooldown adapters split an account's holding
 into up to two legs that **share the same static `positionId`** — a claimable leg
 (`isLocked=false`) and a locked / pending leg (`isLocked=true`) — so `isLocked` is **part of
 the reconciliation key** (it is what distinguishes the two legs). `false` for every other
@@ -222,15 +224,15 @@ PositionBalance({
 #### `KelpWithdrawalQueue` — rsETH exit queue
 
 ```solidity
-// Per payout asset: static positionId = abi.encode(asset). Up to two legs per asset
-// (claimable + locked) that SHARE this positionId and are told apart by isLocked.
+// Static positionId = abi.encode(withdrawalManager). Up to two legs (claimable + locked)
+// that SHARE this positionId and are told apart by isLocked; the payout asset is in balanceAsset.
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xae7a…2Ca0, symbol: "stETH", decimals: 18 }),
     balanceAdapter: 0x<KelpWithdrawalQueueAdapter>,
     amount:        2e18,                   // 2 stETH still pending (locked leg)
     isDebt:        false,
     protocolId:    keccak256("kelp-withdrawal"),
-    positionId:    abi.encode(0xae7a…2Ca0),  // the payout asset (static, per-asset)
+    positionId:    abi.encode(0x<LRTWithdrawalManager>),  // Kelp LRTWithdrawalManager (static anchor)
     positionKind:  PositionKind.Supplied,
     isLocked:      true                    // pending; a claimable (isLocked=false) leg would share this positionId
 })
@@ -645,7 +647,7 @@ Scenario: an ERC-4626 wrapper holding 1 000 GHO equivalent.
 #### `KelpWithdrawalQueue` — pending + claimable unstake
 
 Scenario: 3 stETH in the Kelp queue — 2 still pending, 1 claimable now. Two legs sharing one static
-positionId (`abi.encode(stETH)`), told apart by `isLocked`.
+positionId (`abi.encode(withdrawalManager)`), told apart by `isLocked`; the payout asset (stETH) is in `balanceAsset`.
 
 | asset  | amount | value (USD) | positionKind | isLocked | protocolName | labels |
 |--------|--------|-------------|--------------|----------|--------------|---------------|
@@ -942,8 +944,8 @@ rather than overloading an existing one.
 | `wallet` | `(address asset)` |
 | `aave-v3-lending` | `(address pool)` |
 | `spark-lend` | `(address pool)` |
-| `aave-v3-safety-module` | live stake `(address stakeToken)`; unstaking-cooldown leg `(address stakeToken, uint8 1)` |
-| `aave-v3-umbrella` | live stake `(address stakeToken)`; unstaking-cooldown leg `(address stakeToken, uint8 1)` |
+| `aave-v3-safety-module` | `(address stakeToken)` — both staking legs (locked active stake + unlocked in-window cooldown) and the reward leg share it; told apart by `isLocked` and `positionKind` |
+| `aave-v3-umbrella` | `(address stakeToken)` — both staking legs (locked active stake + unlocked in-window cooldown) and the reward leg share it; told apart by `isLocked` and `positionKind` |
 | `morpho-vaults` | `(address vault)` |
 | `morpho-markets` | `(bytes32 marketId)` |
 | `euler-vaults` | `(address vault)` |
@@ -968,7 +970,7 @@ rather than overloading an existing one.
 | `merkl` | `(address distributor)` — reward token in balanceAsset |
 | `nexus-mutual-staking` | `(uint256 tokenId, uint256 poolId)` |
 | `stader-withdrawal` | `(address userWithdrawalManager)` — static; up to two legs (claimable + locked) sharing it, told apart by `isLocked` |
-| `kelp-withdrawal` | `(address asset)` — static, per payout asset; up to two legs (claimable + locked) per asset, told apart by `isLocked` |
+| `kelp-withdrawal` | `(address withdrawalManager)` — static; up to two legs (claimable + locked) sharing it, told apart by `isLocked`; payout asset in `balanceAsset` |
 | `lido-withdrawal` | `(address withdrawalQueue)` — static; up to two legs (claimable + locked) sharing it, told apart by `isLocked` |
 | `etherfi-withdrawal` | `(address withdrawRequestNFT)` — static; up to two legs (claimable + locked) sharing it, told apart by `isLocked` |
 | `stakewise-exit` | `(address vault)` — static, per vault; claimable (exited) + locked (queued) legs sharing it, told apart by `isLocked` |
@@ -980,9 +982,11 @@ cooldown use a static, timeless positionId — the immutable anchor (queue / man
 sUSDe / asset), never a per-request id. They split an account's holding into up to two legs
 (a claimable leg `isLocked=false` and a pending/locked leg `isLocked=true`) that **share** that
 positionId and are distinguished by `isLocked` (which is part of the key). The Aave SM / Umbrella
-unstaking-cooldown leg is the one case using a distinct static positionId (`(stakeToken, uint8 1)`)
-for its second leg. Per-request ids (NFT / ticket / nonce) are not in any positionId — per-request
-detail lives in the app. Note: `wallet` positions are NOT account-global — each uses
+staking-with-cooldown adapters follow the same model: both staking legs share one
+`abi.encode(address stakeToken)` (no discriminator), distinguished by `isLocked` (active stake is
+non-withdrawable ⇒ locked; only a cooldown elapsed-and-in-window is unlocked), and the reward leg
+shares it too, told apart by `positionKind`. Per-request ids (NFT / ticket / nonce) are not in any
+positionId — per-request detail lives in the app. Note: `wallet` positions are NOT account-global — each uses
 `abi.encode(asset)` to identify the specific token.
 
 ---
@@ -1343,7 +1347,7 @@ const [tokenId, poolId] = abi.decode(["uint256", "uint256"], pos.positionId);
 ```typescript
 const [anchor] = abi.decode(["address"], pos.positionId);
 // positionId = abi.encode(<anchor>) — STATIC; the same value for all of an account's legs in this queue.
-//   anchor = withdrawalQueue (Lido) / userWithdrawalManager (Stader) / asset (Kelp, one per payout asset)
+//   anchor = withdrawalQueue (Lido) / userWithdrawalManager (Stader) / LRTWithdrawalManager (Kelp)
 // Supplied → up to two legs sharing this positionId: a claimable leg (pos.isLocked === false) and a
 //   pending/locked leg (pos.isLocked === true). Sum both for the total owed; read pos.isLocked to
 //   route Claim vs wait. Per-request detail (which NFTs/nonces) is read from the queue contract by the app.
@@ -1419,7 +1423,7 @@ example — for every balance adapter on `main`.
 | `SparkLendBalanceAdapter` | `spark-lend` | `"Spark"` | `["Market","SparkLend"]` (const) | `abi.encode(address POOL)` | Collateral/Supplied / Borrowed | `["Spark","Market","SparkLend"]` |
 | `LidoWithdrawalQueueBalanceAdapter` | `lido-withdrawal` | `"Lido"` | `["stETH Withdrawal Queue"]` (const) | `abi.encode(address withdrawalQueue)` | Supplied ×2 (claimable + locked, shared positionId) | `["Lido","stETH Withdrawal Queue"]` |
 | `StaderWithdrawalQueueBalanceAdapter` | `stader-withdrawal` | `"Stader"` | `["ETHx Withdrawal Queue"]` (const) | `abi.encode(address userWithdrawalManager)` | Supplied ×2 (claimable + locked, shared positionId) | `["Stader","ETHx Withdrawal Queue"]` |
-| `KelpWithdrawalQueueBalanceAdapter` | `kelp-withdrawal` | `"Kelp DAO"` | `["rsETH Withdrawal Queue"]` (const) | `abi.encode(address asset)` (per payout asset) | Supplied ×2 per asset (claimable + locked, shared positionId) | `["Kelp DAO","rsETH Withdrawal Queue"]` |
+| `KelpWithdrawalQueueBalanceAdapter` | `kelp-withdrawal` | `"Kelp DAO"` | `["rsETH Withdrawal Queue"]` (const) | `abi.encode(address withdrawalManager)` | Supplied ×2 (claimable + locked, shared positionId) | `["Kelp DAO","rsETH Withdrawal Queue"]` |
 
 #### Meta-adapters (`src/balances/MetaBalanceAdapters/`)
 
@@ -1474,7 +1478,7 @@ what each argument refers to:
 | `address fToken` | The Fluid lending `fToken` (an ERC4626 share token, e.g. `fUSDC`). |
 | `address market` (Gearbox) | The Gearbox V3 pool contract (an ERC4626 "diesel" pool, e.g. `dUSDC`). |
 | `bytes32 marketId` (Morpho) | Morpho's `Id` for one isolated market — `keccak256` of the market params `(loanToken, collateralToken, oracle, irm, lltv)`. **Raw `bytes32`, not an address.** Collateral, supply and borrow legs of the market share it. |
-| `address stakeToken` | The Aave staking-token contract: a Safety Module `stk*` token (stkAAVE / stkGHO / stkABPT) or an Aave Umbrella stake token. Staked principal and claimable rewards share it. |
+| `address stakeToken` | The Aave staking-token contract: a Safety Module `stk*` token (stkAAVE / stkGHO / stkABPT) or an Aave Umbrella stake token. All legs share it — both staking legs (locked active stake + unlocked in-window cooldown, told apart by `isLocked`) and the claimable-rewards leg (told apart by `positionKind`). |
 | `address CUSD` / `address STCUSD` | The Cap protocol's cUSD (synthetic dollar) or stcUSD (staked cUSD / savings) token contract — one per leg, so the two legs carry different addresses. |
 | `address wrapper` | The generic ERC4626 wrapper share token the adapter was deployed for (e.g. `waEthLidoGHO`, `sGHO`). Distinct deployments carry distinct wrapper addresses. |
 | `address pair` | The **Uniswap V2 / PancakeSwap V2 pool contract**, which is *also* the LP (liquidity-provider) ERC20 token — in V2 the pair contract and its LP token are the same address. token0/token1 legs share it. |
@@ -1487,15 +1491,15 @@ what each argument refers to:
 | `address DISTRIBUTOR` (Merkl) | The Merkl `Distributor` (Angle Labs) — the claim target / trust anchor. All reward tokens claimed from it share this id and are told apart by `balanceAsset`. |
 | `address withdrawalQueue` (Lido) | Lido's `WithdrawalQueueERC721` — the contract that escrows stETH withdrawal requests and pays out ETH on claim. Static; claimable + locked legs share it. |
 | `address userWithdrawalManager` (Stader) | Stader's `UserWithdrawalManager` — escrows ETHx unstake requests, pays ETH (valued to WETH) on claim. Static; claimable + locked legs share it. |
-| `address asset` (Kelp) | The Kelp payout asset (e.g. stETH) — Kelp DAO's `LRTWithdrawalManager` escrows rsETH exit requests across payout assets; positionId is keyed per payout asset. Static; claimable + locked legs of that asset share it. |
+| `address withdrawalManager` (Kelp) | Kelp DAO's `LRTWithdrawalManager` — escrows rsETH exit requests and pays out the requested asset on claim. Static; the payout asset (e.g. stETH) is in `balanceAsset`, not the positionId. Claimable + locked legs share it. |
 | `address withdrawRequestNFT` (ether.fi) | ether.fi's `WithdrawRequestNFT` — the ERC721 that represents eETH withdrawal requests and is the claim target. Static; claimable + locked legs share it. |
 | `address vault` (StakeWise) | The StakeWise V3 vault the exit position belongs to; positionId is keyed per vault. Static; claimable (exited) + locked (queued) legs of that vault share it. (The adapter's `VaultsRegistry` gates which vaults the cache accepts, but is not the positionId.) |
 | `address sUSDe` (Ethena) | Ethena's `StakedUSDeV2` (sUSDe) — the staking contract that holds the unstaking cooldown and is the claim target; the owed USDe is in `balanceAsset`. Static; single leg, `isLocked` while cooling. |
 
 For the withdrawal / exit queue and cooldown adapters (Lido, Stader, Kelp, ether.fi, StakeWise V3
-exit, Ethena) the encoded value is a **static, timeless** coordinate (the queue/manager/vault/sUSDe,
-or the payout asset for Kelp) — never a per-request id. Each splits an account's holding into up to
-two legs (claimable `isLocked=false` + locked `isLocked=true`) that share that positionId.
+exit, Ethena) the encoded value is a **static, timeless** coordinate (the queue/manager/vault/sUSDe)
+— never a per-request id. Each splits an account's holding into up to
+two legs (claimable `isLocked=false` + locked `isLocked=true`) that share that positionId; the owed/payout asset is in `balanceAsset`.
 
 **Multi-leg rule.** Where an adapter emits several legs (lending supply/borrow/collateral; gauge
 stake/rewards; Uniswap V3 liquidity/fees; StakeWise vault/osToken-debt), all legs **share one
@@ -1504,7 +1508,7 @@ stake/rewards; Uniswap V3 liquidity/fees; StakeWise vault/osToken-debt), all leg
 
 **Withdrawal-queue / cooldown adapters.** The withdrawal/exit queues (Lido, Stader, Kelp, ether.fi,
 StakeWise V3) and the Ethena cooldown use a **static, timeless** `positionId` — the immutable anchor
-(queue/manager/vault, or the payout asset for Kelp, or sUSDe) — never a per-request id. They split an
+(queue/manager/vault or sUSDe) — never a per-request id. They split an
 account's holding into up to two legs that share that positionId: a claimable leg (`isLocked=false`)
 and a pending/locked leg (`isLocked=true`), distinguished by `isLocked` (part of the key). The owed
 asset lives in `balanceAsset.asset`. No adapter emits an empty `positionId`.

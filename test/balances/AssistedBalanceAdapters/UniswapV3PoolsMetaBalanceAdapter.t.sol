@@ -195,41 +195,37 @@ contract UniswapV3PoolsMetaBalanceAdapterTest is Test {
         return (0, false);
     }
 
-    /// @notice Audit M-A1: when the oracle-implied price and the pool's real (feeGrowthOutside-anchored) tick
-    ///         straddle a range boundary, the in-range fee-growth branch is inconsistent with the on-chain tick
-    ///         state and the unchecked `fgInside - fgInsideLast` subtraction wraps to ~2^256. The adapter clamps
-    ///         a delta above the pool's global fee-growth to 0, so the token's reported fee falls back to
-    ///         `tokensOwed` (conservative) instead of a phantom over-report — and never reverts/drops the position.
-    function test_M_A1_feeBranch_clampsInconsistentDelta() public {
+    /// @notice Audit M-A1: fee legs report ONLY the position's settled `tokensOwed`. The adapter deliberately omits
+    ///         the uncollected-since-poke `feeGrowthInside` component (it can't be derived from the oracle tick
+    ///         without the manipulable slot0). A pool fee-growth state that, under the old feeGrowthInside path,
+    ///         made the in-range branch underflow and wrap to ~2^256 must therefore have NO effect on the reported
+    ///         fee — no phantom over-report and no revert/drop.
+    function test_M_A1_fees_areSettledTokensOwedOnly() public {
         uint256 Q128 = 1 << 128;
-        // Oracle keeps poolA at tick 0 (in range [-100,100]); make the in-range token0 formula underflow:
-        // fgInside0 = fgGlobal0(0) - fgOutLower0(Q128) - fgOutUpper0(Q128) wraps huge. token1 left consistent (0s).
+        // fgOutLower + fgOutUpper > fgGlobal(0): the old in-range formula would underflow/wrap huge.
         poolA.setFeeGrowthGlobal(0, 0);
-        poolA.setTickFeeGrowth(-100, Q128, 0);
-        poolA.setTickFeeGrowth(100, Q128, 0);
+        poolA.setTickFeeGrowth(-100, Q128, Q128);
+        poolA.setTickFeeGrowth(100, Q128, Q128);
 
         (uint256 wbtcFee, bool f0) = _feeLeg(_instances()[0], address(wbtc));
         (uint256 wethFee, bool f1) = _feeLeg(_instances()[0], address(weth));
 
-        assertTrue(f0, "WBTC fee leg present (no revert/drop)");
-        assertTrue(f1, "WETH fee leg present");
-        assertEq(wbtcFee, 42, "token0 wrapped delta clamped -> tokensOwed0 only (no phantom fee)");
-        assertEq(wethFee, 1337, "token1 consistent (delta 0) -> tokensOwed1 only");
+        assertTrue(f0 && f1, "both fee legs present (no revert/drop)");
+        assertEq(wbtcFee, 42, "fee leg == tokensOwed0 only; pool fee-growth state ignored");
+        assertEq(wethFee, 1337, "fee leg == tokensOwed1 only; pool fee-growth state ignored");
     }
 
-    /// @notice Audit M-A1 regression: a legitimate, consistent fee-growth delta (delta <= fgGlobal) is NOT clamped
-    ///         and flows through to the reported fee.
-    function test_M_A1_feeBranch_passesConsistentDelta() public {
+    /// @notice Audit M-A1: even a large, internally-consistent fee-growth (which the old path would have valued as
+    ///         a big uncollected fee) is intentionally dropped — fees stay at the settled `tokensOwed`.
+    function test_M_A1_fees_ignoreUncollectedFeeGrowth() public {
         uint256 Q128 = 1 << 128;
-        // Consistent in-range state: fgInside0 = 3Q128 - Q128 - Q128 = Q128; delta = Q128 <= fgGlobal0 (3Q128).
-        // fee0 = mulDiv(Q128, liquidity=1e6, Q128) + tokensOwed0(42) = 1_000_042.
-        poolA.setFeeGrowthGlobal(3 * Q128, 0);
-        poolA.setTickFeeGrowth(-100, Q128, 0);
-        poolA.setTickFeeGrowth(100, Q128, 0);
+        poolA.setFeeGrowthGlobal(3 * Q128, 3 * Q128);
+        poolA.setTickFeeGrowth(-100, Q128, Q128);
+        poolA.setTickFeeGrowth(100, Q128, Q128);
 
         (uint256 wbtcFee, bool found) = _feeLeg(_instances()[0], address(wbtc));
         assertTrue(found, "WBTC fee leg present");
-        assertEq(wbtcFee, 1_000_042, "legitimate fee-growth delta passes the clamp unchanged");
+        assertEq(wbtcFee, 42, "uncollected fee-growth dropped; only settled tokensOwed0 reported");
     }
 
     function test_underlyingAssetsForInstances() public view {

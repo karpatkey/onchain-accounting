@@ -89,3 +89,9 @@ if (d0 > fgGlobal0) d0 = 0;               // inconsistent branch / wrap → no p
 f0 = Math.mulDiv(d0, liquidity, FixedPoint128.Q128) + tokensOwed0;   // (same for d1/f1)
 ```
 Accurate fees in the normal case; conservative 0 (safe under-report) on oracle/pool divergence; no `slot0`, PancakeSwap-V3-compatible. See docs/audits/2026-06-vigilo-adapter-audit.md §M-A1.
+
+---
+
+## RESOLUTION (implemented) — tokensOwed-only
+
+A follow-up code review showed the `fgGlobal` clamp is only a partial fix (a branch mismatch can yield a plausible delta ≤ fgGlobal that still over-reports). Final fix: the fee legs now report **only the position's settled `tokensOwed0/1`**; the tick-dependent `feeGrowthInside` component is dropped entirely. Provably never over-reports, fully oracle-only (no slot0), PancakeSwap-V3-compatible. Accepted cost: under-reports uncollected fees on un-poked positions (safe direction). See docs/audits/2026-06-vigilo-adapter-audit.md §M-A1.

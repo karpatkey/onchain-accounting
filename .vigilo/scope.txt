@@ -1,0 +1,19 @@
+# Vigilo Audit Scope — onchain-accounting
+
+## In scope
+- src/**/*.sol  (all 124 contracts: balances adapters, prices, NAV calculator, bridge, utils, proxy, deployment)
+- script/deploy/*.sol  (numbered deploy scripts 01–07 + atomic deployers + DeploySalts)
+
+## Priority focus (from user)
+1. Access control — assisted balance-adapter family (AccessControl: DEFAULT_ADMIN_ROLE / ASSISTANT_ROLE), NAVCalculator MANAGER role, bridge roles, deploy-script EOA→SecurityCouncil handoff
+2. Oracle / price manipulation — Prices.sol (Chainlink staleness, L2 sequencer), custom price feeds, cross-rate feeds
+3. Assisted balance-adapter family — Merkl proof-verified cache (ADR 0007), agent-fed exit-queue caches ether.fi + StakeWise V3 (ADR 0014/0015): can assistant over-report?
+4. Bridge — BridgeEscrow + per-protocol adapters: escrow accounting, provable-release (ADR 0012), replay, cross-chain message validation
+5. NAVCalculator upgradeability — UUPS, NAVRegistryLib, meta-instance governance
+6. Deployment-script correctness — CREATE2 salts, role transfer, config wiring
+
+## Out of scope
+- test/**, lib/** (dependencies), mocks
+
+## Protocol type
+Multi: portfolio NAV accounting (read-mostly oracle aggregation) + cross-chain bridge (escrow/lock-release). Adapters are view-heavy; bridge moves real funds.

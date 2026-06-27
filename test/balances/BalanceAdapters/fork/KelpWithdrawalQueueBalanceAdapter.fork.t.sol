@@ -214,9 +214,7 @@ contract KelpWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTestBa
             assertFalse(positions[i].isDebt);
             assertEq(positions[i].protocolId, ProtocolIds.KELP_WITHDRAWAL);
             assertEq(
-                positions[i].positionId,
-                abi.encode(positions[i].balanceAsset.asset),
-                "static per-asset positionId"
+                positions[i].positionId, abi.encode(positions[i].balanceAsset.asset), "static per-asset positionId"
             );
             assertEq(uint256(positions[i].positionKind), uint256(PositionKind.Supplied));
         }

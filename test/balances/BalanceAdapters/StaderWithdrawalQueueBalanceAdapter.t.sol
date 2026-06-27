@@ -265,11 +265,77 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(positions.length, 0, "Filter mismatch should produce empty");
 
         positions = adapter.getAdapterPositions(alice, address(weth));
+        // A single not-finalized request (ethFinalized == 0) → one locked leg only.
         assertEq(positions.length, 1);
         assertEq(positions[0].balanceAsset.asset, address(weth));
         assertEq(positions[0].balanceAdapter, address(adapter));
         assertEq(positions[0].amount, 1e18);
         assertFalse(positions[0].isDebt);
+        assertTrue(positions[0].isLocked, "not-finalized request -> locked leg");
+        assertEq(positions[0].positionId, abi.encode(address(manager)), "static positionId = withdrawal manager");
+    }
+
+    function test_getAdapterPositions_claimableOnlyLeg() public {
+        // A single finalized request (ethFinalized > 0) → one claimable leg (isLocked = false).
+        manager.pushRequest(
+            alice,
+            1,
+            MockUserWithdrawalManager.Info({
+                owner: alice, ethXAmount: 1e18, ethExpected: 2e18, ethFinalized: 1.95e18, requestBlock: 0
+            })
+        );
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(weth));
+        assertEq(positions.length, 1);
+        assertEq(positions[0].amount, 1.95e18, "claimable leg uses ethFinalized");
+        assertFalse(positions[0].isLocked, "finalized request -> claimable leg");
+        assertEq(positions[0].positionId, abi.encode(address(manager)));
+    }
+
+    function test_getAdapterPositions_mixedClaimableAndLocked() public {
+        // One finalized (claimable) + one pending (locked) request → two legs sharing the static positionId.
+        manager.pushRequest(
+            alice,
+            1,
+            MockUserWithdrawalManager.Info({
+                owner: alice, ethXAmount: 1e18, ethExpected: 2e18, ethFinalized: 1.95e18, requestBlock: 0
+            })
+        );
+        manager.pushRequest(
+            alice,
+            2,
+            MockUserWithdrawalManager.Info({
+                owner: alice, ethXAmount: 1e18, ethExpected: 1.1e18, ethFinalized: 0, requestBlock: 0
+            })
+        );
+
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(weth));
+        assertEq(positions.length, 2, "claimable + locked legs");
+
+        bytes memory expectedId = abi.encode(address(manager));
+        uint256 claimable;
+        uint256 locked;
+        bool sawClaimable;
+        bool sawLocked;
+        for (uint256 i = 0; i < positions.length; i++) {
+            assertEq(positions[i].balanceAsset.asset, address(weth));
+            assertEq(positions[i].balanceAdapter, address(adapter));
+            assertFalse(positions[i].isDebt);
+            assertEq(positions[i].positionId, expectedId, "both legs share the static positionId");
+            if (positions[i].isLocked) {
+                locked += positions[i].amount;
+                sawLocked = true;
+            } else {
+                claimable += positions[i].amount;
+                sawClaimable = true;
+            }
+        }
+        assertTrue(sawClaimable && sawLocked, "exactly one claimable + one locked leg present");
+        assertEq(claimable, 1.95e18, "claimable leg = ethFinalized");
+        assertEq(locked, 1.1e18, "locked leg = ethExpected");
+
+        // NAV-total invariance.
+        (uint256 agg,) = adapter.getAdapterBalanceForAsset(alice, address(weth));
+        assertEq(claimable + locked, agg, "sum of legs == old aggregate");
     }
 
     function test_getAdapterPositions_zeroBalanceProducesEmpty() public view {

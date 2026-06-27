@@ -31,7 +31,11 @@ contract MockLRTWithdrawalManager {
     address public lrtConfig;
 
     mapping(address => mapping(address => uint256[])) private _expected; // asset => user => expectedAssetAmounts
+    mapping(address => mapping(address => uint256[])) private _startBlock; // asset => user => per-request start block
     mapping(address => mapping(address => uint128)) private _begin; // asset => user => front cursor
+
+    mapping(address => uint256) private _nextLockedNonce; // asset => lock cursor
+    uint256 private _delayBlocks; // global block delay (0 by default → block gate trivially satisfied)
 
     constructor(address lrtConfig_) {
         lrtConfig = lrtConfig_;
@@ -39,11 +43,28 @@ contract MockLRTWithdrawalManager {
 
     function pushRequest(address asset, address user, uint256 expectedAssetAmount) external {
         _expected[asset][user].push(expectedAssetAmount);
+        _startBlock[asset][user].push(0); // default start block 0 (delay gate trivially elapsed when delay==0)
+    }
+
+    /// @notice Push a request with an explicit `withdrawalStartBlock` (for delay-gate tests).
+    function pushRequestAt(address asset, address user, uint256 expectedAssetAmount, uint256 startBlock) external {
+        _expected[asset][user].push(expectedAssetAmount);
+        _startBlock[asset][user].push(startBlock);
     }
 
     /// @notice Simulate claiming the front-most open request (deque pop-front).
     function claimFront(address asset, address user) external {
         _begin[asset][user] += 1;
+    }
+
+    /// @notice Set the asset's lock cursor (a request is unlocked by it once `userNonce < nextLockedNonce(asset)`).
+    function setNextLockedNonce(address asset, uint256 cursor) external {
+        _nextLockedNonce[asset] = cursor;
+    }
+
+    /// @notice Set the global block delay that must elapse after a request's start block.
+    function setDelayBlocks(uint256 d) external {
+        _delayBlocks = d;
     }
 
     function userAssociatedNonces(address asset, address user) external view returns (uint128 begin, uint128 end) {
@@ -57,7 +78,15 @@ contract MockLRTWithdrawalManager {
         returns (uint256 rsETHAmount, uint256 expectedAssetAmount, uint256 withdrawalStartBlock, uint256 userNonce)
     {
         uint256 absolute = _begin[asset][user] + userIndex;
-        return (0, _expected[asset][user][absolute], 0, absolute);
+        return (0, _expected[asset][user][absolute], _startBlock[asset][user][absolute], absolute);
+    }
+
+    function nextLockedNonce(address asset) external view returns (uint256) {
+        return _nextLockedNonce[asset];
+    }
+
+    function withdrawalDelayBlocks() external view returns (uint256) {
+        return _delayBlocks;
     }
 }
 
@@ -227,6 +256,7 @@ contract KelpWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         manager.pushRequest(address(weth), alice, 4e18);
         manager.pushRequest(address(steth), alice, 5e18);
 
+        // Default cursor 0 → no request is unlocked → both are locked legs, one per asset.
         INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(0));
         assertEq(positions.length, 2);
 
@@ -238,8 +268,82 @@ contract KelpWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         for (uint256 i = 0; i < positions.length; i++) {
             assertEq(positions[i].balanceAdapter, address(adapter));
             assertFalse(positions[i].isDebt);
-            assertEq(positions[i].positionId, abi.encode(address(adapter.WITHDRAWAL_MANAGER())));
+            assertTrue(positions[i].isLocked, "default cursor 0 -> locked");
+            // positionId is now the per-asset coordinate, NOT the withdrawal manager.
+            assertEq(positions[i].positionId, abi.encode(positions[i].balanceAsset.asset));
         }
+    }
+
+    function test_getAdapterPositions_claimableWhenUnlocked() public {
+        // A request whose nonce is below the asset's lock cursor AND past the block delay → claimable.
+        manager.pushRequest(address(steth), alice, 5e18); // nonce 0
+        manager.setNextLockedNonce(address(steth), 1); // cursor past nonce 0
+        // delayBlocks is 0 by default and startBlock is 0 → block gate trivially satisfied.
+
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(steth));
+        assertEq(positions.length, 1);
+        assertEq(positions[0].balanceAsset.asset, address(steth));
+        assertEq(positions[0].amount, 5e18);
+        assertFalse(positions[0].isLocked, "nonce < cursor AND delay elapsed -> claimable");
+        assertEq(positions[0].positionId, abi.encode(address(steth)));
+    }
+
+    function test_getAdapterPositions_delayGateLocksDespiteCursor() public {
+        // Nonce is past the lock cursor, but the block delay has NOT elapsed → must count as LOCKED
+        // (the two-gate predicate; matching the Sherlock-audited finding the ADR calls out).
+        manager.setDelayBlocks(100);
+        vm.roll(1000);
+        // startBlock 950 → 950 + 100 = 1050 > current block 1000 → delay NOT elapsed.
+        manager.pushRequestAt(address(steth), alice, 5e18, 950); // nonce 0
+        manager.setNextLockedNonce(address(steth), 1); // cursor past nonce 0 (first gate passes)
+
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(steth));
+        assertEq(positions.length, 1);
+        assertEq(positions[0].amount, 5e18);
+        assertTrue(positions[0].isLocked, "cursor passed but block delay not elapsed -> locked");
+
+        // Roll past the delay → now claimable (proves the gate is the only thing that was holding it).
+        vm.roll(1050);
+        positions = adapter.getAdapterPositions(alice, address(steth));
+        assertEq(positions.length, 1);
+        assertFalse(positions[0].isLocked, "after delay elapses -> claimable");
+    }
+
+    function test_getAdapterPositions_mixedClaimableAndLocked() public {
+        // Two requests on the same asset: nonce 0 unlocked (claimable), nonce 1 still locked (cursor not past it).
+        // Both legs share the static per-asset positionId, distinguished by isLocked.
+        manager.pushRequest(address(steth), alice, 3e18); // nonce 0
+        manager.pushRequest(address(steth), alice, 2e18); // nonce 1
+        manager.setNextLockedNonce(address(steth), 1); // cursor past nonce 0 only
+
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(steth));
+        assertEq(positions.length, 2, "claimable + locked legs for the same asset");
+
+        bytes memory expectedId = abi.encode(address(steth));
+        uint256 claimable;
+        uint256 locked;
+        bool sawClaimable;
+        bool sawLocked;
+        for (uint256 i = 0; i < positions.length; i++) {
+            assertEq(positions[i].balanceAsset.asset, address(steth));
+            assertEq(positions[i].balanceAdapter, address(adapter));
+            assertFalse(positions[i].isDebt);
+            assertEq(positions[i].positionId, expectedId, "both legs share the static per-asset positionId");
+            if (positions[i].isLocked) {
+                locked += positions[i].amount;
+                sawLocked = true;
+            } else {
+                claimable += positions[i].amount;
+                sawClaimable = true;
+            }
+        }
+        assertTrue(sawClaimable && sawLocked, "exactly one claimable + one locked leg present");
+        assertEq(claimable, 3e18, "nonce 0 claimable");
+        assertEq(locked, 2e18, "nonce 1 locked");
+
+        // NAV-total invariance for the asset.
+        (uint256 agg,) = adapter.getAdapterBalanceForAsset(alice, address(steth));
+        assertEq(claimable + locked, agg, "sum of legs == old aggregate for the asset");
     }
 
     function test_getAdapterPositions_dropsUnregisteredAsset() public {

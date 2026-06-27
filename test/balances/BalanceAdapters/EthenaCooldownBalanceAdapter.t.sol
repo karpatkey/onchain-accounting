@@ -19,14 +19,23 @@ import "src/errors.sol";
 contract MockStakedUSDe {
     mapping(address => uint104) private _end;
     mapping(address => uint152) private _amount;
+    uint24 private _cooldownDuration = 7 days; // non-zero by default (cooldown enabled)
 
     function setCooldown(address user, uint104 cooldownEnd, uint152 underlyingAmount) external {
         _end[user] = cooldownEnd;
         _amount[user] = underlyingAmount;
     }
 
+    function setCooldownDuration(uint24 d) external {
+        _cooldownDuration = d;
+    }
+
     function cooldowns(address user) external view returns (uint104 cooldownEnd, uint152 underlyingAmount) {
         return (_end[user], _amount[user]);
+    }
+
+    function cooldownDuration() external view returns (uint24) {
+        return _cooldownDuration;
     }
 }
 
@@ -191,5 +200,42 @@ contract EthenaCooldownBalanceAdapterTest is BalanceAdapterTestBase {
             "positionId is the sUSDe anchor for the aggregated cooldown leg"
         );
         assertEq(uint8(positions[0].positionKind), uint8(PositionKind.Supplied));
+        // cooldownEnd is in the future → still cooling → locked.
+        assertTrue(positions[0].isLocked, "future cooldownEnd -> locked");
+    }
+
+    // ---- isLocked status (single leg) ----
+
+    function test_getAdapterPositions_lockedWhileCooling() public {
+        // cooldownEnd in the future, cooldown enabled → still cooling → isLocked = true.
+        staked.setCooldown(alice, uint104(block.timestamp + 3 days), 100e18);
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(0));
+        assertEq(positions.length, 1);
+        assertEq(positions[0].amount, 100e18);
+        assertTrue(positions[0].isLocked, "future cooldownEnd -> locked");
+    }
+
+    function test_getAdapterPositions_unlockedAfterCooldownElapsed() public {
+        // cooldownEnd has passed → claimable now → isLocked = false. The amount is still owed until claimed.
+        vm.warp(1_000_000);
+        staked.setCooldown(alice, uint104(block.timestamp - 1), 250e18);
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(0));
+        assertEq(positions.length, 1);
+        assertEq(positions[0].amount, 250e18);
+        assertFalse(positions[0].isLocked, "elapsed cooldownEnd -> claimable -> not locked");
+    }
+
+    function test_getAdapterPositions_unlockedWhenCooldownDisabled() public {
+        // cooldownDuration == 0 disables the cooldown (instant withdraw) → isLocked = false even if cooldownEnd
+        // is in the future. The single leg's amount is unchanged (NAV-total invariance vs the balance methods).
+        staked.setCooldownDuration(0);
+        staked.setCooldown(alice, uint104(block.timestamp + 5 days), 999e18);
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(0));
+        assertEq(positions.length, 1);
+        assertEq(positions[0].amount, 999e18);
+        assertFalse(positions[0].isLocked, "cooldownDuration == 0 -> instant withdraw -> not locked");
+        // NAV-total invariance: the single leg equals the aggregate balance.
+        (uint256 agg,) = adapter.getAdapterBalanceForAsset(alice, address(usde));
+        assertEq(positions[0].amount, agg, "leg amount == aggregate balance");
     }
 }

@@ -14,6 +14,7 @@ import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
@@ -88,6 +89,15 @@ contract MockStakingViewer {
             agg.totalExpiredStake += expired[ids[i]];
             agg.totalRewards += rewards[ids[i]];
         }
+    }
+
+    /// @notice Deterministic non-zero staking-pool address per poolId (the positionId). Mirror via `poolAddr`.
+    function stakingPool(uint256 pid) external pure returns (address) {
+        return poolAddr(pid);
+    }
+
+    function poolAddr(uint256 pid) public pure returns (address) {
+        return address(uint160(uint256(keccak256(abi.encode("nexus-staking-pool", pid)))));
     }
 }
 
@@ -200,13 +210,18 @@ contract NexusMutualStakingPoolsBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(p[0].amount, 120);
         assertEq(uint8(p[1].positionKind), uint8(PositionKind.Rewards));
         assertEq(p[1].amount, 7);
-        bytes memory expectedId = abi.encode(uint256(4), uint256(7)); // (tokenId, poolId)
+        bytes memory expectedId = abi.encode(viewer.poolAddr(7)); // positionId = staking-pool address
         for (uint256 i; i < 2; i++) {
             assertEq(p[i].balanceAsset.asset, address(nxm));
             assertEq(p[i].balanceAdapter, address(adapter));
             assertEq(p[i].protocolId, ProtocolIds.NEXUS_MUTUAL_STAKING);
             assertEq(p[i].positionId, expectedId);
             assertEq(p[i].isDebt, false);
+            // labels = [category, pool address, NFT id] with the NFT id last.
+            assertEq(p[i].labels.length, 3);
+            assertEq(p[i].labels[0], "Staking");
+            assertEq(p[i].labels[1], Strings.toHexString(viewer.poolAddr(7)));
+            assertEq(p[i].labels[2], "NFT #4");
         }
     }
 
@@ -224,14 +239,16 @@ contract NexusMutualStakingPoolsBalanceAdapterTest is BalanceAdapterTestBase {
 
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
         assertEq(p.length, 4); // (Staking+Rewards) x 2 tokens
-        // token 1 → pool 7 (cache order)
-        assertEq(p[0].positionId, abi.encode(uint256(1), uint256(7)));
-        assertEq(p[1].positionId, abi.encode(uint256(1), uint256(7)));
+        // token 1 → pool 7 (cache order); positionId = pool address, NFT id in labels
+        assertEq(p[0].positionId, abi.encode(viewer.poolAddr(7)));
+        assertEq(p[1].positionId, abi.encode(viewer.poolAddr(7)));
+        assertEq(p[0].labels[2], "NFT #1");
         assertEq(p[0].amount, 100);
         assertEq(p[1].amount, 1);
         // token 2 → pool 9
-        assertEq(p[2].positionId, abi.encode(uint256(2), uint256(9)));
-        assertEq(p[3].positionId, abi.encode(uint256(2), uint256(9)));
+        assertEq(p[2].positionId, abi.encode(viewer.poolAddr(9)));
+        assertEq(p[3].positionId, abi.encode(viewer.poolAddr(9)));
+        assertEq(p[2].labels[2], "NFT #2");
         assertEq(p[2].amount, 200);
         assertEq(p[3].amount, 2);
     }
@@ -242,7 +259,7 @@ contract NexusMutualStakingPoolsBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(p.length, 1);
         assertEq(uint8(p[0].positionKind), uint8(PositionKind.Staking));
         assertEq(p[0].amount, 50);
-        assertEq(p[0].positionId, abi.encode(uint256(1), uint256(3)));
+        assertEq(p[0].positionId, abi.encode(viewer.poolAddr(3)));
     }
 
     function test_positions_onlyRewardsWhenNoStake() public {
@@ -316,7 +333,8 @@ contract NexusMutualStakingPoolsBalanceAdapterTest is BalanceAdapterTestBase {
         nft.setToken(1, 1, other); // token 1 moves to `other`
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
         assertEq(p.length, 1, "transferred token discarded; remaining token reported");
-        assertEq(p[0].positionId, abi.encode(uint256(2), uint256(1)));
+        assertEq(p[0].positionId, abi.encode(viewer.poolAddr(1)));
+        assertEq(p[0].labels[2], "NFT #2");
         (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, address(nxm));
         assertEq(amt, 200);
     }

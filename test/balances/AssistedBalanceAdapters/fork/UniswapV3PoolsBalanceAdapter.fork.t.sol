@@ -89,9 +89,14 @@ contract UniswapV3PoolsBalanceForkTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(HOLDER, address(0));
         assertGt(p.length, 0);
         for (uint256 i = 0; i < p.length; i++) {
-            (address npm, uint256 tokenId) = abi.decode(p[i].positionId, (address, uint256));
-            assertEq(npm, NPM, "positionId[0] = NonfungiblePositionManager");
-            assertGt(tokenId, 0, "positionId[1] = non-zero tokenId");
+            // positionId = the pool contract address.
+            address pool = abi.decode(p[i].positionId, (address));
+            assertTrue(pool != address(0), "positionId = non-zero pool address");
+            assertGt(pool.code.length, 0, "positionId resolves to a deployed pool");
+            // NFT id is the last label segment.
+            assertEq(p[i].labels.length, 3, "labels = [category, pool, NFT id]");
+            assertEq(p[i].labels[0], "Liquidity Pool");
+            assertEq(bytes(p[i].labels[2]).length > 0, true, "NFT id label present");
         }
     }
 }

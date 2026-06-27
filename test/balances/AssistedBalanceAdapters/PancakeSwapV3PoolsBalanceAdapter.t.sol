@@ -13,7 +13,13 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
-import {MockPositionManager, MockToken} from "test/balances/AssistedBalanceAdapters/UniswapV3Mocks.sol";
+import {
+    MockPositionManager,
+    MockUniswapV3Pool,
+    MockUniswapV3Factory,
+    MockToken
+} from "test/balances/AssistedBalanceAdapters/UniswapV3Mocks.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 /// @title PancakeSwapV3PoolsBalanceAdapter unit tests (no fork)
 /// @notice The shared assisted tokenId cache / per-NFT principal+fee math / NAV filtering is verified by the Uniswap
@@ -24,6 +30,8 @@ import {MockPositionManager, MockToken} from "test/balances/AssistedBalanceAdapt
 contract PancakeSwapV3PoolsBalanceAdapterTest is Test {
     Mock_NAVCalculator nav;
     MockPositionManager npm;
+    MockUniswapV3Factory factory;
+    MockUniswapV3Pool pool; // WETH/USDT 0.05%
     MockToken weth;
     MockToken usdt;
     PancakeSwapV3PoolsBalanceAdapter adapter;
@@ -37,6 +45,12 @@ contract PancakeSwapV3PoolsBalanceAdapterTest is Test {
         usdt = new MockToken("USDT", 6);
         nav.registerAsset(address(weth), 18, "WETH");
         nav.registerAsset(address(usdt), 6, "USDT");
+
+        // Factory + pool so positionId resolves to the pool address.
+        factory = new MockUniswapV3Factory();
+        pool = new MockUniswapV3Pool(address(weth), address(usdt), 500, 10);
+        factory.setPool(address(weth), address(usdt), 500, address(pool));
+        npm.setFactory(address(factory));
 
         // [2] Reconstructed raw token1/token0 price == 1.0 (sqrtPrice == 2^96, tick 0), in range for [-100, 100].
         nav.setAssetPrice(address(weth), 1e18, 8);
@@ -113,14 +127,14 @@ contract PancakeSwapV3PoolsBalanceAdapterTest is Test {
         }
     }
 
-    /// @notice positionId schema + identity are inherited unchanged: abi.encode(npm, tokenId), label "NFT #<id>".
+    /// @notice positionId schema + labels inherited unchanged: positionId = abi.encode(pool); labels end with NFT id.
     function test_identity_positionId_andLabel() public view {
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(alice, address(0));
         assertGt(p.length, 0);
-        assertEq(p[0].positionId, abi.encode(address(npm), uint256(1)));
-        string[] memory labels = adapter.positionLabels(abi.encode(address(npm), uint256(1)));
-        assertEq(labels.length, 2);
-        assertEq(labels[0], "Liquidity Pool");
-        assertEq(labels[1], "NFT #1");
+        assertEq(p[0].positionId, abi.encode(address(pool)));
+        assertEq(p[0].labels.length, 3);
+        assertEq(p[0].labels[0], "Liquidity Pool");
+        assertEq(p[0].labels[1], Strings.toHexString(address(pool)));
+        assertEq(p[0].labels[2], "NFT #1");
     }
 }

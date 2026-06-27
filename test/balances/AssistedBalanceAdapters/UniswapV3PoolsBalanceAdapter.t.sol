@@ -11,21 +11,30 @@ import {NotTokenOwner} from "src/errors.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
-import {MockPositionManager, MockToken} from "test/balances/AssistedBalanceAdapters/UniswapV3Mocks.sol";
+import {
+    MockPositionManager,
+    MockUniswapV3Pool,
+    MockUniswapV3Factory,
+    MockToken
+} from "test/balances/AssistedBalanceAdapters/UniswapV3Mocks.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 /// @title UniswapV3PoolsBalanceAdapter unit tests (no fork)
-/// @notice Assisted (agent-fed) tokenId cache + per-NFT decomposition for UniswapV3Pools. The adapter never reads
-///         the pool — it reads `positions(tokenId)` and reconstructs the price from the registered oracles — so
-///         these tests drive it entirely through the NPM mock + the submitted tokenId cache.
+/// @notice Assisted (agent-fed) tokenId cache + per-NFT decomposition for UniswapV3Pools. The adapter reads
+///         `positions(tokenId)`, reconstructs the price from the registered oracles, and resolves the pool address
+///         (positionId) via the factory — so these tests drive it through the NPM/factory/pool mocks + the cache.
 contract UniswapV3PoolsBalanceAdapterTest is Test {
     Mock_NAVCalculator nav;
     MockPositionManager npm;
+    MockUniswapV3Factory factory;
     UniswapV3PoolsBalanceAdapter adapter;
 
     MockToken wbtc; // NFT 1 token0
     MockToken weth; // shared token1
     MockToken usdc; // NFT 2 token0
+    MockUniswapV3Pool poolA; // WBTC/WETH 0.3% (NFT 1)
+    MockUniswapV3Pool poolB; // USDC/WETH 0.05% (NFT 2)
 
     address alice = makeAddr("alice");
     address other = makeAddr("other");
@@ -41,6 +50,14 @@ contract UniswapV3PoolsBalanceAdapterTest is Test {
         nav.registerAsset(address(wbtc), 8, "WBTC");
         nav.registerAsset(address(weth), 18, "WETH");
         nav.registerAsset(address(usdc), 6, "USDC");
+
+        // Factory + per-(token0,token1,fee) pool contracts; positionId resolves to the pool address via getPool.
+        factory = new MockUniswapV3Factory();
+        poolA = new MockUniswapV3Pool(address(wbtc), address(weth), 3000, 60);
+        poolB = new MockUniswapV3Pool(address(usdc), address(weth), 500, 10);
+        factory.setPool(address(wbtc), address(weth), 3000, address(poolA));
+        factory.setPool(address(usdc), address(weth), 500, address(poolB));
+        npm.setFactory(address(factory)); // must precede adapter construction (read in the constructor)
 
         // [2] The adapter reconstructs sqrtPriceX96 from these oracle prices (it never reads slot0). They are chosen
         // so the reconstructed raw token1/token0 price is 1.0 (sqrtPrice == 2^96, tick 0), keeping the [-100, 100]
@@ -135,10 +152,16 @@ contract UniswapV3PoolsBalanceAdapterTest is Test {
             assertEq(p[i].balanceAdapter, address(adapter));
             assertFalse(p[i].isDebt);
         }
-        // NFT 1 legs carry positionId = abi.encode(npm, tokenId=1)
-        assertEq(p[0].positionId, abi.encode(address(npm), uint256(1)));
-        // NFT 2 legs carry positionId = abi.encode(npm, tokenId=2)
-        assertEq(p[4].positionId, abi.encode(address(npm), uint256(2)));
+        // NFT 1 legs carry positionId = the pool address (WBTC/WETH 0.3%)
+        assertEq(p[0].positionId, abi.encode(address(poolA)));
+        // NFT 2 legs carry positionId = the pool address (USDC/WETH 0.05%)
+        assertEq(p[4].positionId, abi.encode(address(poolB)));
+        // Labels carry the pool address and the NFT id last: ["Liquidity Pool", "<pool>", "NFT #<id>"].
+        assertEq(p[0].labels.length, 3);
+        assertEq(p[0].labels[0], "Liquidity Pool");
+        assertEq(p[0].labels[1], Strings.toHexString(address(poolA)));
+        assertEq(p[0].labels[2], "NFT #1");
+        assertEq(p[4].labels[2], "NFT #2");
     }
 
     function test_feesLegType() public view {
@@ -230,7 +253,8 @@ contract UniswapV3PoolsBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(alice, address(0));
         // NFT 1's 4 legs gone; NFT 2's 4 legs remain.
         assertEq(p.length, 4, "transferred NFT discarded; remaining NFT still reported");
-        assertEq(p[0].positionId, abi.encode(address(npm), uint256(2)));
+        assertEq(p[0].positionId, abi.encode(address(poolB)));
+        assertEq(p[0].labels[2], "NFT #2");
     }
 
     /// @notice Reads are fail-open: a burned id (ownerOf reverts) is silently discarded.
@@ -238,7 +262,8 @@ contract UniswapV3PoolsBalanceAdapterTest is Test {
         npm.burn(2);
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(alice, address(0));
         assertEq(p.length, 4, "burned NFT discarded; remaining NFT still reported");
-        assertEq(p[0].positionId, abi.encode(address(npm), uint256(1)));
+        assertEq(p[0].positionId, abi.encode(address(poolA)));
+        assertEq(p[0].labels[2], "NFT #1");
     }
 
     function test_submit_dedups() public {

@@ -157,14 +157,15 @@ contract PancakeSwapV3PoolsBalanceForkTest is BalanceAdapterTestBase {
         assertGt(_sumFrom(p, USDT, true), 0, "USDT principal should be non-zero");
     }
 
-    /// @notice Identity is derived on-chain: positionId = abi.encode(NPM, tokenId); slug = pancakeswap-v3.
+    /// @notice Identity is derived on-chain: positionId = the pool address; NFT id in labels; slug = pancakeswap-v3.
     function test_identityDerivedOnChain() public view {
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(HOLDER, address(0));
         assertGt(p.length, 0, "expected at least one leg");
         for (uint256 i = 0; i < p.length; i++) {
-            (address npm, uint256 tokenId) = abi.decode(p[i].positionId, (address, uint256));
-            assertEq(npm, NPM, "positionId[0] = NonfungiblePositionManager");
-            assertGt(tokenId, 0, "positionId[1] = non-zero tokenId");
+            address pool = abi.decode(p[i].positionId, (address));
+            assertTrue(pool != address(0), "positionId = non-zero pool address");
+            assertGt(pool.code.length, 0, "positionId resolves to a deployed pool");
+            assertEq(p[i].labels.length, 3, "labels = [category, pool, NFT id]");
             assertEq(p[i].protocolId, ProtocolIds.PANCAKESWAP_V3, "protocolId = pancakeswap-v3");
         }
     }

@@ -71,14 +71,6 @@ contract NexusMutualStakingPoolsBalanceAdapterForkTest is BalanceAdapterTestBase
         ids[4] = 187;
     }
 
-    function _isKnownId(uint256 tokenId) internal pure returns (bool) {
-        uint256[] memory ids = _knownIds();
-        for (uint256 i; i < ids.length; ++i) {
-            if (ids[i] == tokenId) return true;
-        }
-        return false;
-    }
-
     function test_realHolder_scanMatchesAggregate() public {
         (uint256 staking, uint256 rewards) = _liveTotals();
         // Sanity: the pinned values are the live state at FORK_BLOCK.
@@ -107,10 +99,12 @@ contract NexusMutualStakingPoolsBalanceAdapterForkTest is BalanceAdapterTestBase
             assertEq(p[i].balanceAdapter, address(adapter));
             assertEq(p[i].protocolId, ProtocolIds.NEXUS_MUTUAL_STAKING);
             assertFalse(p[i].isDebt);
-            // positionId decodes to one of the Safe's known (tokenId, poolId) positions.
-            (uint256 tokenId, uint256 poolId) = abi.decode(p[i].positionId, (uint256, uint256));
-            assertTrue(_isKnownId(tokenId), "positionId tokenId not in known set");
-            assertGt(poolId, 0, "poolId should be set");
+            // positionId = the staking-pool contract address; the NFT id is the last label segment.
+            address pool = abi.decode(p[i].positionId, (address));
+            assertGt(pool.code.length, 0, "positionId resolves to a deployed staking pool");
+            assertEq(p[i].labels.length, 3, "labels = [Staking, pool, NFT id]");
+            assertEq(p[i].labels[0], "Staking");
+            assertGt(bytes(p[i].labels[2]).length, 0, "NFT id label present");
             if (p[i].positionKind == PositionKind.Staking) {
                 stakingSum += p[i].amount;
             } else {

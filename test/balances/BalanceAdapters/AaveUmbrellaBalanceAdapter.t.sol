@@ -309,77 +309,57 @@ contract AaveUmbrellaBalanceMathTest is BalanceAdapterTestBase {
     // ─── cooldown / isLocked split ───────────────────────────────────────────────
 
     /// @dev bob holds 2000e18 stkGHO (no rewards). Activate a cooldown over part of the balance so the staked
-    ///      principal splits into a live leg (isLocked=false) and an unstaking leg (isLocked depending on window).
-    ///      The two legs use DISTINCT positionIds: live = abi.encode(stk), unstaking = abi.encode(stk, uint8(1)).
-    function test_getAdapterPositions_cooldownActive_inWindow_unstakingLegClaimable() public {
-        // Cooldown over 500e18 shares; window currently open → unstaking leg isLocked = false.
+    ///      principal splits into a locked leg (isLocked=true — active stake + any cooling/expired cooldown) and,
+    ///      when the cooldown is elapsed-and-in-window, an unlocked leg (isLocked=false). Both legs share
+    ///      `positionId = abi.encode(stk)` and are told apart by `isLocked`.
+    function test_getAdapterPositions_cooldownActive_inWindow_unlockedLeg() public {
+        // Cooldown over 500e18 shares; window currently open → withdrawable → unlocked leg.
         vm.warp(1_000_000);
         stkGho.setCooldown(bob, 500e18, uint32(block.timestamp - 10), uint32(1 days));
 
         INAVCalculator.PositionBalance[] memory positions = oracle.getAdapterPositions(bob, address(gho));
-        assertEq(positions.length, 2, "live-stake leg + unstaking leg (no rewards)");
+        assertEq(positions.length, 2, "locked (rest) + unlocked (in-window cooldown) legs (no rewards)");
 
-        uint256 live;
-        uint256 unstaking;
-        bool sawLive;
-        bool sawUnstaking;
+        bytes memory expectedId = abi.encode(address(stkGho));
+        uint256 locked;
+        uint256 unlocked;
+        bool sawLocked;
+        bool sawUnlocked;
         for (uint256 i; i < positions.length; ++i) {
             INAVCalculator.PositionBalance memory p = positions[i];
             assertEq(p.balanceAsset.asset, address(gho));
             assertEq(uint8(p.positionKind), uint8(PositionKind.Staking));
             assertFalse(p.isDebt);
-            (address tok, uint8 leg) = _decodePositionId(p.positionId);
-            assertEq(tok, address(stkGho), "positionId stake token");
-            if (leg == 1) {
-                unstaking = p.amount;
-                assertFalse(p.isLocked, "inside the unstake window -> claimable");
-                sawUnstaking = true;
+            assertEq(p.positionId, expectedId, "both staking legs share the stake-token positionId");
+            if (p.isLocked) {
+                locked = p.amount;
+                sawLocked = true;
             } else {
-                live = p.amount;
-                assertFalse(p.isLocked, "live stake -> not locked");
-                sawLive = true;
+                unlocked = p.amount;
+                sawUnlocked = true;
             }
         }
-        assertTrue(sawLive && sawUnstaking, "both legs present");
-        // 2000e18 shares split 1500 live + 500 unstaking, each * 1.2 (one hop to GHO).
-        assertEq(live, 1500e18 * 12 / 10, "live = 1500 shares * 1.2");
-        assertEq(unstaking, 500e18 * 12 / 10, "unstaking = 500 shares * 1.2");
+        assertTrue(sawLocked && sawUnlocked, "both legs present");
+        // 2000e18 shares split 1500 locked + 500 unlocked, each * 1.2 (one hop to GHO).
+        assertEq(locked, 1500e18 * 12 / 10, "locked = 1500 shares * 1.2");
+        assertEq(unlocked, 500e18 * 12 / 10, "unlocked = 500 shares * 1.2");
 
         // NAV-total invariance: the two staking legs sum to the full staked principal (= the balance method total).
         (uint256 agg,) = oracle.getAdapterBalanceForAsset(bob, address(gho));
-        assertEq(live + unstaking, agg, "sum of staking legs == aggregate staked balance (no rewards)");
+        assertEq(locked + unlocked, agg, "sum of staking legs == aggregate staked balance (no rewards)");
     }
 
-    function test_getAdapterPositions_cooldownActive_cooling_unstakingLegLocked() public {
-        // endOfCooldown in the future → still cooling → unstaking leg isLocked = true.
+    function test_getAdapterPositions_cooldownActive_cooling_allLocked() public {
+        // endOfCooldown in the future → still cooling → entire balance non-withdrawable → a single locked leg.
         vm.warp(1_000_000);
         stkGho.setCooldown(bob, 800e18, uint32(block.timestamp + 2 days), uint32(1 days));
 
         INAVCalculator.PositionBalance[] memory positions = oracle.getAdapterPositions(bob, address(gho));
-        assertEq(positions.length, 2);
-
-        bool sawLockedUnstaking;
-        for (uint256 i; i < positions.length; ++i) {
-            (, uint8 leg) = _decodePositionId(positions[i].positionId);
-            if (leg == 1) {
-                assertTrue(positions[i].isLocked, "still cooling -> unstaking leg locked");
-                assertEq(positions[i].amount, 800e18 * 12 / 10);
-                sawLockedUnstaking = true;
-            } else {
-                assertFalse(positions[i].isLocked, "live stake leg never locked");
-            }
-        }
-        assertTrue(sawLockedUnstaking, "unstaking leg present and locked");
-    }
-
-    /// @dev Decode either `abi.encode(address)` (live leg) or `abi.encode(address, uint8)` (unstaking leg).
-    function _decodePositionId(bytes memory id) private pure returns (address token, uint8 leg) {
-        if (id.length == 64) {
-            (token, leg) = abi.decode(id, (address, uint8));
-        } else {
-            token = abi.decode(id, (address));
-            leg = 0;
-        }
+        assertEq(positions.length, 1, "cooling cooldown is not withdrawable -> a single locked leg");
+        assertEq(positions[0].positionId, abi.encode(address(stkGho)));
+        assertTrue(positions[0].isLocked, "still cooling -> locked");
+        // Full 2000e18 shares * 1.2 (active stake + cooling cooldown both locked).
+        assertEq(positions[0].amount, 2000e18 * 12 / 10, "active stake + cooling cooldown both locked");
     }
 
     // ─── helpers ────────────────────────────────────────────────────────────────

@@ -269,8 +269,8 @@ contract KelpWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
             assertEq(positions[i].balanceAdapter, address(adapter));
             assertFalse(positions[i].isDebt);
             assertTrue(positions[i].isLocked, "default cursor 0 -> locked");
-            // positionId is now the per-asset coordinate, NOT the withdrawal manager.
-            assertEq(positions[i].positionId, abi.encode(positions[i].balanceAsset.asset));
+            // positionId is the static withdrawal-manager anchor; the payout asset lives in balanceAsset.asset.
+            assertEq(positions[i].positionId, abi.encode(address(manager)));
         }
     }
 
@@ -285,7 +285,7 @@ contract KelpWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(positions[0].balanceAsset.asset, address(steth));
         assertEq(positions[0].amount, 5e18);
         assertFalse(positions[0].isLocked, "nonce < cursor AND delay elapsed -> claimable");
-        assertEq(positions[0].positionId, abi.encode(address(steth)));
+        assertEq(positions[0].positionId, abi.encode(address(manager)));
     }
 
     function test_getAdapterPositions_delayGateLocksDespiteCursor() public {
@@ -311,7 +311,7 @@ contract KelpWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_getAdapterPositions_mixedClaimableAndLocked() public {
         // Two requests on the same asset: nonce 0 unlocked (claimable), nonce 1 still locked (cursor not past it).
-        // Both legs share the static per-asset positionId, distinguished by isLocked.
+        // Both legs share the static withdrawal-manager positionId, distinguished by isLocked.
         manager.pushRequest(address(steth), alice, 3e18); // nonce 0
         manager.pushRequest(address(steth), alice, 2e18); // nonce 1
         manager.setNextLockedNonce(address(steth), 1); // cursor past nonce 0 only
@@ -319,7 +319,7 @@ contract KelpWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(steth));
         assertEq(positions.length, 2, "claimable + locked legs for the same asset");
 
-        bytes memory expectedId = abi.encode(address(steth));
+        bytes memory expectedId = abi.encode(address(manager));
         uint256 claimable;
         uint256 locked;
         bool sawClaimable;
@@ -328,7 +328,7 @@ contract KelpWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
             assertEq(positions[i].balanceAsset.asset, address(steth));
             assertEq(positions[i].balanceAdapter, address(adapter));
             assertFalse(positions[i].isDebt);
-            assertEq(positions[i].positionId, expectedId, "both legs share the static per-asset positionId");
+            assertEq(positions[i].positionId, expectedId, "both legs share the static withdrawal-manager positionId");
             if (positions[i].isLocked) {
                 locked += positions[i].amount;
                 sawLocked = true;

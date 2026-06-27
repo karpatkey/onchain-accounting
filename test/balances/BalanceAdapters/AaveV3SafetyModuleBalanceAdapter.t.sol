@@ -192,86 +192,77 @@ contract AaveV3SafetyModuleBalanceAdapterTest is BalanceAdapterTestBase {
         balances.addSupportedAssetForTest(adapter.GHO()); // staked token of stkGHO; must be registered to emit
     }
 
-    function test_getAdapterPositions_noCooldown_singleLiveLeg() public {
+    function test_getAdapterPositions_noCooldown_singleLockedLeg() public {
         MockStakeTokenV3 stk = _etchStkGho();
-        stk.setBalance(alice, 1000e18); // no cooldown set → entire balance is live stake
+        stk.setBalance(alice, 1000e18); // no cooldown set → entire balance is active stake (non-withdrawable)
         stk.setWindows(7 days, 2 days);
 
         INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, adapter.GHO());
-        assertEq(positions.length, 1, "no cooldown -> a single live-stake leg");
+        assertEq(positions.length, 1, "no cooldown -> a single locked stake leg");
         assertEq(positions[0].balanceAsset.asset, adapter.GHO());
         assertEq(uint8(positions[0].positionKind), uint8(PositionKind.Staking));
         assertEq(positions[0].amount, 1000e18);
-        assertFalse(positions[0].isLocked, "live stake -> not locked");
-        assertEq(positions[0].positionId, abi.encode(adapter.STK_GHO()), "live leg positionId = stake token");
+        assertTrue(positions[0].isLocked, "active stake -> non-withdrawable -> locked");
+        assertEq(positions[0].positionId, abi.encode(adapter.STK_GHO()), "staking leg positionId = stake token");
         assertEq(positions[0].protocolId, ProtocolIds.AAVE_V3_SAFETY_MODULE);
     }
 
-    function test_getAdapterPositions_cooldownInWindow_unstakingLegClaimable() public {
+    function test_getAdapterPositions_cooldownInWindow_unlockedLeg() public {
         MockStakeTokenV3 stk = _etchStkGho();
         stk.setBalance(alice, 1000e18);
         stk.setWindows(7 days, 2 days);
-        // Cooldown over 300 shares; activated 7 days + a bit ago → now inside the unstake window → claimable.
+        // Cooldown over 300 shares; activated 7 days + a bit ago → now inside the unstake window → withdrawable.
         vm.warp(1_000_000);
         stk.setCooldown(alice, uint40(block.timestamp - 7 days - 1 hours), uint216(300e18));
 
         INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, adapter.GHO());
-        assertEq(positions.length, 2, "live + unstaking legs");
+        assertEq(positions.length, 2, "locked (rest) + unlocked (in-window cooldown) legs");
 
-        uint256 live;
-        uint256 unstaking;
-        bool sawLive;
-        bool sawUnstaking;
+        // Both legs share positionId = abi.encode(stakeToken); they are told apart by isLocked.
+        bytes memory expectedId = abi.encode(adapter.STK_GHO());
+        uint256 locked;
+        uint256 unlocked;
+        bool sawLocked;
+        bool sawUnlocked;
         for (uint256 i; i < positions.length; ++i) {
             INAVCalculator.PositionBalance memory p = positions[i];
             assertEq(p.balanceAsset.asset, adapter.GHO());
             assertEq(uint8(p.positionKind), uint8(PositionKind.Staking));
             assertFalse(p.isDebt);
-            if (keccak256(p.positionId) == keccak256(abi.encode(adapter.STK_GHO(), uint8(1)))) {
-                unstaking = p.amount;
-                assertFalse(p.isLocked, "inside the unstake window -> claimable");
-                sawUnstaking = true;
+            assertEq(p.positionId, expectedId, "both staking legs share the stake-token positionId");
+            if (p.isLocked) {
+                locked = p.amount;
+                sawLocked = true;
             } else {
-                assertEq(p.positionId, abi.encode(adapter.STK_GHO()), "live leg positionId");
-                live = p.amount;
-                assertFalse(p.isLocked, "live stake -> not locked");
-                sawLive = true;
+                unlocked = p.amount;
+                sawUnlocked = true;
             }
         }
-        assertTrue(sawLive && sawUnstaking, "both legs present");
-        assertEq(live, 700e18, "live = balance - cooldown shares");
-        assertEq(unstaking, 300e18, "unstaking = cooldown shares");
+        assertTrue(sawLocked && sawUnlocked, "both legs present");
+        assertEq(locked, 700e18, "locked = balance - in-window cooldown shares");
+        assertEq(unlocked, 300e18, "unlocked = in-window cooldown shares");
 
         // NAV-total invariance: the two staking legs sum to the full staked principal (rate 1, rewards=0).
         (uint256 agg,) = adapter.getAdapterBalanceForAsset(alice, adapter.GHO());
-        assertEq(live + unstaking, agg, "sum of staking legs == aggregate staked balance");
+        assertEq(locked + unlocked, agg, "sum of staking legs == aggregate staked balance");
     }
 
-    function test_getAdapterPositions_cooldownCooling_unstakingLegLocked() public {
+    function test_getAdapterPositions_cooldownCooling_allLocked() public {
         MockStakeTokenV3 stk = _etchStkGho();
         stk.setBalance(alice, 1000e18);
         stk.setWindows(7 days, 2 days);
-        // Cooldown just activated → unlockStart is in the future → still cooling → unstaking leg locked.
+        // Cooldown just activated → unlockStart is in the future → still cooling → entire balance non-withdrawable.
         vm.warp(1_000_000);
         stk.setCooldown(alice, uint40(block.timestamp), uint216(400e18));
 
         INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, adapter.GHO());
-        assertEq(positions.length, 2);
-
-        bool sawLockedUnstaking;
-        for (uint256 i; i < positions.length; ++i) {
-            if (keccak256(positions[i].positionId) == keccak256(abi.encode(adapter.STK_GHO(), uint8(1)))) {
-                assertTrue(positions[i].isLocked, "still cooling -> unstaking leg locked");
-                assertEq(positions[i].amount, 400e18);
-                sawLockedUnstaking = true;
-            } else {
-                assertFalse(positions[i].isLocked, "live leg never locked");
-            }
-        }
-        assertTrue(sawLockedUnstaking, "unstaking leg present and locked");
+        assertEq(positions.length, 1, "cooling cooldown is not withdrawable -> a single locked leg");
+        assertEq(positions[0].positionId, abi.encode(adapter.STK_GHO()));
+        assertTrue(positions[0].isLocked, "still cooling -> locked");
+        assertEq(positions[0].amount, 1000e18, "active stake + cooling cooldown both locked");
     }
 
-    function test_getAdapterPositions_cooldownExpiredPastWindow_unstakingLegLocked() public {
+    function test_getAdapterPositions_cooldownExpiredPastWindow_allLocked() public {
         MockStakeTokenV3 stk = _etchStkGho();
         stk.setBalance(alice, 1000e18);
         stk.setWindows(7 days, 2 days);
@@ -280,10 +271,9 @@ contract AaveV3SafetyModuleBalanceAdapterTest is BalanceAdapterTestBase {
         stk.setCooldown(alice, uint40(block.timestamp - 30 days), uint216(250e18));
 
         INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, adapter.GHO());
-        for (uint256 i; i < positions.length; ++i) {
-            if (keccak256(positions[i].positionId) == keccak256(abi.encode(adapter.STK_GHO(), uint8(1)))) {
-                assertTrue(positions[i].isLocked, "past the unstake window -> re-locked");
-            }
-        }
+        assertEq(positions.length, 1, "past the unstake window -> a single locked leg");
+        assertEq(positions[0].positionId, abi.encode(adapter.STK_GHO()));
+        assertTrue(positions[0].isLocked, "past the unstake window -> re-locked");
+        assertEq(positions[0].amount, 1000e18, "active stake + expired cooldown both locked");
     }
 }

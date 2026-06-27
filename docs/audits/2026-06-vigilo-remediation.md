@@ -16,7 +16,7 @@ The audit report already discounted 8 of 9 raw "Highs" via adversarial verificat
 | **M-12b** | `depositAndBridge` leaves a residual adapter approval | Reset ERC20 allowance to 0 after `adapter.bridge()` in `BridgeEscrow.depositAndBridge` (mirrors `_fundAndRelease`'s approve→use→reset) | `test_depositAndBridge_resetsAdapterAllowance` |
 | **M-10b** | `revokeAdapter` has no active-invoice guard (asymmetric with `revokeAccount`) | Added `_hasActiveInvoicesForAdapter` guard + `AdapterHasActiveInvoices` error; revoke now reverts while the adapter has in-flight (BRIDGING) invoices | `test_revokeAdapter_revertsWithActiveInvoices`, `test_revokeAdapter_succeedsAfterInvoiceCompleted` |
 
-All bridge unit tests pass (`forge test --match-path "test/bridge/**"` → 219, plus 3 new). No NAV/price/balance code touched, so integration snapshots are unaffected.
+All bridge unit tests pass (`forge test --match-path "test/bridge/**"` → 219, plus 3 new). The bridge-hardening fixes in this section touch no NAV/price/balance code, so integration snapshots are unaffected. (This branch later also lands the UniV3/PancakeSwap V3 fee fix — audit finding M-A1 — which *does* change a balance adapter; it is documented separately in [`2026-06-vigilo-adapter-audit.md`](2026-06-vigilo-adapter-audit.md) §M-A1 and is covered by unit tests, with the fork tests confirming no principal-valuation regression.)
 
 ---
 

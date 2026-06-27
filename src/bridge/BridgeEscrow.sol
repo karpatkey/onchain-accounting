@@ -733,8 +733,10 @@ contract BridgeEscrow is
         uint256 safeCount = _authorizedAccounts.length();
         for (uint256 i = 0; i < safeCount; i++) {
             address safe = _authorizedAccounts.at(i);
-            bytes32[] memory activeInvoiceHashes = _activeInvoices[safe];
-            for (uint256 j = 0; j < activeInvoiceHashes.length; j++) {
+            // Iterate the storage array directly (no full memory copy) — cheaper as invoice counts grow.
+            bytes32[] storage activeInvoiceHashes = _activeInvoices[safe];
+            uint256 len = activeInvoiceHashes.length;
+            for (uint256 j = 0; j < len; j++) {
                 if (invoices[activeInvoiceHashes[j]].adapter == adapter) return true;
             }
         }

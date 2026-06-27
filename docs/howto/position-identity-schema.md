@@ -1376,6 +1376,44 @@ address widened → `abi.encode(address instance)`); overrides are flagged.
 | `UniswapV3PoolsMetaBalanceAdapter` | `uniswap-v3` | `"Uniswap V3"` (gov) | `["Liquidity Pool", "NFT #<tokenId>"]` (derived) | `abi.encode(address npm, uint256 tokenId)` | Supplied / Fees | `["Uniswap V3","Liquidity Pool","NFT #12345"]` |
 | `PancakeSwapV3PoolsMetaBalanceAdapter` | `pancakeswap-v3` | `"PancakeSwap V3"` (gov) | `["Liquidity Pool", "NFT #<tokenId>"]` (derived, inherited) | `abi.encode(address npm, uint256 tokenId)` | Supplied / Fees | `["PancakeSwap V3","Liquidity Pool","NFT #12345"]` |
 
+#### What each `positionId` value is
+
+Every encoded value above is the **canonical on-chain coordinate** of the position — the contract (or
+contract + id) you would call to act on it. Decode each with the schema in the table; here is exactly
+what each argument refers to:
+
+| Encoded value | What it is |
+|---|---|
+| `address asset` | The ERC20 token held in the wallet (or the native-token sentinel `0xEeee…EEeE` for ETH/native). The same address is also in `balanceAsset.asset`. |
+| `address pool` (Aave V3) | The Aave V3 `Pool` contract of that market instance (resolved from the instance's `ProtocolDataProvider`). One Aave position per instance; the reserve token is in `balanceAsset`, not here. |
+| `address POOL` (Spark) | The SparkLend `Pool` contract (SparkLend is Aave V3's `Pool` logic, deployed by Spark). Reserve token is in `balanceAsset`. |
+| `address comet` | The Compound V3 `Comet` market contract (e.g. the cUSDCv3 Comet). Base token, collaterals and COMP rewards are all distinguished by `balanceAsset` + `positionKind`. |
+| `address vault` | The ERC4626 (or vault) share-token contract: a MetaMorpho vault, an Euler `EVault`, a Fluid T1 vault, or a StakeWise V3 vault. It is the contract whose `convertToAssets`/valuation is read. |
+| `address fToken` | The Fluid lending `fToken` (an ERC4626 share token, e.g. `fUSDC`). |
+| `address market` (Gearbox) | The Gearbox V3 pool contract (an ERC4626 "diesel" pool, e.g. `dUSDC`). |
+| `bytes32 marketId` (Morpho) | Morpho's `Id` for one isolated market — `keccak256` of the market params `(loanToken, collateralToken, oracle, irm, lltv)`. **Raw `bytes32`, not an address.** Collateral, supply and borrow legs of the market share it. |
+| `address stakeToken` | The Aave staking-token contract: a Safety Module `stk*` token (stkAAVE / stkGHO / stkABPT) or an Aave Umbrella stake token. Staked principal and claimable rewards share it. |
+| `address CUSD` / `address STCUSD` | The Cap protocol's cUSD (synthetic dollar) or stcUSD (staked cUSD / savings) token contract — one per leg, so the two legs carry different addresses. |
+| `address wrapper` | The generic ERC4626 wrapper share token the adapter was deployed for (e.g. `waEthLidoGHO`, `sGHO`). Distinct deployments carry distinct wrapper addresses. |
+| `address pair` | The **Uniswap V2 / PancakeSwap V2 pool contract**, which is *also* the LP (liquidity-provider) ERC20 token — in V2 the pair contract and its LP token are the same address. token0/token1 legs share it. |
+| `address pool` (Balancer V3 / Curve) | The liquidity-pool contract: a Balancer V3 pool (also its BPT token) or a Curve pool. Per-coin `Supplied` legs share it. |
+| `bytes32 poolId` (Balancer V2) | The Balancer V2 Vault `poolId` — the pool's 32-byte id used by the Balancer `Vault` (the first 20 bytes are the pool address). **Raw `bytes32`, not an address** (Balancer V2 keys pools by id, not address). |
+| `address gauge` | The staking **gauge** contract (Balancer V2/V3 or Curve) the LP is staked into. Staked principal and claimable reward legs share it. |
+| `address rewarder` (Convex) | The Convex `BaseRewardPool` ("rewarder") for that Curve LP. The underlying Curve pool, its coins and the CRV/CVX/extra rewards are derived from it. |
+| `address npm, uint256 tokenId` | **`npm` = the `NonfungiblePositionManager`** (Uniswap V3 mainnet `0xC364…FE88`, or the PancakeSwap V3 NPM) — the ERC721 contract that mints LP-position NFTs. **`tokenId`** = the specific LP NFT. Keyed per NFT (not per pool) since one pool can hold many NFTs; the four legs (token0/token1 × liquidity/fees) share it. |
+| `uint256 tokenId, uint256 poolId` (Nexus) | **`tokenId`** = the Nexus Mutual `StakingNFT` id (one staking position); **`poolId`** = the Nexus staking pool that NFT belongs to. Staking and reward legs (both NXM) share it. |
+| `address DISTRIBUTOR` (Merkl) | The Merkl `Distributor` (Angle Labs) — the claim target / trust anchor. All reward tokens claimed from it share this id and are told apart by `balanceAsset`. |
+| `address withdrawalQueue` (Lido) | Lido's `WithdrawalQueueERC721` — the contract that escrows stETH withdrawal requests and pays out ETH on claim. |
+| `address userWithdrawalManager` (Stader) | Stader's `UserWithdrawalManager` — escrows ETHx unstake requests, pays ETH (valued to WETH) on claim. |
+| `address withdrawalManager` (Kelp) | Kelp DAO's `LRTWithdrawalManager` — escrows rsETH exit requests across payout assets. |
+| `address withdrawRequestNFT` (ether.fi) | ether.fi's `WithdrawRequestNFT` — the ERC721 that represents eETH withdrawal requests and is the claim target. |
+| `address vaultsRegistry` (StakeWise) | StakeWise V3's `VaultsRegistry` — the immutable anchor gating which vaults the exit-queue cache accepts. |
+| `address sUSDe` (Ethena) | Ethena's `StakedUSDeV2` (sUSDe) — the staking contract that holds the unstaking cooldown and is the claim target; the owed USDe is in `balanceAsset`. |
+
+For the six account-global adapters (Lido, Stader, Kelp, ether.fi, StakeWise V3 exit, Ethena cooldown)
+the encoded contract is the adapter's single immutable anchor — there is one aggregated leg per account,
+so the anchor (not a per-request id) is the coordinate.
+
 **Multi-leg rule.** Where an adapter emits several legs (lending supply/borrow/collateral; gauge
 stake/rewards; Uniswap V3 liquidity/fees; StakeWise vault/osToken-debt), all legs **share one
 `positionId` and one label set** — they are distinguished by `positionKind` and, for per-token legs, by

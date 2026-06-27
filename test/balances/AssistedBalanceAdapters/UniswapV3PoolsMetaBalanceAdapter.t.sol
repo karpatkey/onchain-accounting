@@ -182,6 +182,56 @@ contract UniswapV3PoolsMetaBalanceAdapterTest is Test {
         assertEq(meta.getAdapterPositionsForInstances(alice, new bytes32[](0), address(0)).length, 0);
     }
 
+    /// @notice Fees-kind leg amount for (pool, token); `found` is false if no Fees leg exists for it.
+    function _feeLeg(bytes32 instance, address token) internal view returns (uint256 amt, bool found) {
+        bytes32[] memory one = new bytes32[](1);
+        one[0] = instance;
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, one, address(0));
+        for (uint256 i = 0; i < p.length; i++) {
+            if (p[i].balanceAsset.asset == token && p[i].positionKind == PositionKind.Fees) {
+                return (p[i].amount, true);
+            }
+        }
+        return (0, false);
+    }
+
+    /// @notice Audit M-A1: when the oracle-implied price and the pool's real (feeGrowthOutside-anchored) tick
+    ///         straddle a range boundary, the in-range fee-growth branch is inconsistent with the on-chain tick
+    ///         state and the unchecked `fgInside - fgInsideLast` subtraction wraps to ~2^256. The adapter clamps
+    ///         a delta above the pool's global fee-growth to 0, so the token's reported fee falls back to
+    ///         `tokensOwed` (conservative) instead of a phantom over-report — and never reverts/drops the position.
+    function test_M_A1_feeBranch_clampsInconsistentDelta() public {
+        uint256 Q128 = 1 << 128;
+        // Oracle keeps poolA at tick 0 (in range [-100,100]); make the in-range token0 formula underflow:
+        // fgInside0 = fgGlobal0(0) - fgOutLower0(Q128) - fgOutUpper0(Q128) wraps huge. token1 left consistent (0s).
+        poolA.setFeeGrowthGlobal(0, 0);
+        poolA.setTickFeeGrowth(-100, Q128, 0);
+        poolA.setTickFeeGrowth(100, Q128, 0);
+
+        (uint256 wbtcFee, bool f0) = _feeLeg(_instances()[0], address(wbtc));
+        (uint256 wethFee, bool f1) = _feeLeg(_instances()[0], address(weth));
+
+        assertTrue(f0, "WBTC fee leg present (no revert/drop)");
+        assertTrue(f1, "WETH fee leg present");
+        assertEq(wbtcFee, 42, "token0 wrapped delta clamped -> tokensOwed0 only (no phantom fee)");
+        assertEq(wethFee, 1337, "token1 consistent (delta 0) -> tokensOwed1 only");
+    }
+
+    /// @notice Audit M-A1 regression: a legitimate, consistent fee-growth delta (delta <= fgGlobal) is NOT clamped
+    ///         and flows through to the reported fee.
+    function test_M_A1_feeBranch_passesConsistentDelta() public {
+        uint256 Q128 = 1 << 128;
+        // Consistent in-range state: fgInside0 = 3Q128 - Q128 - Q128 = Q128; delta = Q128 <= fgGlobal0 (3Q128).
+        // fee0 = mulDiv(Q128, liquidity=1e6, Q128) + tokensOwed0(42) = 1_000_042.
+        poolA.setFeeGrowthGlobal(3 * Q128, 0);
+        poolA.setTickFeeGrowth(-100, Q128, 0);
+        poolA.setTickFeeGrowth(100, Q128, 0);
+
+        (uint256 wbtcFee, bool found) = _feeLeg(_instances()[0], address(wbtc));
+        assertTrue(found, "WBTC fee leg present");
+        assertEq(wbtcFee, 1_000_042, "legitimate fee-growth delta passes the clamp unchanged");
+    }
+
     function test_underlyingAssetsForInstances() public view {
         address[] memory a = meta.underlyingAssetsSupportedForInstances(_instances());
         assertEq(a.length, 4); // [wbtc, weth, usdc, weth]

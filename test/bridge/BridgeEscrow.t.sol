@@ -309,9 +309,7 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
         bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, BRIDGE_AMOUNT, address(mockAdapter));
 
         vm.prank(admin);
-        vm.expectRevert(
-            abi.encodeWithSelector(IBridgeEscrow.AdapterHasActiveInvoices.selector, address(mockAdapter))
-        );
+        vm.expectRevert(abi.encodeWithSelector(IBridgeEscrow.AdapterHasActiveInvoices.selector, address(mockAdapter)));
         bridgeEscrow.revokeAdapter(address(mockAdapter));
         assertTrue(bridgeEscrow.isAuthorizedAdapter(address(mockAdapter)), "Adapter should still be authorized");
     }
@@ -339,9 +337,7 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
         _approveToken(address(usdc), address(bridgeEscrow), BRIDGE_AMOUNT);
         vm.prank(account);
         bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, BRIDGE_AMOUNT, address(mockAdapter));
-        assertEq(
-            usdc.allowance(address(bridgeEscrow), address(mockAdapter)), 0, "Adapter allowance must be reset to 0"
-        );
+        assertEq(usdc.allowance(address(bridgeEscrow), address(mockAdapter)), 0, "Adapter allowance must be reset to 0");
     }
 
     // ============ Pause / emergencyWithdraw ============

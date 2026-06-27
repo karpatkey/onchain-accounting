@@ -243,8 +243,25 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
                 fgInside1 = fgOutUpper1 - fgOutLower1;
             }
 
-            f0 = Math.mulDiv(fgInside0 - fgInside0Last, liquidity, FixedPoint128.Q128) + tokensOwed0;
-            f1 = Math.mulDiv(fgInside1 - fgInside1Last, liquidity, FixedPoint128.Q128) + tokensOwed1;
+            uint256 d0 = fgInside0 - fgInside0Last;
+            uint256 d1 = fgInside1 - fgInside1Last;
+
+            // The fee-growth branch above is selected from the oracle-reconstructed `sqrtPriceX96`,
+            // but `feeGrowthOutside` (read from pool tick state) is anchored to the pool's REAL tick.
+            // When the oracle-implied price and the real pool price straddle a range boundary, the
+            // branch can be inconsistent with that on-chain state and the unchecked subtraction wraps
+            // to a near-2^256 value (which would otherwise revert in `mulDiv` — dropping the whole
+            // position — or report a phantom fee). A position's inside fee-growth can never exceed the
+            // pool's global fee-growth, so a delta above `fgGlobal` is provably bogus: clamp it to 0,
+            // yielding a conservative 0-fee (safe under-report) for that token. In the normal case
+            // (oracle ≈ pool price → correct branch) `d ≤ fgGlobal`, so fees are unaffected. This
+            // preserves the adapter's oracle-only / no-`slot0` design (manipulation resistance + fork
+            // ABI compatibility). See docs/audits/2026-06-vigilo-adapter-audit.md §M-A1.
+            if (d0 > fgGlobal0) d0 = 0;
+            if (d1 > fgGlobal1) d1 = 0;
+
+            f0 = Math.mulDiv(d0, liquidity, FixedPoint128.Q128) + tokensOwed0;
+            f1 = Math.mulDiv(d1, liquidity, FixedPoint128.Q128) + tokensOwed1;
         }
     }
 

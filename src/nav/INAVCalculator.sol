@@ -38,13 +38,14 @@ interface INAVCalculator is IBalances {
     ///        e.g. for AAVE_V3_LENDING: `abi.encode(address pool)`.
     ///        Full schema table: see `src/utils/ProtocolIds.sol` and docs/howto/position-identity-schema.md.
     /// @param positionKind Semantic discriminator (Wallet / Supplied / Borrowed / Collateral / Staking / Rewards / Fees).
-    ///        Together with `protocolId` and `positionId` forms the stable per-chain identity key
-    ///        `(chainId, protocolId, positionId, balanceAsset.asset, positionKind)`.
-    /// @param isLocked True if this leg is NOT withdrawable right now (a withdrawal-queue request still pending, or a
-    ///        staked amount in/awaiting its unstaking cooldown); false if fully liquid / claimable now. A leg counts as
-    ///        liquid only when its entire amount is withdrawable — any pending/cooling/partial portion is reported as
-    ///        locked ("partial = locked"). Attribute only — NOT part of the identity key. `false` for every adapter
-    ///        except the withdrawal-queue / unstaking-cooldown legs.
+    ///        Together with `protocolId`, `positionId` and `isLocked` forms the stable per-chain identity key
+    ///        `(chainId, protocolId, positionId, balanceAsset.asset, positionKind, isLocked)`.
+    /// @param isLocked True if this leg is NOT withdrawable right now (the pending portion of a withdrawal queue, or a
+    ///        staked amount in/awaiting its unstaking cooldown); false if fully liquid / claimable now. Withdrawal-queue
+    ///        and cooldown adapters keep a STATIC, timeless `positionId` (the queue/manager/asset/vault/stake-token
+    ///        coordinate) and split an account's holding into up to two legs — a claimable leg (`isLocked=false`) and a
+    ///        locked leg (`isLocked=true`) — that share that positionId and are distinguished by `isLocked`. Hence
+    ///        `isLocked` is **part of the identity key**. `false` for every adapter except withdrawal-queue / cooldown legs.
     struct PositionBalance {
         Asset balanceAsset;
         address balanceAdapter;

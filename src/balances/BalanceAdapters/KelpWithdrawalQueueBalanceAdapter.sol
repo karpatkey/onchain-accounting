@@ -16,11 +16,12 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @dev When a user unstakes rsETH, the rsETH is burned and a per-(asset, user) withdrawal request
 ///      is recorded denominated in the LST the user chose to receive (stETH, ETHx or native ETH).
 ///      Until claimed, that value is invisible to wallet/receipt-token adapters — it only lives as a
-///      pending claim on the manager. This adapter surfaces it: for every asset Kelp supports it emits
-///      one position per open request (`expectedAssetAmount`), each addressed by `(asset, userNonce)` and
-///      carrying `isLocked` — claimable only once the asset's lock cursor has passed the nonce AND the
-///      block delay has elapsed (both gates, matching `completeWithdrawal`). The balance methods report
-///      the per-asset summed total. The supported-asset set is discovered at runtime from
+///      pending claim on the manager. This adapter surfaces it: for every asset Kelp supports it emits up
+///      to two positions under a single static per-asset positionId (`abi.encode(asset)`) — a claimable
+///      leg (`isLocked = false`) and a locked/pending leg (`isLocked = true`). A request counts as
+///      claimable only once the asset's lock cursor has passed the nonce AND the block delay has elapsed
+///      (both gates, matching `completeWithdrawal`). The balance methods report the per-asset summed
+///      total. The supported-asset set is discovered at runtime from
 ///      `lrtConfig().getSupportedAssetList()` rather than hardcoded, mirroring the dynamic-discovery
 ///      pattern in `AaveUmbrellaBalanceAdapter.sol`.
 contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescribable {
@@ -188,13 +189,16 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
     }
 
     /// @inheritdoc IBalanceAdapter
-    /// @notice Returns ONE position per open exit-queue request, addressable by `(asset, userNonce)`.
-    /// @dev `positionId = abi.encode(asset, userNonce)`, amount = the request's `expectedAssetAmount`. A request is
-    ///      claimable (`isLocked = false`) only when BOTH gates pass: the asset's lock cursor has advanced past its
-    ///      nonce (`userNonce < nextLockedNonce(asset)`) AND the per-request block delay has elapsed
+    /// @notice Returns up to TWO positions PER asset under a single static per-asset positionId — one claimable
+    ///         (`isLocked = false`) and one locked/pending (`isLocked = true`).
+    /// @dev Both legs of an asset share `positionId = abi.encode(asset)` and are distinguished only by `isLocked`.
+    ///      For each supported+registered asset, the account's open requests are aggregated into two sums: a request
+    ///      is claimable (feeds the claimable leg) only when BOTH gates pass: the asset's lock cursor has advanced
+    ///      past its nonce (`userNonce < nextLockedNonce(asset)`) AND the per-request block delay has elapsed
     ///      (`block.number >= withdrawalStartBlock + withdrawalDelayBlocks()`) — matching `LRTWithdrawalManager`'s own
-    ///      `completeWithdrawal` checks. Either gate failing → pending (locked). Only requests whose asset is
-    ///      registered in NAVCalculator (and matches `assetFilter`, if set) are emitted.
+    ///      `completeWithdrawal` checks. Either gate failing → pending (locked leg). The two legs per asset sum to
+    ///      `_owedForAsset`'s total for that asset. A zero-amount leg is omitted. Only assets registered in
+    ///      NAVCalculator (and matching `assetFilter`, if set) are emitted.
     function getAdapterPositions(address account, address assetFilter)
         external
         view
@@ -209,12 +213,9 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
         INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
         uint256 delayBlocks = WITHDRAWAL_MANAGER.withdrawalDelayBlocks();
 
-        // Pass A: per-asset eligibility (filter + registered + has requests) and request count, to size the output.
         uint256 nAssets = supported.length;
-        INAVCalculator.Asset[] memory underlyings = new INAVCalculator.Asset[](nAssets);
-        uint256[] memory counts = new uint256[](nAssets);
-        uint256[] memory lockedCursors = new uint256[](nAssets);
-        uint256 totalSlots;
+        INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](2 * nAssets);
+        uint256 n;
         for (uint256 a = 0; a < nAssets; a++) {
             address asset = supported[a];
             if (assetFilter != address(0) && assetFilter != asset) {
@@ -232,22 +233,10 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
             if (c > MAX_REQUESTS_PROBED) {
                 c = MAX_REQUESTS_PROBED;
             }
-            underlyings[a] = underlying;
-            counts[a] = c;
-            lockedCursors[a] = WITHDRAWAL_MANAGER.nextLockedNonce(asset);
-            totalSlots += c;
-        }
+            uint256 cursor = WITHDRAWAL_MANAGER.nextLockedNonce(asset);
 
-        // Pass B: emit one leg per request.
-        INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](totalSlots);
-        uint256 n;
-        for (uint256 a = 0; a < nAssets; a++) {
-            uint256 c = counts[a];
-            if (c == 0) {
-                continue;
-            }
-            address asset = supported[a];
-            uint256 cursor = lockedCursors[a];
+            uint256 claimable;
+            uint256 locked;
             for (uint256 i = 0; i < c; i++) {
                 (, uint256 owed, uint256 startBlock, uint256 userNonce) =
                     WITHDRAWAL_MANAGER.getUserWithdrawalRequest(asset, account, i);
@@ -256,16 +245,36 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
                 }
                 // Claimable only when the lock cursor has passed AND the block delay has elapsed.
                 bool unlocked = (userNonce < cursor) && (block.number >= startBlock + delayBlocks);
+                if (unlocked) {
+                    claimable += owed;
+                } else {
+                    locked += owed;
+                }
+            }
+
+            bytes memory positionId = abi.encode(asset);
+            if (claimable > 0) {
                 temp[n++] = INAVCalculator.PositionBalance({
-                    balanceAsset: underlyings[a],
+                    balanceAsset: underlying,
                     balanceAdapter: address(this),
-                    amount: owed,
+                    amount: claimable,
                     isDebt: false,
                     protocolId: PROTOCOL_ID,
-                    // Per-request coordinate — each (asset, nonce) request is its own addressable leg.
-                    positionId: abi.encode(asset, userNonce),
+                    positionId: positionId,
                     positionKind: PositionKind.Supplied,
-                    isLocked: !unlocked
+                    isLocked: false
+                });
+            }
+            if (locked > 0) {
+                temp[n++] = INAVCalculator.PositionBalance({
+                    balanceAsset: underlying,
+                    balanceAdapter: address(this),
+                    amount: locked,
+                    isDebt: false,
+                    protocolId: PROTOCOL_ID,
+                    positionId: positionId,
+                    positionKind: PositionKind.Supplied,
+                    isLocked: true
                 });
             }
         }

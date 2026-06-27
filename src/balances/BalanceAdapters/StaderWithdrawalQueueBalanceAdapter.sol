@@ -13,9 +13,10 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @author KPK
 /// @notice Reports ETH owed to an account from open requests in Stader's UserWithdrawalManager.
 /// @dev When a user requests an unstake, ETHx is burned and a sequential request id is recorded.
-///      Until claimed, the value lives as ETH owed by the manager. This adapter emits one position per
-///      open request, denominated in `UNDERLYING_TOKEN` (typically WETH), each carrying
-///      `isLocked = (ethFinalized == 0)` (pending vs claimable). The balance methods report the summed total.
+///      Until claimed, the value lives as ETH owed by the manager. This adapter emits up to two positions
+///      under a single static positionId, denominated in `UNDERLYING_TOKEN` (typically WETH): a claimable
+///      leg (`isLocked = false`, finalized requests) and a locked/pending leg (`isLocked = true`, not-yet-
+///      finalized requests). The balance methods report the summed total.
 contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     //
     // Errors
@@ -187,11 +188,14 @@ contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescri
     }
 
     /// @inheritdoc IBalanceAdapter
-    /// @notice Returns ONE position per open withdrawal request, addressable by its `requestId`.
-    /// @dev `positionId = abi.encode(requestId)`, `isLocked = (ethFinalized == 0)` (a not-yet-finalized request is
-    ///      pending/locked; a finalized one is claimable). Per-request amount = `ethFinalized` if finalized else
-    ///      `ethExpected` — matching `_ethOwed`'s sum. Claimed entries (owner == address(0)) are skipped. Same OOB
-    ///      enumeration as `_ethOwed`. Dropped entirely if the underlying asset is not registered in NAVCalculator.
+    /// @notice Returns up to TWO positions under a single static positionId — one claimable (`isLocked = false`)
+    ///         and one locked/pending (`isLocked = true`).
+    /// @dev Both legs share `positionId = abi.encode(address(USER_WITHDRAWAL_MANAGER))` and are distinguished only by
+    ///      `isLocked`. The account's open requests are aggregated into two sums: finalized requests
+    ///      (`ethFinalized > 0`) contribute `ethFinalized` to the claimable leg; the rest contribute `ethExpected` to
+    ///      the locked leg. The two legs sum to `_ethOwed`'s total. A zero-amount leg is omitted. Claimed entries
+    ///      (owner == address(0)) are skipped. Same OOB enumeration as `_ethOwed`. Dropped entirely if the underlying
+    ///      asset is not registered in NAVCalculator.
     function getAdapterPositions(address account, address assetFilter)
         external
         view
@@ -223,8 +227,8 @@ contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescri
             }
         }
 
-        INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](MAX_REQUESTS_PROBED);
-        uint256 n;
+        uint256 claimable;
+        uint256 locked;
         for (uint256 i = 0; i < MAX_REQUESTS_PROBED; i++) {
             try USER_WITHDRAWAL_MANAGER.requestIdsByUserAddress(account, i) returns (uint256 requestId) {
                 (address owner,, uint256 ethExpected, uint256 ethFinalized,) =
@@ -233,22 +237,11 @@ contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescri
                     // Already claimed (storage deleted) but id may linger in the index array — skip.
                     continue;
                 }
-                uint256 owed = ethFinalized > 0 ? ethFinalized : ethExpected;
-                if (owed == 0) {
-                    continue;
+                if (ethFinalized > 0) {
+                    claimable += ethFinalized;
+                } else {
+                    locked += ethExpected;
                 }
-                temp[n++] = INAVCalculator.PositionBalance({
-                    balanceAsset: underlying,
-                    balanceAdapter: address(this),
-                    amount: owed,
-                    isDebt: false,
-                    protocolId: PROTOCOL_ID,
-                    // Per-request id — each withdrawal request is its own addressable leg.
-                    positionId: abi.encode(requestId),
-                    positionKind: PositionKind.Supplied,
-                    // Pending until its batch is finalized (ethFinalized set) → locked; finalized → claimable.
-                    isLocked: ethFinalized == 0
-                });
             } catch Panic(uint256 panicCode) {
                 // 0x32 = array index out of bounds — list exhausted.
                 if (panicCode == 0x32) {
@@ -266,9 +259,21 @@ contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescri
             }
         }
 
-        positions = new INAVCalculator.PositionBalance[](n);
-        for (uint256 i = 0; i < n; i++) {
-            positions[i] = temp[i];
+        return _statusLegs(underlying, abi.encode(address(USER_WITHDRAWAL_MANAGER)), claimable, locked);
+    }
+
+    /// @dev Up to two `Supplied` legs sharing the static positionId, distinguished by isLocked. Zero legs omitted.
+    function _statusLegs(INAVCalculator.Asset memory underlying, bytes memory positionId, uint256 claimable, uint256 locked)
+        internal view returns (INAVCalculator.PositionBalance[] memory positions)
+    {
+        uint256 nLegs = (claimable > 0 ? 1 : 0) + (locked > 0 ? 1 : 0);
+        positions = new INAVCalculator.PositionBalance[](nLegs);
+        uint256 j;
+        if (claimable > 0) {
+            positions[j++] = INAVCalculator.PositionBalance({balanceAsset: underlying, balanceAdapter: address(this), amount: claimable, isDebt: false, protocolId: PROTOCOL_ID, positionId: positionId, positionKind: PositionKind.Supplied, isLocked: false});
+        }
+        if (locked > 0) {
+            positions[j++] = INAVCalculator.PositionBalance({balanceAsset: underlying, balanceAdapter: address(this), amount: locked, isDebt: false, protocolId: PROTOCOL_ID, positionId: positionId, positionKind: PositionKind.Supplied, isLocked: true});
         }
     }
 }

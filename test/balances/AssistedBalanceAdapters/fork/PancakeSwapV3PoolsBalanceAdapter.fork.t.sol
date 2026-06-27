@@ -80,8 +80,9 @@ contract PancakeSwapV3PoolsBalanceForkTest is BalanceAdapterTestBase {
         balances = _deployBalancesForAdapter(_assets());
         _setPoolImpliedPrices();
         // admin + assistant = this test, so it can submit the holder's tokenIds.
-        adapter =
-            new PancakeSwapV3PoolsBalanceAdapter(NPM, "PancakeSwap V3", address(balances), address(this), address(this));
+        adapter = new PancakeSwapV3PoolsBalanceAdapter(
+            NPM, "PancakeSwap V3", address(balances), address(this), address(this)
+        );
         _submitHolderPoolTokenIds();
     }
 

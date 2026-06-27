@@ -2,9 +2,7 @@
 pragma solidity ^0.8;
 
 import {Test} from "forge-std/Test.sol";
-import {
-    UniswapV3PoolsBalanceAdapter
-} from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsBalanceAdapter.sol";
+import {UniswapV3PoolsBalanceAdapter} from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsBalanceAdapter.sol";
 import {IAssistedBalanceAdapter} from "src/balances/IAssistedBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
@@ -57,7 +55,8 @@ contract UniswapV3PoolsBalanceAdapterTest is Test {
         _mint(2, address(usdc), address(weth), 500, 2_000_000, 7, 99);
 
         // admin + assistant = this test, so it can submit/clear tokenIds.
-        adapter = new UniswapV3PoolsBalanceAdapter(address(npm), "Uniswap V3", address(nav), address(this), address(this));
+        adapter =
+            new UniswapV3PoolsBalanceAdapter(address(npm), "Uniswap V3", address(nav), address(this), address(this));
         adapter.submitTokenIds(alice, _ids(1, 2));
     }
 
@@ -212,7 +211,9 @@ contract UniswapV3PoolsBalanceAdapterTest is Test {
     /// @notice Writes are fail-loud: submitting an id not owned by the account reverts NotTokenOwner.
     function test_submit_revertsOnNonOwnedId() public {
         // NFT 3 is owned by `other`, not alice.
-        npm.mint(other, 3, MockPositionManager.PositionData(address(wbtc), address(weth), 3000, -100, 100, 1, 0, 0, 0, 0));
+        npm.mint(
+            other, 3, MockPositionManager.PositionData(address(wbtc), address(weth), 3000, -100, 100, 1, 0, 0, 0, 0)
+        );
         vm.expectRevert(abi.encodeWithSelector(NotTokenOwner.selector, alice, uint256(3)));
         adapter.submitTokenIds(alice, _id(3));
     }

@@ -220,6 +220,27 @@ The verbose read methods on `NAVCalculator` (`getAccountPositionsVerbose`, `getA
 
 Meta-adapters derive the label hierarchy on-chain from live state (ERC20 symbols, vault names, pool composition); each returns `[category, …leaf]`. Per-instance adapters return a fixed array.
 
+### 6.3 Assisted adapters (externally-fed) — `IAssistedBalanceAdapter`
+
+Most adapters derive a position purely from on-chain state. A few cannot: the data needed to value a position lives off-chain or is not enumerable from a `view`. Merkl distributes rewards via off-chain merkle trees; ether.fi / StakeWise withdrawal requests are keyed by per-account coordinates the contract does not index; and NFT-position protocols (Uniswap V3, PancakeSwap V3, Nexus Mutual staking) hold positions as non-enumerable NFTs that are gas-prohibitive to discover by scanning every minted id. For these, a trusted **assistant** submits the position coordinates (token ids, request ids, proofs) via transactions so the position becomes queryable. This is the third adapter family, peer to plain `BalanceAdapter`s and meta-adapters.
+
+```solidity
+// IAccessControl is listed before IBalanceAdapter so the MRO matches AccessControl's
+// (OZ v5 IAccessControl is not IERC165); the reverse order fails C3 linearization.
+interface IAssistedBalanceAdapter is IAccessControl, IBalanceAdapter {
+    function ASSISTANT_ROLE() external view returns (bytes32);
+}
+```
+
+The interface is deliberately minimal — it only *identifies* the family and exposes the role; it does not prescribe the submit/verify surface (each protocol's data shape differs). The abstract `AssistedBalanceAdapter` base contributes only the access-control scaffolding via OpenZeppelin `AccessControl`:
+
+- **`DEFAULT_ADMIN_ROLE`** — administers (grants/revokes) `ASSISTANT_ROLE`. Held by the admin (e.g. the security-council Safe).
+- **`ASSISTANT_ROLE`** — authorized to submit the assistance. Held by the off-chain submitter (a kpk-agents automation).
+
+Concrete adapters still implement `IBalanceAdapter` (and typically `IPositionDescribable`) themselves and gate their submit/clear mutators with `onlyRole(ASSISTANT_ROLE)`. They **must** uphold the family invariant: cache only position *coordinates* (never amounts), value every read live on-chain, and re-verify ownership per read — so a faulty or compromised assistant can only **under-report, never over-report**. See ADR `docs/decisions/0007-merkl-trust-minimized-cache.md` (Merkl, proof-verified cache) and `docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md` (ether.fi, StakeWise — id-only cache).
+
+**Members on the base** — `MerklRewardsBalanceAdapter`, `EtherFiWithdrawalQueueBalanceAdapter`, `StakeWiseV3ExitQueueBalanceAdapter` — extend `AssistedBalanceAdapter` (migrated off `Ownable`). **Also bundled in `AssistedBalanceAdapters/`** but not yet on the base — relocated here ahead of their agent-fed discovery rework (an assistant will supply the account's NFT token ids instead of brute-force scanning every minted id; they remain meta/scan-based for now): `UniswapV3PoolsMetaBalanceAdapter`, `PancakeSwapV3PoolsMetaBalanceAdapter`, `NexusMutualStakingPoolsBalanceAdapter`.
+
 ---
 
 ## 7. Implemented adapters
@@ -268,7 +289,7 @@ These adapters implement `IBalanceAdapter` directly (not `MetaBalanceAdapter`). 
 | **MerklRewards** | Merkl (Angle Labs) **unclaimed** rewards via on-chain proof verification. Per-(user, token) merkle-proof cache, `onlyOwner` writes, proofs verified against the live Distributor root. positionId = `abi.encode(distributor)` (the reward token is carried by `balanceAsset`, so encoding it in positionId would be redundant; one leg per reward token, distinguished by `balanceAsset`). `Rewards` kind. | `(distributor, navCalculator, initialOwner)` | protocolId = `MERKL`. A documented mutable-cache adapter (see `docs/decisions/0007-merkl-trust-minimized-cache.md`). |
 | **EtherFiWithdrawalQueue** | ether.fi in-flight withdrawal-queue ETH. `onlyOwner` cache of per-account `WithdrawRequestNFT` tokenIds (**ids only, never amounts**); values each live (`getClaimableAmount` / `getRequest`+`amountForShare`) and re-verifies `ownerOf` per read. One aggregated native-ETH leg/account, positionId `""`. `Supplied` kind. | `(withdrawRequestNft, liquidityPool, underlyingToken, navCalculator, initialOwner)` | protocolId = `ETHERFI_WITHDRAWAL`. Mutable-cache adapter, agent-fed (see `docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md`). The owner can only under-report, never over-report. |
 | **NexusMutualStakingPools** | Nexus Mutual V2 staked NXM across all staking pools. Discovers an account's `StakingNFT` positions by scanning `tokenInfo(1..totalSupply)` (the NFT is mint-only with a small global supply, and not ERC721Enumerable — no per-owner view / agent needed); a `balanceOf(account)` guard skips the scan for non-stakers and stops it early once all of an account's tokens are found. `StakingViewer.getTokens` then values **each** into a `Staking` leg (active + expired stake) + a `Rewards` leg, both NXM — one pair **per StakingNFT tokenId**. positionId = `abi.encode(tokenId, poolId)`. (The no-arg balance getters still return the summed NXM total via `getAggregatedTokens`.) | `(stakingNft, stakingViewer, underlyingToken, navCalculator)` | protocolId = `NEXUS_MUTUAL_STAKING` (slug `nexus-mutual-staking`). Mainnet only; underlying = NXM (priced PR #71). The descending scan covers the full `totalSupply` (no fixed cap); `MAX_POSITIONS_PER_ACCOUNT` bounds the per-account viewer call. Migrate to an agent-fed cache (ADR 0014) if Nexus's global StakingNFT supply ever grows large enough to risk OOG inside a NAV read. |
-| **StakeWiseExitQueue** | StakeWise V3 in-flight exit-queue assets. `onlyOwner` cache of per-account `(vault, positionTicket, timestamp)` tuples (**coordinates only, never amounts**); values each live as `calculateExitedAssets(account,…).exitedAssets + convertToAssets(leftShares)` (out-of-range index path for fully-pending positions), with `calculateExitedAssets(receiver=account)` as the on-chain ownership check and a `VaultsRegistry` membership check at submit time. One aggregated native-ETH leg/account, positionId `""`. `Supplied` kind. | `(vaultsRegistry, underlyingToken, navCalculator, initialOwner)` | protocolId = `STAKEWISE_EXIT`. Mainnet only. Mutable-cache adapter, agent-fed, sibling of `EtherFiWithdrawalQueue` (see `docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md`). The owner can only under-report, never over-report. |
+| **StakeWiseV3ExitQueue** | StakeWise V3 in-flight exit-queue assets. `onlyOwner` cache of per-account `(vault, positionTicket, timestamp)` tuples (**coordinates only, never amounts**); values each live as `calculateExitedAssets(account,…).exitedAssets + convertToAssets(leftShares)` (out-of-range index path for fully-pending positions), with `calculateExitedAssets(receiver=account)` as the on-chain ownership check and a `VaultsRegistry` membership check at submit time. One aggregated native-ETH leg/account, positionId `""`. `Supplied` kind. | `(vaultsRegistry, underlyingToken, navCalculator, initialOwner)` | protocolId = `STAKEWISE_EXIT`. Mainnet only. Mutable-cache adapter, agent-fed, sibling of `EtherFiWithdrawalQueue` (see `docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md`). The owner can only under-report, never over-report. |
 | **SparkLend** | Spark lending positions. Two legs per reserve (`Supplied`/`Collateral` + `Borrowed`). positionId = `abi.encode(pool)` (one position per instance; reserves distinguished by `balanceAsset` + `positionKind`). | `(dataProvider, navCalculator)` | protocolId = `SPARK_LEND`. Standalone adapter mirroring the Aave V3 lending pattern (same `ProtocolDataProvider` ABI). |
 | **StaderWithdrawalQueue** | Stader `UserWithdrawalManager` pending unstake requests. Sums `ethFinalized` (or `ethExpected` pre-finalization) for an account's open requests as a single underlying-token credit. positionId = `""` (account-global). `Supplied` kind. | `(userWithdrawalManager, underlyingToken, navCalculator)` | protocolId = `STADER_WITHDRAWAL`. Mainnet only; underlying configured to WETH. |
 
@@ -407,8 +428,8 @@ For a **meta-adapter**, extend `MetaBalanceAdapter` and implement `_instancePosi
 
 ### 8.4 Testing expectations
 
-- Unit tests (mock-only): `test/balances/protocols/<Adapter>.t.sol`
-- Fork tests against a real holder at a pinned block: `test/balances/protocols/fork/<Adapter>.fork.t.sol`
+- Unit tests (mock-only): `test/balances/<family>/<Adapter>.t.sol`
+- Fork tests against a real holder at a pinned block: `test/balances/<family>/fork/<Adapter>.fork.t.sol`
 - Run fork tests with: `FOUNDRY_PROFILE=slow forge test --match-path "test/**/fork/*.sol"`
 
 See also `docs/howto/add-balance-adapter.md` for the end-to-end recipe.

@@ -2,7 +2,7 @@
 
 ## 1. Adapter under test
 
-`src/balances/protocols/pancakeswap/PancakeSwapV3PoolsMetaBalanceAdapter.sol` — the immutable `PancakeSwapV3PoolsMetaBalanceAdapter` meta-adapter (ADR 0010): one adapter serves every PancakeSwap V3 pool, with the active pool set seeded on NAVCalculator at registration via `addMetaBalanceAdapter(adapter, instances)` and adjusted incrementally via `addMetaInstances`/`removeMetaInstances`. Constructor: `(positionManager, protocolName, navCalculator)`. Identity is derived on-chain (positionId = `abi.encode(npm, tokenId)`; positionLabels = `["Liquidity Pool", "NFT #<tokenId>"]`).
+`src/balances/AssistedBalanceAdapters/PancakeSwapV3PoolsMetaBalanceAdapter.sol` — the immutable `PancakeSwapV3PoolsMetaBalanceAdapter` meta-adapter (ADR 0010): one adapter serves every PancakeSwap V3 pool, with the active pool set seeded on NAVCalculator at registration via `addMetaBalanceAdapter(adapter, instances)` and adjusted incrementally via `addMetaInstances`/`removeMetaInstances`. Constructor: `(positionManager, protocolName, navCalculator)`. Identity is derived on-chain (positionId = `abi.encode(npm, tokenId)`; positionLabels = `["Liquidity Pool", "NFT #<tokenId>"]`).
 
 ### Inheritance + per-chain scope (Phase 0)
 
@@ -15,7 +15,7 @@
 ## 2. Existing fork test coverage
 
 - `test/balances/protocols/fork/UniswapV3PoolsMeta.fork.t.sol` — the inherited math (principal/fee branches, identity, filter) on the real mainnet WBTC/WETH 0.3% pool. PancakeSwap V3 inherits all of it unchanged except `_slot0`.
-- `test/balances/protocols/fork/PancakeSwapV3PoolsMeta.Base.fork.t.sol` → `PancakeSwapV3PoolsMetaParityForkTest_Base` (pre-existing). Exercises the `_slot0` override on the real Base WETH/COW 0.25% pool, but the test holder's position is **closed** (liquidity 0) — so it only asserts the override **does not revert** and returns empty. It does not exercise the override on the principal-bearing path.
+- `test/balances/AssistedBalanceAdapters/fork/PancakeSwapV3PoolsMeta.Base.fork.t.sol` → `PancakeSwapV3PoolsMetaParityForkTest_Base` (pre-existing). Exercises the `_slot0` override on the real Base WETH/COW 0.25% pool, but the test holder's position is **closed** (liquidity 0) — so it only asserts the override **does not revert** and returns empty. It does not exercise the override on the principal-bearing path.
 
 Both kept untouched as regression nets.
 

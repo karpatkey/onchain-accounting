@@ -3,7 +3,9 @@ pragma solidity ^0.8;
 
 import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
-import {AaveV3InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV3InstancesMetaBalanceAdapter.sol";
+import {
+    AaveV3InstancesMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/AaveV3InstancesMetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title DeployAaveInstancesMeta (development)

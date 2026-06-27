@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Play the ether.fi submitter agent on a running dev anvil fork: submit a holder's WithdrawRequestNFT
-# tokenIds into the deployed EtherFiWithdrawalsBalanceAdapter, so the dashboard shows the queue leg.
+# tokenIds into the deployed EtherFiWithdrawalQueueBalanceAdapter, so the dashboard shows the queue leg.
 #
 # Usage:  submit-etherfi-positions.sh <chainId> [holder] [tokenId ...]
 #   e.g.  submit-etherfi-positions.sh 1

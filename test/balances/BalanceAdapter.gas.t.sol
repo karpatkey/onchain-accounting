@@ -7,7 +7,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalances} from "src/balances/IBalances.sol";
 import {Mock_CustomBalanceAdapter} from "test/mocks/balance_adapters.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
-import {ERC20DefaultBalanceAdapter} from "src/balances/protocols/ERC20DefaultBalanceAdapter.sol";
+import {ERC20DefaultBalanceAdapter} from "src/balances/BalanceAdapters/ERC20DefaultBalanceAdapter.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
 
 /// @title Balance Adapter Gas Benchmark Tests

@@ -1,7 +1,7 @@
 # Nexus Mutual staked NXM — balance-adapter verification
 
 ## 1. Adapter under test
-`NexusMutualStakingPoolsBalanceAdapter` (`src/balances/protocols/NexusMutualStakingPoolsBalanceAdapter.sol`). Reports an account's staked NXM across Nexus Mutual V2 staking pools as NXM-denominated `Staking` (active + expired stake) and `Rewards` legs — emitted **per StakingNFT position** (`positionId = abi.encode(tokenId, poolId)`).
+`NexusMutualStakingPoolsBalanceAdapter` (`src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsBalanceAdapter.sol`). Reports an account's staked NXM across Nexus Mutual V2 staking pools as NXM-denominated `Staking` (active + expired stake) and `Rewards` legs — emitted **per StakingNFT position** (`positionId = abi.encode(tokenId, poolId)`).
 
 ### Inheritance + per-chain scope (Phase 0)
 - Implements `IBalanceAdapter` + `IPositionDescribable` directly — a **simple immutable view adapter** (no `Ownable`, no agent, no cache). **Mainnet (1) only** (Nexus Mutual V2 is mainnet).
@@ -13,13 +13,13 @@
 - `getAdapterBalances` / `getAdapterBalanceForAsset` (no-arg): summed NXM total via `getAggregatedTokens(ids)` (try/catch → 0) → `active + expired + rewards`.
 
 ## 2. Fork test coverage
-`test/balances/protocols/fork/NexusMutualStakingPoolsBalanceAdapter.fork.t.sol` (3 tests, `FOUNDRY_PROFILE=slow`, FORK_BLOCK 25,388,000):
+`test/balances/AssistedBalanceAdapters/fork/NexusMutualStakingPoolsBalanceAdapter.fork.t.sol` (3 tests, `FOUNDRY_PROFILE=slow`, FORK_BLOCK 25,388,000):
 - `realHolder_scanMatchesAggregate` — the adapter's **scan-derived** summed total for the Nexus Safe equals an independent `getAggregatedTokens([180,184,185,186,187])` read (delta 0) **and** the pinned values.
 - `realHolder_perNftLegs` — per-NFT `Staking`/`Rewards` legs: 5–10 legs, each `positionId` decodes to a known `(tokenId, poolId)`, and the per-kind sums equal the live aggregate (delta 0).
 - `nonStaker_reportsZero` — a non-staking address reports nothing (scan finds no owned ids).
 
 ## 3. Unit test coverage
-`test/balances/protocols/NexusMutualStakingPoolsBalanceAdapter.t.sol` (mock-only): constructor guards (×5), discovery + summed valuation (owned-only, other-account-excluded, wrong-asset), per-NFT `Staking`+`Rewards` leg identity (`positionId = abi.encode(tokenId, poolId)`), a **two-pool** case yielding distinct positionIds, single-leg (no-rewards / no-stake) and empty cases, asset-filter match/mismatch, unregistered-underlying drop, `getAdapterBalances` shape, the `MAX_POSITIONS_PER_ACCOUNT` cap, a high-id position (beyond the former 5000 bound) still discovered, the `balanceOf` fast-path (zero-balance skips the scan; `balanceOf` revert falls back to the full scan), `try/catch` never-revert on `tokenInfo` / `totalSupply` / `getTokens` / `getAggregatedTokens`, ERC165, `underlyingAssetsSupported`. The mock `StakingViewer` returns per-token structs for exactly the ids the adapter passes, so discovery → valuation is tested end-to-end.
+`test/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsBalanceAdapter.t.sol` (mock-only): constructor guards (×5), discovery + summed valuation (owned-only, other-account-excluded, wrong-asset), per-NFT `Staking`+`Rewards` leg identity (`positionId = abi.encode(tokenId, poolId)`), a **two-pool** case yielding distinct positionIds, single-leg (no-rewards / no-stake) and empty cases, asset-filter match/mismatch, unregistered-underlying drop, `getAdapterBalances` shape, the `MAX_POSITIONS_PER_ACCOUNT` cap, a high-id position (beyond the former 5000 bound) still discovered, the `balanceOf` fast-path (zero-balance skips the scan; `balanceOf` revert falls back to the full scan), `try/catch` never-revert on `tokenInfo` / `totalSupply` / `getTokens` / `getAggregatedTokens`, ERC165, `underlyingAssetsSupported`. The mock `StakingViewer` returns per-token structs for exactly the ids the adapter passes, so discovery → valuation is tested end-to-end.
 
 ## 4. Adapter formula recap
 ```

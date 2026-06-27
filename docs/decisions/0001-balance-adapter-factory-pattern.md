@@ -22,7 +22,7 @@ Introduce a per-protocol **factory pattern** + a **central registry**:
 
 2. **`BalanceAdapterRegistry`** (`src/balances/factories/BalanceAdapterRegistry.sol`): the single registry that maps `protocolKey ⇒ factory`, owns MANAGER on `NAVCalculator`, and is the **only** entity that calls `NAVCalculator.addBalanceAdapters` / `removeBalanceAdapters`. Every factory's `deploy(...)` ends with `REGISTRY.register(adapter)`; the registry idempotently registers in NAV.
 
-3. **Per-protocol folder layout** under `src/balances/protocols/<protocol>/`: each folder holds the adapter contract and its sibling factory. Same convention for tests.
+3. **Per-protocol folder layout** under `src/balances/{BalanceAdapters,MetaBalanceAdapters,AssistedBalanceAdapters}/`: each folder holds the adapter contract and its sibling factory. Same convention for tests.
 
 4. **Migration hook for pre-existing adapters**: factories expose `registerExternal(adapter)` to absorb adapters deployed before the framework existed. The registry's `_register` is idempotent (checks `NAVCalculator.isAdapterRegistered`), so absorbing a pre-registered adapter just records it in registry state without duplicating in NAV.
 

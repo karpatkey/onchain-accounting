@@ -3,9 +3,13 @@ pragma solidity ^0.8.0;
 
 import {NAVCalculatorForkHarness} from "test/nav/fork/NAVCalculatorForkTestBase.fork.sol";
 import {ChainlinkPriceFeeds} from "test/ChainlinkPriceFeeds.sol";
-import {AaveV3InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV3InstancesMetaBalanceAdapter.sol";
-import {CompoundV3CometsMetaBalanceAdapter} from "src/balances/protocols/CompoundV3CometsMetaBalanceAdapter.sol";
-import {MorphoMarketsMetaBalanceAdapter} from "src/balances/protocols/MorphoMarketsMetaBalanceAdapter.sol";
+import {
+    AaveV3InstancesMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/AaveV3InstancesMetaBalanceAdapter.sol";
+import {
+    CompoundV3CometsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/CompoundV3CometsMetaBalanceAdapter.sol";
+import {MorphoMarketsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/MorphoMarketsMetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {aa} from "test/helpers/AdapterArray.sol";

@@ -9,7 +9,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Mock_CustomBalanceAdapter} from "test/mocks/balance_adapters.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
-import {ERC20DefaultBalanceAdapter} from "src/balances/protocols/ERC20DefaultBalanceAdapter.sol";
+import {ERC20DefaultBalanceAdapter} from "src/balances/BalanceAdapters/ERC20DefaultBalanceAdapter.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 

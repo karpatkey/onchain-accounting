@@ -1,9 +1,9 @@
 {
   "protocol": "Aave Umbrella",
-  "adapter": "src/balances/protocols/AaveUmbrellaBalanceAdapter.sol",
-  "adapter_test": "test/balances/protocols/fork/AaveUmbrellaBalanceAdapter.fork.t.sol",
+  "adapter": "src/balances/BalanceAdapters/AaveUmbrellaBalanceAdapter.sol",
+  "adapter_test": "test/balances/BalanceAdapters/fork/AaveUmbrellaBalanceAdapter.fork.t.sol",
   "test_contract": "AaveUmbrellaBalanceOracleForkTest",
-  "unit_test": "test/balances/protocols/AaveUmbrellaBalanceAdapter.t.sol::AaveUmbrellaBalanceMathTest",
+  "unit_test": "test/balances/BalanceAdapters/AaveUmbrellaBalanceAdapter.t.sol::AaveUmbrellaBalanceMathTest",
   "chain": { "id": 1, "name": "mainnet" },
   "block": {
     "number": 25287877,

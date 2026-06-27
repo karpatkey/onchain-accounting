@@ -6,63 +6,89 @@ import {ConfigReader} from "../utils/ConfigReader.sol";
 import {console2} from "forge-std/console2.sol";
 
 // Import balance adapters
-import {AaveV3InstancesMetaBalanceAdapter} from "../../src/balances/protocols/AaveV3InstancesMetaBalanceAdapter.sol";
-import {CompoundV3CometsMetaBalanceAdapter} from "../../src/balances/protocols/CompoundV3CometsMetaBalanceAdapter.sol";
-import {SparkLendBalanceAdapter} from "../../src/balances/protocols/SparkLendBalanceAdapter.sol";
-import {MorphoVaultsMetaBalanceAdapter} from "../../src/balances/protocols/MorphoVaultsMetaBalanceAdapter.sol";
-import {MorphoMarketsMetaBalanceAdapter} from "../../src/balances/protocols/MorphoMarketsMetaBalanceAdapter.sol";
-import {ERC4626WrapBalanceAdapter} from "../../src/balances/protocols/ERC4626WrapBalanceAdapter.sol";
-import {GearboxMarketsMetaBalanceAdapter} from "../../src/balances/protocols/GearboxMarketsMetaBalanceAdapter.sol";
-import {EulerVaultsMetaBalanceAdapter} from "../../src/balances/protocols/EulerVaultsMetaBalanceAdapter.sol";
-import {CapBalanceAdapter} from "../../src/balances/protocols/CapBalanceAdapter.sol";
-import {CurvePoolsMetaBalanceAdapter} from "../../src/balances/protocols/curve/CurvePoolsMetaBalanceAdapter.sol";
-import {CurveGaugesMetaBalanceAdapter} from "../../src/balances/protocols/curve/CurveGaugesMetaBalanceAdapter.sol";
-import {ConvexRewardsMetaBalanceAdapter} from "../../src/balances/protocols/ConvexRewardsMetaBalanceAdapter.sol";
-import {AaveV3SafetyModuleBalanceAdapter} from "../../src/balances/protocols/AaveV3SafetyModuleBalanceAdapter.sol";
-import {AaveUmbrellaBalanceAdapter} from "../../src/balances/protocols/AaveUmbrellaBalanceAdapter.sol";
+import {
+    AaveV3InstancesMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/AaveV3InstancesMetaBalanceAdapter.sol";
+import {
+    CompoundV3CometsMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/CompoundV3CometsMetaBalanceAdapter.sol";
+import {SparkLendBalanceAdapter} from "../../src/balances/BalanceAdapters/SparkLendBalanceAdapter.sol";
+import {
+    MorphoVaultsMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/MorphoVaultsMetaBalanceAdapter.sol";
+import {
+    MorphoMarketsMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/MorphoMarketsMetaBalanceAdapter.sol";
+import {ERC4626WrapBalanceAdapter} from "../../src/balances/BalanceAdapters/ERC4626WrapBalanceAdapter.sol";
+import {
+    GearboxMarketsMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/GearboxMarketsMetaBalanceAdapter.sol";
+import {EulerVaultsMetaBalanceAdapter} from "../../src/balances/MetaBalanceAdapters/EulerVaultsMetaBalanceAdapter.sol";
+import {CapBalanceAdapter} from "../../src/balances/BalanceAdapters/CapBalanceAdapter.sol";
+import {
+    CurvePoolsMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/curve/CurvePoolsMetaBalanceAdapter.sol";
+import {
+    CurveGaugesMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/curve/CurveGaugesMetaBalanceAdapter.sol";
+import {
+    ConvexRewardsMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/ConvexRewardsMetaBalanceAdapter.sol";
+import {
+    AaveV3SafetyModuleBalanceAdapter
+} from "../../src/balances/BalanceAdapters/AaveV3SafetyModuleBalanceAdapter.sol";
+import {AaveUmbrellaBalanceAdapter} from "../../src/balances/BalanceAdapters/AaveUmbrellaBalanceAdapter.sol";
 import {
     BalancerV3PoolsMetaBalanceAdapter
-} from "../../src/balances/protocols/balancer/BalancerV3PoolsMetaBalanceAdapter.sol";
+} from "../../src/balances/MetaBalanceAdapters/balancer/BalancerV3PoolsMetaBalanceAdapter.sol";
 import {
     BalancerV3GaugesMetaBalanceAdapter
-} from "../../src/balances/protocols/balancer/BalancerV3GaugesMetaBalanceAdapter.sol";
+} from "../../src/balances/MetaBalanceAdapters/balancer/BalancerV3GaugesMetaBalanceAdapter.sol";
 import {
     BalancerV2PoolsMetaBalanceAdapter
-} from "../../src/balances/protocols/balancer/BalancerV2PoolsMetaBalanceAdapter.sol";
+} from "../../src/balances/MetaBalanceAdapters/balancer/BalancerV2PoolsMetaBalanceAdapter.sol";
 import {
     BalancerV2GaugesMetaBalanceAdapter
-} from "../../src/balances/protocols/balancer/BalancerV2GaugesMetaBalanceAdapter.sol";
+} from "../../src/balances/MetaBalanceAdapters/balancer/BalancerV2GaugesMetaBalanceAdapter.sol";
 import {
     StakeWiseV3VaultsMetaBalanceAdapter
-} from "../../src/balances/protocols/StakeWiseV3VaultsMetaBalanceAdapter.sol";
-import {FluidFTokensMetaBalanceAdapter} from "../../src/balances/protocols/FluidFTokensMetaBalanceAdapter.sol";
-import {FluidVaultsMetaBalanceAdapter} from "../../src/balances/protocols/FluidVaultsMetaBalanceAdapter.sol";
+} from "../../src/balances/MetaBalanceAdapters/StakeWiseV3VaultsMetaBalanceAdapter.sol";
+import {
+    FluidFTokensMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/FluidFTokensMetaBalanceAdapter.sol";
+import {FluidVaultsMetaBalanceAdapter} from "../../src/balances/MetaBalanceAdapters/FluidVaultsMetaBalanceAdapter.sol";
 import {
     StaderWithdrawalQueueBalanceAdapter
-} from "../../src/balances/protocols/StaderWithdrawalQueueBalanceAdapter.sol";
-import {KelpWithdrawalQueueBalanceAdapter} from "../../src/balances/protocols/KelpWithdrawalQueueBalanceAdapter.sol";
-import {LidoWithdrawalQueueBalanceAdapter} from "../../src/balances/protocols/LidoWithdrawalQueueBalanceAdapter.sol";
-import {EthenaCooldownBalanceAdapter} from "../../src/balances/protocols/EthenaCooldownBalanceAdapter.sol";
-import {MerklRewardsBalanceAdapter} from "../../src/balances/protocols/MerklRewardsBalanceAdapter.sol";
+} from "../../src/balances/BalanceAdapters/StaderWithdrawalQueueBalanceAdapter.sol";
+import {
+    KelpWithdrawalQueueBalanceAdapter
+} from "../../src/balances/BalanceAdapters/KelpWithdrawalQueueBalanceAdapter.sol";
+import {
+    LidoWithdrawalQueueBalanceAdapter
+} from "../../src/balances/BalanceAdapters/LidoWithdrawalQueueBalanceAdapter.sol";
+import {EthenaCooldownBalanceAdapter} from "../../src/balances/BalanceAdapters/EthenaCooldownBalanceAdapter.sol";
+import {MerklRewardsBalanceAdapter} from "../../src/balances/AssistedBalanceAdapters/MerklRewardsBalanceAdapter.sol";
 import {
     EtherFiWithdrawalQueueBalanceAdapter
-} from "../../src/balances/protocols/EtherFiWithdrawalQueueBalanceAdapter.sol";
+} from "../../src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueBalanceAdapter.sol";
 import {
     NexusMutualStakingPoolsBalanceAdapter
-} from "../../src/balances/protocols/NexusMutualStakingPoolsBalanceAdapter.sol";
-import {StakeWiseExitQueueBalanceAdapter} from "../../src/balances/protocols/StakeWiseExitQueueBalanceAdapter.sol";
+} from "../../src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsBalanceAdapter.sol";
+import {
+    StakeWiseV3ExitQueueBalanceAdapter
+} from "../../src/balances/AssistedBalanceAdapters/StakeWiseV3ExitQueueBalanceAdapter.sol";
 import {
     UniswapV3PoolsMetaBalanceAdapter
-} from "../../src/balances/protocols/uniswap/UniswapV3PoolsMetaBalanceAdapter.sol";
+} from "../../src/balances/AssistedBalanceAdapters/UniswapV3PoolsMetaBalanceAdapter.sol";
 import {
     UniswapV2PoolsMetaBalanceAdapter
-} from "../../src/balances/protocols/uniswap/UniswapV2PoolsMetaBalanceAdapter.sol";
+} from "../../src/balances/MetaBalanceAdapters/uniswap/UniswapV2PoolsMetaBalanceAdapter.sol";
 import {
     PancakeSwapV2PoolsMetaBalanceAdapter
-} from "../../src/balances/protocols/pancakeswap/PancakeSwapV2PoolsMetaBalanceAdapter.sol";
+} from "../../src/balances/MetaBalanceAdapters/pancakeswap/PancakeSwapV2PoolsMetaBalanceAdapter.sol";
 import {
     PancakeSwapV3PoolsMetaBalanceAdapter
-} from "../../src/balances/protocols/pancakeswap/PancakeSwapV3PoolsMetaBalanceAdapter.sol";
+} from "../../src/balances/AssistedBalanceAdapters/PancakeSwapV3PoolsMetaBalanceAdapter.sol";
 
 /// @title DeployBalanceAdapters
 /// @notice Deploys balance adapter adapters based on per-chain configuration
@@ -157,7 +183,10 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("NexusMutualStakingPools");
 
         // --- StakeWise V3 exit-queue cache adapter (agent-fed; ADR 0014) ---
-        _deployIfEnabled("StakeWiseExitQueue");
+        _deployIfEnabled("StakeWiseV3ExitQueue");
+
+        // --- Uniswap V2 (meta-adapter: all pairs; pair set on NAV, ADR 0010) ---
+        _deployIfEnabled("UniswapV2PoolsMeta"); // Meta-adapter: all Uniswap V2 pairs (shares the PancakeSwap V2 dispatch)
 
         // --- Uniswap V3 (meta-adapter: all pools; pool set on NAV, ADR 0010) ---
         _deployIfEnabled("UniswapV3PoolsMeta"); // Meta-adapter: all Uniswap V3 pools (Supply + Fees legs)
@@ -355,8 +384,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         }
 
         // StakeWise V3 exit queue: ticket-cached exit-queue adapter (ADR 0014).
-        if (_equals(adapterName, "StakeWiseExitQueue")) {
-            return _deployStakeWiseExitQueue(adapterName, navCalculator);
+        if (_equals(adapterName, "StakeWiseV3ExitQueue")) {
+            return _deployStakeWiseV3ExitQueue(adapterName, navCalculator);
         }
 
         // Uniswap/PancakeSwap meta-adapters (per-instance adapters removed — superseded by meta-adapters)
@@ -689,7 +718,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         require(chainConfig.admin != address(0), "MerklRewards: chainConfig.admin (initialOwner) not configured");
 
         MerklRewardsBalanceAdapter adapter =
-            new MerklRewardsBalanceAdapter(distributor, navCalculator, chainConfig.admin);
+            new MerklRewardsBalanceAdapter(distributor, navCalculator, chainConfig.admin, chainConfig.admin);
         return address(adapter);
     }
 
@@ -714,7 +743,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         );
 
         EtherFiWithdrawalQueueBalanceAdapter adapter = new EtherFiWithdrawalQueueBalanceAdapter(
-            withdrawRequestNft, liquidityPool, underlyingToken, navCalculator, chainConfig.admin
+            withdrawRequestNft, liquidityPool, underlyingToken, navCalculator, chainConfig.admin, chainConfig.admin
         );
         return address(adapter);
     }
@@ -740,7 +769,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(adapter);
     }
 
-    function _deployStakeWiseExitQueue(string memory adapterName, address navCalculator) internal returns (address) {
+    function _deployStakeWiseV3ExitQueue(string memory adapterName, address navCalculator) internal returns (address) {
         // Owner = chainConfig.admin (OIV Safe / agent role): the only caller of submitPositions / clearPosition. The
         // adapter values from live on-chain reads and verifies each tuple belongs to the account via
         // calculateExitedAssets(receiver=account), so the owner cannot fabricate amounts (under-report only). See
@@ -751,10 +780,13 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address underlyingToken = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
         );
-        require(chainConfig.admin != address(0), "StakeWiseExitQueue: chainConfig.admin (initialOwner) not configured");
+        require(
+            chainConfig.admin != address(0), "StakeWiseV3ExitQueue: chainConfig.admin (initialOwner) not configured"
+        );
 
-        StakeWiseExitQueueBalanceAdapter adapter =
-            new StakeWiseExitQueueBalanceAdapter(vaultsRegistry, underlyingToken, navCalculator, chainConfig.admin);
+        StakeWiseV3ExitQueueBalanceAdapter adapter = new StakeWiseV3ExitQueueBalanceAdapter(
+            vaultsRegistry, underlyingToken, navCalculator, chainConfig.admin, chainConfig.admin
+        );
         return address(adapter);
     }
 

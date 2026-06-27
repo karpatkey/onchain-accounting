@@ -8,7 +8,7 @@ import {IBalances} from "src/balances/IBalances.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
-import {ERC20DefaultBalanceAdapter} from "src/balances/protocols/ERC20DefaultBalanceAdapter.sol";
+import {ERC20DefaultBalanceAdapter} from "src/balances/BalanceAdapters/ERC20DefaultBalanceAdapter.sol";
 
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";

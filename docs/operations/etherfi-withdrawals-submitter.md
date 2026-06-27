@@ -1,6 +1,8 @@
 # ether.fi withdrawals submitter bot — operator's guide
 
-The `EtherFiWithdrawalsBalanceAdapter` (`src/balances/protocols/EtherFiWithdrawalsBalanceAdapter.sol`) reports a portfolio's in-flight ETH in ether.fi's withdrawal queue by reading an on-chain cache of candidate `WithdrawRequestNFT` `tokenId`s per account. The NFT is **not enumerable**, so an off-chain bot discovers the account's tokenIds and submits them. Crucially, the cache stores **only ids, never amounts** — the adapter values each id entirely from live on-chain reads (`getClaimableAmount` / `getRequest` + `LiquidityPool.amountForShare`) and re-verifies `ownerOf` on every read. The bot cannot fabricate value; at worst it omits an id (NAV under-reports), never over-reports. See [`docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md`](../decisions/0014-agent-fed-cache-adapters-for-exit-queues.md) for the trust model (generalises Merkl/ADR 0007).
+The `EtherFiWithdrawalQueueBalanceAdapter` (`src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueBalanceAdapter.sol`) reports a portfolio's in-flight ETH in ether.fi's withdrawal queue by reading an on-chain cache of candidate `WithdrawRequestNFT` `tokenId`s per account. The NFT is **not enumerable**, so an off-chain bot discovers the account's tokenIds and submits them. Crucially, the cache stores **only ids, never amounts** — the adapter values each id entirely from live on-chain reads (`getClaimableAmount` / `getRequest` + `LiquidityPool.amountForShare`) and re-verifies `ownerOf` on every read. The bot cannot fabricate value; at worst it omits an id (NAV under-reports), never over-reports. See [`docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md`](../decisions/0014-agent-fed-cache-adapters-for-exit-queues.md) for the trust model (generalises Merkl/ADR 0007).
+
+> **Access control:** this adapter is in the assisted balance-adapter family — submissions are gated by `ASSISTANT_ROLE` (granted/rotated by `DEFAULT_ADMIN_ROLE`); see [ADR 0015](../decisions/0015-assisted-balance-adapter-family.md). Where this guide says "owner"/"owner key" below, read it as the `ASSISTANT_ROLE` holder.
 
 This file is the contract between the on-chain adapter and the ops process that feeds it. The bot lives in `kpk-agents` (`agents/automations/accounting/`), mirroring `submit_merkl_proofs.py`.
 
@@ -11,7 +13,7 @@ This file is the contract between the on-chain adapter and the ops process that 
 Per cycle, two things:
 
 1. **Discover** each tracked account's open `WithdrawRequestNFT` tokenIds (off-chain).
-2. **Submit** the fresh ones to the deployed adapter via `submitTokenIds(account, ids)` (or `submitTokenIdsBatch`), signed by the owner key.
+2. **Submit** the fresh ones to the deployed adapter via `submitTokenIds(account, ids)` (or `submitTokenIdsBatch`), signed by a key holding `ASSISTANT_ROLE`.
 
 Garbage-collection (`clearTokenId` / `clearAccount`) for claimed/transferred ids is an occasional cleanup, not steady-state-critical — stale ids already read as 0 (the adapter drops them when `ownerOf != account` or the request is gone).
 
@@ -42,7 +44,7 @@ Cadence: **roughly daily** is sufficient for correctness (withdrawals take ~days
 
 ```
 ids = scan_owned_tokenIds(account)        # Transfer(to=account) − Transfer(from=account)
-if ids: submitTokenIds(account, ids)      # as owner; adapter dedups + re-verifies
+if ids: submitTokenIds(account, ids)      # as ASSISTANT_ROLE holder; adapter dedups + re-verifies
 # optional GC: clearTokenId for ids whose ownerOf no longer == account (claimed/transferred)
 ```
 

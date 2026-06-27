@@ -5,7 +5,7 @@ import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
 import {
     PancakeSwapV3PoolsMetaBalanceAdapter
-} from "src/balances/protocols/pancakeswap/PancakeSwapV3PoolsMetaBalanceAdapter.sol";
+} from "src/balances/AssistedBalanceAdapters/PancakeSwapV3PoolsMetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title DeployPancakeSwapV3Meta (development)

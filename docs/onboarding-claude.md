@@ -72,7 +72,7 @@ function supportsInterface(bytes4) external view returns (bool);  // ERC165
 
 Returned `PositionBalance` has `amount` always positive + `isDebt` flag, plus `balanceAsset` (the `Asset` metadata — address, symbol, decimals — that `amount` is denominated in), `balanceAdapter` (`address(this)`), `protocolId` (bytes32 protocol identifier), `positionId` (bytes, abi-encoded position anchor), and `positionKind` (enum from `PositionKind.sol`). The adapter does **not** know about prices. See [`docs/howto/position-identity-schema.md`](./howto/position-identity-schema.md) for the full schema.
 
-Adapters live under `src/balances/protocols/<protocol>/` (single-file adapters may sit directly under `protocols/`). A folder typically contains:
+Adapters live under `src/balances/{BalanceAdapters,MetaBalanceAdapters,AssistedBalanceAdapters}/` (multi-file protocols keep a `<protocol>/` subdir inside the family folder; interfaces and the `MetaBalanceAdapter`/`AssistedBalanceAdapter` bases sit directly in `src/balances/`). A folder typically contains:
 
 - `<Protocol>.sol` — the adapter contract (immutable; the constructor pins everything).
 - For multi-instance protocols, a single `<Protocol>MetaBalanceAdapter` covering every instance (ADR 0010) instead of one contract per instance. The active instance set is governed on `NAVCalculator` via `addMetaInstances`/`removeMetaInstances`.
@@ -132,7 +132,7 @@ Full workflow + schema + tolerance triage: [`./howto/refresh-integration-test-bl
 
 | Question | Best file |
 |---|---|
-| What does this protocol's adapter actually return? | The adapter source under `src/balances/protocols/<protocol>/` and its fork test. |
+| What does this protocol's adapter actually return? | The adapter source under `src/balances/{BalanceAdapters,MetaBalanceAdapters,AssistedBalanceAdapters}/` and its fork test. |
 | What is registered on chain X today? | Deployed addresses: `script/config/deployments/<X>.json`. Registered assets: `script/config/nav-config/assets-and-price-feeds/<X>.json`. Balance adapters on NAV: `script/config/nav-config/{balance-adapters,meta-balance-adapters}/<X>.json` (deploy config under `contracts-deployment-config/`). |
 | Why is the framework structured this way? | [`./decisions/`](./decisions/) ADRs. |
 | How do positions flow into NAV? | [`src/balances/BALANCE_ADAPTERS.md`](../src/balances/BALANCE_ADAPTERS.md) §2 + §6 (`NAVCalculator.getAccountNav` → `PriceFeedLib.computeNav`). |

@@ -42,12 +42,12 @@ echo "=== deploy ether.fi withdrawals adapter  chain=$CID NAV=$NAV"
 echo "    withdrawRequestNft: $WITHDRAW_REQUEST_NFT"
 echo "    liquidityPool:      $LIQUIDITY_POOL"
 echo "    underlyingToken:    $UNDERLYING_TOKEN (native ETH)"
-echo "    owner:              $DEV_DEPLOYER_ADDR (dev account #0)"
+echo "    admin+assistant:    $DEV_DEPLOYER_ADDR (dev account #0; admin=assistant for local)"
 
 OUT=$(
-  forge create src/balances/protocols/EtherFiWithdrawalQueueBalanceAdapter.sol:EtherFiWithdrawalQueueBalanceAdapter \
+  forge create src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueBalanceAdapter.sol:EtherFiWithdrawalQueueBalanceAdapter \
     --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" --broadcast \
-    --constructor-args "$WITHDRAW_REQUEST_NFT" "$LIQUIDITY_POOL" "$UNDERLYING_TOKEN" "$NAV" "$DEV_DEPLOYER_ADDR" 2>&1
+    --constructor-args "$WITHDRAW_REQUEST_NFT" "$LIQUIDITY_POOL" "$UNDERLYING_TOKEN" "$NAV" "$DEV_DEPLOYER_ADDR" "$DEV_DEPLOYER_ADDR" 2>&1
 ) || true
 ADAPTER=$(printf '%s\n' "$OUT" | grep -i "Deployed to:" | awk '{print $3}' || true)
 if [ -z "$ADAPTER" ]; then

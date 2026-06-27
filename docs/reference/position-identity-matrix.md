@@ -67,7 +67,7 @@ Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, pos
 | KelpWithdrawalQueue | `kelp-withdrawal` | `""` (empty — account-global) | owed per payout asset | `Supplied` | false | each supported asset |
 | LidoWithdrawalQueue | `lido-withdrawal` | `""` (empty — account-global) | claimable + pending ETH | `Supplied` | false | native ETH |
 | EtherFiWithdrawalQueue | `etherfi-withdrawal` | `""` (empty — account-global) | in-flight withdrawal-queue ETH | `Supplied` | false | native ETH |
-| StakeWiseExitQueue | `stakewise-exit` | `""` (empty — account-global) | in-flight exit-queue assets | `Supplied` | false | native ETH |
+| StakeWiseV3ExitQueue | `stakewise-exit` | `""` (empty — account-global) | in-flight exit-queue assets | `Supplied` | false | native ETH |
 | EthenaCooldownBalanceAdapter | `ethena-cooldown` | `""` (empty — account-global) | USDe in the sUSDe unstaking cooldown | `Supplied` | false | USDe |
 | NexusMutualStakingPools | `nexus-mutual-staking` | `abi.encode(uint256 tokenId, uint256 poolId)` | active + expired staked NXM (per StakingNFT) | `Staking` | false | NXM |
 | | | | claimable rewards (per StakingNFT) | `Rewards` | false | NXM |

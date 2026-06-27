@@ -1,6 +1,8 @@
 # StakeWise V3 exit-queue submitter bot — operator's guide
 
-The `StakeWiseExitQueueBalanceAdapter` (`src/balances/protocols/StakeWiseExitQueueBalanceAdapter.sol`) reports a portfolio's in-flight assets in StakeWise V3's exit queue by reading an on-chain cache of candidate `(vault, positionTicket, timestamp)` tuples per account. Exit positions are **not enumerable** — a position is identified only by a `positionTicket` emitted in the `ExitQueueEntered` event — so an off-chain bot discovers the account's positions and submits them. Crucially, the cache stores **only the position coordinates, never amounts** — the adapter values each tuple entirely from live on-chain reads (`calculateExitedAssets` + `convertToAssets`) and the `calculateExitedAssets(receiver = account, …)` call is itself the ownership check. The bot cannot fabricate value; at worst it omits a position (NAV under-reports), never over-reports. See [`docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md`](../decisions/0014-agent-fed-cache-adapters-for-exit-queues.md) for the trust model (generalises Merkl/ADR 0007; sibling of the ether.fi submitter).
+The `StakeWiseV3ExitQueueBalanceAdapter` (`src/balances/AssistedBalanceAdapters/StakeWiseV3ExitQueueBalanceAdapter.sol`) reports a portfolio's in-flight assets in StakeWise V3's exit queue by reading an on-chain cache of candidate `(vault, positionTicket, timestamp)` tuples per account. Exit positions are **not enumerable** — a position is identified only by a `positionTicket` emitted in the `ExitQueueEntered` event — so an off-chain bot discovers the account's positions and submits them. Crucially, the cache stores **only the position coordinates, never amounts** — the adapter values each tuple entirely from live on-chain reads (`calculateExitedAssets` + `convertToAssets`) and the `calculateExitedAssets(receiver = account, …)` call is itself the ownership check. The bot cannot fabricate value; at worst it omits a position (NAV under-reports), never over-reports. See [`docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md`](../decisions/0014-agent-fed-cache-adapters-for-exit-queues.md) for the trust model (generalises Merkl/ADR 0007; sibling of the ether.fi submitter).
+
+> **Access control:** this adapter is in the assisted balance-adapter family — submissions are gated by `ASSISTANT_ROLE` (granted/rotated by `DEFAULT_ADMIN_ROLE`); see [ADR 0015](../decisions/0015-assisted-balance-adapter-family.md). Where this guide says "owner"/"owner key" below, read it as the `ASSISTANT_ROLE` holder.
 
 This file is the contract between the on-chain adapter and the ops process that feeds it. The bot lives in `kpk-agents` (`agents/automations/accounting/`), mirroring `submit_merkl_proofs.py` and the ether.fi submitter.
 
@@ -11,7 +13,7 @@ This file is the contract between the on-chain adapter and the ops process that 
 Per cycle, two things:
 
 1. **Discover** each tracked account's open exit positions (off-chain): the `(vault, positionTicket, timestamp)` tuples.
-2. **Submit** the fresh ones to the deployed adapter via `submitPositions(account, positions)` (or `submitPositionsBatch`), signed by the owner key.
+2. **Submit** the fresh ones to the deployed adapter via `submitPositions(account, positions)` (or `submitPositionsBatch`), signed by a key holding `ASSISTANT_ROLE`.
 
 Garbage-collection (`clearPosition` / `clearAccount`) for claimed positions is an occasional cleanup, not steady-state-critical — stale tuples already read as 0 (the adapter drops them when `calculateExitedAssets` returns zero, i.e. the request was claimed/deleted).
 
@@ -32,7 +34,7 @@ For each event where `receiver == account`, record `(vault, positionTicket, bloc
 | **Account list** | Operator config | EVM addresses to track (the OIV per-chain accounts that use StakeWise V3). |
 | **Vaults** | StakeWise VaultsRegistry / operator config | The vaults to scan `ExitQueueEntered` on (e.g. mainnet Genesis `0xAC0F…2885`, MetaVault `0x1563…cad3`). |
 | **Chains** | Operator config | StakeWise V3 exit queues tracked here are **mainnet (1)** only today (vaults settle in ETH). |
-| **Adapter address** | `script/config/deployments/1.json` → `balanceAdapters.StakeWiseExitQueue` | Read at startup; refresh on redeploy. |
+| **Adapter address** | `script/config/deployments/1.json` → `balanceAdapters.StakeWiseV3ExitQueue` | Read at startup; refresh on redeploy. |
 | **Owner key** | Operator secret store | Owns the adapter (`chainConfig.admin` = OIV Safe). Submit via the Safe Transaction Service / a granted Zodiac role, same as the Merkl bot. |
 
 The `VaultsRegistry` address and all valuation/verification rules are pinned in the adapter; the bot does not need them beyond event scanning.
@@ -43,7 +45,7 @@ Cadence: **roughly daily** is sufficient for correctness (validator exits take ~
 
 ```
 positions = scan_exit_queue_entered(vault, receiver=account)   # (vault, positionTicket, blockTimestamp)
-if positions: submitPositions(account, positions)             # as owner; adapter dedups + verifies on-chain
+if positions: submitPositions(account, positions)             # as ASSISTANT_ROLE holder; adapter dedups + verifies on-chain
 # optional GC: clearPosition for tuples whose calculateExitedAssets(account,…) is now 0 (claimed)
 ```
 

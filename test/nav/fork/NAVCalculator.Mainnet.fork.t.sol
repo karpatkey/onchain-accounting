@@ -3,10 +3,14 @@ pragma solidity ^0.8.0;
 
 import {NAVCalculatorForkHarness} from "test/nav/fork/NAVCalculatorForkTestBase.fork.sol";
 import {ChainlinkPriceFeeds} from "test/ChainlinkPriceFeeds.sol";
-import {AaveV3InstancesMetaBalanceAdapter} from "src/balances/protocols/AaveV3InstancesMetaBalanceAdapter.sol";
-import {AaveV3SafetyModuleBalanceAdapter} from "src/balances/protocols/AaveV3SafetyModuleBalanceAdapter.sol";
-import {CompoundV3CometsMetaBalanceAdapter} from "src/balances/protocols/CompoundV3CometsMetaBalanceAdapter.sol";
-import {MorphoMarketsMetaBalanceAdapter} from "src/balances/protocols/MorphoMarketsMetaBalanceAdapter.sol";
+import {
+    AaveV3InstancesMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/AaveV3InstancesMetaBalanceAdapter.sol";
+import {AaveV3SafetyModuleBalanceAdapter} from "src/balances/BalanceAdapters/AaveV3SafetyModuleBalanceAdapter.sol";
+import {
+    CompoundV3CometsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/CompoundV3CometsMetaBalanceAdapter.sol";
+import {MorphoMarketsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/MorphoMarketsMetaBalanceAdapter.sol";
 import {sDAI_CustomPriceFeed} from "src/prices/protocols/sDAI_CustomPriceFeed.sol";
 import {sUSDS_CustomPriceFeed} from "src/prices/protocols/sUSDS_CustomPriceFeed.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";

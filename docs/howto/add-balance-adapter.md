@@ -35,7 +35,7 @@ Today 20 meta-adapters cover all major multi-instance protocols (Aave V3, Compou
 
 ## 1. Write the adapter contract
 
-File: `src/balances/protocols/<MyProtocol>.sol` (single-file) or `src/balances/protocols/<protocol>/<MyProtocol>.sol` (multi-file).
+File: `src/balances/<family>/<MyProtocol>.sol`, where `<family>` is `BalanceAdapters` (plain), `MetaBalanceAdapters` (multi-instance), or `AssistedBalanceAdapters` (externally-fed). Multi-file protocols keep a `<protocol>/` subdir inside the family folder.
 
 ### 1.1 Identity pattern
 
@@ -165,10 +165,10 @@ contract MyProtocolBalanceAdapter is IBalanceAdapter, IPositionDescribable {
 
 Reuse patterns from existing adapters:
 
-- **Per-instance, multi-asset (supply + borrow legs):** `src/balances/protocols/SparkLendBalanceAdapter.sol`.
-- **Per-instance, single-asset vault:** `src/balances/protocols/CapBalanceAdapter.sol`, `src/balances/protocols/ERC4626WrapBalanceAdapter.sol`.
-- **Meta-adapter, single-leg:** `src/balances/protocols/GearboxMarketsMetaBalanceAdapter.sol`, `src/balances/protocols/MorphoVaultsMetaBalanceAdapter.sol`.
-- **Meta-adapter, multi-leg (LP + rewards):** `src/balances/protocols/curve/CurveGaugesMetaBalanceAdapter.sol`, `src/balances/protocols/balancer/BalancerV3GaugesMetaBalanceAdapter.sol`.
+- **Per-instance, multi-asset (supply + borrow legs):** `src/balances/BalanceAdapters/SparkLendBalanceAdapter.sol`.
+- **Per-instance, single-asset vault:** `src/balances/BalanceAdapters/CapBalanceAdapter.sol`, `src/balances/BalanceAdapters/ERC4626WrapBalanceAdapter.sol`.
+- **Meta-adapter, single-leg:** `src/balances/MetaBalanceAdapters/GearboxMarketsMetaBalanceAdapter.sol`, `src/balances/MetaBalanceAdapters/MorphoVaultsMetaBalanceAdapter.sol`.
+- **Meta-adapter, multi-leg (LP + rewards):** `src/balances/MetaBalanceAdapters/curve/CurveGaugesMetaBalanceAdapter.sol`, `src/balances/MetaBalanceAdapters/balancer/BalancerV3GaugesMetaBalanceAdapter.sol`.
 
 Conventions:
 
@@ -190,7 +190,7 @@ Two files, both required for review.
 
 ### 2.1 Unit test (mocks only)
 
-File: `test/balances/protocols/<MyProtocol>.t.sol`.
+File: `test/balances/<family>/<MyProtocol>.t.sol`.
 
 Cover:
 
@@ -206,7 +206,7 @@ Use `Mock_NAVCalculator` (in `test/mocks/nav_calculator.sol`) and a thin mock of
 
 ### 2.2 Fork test (real protocol)
 
-File: `test/balances/protocols/fork/<MyProtocol>.fork.t.sol`.
+File: `test/balances/<family>/fork/<MyProtocol>.fork.t.sol`.
 
 Cover:
 
@@ -215,7 +215,7 @@ Cover:
 - Reward accrual: time-warp with `vm.warp(block.timestamp + 1 days)` and confirm rewards increase (where applicable).
 - Asset registry filtering: confirm positions for assets *not* registered with NAVCalculator are dropped.
 
-Extend `BalanceAdapterTestBase` (in `test/balances/protocols/fork/BalanceAdapterTestBase.fork.sol`) and pin the block via the shared `getAlchemyUrl` / `createForkWithCadence` helpers from `test/TestEnvConfigurator.sol`:
+Extend `BalanceAdapterTestBase` (in `test/balances/BalanceAdapterTestBase.fork.sol`) and pin the block via the shared `getAlchemyUrl` / `createForkWithCadence` helpers from `test/TestEnvConfigurator.sol`:
 
 ```solidity
 contract MyProtocolBalanceAdapterForkTest is BalanceAdapterTestBase {
@@ -374,8 +374,8 @@ This regenerates the expected `navUsd8dp` values, optionally cross-checks agains
 PR checklist:
 
 - [ ] `forge build` clean
-- [ ] `forge test --match-path "test/balances/protocols/MyProtocol*"` clean
-- [ ] `FOUNDRY_PROFILE=slow forge test --match-path "test/balances/protocols/fork/MyProtocol*"` clean
+- [ ] `forge test --match-path "test/balances/<family>/MyProtocol*"` clean
+- [ ] `FOUNDRY_PROFILE=slow forge test --match-path "test/balances/<family>/fork/MyProtocol*"` clean
 - [ ] Chain config updated for every chain where the adapter applies
 - [ ] If a new `ProtocolIds` constant was added, it is documented in the NatSpec block of `src/utils/ProtocolIds.sol`
 - [ ] No unrelated files committed (run `git status` before staging)

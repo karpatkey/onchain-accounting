@@ -3,7 +3,7 @@ pragma solidity ^0.8;
 
 import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
-import {EulerVaultsMetaBalanceAdapter} from "src/balances/protocols/EulerVaultsMetaBalanceAdapter.sol";
+import {EulerVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/EulerVaultsMetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title DeployEulerVaultsMeta (development)

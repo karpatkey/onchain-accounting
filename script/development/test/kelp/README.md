@@ -2,7 +2,7 @@
 
 ## 1. Adapter under test
 
-`src/balances/protocols/KelpWithdrawalQueueBalanceAdapter.sol` — the immutable `KelpWithdrawalQueueBalanceAdapter`. Constructor: `(withdrawalManager, navCalculator)` where `withdrawalManager = Kelp LRTWithdrawalManager` (`0x62De59c08eB5dAE4b7E6F7a8cAd3006d6965ec16`). Identity is derived on-chain: `positionId = ""` (account-global), `protocolId = keccak256("kelp-withdrawal")`, `positionKind = Supplied`.
+`src/balances/BalanceAdapters/KelpWithdrawalQueueBalanceAdapter.sol` — the immutable `KelpWithdrawalQueueBalanceAdapter`. Constructor: `(withdrawalManager, navCalculator)` where `withdrawalManager = Kelp LRTWithdrawalManager` (`0x62De59c08eB5dAE4b7E6F7a8cAd3006d6965ec16`). Identity is derived on-chain: `positionId = ""` (account-global), `protocolId = keccak256("kelp-withdrawal")`, `positionKind = Supplied`.
 
 ### Inheritance + per-chain scope (Phase 0)
 
@@ -27,9 +27,9 @@ emit one Supplied leg (asset, total) per supported+registered asset with total >
 
 ## 2. Existing fork test coverage
 
-`test/balances/protocols/fork/KelpWithdrawalQueueBalanceAdapter.fork.t.sol` already had `KelpWithdrawalQueueBalanceAdapterForkTest` covering the Slack-incident holder `0x99b9F5…` (one open **stETH** request, 160.44 stETH) @ block `25_094_940`, plus the position **vanishing after claim** @ `25_150_000`, and empty / unknown-holder / unsupported-asset / asset-filter-mismatch / interface / immutables.
+`test/balances/BalanceAdapters/fork/KelpWithdrawalQueueBalanceAdapter.fork.t.sol` already had `KelpWithdrawalQueueBalanceAdapterForkTest` covering the Slack-incident holder `0x99b9F5…` (one open **stETH** request, 160.44 stETH) @ block `25_094_940`, plus the position **vanishing after claim** @ `25_150_000`, and empty / unknown-holder / unsupported-asset / asset-filter-mismatch / interface / immutables.
 
-The unit test (`test/balances/protocols/KelpWithdrawalQueueBalanceAdapter.t.sol`) covers the mock-only edges: constructor reverts, single/multi-request summing, the **256 cap**, the **claimed-front skip** (deque pop), **multi-asset** balances + positions, the **registered-vs-unregistered drop**, and the asset filter.
+The unit test (`test/balances/BalanceAdapters/KelpWithdrawalQueueBalanceAdapter.t.sol`) covers the mock-only edges: constructor reverts, single/multi-request summing, the **256 cap**, the **claimed-front skip** (deque pop), **multi-asset** balances + positions, the **registered-vs-unregistered drop**, and the asset filter.
 
 All kept as regression nets.
 
@@ -102,7 +102,7 @@ Live reads of Kelp's own LRTWithdrawalManager (no closed-form re-derivation):
 | stETH | `userAssociatedNonces(stETH, holder) == (1, 3)`; `adapter == Σ getUserWithdrawalRequest(stETH, holder, i).expectedAssetAmount` for `i ∈ {0,1}`. |
 | native ETH | `adapter == getUserWithdrawalRequest(ETH, holder, 0).expectedAssetAmount`. |
 
-Multi-asset emission, summing, the claimed-front skip (deque pop), the 256 cap, and the registered-vs-unregistered drop are also exercised with mocks in `test/balances/protocols/KelpWithdrawalQueueBalanceAdapter.t.sol`. The tests assert `protocolId == keccak256("kelp-withdrawal")`, `positionId == ""`, `PositionKind.Supplied`, and `balanceAdapter == address(this)`.
+Multi-asset emission, summing, the claimed-front skip (deque pop), the 256 cap, and the registered-vs-unregistered drop are also exercised with mocks in `test/balances/BalanceAdapters/KelpWithdrawalQueueBalanceAdapter.t.sol`. The tests assert `protocolId == keccak256("kelp-withdrawal")`, `positionId == ""`, `PositionKind.Supplied`, and `balanceAdapter == address(this)`.
 
 ## 9. Wiring the live dev-anvil dashboard
 
@@ -141,5 +141,5 @@ The position renders under **Kelp DAO** (the adapter's `protocolName()`) as **tw
 Run via:
 
 ```bash
-FOUNDRY_PROFILE=slow forge test --match-path "test/balances/protocols/fork/KelpWithdrawalQueueBalanceAdapter.fork.t.sol" -vv
+FOUNDRY_PROFILE=slow forge test --match-path "test/balances/BalanceAdapters/fork/KelpWithdrawalQueueBalanceAdapter.fork.t.sol" -vv
 ```

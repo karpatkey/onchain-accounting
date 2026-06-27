@@ -5,7 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {Balances} from "src/balances/Balances.sol";
 import {IPrices} from "src/prices/IPrices.sol";
-import {ERC20DefaultBalanceAdapter} from "src/balances/protocols/ERC20DefaultBalanceAdapter.sol";
+import {ERC20DefaultBalanceAdapter} from "src/balances/BalanceAdapters/ERC20DefaultBalanceAdapter.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {aa} from "test/helpers/AdapterArray.sol";

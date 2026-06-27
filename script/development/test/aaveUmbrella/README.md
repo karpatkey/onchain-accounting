@@ -2,7 +2,7 @@
 
 ## 1. Adapter under test
 
-`src/balances/protocols/AaveUmbrellaBalanceAdapter.sol` — the immutable `AaveUmbrellaBalanceAdapter`. Constructor: `(rewardsController, navCalculator)`. It pins **only** the Umbrella `RewardsController` as a trust anchor and discovers everything else at runtime — the full stake-token set, each stake token's bare reserve, and the reward-token→bare-reserve mapping. Identity is derived on-chain: `positionId = abi.encode(stakeToken)`, `protocolId = keccak256("aave-v3-umbrella")`, `positionLabels = ["Umbrella Module"]`.
+`src/balances/BalanceAdapters/AaveUmbrellaBalanceAdapter.sol` — the immutable `AaveUmbrellaBalanceAdapter`. Constructor: `(rewardsController, navCalculator)`. It pins **only** the Umbrella `RewardsController` as a trust anchor and discovers everything else at runtime — the full stake-token set, each stake token's bare reserve, and the reward-token→bare-reserve mapping. Identity is derived on-chain: `positionId = abi.encode(stakeToken)`, `protocolId = keccak256("aave-v3-umbrella")`, `positionLabels = ["Umbrella Module"]`.
 
 ### Inheritance + per-chain scope (Phase 0)
 

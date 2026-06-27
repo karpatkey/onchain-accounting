@@ -3,7 +3,7 @@ pragma solidity ^0.8;
 
 import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
-import {AaveUmbrellaBalanceAdapter} from "src/balances/protocols/AaveUmbrellaBalanceAdapter.sol";
+import {AaveUmbrellaBalanceAdapter} from "src/balances/BalanceAdapters/AaveUmbrellaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title QueryAaveUmbrellaLiveBalances
@@ -17,7 +17,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 ///          script/development/test/aaveUmbrella/query-live-balances.s.sol:QueryAaveUmbrellaLiveBalances \
 ///          --rpc-url http://127.0.0.1:8545 -vv
 ///      For a registry-controlled dump at an exact archive block, read getAdapterPositions in the fork test
-///      (test/balances/protocols/fork/AaveUmbrellaBalanceAdapter.fork.t.sol), which deploys its own Balances harness.
+///      (test/balances/BalanceAdapters/fork/AaveUmbrellaBalanceAdapter.fork.t.sol), which deploys its own Balances harness.
 contract QueryAaveUmbrellaLiveBalances is Script {
     address constant REWARDS_CONTROLLER = 0x4655Ce3D625a63d30bA704087E52B4C31E38188B;
     // Holders covering all four stake tokens + the same-asset stkGHO case (see README §5).

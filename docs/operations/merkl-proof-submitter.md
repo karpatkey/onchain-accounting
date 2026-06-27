@@ -1,6 +1,8 @@
 # Merkl proof-submitter bot — operator's guide
 
-The `MerklRewardsBalanceAdapter` adapter (`src/balances/protocols/MerklRewardsBalanceAdapter.sol`) reports a portfolio's *unclaimed* Merkl rewards by reading an on-chain cache of `(user, token, cumulativeAmount)` tuples. The cache is populated by an off-chain bot that fetches merkle proofs from the Merkl API and submits them to the adapter, where they're verified against the live `Distributor.getMerkleRoot()` before being stored. The adapter cannot fabricate amounts; the bot cannot fabricate amounts; only Merkl's published merkle tree determines what the adapter reports. See [`docs/decisions/0007-merkl-trust-minimized-cache.md`](../decisions/0007-merkl-trust-minimized-cache.md) for the design rationale and trust model.
+The `MerklRewardsBalanceAdapter` adapter (`src/balances/AssistedBalanceAdapters/MerklRewardsBalanceAdapter.sol`) reports a portfolio's *unclaimed* Merkl rewards by reading an on-chain cache of `(user, token, cumulativeAmount)` tuples. The cache is populated by an off-chain bot that fetches merkle proofs from the Merkl API and submits them to the adapter, where they're verified against the live `Distributor.getMerkleRoot()` before being stored. The adapter cannot fabricate amounts; the bot cannot fabricate amounts; only Merkl's published merkle tree determines what the adapter reports. See [`docs/decisions/0007-merkl-trust-minimized-cache.md`](../decisions/0007-merkl-trust-minimized-cache.md) for the design rationale and trust model.
+
+> **Access control:** this adapter is in the assisted balance-adapter family — submissions are gated by `ASSISTANT_ROLE` (granted/rotated by `DEFAULT_ADMIN_ROLE`); see [ADR 0015](../decisions/0015-assisted-balance-adapter-family.md). Where this guide says "owner"/"owner key" below, read it as the `ASSISTANT_ROLE` holder.
 
 This document specifies what the bot must do, how often, with what inputs and what failure modes. It does **not** specify the language, framework, or deployment topology — those are operator choices. The bot lives outside this repo; this file is the contract between the on-chain adapter and whatever ops process keeps it fed.
 
@@ -11,7 +13,7 @@ This document specifies what the bot must do, how often, with what inputs and wh
 Exactly two things, every cycle:
 
 1. **For each (account, chain) pair the operator wants tracked**, fetch the current set of `(token, cumulativeAmount, proof)` triples from Merkl's API.
-2. **Submit each fresh triple to the deployed `MerklRewardsBalanceAdapter` on that chain** via `submitProof` or `submitProofBatch`, signed by the contract's owner key.
+2. **Submit each fresh triple to the deployed `MerklRewardsBalanceAdapter` on that chain** via `submitProof` or `submitProofBatch`, signed by a key holding `ASSISTANT_ROLE`.
 
 That's the whole job. Garbage collection (`clearAllocation`) and ownership transfer are infrequent operator actions, not part of the steady-state loop.
 
@@ -24,7 +26,7 @@ The bot needs three pieces of operator-provided configuration:
 | **Account list** | Operator config | One or more EVM addresses to track. Typically the OIV's per-chain accounts. |
 | **Chain list** | Operator config | Subset of {1, 10, 100, 8453, 42161}. Merkl supports more chains; only those the OIV deploys to matter. |
 | **Adapter address per chain** | `script/config/deployments/<id>.json` → `balanceAdapters.MerklRewards` | Read at startup; refresh on redeploy. |
-| **Owner key** | Operator secret store | The key that owns each `MerklRewardsBalanceAdapter`. By default this is `chainConfig.admin` (the OIV Safe). The bot must be able to submit transactions as this owner — typically via a Safe Transaction Service / module / API client. Direct EOA ownership is not recommended for production. |
+| **Assistant key** | Operator secret store | The key holding `ASSISTANT_ROLE` on each `MerklRewardsBalanceAdapter`. By default this is `chainConfig.admin` (the OIV Safe). The bot must be able to submit transactions as this owner — typically via a Safe Transaction Service / module / API client. Direct EOA ownership is not recommended for production. |
 
 The Distributor address and proof-verification rules are pinned in the adapter; the bot does not need to know about them.
 
@@ -94,7 +96,7 @@ The owner of every deployed `MerklRewardsBalanceAdapter` is `chainConfig.admin` 
 
 Direct EOA ownership (no Safe) is **not recommended** because the owner key would have to live wherever the bot runs.
 
-The adapter does not care which model is used — `onlyOwner` is the only constraint. Whatever shape the bot uses must end with `msg.sender == adapter.owner()`.
+The adapter does not care which model is used — `onlyRole(ASSISTANT_ROLE)` is the only constraint. Whatever shape the bot uses must end with the submitter holding `ASSISTANT_ROLE`.
 
 ## Failure modes and what to do
 
@@ -103,7 +105,7 @@ The adapter does not care which model is used — `onlyOwner` is the only constr
 | `submitProof` reverts with `InvalidProof` | API returned a proof for a root that hasn't reached this chain yet, or returned a proof for `lastTree` after the dispute window closed | Re-fetch from API and retry once. If still failing, log and skip — the next cycle will recover. |
 | `submitProof` reverts with `UninitializedRoot` | Distributor's `tree.merkleRoot` is 0 (e.g., on a chain where Merkl is freshly deployed) | Disable the bot for that chain until Merkl publishes a root. |
 | `submitProof` reverts with `AmountRegression` | API returned a value lower than what's cached. Should not happen under Merkl's monotonicity invariant; suggests an API bug or campaign restructuring. | Page an operator. Do not auto-clear the cache. The owner can call `clearAllocation` manually after investigating. |
-| `submitProof` reverts with `OwnableUnauthorizedAccount` | Bot's signer is not the adapter's owner | Verify the Safe module wiring / owner address. Likely a deploy or ownership-transfer issue, not a routine failure. |
+| `submitProof` reverts with `AccessControlUnauthorizedAccount` | Bot's signer does not hold ASSISTANT_ROLE | Verify the Safe module wiring / owner address. Likely a deploy or ownership-transfer issue, not a routine failure. |
 | Cache reads as 0 even though API shows non-zero `amount` | Cached `root` does not match current `Distributor.getMerkleRoot()`. Bot has not yet run since the last root rotation. | Wait for next bot cycle. If persistent, the bot is stopped — investigate. |
 | Adapter not in NAV | Either `enabled: false` in chain config or `addBalanceAdapters` wasn't called | Check `NAVCalculator.isAdapterRegistered(adapter)`; if false, register via Safe. |
 
@@ -151,7 +153,7 @@ Which is correct: the user's true total is `cum_{N+1}`, the latest cumulative al
 
 ## Reference
 
-- Adapter source: [`src/balances/protocols/MerklRewardsBalanceAdapter.sol`](../../src/balances/protocols/MerklRewardsBalanceAdapter.sol)
+- Adapter source: [`src/balances/AssistedBalanceAdapters/MerklRewardsBalanceAdapter.sol`](../../src/balances/AssistedBalanceAdapters/MerklRewardsBalanceAdapter.sol)
 - Trust-model ADR: [`docs/decisions/0007-merkl-trust-minimized-cache.md`](../decisions/0007-merkl-trust-minimized-cache.md)
 - Merkl Distributor source: <https://github.com/AngleProtocol/merkl-contracts/blob/main/contracts/Distributor.sol>
 - Merkl API: <https://api.merkl.xyz/v4/users/{address}/rewards?chainId={cid}>

@@ -29,3 +29,5 @@ Short, numbered records of *why* the codebase looks the way it does. Read these 
 | 0010 | [Meta balance-adapters: one adapter per protocol, instances governed on NAVCalculator](0010-meta-balance-adapters.md) | accepted |
 | 0011 | [NAVCalculator size headroom + shared adapter/feed abstractions](0011-nav-size-and-shared-abstractions.md) | accepted |
 | 0012 | [Bridge: provable destination-side release (remove escrow fallback dispatcher, authenticate the real protocol)](0012-bridge-provable-release-rearchitecture.md) | accepted |
+| 0014 | [Agent-fed cache adapters for withdrawal/exit queues (ether.fi, StakeWise V3)](0014-agent-fed-cache-adapters-for-exit-queues.md) | accepted |
+| 0015 | [Assisted balance-adapter family (shared interface + AccessControl base)](0015-assisted-balance-adapter-family.md) | accepted |

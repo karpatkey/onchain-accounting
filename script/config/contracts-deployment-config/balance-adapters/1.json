@@ -576,9 +576,9 @@
       "positionId": "abi.encode(uint256 tokenId, uint256 poolId)"
     }
   },
-  "StakeWiseExitQueue": {
+  "StakeWiseV3ExitQueue": {
     "enabled": true,
-    "$comment": "StakeWise V3 exit-queue cache adapter (agent-fed; ADR 0014, sibling of EtherFiWithdrawalQueue). Mutable cache of (vault, positionTicket, timestamp) tuples — never amounts — owner = chainConfig.admin (OIV Safe); the kpk-agents submitter feeds tuples discovered from ExitQueueEntered events. Native-ETH denominated (mainnet StakeWise vaults settle in ETH); values from live reads (calculateExitedAssets.exitedAssets + convertToAssets(leftShares)) with calculateExitedAssets(receiver=account) as the on-chain ownership check. Reports 0 until the agent submits tuples. 04 reads vaultsRegistry/underlyingToken; protocol/positionDetail/positionId are identity metadata (hardcoded in the contract).",
+    "$comment": "StakeWise V3 exit-queue cache adapter (agent-fed; ADR 0014, sibling of EtherFiWithdrawalQueue). Mutable cache of (vault, positionTicket, timestamp) tuples — never amounts — admin+assistant = chainConfig.admin at deploy (assisted-family AccessControl; ASSISTANT_ROLE submits, DEFAULT_ADMIN_ROLE administers; ADR 0015); the kpk-agents submitter (holding ASSISTANT_ROLE) feeds tuples discovered from ExitQueueEntered events. Native-ETH denominated (mainnet StakeWise vaults settle in ETH); values from live reads (calculateExitedAssets.exitedAssets + convertToAssets(leftShares)) with calculateExitedAssets(receiver=account) as the on-chain ownership check. Reports 0 until the agent submits tuples. 04 reads vaultsRegistry/underlyingToken; protocol/positionDetail/positionId are identity metadata (hardcoded in the contract).",
     "constructor": {
       "vaultsRegistry": "0x3a0008a588772446f6e656133C2D5029CC4FC20E",
       "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",

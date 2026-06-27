@@ -75,3 +75,17 @@ Compare to `UniswapV3PoolLib._computeFees` (lines 202–218) which correctly use
 For fee computation, use the pool's actual `slot0.tick` (or `slot0.sqrtPriceX96`) for the branch selection, not the oracle-reconstructed price. The oracle-derived price should only be used for the principal liquidity split (where manipulation resistance is important). The fee growth calculation cannot be manipulated by moving the pool's tick because the `fgGrowthInside` formula correctly accounts for the tick-crossing history; the security concern for fees is the magnitude (governed by on-chain accumulation), not the branch.
 
 Alternatively, compute the feeGrowthInside directly from the pool's tick-level state using the real pool `slot0.sqrtPriceX96` / `slot0.tick` only for the branch decision, while keeping the principal liquidity split oracle-driven.
+
+---
+
+## CORRECTION (post-review) — recommendation revised
+
+The original recommendation here (use the pool's real `slot0.tick` for the fee branch) is **superseded**. The adapter deliberately never reads `slot0` — both for manipulation resistance (prior `[2]` finding) and for PancakeSwap-V3 ABI compatibility (`UniswapV3PoolsMetaBalanceAdapter.sol:28-34`). Using `slot0.tick` would regress both.
+
+**Revised fix (oracle-only preserving):** bound the inside-growth delta — a position's inside fee-growth can never exceed the pool's global fee-growth, so clamp:
+```solidity
+uint256 d0 = fgInside0 - fgInside0Last;   // unchecked
+if (d0 > fgGlobal0) d0 = 0;               // inconsistent branch / wrap → no phantom fees
+f0 = Math.mulDiv(d0, liquidity, FixedPoint128.Q128) + tokensOwed0;   // (same for d1/f1)
+```
+Accurate fees in the normal case; conservative 0 (safe under-report) on oracle/pool divergence; no `slot0`, PancakeSwap-V3-compatible. See docs/audits/2026-06-vigilo-adapter-audit.md §M-A1.

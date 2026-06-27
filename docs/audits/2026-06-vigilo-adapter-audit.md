@@ -37,8 +37,17 @@
 ### M-A1 — Uniswap V3 / PancakeSwap V3: fee-growth branch selected by oracle price, not the pool's real tick  *(NEW, confirmed)*
 **Location:** `src/balances/AssistedBalanceAdapters/UniswapV3PoolsMetaBalanceAdapter.sol:235-243` (`_computeFees`); inherited by `PancakeSwapV3PoolsMetaBalanceAdapter`.
 The uncollected-fee computation picks the below/in/above-range `feeGrowthInside` branch by comparing the **oracle-reconstructed** `sqrtPriceX96` against the position's tick-boundary sqrt ratios (lines 235/238, intentional per the comment at 208-213). But `feeGrowthOutside` (read from `pool.ticks(tick)`, line 252) is anchored to the pool's **real** current tick. When the oracle-implied price and the real pool price straddle a position boundary, the wrong branch is selected; the `unchecked` `fgInside − fgInsideLast` subtraction then wraps to ~2²⁵⁶, so `Math.mulDiv(…, liquidity, Q128)` either **reverts** (the per-instance `try/catch` drops the whole NFT position → under-report of principal+fees) or returns a **grossly inflated fee** → NAV over-report. The canonical reference `MetaBalanceAdapters/uniswap/UniswapV3PoolLib._computeFees` correctly takes the real `tickCurrent`.
-**Likelihood low, impact high.** Verdict: `.vigilo/adapter-audit/verify/univ3-fee-branch.md`.
-**Recommendation:** select the fee-growth branch using the pool's real `slot0.tick` (consistent with the `feeGrowthOutside` anchoring), while keeping the oracle-reconstructed price for the **principal** amounts. Fee manipulation via `slot0.tick` is bounded (an attacker moving the real tick also moves `feeGrowthOutside` consistently) and fees are a small fraction of LP value, so this trades a non-issue for correctness. The principal stays manipulation-resistant.
+**Likelihood low, impact high** (read-time NAV glitch in an `eth_call`; no fund movement). Verdict: `.vigilo/adapter-audit/verify/univ3-fee-branch.md`.
+
+**Recommendation — preserve the oracle-only design; do NOT reintroduce `slot0`.** The adapter deliberately never reads `slot0` (lines 28-34): both for manipulation resistance (the prior `[2]` finding — `slot0` spot/tick is flash-manipulable) *and* so the same bytecode serves PancakeSwap V3, whose `slot0()` ABI differs. Switching the fee branch to `slot0.tick` would regress both. Instead, **bound the inside-growth delta**: a position's inside fee-growth can never exceed the pool's global fee-growth, so a wrong-branch wrap (`delta ≈ 2²⁵⁶ ≫ fgGlobal`) is detectable. Clamp it:
+
+```solidity
+uint256 d0 = fgInside0 - fgInside0Last;   // unchecked
+if (d0 > fgGlobal0) d0 = 0;               // inconsistent branch / wrap → no phantom fees
+f0 = Math.mulDiv(d0, liquidity, FixedPoint128.Q128) + tokensOwed0;   // (same for d1/f1)
+```
+
+This keeps fees accurate in the normal case (oracle ≈ pool price → correct branch → `delta ≤ fgGlobal`) and, on oracle/pool divergence near a boundary, conservatively reports 0 uncollected fees for that token (safe under-report) instead of reverting or over-reporting — fully oracle-only and PancakeSwap-V3-compatible. (Alternative: drop the fee leg entirely and report principal only.) NOTE: the repo's `UniswapV3PoolLib._computeFees` uses the real `tickCurrent`, but it is unused dead code precisely because the adapter chose the oracle-only path — it is not the pattern to follow here.
 
 ### M-A2 — Balancer V2/V3 read-only reentrancy on pool-balance reads  *(corroborates prior M-13)*
 **Location:** `MetaBalanceAdapters/balancer/BalancerV2PoolLib.shares` (`Vault.getPoolTokens`), `BalancerV3PoolLib.poolBalanceOfIndexed` (`getStablePoolDynamicData`).
@@ -86,7 +95,7 @@ Full tables: `.vigilo/adapter-audit/findings/{balance,assisted,meta-lending,meta
 ---
 
 ## Suggested next actions
-1. **M-A1 (UniV3/PancakeSwap V3 fee branch)** — the one new, self-contained code fix worth doing: switch the fee-growth branch to the real `slot0.tick`. Has a fork-test surface, so verifiable.
+1. **M-A1 (UniV3/PancakeSwap V3 fee branch)** — the one new, self-contained code fix worth doing: clamp the inside-growth delta to `fgGlobal` (preserves the oracle-only / no-`slot0` design; see M-A1 recommendation). Has a fork-test surface, so verifiable. (Do **not** switch to `slot0.tick` — that would regress manipulation-resistance and PancakeSwap-V3 ABI compatibility.)
 2. **M-A2 (Balancer read-only reentrancy)** + **M-A3/4/5 (rate freshness bounds)** — group into the deferred valuation/hardening bucket from the remediation doc; both shift behavior only in stale/manipulated states (snapshot-safe in healthy state) but warrant fork tests.
 3. Lows — fold into a future hardening pass; none is a fund-loss vector and several are config/trust-model accepted.
 

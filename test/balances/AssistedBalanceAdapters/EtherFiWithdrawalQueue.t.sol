@@ -271,7 +271,7 @@ contract EtherFiWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
     // ---- Positions / identity ----
 
     function test_getAdapterPositions_identity() public {
-        nft.setRequest(1, holder, 2 ether, 2 ether, true, 0, true, 2 ether);
+        nft.setRequest(1, holder, 2 ether, 2 ether, true, 0, true, 2 ether); // finalized → claimable
         adapter.submitTokenIds(holder, _ids(1));
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
         assertEq(p.length, 1);
@@ -282,6 +282,57 @@ contract EtherFiWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(p[0].protocolId, ProtocolIds.ETHERFI_WITHDRAWAL);
         assertEq(p[0].positionId, abi.encode(adapter.WITHDRAW_REQUEST_NFT()));
         assertEq(uint8(p[0].positionKind), uint8(PositionKind.Supplied));
+        assertFalse(p[0].isLocked, "finalized request -> claimable leg");
+    }
+
+    function test_getAdapterPositions_lockedLeg() public {
+        // A single pending (not finalized) request → one locked leg.
+        nft.setRequest(1, holder, 2 ether, 2 ether, true, 0, false, 0); // pending; valued via amountForShare (rate 1)
+        adapter.submitTokenIds(holder, _ids(1));
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
+        assertEq(p.length, 1);
+        assertEq(p[0].amount, 2 ether);
+        assertTrue(p[0].isLocked, "pending request -> locked leg");
+        assertEq(p[0].positionId, abi.encode(adapter.WITHDRAW_REQUEST_NFT()));
+    }
+
+    function test_getAdapterPositions_mixedClaimableAndLocked() public {
+        // One finalized (claimable) + one pending (locked) request → two legs sharing the static positionId.
+        nft.setRequest(1, holder, 2 ether, 2 ether, true, 0, true, 2 ether); // finalized → claimable 2
+        nft.setRequest(2, holder, 1 ether, 1 ether, true, 0, false, 0); // pending → locked 1 (rate 1)
+        uint256[] memory ids = new uint256[](2);
+        ids[0] = 1;
+        ids[1] = 2;
+        adapter.submitTokenIds(holder, ids);
+
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
+        assertEq(p.length, 2, "claimable + locked legs");
+
+        bytes memory expectedId = abi.encode(adapter.WITHDRAW_REQUEST_NFT());
+        uint256 claimable;
+        uint256 locked;
+        bool sawClaimable;
+        bool sawLocked;
+        for (uint256 i = 0; i < p.length; i++) {
+            assertEq(p[i].balanceAsset.asset, NATIVE);
+            assertEq(p[i].balanceAdapter, address(adapter));
+            assertFalse(p[i].isDebt);
+            assertEq(p[i].positionId, expectedId, "both legs share the static positionId");
+            if (p[i].isLocked) {
+                locked += p[i].amount;
+                sawLocked = true;
+            } else {
+                claimable += p[i].amount;
+                sawClaimable = true;
+            }
+        }
+        assertTrue(sawClaimable && sawLocked, "exactly one claimable + one locked leg present");
+        assertEq(claimable, 2 ether, "claimable = finalized getClaimableAmount");
+        assertEq(locked, 1 ether, "locked = pending estimate");
+
+        // NAV-total invariance.
+        (uint256 agg,) = adapter.getAdapterBalanceForAsset(holder, NATIVE);
+        assertEq(claimable + locked, agg, "sum of legs == old aggregate");
     }
 
     function test_getAdapterPositions_assetFilterMismatch_empty() public {

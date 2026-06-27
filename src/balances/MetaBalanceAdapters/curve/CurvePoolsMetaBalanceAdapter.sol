@@ -84,7 +84,8 @@ contract CurvePoolsMetaBalanceAdapter is MetaBalanceAdapter {
                 isDebt: false,
                 protocolId: PROTOCOL_ID,
                 positionId: pid,
-                positionKind: PositionKind.Supplied
+                positionKind: PositionKind.Supplied,
+                isLocked: false
             });
         }
 

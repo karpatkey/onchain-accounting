@@ -352,7 +352,7 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_getAdapterPositions_identity() public {
         vault.setIndex(TICKET, 1);
-        vault.setRequest(holder, TICKET, TS, 0, 2 ether);
+        vault.setRequest(holder, TICKET, TS, 0, 2 ether); // fully exited → claimable
         adapter.submitPositions(holder, _claimable());
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
         assertEq(p.length, 1);
@@ -361,8 +361,62 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(p[0].balanceAdapter, address(adapter));
         assertEq(p[0].balanceAsset.asset, NATIVE);
         assertEq(p[0].protocolId, ProtocolIds.STAKEWISE_EXIT);
-        assertEq(p[0].positionId, abi.encode(adapter.VAULTS_REGISTRY()));
+        // positionId is now the per-vault coordinate, NOT the VaultsRegistry.
+        assertEq(p[0].positionId, abi.encode(address(vault)));
         assertEq(uint8(p[0].positionKind), uint8(PositionKind.Supplied));
+        assertFalse(p[0].isLocked, "fully exited -> claimable leg");
+    }
+
+    function test_getAdapterPositions_lockedLeg() public {
+        // Fully pending (idx == -1) → entirely locked: valued via convertToAssets(leftShares).
+        vault.setIndex(TICKET, -1);
+        vault.setRate(1e18);
+        vault.setRequest(holder, TICKET, TS, 4 ether, 0); // 4 shares queued, nothing exited
+        adapter.submitPositions(holder, _claimable());
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
+        assertEq(p.length, 1);
+        assertEq(p[0].amount, 4 ether, "locked leg = convertToAssets(leftShares)");
+        assertTrue(p[0].isLocked, "still-queued shares -> locked leg");
+        assertEq(p[0].positionId, abi.encode(address(vault)));
+    }
+
+    function test_getAdapterPositions_mixedClaimableAndLocked() public {
+        // Partially exited: 2 ETH exited (claimable) + 3 shares still queued (locked) → two legs sharing the
+        // static per-vault positionId, distinguished by isLocked.
+        vault.setIndex(TICKET, 7);
+        vault.setRate(1e18);
+        vault.setRequest(holder, TICKET, TS, 3 ether, 2 ether); // leftShares 3, exitedAssets 2
+        adapter.submitPositions(holder, _claimable());
+
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
+        assertEq(p.length, 2, "claimable + locked legs for the vault");
+
+        bytes memory expectedId = abi.encode(address(vault));
+        uint256 claimable;
+        uint256 locked;
+        bool sawClaimable;
+        bool sawLocked;
+        for (uint256 i = 0; i < p.length; i++) {
+            assertEq(p[i].balanceAsset.asset, NATIVE);
+            assertEq(p[i].balanceAdapter, address(adapter));
+            assertFalse(p[i].isDebt);
+            assertEq(p[i].protocolId, ProtocolIds.STAKEWISE_EXIT);
+            assertEq(p[i].positionId, expectedId, "both legs share the static per-vault positionId");
+            if (p[i].isLocked) {
+                locked += p[i].amount;
+                sawLocked = true;
+            } else {
+                claimable += p[i].amount;
+                sawClaimable = true;
+            }
+        }
+        assertTrue(sawClaimable && sawLocked, "exactly one claimable + one locked leg present");
+        assertEq(claimable, 2 ether, "claimable = exitedAssets");
+        assertEq(locked, 3 ether, "locked = convertToAssets(leftShares)");
+
+        // NAV-total invariance.
+        (uint256 agg,) = adapter.getAdapterBalanceForAsset(holder, NATIVE);
+        assertEq(claimable + locked, agg, "sum of legs == old aggregate");
     }
 
     function test_getAdapterBalances_shape() public {

@@ -24,7 +24,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @dev Access control comes from {AssistedBalanceAdapter}: `DEFAULT_ADMIN_ROLE` administers roles and `ASSISTANT_ROLE`
 ///      gates the submit/clear mutators. Trust model and mutability rationale: see
 ///      `docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md` (generalises the Merkl precedent, ADR 0007).
-///      One aggregated native-ETH `Supplied` leg per account.
+///      Up to two native-ETH `Supplied` legs per account under a single static positionId (claimable + locked).
 contract EtherFiWithdrawalQueueBalanceAdapter is AssistedBalanceAdapter, IPositionDescribable {
     //
     // State
@@ -202,9 +202,14 @@ contract EtherFiWithdrawalQueueBalanceAdapter is AssistedBalanceAdapter, IPositi
     }
 
     /// @inheritdoc IBalanceAdapter
-    /// @notice One aggregated native-ETH `Supplied` leg = total ETH owed across the account's live, owned, valid
-    ///         ether.fi withdrawal requests. `positionId = abi.encode(WITHDRAW_REQUEST_NFT)` (account-global,
-    ///         keyed on the queue's immutable claim contract, like the other WQ adapters).
+    /// @notice Returns up to TWO native-ETH `Supplied` legs under a single static positionId — one claimable
+    ///         (`isLocked = false`) and one locked/pending (`isLocked = true`).
+    /// @dev Both legs share `positionId = abi.encode(WITHDRAW_REQUEST_NFT)` and are distinguished only by `isLocked`.
+    ///      The account's cached requests are valued live from on-chain reads (`_owedForToken`) and aggregated into
+    ///      two sums: finalized requests feed the claimable leg, pending requests the locked leg. The two legs sum to
+    ///      `_ethOwed`'s total. A zero-amount leg is omitted. Requests not owned by `account` / invalid / claimed
+    ///      value to 0 and are skipped — the assistant can only under-report. Dropped entirely if the underlying
+    ///      asset is not registered in NAVCalculator.
     function getAdapterPositions(address account, address assetFilter)
         external
         view
@@ -216,36 +221,75 @@ contract EtherFiWithdrawalQueueBalanceAdapter is AssistedBalanceAdapter, IPositi
         }
         if (account == address(0)) return new INAVCalculator.PositionBalance[](0);
 
-        // Cheap path first: bail before fetching/scanning getRegisteredAssets when there is nothing owed
-        // (the common case — no cached ids, or all stale/claimed).
-        uint256 total = _ethOwed(account);
-        if (total == 0) return new INAVCalculator.PositionBalance[](0);
+        uint256[] memory ids = _tokenIds[account];
+        if (ids.length == 0) return new INAVCalculator.PositionBalance[](0);
 
         // Underlying must be registered in NAVCalculator for the position to count in NAV.
-        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
         INAVCalculator.Asset memory underlying;
-        bool registered;
-        for (uint256 i = 0; i < reg.length; i++) {
-            if (reg[i].asset == UNDERLYING_TOKEN) {
-                underlying = reg[i];
-                registered = true;
-                break;
+        {
+            INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
+            bool registered;
+            for (uint256 i = 0; i < reg.length; i++) {
+                if (reg[i].asset == UNDERLYING_TOKEN) {
+                    underlying = reg[i];
+                    registered = true;
+                    break;
+                }
+            }
+            if (!registered) return new INAVCalculator.PositionBalance[](0);
+        }
+
+        uint256 claimable;
+        uint256 locked;
+        for (uint256 i = 0; i < ids.length; i++) {
+            (uint256 owed, bool finalized) = _owedForToken(account, ids[i]);
+            if (owed == 0) {
+                continue;
+            }
+            if (finalized) {
+                claimable += owed;
+            } else {
+                locked += owed;
             }
         }
-        if (!registered) return new INAVCalculator.PositionBalance[](0);
 
-        positions = new INAVCalculator.PositionBalance[](1);
-        positions[0] = INAVCalculator.PositionBalance({
-            balanceAsset: underlying,
-            balanceAdapter: address(this),
-            amount: total,
-            isDebt: false,
-            protocolId: PROTOCOL_ID,
-            // Anchored on the WithdrawRequestNFT (the claim target / immutable anchor); the owed asset
-            // lives in `balanceAsset`, so the NFT contract address is the non-redundant coordinate.
-            positionId: abi.encode(WITHDRAW_REQUEST_NFT),
-            positionKind: PositionKind.Supplied
-        });
+        return _statusLegs(underlying, abi.encode(WITHDRAW_REQUEST_NFT), claimable, locked);
+    }
+
+    /// @dev Up to two `Supplied` legs sharing the static positionId, distinguished by isLocked. Zero legs omitted.
+    function _statusLegs(
+        INAVCalculator.Asset memory underlying,
+        bytes memory positionId,
+        uint256 claimable,
+        uint256 locked
+    ) internal view returns (INAVCalculator.PositionBalance[] memory positions) {
+        uint256 nLegs = (claimable > 0 ? 1 : 0) + (locked > 0 ? 1 : 0);
+        positions = new INAVCalculator.PositionBalance[](nLegs);
+        uint256 j;
+        if (claimable > 0) {
+            positions[j++] = INAVCalculator.PositionBalance({
+                balanceAsset: underlying,
+                balanceAdapter: address(this),
+                amount: claimable,
+                isDebt: false,
+                protocolId: PROTOCOL_ID,
+                positionId: positionId,
+                positionKind: PositionKind.Supplied,
+                isLocked: false
+            });
+        }
+        if (locked > 0) {
+            positions[j++] = INAVCalculator.PositionBalance({
+                balanceAsset: underlying,
+                balanceAdapter: address(this),
+                amount: locked,
+                isDebt: false,
+                protocolId: PROTOCOL_ID,
+                positionId: positionId,
+                positionKind: PositionKind.Supplied,
+                isLocked: true
+            });
+        }
     }
 
     //
@@ -291,40 +335,41 @@ contract EtherFiWithdrawalQueueBalanceAdapter is AssistedBalanceAdapter, IPositi
     function _ethOwed(address account) internal view returns (uint256 total) {
         uint256[] memory ids = _tokenIds[account];
         for (uint256 i; i < ids.length; ++i) {
-            total += _owedForToken(account, ids[i]);
+            (uint256 owed,) = _owedForToken(account, ids[i]);
+            total += owed;
         }
     }
 
-    /// @dev ETH owed for a single request, or 0 if it is not live / not owned by `account` / invalid. Mirrors
-    ///      ether.fi's own claim math: finalized → exact `getClaimableAmount`; pending → the protocol's
+    /// @dev ETH owed for a single request and whether it is finalized (claimable). `owed` is 0 if the request is
+    ///      not live / not owned by `account` / invalid (and `finalized` is false in those cases). Mirrors ether.fi's
+    ///      own claim math: finalized → exact `getClaimableAmount`; pending → the protocol's
     ///      `min(amountOfEEth, amountForShare(shareOfEEth)) − feeGwei` estimate. All external reads try/catch to 0.
-    function _owedForToken(address account, uint256 tokenId) internal view returns (uint256) {
+    function _owedForToken(address account, uint256 tokenId) internal view returns (uint256 owed, bool finalized) {
         IEtherFiWithdrawRequestNFT nft = IEtherFiWithdrawRequestNFT(WITHDRAW_REQUEST_NFT);
 
         // Ownership: a claimed/burned NFT makes ownerOf revert; a transferred one returns a different owner.
         try nft.ownerOf(tokenId) returns (address o) {
-            if (o != account) return 0;
+            if (o != account) return (0, false);
         } catch {
-            return 0;
+            return (0, false);
         }
         try nft.isValid(tokenId) returns (bool ok) {
-            if (!ok) return 0;
+            if (!ok) return (0, false);
         } catch {
-            return 0;
+            return (0, false);
         }
 
-        bool finalized;
         try nft.isFinalized(tokenId) returns (bool f) {
             finalized = f;
         } catch {
-            return 0;
+            return (0, false);
         }
 
         if (finalized) {
             try nft.getClaimableAmount(tokenId) returns (uint256 claimable) {
-                return claimable;
+                return (claimable, true);
             } catch {
-                return 0;
+                return (0, false);
             }
         }
 
@@ -333,17 +378,17 @@ contract EtherFiWithdrawalQueueBalanceAdapter is AssistedBalanceAdapter, IPositi
         try nft.getRequest(tokenId) returns (IEtherFiWithdrawRequestNFT.WithdrawRequest memory r) {
             req = r;
         } catch {
-            return 0;
+            return (0, false);
         }
         uint256 byShare;
         try IEtherFiLiquidityPool(LIQUIDITY_POOL).amountForShare(req.shareOfEEth) returns (uint256 s) {
             byShare = s;
         } catch {
-            return 0;
+            return (0, false);
         }
         uint256 gross = uint256(req.amountOfEEth) < byShare ? uint256(req.amountOfEEth) : byShare;
         uint256 fee = uint256(req.feeGwei) * 1 gwei;
-        return gross > fee ? gross - fee : 0;
+        return (gross > fee ? gross - fee : 0, false);
     }
 }
 

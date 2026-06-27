@@ -11,7 +11,7 @@
 - `ownerOf(id) != account` (incl. burned/claimed → reverts → caught) → `0`.
 - `!isValid(id)` → `0`.
 - `isFinalized(id)` → `getClaimableAmount(id)` (exact). Else **pending** → `min(amountOfEEth, LiquidityPool.amountForShare(shareOfEEth)) − feeGwei·1gwei`, clamped at 0 — mirrors ether.fi's own claim math. Every external read is `try/catch`→0 so the scan never reverts.
-- `getAdapterPositions`: `assetFilter` mismatch → empty; native ETH not registered → empty; total `0` → empty; else **one aggregated native-ETH leg** (sum across cached ids), `positionId=""` (like Lido/Stader/Kelp).
+- `getAdapterPositions`: `assetFilter` mismatch → empty; native ETH not registered → empty; total `0` → empty; else up to **two native-ETH legs** — claimable (`isLocked=false`, sum of finalized ids) + locked (`isLocked=true`, sum of pending ids) — sharing the static `positionId = abi.encode(address withdrawRequestNFT)` (ADR 0016; like Lido/Stader/Kelp).
 
 ## 2. Fork test coverage
 `test/balances/AssistedBalanceAdapters/fork/EtherFiWithdrawalQueue.fork.t.sol` (4 tests, `FOUNDRY_PROFILE=slow`, FORK_BLOCK 25,387,000):
@@ -24,13 +24,17 @@
 
 ## 4. Adapter formula recap
 ```
-owed(account) = Σ over cached tokenIds of:
-    ownerOf(id)==account && isValid(id) ?
-        (isFinalized(id) ? getClaimableAmount(id)
-                         : min(amountOfEEth, amountForShare(shareOfEEth)) − feeGwei·1gwei)
-      : 0
-position = PositionBalance{ balanceAsset: native ETH (registered), amount: owed, isDebt: false,
-  protocolId: keccak256("etherfi-withdrawal"), positionId: "", positionKind: Supplied }
+for each cached tokenId with ownerOf(id)==account && isValid(id):
+    val = isFinalized(id) ? getClaimableAmount(id)
+                          : min(amountOfEEth, amountForShare(shareOfEEth)) − feeGwei·1gwei
+    if isFinalized(id): claimable += val      # claimable leg
+    else:               locked    += val      # locked (pending) leg
+# static positionId, split into up to two legs sharing it (ADR 0016):
+pid = abi.encode(address(WITHDRAW_REQUEST_NFT))
+if claimable > 0: emit PositionBalance{ native ETH (registered), claimable, isDebt:false,
+  protocolId: keccak256("etherfi-withdrawal"), positionId: pid, positionKind: Supplied, isLocked: false }
+if locked    > 0: emit PositionBalance{ native ETH (registered), locked,    isDebt:false,
+  protocolId: keccak256("etherfi-withdrawal"), positionId: pid, positionKind: Supplied, isLocked: true }
 ```
 Native ETH (`0xEeee…EEeE`) is a registered NAV asset, so NAVCalculator prices the leg. **The cache stores ids only — never amounts** — so the owner can only under-report, never over-report (ADR 0014).
 
@@ -47,7 +51,7 @@ Real holder **`0xcFFab3dFdCa60d838512c41a772e799b71dF1Af4`** owns `WithdrawReque
 | `0xcFFab3…1Af4` | ether.fi withdrawal #80154 (pending) | native ETH | `253077459762665832` (~0.2531 ETH) | Supplied | false |
 
 ### 7b. Per-asset summary
-One aggregated native-ETH leg per account = Σ of its live, owned, valid requests; nothing otherwise.
+Up to two native-ETH legs per account (claimable + locked, sharing one static positionId) — Σ of its live, owned, valid requests split by finalization; nothing otherwise.
 
 ## 8. Ground-truth cross-check
 - **On-chain (fork test):** `adapter.getAdapterBalanceForAsset(holder, ETH)` **== `min(amountOfEEth, amountForShare(shareOfEEth)) − fee`** read live from `WithdrawRequestNFT.getRequest` + `LiquidityPool.amountForShare`, delta **0**.

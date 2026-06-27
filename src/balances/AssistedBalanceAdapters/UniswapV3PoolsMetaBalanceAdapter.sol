@@ -191,7 +191,8 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
             isDebt: false,
             protocolId: _protocolId(),
             positionId: positionId,
-            positionKind: kind
+            positionKind: kind,
+            isLocked: false
         });
     }
 }

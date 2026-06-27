@@ -188,9 +188,13 @@ contract AaveV3SafetyModuleBalanceAdapter is IBalanceAdapter, IPositionDescribab
     }
 
     /// @inheritdoc IBalanceAdapter
-    /// @notice Returns up to two PositionBalances per stake token: one for the staked leg (type "Staking") and one
-    ///         for the reward leg (type "Reward"). The underlyingAsset field disambiguates the stake token involved.
-    /// @dev For stkAAVE both legs share the same asset (AAVE); they are told apart solely by their type label.
+    /// @notice Returns up to three PositionBalances per stake token, all under `positionId = abi.encode(stakeToken)`:
+    ///         a locked `Staking` leg (`isLocked=true`) = the non-withdrawable amount (active stake + a cooldown that
+    ///         is still cooling or past its window), an unlocked `Staking` leg (`isLocked=false`) = a cooldown that has
+    ///         elapsed and is inside the unstake window (withdrawable now), and a reward leg (`Rewards`). The two
+    ///         staking legs share the positionId and are told apart by `isLocked`; the reward leg by `positionKind`.
+    ///         Stake tokens without the V3 cooldown ABI report a single locked staking leg (no unlocked portion).
+    /// @dev For stkAAVE the stake and reward legs share the same asset (AAVE); they are told apart by positionKind.
     function getAdapterPositions(address account, address assetFilter)
         external
         view
@@ -202,29 +206,57 @@ contract AaveV3SafetyModuleBalanceAdapter is IBalanceAdapter, IPositionDescribab
         INAVCalculator.Asset[] memory registered = NAV_CALCULATOR.getRegisteredAssets();
 
         StakeTokenRecord[4] memory recs = _records();
-        // Worst case: 2 positions per stake token (staked + reward).
-        INAVCalculator.PositionBalance[] memory tmp = new INAVCalculator.PositionBalance[](recs.length * 2);
+        // Worst case: 3 positions per stake token (free stake + unstaking cooldown + reward).
+        INAVCalculator.PositionBalance[] memory tmp = new INAVCalculator.PositionBalance[](recs.length * 3);
         uint256 count;
 
         for (uint256 i; i < recs.length; ++i) {
             StakeTokenRecord memory r = recs[i];
 
-            // Staked-token leg.
+            // Staked-token leg(s): split by withdrawability. isLocked = non-withdrawable. The ONLY withdrawable
+            // portion is a cooldown that has elapsed and is inside the unstake window; everything else (active
+            // stake, plus a cooldown still cooling or past the window) is non-withdrawable → locked. Both legs
+            // share `positionId = abi.encode(stakeToken)` and are told apart by `isLocked`.
             if (_passesFilter(r.stakedToken, assetFilter)) {
                 INAVCalculator.Asset memory assetMeta = _findRegisteredAsset(registered, r.stakedToken);
                 if (assetMeta.asset != address(0)) {
-                    uint256 stakedAmount =
-                        IStakeToken(r.stakeToken).previewRedeem(IStakeToken(r.stakeToken).balanceOf(account));
-                    if (stakedAmount != 0) {
-                        tmp[count++] = INAVCalculator.PositionBalance({
-                            balanceAsset: assetMeta,
-                            balanceAdapter: address(this),
-                            amount: stakedAmount,
-                            isDebt: false,
-                            protocolId: PROTOCOL_ID,
-                            positionId: abi.encode(address(r.stakeToken)),
-                            positionKind: PositionKind.Staking
-                        });
+                    uint256 balShares = IStakeToken(r.stakeToken).balanceOf(account);
+                    (, uint256 cooldownShares, bool inWindow) = _cooldownSplit(r.stakeToken, account, balShares);
+                    uint256 unlockedShares = inWindow ? cooldownShares : 0;
+                    uint256 lockedShares = balShares - unlockedShares;
+
+                    // Locked = non-withdrawable (active stake + cooling/expired cooldown).
+                    if (lockedShares != 0) {
+                        uint256 amt = IStakeToken(r.stakeToken).previewRedeem(lockedShares);
+                        if (amt != 0) {
+                            tmp[count++] = INAVCalculator.PositionBalance({
+                                balanceAsset: assetMeta,
+                                balanceAdapter: address(this),
+                                amount: amt,
+                                isDebt: false,
+                                protocolId: PROTOCOL_ID,
+                                positionId: abi.encode(address(r.stakeToken)),
+                                positionKind: PositionKind.Staking,
+                                isLocked: true
+                            });
+                        }
+                    }
+
+                    // Unlocked = withdrawable now (cooldown elapsed and inside the unstake window).
+                    if (unlockedShares != 0) {
+                        uint256 amt = IStakeToken(r.stakeToken).previewRedeem(unlockedShares);
+                        if (amt != 0) {
+                            tmp[count++] = INAVCalculator.PositionBalance({
+                                balanceAsset: assetMeta,
+                                balanceAdapter: address(this),
+                                amount: amt,
+                                isDebt: false,
+                                protocolId: PROTOCOL_ID,
+                                positionId: abi.encode(address(r.stakeToken)),
+                                positionKind: PositionKind.Staking,
+                                isLocked: false
+                            });
+                        }
                     }
                 }
             }
@@ -242,7 +274,8 @@ contract AaveV3SafetyModuleBalanceAdapter is IBalanceAdapter, IPositionDescribab
                             isDebt: false,
                             protocolId: PROTOCOL_ID,
                             positionId: abi.encode(address(r.stakeToken)),
-                            positionKind: PositionKind.Rewards
+                            positionKind: PositionKind.Rewards,
+                            isLocked: false
                         });
                     }
                 }
@@ -274,6 +307,54 @@ contract AaveV3SafetyModuleBalanceAdapter is IBalanceAdapter, IPositionDescribab
                 total += IStakeToken(r.stakeToken).getTotalRewardsBalance(account);
             }
         }
+    }
+
+    /// @dev Splits an account's stake-token shares into a free (live-stake) portion and an unstaking (cooldown)
+    ///      portion, and reports whether the cooldown is currently inside its claim (unstake) window. Reads the
+    ///      StakedTokenV3 cooldown ABI (`stakersCooldowns` → `(uint40 timestamp, uint216 amount)`, `getCooldownSeconds`,
+    ///      `UNSTAKE_WINDOW`). Any read that fails (e.g. an older stake-token version without this ABI) degrades
+    ///      gracefully to "entire balance is free, no cooldown leg" — so such tokens behave exactly as before.
+    /// @return freeShares Shares not committed to a cooldown (live stake).
+    /// @return cooldownShares Shares committed to the active cooldown (= min(cooldown amount, balance)).
+    /// @return inWindow True iff the cooldown has elapsed and is still within the unstake window (claimable now).
+    function _cooldownSplit(address stakeToken, address account, uint256 balShares)
+        internal
+        view
+        returns (uint256 freeShares, uint256 cooldownShares, bool inWindow)
+    {
+        if (balShares == 0) {
+            return (0, 0, false);
+        }
+
+        uint40 ts;
+        uint216 amt;
+        try IStakeToken(stakeToken).stakersCooldowns(account) returns (uint40 t, uint216 a) {
+            ts = t;
+            amt = a;
+        } catch {
+            return (balShares, 0, false);
+        }
+        if (ts == 0) {
+            return (balShares, 0, false); // no active cooldown
+        }
+
+        uint256 cds;
+        try IStakeToken(stakeToken).getCooldownSeconds() returns (uint256 c) {
+            cds = c;
+        } catch {
+            return (balShares, 0, false);
+        }
+        uint256 win;
+        try IStakeToken(stakeToken).UNSTAKE_WINDOW() returns (uint256 w) {
+            win = w;
+        } catch {
+            return (balShares, 0, false);
+        }
+
+        cooldownShares = uint256(amt) < balShares ? uint256(amt) : balShares;
+        freeShares = balShares - cooldownShares;
+        uint256 unlockStart = uint256(ts) + cds;
+        inWindow = block.timestamp >= unlockStart && block.timestamp <= unlockStart + win;
     }
 
     //
@@ -316,4 +397,16 @@ interface IStakeToken {
 
     /// @notice Total claimable rewards for `staker` (in reward-token units).
     function getTotalRewardsBalance(address staker) external view returns (uint256);
+
+    /// @notice The account's cooldown snapshot (StakedTokenV3): `timestamp` when cooldown was activated and the
+    ///         `amount` of shares committed. `timestamp == 0` means no active cooldown.
+    /// @dev Older stake-token versions may not expose this exact ABI; callers must tolerate a decode/call failure.
+    function stakersCooldowns(address account) external view returns (uint40 timestamp, uint216 amount);
+
+    /// @notice Cooldown period in seconds that must elapse before staked tokens become redeemable.
+    function getCooldownSeconds() external view returns (uint256);
+
+    /// @notice Window (seconds) after the cooldown elapses during which redemption is allowed; then it re-locks.
+    //solhint-disable-next-line func-name-mixedcase
+    function UNSTAKE_WINDOW() external view returns (uint256);
 }

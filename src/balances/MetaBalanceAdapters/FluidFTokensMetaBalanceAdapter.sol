@@ -52,7 +52,8 @@ contract FluidFTokensMetaBalanceAdapter is MetaBalanceAdapter {
             isDebt: false,
             protocolId: PROTOCOL_ID,
             positionId: _instancePositionId(instance),
-            positionKind: PositionKind.Supplied
+            positionKind: PositionKind.Supplied,
+            isLocked: false
         });
         return positions;
     }

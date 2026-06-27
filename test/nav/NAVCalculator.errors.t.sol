@@ -146,7 +146,8 @@ contract Mock_ManyLegsBalanceAdapter is IBalanceAdapter {
                 isDebt: false,
                 protocolId: bytes32("uniswap-v3-mock"),
                 positionId: abi.encode(i),
-                positionKind: PositionKind.Supplied
+                positionKind: PositionKind.Supplied,
+                isLocked: false
             });
         }
     }

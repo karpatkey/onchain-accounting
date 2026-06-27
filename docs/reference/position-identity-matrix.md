@@ -4,11 +4,13 @@ Verified against `src/balances/` emission code on 2026-06-26 (includes the Nexus
 
 ## How a position is identified
 
-Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, positionKind)`. `balanceAdapter` (provenance) and `isDebt` (the canonical NAV-sign signal per `PositionKind.sol` — read directly, not inferred from kind) are excluded by design. `Position` adds only pricing fields (`quoteAsset`, `value`, `price`, `priceDecimals`, `stale`) on top of `PositionBalance` — none participate in identity, so this matrix covers both structs.
+Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, positionKind, isLocked)`. `isLocked` is part of the key because the withdrawal-queue / cooldown adapters split a holding into a claimable leg (`isLocked=false`) and a locked leg (`isLocked=true`) that share the same static `positionId` — `isLocked` is what keeps them distinct (see [ADR 0016](../decisions/0016-islocked-position-status.md)). `balanceAdapter` (provenance) and `isDebt` (the canonical NAV-sign signal per `PositionKind.sol` — read directly, not inferred from kind) are excluded by design. `Position` adds only pricing fields (`quoteAsset`, `value`, `price`, `priceDecimals`, `stale`) on top of `PositionBalance` — none participate in identity, so this matrix covers both structs.
 
 **Kind assignment rule:** `positionKind` reflects the **outermost action family** — what the account does to enter/exit the position. A position exited via unstake is `Staking` regardless of what is wrapped inside (the inner exposure stays recoverable from `protocolId`/`positionId`); LP principal sitting unstaked in the wallet is `Supplied`.
 
 ## The matrix — one row per emitted leg
+
+`isLocked` is `false` for every leg except the withdrawal-queue / cooldown legs and the staking-with-cooldown locked-stake legs (Aave SM, Umbrella) called out below; it is omitted from the rows where it is always `false`. Uniform rule: `isLocked = non-withdrawable` (active stake = locked).
 
 | Adapter | `protocolId` slug | `positionId` schema | Leg | `PositionKind` | `isDebt` | `balanceAsset` |
 |---|---|---|---|---|---|---|
@@ -35,10 +37,12 @@ Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, pos
 | ERC4626Wrap | `erc4626` | `abi.encode(address wrapper)` | wrapper shares (`convertToAssets`) | `Supplied` | false | `wrapper.asset()` |
 | Cap | `cap` | `abi.encode(address cUSD)` | held cUSD (Stablecoin) | `Supplied` | false | USDC |
 | | | `abi.encode(address stcUSD)` | staked stcUSD (Savings) | `Staking` | false | USDC |
-| AaveV3SafetyModule | `aave-v3-safety-module` | `abi.encode(address stakeToken)` | staked principal (per stake token) | `Staking` | false | staked token (AAVE/GHO/ABPT…) |
-| | | | claimable SM rewards | `Rewards` | false | AAVE |
-| AaveUmbrella | `aave-v3-umbrella` | `abi.encode(address stakeToken)` | staked principal | `Staking` | false | bare reserve |
-| | | | claimable rewards | `Rewards` | false | bare reserve of reward |
+| AaveV3SafetyModule | `aave-v3-safety-module` | `abi.encode(address stakeToken)` | locked staked principal (active stake + cooling/expired cooldown) — `isLocked=true` | `Staking` | false | staked token (AAVE/GHO/ABPT…) |
+| | | `abi.encode(address stakeToken)` | unlocked staked principal (cooldown elapsed-and-in-window) — `isLocked=false` | `Staking` | false | staked token |
+| | | `abi.encode(address stakeToken)` | claimable SM rewards | `Rewards` | false | AAVE |
+| AaveUmbrella | `aave-v3-umbrella` | `abi.encode(address stakeToken)` | locked staked principal (active stake + cooling/expired cooldown) — `isLocked=true` | `Staking` | false | bare reserve |
+| | | `abi.encode(address stakeToken)` | unlocked staked principal (cooldown elapsed-and-in-window) — `isLocked=false` | `Staking` | false | bare reserve |
+| | | `abi.encode(address stakeToken)` | claimable rewards | `Rewards` | false | bare reserve of reward |
 | StakeWiseV3VaultsMeta | `stakewise-v3` | `abi.encode(address vault)` | vault stake (shares → assets) | `Staking` | false | ETH (mainnet) / GNO (Gnosis) |
 | | | | minted osToken debt | `Borrowed` | true | same underlying |
 | UniswapV2PoolsMeta | `uniswap-v2` | `abi.encode(address pair)` | token0 pro-rata principal | `Supplied` | false | token0 |
@@ -63,35 +67,41 @@ Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, pos
 | | | | earned CRV | `Rewards` | false | CRV |
 | | | | derived CVX (cliff schedule) | `Rewards` | false | CVX |
 | | | | extra reward tokens | `Rewards` | false | reward token |
-| StaderWithdrawalQueue | `stader-withdrawal` | `abi.encode(address userWithdrawalManager)` (account-global anchor) | ETH owed from open requests | `Supplied` | false | WETH |
-| KelpWithdrawalQueue | `kelp-withdrawal` | `abi.encode(address withdrawalManager)` (account-global anchor) | owed per payout asset | `Supplied` | false | each supported asset |
-| LidoWithdrawalQueue | `lido-withdrawal` | `abi.encode(address withdrawalQueue)` (account-global anchor) | claimable + pending ETH | `Supplied` | false | native ETH |
-| EtherFiWithdrawalQueue | `etherfi-withdrawal` | `abi.encode(address withdrawRequestNFT)` (account-global anchor) | in-flight withdrawal-queue ETH | `Supplied` | false | native ETH |
-| StakeWiseV3ExitQueue | `stakewise-exit` | `abi.encode(address vaultsRegistry)` (account-global anchor) | in-flight exit-queue assets | `Supplied` | false | native ETH |
-| EthenaCooldownBalanceAdapter | `ethena-cooldown` | `abi.encode(address sUSDe)` (account-global anchor) | USDe in the sUSDe unstaking cooldown | `Supplied` | false | USDe |
+| StaderWithdrawalQueue | `stader-withdrawal` | `abi.encode(address userWithdrawalManager)` (static) | finalized ETH owed (claimable) | `Supplied` | false | WETH |
+| | | | pending ETH owed (`isLocked=true`, shares positionId) | `Supplied` | false | WETH |
+| KelpWithdrawalQueue | `kelp-withdrawal` | `abi.encode(address withdrawalManager)` (static) | claimable owed (payout asset in `balanceAsset`) | `Supplied` | false | each supported asset |
+| | | | pending owed (`isLocked=true`, shares positionId; until cursor + delay pass) | `Supplied` | false | each supported asset |
+| LidoWithdrawalQueue | `lido-withdrawal` | `abi.encode(address withdrawalQueue)` (static) | finalized ETH owed (claimable) | `Supplied` | false | native ETH |
+| | | | not-finalized ETH owed (`isLocked=true`, shares positionId) | `Supplied` | false | native ETH |
+| EtherFiWithdrawalQueue | `etherfi-withdrawal` | `abi.encode(address withdrawRequestNFT)` (static) | finalized ETH owed (claimable) | `Supplied` | false | native ETH |
+| | | | not-finalized ETH owed (`isLocked=true`, shares positionId) | `Supplied` | false | native ETH |
+| StakeWiseV3ExitQueue | `stakewise-exit` | `abi.encode(address vault)` (static, per vault) | exited assets (claimable) | `Supplied` | false | native ETH |
+| | | | queued shares → assets (`isLocked=true`, shares positionId) | `Supplied` | false | native ETH |
+| EthenaCooldownBalanceAdapter | `ethena-cooldown` | `abi.encode(address sUSDe)` (static, single leg) | USDe cooling — `isLocked=true` until cooldown elapsed, then `false` | `Supplied` | false | USDe |
 | NexusMutualStakingPools | `nexus-mutual-staking` | `abi.encode(uint256 tokenId, uint256 poolId)` | active + expired staked NXM (per StakingNFT) | `Staking` | false | NXM |
 | | | | claimable rewards (per StakingNFT) | `Rewards` | false | NXM |
 | MerklRewards | `merkl` | `abi.encode(address distributor)` | unclaimed rewards (one leg per reward token, distinguished by `balanceAsset`) | `Rewards` | false | reward token |
 
 ## PositionKind usage census
 
-Emission-site counts across `src/balances/` (grep, 2026-06-26, post-assignment):
+Emission-site counts across `src/balances/` (grep `PositionKind.<X>`, includes the claimable/locked
+split legs of the withdrawal-queue / cooldown adapters, which each emit a `Supplied` leg per status):
 
 | `PositionKind` | Emission sites | Emitting adapters |
 |---|---|---|
-| `Wallet` | 1 | ERC20DefaultBalanceAdapter only |
-| `Supplied` | 22 | lending supply, vaults, ERC-4626 wraps, unstaked LP, withdrawal/exit queues, Euler vaults |
-| `Borrowed` | 8 | Aave V3 (×2 sites), Spark, Compound V3, Morpho Markets, Fluid Vaults, StakeWise V3, Euler vaults |
+| `Wallet` | 1 | ERC20DefaultBalanceAdapter |
+| `Supplied` | 27 | lending supply, vaults, ERC-4626 wraps, unstaked LP, withdrawal/exit queues (claimable + locked legs), Euler vaults |
+| `Borrowed` | 7 | Aave V3, Spark, Compound V3, Morpho Markets, Fluid Vaults, StakeWise V3, Euler vaults |
 | `Collateral` | 6 | Aave V3, Spark, Compound V3, Morpho Markets, Fluid Vaults, Euler vaults |
-| `Staking` | 8 | Safety Module, Umbrella, StakeWise V3, Nexus staked NXM, Balancer gauges ×2, Curve gauge, Convex |
+| `Staking` | 11 | Safety Module (locked + unlocked stake), Umbrella (locked + unlocked stake), StakeWise V3, Nexus staked NXM, Balancer gauges ×2, Curve gauge, Convex |
 | `Rewards` | 12 | SM, Umbrella, Nexus staked NXM, Compound V3, Balancer gauges ×2, Curve gauge, Convex, Merkl |
 | `Fees` | 2 | Uniswap V3 (PancakeSwap V3 inherits) |
 
 ## Other observable invariants
 
-- `isDebt == true` occurs **only** with `positionKind == Borrowed` at all 8 current emission sites. This correlation is observational: `isDebt` remains the canonical NAV-sign signal (per `PositionKind.sol`), so consumers should read it directly rather than infer sign from `positionKind`.
+- `isDebt == true` occurs **only** with `positionKind == Borrowed` at all current Borrowed emission sites. This correlation is observational: `isDebt` remains the canonical NAV-sign signal (per `PositionKind.sol`), so consumers should read it directly rather than infer sign from `positionKind`.
 - `Collateral` and `Staking` are always `isDebt == false`.
-- **Account-global** positions — the Ethena cooldown and the withdrawal/exit queues (Lido, Kelp, Stader, ether.fi, StakeWise V3) — encode their immutable anchor contract: `abi.encode(address <queue/manager>)`. There is one aggregated leg per account, so the anchor (not a per-request id) is the positionId; the owed asset lives in `balanceAsset`. All other adapters encode at least one address (or `bytes32` poolId/marketId; Uniswap/PancakeSwap V3 add `uint256 tokenId`, and Nexus Mutual staking encodes `(uint256 tokenId, uint256 poolId)` per StakingNFT). No adapter emits an empty `positionId`.
+- **Static positionId, claimable/locked split.** The Ethena cooldown and the withdrawal/exit queues (Lido, Kelp, Stader, ether.fi, StakeWise V3) encode a **static, timeless** coordinate — `abi.encode(address <queue/manager/vault/sUSDe>)` — never a per-request id; the owed/payout asset is in `balanceAsset`. The staking-with-cooldown adapters (Aave SM, Umbrella) follow the same model: both staking legs share `abi.encode(address stakeToken)` (no discriminator), distinguished by `isLocked` (active stake = locked), and the reward leg shares it too (told apart by `positionKind`). Each splits a holding into up to two legs (claimable `isLocked=false` + locked `isLocked=true`) that **share** that positionId and are distinguished by `isLocked` (part of the key). All other adapters encode at least one address (or `bytes32` poolId/marketId; Uniswap/PancakeSwap V3 add `uint256 tokenId`, and Nexus Mutual staking encodes `(uint256 tokenId, uint256 poolId)` per StakingNFT). No adapter emits an empty `positionId`.
 - One `protocolId` slug ⇒ exactly one `positionId` decode schema, as required by the slug rules — no adapter violates this.
-- Multi-leg adapters reuse the **same** `positionId` across their legs; legs are distinguished by `positionKind` (and `balanceAsset` for per-token legs), which is exactly why `positionKind` must be identity-stable.
+- Multi-leg adapters reuse the **same** `positionId` across their legs; legs are distinguished by `positionKind`, `balanceAsset` (for per-token legs), and `isLocked` (claimable vs locked legs of a withdrawal queue) — which is exactly why all three must be identity-stable.
 - The wallet-LP vs gauge-staked-LP pairing (Curve/Balancer pools metas vs gauges metas) is now distinguishable by kind alone: `Supplied` = liquid LP, `Staking` = behind an unstake.

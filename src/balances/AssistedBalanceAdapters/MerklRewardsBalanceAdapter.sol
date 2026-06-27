@@ -264,7 +264,8 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
                 // the reconciliation key. Multiple reward tokens claimed from the same Distributor share this
                 // positionId and are distinguished by `balanceAsset.asset` (same model as Aave V3 = abi.encode(pool)).
                 positionId: abi.encode(DISTRIBUTOR),
-                positionKind: PositionKind.Rewards
+                positionKind: PositionKind.Rewards,
+                isLocked: false
             });
         }
 

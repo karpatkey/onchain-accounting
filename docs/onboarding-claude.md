@@ -70,7 +70,7 @@ function underlyingAssetsSupported() external view returns (address[]);
 function supportsInterface(bytes4) external view returns (bool);  // ERC165
 ```
 
-Returned `PositionBalance` has `amount` always positive + `isDebt` flag, plus `balanceAsset` (the `Asset` metadata — address, symbol, decimals — that `amount` is denominated in), `balanceAdapter` (`address(this)`), `protocolId` (bytes32 protocol identifier), `positionId` (bytes, abi-encoded position anchor), and `positionKind` (enum from `PositionKind.sol`). The adapter does **not** know about prices. See [`docs/howto/position-identity-schema.md`](./howto/position-identity-schema.md) for the full schema.
+Returned `PositionBalance` has `amount` always positive + `isDebt` flag, plus `balanceAsset` (the `Asset` metadata — address, symbol, decimals — that `amount` is denominated in), `balanceAdapter` (`address(this)`), `protocolId` (bytes32 protocol identifier), `positionId` (bytes, abi-encoded **static** position anchor — never a per-request id), `positionKind` (enum from `PositionKind.sol`), and `isLocked` (bool — `true` for the not-withdrawable portion of a withdrawal queue / cooldown; part of the identity key). The adapter does **not** know about prices. See [`docs/howto/position-identity-schema.md`](./howto/position-identity-schema.md) for the full schema.
 
 Adapters live under `src/balances/{BalanceAdapters,MetaBalanceAdapters,AssistedBalanceAdapters}/` (multi-file protocols keep a `<protocol>/` subdir inside the family folder; interfaces and the `MetaBalanceAdapter`/`AssistedBalanceAdapter` bases sit directly in `src/balances/`). A folder typically contains:
 
@@ -144,7 +144,7 @@ Full workflow + schema + tolerance triage: [`./howto/refresh-integration-test-bl
 
 These are not optional. See [`/CLAUDE.md`](../CLAUDE.md) for the canonical list. Highlights:
 
-- Adapters return `PositionBalance` with positive `amount` + `isDebt` flag. Fields include `balanceAsset`, `protocolId` (bytes32), `positionId` (bytes), and `positionKind` (enum from `PositionKind.sol`). See `docs/howto/position-identity-schema.md`.
+- Adapters return `PositionBalance` with positive `amount` + `isDebt` flag. Fields include `balanceAsset`, `protocolId` (bytes32), `positionId` (bytes), `positionKind` (enum from `PositionKind.sol`), and `isLocked` (bool — withdrawable-now vs pending; part of the identity key). See `docs/howto/position-identity-schema.md`.
 - Adapters are immutable. The Merkl rewards adapter is the documented mutable-storage exception (ADR 0007).
 - Adapters are deployed with plain `new` (CREATE) from the deployer EOA in `04_DeployBalanceAdapters.s.sol` — addresses are chain-/run-specific (read from `deployments/<id>.json` `.balanceAdapters.<name>`) — and registered by `06_Configure.s.sol` calling `NAVCalculator.addBalanceAdapters` (plain) / `addMetaBalanceAdapter` (meta) directly from the deployer EOA (+ `addMetaInstances`/`removeMetaInstances` for meta-adapters). The factory/registry pattern (ADR 0001) is designed but not yet shipped.
 - Tests: every adapter ships with both a unit test and a fork test against a real holder at a pinned block.

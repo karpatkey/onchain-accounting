@@ -134,7 +134,8 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceAdapter {
             isDebt: isDebt,
             protocolId: PROTOCOL_ID,
             positionId: pid,
-            positionKind: kind
+            positionKind: kind,
+            isLocked: false
         });
     }
 }

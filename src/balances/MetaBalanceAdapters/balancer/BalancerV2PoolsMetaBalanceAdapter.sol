@@ -67,7 +67,8 @@ contract BalancerV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
                 isDebt: false,
                 protocolId: PROTOCOL_ID,
                 positionId: positionId,
-                positionKind: PositionKind.Supplied
+                positionKind: PositionKind.Supplied,
+                isLocked: false
             });
         }
 

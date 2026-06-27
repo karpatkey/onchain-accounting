@@ -24,7 +24,8 @@
 pending = sUSDe.cooldowns(account).underlyingAmount      // USDe, 18-dec, 0 when no cooldown
 position = PositionBalance{
   balanceAsset: USDe (registered), amount: pending, isDebt: false,
-  protocolId: keccak256("ethena-cooldown"), positionId: "", positionKind: Supplied
+  protocolId: keccak256("ethena-cooldown"), positionId: abi.encode(address sUSDe), positionKind: Supplied,
+  isLocked: true while cooling (block.timestamp < cooldownEnd), false once elapsed   // ADR 0016
 }
 ```
 USDe (`0x4c9E…68B3`) is a registered NAV asset (Chainlink USDe/USD), so NAVCalculator prices the leg. Correctness-on-exit: non-zero only while an unstake is in flight.

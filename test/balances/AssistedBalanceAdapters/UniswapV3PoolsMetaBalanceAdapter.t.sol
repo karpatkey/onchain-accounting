@@ -2,7 +2,9 @@
 pragma solidity ^0.8;
 
 import {Test} from "forge-std/Test.sol";
-import {UniswapV3PoolsMetaBalanceAdapter} from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsMetaBalanceAdapter.sol";
+import {
+    UniswapV3PoolsMetaBalanceAdapter
+} from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsMetaBalanceAdapter.sol";
 import {TickMath} from "src/balances/MetaBalanceAdapters/uniswap/lib/TickMath.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
@@ -10,7 +12,11 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
-import {MockUniswapV3Pool, MockPositionManager, MockToken} from "test/balances/AssistedBalanceAdapters/UniswapV3Mocks.sol";
+import {
+    MockUniswapV3Pool,
+    MockPositionManager,
+    MockToken
+} from "test/balances/AssistedBalanceAdapters/UniswapV3Mocks.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 
 /// @title UniswapV3PoolsMetaBalanceAdapter unit tests (no fork)

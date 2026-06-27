@@ -2,7 +2,9 @@
 pragma solidity ^0.8.20;
 
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
-import {BalancerV3PoolsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/balancer/BalancerV3PoolsMetaBalanceAdapter.sol";
+import {
+    BalancerV3PoolsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/balancer/BalancerV3PoolsMetaBalanceAdapter.sol";
 import {
     BalancerV3GaugesMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/balancer/BalancerV3GaugesMetaBalanceAdapter.sol";

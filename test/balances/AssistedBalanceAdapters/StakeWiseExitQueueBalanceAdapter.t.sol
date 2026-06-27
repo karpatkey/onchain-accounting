@@ -3,7 +3,9 @@ pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
-import {StakeWiseExitQueueBalanceAdapter} from "src/balances/AssistedBalanceAdapters/StakeWiseExitQueueBalanceAdapter.sol";
+import {
+    StakeWiseExitQueueBalanceAdapter
+} from "src/balances/AssistedBalanceAdapters/StakeWiseExitQueueBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
@@ -119,8 +121,9 @@ contract StakeWiseExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         registry.setVault(address(vault), true);
         balances.addSupportedAssetForTest(NATIVE);
         // admin = assistant = this test contract, so it can submit positions.
-        adapter =
-            new StakeWiseExitQueueBalanceAdapter(address(registry), NATIVE, address(balances), address(this), address(this));
+        adapter = new StakeWiseExitQueueBalanceAdapter(
+            address(registry), NATIVE, address(balances), address(this), address(this)
+        );
     }
 
     // ---- Constructor ----
@@ -132,7 +135,9 @@ contract StakeWiseExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_constructor_revertsOnZeroUnderlying() public {
         vm.expectRevert(InvalidArguments.selector);
-        new StakeWiseExitQueueBalanceAdapter(address(registry), address(0), address(balances), address(this), address(this));
+        new StakeWiseExitQueueBalanceAdapter(
+            address(registry), address(0), address(balances), address(this), address(this)
+        );
     }
 
     function test_constructor_revertsOnZeroNav() public {

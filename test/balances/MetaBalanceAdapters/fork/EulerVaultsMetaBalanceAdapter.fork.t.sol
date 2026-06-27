@@ -3,7 +3,10 @@ pragma solidity ^0.8.0;
 import {LibraryPins} from "script/utils/LibraryPins.sol";
 
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
-import {EulerVaultsMetaBalanceAdapter, IEulerEVault} from "src/balances/MetaBalanceAdapters/EulerVaultsMetaBalanceAdapter.sol";
+import {
+    EulerVaultsMetaBalanceAdapter,
+    IEulerEVault
+} from "src/balances/MetaBalanceAdapters/EulerVaultsMetaBalanceAdapter.sol";
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";

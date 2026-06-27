@@ -9,7 +9,11 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
-import {MockFluidVaultT1, MockFluidVaultResolver, MockToken} from "test/balances/MetaBalanceAdapters/FluidVaultMocks.sol";
+import {
+    MockFluidVaultT1,
+    MockFluidVaultResolver,
+    MockToken
+} from "test/balances/MetaBalanceAdapters/FluidVaultMocks.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 
 /// @title FluidVaultsMetaBalanceAdapter unit tests (no fork)

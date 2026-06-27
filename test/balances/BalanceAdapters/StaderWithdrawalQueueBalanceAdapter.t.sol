@@ -2,7 +2,9 @@
 pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.sol";
-import {StaderWithdrawalQueueBalanceAdapter} from "src/balances/BalanceAdapters/StaderWithdrawalQueueBalanceAdapter.sol";
+import {
+    StaderWithdrawalQueueBalanceAdapter
+} from "src/balances/BalanceAdapters/StaderWithdrawalQueueBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";

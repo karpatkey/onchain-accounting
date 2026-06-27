@@ -2,7 +2,10 @@
 pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
-import {MerklRewardsBalanceAdapter, IMerklDistributor} from "src/balances/AssistedBalanceAdapters/MerklRewardsBalanceAdapter.sol";
+import {
+    MerklRewardsBalanceAdapter,
+    IMerklDistributor
+} from "src/balances/AssistedBalanceAdapters/MerklRewardsBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title MerklRewardsBalanceAdapterForkTest

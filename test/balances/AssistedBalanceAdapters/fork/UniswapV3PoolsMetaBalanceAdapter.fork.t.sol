@@ -2,7 +2,9 @@
 pragma solidity ^0.8;
 
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
-import {UniswapV3PoolsMetaBalanceAdapter} from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsMetaBalanceAdapter.sol";
+import {
+    UniswapV3PoolsMetaBalanceAdapter
+} from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsMetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 

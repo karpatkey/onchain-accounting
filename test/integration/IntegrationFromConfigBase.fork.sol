@@ -15,11 +15,15 @@ import {IPrices} from "src/prices/IPrices.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 
 // Balance adapters
-import {CompoundV3CometsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/CompoundV3CometsMetaBalanceAdapter.sol";
+import {
+    CompoundV3CometsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/CompoundV3CometsMetaBalanceAdapter.sol";
 import {SparkLendBalanceAdapter} from "src/balances/BalanceAdapters/SparkLendBalanceAdapter.sol";
 import {MorphoVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/MorphoVaultsMetaBalanceAdapter.sol";
 import {MorphoMarketsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/MorphoMarketsMetaBalanceAdapter.sol";
-import {AaveV3InstancesMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/AaveV3InstancesMetaBalanceAdapter.sol";
+import {
+    AaveV3InstancesMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/AaveV3InstancesMetaBalanceAdapter.sol";
 import {ERC4626WrapBalanceAdapter} from "src/balances/BalanceAdapters/ERC4626WrapBalanceAdapter.sol";
 import {GearboxMarketsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/GearboxMarketsMetaBalanceAdapter.sol";
 import {CapBalanceAdapter} from "src/balances/BalanceAdapters/CapBalanceAdapter.sol";
@@ -28,21 +32,36 @@ import {CurveGaugesMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/cu
 import {ConvexRewardsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/ConvexRewardsMetaBalanceAdapter.sol";
 import {AaveV3SafetyModuleBalanceAdapter} from "src/balances/BalanceAdapters/AaveV3SafetyModuleBalanceAdapter.sol";
 import {AaveUmbrellaBalanceAdapter} from "src/balances/BalanceAdapters/AaveUmbrellaBalanceAdapter.sol";
-import {BalancerV3PoolsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/balancer/BalancerV3PoolsMetaBalanceAdapter.sol";
-import {BalancerV2PoolsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/balancer/BalancerV2PoolsMetaBalanceAdapter.sol";
+import {
+    BalancerV3PoolsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/balancer/BalancerV3PoolsMetaBalanceAdapter.sol";
+import {
+    BalancerV2PoolsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/balancer/BalancerV2PoolsMetaBalanceAdapter.sol";
 import {
     BalancerV2GaugesMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/balancer/BalancerV2GaugesMetaBalanceAdapter.sol";
 import {
     BalancerV3GaugesMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/balancer/BalancerV3GaugesMetaBalanceAdapter.sol";
-import {MerklRewardsBalanceAdapter, IMerklDistributor} from "src/balances/AssistedBalanceAdapters/MerklRewardsBalanceAdapter.sol";
+import {
+    MerklRewardsBalanceAdapter,
+    IMerklDistributor
+} from "src/balances/AssistedBalanceAdapters/MerklRewardsBalanceAdapter.sol";
 import {FluidFTokensMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/FluidFTokensMetaBalanceAdapter.sol";
 import {FluidVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/FluidVaultsMetaBalanceAdapter.sol";
-import {StaderWithdrawalQueueBalanceAdapter} from "src/balances/BalanceAdapters/StaderWithdrawalQueueBalanceAdapter.sol";
-import {StakeWiseV3VaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/StakeWiseV3VaultsMetaBalanceAdapter.sol";
-import {UniswapV3PoolsMetaBalanceAdapter} from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsMetaBalanceAdapter.sol";
-import {UniswapV2PoolsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/uniswap/UniswapV2PoolsMetaBalanceAdapter.sol";
+import {
+    StaderWithdrawalQueueBalanceAdapter
+} from "src/balances/BalanceAdapters/StaderWithdrawalQueueBalanceAdapter.sol";
+import {
+    StakeWiseV3VaultsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/StakeWiseV3VaultsMetaBalanceAdapter.sol";
+import {
+    UniswapV3PoolsMetaBalanceAdapter
+} from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsMetaBalanceAdapter.sol";
+import {
+    UniswapV2PoolsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/uniswap/UniswapV2PoolsMetaBalanceAdapter.sol";
 import {
     PancakeSwapV2PoolsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/pancakeswap/PancakeSwapV2PoolsMetaBalanceAdapter.sol";

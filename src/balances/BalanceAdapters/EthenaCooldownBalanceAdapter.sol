@@ -179,7 +179,9 @@ contract EthenaCooldownBalanceAdapter is IBalanceAdapter, IPositionDescribable {
             amount: total,
             isDebt: false,
             protocolId: PROTOCOL_ID,
-            positionId: "",
+            // Anchored on StakedUSDeV2 / sUSDe (the cooldown holder & claim target); the owed asset
+            // lives in `balanceAsset`, so the sUSDe address is the non-redundant coordinate.
+            positionId: abi.encode(address(STAKED_USDE)),
             positionKind: PositionKind.Supplied
         });
     }

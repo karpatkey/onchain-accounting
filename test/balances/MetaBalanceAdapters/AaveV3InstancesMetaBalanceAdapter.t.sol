@@ -7,6 +7,7 @@ import {
 } from "src/balances/MetaBalanceAdapters/AaveV3InstancesMetaBalanceAdapter.sol";
 import {IProtocolDataProvider} from "src/balances/BalanceAdapters/SparkLendBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -39,6 +40,7 @@ contract MockAaveDataProvider {
     struct UserData {
         uint256 aToken;
         uint256 variableDebt;
+        uint256 stableDebt;
         bool usageAsCollateral;
     }
 
@@ -55,7 +57,12 @@ contract MockAaveDataProvider {
     function setUserData(address user, address asset, uint256 aToken, uint256 variableDebt, bool usageAsCollateral)
         external
     {
-        _userData[user][asset] = UserData(aToken, variableDebt, usageAsCollateral);
+        _userData[user][asset] = UserData(aToken, variableDebt, 0, usageAsCollateral);
+    }
+
+    /// @notice Set a legacy stable-debt amount for a (user, asset). Leaves the other fields untouched.
+    function setStableDebt(address user, address asset, uint256 stableDebt) external {
+        _userData[user][asset].stableDebt = stableDebt;
     }
 
     function getAllReservesTokens() external view returns (IProtocolDataProvider.TokenData[] memory) {
@@ -68,7 +75,7 @@ contract MockAaveDataProvider {
         returns (uint256, uint256, uint256, uint256, uint256, uint256, uint256, uint40, bool)
     {
         UserData memory d = _userData[user][asset];
-        return (d.aToken, 0, d.variableDebt, 0, 0, 0, 0, 0, d.usageAsCollateral);
+        return (d.aToken, d.stableDebt, d.variableDebt, 0, 0, 0, 0, 0, d.usageAsCollateral);
     }
 }
 
@@ -132,6 +139,22 @@ contract AaveV3InstancesMetaUnitTest is BalanceAdapterTestBase {
             assertEq(pos[i].protocolId, keccak256("aave-v3-lending"));
             assertEq(pos[i].positionId, abi.encode(pool), "positionId = abi.encode(pool), no reserve");
         }
+    }
+
+    function test_borrowLeg_sumsStableAndVariableDebt() public {
+        // Legacy stable debt + variable debt on the same reserve must collapse into ONE Borrowed leg.
+        // Emitting them as two rows would share the same (protocolId, positionId, balanceAsset, Borrowed)
+        // key and collide; the sum is what NAV needs.
+        dp.setUserData(alice, address(usdc), 0, 400e6, false); // variable debt
+        dp.setStableDebt(alice, address(usdc), 100e6); // legacy stable debt on the same reserve
+
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(alice, _ids(), address(0));
+        assertEq(pos.length, 1, "single Borrowed leg (stable + variable summed)");
+        assertEq(pos[0].balanceAsset.asset, address(usdc));
+        assertTrue(pos[0].isDebt);
+        assertEq(uint8(pos[0].positionKind), uint8(PositionKind.Borrowed));
+        assertEq(pos[0].amount, 500e6, "variable(400) + stable(100)");
+        assertEq(pos[0].positionId, abi.encode(pool));
     }
 
     function test_assetFilter_returnsOnlyAsset() public {

@@ -225,7 +225,8 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
 
     /// @inheritdoc IBalanceAdapter
     /// @notice One aggregated staking-asset `Supplied` leg = total assets owed across the account's live,
-    ///         account-owned exit positions. `positionId` is empty (account-global, like the other WQ adapters).
+    ///         account-owned exit positions. `positionId = abi.encode(VAULTS_REGISTRY)` (account-global,
+    ///         keyed on the immutable anchor, like the other WQ adapters).
     function getAdapterPositions(address account, address assetFilter)
         external
         view
@@ -262,7 +263,9 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
             amount: total,
             isDebt: false,
             protocolId: PROTOCOL_ID,
-            positionId: "",
+            // Anchored on the VaultsRegistry (the immutable anchor); the owed asset lives in
+            // `balanceAsset`, so the registry address is the non-redundant coordinate.
+            positionId: abi.encode(VAULTS_REGISTRY),
             positionKind: PositionKind.Supplied
         });
     }

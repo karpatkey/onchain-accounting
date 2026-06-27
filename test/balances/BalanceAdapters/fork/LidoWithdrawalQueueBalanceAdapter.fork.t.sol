@@ -200,7 +200,11 @@ contract LidoWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTestBa
         assertEq(positions[0].amount, PRIMARY_EXPECTED_ETH);
         assertFalse(positions[0].isDebt);
         assertEq(positions[0].protocolId, ProtocolIds.LIDO_WITHDRAWAL);
-        assertEq(positions[0].positionId.length, 0, "account-global positionId is empty");
+        assertEq(
+            positions[0].positionId,
+            abi.encode(address(oracle.WITHDRAWAL_QUEUE())),
+            "account-global positionId is the WithdrawalQueue anchor"
+        );
         assertEq(uint256(positions[0].positionKind), uint256(PositionKind.Supplied));
     }
 

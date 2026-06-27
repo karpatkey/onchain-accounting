@@ -24,8 +24,13 @@ pragma solidity ^0.8;
 ///        COMPOUND_V3 / FLUID_FTOKENS     → (address market)
 ///        MERKL                           → (address distributor) — reward token is in balanceAsset, not positionId
 ///        NEXUS_MUTUAL_STAKING            → (uint256 tokenId, uint256 poolId)
-///        STADER_WITHDRAWAL / KELP_WITHDRAWAL / LIDO_WITHDRAWAL
-///          / ETHENA_COOLDOWN / ETHERFI_WITHDRAWAL / STAKEWISE_EXIT → "" (account-global)
+///        STADER_WITHDRAWAL              → (address userWithdrawalManager) — account-global anchor
+///        KELP_WITHDRAWAL                → (address withdrawalManager)      — account-global anchor
+///        LIDO_WITHDRAWAL                → (address withdrawalQueue)        — account-global anchor
+///        ETHENA_COOLDOWN                → (address sUSDe)                  — account-global anchor
+///        ETHERFI_WITHDRAWAL             → (address withdrawRequestNFT)     — account-global anchor
+///        STAKEWISE_EXIT                 → (address vaultsRegistry)         — account-global anchor
+///          (for all six: one aggregated leg per account; owed asset is in balanceAsset, not positionId)
 ///        BRIDGE_ESCROW                   → (address escrow, address token)
 /// @author KPK
 library ProtocolIds {
@@ -87,7 +92,8 @@ library ProtocolIds {
     bytes32 internal constant ERC4626 = keccak256("erc4626");
 
     // Withdrawal / cooldown queues
-    // positionId is empty (`""`) for all of these — each adapter reports one aggregated leg per account.
+    // Each adapter reports one aggregated leg per account; positionId = `abi.encode(<anchor contract>)`
+    // (the queue/manager — Lido queue, Stader/Kelp manager, ether.fi NFT, StakeWise registry, sUSDe).
     bytes32 internal constant STADER_WITHDRAWAL = keccak256("stader-withdrawal");
     bytes32 internal constant KELP_WITHDRAWAL = keccak256("kelp-withdrawal");
     bytes32 internal constant LIDO_WITHDRAWAL = keccak256("lido-withdrawal");

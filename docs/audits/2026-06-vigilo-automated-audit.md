@@ -16,7 +16,7 @@
 | **High** | 1 | Superchain dual-L2 address confusion (design; no code guard) — matches a known open issue |
 | **Medium** | 15 | Mostly valuation-accuracy and bridge-lifecycle correctness; several trust-model-bounded |
 | **Low** | ~11 | Defense-in-depth, griefing, footguns |
-| **Refuted / Invalid / Already-fixed** | 3 (all originally "High") | safecast DoS, proxy front-run, sUSDe share-unit |
+| **Refuted / Invalid / Already-fixed** | 3 (all originally "High") | SafeCast DoS, proxy front-run, sUSDe share-unit |
 
 **Positive result (verified):** The headline security invariant of the assisted balance-adapter family — *the assistant can only under-report, never over-report* — **holds** for all three adapters (Merkl, ether.fi, StakeWise V3). Proofs are bound to the live Merkl Distributor root; exit-queue adapters re-verify on-chain ownership and read amounts live on every call. See "Assisted-adapter invariant" below.
 

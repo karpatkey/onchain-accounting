@@ -4,7 +4,7 @@ Each Phase-2 finding was re-checked by an independent agent instructed to REFUTE
 
 | Finding (original) | Original sev | Verdict | Final sev | Key evidence |
 |---|---|---|---|---|
-| access-control/H-01 + low/L-01 safecast-toInt256 DoS | High/Low | REFUTED — already fixed | — (resolved) | `PriceFeedLib.sol:102` bounds check before cast; commit 887ac32; per-feed isolated |
+| access-control/H-01 + low/L-01 SafeCast-toInt256 DoS | High/Low | REFUTED — already fixed | — (resolved) | `PriceFeedLib.sol:102` bounds check before cast; commit 887ac32; per-feed isolated |
 | access-control/H-02 proxy front-run + M-07 | High/Med | REFUTED | — (invalid) | `AtomicProxyDeployer` constructor deploys+initializes atomically; v1 front-run already remediated by salt bump |
 | access-control/H-02 bridge-adapter front-run | High | CONFIRMED, downgraded | Low | adapters CREATE2+init in separate txs (`05_DeployBridgeAdapters`), but escrow auth (`06`) + council handoff (`07`) + salt-bump redeploy mean funds safe; only griefing |
 | oracle/H-03 sUSDe-sUSDS share unit | High | REFUTED-INVALID | — (invalid) | feeds use `convertToAssets(10**_vaultDecimals)` and divide by same; correct |

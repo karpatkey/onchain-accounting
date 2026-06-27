@@ -2,6 +2,8 @@
 
 The `StakeWiseExitQueueBalanceAdapter` (`src/balances/AssistedBalanceAdapters/StakeWiseExitQueueBalanceAdapter.sol`) reports a portfolio's in-flight assets in StakeWise V3's exit queue by reading an on-chain cache of candidate `(vault, positionTicket, timestamp)` tuples per account. Exit positions are **not enumerable** — a position is identified only by a `positionTicket` emitted in the `ExitQueueEntered` event — so an off-chain bot discovers the account's positions and submits them. Crucially, the cache stores **only the position coordinates, never amounts** — the adapter values each tuple entirely from live on-chain reads (`calculateExitedAssets` + `convertToAssets`) and the `calculateExitedAssets(receiver = account, …)` call is itself the ownership check. The bot cannot fabricate value; at worst it omits a position (NAV under-reports), never over-reports. See [`docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md`](../decisions/0014-agent-fed-cache-adapters-for-exit-queues.md) for the trust model (generalises Merkl/ADR 0007; sibling of the ether.fi submitter).
 
+> **Access control:** this adapter is in the assisted balance-adapter family — submissions are gated by `ASSISTANT_ROLE` (granted/rotated by `DEFAULT_ADMIN_ROLE`); see [ADR 0015](../decisions/0015-assisted-balance-adapter-family.md). Where this guide says "owner"/"owner key" below, read it as the `ASSISTANT_ROLE` holder.
+
 This file is the contract between the on-chain adapter and the ops process that feeds it. The bot lives in `kpk-agents` (`agents/automations/accounting/`), mirroring `submit_merkl_proofs.py` and the ether.fi submitter.
 
 ---
@@ -11,7 +13,7 @@ This file is the contract between the on-chain adapter and the ops process that 
 Per cycle, two things:
 
 1. **Discover** each tracked account's open exit positions (off-chain): the `(vault, positionTicket, timestamp)` tuples.
-2. **Submit** the fresh ones to the deployed adapter via `submitPositions(account, positions)` (or `submitPositionsBatch`), signed by the owner key.
+2. **Submit** the fresh ones to the deployed adapter via `submitPositions(account, positions)` (or `submitPositionsBatch`), signed by a key holding `ASSISTANT_ROLE`.
 
 Garbage-collection (`clearPosition` / `clearAccount`) for claimed positions is an occasional cleanup, not steady-state-critical — stale tuples already read as 0 (the adapter drops them when `calculateExitedAssets` returns zero, i.e. the request was claimed/deleted).
 
@@ -43,7 +45,7 @@ Cadence: **roughly daily** is sufficient for correctness (validator exits take ~
 
 ```
 positions = scan_exit_queue_entered(vault, receiver=account)   # (vault, positionTicket, blockTimestamp)
-if positions: submitPositions(account, positions)             # as owner; adapter dedups + verifies on-chain
+if positions: submitPositions(account, positions)             # as ASSISTANT_ROLE holder; adapter dedups + verifies on-chain
 # optional GC: clearPosition for tuples whose calculateExitedAssets(account,…) is now 0 (claimed)
 ```
 

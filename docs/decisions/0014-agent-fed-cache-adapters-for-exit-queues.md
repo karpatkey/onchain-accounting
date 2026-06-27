@@ -19,7 +19,7 @@ The shipped withdrawal-queue adapters (Lido/Stader/Kelp) work only because those
 
 ## Decision
 
-Ship **two owner-gated cache adapters** — `EtherFiWithdrawalQueueBalanceAdapter` and `StakeWiseExitQueueBalanceAdapter` — as the **third and fourth documented mutable adapters** (after `MerklRewards`, ADR 0007). Each pairs with an off-chain submitter agent in `kpk-agents` that mirrors `submit_merkl_proofs.py`.
+Ship **two cache adapters** — `EtherFiWithdrawalQueueBalanceAdapter` and `StakeWiseExitQueueBalanceAdapter` — as the **third and fourth documented mutable adapters** (after `MerklRewards`, ADR 0007). Each pairs with an off-chain submitter agent in `kpk-agents` that mirrors `submit_merkl_proofs.py`. (These were initially `Ownable`; they have since been consolidated, with Merkl, under the **assisted balance-adapter family** — `AssistedBalanceAdapter` on OpenZeppelin AccessControl, where `ASSISTANT_ROLE` submits and `DEFAULT_ADMIN_ROLE` administers — see [ADR 0015](0015-assisted-balance-adapter-family.md). The "owner" framing below describes the original design; substitute `ASSISTANT_ROLE` for the submit gate.)
 
 **Key refinement over Merkl — the cache stores *ids only*, never amounts.** Merkl caches a `(cumulativeAmount, root)` verified at write time. Here the cache stores only the **candidate id set** per account; the **amount is read live on every NAV read** and re-verified to still belong to the account. The agent therefore cannot influence the reported value *at all* — only the set of positions checked. Failure mode is strictly under-report (agent omits/lags an id), never over-report. This is a *stronger* trust model than Merkl's.
 

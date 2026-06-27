@@ -182,6 +182,52 @@ contract UniswapV3PoolsMetaBalanceAdapterTest is Test {
         assertEq(meta.getAdapterPositionsForInstances(alice, new bytes32[](0), address(0)).length, 0);
     }
 
+    /// @notice Fees-kind leg amount for (pool, token); `found` is false if no Fees leg exists for it.
+    function _feeLeg(bytes32 instance, address token) internal view returns (uint256 amt, bool found) {
+        bytes32[] memory one = new bytes32[](1);
+        one[0] = instance;
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, one, address(0));
+        for (uint256 i = 0; i < p.length; i++) {
+            if (p[i].balanceAsset.asset == token && p[i].positionKind == PositionKind.Fees) {
+                return (p[i].amount, true);
+            }
+        }
+        return (0, false);
+    }
+
+    /// @notice Audit M-A1: fee legs report ONLY the position's settled `tokensOwed`. The adapter deliberately omits
+    ///         the uncollected-since-poke `feeGrowthInside` component (it can't be derived from the oracle tick
+    ///         without the manipulable slot0). A pool fee-growth state that, under the old feeGrowthInside path,
+    ///         made the in-range branch underflow and wrap to ~2^256 must therefore have NO effect on the reported
+    ///         fee — no phantom over-report and no revert/drop.
+    function test_M_A1_fees_areSettledTokensOwedOnly() public {
+        uint256 Q128 = 1 << 128;
+        // fgOutLower + fgOutUpper > fgGlobal(0): the old in-range formula would underflow/wrap huge.
+        poolA.setFeeGrowthGlobal(0, 0);
+        poolA.setTickFeeGrowth(-100, Q128, Q128);
+        poolA.setTickFeeGrowth(100, Q128, Q128);
+
+        (uint256 wbtcFee, bool f0) = _feeLeg(_instances()[0], address(wbtc));
+        (uint256 wethFee, bool f1) = _feeLeg(_instances()[0], address(weth));
+
+        assertTrue(f0 && f1, "both fee legs present (no revert/drop)");
+        assertEq(wbtcFee, 42, "fee leg == tokensOwed0 only; pool fee-growth state ignored");
+        assertEq(wethFee, 1337, "fee leg == tokensOwed1 only; pool fee-growth state ignored");
+    }
+
+    /// @notice Audit M-A1: even a large, internally-consistent fee-growth (which the old path would have valued as
+    ///         a big uncollected fee) is intentionally dropped — fees stay at the settled `tokensOwed`.
+    function test_M_A1_fees_ignoreUncollectedFeeGrowth() public {
+        uint256 Q128 = 1 << 128;
+        poolA.setFeeGrowthGlobal(3 * Q128, 3 * Q128);
+        poolA.setTickFeeGrowth(-100, Q128, Q128);
+        poolA.setTickFeeGrowth(100, Q128, Q128);
+
+        (uint256 wbtcFee, bool found) = _feeLeg(_instances()[0], address(wbtc));
+        assertTrue(found, "WBTC fee leg present");
+        assertEq(wbtcFee, 42, "uncollected fee-growth dropped; only settled tokensOwed0 reported");
+    }
+
     function test_underlyingAssetsForInstances() public view {
         address[] memory a = meta.underlyingAssetsSupportedForInstances(_instances());
         assertEq(a.length, 4); // [wbtc, weth, usdc, weth]

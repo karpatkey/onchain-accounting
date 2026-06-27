@@ -14,25 +14,29 @@ import {
 } from "src/balances/MetaBalanceAdapters/uniswap/UniswapV3PoolLib.sol";
 import {TickMath} from "src/balances/MetaBalanceAdapters/uniswap/lib/TickMath.sol";
 import {LiquidityAmounts} from "src/balances/MetaBalanceAdapters/uniswap/lib/LiquidityAmounts.sol";
-import {FixedPoint128} from "src/balances/MetaBalanceAdapters/uniswap/lib/FixedPoint128.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @title Uniswap V3 Pools Meta Balance Adapter
 /// @author KPK
 /// @notice One immutable adapter that reports an account's Uniswap V3 LP across *any* pool — both the in-range
-///         liquidity (`Supplied`) and the unclaimed fees (`Earned`) of the account's NFT positions. The instance
+///         liquidity (`Supplied`) and the settled `tokensOwed` fees (`Fees`) of the account's NFT positions. The instance
 ///         coordinate is the pool address, widened to bytes32; the active pool set lives on NAVCalculator
 ///         (`addMetaInstances`/`removeMetaInstances`). The NonfungiblePositionManager is the chain-level constant pinned in the
 ///         constructor. Each NFT position gets its own positionId = abi.encode(npm, tokenId).
 ///         See ADR 0010.
-/// @dev Manipulation resistance ([2]): the in-range split and the fee-growth branch are driven by a `sqrtPriceX96`
+/// @dev Manipulation resistance ([2]): the in-range split is driven by a `sqrtPriceX96`
 ///      *reconstructed from the two tokens' registered oracle prices* (`NAV_CALCULATOR.getPriceData`), NOT the
 ///      pool's `slot0` spot. This makes reported amounts a pure function of the same oracles NAV prices with, so an
 ///      attacker who atomically moves the pool price cannot move the reported value (honors the repo's "never trust
 ///      an AMM spot price" rule). A position whose tokens are unregistered/unpriced/stale is dropped (returns no
 ///      legs) rather than valued off a manipulable spot. Because `slot0` is no longer read, byte-compatible forks
 ///      with a divergent `slot0()` ABI (PancakeSwap V3) need no special handling.
-///      Licensing: links the GPL-2.0-or-later Uniswap math (TickMath, LiquidityAmounts, FixedPoint128) —
+/// @dev Fees ([M-A1]): only the position's settled `tokensOwed` are reported. The uncollected-since-poke component
+///      derives from `feeGrowthInside`, which is correct only relative to the pool's REAL tick; deriving it from the
+///      oracle-reconstructed tick can pick a branch inconsistent with the on-chain `feeGrowthOutside` anchoring and
+///      over-report a phantom fee. Since this adapter intentionally avoids `slot0`, that component is omitted — a
+///      conservative under-report that upholds the assisted family's never-over-report invariant. See
+///      docs/audits/2026-06-vigilo-adapter-audit.md §M-A1.
+///      Licensing: links the GPL-2.0-or-later Uniswap math (TickMath, LiquidityAmounts) —
 ///      combined work is GPL-2.0-or-later (ADR 0008).
 contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     using Strings for uint256;
@@ -96,9 +100,6 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
             uint256(pd0.price), pd0.decimals, a0.decimals, uint256(pd1.price), pd1.decimals, a1.decimals
         );
 
-        uint256 fgGlobal0 = IUniswapV3Pool(pool).feeGrowthGlobal0X128();
-        uint256 fgGlobal1 = IUniswapV3Pool(pool).feeGrowthGlobal1X128();
-
         uint256 nftBalance = INonfungiblePositionManager(POSITION_MANAGER).balanceOf(account);
         uint256 max = nftBalance > MAX_POSITIONS ? MAX_POSITIONS : nftBalance;
 
@@ -116,9 +117,7 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
                 uint24 f,
                 int24 tickLower,
                 int24 tickUpper,
-                uint128 liquidity,
-                uint256 fgInside0Last,
-                uint256 fgInside1Last,
+                uint128 liquidity,,,
                 uint128 tokensOwed0,
                 uint128 tokensOwed1
             ) = INonfungiblePositionManager(POSITION_MANAGER).positions(tokenId);
@@ -131,9 +130,9 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
             // not apply here; see MetaBalanceAdapter.
             bytes memory positionId = abi.encode(POSITION_MANAGER, tokenId);
 
-            // Tick-boundary sqrt ratios, computed once: used for the in-range split AND (via comparison against
-            // the reconstructed sqrtPriceX96) the fee-growth branch — `sqrtPriceX96 < getSqrtRatioAtTick(t)` is
-            // exactly equivalent to `currentTick < t`, so no reverse tick lookup is needed.
+            // Principal split: tick-boundary sqrt ratios for the in-range amount calc, valued off the
+            // oracle-reconstructed sqrtPriceX96 (not the manipulable slot0; `sqrtPriceX96 < getSqrtRatioAtTick(t)`
+            // is exactly equivalent to `currentTick < t`).
             uint160 sqrtLower = TickMath.getSqrtRatioAtTick(tickLower);
             uint160 sqrtUpper = TickMath.getSqrtRatioAtTick(tickUpper);
 
@@ -143,26 +142,17 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
                 (liq0, liq1) = LiquidityAmounts.getAmountsForLiquidity(sqrtPriceX96, sqrtLower, sqrtUpper, liquidity);
             }
 
-            (uint256 fee0, uint256 fee1) = _computeFees(
-                pool,
-                sqrtPriceX96,
-                sqrtLower,
-                sqrtUpper,
-                fgGlobal0,
-                fgGlobal1,
-                tickLower,
-                tickUpper,
-                liquidity,
-                fgInside0Last,
-                fgInside1Last,
-                tokensOwed0,
-                tokensOwed1
-            );
-
+            // Fees: report only the position's settled `tokensOwed` (fees credited at the last mint/collect/burn
+            // poke). The uncollected-since-poke component is deliberately NOT computed — it derives from
+            // `feeGrowthInside`, which is correct only relative to the pool's REAL tick, while this adapter
+            // intentionally avoids `slot0` (manipulation resistance + PancakeSwap V3 ABI compatibility). Deriving
+            // it from the oracle tick can select a `feeGrowthInside` branch inconsistent with the on-chain
+            // `feeGrowthOutside` anchoring and over-report a phantom fee, so it is omitted — a conservative
+            // under-report that upholds the never-over-report invariant (audit M-A1).
             if (f0reg && liq0 > 0) temp[count++] = _row(a0, liq0, positionId, PositionKind.Supplied);
             if (f1reg && liq1 > 0) temp[count++] = _row(a1, liq1, positionId, PositionKind.Supplied);
-            if (f0reg && fee0 > 0) temp[count++] = _row(a0, fee0, positionId, PositionKind.Fees);
-            if (f1reg && fee1 > 0) temp[count++] = _row(a1, fee1, positionId, PositionKind.Fees);
+            if (f0reg && tokensOwed0 > 0) temp[count++] = _row(a0, tokensOwed0, positionId, PositionKind.Fees);
+            if (f1reg && tokensOwed1 > 0) temp[count++] = _row(a1, tokensOwed1, positionId, PositionKind.Fees);
         }
 
         INAVCalculator.PositionBalance[] memory positions = new INAVCalculator.PositionBalance[](count);
@@ -204,53 +194,5 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
             positionKind: kind,
             isLocked: false
         });
-    }
-
-    /// @notice Computes unclaimed fees for a single NFT position.
-    /// @dev Subtractions intentionally wrap (`unchecked`), matching Uniswap's fee accounting (v3 whitepaper 6.3).
-    ///      The below/in/above-range branch is selected by comparing the reconstructed `sqrtPriceX96` against the
-    ///      range's tick-boundary sqrt ratios — `sqrtPriceX96 < getSqrtRatioAtTick(t)` is exactly equivalent to
-    ///      `currentTick < t`. So, like the principal split, fee valuation is driven by the oracle-implied price,
-    ///      not the manipulable slot0 tick.
-    function _computeFees(
-        address pool,
-        uint160 sqrtPriceX96,
-        uint160 sqrtLower,
-        uint160 sqrtUpper,
-        uint256 fgGlobal0,
-        uint256 fgGlobal1,
-        int24 tickLower,
-        int24 tickUpper,
-        uint128 liquidity,
-        uint256 fgInside0Last,
-        uint256 fgInside1Last,
-        uint128 tokensOwed0,
-        uint128 tokensOwed1
-    ) private view returns (uint256 f0, uint256 f1) {
-        (uint256 fgOutLower0, uint256 fgOutLower1) = _ticksFeeGrowthOutside(pool, tickLower);
-        (uint256 fgOutUpper0, uint256 fgOutUpper1) = _ticksFeeGrowthOutside(pool, tickUpper);
-
-        unchecked {
-            uint256 fgInside0;
-            uint256 fgInside1;
-            if (sqrtPriceX96 < sqrtLower) {
-                fgInside0 = fgOutLower0 - fgOutUpper0;
-                fgInside1 = fgOutLower1 - fgOutUpper1;
-            } else if (sqrtPriceX96 < sqrtUpper) {
-                fgInside0 = fgGlobal0 - fgOutLower0 - fgOutUpper0;
-                fgInside1 = fgGlobal1 - fgOutLower1 - fgOutUpper1;
-            } else {
-                fgInside0 = fgOutUpper0 - fgOutLower0;
-                fgInside1 = fgOutUpper1 - fgOutLower1;
-            }
-
-            f0 = Math.mulDiv(fgInside0 - fgInside0Last, liquidity, FixedPoint128.Q128) + tokensOwed0;
-            f1 = Math.mulDiv(fgInside1 - fgInside1Last, liquidity, FixedPoint128.Q128) + tokensOwed1;
-        }
-    }
-
-    function _ticksFeeGrowthOutside(address pool, int24 tick) private view returns (uint256 fgOut0, uint256 fgOut1) {
-        (,, uint256 _fgOut0, uint256 _fgOut1,,,,) = IUniswapV3Pool(pool).ticks(tick);
-        return (_fgOut0, _fgOut1);
     }
 }

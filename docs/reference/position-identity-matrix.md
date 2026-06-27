@@ -44,11 +44,11 @@ Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, pos
 | UniswapV2PoolsMeta | `uniswap-v2` | `abi.encode(address pair)` | token0 pro-rata principal | `Supplied` | false | token0 |
 | | | | token1 pro-rata principal | `Supplied` | false | token1 |
 | PancakeSwapV2PoolsMeta | `pancakeswap-v2` | `abi.encode(address pair)` | same 2 legs as Uniswap V2 | `Supplied` | false | token0/token1 |
-| UniswapV3Pools | `uniswap-v3` | `abi.encode(address npm, uint256 tokenId)` | in-range principal, token0 | `Supplied` | false | token0 |
+| UniswapV3Pools | `uniswap-v3` | `abi.encode(address pool)` (NFT id in labels) | in-range principal, token0 | `Supplied` | false | token0 |
 | | | | in-range principal, token1 | `Supplied` | false | token1 |
 | | | | unclaimed fees, token0 | `Fees` | false | token0 |
 | | | | unclaimed fees, token1 | `Fees` | false | token1 |
-| PancakeSwapV3Pools | `pancakeswap-v3` | `abi.encode(address npm, uint256 tokenId)` | same 4 legs as Uniswap V3 | `Supplied`/`Fees` | false | token0/token1 |
+| PancakeSwapV3Pools | `pancakeswap-v3` | `abi.encode(address pool)` (NFT id in labels) | same 4 legs as Uniswap V3 | `Supplied`/`Fees` | false | token0/token1 |
 | BalancerV2PoolsMeta | `balancer-v2-pool` | `abi.encode(bytes32 poolId)` | per-token principal (wallet BPT) | `Supplied` | false | pool token |
 | BalancerV3PoolsMeta | `balancer-v3-pool` | `abi.encode(address pool)` | per-token principal (wallet BPT) | `Supplied` | false | pool token |
 | CurvePoolsMeta | `curve-pool` | `abi.encode(address pool)` | per-coin principal (wallet LP) | `Supplied` | false | pool coin |
@@ -69,7 +69,7 @@ Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, pos
 | EtherFiWithdrawalQueue | `etherfi-withdrawal` | `abi.encode(address withdrawRequestNFT)` (account-global anchor) | in-flight withdrawal-queue ETH | `Supplied` | false | native ETH |
 | StakeWiseV3ExitQueue | `stakewise-exit` | `abi.encode(address vaultsRegistry)` (account-global anchor) | in-flight exit-queue assets | `Supplied` | false | native ETH |
 | EthenaCooldownBalanceAdapter | `ethena-cooldown` | `abi.encode(address sUSDe)` (account-global anchor) | USDe in the sUSDe unstaking cooldown | `Supplied` | false | USDe |
-| NexusMutualStakingPools | `nexus-mutual-staking` | `abi.encode(uint256 tokenId, uint256 poolId)` | active + expired staked NXM (per StakingNFT) | `Staking` | false | NXM |
+| NexusMutualStakingPools | `nexus-mutual-staking` | `abi.encode(address stakingPool)` (NFT id in labels) | active + expired staked NXM (per StakingNFT) | `Staking` | false | NXM |
 | | | | claimable rewards (per StakingNFT) | `Rewards` | false | NXM |
 | MerklRewards | `merkl` | `abi.encode(address distributor)` | unclaimed rewards (one leg per reward token, distinguished by `balanceAsset`) | `Rewards` | false | reward token |
 

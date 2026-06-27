@@ -514,16 +514,18 @@ PositionBalance({
 #### `UniswapV3Pools` — Uniswap V3 NFT position
 
 ```solidity
-// Per-NFT positionId. Two Supplied legs (token0, token1 in-range liquidity) +
-// two Fees legs (token0, token1 uncollected fees) — all share this positionId.
+// positionId = the pool contract address (factory.getPool(token0,token1,fee)). Two Supplied legs
+// (token0, token1 in-range liquidity) + two Fees legs share it. The NFT id is NOT in positionId — it
+// is the last entry of the adapter-supplied `labels`: ["Liquidity Pool", "<pool>", "NFT #12345"].
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xA0b8…6eB48, symbol: "USDC", decimals: 6 }),
     balanceAdapter: 0x<UniswapV3Pools>,
     amount:        600_000_000,            // 600 USDC in-range liquidity (NFT #12345)
     isDebt:        false,
     protocolId:    keccak256("uniswap-v3"),
-    positionId:    abi.encode(0x<NPM>, uint256(12345)),   // (npm, tokenId)
-    positionKind:  PositionKind.Supplied
+    positionId:    abi.encode(0x<pool>),   // the WBTC/WETH-style pool address
+    positionKind:  PositionKind.Supplied,
+    labels:        ["Liquidity Pool", "0x<pool>", "NFT #12345"]
 })
 ```
 
@@ -544,8 +546,9 @@ PositionBalance({
 
 #### `PancakeSwapV3Pools` / `PancakeSwapV2PoolsMeta`
 
-Thin subclasses of UniswapV3/V2 adapters with different `npm`/`pair` addresses and the
-`pancakeswap-v3` / `pancakeswap-v2` protocol slugs. All field schemas are identical.
+Thin subclasses of the UniswapV3/V2 adapters with different factory/`pair` addresses and the
+`pancakeswap-v3` / `pancakeswap-v2` protocol slugs. All field schemas are identical (V3 positionId = pool
+address, NFT id in labels; V2 positionId = pair address).
 
 ---
 
@@ -827,11 +830,13 @@ Scenario: one NFT position (#12345) in the USDC/WETH 0.05% pool, in-range, with 
 
 | asset | amount  | value (USD) | positionKind | protocolName   | labels  |
 |-------|---------|-------------|--------------|----------------|----------------|
-| USDC  | 600     | +600        | `Supplied`   | `"Uniswap V3"` | `["Liquidity Pool", "NFT #12345"]` |
-| WETH  | 0.24    | +600        | `Supplied`   | `"Uniswap V3"` | `["Liquidity Pool", "NFT #12345"]` |
-| USDC  | 20      | +20         | `Fees`       | `"Uniswap V3"` | `["Liquidity Pool", "NFT #12345"]` |
-| WETH  | 0.008   | +20         | `Fees`       | `"Uniswap V3"` | `["Liquidity Pool", "NFT #12345"]` |
+| USDC  | 600     | +600        | `Supplied`   | `"Uniswap V3"` | `["Liquidity Pool", "0x88e6…5640", "NFT #12345"]` |
+| WETH  | 0.24    | +600        | `Supplied`   | `"Uniswap V3"` | `["Liquidity Pool", "0x88e6…5640", "NFT #12345"]` |
+| USDC  | 20      | +20         | `Fees`       | `"Uniswap V3"` | `["Liquidity Pool", "0x88e6…5640", "NFT #12345"]` |
+| WETH  | 0.008   | +20         | `Fees`       | `"Uniswap V3"` | `["Liquidity Pool", "0x88e6…5640", "NFT #12345"]` |
 | **NAV** | | **+1 240** | | | |
+
+(positionId for all four legs = `abi.encode(0x88e6…5640)`, the USDC/WETH 0.05% pool; the NFT id lives only in the last label.)
 
 #### `UniswapV2PoolsMeta`
 
@@ -938,15 +943,15 @@ rather than overloading an existing one.
 | `curve-pool` | `(address pool)` |
 | `curve-gauge` | `(address gauge)` |
 | `convex` | `(address rewarder)` |
-| `uniswap-v3` | `(address npm, uint256 tokenId)` |
+| `uniswap-v3` | `(address pool)` — NFT id in labels |
 | `uniswap-v2` | `(address pair)` |
-| `pancakeswap-v3` | `(address npm, uint256 tokenId)` |
+| `pancakeswap-v3` | `(address pool)` — NFT id in labels |
 | `pancakeswap-v2` | `(address pair)` |
 | `stakewise-v3` | `(address vault)` |
 | `cap` | `(address token)` — cUSD or stcUSD |
 | `erc4626` | `(address vault)` |
 | `merkl` | `(address distributor)` — reward token in balanceAsset |
-| `nexus-mutual-staking` | `(uint256 tokenId, uint256 poolId)` |
+| `nexus-mutual-staking` | `(address stakingPool)` — NFT id in labels |
 | `stader-withdrawal` | `(address userWithdrawalManager)` — account-global anchor |
 | `kelp-withdrawal` | `(address withdrawalManager)` — account-global anchor |
 | `lido-withdrawal` | `(address withdrawalQueue)` — account-global anchor |
@@ -1249,18 +1254,20 @@ const [rewarder] = abi.decode(["address"], pos.positionId);
 
 #### Uniswap V3 / PancakeSwap V3 — `uniswap-v3` / `pancakeswap-v3`
 
-Per-NFT positionId: each NFT (tokenId) gets its own positionId. Multiple NFTs in the same
-pool each have a distinct positionId. All legs of one NFT (token0 liquidity, token1
-liquidity, token0 fees, token1 fees) share the same positionId.
+Per-pool positionId: positionId is the pool contract address (`factory.getPool(token0,token1,fee)` —
+each fee tier is its own pool). An account's multiple NFTs in the same pool share this positionId; the
+specific NFT id is the last entry of the verbose `labels` (`["Liquidity Pool", "<pool>", "NFT #<id>"]`).
+All legs of one NFT (token0/token1 liquidity + fees) share the positionId.
 
 ```typescript
-const [npm, tokenId] = abi.decode(["address", "uint256"], pos.positionId);
-// npm     — NonfungiblePositionManager (canonical per chain)
-// tokenId — NFT token ID
+const [pool] = abi.decode(["address"], pos.positionId);
+// pool — the Uniswap/PancakeSwap V3 pool contract (identifies token pair + fee tier)
+// The NFT id is in verbose labels[2] ("NFT #<id>"), not in positionId.
 // Supplied → in-range liquidity (token0 and token1 legs)
 // Fees     → unclaimed fee legs (token0 and token1)
 
-// Collect fees:
+// To act on a specific NFT, recover the tokenId from the verbose label:
+const tokenId = Number(verbose.labels.at(-1)?.replace("NFT #", ""));
 if (pos.positionKind === PositionKind.Fees) {
   await npmContract.collect({ tokenId, recipient: account, amount0Max: MAX, amount1Max: MAX });
 }
@@ -1302,10 +1309,11 @@ const [distributor] = abi.decode(["address"], pos.positionId);
 #### Nexus Mutual staking pools — `nexus-mutual-staking`
 
 ```typescript
-const [tokenId, poolId] = abi.decode(["uint256", "uint256"], pos.positionId);
-// tokenId — the Nexus StakingNFT id (one position); poolId — the staking pool it belongs to
-// One Staking (active + expired stake) and one Rewards leg per tokenId, both NXM-denominated.
-// An account may hold several positions across several pools; each surfaces under its own positionId.
+const [stakingPool] = abi.decode(["address"], pos.positionId);
+// stakingPool — the Nexus staking-pool contract (StakingViewer.stakingPool(poolId)).
+// The StakingNFT id is the last verbose label ("NFT #<id>"), not in positionId.
+// One Staking (active + expired stake) and one Rewards leg per StakingNFT, both NXM-denominated.
+// An account may hold several positions across several pools.
 ```
 
 #### Lido / Stader / Kelp withdrawal queues — `lido-withdrawal` / `stader-withdrawal` / `kelp-withdrawal`
@@ -1422,9 +1430,9 @@ address widened → `abi.encode(address instance)`); overrides are flagged.
 | `MerklRewardsBalanceAdapter` | `merkl` | `"Merkl"` (const) | `["Claimable Rewards"]` (const) | `abi.encode(address DISTRIBUTOR)` | Rewards | `["Merkl","Claimable Rewards"]` |
 | `EtherFiWithdrawalQueueBalanceAdapter` | `etherfi-withdrawal` | `"ether.fi"` (const) | `["eETH Withdrawal Queue"]` (const) | `abi.encode(address withdrawRequestNFT)` | Supplied | `["ether.fi","eETH Withdrawal Queue"]` |
 | `StakeWiseV3ExitQueueBalanceAdapter` | `stakewise-exit` | `"StakeWise V3"` (const) | `["Exit Queue"]` (const) | `abi.encode(address vaultsRegistry)` | Supplied | `["StakeWise V3","Exit Queue"]` |
-| `NexusMutualStakingPoolsBalanceAdapter` | `nexus-mutual-staking` | `"Nexus Mutual"` (const) | `["Staking"]` (const) | `abi.encode(uint256 tokenId, uint256 poolId)` | Staking / Rewards | `["Nexus Mutual","Staking"]` |
-| `UniswapV3PoolsBalanceAdapter` | `uniswap-v3` | `"Uniswap V3"` (gov) | `["Liquidity Pool", "NFT #<tokenId>"]` (derived) | `abi.encode(address npm, uint256 tokenId)` | Supplied / Fees | `["Uniswap V3","Liquidity Pool","NFT #12345"]` |
-| `PancakeSwapV3PoolsBalanceAdapter` | `pancakeswap-v3` | `"PancakeSwap V3"` (gov) | `["Liquidity Pool", "NFT #<tokenId>"]` (derived, inherited) | `abi.encode(address npm, uint256 tokenId)` | Supplied / Fees | `["PancakeSwap V3","Liquidity Pool","NFT #12345"]` |
+| `NexusMutualStakingPoolsBalanceAdapter` | `nexus-mutual-staking` | `"Nexus Mutual"` (const) | `["Staking", "<pool>", "NFT #<id>"]` (adapter-supplied) | `abi.encode(address stakingPool)` | Staking / Rewards | `["Nexus Mutual","Staking","0x…","NFT #180"]` |
+| `UniswapV3PoolsBalanceAdapter` | `uniswap-v3` | `"Uniswap V3"` (gov) | `["Liquidity Pool", "<pool>", "NFT #<id>"]` (adapter-supplied) | `abi.encode(address pool)` | Supplied / Fees | `["Uniswap V3","Liquidity Pool","0x…","NFT #12345"]` |
+| `PancakeSwapV3PoolsBalanceAdapter` | `pancakeswap-v3` | `"PancakeSwap V3"` (gov) | `["Liquidity Pool", "<pool>", "NFT #<id>"]` (adapter-supplied, inherited) | `abi.encode(address pool)` | Supplied / Fees | `["PancakeSwap V3","Liquidity Pool","0x…","NFT #12345"]` |
 
 #### What each `positionId` value is
 
@@ -1450,8 +1458,8 @@ what each argument refers to:
 | `bytes32 poolId` (Balancer V2) | The Balancer V2 Vault `poolId` — the pool's 32-byte id used by the Balancer `Vault` (the first 20 bytes are the pool address). **Raw `bytes32`, not an address** (Balancer V2 keys pools by id, not address). |
 | `address gauge` | The staking **gauge** contract (Balancer V2/V3 or Curve) the LP is staked into. Staked principal and claimable reward legs share it. |
 | `address rewarder` (Convex) | The Convex `BaseRewardPool` ("rewarder") for that Curve LP. The underlying Curve pool, its coins and the CRV/CVX/extra rewards are derived from it. |
-| `address npm, uint256 tokenId` | **`npm` = the `NonfungiblePositionManager`** (Uniswap V3 mainnet `0xC364…FE88`, or the PancakeSwap V3 NPM) — the ERC721 contract that mints LP-position NFTs. **`tokenId`** = the specific LP NFT. Keyed per NFT (not per pool) since one pool can hold many NFTs; the four legs (token0/token1 × liquidity/fees) share it. |
-| `uint256 tokenId, uint256 poolId` (Nexus) | **`tokenId`** = the Nexus Mutual `StakingNFT` id (one staking position); **`poolId`** = the Nexus staking pool that NFT belongs to. Staking and reward legs (both NXM) share it. |
+| `address pool` (Uniswap V3 / PancakeSwap V3) | The Uniswap/PancakeSwap **V3 pool contract** (`factory.getPool(token0, token1, fee)`) — each fee tier is its own deployed pool, so the address identifies the token pair + fee tier. Keyed per pool; an account's NFTs in the same pool share it, and the four legs (token0/token1 × liquidity/fees) share it. The specific NFT id is **not** in positionId — it is the last entry of the adapter-supplied `labels` (`"NFT #<id>"`). |
+| `address stakingPool` (Nexus) | The Nexus Mutual **staking-pool contract** (`StakingViewer.stakingPool(poolId)`, deterministic per poolId). Staking and reward legs (both NXM) share it. The `StakingNFT` id is the last entry of the adapter-supplied `labels` (`"NFT #<id>"`), not in positionId. |
 | `address DISTRIBUTOR` (Merkl) | The Merkl `Distributor` (Angle Labs) — the claim target / trust anchor. All reward tokens claimed from it share this id and are told apart by `balanceAsset`. |
 | `address withdrawalQueue` (Lido) | Lido's `WithdrawalQueueERC721` — the contract that escrows stETH withdrawal requests and pays out ETH on claim. |
 | `address userWithdrawalManager` (Stader) | Stader's `UserWithdrawalManager` — escrows ETHx unstake requests, pays ETH (valued to WETH) on claim. |

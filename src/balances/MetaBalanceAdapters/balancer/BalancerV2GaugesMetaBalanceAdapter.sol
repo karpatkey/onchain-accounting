@@ -132,6 +132,7 @@ contract BalancerV2GaugesMetaBalanceAdapter is MetaBalanceAdapter {
     /// @dev Returns `["Staking Gauge", <gauge symbol>]`; the leaf is "" if the gauge's `symbol()` reverts.
     function _legLabels(bytes memory positionId) private view returns (string[] memory) {
         address gauge = abi.decode(positionId, (address));
+        if (gauge.code.length == 0) return new string[](0);
         string memory leaf;
         try IERC20Metadata(gauge).symbol() returns (string memory s) {
             leaf = s;

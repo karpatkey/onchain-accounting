@@ -180,6 +180,8 @@ contract ERC20DefaultBalanceAdapter is IBalanceAdapter, IPositionDescribable {
             address addr = abi.decode(positionId, (address));
             if (addr == NATIVE_ADDRESS) {
                 leaf = "native";
+            } else if (addr.code.length == 0) {
+                return new string[](0);
             } else {
                 try IERC20Metadata(addr).symbol() returns (string memory sym) {
                     leaf = sym;

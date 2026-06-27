@@ -115,6 +115,7 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceAdapter {
     function _legLabels(bytes memory positionId) private view returns (string[] memory) {
         if (positionId.length < 32) return new string[](0);
         address vault = abi.decode(positionId, (address));
+        if (vault.code.length == 0) return new string[](0);
         string memory leaf = "";
         try IERC20Metadata(vault).name() returns (string memory n) {
             leaf = n;

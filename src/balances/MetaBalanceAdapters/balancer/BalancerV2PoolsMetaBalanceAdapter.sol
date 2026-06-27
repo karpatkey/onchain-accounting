@@ -95,6 +95,7 @@ contract BalancerV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     function _legLabels(bytes memory positionId) private view returns (string[] memory) {
         bytes32 poolId = abi.decode(positionId, (bytes32));
         address bpt = address(uint160(uint256(poolId) >> 96));
+        if (bpt.code.length == 0) return new string[](0);
         string memory leaf;
         try IERC20Metadata(bpt).name() returns (string memory n) {
             leaf = n;

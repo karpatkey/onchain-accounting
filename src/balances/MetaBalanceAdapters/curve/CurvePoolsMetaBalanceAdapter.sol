@@ -113,6 +113,7 @@ contract CurvePoolsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @notice Derives the "TOKEN0/TOKEN1/… LP" leaf from the pool coins ("" on failure).
     function _leaf(bytes memory pid) private view returns (string memory) {
         address pool = abi.decode(pid, (address));
+        if (pool.code.length == 0) return "";
         address[] memory coins = CurvePoolLib.getCoins(pool);
         if (coins.length == 0) return "";
         return string.concat(CurvePoolLib.coinSymbols(coins), " LP");

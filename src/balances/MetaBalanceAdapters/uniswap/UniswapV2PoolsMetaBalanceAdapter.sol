@@ -114,6 +114,7 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     function _legLabels(bytes memory positionId) private view returns (string[] memory) {
         if (positionId.length < 32) return new string[](0);
         address pair = abi.decode(positionId, (address));
+        if (pair.code.length == 0) return new string[](0);
         (address token0, address token1,,) = UniswapV2PairLib.pairAmounts(pair, address(0));
         string memory leaf = string.concat(_symbol(token0), "/", _symbol(token1), " LP");
         return _labels("Liquidity Pool", leaf);
@@ -121,6 +122,7 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
 
     /// @notice Reads an ERC20 symbol, falling back to "?" for non-standard tokens (e.g. bytes32 symbols).
     function _symbol(address token) private view returns (string memory) {
+        if (token.code.length == 0) return "";
         try IERC20Metadata(token).symbol() returns (string memory s) {
             return bytes(s).length == 0 ? "?" : s;
         } catch {

@@ -70,6 +70,7 @@ contract FluidFTokensMetaBalanceAdapter is MetaBalanceAdapter {
     function _legLabels(bytes memory positionId) private view returns (string[] memory) {
         if (positionId.length < 32) return new string[](0);
         address fToken = abi.decode(positionId, (address));
+        if (fToken.code.length == 0) return new string[](0);
         string memory leaf = "";
         try IERC20Metadata(fToken).symbol() returns (string memory sym) {
             leaf = string.concat(sym, " supply");

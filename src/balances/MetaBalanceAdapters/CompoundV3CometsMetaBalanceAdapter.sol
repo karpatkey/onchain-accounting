@@ -104,6 +104,7 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceAdapter {
     function _legLabels(bytes memory positionId) private view returns (string[] memory) {
         if (positionId.length < 32) return new string[](0);
         address comet = abi.decode(positionId, (address));
+        if (comet.code.length == 0) return new string[](0);
         string memory leaf = "";
         try IERC20Metadata(comet).name() returns (string memory n) {
             leaf = n;

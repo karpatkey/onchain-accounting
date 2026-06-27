@@ -72,6 +72,7 @@ contract GearboxMarketsMetaBalanceAdapter is MetaBalanceAdapter {
     function _legLabels(bytes memory positionId) private view returns (string[] memory) {
         if (positionId.length < 32) return new string[](0);
         address market = abi.decode(positionId, (address));
+        if (market.code.length == 0) return new string[](0);
         string memory leaf = "";
         try IERC20Metadata(market).name() returns (string memory n) {
             leaf = n;

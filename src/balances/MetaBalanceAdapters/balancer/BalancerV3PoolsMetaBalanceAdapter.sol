@@ -84,6 +84,7 @@ contract BalancerV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @dev Returns `["Liquidity Pool", <pool name>]`; the leaf is "" if the pool's `name()` reverts.
     function _legLabels(bytes memory positionId) private view returns (string[] memory) {
         address pool = abi.decode(positionId, (address));
+        if (pool.code.length == 0) return new string[](0);
         string memory leaf;
         try IERC20Metadata(pool).name() returns (string memory n) {
             leaf = n;

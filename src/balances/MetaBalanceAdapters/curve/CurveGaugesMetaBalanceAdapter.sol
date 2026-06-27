@@ -215,6 +215,7 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
     /// @notice Derives the "TOKEN0/TOKEN1/… gauge" leaf from the gauge's pool coins ("" on failure).
     function _leaf(bytes memory pid) private view returns (string memory) {
         address gauge = abi.decode(pid, (address));
+        if (gauge.code.length == 0) return "";
         address lpToken = CurvePoolLib.gaugeLpToken(gauge);
         if (lpToken == address(0)) return "";
         address pool = CurvePoolLib.getPool(lpToken);

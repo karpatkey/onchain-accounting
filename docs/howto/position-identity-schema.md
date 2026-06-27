@@ -17,6 +17,7 @@ struct PositionBalance {
     bytes32      protocolId;     // keccak256("protocol-slug")
     bytes        positionId;     // abi.encode(...) — stable on-chain key
     PositionKind positionKind;   // Wallet | Supplied | Borrowed | Collateral | Staking | Rewards | Fees
+    bool         isLocked;       // true = not withdrawable now (pending/cooling); part of the key
 }
 ```
 
@@ -53,17 +54,27 @@ decode `positionId` without runtime sniffing. Constants in `src/utils/ProtocolId
 
 **`positionId`** — `bytes`
 
-`abi.encode(...)` of the stable on-chain key for this position. Account-global
-positions (withdrawal/exit queues, the Ethena cooldown) encode their immutable
-anchor contract — `abi.encode(address <queue/manager>)` — since there is one
-aggregated leg per account. The schema is uniquely determined by `protocolId`;
+`abi.encode(...)` of the **static, timeless** on-chain key for this position. Withdrawal /
+exit queues and the Ethena cooldown encode their immutable anchor (queue / manager / vault /
+sUSDe / asset) — never a per-request id. The schema is uniquely determined by `protocolId`;
 full table below.
 
 **`positionKind`** — `PositionKind`
 
-Semantic category of the leg. Together with `protocolId`, `positionId`, and
-`balanceAsset.asset` it forms the per-chain reconciliation key:
-`keccak256(abi.encode(chainId, protocolId, positionId, balanceAsset.asset, positionKind))`.
+Semantic category of the leg. Together with `protocolId`, `positionId`,
+`balanceAsset.asset`, and `isLocked` it forms the per-chain reconciliation key:
+`keccak256(abi.encode(chainId, protocolId, positionId, balanceAsset.asset, positionKind, isLocked))`.
+
+**`isLocked`** — `bool`
+
+`true` when the leg is **not withdrawable right now** — the pending portion of a withdrawal
+queue, or a staked amount in / awaiting its unstaking cooldown. `false` when the leg is fully
+liquid / claimable now. The withdrawal-queue / cooldown adapters split an account's holding
+into up to two legs that **share the same static `positionId`** — a claimable leg
+(`isLocked=false`) and a locked / pending leg (`isLocked=true`) — so `isLocked` is **part of
+the reconciliation key** (it is what distinguishes the two legs). `false` for every other
+adapter. "Partial = locked": any not-yet-withdrawable amount lands on the locked leg. See
+[ADR 0016](../decisions/0016-islocked-position-status.md).
 
 ### The enriched sibling: `Position`
 
@@ -77,7 +88,7 @@ struct Position {
     int256  price;           // price used: quoteAsset per balanceAsset unit
     uint8   priceDecimals;   // decimal precision of price
     bool    stale;           // true if the price feed was stale at query time
-    // + the identity fields: protocolId, positionId, positionKind
+    // + the identity fields: protocolId, positionId, positionKind, isLocked
 }
 ```
 
@@ -211,31 +222,34 @@ PositionBalance({
 #### `KelpWithdrawalQueue` — rsETH exit queue
 
 ```solidity
-// Sums all open requests per asset; positionId = abi.encode(WithdrawalManager) — account-global
-// anchor, shared across the per-asset legs (told apart by balanceAsset), not per-request.
+// Per payout asset: static positionId = abi.encode(asset). Up to two legs per asset
+// (claimable + locked) that SHARE this positionId and are told apart by isLocked.
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xae7a…2Ca0, symbol: "stETH", decimals: 18 }),
     balanceAdapter: 0x<KelpWithdrawalQueueAdapter>,
-    amount:        2e18,                   // 2 stETH owed across open requests
+    amount:        2e18,                   // 2 stETH still pending (locked leg)
     isDebt:        false,
     protocolId:    keccak256("kelp-withdrawal"),
-    positionId:    abi.encode(0x<KelpWithdrawalManager>),  // Kelp LRTWithdrawalManager (account-global anchor)
-    positionKind:  PositionKind.Supplied
+    positionId:    abi.encode(0xae7a…2Ca0),  // the payout asset (static, per-asset)
+    positionKind:  PositionKind.Supplied,
+    isLocked:      true                    // pending; a claimable (isLocked=false) leg would share this positionId
 })
 ```
 
 #### `LidoWithdrawalQueue` — stETH → ETH queue
 
 ```solidity
-// Sums amountOfStETH across all unclaimed request IDs; denominated in ETH (not stETH).
+// Static positionId = abi.encode(withdrawalQueue). Up to two legs (claimable + locked)
+// that share this positionId; denominated in ETH (not stETH).
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xEeee…EeeE, symbol: "ETH", decimals: 18 }),
     balanceAdapter: 0x<LidoWithdrawalQueueAdapter>,
-    amount:        1e18,                   // 1 ETH owed on finalization
+    amount:        1e18,                   // 1 ETH finalized and claimable now
     isDebt:        false,
     protocolId:    keccak256("lido-withdrawal"),
-    positionId:    abi.encode(0x<LidoWithdrawalQueue>),  // Lido WithdrawalQueueERC721 (account-global anchor)
-    positionKind:  PositionKind.Supplied
+    positionId:    abi.encode(0x<LidoWithdrawalQueue>),  // Lido WithdrawalQueueERC721 (static anchor)
+    positionKind:  PositionKind.Supplied,
+    isLocked:      false                   // claimable; pending requests appear as a locked (true) leg sharing this positionId
 })
 ```
 
@@ -257,15 +271,17 @@ PositionBalance({
 #### `StaderWithdrawalQueue` — ETHx → ETH queue
 
 ```solidity
-// Sums all open request ETH values; denominated in WETH.
+// Static positionId = abi.encode(userWithdrawalManager). Up to two legs (claimable + locked)
+// that share this positionId; denominated in WETH.
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xC02a…6Cc2, symbol: "WETH", decimals: 18 }),
     balanceAdapter: 0x<StaderWithdrawalQueueAdapter>,
-    amount:        5e17,                   // 0.5 WETH owed
+    amount:        5e17,                   // 0.5 WETH still pending (locked leg)
     isDebt:        false,
     protocolId:    keccak256("stader-withdrawal"),
-    positionId:    abi.encode(0x<StaderUserWithdrawalManager>),  // Stader UserWithdrawalManager (account-global anchor)
-    positionKind:  PositionKind.Supplied
+    positionId:    abi.encode(0x<StaderUserWithdrawalManager>),  // Stader UserWithdrawalManager (static anchor)
+    positionKind:  PositionKind.Supplied,
+    isLocked:      true                    // not finalized; a claimable (false) leg would share this positionId
 })
 ```
 
@@ -626,21 +642,24 @@ Scenario: an ERC-4626 wrapper holding 1 000 GHO equivalent.
 |-------|--------|-------------|--------------|--------------|---------------|
 | GHO   | 1 000  | +1 000      | `Supplied`   | `"ERC4626"`  | `["Vault"]` |
 
-#### `KelpWithdrawalQueue` — pending unstake
+#### `KelpWithdrawalQueue` — pending + claimable unstake
 
-Scenario: 2 stETH pending claim in Kelp queue.
+Scenario: 3 stETH in the Kelp queue — 2 still pending, 1 claimable now. Two legs sharing one static
+positionId (`abi.encode(stETH)`), told apart by `isLocked`.
 
-| asset  | amount | value (USD) | positionKind | protocolName | labels |
-|--------|--------|-------------|--------------|--------------|---------------|
-| stETH  | 2.0    | +4 960      | `Supplied`   | `"Kelp DAO"` | `["rsETH Withdrawal Queue"]` |
+| asset  | amount | value (USD) | positionKind | isLocked | protocolName | labels |
+|--------|--------|-------------|--------------|----------|--------------|---------------|
+| stETH  | 1.0    | +2 480      | `Supplied`   | false    | `"Kelp DAO"` | `["rsETH Withdrawal Queue"]` |
+| stETH  | 2.0    | +4 960      | `Supplied`   | true     | `"Kelp DAO"` | `["rsETH Withdrawal Queue"]` |
 
-#### `LidoWithdrawalQueue` — pending unstake
+#### `LidoWithdrawalQueue` — claimable unstake
 
-Scenario: 1 ETH finalized and waiting to be claimed.
+Scenario: 1 ETH finalized and claimable now (no pending portion ⇒ only the `isLocked=false` leg).
+A pending portion would appear as a second leg with `isLocked=true` sharing the same positionId.
 
-| asset | amount | value (USD) | positionKind | protocolName | labels |
-|-------|--------|-------------|--------------|--------------|---------------|
-| ETH   | 1.0    | +2 500      | `Supplied`   | `"Lido"`     | `["stETH Withdrawal Queue"]` |
+| asset | amount | value (USD) | positionKind | isLocked | protocolName | labels |
+|-------|--------|-------------|--------------|----------|--------------|---------------|
+| ETH   | 1.0    | +2 500      | `Supplied`   | false    | `"Lido"`     | `["stETH Withdrawal Queue"]` |
 
 #### `MerklRewards` — unclaimed rewards
 
@@ -652,11 +671,12 @@ Scenario: 250 CRV unclaimed in Merkl distributor.
 
 #### `StaderWithdrawalQueue` — pending unstake
 
-Scenario: 0.5 WETH pending from ETHx unstake.
+Scenario: 0.5 WETH pending (not finalized) from ETHx unstake ⇒ only the `isLocked=true` leg.
+A finalized portion would appear as a second leg with `isLocked=false` sharing the same positionId.
 
-| asset | amount | value (USD) | positionKind | protocolName | labels |
-|-------|--------|-------------|--------------|--------------|---------------|
-| WETH  | 0.5    | +1 250      | `Supplied`   | `"Stader"`   | `["ETHx Withdrawal Queue"]` |
+| asset | amount | value (USD) | positionKind | isLocked | protocolName | labels |
+|-------|--------|-------------|--------------|----------|--------------|---------------|
+| WETH  | 0.5    | +1 250      | `Supplied`   | true     | `"Stader"`   | `["ETHx Withdrawal Queue"]` |
 
 ---
 
@@ -947,18 +967,23 @@ rather than overloading an existing one.
 | `erc4626` | `(address vault)` |
 | `merkl` | `(address distributor)` — reward token in balanceAsset |
 | `nexus-mutual-staking` | `(uint256 tokenId, uint256 poolId)` |
-| `stader-withdrawal` | `(uint256 requestId)` — one leg per request; `isLocked` per request |
-| `kelp-withdrawal` | `(address asset, uint256 userNonce)` — one leg per request; `isLocked` per request |
-| `lido-withdrawal` | `(uint256 requestId)` — one leg per NFT request; `isLocked` per request |
-| `etherfi-withdrawal` | `(uint256 tokenId)` — one leg per NFT; `isLocked` per request |
-| `stakewise-exit` | `(address vault, uint256 positionTicket, uint256 timestamp)` — one leg per ticket; `isLocked` per ticket |
-| `ethena-cooldown` | `(address sUSDe)` — single cooldown leg; `isLocked` while still cooling |
+| `stader-withdrawal` | `(address userWithdrawalManager)` — static; up to two legs (claimable + locked) sharing it, told apart by `isLocked` |
+| `kelp-withdrawal` | `(address asset)` — static, per payout asset; up to two legs (claimable + locked) per asset, told apart by `isLocked` |
+| `lido-withdrawal` | `(address withdrawalQueue)` — static; up to two legs (claimable + locked) sharing it, told apart by `isLocked` |
+| `etherfi-withdrawal` | `(address withdrawRequestNFT)` — static; up to two legs (claimable + locked) sharing it, told apart by `isLocked` |
+| `stakewise-exit` | `(address vault)` — static, per vault; claimable (exited) + locked (queued) legs sharing it, told apart by `isLocked` |
+| `ethena-cooldown` | `(address sUSDe)` — static; single cooldown leg, `isLocked` while still cooling |
 | `bridge-escrow` | `(address escrow, address token)` |
 
-**Account-global positionId** means there is only ever one such position per account for that
-protocol (e.g. the Lido withdrawal queue), so the positionId encodes the queue/manager's immutable
-anchor address rather than a per-request id. Note: `wallet` positions are NOT account-global — each
-uses `abi.encode(asset)` to identify the specific token.
+**Static positionId, claimable/locked split.** Withdrawal / exit queues and the Ethena
+cooldown use a static, timeless positionId — the immutable anchor (queue / manager / vault /
+sUSDe / asset), never a per-request id. They split an account's holding into up to two legs
+(a claimable leg `isLocked=false` and a pending/locked leg `isLocked=true`) that **share** that
+positionId and are distinguished by `isLocked` (which is part of the key). The Aave SM / Umbrella
+unstaking-cooldown leg is the one case using a distinct static positionId (`(stakeToken, uint8 1)`)
+for its second leg. Per-request ids (NFT / ticket / nonce) are not in any positionId — per-request
+detail lives in the app. Note: `wallet` positions are NOT account-global — each uses
+`abi.encode(asset)` to identify the specific token.
 
 ---
 
@@ -991,7 +1016,8 @@ bytes32 key = keccak256(abi.encode(
     protocolId,
     positionId,
     balanceAsset.asset,
-    positionKind
+    positionKind,
+    isLocked
 ));
 ```
 
@@ -1002,10 +1028,14 @@ import { keccak256, AbiCoder } from "ethers";
 
 const abi = AbiCoder.defaultAbiCoder();
 const key = keccak256(abi.encode(
-    ["uint256", "bytes32", "bytes", "address", "uint8"],
-    [chainId, position.protocolId, position.positionId, position.balanceAsset.asset, position.positionKind]
+    ["uint256", "bytes32", "bytes", "address", "uint8", "bool"],
+    [chainId, position.protocolId, position.positionId, position.balanceAsset.asset, position.positionKind, position.isLocked]
 ));
 ```
+
+`isLocked` is part of the key: withdrawal-queue / cooldown adapters split a holding into a
+claimable leg (`isLocked=false`) and a locked leg (`isLocked=true`) that share the same static
+`positionId`, so `isLocked` is what keeps them distinct.
 
 **Excluded from the key by design:**
 - `balanceAdapter` — provenance only; redeploying an adapter doesn't change the position
@@ -1049,9 +1079,9 @@ decodes use `AbiCoder.defaultAbiCoder()` from ethers.js. Protocol ID constants c
 | `ERC4626Wrap` | `erc4626` | `Supplied` |
 | `MerklRewards` | `merkl` | `Rewards` |
 | `NexusMutualStakingPoolsBalanceAdapter` | `nexus-mutual-staking` | `Staking`, `Rewards` |
-| `LidoWithdrawalQueue` | `lido-withdrawal` | `Supplied` |
-| `StaderWithdrawalQueue` | `stader-withdrawal` | `Supplied` |
-| `KelpWithdrawalQueue` | `kelp-withdrawal` | `Supplied` |
+| `LidoWithdrawalQueue` | `lido-withdrawal` | `Supplied` (claimable + locked legs via `isLocked`) |
+| `StaderWithdrawalQueue` | `stader-withdrawal` | `Supplied` (claimable + locked legs via `isLocked`) |
+| `KelpWithdrawalQueue` | `kelp-withdrawal` | `Supplied` (claimable + locked legs via `isLocked`, per asset) |
 
 ---
 
@@ -1312,9 +1342,11 @@ const [tokenId, poolId] = abi.decode(["uint256", "uint256"], pos.positionId);
 
 ```typescript
 const [anchor] = abi.decode(["address"], pos.positionId);
-// positionId = abi.encode(<anchor>) — account-global; one position per account per queue.
-//   anchor = withdrawalQueue (Lido) / userWithdrawalManager (Stader) / withdrawalManager (Kelp)
-// Supplied → summed ETH owed across all open (unclaimed) request IDs
+// positionId = abi.encode(<anchor>) — STATIC; the same value for all of an account's legs in this queue.
+//   anchor = withdrawalQueue (Lido) / userWithdrawalManager (Stader) / asset (Kelp, one per payout asset)
+// Supplied → up to two legs sharing this positionId: a claimable leg (pos.isLocked === false) and a
+//   pending/locked leg (pos.isLocked === true). Sum both for the total owed; read pos.isLocked to
+//   route Claim vs wait. Per-request detail (which NFTs/nonces) is read from the queue contract by the app.
 // balanceAsset is the underlying paid on claim: native ETH sentinel for Lido,
 //   WETH for Stader, and the LST asset (e.g. stETH) for Kelp — all set per-deploy via UNDERLYING_TOKEN
 ```
@@ -1383,11 +1415,11 @@ example — for every balance adapter on `main`.
 | `CapBalanceAdapter` (cUSD) | `cap` | `"Cap"` | `["Stablecoin","cUSD"]` (const) | `abi.encode(address CUSD)` | Supplied | `["Cap","Stablecoin","cUSD"]` |
 | `CapBalanceAdapter` (stcUSD) | `cap` | `"Cap"` | `["Savings","stcUSD"]` (const) | `abi.encode(address STCUSD)` | Staking | `["Cap","Savings","stcUSD"]` |
 | `ERC4626WrapBalanceAdapter` | `erc4626` | `"ERC4626"` | `["Vault"]` (const) | `abi.encode(address wrapper)` | Supplied | `["ERC4626","Vault"]` |
-| `EthenaCooldownBalanceAdapter` | `ethena-cooldown` | `"Ethena"` | `["Unstaking Cooldown"]` (const) | `abi.encode(address sUSDe)` | Supplied | `["Ethena","Unstaking Cooldown"]` |
+| `EthenaCooldownBalanceAdapter` | `ethena-cooldown` | `"Ethena"` | `["Unstaking Cooldown"]` (const) | `abi.encode(address sUSDe)` | Supplied (`isLocked` while cooling) | `["Ethena","Unstaking Cooldown"]` |
 | `SparkLendBalanceAdapter` | `spark-lend` | `"Spark"` | `["Market","SparkLend"]` (const) | `abi.encode(address POOL)` | Collateral/Supplied / Borrowed | `["Spark","Market","SparkLend"]` |
-| `LidoWithdrawalQueueBalanceAdapter` | `lido-withdrawal` | `"Lido"` | `["stETH Withdrawal Queue"]` (const) | `abi.encode(address withdrawalQueue)` | Supplied | `["Lido","stETH Withdrawal Queue"]` |
-| `StaderWithdrawalQueueBalanceAdapter` | `stader-withdrawal` | `"Stader"` | `["ETHx Withdrawal Queue"]` (const) | `abi.encode(address userWithdrawalManager)` | Supplied | `["Stader","ETHx Withdrawal Queue"]` |
-| `KelpWithdrawalQueueBalanceAdapter` | `kelp-withdrawal` | `"Kelp DAO"` | `["rsETH Withdrawal Queue"]` (const) | `abi.encode(address withdrawalManager)` | Supplied | `["Kelp DAO","rsETH Withdrawal Queue"]` |
+| `LidoWithdrawalQueueBalanceAdapter` | `lido-withdrawal` | `"Lido"` | `["stETH Withdrawal Queue"]` (const) | `abi.encode(address withdrawalQueue)` | Supplied ×2 (claimable + locked, shared positionId) | `["Lido","stETH Withdrawal Queue"]` |
+| `StaderWithdrawalQueueBalanceAdapter` | `stader-withdrawal` | `"Stader"` | `["ETHx Withdrawal Queue"]` (const) | `abi.encode(address userWithdrawalManager)` | Supplied ×2 (claimable + locked, shared positionId) | `["Stader","ETHx Withdrawal Queue"]` |
+| `KelpWithdrawalQueueBalanceAdapter` | `kelp-withdrawal` | `"Kelp DAO"` | `["rsETH Withdrawal Queue"]` (const) | `abi.encode(address asset)` (per payout asset) | Supplied ×2 per asset (claimable + locked, shared positionId) | `["Kelp DAO","rsETH Withdrawal Queue"]` |
 
 #### Meta-adapters (`src/balances/MetaBalanceAdapters/`)
 
@@ -1420,8 +1452,8 @@ address widened → `abi.encode(address instance)`); overrides are flagged.
 | Adapter | `protocolId` | `protocolName()` | `positionLabels` → (source) | `positionId` schema | `PositionKind` legs | Example breadcrumb |
 |---|---|---|---|---|---|---|
 | `MerklRewardsBalanceAdapter` | `merkl` | `"Merkl"` (const) | `["Claimable Rewards"]` (const) | `abi.encode(address DISTRIBUTOR)` | Rewards | `["Merkl","Claimable Rewards"]` |
-| `EtherFiWithdrawalQueueBalanceAdapter` | `etherfi-withdrawal` | `"ether.fi"` (const) | `["eETH Withdrawal Queue"]` (const) | `abi.encode(address withdrawRequestNFT)` | Supplied | `["ether.fi","eETH Withdrawal Queue"]` |
-| `StakeWiseV3ExitQueueBalanceAdapter` | `stakewise-exit` | `"StakeWise V3"` (const) | `["Exit Queue"]` (const) | `abi.encode(address vaultsRegistry)` | Supplied | `["StakeWise V3","Exit Queue"]` |
+| `EtherFiWithdrawalQueueBalanceAdapter` | `etherfi-withdrawal` | `"ether.fi"` (const) | `["eETH Withdrawal Queue"]` (const) | `abi.encode(address withdrawRequestNFT)` | Supplied ×2 (claimable + locked, shared positionId) | `["ether.fi","eETH Withdrawal Queue"]` |
+| `StakeWiseV3ExitQueueBalanceAdapter` | `stakewise-exit` | `"StakeWise V3"` (const) | `["Exit Queue"]` (const) | `abi.encode(address vault)` (per vault) | Supplied ×2 per vault (claimable/exited + locked/queued, shared positionId) | `["StakeWise V3","Exit Queue"]` |
 | `NexusMutualStakingPoolsBalanceAdapter` | `nexus-mutual-staking` | `"Nexus Mutual"` (const) | `["Staking"]` (const) | `abi.encode(uint256 tokenId, uint256 poolId)` | Staking / Rewards | `["Nexus Mutual","Staking"]` |
 | `UniswapV3PoolsMetaBalanceAdapter` | `uniswap-v3` | `"Uniswap V3"` (gov) | `["Liquidity Pool", "NFT #<tokenId>"]` (derived) | `abi.encode(address npm, uint256 tokenId)` | Supplied / Fees | `["Uniswap V3","Liquidity Pool","NFT #12345"]` |
 | `PancakeSwapV3PoolsMetaBalanceAdapter` | `pancakeswap-v3` | `"PancakeSwap V3"` (gov) | `["Liquidity Pool", "NFT #<tokenId>"]` (derived, inherited) | `abi.encode(address npm, uint256 tokenId)` | Supplied / Fees | `["PancakeSwap V3","Liquidity Pool","NFT #12345"]` |
@@ -1453,26 +1485,29 @@ what each argument refers to:
 | `address npm, uint256 tokenId` | **`npm` = the `NonfungiblePositionManager`** (Uniswap V3 mainnet `0xC364…FE88`, or the PancakeSwap V3 NPM) — the ERC721 contract that mints LP-position NFTs. **`tokenId`** = the specific LP NFT. Keyed per NFT (not per pool) since one pool can hold many NFTs; the four legs (token0/token1 × liquidity/fees) share it. |
 | `uint256 tokenId, uint256 poolId` (Nexus) | **`tokenId`** = the Nexus Mutual `StakingNFT` id (one staking position); **`poolId`** = the Nexus staking pool that NFT belongs to. Staking and reward legs (both NXM) share it. |
 | `address DISTRIBUTOR` (Merkl) | The Merkl `Distributor` (Angle Labs) — the claim target / trust anchor. All reward tokens claimed from it share this id and are told apart by `balanceAsset`. |
-| `address withdrawalQueue` (Lido) | Lido's `WithdrawalQueueERC721` — the contract that escrows stETH withdrawal requests and pays out ETH on claim. |
-| `address userWithdrawalManager` (Stader) | Stader's `UserWithdrawalManager` — escrows ETHx unstake requests, pays ETH (valued to WETH) on claim. |
-| `address withdrawalManager` (Kelp) | Kelp DAO's `LRTWithdrawalManager` — escrows rsETH exit requests across payout assets. |
-| `address withdrawRequestNFT` (ether.fi) | ether.fi's `WithdrawRequestNFT` — the ERC721 that represents eETH withdrawal requests and is the claim target. |
-| `address vaultsRegistry` (StakeWise) | StakeWise V3's `VaultsRegistry` — the immutable anchor gating which vaults the exit-queue cache accepts. |
-| `address sUSDe` (Ethena) | Ethena's `StakedUSDeV2` (sUSDe) — the staking contract that holds the unstaking cooldown and is the claim target; the owed USDe is in `balanceAsset`. |
+| `address withdrawalQueue` (Lido) | Lido's `WithdrawalQueueERC721` — the contract that escrows stETH withdrawal requests and pays out ETH on claim. Static; claimable + locked legs share it. |
+| `address userWithdrawalManager` (Stader) | Stader's `UserWithdrawalManager` — escrows ETHx unstake requests, pays ETH (valued to WETH) on claim. Static; claimable + locked legs share it. |
+| `address asset` (Kelp) | The Kelp payout asset (e.g. stETH) — Kelp DAO's `LRTWithdrawalManager` escrows rsETH exit requests across payout assets; positionId is keyed per payout asset. Static; claimable + locked legs of that asset share it. |
+| `address withdrawRequestNFT` (ether.fi) | ether.fi's `WithdrawRequestNFT` — the ERC721 that represents eETH withdrawal requests and is the claim target. Static; claimable + locked legs share it. |
+| `address vault` (StakeWise) | The StakeWise V3 vault the exit position belongs to; positionId is keyed per vault. Static; claimable (exited) + locked (queued) legs of that vault share it. (The adapter's `VaultsRegistry` gates which vaults the cache accepts, but is not the positionId.) |
+| `address sUSDe` (Ethena) | Ethena's `StakedUSDeV2` (sUSDe) — the staking contract that holds the unstaking cooldown and is the claim target; the owed USDe is in `balanceAsset`. Static; single leg, `isLocked` while cooling. |
 
-For the six account-global adapters (Lido, Stader, Kelp, ether.fi, StakeWise V3 exit, Ethena cooldown)
-the encoded contract is the adapter's single immutable anchor — there is one aggregated leg per account,
-so the anchor (not a per-request id) is the coordinate.
+For the withdrawal / exit queue and cooldown adapters (Lido, Stader, Kelp, ether.fi, StakeWise V3
+exit, Ethena) the encoded value is a **static, timeless** coordinate (the queue/manager/vault/sUSDe,
+or the payout asset for Kelp) — never a per-request id. Each splits an account's holding into up to
+two legs (claimable `isLocked=false` + locked `isLocked=true`) that share that positionId.
 
 **Multi-leg rule.** Where an adapter emits several legs (lending supply/borrow/collateral; gauge
 stake/rewards; Uniswap V3 liquidity/fees; StakeWise vault/osToken-debt), all legs **share one
 `positionId` and one label set** — they are distinguished by `positionKind` and, for per-token legs, by
 `balanceAsset.asset` (the underlying token), never by extra label elements.
 
-**Account-global adapters.** The withdrawal/exit queues (Lido, Stader, Kelp, ether.fi, StakeWise V3)
-and the Ethena cooldown report one aggregated leg per account, so their `positionId` encodes the
-adapter's immutable anchor contract (the queue/manager/registry, or sUSDe) rather than a per-request
-id; the owed asset lives in `balanceAsset.asset`. No adapter emits an empty `positionId`.
+**Withdrawal-queue / cooldown adapters.** The withdrawal/exit queues (Lido, Stader, Kelp, ether.fi,
+StakeWise V3) and the Ethena cooldown use a **static, timeless** `positionId` — the immutable anchor
+(queue/manager/vault, or the payout asset for Kelp, or sUSDe) — never a per-request id. They split an
+account's holding into up to two legs that share that positionId: a claimable leg (`isLocked=false`)
+and a pending/locked leg (`isLocked=true`), distinguished by `isLocked` (part of the key). The owed
+asset lives in `balanceAsset.asset`. No adapter emits an empty `positionId`.
 
 ---
 

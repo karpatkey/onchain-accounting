@@ -2,26 +2,41 @@
 
 ## 1. Adapter under test
 
-`src/balances/BalanceAdapters/KelpWithdrawalQueueBalanceAdapter.sol` — the immutable `KelpWithdrawalQueueBalanceAdapter`. Constructor: `(withdrawalManager, navCalculator)` where `withdrawalManager = Kelp LRTWithdrawalManager` (`0x62De59c08eB5dAE4b7E6F7a8cAd3006d6965ec16`). Identity is derived on-chain: `positionId = ""` (account-global), `protocolId = keccak256("kelp-withdrawal")`, `positionKind = Supplied`.
+`src/balances/BalanceAdapters/KelpWithdrawalQueueBalanceAdapter.sol` — the immutable `KelpWithdrawalQueueBalanceAdapter`. Constructor: `(withdrawalManager, navCalculator)` where `withdrawalManager = Kelp LRTWithdrawalManager` (`0x62De59c08eB5dAE4b7E6F7a8cAd3006d6965ec16`). Identity is derived on-chain: `positionId = abi.encode(address asset)` (static, per payout asset; up to two legs — claimable + locked — sharing it, told apart by `isLocked`), `protocolId = keccak256("kelp-withdrawal")`, `positionKind = Supplied`.
 
 ### Inheritance + per-chain scope (Phase 0)
 
 - **Inheritance:** none — implements `IBalanceAdapter` + `IPositionDescribable` directly. No base contract, no overrides.
 - **Per-chain scope:** Kelp's `LRTWithdrawalManager` is **mainnet-only**. So mainnet (chainId 1) is the only chain that enables `KelpWithdrawalQueue` — see `script/config/nav-config/balance-adapters/1.json` and `script/config/contracts-deployment-config/balance-adapters/1.json`. A single mainnet fork test suffices.
-- **Multi-asset (the distinguishing feature):** when a user unstakes rsETH, the rsETH is burned and a per-`(asset, user)` request is recorded denominated in the LST the user chose to receive. Kelp's payout assets are **discovered at runtime** from `lrtConfig().getSupportedAssetList()` — at the fork block: **stETH** (`0xae7a…`), **ETHx** (`0xA35b…`), **native ETH** (`0xEeee…`, ERC-7528 sentinel). The adapter emits **one `Supplied` leg per asset** with non-zero owed that is also registered in NAV.
+- **Multi-asset (the distinguishing feature):** when a user unstakes rsETH, the rsETH is burned and a per-`(asset, user)` request is recorded denominated in the LST the user chose to receive. Kelp's payout assets are **discovered at runtime** from `lrtConfig().getSupportedAssetList()` — at the fork block: **stETH** (`0xae7a…`), **ETHx** (`0xA35b…`), **native ETH** (`0xEeee…`, ERC-7528 sentinel). The adapter emits up to **two `Supplied` legs per asset** — a claimable (`isLocked=false`) and a locked (`isLocked=true`) leg sharing the static `positionId = abi.encode(address asset)` — for each asset with non-zero owed that is also registered in NAV (ADR 0016).
 - **Registration gating (asymmetric, same as sGHO / Aave Umbrella / Lido / Stader):** `getAdapterPositions` drops any asset not registered on NAVCalculator (registered-asset intersection). On the dev NAV, stETH and native ETH are registered; **ETHx is not** (it uses a custom feed the dev `deploy.sh` skips), so an ETHx request is dropped from positions — but `getAdapterBalanceForAsset` / `getAdapterBalances` still return its raw owed value (they don't consult the registry).
 
-### Math (`_owedForAsset`) — no value branches
+### Math — claimable/locked split per asset (ADR 0016)
 
-Per asset, the owed value is a straight sum, so there is **no value-branch split** like Lido/Stader:
+The no-arg balance getters (`_owedForAsset`) still return a straight sum of `expectedAssetAmount`
+across an asset's open requests. `getAdapterPositions` splits that sum into a claimable and a locked
+leg per asset, both under the static `positionId = abi.encode(asset)`, using the two-gate
+claimability predicate (matching `LRTWithdrawalManager.completeWithdrawal`):
 
 ```
 (begin, end) = WITHDRAWAL_MANAGER.userAssociatedNonces(asset, account)   # OZ DoubleEndedQueue cursors
-count = min(end - begin, MAX_REQUESTS_PROBED)                            # claimed requests are popped off the front
+count  = min(end - begin, MAX_REQUESTS_PROBED)                           # claimed requests are popped off the front
+cursor = WITHDRAWAL_MANAGER.nextLockedNonce(asset)
+delay  = WITHDRAWAL_MANAGER.withdrawalDelayBlocks()
 for i in 0 .. count-1:
-    total += getUserWithdrawalRequest(asset, account, i).expectedAssetAmount
-emit one Supplied leg (asset, total) per supported+registered asset with total > 0
+    (_, owed, startBlock, userNonce) = getUserWithdrawalRequest(asset, account, i)
+    unlocked = (userNonce < cursor) && (block.number >= startBlock + delay)   # BOTH gates
+    if unlocked: claimable += owed       # claimable (isLocked=false) leg
+    else:        locked    += owed       # pending  (isLocked=true)  leg
+pid = abi.encode(asset)
+if claimable > 0: emit PositionBalance(asset, claimable, Supplied, positionId=pid, isLocked=false)
+if locked    > 0: emit PositionBalance(asset, locked,    Supplied, positionId=pid, isLocked=true)
+# per supported+registered asset
 ```
+
+The previous app hook treated a request as claimable on the nonce cursor alone, omitting the
+block-delay gate — a false-positive class matching a Sherlock-audited finding; the two-gate
+predicate above corrects it (ADR 0016).
 
 `userAssociatedNonces` is the public getter of an OZ `DoubleEndedQueue.Uint256Deque`; the open-request count is `end - begin`, and `getUserWithdrawalRequest(.., i)` resolves to the deque's `.at(i)` — claimed requests are popped off the front, so this only ever counts live claims (no out-of-bounds probing, unlike Stader). The cap bounds gas.
 
@@ -102,7 +117,7 @@ Live reads of Kelp's own LRTWithdrawalManager (no closed-form re-derivation):
 | stETH | `userAssociatedNonces(stETH, holder) == (1, 3)`; `adapter == Σ getUserWithdrawalRequest(stETH, holder, i).expectedAssetAmount` for `i ∈ {0,1}`. |
 | native ETH | `adapter == getUserWithdrawalRequest(ETH, holder, 0).expectedAssetAmount`. |
 
-Multi-asset emission, summing, the claimed-front skip (deque pop), the 256 cap, and the registered-vs-unregistered drop are also exercised with mocks in `test/balances/BalanceAdapters/KelpWithdrawalQueueBalanceAdapter.t.sol`. The tests assert `protocolId == keccak256("kelp-withdrawal")`, `positionId == ""`, `PositionKind.Supplied`, and `balanceAdapter == address(this)`.
+Multi-asset emission, summing, the claimed-front skip (deque pop), the 256 cap, and the registered-vs-unregistered drop are also exercised with mocks in `test/balances/BalanceAdapters/KelpWithdrawalQueueBalanceAdapter.t.sol`. The tests assert `protocolId == keccak256("kelp-withdrawal")`, `positionId == abi.encode(asset)`, `PositionKind.Supplied`, the claimable/locked `isLocked` split, and `balanceAdapter == address(this)`.
 
 ## 9. Wiring the live dev-anvil dashboard
 
@@ -133,7 +148,7 @@ The position renders under **Kelp DAO** (the adapter's `protocolName()`) as **tw
 | Asset filter narrows to one leg | ✅ |
 | Claimed-front skip (deque pop); 256 cap; registered-vs-unregistered drop | ✅ (unit test, mocks) |
 | Position vanishes after claim | ✅ (original fork suite) |
-| Identity: `protocolId == kelp-withdrawal`, `positionId == ""`, `Supplied` | ✅ |
+| Identity: `protocolId == kelp-withdrawal`, `positionId == abi.encode(asset)`, `Supplied`, claimable/locked `isLocked` split | ✅ |
 | Mainnet-only scope | ✅ |
 
 **Mainnet: Kelp WQ fork suites pass (original incident + fresh multi-asset pin).** Single mainnet deployment → no cross-chain surface. Kelp rsETH withdrawal queue is verified.

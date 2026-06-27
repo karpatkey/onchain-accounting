@@ -1,7 +1,7 @@
 # Ethena sUSDe Cooldown — balance-adapter verification
 
 ## 1. Adapter under test
-`EthenaCooldownBalanceAdapter` (`src/balances/protocols/EthenaCooldownBalanceAdapter.sol`). Reports the USDe owed to an account that is in the sUSDe unstaking cooldown.
+`EthenaCooldownBalanceAdapter` (`src/balances/BalanceAdapters/EthenaCooldownBalanceAdapter.sol`). Reports the USDe owed to an account that is in the sUSDe unstaking cooldown.
 
 ### Inheritance + per-chain scope (Phase 0)
 - Implements `IBalanceAdapter` + `IPositionDescribable` directly (a simple, single-instance adapter — like the Stader/Lido/Kelp withdrawal-queue adapters). No base class, no overrides → the only verification surface is this contract's own logic.

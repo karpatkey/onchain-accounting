@@ -10,9 +10,9 @@
 
 ## 1. Adapter under test
 
-`src/balances/protocols/uniswap/UniswapV3Pool.sol` — **removed** in the meta reconciliation; the live implementation is now the immutable `UniswapV3PoolsMetaBalanceAdapter.sol` (`UniswapV3PoolsMetaBalanceAdapter`), which covers every pool from one contract. The per-pool adapter under test here was one instance per pool (immutable). Position discovery is dynamic (and carried over unchanged into the meta-adapter): it iterates the account's NFTs from the canonical `NonfungiblePositionManager` (NPM), filters those whose `(token0, token1, fee)` match the pool, and aggregates principal + fees per token. Bounded at 256 NFTs per query.
+`src/balances/MetaBalanceAdapters/uniswap/UniswapV3Pool.sol` — **removed** in the meta reconciliation; the live implementation is now the immutable `UniswapV3PoolsMetaBalanceAdapter.sol` (`UniswapV3PoolsMetaBalanceAdapter`), which covers every pool from one contract. The per-pool adapter under test here was one instance per pool (immutable). Position discovery is dynamic (and carried over unchanged into the meta-adapter): it iterates the account's NFTs from the canonical `NonfungiblePositionManager` (NPM), filters those whose `(token0, token1, fee)` match the pool, and aggregates principal + fees per token. Bounded at 256 NFTs per query.
 
-The math libraries (`TickMath`, `LiquidityAmounts`, `FixedPoint128`) live under `src/balances/protocols/uniswap/lib/` and carry `GPL-2.0-or-later`. Because the adapter imports and links those libs, the adapter file itself also carries `GPL-2.0-or-later` — there is no MIT file in this compilation unit — see [`docs/decisions/0008-uniswap-v3-math-libs-gpl-license.md`](../../../../docs/decisions/0008-uniswap-v3-math-libs-gpl-license.md).
+The math libraries (`TickMath`, `LiquidityAmounts`, `FixedPoint128`) live under `src/balances/MetaBalanceAdapters/uniswap/lib/` and carry `GPL-2.0-or-later`. Because the adapter imports and links those libs, the adapter file itself also carries `GPL-2.0-or-later` — there is no MIT file in this compilation unit — see [`docs/decisions/0008-uniswap-v3-math-libs-gpl-license.md`](../../../../docs/decisions/0008-uniswap-v3-math-libs-gpl-license.md).
 
 ### Inheritance + per-chain scope (Phase 0)
 
@@ -87,7 +87,7 @@ All subtractions are intentionally `unchecked` — `fgInside*X128` and `fgOutsid
 | Pool tick — USDC/WETH 0.05% | 199730 |
 | Pool tick — WETH/USDT 0.3% | -199732 |
 | Pool tick — WBTC/WETH 0.3% | 266166 |
-| Adapter under test | `src/balances/protocols/uniswap/UniswapV3Pool.sol` (one instance per pool) |
+| Adapter under test | `src/balances/MetaBalanceAdapters/uniswap/UniswapV3Pool.sol` (one instance per pool) |
 | New fork-test contract | `UniswapV3PoolBalanceOracleForkTest_MultiHolder_LP` in `test/balances/protocols/fork/UniswapV3Pool.fork.t.sol` |
 | Existing fork-test contract (kept) | `UniswapV3PoolBalanceOracleForkTest_WBTC_WETH` (block 24,987,608) |
 

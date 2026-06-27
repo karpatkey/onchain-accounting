@@ -1,7 +1,7 @@
 # Nexus Mutual staked NXM — balance-adapter verification
 
 ## 1. Adapter under test
-`NexusMutualStakingPoolsBalanceAdapter` (`src/balances/protocols/NexusMutualStakingPoolsBalanceAdapter.sol`). Reports an account's staked NXM across Nexus Mutual V2 staking pools as NXM-denominated `Staking` (active + expired stake) and `Rewards` legs — emitted **per StakingNFT position** (`positionId = abi.encode(tokenId, poolId)`).
+`NexusMutualStakingPoolsBalanceAdapter` (`src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsBalanceAdapter.sol`). Reports an account's staked NXM across Nexus Mutual V2 staking pools as NXM-denominated `Staking` (active + expired stake) and `Rewards` legs — emitted **per StakingNFT position** (`positionId = abi.encode(tokenId, poolId)`).
 
 ### Inheritance + per-chain scope (Phase 0)
 - Implements `IBalanceAdapter` + `IPositionDescribable` directly — a **simple immutable view adapter** (no `Ownable`, no agent, no cache). **Mainnet (1) only** (Nexus Mutual V2 is mainnet).

@@ -1,7 +1,7 @@
 # StakeWise V3 Exit Queue — balance-adapter verification
 
 ## 1. Adapter under test
-`StakeWiseExitQueueBalanceAdapter` (`src/balances/protocols/StakeWiseExitQueueBalanceAdapter.sol`). Reports the in-flight assets owed to an account in StakeWise V3's exit queue (`enterExitQueue(shares, receiver)` moves vault shares into the queue and returns a `positionTicket`; the queued value is claimable once validator exits complete).
+`StakeWiseExitQueueBalanceAdapter` (`src/balances/AssistedBalanceAdapters/StakeWiseExitQueueBalanceAdapter.sol`). Reports the in-flight assets owed to an account in StakeWise V3's exit queue (`enterExitQueue(shares, receiver)` moves vault shares into the queue and returns a `positionTicket`; the queued value is claimable once validator exits complete).
 
 ### Inheritance + per-chain scope (Phase 0)
 - Implements `IBalanceAdapter` + `IPositionDescribable` directly, **plus `Ownable`** — the 4th documented mutable-cache adapter (after Merkl + ether.fi), per **ADR 0014** (sibling of `EtherFiWithdrawalQueue`). The mutability is a per-account `(vault, positionTicket, timestamp)` cache only; identity + all addresses are immutable.

@@ -53,9 +53,11 @@ decode `positionId` without runtime sniffing. Constants in `src/utils/ProtocolId
 
 **`positionId`** — `bytes`
 
-`abi.encode(...)` of the stable on-chain key for this position. Empty (`""`) for
-account-global positions (withdrawal queues). The schema is uniquely determined by
-`protocolId`; full table below.
+`abi.encode(...)` of the stable on-chain key for this position. Account-global
+positions (withdrawal/exit queues, the Ethena cooldown) encode their immutable
+anchor contract — `abi.encode(address <queue/manager>)` — since there is one
+aggregated leg per account. The schema is uniquely determined by `protocolId`;
+full table below.
 
 **`positionKind`** — `PositionKind`
 
@@ -895,14 +897,18 @@ bytes32 protocolId = keccak256("aave-v3-lending");  // == ProtocolIds.AAVE_V3_LE
 | `erc4626` | `(address vault)` |
 | `merkl` | `(address distributor)` — reward token in balanceAsset |
 | `nexus-mutual-staking` | `(uint256 tokenId, uint256 poolId)` |
-| `stader-withdrawal` | `""` (account-global) |
-| `kelp-withdrawal` | `""` (account-global) |
-| `lido-withdrawal` | `""` (account-global) |
+| `stader-withdrawal` | `(address userWithdrawalManager)` — account-global anchor |
+| `kelp-withdrawal` | `(address withdrawalManager)` — account-global anchor |
+| `lido-withdrawal` | `(address withdrawalQueue)` — account-global anchor |
+| `etherfi-withdrawal` | `(address withdrawRequestNFT)` — account-global anchor |
+| `stakewise-exit` | `(address vaultsRegistry)` — account-global anchor |
+| `ethena-cooldown` | `(address sUSDe)` — account-global anchor |
 | `bridge-escrow` | `(address escrow, address token)` |
 
-**Empty positionId** means the position is account-global for that protocol — there is only ever
-one such position per account (e.g. the Lido withdrawal queue). Note: `wallet`
-positions are NOT account-global — each uses `abi.encode(asset)` to identify the specific token.
+**Account-global positionId** means there is only ever one such position per account for that
+protocol (e.g. the Lido withdrawal queue), so the positionId encodes the queue/manager's immutable
+anchor address rather than a per-request id. Note: `wallet` positions are NOT account-global — each
+uses `abi.encode(asset)` to identify the specific token.
 
 ---
 
@@ -1255,7 +1261,9 @@ const [tokenId, poolId] = abi.decode(["uint256", "uint256"], pos.positionId);
 #### Lido / Stader / Kelp withdrawal queues — `lido-withdrawal` / `stader-withdrawal` / `kelp-withdrawal`
 
 ```typescript
-// positionId = "" — account-global; one position per account per queue
+const [anchor] = abi.decode(["address"], pos.positionId);
+// positionId = abi.encode(<anchor>) — account-global; one position per account per queue.
+//   anchor = withdrawalQueue (Lido) / userWithdrawalManager (Stader) / withdrawalManager (Kelp)
 // Supplied → summed ETH owed across all open (unclaimed) request IDs
 // balanceAsset is the underlying paid on claim: native ETH sentinel for Lido,
 //   WETH for Stader, and the LST asset (e.g. stETH) for Kelp — all set per-deploy via UNDERLYING_TOKEN
@@ -1301,6 +1309,82 @@ Labels come from each adapter's `IPositionDescribable` implementation; the full 
 `[protocolName, ...labels]`. If an adapter doesn't implement it, `protocolName` is empty and
 `labels` is an empty array. **Never use these strings for identity, indexing, or reconciliation**
 — they are display-only and may change as labels evolve.
+
+### Complete per-adapter schema
+
+The single source of truth tying together everything above — `protocolId`, `protocolName()`, the
+`positionLabels` breadcrumb, the `positionId` ABI schema, the `PositionKind` legs, and a worked
+example — for every balance adapter on `main`.
+
+- **Full breadcrumb** = `[protocolName(), ...positionLabels(positionId)]`; the **leaf** is the last element.
+- **`protocolId`** column is the `keccak256` slug (constants in [`src/utils/ProtocolIds.sol`](../../src/utils/ProtocolIds.sol)).
+- **Leaf source:** `const` = hardcoded literal · `derived` = read live from chain · `gov` = constructor arg.
+  No leaf is governance-fed today; for meta-adapters only `protocolName()` (the breadcrumb root, marked ¹)
+  is a constructor arg, the category is a `const` literal, and the leaf is `derived` on-chain. Meta-adapters
+  use a `_labels(category, leaf)` helper that **drops an empty leaf**, so a failed read degrades to `[category]`.
+
+#### Plain adapters (`src/balances/BalanceAdapters/`)
+
+| Adapter | `protocolId` | `protocolName()` | `positionLabels` → (source) | `positionId` schema | `PositionKind` legs | Example breadcrumb |
+|---|---|---|---|---|---|---|
+| `ERC20DefaultBalanceAdapter` | `wallet` | `"Wallet"` | `[<symbol>]` (derived); `["native"]`; `[]` on revert | `abi.encode(address asset)` | Wallet | `["Wallet","USDC"]` |
+| `AaveUmbrellaBalanceAdapter` | `aave-v3-umbrella` | `"Aave Umbrella"` | `["Umbrella Module"]` (const) | `abi.encode(address stakeToken)` | Staking / Rewards | `["Aave Umbrella","Umbrella Module"]` |
+| `AaveV3SafetyModuleBalanceAdapter` | `aave-v3-safety-module` | `"Aave V3"` | `["Safety Module"]` (const) | `abi.encode(address stakeToken)` | Staking / Rewards | `["Aave V3","Safety Module"]` |
+| `CapBalanceAdapter` (cUSD) | `cap` | `"Cap"` | `["Stablecoin","cUSD"]` (const) | `abi.encode(address CUSD)` | Supplied | `["Cap","Stablecoin","cUSD"]` |
+| `CapBalanceAdapter` (stcUSD) | `cap` | `"Cap"` | `["Savings","stcUSD"]` (const) | `abi.encode(address STCUSD)` | Staking | `["Cap","Savings","stcUSD"]` |
+| `ERC4626WrapBalanceAdapter` | `erc4626` | `"ERC4626"` | `["Vault"]` (const) | `abi.encode(address wrapper)` | Supplied | `["ERC4626","Vault"]` |
+| `EthenaCooldownBalanceAdapter` | `ethena-cooldown` | `"Ethena"` | `["Unstaking Cooldown"]` (const) | `abi.encode(address sUSDe)` | Supplied | `["Ethena","Unstaking Cooldown"]` |
+| `SparkLendBalanceAdapter` | `spark-lend` | `"Spark"` | `["Market","SparkLend"]` (const) | `abi.encode(address POOL)` | Collateral/Supplied / Borrowed | `["Spark","Market","SparkLend"]` |
+| `LidoWithdrawalQueueBalanceAdapter` | `lido-withdrawal` | `"Lido"` | `["stETH Withdrawal Queue"]` (const) | `abi.encode(address withdrawalQueue)` | Supplied | `["Lido","stETH Withdrawal Queue"]` |
+| `StaderWithdrawalQueueBalanceAdapter` | `stader-withdrawal` | `"Stader"` | `["ETHx Withdrawal Queue"]` (const) | `abi.encode(address userWithdrawalManager)` | Supplied | `["Stader","ETHx Withdrawal Queue"]` |
+| `KelpWithdrawalQueueBalanceAdapter` | `kelp-withdrawal` | `"Kelp DAO"` | `["rsETH Withdrawal Queue"]` (const) | `abi.encode(address withdrawalManager)` | Supplied | `["Kelp DAO","rsETH Withdrawal Queue"]` |
+
+#### Meta-adapters (`src/balances/MetaBalanceAdapters/`)
+
+`protocolName()` is a constructor arg (¹). Default `positionId` = base `_instancePositionId` (instance
+address widened → `abi.encode(address instance)`); overrides are flagged.
+
+| Adapter | `protocolId` | `protocolName()`¹ | `positionLabels` → (source) | `positionId` schema | `PositionKind` legs | Example breadcrumb |
+|---|---|---|---|---|---|---|
+| `AaveV3InstancesMetaBalanceAdapter` | `aave-v3-lending` | `"Aave V3"` | `["Market Instance", <getMarketId()>]` (derived) | **override** `abi.encode(address pool)` | Collateral/Supplied / Borrowed | `["Aave V3","Market Instance","Aave Ethereum Market"]` |
+| `CompoundV3CometsMetaBalanceAdapter` | `compound-v3` | `"Compound V3"` | `["Market", <comet.name()>]` (derived) | `abi.encode(address comet)` | Supplied/Borrowed / Collateral / Rewards | `["Compound V3","Market","cUSDCv3"]` |
+| `ConvexRewardsMetaBalanceAdapter` | `convex` | `"Convex"` | `["Curve LP", "<coins> Convex"]` (derived) | `abi.encode(address rewarder)` | Staking / Rewards | `["Convex","Curve LP","DAI/USDC/USDT Convex"]` |
+| `EulerVaultsMetaBalanceAdapter` | `euler-vaults` | `"Euler"` | `["Vault", <vault.name()>]` (derived) | `abi.encode(address vault)` | Collateral/Supplied / Borrowed | `["Euler","Vault","eUSDC"]` |
+| `FluidFTokensMetaBalanceAdapter` | `fluid-ftokens` | `"Fluid"` | `["Lending", "<fToken.symbol()> supply"]` (derived) | `abi.encode(address fToken)` | Supplied | `["Fluid","Lending","fUSDC supply"]` |
+| `FluidVaultsMetaBalanceAdapter` | `fluid-vaults` | `"Fluid"` | `["Vault", <vault.name()>]` (derived) | `abi.encode(address vault)` | Collateral / Borrowed | `["Fluid","Vault","Fluid T1 USDC"]` |
+| `GearboxMarketsMetaBalanceAdapter` | `gearbox-v3` | `"Gearbox"` | `["Market", <market.name()>]` (derived) | `abi.encode(address market)` | Supplied | `["Gearbox","Market","dDAI"]` |
+| `MorphoMarketsMetaBalanceAdapter` | `morpho-markets` | `"Morpho"` | `["Market", "<coll>/<loan> market"]` (derived) | **override** `abi.encode(bytes32 marketId)` (raw) | Collateral / Supplied / Borrowed | `["Morpho","Market","wETH/USDC market"]` |
+| `MorphoVaultsMetaBalanceAdapter` | `morpho-vaults` | `"Morpho"` | `["Vault", <vault.name()>]` (derived) | `abi.encode(address vault)` | Supplied | `["Morpho","Vault","Morpho DAI"]` |
+| `StakeWiseV3VaultsMetaBalanceAdapter` | `stakewise-v3` | `"StakeWise V3"` | `["Vaults", <vault.name()>]` (derived) | `abi.encode(address vault)` | Staking / Borrowed (osToken) | `["StakeWise V3","Vaults","StakeWise Vault ETH"]` |
+| `BalancerV2PoolsMetaBalanceAdapter` | `balancer-v2-pool` | `"Balancer V2"` | `["Liquidity Pool", <BPT.name()>]` (derived) | **override** `abi.encode(bytes32 poolId)` (raw) | Supplied | `["Balancer V2","Liquidity Pool","50WETH-50USDC"]` |
+| `BalancerV2GaugesMetaBalanceAdapter` | `balancer-v2-gauge` | `"Balancer V2"` | `["Staking Gauge", <gauge.symbol()>]` (derived) | `abi.encode(address gauge)` | Staking / Rewards | `["Balancer V2","Staking Gauge","…-gauge"]` |
+| `BalancerV3PoolsMetaBalanceAdapter` | `balancer-v3-pool` | `"Balancer V3"` | `["Liquidity Pool", <pool.name()>]` (derived) | `abi.encode(address pool)` | Supplied | `["Balancer V3","Liquidity Pool","Balancer 50 WETH 50 USDC"]` |
+| `BalancerV3GaugesMetaBalanceAdapter` | `balancer-v3-gauge` | `"Balancer V3"` | `["Staking Gauge", <gauge.symbol()>]` (derived) | `abi.encode(address gauge)` | Staking / Rewards | `["Balancer V3","Staking Gauge","…-gauge"]` |
+| `CurvePoolsMetaBalanceAdapter` | `curve-pool` | `"Curve"` | `["Liquidity Pool", "<coins> LP"]` (derived) | `abi.encode(address pool)` | Supplied | `["Curve","Liquidity Pool","USDC/USDT/DAI LP"]` |
+| `CurveGaugesMetaBalanceAdapter` | `curve-gauge` | `"Curve"` | `["Staking Gauge", "<coins> gauge"]` (derived) | `abi.encode(address gauge)` | Staking / Rewards | `["Curve","Staking Gauge","USDC/USDT/DAI gauge"]` |
+| `UniswapV2PoolsMetaBalanceAdapter` | `uniswap-v2` | `"Uniswap V2"` | `["Liquidity Pool", "<sym0>/<sym1> LP"]` (derived) | `abi.encode(address pair)` | Supplied | `["Uniswap V2","Liquidity Pool","WETH/USDC LP"]` |
+| `PancakeSwapV2PoolsMetaBalanceAdapter` | `pancakeswap-v2` | `"PancakeSwap V2"` | `["Liquidity Pool", "<sym0>/<sym1> LP"]` (derived, inherited) | `abi.encode(address pair)` | Supplied | `["PancakeSwap V2","Liquidity Pool","WBNB/BUSD LP"]` |
+
+#### Assisted adapters (`src/balances/AssistedBalanceAdapters/`)
+
+| Adapter | `protocolId` | `protocolName()` | `positionLabels` → (source) | `positionId` schema | `PositionKind` legs | Example breadcrumb |
+|---|---|---|---|---|---|---|
+| `MerklRewardsBalanceAdapter` | `merkl` | `"Merkl"` (const) | `["Claimable Rewards"]` (const) | `abi.encode(address DISTRIBUTOR)` | Rewards | `["Merkl","Claimable Rewards"]` |
+| `EtherFiWithdrawalQueueBalanceAdapter` | `etherfi-withdrawal` | `"ether.fi"` (const) | `["eETH Withdrawal Queue"]` (const) | `abi.encode(address withdrawRequestNFT)` | Supplied | `["ether.fi","eETH Withdrawal Queue"]` |
+| `StakeWiseV3ExitQueueBalanceAdapter` | `stakewise-exit` | `"StakeWise V3"` (const) | `["Exit Queue"]` (const) | `abi.encode(address vaultsRegistry)` | Supplied | `["StakeWise V3","Exit Queue"]` |
+| `NexusMutualStakingPoolsBalanceAdapter` | `nexus-mutual-staking` | `"Nexus Mutual"` (const) | `["Staking"]` (const) | `abi.encode(uint256 tokenId, uint256 poolId)` | Staking / Rewards | `["Nexus Mutual","Staking"]` |
+| `UniswapV3PoolsMetaBalanceAdapter` | `uniswap-v3` | `"Uniswap V3"` (gov) | `["Liquidity Pool", "NFT #<tokenId>"]` (derived) | `abi.encode(address npm, uint256 tokenId)` | Supplied / Fees | `["Uniswap V3","Liquidity Pool","NFT #12345"]` |
+| `PancakeSwapV3PoolsMetaBalanceAdapter` | `pancakeswap-v3` | `"PancakeSwap V3"` (gov) | `["Liquidity Pool", "NFT #<tokenId>"]` (derived, inherited) | `abi.encode(address npm, uint256 tokenId)` | Supplied / Fees | `["PancakeSwap V3","Liquidity Pool","NFT #12345"]` |
+
+**Multi-leg rule.** Where an adapter emits several legs (lending supply/borrow/collateral; gauge
+stake/rewards; Uniswap V3 liquidity/fees; StakeWise vault/osToken-debt), all legs **share one
+`positionId` and one label set** — they are distinguished by `positionKind` and, for per-token legs, by
+`balanceAsset.asset` (the underlying token), never by extra label elements.
+
+**Account-global adapters.** The withdrawal/exit queues (Lido, Stader, Kelp, ether.fi, StakeWise V3)
+and the Ethena cooldown report one aggregated leg per account, so their `positionId` encodes the
+adapter's immutable anchor contract (the queue/manager/registry, or sUSDe) rather than a per-request
+id; the owed asset lives in `balanceAsset.asset`. No adapter emits an empty `positionId`.
 
 ---
 

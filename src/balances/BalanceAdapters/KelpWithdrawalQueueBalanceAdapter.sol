@@ -226,7 +226,9 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
                 amount: owed,
                 isDebt: false,
                 protocolId: PROTOCOL_ID,
-                positionId: "",
+                // Anchored on the WithdrawalManager (the claim target / immutable anchor); the owed
+                // asset lives in `balanceAsset`, so the manager address is the non-redundant coordinate.
+                positionId: abi.encode(address(WITHDRAWAL_MANAGER)),
                 positionKind: PositionKind.Supplied
             });
         }

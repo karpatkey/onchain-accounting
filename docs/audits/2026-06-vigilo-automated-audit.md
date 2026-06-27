@@ -14,7 +14,7 @@
 | Severity | Count | Notes |
 |---|---|---|
 | **High** | 1 | Superchain dual-L2 address confusion (design; no code guard) — matches a known open issue |
-| **Medium** | 13 | Mostly valuation-accuracy and bridge-lifecycle correctness; several trust-model-bounded |
+| **Medium** | 15 | Mostly valuation-accuracy and bridge-lifecycle correctness; several trust-model-bounded |
 | **Low** | ~11 | Defense-in-depth, griefing, footguns |
 | **Refuted / Invalid / Already-fixed** | 3 (all originally "High") | safecast DoS, proxy front-run, sUSDe share-unit |
 
@@ -130,7 +130,7 @@ Valuation reads Vault pool balances that can be mid-update during a join/exit/fl
 **Recommendation:** Extend 07 to transfer `DEFAULT_ADMIN_ROLE` of the assisted adapters to the security council and renounce the deployer's.
 
 ### M-15 — Cap adapter: per-leg vs combined burn-quote inconsistency
-**Location:** `src/balances/AssistedBalanceAdapters/.../CapBalanceAdapter.sol` (`getAdapterPositions` vs `getAdapterBalances`).
+**Location:** `src/balances/BalanceAdapters/CapBalanceAdapter.sol` (`getAdapterPositions` vs `getAdapterBalances`).
 Positions path quotes `getBurnAmount` per leg (cUSD, stcUSD); balances path quotes once on the combined total. Under any non-proportional (fixed/tiered) fee the two diverge, and small legs can round to 0 individually while the combined clears the threshold.
 **Recommendation:** Quote consistently (combined, then split pro-rata) or document the proportional-fee assumption.
 

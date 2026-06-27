@@ -3,7 +3,7 @@
 **Protocol:** Onchain Accounting Infrastructure for Portfolio NAV  
 **Scope:** Core system (NAVCalculator, balance adapters, price feeds, bridge escrow, bridge adapters)  
 **Document date:** 2026-06-27  
-**Status:** Final pre-deployment audit completed; 20 findings fixed, 4 systemic acknowledged.
+**Status:** Final pre-deployment audit completed; 20 findings confirmed (12 fixed this round, 4 accepted as operational/design constraints), 4 systemic acknowledged.
 
 ---
 
@@ -485,14 +485,14 @@ Source: `docs/howto/refresh-integration-test-blocks.md`, ADR 0003, `test/integra
 
 ## References
 
-### Core Documentation (absolute paths for deep auditors)
+### Core Documentation (repo-relative paths for deep auditors)
 
-- `/home/sgzerbo/github-projects/onchain-accounting/CLAUDE.md` — Architecture index, conventions, role definitions
-- `/home/sgzerbo/github-projects/onchain-accounting/README.md` — Elevator pitch, subsystem overview
-- `/home/sgzerbo/github-projects/onchain-accounting/src/balances/BALANCE_ADAPTERS.md` — Balance adapter framework
-- `/home/sgzerbo/github-projects/onchain-accounting/src/prices/PRICE_ADAPTERS.md` — Price feed architecture
-- `/home/sgzerbo/github-projects/onchain-accounting/src/bridge/BRIDGE_ADAPTERS.md` — Bridge module design (post-ADR 0012)
-- `/home/sgzerbo/github-projects/onchain-accounting/docs/howto/position-identity-schema.md` — Position identity reference
+- `CLAUDE.md` — Architecture index, conventions, role definitions
+- `README.md` — Elevator pitch, subsystem overview
+- `src/balances/BALANCE_ADAPTERS.md` — Balance adapter framework
+- `src/prices/PRICE_ADAPTERS.md` — Price feed architecture
+- `src/bridge/BRIDGE_ADAPTERS.md` — Bridge module design (post-ADR 0012)
+- `docs/howto/position-identity-schema.md` — Position identity reference
 
 ### ADRs (Architecture Decision Records)
 
@@ -505,11 +505,11 @@ Source: `docs/howto/refresh-integration-test-blocks.md`, ADR 0003, `test/integra
 - **ADR 0014** — Agent-fed cache adapters for exit queues (ether.fi, StakeWise)
 - **ADR 0015** — Assisted balance-adapter family (shared AccessControl base)
 
-All in `/home/sgzerbo/github-projects/onchain-accounting/docs/decisions/`
+All in `docs/decisions/`
 
 ### Audit Reports
 
-- `/home/sgzerbo/github-projects/onchain-accounting/docs/audits/2026-06-final-pre-deploy-audit.md` — **20 findings, 12 fixed, 4 acknowledged, 4 systemic**
+- `docs/audits/2026-06-final-pre-deploy-audit.md` — **20 findings, 12 fixed, 4 acknowledged, 4 systemic**
 
 ---
 

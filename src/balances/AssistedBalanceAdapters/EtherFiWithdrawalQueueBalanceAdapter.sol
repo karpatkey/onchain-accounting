@@ -109,9 +109,12 @@ contract EtherFiWithdrawalQueueBalanceAdapter is AssistedBalanceAdapter, IPositi
     // Mutators (onlyRole(ASSISTANT_ROLE))
     //
 
-    /// @notice Add candidate withdrawal-request tokenIds for `account`. Idempotent (dedup). Ids not currently owned
-    ///         by `account` are skipped at write time as light hygiene; correctness does not depend on it — reads
-    ///         re-verify ownership every time and value only live, owned, valid requests.
+    /// @notice Add candidate withdrawal-request tokenIds for `account`. Idempotent (dedup). **Reverts**
+    ///         `NotTokenOwner` for any id whose `ownerOf` is not `account` (or that reverts/burned), and
+    ///         `TokenIdCacheFull` when the per-account cache is at `MAX_TOKEN_IDS` — writes are fail-loud (matching the
+    ///         sibling assisted NFT-id adapters), so a full cache or a non-owned id surfaces to the assistant instead
+    ///         of silently dropping an owned request from NAV. Correctness does not depend on the ownership check
+    ///         (reads re-verify every time and value only live, owned, valid requests).
     function submitTokenIds(address account, uint256[] calldata tokenIds) external onlyRole(ASSISTANT_ROLE) {
         if (account == address(0)) revert InvalidArguments();
         for (uint256 i; i < tokenIds.length; ++i) {
@@ -272,15 +275,18 @@ contract EtherFiWithdrawalQueueBalanceAdapter is AssistedBalanceAdapter, IPositi
     //
 
     function _addTokenId(address account, uint256 tokenId) internal {
-        if (_tokenIdIdxPlus1[account][tokenId] != 0) return; // already cached
-        // Cap the cache so the per-account read loop stays gas-bounded (OOG there isn't caught by NAV). The
-        // assistant must GC claimed ids to make room; a real account never approaches MAX_TOKEN_IDS open requests.
-        if (_tokenIds[account].length >= MAX_TOKEN_IDS) return;
-        // Light hygiene: only store ids currently owned by `account`. Not load-bearing — reads re-verify.
+        if (_tokenIdIdxPlus1[account][tokenId] != 0) return; // already cached (idempotent no-op)
+        // Cap the cache so the per-account read loop stays gas-bounded (OOG there isn't caught by NAV). The assistant
+        // must GC claimed ids to make room; a real account never approaches MAX_TOKEN_IDS open requests. **Revert**
+        // rather than silently dropping the id — writes are fail-loud (like the ownership check below), so a full
+        // cache surfaces to the assistant instead of silently omitting an owned request.
+        if (_tokenIds[account].length >= MAX_TOKEN_IDS) revert TokenIdCacheFull(account, MAX_TOKEN_IDS);
+        // Fail-loud ownership check: a non-owned (or burned) id is a caller mistake. `ownerOf` reverts for a
+        // non-existent token; surface that as NotTokenOwner too. Not load-bearing for correctness — reads re-verify.
         try IEtherFiWithdrawRequestNFT(WITHDRAW_REQUEST_NFT).ownerOf(tokenId) returns (address o) {
-            if (o != account) return;
+            if (o != account) revert NotTokenOwner(account, tokenId);
         } catch {
-            return;
+            revert NotTokenOwner(account, tokenId);
         }
         _tokenIds[account].push(tokenId);
         _tokenIdIdxPlus1[account][tokenId] = _tokenIds[account].length;

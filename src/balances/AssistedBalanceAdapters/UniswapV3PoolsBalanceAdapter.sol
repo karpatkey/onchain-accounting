@@ -245,9 +245,11 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
         uint256[] memory ids = _tokenIds[account];
         if (ids.length == 0) return new INAVCalculator.PositionBalance[](0);
 
-        // Fetch the registry snapshot ONCE for the whole read (not once per NFT): the loop below resolves every
-        // position's tokens from this single in-memory array, so the read stays O(NFTs + registrySize) rather than
-        // O(NFTs × registrySize) — important on an account near MAX_TOKEN_IDS with a large registry.
+        // Fetch the registry snapshot ONCE for the whole read (a single `getRegisteredAssets()` cross-contract call,
+        // not one per NFT). It is then re-encoded into calldata on each `this.positionLegs(account, reg, ...)`
+        // self-call below, so the per-NFT registry cost is the ABI copy, not a fresh fetch — the snapshot read itself
+        // stays O(1) in the number of NFTs. (Any per-NFT blow-up is bounded by NAVCalculator's per-adapter try/catch,
+        // which fails open and drops only this adapter's positions.)
         INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
 
         // Up to 4 legs per NFT (liq0, liq1, fee0, fee1).

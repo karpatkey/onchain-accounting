@@ -189,10 +189,13 @@ contract EtherFiWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(cached[0], 1);
     }
 
-    function test_submit_skipsNonOwnedId() public {
+    /// @notice Writes are fail-loud: submitting an id not owned by the account reverts NotTokenOwner (matching the
+    ///         sibling assisted NFT-id adapters) rather than silently dropping it.
+    function test_submit_revertsOnNonOwnedId() public {
         nft.setRequest(1, other, 1 ether, 1 ether, true, 0, true, 1 ether);
+        vm.expectRevert(abi.encodeWithSelector(NotTokenOwner.selector, holder, uint256(1)));
         adapter.submitTokenIds(holder, _ids(1));
-        assertEq(adapter.tokenIdsOf(holder).length, 0); // not owned by holder → not stored
+        assertEq(adapter.tokenIdsOf(holder).length, 0); // nothing stored — the whole submit reverted
     }
 
     function test_clearTokenId_andClearAccount() public {
@@ -464,15 +467,23 @@ contract EtherFiWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(amt, 0);
     }
 
-    function test_submit_capsAtMaxTokenIds() public {
+    /// @notice Writes are fail-loud at the cap: filling exactly MAX_TOKEN_IDS succeeds, but the next owned id reverts
+    ///         TokenIdCacheFull rather than being silently dropped from NAV.
+    function test_submit_revertsWhenCacheFull() public {
         uint256 cap = adapter.MAX_TOKEN_IDS();
-        uint256[] memory ids = new uint256[](cap + 5);
-        for (uint256 i = 0; i < cap + 5; i++) {
+        uint256[] memory ids = new uint256[](cap);
+        for (uint256 i = 0; i < cap; i++) {
             nft.setRequest(i + 1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
             ids[i] = i + 1;
         }
         adapter.submitTokenIds(holder, ids);
-        assertEq(adapter.tokenIdsOf(holder).length, cap, "cache must be capped at MAX_TOKEN_IDS");
+        assertEq(adapter.tokenIdsOf(holder).length, cap, "cache filled to MAX_TOKEN_IDS");
+
+        // One more owned id past the cap must revert (not silently drop).
+        nft.setRequest(cap + 1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
+        vm.expectRevert(abi.encodeWithSelector(TokenIdCacheFull.selector, holder, cap));
+        adapter.submitTokenIds(holder, _ids(cap + 1));
+        assertEq(adapter.tokenIdsOf(holder).length, cap, "cache unchanged after the reverted submit");
     }
 
     function _ids(uint256 id) internal pure returns (uint256[] memory ids) {

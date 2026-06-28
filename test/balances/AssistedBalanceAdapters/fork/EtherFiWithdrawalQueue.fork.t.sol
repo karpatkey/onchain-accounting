@@ -9,6 +9,7 @@ import {
     IEtherFiLiquidityPool
 } from "src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {NotTokenOwner} from "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
@@ -124,11 +125,12 @@ contract EtherFiWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase 
         assertEq(adapter.getAdapterPositions(HOLDER, address(0)).length, 0);
     }
 
-    function test_submit_skipsIdNotOwnedByAccount() public {
-        // Submitting HOLDER's real id under a different account is rejected at write (ownerOf != account).
+    function test_submit_revertsOnIdNotOwnedByAccount() public {
+        // Submitting HOLDER's real id under a different account is rejected at write (ownerOf != account) — fail-loud.
         address stranger = makeAddr("stranger");
         uint256[] memory ids = new uint256[](1);
         ids[0] = TOKEN_ID;
+        vm.expectRevert(abi.encodeWithSelector(NotTokenOwner.selector, stranger, TOKEN_ID));
         adapter.submitTokenIds(stranger, ids);
         assertEq(adapter.tokenIdsOf(stranger).length, 0);
         (uint256 amount,) = adapter.getAdapterBalanceForAsset(stranger, NATIVE_ETH);

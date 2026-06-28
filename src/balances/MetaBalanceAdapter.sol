@@ -215,8 +215,8 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     // Shared helpers
     //
 
-    /// @notice Assembles the `[category, leaf]` label pair for `positionLabels`, applying the fail-open
-    ///         empty-leaf convention in one place (IPositionDescribable): a leaf that could not be derived
+    /// @notice Assembles the `[category, leaf]` label pair carried on each `PositionBalance.labels`, applying the
+    ///         fail-open empty-leaf convention in one place (IPositionDescribable): a leaf that could not be derived
     ///         (empty string, e.g. a reverting `name()`/`symbol()` read) is dropped so consumers never render
     ///         a blank trailing breadcrumb segment, while the known `category` is preserved. If both are empty,
     ///         returns an empty array. Mirrors `ERC20DefaultBalanceAdapter`'s single-segment collapse, generalised to

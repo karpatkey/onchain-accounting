@@ -7,6 +7,7 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
+import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
@@ -234,59 +235,84 @@ contract NexusMutualStakingPoolsBalanceAdapter is AssistedBalanceAdapter, IPosit
         }
         if (account == address(0)) return new INAVCalculator.PositionBalance[](0);
 
-        // Cheap path first: build the owned-id survivor list and bail before the (non-trivial) registry read when
-        // the account has no live positions.
-        uint256[] memory ids = _ownedCachedIds(account);
+        uint256[] memory ids = _tokenIds[account];
         if (ids.length == 0) return new INAVCalculator.PositionBalance[](0);
 
-        // NXM must be registered in NAVCalculator for the position to count in NAV. Resolve its Asset record first.
+        // NXM must be registered in NAVCalculator for the position to count in NAV. Resolve its Asset record once.
         INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
-        INAVCalculator.Asset memory underlying;
-        bool registered;
-        for (uint256 i = 0; i < reg.length; i++) {
-            if (reg[i].asset == UNDERLYING_TOKEN) {
-                underlying = reg[i];
-                registered = true;
-                break;
-            }
-        }
+        (INAVCalculator.Asset memory underlying, bool registered) = RegisteredAssetLib.find(reg, UNDERLYING_TOKEN);
         if (!registered) return new INAVCalculator.PositionBalance[](0);
 
-        INexusStakingViewer.Token[] memory tokens;
-        try INexusStakingViewer(STAKING_VIEWER).getTokens(ids) returns (INexusStakingViewer.Token[] memory t) {
-            tokens = t;
-        } catch {
-            return new INAVCalculator.PositionBalance[](0);
-        }
-
         // Up to two legs (Staking + Rewards) per owned tokenId.
-        INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](2 * tokens.length);
+        INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](2 * ids.length);
         uint256 count;
-        for (uint256 i; i < tokens.length; ++i) {
-            // Active and expired stake are both staked NXM principal (expired tranches are no longer earning but
-            // remain withdrawable); rewards are accrued NXM.
-            uint256 staking = tokens[i].activeStake + tokens[i].expiredStake;
-            uint256 rewards = tokens[i].rewards;
-            if (staking == 0 && rewards == 0) continue;
-            // positionId = the staking-pool contract address (deterministic per poolId). Skip the token if the pool
-            // can't be resolved (under-report). The tokenId is NOT in positionId; it rides in the display labels.
-            address pool;
-            try INexusStakingViewer(STAKING_VIEWER).stakingPool(tokens[i].poolId) returns (address p) {
-                pool = p;
-            } catch {
-                continue;
-            }
-            if (pool == address(0)) continue;
-            bytes memory positionId = abi.encode(pool);
-            string[] memory labels = _labels(pool, tokens[i].tokenId);
-            if (staking > 0) temp[count++] = _leg(underlying, staking, PositionKind.Staking, positionId, labels);
-            if (rewards > 0) temp[count++] = _leg(underlying, rewards, PositionKind.Rewards, positionId, labels);
+        for (uint256 i; i < ids.length; ++i) {
+            // Per-NFT fault isolation (fail-open, ADR 0015): value each id behind an external `this.` call so a revert
+            // in its live reads (`tokenInfo` / `getTokens` / `stakingPool` on a stale or exotic position) is caught
+            // here and that ONE id is discarded — it never propagates out of getAdapterPositions, where NAVCalculator's
+            // per-adapter try/catch would otherwise fail-open and drop the account's ENTIRE Nexus stake. Mirrors the
+            // Uniswap V3 adapter's `try this.positionLegs(...)` fan-out.
+            try this.tokenLegs(account, underlying, ids[i]) returns (INAVCalculator.PositionBalance[] memory legs) {
+                for (uint256 j; j < legs.length; ++j) {
+                    temp[count++] = legs[j];
+                }
+            } catch {}
         }
 
         positions = new INAVCalculator.PositionBalance[](count);
         for (uint256 i; i < count; i++) {
             positions[i] = temp[i];
         }
+    }
+
+    /// @notice Values one cached `tokenId` into its (up to 2) legs: `Staking` (active + expired stake) + `Rewards`
+    ///         (accrued), both NXM-denominated. Returns an empty array if the id is not owned by `account`, the token
+    ///         has no stake/rewards, or its staking pool can't be resolved.
+    /// @dev `external` so `getAdapterPositions` can invoke it via `this.` inside a per-NFT try/catch — a revert in any
+    ///      live read (`tokenInfo` / `getTokens` / `stakingPool`) is then isolated to this one id (fail-open). Reads
+    ///      the token live and re-verifies ownership via `StakingNFT.tokenInfo` (a burned id reverts → caught by the
+    ///      caller → discarded; a transferred id returns a different owner → empty). NOT meant for external callers; it
+    ///      is `external` only to enable the self-call isolation.
+    function tokenLegs(address account, INAVCalculator.Asset calldata underlying, uint256 tokenId)
+        external
+        view
+        returns (INAVCalculator.PositionBalance[] memory)
+    {
+        INAVCalculator.PositionBalance[] memory none = new INAVCalculator.PositionBalance[](0);
+
+        // Re-verify ownership live: a burned id reverts `tokenInfo` (caught by the caller's try/catch → discarded);
+        // a transferred id returns a different owner → empty.
+        (, address owner) = INexusStakingNFT(STAKING_NFT).tokenInfo(tokenId);
+        if (owner != account) return none;
+
+        uint256[] memory one = new uint256[](1);
+        one[0] = tokenId;
+        INexusStakingViewer.Token[] memory tokens = INexusStakingViewer(STAKING_VIEWER).getTokens(one);
+        if (tokens.length == 0) return none;
+
+        // Active and expired stake are both staked NXM principal (expired tranches are no longer earning but remain
+        // withdrawable); rewards are accrued NXM.
+        uint256 staking = tokens[0].activeStake + tokens[0].expiredStake;
+        uint256 rewards = tokens[0].rewards;
+        if (staking == 0 && rewards == 0) return none;
+
+        // positionId = the staking-pool contract address (deterministic per poolId). The tokenId is NOT in positionId;
+        // it rides in the display labels. A zero pool (unresolvable poolId) yields no leg (under-report).
+        address pool = INexusStakingViewer(STAKING_VIEWER).stakingPool(tokens[0].poolId);
+        if (pool == address(0)) return none;
+        bytes memory positionId = abi.encode(pool);
+        string[] memory labels = _labels(pool, tokens[0].tokenId);
+
+        INAVCalculator.PositionBalance[] memory tmp = new INAVCalculator.PositionBalance[](2);
+        uint256 n;
+        if (staking > 0) tmp[n++] = _leg(underlying, staking, PositionKind.Staking, positionId, labels);
+        if (rewards > 0) tmp[n++] = _leg(underlying, rewards, PositionKind.Rewards, positionId, labels);
+
+        INAVCalculator.PositionBalance[] memory out = new INAVCalculator.PositionBalance[](n);
+        for (uint256 k; k < n; ++k) {
+            out[k] = tmp[k];
+        }
+        return out;
     }
 
     //

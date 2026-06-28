@@ -144,20 +144,23 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
     // Mutators (onlyRole(ASSISTANT_ROLE))
     //
 
-    /// @notice Add candidate exit positions for `account`. Idempotent (dedup by tuple hash). **Reverts**
-    ///         `InvalidExitPosition` for any position whose vault is not StakeWise-registered or that does not
-    ///         currently resolve to a non-zero owed amount for `account` (the on-chain ownership proxy), and
-    ///         `PositionCacheFull` once the per-account cache is at `MAX_POSITIONS` — writes are fail-loud, so a bad
-    ///         tuple or a full cache surfaces to the assistant instead of silently dropping an owned position from NAV.
-    ///         Not load-bearing for correctness — reads re-verify and value only live, account-owned positions.
+    /// @notice Submit `account`'s **complete** set of candidate exit positions — this **replaces** the account's
+    ///         cached set entirely (the prior tuples are dropped first), so the assistant always submits the full list,
+    ///         not a delta. Duplicates within the list collapse (dedup by tuple hash). **Reverts** `InvalidExitPosition`
+    ///         for any position whose vault is not StakeWise-registered or that does not currently resolve to a non-zero
+    ///         owed amount for `account` (the on-chain ownership proxy), and `PositionCacheFull` past `MAX_POSITIONS` —
+    ///         writes are fail-loud, and because they revert atomically, a bad list leaves the prior set untouched. Not
+    ///         load-bearing for correctness — reads re-verify and value only live, account-owned positions.
     function submitPositions(address account, ExitPosition[] calldata positions) external onlyRole(ASSISTANT_ROLE) {
         if (account == address(0)) revert InvalidArguments();
+        _clearPositions(account); // replace semantics: the submitted list becomes the complete cached set
         for (uint256 i; i < positions.length; ++i) {
             _addPosition(account, positions[i]);
         }
     }
 
-    /// @notice Batch variant across accounts. `accounts` and `positions` must have the same length.
+    /// @notice Batch variant: for each account, its sublist **replaces** that account's cached set. `accounts` and
+    ///         `positions` must have the same length.
     function submitPositionsBatch(address[] calldata accounts, ExitPosition[][] calldata positions)
         external
         onlyRole(ASSISTANT_ROLE)
@@ -165,6 +168,7 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
         if (accounts.length != positions.length) revert ArrayLengthMismatch();
         for (uint256 i; i < accounts.length; ++i) {
             if (accounts[i] == address(0)) revert InvalidArguments();
+            _clearPositions(accounts[i]); // replace this account's set
             for (uint256 j; j < positions[i].length; ++j) {
                 _addPosition(accounts[i], positions[i][j]);
             }
@@ -184,12 +188,18 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
 
     /// @notice Drop all cached positions for `account`.
     function clearAccount(address account) external onlyRole(ASSISTANT_ROLE) {
+        _clearPositions(account);
+        emit AccountCleared(account);
+    }
+
+    /// @dev Delete the account's cached position set (storage only, no event). Shared by `clearAccount` and the
+    ///      replace-on-submit path.
+    function _clearPositions(address account) private {
         ExitPosition[] storage list = _positions[account];
         for (uint256 i; i < list.length; ++i) {
             delete _positionIdxPlus1[account][_key(list[i].vault, list[i].positionTicket, list[i].timestamp)];
         }
         delete _positions[account];
-        emit AccountCleared(account);
     }
 
     //

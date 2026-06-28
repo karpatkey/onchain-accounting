@@ -467,10 +467,12 @@ contract EtherFiWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(amt, 0);
     }
 
-    /// @notice Writes are fail-loud at the cap: filling exactly MAX_TOKEN_IDS succeeds, but the next owned id reverts
-    ///         TokenIdCacheFull rather than being silently dropped from NAV.
+    /// @notice Writes are fail-loud at the cap: a submitted list longer than MAX_TOKEN_IDS reverts TokenIdCacheFull
+    ///         rather than silently dropping the overflow. Submit is replace semantics, so the cap is hit within a
+    ///         single list, not by accumulating across calls.
     function test_submit_revertsWhenCacheFull() public {
         uint256 cap = adapter.MAX_TOKEN_IDS();
+        // A single list of exactly MAX_TOKEN_IDS is accepted.
         uint256[] memory ids = new uint256[](cap);
         for (uint256 i = 0; i < cap; i++) {
             nft.setRequest(i + 1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
@@ -479,10 +481,15 @@ contract EtherFiWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         adapter.submitTokenIds(holder, ids);
         assertEq(adapter.tokenIdsOf(holder).length, cap, "cache filled to MAX_TOKEN_IDS");
 
-        // One more owned id past the cap must revert (not silently drop).
-        nft.setRequest(cap + 1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
+        // A single list of MAX_TOKEN_IDS + 1 is fail-loud (the cap+1-th add reverts).
+        uint256[] memory tooMany = new uint256[](cap + 1);
+        for (uint256 i = 0; i < cap + 1; i++) {
+            nft.setRequest(i + 1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
+            tooMany[i] = i + 1;
+        }
         vm.expectRevert(abi.encodeWithSelector(TokenIdCacheFull.selector, holder, cap));
-        adapter.submitTokenIds(holder, _ids(cap + 1));
+        adapter.submitTokenIds(holder, tooMany);
+        // The reverted submit left the prior set intact (replace is atomic — the clear rolled back with the revert).
         assertEq(adapter.tokenIdsOf(holder).length, cap, "cache unchanged after the reverted submit");
     }
 

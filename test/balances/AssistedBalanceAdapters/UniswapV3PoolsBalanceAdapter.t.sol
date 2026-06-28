@@ -327,6 +327,18 @@ contract UniswapV3PoolsBalanceAdapterTest is Test {
         assertEq(adapter.tokenIdsOf(alice).length, 2);
     }
 
+    /// @notice Submit is REPLACE, not append: the submitted list becomes the account's complete cached set, so a
+    ///         prior id omitted from the new list is dropped (the assistant always submits the full list).
+    function test_submit_replacesPriorSet() public {
+        // setUp seeded alice with {1, 2}.
+        assertEq(adapter.tokenIdsOf(alice).length, 2);
+        _mint(3, address(wbtc), address(weth), 3000, 1_000_000, 0, 0);
+        adapter.submitTokenIds(alice, _id(3)); // submitting {3} alone replaces {1, 2}
+        uint256[] memory cached = adapter.tokenIdsOf(alice);
+        assertEq(cached.length, 1, "prior set replaced, not appended");
+        assertEq(cached[0], 3);
+    }
+
     function test_clearTokenId() public {
         adapter.clearTokenId(alice, 1);
         assertEq(adapter.tokenIdsOf(alice).length, 1);
@@ -379,14 +391,15 @@ contract UniswapV3PoolsBalanceAdapterTest is Test {
         assertEq(p[0].labels[2], "NFT #2", "surviving legs are NFT #2 (poolB)");
     }
 
-    /// @notice Writes are fail-loud at the cap: an owned id past MAX_TOKEN_IDS reverts TokenIdCacheFull rather than
-    ///         being silently dropped (which would silently under-count the account's NAV).
+    /// @notice Writes are fail-loud at the cap: a submitted list longer than MAX_TOKEN_IDS reverts TokenIdCacheFull
+    ///         rather than silently dropping the overflow (which would silently under-count the account's NAV). Submit
+    ///         is replace semantics, so the cap is hit within a single list, not by accumulating across calls.
     function test_perAccountCap_revertsWhenFull() public {
         adapter.clearAccount(alice); // start empty (setUp seeded ids 1,2)
         uint256 cap = adapter.MAX_TOKEN_IDS();
 
-        // Fill the cache to exactly MAX_TOKEN_IDS with owned NFTs (all in poolA's pair; ownerOf == alice is all the
-        // cap path needs). ids 1,2 were minted in setUp, so reuse them and mint the rest.
+        // A single list of exactly MAX_TOKEN_IDS owned NFTs is accepted (all in poolA's pair; ownerOf == alice is all
+        // the cap path needs). ids 1,2 were minted in setUp, so reuse them and mint the rest.
         uint256[] memory ids = new uint256[](cap);
         for (uint256 i = 0; i < cap; i++) {
             uint256 id = i + 1;
@@ -396,14 +409,18 @@ contract UniswapV3PoolsBalanceAdapterTest is Test {
         adapter.submitTokenIds(alice, ids);
         assertEq(adapter.tokenIdsOf(alice).length, cap);
 
-        // One more owned id past the cap is fail-loud.
+        // A single list of MAX_TOKEN_IDS + 1 is fail-loud (the cap+1-th add reverts).
+        uint256[] memory tooMany = new uint256[](cap + 1);
+        for (uint256 i = 0; i < cap; i++) {
+            tooMany[i] = ids[i];
+        }
         uint256 overflowId = cap + 1;
         _mint(overflowId, address(wbtc), address(weth), 3000, 1_000_000, 0, 0);
+        tooMany[cap] = overflowId;
         vm.expectRevert(abi.encodeWithSelector(TokenIdCacheFull.selector, alice, cap));
-        adapter.submitTokenIds(alice, _id(overflowId));
+        adapter.submitTokenIds(alice, tooMany);
 
-        // Re-submitting an already-cached id while full is still an idempotent no-op (dedup precedes the cap check).
-        adapter.submitTokenIds(alice, _id(1));
+        // The reverted submit left the prior set intact (replace is atomic — the clear rolled back with the revert).
         assertEq(adapter.tokenIdsOf(alice).length, cap);
     }
 }

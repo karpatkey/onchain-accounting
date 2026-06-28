@@ -387,10 +387,12 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(amt, 0);
     }
 
-    /// @notice Writes are fail-loud at the cap: filling exactly MAX_POSITIONS succeeds, but the next position reverts
-    ///         PositionCacheFull rather than being silently dropped from NAV.
+    /// @notice Writes are fail-loud at the cap: a submitted list longer than MAX_POSITIONS reverts PositionCacheFull
+    ///         rather than silently dropping the overflow. Submit is replace semantics, so the cap is hit within a
+    ///         single list, not by accumulating across calls.
     function test_submit_revertsWhenCacheFull() public {
         uint256 cap = adapter.MAX_POSITIONS();
+        // A single list of exactly MAX_POSITIONS is accepted.
         StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[] memory many =
             new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[](cap);
         for (uint256 i = 0; i < cap; i++) {
@@ -401,14 +403,17 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         adapter.submitPositions(holder, many);
         assertEq(adapter.positionsOf(holder).length, cap, "cache filled to MAX_POSITIONS");
 
-        // One more valid position past the cap must revert (not silently drop).
-        vault.setIndex(cap + 1, 1);
-        vault.setRequest(holder, cap + 1, TS, 0, 1 ether);
-        StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[] memory one =
-            new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[](1);
-        one[0] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(address(vault), cap + 1, TS);
+        // A single list of MAX_POSITIONS + 1 is fail-loud (the cap+1-th add reverts).
+        StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[] memory tooMany =
+            new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[](cap + 1);
+        for (uint256 i = 0; i < cap + 1; i++) {
+            vault.setIndex(i + 1, 1);
+            vault.setRequest(holder, i + 1, TS, 0, 1 ether);
+            tooMany[i] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(address(vault), i + 1, TS);
+        }
         vm.expectRevert(abi.encodeWithSelector(PositionCacheFull.selector, holder, cap));
-        adapter.submitPositions(holder, one);
+        adapter.submitPositions(holder, tooMany);
+        // The reverted submit left the prior set intact (replace is atomic — the clear rolled back with the revert).
         assertEq(adapter.positionsOf(holder).length, cap, "cache unchanged after the reverted submit");
     }
 

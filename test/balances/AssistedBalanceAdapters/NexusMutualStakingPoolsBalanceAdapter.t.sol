@@ -179,8 +179,16 @@ contract NexusMutualStakingPoolsBalanceAdapterTest is BalanceAdapterTestBase {
     }
 
     function test_submittedTokensAggregate() public {
-        _seedOne(2, 1, 100, 10, 3);
-        _seedOne(5, 1, 100, 10, 3); // each owned: 100 active + 10 expired + 3 rewards
+        // Submit is replace semantics, so both ids must go in ONE list (two separate submits would replace, not
+        // accumulate). Seed the mock state for both, then submit them together.
+        nft.setToken(2, 1, holder);
+        viewer.setToken(2, 1, 100, 10, 3);
+        nft.setToken(5, 1, holder);
+        viewer.setToken(5, 1, 100, 10, 3); // each owned: 100 active + 10 expired + 3 rewards
+        uint256[] memory ids = new uint256[](2);
+        ids[0] = 2;
+        ids[1] = 5;
+        adapter.submitTokenIds(holder, ids);
         (uint256 amt, bool d) = adapter.getAdapterBalanceForAsset(holder, address(nxm));
         // staking = (100+10)*2 = 220; rewards = 3*2 = 6; total = 226
         assertEq(amt, 226);
@@ -369,6 +377,7 @@ contract NexusMutualStakingPoolsBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_perAccountCap_revertsWhenFull() public {
         uint256 cap = adapter.MAX_TOKEN_IDS();
+        // A single list of exactly MAX_TOKEN_IDS owned ids is accepted.
         uint256[] memory ids = new uint256[](cap);
         for (uint256 i = 0; i < cap; i++) {
             uint256 id = i + 1;
@@ -376,22 +385,22 @@ contract NexusMutualStakingPoolsBalanceAdapterTest is BalanceAdapterTestBase {
             viewer.setToken(id, 1, 1, 0, 0); // 1 active each
             ids[i] = id;
         }
-        adapter.submitTokenIds(holder, ids); // fills the cache to exactly MAX_TOKEN_IDS
+        adapter.submitTokenIds(holder, ids);
         assertEq(adapter.tokenIdsOf(holder).length, cap);
 
-        // One more owned id past the cap is fail-loud: revert TokenIdCacheFull rather than silently dropping it.
-        uint256 overflowId = cap + 1;
-        nft.setToken(overflowId, 1, holder);
-        viewer.setToken(overflowId, 1, 1, 0, 0);
-        uint256[] memory more = new uint256[](1);
-        more[0] = overflowId;
+        // A single list of MAX_TOKEN_IDS + 1 is fail-loud (the cap+1-th add reverts). Submit is replace semantics, so
+        // the cap is hit within one list, not by accumulating across calls.
+        uint256[] memory tooMany = new uint256[](cap + 1);
+        for (uint256 i = 0; i < cap + 1; i++) {
+            uint256 id = i + 1;
+            nft.setToken(id, 1, holder);
+            viewer.setToken(id, 1, 1, 0, 0);
+            tooMany[i] = id;
+        }
         vm.expectRevert(abi.encodeWithSelector(TokenIdCacheFull.selector, holder, cap));
-        adapter.submitTokenIds(holder, more);
+        adapter.submitTokenIds(holder, tooMany);
 
-        // Re-submitting an already-cached id while full is still an idempotent no-op (dedup precedes the cap check).
-        uint256[] memory dup = new uint256[](1);
-        dup[0] = ids[0];
-        adapter.submitTokenIds(holder, dup);
+        // The reverted submit left the prior set intact (replace is atomic — the clear rolled back with the revert).
         assertEq(adapter.tokenIdsOf(holder).length, cap);
     }
 

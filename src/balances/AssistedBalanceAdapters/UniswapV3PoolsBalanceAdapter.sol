@@ -137,17 +137,22 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
     // Mutators (onlyRole(ASSISTANT_ROLE))
     //
 
-    /// @notice Add candidate NFT tokenIds for `account`. Idempotent (dedup). **Reverts** `NotTokenOwner` if any id is
-    ///         not currently owned by `account` — writes are fail-loud. Correctness does not depend on it (reads
-    ///         re-verify ownership and value only live, owned positions), but a non-owned id is a caller mistake.
+    /// @notice Submit `account`'s **complete** set of candidate NFT tokenIds — this **replaces** the account's
+    ///         cached set entirely (the prior ids are dropped first), so the assistant always submits the full list
+    ///         to be considered, not a delta. Duplicates within the list collapse (dedup). **Reverts** `NotTokenOwner`
+    ///         if any id is not currently owned by `account` and `TokenIdCacheFull` past `MAX_TOKEN_IDS` — writes are
+    ///         fail-loud, and because they revert atomically, a bad list leaves the prior set untouched. Correctness
+    ///         does not depend on the ownership check (reads re-verify and value only live, owned positions).
     function submitTokenIds(address account, uint256[] calldata tokenIds) external onlyRole(ASSISTANT_ROLE) {
         if (account == address(0)) revert InvalidArguments();
+        _clearTokenIds(account); // replace semantics: the submitted list becomes the complete cached set
         for (uint256 i; i < tokenIds.length; ++i) {
             _addTokenId(account, tokenIds[i]);
         }
     }
 
-    /// @notice Batch variant across accounts. `accounts` and `tokenIds` must have the same length.
+    /// @notice Batch variant: for each account, its sublist **replaces** that account's cached set. `accounts` and
+    ///         `tokenIds` must have the same length.
     function submitTokenIdsBatch(address[] calldata accounts, uint256[][] calldata tokenIds)
         external
         onlyRole(ASSISTANT_ROLE)
@@ -155,6 +160,7 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
         if (accounts.length != tokenIds.length) revert ArrayLengthMismatch();
         for (uint256 i; i < accounts.length; ++i) {
             if (accounts[i] == address(0)) revert InvalidArguments();
+            _clearTokenIds(accounts[i]); // replace this account's set
             for (uint256 j; j < tokenIds[i].length; ++j) {
                 _addTokenId(accounts[i], tokenIds[i][j]);
             }
@@ -170,12 +176,18 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
 
     /// @notice Drop all cached tokenIds for `account`.
     function clearAccount(address account) external onlyRole(ASSISTANT_ROLE) {
+        _clearTokenIds(account);
+        emit AccountCleared(account);
+    }
+
+    /// @dev Delete the account's cached id set (storage only, no event). Shared by `clearAccount` and the
+    ///      replace-on-submit path.
+    function _clearTokenIds(address account) private {
         uint256[] storage ids = _tokenIds[account];
         for (uint256 i; i < ids.length; ++i) {
             delete _tokenIdIdxPlus1[account][ids[i]];
         }
         delete _tokenIds[account];
-        emit AccountCleared(account);
     }
 
     //

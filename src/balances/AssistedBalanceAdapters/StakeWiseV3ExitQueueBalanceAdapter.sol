@@ -62,7 +62,7 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
     // State
     //
 
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.STAKEWISE_EXIT;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.STAKEWISE_V3_EXIT;
 
     /// @notice Hard cap on cached exit positions per account. `_assetsOwed` iterates the whole array on every NAV
     ///         read, and an OOG there is NOT caught by NAVCalculator's try/catch — a bloated cache would brick the

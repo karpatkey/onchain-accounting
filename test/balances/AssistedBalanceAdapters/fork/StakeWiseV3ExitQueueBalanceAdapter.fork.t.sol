@@ -103,7 +103,7 @@ contract StakeWiseV3ExitQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
         assertEq(p[0].amount, EXPECTED_CLAIMABLE);
         assertEq(p[0].balanceAsset.asset, NATIVE_ETH);
         assertEq(p[0].balanceAdapter, address(adapter));
-        assertEq(p[0].protocolId, ProtocolIds.STAKEWISE_EXIT);
+        assertEq(p[0].protocolId, ProtocolIds.STAKEWISE_V3_EXIT);
         assertEq(p[0].positionId, abi.encode(GENESIS_VAULT)); // static per-vault positionId
         assertEq(uint8(p[0].positionKind), uint8(PositionKind.Supplied));
         assertFalse(p[0].isDebt);

@@ -429,7 +429,7 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(p[0].isDebt, false);
         assertEq(p[0].balanceAdapter, address(adapter));
         assertEq(p[0].balanceAsset.asset, NATIVE);
-        assertEq(p[0].protocolId, ProtocolIds.STAKEWISE_EXIT);
+        assertEq(p[0].protocolId, ProtocolIds.STAKEWISE_V3_EXIT);
         // positionId is now the per-vault coordinate, NOT the VaultsRegistry.
         assertEq(p[0].positionId, abi.encode(address(vault)));
         assertEq(uint8(p[0].positionKind), uint8(PositionKind.Supplied));
@@ -474,7 +474,7 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
             assertEq(p[i].balanceAsset.asset, NATIVE);
             assertEq(p[i].balanceAdapter, address(adapter));
             assertFalse(p[i].isDebt);
-            assertEq(p[i].protocolId, ProtocolIds.STAKEWISE_EXIT);
+            assertEq(p[i].protocolId, ProtocolIds.STAKEWISE_V3_EXIT);
             assertEq(p[i].positionId, expectedId, "both legs share the static per-vault positionId");
             _assertTicketLeg(p[i]);
             assertEq(p[i].positionInstanceId, expectedInstanceId, "both legs carry the SAME ticket");

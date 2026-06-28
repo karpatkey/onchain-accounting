@@ -13,7 +13,7 @@ pragma solidity ^0.8;
 ///                                          isLocked=non-withdrawable splits them — active stake is LOCKED
 ///                                          (isLocked=true), only a cooldown elapsed-and-in-window is UNLOCKED;
 ///                                          the reward leg shares it too, told apart by positionKind=Rewards
-///        MORPHO_VAULTS / GEARBOX_V3 / EULER_VAULTS / ERC4626 / STAKEWISE_V3 / FLUID_VAULTS → (address vault)
+///        MORPHO_VAULTS / GEARBOX_V3 / EULER_VAULTS / ERC4626 / STAKEWISE_V3_VAULTS / FLUID_VAULTS → (address vault)
 ///        CAP                             → (address token: cUSD or stcUSD) — one leg per token
 ///        MORPHO_MARKETS                  → (bytes32 marketId)
 ///        BALANCER_V3_POOL                → (address pool)
@@ -32,7 +32,7 @@ pragma solidity ^0.8;
 ///        LIDO_WITHDRAWAL                → (address withdrawalQueue)        — static coordinate
 ///        ETHENA_COOLDOWN                → (address sUSDe)                  — static coordinate
 ///        ETHERFI_WITHDRAWAL             → (address withdrawRequestNFT)     — static coordinate
-///        STAKEWISE_EXIT                 → (address vault)                 — static, per vault
+///        STAKEWISE_V3_EXIT              → (address vault)                 — static, per vault
 ///          (for these: a static positionId with up to two legs — claimable (isLocked=false) + locked
 ///           (isLocked=true) — sharing it, told apart by isLocked; owed asset is in balanceAsset. isLocked
 ///           is part of the identity key. See docs/decisions/0016-islocked-position-status.md.)
@@ -63,7 +63,7 @@ library ProtocolIds {
     bytes32 internal constant PANCAKESWAP_V2 = keccak256("pancakeswap-v2");
 
     // StakeWise
-    bytes32 internal constant STAKEWISE_V3 = keccak256("stakewise-v3");
+    bytes32 internal constant STAKEWISE_V3_VAULTS = keccak256("stakewise-v3-vaults");
 
     // Nexus Mutual
     bytes32 internal constant NEXUS_MUTUAL_STAKING = keccak256("nexus-mutual-staking");
@@ -105,7 +105,7 @@ library ProtocolIds {
     bytes32 internal constant LIDO_WITHDRAWAL = keccak256("lido-withdrawal");
     bytes32 internal constant ETHENA_COOLDOWN = keccak256("ethena-cooldown");
     bytes32 internal constant ETHERFI_WITHDRAWAL = keccak256("etherfi-withdrawal");
-    bytes32 internal constant STAKEWISE_EXIT = keccak256("stakewise-exit");
+    bytes32 internal constant STAKEWISE_V3_EXIT = keccak256("stakewise-v3-exit");
 
     // Merkl rewards distributor
     bytes32 internal constant MERKL = keccak256("merkl");

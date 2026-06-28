@@ -13,7 +13,7 @@ import {UniswapV2PairLib} from "src/balances/MetaBalanceAdapters/uniswap/Uniswap
 /// @notice One immutable adapter that reports an account's Uniswap V2 LP across *any* pair — the dilution-adjusted
 ///         pro-rata share of both reserves, emitted as one `Supply` leg per token. The instance coordinate is the
 ///         pair address, widened to bytes32; the active pair set lives on NAVCalculator (`addMetaInstances`).
-///         Identity is derived on-chain (positionId = pair address; name = `sym0/sym1 LP`). See ADR 0010.
+///         Identity is derived on-chain (positionId = pair address; name = `sym0/sym1`). See ADR 0010.
 /// @dev Valuation = instantaneous on-chain amounts (ADR 0017): this adapter reports the position's current
 ///      pro-rata share of the pair's on-chain reserves as per-token `amount`s, which NAVCalculator prices with
 ///      external oracles — it does NOT compute a manipulation-resistant "fair" value. Imbalancing the pair can
@@ -118,12 +118,12 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev Returns `["Liquidity Pool", "sym0/sym1 LP"]`; leaf derived on-chain from the pair's token symbols.
+    /// @dev Returns `["Liquidity Pool", "sym0/sym1"]`; leaf derived on-chain from the pair's token symbols.
     function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
         if (pid.length < 32) return new string[](0);
         address pair = abi.decode(pid, (address));
         (address token0, address token1,,) = UniswapV2PairLib.pairAmounts(pair, address(0));
-        string memory leaf = string.concat(_symbol(token0), "/", _symbol(token1), " LP");
+        string memory leaf = string.concat(_symbol(token0), "/", _symbol(token1));
         return _labels("Liquidity Pool", leaf);
     }
 

@@ -277,8 +277,9 @@ contract LidoWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(positions[0].positionId, abi.encode(address(queue)), "static positionId = withdrawal queue");
         // Static breadcrumb is positionId-derived (no ephemeral id); the request id rides in positionInstanceId.
         string[] memory lbl = adapter.positionLabels(positions[0].positionId);
-        assertEq(lbl.length, 1);
-        assertEq(lbl[0], "stETH Withdrawal Queue");
+        assertEq(lbl.length, 2);
+        assertEq(lbl[0], "Withdrawal Queue");
+        assertEq(lbl[1], "stETH");
         assertEq(positions[0].positionInstanceId, bytes32(uint256(1)));
     }
 

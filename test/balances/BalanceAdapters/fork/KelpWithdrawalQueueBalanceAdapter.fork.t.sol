@@ -74,12 +74,13 @@ contract KelpWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
         assertEq(sum, TEST_USER_EXPECTED_STETH);
     }
 
-    /// @dev Asserts a per-request leg: the static breadcrumb is `["rsETH Withdrawal Queue"]` (positionId-derived, no
+    /// @dev Asserts a per-request leg: the static breadcrumb is `["Withdrawal Queue", "rsETH"]` (positionId-derived, no
     ///      ephemeral id), and the userNonce rides in the typed `positionInstanceId`.
     function _assertRequestLeg(INAVCalculator.PositionBalance memory leg) internal view {
         string[] memory labels = oracle.positionLabels(leg.positionId);
-        assertEq(labels.length, 1, "static breadcrumb = [category]");
-        assertEq(labels[0], "rsETH Withdrawal Queue");
+        assertEq(labels.length, 2, "static breadcrumb = [category]");
+        assertEq(labels[0], "Withdrawal Queue");
+        assertEq(labels[1], "rsETH");
         assertTrue(leg.positionInstanceId != bytes32(0), "positionInstanceId carries the userNonce");
     }
 
@@ -257,12 +258,13 @@ contract KelpWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTestBa
         _assertRequestLeg(positions[0]);
     }
 
-    /// @dev Asserts a per-request leg: the static breadcrumb is `["rsETH Withdrawal Queue"]` (positionId-derived, no
+    /// @dev Asserts a per-request leg: the static breadcrumb is `["Withdrawal Queue", "rsETH"]` (positionId-derived, no
     ///      ephemeral id), and the userNonce rides in the typed `positionInstanceId`.
     function _assertRequestLeg(INAVCalculator.PositionBalance memory leg) internal view {
         string[] memory labels = oracle.positionLabels(leg.positionId);
-        assertEq(labels.length, 1, "static breadcrumb = [category]");
-        assertEq(labels[0], "rsETH Withdrawal Queue");
+        assertEq(labels.length, 2, "static breadcrumb = [category]");
+        assertEq(labels[0], "Withdrawal Queue");
+        assertEq(labels[1], "rsETH");
         assertTrue(leg.positionInstanceId != bytes32(0), "positionInstanceId carries the userNonce");
     }
 

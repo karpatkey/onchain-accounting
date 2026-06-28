@@ -155,11 +155,13 @@ contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescri
     }
 
     /// @inheritdoc IPositionDescribable
-    /// @dev `["ETHx Withdrawal Queue"]` — a static category (all requests share the queue `positionId`). The
-    ///      per-request sequential id is the typed `positionInstanceId` on each leg, NOT a label.
+    /// @dev `["Withdrawal Queue", "ETHx"]` — category + the receipt-token symbol (matching the sibling queues). All
+    ///      requests share the queue `positionId`; the per-request sequential id is the typed `positionInstanceId` on
+    ///      each leg, NOT a label.
     function positionLabels(bytes calldata) external pure override returns (string[] memory out) {
-        out = new string[](1);
-        out[0] = "ETHx Withdrawal Queue";
+        out = new string[](2);
+        out[0] = "Withdrawal Queue";
+        out[1] = "ETHx";
     }
 
     /// @inheritdoc IBalanceAdapter

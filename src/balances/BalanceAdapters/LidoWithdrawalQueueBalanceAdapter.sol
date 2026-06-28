@@ -159,11 +159,13 @@ contract LidoWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
     }
 
     /// @inheritdoc IPositionDescribable
-    /// @dev `["stETH Withdrawal Queue"]` — a static category (all requests share the queue `positionId`). The per-request
-    ///      ERC721 token id is the typed `positionInstanceId` on each leg (ephemeral — burned on claim), NOT a label.
+    /// @dev `["Withdrawal Queue", "stETH"]` — category + the receipt-token symbol (matching the sibling queues). All
+    ///      requests share the queue `positionId`; the per-request ERC721 token id is the typed `positionInstanceId`
+    ///      on each leg (ephemeral — burned on claim), NOT a label.
     function positionLabels(bytes calldata) external pure override returns (string[] memory out) {
-        out = new string[](1);
-        out[0] = "stETH Withdrawal Queue";
+        out = new string[](2);
+        out[0] = "Withdrawal Queue";
+        out[1] = "stETH";
     }
 
     /// @inheritdoc IBalanceAdapter

@@ -127,12 +127,13 @@ contract StakeWiseV3ExitQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
         assertEq(total, agg, "sum of per-request legs == aggregate");
     }
 
-    /// @dev Asserts a per-request leg: the static breadcrumb is `["osETH Exit Queue"]` (positionId-derived receipt-token
+    /// @dev Asserts a per-request leg: the static breadcrumb is `["Exit Queue", "osETH"]` (positionId-derived receipt-token
     ///      category, no ephemeral id), and the positionTicket rides in the typed `positionInstanceId`.
     function _assertTicketLeg(INAVCalculator.PositionBalance memory leg) internal view {
         string[] memory labels = adapter.positionLabels(leg.positionId);
-        assertEq(labels.length, 1, "static breadcrumb = [category]");
-        assertEq(labels[0], "osETH Exit Queue");
+        assertEq(labels.length, 2, "static breadcrumb = [category]");
+        assertEq(labels[0], "Exit Queue");
+        assertEq(labels[1], "osETH");
         assertTrue(leg.positionInstanceId != bytes32(0), "positionInstanceId carries the ticket");
     }
 

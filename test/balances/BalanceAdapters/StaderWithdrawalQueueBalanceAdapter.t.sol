@@ -275,8 +275,9 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(positions[0].positionId, abi.encode(address(manager)), "static positionId = withdrawal manager");
         // Static breadcrumb is positionId-derived; the request id rides in positionInstanceId.
         string[] memory lbl = adapter.positionLabels(positions[0].positionId);
-        assertEq(lbl.length, 1);
-        assertEq(lbl[0], "ETHx Withdrawal Queue");
+        assertEq(lbl.length, 2);
+        assertEq(lbl[0], "Withdrawal Queue");
+        assertEq(lbl[1], "ETHx");
         assertEq(positions[0].positionInstanceId, bytes32(uint256(1)));
     }
 
@@ -340,8 +341,9 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertFalse(positions[0].isLocked, "finalized request -> claimable leg");
         assertEq(positions[0].positionId, abi.encode(address(manager)));
         string[] memory lbl = adapter.positionLabels(positions[0].positionId);
-        assertEq(lbl.length, 1);
-        assertEq(lbl[0], "ETHx Withdrawal Queue");
+        assertEq(lbl.length, 2);
+        assertEq(lbl[0], "Withdrawal Queue");
+        assertEq(lbl[1], "ETHx");
         assertEq(positions[0].positionInstanceId, bytes32(uint256(1)));
     }
 
@@ -376,8 +378,9 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
             assertFalse(positions[i].isDebt);
             assertEq(positions[i].positionId, expectedId, "both legs share the static positionId");
             string[] memory lbl = adapter.positionLabels(positions[i].positionId);
-            assertEq(lbl.length, 1);
-            assertEq(lbl[0], "ETHx Withdrawal Queue");
+            assertEq(lbl.length, 2);
+            assertEq(lbl[0], "Withdrawal Queue");
+            assertEq(lbl[1], "ETHx");
             if (positions[i].isLocked) {
                 locked += positions[i].amount;
                 sawLocked = true;

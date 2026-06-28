@@ -238,14 +238,20 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
     }
 
     /// @inheritdoc IPositionDescribable
-    /// @dev `["<receiptSymbol> Exit Queue"]` — names StakeWise's receipt/LST token (e.g. `"osETH Exit Queue"` on
-    ///      mainnet, `"osGNO Exit Queue"` on Gnosis), consistent with the sibling queues that name the receipt token
-    ///      (stETH/rsETH/eETH/ETHx) rather than the payout asset. Falls back to the bare `["Exit Queue"]` if
-    ///      {receiptSymbol} was left empty. A static category — all of a vault's tickets share the per-vault
-    ///      `positionId`; the per-ticket coordinate is the typed `positionInstanceId` on each leg (ephemeral), NOT a label.
+    /// @dev `["Exit Queue", "<receiptSymbol>"]` — category + StakeWise's receipt/LST token symbol (`"osETH"` mainnet,
+    ///      `"osGNO"` Gnosis), matching the sibling queues' `[category, token]` shape; names the receipt token rather
+    ///      than the payout asset. Falls back to the bare `["Exit Queue"]` if {receiptSymbol} was left empty. All of a
+    ///      vault's tickets share the per-vault `positionId`; the per-ticket coordinate is the typed
+    ///      `positionInstanceId` on each leg (ephemeral), NOT a label.
     function positionLabels(bytes calldata) external view override returns (string[] memory out) {
-        out = new string[](1);
-        out[0] = bytes(receiptSymbol).length == 0 ? "Exit Queue" : string.concat(receiptSymbol, " Exit Queue");
+        if (bytes(receiptSymbol).length == 0) {
+            out = new string[](1);
+            out[0] = "Exit Queue";
+            return out;
+        }
+        out = new string[](2);
+        out[0] = "Exit Queue";
+        out[1] = receiptSymbol;
     }
 
     /// @inheritdoc IBalanceAdapter

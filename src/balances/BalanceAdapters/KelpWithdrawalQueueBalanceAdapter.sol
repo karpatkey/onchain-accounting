@@ -125,11 +125,13 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
     }
 
     /// @inheritdoc IPositionDescribable
-    /// @dev `["rsETH Withdrawal Queue"]` — a static category (all requests share the withdrawal-manager `positionId`).
-    ///      The per-request absolute `userNonce` is the typed `positionInstanceId` on each leg, NOT a label.
+    /// @dev `["Withdrawal Queue", "rsETH"]` — category + the receipt-token symbol (matching the sibling queues). All
+    ///      requests share the withdrawal-manager `positionId`; the per-request absolute `userNonce` is the typed
+    ///      `positionInstanceId` on each leg, NOT a label.
     function positionLabels(bytes calldata) external pure override returns (string[] memory out) {
-        out = new string[](1);
-        out[0] = "rsETH Withdrawal Queue";
+        out = new string[](2);
+        out[0] = "Withdrawal Queue";
+        out[1] = "rsETH";
     }
 
     /// @inheritdoc IBalanceAdapter

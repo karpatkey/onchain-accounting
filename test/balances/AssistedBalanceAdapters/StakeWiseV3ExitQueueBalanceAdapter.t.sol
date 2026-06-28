@@ -606,12 +606,13 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         p[0] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(address(vault), TICKET, TS);
     }
 
-    /// @dev Asserts a leg's static breadcrumb is `["osETH Exit Queue"]` (positionId-derived receipt-token category, no
+    /// @dev Asserts a leg's static breadcrumb is `["Exit Queue", "osETH"]` (positionId-derived receipt-token category, no
     ///      ephemeral id); the positionTicket now rides in the typed `positionInstanceId`.
     function _assertTicketLeg(INAVCalculator.PositionBalance memory leg) internal view {
         string[] memory labels = adapter.positionLabels(leg.positionId);
-        assertEq(labels.length, 1, "static breadcrumb = [category]");
-        assertEq(labels[0], "osETH Exit Queue");
+        assertEq(labels.length, 2, "static breadcrumb = [category]");
+        assertEq(labels[0], "Exit Queue");
+        assertEq(labels[1], "osETH");
         assertTrue(leg.positionInstanceId != bytes32(0), "positionInstanceId carries the ticket");
     }
 }

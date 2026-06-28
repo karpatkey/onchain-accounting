@@ -66,12 +66,13 @@ contract StaderWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
         assertEq(sum, TEST_USER_EXPECTED_ETH);
     }
 
-    /// @dev Asserts a per-request leg: the static breadcrumb is `["ETHx Withdrawal Queue"]` (positionId-derived, no
+    /// @dev Asserts a per-request leg: the static breadcrumb is `["Withdrawal Queue", "ETHx"]` (positionId-derived, no
     ///      ephemeral id), and the request id rides in the typed `positionInstanceId`.
     function _assertRequestLeg(INAVCalculator.PositionBalance memory leg) internal view {
         string[] memory labels = adapter.positionLabels(leg.positionId);
-        assertEq(labels.length, 1, "static breadcrumb = [category]");
-        assertEq(labels[0], "ETHx Withdrawal Queue");
+        assertEq(labels.length, 2, "static breadcrumb = [category]");
+        assertEq(labels[0], "Withdrawal Queue");
+        assertEq(labels[1], "ETHx");
         assertTrue(leg.positionInstanceId != bytes32(0), "positionInstanceId carries the request id");
     }
 
@@ -206,12 +207,13 @@ contract StaderWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTest
         assertEq(sum, PENDING_EXPECTED_ETH);
     }
 
-    /// @dev Asserts a per-request leg: the static breadcrumb is `["ETHx Withdrawal Queue"]` (positionId-derived, no
+    /// @dev Asserts a per-request leg: the static breadcrumb is `["Withdrawal Queue", "ETHx"]` (positionId-derived, no
     ///      ephemeral id), and the request id rides in the typed `positionInstanceId`.
     function _assertRequestLeg(INAVCalculator.PositionBalance memory leg) internal view {
         string[] memory labels = oracle.positionLabels(leg.positionId);
-        assertEq(labels.length, 1, "static breadcrumb = [category]");
-        assertEq(labels[0], "ETHx Withdrawal Queue");
+        assertEq(labels.length, 2, "static breadcrumb = [category]");
+        assertEq(labels[0], "Withdrawal Queue");
+        assertEq(labels[1], "ETHx");
         assertTrue(leg.positionInstanceId != bytes32(0), "positionInstanceId carries the request id");
     }
 

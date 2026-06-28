@@ -82,12 +82,13 @@ contract LidoWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
         assertEq(sum, expectedClaimableEth);
     }
 
-    /// @dev Asserts a per-request leg: the static breadcrumb is `["stETH Withdrawal Queue"]` (positionId-derived, no
+    /// @dev Asserts a per-request leg: the static breadcrumb is `["Withdrawal Queue", "stETH"]` (positionId-derived, no
     ///      ephemeral id), and the request id rides in the typed `positionInstanceId`.
     function _assertRequestLeg(INAVCalculator.PositionBalance memory leg) internal view {
         string[] memory labels = adapter.positionLabels(leg.positionId);
-        assertEq(labels.length, 1, "static breadcrumb = [category]");
-        assertEq(labels[0], "stETH Withdrawal Queue");
+        assertEq(labels.length, 2, "static breadcrumb = [category]");
+        assertEq(labels[0], "Withdrawal Queue");
+        assertEq(labels[1], "stETH");
         assertTrue(leg.positionInstanceId != bytes32(0), "positionInstanceId carries the request id");
     }
 
@@ -266,12 +267,13 @@ contract LidoWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTestBa
         assertEq(sum, SECONDARY_EXPECTED_ETH);
     }
 
-    /// @dev Asserts a per-request leg: the static breadcrumb is `["stETH Withdrawal Queue"]` (positionId-derived, no
+    /// @dev Asserts a per-request leg: the static breadcrumb is `["Withdrawal Queue", "stETH"]` (positionId-derived, no
     ///      ephemeral id), and the request id rides in the typed `positionInstanceId`.
     function _assertRequestLeg(INAVCalculator.PositionBalance memory leg) internal view {
         string[] memory labels = oracle.positionLabels(leg.positionId);
-        assertEq(labels.length, 1, "static breadcrumb = [category]");
-        assertEq(labels[0], "stETH Withdrawal Queue");
+        assertEq(labels.length, 2, "static breadcrumb = [category]");
+        assertEq(labels[0], "Withdrawal Queue");
+        assertEq(labels[1], "stETH");
         assertTrue(leg.positionInstanceId != bytes32(0), "positionInstanceId carries the request id");
     }
 }

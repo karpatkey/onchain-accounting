@@ -104,12 +104,13 @@ contract EtherFiWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase 
         assertEq(sum, EXPECTED_ETH, "per-request legs sum to the aggregate total");
     }
 
-    /// @dev Asserts a per-request leg: the static breadcrumb is `["eETH Withdrawal Queue"]` (positionId-derived, no
+    /// @dev Asserts a per-request leg: the static breadcrumb is `["Withdrawal Queue", "eETH"]` (positionId-derived, no
     ///      ephemeral id), and the tokenId rides in the typed `positionInstanceId`.
     function _assertRequestLeg(INAVCalculator.PositionBalance memory leg) internal view {
         string[] memory labels = adapter.positionLabels(leg.positionId);
-        assertEq(labels.length, 1, "static breadcrumb = [category]");
-        assertEq(labels[0], "eETH Withdrawal Queue");
+        assertEq(labels.length, 2, "static breadcrumb = [category]");
+        assertEq(labels[0], "Withdrawal Queue");
+        assertEq(labels[1], "eETH");
         assertTrue(leg.positionInstanceId != bytes32(0), "positionInstanceId carries the tokenId");
     }
 

@@ -273,8 +273,9 @@ contract KelpWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
             assertEq(positions[i].positionId, abi.encode(address(manager)));
             // Static breadcrumb is positionId-derived; the userNonce rides in positionInstanceId (0 for first request).
             string[] memory lbl = adapter.positionLabels(positions[i].positionId);
-            assertEq(lbl.length, 1);
-            assertEq(lbl[0], "rsETH Withdrawal Queue");
+            assertEq(lbl.length, 2);
+            assertEq(lbl[0], "Withdrawal Queue");
+            assertEq(lbl[1], "rsETH");
             assertEq(positions[i].positionInstanceId, bytes32(uint256(0)));
         }
     }
@@ -292,8 +293,9 @@ contract KelpWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertFalse(positions[0].isLocked, "nonce < cursor AND delay elapsed -> claimable");
         assertEq(positions[0].positionId, abi.encode(address(manager)));
         string[] memory lbl = adapter.positionLabels(positions[0].positionId);
-        assertEq(lbl.length, 1);
-        assertEq(lbl[0], "rsETH Withdrawal Queue");
+        assertEq(lbl.length, 2);
+        assertEq(lbl[0], "Withdrawal Queue");
+        assertEq(lbl[1], "rsETH");
         assertEq(positions[0].positionInstanceId, bytes32(uint256(0)));
     }
 
@@ -340,8 +342,9 @@ contract KelpWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
             assertFalse(positions[i].isDebt);
             assertEq(positions[i].positionId, expectedId, "both legs share the static withdrawal-manager positionId");
             string[] memory lbl = adapter.positionLabels(positions[i].positionId);
-            assertEq(lbl.length, 1);
-            assertEq(lbl[0], "rsETH Withdrawal Queue");
+            assertEq(lbl.length, 2);
+            assertEq(lbl[0], "Withdrawal Queue");
+            assertEq(lbl[1], "rsETH");
             if (positions[i].isLocked) {
                 locked += positions[i].amount;
                 sawLocked = true;
@@ -385,8 +388,9 @@ contract KelpWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(positions[0].balanceAsset.asset, address(steth));
         assertEq(positions[0].amount, 5e18);
         string[] memory lbl = adapter.positionLabels(positions[0].positionId);
-        assertEq(lbl.length, 1);
-        assertEq(lbl[0], "rsETH Withdrawal Queue");
+        assertEq(lbl.length, 2);
+        assertEq(lbl[0], "Withdrawal Queue");
+        assertEq(lbl[1], "rsETH");
         assertEq(positions[0].positionInstanceId, bytes32(uint256(0)));
     }
 

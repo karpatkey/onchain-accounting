@@ -1045,9 +1045,23 @@ const key = keccak256(abi.encode(
 ));
 ```
 
-`isLocked` is part of the key: withdrawal-queue / cooldown adapters split a holding into a
-claimable leg (`isLocked=false`) and a locked leg (`isLocked=true`) that share the same static
-`positionId`, so `isLocked` is what keeps them distinct.
+`isLocked` is part of the key: it distinguishes the claimable (`isLocked=false`) vs locked
+(`isLocked=true`) legs that share a static `positionId` (the withdrawal-queue / cooldown /
+staking-with-cooldown adapters).
+
+**The key identifies a position _group_, not necessarily a single emitted leg.** Adapters that emit
+one leg per underlying item emit **multiple legs that share the same full key**, distinguished only by
+the display `labels` (never part of the key):
+- the withdrawal queues — **one leg per open request** (Lido / Stader / Kelp / ether.fi / StakeWise
+  V3); the request id (ERC721 request id / `userNonce` / cached tokenId / `positionTicket`) is in `labels`;
+- the non-enumerable-NFT adapters — **one leg per NFT** (Uniswap V3 / PancakeSwap V3 / Nexus Mutual);
+  the NFT id is in `labels`.
+
+This is by design: the per-item id is ephemeral (a withdrawal request is burned on claim; an LP/stake
+NFT can be transferred or burned), so it is never put in `positionId`. **Consumers reconciling at the
+position level must SUM amounts across legs that share the key** — this is exactly what NAV does, so
+the on-chain total is always correct; only a consumer that _upserts_ (deduplicates) by the key would
+collapse those legs and under-count. Consumers needing per-item granularity read `labels`.
 
 **Excluded from the key by design:**
 - `balanceAdapter` — provenance only; redeploying an adapter doesn't change the position

@@ -229,15 +229,18 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
 
         uint256 nAssets = supported.length;
 
-        // Size the scratch array to the sum of per-asset open-request counts (each capped at
-        // MAX_REQUESTS_PROBED), an upper bound on the number of legs (zero-amount requests drop below it).
+        // Size the scratch array to the sum of per-asset open-request counts (each capped at MAX_REQUESTS_PROBED), an
+        // upper bound on the number of legs (zero-amount requests drop below it). Cache each capped count so the
+        // emission loop below does NOT re-read `userAssociatedNonces` per asset.
         uint256 cap;
+        uint256[] memory counts = new uint256[](nAssets);
         for (uint256 a = 0; a < nAssets; a++) {
             (uint128 begin, uint128 end) = WITHDRAWAL_MANAGER.userAssociatedNonces(supported[a], account);
             uint256 c = end - begin;
             if (c > MAX_REQUESTS_PROBED) {
                 c = MAX_REQUESTS_PROBED;
             }
+            counts[a] = c;
             cap += c;
         }
 
@@ -248,6 +251,9 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](cap);
         uint256 n;
         for (uint256 a = 0; a < nAssets; a++) {
+            if (counts[a] == 0) {
+                continue;
+            }
             address asset = supported[a];
             if (assetFilter != address(0) && assetFilter != asset) {
                 continue;
@@ -257,7 +263,8 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
                 continue;
             }
             // Append this asset's per-request legs (extracted to keep `getAdapterPositions` under the stack limit).
-            n = _appendAssetLegs(account, asset, underlying, delayBlocks, positionId, temp, n);
+            // `counts[a]` (capped request count) is reused from the sizing pre-pass — no second nonce-range read.
+            n = _appendAssetLegs(account, asset, underlying, counts[a], delayBlocks, positionId, temp, n);
         }
 
         positions = new INAVCalculator.PositionBalance[](n);
@@ -268,24 +275,18 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
 
     /// @dev Appends one `Supplied` leg per open request of `(asset, account)` into `temp` (starting at `n`), returning
     ///      the new count. Mirrors the inner loop of `getAdapterPositions`; extracted so the outer per-asset scope
-    ///      stays within the via_ir stack limit. Bounded by `MAX_REQUESTS_PROBED`; zero-amount requests are skipped.
+    ///      stays within the via_ir stack limit. `c` is the capped open-request count from the sizing pre-pass (reused
+    ///      here rather than re-reading `userAssociatedNonces`); zero-amount requests are skipped.
     function _appendAssetLegs(
         address account,
         address asset,
         INAVCalculator.Asset memory underlying,
+        uint256 c,
         uint256 delayBlocks,
         bytes memory positionId,
         INAVCalculator.PositionBalance[] memory temp,
         uint256 n
     ) private view returns (uint256) {
-        (uint128 begin, uint128 end) = WITHDRAWAL_MANAGER.userAssociatedNonces(asset, account);
-        uint256 c = end - begin;
-        if (c == 0) {
-            return n;
-        }
-        if (c > MAX_REQUESTS_PROBED) {
-            c = MAX_REQUESTS_PROBED;
-        }
         uint256 cursor = WITHDRAWAL_MANAGER.nextLockedNonce(asset);
 
         for (uint256 i = 0; i < c; i++) {

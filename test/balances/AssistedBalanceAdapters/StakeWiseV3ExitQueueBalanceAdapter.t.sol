@@ -191,17 +191,22 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(cached[0].timestamp, TS);
     }
 
-    function test_submit_skipsVaultNotInRegistry() public {
+    /// @notice Writes are fail-loud: a vault not in the registry reverts InvalidExitPosition rather than being skipped.
+    function test_submit_revertsOnVaultNotInRegistry() public {
         registry.setVault(address(vault), false);
         vault.setIndex(TICKET, 1);
         vault.setRequest(holder, TICKET, TS, 0, 1 ether);
+        vm.expectRevert(abi.encodeWithSelector(InvalidExitPosition.selector, holder, address(vault), TICKET));
         adapter.submitPositions(holder, _claimable());
         assertEq(adapter.positionsOf(holder).length, 0);
     }
 
-    function test_submit_skipsTupleWithZeroOwed() public {
-        // Registered vault, but no exit request set for (holder, TICKET, TS) → owed 0 → skipped.
+    /// @notice Writes are fail-loud: a tuple that resolves to zero owed for `account` (not its position, or claimed)
+    ///         reverts InvalidExitPosition — the on-chain ownership proxy — rather than being silently skipped.
+    function test_submit_revertsOnTupleWithZeroOwed() public {
+        // Registered vault, but no exit request set for (holder, TICKET, TS) → owed 0 → reverts.
         vault.setIndex(TICKET, 1);
+        vm.expectRevert(abi.encodeWithSelector(InvalidExitPosition.selector, holder, address(vault), TICKET));
         adapter.submitPositions(holder, _claimable());
         assertEq(adapter.positionsOf(holder).length, 0);
     }
@@ -318,10 +323,12 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(p[0].amount, 3 ether);
     }
 
-    function test_wrongReceiver_dropped() public {
-        // Position belongs to `other`; submitting it under `holder` → calculateExitedAssets(holder,…) == 0 → skip.
+    function test_submit_revertsOnWrongReceiver() public {
+        // Position belongs to `other`; submitting it under `holder` → calculateExitedAssets(holder,…) == 0, which is
+        // the on-chain ownership proxy → fail-loud revert (the assistant submitted someone else's position).
         vault.setIndex(TICKET, 1);
         vault.setRequest(other, TICKET, TS, 0, 1 ether);
+        vm.expectRevert(abi.encodeWithSelector(InvalidExitPosition.selector, holder, address(vault), TICKET));
         adapter.submitPositions(holder, _claimable());
         assertEq(adapter.positionsOf(holder).length, 0);
         (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, NATIVE);
@@ -380,17 +387,29 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(amt, 0);
     }
 
-    function test_submit_capsAtMaxPositions() public {
+    /// @notice Writes are fail-loud at the cap: filling exactly MAX_POSITIONS succeeds, but the next position reverts
+    ///         PositionCacheFull rather than being silently dropped from NAV.
+    function test_submit_revertsWhenCacheFull() public {
         uint256 cap = adapter.MAX_POSITIONS();
         StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[] memory many =
-            new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[](cap + 5);
-        for (uint256 i = 0; i < cap + 5; i++) {
+            new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[](cap);
+        for (uint256 i = 0; i < cap; i++) {
             vault.setIndex(i + 1, 1);
             vault.setRequest(holder, i + 1, TS, 0, 1 ether);
             many[i] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(address(vault), i + 1, TS);
         }
         adapter.submitPositions(holder, many);
-        assertEq(adapter.positionsOf(holder).length, cap, "cache must be capped at MAX_POSITIONS");
+        assertEq(adapter.positionsOf(holder).length, cap, "cache filled to MAX_POSITIONS");
+
+        // One more valid position past the cap must revert (not silently drop).
+        vault.setIndex(cap + 1, 1);
+        vault.setRequest(holder, cap + 1, TS, 0, 1 ether);
+        StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[] memory one =
+            new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[](1);
+        one[0] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(address(vault), cap + 1, TS);
+        vm.expectRevert(abi.encodeWithSelector(PositionCacheFull.selector, holder, cap));
+        adapter.submitPositions(holder, one);
+        assertEq(adapter.positionsOf(holder).length, cap, "cache unchanged after the reverted submit");
     }
 
     // ---- Positions / identity ----

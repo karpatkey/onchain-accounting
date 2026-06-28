@@ -38,8 +38,10 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      the entry block's `block.timestamp` (the agent reads it from the `ExitQueueEntered` event's block). Because
 ///      the valuation call passes `receiver = account`, a tuple that does not belong to `account` resolves to a
 ///      zero exit request and is dropped — this is the on-chain verification (no `ownerOf` exists for exit
-///      positions). The `vaultsRegistry` membership check at submit time is light hygiene only; correctness does
-///      not depend on it.
+///      positions). Writes are fail-loud (matching the sibling assisted NFT-id adapters): `submitPositions`
+///      **reverts** `InvalidExitPosition` for a tuple whose vault is not StakeWise-registered or that does not
+///      resolve to a live owed amount for `account`, and `PositionCacheFull` at `MAX_POSITIONS`. Reads still
+///      re-verify and discard (never revert), so correctness does not depend on the write-time checks.
 contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPositionDescribable {
     using Strings for uint256;
 
@@ -142,10 +144,12 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
     // Mutators (onlyRole(ASSISTANT_ROLE))
     //
 
-    /// @notice Add candidate exit positions for `account`. Idempotent (dedup by tuple hash). Positions whose vault
-    ///         is not in the VaultsRegistry, or that do not currently resolve to a non-zero owed amount for
-    ///         `account`, are skipped at write time as light hygiene; correctness does not depend on it — reads
-    ///         re-verify and value only live, account-owned positions.
+    /// @notice Add candidate exit positions for `account`. Idempotent (dedup by tuple hash). **Reverts**
+    ///         `InvalidExitPosition` for any position whose vault is not StakeWise-registered or that does not
+    ///         currently resolve to a non-zero owed amount for `account` (the on-chain ownership proxy), and
+    ///         `PositionCacheFull` once the per-account cache is at `MAX_POSITIONS` — writes are fail-loud, so a bad
+    ///         tuple or a full cache surfaces to the assistant instead of silently dropping an owned position from NAV.
+    ///         Not load-bearing for correctness — reads re-verify and value only live, account-owned positions.
     function submitPositions(address account, ExitPosition[] calldata positions) external onlyRole(ASSISTANT_ROLE) {
         if (account == address(0)) revert InvalidArguments();
         for (uint256 i; i < positions.length; ++i) {
@@ -353,19 +357,27 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
 
     function _addPosition(address account, ExitPosition calldata position) internal {
         bytes32 key = _key(position.vault, position.positionTicket, position.timestamp);
-        if (_positionIdxPlus1[account][key] != 0) return; // already cached
+        if (_positionIdxPlus1[account][key] != 0) return; // already cached (idempotent no-op)
         // Cap the cache so the per-account read loop stays gas-bounded (OOG there isn't caught by NAV). The assistant
-        // must GC claimed positions to make room; a real account never approaches MAX_POSITIONS open exits.
-        if (_positions[account].length >= MAX_POSITIONS) return;
-        // Light hygiene: only store vaults the registry knows and tuples that resolve to a live owed amount for
-        // `account`. Not load-bearing — reads re-verify. Both reads try/catch to a skip.
+        // must GC claimed positions to make room; a real account never approaches MAX_POSITIONS open exits. **Revert**
+        // rather than silently dropping the position — writes are fail-loud (like the validation below), so a full
+        // cache surfaces to the assistant instead of silently omitting an owned exit position from NAV.
+        if (_positions[account].length >= MAX_POSITIONS) revert PositionCacheFull(account, MAX_POSITIONS);
+        // Fail-loud validation (matching the sibling assisted NFT-id adapters): the vault must be StakeWise-registered
+        // AND the tuple must resolve to a live owed amount for `account` — `calculateExitedAssets` keys on
+        // `receiver = account`, so a non-zero owed amount is the on-chain proxy for "this exit position belongs to
+        // `account`" (StakeWise exit positions have no `ownerOf`). A tuple failing either check is a caller mistake
+        // (wrong account/vault/ticket, or already claimed); reject it instead of silently omitting it. Not load-bearing
+        // for correctness — reads re-verify and value only live, account-owned positions.
+        bool registeredVault;
         try IStakeWiseVaultsRegistry(VAULTS_REGISTRY).vaults(position.vault) returns (bool ok) {
-            if (!ok) return;
+            registeredVault = ok;
         } catch {
-            return;
+            registeredVault = false;
         }
+        if (!registeredVault) revert InvalidExitPosition(account, position.vault, position.positionTicket);
         (uint256 c, uint256 l) = _owedForPosition(account, position.vault, position.positionTicket, position.timestamp);
-        if (c + l == 0) return;
+        if (c + l == 0) revert InvalidExitPosition(account, position.vault, position.positionTicket);
 
         _positions[account].push(position);
         _positionIdxPlus1[account][key] = _positions[account].length;

@@ -8,6 +8,7 @@ import {
     IStakeWiseExitVault
 } from "src/balances/AssistedBalanceAdapters/StakeWiseV3ExitQueueBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {InvalidExitPosition} from "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
@@ -162,23 +163,26 @@ contract StakeWiseV3ExitQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
         assertEq(adapter.getAdapterPositions(HOLDER, address(0)).length, 0);
     }
 
-    function test_submit_skipsTupleNotOwnedByAccount() public {
-        // Submitting the real tuple under a different account → calculateExitedAssets(stranger,…) == 0 → skipped.
+    function test_submit_revertsOnTupleNotOwnedByAccount() public {
+        // Submitting the real tuple under a different account → calculateExitedAssets(stranger,…) == 0 → reverts
+        // (fail-loud; the zero owed amount is the on-chain ownership proxy).
         address stranger = makeAddr("stranger");
         StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[] memory p =
             new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[](1);
         p[0] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(GENESIS_VAULT, TICKET, ENTRY_TS);
+        vm.expectRevert(abi.encodeWithSelector(InvalidExitPosition.selector, stranger, GENESIS_VAULT, TICKET));
         adapter.submitPositions(stranger, p);
         assertEq(adapter.positionsOf(stranger).length, 0);
         (uint256 amount,) = adapter.getAdapterBalanceForAsset(stranger, NATIVE_ETH);
         assertEq(amount, 0);
     }
 
-    function test_submit_skipsUnregisteredVault() public {
-        // A non-StakeWise address is rejected at write (VaultsRegistry.vaults == false).
+    function test_submit_revertsOnUnregisteredVault() public {
+        // A non-StakeWise address is rejected at write (VaultsRegistry.vaults == false) — fail-loud.
         StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[] memory p =
             new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[](1);
         p[0] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(MAINNET_WETH, TICKET, ENTRY_TS);
+        vm.expectRevert(abi.encodeWithSelector(InvalidExitPosition.selector, HOLDER, MAINNET_WETH, TICKET));
         adapter.submitPositions(HOLDER, p);
         assertEq(adapter.positionsOf(HOLDER).length, 0);
     }

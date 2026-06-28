@@ -141,16 +141,18 @@ contract MyProtocolBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         //     protocolId: PROTOCOL_ID,
         //     positionId: abi.encode(PROTOCOL_CONTRACT, asset),
         //     positionKind: PositionKind.Supplied,
-        //     isLocked: false  // true only for the pending leg of a withdrawal queue / cooldown
-        //     labels: _supplyLabels(assetMeta.symbol)  // string[] display hierarchy below protocolName, leaf last
+        //     isLocked: false,  // true only for the pending leg of a withdrawal queue / cooldown
+        //     positionInstanceId: bytes32(0)  // ephemeral per-item coordinate (NFT/request id); bytes32(0) if none
         // });
     }
 
-    /// @dev Build the display hierarchy that sits below `protocolName()` (leaf last), derived on-chain
-    ///      (ERC20 symbols, vault/pool names, etc.). Display only — never identity.
-    function _supplyLabels(string memory assetSymbol) internal pure returns (string[] memory out) {
-        out = new string[](1);
-        out[0] = string.concat(assetSymbol, " supply");
+    /// @dev Display hierarchy that sits below `protocolName()` (leaf last), derived on-chain from `positionId`
+    ///      (ERC20 symbols, vault/pool names, etc.). Verbose-only, gas-capped — display, never identity.
+    function positionLabels(bytes calldata positionId) external view returns (string[] memory out) {
+        // Decode `positionId`, read the relevant on-chain name(s)/symbol(s), return [category, leaf].
+        out = new string[](2);
+        out[0] = "Supplied";
+        out[1] = "<derived leaf>";
     }
 }
 ```
@@ -172,7 +174,7 @@ Conventions:
 - `balanceAdapter` is always `address(this)`. It is the audit trail.
 - For asset metadata on the `PositionBalance.balanceAsset` field, call `NAV_CALCULATOR.getRegisteredAssets()` and only emit positions for assets present in that list.
 - Use a **minimal interface** for each external protocol call — declare it at the bottom of the file (or in a sibling `I<Protocol>.sol`). Do not import the protocol's full library.
-- Implement `protocolName()` (the only method on `IPositionDescribable`) and fill `PositionBalance.labels` on each returned position — a `string[]` display hierarchy below `protocolName` (leaf last), derived on-chain (ERC20 symbols, vault/pool names, etc.). NAVCalculator's verbose read methods surface both verbatim; labels are display-only, never identity.
+- Implement `protocolName()` **and** `positionLabels(bytes positionId)` from `IPositionDescribable`. `positionLabels` returns a `string[]` display hierarchy below `protocolName` (leaf last), derived on-chain from the `positionId` (ERC20 symbols, vault/pool names, etc.). It is a lazy, verbose-only, gas-capped read off the NAV hot path (NAVCalculator's verbose views call it); display-only, never identity. The per-item ephemeral coordinate (NFT/request id) rides in `PositionBalance.positionInstanceId`, not in labels.
 
 ---
 

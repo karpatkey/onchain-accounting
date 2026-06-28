@@ -290,7 +290,7 @@ contract ERC20DefaultBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     }
 
     /// @dev Builds one wallet PositionBalance field-by-field (avoids a 9-field literal inside the per-asset loop,
-    ///      which overflows the via_ir stack). positionId = abi.encode(asset); positionInstanceId is empty.
+    ///      which overflows the via_ir stack). positionId = abi.encode(asset); positionInstanceId defaults to bytes32(0).
     function _row(INAVCalculator.Asset memory underlyingAsset, uint256 balance, address asset)
         private
         view

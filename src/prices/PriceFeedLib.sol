@@ -535,8 +535,7 @@ library PriceFeedLib {
     ///         counting pass sizes the output to the EXACT number of surviving rows (registered asset + matching
     ///         filter) — not a fixed `2·(adapters+instances)·assetCount` heuristic, which a multi-leg meta-adapter
     ///         (e.g. Uniswap / PancakeSwap V3, up to 4 legs per LP NFT) could overflow, and not the
-    ///         sum-of-all-returned-rows, which would over-allocate when rows are filtered out. `metaInstanceTotal`
-    ///         and `assetCount` are retained in the signature for caller compatibility but no longer size the output.
+    ///         sum-of-all-returned-rows, which would over-allocate when rows are filtered out.
     function _getPositionBalances(
         address[] memory allAdapters,
         mapping(address => uint256) storage assetIndex,

@@ -273,10 +273,11 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertFalse(positions[0].isDebt);
         assertTrue(positions[0].isLocked, "not-finalized request -> locked leg");
         assertEq(positions[0].positionId, abi.encode(address(manager)), "static positionId = withdrawal manager");
-        // Request id rides in the last label (display only), not the positionId.
-        assertEq(positions[0].labels.length, 2);
-        assertEq(positions[0].labels[0], "ETHx Withdrawal Queue");
-        assertEq(positions[0].labels[1], "Request #1");
+        // Static breadcrumb is positionId-derived; the request id rides in positionInstanceId.
+        string[] memory lbl = adapter.positionLabels(positions[0].positionId);
+        assertEq(lbl.length, 1);
+        assertEq(lbl[0], "ETHx Withdrawal Queue");
+        assertEq(positions[0].positionInstanceId, bytes32(uint256(1)));
     }
 
     function test_getAdapterPositions_perRequestLegsAndLabels() public {
@@ -307,19 +308,17 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         for (uint256 i = 0; i < positions.length; i++) {
             assertEq(positions[i].positionId, expectedId, "all legs share the static positionId");
             assertTrue(positions[i].isLocked, "both pending -> locked");
-            assertEq(positions[i].labels.length, 2);
-            assertEq(positions[i].labels[0], "ETHx Withdrawal Queue");
             sum += positions[i].amount;
-            if (keccak256(bytes(positions[i].labels[1])) == keccak256("Request #7")) {
+            if (positions[i].positionInstanceId == bytes32(uint256(7))) {
                 saw7 = true;
                 assertEq(positions[i].amount, 2e18);
             }
-            if (keccak256(bytes(positions[i].labels[1])) == keccak256("Request #42")) {
+            if (positions[i].positionInstanceId == bytes32(uint256(42))) {
                 saw42 = true;
                 assertEq(positions[i].amount, 3e18);
             }
         }
-        assertTrue(saw7 && saw42, "each request id surfaced as its own leg label");
+        assertTrue(saw7 && saw42, "each request id surfaced as its own positionInstanceId");
 
         // NAV-total invariance: per-request legs still sum to the aggregate balance method.
         (uint256 agg,) = adapter.getAdapterBalanceForAsset(alice, address(weth));
@@ -340,9 +339,10 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(positions[0].amount, 1.95e18, "claimable leg uses ethFinalized");
         assertFalse(positions[0].isLocked, "finalized request -> claimable leg");
         assertEq(positions[0].positionId, abi.encode(address(manager)));
-        assertEq(positions[0].labels.length, 2);
-        assertEq(positions[0].labels[0], "ETHx Withdrawal Queue");
-        assertEq(positions[0].labels[1], "Request #1");
+        string[] memory lbl = adapter.positionLabels(positions[0].positionId);
+        assertEq(lbl.length, 1);
+        assertEq(lbl[0], "ETHx Withdrawal Queue");
+        assertEq(positions[0].positionInstanceId, bytes32(uint256(1)));
     }
 
     function test_getAdapterPositions_mixedClaimableAndLocked() public {
@@ -375,16 +375,19 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
             assertEq(positions[i].balanceAdapter, address(adapter));
             assertFalse(positions[i].isDebt);
             assertEq(positions[i].positionId, expectedId, "both legs share the static positionId");
-            assertEq(positions[i].labels.length, 2);
-            assertEq(positions[i].labels[0], "ETHx Withdrawal Queue");
+            string[] memory lbl = adapter.positionLabels(positions[i].positionId);
+            assertEq(lbl.length, 1);
+            assertEq(lbl[0], "ETHx Withdrawal Queue");
             if (positions[i].isLocked) {
                 locked += positions[i].amount;
                 sawLocked = true;
-                assertEq(positions[i].labels[1], "Request #2", "locked leg carries its own request id");
+                assertEq(positions[i].positionInstanceId, bytes32(uint256(2)), "locked leg carries its own request id");
             } else {
                 claimable += positions[i].amount;
                 sawClaimable = true;
-                assertEq(positions[i].labels[1], "Request #1", "claimable leg carries its own request id");
+                assertEq(
+                    positions[i].positionInstanceId, bytes32(uint256(1)), "claimable leg carries its own request id"
+                );
             }
         }
         assertTrue(sawClaimable && sawLocked, "exactly one claimable + one locked leg present");

@@ -184,14 +184,12 @@ contract EtherFiWithdrawalQueueBalanceAdapter is AssistedBalanceAdapter, IPositi
         return "ether.fi";
     }
 
-    /// @dev Per-request display labels: `["eETH Withdrawal Queue", "Request #<tokenId>"]`. The tokenId is the
-    ///      WithdrawRequestNFT id of the cached request — display only (it is ephemeral: the NFT is burned on claim),
-    ///      so it lives here in `labels`, never in `positionId`.
-    function _legLabels(uint256 tokenId) private pure returns (string[] memory) {
-        string[] memory out = new string[](2);
+    /// @inheritdoc IPositionDescribable
+    /// @dev `["eETH Withdrawal Queue"]` — a static category (all requests share the queue `positionId`). The per-request
+    ///      WithdrawRequestNFT id is the typed `positionInstanceId` on each leg (ephemeral — burned on claim), NOT here.
+    function positionLabels(bytes calldata) external pure override returns (string[] memory out) {
+        out = new string[](1);
         out[0] = "eETH Withdrawal Queue";
-        out[1] = string.concat("Request #", tokenId.toString());
-        return out;
     }
 
     /// @inheritdoc IBalanceAdapter
@@ -273,7 +271,7 @@ contract EtherFiWithdrawalQueueBalanceAdapter is AssistedBalanceAdapter, IPositi
                 positionId: positionId,
                 positionKind: PositionKind.Supplied,
                 isLocked: !finalized,
-                labels: _legLabels(ids[i])
+                positionInstanceId: bytes32(ids[i])
             });
         }
 

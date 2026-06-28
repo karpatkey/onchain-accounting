@@ -253,13 +253,13 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
 
         // pos[0] = vaultA, pos[1] = vaultB
         assertEq(pos[0].positionId, abi.encode(address(vaultA)));
-        string[] memory labelsA = pos[0].labels;
+        string[] memory labelsA = adapter.positionLabels(pos[0].positionId);
         assertEq(labelsA.length, 2);
         assertEq(labelsA[0], "Vault");
         assertEq(labelsA[1], "KPK RWA USDC");
 
         assertEq(pos[1].positionId, abi.encode(address(vaultB)));
-        string[] memory labelsB = pos[1].labels;
+        string[] memory labelsB = adapter.positionLabels(pos[1].positionId);
         assertEq(labelsB.length, 2);
         assertEq(labelsB[0], "Vault");
         assertEq(labelsB[1], "KPK ETH Yield Term");

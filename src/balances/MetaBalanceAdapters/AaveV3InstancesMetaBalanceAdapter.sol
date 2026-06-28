@@ -99,15 +99,15 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
         }
     }
 
-    /// @dev Per-leg display labels, filled on every emitted PositionBalance.labels.
+    /// @inheritdoc MetaBalanceAdapter
     /// @dev Returns `["Market Instance", <market id>]` — the leaf is the instance's on-chain market id
     ///      (e.g. "Aave Ethereum Market" vs "Aave V3 Lido Ethereum"), which distinguishes instances that share
     ///      the same protocolId. positionId is the instance Pool, so the label is per-instance, not per-reserve
     ///      (the reserve token lives in `balanceAsset`). Collapses to `["Market Instance"]` if the market id is
     ///      unavailable; empty array for a short positionId.
-    function _legLabels(bytes memory positionId) private view returns (string[] memory) {
-        if (positionId.length < 32) return new string[](0);
-        address pool = abi.decode(positionId, (address));
+    function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
+        if (pid.length < 32) return new string[](0);
+        address pool = abi.decode(pid, (address));
         return _labels("Market Instance", _marketId(pool));
     }
 
@@ -115,12 +115,7 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
     /// @dev V3 Pool exposes `ADDRESSES_PROVIDER()`.
     ///      Best-effort: returns "" if the pool/provider does not expose the views (label then drops the market).
     function _marketId(address pool) internal view returns (string memory) {
-        // Fail-open against a no-code address: Solidity's high-level call inserts an extcodesize check that reverts
-        // *past* try/catch when the target has no code, so guard explicitly. This matters now that labels are derived
-        // on the getAdapterPositions hot path — an unguarded revert here would drop the whole instance's positions.
-        if (pool.code.length == 0) return "";
         try IAaveAddressesProviderSource(pool).ADDRESSES_PROVIDER() returns (address ap) {
-            if (ap.code.length == 0) return "";
             try IAavePoolAddressesProvider(ap).getMarketId() returns (string memory m) {
                 return m;
             } catch {
@@ -157,7 +152,7 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
             positionId: pid,
             positionKind: kind,
             isLocked: false,
-            labels: _legLabels(pid)
+            positionInstanceId: bytes32(0)
         });
     }
 }

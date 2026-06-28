@@ -96,7 +96,8 @@ contract EthenaCooldownBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         return "Ethena";
     }
 
-    function _legLabels() private pure returns (string[] memory) {
+    /// @inheritdoc IPositionDescribable
+    function positionLabels(bytes calldata) external pure override returns (string[] memory) {
         string[] memory out = new string[](1);
         out[0] = "Unstaking Cooldown";
         return out;
@@ -200,7 +201,7 @@ contract EthenaCooldownBalanceAdapter is IBalanceAdapter, IPositionDescribable {
             positionId: abi.encode(address(STAKED_USDE)),
             positionKind: PositionKind.Supplied,
             isLocked: !unlocked,
-            labels: _legLabels()
+            positionInstanceId: bytes32(0)
         });
     }
 }

@@ -60,23 +60,19 @@ contract StaderWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
                 abi.encode(address(adapter.USER_WITHDRAWAL_MANAGER())),
                 "static positionId"
             );
-            _assertRequestLabel(positions[i].labels);
+            _assertRequestLeg(positions[i]);
             sum += positions[i].amount;
         }
         assertEq(sum, TEST_USER_EXPECTED_ETH);
     }
 
-    /// @dev Asserts a per-request leg's labels are `["ETHx Withdrawal Queue", "Request #<id>"]` (id prefix checked;
-    ///      the exact request id is holder/block-specific).
-    function _assertRequestLabel(string[] memory labels) internal pure {
-        assertEq(labels.length, 2, "labels = [category, Request #id]");
+    /// @dev Asserts a per-request leg: the static breadcrumb is `["ETHx Withdrawal Queue"]` (positionId-derived, no
+    ///      ephemeral id), and the request id rides in the typed `positionInstanceId`.
+    function _assertRequestLeg(INAVCalculator.PositionBalance memory leg) internal view {
+        string[] memory labels = adapter.positionLabels(leg.positionId);
+        assertEq(labels.length, 1, "static breadcrumb = [category]");
         assertEq(labels[0], "ETHx Withdrawal Queue");
-        bytes memory l = bytes(labels[1]);
-        bytes memory p = bytes("Request #");
-        assertGe(l.length, p.length + 1, "request id label is non-empty");
-        for (uint256 k = 0; k < p.length; k++) {
-            assertEq(uint8(l[k]), uint8(p[k]), "label leaf starts with 'Request #'");
-        }
+        assertTrue(leg.positionInstanceId != bytes32(0), "positionInstanceId carries the request id");
     }
 
     function test_getAdapterBalances_realHolder() public view {
@@ -204,22 +200,19 @@ contract StaderWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTest
                 "account-global positionId is the UserWithdrawalManager anchor"
             );
             assertEq(uint256(positions[i].positionKind), uint256(PositionKind.Supplied));
-            _assertRequestLabel(positions[i].labels);
+            _assertRequestLeg(positions[i]);
             sum += positions[i].amount;
         }
         assertEq(sum, PENDING_EXPECTED_ETH);
     }
 
-    /// @dev Asserts a per-request leg's labels are `["ETHx Withdrawal Queue", "Request #<id>"]` (id prefix checked).
-    function _assertRequestLabel(string[] memory labels) internal pure {
-        assertEq(labels.length, 2, "labels = [category, Request #id]");
+    /// @dev Asserts a per-request leg: the static breadcrumb is `["ETHx Withdrawal Queue"]` (positionId-derived, no
+    ///      ephemeral id), and the request id rides in the typed `positionInstanceId`.
+    function _assertRequestLeg(INAVCalculator.PositionBalance memory leg) internal view {
+        string[] memory labels = oracle.positionLabels(leg.positionId);
+        assertEq(labels.length, 1, "static breadcrumb = [category]");
         assertEq(labels[0], "ETHx Withdrawal Queue");
-        bytes memory l = bytes(labels[1]);
-        bytes memory p = bytes("Request #");
-        assertGe(l.length, p.length + 1, "request id label is non-empty");
-        for (uint256 k = 0; k < p.length; k++) {
-            assertEq(uint8(l[k]), uint8(p[k]), "label leaf starts with 'Request #'");
-        }
+        assertTrue(leg.positionInstanceId != bytes32(0), "positionInstanceId carries the request id");
     }
 
     // ---- FINALIZED: ethFinalized > 0 → preferred over ethExpected ----
@@ -241,7 +234,7 @@ contract StaderWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTest
             assertEq(positions[i].protocolId, ProtocolIds.STADER_WITHDRAWAL);
             assertEq(uint256(positions[i].positionKind), uint256(PositionKind.Supplied));
             assertFalse(positions[i].isLocked, "finalized request -> claimable (unlocked) leg");
-            _assertRequestLabel(positions[i].labels);
+            _assertRequestLeg(positions[i]);
             sum += positions[i].amount;
         }
         assertEq(sum, FINALIZED_EXPECTED_ETH);
@@ -270,13 +263,13 @@ contract StaderWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTest
                 positions[i].positionId, expectedId, "account-global positionId is the UserWithdrawalManager anchor"
             );
             assertEq(uint256(positions[i].positionKind), uint256(PositionKind.Supplied));
-            _assertRequestLabel(positions[i].labels);
+            _assertRequestLeg(positions[i]);
             sum += positions[i].amount;
         }
-        // The two request-id labels must differ (distinct requests).
+        // The two request-id instance ids must differ (distinct requests).
         assertTrue(
-            keccak256(bytes(positions[0].labels[1])) != keccak256(bytes(positions[1].labels[1])),
-            "each request leg has a distinct request id label"
+            positions[0].positionInstanceId != positions[1].positionInstanceId,
+            "each request leg has a distinct positionInstanceId"
         );
         assertEq(sum, MULTI_EXPECTED_ETH, "per-request legs sum to the aggregate total");
     }

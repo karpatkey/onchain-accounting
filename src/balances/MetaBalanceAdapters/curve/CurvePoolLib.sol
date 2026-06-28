@@ -210,9 +210,9 @@ library CurvePoolLib {
         for (uint256 i; i < coins.length; ++i) {
             string memory sym;
             // Fail-open against a no-code coin (e.g. Curve's native-ETH sentinel 0xEEee…EEeE): a high-level call to a
-            // codeless address reverts via Solidity's extcodesize check, which try/catch does NOT catch — and this
-            // runs on the getAdapterPositions hot path (via _legLabels), so an unguarded revert would drop the whole
-            // pool/gauge position from NAV. Guard explicitly and fall back to "?" like the catch arm.
+            // codeless address reverts via Solidity's extcodesize check, which try/catch does NOT catch. This runs in
+            // `positionLabels` (the lazy, verbose-only display path); guard explicitly and fall back to "?" like the
+            // catch arm so a labels read never reverts.
             if (coins[i].code.length == 0) {
                 sym = "?";
             } else {

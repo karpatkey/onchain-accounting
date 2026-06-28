@@ -98,13 +98,12 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceAdapter {
         return CompoundV3CometLib.supportedAssets(_toAddress(instance), REWARD_TOKEN);
     }
 
-    /// @dev Per-leg display labels, filled on every emitted PositionBalance.labels.
+    /// @inheritdoc MetaBalanceAdapter
     /// @dev Returns `["Market", <leaf>]` where the leaf is the comet's ERC20 name ("" if unreadable). Returns an
     ///      empty array for a short positionId.
-    function _legLabels(bytes memory positionId) private view returns (string[] memory) {
-        if (positionId.length < 32) return new string[](0);
-        address comet = abi.decode(positionId, (address));
-        if (comet.code.length == 0) return new string[](0);
+    function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
+        if (pid.length < 32) return new string[](0);
+        address comet = abi.decode(pid, (address));
         string memory leaf = "";
         try IERC20Metadata(comet).name() returns (string memory n) {
             leaf = n;
@@ -135,7 +134,7 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceAdapter {
             positionId: pid,
             positionKind: kind,
             isLocked: false,
-            labels: _legLabels(pid)
+            positionInstanceId: bytes32(0)
         });
     }
 }

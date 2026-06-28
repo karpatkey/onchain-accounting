@@ -225,14 +225,12 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
         return "StakeWise V3";
     }
 
-    /// @dev Per-request display labels: `["Exit Queue", "Ticket #<positionTicket>"]`. The positionTicket identifies
-    ///      the exit position — display only (it lives in `labels`, never in `positionId`, so the per-vault positionId
-    ///      stays static across tickets). Both legs of a ticket (claimable + locked) carry the same ticket label.
-    function _legLabels(uint256 positionTicket) private pure returns (string[] memory) {
-        string[] memory out = new string[](2);
+    /// @inheritdoc IPositionDescribable
+    /// @dev `["Exit Queue"]` — a static category (all of a vault's tickets share the per-vault `positionId`). The
+    ///      per-ticket coordinate is the typed `positionInstanceId` on each leg (ephemeral), NOT a label.
+    function positionLabels(bytes calldata) external pure override returns (string[] memory out) {
+        out = new string[](1);
         out[0] = "Exit Queue";
-        out[1] = string.concat("Ticket #", positionTicket.toString());
-        return out;
     }
 
     /// @inheritdoc IBalanceAdapter
@@ -334,7 +332,10 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
             return n;
         }
         bytes memory positionId = abi.encode(position.vault);
-        string[] memory labels = _legLabels(position.positionTicket);
+        // The exit ticket(+timestamp) is the EPHEMERAL per-item coordinate — typed `positionInstanceId`, not a label
+        // and not in positionId (the stable vault address; an account's tickets in one vault share it). Both legs of a
+        // position carry the same instance id; the display breadcrumb is derived from positionId by `positionLabels`.
+        bytes32 instanceId = bytes32(position.positionTicket);
         if (claimable > 0) {
             temp[n++] = INAVCalculator.PositionBalance({
                 balanceAsset: underlying,
@@ -345,7 +346,7 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
                 positionId: positionId,
                 positionKind: PositionKind.Supplied,
                 isLocked: false,
-                labels: labels
+                positionInstanceId: instanceId
             });
         }
         if (locked > 0) {
@@ -358,7 +359,7 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
                 positionId: positionId,
                 positionKind: PositionKind.Supplied,
                 isLocked: true,
-                labels: labels
+                positionInstanceId: instanceId
             });
         }
         return n;

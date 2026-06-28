@@ -46,12 +46,17 @@ interface INAVCalculator is IBalances {
     ///        coordinate) and split an account's holding into up to two legs — a claimable leg (`isLocked=false`) and a
     ///        locked leg (`isLocked=true`) — that share that positionId and are distinguished by `isLocked`. Hence
     ///        `isLocked` is **part of the identity key**. `false` for every adapter except withdrawal-queue / cooldown legs.
-    /// @param labels Adapter-supplied display hierarchy (below `protocolName`, leaf last), e.g.
-    ///        `["Market", "wstETH/USDC"]` or `["Liquidity Pool", "0x…pool", "NFT #123"]`. Every adapter fills this on
-    ///        each emitted position; the verbose reads use it verbatim (the single label mechanism — there is no
-    ///        `positionLabels` fallback). May be empty when no label can be derived. Display only — never used for
-    ///        identity (this is where ephemeral data such as a Uniswap V3 NFT id lives, since `positionId` is the
-    ///        stable pool address).
+    /// @param positionInstanceId OPTIONAL EPHEMERAL per-item coordinate as a `bytes32` — a Uniswap V3 / PancakeSwap V3
+    ///        NFT id, a withdrawal/exit request id, or a StakeWise exit ticket (each a `uint256` widened to `bytes32`).
+    ///        `bytes32(0)` for adapters with no per-item granularity. It is the SOLE ephemeral identity field, by
+    ///        design: the **stable** reconciliation key
+    ///        `(chainId, protocolId, positionId, balanceAsset.asset, positionKind, isLocked)` deliberately EXCLUDES it,
+    ///        so the legs of one anchor sum and identity survives item churn. A consumer that wants per-item
+    ///        granularity MAY append `positionInstanceId` to the key — gaining one position per item, at the cost of an
+    ///        **ephemeral** key (it blinks in/out as items are minted/burned/claimed). Never use it for stable
+    ///        identity. (Stable sub-distinguishers like an Aave reserve are NOT here — they live in `balanceAsset`.)
+    ///        Typed as `bytes32` (not `bytes`): every current coordinate is a single `uint256`, and a value type keeps
+    ///        the position-building/copy loops under the via_ir stack limit.
     struct PositionBalance {
         Asset balanceAsset;
         address balanceAdapter;
@@ -61,7 +66,7 @@ interface INAVCalculator is IBalances {
         bytes positionId;
         PositionKind positionKind;
         bool isLocked;
-        string[] labels;
+        bytes32 positionInstanceId;
     }
 
     /// @notice Enriched position including pricing and quote-currency value.
@@ -79,6 +84,8 @@ interface INAVCalculator is IBalances {
     /// @param positionId ABI-encoded position identifier. Copied from PositionBalance.
     /// @param positionKind Semantic discriminator. Copied from PositionBalance.
     /// @param isLocked True if the leg is not withdrawable now (pending/cooling). Copied from PositionBalance.
+    /// @param positionInstanceId Ephemeral per-item coordinate (NFT/request/ticket), or empty. Copied from
+    ///        PositionBalance; excluded from the stable identity key. See PositionBalance.
     struct Position {
         Asset balanceAsset;
         address balanceAdapter;
@@ -96,21 +103,22 @@ interface INAVCalculator is IBalances {
         bytes positionId;
         PositionKind positionKind;
         bool isLocked;
-        // Adapter-supplied display labels copied from PositionBalance; consumed verbatim by the verbose reads.
-        // Display only — never used for identity. See PositionBalance.
-        string[] labels;
+        // Ephemeral per-item coordinate copied from PositionBalance (NFT id / request id / ticket as bytes32).
+        // bytes32(0) when none. Display/granularity only — excluded from the stable identity key. See PositionBalance.
+        bytes32 positionInstanceId;
     }
 
     /// @notice Position enriched with human-readable display labels.
-    /// @dev Returned by verbose read methods. Labels are the position's own `labels` field (every adapter fills it;
-    ///      the single label mechanism). MUST NOT be used for identity, indexing, or reconciliation — use the typed
-    ///      fields on `position` for those purposes.
+    /// @dev Returned by verbose read methods. Labels are sourced from the adapter's `IPositionDescribable`
+    ///      implementation (`positionLabels(positionId)`, via a fail-open staticcall) and are empty otherwise. MUST NOT
+    ///      be used for identity, indexing, or reconciliation — use the typed fields on `position` for those purposes.
     struct VerbosePosition {
         Position position;
         string protocolName; // e.g. "Aave V3", "Morpho"
         // Ordered display hierarchy BELOW the protocol, leaf last (arbitrary depth, may be empty), e.g.
-        // ["Market", "wstETH/USDC"] or ["Liquidity Pool", "0x…pool", "NFT #12345"]. Full breadcrumb
-        // = [protocolName, ...labels]. Copied from PositionBalance.labels (adapter-supplied); display only.
+        // ["Market", "wstETH/USDC"] or ["Liquidity Pool", "WETH/USDC 0.05%"]. Full breadcrumb = [protocolName,
+        // ...labels]. Sourced from IPositionDescribable.positionLabels(positionId); display only. The ephemeral
+        // per-item id (NFT/request/ticket) is NOT here — it is the typed `position.positionInstanceId` field.
         string[] labels;
     }
 

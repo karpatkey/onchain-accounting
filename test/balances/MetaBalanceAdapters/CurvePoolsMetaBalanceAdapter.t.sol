@@ -272,7 +272,7 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory pos =
             meta.getAdapterPositionsForInstances(alice, _instance(address(pool)), address(0));
         assertGt(pos.length, 0);
-        string[] memory labels = pos[0].labels;
+        string[] memory labels = meta.positionLabels(pos[0].positionId);
         assertEq(labels.length, 2);
         assertEq(labels[0], "Liquidity Pool");
         assertEq(labels[1], "USDC/DAI LP");
@@ -308,7 +308,7 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
         assertEq(pos[1].balanceAsset.asset, ethSentinel);
 
         // Labels are well-formed; the sentinel coin's symbol falls back to "?".
-        string[] memory labels = pos[0].labels;
+        string[] memory labels = meta.positionLabels(pos[0].positionId);
         assertEq(labels.length, 2);
         assertEq(labels[0], "Liquidity Pool");
         assertEq(labels[1], "USDC/? LP");

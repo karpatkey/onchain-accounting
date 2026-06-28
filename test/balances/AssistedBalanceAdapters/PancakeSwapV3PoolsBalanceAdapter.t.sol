@@ -133,15 +133,17 @@ contract PancakeSwapV3PoolsBalanceAdapterTest is Test {
         }
     }
 
-    /// @notice positionId schema + labels inherited unchanged: positionId = abi.encode(pool); labels end with NFT id.
+    /// @notice positionId schema + labels inherited unchanged: positionId = abi.encode(pool); the NFT id rides in the
+    ///         typed positionInstanceId (the static breadcrumb is positionId-derived).
     function test_identity_positionId_andLabel() public view {
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(alice, address(0));
         assertGt(p.length, 0);
         assertEq(p[0].positionId, abi.encode(address(pool)));
-        assertEq(p[0].labels.length, 3);
-        assertEq(p[0].labels[0], "Liquidity Pool");
-        assertEq(p[0].labels[1], Strings.toHexString(address(pool)));
-        assertEq(p[0].labels[2], "NFT #1");
+        string[] memory lbl = adapter.positionLabels(p[0].positionId);
+        assertEq(lbl.length, 2);
+        assertEq(lbl[0], "Liquidity Pool");
+        assertEq(lbl[1], Strings.toHexString(address(pool)));
+        assertEq(p[0].positionInstanceId, bytes32(uint256(1)));
     }
 
     /// @notice ADR 0017 / the whole point of the `_slot0` override: a real PCS V3 pool packs `feeProtocol` as a

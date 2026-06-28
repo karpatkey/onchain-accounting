@@ -150,7 +150,9 @@ contract PancakeSwapV3PoolsBalanceForkTest is BalanceAdapterTestBase {
             address pool = abi.decode(p[i].positionId, (address));
             assertTrue(pool != address(0), "positionId = non-zero pool address");
             assertGt(pool.code.length, 0, "positionId resolves to a deployed pool");
-            assertEq(p[i].labels.length, 3, "labels = [category, pool, NFT id]");
+            string[] memory lbl = adapter.positionLabels(p[i].positionId);
+            assertEq(lbl.length, 2, "static breadcrumb = [category, pool]");
+            assertTrue(p[i].positionInstanceId != bytes32(0), "NFT id rides in positionInstanceId");
             assertEq(p[i].protocolId, ProtocolIds.PANCAKESWAP_V3, "protocolId = pancakeswap-v3");
         }
     }

@@ -211,7 +211,7 @@ contract CapBalanceAdapterTest is Test {
         assertEq(positions.length, 1);
 
         assertEq(positions[0].positionId, abi.encode(address(mockCUsd)));
-        string[] memory labels = positions[0].labels;
+        string[] memory labels = adapter.positionLabels(positions[0].positionId);
         assertEq(labels.length, 2);
         assertEq(labels[0], "Stablecoin");
         assertEq(labels[1], "cUSD");
@@ -223,7 +223,7 @@ contract CapBalanceAdapterTest is Test {
         assertEq(positions.length, 1);
 
         assertEq(positions[0].positionId, abi.encode(address(mockStcUsd)));
-        string[] memory labels = positions[0].labels;
+        string[] memory labels = adapter.positionLabels(positions[0].positionId);
         assertEq(labels.length, 2);
         assertEq(labels[0], "Savings");
         assertEq(labels[1], "stcUSD");
@@ -236,9 +236,11 @@ contract CapBalanceAdapterTest is Test {
         assertEq(positions.length, 2);
 
         // Leg 0 = cUSD (Stablecoin), leg 1 = stcUSD (Savings) — emission order in the adapter
-        assertEq(positions[0].labels[0], "Stablecoin");
-        assertEq(positions[0].labels[1], "cUSD");
-        assertEq(positions[1].labels[0], "Savings");
-        assertEq(positions[1].labels[1], "stcUSD");
+        string[] memory labels0 = adapter.positionLabels(positions[0].positionId);
+        string[] memory labels1 = adapter.positionLabels(positions[1].positionId);
+        assertEq(labels0[0], "Stablecoin");
+        assertEq(labels0[1], "cUSD");
+        assertEq(labels1[0], "Savings");
+        assertEq(labels1[1], "stcUSD");
     }
 }

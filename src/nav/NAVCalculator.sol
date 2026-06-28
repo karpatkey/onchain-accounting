@@ -359,7 +359,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         // protocolName() returns a per-adapter constant, and positions are grouped by adapter (PriceFeedLib
         // concatenates each adapter's positions contiguously), so cache the last adapter's name and only
         // re-staticcall when the adapter changes — one protocolName() call per distinct adapter, not per position.
-        // Labels are no longer fetched here: they ride on each PositionBalance (single mechanism; see below).
+        // positionLabels() varies by positionId, so it stays per-position.
         address prevAdapter;
         string memory prevName;
         for (uint256 i = 0; i < len; i++) {
@@ -368,12 +368,21 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
                 prevName = _safeString(adapter, protocolNameCall);
                 prevAdapter = adapter;
             }
-            // Labels are carried on the position itself — every adapter fills `PositionBalance.labels` directly
-            // (single mechanism; the lazy `positionLabels(positionId)` interface call was removed).
-            verbose[i] =
-                INAVCalculator.VerbosePosition({position: pos[i], protocolName: prevName, labels: pos[i].labels});
+            // Labels are derived lazily from positionId (display only, off the NAV hot path) via a fail-open,
+            // gas-capped staticcall — an adapter that doesn't implement positionLabels yields an empty array.
+            // Field-by-field assignment (not a VerbosePosition literal, which would deep-copy the 15-field Position
+            // as one expression) keeps this loop under the via_ir stack limit.
+            verbose[i].position = pos[i];
+            verbose[i].protocolName = prevName;
+            verbose[i].labels =
+                _safeStringArray(adapter, abi.encodeCall(IPositionDescribable.positionLabels, (pos[i].positionId)));
         }
     }
+
+    /// @notice Gas stipend for the `decodeStringArray` shim (see `_safeStringArray`). Generous for any legitimate
+    ///         label array (a handful of short strings decode in well under this) yet small enough that a
+    ///         pathological declared length OOGs within a bounded budget instead of starving the verbose read.
+    uint256 private constant _LABEL_DECODE_GAS = 1_000_000;
 
     /// @notice Fully fail-open string read: staticcalls `target` and returns the decoded string only when the
     ///         returndata is a well-formed ABI string, otherwise "".
@@ -399,6 +408,34 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         uint256 padded = (strLen + 31) & ~uint256(31);
         if (ret.length < 64 + padded) return "";
         return abi.decode(ret, (string));
+    }
+
+    /// @notice Fail-open `string[]` read for `positionLabels`: staticcalls `target` and decodes a `string[]`,
+    ///         returning an empty array on a failed/short call or any decode failure rather than reverting the
+    ///         whole verbose read. A `string[]` has nested offsets/lengths that are impractical to validate
+    ///         inline (as `_safeString` does for a flat string), so the possibly-reverting `abi.decode` is
+    ///         isolated behind a try/catch — which needs an external call boundary (`decodeStringArray`).
+    /// @dev The decode shim is called with a bounded gas stipend (`_LABEL_DECODE_GAS`) so a buggy/malicious
+    ///      adapter cannot defeat the fail-open guarantee: returndata declaring a huge `string[]` length would
+    ///      force unbounded memory expansion in `abi.decode` and burn ~63/64 of the remaining gas before
+    ///      reverting, starving the rest of the verbose read. Capping the stipend contains that to one position
+    ///      (the catch then returns `[]`). Legitimate label arrays are tiny (≪ the cap).
+    function _safeStringArray(address target, bytes memory callData) private view returns (string[] memory) {
+        (bool ok, bytes memory ret) = target.staticcall(callData);
+        if (!ok || ret.length < 64) return new string[](0); // need at least offset(32) + length(32)
+        try this.decodeStringArray{gas: _LABEL_DECODE_GAS}(ret) returns (string[] memory arr) {
+            return arr;
+        } catch {
+            return new string[](0);
+        }
+    }
+
+    /// @notice External ABI-decode shim so `_safeStringArray` can wrap a possibly-reverting `abi.decode` in
+    ///         try/catch (try/catch requires an external call). Internal-only: reverts unless the caller is
+    ///         this contract, so it is not a usable public API surface.
+    function decodeStringArray(bytes calldata data) external view returns (string[] memory) {
+        if (msg.sender != address(this)) revert NotAuthorized();
+        return abi.decode(data, (string[]));
     }
 
     /// @inheritdoc INAVCalculator

@@ -94,12 +94,12 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
         assets[1] = mp.loanToken;
     }
 
-    /// @dev Per-leg display labels, filled on every emitted PositionBalance.labels.
+    /// @inheritdoc MetaBalanceAdapter
     /// @dev Returns `["Market", <leaf>]` where the leaf is "<collateral>/<loan> market" ("" if the marketId cannot
     ///      be resolved). Returns an empty array for a short positionId.
-    function _legLabels(bytes memory positionId) private view returns (string[] memory) {
-        if (positionId.length < 32) return new string[](0);
-        bytes32 marketId = abi.decode(positionId, (bytes32));
+    function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
+        if (pid.length < 32) return new string[](0);
+        bytes32 marketId = abi.decode(pid, (bytes32));
         string memory leaf = "";
         try MORPHO.idToMarketParams(Id.wrap(marketId)) returns (MarketParams memory mp) {
             string memory collSym = _symbol(mp.collateralToken);
@@ -147,7 +147,7 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
             positionId: pid,
             positionKind: kind,
             isLocked: false,
-            labels: _legLabels(pid)
+            positionInstanceId: bytes32(0)
         });
     }
 

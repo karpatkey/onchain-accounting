@@ -68,23 +68,19 @@ contract KelpWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
             assertEq(positions[i].balanceAdapter, address(oracle));
             assertFalse(positions[i].isDebt);
             assertEq(positions[i].positionId, abi.encode(WITHDRAWAL_MANAGER), "static withdrawal-manager positionId");
-            _assertRequestLabel(positions[i].labels);
+            _assertRequestLeg(positions[i]);
             sum += positions[i].amount;
         }
         assertEq(sum, TEST_USER_EXPECTED_STETH);
     }
 
-    /// @dev Asserts a per-request leg's labels are `["rsETH Withdrawal Queue", "Request #<userNonce>"]` (id prefix
-    ///      checked; the exact userNonce is holder/block-specific).
-    function _assertRequestLabel(string[] memory labels) internal pure {
-        assertEq(labels.length, 2, "labels = [category, Request #userNonce]");
+    /// @dev Asserts a per-request leg: the static breadcrumb is `["rsETH Withdrawal Queue"]` (positionId-derived, no
+    ///      ephemeral id), and the userNonce rides in the typed `positionInstanceId`.
+    function _assertRequestLeg(INAVCalculator.PositionBalance memory leg) internal view {
+        string[] memory labels = oracle.positionLabels(leg.positionId);
+        assertEq(labels.length, 1, "static breadcrumb = [category]");
         assertEq(labels[0], "rsETH Withdrawal Queue");
-        bytes memory l = bytes(labels[1]);
-        bytes memory p = bytes("Request #");
-        assertGe(l.length, p.length + 1, "request id label is non-empty");
-        for (uint256 k = 0; k < p.length; k++) {
-            assertEq(uint8(l[k]), uint8(p[k]), "label leaf starts with 'Request #'");
-        }
+        assertTrue(leg.positionInstanceId != bytes32(0), "positionInstanceId carries the userNonce");
     }
 
     function test_getAdapterBalances_realHolder() public view {
@@ -235,7 +231,7 @@ contract KelpWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTestBa
             assertEq(positions[i].protocolId, ProtocolIds.KELP_WITHDRAWAL);
             assertEq(positions[i].positionId, abi.encode(WITHDRAWAL_MANAGER), "static withdrawal-manager positionId");
             assertEq(uint256(positions[i].positionKind), uint256(PositionKind.Supplied));
-            _assertRequestLabel(positions[i].labels);
+            _assertRequestLeg(positions[i]);
 
             if (positions[i].balanceAsset.asset == MAINNET_STETH) {
                 stethSum += positions[i].amount;
@@ -258,20 +254,16 @@ contract KelpWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTestBa
         assertEq(positions.length, 1, "asset filter narrows to the native-ETH leg only");
         assertEq(positions[0].balanceAsset.asset, NATIVE_ETH);
         assertEq(positions[0].amount, NETH_EXPECTED);
-        _assertRequestLabel(positions[0].labels);
+        _assertRequestLeg(positions[0]);
     }
 
-    /// @dev Asserts a per-request leg's labels are `["rsETH Withdrawal Queue", "Request #<userNonce>"]` (id prefix
-    ///      checked; the exact userNonce is holder/block-specific).
-    function _assertRequestLabel(string[] memory labels) internal pure {
-        assertEq(labels.length, 2, "labels = [category, Request #userNonce]");
+    /// @dev Asserts a per-request leg: the static breadcrumb is `["rsETH Withdrawal Queue"]` (positionId-derived, no
+    ///      ephemeral id), and the userNonce rides in the typed `positionInstanceId`.
+    function _assertRequestLeg(INAVCalculator.PositionBalance memory leg) internal view {
+        string[] memory labels = oracle.positionLabels(leg.positionId);
+        assertEq(labels.length, 1, "static breadcrumb = [category]");
         assertEq(labels[0], "rsETH Withdrawal Queue");
-        bytes memory l = bytes(labels[1]);
-        bytes memory p = bytes("Request #");
-        assertGe(l.length, p.length + 1, "request id label is non-empty");
-        for (uint256 k = 0; k < p.length; k++) {
-            assertEq(uint8(l[k]), uint8(p[k]), "label leaf starts with 'Request #'");
-        }
+        assertTrue(leg.positionInstanceId != bytes32(0), "positionInstanceId carries the userNonce");
     }
 
     function test_getAdapterBalances_bothAssets() public view {

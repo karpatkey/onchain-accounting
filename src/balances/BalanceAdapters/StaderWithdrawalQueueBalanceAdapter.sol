@@ -154,13 +154,12 @@ contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescri
         return "Stader";
     }
 
-    /// @dev Per-request display labels: `["ETHx Withdrawal Queue", "Request #<id>"]`. The request id is the sequential
-    ///      Stader withdrawal request id — display only, so it lives here in `labels`, never in `positionId`.
-    function _legLabels(uint256 requestId) private pure returns (string[] memory) {
-        string[] memory out = new string[](2);
+    /// @inheritdoc IPositionDescribable
+    /// @dev `["ETHx Withdrawal Queue"]` — a static category (all requests share the queue `positionId`). The
+    ///      per-request sequential id is the typed `positionInstanceId` on each leg, NOT a label.
+    function positionLabels(bytes calldata) external pure override returns (string[] memory out) {
+        out = new string[](1);
         out[0] = "ETHx Withdrawal Queue";
-        out[1] = string.concat("Request #", requestId.toString());
-        return out;
     }
 
     /// @inheritdoc IBalanceAdapter
@@ -266,7 +265,7 @@ contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescri
                     positionId: positionId,
                     positionKind: PositionKind.Supplied,
                     isLocked: locked,
-                    labels: _legLabels(requestId)
+                    positionInstanceId: bytes32(requestId)
                 });
             } catch Panic(uint256 panicCode) {
                 // 0x32 = array index out of bounds — list exhausted.

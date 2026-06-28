@@ -121,7 +121,7 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceAdapter {
                                 positionId: pid,
                                 positionKind: PositionKind.Staking,
                                 isLocked: false,
-                                labels: _legLabels(pid)
+                                positionInstanceId: bytes32(0)
                             });
                         }
                     }
@@ -146,7 +146,7 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceAdapter {
                         positionId: pid,
                         positionKind: PositionKind.Rewards,
                         isLocked: false,
-                        labels: _legLabels(pid)
+                        positionInstanceId: bytes32(0)
                     });
                 }
             }
@@ -167,7 +167,7 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceAdapter {
                         positionId: pid,
                         positionKind: PositionKind.Rewards,
                         isLocked: false,
-                        labels: _legLabels(pid)
+                        positionInstanceId: bytes32(0)
                     });
                 }
             }
@@ -215,7 +215,7 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceAdapter {
                     positionId: pid,
                     positionKind: PositionKind.Rewards,
                     isLocked: false,
-                    labels: _legLabels(pid)
+                    positionInstanceId: bytes32(0)
                 });
             }
         }
@@ -278,18 +278,17 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceAdapter {
 
     // ─── IPositionDescribable ─────────────────────────────────────────────────
 
-    /// @dev Per-leg display labels, filled on every emitted PositionBalance.labels.
+    /// @inheritdoc MetaBalanceAdapter
     /// @dev Returns `["Curve LP", "TOKEN0/TOKEN1/… Convex"]`; leaf derived on-chain from coin symbols ("" on failure).
-    function _legLabels(bytes memory positionId) private view returns (string[] memory) {
-        if (positionId.length < 32) return new string[](0);
-        string memory leaf = _leaf(positionId);
+    function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
+        if (pid.length < 32) return new string[](0);
+        string memory leaf = _leaf(pid);
         return _labels("Curve LP", leaf);
     }
 
     /// @notice Derives the "TOKEN0/TOKEN1/… Convex" leaf from the rewarder's Curve pool coins ("" on failure).
-    function _leaf(bytes memory pid) private view returns (string memory) {
+    function _leaf(bytes calldata pid) private view returns (string memory) {
         address rewarder = abi.decode(pid, (address));
-        if (rewarder.code.length == 0) return "";
         address lpToken = _lpTokenOf(rewarder);
         if (lpToken == address(0)) return "";
         address pool = CurvePoolLib.getPool(lpToken);
@@ -299,14 +298,10 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceAdapter {
         string memory syms;
         for (uint256 i; i < coins.length; ++i) {
             string memory s;
-            if (coins[i].code.length == 0) {
+            try IERC20Metadata(coins[i]).symbol() returns (string memory sym) {
+                s = sym;
+            } catch {
                 s = "?";
-            } else {
-                try IERC20Metadata(coins[i]).symbol() returns (string memory sym) {
-                    s = sym;
-                } catch {
-                    s = "?";
-                }
             }
             syms = i == 0 ? s : string.concat(syms, "/", s);
         }

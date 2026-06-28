@@ -271,10 +271,11 @@ contract KelpWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
             assertTrue(positions[i].isLocked, "default cursor 0 -> locked");
             // positionId is the static withdrawal-manager anchor; the payout asset lives in balanceAsset.asset.
             assertEq(positions[i].positionId, abi.encode(address(manager)));
-            // Per-request labels: ["rsETH Withdrawal Queue", "Request #<userNonce>"]; nonce 0 for each (first request).
-            assertEq(positions[i].labels.length, 2);
-            assertEq(positions[i].labels[0], "rsETH Withdrawal Queue");
-            assertEq(positions[i].labels[1], "Request #0");
+            // Static breadcrumb is positionId-derived; the userNonce rides in positionInstanceId (0 for first request).
+            string[] memory lbl = adapter.positionLabels(positions[i].positionId);
+            assertEq(lbl.length, 1);
+            assertEq(lbl[0], "rsETH Withdrawal Queue");
+            assertEq(positions[i].positionInstanceId, bytes32(uint256(0)));
         }
     }
 
@@ -290,9 +291,10 @@ contract KelpWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(positions[0].amount, 5e18);
         assertFalse(positions[0].isLocked, "nonce < cursor AND delay elapsed -> claimable");
         assertEq(positions[0].positionId, abi.encode(address(manager)));
-        assertEq(positions[0].labels.length, 2);
-        assertEq(positions[0].labels[0], "rsETH Withdrawal Queue");
-        assertEq(positions[0].labels[1], "Request #0");
+        string[] memory lbl = adapter.positionLabels(positions[0].positionId);
+        assertEq(lbl.length, 1);
+        assertEq(lbl[0], "rsETH Withdrawal Queue");
+        assertEq(positions[0].positionInstanceId, bytes32(uint256(0)));
     }
 
     function test_getAdapterPositions_delayGateLocksDespiteCursor() public {
@@ -337,16 +339,17 @@ contract KelpWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
             assertEq(positions[i].balanceAdapter, address(adapter));
             assertFalse(positions[i].isDebt);
             assertEq(positions[i].positionId, expectedId, "both legs share the static withdrawal-manager positionId");
-            assertEq(positions[i].labels.length, 2);
-            assertEq(positions[i].labels[0], "rsETH Withdrawal Queue");
+            string[] memory lbl = adapter.positionLabels(positions[i].positionId);
+            assertEq(lbl.length, 1);
+            assertEq(lbl[0], "rsETH Withdrawal Queue");
             if (positions[i].isLocked) {
                 locked += positions[i].amount;
                 sawLocked = true;
-                assertEq(positions[i].labels[1], "Request #1", "locked leg carries nonce 1");
+                assertEq(positions[i].positionInstanceId, bytes32(uint256(1)), "locked leg carries nonce 1");
             } else {
                 claimable += positions[i].amount;
                 sawClaimable = true;
-                assertEq(positions[i].labels[1], "Request #0", "claimable leg carries nonce 0");
+                assertEq(positions[i].positionInstanceId, bytes32(uint256(0)), "claimable leg carries nonce 0");
             }
         }
         assertTrue(sawClaimable && sawLocked, "exactly one claimable + one locked leg present");
@@ -381,9 +384,10 @@ contract KelpWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(positions.length, 1);
         assertEq(positions[0].balanceAsset.asset, address(steth));
         assertEq(positions[0].amount, 5e18);
-        assertEq(positions[0].labels.length, 2);
-        assertEq(positions[0].labels[0], "rsETH Withdrawal Queue");
-        assertEq(positions[0].labels[1], "Request #0");
+        string[] memory lbl = adapter.positionLabels(positions[0].positionId);
+        assertEq(lbl.length, 1);
+        assertEq(lbl[0], "rsETH Withdrawal Queue");
+        assertEq(positions[0].positionInstanceId, bytes32(uint256(0)));
     }
 
     function test_getAdapterPositions_perRequestLegsAndLabels() public {
@@ -403,19 +407,17 @@ contract KelpWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
             assertEq(positions[i].balanceAsset.asset, address(steth));
             assertEq(positions[i].positionId, expectedId, "all legs share the static positionId");
             assertTrue(positions[i].isLocked, "both pending -> locked");
-            assertEq(positions[i].labels.length, 2);
-            assertEq(positions[i].labels[0], "rsETH Withdrawal Queue");
             sum += positions[i].amount;
-            if (keccak256(bytes(positions[i].labels[1])) == keccak256("Request #0")) {
+            if (positions[i].positionInstanceId == bytes32(uint256(0))) {
                 saw0 = true;
                 assertEq(positions[i].amount, 2e18);
             }
-            if (keccak256(bytes(positions[i].labels[1])) == keccak256("Request #1")) {
+            if (positions[i].positionInstanceId == bytes32(uint256(1))) {
                 saw1 = true;
                 assertEq(positions[i].amount, 3e18);
             }
         }
-        assertTrue(saw0 && saw1, "each request id surfaced as its own leg label");
+        assertTrue(saw0 && saw1, "each request id surfaced as its own positionInstanceId");
 
         // NAV-total invariance: per-request legs still sum to the aggregate balance method.
         (uint256 agg,) = adapter.getAdapterBalanceForAsset(alice, address(steth));

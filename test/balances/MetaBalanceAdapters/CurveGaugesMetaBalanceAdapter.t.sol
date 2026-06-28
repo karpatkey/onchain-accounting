@@ -253,7 +253,7 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory pos =
             meta.getAdapterPositionsForInstances(alice, _instance(address(gauge)), address(0));
         assertGt(pos.length, 0);
-        string[] memory labels = pos[0].labels;
+        string[] memory labels = meta.positionLabels(pos[0].positionId);
         assertEq(labels.length, 2);
         assertEq(labels[0], "Staking Gauge");
         assertEq(labels[1], "USDC/DAI gauge");

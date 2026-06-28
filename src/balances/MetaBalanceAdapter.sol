@@ -58,6 +58,12 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
         return _protocolName;
     }
 
+    /// @inheritdoc IPositionDescribable
+    /// @dev Abstract — each concrete meta-adapter derives the breadcrumb from `positionId` (decode the instance
+    ///      coordinate, read its on-chain name/symbol) and returns `_labels("Category", leaf)`. Display only; the
+    ///      ephemeral per-item id (if any) is the typed `PositionBalance.positionInstanceId`, not a label.
+    function positionLabels(bytes calldata positionId) external view virtual override returns (string[] memory);
+
     //
     // IBalanceAdapter
     //
@@ -215,8 +221,8 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     // Shared helpers
     //
 
-    /// @notice Assembles the `[category, leaf]` label pair carried on each `PositionBalance.labels`, applying the
-    ///         fail-open empty-leaf convention in one place (IPositionDescribable): a leaf that could not be derived
+    /// @notice Assembles the `[category, leaf]` label pair returned by each meta-adapter's `positionLabels`, applying
+    ///         the fail-open empty-leaf convention in one place (IPositionDescribable): a leaf that could not be derived
     ///         (empty string, e.g. a reverting `name()`/`symbol()` read) is dropped so consumers never render
     ///         a blank trailing breadcrumb segment, while the known `category` is preserved. If both are empty,
     ///         returns an empty array. Mirrors `ERC20DefaultBalanceAdapter`'s single-segment collapse, generalised to

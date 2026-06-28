@@ -198,8 +198,11 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
         return "Merkl";
     }
 
-    function _legLabels() private pure returns (string[] memory) {
-        string[] memory out = new string[](1);
+    /// @inheritdoc IPositionDescribable
+    /// @dev `["Claimable Rewards"]` — a static category (the reward token is in `balanceAsset`; there is no ephemeral
+    ///      per-item id, so `positionInstanceId` is empty for this adapter).
+    function positionLabels(bytes calldata) external pure override returns (string[] memory out) {
+        out = new string[](1);
         out[0] = "Claimable Rewards";
         return out;
     }
@@ -264,41 +267,68 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
     {
         if (account == address(0)) return new INAVCalculator.PositionBalance[](0);
 
-        INAVCalculator.Asset[] memory registered = NAV_CALCULATOR.getRegisteredAssets();
-
-        address[] memory tokens = _userTokens[account];
-        uint256 n = tokens.length;
-        INAVCalculator.PositionBalance[] memory tmp = new INAVCalculator.PositionBalance[](n);
-        uint256 count;
-
-        for (uint256 i; i < n; ++i) {
-            address token = tokens[i];
-            if (assetFilter != address(0) && token != assetFilter) continue;
-            INAVCalculator.Asset memory meta = _findRegisteredAsset(registered, token);
-            if (meta.asset == address(0)) continue;
-            uint256 bal = _unclaimed(account, token);
-            if (bal == 0) continue;
-            tmp[count++] = INAVCalculator.PositionBalance({
-                balanceAsset: meta,
-                balanceAdapter: address(this),
-                amount: bal,
-                isDebt: false,
-                protocolId: PROTOCOL_ID,
-                // positionId is the Distributor (the claim target / trust anchor), NOT the reward token —
-                // the token is already carried by `balanceAsset`, so encoding it here would be redundant with
-                // the reconciliation key. Multiple reward tokens claimed from the same Distributor share this
-                // positionId and are distinguished by `balanceAsset.asset` (same model as Aave V3 = abi.encode(pool)).
-                positionId: abi.encode(DISTRIBUTOR),
-                positionKind: PositionKind.Rewards,
-                isLocked: false,
-                labels: _legLabels()
-            });
+        // Resolve the token list to value, consuming `assetFilter` here so the build runs without it.
+        address[] memory tokensToProcess;
+        if (assetFilter != address(0)) {
+            if (_userTokenIdxPlus1[account][assetFilter] == 0) return new INAVCalculator.PositionBalance[](0);
+            tokensToProcess = new address[](1);
+            tokensToProcess[0] = assetFilter;
+        } else {
+            tokensToProcess = _userTokens[account];
         }
 
+        // Build via an external self-staticcall so the row-building frame's only params are `(account, tokens)` —
+        // keeping `getAdapterPositions`'s `assetFilter` param (stack-bottom for its whole body) off the build loop's
+        // stack, which otherwise overflows the via_ir limit. Mirrors ERC20DefaultBalanceAdapter.buildPositionsSelf.
+        positions = this.buildPositionsSelf(account, tokensToProcess);
+    }
+
+    /// @notice External self-call entrypoint for the row-building loop (see `getAdapterPositions`). `msg.sender`-guarded
+    ///         to `address(this)` so it is not a usable external surface — it exists only to give the build its own
+    ///         stack frame (params `(account, tokens)`, no `assetFilter`). `view`, so the self-call is a staticcall.
+    function buildPositionsSelf(address account, address[] calldata tokens)
+        external
+        view
+        returns (INAVCalculator.PositionBalance[] memory positions)
+    {
+        require(msg.sender == address(this), "self only");
+        INAVCalculator.Asset[] memory registered = NAV_CALCULATOR.getRegisteredAssets();
+        bytes memory pid = abi.encode(DISTRIBUTOR); // identical for every leg — hoist out of the loop
+        INAVCalculator.PositionBalance[] memory tmp = new INAVCalculator.PositionBalance[](tokens.length);
+        uint256 count;
+        for (uint256 i; i < tokens.length; ++i) {
+            INAVCalculator.Asset memory meta = _findRegisteredAsset(registered, tokens[i]);
+            if (meta.asset == address(0)) continue;
+            uint256 bal = _unclaimed(account, tokens[i]);
+            if (bal == 0) continue;
+            tmp[count++] = _row(meta, bal, pid);
+        }
         positions = new INAVCalculator.PositionBalance[](count);
         for (uint256 i; i < count; ++i) {
             positions[i] = tmp[i];
         }
+    }
+
+    /// @notice Builds one `Rewards` PositionBalance row. Extracted from the `getAdapterPositions` loop so the 9-field
+    ///         struct literal lives in its own stack frame (keeps the loop under the via_ir stack limit).
+    /// @dev positionId is the Distributor (the claim target / trust anchor), NOT the reward token — the token is
+    ///      already carried by `balanceAsset`, so encoding it here would be redundant with the reconciliation key.
+    ///      Multiple reward tokens claimed from the same Distributor share this positionId and are distinguished by
+    ///      `balanceAsset.asset` (same model as Aave V3 = abi.encode(pool)). `positionInstanceId` is empty (no
+    ///      ephemeral per-item id — the reward token is the only sub-coordinate, and it lives in `balanceAsset`).
+    function _row(INAVCalculator.Asset memory asset, uint256 amount, bytes memory pid)
+        private
+        view
+        returns (INAVCalculator.PositionBalance memory row)
+    {
+        // Field-by-field (not a 9-field struct literal) to stay under the via_ir stack limit on the hot path.
+        row.balanceAsset = asset;
+        row.balanceAdapter = address(this);
+        row.amount = amount;
+        row.protocolId = PROTOCOL_ID;
+        row.positionId = pid;
+        row.positionKind = PositionKind.Rewards;
+        // isDebt, isLocked default false; positionInstanceId defaults to empty bytes (no ephemeral id for Merkl).
     }
 
     //

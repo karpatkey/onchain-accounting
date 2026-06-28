@@ -124,14 +124,12 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
         return "Kelp DAO";
     }
 
-    /// @dev Per-request display labels: `["rsETH Withdrawal Queue", "Request #<userNonce>"]`. The `userNonce` is the
-    ///      request's stable absolute nonce within the asset's queue — display only, so it lives here in `labels`,
-    ///      never in `positionId` (which stays the static withdrawal-manager anchor shared by all requests).
-    function _legLabels(uint256 userNonce) private pure returns (string[] memory) {
-        string[] memory out = new string[](2);
+    /// @inheritdoc IPositionDescribable
+    /// @dev `["rsETH Withdrawal Queue"]` — a static category (all requests share the withdrawal-manager `positionId`).
+    ///      The per-request absolute `userNonce` is the typed `positionInstanceId` on each leg, NOT a label.
+    function positionLabels(bytes calldata) external pure override returns (string[] memory out) {
+        out = new string[](1);
         out[0] = "rsETH Withdrawal Queue";
-        out[1] = string.concat("Request #", userNonce.toString());
-        return out;
     }
 
     /// @inheritdoc IBalanceAdapter
@@ -207,11 +205,48 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
             return new INAVCalculator.PositionBalance[](0);
         }
 
+        // Resolve `assetFilter` into a concrete asset list HERE, so the heavy build loop (delegated to
+        // `buildPositionsSelf` via an external self-call) no longer carries `assetFilter` at the bottom of its stack
+        // frame — that one extra slot was tipping the build over the via_ir stack limit.
         address[] memory supported = _supportedAssets();
+        address[] memory assetsToProcess;
+        if (assetFilter == address(0)) {
+            assetsToProcess = supported;
+        } else {
+            bool isSupported;
+            for (uint256 a = 0; a < supported.length; a++) {
+                if (supported[a] == assetFilter) {
+                    isSupported = true;
+                    break;
+                }
+            }
+            if (!isSupported) {
+                return new INAVCalculator.PositionBalance[](0);
+            }
+            assetsToProcess = new address[](1);
+            assetsToProcess[0] = assetFilter;
+        }
+
+        positions = this.buildPositionsSelf(account, assetsToProcess);
+    }
+
+    /// @notice Builds the per-request legs for `account` across the pre-filtered `assets`. Split out of
+    ///         `getAdapterPositions` and reached via an external self-call so that `assetFilter` is NOT in this
+    ///         frame's stack — without that, the build (sizing pre-pass + emission loop + per-leg struct) exceeds the
+    ///         via_ir stack limit.
+    /// @dev External (not internal) ON PURPOSE: an internal call inlines, re-merging the frames and re-introducing the
+    ///      overflow. Guarded so only this contract can invoke it — it is an implementation detail, not a public API.
+    function buildPositionsSelf(address account, address[] calldata assets)
+        external
+        view
+        returns (INAVCalculator.PositionBalance[] memory positions)
+    {
+        require(msg.sender == address(this), "self only");
+
         INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
         uint256 delayBlocks = WITHDRAWAL_MANAGER.withdrawalDelayBlocks();
 
-        uint256 nAssets = supported.length;
+        uint256 nAssets = assets.length;
 
         // Size the scratch array to the sum of per-asset open-request counts (each capped at MAX_REQUESTS_PROBED), an
         // upper bound on the number of legs (zero-amount requests drop below it). Cache each capped count so the
@@ -219,7 +254,7 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
         uint256 cap;
         uint256[] memory counts = new uint256[](nAssets);
         for (uint256 a = 0; a < nAssets; a++) {
-            (uint128 begin, uint128 end) = WITHDRAWAL_MANAGER.userAssociatedNonces(supported[a], account);
+            (uint128 begin, uint128 end) = WITHDRAWAL_MANAGER.userAssociatedNonces(assets[a], account);
             uint256 c = end - begin;
             if (c > MAX_REQUESTS_PROBED) {
                 c = MAX_REQUESTS_PROBED;
@@ -230,7 +265,7 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
 
         // Static positionId = the WithdrawalManager (the immutable anchor). The payout asset is already in
         // `balanceAsset.asset` (part of the identity key), so it is NOT duplicated in the positionId; per-request
-        // legs are distinguished for display by their `userNonce` label.
+        // legs are distinguished for display by their `userNonce` (in `positionInstanceId`).
         bytes memory positionId = abi.encode(address(WITHDRAWAL_MANAGER));
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](cap);
         uint256 n;
@@ -238,15 +273,12 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
             if (counts[a] == 0) {
                 continue;
             }
-            address asset = supported[a];
-            if (assetFilter != address(0) && assetFilter != asset) {
-                continue;
-            }
+            address asset = assets[a];
             (INAVCalculator.Asset memory underlying, bool registered) = RegisteredAssetLib.find(reg, asset);
             if (!registered) {
                 continue;
             }
-            // Append this asset's per-request legs (extracted to keep `getAdapterPositions` under the stack limit).
+            // Append this asset's per-request legs (extracted to keep this loop under the stack limit).
             // `counts[a]` (capped request count) is reused from the sizing pre-pass — no second nonce-range read.
             n = _appendAssetLegs(account, asset, underlying, counts[a], delayBlocks, positionId, temp, n);
         }
@@ -290,7 +322,7 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
                 positionId: positionId,
                 positionKind: PositionKind.Supplied,
                 isLocked: !unlocked,
-                labels: _legLabels(userNonce)
+                positionInstanceId: bytes32(userNonce)
             });
         }
         return n;

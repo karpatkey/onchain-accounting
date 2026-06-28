@@ -275,10 +275,11 @@ contract LidoWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertFalse(positions[0].isDebt);
         assertTrue(positions[0].isLocked, "not-finalized request -> locked leg");
         assertEq(positions[0].positionId, abi.encode(address(queue)), "static positionId = withdrawal queue");
-        // Request id rides in the last label (display only), not the positionId.
-        assertEq(positions[0].labels.length, 2);
-        assertEq(positions[0].labels[0], "stETH Withdrawal Queue");
-        assertEq(positions[0].labels[1], "Request #1");
+        // Static breadcrumb is positionId-derived (no ephemeral id); the request id rides in positionInstanceId.
+        string[] memory lbl = adapter.positionLabels(positions[0].positionId);
+        assertEq(lbl.length, 1);
+        assertEq(lbl[0], "stETH Withdrawal Queue");
+        assertEq(positions[0].positionInstanceId, bytes32(uint256(1)));
     }
 
     function test_getAdapterPositions_perRequestLegsAndLabels() public {
@@ -297,19 +298,17 @@ contract LidoWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         for (uint256 i = 0; i < positions.length; i++) {
             assertEq(positions[i].positionId, expectedId, "all legs share the static positionId");
             assertTrue(positions[i].isLocked, "both pending -> locked");
-            assertEq(positions[i].labels.length, 2);
-            assertEq(positions[i].labels[0], "stETH Withdrawal Queue");
             sum += positions[i].amount;
-            if (keccak256(bytes(positions[i].labels[1])) == keccak256("Request #7")) {
+            if (positions[i].positionInstanceId == bytes32(uint256(7))) {
                 saw7 = true;
                 assertEq(positions[i].amount, 2e18);
             }
-            if (keccak256(bytes(positions[i].labels[1])) == keccak256("Request #42")) {
+            if (positions[i].positionInstanceId == bytes32(uint256(42))) {
                 saw42 = true;
                 assertEq(positions[i].amount, 3e18);
             }
         }
-        assertTrue(saw7 && saw42, "each request id surfaced as its own leg label");
+        assertTrue(saw7 && saw42, "each request id surfaced as its own positionInstanceId");
 
         // NAV-total invariance: per-request legs still sum to the aggregate balance method.
         (uint256 agg,) = adapter.getAdapterBalanceForAsset(alice, address(weth));

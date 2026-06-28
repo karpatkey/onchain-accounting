@@ -158,14 +158,12 @@ contract LidoWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
         return "Lido";
     }
 
-    /// @dev Per-request display labels: `["stETH Withdrawal Queue", "Request #<id>"]`. The request id is the ERC721
-    ///      token id of the open withdrawal request — display only (it is ephemeral: the NFT is burned on claim), so
-    ///      it lives here in `labels`, never in `positionId`.
-    function _legLabels(uint256 requestId) private pure returns (string[] memory) {
-        string[] memory out = new string[](2);
+    /// @inheritdoc IPositionDescribable
+    /// @dev `["stETH Withdrawal Queue"]` — a static category (all requests share the queue `positionId`). The per-request
+    ///      ERC721 token id is the typed `positionInstanceId` on each leg (ephemeral — burned on claim), NOT a label.
+    function positionLabels(bytes calldata) external pure override returns (string[] memory out) {
+        out = new string[](1);
         out[0] = "stETH Withdrawal Queue";
-        out[1] = string.concat("Request #", requestId.toString());
-        return out;
     }
 
     /// @inheritdoc IBalanceAdapter
@@ -282,7 +280,7 @@ contract LidoWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
                 positionId: positionId,
                 positionKind: PositionKind.Supplied,
                 isLocked: locked,
-                labels: _legLabels(ids[i])
+                positionInstanceId: bytes32(ids[i])
             });
         }
 

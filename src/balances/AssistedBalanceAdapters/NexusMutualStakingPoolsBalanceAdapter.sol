@@ -316,12 +316,15 @@ contract NexusMutualStakingPoolsBalanceAdapter is AssistedBalanceAdapter, IPosit
         address pool = INexusStakingViewer(STAKING_VIEWER).stakingPool(tokens[0].poolId);
         if (pool == address(0)) return none;
         bytes memory positionId = abi.encode(pool);
-        string[] memory labels = _labels(pool, tokens[0].tokenId);
+        // The StakingNFT id is the EPHEMERAL per-item coordinate — typed `positionInstanceId`, not a label and not in
+        // positionId (the stable staking-pool address; an account's NFTs in one pool share it). Breadcrumb is derived
+        // from positionId by `positionLabels`.
+        bytes32 instanceId = bytes32(tokens[0].tokenId);
 
         INAVCalculator.PositionBalance[] memory tmp = new INAVCalculator.PositionBalance[](2);
         uint256 n;
-        if (staking > 0) tmp[n++] = _leg(underlying, staking, PositionKind.Staking, positionId, labels);
-        if (rewards > 0) tmp[n++] = _leg(underlying, rewards, PositionKind.Rewards, positionId, labels);
+        if (staking > 0) tmp[n++] = _leg(underlying, staking, PositionKind.Staking, positionId, instanceId);
+        if (rewards > 0) tmp[n++] = _leg(underlying, rewards, PositionKind.Rewards, positionId, instanceId);
 
         INAVCalculator.PositionBalance[] memory out = new INAVCalculator.PositionBalance[](n);
         for (uint256 k; k < n; ++k) {
@@ -404,12 +407,15 @@ contract NexusMutualStakingPoolsBalanceAdapter is AssistedBalanceAdapter, IPosit
         }
     }
 
-    /// @dev `["Staking", "<pool address>", "NFT #<tokenId>"]` — the per-leg display hierarchy.
-    function _labels(address pool, uint256 tokenId) private pure returns (string[] memory out) {
-        out = new string[](3);
+    /// @inheritdoc IPositionDescribable
+    /// @dev `["Staking", "<pool address>"]`, derived purely from `positionId` (the staking pool). The per-NFT id is
+    ///      the typed `positionInstanceId` on each leg, NOT a label. Empty for a short/malformed positionId.
+    function positionLabels(bytes calldata positionId) external pure override returns (string[] memory out) {
+        if (positionId.length < 32) return new string[](0);
+        address pool = abi.decode(positionId, (address));
+        out = new string[](2);
         out[0] = "Staking";
         out[1] = Strings.toHexString(pool);
-        out[2] = string.concat("NFT #", tokenId.toString());
     }
 
     function _leg(
@@ -417,7 +423,7 @@ contract NexusMutualStakingPoolsBalanceAdapter is AssistedBalanceAdapter, IPosit
         uint256 amount,
         PositionKind kind,
         bytes memory positionId,
-        string[] memory labels
+        bytes32 positionInstanceId
     ) private view returns (INAVCalculator.PositionBalance memory) {
         return INAVCalculator.PositionBalance({
             balanceAsset: asset,
@@ -428,7 +434,7 @@ contract NexusMutualStakingPoolsBalanceAdapter is AssistedBalanceAdapter, IPosit
             positionId: positionId,
             positionKind: kind,
             isLocked: false,
-            labels: labels
+            positionInstanceId: positionInstanceId
         });
     }
 }

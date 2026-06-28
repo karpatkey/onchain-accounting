@@ -76,23 +76,19 @@ contract LidoWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
         for (uint256 i = 0; i < positions.length; i++) {
             assertEq(positions[i].balanceAsset.asset, NATIVE_ETH);
             assertFalse(positions[i].isLocked, "finalized request -> claimable (unlocked) leg");
-            _assertRequestLabel(positions[i].labels);
+            _assertRequestLeg(positions[i]);
             sum += positions[i].amount;
         }
         assertEq(sum, expectedClaimableEth);
     }
 
-    /// @dev Asserts a per-request leg's labels are `["stETH Withdrawal Queue", "Request #<id>"]` (id prefix checked;
-    ///      the exact request id is holder/block-specific).
-    function _assertRequestLabel(string[] memory labels) internal pure {
-        assertEq(labels.length, 2, "labels = [category, Request #id]");
+    /// @dev Asserts a per-request leg: the static breadcrumb is `["stETH Withdrawal Queue"]` (positionId-derived, no
+    ///      ephemeral id), and the request id rides in the typed `positionInstanceId`.
+    function _assertRequestLeg(INAVCalculator.PositionBalance memory leg) internal view {
+        string[] memory labels = adapter.positionLabels(leg.positionId);
+        assertEq(labels.length, 1, "static breadcrumb = [category]");
         assertEq(labels[0], "stETH Withdrawal Queue");
-        bytes memory l = bytes(labels[1]);
-        bytes memory p = bytes("Request #");
-        assertGe(l.length, p.length + 1, "request id label is non-empty");
-        for (uint256 k = 0; k < p.length; k++) {
-            assertEq(uint8(l[k]), uint8(p[k]), "label leaf starts with 'Request #'");
-        }
+        assertTrue(leg.positionInstanceId != bytes32(0), "positionInstanceId carries the request id");
     }
 
     // ---- Real open position ----
@@ -113,7 +109,7 @@ contract LidoWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
             assertEq(positions[i].balanceAdapter, address(adapter));
             assertFalse(positions[i].isDebt);
             assertEq(positions[i].positionId, abi.encode(address(adapter.WITHDRAWAL_QUEUE())), "static positionId");
-            _assertRequestLabel(positions[i].labels);
+            _assertRequestLeg(positions[i]);
             sum += positions[i].amount;
         }
         assertEq(sum, TEST_USER_EXPECTED_ETH);
@@ -235,13 +231,13 @@ contract LidoWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTestBa
             assertEq(positions[i].protocolId, ProtocolIds.LIDO_WITHDRAWAL);
             assertEq(positions[i].positionId, expectedId, "static WithdrawalQueue positionId shared by both legs");
             assertEq(uint256(positions[i].positionKind), uint256(PositionKind.Supplied));
-            _assertRequestLabel(positions[i].labels);
+            _assertRequestLeg(positions[i]);
             sum += positions[i].amount;
         }
-        // The two request-id labels must differ (distinct requests).
+        // The two request-id instance ids must differ (distinct requests).
         assertTrue(
-            keccak256(bytes(positions[0].labels[1])) != keccak256(bytes(positions[1].labels[1])),
-            "each request leg has a distinct request id label"
+            positions[0].positionInstanceId != positions[1].positionInstanceId,
+            "each request leg has a distinct positionInstanceId"
         );
         assertEq(sum, PRIMARY_EXPECTED_ETH, "per-request legs sum to the aggregate total");
     }
@@ -264,21 +260,18 @@ contract LidoWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTestBa
             assertEq(positions[i].protocolId, ProtocolIds.LIDO_WITHDRAWAL);
             assertEq(uint256(positions[i].positionKind), uint256(PositionKind.Supplied));
             assertFalse(positions[i].isLocked, "finalized request -> claimable (unlocked) leg");
-            _assertRequestLabel(positions[i].labels);
+            _assertRequestLeg(positions[i]);
             sum += positions[i].amount;
         }
         assertEq(sum, SECONDARY_EXPECTED_ETH);
     }
 
-    /// @dev Asserts a per-request leg's labels are `["stETH Withdrawal Queue", "Request #<id>"]` (id prefix checked).
-    function _assertRequestLabel(string[] memory labels) internal pure {
-        assertEq(labels.length, 2, "labels = [category, Request #id]");
+    /// @dev Asserts a per-request leg: the static breadcrumb is `["stETH Withdrawal Queue"]` (positionId-derived, no
+    ///      ephemeral id), and the request id rides in the typed `positionInstanceId`.
+    function _assertRequestLeg(INAVCalculator.PositionBalance memory leg) internal view {
+        string[] memory labels = oracle.positionLabels(leg.positionId);
+        assertEq(labels.length, 1, "static breadcrumb = [category]");
         assertEq(labels[0], "stETH Withdrawal Queue");
-        bytes memory l = bytes(labels[1]);
-        bytes memory p = bytes("Request #");
-        assertGe(l.length, p.length + 1, "request id label is non-empty");
-        for (uint256 k = 0; k < p.length; k++) {
-            assertEq(uint8(l[k]), uint8(p[k]), "label leaf starts with 'Request #'");
-        }
+        assertTrue(leg.positionInstanceId != bytes32(0), "positionInstanceId carries the request id");
     }
 }

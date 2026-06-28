@@ -434,7 +434,8 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(p[0].positionId, abi.encode(address(vault)));
         assertEq(uint8(p[0].positionKind), uint8(PositionKind.Supplied));
         assertFalse(p[0].isLocked, "fully exited -> claimable leg");
-        _assertTicketLabel(p[0].labels);
+        _assertTicketLeg(p[0]);
+        assertEq(p[0].positionInstanceId, bytes32(TICKET), "positionInstanceId = ticket");
     }
 
     function test_getAdapterPositions_lockedLeg() public {
@@ -448,7 +449,8 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(p[0].amount, 4 ether, "locked leg = convertToAssets(leftShares)");
         assertTrue(p[0].isLocked, "still-queued shares -> locked leg");
         assertEq(p[0].positionId, abi.encode(address(vault)));
-        _assertTicketLabel(p[0].labels);
+        _assertTicketLeg(p[0]);
+        assertEq(p[0].positionInstanceId, bytes32(TICKET), "positionInstanceId = ticket");
     }
 
     function test_getAdapterPositions_mixedClaimableAndLocked() public {
@@ -463,7 +465,7 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(p.length, 2, "claimable + locked legs for the ticket");
 
         bytes memory expectedId = abi.encode(address(vault));
-        string memory expectedTicketLabel = string.concat("Ticket #", _toString(TICKET));
+        bytes32 expectedInstanceId = bytes32(TICKET);
         uint256 claimable;
         uint256 locked;
         bool sawClaimable;
@@ -474,8 +476,8 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
             assertFalse(p[i].isDebt);
             assertEq(p[i].protocolId, ProtocolIds.STAKEWISE_EXIT);
             assertEq(p[i].positionId, expectedId, "both legs share the static per-vault positionId");
-            _assertTicketLabel(p[i].labels);
-            assertEq(p[i].labels[1], expectedTicketLabel, "both legs carry the SAME ticket label");
+            _assertTicketLeg(p[i]);
+            assertEq(p[i].positionInstanceId, expectedInstanceId, "both legs carry the SAME ticket");
             if (p[i].isLocked) {
                 locked += p[i].amount;
                 sawLocked = true;
@@ -512,26 +514,26 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(p.length, 2, "one leg per cached position");
 
         bytes memory expectedId = abi.encode(address(vault));
-        string memory labelA = string.concat("Ticket #", _toString(TICKET));
-        string memory labelB = string.concat("Ticket #", _toString(TICKET + 1));
+        bytes32 instA = bytes32(TICKET);
+        bytes32 instB = bytes32(TICKET + 1);
         uint256 total;
         bool sawA;
         bool sawB;
         for (uint256 i = 0; i < p.length; i++) {
             assertEq(p[i].positionId, expectedId, "legs of the same vault share the per-vault positionId");
-            _assertTicketLabel(p[i].labels);
+            _assertTicketLeg(p[i]);
             total += p[i].amount;
-            if (keccak256(bytes(p[i].labels[1])) == keccak256(bytes(labelA))) {
+            if (p[i].positionInstanceId == instA) {
                 sawA = true;
                 assertFalse(p[i].isLocked, "TICKET leg is claimable");
                 assertEq(p[i].amount, 1 ether);
-            } else if (keccak256(bytes(p[i].labels[1])) == keccak256(bytes(labelB))) {
+            } else if (p[i].positionInstanceId == instB) {
                 sawB = true;
                 assertTrue(p[i].isLocked, "TICKET+1 leg is locked");
                 assertEq(p[i].amount, 3 ether);
             }
         }
-        assertTrue(sawA && sawB, "legs carry DISTINCT ticket labels");
+        assertTrue(sawA && sawB, "legs carry DISTINCT ticket instance ids");
 
         (uint256 agg,) = adapter.getAdapterBalanceForAsset(holder, NATIVE);
         assertEq(total, agg, "sum of per-ticket legs == aggregate");
@@ -604,32 +606,12 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         p[0] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(address(vault), TICKET, TS);
     }
 
-    /// @dev Asserts a leg's labels are `["Exit Queue", "Ticket #<positionTicket>"]` (id prefix checked).
-    function _assertTicketLabel(string[] memory labels) internal pure {
-        assertEq(labels.length, 2, "labels = [category, Ticket #id]");
+    /// @dev Asserts a leg's static breadcrumb is `["Exit Queue"]` (positionId-derived, no ephemeral id); the
+    ///      positionTicket now rides in the typed `positionInstanceId`.
+    function _assertTicketLeg(INAVCalculator.PositionBalance memory leg) internal view {
+        string[] memory labels = adapter.positionLabels(leg.positionId);
+        assertEq(labels.length, 1, "static breadcrumb = [category]");
         assertEq(labels[0], "Exit Queue");
-        bytes memory l = bytes(labels[1]);
-        bytes memory pre = bytes("Ticket #");
-        assertGe(l.length, pre.length + 1, "ticket id label is non-empty");
-        for (uint256 k = 0; k < pre.length; k++) {
-            assertEq(uint8(l[k]), uint8(pre[k]), "label leaf starts with 'Ticket #'");
-        }
-    }
-
-    function _toString(uint256 v) internal pure returns (string memory str) {
-        if (v == 0) return "0";
-        uint256 tmp = v;
-        uint256 digits;
-        while (tmp != 0) {
-            digits++;
-            tmp /= 10;
-        }
-        bytes memory buf = new bytes(digits);
-        while (v != 0) {
-            digits--;
-            buf[digits] = bytes1(uint8(48 + uint256(v % 10)));
-            v /= 10;
-        }
-        str = string(buf);
+        assertTrue(leg.positionInstanceId != bytes32(0), "positionInstanceId carries the ticket");
     }
 }

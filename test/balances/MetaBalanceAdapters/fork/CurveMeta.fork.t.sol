@@ -202,7 +202,7 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory pos =
             gaugesMeta.getAdapterPositionsForInstances(CRVUSD_USDC_STAKER, _gauge(CRVUSD_USDC_GAUGE), address(0));
         assertGt(pos.length, 0);
-        string[] memory labels = pos[0].labels;
+        string[] memory labels = gaugesMeta.positionLabels(pos[0].positionId);
         assertEq(labels.length, 2);
         assertEq(labels[0], "Staking Gauge");
         assertGt(bytes(labels[1]).length, 0);
@@ -215,7 +215,7 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory pos =
             poolsMeta.getAdapterPositionsForInstances(THREEPOOL_HOLDER, _pool(THREEPOOL), address(0));
         assertGt(pos.length, 0);
-        string[] memory labels = pos[0].labels;
+        string[] memory labels = poolsMeta.positionLabels(pos[0].positionId);
         assertEq(labels.length, 2);
         assertEq(labels[0], "Liquidity Pool");
         assertGt(bytes(labels[1]).length, 0);

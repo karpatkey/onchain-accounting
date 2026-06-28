@@ -379,15 +379,17 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
             UniswapV3PoolLib.positionAmounts(pool, p, sqrtPriceX96, tick);
 
         bytes memory positionId = abi.encode(pool);
-        // Labels: [category, pool address, NFT id] — NFT id last (per-leg, adapter-supplied; see _toVerbose).
-        string[] memory labels = _labels(pool, tokenId);
+        // The NFT id is the EPHEMERAL per-item coordinate — carried as the typed `positionInstanceId`, NOT a label
+        // and NOT in positionId (which is the stable pool address; all of an account's NFTs in this pool share it).
+        // The display breadcrumb is derived from positionId by `positionLabels`.
+        bytes32 instanceId = bytes32(tokenId);
 
         INAVCalculator.PositionBalance[] memory tmp = new INAVCalculator.PositionBalance[](4);
         uint256 n;
-        if (f0reg && liq0 > 0) tmp[n++] = _row(a0, liq0, positionId, PositionKind.Supplied, labels);
-        if (f1reg && liq1 > 0) tmp[n++] = _row(a1, liq1, positionId, PositionKind.Supplied, labels);
-        if (f0reg && fee0 > 0) tmp[n++] = _row(a0, fee0, positionId, PositionKind.Fees, labels);
-        if (f1reg && fee1 > 0) tmp[n++] = _row(a1, fee1, positionId, PositionKind.Fees, labels);
+        if (f0reg && liq0 > 0) tmp[n++] = _row(a0, liq0, positionId, PositionKind.Supplied, instanceId);
+        if (f1reg && liq1 > 0) tmp[n++] = _row(a1, liq1, positionId, PositionKind.Supplied, instanceId);
+        if (f0reg && fee0 > 0) tmp[n++] = _row(a0, fee0, positionId, PositionKind.Fees, instanceId);
+        if (f1reg && fee1 > 0) tmp[n++] = _row(a1, fee1, positionId, PositionKind.Fees, instanceId);
 
         INAVCalculator.PositionBalance[] memory out = new INAVCalculator.PositionBalance[](n);
         for (uint256 k; k < n; ++k) {
@@ -403,12 +405,15 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
         (sqrtPriceX96, tick,,,,,) = IUniswapV3Pool(pool).slot0();
     }
 
-    /// @dev `["Liquidity Pool", "<pool address>", "NFT #<tokenId>"]` — the per-leg display hierarchy.
-    function _labels(address pool, uint256 tokenId) private pure returns (string[] memory out) {
-        out = new string[](3);
+    /// @inheritdoc IPositionDescribable
+    /// @dev `["Liquidity Pool", "<pool address>"]`, derived purely from `positionId` (the pool). The per-NFT id is the
+    ///      typed `positionInstanceId` on each leg, NOT a label. Empty for a short/malformed positionId.
+    function positionLabels(bytes calldata positionId) external pure override returns (string[] memory out) {
+        if (positionId.length < 32) return new string[](0);
+        address pool = abi.decode(positionId, (address));
+        out = new string[](2);
         out[0] = "Liquidity Pool";
         out[1] = Strings.toHexString(pool);
-        out[2] = string.concat("NFT #", tokenId.toString());
     }
 
     function _row(
@@ -416,7 +421,7 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
         uint256 amount,
         bytes memory positionId,
         PositionKind kind,
-        string[] memory labels
+        bytes32 positionInstanceId
     ) private view returns (INAVCalculator.PositionBalance memory) {
         return INAVCalculator.PositionBalance({
             balanceAsset: asset,
@@ -427,7 +432,7 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
             positionId: positionId,
             positionKind: kind,
             isLocked: false, // LP liquidity + settled fees are always withdrawable now
-            labels: labels
+            positionInstanceId: positionInstanceId
         });
     }
 

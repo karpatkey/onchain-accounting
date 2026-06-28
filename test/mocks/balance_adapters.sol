@@ -192,23 +192,9 @@ contract Mock_CustomBalanceAdapter is IBalanceAdapter {
                     }
                 }
 
-                // Build balance asset struct
-                INAVCalculator.Asset memory balanceAsset =
-                    INAVCalculator.Asset({asset: asset, symbol: symbol, decimals: decimals});
-
-                // Build position (balance-only, pricing will be added by NAVCalculator)
-                tempPositions[positionCount] = INAVCalculator.PositionBalance({
-                    balanceAsset: balanceAsset,
-                    balanceAdapter: address(this),
-                    amount: amount,
-                    isDebt: debt,
-                    protocolId: bytes32(0),
-                    positionId: abi.encode(address(this)),
-                    positionKind: debt ? PositionKind.Borrowed : PositionKind.Supplied,
-                    isLocked: false,
-                    labels: new string[](0)
-                });
-
+                // Build the row in a helper (field-by-field, separate frame) so the loop stays under the via_ir
+                // stack limit.
+                tempPositions[positionCount] = _row(asset, symbol, decimals, amount, debt);
                 positionCount++;
             }
         }
@@ -218,6 +204,21 @@ contract Mock_CustomBalanceAdapter is IBalanceAdapter {
         for (uint256 i = 0; i < positionCount; i++) {
             positions[i] = tempPositions[i];
         }
+    }
+
+    /// @dev Builds one PositionBalance row field-by-field (avoids a 9-field literal in the loop → via_ir stack).
+    function _row(address asset, string memory symbol, uint8 decimals, uint256 amount, bool debt)
+        private
+        view
+        returns (INAVCalculator.PositionBalance memory row)
+    {
+        row.balanceAsset = INAVCalculator.Asset({asset: asset, symbol: symbol, decimals: decimals});
+        row.balanceAdapter = address(this);
+        row.amount = amount;
+        row.isDebt = debt;
+        row.positionId = abi.encode(address(this));
+        row.positionKind = debt ? PositionKind.Borrowed : PositionKind.Supplied;
+        // protocolId defaults to bytes32(0); isLocked false; positionInstanceId bytes32(0).
     }
 
     /// @inheritdoc IBalanceAdapter

@@ -100,7 +100,7 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
                 positionId: positionId,
                 positionKind: _supplyKind(account, vaultAddr),
                 isLocked: false,
-                labels: _legLabels(positionId)
+                positionInstanceId: bytes32(0)
             });
         }
         if (debt > 0) {
@@ -113,7 +113,7 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
                 positionId: positionId,
                 positionKind: PositionKind.Borrowed,
                 isLocked: false,
-                labels: _legLabels(positionId)
+                positionInstanceId: bytes32(0)
             });
         }
         return positions;
@@ -142,12 +142,12 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
         assets[0] = IERC4626(_toAddress(instance)).asset();
     }
 
-    /// @dev Per-leg display labels (filled on every emitted PositionBalance.labels): `["Vault", <leaf>]` where the
-    ///      leaf is the vault's ERC4626 name ("" if unreadable). Empty array for a short positionId.
-    function _legLabels(bytes memory positionId) private view returns (string[] memory) {
-        if (positionId.length < 32) return new string[](0);
-        address vault = abi.decode(positionId, (address));
-        if (vault.code.length == 0) return new string[](0);
+    /// @inheritdoc MetaBalanceAdapter
+    /// @dev Returns `["Vault", <leaf>]` where the leaf is the vault's ERC4626 name ("" if unreadable). Returns an
+    ///      empty array for a short positionId.
+    function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
+        if (pid.length < 32) return new string[](0);
+        address vault = abi.decode(pid, (address));
         string memory leaf = "";
         try IERC4626(vault).name() returns (string memory n) {
             leaf = n;

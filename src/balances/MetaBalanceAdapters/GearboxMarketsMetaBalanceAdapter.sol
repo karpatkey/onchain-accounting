@@ -56,7 +56,7 @@ contract GearboxMarketsMetaBalanceAdapter is MetaBalanceAdapter {
             positionId: _instancePositionId(instance),
             positionKind: PositionKind.Supplied,
             isLocked: false,
-            labels: _legLabels(_instancePositionId(instance))
+            positionInstanceId: bytes32(0)
         });
         return positions;
     }
@@ -67,13 +67,12 @@ contract GearboxMarketsMetaBalanceAdapter is MetaBalanceAdapter {
         assets[0] = IERC4626(_toAddress(instance)).asset();
     }
 
-    /// @dev Per-leg display labels, filled on every emitted PositionBalance.labels.
+    /// @inheritdoc MetaBalanceAdapter
     /// @dev Returns `["Market", <leaf>]` where the leaf is the market's ERC20 name ("" if unreadable). Returns an
     ///      empty array for a short positionId.
-    function _legLabels(bytes memory positionId) private view returns (string[] memory) {
-        if (positionId.length < 32) return new string[](0);
-        address market = abi.decode(positionId, (address));
-        if (market.code.length == 0) return new string[](0);
+    function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
+        if (pid.length < 32) return new string[](0);
+        address market = abi.decode(pid, (address));
         string memory leaf = "";
         try IERC20Metadata(market).name() returns (string memory n) {
             leaf = n;

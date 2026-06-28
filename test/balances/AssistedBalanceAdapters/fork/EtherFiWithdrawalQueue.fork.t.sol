@@ -98,22 +98,19 @@ contract EtherFiWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase 
             assertEq(uint8(p[i].positionKind), uint8(PositionKind.Supplied));
             assertFalse(p[i].isDebt);
             assertTrue(p[i].isLocked, "request #80154 is pending -> locked leg");
-            _assertRequestLabel(p[i].labels);
+            _assertRequestLeg(p[i]);
             sum += p[i].amount;
         }
         assertEq(sum, EXPECTED_ETH, "per-request legs sum to the aggregate total");
     }
 
-    /// @dev Asserts a per-request leg's labels are `["eETH Withdrawal Queue", "Request #<tokenId>"]` (id prefix only).
-    function _assertRequestLabel(string[] memory labels) internal pure {
-        assertEq(labels.length, 2, "labels = [category, Request #id]");
+    /// @dev Asserts a per-request leg: the static breadcrumb is `["eETH Withdrawal Queue"]` (positionId-derived, no
+    ///      ephemeral id), and the tokenId rides in the typed `positionInstanceId`.
+    function _assertRequestLeg(INAVCalculator.PositionBalance memory leg) internal view {
+        string[] memory labels = adapter.positionLabels(leg.positionId);
+        assertEq(labels.length, 1, "static breadcrumb = [category]");
         assertEq(labels[0], "eETH Withdrawal Queue");
-        bytes memory l = bytes(labels[1]);
-        bytes memory pre = bytes("Request #");
-        assertGe(l.length, pre.length + 1, "request id label is non-empty");
-        for (uint256 k = 0; k < pre.length; k++) {
-            assertEq(uint8(l[k]), uint8(pre[k]), "label leaf starts with 'Request #'");
-        }
+        assertTrue(leg.positionInstanceId != bytes32(0), "positionInstanceId carries the tokenId");
     }
 
     // ---- Negative cases against the real contracts ----

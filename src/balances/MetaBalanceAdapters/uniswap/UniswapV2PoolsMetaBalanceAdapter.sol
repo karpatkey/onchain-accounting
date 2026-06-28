@@ -113,25 +113,22 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
             positionId: positionId,
             positionKind: PositionKind.Supplied,
             isLocked: false,
-            labels: _legLabels(positionId)
+            positionInstanceId: bytes32(0)
         });
     }
 
-    /// @dev Per-leg display labels, filled on every emitted PositionBalance.labels.
+    /// @inheritdoc MetaBalanceAdapter
     /// @dev Returns `["Liquidity Pool", "sym0/sym1 LP"]`; leaf derived on-chain from the pair's token symbols.
-    function _legLabels(bytes memory positionId) private view returns (string[] memory) {
-        if (positionId.length < 32) return new string[](0);
-        address pair = abi.decode(positionId, (address));
-        if (pair.code.length == 0) return new string[](0);
+    function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
+        if (pid.length < 32) return new string[](0);
+        address pair = abi.decode(pid, (address));
         (address token0, address token1,,) = UniswapV2PairLib.pairAmounts(pair, address(0));
         string memory leaf = string.concat(_symbol(token0), "/", _symbol(token1), " LP");
         return _labels("Liquidity Pool", leaf);
     }
 
-    /// @notice Reads an ERC20 symbol, falling back to "?" for non-standard tokens (e.g. bytes32 symbols) or a
-    ///         codeless address — so the concatenated leaf stays well-formed (no leading/empty `/` segment).
+    /// @notice Reads an ERC20 symbol, falling back to "?" for non-standard tokens (e.g. bytes32 symbols).
     function _symbol(address token) private view returns (string memory) {
-        if (token.code.length == 0) return "?";
         try IERC20Metadata(token).symbol() returns (string memory s) {
             return bytes(s).length == 0 ? "?" : s;
         } catch {

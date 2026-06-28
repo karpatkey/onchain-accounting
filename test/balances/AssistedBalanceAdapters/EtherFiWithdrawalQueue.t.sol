@@ -273,17 +273,13 @@ contract EtherFiWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
 
     // ---- Positions / identity ----
 
-    /// @dev Asserts a per-request leg's labels are `["eETH Withdrawal Queue", "Request #<tokenId>"]` (id prefix only;
-    ///      the exact id is per-leg).
-    function _assertRequestLabel(string[] memory labels) internal pure {
-        assertEq(labels.length, 2, "labels = [category, Request #id]");
+    /// @dev Asserts a per-request leg: the static breadcrumb is `["eETH Withdrawal Queue"]` (positionId-derived, no
+    ///      ephemeral id), and the tokenId rides in the typed `positionInstanceId` (bytes32(uint256 tokenId)).
+    function _assertRequestLeg(INAVCalculator.PositionBalance memory leg) internal view {
+        string[] memory labels = adapter.positionLabels(leg.positionId);
+        assertEq(labels.length, 1, "static breadcrumb = [category]");
         assertEq(labels[0], "eETH Withdrawal Queue");
-        bytes memory l = bytes(labels[1]);
-        bytes memory p = bytes("Request #");
-        assertGe(l.length, p.length + 1, "request id label is non-empty");
-        for (uint256 k = 0; k < p.length; k++) {
-            assertEq(uint8(l[k]), uint8(p[k]), "label leaf starts with 'Request #'");
-        }
+        assertTrue(leg.positionInstanceId != bytes32(0), "positionInstanceId carries the tokenId");
     }
 
     function test_getAdapterPositions_identity() public {
@@ -299,8 +295,8 @@ contract EtherFiWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(p[0].positionId, abi.encode(adapter.WITHDRAW_REQUEST_NFT()));
         assertEq(uint8(p[0].positionKind), uint8(PositionKind.Supplied));
         assertFalse(p[0].isLocked, "finalized request -> claimable leg");
-        _assertRequestLabel(p[0].labels);
-        assertEq(p[0].labels[1], "Request #1", "tokenId rides in the last label");
+        _assertRequestLeg(p[0]);
+        assertEq(p[0].positionInstanceId, bytes32(uint256(1)), "tokenId rides in positionInstanceId");
     }
 
     function test_getAdapterPositions_lockedLeg() public {
@@ -312,7 +308,7 @@ contract EtherFiWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(p[0].amount, 2 ether);
         assertTrue(p[0].isLocked, "pending request -> locked leg");
         assertEq(p[0].positionId, abi.encode(adapter.WITHDRAW_REQUEST_NFT()));
-        _assertRequestLabel(p[0].labels);
+        _assertRequestLeg(p[0]);
     }
 
     function test_getAdapterPositions_perRequestLegs_mixedClaimableAndLocked() public {
@@ -338,7 +334,7 @@ contract EtherFiWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
             assertEq(p[i].balanceAdapter, address(adapter));
             assertFalse(p[i].isDebt);
             assertEq(p[i].positionId, expectedId, "both legs share the static positionId");
-            _assertRequestLabel(p[i].labels);
+            _assertRequestLeg(p[i]);
             if (p[i].isLocked) {
                 locked += p[i].amount;
                 sawLocked = true;
@@ -350,10 +346,9 @@ contract EtherFiWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertTrue(sawClaimable && sawLocked, "one claimable + one locked leg present");
         assertEq(claimable, 2 ether, "claimable = finalized getClaimableAmount");
         assertEq(locked, 1 ether, "locked = pending estimate");
-        // Distinct requests carry distinct request-id labels.
+        // Distinct requests carry distinct positionInstanceIds.
         assertTrue(
-            keccak256(bytes(p[0].labels[1])) != keccak256(bytes(p[1].labels[1])),
-            "each request leg has a distinct request id label"
+            p[0].positionInstanceId != p[1].positionInstanceId, "each request leg has a distinct positionInstanceId"
         );
 
         // NAV-total invariance: sum of per-request legs == the aggregate balance.
@@ -378,13 +373,12 @@ contract EtherFiWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         for (uint256 i = 0; i < p.length; i++) {
             assertFalse(p[i].isLocked, "finalized request -> claimable leg");
             assertEq(p[i].positionId, expectedId, "legs share the static positionId");
-            _assertRequestLabel(p[i].labels);
+            _assertRequestLeg(p[i]);
             sum += p[i].amount;
         }
-        // Distinct ids → distinct labels even though state is identical.
+        // Distinct ids → distinct positionInstanceIds even though state is identical.
         assertTrue(
-            keccak256(bytes(p[0].labels[1])) != keccak256(bytes(p[1].labels[1])),
-            "distinct ids -> distinct request labels"
+            p[0].positionInstanceId != p[1].positionInstanceId, "distinct ids -> distinct positionInstanceIds"
         );
         (uint256 agg,) = adapter.getAdapterBalanceForAsset(holder, NATIVE);
         assertEq(sum, agg, "sum of legs == aggregate");
@@ -407,7 +401,7 @@ contract EtherFiWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
         assertEq(p.length, 1, "non-owned cached id is discarded");
         assertEq(p[0].amount, 2 ether, "only the still-owned request is valued");
-        assertEq(p[0].labels[1], "Request #1");
+        assertEq(p[0].positionInstanceId, bytes32(uint256(1)));
 
         (uint256 agg,) = adapter.getAdapterBalanceForAsset(holder, NATIVE);
         assertEq(p[0].amount, agg, "sum of legs == aggregate (discarded id excluded)");

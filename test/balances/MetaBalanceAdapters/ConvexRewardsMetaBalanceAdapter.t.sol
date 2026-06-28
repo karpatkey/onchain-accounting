@@ -441,7 +441,7 @@ contract ConvexRewardsMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory pos =
             meta.getAdapterPositionsForInstances(alice, _instance(address(rewarder)), address(0));
         assertGt(pos.length, 0);
-        string[] memory labels = pos[0].labels;
+        string[] memory labels = meta.positionLabels(pos[0].positionId);
         assertEq(labels.length, 2);
         assertEq(labels[0], "Curve LP");
         assertEq(labels[1], "USDC/WETH Convex");

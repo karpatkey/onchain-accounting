@@ -205,7 +205,7 @@ contract EulerVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(SAFE, one, address(0));
         assertEq(pos.length, 1);
         assertEq(pos[0].positionId, abi.encode(address(KPK_ETH_TERM)));
-        string[] memory labels = pos[0].labels;
+        string[] memory labels = adapter.positionLabels(pos[0].positionId);
         assertEq(labels.length, 2);
         assertEq(labels[0], "Vault");
         assertEq(labels[1], "KPK ETH Yield Term");

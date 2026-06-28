@@ -262,7 +262,7 @@ library PriceFeedLib {
         }
 
         INAVCalculator.PositionBalance[] memory allPositions =
-            _getPositionBalances(allAdapters, metaInstanceTotal, assetIndex, assetCount, account, address(0));
+            _getPositionBalances(allAdapters, assetIndex, account, address(0));
 
         nav.sequencerDown = sequencerDown;
         if (allPositions.length == 0) {
@@ -315,11 +315,11 @@ library PriceFeedLib {
 
         if (assetFilter == address(0)) {
             positionBalances =
-                _getPositionBalances(allAdapters, metaInstanceTotal, assetIndex, assetCount, account, address(0));
+                _getPositionBalances(allAdapters, assetIndex, account, address(0));
             assetsWithPositions = _extractUniqueAssets(positionBalances);
         } else {
             positionBalances =
-                _getPositionBalances(allAdapters, metaInstanceTotal, assetIndex, assetCount, account, assetFilter);
+                _getPositionBalances(allAdapters, assetIndex, account, assetFilter);
             if (positionBalances.length == 0) {
                 return new INAVCalculator.Position[](0);
             }
@@ -384,7 +384,7 @@ library PriceFeedLib {
         }
 
         INAVCalculator.PositionBalance[] memory allPositions =
-            _getPositionBalances(allAdapters, metaInstanceTotal, assetIndex, assetCount, account, address(0));
+            _getPositionBalances(allAdapters, assetIndex, account, address(0));
 
         nav.sequencerDown = sequencerDown;
         if (allPositions.length == 0) {
@@ -431,7 +431,7 @@ library PriceFeedLib {
         address account
     ) external view returns (bool) {
         INAVCalculator.PositionBalance[] memory positions = _getPositionBalances(
-            allAdapters, metaInstanceTotal, assetIndex, assetCount, account, address(0)
+            allAdapters, assetIndex, account, address(0)
         );
         for (uint256 i = 0; i < positions.length; i++) {
             if (positions[i].amount != 0) return true;
@@ -449,7 +449,7 @@ library PriceFeedLib {
         address account
     ) external view returns (address[] memory) {
         return _extractUniqueAssets(
-            _getPositionBalances(allAdapters, metaInstanceTotal, assetIndex, assetCount, account, address(0))
+            _getPositionBalances(allAdapters, assetIndex, account, address(0))
         );
     }
 
@@ -539,19 +539,15 @@ library PriceFeedLib {
     ///         and `assetCount` are retained in the signature for caller compatibility but no longer size the output.
     function _getPositionBalances(
         address[] memory allAdapters,
-        uint256, /* metaInstanceTotal */
         mapping(address => uint256) storage assetIndex,
-        uint256, /* assetCount */
         address account,
         address assetFilter
     ) private view returns (INAVCalculator.PositionBalance[] memory positions) {
         uint256 totalAdapters = allAdapters.length;
 
-        // First pass: query each adapter once (the only external calls) and retain its returned rows.
-        INAVCalculator.PositionBalance[][] memory perAdapter = new INAVCalculator.PositionBalance[][](totalAdapters);
-        for (uint256 i = 0; i < totalAdapters; i++) {
-            perAdapter[i] = _getAdapterPositions(allAdapters[i], account, assetFilter);
-        }
+        // First pass: query each adapter once (the only external calls) and retain its returned rows. Extracted to
+        // its own frame so the per-adapter try/catch fan-out does not inline into this function's stack (via_ir).
+        INAVCalculator.PositionBalance[][] memory perAdapter = _queryAllAdapters(allAdapters, account, assetFilter);
 
         // Second pass (in-memory, no external calls): count exactly the rows that survive the
         // registered-asset + assetFilter predicate, so `positions` is allocated to the precise size — no
@@ -575,6 +571,21 @@ library PriceFeedLib {
                     positions[k++] = adapterPositions[j];
                 }
             }
+        }
+    }
+
+    /// @notice First pass of {_getPositionBalances}: query every adapter once (the only external calls) and retain
+    ///         each adapter's returned rows. Kept in its own frame so the per-adapter try/catch fan-out does not
+    ///         inline into the caller's stack (via_ir stack limit).
+    function _queryAllAdapters(address[] memory allAdapters, address account, address assetFilter)
+        private
+        view
+        returns (INAVCalculator.PositionBalance[][] memory perAdapter)
+    {
+        uint256 totalAdapters = allAdapters.length;
+        perAdapter = new INAVCalculator.PositionBalance[][](totalAdapters);
+        for (uint256 i = 0; i < totalAdapters; i++) {
+            perAdapter[i] = _getAdapterPositions(allAdapters[i], account, assetFilter);
         }
     }
 
@@ -744,26 +755,25 @@ library PriceFeedLib {
             quoteAssetDecimals
         );
 
-        INAVCalculator.Asset memory balanceAsset = INAVCalculator.Asset({
+        // Field-by-field assignment to the named return (not a 15-field struct literal) so this stays under the
+        // via_ir stack limit when inlined into the per-position enrichment loop.
+        position.balanceAsset = INAVCalculator.Asset({
             asset: balance.balanceAsset.asset, symbol: canonicalSymbol, decimals: canonicalDecimals
         });
-        position = INAVCalculator.Position({
-            balanceAsset: balanceAsset,
-            balanceAdapter: balance.balanceAdapter,
-            amount: balance.amount,
-            isDebt: balance.isDebt,
-            protocolId: balance.protocolId,
-            positionId: balance.positionId,
-            positionKind: balance.positionKind,
-            isLocked: balance.isLocked,
-            labels: balance.labels,
-            quoteAsset: quoteAssetStruct,
-            value: value,
-            price: priceFeed.price,
-            priceDecimals: priceFeed.decimals,
-            stale: priceFeed.stale,
-            quoteAssetStale: quoteAssetStale
-        });
+        position.balanceAdapter = balance.balanceAdapter;
+        position.amount = balance.amount;
+        position.isDebt = balance.isDebt;
+        position.protocolId = balance.protocolId;
+        position.positionId = balance.positionId;
+        position.positionKind = balance.positionKind;
+        position.isLocked = balance.isLocked;
+        position.positionInstanceId = balance.positionInstanceId;
+        position.quoteAsset = quoteAssetStruct;
+        position.value = value;
+        position.price = priceFeed.price;
+        position.priceDecimals = priceFeed.decimals;
+        position.stale = priceFeed.stale;
+        position.quoteAssetStale = quoteAssetStale;
     }
 
     /// @notice Converts an amount of one asset to value in quote (USD when quotePrice is 0). Mirrors the former

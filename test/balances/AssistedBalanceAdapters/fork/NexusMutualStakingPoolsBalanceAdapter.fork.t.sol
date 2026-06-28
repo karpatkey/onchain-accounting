@@ -99,12 +99,13 @@ contract NexusMutualStakingPoolsBalanceAdapterForkTest is BalanceAdapterTestBase
             assertEq(p[i].balanceAdapter, address(adapter));
             assertEq(p[i].protocolId, ProtocolIds.NEXUS_MUTUAL_STAKING);
             assertFalse(p[i].isDebt);
-            // positionId = the staking-pool contract address; the NFT id is the last label segment.
+            // positionId = the staking-pool contract address; the NFT id rides in the typed positionInstanceId.
             address pool = abi.decode(p[i].positionId, (address));
             assertGt(pool.code.length, 0, "positionId resolves to a deployed staking pool");
-            assertEq(p[i].labels.length, 3, "labels = [Staking, pool, NFT id]");
-            assertEq(p[i].labels[0], "Staking");
-            assertGt(bytes(p[i].labels[2]).length, 0, "NFT id label present");
+            string[] memory lbl = adapter.positionLabels(p[i].positionId);
+            assertEq(lbl.length, 2, "static breadcrumb = [Staking, pool]");
+            assertEq(lbl[0], "Staking");
+            assertTrue(p[i].positionInstanceId != bytes32(0), "NFT id rides in positionInstanceId");
             if (p[i].positionKind == PositionKind.Staking) {
                 stakingSum += p[i].amount;
             } else {

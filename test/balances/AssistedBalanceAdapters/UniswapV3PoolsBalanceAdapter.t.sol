@@ -163,12 +163,14 @@ contract UniswapV3PoolsBalanceAdapterTest is Test {
         assertEq(p[0].positionId, abi.encode(address(poolA)));
         // NFT 2 legs carry positionId = the pool address (USDC/WETH 0.05%)
         assertEq(p[4].positionId, abi.encode(address(poolB)));
-        // Labels carry the pool address and the NFT id last: ["Liquidity Pool", "<pool>", "NFT #<id>"].
-        assertEq(p[0].labels.length, 3);
-        assertEq(p[0].labels[0], "Liquidity Pool");
-        assertEq(p[0].labels[1], Strings.toHexString(address(poolA)));
-        assertEq(p[0].labels[2], "NFT #1");
-        assertEq(p[4].labels[2], "NFT #2");
+        // Static breadcrumb (positionId-derived) carries the pool address: ["Liquidity Pool", "<pool>"].
+        string[] memory lbl = adapter.positionLabels(p[0].positionId);
+        assertEq(lbl.length, 2);
+        assertEq(lbl[0], "Liquidity Pool");
+        assertEq(lbl[1], Strings.toHexString(address(poolA)));
+        // The ephemeral NFT id now rides in the typed positionInstanceId on each leg.
+        assertEq(p[0].positionInstanceId, bytes32(uint256(1)));
+        assertEq(p[4].positionInstanceId, bytes32(uint256(2)));
     }
 
     /// @notice Emission order per NFT: Supplied liq0, Supplied liq1, Fees fee0, Fees fee1. With the mock's
@@ -310,7 +312,7 @@ contract UniswapV3PoolsBalanceAdapterTest is Test {
         // NFT 1's 4 legs gone; NFT 2's 4 legs remain.
         assertEq(p.length, 4, "transferred NFT discarded; remaining NFT still reported");
         assertEq(p[0].positionId, abi.encode(address(poolB)));
-        assertEq(p[0].labels[2], "NFT #2");
+        assertEq(p[0].positionInstanceId, bytes32(uint256(2)));
     }
 
     /// @notice Reads are fail-open: a burned id (ownerOf reverts) is silently discarded.
@@ -319,7 +321,7 @@ contract UniswapV3PoolsBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(alice, address(0));
         assertEq(p.length, 4, "burned NFT discarded; remaining NFT still reported");
         assertEq(p[0].positionId, abi.encode(address(poolA)));
-        assertEq(p[0].labels[2], "NFT #1");
+        assertEq(p[0].positionInstanceId, bytes32(uint256(1)));
     }
 
     function test_submit_dedups() public {
@@ -388,7 +390,7 @@ contract UniswapV3PoolsBalanceAdapterTest is Test {
         for (uint256 i = 0; i < p.length; i++) {
             assertEq(p[i].positionId, abi.encode(address(poolB)), "only poolB legs remain");
         }
-        assertEq(p[0].labels[2], "NFT #2", "surviving legs are NFT #2 (poolB)");
+        assertEq(p[0].positionInstanceId, bytes32(uint256(2)), "surviving legs are NFT #2 (poolB)");
     }
 
     /// @notice Writes are fail-loud at the cap: a submitted list longer than MAX_TOKEN_IDS reverts TokenIdCacheFull

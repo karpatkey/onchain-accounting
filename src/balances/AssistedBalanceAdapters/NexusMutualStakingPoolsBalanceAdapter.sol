@@ -293,6 +293,7 @@ contract NexusMutualStakingPoolsBalanceAdapter is AssistedBalanceAdapter, IPosit
         view
         returns (INAVCalculator.PositionBalance[] memory)
     {
+        if (msg.sender != address(this)) revert NotAuthorized(); // self-call-only (external solely for try/catch isolation)
         INAVCalculator.PositionBalance[] memory none = new INAVCalculator.PositionBalance[](0);
 
         // Re-verify ownership live: a burned id reverts `tokenInfo` (caught by the caller's try/catch → discarded);

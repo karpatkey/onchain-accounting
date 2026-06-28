@@ -116,7 +116,7 @@ contract ERC20DefaultBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         view
         returns (INAVCalculator.PositionBalance[] memory)
     {
-        require(msg.sender == address(this), "self only");
+        if (msg.sender != address(this)) revert NotAuthorized();
         return _buildPositions(account, assets);
     }
 

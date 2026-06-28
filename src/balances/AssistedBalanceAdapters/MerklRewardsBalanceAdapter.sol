@@ -7,6 +7,7 @@ import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -291,14 +292,14 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
         view
         returns (INAVCalculator.PositionBalance[] memory positions)
     {
-        require(msg.sender == address(this), "self only");
+        if (msg.sender != address(this)) revert NotAuthorized();
         INAVCalculator.Asset[] memory registered = NAV_CALCULATOR.getRegisteredAssets();
         bytes memory pid = abi.encode(DISTRIBUTOR); // identical for every leg — hoist out of the loop
         INAVCalculator.PositionBalance[] memory tmp = new INAVCalculator.PositionBalance[](tokens.length);
         uint256 count;
         for (uint256 i; i < tokens.length; ++i) {
-            INAVCalculator.Asset memory meta = _findRegisteredAsset(registered, tokens[i]);
-            if (meta.asset == address(0)) continue;
+            (INAVCalculator.Asset memory meta, bool found) = RegisteredAssetLib.find(registered, tokens[i]);
+            if (!found) continue;
             uint256 bal = _unclaimed(account, tokens[i]);
             if (bal == 0) continue;
             tmp[count++] = _row(meta, bal, pid);
@@ -425,17 +426,6 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
         return currentHash == root;
     }
 
-    function _findRegisteredAsset(INAVCalculator.Asset[] memory registered, address asset)
-        internal
-        pure
-        returns (INAVCalculator.Asset memory)
-    {
-        uint256 n = registered.length;
-        for (uint256 i; i < n; ++i) {
-            if (registered[i].asset == asset) return registered[i];
-        }
-        return INAVCalculator.Asset({asset: address(0), symbol: "", decimals: 0});
-    }
 }
 
 /// @notice Minimal interface for Merkl's Distributor (Angle Labs).

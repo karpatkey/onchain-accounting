@@ -8,7 +8,6 @@ import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -30,7 +29,6 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      positionId; each leg's `isLocked` reflects that request's own state (finalized → `false`, pending → `true`)
 ///      and its `tokenId` (the WithdrawRequestNFT id) rides in the last `labels` entry, never in `positionId`.
 contract EtherFiWithdrawalQueueBalanceAdapter is AssistedBalanceAdapter, IPositionDescribable {
-    using Strings for uint256;
 
     //
     // State

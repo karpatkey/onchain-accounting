@@ -6,7 +6,6 @@ import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {InvalidArguments} from "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -31,7 +30,6 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      is used). NAVCalculator prices each via the registered ETH feed; the balance methods
 ///      (`getAdapterBalances`) still report the summed total.
 contract LidoWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescribable {
-    using Strings for uint256;
 
     //
     // Constants

@@ -6,7 +6,6 @@ import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {InvalidArguments} from "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -26,7 +25,6 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      `positionId` (the legs share the static positionId and are distinguished for display by their labels,
 ///      for NAV by summing). The balance methods (`getAdapterBalances`) still report the summed total.
 contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescribable {
-    using Strings for uint256;
 
     //
     // Errors

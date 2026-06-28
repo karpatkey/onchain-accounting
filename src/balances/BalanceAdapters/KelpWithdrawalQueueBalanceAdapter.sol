@@ -6,8 +6,7 @@ import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-import {InvalidArguments} from "src/errors.sol";
+import {InvalidArguments, NotAuthorized} from "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
@@ -31,7 +30,6 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      `lrtConfig().getSupportedAssetList()` rather than hardcoded, mirroring the dynamic-discovery
 ///      pattern in `AaveUmbrellaBalanceAdapter.sol`.
 contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescribable {
-    using Strings for uint256;
 
     //
     // Constants
@@ -243,7 +241,7 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
         view
         returns (INAVCalculator.PositionBalance[] memory positions)
     {
-        require(msg.sender == address(this), "self only");
+        if (msg.sender != address(this)) revert NotAuthorized();
 
         INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
         uint256 delayBlocks = WITHDRAWAL_MANAGER.withdrawalDelayBlocks();

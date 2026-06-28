@@ -2,7 +2,6 @@
 pragma solidity ^0.8;
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
@@ -43,7 +42,6 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      resolve to a live owed amount for `account`, and `PositionCacheFull` at `MAX_POSITIONS`. Reads still
 ///      re-verify and discard (never revert), so correctness does not depend on the write-time checks.
 contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPositionDescribable {
-    using Strings for uint256;
 
     //
     // Types

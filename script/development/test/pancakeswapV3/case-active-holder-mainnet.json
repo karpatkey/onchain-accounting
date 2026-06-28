@@ -24,7 +24,7 @@
       "currentTick_at_fork_block": -202019,
       "sqrtPriceX96_at_fork_block": "3253334064596920230428346",
       "feeProtocol": 222825800,
-      "feeProtocol_note": "222825800 > uint8 max (255) — the high bits are set, so the inherited uint8 slot0 read reverts; the PancakeSwapV3PoolsBalanceAdapter._slot0 override decodes it as uint32. This is the entire verification surface."
+      "feeProtocol_note": "222825800 > uint8 max (255) — PCS V3 packs feeProtocol as uint32, which historically broke a uint8 slot0 read. This is now MOOT: UniswapV3PoolsBalanceAdapter (and the PancakeSwapV3PoolsBalanceAdapter subclass) never read slot0() — the in-range split is priced off an oracle-reconstructed sqrtPriceX96 — so there is no _slot0 override. The subclass overrides only _protocolId() (the pancakeswap-v3 slug); this field is retained as recorded chain evidence only."
     }
   ],
   "holders": [

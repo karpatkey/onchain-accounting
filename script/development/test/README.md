@@ -13,7 +13,7 @@ The verification quality depends on this. Skipping it lets bugs hide where the a
 **A. Read the adapter source thoroughly.**
 - Class hierarchy: is it a direct `IBalanceAdapter` implementer or a subclass? If subclass, list every `override` — each override is a verification surface the parent's test does NOT cover. List every purely-inherited method — those are transitively covered.
   - `PancakeSwapV2PoolsMetaBalanceAdapter is UniswapV2PoolsMetaBalanceAdapter` → thin subclass: constructor + a `_protocolId()` override returning the `pancakeswap-v2` slug; no math change. Verification: balance logic inherited from Uni V2, skip.
-  - `PancakeSwapV3PoolsBalanceAdapter is UniswapV3PoolsBalanceAdapter` → overrides only `_slot0()` (the `uint32 feeProtocol` ABI shim) and `_protocolId()`. Verification: minimal test exercising the overrides only.
+  - `PancakeSwapV3PoolsBalanceAdapter is UniswapV3PoolsBalanceAdapter` → overrides only `_protocolId()` (the `pancakeswap-v3` slug). The adapter never reads `slot0()` (price is oracle-reconstructed), so there is no `_slot0()` hook / `feeProtocol` ABI shim to verify. Verification: minimal test exercising the slug override only.
   - `SparkLendBalanceAdapter is IBalanceAdapter, IPositionDescribable` → a standalone implementer (not an Aave subclass); check the source for the leg-emission branches and treat accordingly.
 - Math branches: enumerate every `if` that affects the returned amount. Each branch needs a test case OR a documented reason it can't be exercised on a real chain. Uni V2 example: `feeTo == 0`, `feeTo != 0 && kLast == 0`, `feeTo != 0 && kLast != 0 && rootK > rootKLast`.
 - Immutable constructor args: pin in setUp + assert in a `test_immutables_*` smoke test (catches deployment-config drift).

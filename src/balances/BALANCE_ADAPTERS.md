@@ -12,7 +12,9 @@ The balance system powers **Net Asset Value (NAV)** calculation by aggregating p
 - **Balance adapters:** Contracts implementing `IBalanceAdapter`. Each adapter reports **balance-only** positions (e.g. wallet ERC20/native, Compound supply/borrow, Aave positions) as `PositionBalance` structs — without pricing. One adapter is special: **ERC20DefaultBalanceAdapter**, which is deployed and registered automatically at initialization and reports wallet ERC20 and native balances for all registered assets.
 - **NAVCalculator:** Extends Prices and Balances. It iterates over all registered adapters, calls `getAdapterPositions(account, assetFilter)` on each, filters positions by registered assets, enriches them with prices (value = amount × price, with sign from `isDebt`), and aggregates into a single NAV.
 
-So: **adapters only report balances; NAVCalculator adds prices and sums values.**
+So: **adapters only report balances; NAVCalculator adds prices and sums values.** AMM-LP adapters report the
+**instantaneous** pro-rata share of current pool reserves (not a manipulation-resistant "fair" value) — a
+deliberate decision valid while NAV is consumed asynchronously / off-chain; see [ADR 0017](../../docs/decisions/0017-lp-valuation-instantaneous-amounts.md) for the threat model and the revisit trigger.
 
 ---
 

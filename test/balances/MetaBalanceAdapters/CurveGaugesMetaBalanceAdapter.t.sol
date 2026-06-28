@@ -256,7 +256,7 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
         string[] memory labels = meta.positionLabels(pos[0].positionId);
         assertEq(labels.length, 2);
         assertEq(labels[0], "Staking Gauge");
-        assertEq(labels[1], "USDC/DAI gauge");
+        assertEq(labels[1], "USDC/DAI");
     }
 
     // ─── underlyingAssetsSupported ────────────────────────────────────────────

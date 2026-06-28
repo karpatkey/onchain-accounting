@@ -710,7 +710,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         //     }
         //   }
         // Owner is set to chainConfig.admin (the OIV Safe). The Safe will be the only address that can call
-        // submitProof / clearAllocation. Proof verification on-chain prevents the owner from fabricating amounts;
+        // submitProofs / clearAllocation. Proof verification on-chain prevents the owner from fabricating amounts;
         // see docs/decisions/0007-merkl-trust-minimized-cache.md.
         address distributor = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "distributor")

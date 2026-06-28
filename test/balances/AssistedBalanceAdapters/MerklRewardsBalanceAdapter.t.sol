@@ -52,6 +52,8 @@ contract MockMerklDistributor is IMerklDistributor {
 /// @title MerklRewardsBalanceAdapterTest
 /// @notice Unit tests for MerklRewardsBalanceAdapter. Builds toy 1-, 2-, and 4-leaf merkle trees in-memory using the
 ///         same hashing rule as Merkl's Distributor (sorted-pair, `keccak256(abi.encode(a, b))`).
+/// @dev    Submit is REPLACE semantics: `submitProofs(user, Allocation[])` sets the user's COMPLETE cached token set
+///         (clearing the prior set), so a user's multiple tokens must be submitted in ONE call (see `_submitMany`).
 contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
     MerklRewardsBalanceAdapter public adapter;
     MockMerklDistributor public distributor;
@@ -124,6 +126,30 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
         proof[0] = leaves[leafIdx == 0 ? 1 : 0];
     }
 
+    /// @dev Wrap a single (token, amount, proof) into the per-user replace submit (pranked as `owner`). Submit is
+    ///      replace semantics, so this sets the user's cached set to exactly this one token.
+    function _submitOne(address user, address token, uint256 amount, bytes32[] memory proof) internal {
+        MerklRewardsBalanceAdapter.Allocation[] memory allocs = new MerklRewardsBalanceAdapter.Allocation[](1);
+        allocs[0] = MerklRewardsBalanceAdapter.Allocation({token: token, cumulativeAmount: amount, proof: proof});
+        vm.prank(owner);
+        adapter.submitProofs(user, allocs);
+    }
+
+    /// @dev Submit several (token, amount, proof) entries for one user in a single replace submit (pranked as `owner`).
+    ///      Needed because a per-user submit replaces the whole set — multiple tokens for one user must go in one call.
+    function _submitMany(address user, address[] memory tokens, uint256[] memory amounts, bytes32[][] memory proofs)
+        internal
+    {
+        MerklRewardsBalanceAdapter.Allocation[] memory allocs =
+            new MerklRewardsBalanceAdapter.Allocation[](tokens.length);
+        for (uint256 i; i < tokens.length; ++i) {
+            allocs[i] =
+                MerklRewardsBalanceAdapter.Allocation({token: tokens[i], cumulativeAmount: amounts[i], proof: proofs[i]});
+        }
+        vm.prank(owner);
+        adapter.submitProofs(user, allocs);
+    }
+
     // ============================================
     // Constructor
     // ============================================
@@ -170,17 +196,15 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
     }
 
     // ============================================
-    // submitProof — happy path
+    // submitProofs — happy path
     // ============================================
 
-    function test_submitProof_singleLeafTree() public {
+    function test_submitProofs_singleLeafTree() public {
         // Single-leaf tree: root = leaf, proof = [].
         bytes32 leaf = _leaf(alice, address(arb), 100 ether);
         distributor.setRoot(leaf);
 
-        bytes32[] memory emptyProof = new bytes32[](0);
-        vm.prank(owner);
-        adapter.submitProof(alice, address(arb), 100 ether, emptyProof);
+        _submitOne(alice, address(arb), 100 ether, new bytes32[](0));
 
         (uint256 amt, bytes32 root, uint64 ts) = adapter.allocations(alice, address(arb));
         assertEq(amt, 100 ether);
@@ -188,7 +212,7 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(ts, uint64(block.timestamp));
     }
 
-    function test_submitProof_twoLeafTree() public {
+    function test_submitProofs_twoLeafTree() public {
         bytes32[2] memory leaves;
         leaves[0] = _leaf(alice, address(arb), 100 ether);
         leaves[1] = _leaf(bob, address(arb), 200 ether);
@@ -196,8 +220,7 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
         (bytes32 root, bytes32[] memory proof) = _buildTree2(leaves, 0);
         distributor.setRoot(root);
 
-        vm.prank(owner);
-        adapter.submitProof(alice, address(arb), 100 ether, proof);
+        _submitOne(alice, address(arb), 100 ether, proof);
 
         (uint256 amt, bytes32 cachedRoot,) = adapter.allocations(alice, address(arb));
         assertEq(amt, 100 ether);
@@ -209,35 +232,32 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(tokens[0], address(arb));
     }
 
-    function test_submitProof_fourLeafTree_allLeavesVerifiable() public {
+    function test_submitProofs_fourLeafTree_allLeavesVerifiable() public {
         bytes32[4] memory leaves;
         leaves[0] = _leaf(alice, address(arb), 100 ether);
         leaves[1] = _leaf(bob, address(arb), 200 ether);
         leaves[2] = _leaf(alice, address(op), 50 ether);
         leaves[3] = _leaf(makeAddr("carol"), address(op), 75 ether);
 
-        bytes32 root;
-        bytes32[] memory proof;
-
-        // Compute root once
-        (root, proof) = _buildTree4(leaves, 0);
+        (bytes32 root,) = _buildTree4(leaves, 0);
         distributor.setRoot(root);
 
-        // alice/ARB
-        vm.prank(owner);
-        adapter.submitProof(alice, address(arb), 100 ether, proof);
+        // alice holds TWO tokens (ARB + OP): submitted together in one replace call.
+        address[] memory aTokens = new address[](2);
+        uint256[] memory aAmounts = new uint256[](2);
+        bytes32[][] memory aProofs = new bytes32[][](2);
+        aTokens[0] = address(arb);
+        aAmounts[0] = 100 ether;
+        (, aProofs[0]) = _buildTree4(leaves, 0);
+        aTokens[1] = address(op);
+        aAmounts[1] = 50 ether;
+        (, aProofs[1]) = _buildTree4(leaves, 2);
+        _submitMany(alice, aTokens, aAmounts, aProofs);
 
-        // bob/ARB
-        (, proof) = _buildTree4(leaves, 1);
-        vm.prank(owner);
-        adapter.submitProof(bob, address(arb), 200 ether, proof);
+        // bob holds one token (ARB).
+        (, bytes32[] memory bobProof) = _buildTree4(leaves, 1);
+        _submitOne(bob, address(arb), 200 ether, bobProof);
 
-        // alice/OP
-        (, proof) = _buildTree4(leaves, 2);
-        vm.prank(owner);
-        adapter.submitProof(alice, address(op), 50 ether, proof);
-
-        // alice now has two tokens cached
         address[] memory aliceTokens = adapter.userTokens(alice);
         assertEq(aliceTokens.length, 2);
         assertEq(aliceTokens[0], address(arb));
@@ -248,31 +268,58 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(bobTokens[0], address(arb));
     }
 
-    function test_submitProof_emitsEvent() public {
+    function test_submitProofs_emitsEvent() public {
         bytes32 leaf = _leaf(alice, address(arb), 100 ether);
         distributor.setRoot(leaf);
 
-        bytes32[] memory emptyProof = new bytes32[](0);
         vm.expectEmit(true, true, false, true, address(adapter));
         emit MerklRewardsBalanceAdapter.AllocationCached(alice, address(arb), 100 ether, leaf, uint64(block.timestamp));
-        vm.prank(owner);
-        adapter.submitProof(alice, address(arb), 100 ether, emptyProof);
+        _submitOne(alice, address(arb), 100 ether, new bytes32[](0));
     }
 
-    function test_submitProof_overwritesPriorEntry_doesNotDuplicateUserTokenList() public {
+    function test_submitProofs_replacesPriorSet() public {
+        // Seed alice with {ARB, OP}.
+        bytes32[2] memory leaves;
+        leaves[0] = _leaf(alice, address(arb), 100 ether);
+        leaves[1] = _leaf(alice, address(op), 50 ether);
+        (bytes32 root, bytes32[] memory p0) = _buildTree2(leaves, 0);
+        (, bytes32[] memory p1) = _buildTree2(leaves, 1);
+        distributor.setRoot(root);
+        address[] memory tokens = new address[](2);
+        uint256[] memory amounts = new uint256[](2);
+        bytes32[][] memory proofs = new bytes32[][](2);
+        tokens[0] = address(arb);
+        amounts[0] = 100 ether;
+        proofs[0] = p0;
+        tokens[1] = address(op);
+        amounts[1] = 50 ether;
+        proofs[1] = p1;
+        _submitMany(alice, tokens, amounts, proofs);
+        assertEq(adapter.userTokens(alice).length, 2);
+
+        // Re-submitting ONLY {OP} replaces the set — ARB is dropped.
+        bytes32 opLeaf = _leaf(alice, address(op), 50 ether);
+        distributor.setRoot(opLeaf);
+        _submitOne(alice, address(op), 50 ether, new bytes32[](0));
+
+        address[] memory after_ = adapter.userTokens(alice);
+        assertEq(after_.length, 1, "prior set replaced, not merged");
+        assertEq(after_[0], address(op));
+        (uint256 arbAmt,,) = adapter.allocations(alice, address(arb));
+        assertEq(arbAmt, 0, "dropped ARB entry zeroed");
+    }
+
+    function test_submitProofs_overwritesPriorEntry_doesNotDuplicateUserTokenList() public {
         // First submission
         bytes32 leaf1 = _leaf(alice, address(arb), 100 ether);
         distributor.setRoot(leaf1);
-        bytes32[] memory emptyProof = new bytes32[](0);
-        vm.prank(owner);
-        adapter.submitProof(alice, address(arb), 100 ether, emptyProof);
+        _submitOne(alice, address(arb), 100 ether, new bytes32[](0));
 
-        // Time passes; root rotates
+        // Time passes; root rotates; resubmit the same single token at a higher amount.
         vm.warp(block.timestamp + 1 days);
         bytes32 leaf2 = _leaf(alice, address(arb), 150 ether);
         distributor.setRoot(leaf2);
-        vm.prank(owner);
-        adapter.submitProof(alice, address(arb), 150 ether, emptyProof);
+        _submitOne(alice, address(arb), 150 ether, new bytes32[](0));
 
         // _userTokens should have ARB exactly once
         address[] memory tokens = adapter.userTokens(alice);
@@ -286,58 +333,44 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
     }
 
     // ============================================
-    // submitProof — rejection paths
+    // submitProofs — rejection paths
     // ============================================
 
-    function test_submitProof_revertsOnZeroUser() public {
+    function test_submitProofs_revertsOnZeroUser() public {
         bytes32 leaf = _leaf(address(0), address(arb), 100 ether);
         distributor.setRoot(leaf);
-        bytes32[] memory emptyProof = new bytes32[](0);
-
         vm.expectRevert(InvalidArguments.selector);
-        vm.prank(owner);
-        adapter.submitProof(address(0), address(arb), 100 ether, emptyProof);
+        _submitOne(address(0), address(arb), 100 ether, new bytes32[](0));
     }
 
-    function test_submitProof_revertsOnZeroToken() public {
+    function test_submitProofs_revertsOnZeroToken() public {
         bytes32 leaf = _leaf(alice, address(0), 100 ether);
         distributor.setRoot(leaf);
-        bytes32[] memory emptyProof = new bytes32[](0);
-
         vm.expectRevert(InvalidArguments.selector);
-        vm.prank(owner);
-        adapter.submitProof(alice, address(0), 100 ether, emptyProof);
+        _submitOne(alice, address(0), 100 ether, new bytes32[](0));
     }
 
-    function test_submitProof_revertsOnUninitializedRoot() public {
+    function test_submitProofs_revertsOnUninitializedRoot() public {
         // root == 0
-        bytes32[] memory emptyProof = new bytes32[](0);
         vm.expectRevert(MerklRewardsBalanceAdapter.UninitializedRoot.selector);
-        vm.prank(owner);
-        adapter.submitProof(alice, address(arb), 100 ether, emptyProof);
+        _submitOne(alice, address(arb), 100 ether, new bytes32[](0));
     }
 
-    function test_submitProof_revertsOnInvalidProof_wrongAmount() public {
+    function test_submitProofs_revertsOnInvalidProof_wrongAmount() public {
         bytes32 leaf = _leaf(alice, address(arb), 100 ether);
         distributor.setRoot(leaf);
-        bytes32[] memory emptyProof = new bytes32[](0);
-
         vm.expectRevert(MerklRewardsBalanceAdapter.InvalidProof.selector);
-        vm.prank(owner);
-        adapter.submitProof(alice, address(arb), 999 ether, emptyProof);
+        _submitOne(alice, address(arb), 999 ether, new bytes32[](0));
     }
 
-    function test_submitProof_revertsOnInvalidProof_wrongUser() public {
+    function test_submitProofs_revertsOnInvalidProof_wrongUser() public {
         bytes32 leaf = _leaf(alice, address(arb), 100 ether);
         distributor.setRoot(leaf);
-        bytes32[] memory emptyProof = new bytes32[](0);
-
         vm.expectRevert(MerklRewardsBalanceAdapter.InvalidProof.selector);
-        vm.prank(owner);
-        adapter.submitProof(bob, address(arb), 100 ether, emptyProof);
+        _submitOne(bob, address(arb), 100 ether, new bytes32[](0));
     }
 
-    function test_submitProof_revertsOnInvalidProof_corruptedSibling() public {
+    function test_submitProofs_revertsOnInvalidProof_corruptedSibling() public {
         bytes32[2] memory leaves;
         leaves[0] = _leaf(alice, address(arb), 100 ether);
         leaves[1] = _leaf(bob, address(arb), 200 ether);
@@ -349,46 +382,76 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
         proof[0] = bytes32(uint256(proof[0]) ^ uint256(1));
 
         vm.expectRevert(MerklRewardsBalanceAdapter.InvalidProof.selector);
-        vm.prank(owner);
-        adapter.submitProof(alice, address(arb), 100 ether, proof);
+        _submitOne(alice, address(arb), 100 ether, proof);
     }
 
-    function test_submitProof_revertsOnAmountRegression() public {
-        // First submission at 100
-        bytes32 leaf1 = _leaf(alice, address(arb), 100 ether);
-        distributor.setRoot(leaf1);
-        bytes32[] memory emptyProof = new bytes32[](0);
-        vm.prank(owner);
-        adapter.submitProof(alice, address(arb), 100 ether, emptyProof);
+    /// @notice Across-submit monotonicity is NOT enforced under replace (the cleared cache makes the guard moot) — the
+    ///         live-root proof is the guarantee. The `AmountRegression` guard still catches a decreasing DUPLICATE
+    ///         token within a single submitted list.
+    function test_submitProofs_revertsOnWithinListRegression() public {
+        // Tree containing both leaf(alice, ARB, 100) and leaf(alice, ARB, 50) so both proofs verify against one root.
+        bytes32[2] memory leaves;
+        leaves[0] = _leaf(alice, address(arb), 100 ether);
+        leaves[1] = _leaf(alice, address(arb), 50 ether);
+        (bytes32 root, bytes32[] memory p0) = _buildTree2(leaves, 0);
+        (, bytes32[] memory p1) = _buildTree2(leaves, 1);
+        distributor.setRoot(root);
 
-        // Try to submit a smaller amount — even with a valid proof against a different root.
-        bytes32 leaf2 = _leaf(alice, address(arb), 50 ether);
-        distributor.setRoot(leaf2);
+        // Same token twice, decreasing: the second entry trips AmountRegression.
+        address[] memory tokens = new address[](2);
+        uint256[] memory amounts = new uint256[](2);
+        bytes32[][] memory proofs = new bytes32[][](2);
+        tokens[0] = address(arb);
+        amounts[0] = 100 ether;
+        proofs[0] = p0;
+        tokens[1] = address(arb);
+        amounts[1] = 50 ether;
+        proofs[1] = p1;
 
+        MerklRewardsBalanceAdapter.Allocation[] memory allocs = new MerklRewardsBalanceAdapter.Allocation[](2);
+        allocs[0] = MerklRewardsBalanceAdapter.Allocation({token: tokens[0], cumulativeAmount: amounts[0], proof: p0});
+        allocs[1] = MerklRewardsBalanceAdapter.Allocation({token: tokens[1], cumulativeAmount: amounts[1], proof: p1});
         vm.expectRevert(MerklRewardsBalanceAdapter.AmountRegression.selector);
         vm.prank(owner);
-        adapter.submitProof(alice, address(arb), 50 ether, emptyProof);
+        adapter.submitProofs(alice, allocs);
     }
 
-    function test_submitProof_revertsOnNonAssistant() public {
+    /// @notice Under replace, a NEW submit with a lower amount than a prior submit is accepted (the prior cache is
+    ///         cleared first) — across-submit monotonicity is intentionally not enforced.
+    function test_submitProofs_lowerAmountInNewSubmitAccepted() public {
+        bytes32 leaf1 = _leaf(alice, address(arb), 100 ether);
+        distributor.setRoot(leaf1);
+        _submitOne(alice, address(arb), 100 ether, new bytes32[](0));
+
+        bytes32 leaf2 = _leaf(alice, address(arb), 50 ether);
+        distributor.setRoot(leaf2);
+        _submitOne(alice, address(arb), 50 ether, new bytes32[](0)); // lower — accepted under replace
+
+        (uint256 amt,,) = adapter.allocations(alice, address(arb));
+        assertEq(amt, 50 ether);
+    }
+
+    function test_submitProofs_revertsOnNonAssistant() public {
         bytes32 leaf = _leaf(alice, address(arb), 100 ether);
         distributor.setRoot(leaf);
-        bytes32[] memory emptyProof = new bytes32[](0);
 
+        MerklRewardsBalanceAdapter.Allocation[] memory allocs = new MerklRewardsBalanceAdapter.Allocation[](1);
+        allocs[0] =
+            MerklRewardsBalanceAdapter.Allocation({token: address(arb), cumulativeAmount: 100 ether, proof: new bytes32[](0)});
         vm.expectRevert(
             abi.encodeWithSelector(
                 IAccessControl.AccessControlUnauthorizedAccount.selector, stranger, keccak256("ASSISTANT_ROLE")
             )
         );
         vm.prank(stranger);
-        adapter.submitProof(alice, address(arb), 100 ether, emptyProof);
+        adapter.submitProofs(alice, allocs);
     }
 
     // ============================================
-    // submitProofBatch
+    // submitProofsBatch
     // ============================================
 
-    function test_submitProofBatch_happyPath() public {
+    function test_submitProofsBatch_happyPath() public {
         bytes32[4] memory leaves;
         leaves[0] = _leaf(alice, address(arb), 100 ether);
         leaves[1] = _leaf(bob, address(arb), 200 ether);
@@ -398,47 +461,39 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
         (bytes32 root,) = _buildTree4(leaves, 0);
         distributor.setRoot(root);
 
-        address[] memory users = new address[](4);
-        address[] memory tokens = new address[](4);
-        uint256[] memory amounts = new uint256[](4);
-        bytes32[][] memory proofs = new bytes32[][](4);
+        address[] memory users = new address[](2);
+        MerklRewardsBalanceAdapter.Allocation[][] memory allocs = new MerklRewardsBalanceAdapter.Allocation[][](2);
 
+        // alice: ARB (leaf 0) + OP (leaf 2)
         users[0] = alice;
-        tokens[0] = address(arb);
-        amounts[0] = 100 ether;
-        (, proofs[0]) = _buildTree4(leaves, 0);
+        allocs[0] = new MerklRewardsBalanceAdapter.Allocation[](2);
+        (, bytes32[] memory aArb) = _buildTree4(leaves, 0);
+        (, bytes32[] memory aOp) = _buildTree4(leaves, 2);
+        allocs[0][0] = MerklRewardsBalanceAdapter.Allocation(address(arb), 100 ether, aArb);
+        allocs[0][1] = MerklRewardsBalanceAdapter.Allocation(address(op), 50 ether, aOp);
 
+        // bob: ARB (leaf 1) + OP (leaf 3)
         users[1] = bob;
-        tokens[1] = address(arb);
-        amounts[1] = 200 ether;
-        (, proofs[1]) = _buildTree4(leaves, 1);
-
-        users[2] = alice;
-        tokens[2] = address(op);
-        amounts[2] = 50 ether;
-        (, proofs[2]) = _buildTree4(leaves, 2);
-
-        users[3] = bob;
-        tokens[3] = address(op);
-        amounts[3] = 75 ether;
-        (, proofs[3]) = _buildTree4(leaves, 3);
+        allocs[1] = new MerklRewardsBalanceAdapter.Allocation[](2);
+        (, bytes32[] memory bArb) = _buildTree4(leaves, 1);
+        (, bytes32[] memory bOp) = _buildTree4(leaves, 3);
+        allocs[1][0] = MerklRewardsBalanceAdapter.Allocation(address(arb), 200 ether, bArb);
+        allocs[1][1] = MerklRewardsBalanceAdapter.Allocation(address(op), 75 ether, bOp);
 
         vm.prank(owner);
-        adapter.submitProofBatch(users, tokens, amounts, proofs);
+        adapter.submitProofsBatch(users, allocs);
 
         assertEq(adapter.userTokens(alice).length, 2);
         assertEq(adapter.userTokens(bob).length, 2);
     }
 
-    function test_submitProofBatch_revertsOnLengthMismatch() public {
+    function test_submitProofsBatch_revertsOnLengthMismatch() public {
         address[] memory users = new address[](2);
-        address[] memory tokens = new address[](2);
-        uint256[] memory amounts = new uint256[](1); // mismatch
-        bytes32[][] memory proofs = new bytes32[][](2);
+        MerklRewardsBalanceAdapter.Allocation[][] memory allocs = new MerklRewardsBalanceAdapter.Allocation[][](1); // mismatch
 
         vm.expectRevert(ArrayLengthMismatch.selector);
         vm.prank(owner);
-        adapter.submitProofBatch(users, tokens, amounts, proofs);
+        adapter.submitProofsBatch(users, allocs);
     }
 
     // ============================================
@@ -448,9 +503,7 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
     function _seedAllocation(address user, address token, uint256 amount) internal {
         bytes32 leaf = _leaf(user, token, amount);
         distributor.setRoot(leaf);
-        bytes32[] memory emptyProof = new bytes32[](0);
-        vm.prank(owner);
-        adapter.submitProof(user, token, amount, emptyProof);
+        _submitOne(user, token, amount, new bytes32[](0));
     }
 
     function test_clearAllocation_zerosCacheAndRemovesFromList() public {
@@ -467,10 +520,28 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
     }
 
     function test_clearAllocation_swapAndPopFromMiddle() public {
-        // Seed three tokens for alice, one root at a time.
-        _seedAllocation(alice, address(arb), 100 ether);
-        _seedAllocation(alice, address(op), 50 ether);
-        _seedAllocation(alice, address(morpho), 25 ether);
+        // Seed three tokens for alice in ONE replace submit (a 4-leaf tree; the 4th leaf is an unused filler).
+        bytes32[4] memory leaves;
+        leaves[0] = _leaf(alice, address(arb), 100 ether);
+        leaves[1] = _leaf(alice, address(op), 50 ether);
+        leaves[2] = _leaf(alice, address(morpho), 25 ether);
+        leaves[3] = _leaf(makeAddr("filler"), address(arb), 1 ether);
+        (bytes32 root,) = _buildTree4(leaves, 0);
+        distributor.setRoot(root);
+
+        address[] memory tokens = new address[](3);
+        uint256[] memory amounts = new uint256[](3);
+        bytes32[][] memory proofs = new bytes32[][](3);
+        tokens[0] = address(arb);
+        amounts[0] = 100 ether;
+        (, proofs[0]) = _buildTree4(leaves, 0);
+        tokens[1] = address(op);
+        amounts[1] = 50 ether;
+        (, proofs[1]) = _buildTree4(leaves, 1);
+        tokens[2] = address(morpho);
+        amounts[2] = 25 ether;
+        (, proofs[2]) = _buildTree4(leaves, 2);
+        _submitMany(alice, tokens, amounts, proofs);
 
         // Sanity: list is [arb, op, morpho]
         address[] memory before = adapter.userTokens(alice);
@@ -562,19 +633,58 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(isDebt.length, 0);
     }
 
-    function test_getAdapterBalances_skipsZeroAndStale() public {
-        _seedAllocation(alice, address(arb), 100 ether);
-        _seedAllocation(alice, address(op), 50 ether);
+    function test_getAdapterBalances_skipsClaimedZero() public {
+        // Seed alice with {ARB, OP} in one replace submit (shared tree root).
+        bytes32[2] memory leaves;
+        leaves[0] = _leaf(alice, address(arb), 100 ether);
+        leaves[1] = _leaf(alice, address(op), 50 ether);
+        (bytes32 root, bytes32[] memory p0) = _buildTree2(leaves, 0);
+        (, bytes32[] memory p1) = _buildTree2(leaves, 1);
+        distributor.setRoot(root);
+        address[] memory tokens = new address[](2);
+        uint256[] memory amounts = new uint256[](2);
+        bytes32[][] memory proofs = new bytes32[][](2);
+        tokens[0] = address(arb);
+        amounts[0] = 100 ether;
+        proofs[0] = p0;
+        tokens[1] = address(op);
+        amounts[1] = 50 ether;
+        proofs[1] = p1;
+        _submitMany(alice, tokens, amounts, proofs);
 
-        // Mark OP as fully claimed → returns 0 → skipped.
+        // Mark OP fully claimed → its unclaimed is 0 → skipped from the array; ARB (fresh root) remains.
         distributor.setClaimed(alice, address(op), uint208(50 ether), uint48(block.timestamp), bytes32(0));
-        // Refresh root to the most recent leaf so ARB is still fresh.
-        distributor.setRoot(_leaf(alice, address(op), 50 ether));
 
-        (address[] memory assets, uint256[] memory amounts,) = adapter.getAdapterBalances(alice);
-        // ARB is now stale (root != leaf(alice, ARB, 100)). Both should be skipped.
+        (address[] memory assets, uint256[] memory outAmounts,) = adapter.getAdapterBalances(alice);
+        assertEq(assets.length, 1, "claimed-zero OP skipped, ARB kept");
+        assertEq(assets[0], address(arb));
+        assertEq(outAmounts[0], 100 ether);
+    }
+
+    function test_getAdapterBalances_skipsAllWhenStale() public {
+        // Seed {ARB, OP}, then rotate the root so the whole cache goes stale → both skipped.
+        bytes32[2] memory leaves;
+        leaves[0] = _leaf(alice, address(arb), 100 ether);
+        leaves[1] = _leaf(alice, address(op), 50 ether);
+        (bytes32 root, bytes32[] memory p0) = _buildTree2(leaves, 0);
+        (, bytes32[] memory p1) = _buildTree2(leaves, 1);
+        distributor.setRoot(root);
+        address[] memory tokens = new address[](2);
+        uint256[] memory amounts = new uint256[](2);
+        bytes32[][] memory proofs = new bytes32[][](2);
+        tokens[0] = address(arb);
+        amounts[0] = 100 ether;
+        proofs[0] = p0;
+        tokens[1] = address(op);
+        amounts[1] = 50 ether;
+        proofs[1] = p1;
+        _submitMany(alice, tokens, amounts, proofs);
+
+        distributor.setRoot(keccak256("rotated root")); // both entries now stale
+
+        (address[] memory assets, uint256[] memory outAmounts,) = adapter.getAdapterBalances(alice);
         assertEq(assets.length, 0);
-        assertEq(amounts.length, 0);
+        assertEq(outAmounts.length, 0);
     }
 
     function test_getAdapterBalances_returnsAllFreshNonZero() public {
@@ -585,15 +695,21 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
         (, bytes32[] memory proof1) = _buildTree2(leaves, 1);
         distributor.setRoot(root);
 
-        vm.prank(owner);
-        adapter.submitProof(alice, address(arb), 100 ether, proof0);
-        vm.prank(owner);
-        adapter.submitProof(alice, address(op), 50 ether, proof1);
+        address[] memory tokens = new address[](2);
+        uint256[] memory amounts = new uint256[](2);
+        bytes32[][] memory proofs = new bytes32[][](2);
+        tokens[0] = address(arb);
+        amounts[0] = 100 ether;
+        proofs[0] = proof0;
+        tokens[1] = address(op);
+        amounts[1] = 50 ether;
+        proofs[1] = proof1;
+        _submitMany(alice, tokens, amounts, proofs);
 
-        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = adapter.getAdapterBalances(alice);
+        (address[] memory assets, uint256[] memory outAmounts, bool[] memory isDebt) = adapter.getAdapterBalances(alice);
         assertEq(assets.length, 2);
-        assertEq(amounts[0], 100 ether);
-        assertEq(amounts[1], 50 ether);
+        assertEq(outAmounts[0], 100 ether);
+        assertEq(outAmounts[1], 50 ether);
         assertFalse(isDebt[0]);
         assertFalse(isDebt[1]);
     }
@@ -612,9 +728,7 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
         Mock_ERC20 unregistered = new Mock_ERC20("UNREG", 18);
         bytes32 leaf = _leaf(alice, address(unregistered), 100 ether);
         distributor.setRoot(leaf);
-        bytes32[] memory emptyProof = new bytes32[](0);
-        vm.prank(owner);
-        adapter.submitProof(alice, address(unregistered), 100 ether, emptyProof);
+        _submitOne(alice, address(unregistered), 100 ether, new bytes32[](0));
 
         INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(0));
         assertEq(positions.length, 0); // dropped — not in NAV asset registry
@@ -628,10 +742,16 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
         (, bytes32[] memory proof1) = _buildTree2(leaves, 1);
         distributor.setRoot(root);
 
-        vm.prank(owner);
-        adapter.submitProof(alice, address(arb), 100 ether, proof0);
-        vm.prank(owner);
-        adapter.submitProof(alice, address(op), 50 ether, proof1);
+        address[] memory tokens = new address[](2);
+        uint256[] memory amounts = new uint256[](2);
+        bytes32[][] memory proofs = new bytes32[][](2);
+        tokens[0] = address(arb);
+        amounts[0] = 100 ether;
+        proofs[0] = proof0;
+        tokens[1] = address(op);
+        amounts[1] = 50 ether;
+        proofs[1] = proof1;
+        _submitMany(alice, tokens, amounts, proofs);
 
         INAVCalculator.PositionBalance[] memory all = adapter.getAdapterPositions(alice, address(0));
         assertEq(all.length, 2);
@@ -667,8 +787,10 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
         // The new assistant can submit.
         bytes32 leaf = _leaf(alice, address(arb), 100 ether);
         distributor.setRoot(leaf);
-        bytes32[] memory emptyProof = new bytes32[](0);
+        MerklRewardsBalanceAdapter.Allocation[] memory allocs = new MerklRewardsBalanceAdapter.Allocation[](1);
+        allocs[0] =
+            MerklRewardsBalanceAdapter.Allocation({token: address(arb), cumulativeAmount: 100 ether, proof: new bytes32[](0)});
         vm.prank(stranger);
-        adapter.submitProof(alice, address(arb), 100 ether, emptyProof);
+        adapter.submitProofs(alice, allocs);
     }
 }

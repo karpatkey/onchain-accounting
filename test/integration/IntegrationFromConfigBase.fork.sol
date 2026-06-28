@@ -1125,17 +1125,37 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             users.length == tokens.length && users.length == amountStrs.length,
             "merkl-proofs.json users/tokens/amounts length mismatch"
         );
+        // submitProofs is REPLACE semantics per user, so group the flat (user, token, amount, proof) rows by user and
+        // submit each user's complete allocation list in ONE call (else a user's 2nd token would wipe the 1st).
         uint256 ok;
         uint256 failed;
+        bool[] memory consumed = new bool[](users.length);
         for (uint256 i = 0; i < users.length; i++) {
-            string memory proofKey = string.concat(chainKey, ".proofs[", vm.toString(i), "]");
-            bytes32[] memory proof = vm.parseJsonBytes32Array(json, proofKey);
-            uint256 amount = vm.parseUint(amountStrs[i]);
-            try MerklRewardsBalanceAdapter(_merklAdapter).submitProof(users[i], tokens[i], amount, proof) {
-                ok++;
+            if (consumed[i]) continue;
+            address user = users[i];
+            // Count this user's rows.
+            uint256 cnt;
+            for (uint256 j = i; j < users.length; j++) {
+                if (users[j] == user) cnt++;
+            }
+            MerklRewardsBalanceAdapter.Allocation[] memory allocs = new MerklRewardsBalanceAdapter.Allocation[](cnt);
+            uint256 k;
+            for (uint256 j = i; j < users.length; j++) {
+                if (users[j] != user) continue;
+                consumed[j] = true;
+                allocs[k++] = MerklRewardsBalanceAdapter.Allocation({
+                    token: tokens[j],
+                    cumulativeAmount: vm.parseUint(amountStrs[j]),
+                    proof: vm.parseJsonBytes32Array(json, string.concat(chainKey, ".proofs[", vm.toString(j), "]"))
+                });
+            }
+            // Fail-loud + replace: a single bad proof reverts this user's whole list (atomic), so all-or-nothing per
+            // user. Fixtures are captured together against one root, so a per-user failure means re-capture is needed.
+            try MerklRewardsBalanceAdapter(_merklAdapter).submitProofs(user, allocs) {
+                ok += cnt;
             } catch (bytes memory err) {
-                failed++;
-                console2.log("[merkl] submitProof failed (proof stale or root mismatch?) user=", users[i]);
+                failed += cnt;
+                console2.log("[merkl] submitProofs failed (proof stale or root mismatch?) user=", user);
                 console2.logBytes(err);
             }
         }

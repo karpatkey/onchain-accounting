@@ -16,10 +16,12 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @author KPK
 /// @notice Reports a user's *unclaimed* Merkl reward balances. Merkl distributes rewards via off-chain merkle trees;
 ///         only cumulative *claimed* amounts live on-chain. To make pending allocations queryable from a `view`
-///         function, this adapter caches per-(user, token) cumulative allocations submitted via `submitProof`. Each
-///         submission is verified against the live Distributor merkle root, so even the `ASSISTANT_ROLE` holder
-///         cannot fabricate amounts. The assistant is trusted only to keep the cache fresh; failure to do so makes
-///         NAV under-count rewards but never over-count.
+///         function, this adapter caches per-(user, token) cumulative allocations submitted via `submitProofs`. Each
+///         submission carries the user's **complete** allocation set and **replaces** the prior cache for that user
+///         (the assistant always submits the full list; an omitted token is dropped). Each entry is verified against
+///         the live Distributor merkle root, so even the `ASSISTANT_ROLE` holder cannot fabricate amounts. The
+///         assistant is trusted only to keep the cache fresh; failure to do so makes NAV under-count rewards but never
+///         over-count.
 /// @dev Access control follows the assisted-adapter family ({AssistedBalanceAdapter}): `DEFAULT_ADMIN_ROLE`
 ///      administers roles and `ASSISTANT_ROLE` is authorized to submit/clear allocations. Trust model and
 ///      mutability rationale: see `docs/decisions/0007-merkl-trust-minimized-cache.md`.
@@ -38,6 +40,16 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
         uint256 cumulativeAmount;
         bytes32 root;
         uint64 submittedAt;
+    }
+
+    /// @notice One (token, cumulativeAmount, proof) entry in a per-user replace submission.
+    /// @param token            Reward token the leaf is for.
+    /// @param cumulativeAmount Cumulative amount in the leaf (`amount` field per Merkl's leaf encoding).
+    /// @param proof            Merkle proof from the Merkl API; verified against the live Distributor root.
+    struct Allocation {
+        address token;
+        uint256 cumulativeAmount;
+        bytes32[] proof;
     }
 
     //
@@ -113,30 +125,40 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
     // Mutators (onlyRole(ASSISTANT_ROLE))
     //
 
-    /// @notice Verify a Merkl proof and cache the resulting allocation for `(user, token)`.
-    /// @dev Reverts on invalid proof, uninitialized root, zero address, or amount regression.
-    /// @param user             Account the leaf is for.
-    /// @param token            Reward token the leaf is for.
-    /// @param cumulativeAmount Cumulative amount in the leaf (`amount` field per Merkl's leaf encoding).
-    /// @param proof            Merkle proof from the Merkl API. Verified against `Distributor.getMerkleRoot()`.
-    function submitProof(address user, address token, uint256 cumulativeAmount, bytes32[] calldata proof)
+    /// @notice Submit `user`'s **complete** set of Merkl allocations — this **replaces** the user's cached token set
+    ///         entirely (every prior `(user, token)` entry is dropped first), so the assistant always submits the full
+    ///         list of the user's currently-allocated reward tokens, not a delta; a token omitted from the list is
+    ///         removed from NAV. Each entry's proof is verified against the live Distributor merkle root, so even the
+    ///         `ASSISTANT_ROLE` holder cannot fabricate amounts.
+    /// @dev **Reverts** `InvalidArguments` (zero user/token), `UninitializedRoot`, or `InvalidProof` — writes are
+    ///      fail-loud, and because they revert atomically, a bad list leaves the prior set intact. Monotonicity across
+    ///      submits is no longer enforced (the cleared cache makes the `AmountRegression` guard moot across calls); the
+    ///      live-root proof verification is the real guarantee. `AmountRegression` still catches a decreasing duplicate
+    ///      token within a single list.
+    /// @param user        Account the allocations are for.
+    /// @param allocs      The user's complete set of (token, cumulativeAmount, proof) entries.
+    function submitProofs(address user, Allocation[] calldata allocs) external onlyRole(ASSISTANT_ROLE) {
+        if (user == address(0)) revert InvalidArguments();
+        _clearUser(user); // replace semantics: the submitted list becomes the user's complete cached set
+        for (uint256 i; i < allocs.length; ++i) {
+            _submitProof(user, allocs[i].token, allocs[i].cumulativeAmount, allocs[i].proof);
+        }
+    }
+
+    /// @notice Batch variant: for each user, their allocation list **replaces** that user's cached set. `users` and
+    ///         `allocs` must have the same length.
+    function submitProofsBatch(address[] calldata users, Allocation[][] calldata allocs)
         external
         onlyRole(ASSISTANT_ROLE)
     {
-        _submitProof(user, token, cumulativeAmount, proof);
-    }
-
-    /// @notice Batch variant of `submitProof`. All arrays must have the same length.
-    function submitProofBatch(
-        address[] calldata users,
-        address[] calldata tokens,
-        uint256[] calldata cumulativeAmounts,
-        bytes32[][] calldata proofs
-    ) external onlyRole(ASSISTANT_ROLE) {
-        uint256 n = users.length;
-        if (tokens.length != n || cumulativeAmounts.length != n || proofs.length != n) revert ArrayLengthMismatch();
-        for (uint256 i; i < n; ++i) {
-            _submitProof(users[i], tokens[i], cumulativeAmounts[i], proofs[i]);
+        if (users.length != allocs.length) revert ArrayLengthMismatch();
+        for (uint256 i; i < users.length; ++i) {
+            address user = users[i];
+            if (user == address(0)) revert InvalidArguments();
+            _clearUser(user); // replace this user's set
+            for (uint256 j; j < allocs[i].length; ++j) {
+                _submitProof(user, allocs[i][j].token, allocs[i][j].cumulativeAmount, allocs[i][j].proof);
+            }
         }
     }
 
@@ -305,6 +327,17 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
         a.submittedAt = uint64(block.timestamp);
 
         emit AllocationCached(user, token, cumulativeAmount, root, a.submittedAt);
+    }
+
+    /// @dev Delete a user's entire cached allocation set (storage only, no event). Shared by `submitProofs`/batch as
+    ///      the replace-on-submit clear step.
+    function _clearUser(address user) private {
+        address[] storage toks = _userTokens[user];
+        for (uint256 i; i < toks.length; ++i) {
+            delete allocations[user][toks[i]];
+            delete _userTokenIdxPlus1[user][toks[i]];
+        }
+        delete _userTokens[user];
     }
 
     function _removeUserToken(address user, address token) internal {

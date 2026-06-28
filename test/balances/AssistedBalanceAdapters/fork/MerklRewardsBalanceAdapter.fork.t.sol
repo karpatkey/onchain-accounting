@@ -81,15 +81,20 @@ contract MerklRewardsBalanceAdapterForkTest is BalanceAdapterTestBase {
     function test_adapter_invalidProofRevertsAgainstRealRoot() public {
         // Build a leaf that is virtually guaranteed not to be in the active tree, then submit it with an
         // empty proof. The adapter should run real proof verification against the real on-chain root and revert.
-        bytes32[] memory emptyProof = new bytes32[](0);
+        MerklRewardsBalanceAdapter.Allocation[] memory allocs = new MerklRewardsBalanceAdapter.Allocation[](1);
+        allocs[0] = MerklRewardsBalanceAdapter.Allocation({
+            token: MAINNET_DAI,
+            cumulativeAmount: 1_000_000 ether,
+            proof: new bytes32[](0)
+        });
         vm.expectRevert(MerklRewardsBalanceAdapter.InvalidProof.selector);
         vm.prank(owner);
-        adapter.submitProof(alice, MAINNET_DAI, 1_000_000 ether, emptyProof);
+        adapter.submitProofs(alice, allocs);
     }
 
     function test_adapter_uninitializedRootGuardWithRealDistributor() public view {
         // Real distributor's root is non-zero at this block; this test sanity-checks the contrapositive: when we
-        // change nothing, the UninitializedRoot path is not reachable (otherwise our `submitProof` test above
+        // change nothing, the UninitializedRoot path is not reachable (otherwise our `submitProofs` test above
         // would have hit it before the proof check). Here we just assert non-zero root at the pinned block.
         assertTrue(IMerklDistributor(MERKL_DISTRIBUTOR).getMerkleRoot() != bytes32(0));
     }

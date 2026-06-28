@@ -360,6 +360,25 @@ contract UniswapV3PoolsBalanceAdapterTest is Test {
         assertTrue(sawWbtc, "WBTC legs still emitted despite the reverting feed");
     }
 
+    /// @notice Per-NFT fail-open isolation: each cached NFT is valued behind a `this.positionLegs(...)` external call
+    ///         wrapped in try/catch, so a revert in ONE NFT's live reads (slot0/positions/ticks/feeGrowth) drops only
+    ///         that id — the rest of the account's V3 set still reports. Make poolA's `slot0()` revert and assert the
+    ///         read does not revert, returns ONLY poolB's 4 legs (all carrying poolB's positionId), and poolA's NFT is
+    ///         silently dropped. (Before slot0 became a per-NFT live read this isolation was covered by the old
+    ///         price-feed-revert test; it now lives here.)
+    function test_revertingPool_isolatedFromRest() public {
+        // alice has NFT 1 (poolA) + NFT 2 (poolB) from setUp. Make poolA's slot0 read revert.
+        poolA.setSlot0Reverts(true);
+
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(alice, address(0));
+        // poolA's NFT is dropped; only poolB's 4 legs survive.
+        assertEq(p.length, 4, "reverting pool's NFT dropped; the rest of the V3 set survives");
+        for (uint256 i = 0; i < p.length; i++) {
+            assertEq(p[i].positionId, abi.encode(address(poolB)), "only poolB legs remain");
+        }
+        assertEq(p[0].labels[2], "NFT #2", "surviving legs are NFT #2 (poolB)");
+    }
+
     /// @notice Writes are fail-loud at the cap: an owned id past MAX_TOKEN_IDS reverts TokenIdCacheFull rather than
     ///         being silently dropped (which would silently under-count the account's NAV).
     function test_perAccountCap_revertsWhenFull() public {

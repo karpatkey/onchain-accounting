@@ -13,6 +13,7 @@ contract MockUniswapV3Pool {
     int24 internal _tick;
     uint256 public feeGrowthGlobal0X128;
     uint256 public feeGrowthGlobal1X128;
+    bool internal _slot0Reverts;
 
     struct TickInfo {
         uint256 feeGrowthOutside0X128;
@@ -42,7 +43,14 @@ contract MockUniswapV3Pool {
         _ticks[tick] = TickInfo(fgOut0, fgOut1);
     }
 
+    /// @notice Make `slot0()` revert, simulating an unreadable pool (e.g. a broken/exotic pool whose live reads
+    ///         fail). Used to prove the adapter's per-NFT try/catch isolates the failing pool's NFT from the rest.
+    function setSlot0Reverts(bool reverts) external {
+        _slot0Reverts = reverts;
+    }
+
     function slot0() external view returns (uint160, int24, uint16, uint16, uint16, uint8, bool) {
+        require(!_slot0Reverts, "slot0 reverts");
         return (_sqrtPriceX96, _tick, 0, 0, 0, 0, false);
     }
 

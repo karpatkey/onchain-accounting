@@ -69,21 +69,19 @@ interface INonfungiblePositionManager {
 
 /// @title UniswapV3PoolLib
 /// @author KPK
-/// @notice Shared read math for the Uniswap V3 meta-adapter (and PancakeSwap V3 fork). Given a pool, the
-///         NonfungiblePositionManager, an account, and a pool `slot0` snapshot, it scans the account's NFT
-///         positions in that pool and aggregates principal (liquidity → token amounts) and unclaimed fees.
-/// @dev Contains the per-pool aggregation logic so the meta-adapter is
-///      leg-for-leg identical (parity fork-tested). The `slot0` read is intentionally NOT done here — the caller
-///      passes `(sqrtPriceX96, tickCurrent)` so a fork with a divergent `slot0()` ABI (PancakeSwap V3's `uint32
+/// @notice Shared read math for the Uniswap V3 assisted adapter (and PancakeSwap V3 fork). Provides per-position
+///         read helpers — `readPosition` (load an NFT's fields from the NPM), `positionAmounts` (split a single
+///         position's liquidity into token amounts and compute its full unclaimed fees) and the underlying fee math —
+///         that the assisted adapter calls once per cached tokenId.
+/// @dev Holds the per-position valuation math so the adapter (and the PancakeSwap V3 subclass) stay leg-for-leg
+///      identical (parity fork-tested). The `slot0` read is intentionally NOT done here — the caller passes
+///      `(sqrtPriceX96, tickCurrent)` so a fork with a divergent `slot0()` ABI (PancakeSwap V3's `uint32
 ///      feeProtocol`) can override that single read in the adapter without duplicating this math.
 ///
 ///      Licensing: imports the GPL-2.0-or-later Uniswap math (`lib/{TickMath,LiquidityAmounts,FixedPoint128}`),
 ///      so this library — and any adapter linking it — is a combined work under GPL-2.0-or-later. See
 ///      `docs/decisions/0008-uniswap-v3-math-libs-gpl-license.md`.
 library UniswapV3PoolLib {
-    /// @notice Bounded iteration limit for position discovery (matches the per-instance adapter).
-    uint256 internal constant MAX_POSITIONS = 256;
-
     /// @dev In-memory snapshot of the NFT-position fields we use.
     struct Position {
         address token0;
@@ -98,50 +96,9 @@ library UniswapV3PoolLib {
         uint128 tokensOwed1;
     }
 
-    /// @notice Aggregates principal + fees for `account` across all of its NFTs in `pool`.
-    /// @param pool The Uniswap V3 pool.
-    /// @param positionManager The NonfungiblePositionManager.
-    /// @param account The account whose NFTs are scanned.
-    /// @param sqrtPriceX96 Pool current `sqrtPriceX96` (read by the caller via its `_slot0` hook).
-    /// @param tickCurrent Pool current tick (read by the caller via its `_slot0` hook).
-    /// @return liq0 Total token0 derivable from in-range liquidity.
-    /// @return liq1 Total token1 derivable from in-range liquidity.
-    /// @return fee0 Total unclaimed token0 fees (settled `tokensOwed0` + accruing).
-    /// @return fee1 Total unclaimed token1 fees (settled `tokensOwed1` + accruing).
-    function accountAggregates(
-        address pool,
-        address positionManager,
-        address account,
-        uint160 sqrtPriceX96,
-        int24 tickCurrent
-    ) internal view returns (uint256 liq0, uint256 liq1, uint256 fee0, uint256 fee1) {
-        if (account == address(0)) return (0, 0, 0, 0);
-
-        address token0 = IUniswapV3Pool(pool).token0();
-        address token1 = IUniswapV3Pool(pool).token1();
-        uint24 fee = IUniswapV3Pool(pool).fee();
-
-        uint256 nftBalance = INonfungiblePositionManager(positionManager).balanceOf(account);
-        uint256 max = nftBalance > MAX_POSITIONS ? MAX_POSITIONS : nftBalance;
-
-        for (uint256 i = 0; i < max; i++) {
-            uint256 tokenId = INonfungiblePositionManager(positionManager).tokenOfOwnerByIndex(account, i);
-            Position memory p = readPosition(positionManager, tokenId);
-
-            // Filter: only positions in *this* pool.
-            if (p.token0 != token0 || p.token1 != token1 || p.fee != fee) continue;
-
-            (uint256 a0, uint256 a1, uint256 f0, uint256 f1) = positionAmounts(pool, p, sqrtPriceX96, tickCurrent);
-            liq0 += a0;
-            liq1 += a1;
-            fee0 += f0;
-            fee1 += f1;
-        }
-    }
-
     /// @notice Principal split + unclaimed fees for a SINGLE position `p` in `pool`, valued at the pool's current
-    ///         `(sqrtPriceX96, tickCurrent)` (read by the caller from `slot0`). Used by both the legacy enumerating
-    ///         `accountAggregates` and the assisted per-NFT adapter.
+    ///         `(sqrtPriceX96, tickCurrent)` (read by the caller from `slot0`). The assisted per-NFT adapter calls
+    ///         this once per cached tokenId.
     /// @return liq0 token0 derivable from in-range liquidity.
     /// @return liq1 token1 derivable from in-range liquidity.
     /// @return fee0 token0 unclaimed fees (settled `tokensOwed0` + accruing-since-poke).
@@ -151,14 +108,18 @@ library UniswapV3PoolLib {
         view
         returns (uint256 liq0, uint256 liq1, uint256 fee0, uint256 fee1)
     {
-        if (p.liquidity > 0) {
-            (liq0, liq1) = LiquidityAmounts.getAmountsForLiquidity(
-                sqrtPriceX96,
-                TickMath.getSqrtRatioAtTick(p.tickLower),
-                TickMath.getSqrtRatioAtTick(p.tickUpper),
-                p.liquidity
-            );
+        // No active liquidity ⇒ the in-range split is 0 and the accruing-fee term (`feeGrowthInside·liquidity`) is
+        // 0, so unclaimed fees collapse to the already-loaded settled `tokensOwed`. Skip the four
+        // `ticks()`/`feeGrowthGlobal` reads entirely (closed / empty positions are common in a cache).
+        if (p.liquidity == 0) {
+            return (0, 0, p.tokensOwed0, p.tokensOwed1);
         }
+        (liq0, liq1) = LiquidityAmounts.getAmountsForLiquidity(
+            sqrtPriceX96,
+            TickMath.getSqrtRatioAtTick(p.tickLower),
+            TickMath.getSqrtRatioAtTick(p.tickUpper),
+            p.liquidity
+        );
         (fee0, fee1) = _computeFees(
             pool, p, tickCurrent, IUniswapV3Pool(pool).feeGrowthGlobal0X128(), IUniswapV3Pool(pool).feeGrowthGlobal1X128()
         );

@@ -192,14 +192,12 @@ contract PancakeSwapV3PoolsBalanceAdapterTest is Test {
         }
         assertGt(supply, 0, "non-zero in-range principal off the PancakeSwap pool");
 
-        // Control: the Uniswap base adapter's uint8 `slot0` decode of the SAME returndata reverts, so the position is
-        // unvaluable. The per-NFT read is wrapped in try/catch on the slot0 call? No — `_slot0` is a direct call, so a
-        // decode revert bubbles up through getAdapterPositions. Assert it reverts.
-        UniswapV3PoolsBalanceAdapter base = new UniswapV3PoolsBalanceAdapter(
-            address(pcsNpm), "Uniswap V3", address(nav), address(this), address(this)
-        );
-        base.submitTokenIds(alice, ids);
-        vm.expectRevert();
-        base.getAdapterPositions(alice, address(0));
+        // Note on the override's role: the inherited base `_slot0` reads only `(sqrtPriceX96, tick,,,,,)` — the
+        // differing `feeProtocol` field is a SKIPPED trailing return, and Solidity does not validate skipped
+        // value-type returns, so the base `uint8`-feeProtocol ABI would in fact decode this `uint32` returndata
+        // without reverting too. The PancakeSwap `_slot0` override is therefore a defensive, explicit-ABI measure
+        // (correct-by-construction regardless of how the compiler treats unused returns), not a strict requirement.
+        // (And per-NFT isolation would catch any such decode revert anyway, dropping just that id.) This test pins
+        // that the override path values a uint32-feeProtocol pool correctly.
     }
 }

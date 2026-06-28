@@ -8,6 +8,7 @@ import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -67,9 +68,13 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
     //
 
     /// @notice Hard cap on cached tokenIds per account. `getAdapterPositions` iterates the whole array on every NAV
-    ///         read, and an OOG there is NOT caught by NAVCalculator's try/catch — a bloated cache would brick the
+    ///         read — each id costing an external `this.positionLegs` staticcall plus that position's live reads
+    ///         (`slot0` + `positions`, and for an in-range position two `ticks()` + two `feeGrowthGlobal` reads) —
+    ///         and an OOG there is NOT caught by NAVCalculator's try/catch, so a bloated cache would brick the
     ///         account's NAV scan. Bounding the cache at submit time keeps the read gas-bounded; the assistant must
-    ///         GC closed positions (`clearTokenId`) to stay under it. A real account never approaches 256 positions.
+    ///         GC closed positions (`clearTokenId`) to stay under it. A real account holds a handful of positions,
+    ///         far below 256; NAV is also consumed asynchronously / off-chain (ADR 0017), so this is a belt-and-
+    ///         suspenders bound rather than a hot on-chain path.
     uint256 public constant MAX_TOKEN_IDS = 256;
 
     /// @notice The Uniswap V3 NonfungiblePositionManager (chain-level constant; same for all V3 pools on a chain).
@@ -250,7 +255,18 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
         uint256 count;
 
         for (uint256 i; i < ids.length; ++i) {
-            count = _appendPositionLegs(account, reg, ids[i], assetFilter, temp, count);
+            // Per-NFT fault isolation (fail-open, ADR 0015): value each id behind an external `this.` call so a
+            // revert in its live reads (slot0 / positions / ticks / feeGrowth on an exotic or stale pool) is caught
+            // here and that ONE id is discarded — it never propagates out of getAdapterPositions, where
+            // NAVCalculator's per-adapter try/catch would otherwise fail-open and drop the account's ENTIRE V3 set.
+            // Mirrors the meta-adapter's `try this.instancePositions(...)` fan-out.
+            try this.positionLegs(account, reg, ids[i], assetFilter) returns (
+                INAVCalculator.PositionBalance[] memory legs
+            ) {
+                for (uint256 j; j < legs.length; ++j) {
+                    temp[count++] = legs[j];
+                }
+            } catch {}
         }
 
         INAVCalculator.PositionBalance[] memory positions = new INAVCalculator.PositionBalance[](count);
@@ -302,42 +318,41 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
     // Internal — valuation
     //
 
-    /// @dev Appends the (up to 4) legs for one cached `tokenId` to `temp`, returning the new count. An id that is no
-    ///      longer owned by `account`, whose pool tokens are unregistered, or that is in no requested asset,
-    ///      contributes nothing (discarded, never reverts). Reads `token0/token1/fee` from `positions(tokenId)`,
-    ///      resolves the pool, and values the position from the pool's live `slot0` (in-range split) + full unclaimed
-    ///      fees (see contract @dev / ADR 0017).
-    function _appendPositionLegs(
-        address account,
-        INAVCalculator.Asset[] memory reg,
-        uint256 tokenId,
-        address assetFilter,
-        INAVCalculator.PositionBalance[] memory temp,
-        uint256 count
-    ) internal view returns (uint256) {
-        // Re-verify ownership every read: discard (do not revert) an id whose NFT was burned or transferred away.
-        try INonfungiblePositionManager(POSITION_MANAGER).ownerOf(tokenId) returns (address o) {
-            if (o != account) return count;
-        } catch {
-            return count;
-        }
+    /// @notice Values one cached `tokenId` into its (up to 4) legs: `Supplied` x2 (in-range split) + `Fees` x2 (full
+    ///         unclaimed). Returns an empty array if the id is not owned by `account`, its pool tokens are
+    ///         unregistered, the triple has no canonical pool, or nothing is in the requested `assetFilter`.
+    /// @dev `external` so `getAdapterPositions` can invoke it via `this.` inside a per-NFT try/catch — a revert in
+    ///      any live read (slot0 / positions / ticks / feeGrowth) is then isolated to this one id (fail-open). Reads
+    ///      `token0/token1/fee` from `positions(tokenId)`, resolves the pool, and values it from the pool's live
+    ///      `slot0` (in-range split) + full unclaimed fees (see contract @dev / ADR 0017). NOT meant for external
+    ///      callers; it is `external` only to enable the self-call isolation.
+    function positionLegs(address account, INAVCalculator.Asset[] calldata reg, uint256 tokenId, address assetFilter)
+        external
+        view
+        returns (INAVCalculator.PositionBalance[] memory)
+    {
+        INAVCalculator.PositionBalance[] memory none = new INAVCalculator.PositionBalance[](0);
+
+        // Re-verify ownership: a burned id reverts `ownerOf` (caught by the caller's try/catch → discarded); a
+        // transferred id returns a different owner → empty.
+        if (INonfungiblePositionManager(POSITION_MANAGER).ownerOf(tokenId) != account) return none;
 
         UniswapV3PoolLib.Position memory p = UniswapV3PoolLib.readPosition(POSITION_MANAGER, tokenId);
 
         // Both tokens must be registered for NAV to price the legs. `reg` is the registry snapshot fetched once by
         // `getAdapterPositions`; resolve both tokens from it. `assetFilter` only gates which legs are emitted below.
-        (INAVCalculator.Asset memory a0, bool reg0) = _findAsset(reg, p.token0);
-        (INAVCalculator.Asset memory a1, bool reg1) = _findAsset(reg, p.token1);
-        if (!reg0 || !reg1) return count;
+        (INAVCalculator.Asset memory a0, bool reg0) = RegisteredAssetLib.find(reg, p.token0);
+        (INAVCalculator.Asset memory a1, bool reg1) = RegisteredAssetLib.find(reg, p.token1);
+        if (!reg0 || !reg1) return none;
         bool f0reg = assetFilter == address(0) || assetFilter == p.token0;
         bool f1reg = assetFilter == address(0) || assetFilter == p.token1;
-        if (!f0reg && !f1reg) return count;
+        if (!f0reg && !f1reg) return none;
 
         // positionId = the pool contract address (each (token0, token1, fee) is its own deployed Uniswap V3 pool).
         // The NFT id is NOT in the positionId; it rides in the display labels. Drop the position if the factory has
         // no canonical pool for the triple (defensive: never emit a zero-pool identity that collides across pools).
         address pool = IUniswapV3Factory(FACTORY).getPool(p.token0, p.token1, p.fee);
-        if (pool == address(0)) return count;
+        if (pool == address(0)) return none;
 
         // Value from the pool's live slot0 (ADR 0017 — instantaneous on-chain amounts): `sqrtPriceX96` drives the
         // in-range principal split and `tick` selects the fee-growth branch for the full unclaimed-fee computation.
@@ -350,11 +365,18 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
         // Labels: [category, pool address, NFT id] — NFT id last (per-leg, adapter-supplied; see _toVerbose).
         string[] memory labels = _labels(pool, tokenId);
 
-        if (f0reg && liq0 > 0) temp[count++] = _row(a0, liq0, positionId, PositionKind.Supplied, labels);
-        if (f1reg && liq1 > 0) temp[count++] = _row(a1, liq1, positionId, PositionKind.Supplied, labels);
-        if (f0reg && fee0 > 0) temp[count++] = _row(a0, fee0, positionId, PositionKind.Fees, labels);
-        if (f1reg && fee1 > 0) temp[count++] = _row(a1, fee1, positionId, PositionKind.Fees, labels);
-        return count;
+        INAVCalculator.PositionBalance[] memory tmp = new INAVCalculator.PositionBalance[](4);
+        uint256 n;
+        if (f0reg && liq0 > 0) tmp[n++] = _row(a0, liq0, positionId, PositionKind.Supplied, labels);
+        if (f1reg && liq1 > 0) tmp[n++] = _row(a1, liq1, positionId, PositionKind.Supplied, labels);
+        if (f0reg && fee0 > 0) tmp[n++] = _row(a0, fee0, positionId, PositionKind.Fees, labels);
+        if (f1reg && fee1 > 0) tmp[n++] = _row(a1, fee1, positionId, PositionKind.Fees, labels);
+
+        INAVCalculator.PositionBalance[] memory out = new INAVCalculator.PositionBalance[](n);
+        for (uint256 k; k < n; ++k) {
+            out[k] = tmp[k];
+        }
+        return out;
     }
 
     /// @dev Reads `(sqrtPriceX96, tick)` from the pool's `slot0`. `virtual` so a fork with a divergent `slot0()` ABI
@@ -392,22 +414,4 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
         });
     }
 
-    //
-    // Internal — registry helpers (previously inherited from MetaBalanceAdapter)
-    //
-
-    /// @notice Looks up an asset's metadata in a pre-fetched registry snapshot (so the caller scans the registry
-    ///         once per NFT and resolves both pool tokens from the same in-memory array).
-    /// @return asset The Asset struct (zeroed if not found).
-    /// @return found True if the asset is registered in NAVCalculator.
-    function _findAsset(INAVCalculator.Asset[] memory reg, address asset)
-        private
-        pure
-        returns (INAVCalculator.Asset memory, bool found)
-    {
-        for (uint256 i = 0; i < reg.length; i++) {
-            if (reg[i].asset == asset) return (reg[i], true);
-        }
-        return (INAVCalculator.Asset({asset: address(0), symbol: "", decimals: 0}), false);
-    }
 }

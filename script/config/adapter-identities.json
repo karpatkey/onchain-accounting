@@ -320,7 +320,7 @@
   },
 
   "UniswapV3Pools": {
-    "$comment": "Assisted adapter (ADR 0015): one immutable contract for ALL Uniswap V3 pools, agent-fed. Constructor takes (positionManager, protocol, navCalculator, admin, assistant). The assistant submits an account's NFT tokenIds via submitTokenIds (ASSISTANT_ROLE); the adapter caches ids only, values each NFT live on-chain (oracle-reconstructed sqrtPriceX96, not slot0; + settled tokensOwed), and re-verifies ownerOf per read. Identity derived on-chain: positionId = abi.encode(pool) (factory.getPool(token0,token1,fee)); the NFT id is the last display label (labels = ['Liquidity Pool','<pool>','NFT #<id>']). Supersedes the per-pool UniswapV3Pool adapter.",
+    "$comment": "Assisted adapter (ADR 0015): one immutable contract for ALL Uniswap V3 pools, agent-fed. Constructor takes (positionManager, protocol, navCalculator, admin, assistant). The assistant submits an account's NFT tokenIds via submitTokenIds (ASSISTANT_ROLE); the adapter caches ids only, values each NFT live on-chain (reads the pool's live slot0 sqrtPriceX96/tick — ADR 0017; full unclaimed fees = feeGrowth delta + tokensOwed), and re-verifies ownerOf per read. Identity derived on-chain: positionId = abi.encode(pool) (factory.getPool(token0,token1,fee)); the NFT id is the last display label (labels = ['Liquidity Pool','<pool>','NFT #<id>']). Supersedes the per-pool UniswapV3Pool adapter.",
     "$perPositionFields": "type: Supply | Fees (up to 4 legs: token0/token1 liquidity + token0/token1 fees)",
     "protocol": "Uniswap V3",
     "positionDetail": { "protocol": "Uniswap V3", "product": "LP", "name": "<derived: NFT #tokenId (label)>" },

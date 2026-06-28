@@ -167,7 +167,7 @@
   },
   "PancakeSwapV3Pools": {
     "enabled": false,
-    "$comment": "PancakeSwap V3 pools (assisted adapter; agent-fed NFT tokenId cache, ADR 0015; subclass of UniswapV3Pools differing only in protocol-id slug). The assistant submits an account's NFT tokenIds via submitTokenIds (admin+assistant = chainConfig.admin at deploy); the adapter caches ids only, values each NFT from live on-chain reads (oracle-reconstructed sqrtPriceX96, not slot0; + settled tokensOwed) and re-verifies ownerOf per read. positionId = abi.encode(pool) (the pool address; NFT id in the display labels). 04 reads positionManager/protocol. Disabled: COW on Base has no feed, so the COW leg would be silently dropped. Enable once COW is priced.",
+    "$comment": "PancakeSwap V3 pools (assisted adapter; agent-fed NFT tokenId cache, ADR 0015; subclass of UniswapV3Pools, overriding _slot0() to decode PancakeSwap V3's uint32 feeProtocol ABI plus the protocol-id slug). The assistant submits an account's NFT tokenIds via submitTokenIds (admin+assistant = chainConfig.admin at deploy); the adapter caches ids only, values each NFT from live on-chain reads (reads the pool's live slot0 sqrtPriceX96/tick — ADR 0017; full unclaimed fees = feeGrowth delta + settled tokensOwed) and re-verifies ownerOf per read. positionId = abi.encode(pool) (the pool address; NFT id in the display labels). 04 reads positionManager/protocol. Disabled: COW on Base has no feed, so the COW leg would be silently dropped. Enable once COW is priced.",
     "constructor": {
       "positionManager": "0x46A15B0b27311cedF172AB29E4f4766fbE7F4364",
       "protocol": "PancakeSwap V3"

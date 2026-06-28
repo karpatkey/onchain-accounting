@@ -256,7 +256,7 @@ contract KelpWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         manager.pushRequest(address(weth), alice, 4e18);
         manager.pushRequest(address(steth), alice, 5e18);
 
-        // Default cursor 0 → no request is unlocked → both are locked legs, one per asset.
+        // Default cursor 0 → no request is unlocked → both are locked legs, one per request (one each here).
         INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(0));
         assertEq(positions.length, 2);
 
@@ -271,6 +271,10 @@ contract KelpWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
             assertTrue(positions[i].isLocked, "default cursor 0 -> locked");
             // positionId is the static withdrawal-manager anchor; the payout asset lives in balanceAsset.asset.
             assertEq(positions[i].positionId, abi.encode(address(manager)));
+            // Per-request labels: ["rsETH Withdrawal Queue", "Request #<userNonce>"]; nonce 0 for each (first request).
+            assertEq(positions[i].labels.length, 2);
+            assertEq(positions[i].labels[0], "rsETH Withdrawal Queue");
+            assertEq(positions[i].labels[1], "Request #0");
         }
     }
 
@@ -286,6 +290,9 @@ contract KelpWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(positions[0].amount, 5e18);
         assertFalse(positions[0].isLocked, "nonce < cursor AND delay elapsed -> claimable");
         assertEq(positions[0].positionId, abi.encode(address(manager)));
+        assertEq(positions[0].labels.length, 2);
+        assertEq(positions[0].labels[0], "rsETH Withdrawal Queue");
+        assertEq(positions[0].labels[1], "Request #0");
     }
 
     function test_getAdapterPositions_delayGateLocksDespiteCursor() public {
@@ -311,7 +318,8 @@ contract KelpWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_getAdapterPositions_mixedClaimableAndLocked() public {
         // Two requests on the same asset: nonce 0 unlocked (claimable), nonce 1 still locked (cursor not past it).
-        // Both legs share the static withdrawal-manager positionId, distinguished by isLocked.
+        // Each request is its own per-request leg; both share the static withdrawal-manager positionId,
+        // distinguished by isLocked and by their request-id label.
         manager.pushRequest(address(steth), alice, 3e18); // nonce 0
         manager.pushRequest(address(steth), alice, 2e18); // nonce 1
         manager.setNextLockedNonce(address(steth), 1); // cursor past nonce 0 only
@@ -329,12 +337,16 @@ contract KelpWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
             assertEq(positions[i].balanceAdapter, address(adapter));
             assertFalse(positions[i].isDebt);
             assertEq(positions[i].positionId, expectedId, "both legs share the static withdrawal-manager positionId");
+            assertEq(positions[i].labels.length, 2);
+            assertEq(positions[i].labels[0], "rsETH Withdrawal Queue");
             if (positions[i].isLocked) {
                 locked += positions[i].amount;
                 sawLocked = true;
+                assertEq(positions[i].labels[1], "Request #1", "locked leg carries nonce 1");
             } else {
                 claimable += positions[i].amount;
                 sawClaimable = true;
+                assertEq(positions[i].labels[1], "Request #0", "claimable leg carries nonce 0");
             }
         }
         assertTrue(sawClaimable && sawLocked, "exactly one claimable + one locked leg present");
@@ -369,5 +381,44 @@ contract KelpWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(positions.length, 1);
         assertEq(positions[0].balanceAsset.asset, address(steth));
         assertEq(positions[0].amount, 5e18);
+        assertEq(positions[0].labels.length, 2);
+        assertEq(positions[0].labels[0], "rsETH Withdrawal Queue");
+        assertEq(positions[0].labels[1], "Request #0");
+    }
+
+    function test_getAdapterPositions_perRequestLegsAndLabels() public {
+        // Two requests of the SAME state (both locked, default cursor 0) on the same asset must now emit TWO separate
+        // legs — one per request — each carrying its own userNonce in the last label, all sharing the static positionId.
+        manager.pushRequest(address(steth), alice, 2e18); // nonce 0
+        manager.pushRequest(address(steth), alice, 3e18); // nonce 1
+
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(steth));
+        assertEq(positions.length, 2, "one leg per request, even at the same isLocked state");
+
+        bytes memory expectedId = abi.encode(address(manager));
+        bool saw0;
+        bool saw1;
+        uint256 sum;
+        for (uint256 i = 0; i < positions.length; i++) {
+            assertEq(positions[i].balanceAsset.asset, address(steth));
+            assertEq(positions[i].positionId, expectedId, "all legs share the static positionId");
+            assertTrue(positions[i].isLocked, "both pending -> locked");
+            assertEq(positions[i].labels.length, 2);
+            assertEq(positions[i].labels[0], "rsETH Withdrawal Queue");
+            sum += positions[i].amount;
+            if (keccak256(bytes(positions[i].labels[1])) == keccak256("Request #0")) {
+                saw0 = true;
+                assertEq(positions[i].amount, 2e18);
+            }
+            if (keccak256(bytes(positions[i].labels[1])) == keccak256("Request #1")) {
+                saw1 = true;
+                assertEq(positions[i].amount, 3e18);
+            }
+        }
+        assertTrue(saw0 && saw1, "each request id surfaced as its own leg label");
+
+        // NAV-total invariance: per-request legs still sum to the aggregate balance method.
+        (uint256 agg,) = adapter.getAdapterBalanceForAsset(alice, address(steth));
+        assertEq(sum, agg, "sum of per-request legs == aggregate balance");
     }
 }

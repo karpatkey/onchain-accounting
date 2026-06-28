@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
@@ -23,11 +24,14 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         **only the position coordinates, never amounts** — a holder of `ASSISTANT_ROLE` cannot fabricate value;
 ///         at worst it omits a position (NAV under-counts), never over-counts.
 /// @dev Trust model and mutability rationale: see `docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md`
-///      (generalises the Merkl precedent, ADR 0007; sibling of `EtherFiWithdrawalQueue`). Up to two legs per vault
-///      under a single static per-vault positionId (claimable + locked), denominated in the chain's staking asset
-///      (native ETH on mainnet). Mainnet only — every StakeWise
-///      V3 vault there settles in ETH; do not deploy on a chain with a non-ETH staking asset against this
-///      `underlyingToken`.
+///      (generalises the Merkl precedent, ADR 0007; sibling of `EtherFiWithdrawalQueue`). Emits up to two legs PER
+///      cached exit position (per `positionTicket`) — a claimable leg (`isLocked = false`) and a locked/pending leg
+///      (`isLocked = true`) — both carrying that ticket's id in the last `labels` entry. All legs of a given vault
+///      share one static per-vault positionId (`abi.encode(vault)`); the ticket id rides in `labels`, never in
+///      `positionId`, so multiple tickets in the same vault share the positionId and are distinguished for display by
+///      their labels (and for NAV by summing). Denominated in the chain's staking asset (native ETH on mainnet).
+///      Mainnet only — every StakeWise V3 vault there settles in ETH; do not deploy on a chain with a non-ETH staking
+///      asset against this `underlyingToken`.
 ///
 ///      The exit-request key is `keccak256(abi.encode(receiver, timestamp, positionTicket))`, where `timestamp` is
 ///      the entry block's `block.timestamp` (the agent reads it from the `ExitQueueEntered` event's block). Because
@@ -36,6 +40,8 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      positions). The `vaultsRegistry` membership check at submit time is light hygiene only; correctness does
 ///      not depend on it.
 contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPositionDescribable {
+    using Strings for uint256;
+
     //
     // Types
     //
@@ -185,9 +191,13 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
         return "StakeWise V3";
     }
 
-    function _legLabels() private pure returns (string[] memory) {
-        string[] memory out = new string[](1);
+    /// @dev Per-request display labels: `["Exit Queue", "Ticket #<positionTicket>"]`. The positionTicket identifies
+    ///      the exit position — display only (it lives in `labels`, never in `positionId`, so the per-vault positionId
+    ///      stays static across tickets). Both legs of a ticket (claimable + locked) carry the same ticket label.
+    function _legLabels(uint256 positionTicket) private pure returns (string[] memory) {
+        string[] memory out = new string[](2);
         out[0] = "Exit Queue";
+        out[1] = string.concat("Ticket #", positionTicket.toString());
         return out;
     }
 
@@ -225,15 +235,17 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
     }
 
     /// @inheritdoc IBalanceAdapter
-    /// @notice Returns up to TWO staking-asset `Supplied` legs PER vault under a single static per-vault positionId —
-    ///         one claimable (`isLocked = false`) and one locked/pending (`isLocked = true`).
-    /// @dev Both legs of a vault share `positionId = abi.encode(vault)` and are distinguished only by `isLocked`. The
-    ///      account's cached positions are grouped by vault and valued live from on-chain reads (`_owedForPosition`),
-    ///      which splits each position into a claimable portion (`exitedAssets`) and a locked portion (still-queued
-    ///      remainder); the per-vault sums of each feed the two legs. The two legs per vault sum to that vault's
-    ///      `_assetsOwed` contribution. A zero-amount leg is omitted. Positions not owned by `account` / claimed value
-    ///      to 0 and are skipped — the assistant can only under-report. Dropped entirely if the underlying asset is
-    ///      not registered in NAVCalculator.
+    /// @notice Returns up to TWO staking-asset `Supplied` legs PER cached exit position (per `positionTicket`) — one
+    ///         claimable (`isLocked = false`) and one locked/pending (`isLocked = true`) — each carrying the ticket id
+    ///         in the last `labels` entry. All legs of a vault share that vault's static `positionId`.
+    /// @dev Each cached position is valued live from on-chain reads (`_owedForPosition`), which splits it into a
+    ///      claimable portion (`exitedAssets`) and a locked portion (still-queued remainder). A position contributes a
+    ///      claimable leg if its claimable > 0 AND a locked leg if its locked > 0; both legs carry the SAME ticket
+    ///      label (`["Exit Queue", "Ticket #<positionTicket>"]`) and the same per-vault `positionId =
+    ///      abi.encode(vault)` (the ticket id is display-only, never in `positionId`, so multiple tickets in one vault
+    ///      share it). A zero-amount leg is omitted; a position that values to 0/0 contributes no legs. All legs sum to
+    ///      `_assetsOwed`. Positions not owned by `account` / claimed value to 0 and are skipped — the assistant can
+    ///      only under-report. Dropped entirely if the underlying asset is not registered in NAVCalculator.
     function getAdapterPositions(address account, address assetFilter)
         external
         view
@@ -263,70 +275,66 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
             if (!registered) return new INAVCalculator.PositionBalance[](0);
         }
 
-        // Group cached positions by distinct vault (distinct vaults are few — O(n²) grouping is fine), summing the
-        // claimable and locked portions per vault, then emit up to two legs (claimable + locked) per vault.
-        address[] memory vaults = new address[](list.length);
-        uint256[] memory claimableByVault = new uint256[](list.length);
-        uint256[] memory lockedByVault = new uint256[](list.length);
-        uint256 nVaults;
-        for (uint256 i = 0; i < list.length; i++) {
-            (uint256 claimable, uint256 locked) =
-                _owedForPosition(account, list[i].vault, list[i].positionTicket, list[i].timestamp);
-            if (claimable + locked == 0) {
-                continue;
-            }
-            address vault = list[i].vault;
-            uint256 vi = nVaults;
-            for (uint256 k = 0; k < nVaults; k++) {
-                if (vaults[k] == vault) {
-                    vi = k;
-                    break;
-                }
-            }
-            if (vi == nVaults) {
-                vaults[nVaults] = vault;
-                nVaults++;
-            }
-            claimableByVault[vi] += claimable;
-            lockedByVault[vi] += locked;
-        }
-
-        INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](2 * nVaults);
+        // Emit up to two legs PER cached position (claimable + locked), both labelled with that position's ticket and
+        // sharing the static per-vault positionId. Size for two slots per position; resize to the actual count below.
+        INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](2 * list.length);
         uint256 n;
-        for (uint256 vi = 0; vi < nVaults; vi++) {
-            bytes memory positionId = abi.encode(vaults[vi]);
-            if (claimableByVault[vi] > 0) {
-                temp[n++] = INAVCalculator.PositionBalance({
-                    balanceAsset: underlying,
-                    balanceAdapter: address(this),
-                    amount: claimableByVault[vi],
-                    isDebt: false,
-                    protocolId: PROTOCOL_ID,
-                    positionId: positionId,
-                    positionKind: PositionKind.Supplied,
-                    isLocked: false,
-                    labels: _legLabels()
-                });
-            }
-            if (lockedByVault[vi] > 0) {
-                temp[n++] = INAVCalculator.PositionBalance({
-                    balanceAsset: underlying,
-                    balanceAdapter: address(this),
-                    amount: lockedByVault[vi],
-                    isDebt: false,
-                    protocolId: PROTOCOL_ID,
-                    positionId: positionId,
-                    positionKind: PositionKind.Supplied,
-                    isLocked: true,
-                    labels: _legLabels()
-                });
-            }
+        for (uint256 i = 0; i < list.length; i++) {
+            // Append this position's leg(s) (extracted to keep `getAdapterPositions` under the via_ir stack limit).
+            n = _appendPositionLegs(account, list[i], underlying, temp, n);
         }
 
         positions = new INAVCalculator.PositionBalance[](n);
         for (uint256 i = 0; i < n; i++) {
             positions[i] = temp[i];
         }
+    }
+
+    /// @dev Appends up to two `Supplied` legs for one cached exit position into `temp` (starting at `n`), returning the
+    ///      new count: a claimable leg (`isLocked=false`) if its claimable > 0 and a locked leg (`isLocked=true`) if its
+    ///      locked > 0 — both carrying the same ticket label and the same per-vault `positionId = abi.encode(vault)`.
+    ///      A position that values to 0/0 contributes nothing. Extracted from `getAdapterPositions` to relieve stack.
+    function _appendPositionLegs(
+        address account,
+        ExitPosition memory position,
+        INAVCalculator.Asset memory underlying,
+        INAVCalculator.PositionBalance[] memory temp,
+        uint256 n
+    ) private view returns (uint256) {
+        (uint256 claimable, uint256 locked) =
+            _owedForPosition(account, position.vault, position.positionTicket, position.timestamp);
+        if (claimable + locked == 0) {
+            return n;
+        }
+        bytes memory positionId = abi.encode(position.vault);
+        string[] memory labels = _legLabels(position.positionTicket);
+        if (claimable > 0) {
+            temp[n++] = INAVCalculator.PositionBalance({
+                balanceAsset: underlying,
+                balanceAdapter: address(this),
+                amount: claimable,
+                isDebt: false,
+                protocolId: PROTOCOL_ID,
+                positionId: positionId,
+                positionKind: PositionKind.Supplied,
+                isLocked: false,
+                labels: labels
+            });
+        }
+        if (locked > 0) {
+            temp[n++] = INAVCalculator.PositionBalance({
+                balanceAsset: underlying,
+                balanceAdapter: address(this),
+                amount: locked,
+                isDebt: false,
+                protocolId: PROTOCOL_ID,
+                positionId: positionId,
+                positionKind: PositionKind.Supplied,
+                isLocked: true,
+                labels: labels
+            });
+        }
+        return n;
     }
 
     //

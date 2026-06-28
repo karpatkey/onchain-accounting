@@ -106,6 +106,36 @@ contract StakeWiseV3ExitQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
         assertEq(p[0].positionId, abi.encode(GENESIS_VAULT)); // static per-vault positionId
         assertEq(uint8(p[0].positionKind), uint8(PositionKind.Supplied));
         assertFalse(p[0].isDebt);
+        _assertTicketLabel(p[0].labels);
+    }
+
+    /// @dev Sum-based check: per-request legs (claimable + locked) sum to the aggregate `_assetsOwed`, share the
+    ///      per-vault positionId, and carry a "Ticket #<id>" leaf label.
+    function test_getAdapterPositions_legsSumToAggregate() public {
+        _submit();
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(HOLDER, address(0));
+        bytes memory expectedId = abi.encode(GENESIS_VAULT);
+        uint256 total;
+        for (uint256 i = 0; i < p.length; i++) {
+            assertEq(p[i].positionId, expectedId, "legs share the static per-vault positionId");
+            _assertTicketLabel(p[i].labels);
+            total += p[i].amount;
+        }
+        (uint256 agg,) = adapter.getAdapterBalanceForAsset(HOLDER, NATIVE_ETH);
+        assertEq(total, agg, "sum of per-request legs == aggregate");
+    }
+
+    /// @dev Asserts a per-request leg's labels are `["Exit Queue", "Ticket #<id>"]` (id prefix checked; the exact
+    ///      ticket is holder/block-specific).
+    function _assertTicketLabel(string[] memory labels) internal pure {
+        assertEq(labels.length, 2, "labels = [category, Ticket #id]");
+        assertEq(labels[0], "Exit Queue");
+        bytes memory l = bytes(labels[1]);
+        bytes memory pre = bytes("Ticket #");
+        assertGe(l.length, pre.length + 1, "ticket id label is non-empty");
+        for (uint256 k = 0; k < pre.length; k++) {
+            assertEq(uint8(l[k]), uint8(pre[k]), "label leaf starts with 'Ticket #'");
+        }
     }
 
     // ---- Fully-pending state: the out-of-range-index valuation path ----

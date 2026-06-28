@@ -5,6 +5,7 @@ import {IBalanceAdapter} from "../IBalanceAdapter.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {InvalidArguments} from "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -16,17 +17,21 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @dev When a user unstakes rsETH, the rsETH is burned and a per-(asset, user) withdrawal request
 ///      is recorded denominated in the LST the user chose to receive (stETH, ETHx or native ETH).
 ///      Until claimed, that value is invisible to wallet/receipt-token adapters — it only lives as a
-///      pending claim on the manager. This adapter surfaces it: for every asset Kelp supports it emits up
-///      to two positions under a single static positionId (`abi.encode(withdrawalManager)`) — a claimable
-///      leg (`isLocked = false`) and a locked/pending leg (`isLocked = true`). The payout asset lives in
-///      `balanceAsset.asset` (so it is not duplicated in the positionId); legs are told apart by
-///      `balanceAsset.asset` + `isLocked`. A request counts as
-///      claimable only once the asset's lock cursor has passed the nonce AND the block delay has elapsed
-///      (both gates, matching `completeWithdrawal`). The balance methods report the per-asset summed
+///      pending claim on the manager. This adapter surfaces it: for every asset Kelp supports it emits
+///      **one position per open request** under a single static positionId (`abi.encode(withdrawalManager)`),
+///      valued at the request's `expectedAssetAmount`. The payout asset lives in `balanceAsset.asset` (so it
+///      is not duplicated in the positionId); each request's `isLocked` reflects its own state — `false` for a
+///      claimable request, `true` for a locked/pending one — and its stable `userNonce` rides in the last
+///      `labels` entry (`["rsETH Withdrawal Queue", "Request #<userNonce>"]`), never in `positionId` (multiple
+///      requests share the static positionId and are distinguished for display by their labels). A request
+///      counts as claimable only once the asset's lock cursor has passed the nonce AND the block delay has
+///      elapsed (both gates, matching `completeWithdrawal`). The balance methods report the per-asset summed
 ///      total. The supported-asset set is discovered at runtime from
 ///      `lrtConfig().getSupportedAssetList()` rather than hardcoded, mirroring the dynamic-discovery
 ///      pattern in `AaveUmbrellaBalanceAdapter.sol`.
 contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescribable {
+    using Strings for uint256;
+
     //
     // Constants
     //
@@ -135,9 +140,13 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
         return "Kelp DAO";
     }
 
-    function _legLabels() private pure returns (string[] memory) {
-        string[] memory out = new string[](1);
+    /// @dev Per-request display labels: `["rsETH Withdrawal Queue", "Request #<userNonce>"]`. The `userNonce` is the
+    ///      request's stable absolute nonce within the asset's queue — display only, so it lives here in `labels`,
+    ///      never in `positionId` (which stays the static withdrawal-manager anchor shared by all requests).
+    function _legLabels(uint256 userNonce) private pure returns (string[] memory) {
+        string[] memory out = new string[](2);
         out[0] = "rsETH Withdrawal Queue";
+        out[1] = string.concat("Request #", userNonce.toString());
         return out;
     }
 
@@ -191,17 +200,19 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
     }
 
     /// @inheritdoc IBalanceAdapter
-    /// @notice Returns up to TWO positions PER asset under the static `positionId = abi.encode(withdrawalManager)` —
-    ///         one claimable (`isLocked = false`) and one locked/pending (`isLocked = true`).
+    /// @notice Returns ONE position PER open withdrawal request under the static
+    ///         `positionId = abi.encode(withdrawalManager)`. Each leg's `isLocked` reflects that request's state
+    ///         (claimable → `false`, pending → `true`) and its `userNonce` is the last `labels` entry.
     /// @dev All legs share `positionId = abi.encode(withdrawalManager)`; the payout asset is in `balanceAsset.asset`,
-    ///      so legs are distinguished by `balanceAsset.asset` + `isLocked` (the asset is not duplicated in positionId).
-    ///      For each supported+registered asset, the account's open requests are aggregated into two sums: a request
-    ///      is claimable (feeds the claimable leg) only when BOTH gates pass: the asset's lock cursor has advanced
-    ///      past its nonce (`userNonce < nextLockedNonce(asset)`) AND the per-request block delay has elapsed
+    ///      so it is not duplicated in the positionId. For each supported+registered asset, the account's open
+    ///      requests are each emitted as a separate `Supplied` leg valued at `expectedAssetAmount`. A request is
+    ///      claimable (`isLocked = false`) only when BOTH gates pass: the asset's lock cursor has advanced past its
+    ///      nonce (`userNonce < nextLockedNonce(asset)`) AND the per-request block delay has elapsed
     ///      (`block.number >= withdrawalStartBlock + withdrawalDelayBlocks()`) — matching `LRTWithdrawalManager`'s own
-    ///      `completeWithdrawal` checks. Either gate failing → pending (locked leg). The two legs per asset sum to
-    ///      `_owedForAsset`'s total for that asset. A zero-amount leg is omitted. Only assets registered in
-    ///      NAVCalculator (and matching `assetFilter`, if set) are emitted.
+    ///      `completeWithdrawal` checks. Either gate failing → pending (`isLocked = true`). The per-asset legs sum to
+    ///      `_owedForAsset`'s total for that asset; across assets they sum to `getAdapterBalances`. The request id
+    ///      (`userNonce`) rides in `labels` (display only), NOT in `positionId`. A zero-amount leg is omitted. Only
+    ///      assets registered in NAVCalculator (and matching `assetFilter`, if set) are emitted.
     function getAdapterPositions(address account, address assetFilter)
         external
         view
@@ -217,7 +228,24 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
         uint256 delayBlocks = WITHDRAWAL_MANAGER.withdrawalDelayBlocks();
 
         uint256 nAssets = supported.length;
-        INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](2 * nAssets);
+
+        // Size the scratch array to the sum of per-asset open-request counts (each capped at
+        // MAX_REQUESTS_PROBED), an upper bound on the number of legs (zero-amount requests drop below it).
+        uint256 cap;
+        for (uint256 a = 0; a < nAssets; a++) {
+            (uint128 begin, uint128 end) = WITHDRAWAL_MANAGER.userAssociatedNonces(supported[a], account);
+            uint256 c = end - begin;
+            if (c > MAX_REQUESTS_PROBED) {
+                c = MAX_REQUESTS_PROBED;
+            }
+            cap += c;
+        }
+
+        // Static positionId = the WithdrawalManager (the immutable anchor). The payout asset is already in
+        // `balanceAsset.asset` (part of the identity key), so it is NOT duplicated in the positionId; per-request
+        // legs are distinguished for display by their `userNonce` label.
+        bytes memory positionId = abi.encode(address(WITHDRAWAL_MANAGER));
+        INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](cap);
         uint256 n;
         for (uint256 a = 0; a < nAssets; a++) {
             address asset = supported[a];
@@ -228,69 +256,59 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
             if (!registered) {
                 continue;
             }
-            (uint128 begin, uint128 end) = WITHDRAWAL_MANAGER.userAssociatedNonces(asset, account);
-            uint256 c = end - begin;
-            if (c == 0) {
-                continue;
-            }
-            if (c > MAX_REQUESTS_PROBED) {
-                c = MAX_REQUESTS_PROBED;
-            }
-            uint256 cursor = WITHDRAWAL_MANAGER.nextLockedNonce(asset);
-
-            uint256 claimable;
-            uint256 locked;
-            for (uint256 i = 0; i < c; i++) {
-                (, uint256 owed, uint256 startBlock, uint256 userNonce) =
-                    WITHDRAWAL_MANAGER.getUserWithdrawalRequest(asset, account, i);
-                if (owed == 0) {
-                    continue;
-                }
-                // Claimable only when the lock cursor has passed AND the block delay has elapsed.
-                bool unlocked = (userNonce < cursor) && (block.number >= startBlock + delayBlocks);
-                if (unlocked) {
-                    claimable += owed;
-                } else {
-                    locked += owed;
-                }
-            }
-
-            // Static positionId = the WithdrawalManager (the immutable anchor). The payout asset is already in
-            // `balanceAsset.asset` (part of the identity key), so it is NOT duplicated in the positionId; the two
-            // legs per asset are told apart by `balanceAsset.asset` + `isLocked`.
-            bytes memory positionId = abi.encode(address(WITHDRAWAL_MANAGER));
-            if (claimable > 0) {
-                temp[n++] = INAVCalculator.PositionBalance({
-                    balanceAsset: underlying,
-                    balanceAdapter: address(this),
-                    amount: claimable,
-                    isDebt: false,
-                    protocolId: PROTOCOL_ID,
-                    positionId: positionId,
-                    positionKind: PositionKind.Supplied,
-                    isLocked: false,
-                    labels: _legLabels()
-                });
-            }
-            if (locked > 0) {
-                temp[n++] = INAVCalculator.PositionBalance({
-                    balanceAsset: underlying,
-                    balanceAdapter: address(this),
-                    amount: locked,
-                    isDebt: false,
-                    protocolId: PROTOCOL_ID,
-                    positionId: positionId,
-                    positionKind: PositionKind.Supplied,
-                    isLocked: true,
-                    labels: _legLabels()
-                });
-            }
+            // Append this asset's per-request legs (extracted to keep `getAdapterPositions` under the stack limit).
+            n = _appendAssetLegs(account, asset, underlying, delayBlocks, positionId, temp, n);
         }
 
         positions = new INAVCalculator.PositionBalance[](n);
         for (uint256 i = 0; i < n; i++) {
             positions[i] = temp[i];
         }
+    }
+
+    /// @dev Appends one `Supplied` leg per open request of `(asset, account)` into `temp` (starting at `n`), returning
+    ///      the new count. Mirrors the inner loop of `getAdapterPositions`; extracted so the outer per-asset scope
+    ///      stays within the via_ir stack limit. Bounded by `MAX_REQUESTS_PROBED`; zero-amount requests are skipped.
+    function _appendAssetLegs(
+        address account,
+        address asset,
+        INAVCalculator.Asset memory underlying,
+        uint256 delayBlocks,
+        bytes memory positionId,
+        INAVCalculator.PositionBalance[] memory temp,
+        uint256 n
+    ) private view returns (uint256) {
+        (uint128 begin, uint128 end) = WITHDRAWAL_MANAGER.userAssociatedNonces(asset, account);
+        uint256 c = end - begin;
+        if (c == 0) {
+            return n;
+        }
+        if (c > MAX_REQUESTS_PROBED) {
+            c = MAX_REQUESTS_PROBED;
+        }
+        uint256 cursor = WITHDRAWAL_MANAGER.nextLockedNonce(asset);
+
+        for (uint256 i = 0; i < c; i++) {
+            (, uint256 owed, uint256 startBlock, uint256 userNonce) =
+                WITHDRAWAL_MANAGER.getUserWithdrawalRequest(asset, account, i);
+            if (owed == 0) {
+                continue;
+            }
+            // Claimable only when the lock cursor has passed AND the block delay has elapsed.
+            bool unlocked = (userNonce < cursor) && (block.number >= startBlock + delayBlocks);
+            temp[n++] = INAVCalculator.PositionBalance({
+                balanceAsset: underlying,
+                balanceAdapter: address(this),
+                amount: owed,
+                isDebt: false,
+                protocolId: PROTOCOL_ID,
+                positionId: positionId,
+                positionKind: PositionKind.Supplied,
+                isLocked: !unlocked,
+                labels: _legLabels(userNonce)
+            });
+        }
+        return n;
     }
 }
 

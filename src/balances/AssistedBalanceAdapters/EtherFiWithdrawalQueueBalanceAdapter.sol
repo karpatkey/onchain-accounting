@@ -7,6 +7,7 @@ import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -24,8 +25,12 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @dev Access control comes from {AssistedBalanceAdapter}: `DEFAULT_ADMIN_ROLE` administers roles and `ASSISTANT_ROLE`
 ///      gates the submit/clear mutators. Trust model and mutability rationale: see
 ///      `docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md` (generalises the Merkl precedent, ADR 0007).
-///      Up to two native-ETH `Supplied` legs per account under a single static positionId (claimable + locked).
+///      Emits ONE native-ETH `Supplied` leg per owned cached withdrawal request, all sharing a single static
+///      positionId; each leg's `isLocked` reflects that request's own state (finalized → `false`, pending → `true`)
+///      and its `tokenId` (the WithdrawRequestNFT id) rides in the last `labels` entry, never in `positionId`.
 contract EtherFiWithdrawalQueueBalanceAdapter is AssistedBalanceAdapter, IPositionDescribable {
+    using Strings for uint256;
+
     //
     // State
     //
@@ -162,9 +167,13 @@ contract EtherFiWithdrawalQueueBalanceAdapter is AssistedBalanceAdapter, IPositi
         return "ether.fi";
     }
 
-    function _legLabels() private pure returns (string[] memory) {
-        string[] memory out = new string[](1);
+    /// @dev Per-request display labels: `["eETH Withdrawal Queue", "Request #<tokenId>"]`. The tokenId is the
+    ///      WithdrawRequestNFT id of the cached request — display only (it is ephemeral: the NFT is burned on claim),
+    ///      so it lives here in `labels`, never in `positionId`.
+    function _legLabels(uint256 tokenId) private pure returns (string[] memory) {
+        string[] memory out = new string[](2);
         out[0] = "eETH Withdrawal Queue";
+        out[1] = string.concat("Request #", tokenId.toString());
         return out;
     }
 
@@ -202,14 +211,15 @@ contract EtherFiWithdrawalQueueBalanceAdapter is AssistedBalanceAdapter, IPositi
     }
 
     /// @inheritdoc IBalanceAdapter
-    /// @notice Returns up to TWO native-ETH `Supplied` legs under a single static positionId — one claimable
-    ///         (`isLocked = false`) and one locked/pending (`isLocked = true`).
-    /// @dev Both legs share `positionId = abi.encode(WITHDRAW_REQUEST_NFT)` and are distinguished only by `isLocked`.
-    ///      The account's cached requests are valued live from on-chain reads (`_owedForToken`) and aggregated into
-    ///      two sums: finalized requests feed the claimable leg, pending requests the locked leg. The two legs sum to
-    ///      `_ethOwed`'s total. A zero-amount leg is omitted. Requests not owned by `account` / invalid / claimed
-    ///      value to 0 and are skipped — the assistant can only under-report. Dropped entirely if the underlying
-    ///      asset is not registered in NAVCalculator.
+    /// @notice Returns ONE native-ETH `Supplied` leg per owned cached withdrawal request, all sharing the static
+    ///         `positionId = abi.encode(WITHDRAW_REQUEST_NFT)`. Each leg's `isLocked` reflects that request's state
+    ///         (finalized → `false`, pending → `true`) and its `tokenId` is the last `labels` entry.
+    /// @dev Each cached id is valued live from on-chain reads (`_owedForToken`), re-verifying ownership every read:
+    ///      requests not owned by `account` / invalid / claimed / burned value to 0 and emit no leg — the assistant
+    ///      can only under-report. Zero-amount legs are skipped. The legs sum to `_ethOwed`'s total. The tokenId rides
+    ///      in `labels` (display only — ephemeral), NOT in `positionId`, so multiple requests share the static
+    ///      positionId and are distinguished for display by their labels (and for NAV by summing). Dropped entirely if
+    ///      the underlying asset is not registered in NAVCalculator.
     function getAdapterPositions(address account, address assetFilter)
         external
         view
@@ -239,58 +249,30 @@ contract EtherFiWithdrawalQueueBalanceAdapter is AssistedBalanceAdapter, IPositi
             if (!registered) return new INAVCalculator.PositionBalance[](0);
         }
 
-        uint256 claimable;
-        uint256 locked;
+        bytes memory positionId = abi.encode(WITHDRAW_REQUEST_NFT);
+        INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](ids.length);
+        uint256 n;
         for (uint256 i = 0; i < ids.length; i++) {
             (uint256 owed, bool finalized) = _owedForToken(account, ids[i]);
             if (owed == 0) {
                 continue;
             }
-            if (finalized) {
-                claimable += owed;
-            } else {
-                locked += owed;
-            }
-        }
-
-        return _statusLegs(underlying, abi.encode(WITHDRAW_REQUEST_NFT), claimable, locked);
-    }
-
-    /// @dev Up to two `Supplied` legs sharing the static positionId, distinguished by isLocked. Zero legs omitted.
-    function _statusLegs(
-        INAVCalculator.Asset memory underlying,
-        bytes memory positionId,
-        uint256 claimable,
-        uint256 locked
-    ) internal view returns (INAVCalculator.PositionBalance[] memory positions) {
-        uint256 nLegs = (claimable > 0 ? 1 : 0) + (locked > 0 ? 1 : 0);
-        positions = new INAVCalculator.PositionBalance[](nLegs);
-        uint256 j;
-        if (claimable > 0) {
-            positions[j++] = INAVCalculator.PositionBalance({
+            temp[n++] = INAVCalculator.PositionBalance({
                 balanceAsset: underlying,
                 balanceAdapter: address(this),
-                amount: claimable,
+                amount: owed,
                 isDebt: false,
                 protocolId: PROTOCOL_ID,
                 positionId: positionId,
                 positionKind: PositionKind.Supplied,
-                isLocked: false,
-                labels: _legLabels()
+                isLocked: !finalized,
+                labels: _legLabels(ids[i])
             });
         }
-        if (locked > 0) {
-            positions[j++] = INAVCalculator.PositionBalance({
-                balanceAsset: underlying,
-                balanceAdapter: address(this),
-                amount: locked,
-                isDebt: false,
-                protocolId: PROTOCOL_ID,
-                positionId: positionId,
-                positionKind: PositionKind.Supplied,
-                isLocked: true,
-                labels: _legLabels()
-            });
+
+        positions = new INAVCalculator.PositionBalance[](n);
+        for (uint256 i = 0; i < n; i++) {
+            positions[i] = temp[i];
         }
     }
 

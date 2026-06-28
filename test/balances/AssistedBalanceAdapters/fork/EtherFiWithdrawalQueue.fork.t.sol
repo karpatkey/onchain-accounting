@@ -84,15 +84,35 @@ contract EtherFiWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase 
         ids[0] = TOKEN_ID;
         adapter.submitTokenIds(HOLDER, ids);
 
+        // One owned cached request → one per-request leg; sum across legs == the holder's aggregate owed ETH.
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(HOLDER, address(0));
-        assertEq(p.length, 1);
-        assertEq(p[0].amount, EXPECTED_ETH);
-        assertEq(p[0].balanceAsset.asset, NATIVE_ETH);
-        assertEq(p[0].balanceAdapter, address(adapter));
-        assertEq(p[0].protocolId, ProtocolIds.ETHERFI_WITHDRAWAL);
-        assertEq(p[0].positionId, abi.encode(adapter.WITHDRAW_REQUEST_NFT()));
-        assertEq(uint8(p[0].positionKind), uint8(PositionKind.Supplied));
-        assertFalse(p[0].isDebt);
+        assertGe(p.length, 1);
+        bytes memory expectedId = abi.encode(adapter.WITHDRAW_REQUEST_NFT());
+        uint256 sum;
+        for (uint256 i = 0; i < p.length; i++) {
+            assertEq(p[i].balanceAsset.asset, NATIVE_ETH);
+            assertEq(p[i].balanceAdapter, address(adapter));
+            assertEq(p[i].protocolId, ProtocolIds.ETHERFI_WITHDRAWAL);
+            assertEq(p[i].positionId, expectedId, "static positionId shared across per-request legs");
+            assertEq(uint8(p[i].positionKind), uint8(PositionKind.Supplied));
+            assertFalse(p[i].isDebt);
+            assertTrue(p[i].isLocked, "request #80154 is pending -> locked leg");
+            _assertRequestLabel(p[i].labels);
+            sum += p[i].amount;
+        }
+        assertEq(sum, EXPECTED_ETH, "per-request legs sum to the aggregate total");
+    }
+
+    /// @dev Asserts a per-request leg's labels are `["eETH Withdrawal Queue", "Request #<tokenId>"]` (id prefix only).
+    function _assertRequestLabel(string[] memory labels) internal pure {
+        assertEq(labels.length, 2, "labels = [category, Request #id]");
+        assertEq(labels[0], "eETH Withdrawal Queue");
+        bytes memory l = bytes(labels[1]);
+        bytes memory pre = bytes("Request #");
+        assertGe(l.length, pre.length + 1, "request id label is non-empty");
+        for (uint256 k = 0; k < pre.length; k++) {
+            assertEq(uint8(l[k]), uint8(pre[k]), "label leaf starts with 'Request #'");
+        }
     }
 
     // ---- Negative cases against the real contracts ----

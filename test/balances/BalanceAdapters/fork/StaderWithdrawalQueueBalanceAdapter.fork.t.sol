@@ -47,12 +47,36 @@ contract StaderWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
     }
 
     function test_getAdapterPositions_realHolder() public view {
+        // One leg per open request; sum across legs == the holder's aggregate owed ETH.
         INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(TEST_USER, address(0));
-        assertEq(positions.length, 1);
-        assertEq(positions[0].balanceAsset.asset, MAINNET_WETH);
-        assertEq(positions[0].balanceAdapter, address(adapter));
-        assertEq(positions[0].amount, TEST_USER_EXPECTED_ETH);
-        assertFalse(positions[0].isDebt);
+        assertGe(positions.length, 1);
+        uint256 sum;
+        for (uint256 i = 0; i < positions.length; i++) {
+            assertEq(positions[i].balanceAsset.asset, MAINNET_WETH);
+            assertEq(positions[i].balanceAdapter, address(adapter));
+            assertFalse(positions[i].isDebt);
+            assertEq(
+                positions[i].positionId,
+                abi.encode(address(adapter.USER_WITHDRAWAL_MANAGER())),
+                "static positionId"
+            );
+            _assertRequestLabel(positions[i].labels);
+            sum += positions[i].amount;
+        }
+        assertEq(sum, TEST_USER_EXPECTED_ETH);
+    }
+
+    /// @dev Asserts a per-request leg's labels are `["ETHx Withdrawal Queue", "Request #<id>"]` (id prefix checked;
+    ///      the exact request id is holder/block-specific).
+    function _assertRequestLabel(string[] memory labels) internal pure {
+        assertEq(labels.length, 2, "labels = [category, Request #id]");
+        assertEq(labels[0], "ETHx Withdrawal Queue");
+        bytes memory l = bytes(labels[1]);
+        bytes memory p = bytes("Request #");
+        assertGe(l.length, p.length + 1, "request id label is non-empty");
+        for (uint256 k = 0; k < p.length; k++) {
+            assertEq(uint8(l[k]), uint8(p[k]), "label leaf starts with 'Request #'");
+        }
     }
 
     function test_getAdapterBalances_realHolder() public view {
@@ -164,19 +188,38 @@ contract StaderWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTest
     }
 
     function test_pending_usesEthExpected_position() public view {
+        // One pending request → one per-request locked leg; sum across legs == the holder's aggregate.
         INAVCalculator.PositionBalance[] memory positions = oracle.getAdapterPositions(PENDING_HOLDER, address(0));
-        assertEq(positions.length, 1);
-        assertEq(positions[0].balanceAsset.asset, MAINNET_WETH);
-        assertEq(positions[0].balanceAdapter, address(oracle));
-        assertEq(positions[0].amount, PENDING_EXPECTED_ETH);
-        assertFalse(positions[0].isDebt);
-        assertEq(positions[0].protocolId, ProtocolIds.STADER_WITHDRAWAL);
-        assertEq(
-            positions[0].positionId,
-            abi.encode(address(oracle.USER_WITHDRAWAL_MANAGER())),
-            "account-global positionId is the UserWithdrawalManager anchor"
-        );
-        assertEq(uint256(positions[0].positionKind), uint256(PositionKind.Supplied));
+        assertGe(positions.length, 1);
+        uint256 sum;
+        for (uint256 i = 0; i < positions.length; i++) {
+            assertEq(positions[i].balanceAsset.asset, MAINNET_WETH);
+            assertEq(positions[i].balanceAdapter, address(oracle));
+            assertFalse(positions[i].isDebt);
+            assertTrue(positions[i].isLocked, "pending request -> locked leg");
+            assertEq(positions[i].protocolId, ProtocolIds.STADER_WITHDRAWAL);
+            assertEq(
+                positions[i].positionId,
+                abi.encode(address(oracle.USER_WITHDRAWAL_MANAGER())),
+                "account-global positionId is the UserWithdrawalManager anchor"
+            );
+            assertEq(uint256(positions[i].positionKind), uint256(PositionKind.Supplied));
+            _assertRequestLabel(positions[i].labels);
+            sum += positions[i].amount;
+        }
+        assertEq(sum, PENDING_EXPECTED_ETH);
+    }
+
+    /// @dev Asserts a per-request leg's labels are `["ETHx Withdrawal Queue", "Request #<id>"]` (id prefix checked).
+    function _assertRequestLabel(string[] memory labels) internal pure {
+        assertEq(labels.length, 2, "labels = [category, Request #id]");
+        assertEq(labels[0], "ETHx Withdrawal Queue");
+        bytes memory l = bytes(labels[1]);
+        bytes memory p = bytes("Request #");
+        assertGe(l.length, p.length + 1, "request id label is non-empty");
+        for (uint256 k = 0; k < p.length; k++) {
+            assertEq(uint8(l[k]), uint8(p[k]), "label leaf starts with 'Request #'");
+        }
     }
 
     // ---- FINALIZED: ethFinalized > 0 → preferred over ethExpected ----
@@ -189,15 +232,22 @@ contract StaderWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTest
     }
 
     function test_finalized_prefersEthFinalized_position() public view {
+        // One finalized request → one per-request claimable (unlocked) leg.
         INAVCalculator.PositionBalance[] memory positions = oracle.getAdapterPositions(FINALIZED_HOLDER, address(0));
-        assertEq(positions.length, 1);
-        assertEq(positions[0].balanceAsset.asset, MAINNET_WETH);
-        assertEq(positions[0].amount, FINALIZED_EXPECTED_ETH);
-        assertEq(positions[0].protocolId, ProtocolIds.STADER_WITHDRAWAL);
-        assertEq(uint256(positions[0].positionKind), uint256(PositionKind.Supplied));
+        assertGe(positions.length, 1);
+        uint256 sum;
+        for (uint256 i = 0; i < positions.length; i++) {
+            assertEq(positions[i].balanceAsset.asset, MAINNET_WETH);
+            assertEq(positions[i].protocolId, ProtocolIds.STADER_WITHDRAWAL);
+            assertEq(uint256(positions[i].positionKind), uint256(PositionKind.Supplied));
+            assertFalse(positions[i].isLocked, "finalized request -> claimable (unlocked) leg");
+            _assertRequestLabel(positions[i].labels);
+            sum += positions[i].amount;
+        }
+        assertEq(sum, FINALIZED_EXPECTED_ETH);
     }
 
-    // ---- MULTI: two open requests summed into one aggregated leg (real on-chain summing) ----
+    // ---- MULTI: two open requests → two per-request legs summing to the aggregate (real on-chain summing) ----
 
     function test_multi_sumsAcrossRequests_balance() public view {
         (uint256 amount, bool isDebt) = oracle.getAdapterBalanceForAsset(MULTI_HOLDER, MAINNET_WETH);
@@ -206,17 +256,28 @@ contract StaderWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTest
     }
 
     function test_multi_sumsAcrossRequests_position() public view {
+        // TWO open requests → TWO per-request legs (one per request id), each carrying its own request id in the last
+        // label, both sharing the static UserWithdrawalManager positionId; the legs sum to MULTI_EXPECTED.
         INAVCalculator.PositionBalance[] memory positions = oracle.getAdapterPositions(MULTI_HOLDER, address(0));
-        // Still ONE aggregated leg, not one-per-request — the adapter sums; the per-request split is display-only.
-        assertEq(positions.length, 1);
-        assertEq(positions[0].balanceAsset.asset, MAINNET_WETH);
-        assertEq(positions[0].amount, MULTI_EXPECTED_ETH);
-        assertEq(positions[0].protocolId, ProtocolIds.STADER_WITHDRAWAL);
-        assertEq(
-            positions[0].positionId,
-            abi.encode(address(oracle.USER_WITHDRAWAL_MANAGER())),
-            "account-global positionId is the UserWithdrawalManager anchor"
+        assertEq(positions.length, 2, "two open requests -> two per-request legs");
+
+        bytes memory expectedId = abi.encode(address(oracle.USER_WITHDRAWAL_MANAGER()));
+        uint256 sum;
+        for (uint256 i = 0; i < positions.length; i++) {
+            assertEq(positions[i].balanceAsset.asset, MAINNET_WETH);
+            assertEq(positions[i].protocolId, ProtocolIds.STADER_WITHDRAWAL);
+            assertEq(
+                positions[i].positionId, expectedId, "account-global positionId is the UserWithdrawalManager anchor"
+            );
+            assertEq(uint256(positions[i].positionKind), uint256(PositionKind.Supplied));
+            _assertRequestLabel(positions[i].labels);
+            sum += positions[i].amount;
+        }
+        // The two request-id labels must differ (distinct requests).
+        assertTrue(
+            keccak256(bytes(positions[0].labels[1])) != keccak256(bytes(positions[1].labels[1])),
+            "each request leg has a distinct request id label"
         );
-        assertEq(uint256(positions[0].positionKind), uint256(PositionKind.Supplied));
+        assertEq(sum, MULTI_EXPECTED_ETH, "per-request legs sum to the aggregate total");
     }
 }

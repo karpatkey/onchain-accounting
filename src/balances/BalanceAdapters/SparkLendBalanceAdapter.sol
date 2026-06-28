@@ -199,12 +199,19 @@ contract SparkLendBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         return false;
     }
 
+    /// @dev `debt` is `variableDebt + stableDebt`. SparkLend is an Aave V3 fork: Aave V3 deprecated NEW stable
+    ///      borrows but legacy stable debt can persist, so dropping `currentStableDebt` (the 2nd `getUserReserveData`
+    ///      return) would understate the Borrow leg and overstate NAV. Mirrors `AaveV3InstancesMetaBalanceAdapter`.
     function _reserveData(address account, address asset)
         internal
         view
-        returns (uint256 aTokenBalance, uint256 variableDebt, bool asCollateral)
+        returns (uint256 aTokenBalance, uint256 debt, bool asCollateral)
     {
-        (aTokenBalance,, variableDebt,,,,,, asCollateral) = DATA_PROVIDER.getUserReserveData(asset, account);
+        uint256 stableDebt;
+        uint256 variableDebt;
+        (aTokenBalance, stableDebt, variableDebt,,,,,, asCollateral) =
+            DATA_PROVIDER.getUserReserveData(asset, account);
+        debt = variableDebt + stableDebt;
     }
 
     function _assetMeta(address asset, INAVCalculator.Asset[] memory reg)

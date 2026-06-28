@@ -55,8 +55,8 @@ bytecode_hash = "none"
 #   - NAVRegistryLib : asset-registry + balance-oracle-registry storage mutations (extracted from NAVCalculator /
 #                      Balances) to keep NAVCalculator under EIP-170. See ADR 0010.
 libraries = [
-  "src/prices/PriceFeedLib.sol:PriceFeedLib:0x9FAEC5351a0F0921721284BE3A5320e68E12353a",
-  "src/nav/NAVRegistryLib.sol:NAVRegistryLib:0x2b46e301c33990A7056ca86367037843E52f2447",
+  "src/prices/PriceFeedLib.sol:PriceFeedLib:0x733D3B64Daa63E51B32634473b218e1dcE25E4f2",
+  "src/nav/NAVRegistryLib.sol:NAVRegistryLib:0x46654Ef6a0689b7f739e7203e707cfABDE752563",
 ]
 
 # Treat compiler warnings as errors (fail build). Warnings from lib/ are ignored.

@@ -141,6 +141,8 @@ These two were genuine **design decisions** baked into immutable / core-pricing 
 hard-code a strategy unilaterally, the approach was chosen with the team and then implemented here.
 
 ### [2] High — `UniswapV3PoolsMeta`: reconstruct the price from oracle feeds (no `slot0`)
+> **Revisited 2026-06-28 — superseded by ADR 0017.** The async sub/redeem consumer model makes the spot-manipulation vector non-monetisable, so the V3 adapter was reverted to reading `slot0` (instantaneous on-chain amounts). See docs/decisions/0017-lp-valuation-instantaneous-amounts.md.
+
 Previously `slot0` (`sqrtPriceX96`, `tick`) fed both the in-range liquidity split
 (`getAmountsForLiquidity`) and the fee-growth branch, so the reported per-token **amounts** tracked the
 instantaneous AMM spot — an attacker who atomically moved the pool price (swap / flash-loan round-trip /

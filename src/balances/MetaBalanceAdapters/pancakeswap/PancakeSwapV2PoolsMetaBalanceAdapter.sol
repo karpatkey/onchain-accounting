@@ -13,6 +13,13 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         respect: PancakeSwap's protocol-fee fraction is not Uniswap's, so its `_mintFee` mints a different
 ///         amount of dilution LP to `feeTo` — overridden via `_mintFeeConstants` below. The protocol identifier
 ///         (e.g. "PancakeSwap V2") is set per deployment.
+/// @dev Valuation = instantaneous on-chain amounts (ADR 0017): this adapter reports the position's current
+///      pro-rata share of the pair's on-chain reserves as per-token `amount`s, which NAVCalculator prices with
+///      external oracles — it does NOT compute a manipulation-resistant "fair" value. Imbalancing the pair can
+///      transiently move the reported amounts (a donation that arbitrage reverses within a block) but cannot be
+///      monetised: NAV is a read-only oracle consumed by an asynchronous sub/redeem layer (no atomic on-chain
+///      consumer). See docs/decisions/0017-lp-valuation-instantaneous-amounts.md; revisit if NAV is ever consumed
+///      synchronously on-chain.
 contract PancakeSwapV2PoolsMetaBalanceAdapter is UniswapV2PoolsMetaBalanceAdapter {
     /// @param protocolName_ Human-readable protocol name (e.g. "PancakeSwap V2").
     /// @param navCalculator_ NAVCalculator contract address.

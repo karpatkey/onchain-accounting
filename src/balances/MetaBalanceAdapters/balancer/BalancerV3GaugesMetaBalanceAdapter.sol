@@ -24,6 +24,14 @@ import {BalancerV3PoolLib} from "./BalancerV3PoolLib.sol";
 ///         gauge rewards. Wallet-held (unstaked) LP is the separate BalancerV3PoolsMetaBalanceAdapter. The instance
 ///         coordinate is the gauge address, widened to bytes32. Emits `Staking` legs per pool token and `Rewards`
 ///         legs per reward token. See ADR 0010.
+/// @dev Valuation = instantaneous on-chain amounts (ADR 0017): the staked LP is decomposed into the underlying
+///      pool tokens and reported as the position's current pro-rata share of the pool's on-chain balances, as
+///      per-token `amount`s that NAVCalculator prices with external oracles — it does NOT compute a
+///      manipulation-resistant "fair" value. Imbalancing the pool can transiently move the reported amounts (a
+///      donation that arbitrage reverses within a block) but cannot be monetised: NAV is a read-only oracle
+///      consumed by an asynchronous sub/redeem layer (no atomic on-chain consumer). See
+///      docs/decisions/0017-lp-valuation-instantaneous-amounts.md; revisit if NAV is ever consumed synchronously
+///      on-chain.
 contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceAdapter {
     using SafeCast for uint256;
     using SafeCast for int128;

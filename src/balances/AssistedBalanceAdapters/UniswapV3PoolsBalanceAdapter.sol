@@ -14,10 +14,9 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {
     INonfungiblePositionManager,
+    IUniswapV3Pool,
     UniswapV3PoolLib
 } from "src/balances/MetaBalanceAdapters/uniswap/UniswapV3PoolLib.sol";
-import {TickMath} from "src/balances/MetaBalanceAdapters/uniswap/lib/TickMath.sol";
-import {LiquidityAmounts} from "src/balances/MetaBalanceAdapters/uniswap/lib/LiquidityAmounts.sol";
 
 /// @notice Minimal Uniswap V3 factory interface — resolves the canonical pool address for a `(token0, token1, fee)`
 ///         triple. PancakeSwap V3's factory shares this `getPool` signature, so the assisted subclass needs no
@@ -29,8 +28,8 @@ interface IUniswapV3Factory {
 
 /// @title Uniswap V3 Pools Balance Adapter (id-cached, assisted)
 /// @author KPK
-/// @notice Reports an account's Uniswap V3 LP across *any* pool — both the in-range liquidity (`Supplied`) and the
-///         settled `tokensOwed` fees (`Fees`) of the account's NFT positions. The NonfungiblePositionManager (NPM)
+/// @notice Reports an account's Uniswap V3 LP across *any* pool — the in-range liquidity (`Supplied`) and the
+///         unclaimed fees (`Fees`) of the account's NFT positions. The NonfungiblePositionManager (NPM)
 ///         is not `ERC721Enumerable`-discoverable cheaply at scale, so rather than brute-forcing every NFT the
 ///         account holds, an off-chain assistant (holder of `ASSISTANT_ROLE`) submits the account's `tokenId`s via
 ///         `submitTokenIds`. This adapter then values them entirely from live on-chain reads, re-verifying NFT
@@ -44,21 +43,22 @@ interface IUniswapV3Factory {
 ///      currently owned by the account (fail-loud writes); reads instead **discard** an id whose ownership changed or
 ///      whose NFT was burned (fail-open, so a single stale id never zeroes the whole account). See
 ///      `docs/decisions/0015-assisted-balance-adapter-family.md` (and the Merkl precedent, ADR 0007).
-/// @dev Manipulation resistance ([2]): the in-range split is driven by a `sqrtPriceX96`
-///      *reconstructed from the two tokens' registered oracle prices* (`NAV_CALCULATOR.getPriceData`), NOT the
-///      pool's `slot0` spot. This makes reported amounts a pure function of the same oracles NAV prices with, so an
-///      attacker who atomically moves the pool price cannot move the reported value (honors the repo's "never trust
-///      an AMM spot price" rule). A position whose tokens are unregistered/unpriced/stale is dropped (returns no
-///      legs) rather than valued off a manipulable spot. Because `slot0` is no longer read, byte-compatible forks
-///      with a divergent `slot0()` ABI (PancakeSwap V3) need no special handling.
-/// @dev Fees ([M-A1]): only the position's settled `tokensOwed` are reported. The uncollected-since-poke component
-///      derives from `feeGrowthInside`, which is correct only relative to the pool's REAL tick; deriving it from the
-///      oracle-reconstructed tick can pick a branch inconsistent with the on-chain `feeGrowthOutside` anchoring and
-///      over-report a phantom fee. Since this adapter intentionally avoids `slot0`, that component is omitted — a
-///      conservative under-report that upholds the assisted family's never-over-report invariant. See
-///      docs/audits/2026-06-vigilo-adapter-audit.md §M-A1.
-///      Licensing: links the GPL-2.0-or-later Uniswap math (TickMath, LiquidityAmounts) —
-///      combined work is GPL-2.0-or-later (ADR 0008).
+/// @dev Valuation = **instantaneous on-chain amounts** (ADR 0017). The in-range split is computed from the pool's
+///      current `slot0().sqrtPriceX96`/`tick` (read live via the `_slot0` hook) and the position's `liquidity` — the
+///      true token0/token1 composition you would withdraw at this block — and fees are the full unclaimed amount
+///      (`feeGrowthInside`-since-poke + settled `tokensOwed`), correct only against the pool's REAL tick. This is the
+///      same "report instantaneous amounts, NAVCalculator prices them with external oracles" model the V2/Curve/
+///      Balancer LP adapters use. Imbalancing the pool can transiently move the reported amounts, but it cannot be
+///      monetised: NAV is a read-only oracle consumed by an **asynchronous** sub/redeem layer (no atomic on-chain
+///      consumer), and a forced imbalance is a donation that arbitrage reverses within a block — see ADR 0017 for the
+///      full analysis and the revisit trigger (reinstate the oracle-reconstructed `sqrtPriceX96` only if NAV is ever
+///      consumed synchronously on-chain). NOTE: this deliberately reinstates the `slot0` read that audit `[2]` once
+///      replaced with oracle reconstruction; the async-consumer model (ADR 0017) supersedes that recommendation.
+/// @dev `_slot0` is `virtual`: it reads `(sqrtPriceX96, tick)` from `IUniswapV3Pool(pool).slot0()`. PancakeSwap V3's
+///      `slot0().feeProtocol` is `uint32` (not Uniswap's `uint8`), so the full-tuple decode differs — the
+///      `PancakeSwapV3PoolsBalanceAdapter` subclass overrides `_slot0` with a matching ABI.
+///      Licensing: links the GPL-2.0-or-later Uniswap math (TickMath, LiquidityAmounts, FixedPoint128 via
+///      `UniswapV3PoolLib`) — combined work is GPL-2.0-or-later (ADR 0008).
 contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescribable {
     using Strings for uint256;
 
@@ -303,9 +303,10 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
     //
 
     /// @dev Appends the (up to 4) legs for one cached `tokenId` to `temp`, returning the new count. An id that is no
-    ///      longer owned by `account`, whose pool tokens are unregistered/unpriced/stale, or that is in no requested
-    ///      asset, contributes nothing (discarded, never reverts). Mirrors the legacy per-pool valuation, but reads
-    ///      `token0/token1/fee` from `positions(tokenId)` so no pool address is needed.
+    ///      longer owned by `account`, whose pool tokens are unregistered, or that is in no requested asset,
+    ///      contributes nothing (discarded, never reverts). Reads `token0/token1/fee` from `positions(tokenId)`,
+    ///      resolves the pool, and values the position from the pool's live `slot0` (in-range split) + full unclaimed
+    ///      fees (see contract @dev / ADR 0017).
     function _appendPositionLegs(
         address account,
         INAVCalculator.Asset[] memory reg,
@@ -321,80 +322,46 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
             return count;
         }
 
-        (
-            ,,
-            address token0,
-            address token1,
-            uint24 fee,
-            int24 tickLower,
-            int24 tickUpper,
-            uint128 liquidity,,,
-            uint128 tokensOwed0,
-            uint128 tokensOwed1
-        ) = INonfungiblePositionManager(POSITION_MANAGER).positions(tokenId);
+        UniswapV3PoolLib.Position memory p = UniswapV3PoolLib.readPosition(POSITION_MANAGER, tokenId);
 
-        // Both tokens must be registered: valuing the LP split needs *both* oracle prices, regardless of which
-        // leg(s) `assetFilter` ultimately emits. `assetFilter` only gates emission below (f0reg/f1reg).
-        // `reg` is the registry snapshot fetched once by `getAdapterPositions`; resolve both tokens from it.
-        (INAVCalculator.Asset memory a0, bool reg0) = _findAsset(reg, token0);
-        (INAVCalculator.Asset memory a1, bool reg1) = _findAsset(reg, token1);
+        // Both tokens must be registered for NAV to price the legs. `reg` is the registry snapshot fetched once by
+        // `getAdapterPositions`; resolve both tokens from it. `assetFilter` only gates which legs are emitted below.
+        (INAVCalculator.Asset memory a0, bool reg0) = _findAsset(reg, p.token0);
+        (INAVCalculator.Asset memory a1, bool reg1) = _findAsset(reg, p.token1);
         if (!reg0 || !reg1) return count;
-        bool f0reg = assetFilter == address(0) || assetFilter == token0;
-        bool f1reg = assetFilter == address(0) || assetFilter == token1;
+        bool f0reg = assetFilter == address(0) || assetFilter == p.token0;
+        bool f1reg = assetFilter == address(0) || assetFilter == p.token1;
         if (!f0reg && !f1reg) return count;
 
-        // [2] Reconstruct the price from the registered oracles instead of reading the manipulable slot0. Drop the
-        // position if either feed is missing/zero/stale — an LP can't be valued manipulation-safely without both
-        // fair prices (the stale asset is already surfaced in NAV.stalePriceAssets).
-        // `getPriceData` REVERTS (`PriceFeedNotSet`) for a registered asset whose feeds were all removed; catch it
-        // and discard only THIS position. Without the guard the revert escapes `getAdapterPositions`, where
-        // PriceFeedLib's single per-adapter try/catch would drop the account's ENTIRE Uniswap V3 LP set rather than
-        // the one unpriced pool — re-establishing the per-position isolation the old meta-adapter had per instance.
-        INAVCalculator.PriceFeedData memory pd0;
-        INAVCalculator.PriceFeedData memory pd1;
-        try NAV_CALCULATOR.getPriceData(token0) returns (INAVCalculator.PriceFeedData memory _pd0) {
-            pd0 = _pd0;
-        } catch {
-            return count;
-        }
-        try NAV_CALCULATOR.getPriceData(token1) returns (INAVCalculator.PriceFeedData memory _pd1) {
-            pd1 = _pd1;
-        } catch {
-            return count;
-        }
-        if (pd0.price <= 0 || pd1.price <= 0 || pd0.stale || pd1.stale) return count;
-        uint160 sqrtPriceX96 = UniswapV3PoolLib.sqrtPriceX96FromOraclePrices(
-            uint256(pd0.price), pd0.decimals, a0.decimals, uint256(pd1.price), pd1.decimals, a1.decimals
-        );
-
         // positionId = the pool contract address (each (token0, token1, fee) is its own deployed Uniswap V3 pool).
-        // The NFT id is NOT in the positionId; it rides in the display labels (built once per NFT below). Drop the
-        // position if the factory has no canonical pool for the triple (defensive: never emit a zero-pool identity
-        // that would collide across unrelated positions).
-        address pool = IUniswapV3Factory(FACTORY).getPool(token0, token1, fee);
+        // The NFT id is NOT in the positionId; it rides in the display labels. Drop the position if the factory has
+        // no canonical pool for the triple (defensive: never emit a zero-pool identity that collides across pools).
+        address pool = IUniswapV3Factory(FACTORY).getPool(p.token0, p.token1, p.fee);
         if (pool == address(0)) return count;
+
+        // Value from the pool's live slot0 (ADR 0017 — instantaneous on-chain amounts): `sqrtPriceX96` drives the
+        // in-range principal split and `tick` selects the fee-growth branch for the full unclaimed-fee computation.
+        // `_slot0` is virtual so PancakeSwap V3's `uint32 feeProtocol` ABI is handled by the subclass.
+        (uint160 sqrtPriceX96, int24 tick) = _slot0(pool);
+        (uint256 liq0, uint256 liq1, uint256 fee0, uint256 fee1) =
+            UniswapV3PoolLib.positionAmounts(pool, p, sqrtPriceX96, tick);
+
         bytes memory positionId = abi.encode(pool);
         // Labels: [category, pool address, NFT id] — NFT id last (per-leg, adapter-supplied; see _toVerbose).
         string[] memory labels = _labels(pool, tokenId);
 
-        // Principal split: tick-boundary sqrt ratios for the in-range amount calc, valued off the
-        // oracle-reconstructed sqrtPriceX96 (not the manipulable slot0; `sqrtPriceX96 < getSqrtRatioAtTick(t)` is
-        // exactly equivalent to `currentTick < t`).
-        uint256 liq0;
-        uint256 liq1;
-        if (liquidity > 0) {
-            (liq0, liq1) = LiquidityAmounts.getAmountsForLiquidity(
-                sqrtPriceX96, TickMath.getSqrtRatioAtTick(tickLower), TickMath.getSqrtRatioAtTick(tickUpper), liquidity
-            );
-        }
-
-        // Fees: report only the position's settled `tokensOwed` (audit M-A1 — the uncollected-since-poke component
-        // is deliberately NOT computed; see the contract-level @dev).
         if (f0reg && liq0 > 0) temp[count++] = _row(a0, liq0, positionId, PositionKind.Supplied, labels);
         if (f1reg && liq1 > 0) temp[count++] = _row(a1, liq1, positionId, PositionKind.Supplied, labels);
-        if (f0reg && tokensOwed0 > 0) temp[count++] = _row(a0, tokensOwed0, positionId, PositionKind.Fees, labels);
-        if (f1reg && tokensOwed1 > 0) temp[count++] = _row(a1, tokensOwed1, positionId, PositionKind.Fees, labels);
+        if (f0reg && fee0 > 0) temp[count++] = _row(a0, fee0, positionId, PositionKind.Fees, labels);
+        if (f1reg && fee1 > 0) temp[count++] = _row(a1, fee1, positionId, PositionKind.Fees, labels);
         return count;
+    }
+
+    /// @dev Reads `(sqrtPriceX96, tick)` from the pool's `slot0`. `virtual` so a fork with a divergent `slot0()` ABI
+    ///      overrides just this read — `PancakeSwapV3PoolsBalanceAdapter` does so for PancakeSwap V3's `uint32`
+    ///      `feeProtocol` field (Uniswap V3 packs it as `uint8`).
+    function _slot0(address pool) internal view virtual returns (uint160 sqrtPriceX96, int24 tick) {
+        (sqrtPriceX96, tick,,,,,) = IUniswapV3Pool(pool).slot0();
     }
 
     /// @dev `["Liquidity Pool", "<pool address>", "NFT #<tokenId>"]` — the per-leg display hierarchy.

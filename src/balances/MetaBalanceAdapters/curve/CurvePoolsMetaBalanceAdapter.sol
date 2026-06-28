@@ -30,6 +30,14 @@ import {CurvePoolLib} from "./CurvePoolLib.sol";
 ///      positionId = abi.encode(address pool)
 ///
 ///      Gauge-staked LP and rewards are handled separately by CurveGaugesMetaBalanceAdapter.
+///
+///      Valuation = instantaneous on-chain amounts (ADR 0017): this adapter reports the position's current
+///      pro-rata share of the pool's on-chain balances as per-token `amount`s, which NAVCalculator prices with
+///      external oracles — it does NOT compute a manipulation-resistant "fair" value. Imbalancing the pool can
+///      transiently move the reported amounts (a donation that arbitrage reverses within a block) but cannot be
+///      monetised: NAV is a read-only oracle consumed by an asynchronous sub/redeem layer (no atomic on-chain
+///      consumer). See docs/decisions/0017-lp-valuation-instantaneous-amounts.md; revisit if NAV is ever consumed
+///      synchronously on-chain.
 contract CurvePoolsMetaBalanceAdapter is MetaBalanceAdapter {
     bytes32 private constant PROTOCOL_ID = ProtocolIds.CURVE_POOL;
 

@@ -19,11 +19,14 @@ import {
 } from "test/balances/AssistedBalanceAdapters/UniswapV3Mocks.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {FixedPoint128} from "src/balances/MetaBalanceAdapters/uniswap/lib/FixedPoint128.sol";
 
 /// @title UniswapV3PoolsBalanceAdapter unit tests (no fork)
 /// @notice Assisted (agent-fed) tokenId cache + per-NFT decomposition for UniswapV3Pools. The adapter reads
-///         `positions(tokenId)`, reconstructs the price from the registered oracles, and resolves the pool address
-///         (positionId) via the factory — so these tests drive it through the NPM/factory/pool mocks + the cache.
+///         `positions(tokenId)`, splits the principal at the pool's live `slot0` (instantaneous on-chain amounts;
+///         ADR 0017) and resolves the pool address (positionId) via the factory — so these tests drive it through
+///         the NPM/factory/pool mocks + the cache.
 contract UniswapV3PoolsBalanceAdapterTest is Test {
     Mock_NAVCalculator nav;
     MockPositionManager npm;
@@ -59,10 +62,14 @@ contract UniswapV3PoolsBalanceAdapterTest is Test {
         factory.setPool(address(usdc), address(weth), 500, address(poolB));
         npm.setFactory(address(factory)); // must precede adapter construction (read in the constructor)
 
-        // [2] The adapter reconstructs sqrtPriceX96 from these oracle prices (it never reads slot0). They are chosen
-        // so the reconstructed raw token1/token0 price is 1.0 (sqrtPrice == 2^96, tick 0), keeping the [-100, 100]
-        // NFT positions in range. Deliberately nonsensical as USD figures (this suite asserts leg structure/amounts,
-        // not values): WBTC(8)/WETH(18) → (1e8·10^10)/1e18 = 1; USDC(6)/WETH(18) → (1e6·10^12)/1e18 = 1.
+        // ADR 0017: the adapter splits the principal at the pool's live `slot0` (it reads slot0 directly, NOT the
+        // oracle). Put each pool in range at sqrtPrice == 2^96 (raw token1/token0 price 1.0, tick 0), keeping the
+        // [-100, 100] NFT positions in range so both legs are non-zero.
+        poolA.setSlot0(uint160(1 << 96), 0);
+        poolB.setSlot0(uint160(1 << 96), 0);
+
+        // NAV still needs the assets registered + priced (it, not the adapter, does the pricing/staleness). The USD
+        // figures are deliberately nonsensical — this suite asserts leg structure/amounts, not values.
         nav.setAssetPrice(address(wbtc), 1e8, 8);
         nav.setAssetPrice(address(weth), 1e18, 8);
         nav.setAssetPrice(address(usdc), 1e6, 8);
@@ -164,30 +171,79 @@ contract UniswapV3PoolsBalanceAdapterTest is Test {
         assertEq(p[4].labels[2], "NFT #2");
     }
 
+    /// @notice Emission order per NFT: Supplied liq0, Supplied liq1, Fees fee0, Fees fee1. With the mock's
+    ///         feeGrowthGlobal == 0 and the position's feeGrowthInsideLast == 0, the accruing-since-poke component is
+    ///         zero, so the full uncollected fee collapses to `tokensOwed` (42/1337) — the accruing component is
+    ///         exercised separately in test_fees_fullUncollected_feeGrowthPlusTokensOwed.
     function test_feesLegType() public view {
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(alice, address(0));
-        // The 3rd/4th NFT-1 legs are Fees (tokensOwed 42/1337).
+        assertEq(uint8(p[0].positionKind), uint8(PositionKind.Supplied));
+        assertEq(uint8(p[1].positionKind), uint8(PositionKind.Supplied));
+        // The 3rd/4th NFT-1 legs are Fees (tokensOwed 42/1337; feeGrowth == 0 so full fee == tokensOwed).
         assertEq(p[2].amount, 42);
         assertEq(uint8(p[2].positionKind), uint8(PositionKind.Fees));
         assertEq(p[3].amount, 1337);
         assertEq(uint8(p[3].positionKind), uint8(PositionKind.Fees));
-        assertEq(uint8(p[0].positionKind), uint8(PositionKind.Supplied));
     }
 
-    /// @notice Audit M-A1: fee legs report ONLY the position's settled `tokensOwed`. The adapter never reads the
-    ///         pool's tick fee-growth, so the uncollected-since-poke component is structurally absent. WBTC fee is
-    ///         unique to NFT 1 (tokensOwed0=42); USDC fee is unique to NFT 2 (tokensOwed0=7).
-    function test_M_A1_fees_areSettledTokensOwedOnly() public view {
+    /// @notice ADR 0017 reverses audit M-A1: fee legs now report the FULL uncollected fee — the
+    ///         `feeGrowthInside`-since-poke accruing component PLUS the settled `tokensOwed` — valued at the pool's
+    ///         real `slot0` tick, not `tokensOwed` alone. Set a non-zero pool `feeGrowthGlobal` and a smaller
+    ///         per-position `feeGrowthInsideLast` so `feeGrowthGlobal − feeGrowthInsideLast > 0`, and assert the
+    ///         reported Fees leg = mulDiv(delta, liquidity, 2^128) + tokensOwed (strictly greater than tokensOwed).
+    function test_fees_fullUncollected_feeGrowthPlusTokensOwed() public {
+        adapter.clearAccount(alice); // start from a clean cache (setUp seeded ids 1,2)
+
+        uint256 liq = 1_000_000;
+        uint128 owed0 = 42;
+        uint128 owed1 = 1337;
+        // Accruing-since-poke fee growth: global − inside-last. Pick deltas that, scaled by liquidity, are exact and
+        // non-trivial: delta0 = 1·Q128 → accrued0 = liq; delta1 = 3·Q128 → accrued1 = 3·liq.
+        uint256 fgInside0Last = 5 * FixedPoint128.Q128;
+        uint256 fgInside1Last = 2 * FixedPoint128.Q128;
+        uint256 fgGlobal0 = fgInside0Last + 1 * FixedPoint128.Q128; // delta 1·Q128
+        uint256 fgGlobal1 = fgInside1Last + 3 * FixedPoint128.Q128; // delta 3·Q128
+
+        // Mint NFT 10 (WBTC/WETH 0.3% → poolA) with the per-position feeGrowthInsideLast set, then advance the pool's
+        // global fee growth above it. tickCurrent 0 ∈ [-100, 100] and the mock's ticks() return zero outside-growth,
+        // so feeGrowthInside == feeGrowthGlobal and the accruing component is exactly mulDiv(global - last, liq, Q128).
+        npm.mint(
+            alice,
+            10,
+            MockPositionManager.PositionData({
+                token0: address(wbtc),
+                token1: address(weth),
+                fee: 3000,
+                tickLower: -100,
+                tickUpper: 100,
+                liquidity: uint128(liq),
+                feeGrowthInside0LastX128: fgInside0Last,
+                feeGrowthInside1LastX128: fgInside1Last,
+                tokensOwed0: owed0,
+                tokensOwed1: owed1
+            })
+        );
+        poolA.setFeeGrowthGlobal(fgGlobal0, fgGlobal1);
+        adapter.submitTokenIds(alice, _id(10));
+
+        uint256 expected0 = Math.mulDiv(fgGlobal0 - fgInside0Last, liq, FixedPoint128.Q128) + owed0;
+        uint256 expected1 = Math.mulDiv(fgGlobal1 - fgInside1Last, liq, FixedPoint128.Q128) + owed1;
+
         uint256 wbtcFee;
-        uint256 usdcFee;
+        uint256 wethFee;
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(alice, address(0));
         for (uint256 i = 0; i < p.length; i++) {
             if (p[i].positionKind != PositionKind.Fees) continue;
             if (p[i].balanceAsset.asset == address(wbtc)) wbtcFee = p[i].amount;
-            if (p[i].balanceAsset.asset == address(usdc)) usdcFee = p[i].amount;
+            if (p[i].balanceAsset.asset == address(weth)) wethFee = p[i].amount;
         }
-        assertEq(wbtcFee, 42, "WBTC fee leg == tokensOwed0 only");
-        assertEq(usdcFee, 7, "USDC fee leg == tokensOwed0 only");
+        assertEq(wbtcFee, expected0, "WBTC fee = feeGrowth-since-poke + tokensOwed0");
+        assertEq(wethFee, expected1, "WETH fee = feeGrowth-since-poke + tokensOwed1");
+        // The accruing component is genuinely included — strictly greater than the settled tokensOwed alone.
+        assertGt(wbtcFee, owed0, "full fee strictly exceeds tokensOwed0");
+        assertGt(wethFee, owed1, "full fee strictly exceeds tokensOwed1");
+        assertEq(wbtcFee, liq + owed0, "WBTC accrued == 1*liq + owed0");
+        assertEq(wethFee, 3 * liq + owed1, "WETH accrued == 3*liq + owed1");
     }
 
     function test_assetFilter() public view {
@@ -198,8 +254,8 @@ contract UniswapV3PoolsBalanceAdapterTest is Test {
         }
     }
 
-    /// @notice [2] Valuing the LP split needs BOTH tokens' oracle prices. If either token is unregistered the price
-    ///         cannot be reconstructed, so that NFT contributes no legs (not just the unregistered token's leg).
+    /// @notice Both pool tokens must be registered for NAV to price the legs. If either is unregistered the whole NFT
+    ///         contributes no legs (not just the unregistered token's leg) — the adapter requires reg0 && reg1.
     function test_unregisteredToken_dropsPosition() public {
         nav.unregisterAssetHelper(address(weth)); // NFT 1 is WBTC/WETH → WETH unregistered
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(alice, address(0));
@@ -284,21 +340,24 @@ contract UniswapV3PoolsBalanceAdapterTest is Test {
         assertEq(adapter.getAdapterPositions(alice, address(0)).length, 0);
     }
 
-    /// @notice Blast-radius isolation: when one pool's token reverts in getPriceData (registered asset, feeds
-    ///         removed), only THAT NFT is dropped — the account's other Uniswap V3 LP still reports. Without the
-    ///         per-position try/catch the revert would escape getAdapterPositions and (under PriceFeedLib's single
-    ///         per-adapter catch) zero out the account's entire Uniswap V3 set.
-    function test_read_priceFeedRevert_dropsOnlyThatPool() public {
+    /// @notice ADR 0017: the split no longer reads prices — the adapter reports instantaneous on-chain amounts and
+    ///         NAVCalculator (not the adapter) handles pricing/staleness. So making a token's price feed revert does
+    ///         NOT drop the position from the adapter's output; the legs are still emitted (NAV deals with the price
+    ///         failure downstream). Per-NFT isolation against burned/transferred ids is covered by the read tests.
+    function test_priceFeedRemoved_positionStillReported() public {
         // WBTC pairs only in NFT 1 (poolA); make its feed read revert like the real NAVCalculator's PriceFeedNotSet.
         nav.setPriceReverts(address(wbtc), true);
 
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(alice, address(0));
-        // NFT 1 (WBTC/WETH) dropped; NFT 2 (USDC/WETH) survives — the call does NOT revert.
-        assertEq(p.length, 4, "only the unpriced pool's NFT is dropped");
+        // Both NFTs still reported (8 legs) — the adapter does not consult getPriceData.
+        assertEq(p.length, 8, "price-feed failure does not drop positions from the adapter");
+
+        // NFT 1's WBTC leg (the asset whose feed reverts) is still present.
+        bool sawWbtc;
         for (uint256 i = 0; i < p.length; i++) {
-            assertEq(p[i].positionId, abi.encode(address(poolB)), "surviving legs are poolB's");
-            assertEq(p[i].labels[2], "NFT #2");
+            if (p[i].balanceAsset.asset == address(wbtc)) sawWbtc = true;
         }
+        assertTrue(sawWbtc, "WBTC legs still emitted despite the reverting feed");
     }
 
     /// @notice Writes are fail-loud at the cap: an owned id past MAX_TOKEN_IDS reverts TokenIdCacheFull rather than

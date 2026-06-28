@@ -38,6 +38,15 @@ import {CurvePoolLib} from "./curve/CurvePoolLib.sol";
 ///      Compatible with all Convex pools whose BaseRewardPool exposes pid() and the standard
 ///      extraRewards/extraRewardsLength interface. CRV is the main reward token on all mainnet
 ///      Convex pools; CVX is derived independently.
+///
+///      Valuation = instantaneous on-chain amounts (ADR 0017): the staked LP is decomposed into the underlying
+///      Curve pool tokens and reported as the position's current pro-rata share of the pool's on-chain balances,
+///      as per-token `amount`s that NAVCalculator prices with external oracles — it does NOT compute a
+///      manipulation-resistant "fair" value. Imbalancing the pool can transiently move the reported amounts (a
+///      donation that arbitrage reverses within a block) but cannot be monetised: NAV is a read-only oracle
+///      consumed by an asynchronous sub/redeem layer (no atomic on-chain consumer). See
+///      docs/decisions/0017-lp-valuation-instantaneous-amounts.md; revisit if NAV is ever consumed synchronously
+///      on-chain.
 contract ConvexRewardsMetaBalanceAdapter is MetaBalanceAdapter {
     bytes32 private constant PROTOCOL_ID = ProtocolIds.CONVEX;
 

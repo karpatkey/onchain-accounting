@@ -14,6 +14,13 @@ import {UniswapV2PairLib} from "src/balances/MetaBalanceAdapters/uniswap/Uniswap
 ///         pro-rata share of both reserves, emitted as one `Supply` leg per token. The instance coordinate is the
 ///         pair address, widened to bytes32; the active pair set lives on NAVCalculator (`addMetaInstances`).
 ///         Identity is derived on-chain (positionId = pair address; name = `sym0/sym1 LP`). See ADR 0010.
+/// @dev Valuation = instantaneous on-chain amounts (ADR 0017): this adapter reports the position's current
+///      pro-rata share of the pair's on-chain reserves as per-token `amount`s, which NAVCalculator prices with
+///      external oracles — it does NOT compute a manipulation-resistant "fair" value. Imbalancing the pair can
+///      transiently move the reported amounts (a donation that arbitrage reverses within a block) but cannot be
+///      monetised: NAV is a read-only oracle consumed by an asynchronous sub/redeem layer (no atomic on-chain
+///      consumer). See docs/decisions/0017-lp-valuation-instantaneous-amounts.md; revisit if NAV is ever consumed
+///      synchronously on-chain.
 /// @dev The pro-rata + protocol-fee dilution math is delegated to `UniswapV2PairLib`, which mirrors the
 ///      leg-for-leg. Works with canonical Uniswap V2
 ///      and standard forks (SushiSwap, PancakeSwap V2) that preserve the `_mintFee` formula.

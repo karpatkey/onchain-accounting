@@ -52,6 +52,61 @@ contract MockUniswapV3Pool {
     }
 }
 
+/// @notice Minimal PancakeSwap V3 pool mock — identical to {MockUniswapV3Pool} except `slot0().feeProtocol` is
+///         `uint32` (PancakeSwap V3 widens Uniswap's `uint8`). Used to prove the PancakeSwap adapter's `_slot0`
+///         override decodes a `feeProtocol > uint8.max` without reverting (and that the Uniswap-base `uint8` decode
+///         of the same returndata WOULD revert).
+contract MockPancakeV3Pool {
+    address public token0;
+    address public token1;
+    uint24 public fee;
+    int24 public tickSpacing;
+    uint160 internal _sqrtPriceX96;
+    int24 internal _tick;
+    uint32 internal _feeProtocol;
+    uint256 public feeGrowthGlobal0X128;
+    uint256 public feeGrowthGlobal1X128;
+
+    struct TickInfo {
+        uint256 feeGrowthOutside0X128;
+        uint256 feeGrowthOutside1X128;
+    }
+
+    mapping(int24 => TickInfo) internal _ticks;
+
+    constructor(address token0_, address token1_, uint24 fee_, int24 tickSpacing_) {
+        token0 = token0_;
+        token1 = token1_;
+        fee = fee_;
+        tickSpacing = tickSpacing_;
+    }
+
+    function setSlot0(uint160 sqrtPriceX96_, int24 tick_, uint32 feeProtocol_) external {
+        _sqrtPriceX96 = sqrtPriceX96_;
+        _tick = tick_;
+        _feeProtocol = feeProtocol_;
+    }
+
+    function setFeeGrowthGlobal(uint256 fg0, uint256 fg1) external {
+        feeGrowthGlobal0X128 = fg0;
+        feeGrowthGlobal1X128 = fg1;
+    }
+
+    function setTickFeeGrowth(int24 tick, uint256 fgOut0, uint256 fgOut1) external {
+        _ticks[tick] = TickInfo(fgOut0, fgOut1);
+    }
+
+    /// @dev PancakeSwap V3 ABI: `feeProtocol` is `uint32` (Uniswap V3 packs it as `uint8`).
+    function slot0() external view returns (uint160, int24, uint16, uint16, uint16, uint32, bool) {
+        return (_sqrtPriceX96, _tick, 0, 0, 0, _feeProtocol, false);
+    }
+
+    function ticks(int24 tick) external view returns (uint128, int128, uint256, uint256, int56, uint160, uint32, bool) {
+        TickInfo memory info = _ticks[tick];
+        return (0, 0, info.feeGrowthOutside0X128, info.feeGrowthOutside1X128, 0, 0, 0, false);
+    }
+}
+
 /// @notice Minimal NonfungiblePositionManager mock — ERC721Enumerable surface + positions().
 contract MockPositionManager {
     struct PositionData {

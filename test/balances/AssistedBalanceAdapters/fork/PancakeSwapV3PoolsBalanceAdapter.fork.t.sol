@@ -8,13 +8,6 @@ import {
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-
-/// @dev Minimal slot0 read used only by the test to derive oracle-consistent prices (PancakeSwap V3's
-///      `feeProtocol` is uint32; the adapter itself no longer reads slot0 — see [2]).
-interface IPcsSlot0 {
-    function slot0() external view returns (uint160 sqrtPriceX96, int24, uint16, uint16, uint16, uint32, bool);
-}
 
 /// @notice Minimal PancakeSwap V3 NonfungiblePositionManager interface for id discovery + the ground-truth check.
 interface IPancakeNPM {
@@ -54,21 +47,23 @@ interface IPancakeNPM {
 
 /// @title PancakeSwapV3PoolsBalanceForkTest (mainnet, active positions)
 /// @notice Verifies the PancakeSwap V3 pools assisted adapter against a real mainnet holder with an active in-wallet
-///         (liquidity > 0) position. PancakeSwap V3 is a byte-for-byte Uniswap V3 fork; since [2] neither adapter
-///         reads `slot0` (the price is reconstructed from the registered oracle feeds), so the only behavioural
-///         difference from Uniswap V3 is the protocol-id slug — all valuation math is inherited from the verified
+///         (liquidity > 0) position. PancakeSwap V3 is a byte-for-byte Uniswap V3 fork; since ADR 0017 the adapter
+///         values each position from the pool's live `slot0` (instantaneous on-chain amounts). PancakeSwap V3's
+///         `slot0().feeProtocol` is `uint32` (Uniswap packs it as `uint8`), so this fork genuinely exercises the
+///         PancakeSwap `_slot0` override against a real PCS V3 pool — a position is valued here without reverting,
+///         which the inherited `uint8` decode could not do. All other valuation math is inherited from the verified
 ///         UniswapV3PoolsBalanceAdapter. The holder's WETH/USDT 0.05% NFT tokenIds are discovered off the NPM and
 ///         fed to the adapter via `submitTokenIds` (as the off-chain assistant would).
 ///
 ///         The ground-truth test burns each position's liquidity via the real NPM and asserts the adapter's reported
-///         principal ≈ the protocol's own settlement amounts — same NPM, same archive state, same EVM.
+///         principal == the protocol's own settlement amounts — same NPM, same `slot0`, same archive state, same EVM.
 contract PancakeSwapV3PoolsBalanceForkTest is BalanceAdapterTestBase {
     address public constant NPM = 0x46A15B0b27311cedF172AB29E4f4766fbE7F4364;
     address public constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
     address public constant USDT = 0xdAC17F958D2ee523a2206206994597C13D831ec7;
     address public constant HOLDER = 0x783C3255340f8Ba524452A9BE5d12a77e9Ce1F53;
     uint24 public constant POOL_FEE = 500; // WETH/USDT 0.05%
-    address public constant POOL = 0x6CA298D2983aB03Aa1dA7679389D955A4eFEE15C; // WETH/USDT 0.05% (price reference)
+    address public constant POOL = 0x6CA298D2983aB03Aa1dA7679389D955A4eFEE15C; // WETH/USDT 0.05% (the holder's pool)
     // Selected block — same block the dev-anvil dashboard pins at (script/development/test/pancakeswapV3/README.md).
     // HOLDER has at least one active (liquidity > 0) WETH/USDT 0.05% position here.
     uint256 public constant FORK_BLOCK = 25_274_483;
@@ -78,7 +73,6 @@ contract PancakeSwapV3PoolsBalanceForkTest is BalanceAdapterTestBase {
     function setUp() public override {
         super.setUp(); // dispatches to the _setupFork() override below — no need to call it again
         balances = _deployBalancesForAdapter(_assets());
-        _setPoolImpliedPrices();
         // admin + assistant = this test, so it can submit the holder's tokenIds.
         adapter = new PancakeSwapV3PoolsBalanceAdapter(
             NPM, "PancakeSwap V3", address(balances), address(this), address(this)
@@ -111,16 +105,6 @@ contract PancakeSwapV3PoolsBalanceForkTest is BalanceAdapterTestBase {
         }
     }
 
-    /// @notice Feeds the harness oracle prices consistent with the pool's live `sqrtPrice` so the adapter's [2]
-    ///         reconstruct-from-feeds split reproduces the real on-chain split. token0 = WETH (18dp), token1 =
-    ///         USDT (6dp), both price feeds 8dp; set USDT = $1 and derive WETH = sp²·10^(d0-d1+8)/2^192 = sp²·1e20/2^192.
-    function _setPoolImpliedPrices() internal {
-        (uint160 sp,,,,,,) = IPcsSlot0(POOL).slot0();
-        uint256 pWeth = Math.mulDiv(Math.mulDiv(uint256(sp), uint256(sp), 1 << 96), 1e20, 1 << 96);
-        balances.setAssetPrice(USDT, 1e8, 8);
-        balances.setAssetPrice(WETH, int256(pWeth), 8);
-    }
-
     function _setupFork() internal override {
         fork = createForkWithCadence(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
@@ -147,8 +131,9 @@ contract PancakeSwapV3PoolsBalanceForkTest is BalanceAdapterTestBase {
         }
     }
 
-    /// @notice An active position yields non-zero principal on both tokens (the split is driven by the
-    ///         oracle-reconstructed price feeding `getAmountsForLiquidity`).
+    /// @notice An active position yields non-zero principal on both tokens (the split is driven by the pool's live
+    ///         `slot0` `sqrtPriceX96` feeding `getAmountsForLiquidity`). Valuing it at all requires the PancakeSwap
+    ///         `_slot0` override to decode the real pool's `uint32 feeProtocol` without reverting.
     function test_activePositionNonZero() public view {
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(HOLDER, address(0));
         assertGt(_sumFrom(p, WETH, false), 0, "WETH total should be non-zero for active positions");
@@ -170,10 +155,10 @@ contract PancakeSwapV3PoolsBalanceForkTest is BalanceAdapterTestBase {
         }
     }
 
-    /// @notice Ground truth: the adapter's reported Supplied principal ≈ the protocol's own settlement.
+    /// @notice Ground truth: the adapter's reported Supplied principal == the protocol's own settlement.
     ///         Burning each NFT's liquidity via the real NPM returns (amount0, amount1) = the principal the holder
-    ///         would receive at the pool's current `slot0` price. The adapter values the split at the *oracle*
-    ///         price (fed to reproduce `slot0`), so the two agree to within the reconstruction's ~1e-9 rounding.
+    ///         would receive at the pool's current `slot0` price. ADR 0017: the adapter values the split at the SAME
+    ///         live `slot0` `sqrtPriceX96` (no oracle reconstruction), so the two now agree to within 1 wei rounding.
     function test_groundTruth_principalEqualsNpmSettlement() public {
         // Adapter's principal BEFORE mutating state (fetch once, reuse for both tokens).
         INAVCalculator.PositionBalance[] memory adapterPositions = adapter.getAdapterPositions(HOLDER, address(0));
@@ -203,8 +188,9 @@ contract PancakeSwapV3PoolsBalanceForkTest is BalanceAdapterTestBase {
         }
 
         assertGt(active, 0, "holder should have at least one active position");
-        // 0.01% tolerance: the only gap from the NPM settlement is the oracle-price reconstruction rounding.
-        assertApproxEqRel(adapterWeth, settledWeth, 0.0001e18, "adapter WETH principal !~= NPM settlement");
-        assertApproxEqRel(adapterUsdt, settledUsdt, 0.0001e18, "adapter USDT principal !~= NPM settlement");
+        // Same live `slot0` price drives both the adapter split and the NPM burn, so they agree to within 1 wei
+        // per position (the only gap is rounding direction in getAmountsForLiquidity vs the pool's burn).
+        assertApproxEqAbs(adapterWeth, settledWeth, active, "adapter WETH principal != NPM settlement");
+        assertApproxEqAbs(adapterUsdt, settledUsdt, active, "adapter USDT principal != NPM settlement");
     }
 }

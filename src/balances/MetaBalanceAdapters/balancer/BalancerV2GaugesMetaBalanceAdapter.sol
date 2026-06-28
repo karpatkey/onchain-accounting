@@ -23,6 +23,14 @@ import {BalancerV2PoolLib, IBalancerV2Pool} from "src/balances/MetaBalanceAdapte
 /// @dev Balancer V2 and V3 share the same liquidity-gauge + BalancerMinter design, so the BAL reward math is
 ///      identical to `BalancerV3GaugesMeta`; the only difference is the staked-share computation, which for V2
 ///      reads the Vault's pool balances (`BalancerV2PoolLib`) rather than V3's per-pool scaled data.
+/// @dev Valuation = instantaneous on-chain amounts (ADR 0017): the staked LP is decomposed into the underlying
+///      pool tokens and reported as the position's current pro-rata share of the pool's on-chain Vault balances,
+///      as per-token `amount`s that NAVCalculator prices with external oracles — it does NOT compute a
+///      manipulation-resistant "fair" value. Imbalancing the pool can transiently move the reported amounts (a
+///      donation that arbitrage reverses within a block) but cannot be monetised: NAV is a read-only oracle
+///      consumed by an asynchronous sub/redeem layer (no atomic on-chain consumer). See
+///      docs/decisions/0017-lp-valuation-instantaneous-amounts.md; revisit if NAV is ever consumed synchronously
+///      on-chain.
 contract BalancerV2GaugesMetaBalanceAdapter is MetaBalanceAdapter {
     using SafeCast for uint256;
     using SafeCast for int128;

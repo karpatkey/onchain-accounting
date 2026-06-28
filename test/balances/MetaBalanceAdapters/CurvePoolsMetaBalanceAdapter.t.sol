@@ -275,7 +275,7 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
         string[] memory labels = meta.positionLabels(pos[0].positionId);
         assertEq(labels.length, 2);
         assertEq(labels[0], "Liquidity Pool");
-        assertEq(labels[1], "USDC/DAI LP");
+        assertEq(labels[1], "USDC/DAI");
     }
 
     // ─── no-code coin (native-ETH sentinel) regression ──────────────────────────
@@ -311,6 +311,6 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
         string[] memory labels = meta.positionLabels(pos[0].positionId);
         assertEq(labels.length, 2);
         assertEq(labels[0], "Liquidity Pool");
-        assertEq(labels[1], "USDC/? LP");
+        assertEq(labels[1], "USDC/?");
     }
 }

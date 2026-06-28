@@ -112,19 +112,19 @@ contract CurvePoolsMetaBalanceAdapter is MetaBalanceAdapter {
     // ─── IPositionDescribable ─────────────────────────────────────────────────
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev Returns `["Liquidity Pool", "TOKEN0/TOKEN1/… LP"]`; leaf derived on-chain from coin symbols ("" on failure).
+    /// @dev Returns `["Liquidity Pool", "TOKEN0/TOKEN1/…"]`; leaf derived on-chain from coin symbols ("" on failure).
     function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
         if (pid.length < 32) return new string[](0);
         string memory leaf = _leaf(pid);
         return _labels("Liquidity Pool", leaf);
     }
 
-    /// @notice Derives the "TOKEN0/TOKEN1/… LP" leaf from the pool coins ("" on failure).
+    /// @notice Derives the "TOKEN0/TOKEN1/…" leaf from the pool coins ("" on failure).
     function _leaf(bytes calldata pid) private view returns (string memory) {
         address pool = abi.decode(pid, (address));
         address[] memory coins = CurvePoolLib.getCoins(pool);
         if (coins.length == 0) return "";
-        return string.concat(CurvePoolLib.coinSymbols(coins), " LP");
+        return CurvePoolLib.coinSymbols(coins);
     }
 
     // ─── Internal helpers ─────────────────────────────────────────────────────

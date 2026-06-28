@@ -578,10 +578,11 @@
   },
   "StakeWiseV3ExitQueue": {
     "enabled": true,
-    "$comment": "StakeWise V3 exit-queue cache adapter (agent-fed; ADR 0014, sibling of EtherFiWithdrawalQueue). Mutable cache of (vault, positionTicket, timestamp) tuples — never amounts — admin+assistant = chainConfig.admin at deploy (assisted-family AccessControl; ASSISTANT_ROLE submits, DEFAULT_ADMIN_ROLE administers; ADR 0015); the kpk-agents submitter (holding ASSISTANT_ROLE) feeds tuples discovered from ExitQueueEntered events. Native-ETH denominated (mainnet StakeWise vaults settle in ETH); values from live reads (calculateExitedAssets.exitedAssets + convertToAssets(leftShares)) with calculateExitedAssets(receiver=account) as the on-chain ownership check. Reports 0 until the agent submits tuples. 04 reads vaultsRegistry/underlyingToken; protocol/positionDetail/positionId are identity metadata (hardcoded in the contract).",
+    "$comment": "StakeWise V3 exit-queue cache adapter (agent-fed; ADR 0014, sibling of EtherFiWithdrawalQueue). Mutable cache of (vault, positionTicket, timestamp) tuples — never amounts — admin+assistant = chainConfig.admin at deploy (assisted-family AccessControl; ASSISTANT_ROLE submits, DEFAULT_ADMIN_ROLE administers; ADR 0015); the kpk-agents submitter (holding ASSISTANT_ROLE) feeds tuples discovered from ExitQueueEntered events. Native-ETH denominated (mainnet StakeWise vaults settle in ETH); values from live reads (calculateExitedAssets.exitedAssets + convertToAssets(leftShares)) with calculateExitedAssets(receiver=account) as the on-chain ownership check. Reports 0 until the agent submits tuples. 04 reads vaultsRegistry/underlyingToken/receiptSymbol; protocol/positionDetail/positionId are identity metadata (hardcoded in the contract). receiptSymbol names StakeWise's LST (osETH on mainnet) for the position label '<receiptSymbol> Exit Queue', matching the sibling queues.",
     "constructor": {
       "vaultsRegistry": "0x3a0008a588772446f6e656133C2D5029CC4FC20E",
       "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+      "receiptSymbol": "osETH",
       "exitClaimDelay": "86400",
       "protocol": "StakeWise V3",
       "positionDetail": "{\"protocol\":\"StakeWise V3\",\"product\":\"Staking\",\"name\":\"Exit Queue\"",

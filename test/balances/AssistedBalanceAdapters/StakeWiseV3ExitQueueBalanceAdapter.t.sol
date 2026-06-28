@@ -123,7 +123,7 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         balances.addSupportedAssetForTest(NATIVE);
         // admin = assistant = this test contract, so it can submit positions.
         adapter = new StakeWiseV3ExitQueueBalanceAdapter(
-            address(registry), NATIVE, address(balances), DELAY, address(this), address(this)
+            address(registry), NATIVE, "osETH", address(balances), DELAY, address(this), address(this)
         );
         // Warp comfortably past TS + DELAY so checkpointed positions (timestamp = TS) are past the claim delay and
         // value as claimable by default; the delay-gate test re-warps to within the window.
@@ -135,35 +135,35 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
     function test_constructor_revertsOnZeroRegistry() public {
         vm.expectRevert(InvalidArguments.selector);
         new StakeWiseV3ExitQueueBalanceAdapter(
-            address(0), NATIVE, address(balances), DELAY, address(this), address(this)
+            address(0), NATIVE, "osETH", address(balances), DELAY, address(this), address(this)
         );
     }
 
     function test_constructor_revertsOnZeroUnderlying() public {
         vm.expectRevert(InvalidArguments.selector);
         new StakeWiseV3ExitQueueBalanceAdapter(
-            address(registry), address(0), address(balances), DELAY, address(this), address(this)
+            address(registry), address(0), "osETH", address(balances), DELAY, address(this), address(this)
         );
     }
 
     function test_constructor_revertsOnZeroNav() public {
         vm.expectRevert(InvalidArguments.selector);
         new StakeWiseV3ExitQueueBalanceAdapter(
-            address(registry), NATIVE, address(0), DELAY, address(this), address(this)
+            address(registry), NATIVE, "osETH", address(0), DELAY, address(this), address(this)
         );
     }
 
     function test_constructor_revertsOnZeroClaimDelay() public {
         vm.expectRevert(InvalidArguments.selector);
         new StakeWiseV3ExitQueueBalanceAdapter(
-            address(registry), NATIVE, address(balances), 0, address(this), address(this)
+            address(registry), NATIVE, "osETH", address(balances), 0, address(this), address(this)
         );
     }
 
     function test_constructor_revertsWhenRegistryNotContract() public {
         vm.expectRevert(bytes("VaultsRegistry must be a contract"));
         new StakeWiseV3ExitQueueBalanceAdapter(
-            makeAddr("eoa"), NATIVE, address(balances), DELAY, address(this), address(this)
+            makeAddr("eoa"), NATIVE, "osETH", address(balances), DELAY, address(this), address(this)
         );
     }
 
@@ -591,7 +591,7 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         // Fresh NAV harness that does NOT register the native sentinel.
         BalancesHarness freshNav = new BalancesHarness();
         StakeWiseV3ExitQueueBalanceAdapter a2 = new StakeWiseV3ExitQueueBalanceAdapter(
-            address(registry), NATIVE, address(freshNav), DELAY, address(this), address(this)
+            address(registry), NATIVE, "osETH", address(freshNav), DELAY, address(this), address(this)
         );
         vault.setIndex(TICKET, 1);
         vault.setRequest(holder, TICKET, TS, 0, 1 ether);
@@ -606,12 +606,12 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         p[0] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(address(vault), TICKET, TS);
     }
 
-    /// @dev Asserts a leg's static breadcrumb is `["Exit Queue"]` (positionId-derived, no ephemeral id); the
-    ///      positionTicket now rides in the typed `positionInstanceId`.
+    /// @dev Asserts a leg's static breadcrumb is `["osETH Exit Queue"]` (positionId-derived receipt-token category, no
+    ///      ephemeral id); the positionTicket now rides in the typed `positionInstanceId`.
     function _assertTicketLeg(INAVCalculator.PositionBalance memory leg) internal view {
         string[] memory labels = adapter.positionLabels(leg.positionId);
         assertEq(labels.length, 1, "static breadcrumb = [category]");
-        assertEq(labels[0], "Exit Queue");
+        assertEq(labels[0], "osETH Exit Queue");
         assertTrue(leg.positionInstanceId != bytes32(0), "positionInstanceId carries the ticket");
     }
 }

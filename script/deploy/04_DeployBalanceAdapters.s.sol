@@ -786,6 +786,10 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address underlyingToken = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
         );
+        // StakeWise's receipt/LST token symbol for this chain ("osETH" mainnet, "osGNO" Gnosis); pins receiptSymbol so
+        // the position label reads "<receiptSymbol> Exit Queue", consistent with the sibling queues.
+        string memory receiptSymbol =
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "receiptSymbol");
         // StakeWise's post-checkpoint claim delay in seconds (86400 = 24h on V3 mainnet); pins EXIT_CLAIM_DELAY so the
         // exited-but-still-delayed portion is reported locked, not claimable.
         uint256 exitClaimDelay = vm.parseUint(
@@ -796,7 +800,13 @@ contract DeployBalanceAdapters is BaseDeployScript {
         );
 
         StakeWiseV3ExitQueueBalanceAdapter adapter = new StakeWiseV3ExitQueueBalanceAdapter(
-            vaultsRegistry, underlyingToken, navCalculator, exitClaimDelay, chainConfig.admin, chainConfig.admin
+            vaultsRegistry,
+            underlyingToken,
+            receiptSymbol,
+            navCalculator,
+            exitClaimDelay,
+            chainConfig.admin,
+            chainConfig.admin
         );
         return address(adapter);
     }

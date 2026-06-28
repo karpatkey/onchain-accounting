@@ -78,6 +78,13 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
     ///         NAV asset. All accepted vaults must settle in this asset.
     address public immutable UNDERLYING_TOKEN;
 
+    /// @notice Display symbol of StakeWise's receipt/LST token for this deployment — `"osETH"` on mainnet,
+    ///         `"osGNO"` on Gnosis. Used only to build the `positionLabels` breadcrumb (`"<receiptSymbol> Exit
+    ///         Queue"`), matching the sibling queues which name the receipt token (stETH/rsETH/eETH/ETHx), not the
+    ///         payout asset. Set once at construction (no setter, so effectively immutable; a `string` cannot be a
+    ///         Solidity `immutable`). Empty ⇒ the label falls back to the bare `"Exit Queue"` category.
+    string public receiptSymbol;
+
     /// @notice NAVCalculator — used to look up the registered staking-asset metadata when emitting positions.
     INAVCalculator public immutable NAV_CALCULATOR;
 
@@ -110,6 +117,9 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
 
     /// @param vaultsRegistry_ StakeWise VaultsRegistry. Must be a contract.
     /// @param underlyingToken_ Payout asset (native-ETH sentinel on mainnet).
+    /// @param receiptSymbol_  Display symbol of StakeWise's receipt/LST token for this chain (`"osETH"` mainnet,
+    ///                        `"osGNO"` Gnosis); pins {receiptSymbol} for the label. May be empty (label falls back to
+    ///                        the bare `"Exit Queue"`).
     /// @param navCalculator_   NAVCalculator. Must be a contract.
     /// @param exitClaimDelay_  StakeWise's post-checkpoint claim delay in seconds (24h = `86400` on V3 mainnet); pins
     ///                         {EXIT_CLAIM_DELAY}. Must be non-zero (StakeWise enforces a delay; a zero here would
@@ -120,6 +130,7 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
     constructor(
         address vaultsRegistry_,
         address underlyingToken_,
+        string memory receiptSymbol_,
         address navCalculator_,
         uint256 exitClaimDelay_,
         address admin_,
@@ -136,6 +147,7 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
 
         VAULTS_REGISTRY = vaultsRegistry_;
         UNDERLYING_TOKEN = underlyingToken_;
+        receiptSymbol = receiptSymbol_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
         EXIT_CLAIM_DELAY = exitClaimDelay_;
     }
@@ -226,11 +238,14 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
     }
 
     /// @inheritdoc IPositionDescribable
-    /// @dev `["Exit Queue"]` — a static category (all of a vault's tickets share the per-vault `positionId`). The
-    ///      per-ticket coordinate is the typed `positionInstanceId` on each leg (ephemeral), NOT a label.
-    function positionLabels(bytes calldata) external pure override returns (string[] memory out) {
+    /// @dev `["<receiptSymbol> Exit Queue"]` — names StakeWise's receipt/LST token (e.g. `"osETH Exit Queue"` on
+    ///      mainnet, `"osGNO Exit Queue"` on Gnosis), consistent with the sibling queues that name the receipt token
+    ///      (stETH/rsETH/eETH/ETHx) rather than the payout asset. Falls back to the bare `["Exit Queue"]` if
+    ///      {receiptSymbol} was left empty. A static category — all of a vault's tickets share the per-vault
+    ///      `positionId`; the per-ticket coordinate is the typed `positionInstanceId` on each leg (ephemeral), NOT a label.
+    function positionLabels(bytes calldata) external view override returns (string[] memory out) {
         out = new string[](1);
-        out[0] = "Exit Queue";
+        out[0] = bytes(receiptSymbol).length == 0 ? "Exit Queue" : string.concat(receiptSymbol, " Exit Queue");
     }
 
     /// @inheritdoc IBalanceAdapter

@@ -99,7 +99,7 @@ contract EthenaCooldownBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     /// @inheritdoc IPositionDescribable
     function positionLabels(bytes calldata) external pure override returns (string[] memory) {
         string[] memory out = new string[](1);
-        out[0] = "Unstaking Cooldown";
+        out[0] = "sUSDe Unstaking Cooldown";
         return out;
     }
 

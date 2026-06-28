@@ -63,7 +63,7 @@ contract StakeWiseV3ExitQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
         balances.registerAssetForTest(NATIVE_ETH, 18, "ETH");
         // admin = assistant = this test, so it plays the agent and submits the real tuple.
         return new StakeWiseV3ExitQueueBalanceAdapter(
-            VAULTS_REGISTRY, NATIVE_ETH, address(balances), 1 days, address(this), address(this)
+            VAULTS_REGISTRY, NATIVE_ETH, "osETH", address(balances), 1 days, address(this), address(this)
         );
     }
 
@@ -127,12 +127,12 @@ contract StakeWiseV3ExitQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
         assertEq(total, agg, "sum of per-request legs == aggregate");
     }
 
-    /// @dev Asserts a per-request leg: the static breadcrumb is `["Exit Queue"]` (positionId-derived, no ephemeral id),
-    ///      and the positionTicket rides in the typed `positionInstanceId`.
+    /// @dev Asserts a per-request leg: the static breadcrumb is `["osETH Exit Queue"]` (positionId-derived receipt-token
+    ///      category, no ephemeral id), and the positionTicket rides in the typed `positionInstanceId`.
     function _assertTicketLeg(INAVCalculator.PositionBalance memory leg) internal view {
         string[] memory labels = adapter.positionLabels(leg.positionId);
         assertEq(labels.length, 1, "static breadcrumb = [category]");
-        assertEq(labels[0], "Exit Queue");
+        assertEq(labels[0], "osETH Exit Queue");
         assertTrue(leg.positionInstanceId != bytes32(0), "positionInstanceId carries the ticket");
     }
 

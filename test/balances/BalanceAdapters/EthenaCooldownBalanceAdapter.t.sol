@@ -98,7 +98,7 @@ contract EthenaCooldownBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(positions.length, 1);
         string[] memory labels = adapter.positionLabels(positions[0].positionId);
         assertEq(labels.length, 1);
-        assertEq(labels[0], "Unstaking Cooldown");
+        assertEq(labels[0], "sUSDe Unstaking Cooldown");
     }
 
     // ---- getAdapterBalanceForAsset ----

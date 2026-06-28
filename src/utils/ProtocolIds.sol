@@ -13,7 +13,8 @@ pragma solidity ^0.8;
 ///                                          isLocked=non-withdrawable splits them — active stake is LOCKED
 ///                                          (isLocked=true), only a cooldown elapsed-and-in-window is UNLOCKED;
 ///                                          the reward leg shares it too, told apart by positionKind=Rewards
-///        MORPHO_VAULTS / GEARBOX_V3 / EULER_VAULTS / ERC4626 / STAKEWISE_V3_VAULTS / FLUID_VAULTS → (address vault)
+///        MORPHO_VAULTS / GEARBOX_V3_MARKET / GEARBOX_V3_CREDIT_ACCOUNT / EULER_VAULTS / ERC4626 /
+///        STAKEWISE_V3_VAULTS / FLUID_VAULTS → (address vault / market / credit account)
 ///        CAP                             → (address token: cUSD or stcUSD) — one leg per token
 ///        MORPHO_MARKETS                  → (bytes32 marketId)
 ///        BALANCER_V3_POOL                → (address pool)
@@ -69,7 +70,8 @@ library ProtocolIds {
     bytes32 internal constant NEXUS_MUTUAL_STAKING = keccak256("nexus-mutual-staking");
 
     // Gearbox
-    bytes32 internal constant GEARBOX_V3 = keccak256("gearbox-v3");
+    bytes32 internal constant GEARBOX_V3_MARKET = keccak256("gearbox-v3-market");
+    bytes32 internal constant GEARBOX_V3_CREDIT_ACCOUNT = keccak256("gearbox-v3-credit-account");
 
     // Euler
     bytes32 internal constant EULER_VAULTS = keccak256("euler-vaults");

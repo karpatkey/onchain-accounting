@@ -41,7 +41,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      external oracles (the basket includes leveraged positions) — not a manipulation-resistant mark; acceptable
 ///      under the asynchronous NAV-consumer model (see ADR 0017), same as the AMM-LP adapters.
 contract GearboxCreditAccountsMetaBalanceAdapter is MetaBalanceAdapter {
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.GEARBOX_V3;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.GEARBOX_V3_CREDIT_ACCOUNT;
 
     /// @param protocolName_ Human-readable protocol name (e.g. "Gearbox").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.

@@ -105,7 +105,7 @@ contract UniswapV3PoolsBalanceForkTest is BalanceAdapterTestBase {
             // NFT id rides in the typed positionInstanceId; the static breadcrumb is positionId-derived.
             string[] memory lbl = adapter.positionLabels(p[i].positionId);
             assertEq(lbl.length, 2, "static breadcrumb = [category, pool]");
-            assertEq(lbl[0], "Liquidity Pool");
+            assertEq(lbl[0], "AMM Liquidity Pool");
             assertEq(p[i].positionInstanceId != bytes32(0), true, "NFT id rides in positionInstanceId");
         }
     }

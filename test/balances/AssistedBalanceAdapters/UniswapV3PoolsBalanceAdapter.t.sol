@@ -163,10 +163,10 @@ contract UniswapV3PoolsBalanceAdapterTest is Test {
         assertEq(p[0].positionId, abi.encode(address(poolA)));
         // NFT 2 legs carry positionId = the pool address (USDC/WETH 0.05%)
         assertEq(p[4].positionId, abi.encode(address(poolB)));
-        // Static breadcrumb (positionId-derived) carries the pool address: ["Liquidity Pool", "<pool>"].
+        // Static breadcrumb (positionId-derived) carries the pool address: ["AMM Liquidity Pool", "<pool>"].
         string[] memory lbl = adapter.positionLabels(p[0].positionId);
         assertEq(lbl.length, 2);
-        assertEq(lbl[0], "Liquidity Pool");
+        assertEq(lbl[0], "AMM Liquidity Pool");
         assertEq(lbl[1], Strings.toHexString(address(poolA)));
         // The ephemeral NFT id now rides in the typed positionInstanceId on each leg.
         assertEq(p[0].positionInstanceId, bytes32(uint256(1)));

@@ -20,7 +20,7 @@ interface IPositionDescribable {
 
     /// @notice Ordered, arbitrary-depth display hierarchy for a single position, BELOW the protocol level.
     ///         Index 0 is the broadest level (category) and the last element is the position leaf, e.g.
-    ///         `["Market", "wstETH/USDC"]`, `["Liquidity Pool", "WETH/USDC 0.05%"]`, or `["Safety Module"]` when the
+    ///         `["Market", "wstETH/USDC"]`, `["AMM Liquidity Pool", "WETH/USDC 0.05%"]`, or `["Safety Module"]` when the
     ///         category itself is the leaf. The full breadcrumb a consumer renders is
     ///         `[protocolName(), ...positionLabels(positionId)]`. Derived purely from `positionId` (the static
     ///         anchor) — the ephemeral per-item id rides in `PositionBalance.positionInstanceId`, not here.

@@ -38,7 +38,7 @@ interface IUniswapV3Factory {
 ///         cannot fabricate value; at worst it omits an id (NAV under-counts), never over-counts. positionId is the
 ///         **pool contract address** (`abi.encode(factory.getPool(token0, token1, fee))`) — each fee tier is its own
 ///         deployed pool, so it uniquely identifies the pair+fee. The NFT id is not in positionId; it is surfaced as
-///         the last adapter-supplied display **label** (`["Liquidity Pool", "<pool>", "NFT #<id>"]`).
+///         the last adapter-supplied display **label** (`["AMM Liquidity Pool", "<pool>", "NFT #<id>"]`).
 /// @dev Access control comes from {AssistedBalanceAdapter}: `DEFAULT_ADMIN_ROLE` administers roles and
 ///      `ASSISTANT_ROLE` gates the submit/clear mutators. `submitTokenIds` **reverts** `NotTokenOwner` for any id not
 ///      currently owned by the account (fail-loud writes); reads instead **discard** an id whose ownership changed or
@@ -406,13 +406,13 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
     }
 
     /// @inheritdoc IPositionDescribable
-    /// @dev `["Liquidity Pool", "<pool address>"]`, derived purely from `positionId` (the pool). The per-NFT id is the
+    /// @dev `["AMM Liquidity Pool", "<pool address>"]`, derived purely from `positionId` (the pool). The per-NFT id is the
     ///      typed `positionInstanceId` on each leg, NOT a label. Empty for a short/malformed positionId.
     function positionLabels(bytes calldata positionId) external pure override returns (string[] memory out) {
         if (positionId.length < 32) return new string[](0);
         address pool = abi.decode(positionId, (address));
         out = new string[](2);
-        out[0] = "Liquidity Pool";
+        out[0] = "AMM Liquidity Pool";
         out[1] = Strings.toHexString(pool);
     }
 

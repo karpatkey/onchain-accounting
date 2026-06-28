@@ -112,11 +112,11 @@ contract CurvePoolsMetaBalanceAdapter is MetaBalanceAdapter {
     // ─── IPositionDescribable ─────────────────────────────────────────────────
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev Returns `["Liquidity Pool", "TOKEN0/TOKEN1/…"]`; leaf derived on-chain from coin symbols ("" on failure).
+    /// @dev Returns `["AMM Liquidity Pool", "TOKEN0/TOKEN1/…"]`; leaf derived on-chain from coin symbols ("" on failure).
     function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
         if (pid.length < 32) return new string[](0);
         string memory leaf = _leaf(pid);
-        return _labels("Liquidity Pool", leaf);
+        return _labels("AMM Liquidity Pool", leaf);
     }
 
     /// @notice Derives the "TOKEN0/TOKEN1/…" leaf from the pool coins ("" on failure).

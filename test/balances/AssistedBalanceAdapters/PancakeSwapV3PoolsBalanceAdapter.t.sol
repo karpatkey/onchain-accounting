@@ -141,7 +141,7 @@ contract PancakeSwapV3PoolsBalanceAdapterTest is Test {
         assertEq(p[0].positionId, abi.encode(address(pool)));
         string[] memory lbl = adapter.positionLabels(p[0].positionId);
         assertEq(lbl.length, 2);
-        assertEq(lbl[0], "Liquidity Pool");
+        assertEq(lbl[0], "AMM Liquidity Pool");
         assertEq(lbl[1], Strings.toHexString(address(pool)));
         assertEq(p[0].positionInstanceId, bytes32(uint256(1)));
     }

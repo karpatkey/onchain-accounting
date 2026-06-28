@@ -118,13 +118,13 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev Returns `["Liquidity Pool", "sym0/sym1"]`; leaf derived on-chain from the pair's token symbols.
+    /// @dev Returns `["AMM Liquidity Pool", "sym0/sym1"]`; leaf derived on-chain from the pair's token symbols.
     function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
         if (pid.length < 32) return new string[](0);
         address pair = abi.decode(pid, (address));
         (address token0, address token1,,) = UniswapV2PairLib.pairAmounts(pair, address(0));
         string memory leaf = string.concat(_symbol(token0), "/", _symbol(token1));
-        return _labels("Liquidity Pool", leaf);
+        return _labels("AMM Liquidity Pool", leaf);
     }
 
     /// @notice Reads an ERC20 symbol, falling back to "?" for non-standard tokens (e.g. bytes32 symbols).

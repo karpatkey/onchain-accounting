@@ -116,7 +116,7 @@ interface INAVCalculator is IBalances {
         Position position;
         string protocolName; // e.g. "Aave V3", "Morpho"
         // Ordered display hierarchy BELOW the protocol, leaf last (arbitrary depth, may be empty), e.g.
-        // ["Market", "wstETH/USDC"] or ["Liquidity Pool", "WETH/USDC 0.05%"]. Full breadcrumb = [protocolName,
+        // ["Market", "wstETH/USDC"] or ["AMM Liquidity Pool", "WETH/USDC 0.05%"]. Full breadcrumb = [protocolName,
         // ...labels]. Sourced from IPositionDescribable.positionLabels(positionId); display only. The ephemeral
         // per-item id (NFT/request/ticket) is NOT here — it is the typed `position.positionInstanceId` field.
         string[] labels;

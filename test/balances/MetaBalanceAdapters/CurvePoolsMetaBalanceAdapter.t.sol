@@ -274,7 +274,7 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
         assertGt(pos.length, 0);
         string[] memory labels = meta.positionLabels(pos[0].positionId);
         assertEq(labels.length, 2);
-        assertEq(labels[0], "Liquidity Pool");
+        assertEq(labels[0], "AMM Liquidity Pool");
         assertEq(labels[1], "USDC/DAI");
     }
 
@@ -310,7 +310,7 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
         // Labels are well-formed; the sentinel coin's symbol falls back to "?".
         string[] memory labels = meta.positionLabels(pos[0].positionId);
         assertEq(labels.length, 2);
-        assertEq(labels[0], "Liquidity Pool");
+        assertEq(labels[0], "AMM Liquidity Pool");
         assertEq(labels[1], "USDC/?");
     }
 }

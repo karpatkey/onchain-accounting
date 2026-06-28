@@ -99,7 +99,7 @@ contract BalancerV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev Returns `["Liquidity Pool", <BPT name>]`; the leaf is "" if the BPT's `name()` reverts.
+    /// @dev Returns `["AMM Liquidity Pool", <BPT name>]`; the leaf is "" if the BPT's `name()` reverts.
     function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
         bytes32 poolId = abi.decode(pid, (bytes32));
         address bpt = address(uint160(uint256(poolId) >> 96));
@@ -109,6 +109,6 @@ contract BalancerV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
         } catch {
             leaf = "";
         }
-        return _labels("Liquidity Pool", leaf);
+        return _labels("AMM Liquidity Pool", leaf);
     }
 }

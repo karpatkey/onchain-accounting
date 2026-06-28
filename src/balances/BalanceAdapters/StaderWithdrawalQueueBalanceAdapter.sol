@@ -4,6 +4,7 @@ pragma solidity ^0.8;
 import {IBalanceAdapter} from "../IBalanceAdapter.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {InvalidArguments} from "src/errors.sol";
@@ -225,20 +226,10 @@ contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescri
         }
 
         // Underlying must be registered in NAVCalculator for the position to count in NAV.
-        INAVCalculator.Asset memory underlying;
-        {
-            INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
-            bool registered;
-            for (uint256 i = 0; i < reg.length; i++) {
-                if (reg[i].asset == UNDERLYING_TOKEN) {
-                    underlying = reg[i];
-                    registered = true;
-                    break;
-                }
-            }
-            if (!registered) {
-                return new INAVCalculator.PositionBalance[](0);
-            }
+        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
+        (INAVCalculator.Asset memory underlying, bool registered) = RegisteredAssetLib.find(reg, UNDERLYING_TOKEN);
+        if (!registered) {
+            return new INAVCalculator.PositionBalance[](0);
         }
 
         bytes memory positionId = abi.encode(address(USER_WITHDRAWAL_MANAGER));

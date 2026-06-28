@@ -6,6 +6,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
+import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
@@ -235,19 +236,9 @@ contract EtherFiWithdrawalQueueBalanceAdapter is AssistedBalanceAdapter, IPositi
         if (ids.length == 0) return new INAVCalculator.PositionBalance[](0);
 
         // Underlying must be registered in NAVCalculator for the position to count in NAV.
-        INAVCalculator.Asset memory underlying;
-        {
-            INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
-            bool registered;
-            for (uint256 i = 0; i < reg.length; i++) {
-                if (reg[i].asset == UNDERLYING_TOKEN) {
-                    underlying = reg[i];
-                    registered = true;
-                    break;
-                }
-            }
-            if (!registered) return new INAVCalculator.PositionBalance[](0);
-        }
+        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
+        (INAVCalculator.Asset memory underlying, bool registered) = RegisteredAssetLib.find(reg, UNDERLYING_TOKEN);
+        if (!registered) return new INAVCalculator.PositionBalance[](0);
 
         bytes memory positionId = abi.encode(WITHDRAW_REQUEST_NFT);
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](ids.length);

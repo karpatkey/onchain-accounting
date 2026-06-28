@@ -62,7 +62,7 @@ contract StakeWiseV3ExitQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
         balances.registerAssetForTest(NATIVE_ETH, 18, "ETH");
         // admin = assistant = this test, so it plays the agent and submits the real tuple.
         return new StakeWiseV3ExitQueueBalanceAdapter(
-            VAULTS_REGISTRY, NATIVE_ETH, address(balances), address(this), address(this)
+            VAULTS_REGISTRY, NATIVE_ETH, address(balances), 1 days, address(this), address(this)
         );
     }
 

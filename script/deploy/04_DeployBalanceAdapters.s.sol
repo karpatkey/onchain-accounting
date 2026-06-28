@@ -786,12 +786,17 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address underlyingToken = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
         );
+        // StakeWise's post-checkpoint claim delay in seconds (86400 = 24h on V3 mainnet); pins EXIT_CLAIM_DELAY so the
+        // exited-but-still-delayed portion is reported locked, not claimable.
+        uint256 exitClaimDelay = vm.parseUint(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "exitClaimDelay")
+        );
         require(
             chainConfig.admin != address(0), "StakeWiseV3ExitQueue: chainConfig.admin (initialOwner) not configured"
         );
 
         StakeWiseV3ExitQueueBalanceAdapter adapter = new StakeWiseV3ExitQueueBalanceAdapter(
-            vaultsRegistry, underlyingToken, navCalculator, chainConfig.admin, chainConfig.admin
+            vaultsRegistry, underlyingToken, navCalculator, exitClaimDelay, chainConfig.admin, chainConfig.admin
         );
         return address(adapter);
     }

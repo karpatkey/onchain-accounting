@@ -8,6 +8,7 @@ import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -78,6 +79,14 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
     /// @notice NAVCalculator — used to look up the registered staking-asset metadata when emitting positions.
     INAVCalculator public immutable NAV_CALCULATOR;
 
+    /// @notice StakeWise's post-checkpoint claim delay, in seconds. After a position is checkpointed (its shares have
+    ///         exited to assets), StakeWise still blocks `claimExitedAssets` until `block.timestamp >= timestamp +
+    ///         EXIT_CLAIM_DELAY` (a fixed protocol constant — 24h on StakeWise V3 mainnet — held as a `private` constant
+    ///         in the vault with no public getter, so it is pinned here at construction). The exited-but-still-delayed
+    ///         portion is therefore reported as **locked** (`isLocked = true`) until the delay elapses; it does not
+    ///         affect the owed *amount* (which is always summed correctly), only the claimable/locked split.
+    uint256 public immutable EXIT_CLAIM_DELAY;
+
     /// @notice Cached exit positions per account (the only thing the assistant supplies).
     mapping(address account => ExitPosition[] positions) private _positions;
 
@@ -100,6 +109,9 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
     /// @param vaultsRegistry_ StakeWise VaultsRegistry. Must be a contract.
     /// @param underlyingToken_ Payout asset (native-ETH sentinel on mainnet).
     /// @param navCalculator_   NAVCalculator. Must be a contract.
+    /// @param exitClaimDelay_  StakeWise's post-checkpoint claim delay in seconds (24h = `86400` on V3 mainnet); pins
+    ///                         {EXIT_CLAIM_DELAY}. Must be non-zero (StakeWise enforces a delay; a zero here would
+    ///                         mark exited assets claimable the instant they checkpoint, overstating immediate liquidity).
     /// @param admin_     Holder of `DEFAULT_ADMIN_ROLE` — administers `ASSISTANT_ROLE`. Required.
     /// @param assistant_ Initial holder of `ASSISTANT_ROLE`, authorized to submit/clear positions (the agent role).
     ///                   Optional (pass `address(0)` to grant later via `admin_`).
@@ -107,10 +119,14 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
         address vaultsRegistry_,
         address underlyingToken_,
         address navCalculator_,
+        uint256 exitClaimDelay_,
         address admin_,
         address assistant_
     ) AssistedBalanceAdapter(admin_, assistant_) {
-        if (vaultsRegistry_ == address(0) || underlyingToken_ == address(0) || navCalculator_ == address(0)) {
+        if (
+            vaultsRegistry_ == address(0) || underlyingToken_ == address(0) || navCalculator_ == address(0)
+                || exitClaimDelay_ == 0
+        ) {
             revert InvalidArguments();
         }
         require(vaultsRegistry_.code.length > 0, "VaultsRegistry must be a contract");
@@ -119,6 +135,7 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
         VAULTS_REGISTRY = vaultsRegistry_;
         UNDERLYING_TOKEN = underlyingToken_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
+        EXIT_CLAIM_DELAY = exitClaimDelay_;
     }
 
     //
@@ -261,22 +278,15 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
         if (list.length == 0) return new INAVCalculator.PositionBalance[](0);
 
         // Underlying must be registered in NAVCalculator for the position to count in NAV.
-        INAVCalculator.Asset memory underlying;
-        {
-            INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
-            bool registered;
-            for (uint256 i = 0; i < reg.length; i++) {
-                if (reg[i].asset == UNDERLYING_TOKEN) {
-                    underlying = reg[i];
-                    registered = true;
-                    break;
-                }
-            }
-            if (!registered) return new INAVCalculator.PositionBalance[](0);
-        }
+        (INAVCalculator.Asset memory underlying, bool registered) =
+            RegisteredAssetLib.find(NAV_CALCULATOR.getRegisteredAssets(), UNDERLYING_TOKEN);
+        if (!registered) return new INAVCalculator.PositionBalance[](0);
 
         // Emit up to two legs PER cached position (claimable + locked), both labelled with that position's ticket and
-        // sharing the static per-vault positionId. Size for two slots per position; resize to the actual count below.
+        // sharing the static per-vault positionId. Size for two slots per position and resize to the actual count
+        // below. A tighter count pre-pass is deliberately avoided: counting would mean calling `_owedForPosition` (the
+        // expensive external-read path) twice per position, so over-allocating cheap memory-pointer slots — `list` is
+        // capped at MAX_POSITIONS — is the better trade than doubling the on-chain reads.
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](2 * list.length);
         uint256 n;
         for (uint256 i = 0; i < list.length; i++) {
@@ -401,11 +411,13 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
     ///          remainder, valued at the vault's current rate.
     ///      `calculateExitedAssets(receiver = account, …)` returns zero for a tuple that is not the account's exit
     ///      request, which is the on-chain ownership verification. All external reads try/catch to 0.
-    ///      The split is per-bucket: `claimable = exitedAssets` (the checkpointed, exited portion) and
-    ///      `locked = convertToAssets(leftShares)` (any still-queued remainder). A not-yet-checkpointed position is
-    ///      entirely locked. NOTE: StakeWise also enforces a ~24h `claimExitedAssets` delay after `timestamp` that
-    ///      this does not yet gate on (no public getter for the vault's claim delay is confirmed) — see ADR; omitting
-    ///      it can only mark a portion claimable slightly early.
+    ///      The split is per-bucket: the checkpointed, exited portion (`exitedAssets`) is claimable ONLY once
+    ///      StakeWise's post-checkpoint delay has elapsed (`block.timestamp >= timestamp + EXIT_CLAIM_DELAY`); until
+    ///      then it is still locked. The still-queued remainder (`convertToAssets(leftShares)`) is always locked, and a
+    ///      not-yet-checkpointed position is entirely locked. So `claimable` is the exited portion past the delay and
+    ///      `locked` is everything else — gating the exited portion on `EXIT_CLAIM_DELAY` avoids marking assets
+    ///      withdrawable up to ~24h before StakeWise actually allows `claimExitedAssets`. The owed *total*
+    ///      (`claimable + locked`) is unaffected by the gate.
     function _owedForPosition(address account, address vault, uint256 positionTicket, uint256 timestamp)
         internal
         view
@@ -443,9 +455,15 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
                 return (0, 0);
             }
         }
-        // Checkpointed exited portion is claimable; any still-queued remainder is locked.
-        claimable = exitedAssets;
-        locked = queued;
+        // The checkpointed, exited portion is claimable only once StakeWise's post-checkpoint claim delay has elapsed;
+        // before that it is still locked. The still-queued remainder is always locked.
+        if (block.timestamp >= timestamp + EXIT_CLAIM_DELAY) {
+            claimable = exitedAssets;
+            locked = queued;
+        } else {
+            claimable = 0;
+            locked = exitedAssets + queued;
+        }
     }
 
     function _key(address vault, uint256 positionTicket, uint256 timestamp) private pure returns (bytes32) {

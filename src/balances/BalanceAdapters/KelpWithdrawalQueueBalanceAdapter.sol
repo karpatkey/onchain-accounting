@@ -4,6 +4,7 @@ pragma solidity ^0.8;
 import {IBalanceAdapter} from "../IBalanceAdapter.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {InvalidArguments} from "src/errors.sol";
@@ -102,23 +103,6 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
     /// @notice Returns the set of assets Kelp's exit queue can pay out, discovered from LRTConfig.
     function _supportedAssets() internal view returns (address[] memory) {
         return ILRTConfig(WITHDRAWAL_MANAGER.lrtConfig()).getSupportedAssetList();
-    }
-
-    /// @notice Looks up `asset` in a pre-fetched NAVCalculator registered-asset set.
-    /// @dev Pure in-memory search: the caller fetches `getRegisteredAssets()` once and reuses it
-    ///      across every supported asset, rather than re-fetching per lookup (cf. `AaveUmbrella`).
-    /// @return found Whether the asset is registered (and therefore priced) in NAV.
-    /// @return info The registered Asset tuple (zeroed if not found).
-    function _findRegisteredAsset(INAVCalculator.Asset[] memory reg, address asset)
-        internal
-        pure
-        returns (bool found, INAVCalculator.Asset memory info)
-    {
-        for (uint256 i = 0; i < reg.length; i++) {
-            if (reg[i].asset == asset) {
-                return (true, reg[i]);
-            }
-        }
     }
 
     //
@@ -258,7 +242,7 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
             if (assetFilter != address(0) && assetFilter != asset) {
                 continue;
             }
-            (bool registered, INAVCalculator.Asset memory underlying) = _findRegisteredAsset(reg, asset);
+            (INAVCalculator.Asset memory underlying, bool registered) = RegisteredAssetLib.find(reg, asset);
             if (!registered) {
                 continue;
             }

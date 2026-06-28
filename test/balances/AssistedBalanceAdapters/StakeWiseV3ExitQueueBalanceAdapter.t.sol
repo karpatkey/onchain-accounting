@@ -113,6 +113,7 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
 
     uint256 constant TICKET = 12_345;
     uint256 constant TS = 1_700_000_000;
+    uint256 constant DELAY = 1 days; // StakeWise post-checkpoint claim delay (EXIT_CLAIM_DELAY)
 
     function setUp() public override {
         super.setUp();
@@ -122,32 +123,48 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         balances.addSupportedAssetForTest(NATIVE);
         // admin = assistant = this test contract, so it can submit positions.
         adapter = new StakeWiseV3ExitQueueBalanceAdapter(
-            address(registry), NATIVE, address(balances), address(this), address(this)
+            address(registry), NATIVE, address(balances), DELAY, address(this), address(this)
         );
+        // Warp comfortably past TS + DELAY so checkpointed positions (timestamp = TS) are past the claim delay and
+        // value as claimable by default; the delay-gate test re-warps to within the window.
+        vm.warp(TS + DELAY + 1);
     }
 
     // ---- Constructor ----
 
     function test_constructor_revertsOnZeroRegistry() public {
         vm.expectRevert(InvalidArguments.selector);
-        new StakeWiseV3ExitQueueBalanceAdapter(address(0), NATIVE, address(balances), address(this), address(this));
+        new StakeWiseV3ExitQueueBalanceAdapter(
+            address(0), NATIVE, address(balances), DELAY, address(this), address(this)
+        );
     }
 
     function test_constructor_revertsOnZeroUnderlying() public {
         vm.expectRevert(InvalidArguments.selector);
         new StakeWiseV3ExitQueueBalanceAdapter(
-            address(registry), address(0), address(balances), address(this), address(this)
+            address(registry), address(0), address(balances), DELAY, address(this), address(this)
         );
     }
 
     function test_constructor_revertsOnZeroNav() public {
         vm.expectRevert(InvalidArguments.selector);
-        new StakeWiseV3ExitQueueBalanceAdapter(address(registry), NATIVE, address(0), address(this), address(this));
+        new StakeWiseV3ExitQueueBalanceAdapter(
+            address(registry), NATIVE, address(0), DELAY, address(this), address(this)
+        );
+    }
+
+    function test_constructor_revertsOnZeroClaimDelay() public {
+        vm.expectRevert(InvalidArguments.selector);
+        new StakeWiseV3ExitQueueBalanceAdapter(
+            address(registry), NATIVE, address(balances), 0, address(this), address(this)
+        );
     }
 
     function test_constructor_revertsWhenRegistryNotContract() public {
         vm.expectRevert(bytes("VaultsRegistry must be a contract"));
-        new StakeWiseV3ExitQueueBalanceAdapter(makeAddr("eoa"), NATIVE, address(balances), address(this), address(this));
+        new StakeWiseV3ExitQueueBalanceAdapter(
+            makeAddr("eoa"), NATIVE, address(balances), DELAY, address(this), address(this)
+        );
     }
 
     // ---- Access control / submission ----
@@ -271,6 +288,34 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         adapter.submitPositions(holder, _claimable());
         (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, NATIVE);
         assertEq(amt, 5 ether); // 2 exited + convertToAssets(3) at 1.0
+    }
+
+    function test_claimDelay_checkpointedButWithinDelay_reportedLocked() public {
+        // A checkpointed position (fully exited, 3 ETH) whose entry timestamp is so recent that StakeWise's
+        // post-checkpoint claim delay has NOT elapsed → the exited assets are reported LOCKED (isLocked=true), not
+        // claimable, even though they still count toward the owed total.
+        uint256 recentTs = block.timestamp - (DELAY - 1); // delay window not yet elapsed
+        vault.setIndex(TICKET, 5);
+        vault.setRequest(holder, TICKET, recentTs, 0, 3 ether); // left 0, exitedAssets 3 ETH
+        StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[] memory one =
+            new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[](1);
+        one[0] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(address(vault), TICKET, recentTs);
+        adapter.submitPositions(holder, one);
+
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
+        assertEq(p.length, 1, "one locked leg while within the claim delay");
+        assertTrue(p[0].isLocked, "checkpointed-but-delayed exited assets are locked, not claimable");
+        assertEq(p[0].amount, 3 ether);
+        // The owed total is unaffected by the gate.
+        (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, NATIVE);
+        assertEq(amt, 3 ether);
+
+        // Once the delay elapses, the same position flips to claimable (isLocked=false); amount unchanged.
+        vm.warp(recentTs + DELAY);
+        p = adapter.getAdapterPositions(holder, address(0));
+        assertEq(p.length, 1);
+        assertFalse(p[0].isLocked, "claimable once the delay has elapsed");
+        assertEq(p[0].amount, 3 ether);
     }
 
     function test_wrongReceiver_dropped() public {
@@ -520,7 +565,7 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         // Fresh NAV harness that does NOT register the native sentinel.
         BalancesHarness freshNav = new BalancesHarness();
         StakeWiseV3ExitQueueBalanceAdapter a2 = new StakeWiseV3ExitQueueBalanceAdapter(
-            address(registry), NATIVE, address(freshNav), address(this), address(this)
+            address(registry), NATIVE, address(freshNav), DELAY, address(this), address(this)
         );
         vault.setIndex(TICKET, 1);
         vault.setRequest(holder, TICKET, TS, 0, 1 ether);

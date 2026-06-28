@@ -291,10 +291,11 @@
   },
 
   "StakeWiseV3ExitQueue": {
-    "$perPositionFields": "type: Supplied; single aggregated native-ETH leg per account (in-flight StakeWise V3 exit-queue assets; agent-fed cache of (vault, positionTicket, timestamp) tuples, emitted positionId is empty)",
+    "$perPositionFields": "type: Supplied; one native-ETH leg per exit request (per positionTicket) — up to two per ticket (claimable + still-queued), claimable gated on the post-checkpoint EXIT_CLAIM_DELAY. Agent-fed cache of (vault, positionTicket, timestamp) tuples; positionId = abi.encode(vault) (per vault, shared by a vault's tickets); the positionTicket rides in the display label, not positionId.",
+    "$constructorNote": "constructor(vaultsRegistry, underlyingToken, navCalculator, exitClaimDelay, admin, assistant). exitClaimDelay is StakeWise's post-checkpoint claim delay in seconds (86400 = 24h on V3 mainnet), read from contracts-deployment-config; pins EXIT_CLAIM_DELAY.",
     "protocol": "StakeWise V3",
     "positionDetail": { "protocol": "StakeWise V3", "product": "Staking", "name": "Exit Queue" },
-    "positionId": "<VaultsRegistry address>"
+    "positionId": "abi.encode(address vault)"
   },
 
   "KelpWithdrawalQueue": {

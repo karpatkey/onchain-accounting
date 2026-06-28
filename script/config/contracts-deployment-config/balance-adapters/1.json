@@ -582,6 +582,7 @@
     "constructor": {
       "vaultsRegistry": "0x3a0008a588772446f6e656133C2D5029CC4FC20E",
       "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+      "exitClaimDelay": "86400",
       "protocol": "StakeWise V3",
       "positionDetail": "{\"protocol\":\"StakeWise V3\",\"product\":\"Staking\",\"name\":\"Exit Queue\"",
       "positionId": "0x3a0008a588772446f6e656133C2D5029CC4FC20E"

@@ -124,11 +124,7 @@ contract NexusMutualStakingPoolsBalanceAdapter is AssistedBalanceAdapter, IPosit
     ///         and because they revert atomically, a bad list leaves the prior set untouched. Correctness does not
     ///         depend on the ownership check (reads re-verify ownership).
     function submitTokenIds(address account, uint256[] calldata tokenIds) external onlyRole(ASSISTANT_ROLE) {
-        if (account == address(0)) revert InvalidArguments();
-        _clearTokenIds(account); // replace semantics: the submitted list becomes the complete cached set
-        for (uint256 i; i < tokenIds.length; ++i) {
-            _addTokenId(account, tokenIds[i]);
-        }
+        _submit(account, abi.encode(tokenIds)); // friendly typed wrapper → shared replace chokepoint (base)
     }
 
     /// @notice Batch variant: for each account, its sublist **replaces** that account's cached set. `accounts` and
@@ -137,13 +133,20 @@ contract NexusMutualStakingPoolsBalanceAdapter is AssistedBalanceAdapter, IPosit
         external
         onlyRole(ASSISTANT_ROLE)
     {
-        if (accounts.length != tokenIds.length) revert ArrayLengthMismatch();
-        for (uint256 i; i < accounts.length; ++i) {
-            if (accounts[i] == address(0)) revert InvalidArguments();
-            _clearTokenIds(accounts[i]); // replace this account's set
-            for (uint256 j; j < tokenIds[i].length; ++j) {
-                _addTokenId(accounts[i], tokenIds[i][j]);
-            }
+        bytes[] memory data = new bytes[](tokenIds.length);
+        for (uint256 i; i < tokenIds.length; ++i) {
+            data[i] = abi.encode(tokenIds[i]);
+        }
+        _submitBatch(accounts, data);
+    }
+
+    /// @inheritdoc AssistedBalanceAdapter
+    /// @dev Decodes the `uint256[]` token-id list and replaces `account`'s cached set (clear then re-add, fail-loud).
+    function _applyReplace(address account, bytes memory data) internal override {
+        uint256[] memory ids = abi.decode(data, (uint256[]));
+        _clearTokenIds(account);
+        for (uint256 i; i < ids.length; ++i) {
+            _addTokenId(account, ids[i]);
         }
     }
 

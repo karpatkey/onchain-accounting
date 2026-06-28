@@ -16,11 +16,34 @@ import "src/errors.sol";
 ///         mutator that flips a flag, so we can assert the role actually gates submission.
 contract MockAssistedAdapter is AssistedBalanceAdapter {
     uint256 public lastSubmitted;
+    mapping(address account => uint256) public lastReplaced;
 
     constructor(address admin, address assistant) AssistedBalanceAdapter(admin, assistant) {}
 
     function submit(uint256 value) external onlyRole(ASSISTANT_ROLE) {
         lastSubmitted = value;
+    }
+
+    /// @notice Friendly typed wrapper over the base's shared {_submit} orchestration (mirrors how the real adapters
+    ///         expose `submitTokenIds` etc.). Routes through the access-control-gated, account-checked chokepoint.
+    function submitReplace(address account, uint256 value) external onlyRole(ASSISTANT_ROLE) {
+        _submit(account, abi.encode(value));
+    }
+
+    function submitReplaceBatch(address[] calldata accounts, uint256[] calldata values)
+        external
+        onlyRole(ASSISTANT_ROLE)
+    {
+        bytes[] memory data = new bytes[](values.length);
+        for (uint256 i; i < values.length; ++i) {
+            data[i] = abi.encode(values[i]);
+        }
+        _submitBatch(accounts, data);
+    }
+
+    /// @inheritdoc AssistedBalanceAdapter
+    function _applyReplace(address account, bytes memory data) internal override {
+        lastReplaced[account] = abi.decode(data, (uint256));
     }
 
     function getAdapterPositions(address, address) external pure returns (INAVCalculator.PositionBalance[] memory) {
@@ -116,6 +139,49 @@ contract AssistedBalanceAdapterTest is Test {
         );
         vm.prank(assistant);
         adapter.grantRole(ASSISTANT_ROLE, stranger);
+    }
+
+    // ---- Shared _submit / _submitBatch orchestration (base) ----
+
+    function test_Submit_RoutesThroughChokepoint() public {
+        vm.prank(assistant);
+        adapter.submitReplace(makeAddr("acct"), 123);
+        assertEq(adapter.lastReplaced(makeAddr("acct")), 123);
+    }
+
+    function test_Submit_RevertsOnZeroAccount() public {
+        vm.expectRevert(InvalidArguments.selector);
+        vm.prank(assistant);
+        adapter.submitReplace(address(0), 1);
+    }
+
+    function test_Submit_OnlyAssistant() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, stranger, ASSISTANT_ROLE)
+        );
+        vm.prank(stranger);
+        adapter.submitReplace(makeAddr("acct"), 1);
+    }
+
+    function test_SubmitBatch_ReplacesEachAccount() public {
+        address[] memory accounts = new address[](2);
+        uint256[] memory values = new uint256[](2);
+        accounts[0] = makeAddr("a");
+        values[0] = 10;
+        accounts[1] = makeAddr("b");
+        values[1] = 20;
+        vm.prank(assistant);
+        adapter.submitReplaceBatch(accounts, values);
+        assertEq(adapter.lastReplaced(makeAddr("a")), 10);
+        assertEq(adapter.lastReplaced(makeAddr("b")), 20);
+    }
+
+    function test_SubmitBatch_RevertsOnLengthMismatch() public {
+        address[] memory accounts = new address[](2);
+        uint256[] memory values = new uint256[](1);
+        vm.expectRevert(ArrayLengthMismatch.selector);
+        vm.prank(assistant);
+        adapter.submitReplaceBatch(accounts, values);
     }
 
     function test_SupportsInterface() public view {

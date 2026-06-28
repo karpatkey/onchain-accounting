@@ -152,11 +152,7 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
     ///         writes are fail-loud, and because they revert atomically, a bad list leaves the prior set untouched. Not
     ///         load-bearing for correctness — reads re-verify and value only live, account-owned positions.
     function submitPositions(address account, ExitPosition[] calldata positions) external onlyRole(ASSISTANT_ROLE) {
-        if (account == address(0)) revert InvalidArguments();
-        _clearPositions(account); // replace semantics: the submitted list becomes the complete cached set
-        for (uint256 i; i < positions.length; ++i) {
-            _addPosition(account, positions[i]);
-        }
+        _submit(account, abi.encode(positions)); // friendly typed wrapper → shared replace chokepoint (base)
     }
 
     /// @notice Batch variant: for each account, its sublist **replaces** that account's cached set. `accounts` and
@@ -165,13 +161,20 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
         external
         onlyRole(ASSISTANT_ROLE)
     {
-        if (accounts.length != positions.length) revert ArrayLengthMismatch();
-        for (uint256 i; i < accounts.length; ++i) {
-            if (accounts[i] == address(0)) revert InvalidArguments();
-            _clearPositions(accounts[i]); // replace this account's set
-            for (uint256 j; j < positions[i].length; ++j) {
-                _addPosition(accounts[i], positions[i][j]);
-            }
+        bytes[] memory data = new bytes[](positions.length);
+        for (uint256 i; i < positions.length; ++i) {
+            data[i] = abi.encode(positions[i]);
+        }
+        _submitBatch(accounts, data);
+    }
+
+    /// @inheritdoc AssistedBalanceAdapter
+    /// @dev Decodes the `ExitPosition[]` list and replaces `account`'s cached set (clear then re-add, fail-loud).
+    function _applyReplace(address account, bytes memory data) internal override {
+        ExitPosition[] memory positions = abi.decode(data, (ExitPosition[]));
+        _clearPositions(account);
+        for (uint256 i; i < positions.length; ++i) {
+            _addPosition(account, positions[i]);
         }
     }
 
@@ -365,7 +368,7 @@ contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPosition
     // Internal — write
     //
 
-    function _addPosition(address account, ExitPosition calldata position) internal {
+    function _addPosition(address account, ExitPosition memory position) internal {
         bytes32 key = _key(position.vault, position.positionTicket, position.timestamp);
         if (_positionIdxPlus1[account][key] != 0) return; // already cached (idempotent no-op)
         // Cap the cache so the per-account read loop stays gas-bounded (OOG there isn't caught by NAV). The assistant

@@ -138,11 +138,7 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
     /// @param user        Account the allocations are for.
     /// @param allocs      The user's complete set of (token, cumulativeAmount, proof) entries.
     function submitProofs(address user, Allocation[] calldata allocs) external onlyRole(ASSISTANT_ROLE) {
-        if (user == address(0)) revert InvalidArguments();
-        _clearUser(user); // replace semantics: the submitted list becomes the user's complete cached set
-        for (uint256 i; i < allocs.length; ++i) {
-            _submitProof(user, allocs[i].token, allocs[i].cumulativeAmount, allocs[i].proof);
-        }
+        _submit(user, abi.encode(allocs)); // friendly typed wrapper → shared replace chokepoint (base)
     }
 
     /// @notice Batch variant: for each user, their allocation list **replaces** that user's cached set. `users` and
@@ -151,14 +147,21 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
         external
         onlyRole(ASSISTANT_ROLE)
     {
-        if (users.length != allocs.length) revert ArrayLengthMismatch();
-        for (uint256 i; i < users.length; ++i) {
-            address user = users[i];
-            if (user == address(0)) revert InvalidArguments();
-            _clearUser(user); // replace this user's set
-            for (uint256 j; j < allocs[i].length; ++j) {
-                _submitProof(user, allocs[i][j].token, allocs[i][j].cumulativeAmount, allocs[i][j].proof);
-            }
+        bytes[] memory data = new bytes[](allocs.length);
+        for (uint256 i; i < allocs.length; ++i) {
+            data[i] = abi.encode(allocs[i]);
+        }
+        _submitBatch(users, data);
+    }
+
+    /// @inheritdoc AssistedBalanceAdapter
+    /// @dev Decodes the `Allocation[]` list and replaces `account`'s (the user's) cached token set — clear, then
+    ///      verify each leaf against the live Distributor root and store, fail-loud.
+    function _applyReplace(address account, bytes memory data) internal override {
+        Allocation[] memory allocs = abi.decode(data, (Allocation[]));
+        _clearUser(account);
+        for (uint256 i; i < allocs.length; ++i) {
+            _submitProof(account, allocs[i].token, allocs[i].cumulativeAmount, allocs[i].proof);
         }
     }
 
@@ -302,7 +305,7 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
     // Internal — write
     //
 
-    function _submitProof(address user, address token, uint256 cumulativeAmount, bytes32[] calldata proof) internal {
+    function _submitProof(address user, address token, uint256 cumulativeAmount, bytes32[] memory proof) internal {
         if (user == address(0) || token == address(0)) revert InvalidArguments();
 
         bytes32 root = IMerklDistributor(DISTRIBUTOR).getMerkleRoot();
@@ -375,7 +378,7 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
     /// @dev Replicates Merkl's `_verifyProof` byte-for-byte: sorted-pair, `keccak256(abi.encode(a, b))`. The use
     ///      of `abi.encode` (32-byte padded) rather than `abi.encodePacked` is the key deviation from
     ///      OpenZeppelin's `MerkleProof.verify` and we MUST match it for proofs from the Merkl API to verify.
-    function _verifyMerklProof(bytes32 leaf, bytes32[] calldata proof, bytes32 root) internal pure returns (bool) {
+    function _verifyMerklProof(bytes32 leaf, bytes32[] memory proof, bytes32 root) internal pure returns (bool) {
         bytes32 currentHash = leaf;
         uint256 n = proof.length;
         for (uint256 i; i < n;) {

@@ -128,9 +128,10 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
         return _labels("Liquidity Pool", leaf);
     }
 
-    /// @notice Reads an ERC20 symbol, falling back to "?" for non-standard tokens (e.g. bytes32 symbols).
+    /// @notice Reads an ERC20 symbol, falling back to "?" for non-standard tokens (e.g. bytes32 symbols) or a
+    ///         codeless address — so the concatenated leaf stays well-formed (no leading/empty `/` segment).
     function _symbol(address token) private view returns (string memory) {
-        if (token.code.length == 0) return "";
+        if (token.code.length == 0) return "?";
         try IERC20Metadata(token).symbol() returns (string memory s) {
             return bytes(s).length == 0 ? "?" : s;
         } catch {

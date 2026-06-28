@@ -5,6 +5,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {ERC20DefaultBalanceAdapter} from "src/balances/BalanceAdapters/ERC20DefaultBalanceAdapter.sol";
+import {PriceFeedNotSet} from "src/errors.sol";
 
 /// @title Mock_NAVCalculator
 /// @notice Mock implementation of INAVCalculator for adapter testing
@@ -216,7 +217,7 @@ contract Mock_NAVCalculator is INAVCalculator {
     }
 
     function getPriceData(address asset) external view override returns (PriceFeedData memory) {
-        if (_priceReverts[asset]) revert("PriceFeedNotSet");
+        if (_priceReverts[asset]) revert PriceFeedNotSet(asset);
         return _priceData[asset];
     }
 

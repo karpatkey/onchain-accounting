@@ -151,9 +151,10 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
         });
     }
 
-    /// @notice Reads an ERC20 symbol, falling back to "?" for non-standard tokens.
+    /// @notice Reads an ERC20 symbol, falling back to "?" for non-standard tokens or a codeless address (e.g. an idle
+    ///         market with no collateral token) — so the concatenated leaf stays well-formed (no leading `/` segment).
     function _symbol(address token) private view returns (string memory) {
-        if (token.code.length == 0) return "";
+        if (token.code.length == 0) return "?";
         try IERC20Metadata(token).symbol() returns (string memory s) {
             return bytes(s).length == 0 ? "?" : s;
         } catch {

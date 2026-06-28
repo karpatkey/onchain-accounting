@@ -95,7 +95,7 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev Returns `["Market", <leaf>]` where the leaf is "<collateral>/<loan> market" ("" if the marketId cannot
+    /// @dev Returns `["Market", <leaf>]` where the leaf is "<collateral>/<loan>" ("" if the marketId cannot
     ///      be resolved). Returns an empty array for a short positionId.
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
         if (pid.length < 32) return new string[](0);
@@ -104,7 +104,7 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
         try MORPHO.idToMarketParams(Id.wrap(marketId)) returns (MarketParams memory mp) {
             string memory collSym = _symbol(mp.collateralToken);
             string memory loanSym = _symbol(mp.loanToken);
-            leaf = string.concat(collSym, "/", loanSym, " market");
+            leaf = string.concat(collSym, "/", loanSym);
         } catch {}
         return _labels("Market", leaf);
     }

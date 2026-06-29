@@ -4,15 +4,10 @@ pragma solidity ^0.8;
 import {MetaBalanceAdapter} from "../../MetaBalanceAdapter.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
-import {
-    IStablePool,
-    IGaugeV3,
-    IBalancerMinter,
-    ITokenAdmin
-} from "src/balances/MetaBalanceAdapters/balancer/IBalancerV3.sol";
+import {IStablePool, IGaugeV3, IBalancerMinter} from "src/balances/MetaBalanceAdapters/balancer/IBalancerV3.sol";
+import {BalancerGaugeLib} from "src/balances/MetaBalanceAdapters/balancer/BalancerGaugeLib.sol";
 import {BalancerV3PoolLib} from "./BalancerV3PoolLib.sol";
 
 // solhint-disable func-name-mixedcase
@@ -33,12 +28,7 @@ import {BalancerV3PoolLib} from "./BalancerV3PoolLib.sol";
 ///      docs/decisions/0017-lp-valuation-instantaneous-amounts.md; revisit if NAV is ever consumed synchronously
 ///      on-chain.
 contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceAdapter {
-    using SafeCast for uint256;
-    using SafeCast for int128;
     using BalancerV3PoolLib for IStablePool;
-
-    /// @notice One week in seconds (gauge inflation accounting boundary).
-    uint256 public constant WEEK = 7 * 86_400;
 
     /// @notice Balancer Minter (mints BAL); used to resolve the BAL token, token admin, and minted amounts.
     IBalancerMinter public immutable BALANCER_MINTER;
@@ -70,7 +60,7 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceAdapter {
         address[] memory tokens = pool.poolTokens();
         // Worst case: one Staking leg per pool token + one Rewards leg per (pool token also a reward) + BAL +
         // extras. Size generously; trim at the end.
-        uint256 rewardCount = _rewardCount(gauge);
+        uint256 rewardCount = BalancerGaugeLib.rewardCount(gauge);
         INAVCalculator.PositionBalance[] memory temp =
             new INAVCalculator.PositionBalance[](tokens.length + rewardCount + 1);
         uint256 count;
@@ -93,7 +83,7 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceAdapter {
         address balToken = BALANCER_MINTER.getBalancerToken();
         count = _addReward(temp, count, balToken, claimableBal(gauge, account), positionId, assetFilter);
         for (uint256 i = 0; i < rewardCount; i++) {
-            address rt = _rewardToken(gauge, i);
+            address rt = BalancerGaugeLib.rewardToken(gauge, i);
             if (rt == address(0) || rt == balToken) continue;
             count = _addReward(temp, count, rt, gaugeRewards(gauge, account, rt), positionId, assetFilter);
         }
@@ -110,7 +100,7 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceAdapter {
     function _instanceAssets(bytes32 instance) internal view override returns (address[] memory assets) {
         IGaugeV3 gauge = IGaugeV3(_toAddress(instance));
         address[] memory tokens = IStablePool(gauge.lp_token()).poolTokens();
-        uint256 rewardCount = _rewardCount(gauge);
+        uint256 rewardCount = BalancerGaugeLib.rewardCount(gauge);
 
         assets = new address[](tokens.length + rewardCount + 1);
         uint256 n;
@@ -118,7 +108,7 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceAdapter {
             assets[n++] = tokens[i];
         }
         for (uint256 i = 0; i < rewardCount; i++) {
-            address rt = _rewardToken(gauge, i);
+            address rt = BalancerGaugeLib.rewardToken(gauge, i);
             if (rt != address(0)) assets[n++] = rt;
         }
         assets[n++] = BALANCER_MINTER.getBalancerToken();
@@ -179,92 +169,17 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @notice Emulates the gauge `_checkpoint` integrate_fraction update for `user` (mainnet inflation model).
-    /// @dev External so claimableBal can isolate a revert via try/catch. View-only (no state changes).
+    /// @dev Thin wrapper over {BalancerGaugeLib.calculateIntegrateFraction}; kept `public` so `claimableBal` can
+    ///      `try this.calculateIntegrateFraction(...)` and fall back to the L2 model. Math is shared with V2.
     function calculateIntegrateFraction(address user, IGaugeV3 gauge) public view returns (uint256) {
-        uint256 period = gauge.period().toUint256();
-        uint128 period128 = period.toUint128();
-        uint256 periodTime = gauge.period_timestamp(uint256(period128));
-        uint256 integrateInvSup = gauge.integrate_inv_supply(uint256(period128));
-        uint256 rate = gauge.inflation_rate();
-        uint256 prevFutureEpoch = gauge.future_epoch_time();
-        uint256 newRate = rate;
-
-        if (prevFutureEpoch >= periodTime) {
-            ITokenAdmin tokenAdmin = ITokenAdmin(BALANCER_MINTER.getBalancerTokenAdmin());
-            newRate = tokenAdmin.rate();
-        }
-        if (gauge.is_killed()) {
-            rate = 0;
-            newRate = 0;
-        }
-
-        if (block.timestamp > periodTime) {
-            uint256 ws = gauge.working_supply();
-            uint256 prevWeek = periodTime;
-            // forge-lint: disable-next-line(divide-before-multiply)
-            uint256 weekTime = ((periodTime + WEEK) / WEEK) * WEEK;
-            if (weekTime > block.timestamp) weekTime = block.timestamp;
-
-            for (uint256 i = 0; i < 500; i++) {
-                uint256 dt = weekTime - prevWeek;
-                // forge-lint: disable-next-line(divide-before-multiply)
-                uint256 w = gauge.getCappedRelativeWeight((prevWeek / WEEK) * WEEK);
-                if (ws > 0) {
-                    if (prevFutureEpoch >= prevWeek && prevFutureEpoch < weekTime) {
-                        integrateInvSup += rate * w * (prevFutureEpoch - prevWeek) / ws;
-                        rate = newRate;
-                        integrateInvSup += rate * w * (weekTime - prevFutureEpoch) / ws;
-                    } else {
-                        integrateInvSup += rate * w * dt / ws;
-                    }
-                }
-                if (weekTime == block.timestamp) break;
-                prevWeek = weekTime;
-                weekTime = prevWeek + WEEK;
-                if (weekTime > block.timestamp) weekTime = block.timestamp;
-            }
-        }
-
-        uint256 balFrac = gauge.integrate_fraction(user);
-        uint256 balInvPrev = gauge.integrate_inv_supply_of(user);
-        uint256 wb = gauge.working_balances(user);
-        return balFrac + (wb * (integrateInvSup - balInvPrev)) / 1e18;
+        return BalancerGaugeLib.calculateIntegrateFraction(user, gauge, BALANCER_MINTER);
     }
 
     /// @notice Emulates the gauge integrate_fraction update for `user` (L2 inflation model: per-week rate mapping).
-    /// @dev External so claimableBal can isolate a revert via try/catch. View-only.
+    /// @dev Thin wrapper over {BalancerGaugeLib.calculateIntegrateFractionL2}; kept `public` for the `this.`-call
+    ///      fallback in `claimableBal`.
     function calculateIntegrateFractionL2(address user, IGaugeV3 gauge) public view returns (uint256) {
-        uint256 period = gauge.period().toUint256();
-        uint128 period128 = period.toUint128();
-        uint256 periodTime = gauge.period_timestamp(uint256(period128));
-        uint256 integrateInvSup = gauge.integrate_inv_supply(uint256(period128));
-
-        if (block.timestamp > periodTime && !gauge.is_killed()) {
-            uint256 ws = gauge.working_supply();
-            uint256 prevWeek = periodTime;
-            // forge-lint: disable-next-line(divide-before-multiply)
-            uint256 weekTime = ((periodTime + WEEK) / WEEK) * WEEK;
-            if (weekTime > block.timestamp) weekTime = block.timestamp;
-
-            for (uint256 i = 0; i < 256; i++) {
-                uint256 dt = weekTime - prevWeek;
-                if (ws != 0) {
-                    // forge-lint: disable-next-line(divide-before-multiply)
-                    uint256 weekNumber = prevWeek / WEEK;
-                    uint256 rate = gauge.inflation_rate(weekNumber);
-                    integrateInvSup += rate * 1e18 * dt / ws;
-                }
-                if (weekTime == block.timestamp) break;
-                prevWeek = weekTime;
-                weekTime = prevWeek + WEEK;
-                if (weekTime > block.timestamp) weekTime = block.timestamp;
-            }
-        }
-
-        uint256 balFrac = gauge.integrate_fraction(user);
-        uint256 balInvPrev = gauge.integrate_inv_supply_of(user);
-        uint256 wb = gauge.working_balances(user);
-        return balFrac + (wb * (integrateInvSup - balInvPrev)) / 1e18;
+        return BalancerGaugeLib.calculateIntegrateFractionL2(user, gauge);
     }
 
     //
@@ -301,21 +216,5 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceAdapter {
     /// @inheritdoc MetaBalanceAdapter
     function _protocolSubId() internal pure override returns (bytes32) {
         return ProtocolIds.BALANCER_V3_GAUGES;
-    }
-
-    function _rewardCount(IGaugeV3 gauge) private view returns (uint256) {
-        try gauge.reward_count() returns (uint256 c) {
-            return c;
-        } catch {
-            return 0;
-        }
-    }
-
-    function _rewardToken(IGaugeV3 gauge, uint256 i) private view returns (address) {
-        try gauge.reward_tokens(i) returns (address rt) {
-            return rt;
-        } catch {
-            return address(0);
-        }
     }
 }

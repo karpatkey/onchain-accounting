@@ -1147,8 +1147,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
                     token: tokens[j],
                     cumulativeAmount: vm.parseUint(amountStrs[j]),
                     proof: vm.parseJsonBytes32Array(json, string.concat(chainKey, ".proofs[", vm.toString(j), "]")),
-                    campaignId: bytes32(0),
-                    subCampaignId: bytes32(0)
+                    campaigns: new MerklRewardsBalanceAdapter.CampaignShare[](0)
                 });
             }
             // Fail-loud + replace: a single bad proof reverts this user's whole list (atomic), so all-or-nothing per

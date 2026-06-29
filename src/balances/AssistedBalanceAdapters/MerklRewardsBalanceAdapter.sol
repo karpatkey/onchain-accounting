@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
@@ -31,39 +32,50 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
     // Type Definitions
     //
 
-    /// @notice One cached allocation entry per (user, token).
-    /// @param cumulativeAmount Cumulative amount allocated to `user` for `token` per the merkle leaf.
+    /// @notice One cached allocation entry per (user, token) — the proof-verified per-token total.
+    /// @param cumulativeAmount Cumulative amount allocated to `user` for `token` per the merkle leaf (the per-token
+    ///                         total, aggregated across all campaigns; this is what the proof attests).
     /// @param root             Distributor merkle root the proof was verified against. Reads return 0 when this
     ///                         root no longer matches `Distributor.getMerkleRoot()` (conservative stale handling).
     /// @param submittedAt      Timestamp of the most recent successful submission. Doubles as a freshness signal
     ///                         and a "first-time entry" check (zero ⇒ never submitted).
-    /// @param campaignId       Merkl campaign id for this (user, token) reward, from the API breakdown (display
-    ///                         coordinate only; NOT proof-backed — see {Allocation}). `bytes32(0)` if unspecified.
-    /// @param subCampaignId    Merkl sub-campaign id (display coordinate only). `bytes32(0)` if unspecified.
     struct CachedAllocation {
         uint256 cumulativeAmount;
         bytes32 root;
         uint64 submittedAt;
-        bytes32 campaignId;
-        bytes32 subCampaignId;
     }
 
-    /// @notice One (token, cumulativeAmount, proof, campaignId, subCampaignId) entry in a per-user replace submission.
-    /// @param token            Reward token the leaf is for.
-    /// @param cumulativeAmount Cumulative amount in the leaf (`amount` field per Merkl's leaf encoding).
-    /// @param proof            Merkle proof from the Merkl API; verified against the live Distributor root.
-    /// @param campaignId       Merkl campaign id from the API `breakdowns[]` (a `bytes32`). DISPLAY/IDENTITY ONLY —
-    ///                         it rides into `positionInstanceId` and is NOT used for valuation or proof-verified
-    ///                         (the on-chain leaf is per-token, aggregated across campaigns). The reward `amount`
-    ///                         remains the proof-verified per-token total; the campaign pair only tags the position.
+    /// @notice One campaign's share of a token's reward, from the Merkl API `breakdowns[]`. Cached per (user, token)
+    ///         to give each reward campaign its own NAV position.
+    /// @param campaignId       Merkl campaign id (a `bytes32`).
     /// @param subCampaignId    Merkl sub-campaign id (a `bytes32`; encode/hash Merkl's identifier if not natively
-    ///                         32 bytes). Same display-only semantics as `campaignId`.
+    ///                         32 bytes). Together with `campaignId` it forms the position's `positionInstanceId`
+    ///                         (`keccak256(abi.encode(campaignId, subCampaignId))`).
+    /// @param cumulativeAmount This campaign's cumulative contribution to the token total. NOT individually
+    ///                         proof-backed (Merkl proves only the per-token total); the contract instead enforces
+    ///                         that the campaign shares of a token SUM to the proof-verified per-token total, so a
+    ///                         faulty assistant can mis-split across campaigns but can never inflate the token total.
+    struct CampaignShare {
+        bytes32 campaignId;
+        bytes32 subCampaignId;
+        uint256 cumulativeAmount;
+    }
+
+    /// @notice One token's entry in a per-user replace submission: the per-token leaf (proof-verified) plus its
+    ///         per-campaign breakdown.
+    /// @param token            Reward token the leaf is for.
+    /// @param cumulativeAmount Cumulative amount in the leaf (`amount` per Merkl's leaf encoding) — the per-token
+    ///                         total, proof-verified.
+    /// @param proof            Merkle proof from the Merkl API; verified against the live Distributor root.
+    /// @param campaigns        Per-campaign breakdown from the API. If non-empty, the contract requires
+    ///                         `Σ campaigns[i].cumulativeAmount == cumulativeAmount` (fail-loud) — bounding the total
+    ///                         to the proof while letting each campaign become its own position. Empty ⇒ one untagged
+    ///                         position for the whole token (`positionInstanceId = bytes32(0)`).
     struct Allocation {
         address token;
         uint256 cumulativeAmount;
         bytes32[] proof;
-        bytes32 campaignId;
-        bytes32 subCampaignId;
+        CampaignShare[] campaigns;
     }
 
     //
@@ -74,14 +86,25 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
     bytes32 private constant PROTOCOL_ID = ProtocolIds.MERKL;
     bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.MERKL;
 
+    /// @notice Hard cap on campaign shares cached per (user, token). Bounds the per-token read fan-out (each share is
+    ///         a leg) so a pathological breakdown can't OOG a NAV read (an OOG there is NOT caught by NAVCalculator's
+    ///         try/catch). A real token has a handful of campaigns; enforced fail-loud at submit.
+    uint256 public constant MAX_CAMPAIGNS_PER_TOKEN = 64;
+
     /// @notice Merkl Distributor (Angle Labs). Same address on every supported EVM chain.
     address public immutable DISTRIBUTOR;
 
     /// @notice NAVCalculator — used to look up registered Asset metadata when emitting positions.
     INAVCalculator public immutable NAV_CALCULATOR;
 
-    /// @notice Cached allocations: `allocations[user][token] = (cumulativeAmount, root, submittedAt)`.
+    /// @notice Cached allocations: `allocations[user][token] = (cumulativeAmount, root, submittedAt)` — the
+    ///         proof-verified per-token total.
     mapping(address user => mapping(address token => CachedAllocation)) public allocations;
+
+    /// @notice Per-(user, token) campaign breakdown (the assistant-submitted `breakdowns[]`). Each share becomes its
+    ///         own NAV position, valued as the token's on-chain unclaimed split pro-rata by the share's cumulative.
+    ///         Empty ⇒ one untagged position for the token. Shares of a token sum to the token's verified cumulative.
+    mapping(address user => mapping(address token => CampaignShare[])) private _campaigns;
 
     /// @dev Per-user enumeration list. Populated on first `submitProof` for a (user, token) pair, drained by
     ///      `clearAllocation`. Used to power `getAdapterBalances` and `getAdapterPositions` without `address(0)`
@@ -102,8 +125,7 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
         uint256 cumulativeAmount,
         bytes32 root,
         uint64 submittedAt,
-        bytes32 campaignId,
-        bytes32 subCampaignId
+        uint256 campaignCount
     );
     event AllocationCleared(address indexed user, address indexed token);
 
@@ -120,6 +142,13 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
     /// @notice Submitted cumulative amount is strictly less than the cached value. Merkl invariants are monotonic;
     ///         a regression suggests a stale or malformed proof and is rejected as a defense in depth.
     error AmountRegression();
+
+    /// @notice The submitted campaign breakdown does not sum to the proof-verified per-token cumulative. Bounding the
+    ///         campaign shares to the proven total is what keeps the (assistant-supplied) split from inflating NAV.
+    error CampaignSumMismatch(address token, uint256 sumOfShares, uint256 tokenCumulative);
+
+    /// @notice More than `MAX_CAMPAIGNS_PER_TOKEN` campaign shares submitted for one token (read-gas bound).
+    error TooManyCampaigns(address token, uint256 count);
 
     //
     // Constructor
@@ -183,14 +212,7 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
         Allocation[] memory allocs = abi.decode(data, (Allocation[]));
         _clearUser(account);
         for (uint256 i; i < allocs.length; ++i) {
-            _submitProof(
-                account,
-                allocs[i].token,
-                allocs[i].cumulativeAmount,
-                allocs[i].proof,
-                allocs[i].campaignId,
-                allocs[i].subCampaignId
-            );
+            _submitProof(account, allocs[i].token, allocs[i].cumulativeAmount, allocs[i].proof, allocs[i].campaigns);
         }
     }
 
@@ -201,6 +223,7 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
         if (user == address(0) || token == address(0)) revert InvalidArguments();
         if (allocations[user][token].submittedAt == 0) return; // nothing to clear
         delete allocations[user][token];
+        delete _campaigns[user][token];
         _removeUserToken(user, token);
         emit AllocationCleared(user, token);
     }
@@ -214,6 +237,13 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
     ///      against `Distributor.getMerkleRoot()` if you need only fresh entries.
     function userTokens(address user) external view returns (address[] memory) {
         return _userTokens[user];
+    }
+
+    /// @notice The cached campaign-share breakdown for `(user, token)` (empty if the token was submitted untagged).
+    /// @dev Display/debug. The shares sum to the proof-verified per-token cumulative; each becomes one NAV position
+    ///      valued as the token's on-chain unclaimed split pro-rata by the share's cumulative.
+    function campaignsOf(address user, address token) external view returns (CampaignShare[] memory) {
+        return _campaigns[user][token];
     }
 
     /// @inheritdoc IERC165
@@ -323,14 +353,21 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
         if (msg.sender != address(this)) revert NotAuthorized();
         INAVCalculator.Asset[] memory registered = NAV_CALCULATOR.getRegisteredAssets();
         bytes memory pid = abi.encode(DISTRIBUTOR); // identical for every leg — hoist out of the loop
-        INAVCalculator.PositionBalance[] memory tmp = new INAVCalculator.PositionBalance[](tokens.length);
+
+        // Size the scratch buffer to the leg upper bound: one leg per cached campaign share per token (or one
+        // untagged leg for a token with no breakdown). Zero-amount legs drop below it.
+        uint256 cap;
+        for (uint256 i; i < tokens.length; ++i) {
+            uint256 c = _campaigns[account][tokens[i]].length;
+            cap += c == 0 ? 1 : c;
+        }
+
+        INAVCalculator.PositionBalance[] memory tmp = new INAVCalculator.PositionBalance[](cap);
         uint256 count;
         for (uint256 i; i < tokens.length; ++i) {
             (INAVCalculator.Asset memory meta, bool found) = RegisteredAssetLib.find(registered, tokens[i]);
             if (!found) continue;
-            uint256 bal = _unclaimed(account, tokens[i]);
-            if (bal == 0) continue;
-            tmp[count++] = _row(meta, bal, pid, _campaignInstanceId(account, tokens[i]));
+            count = _appendTokenLegs(account, tokens[i], meta, pid, tmp, count);
         }
         positions = new INAVCalculator.PositionBalance[](count);
         for (uint256 i; i < count; ++i) {
@@ -338,14 +375,50 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
         }
     }
 
+    /// @dev Appends `account`'s reward leg(s) for one `token` into `temp` (from `n`), returning the new count. The
+    ///      token's on-chain unclaimed total (`_unclaimed` = proof-verified cumulative − claimed) is split across the
+    ///      token's cached campaign shares pro-rata by each share's cumulative (denominator = the verified per-token
+    ///      cumulative, which the shares sum to). With no campaign shares, one untagged leg carries the whole
+    ///      unclaimed amount. Each campaign leg's `positionInstanceId = keccak256(abi.encode(campaignId,
+    ///      subCampaignId))`. Zero-amount legs are omitted; `mulDiv` rounds down, so the campaign legs sum to ≤ the
+    ///      token's unclaimed total (dust under-report, never over). Extracted to keep `buildPositionsSelf` under the
+    ///      via_ir stack limit.
+    function _appendTokenLegs(
+        address account,
+        address token,
+        INAVCalculator.Asset memory meta,
+        bytes memory pid,
+        INAVCalculator.PositionBalance[] memory temp,
+        uint256 n
+    ) private view returns (uint256) {
+        uint256 unclaimed = _unclaimed(account, token);
+        if (unclaimed == 0) return n;
+
+        CampaignShare[] memory shares = _campaigns[account][token];
+        if (shares.length == 0) {
+            temp[n++] = _row(meta, unclaimed, pid, bytes32(0)); // untagged single position
+            return n;
+        }
+
+        uint256 tokenCumulative = allocations[account][token].cumulativeAmount; // == Σ shares[].cumulativeAmount
+        if (tokenCumulative == 0) return n; // defensive: nothing to split against (all shares would be 0)
+        for (uint256 i; i < shares.length; ++i) {
+            uint256 legAmount = Math.mulDiv(unclaimed, shares[i].cumulativeAmount, tokenCumulative);
+            if (legAmount == 0) continue;
+            temp[n++] =
+                _row(meta, legAmount, pid, keccak256(abi.encode(shares[i].campaignId, shares[i].subCampaignId)));
+        }
+        return n;
+    }
+
     /// @notice Builds one `Rewards` PositionBalance row. Extracted from the `getAdapterPositions` loop so the 9-field
     ///         struct literal lives in its own stack frame (keeps the loop under the via_ir stack limit).
     /// @dev positionId is the Distributor (the claim target / trust anchor), NOT the reward token — the token is
     ///      already carried by `balanceAsset`, so encoding it here would be redundant with the reconciliation key.
     ///      Multiple reward tokens claimed from the same Distributor share this positionId and are distinguished by
-    ///      `balanceAsset.asset` (same model as Aave V3 = abi.encode(pool)). `positionInstanceId` carries the
-    ///      assistant-submitted Merkl campaign coordinate (`keccak256(abi.encode(campaignId, subCampaignId))`, or
-    ///      `bytes32(0)` if unspecified) — display/identity only, NOT proof-backed and NOT part of the stable key.
+    ///      `balanceAsset.asset` (same model as Aave V3 = abi.encode(pool)). `positionInstanceId` carries the Merkl
+    ///      campaign coordinate `keccak256(abi.encode(campaignId, subCampaignId))` (or `bytes32(0)` for an untagged
+    ///      token) — display/identity only, NOT proof-backed and NOT part of the stable key.
     function _row(INAVCalculator.Asset memory asset, uint256 amount, bytes memory pid, bytes32 instanceId)
         private
         view
@@ -364,17 +437,6 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
         // isDebt, isLocked default false.
     }
 
-    /// @dev The position's ephemeral instance id from the cached Merkl campaign coordinate:
-    ///      `keccak256(abi.encode(campaignId, subCampaignId))`, or `bytes32(0)` when no campaign was submitted (both
-    ///      zero) so a tag-less reward is not given a spurious non-zero instance id. The campaign pair is
-    ///      assistant-submitted and NOT proof-verified — it tags the position for display/granularity and never
-    ///      affects the (proof-verified per-token) reward `amount`.
-    function _campaignInstanceId(address user, address token) private view returns (bytes32) {
-        CachedAllocation storage a = allocations[user][token];
-        if (a.campaignId == bytes32(0) && a.subCampaignId == bytes32(0)) return bytes32(0);
-        return keccak256(abi.encode(a.campaignId, a.subCampaignId));
-    }
-
     //
     // Internal — write
     //
@@ -384,8 +446,7 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
         address token,
         uint256 cumulativeAmount,
         bytes32[] memory proof,
-        bytes32 campaignId,
-        bytes32 subCampaignId
+        CampaignShare[] memory campaigns
     ) internal {
         if (user == address(0) || token == address(0)) revert InvalidArguments();
 
@@ -401,6 +462,20 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
         CachedAllocation storage a = allocations[user][token];
         if (cumulativeAmount < a.cumulativeAmount) revert AmountRegression();
 
+        // Campaign breakdown: bound the (assistant-supplied) per-campaign shares to the proof-verified per-token
+        // total — Σ shares MUST equal `cumulativeAmount`. This is the safety hinge: the assistant can mis-split value
+        // across campaigns but can never make the shares sum to more than the proven total, so NAV is never inflated.
+        // An empty breakdown is allowed (one untagged position for the whole token).
+        uint256 nCampaigns = campaigns.length;
+        if (nCampaigns > MAX_CAMPAIGNS_PER_TOKEN) revert TooManyCampaigns(token, nCampaigns);
+        if (nCampaigns != 0) {
+            uint256 sumShares;
+            for (uint256 i; i < nCampaigns; ++i) {
+                sumShares += campaigns[i].cumulativeAmount;
+            }
+            if (sumShares != cumulativeAmount) revert CampaignSumMismatch(token, sumShares, cumulativeAmount);
+        }
+
         if (a.submittedAt == 0) {
             _userTokens[user].push(token);
             _userTokenIdxPlus1[user][token] = _userTokens[user].length;
@@ -409,10 +484,15 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
         a.cumulativeAmount = cumulativeAmount;
         a.root = root;
         a.submittedAt = uint64(block.timestamp);
-        a.campaignId = campaignId;
-        a.subCampaignId = subCampaignId;
 
-        emit AllocationCached(user, token, cumulativeAmount, root, a.submittedAt, campaignId, subCampaignId);
+        // Replace the token's campaign shares (the per-user set is fully replaced by the submit chokepoint, but a
+        // re-submit of the same token within one list overwrites cleanly here too).
+        delete _campaigns[user][token];
+        for (uint256 i; i < nCampaigns; ++i) {
+            _campaigns[user][token].push(campaigns[i]);
+        }
+
+        emit AllocationCached(user, token, cumulativeAmount, root, a.submittedAt, nCampaigns);
     }
 
     /// @dev Delete a user's entire cached allocation set (storage only, no event). Shared by `submitProofs`/batch as
@@ -422,6 +502,7 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
         for (uint256 i; i < toks.length; ++i) {
             delete allocations[user][toks[i]];
             delete _userTokenIdxPlus1[user][toks[i]];
+            delete _campaigns[user][toks[i]];
         }
         delete _userTokens[user];
     }

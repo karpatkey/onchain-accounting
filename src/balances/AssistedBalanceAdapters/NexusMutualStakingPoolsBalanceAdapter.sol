@@ -411,13 +411,13 @@ contract NexusMutualStakingPoolsBalanceAdapter is AssistedBalanceAdapter, IPosit
     }
 
     /// @inheritdoc IPositionDescribable
-    /// @dev `["Staking", "<pool address>"]`, derived purely from `positionId` (the staking pool). The per-NFT id is
-    ///      the typed `positionInstanceId` on each leg, NOT a label. Empty for a short/malformed positionId.
+    /// @dev `["Staking Pools", "<pool address>"]`, derived purely from `positionId` (the staking pool). The per-NFT id
+    ///      is the typed `positionInstanceId` on each leg, NOT a label. Empty for a short/malformed positionId.
     function positionLabels(bytes calldata positionId) external pure override returns (string[] memory out) {
         if (positionId.length < 32) return new string[](0);
         address pool = abi.decode(positionId, (address));
         out = new string[](2);
-        out[0] = "Staking";
+        out[0] = "Staking Pools";
         out[1] = Strings.toHexString(pool);
     }
 

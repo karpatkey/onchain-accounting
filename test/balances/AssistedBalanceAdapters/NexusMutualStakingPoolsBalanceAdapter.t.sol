@@ -229,7 +229,7 @@ contract NexusMutualStakingPoolsBalanceAdapterTest is BalanceAdapterTestBase {
             // Static breadcrumb = [category, pool address] (positionId-derived); the NFT id rides in positionInstanceId.
             string[] memory lbl = adapter.positionLabels(p[i].positionId);
             assertEq(lbl.length, 2);
-            assertEq(lbl[0], "Staking");
+            assertEq(lbl[0], "Staking Pools");
             assertEq(lbl[1], Strings.toHexString(viewer.poolAddr(7)));
             assertEq(p[i].positionInstanceId, bytes32(uint256(4)));
         }

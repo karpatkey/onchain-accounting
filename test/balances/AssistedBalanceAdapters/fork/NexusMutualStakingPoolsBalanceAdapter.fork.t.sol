@@ -105,7 +105,7 @@ contract NexusMutualStakingPoolsBalanceAdapterForkTest is BalanceAdapterTestBase
             assertGt(pool.code.length, 0, "positionId resolves to a deployed staking pool");
             string[] memory lbl = adapter.positionLabels(p[i].positionId);
             assertEq(lbl.length, 2, "static breadcrumb = [Staking, pool]");
-            assertEq(lbl[0], "Staking");
+            assertEq(lbl[0], "Staking Pools");
             assertTrue(p[i].positionInstanceId != bytes32(0), "NFT id rides in positionInstanceId");
             if (p[i].positionKind == PositionKind.Staking) {
                 stakingSum += p[i].amount;

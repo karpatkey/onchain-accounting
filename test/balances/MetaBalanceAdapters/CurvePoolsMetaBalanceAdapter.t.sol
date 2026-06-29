@@ -92,7 +92,7 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory pos =
             meta.getAdapterPositionsForInstances(alice, _instance(address(pool)), address(0));
         assertGt(pos.length, 0);
-        assertEq(pos[0].protocolSubId, ProtocolIds.CURVE_POOL);
+        assertEq(pos[0].protocolSubId, ProtocolIds.CURVE_POOLS);
         assertEq(pos[0].protocolId, ProtocolIds.CURVE);
         assertEq(pos[0].positionId, abi.encode(address(pool)));
         assertEq(pos[0].balanceAdapter, address(meta));

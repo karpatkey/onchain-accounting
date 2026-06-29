@@ -27,7 +27,7 @@ contract BalancerV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
 
     bytes32 private constant PROTOCOL_BRAND = ProtocolIds.BALANCER;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.BALANCER_V3;
-    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.BALANCER_V3_POOL;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.BALANCER_V3_POOLS;
 
     /// @param protocolName_ Protocol identifier (e.g. "Balancer V3").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.

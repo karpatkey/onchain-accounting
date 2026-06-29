@@ -41,7 +41,7 @@ import {CurvePoolLib} from "./CurvePoolLib.sol";
 contract CurvePoolsMetaBalanceAdapter is MetaBalanceAdapter {
     bytes32 private constant PROTOCOL_BRAND = ProtocolIds.CURVE;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.CURVE;
-    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.CURVE_POOL;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.CURVE_POOLS;
 
     /// @param protocolName_ Human-readable name (e.g. "Curve").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.

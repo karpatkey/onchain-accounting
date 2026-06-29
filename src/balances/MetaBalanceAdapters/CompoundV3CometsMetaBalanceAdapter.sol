@@ -25,7 +25,7 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceAdapter {
 
     bytes32 private constant PROTOCOL_BRAND = ProtocolIds.COMPOUND;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.COMPOUND_V3;
-    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.COMPOUND_V3;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.COMPOUND_V3_COMETS;
 
     /// @notice The chain's CometRewards contract (same for every comet on the chain).
     address public immutable COMPOUND_REWARDS;

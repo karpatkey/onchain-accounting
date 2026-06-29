@@ -37,7 +37,7 @@ contract BalancerV2GaugesMetaBalanceAdapter is MetaBalanceAdapter {
 
     bytes32 private constant PROTOCOL_BRAND = ProtocolIds.BALANCER;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.BALANCER_V2;
-    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.BALANCER_V2_GAUGE;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.BALANCER_V2_GAUGES;
 
     /// @notice One week in seconds (gauge inflation accounting boundary).
     uint256 public constant WEEK = 7 * 86_400;

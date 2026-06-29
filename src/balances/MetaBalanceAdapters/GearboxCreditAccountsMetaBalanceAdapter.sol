@@ -43,7 +43,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 contract GearboxCreditAccountsMetaBalanceAdapter is MetaBalanceAdapter {
     bytes32 private constant PROTOCOL_BRAND = ProtocolIds.GEARBOX;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.GEARBOX_V3;
-    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.GEARBOX_V3_CREDIT_ACCOUNT;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.GEARBOX_V3_CREDIT_ACCOUNTS;
 
     /// @param protocolName_ Human-readable protocol name (e.g. "Gearbox").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.

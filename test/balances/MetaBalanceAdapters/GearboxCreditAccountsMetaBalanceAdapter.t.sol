@@ -207,7 +207,7 @@ contract GearboxCreditAccountsMetaBalanceAdapterTest is Test {
         for (uint256 i = 0; i < pos.length; i++) {
             assertEq(pos[i].balanceAdapter, address(adapter));
             assertEq(pos[i].positionId, abi.encode(address(ca)));
-            assertEq(pos[i].protocolSubId, ProtocolIds.GEARBOX_V3_CREDIT_ACCOUNT);
+            assertEq(pos[i].protocolSubId, ProtocolIds.GEARBOX_V3_CREDIT_ACCOUNTS);
             assertEq(pos[i].protocolId, ProtocolIds.GEARBOX_V3);
             assertEq(pos[i].positionInstanceId, bytes32(0));
         }

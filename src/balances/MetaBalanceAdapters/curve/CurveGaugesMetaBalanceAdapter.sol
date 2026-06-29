@@ -52,7 +52,7 @@ import {CurvePoolLib} from "./CurvePoolLib.sol";
 contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
     bytes32 private constant PROTOCOL_BRAND = ProtocolIds.CURVE;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.CURVE;
-    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.CURVE_GAUGE;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.CURVE_GAUGES;
 
     /// @notice Curve Minter for CRV emission. address(0) disables CRV tracking (use on L2).
     address public immutable CURVE_MINTER;

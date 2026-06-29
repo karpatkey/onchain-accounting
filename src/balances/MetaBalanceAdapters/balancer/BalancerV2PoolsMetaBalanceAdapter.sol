@@ -29,7 +29,7 @@ contract BalancerV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
 
     bytes32 private constant PROTOCOL_BRAND = ProtocolIds.BALANCER;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.BALANCER_V2;
-    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.BALANCER_V2_POOL;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.BALANCER_V2_POOLS;
 
     /// @notice The Balancer V2 Vault (custodies every pool's tokens; chain-level constant).
     address public immutable VAULT;

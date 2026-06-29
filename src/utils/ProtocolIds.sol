@@ -27,7 +27,7 @@ pragma solidity ^0.8;
 ///        UNISWAP_V2 / PANCAKESWAP_V2     → (address pair)
 ///        COMPOUND_V3 / FLUID_FTOKENS     → (address market)
 ///        MERKL                           → (address distributor) — reward token is in balanceAsset, not positionId
-///        NEXUS_MUTUAL_STAKING            → (address stakingPool); StakingNFT tokenId in positionInstanceId
+///        NEXUS_MUTUAL_STAKING_POOLS      → (address stakingPool); StakingNFT tokenId in positionInstanceId
 ///        STADER_WITHDRAWAL              → (address userWithdrawalManager) — static coordinate
 ///        KELP_WITHDRAWAL                → (address withdrawalManager)     — static coordinate; payout asset in balanceAsset
 ///        LIDO_WITHDRAWAL                → (address withdrawalQueue)        — static coordinate
@@ -110,7 +110,7 @@ library ProtocolIds {
     bytes32 internal constant STAKEWISE_V3_VAULTS = keccak256("stakewise-v3-vaults");
 
     // Nexus Mutual
-    bytes32 internal constant NEXUS_MUTUAL_STAKING = keccak256("nexus-mutual-staking");
+    bytes32 internal constant NEXUS_MUTUAL_STAKING_POOLS = keccak256("nexus-mutual-staking-pools");
 
     // Gearbox
     bytes32 internal constant GEARBOX_V3_MARKET = keccak256("gearbox-v3-market");

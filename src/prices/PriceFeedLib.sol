@@ -107,6 +107,14 @@ library PriceFeedLib {
                 ) {
                     lrdUpdatedAt = u;
                 } catch {} // reverted: treat as no-timestamp oracle; sentinel updatedAt applied below
+                // KNOWN INCONSISTENCY (dormant): the block.timestamp-1 sentinel below makes a rate-only custom
+                // feed (latestRoundData.updatedAt == 0) rank by near-current freshness, so it can OUT-rank a
+                // co-configured Chainlink feed updated a few seconds ago — the opposite of the IPrices
+                // .PriceFeedConfig intent ("rate-only feeds participate but yield to any feed with a real push
+                // timestamp"). No deployed custom feed currently returns updatedAt == 0 (each derives a real
+                // timestamp from its Chainlink leg), so this is latent, not active. A correct fix tiers selection
+                // (real-timestamp feeds outrank rate-only ones) and requires regenerating the PriceFeedLib CREATE2
+                // pin — deferred to a dedicated change + team decision on the intended tie-break.
                 updatedAt = lrdUpdatedAt == 0 ? (block.timestamp > 0 ? block.timestamp - 1 : 0) : lrdUpdatedAt;
             } else {
                 int256 answer;

@@ -20,7 +20,6 @@ import {
     MockUniswapV3Factory,
     MockToken
 } from "test/balances/AssistedBalanceAdapters/UniswapV3Mocks.sol";
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 /// @title PancakeSwapV3PoolsBalanceAdapter unit tests (no fork)
 /// @notice The shared assisted tokenId cache / per-NFT principal+fee math / NAV filtering is verified by the Uniswap
@@ -142,7 +141,7 @@ contract PancakeSwapV3PoolsBalanceAdapterTest is Test {
         string[] memory lbl = adapter.positionLabels(p[0].positionId);
         assertEq(lbl.length, 2);
         assertEq(lbl[0], "AMM Liquidity Pool");
-        assertEq(lbl[1], Strings.toHexString(address(pool)));
+        assertEq(lbl[1], "WETH/USDT 0.05%");
         assertEq(p[0].positionInstanceId, bytes32(uint256(1)));
     }
 

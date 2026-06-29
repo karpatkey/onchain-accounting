@@ -18,7 +18,6 @@ import {
     MockToken
 } from "test/balances/AssistedBalanceAdapters/UniswapV3Mocks.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {FixedPoint128} from "src/balances/MetaBalanceAdapters/uniswap/lib/FixedPoint128.sol";
 
@@ -163,11 +162,11 @@ contract UniswapV3PoolsBalanceAdapterTest is Test {
         assertEq(p[0].positionId, abi.encode(address(poolA)));
         // NFT 2 legs carry positionId = the pool address (USDC/WETH 0.05%)
         assertEq(p[4].positionId, abi.encode(address(poolB)));
-        // Static breadcrumb (positionId-derived) carries the pool address: ["AMM Liquidity Pool", "<pool>"].
+        // Static breadcrumb (positionId-derived) carries the pair + fee: ["AMM Liquidity Pool", "WBTC/WETH 0.3%"].
         string[] memory lbl = adapter.positionLabels(p[0].positionId);
         assertEq(lbl.length, 2);
         assertEq(lbl[0], "AMM Liquidity Pool");
-        assertEq(lbl[1], Strings.toHexString(address(poolA)));
+        assertEq(lbl[1], "WBTC/WETH 0.3%");
         // The ephemeral NFT id now rides in the typed positionInstanceId on each leg.
         assertEq(p[0].positionInstanceId, bytes32(uint256(1)));
         assertEq(p[4].positionInstanceId, bytes32(uint256(2)));

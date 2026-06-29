@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
@@ -407,14 +408,76 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
     }
 
     /// @inheritdoc IPositionDescribable
-    /// @dev `["AMM Liquidity Pool", "<pool address>"]`, derived purely from `positionId` (the pool). The per-NFT id is the
-    ///      typed `positionInstanceId` on each leg, NOT a label. Empty for a short/malformed positionId.
-    function positionLabels(bytes calldata positionId) external pure override returns (string[] memory out) {
+    /// @dev `["AMM Liquidity Pool", "<sym0>/<sym1> <fee>%"]` (e.g. `["AMM Liquidity Pool", "USDC/WETH 0.3%"]`) — the
+    ///      leaf is read live from the pool decoded out of `positionId` (token0/token1 symbols + fee tier). An
+    ///      unreadable symbol falls back to "?"; a reverting pool falls back to just `["AMM Liquidity Pool"]`. The
+    ///      per-NFT id is the typed `positionInstanceId` on each leg, NOT a label. Empty for a short/malformed positionId.
+    function positionLabels(bytes calldata positionId) external view override returns (string[] memory out) {
         if (positionId.length < 32) return new string[](0);
-        address pool = abi.decode(positionId, (address));
+        string memory leaf = _poolLeaf(abi.decode(positionId, (address)));
+        if (bytes(leaf).length == 0) {
+            out = new string[](1);
+            out[0] = "AMM Liquidity Pool";
+            return out;
+        }
         out = new string[](2);
         out[0] = "AMM Liquidity Pool";
-        out[1] = Strings.toHexString(pool);
+        out[1] = leaf;
+    }
+
+    /// @dev "<sym0>/<sym1> <fee>%" read live from the pool (e.g. "USDC/WETH 0.3%"); "" if a core pool read reverts.
+    function _poolLeaf(address pool) private view returns (string memory) {
+        uint24 fee;
+        try IUniswapV3Pool(pool).fee() returns (uint24 f) {
+            fee = f;
+        } catch {
+            return "";
+        }
+        address t0;
+        address t1;
+        try IUniswapV3Pool(pool).token0() returns (address a) {
+            t0 = a;
+        } catch {
+            return "";
+        }
+        try IUniswapV3Pool(pool).token1() returns (address a) {
+            t1 = a;
+        } catch {
+            return "";
+        }
+        return string.concat(_symbol(t0), "/", _symbol(t1), " ", _feePercent(fee), "%");
+    }
+
+    /// @dev ERC20 symbol with a "?" fallback for non-standard tokens (e.g. bytes32 symbols) or reverts.
+    function _symbol(address token) private view returns (string memory) {
+        try IERC20Metadata(token).symbol() returns (string memory s) {
+            return bytes(s).length == 0 ? "?" : s;
+        } catch {
+            return "?";
+        }
+    }
+
+    /// @dev Formats a V3 fee (hundredths of a bip: 3000 = 0.3%, 500 = 0.05%, 100 = 0.01%, 10000 = 1%) as a percentage
+    ///      string with trailing zeros trimmed.
+    function _feePercent(uint24 fee) private pure returns (string memory) {
+        uint256 whole = uint256(fee) / 10000;
+        uint256 frac = uint256(fee) % 10000; // ten-thousandths of a percent
+        if (frac == 0) return whole.toString();
+        bytes memory f = bytes(frac.toString());
+        bytes memory padded = new bytes(4); // frac < 10000, so it fits in 4 digits
+        uint256 lead = 4 - f.length;
+        for (uint256 i = 0; i < 4; i++) {
+            padded[i] = i < lead ? bytes1("0") : f[i - lead];
+        }
+        uint256 end = 4;
+        while (padded[end - 1] == bytes1("0")) {
+            end--; // frac != 0 guarantees a non-zero digit, so this never underflows
+        }
+        bytes memory trimmed = new bytes(end);
+        for (uint256 i = 0; i < end; i++) {
+            trimmed[i] = padded[i];
+        }
+        return string.concat(whole.toString(), ".", string(trimmed));
     }
 
     function _row(

@@ -5,6 +5,8 @@ import {IBalanceAdapter} from "./IBalanceAdapter.sol";
 import {IMetaBalanceAdapter} from "./IMetaBalanceAdapter.sol";
 import {IPositionDescribable} from "./IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {LabelLib} from "./LabelLib.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 /// @title MetaBalanceAdapter
@@ -16,11 +18,6 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 /// @dev The instance set lives on NAVCalculator (ADR 0010). The adapter reads its own set via
 ///      `NAV_CALCULATOR.getMetaInstances(address(this))` and holds no instance state or admin functions of its
 ///      own — it stays immutable. `getAdapterPositionsForInstances` is also exposed for explicit/off-chain queries.
-/// @notice Minimal ERC20 `symbol()` view used by `_joinTokenSymbols` for AMM-pool label leaves.
-interface IERC20SymbolView {
-    function symbol() external view returns (string memory);
-}
-
 abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribable {
     //
     // State
@@ -223,8 +220,47 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     function _instanceAssets(bytes32 instance) internal view virtual returns (address[] memory);
 
     //
+    // Identity hooks (overridden per adapter)
+    //
+
+    /// @notice The adapter's `protocolBrand` — the version-stripped brand roll-up (e.g. `aave`). See ProtocolIds.
+    function _protocolBrand() internal pure virtual returns (bytes32);
+
+    /// @notice The adapter's `protocolId` — the ecosystem/version roll-up (e.g. `aave-v3`). See ProtocolIds.
+    function _protocolId() internal pure virtual returns (bytes32);
+
+    /// @notice The adapter's `protocolSubId` — the per-product slug; the protocol component of the stable
+    ///         reconciliation key (e.g. `aave-v3-lending`). See ProtocolIds.
+    function _protocolSubId() internal pure virtual returns (bytes32);
+
+    //
     // Shared helpers
     //
+
+    /// @notice Assembles a single `PositionBalance` with this adapter's identity (the `_protocol*` hooks +
+    ///         `balanceAdapter = address(this)`), `isLocked = false`, and `positionInstanceId = bytes32(0)`.
+    /// @dev The shared leg builder for every meta-adapter — each instance read calls this instead of inlining a
+    ///      9-field struct literal (which also keeps per-adapter frames under the via_ir stack limit). Meta-adapter
+    ///      positions are never locked and carry no ephemeral per-item id (the instance coordinate lives in
+    ///      `positionId`), so those two fields are fixed here.
+    function _leg(
+        INAVCalculator.Asset memory asset,
+        uint256 amount,
+        bool isDebt,
+        bytes memory positionId,
+        PositionKind kind
+    ) internal view returns (INAVCalculator.PositionBalance memory leg) {
+        leg.balanceAsset = asset;
+        leg.balanceAdapter = address(this);
+        leg.amount = amount;
+        leg.isDebt = isDebt;
+        leg.protocolBrand = _protocolBrand();
+        leg.protocolId = _protocolId();
+        leg.protocolSubId = _protocolSubId();
+        leg.positionId = positionId;
+        leg.positionKind = kind;
+        // isLocked defaults false; positionInstanceId defaults bytes32(0).
+    }
 
     /// @notice Assembles the `[category, leaf]` label pair returned by each meta-adapter's `positionLabels`, applying
     ///         the fail-open empty-leaf convention in one place (IPositionDescribable): a leaf that could not be derived
@@ -276,21 +312,8 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     ///      token set (Balancer V2/V3). Returns "" for an empty `tokens` array.
     function _joinTokenSymbols(address[] memory tokens) internal view returns (string memory result) {
         for (uint256 i; i < tokens.length; ++i) {
-            string memory sym = _tokenSymbol(tokens[i]);
+            string memory sym = LabelLib.symbol(tokens[i], "?");
             result = i == 0 ? sym : string.concat(result, "/", sym);
-        }
-    }
-
-    /// @notice Reads a single token's ERC20 symbol, fail-open: `"?"` if the token has no code or `symbol()` reverts.
-    /// @dev The explicit codesize check matters because a high-level call to a codeless address reverts via
-    ///      Solidity's `extcodesize` check, which `try/catch` does NOT catch (mirrors `CurvePoolLib`). Used for
-    ///      single-token label leaves (e.g. an adapter's underlying-asset fallback) and by `_joinTokenSymbols`.
-    function _tokenSymbol(address token) internal view returns (string memory) {
-        if (token.code.length == 0) return "?";
-        try IERC20SymbolView(token).symbol() returns (string memory s) {
-            return s;
-        } catch {
-            return "?";
         }
     }
 

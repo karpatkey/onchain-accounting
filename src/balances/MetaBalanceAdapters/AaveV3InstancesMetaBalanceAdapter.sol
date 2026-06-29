@@ -36,10 +36,6 @@ interface IAavePoolAddressesProvider {
 ///      market, whose provider was never added to it). Use the registry off-chain to *propose* instances; governance
 ///      approves them. See BALANCE_ADAPTERS.md §6.1.
 contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
-    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.AAVE;
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.AAVE_V3;
-    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.AAVE_V3_LENDING;
-
     /// @param protocolName_ Human-readable protocol name (e.g. "Aave V3").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
     constructor(string memory protocolName_, address navCalculator_)
@@ -83,14 +79,14 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
 
             if (aTokenBalance > 0) {
                 PositionKind kind = usageAsCollateral ? PositionKind.Collateral : PositionKind.Supplied;
-                temp[count++] = _row(assetInfo, aTokenBalance, false, pid, kind);
+                temp[count++] = _leg(assetInfo, aTokenBalance, false, pid, kind);
             }
             // Sum variable + legacy stable debt into a single Borrowed leg. Emitting them separately would
             // produce two rows with an identical reconciliation key (same pool positionId, same reserve
             // balanceAsset, same Borrowed kind), which is not univocal.
             uint256 totalDebt = variableDebt + stableDebt;
             if (totalDebt > 0) {
-                temp[count++] = _row(assetInfo, totalDebt, true, pid, PositionKind.Borrowed);
+                temp[count++] = _leg(assetInfo, totalDebt, true, pid, PositionKind.Borrowed);
             }
         }
 
@@ -123,6 +119,21 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
         return _labels("Market", _marketId(pool));
     }
 
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolBrand() internal pure override returns (bytes32) {
+        return ProtocolIds.AAVE;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolId() internal pure override returns (bytes32) {
+        return ProtocolIds.AAVE_V3;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolSubId() internal pure override returns (bytes32) {
+        return ProtocolIds.AAVE_V3_LENDING;
+    }
+
     /// @notice Resolves the instance's market id (for the display label) from its pool.
     /// @dev V3 Pool exposes `ADDRESSES_PROVIDER()`.
     ///      Best-effort: returns "" if the pool/provider does not expose the views (label then drops the market).
@@ -146,31 +157,5 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
     /// @dev V3's LendingPoolAddressesProvider resolves the pool via `getPool()`.
     function _poolOf(IProtocolDataProvider dp) internal view returns (address) {
         return IAavePoolAddressesProvider(IAaveAddressesProviderSource(address(dp)).ADDRESSES_PROVIDER()).getPool();
-    }
-
-    /// @notice Returns the protocol id constant for this adapter.
-    function _getProtocolId() internal view returns (bytes32) {
-        return PROTOCOL_ID;
-    }
-
-    /// @notice Assembles a single PositionBalance row with this adapter's identity.
-    function _row(INAVCalculator.Asset memory asset, uint256 amount, bool isDebt, bytes memory pid, PositionKind kind)
-        internal
-        view
-        returns (INAVCalculator.PositionBalance memory)
-    {
-        return INAVCalculator.PositionBalance({
-            balanceAsset: asset,
-            balanceAdapter: address(this),
-            amount: amount,
-            isDebt: isDebt,
-            protocolBrand: PROTOCOL_BRAND,
-            protocolId: _getProtocolId(),
-            protocolSubId: PROTOCOL_SUB_ID,
-            positionId: pid,
-            positionKind: kind,
-            isLocked: false,
-            positionInstanceId: bytes32(0)
-        });
     }
 }

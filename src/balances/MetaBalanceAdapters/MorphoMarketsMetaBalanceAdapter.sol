@@ -4,7 +4,7 @@ pragma solidity ^0.8;
 import {MetaBalanceAdapter} from "../MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {LabelLib} from "src/balances/LabelLib.sol";
 import {Id, IMorpho, MarketParams, Position} from "morpho-blue/src/interfaces/IMorpho.sol";
 import {MorphoBalancesLib} from "morpho-blue/src/libraries/periphery/MorphoBalancesLib.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -20,10 +20,6 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
     using Math for uint256;
     using MorphoBalancesLib for IMorpho;
-
-    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.MORPHO;
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.MORPHO;
-    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.MORPHO_MARKETS;
 
     /// @notice The Morpho Blue singleton (protocol-global).
     IMorpho public immutable MORPHO;
@@ -68,16 +64,16 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
         uint256 count;
 
         if (collateralEligible && uint256(pos.collateral) > 0) {
-            temp[count++] = _row(collAsset, uint256(pos.collateral), false, pid, PositionKind.Collateral);
+            temp[count++] = _leg(collAsset, uint256(pos.collateral), false, pid, PositionKind.Collateral);
         }
 
         if (loanEligible) {
             (uint256 supplied, uint256 borrowed) = _loanLegs(mp, pos);
             if (supplied > 0) {
-                temp[count++] = _row(loanAsset, supplied, false, pid, PositionKind.Supplied);
+                temp[count++] = _leg(loanAsset, supplied, false, pid, PositionKind.Supplied);
             }
             if (borrowed > 0) {
-                temp[count++] = _row(loanAsset, borrowed, true, pid, PositionKind.Borrowed);
+                temp[count++] = _leg(loanAsset, borrowed, true, pid, PositionKind.Borrowed);
             }
         }
 
@@ -112,6 +108,21 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
+    function _protocolBrand() internal pure override returns (bytes32) {
+        return ProtocolIds.MORPHO;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolId() internal pure override returns (bytes32) {
+        return ProtocolIds.MORPHO;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolSubId() internal pure override returns (bytes32) {
+        return ProtocolIds.MORPHO_MARKETS;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
     /// @dev Morpho market instance is a raw bytes32 marketId, not an address.
     function _instancePositionId(bytes32 instance) internal pure override returns (bytes memory) {
         return abi.encode(instance);
@@ -134,35 +145,9 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
         }
     }
 
-    /// @notice Assembles a single PositionBalance row with this adapter's identity.
-    function _row(INAVCalculator.Asset memory asset, uint256 amount, bool isDebt, bytes memory pid, PositionKind kind)
-        private
-        view
-        returns (INAVCalculator.PositionBalance memory)
-    {
-        return INAVCalculator.PositionBalance({
-            balanceAsset: asset,
-            balanceAdapter: address(this),
-            amount: amount,
-            isDebt: isDebt,
-            protocolBrand: PROTOCOL_BRAND,
-            protocolId: PROTOCOL_ID,
-            protocolSubId: PROTOCOL_SUB_ID,
-            positionId: pid,
-            positionKind: kind,
-            isLocked: false,
-            positionInstanceId: bytes32(0)
-        });
-    }
-
     /// @notice Reads an ERC20 symbol, falling back to "?" for non-standard tokens or a codeless address (e.g. an idle
     ///         market with no collateral token) — so the concatenated leaf stays well-formed (no leading `/` segment).
     function _symbol(address token) private view returns (string memory) {
-        if (token.code.length == 0) return "?";
-        try IERC20Metadata(token).symbol() returns (string memory s) {
-            return bytes(s).length == 0 ? "?" : s;
-        } catch {
-            return "?";
-        }
+        return LabelLib.symbol(token, "?");
     }
 }

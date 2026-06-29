@@ -3,7 +3,7 @@ pragma solidity ^0.8;
 
 import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {LabelLib} from "src/balances/LabelLib.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -22,10 +22,6 @@ import {CompoundV3CometLib} from "src/balances/MetaBalanceAdapters/CompoundV3Com
 ///      (e.g. COMP as both collateral and reward) emit one leg per role, same as the per-comet adapter.
 contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceAdapter {
     using SafeCast for int256;
-
-    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.COMPOUND;
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.COMPOUND_V3;
-    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.COMPOUND_V3_COMETS;
 
     /// @notice The chain's CometRewards contract (same for every comet on the chain).
     address public immutable COMPOUND_REWARDS;
@@ -71,7 +67,7 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceAdapter {
                 bool isDebt = d.baseNet < 0;
                 uint256 amount = isDebt ? uint256(-d.baseNet) : uint256(d.baseNet);
                 PositionKind kind = isDebt ? PositionKind.Borrowed : PositionKind.Supplied;
-                temp[count++] = _row(a, amount, isDebt, pid, kind);
+                temp[count++] = _leg(a, amount, isDebt, pid, kind);
             }
         }
 
@@ -79,13 +75,13 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceAdapter {
         for (uint256 i = 0; i < d.collateralAssets.length; i++) {
             if (d.collateralBalances[i] == 0) continue;
             (INAVCalculator.Asset memory a, bool ok) = _eligible(d.collateralAssets[i], assetFilter);
-            if (ok) temp[count++] = _row(a, d.collateralBalances[i], false, pid, PositionKind.Collateral);
+            if (ok) temp[count++] = _leg(a, d.collateralBalances[i], false, pid, PositionKind.Collateral);
         }
 
         // Reward leg.
         if (d.rewardOwed != 0) {
             (INAVCalculator.Asset memory a, bool ok) = _eligible(REWARD_TOKEN, assetFilter);
-            if (ok) temp[count++] = _row(a, d.rewardOwed, false, pid, PositionKind.Rewards);
+            if (ok) temp[count++] = _leg(a, d.rewardOwed, false, pid, PositionKind.Rewards);
         }
 
         INAVCalculator.PositionBalance[] memory positions = new INAVCalculator.PositionBalance[](count);
@@ -102,19 +98,25 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceAdapter {
 
     /// @inheritdoc MetaBalanceAdapter
     /// @dev Returns `["Market", <leaf>]` where the leaf is the comet's ERC20 symbol (e.g. "cUSDCv3"; "" if
-    ///      unreadable). Returns an empty array for a short positionId.
+    ///      unreadable, fail-open). Returns an empty array for a short positionId.
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
         if (pid.length < 32) return new string[](0);
-        address comet = abi.decode(pid, (address));
-        string memory leaf = "";
-        // Codesize guard: a high-level call to a codeless address reverts via extcodesize, which try/catch does
-        // NOT catch — a faulty label must never revert this (verbose-only) read.
-        if (comet.code.length != 0) {
-            try IERC20Metadata(comet).symbol() returns (string memory s) {
-                leaf = s;
-            } catch {}
-        }
-        return _labels("Market", leaf);
+        return _labels("Market", LabelLib.symbol(abi.decode(pid, (address)), ""));
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolBrand() internal pure override returns (bytes32) {
+        return ProtocolIds.COMPOUND;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolId() internal pure override returns (bytes32) {
+        return ProtocolIds.COMPOUND_V3;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolSubId() internal pure override returns (bytes32) {
+        return ProtocolIds.COMPOUND_V3_COMETS;
     }
 
     function _eligible(address token, address assetFilter)
@@ -124,25 +126,5 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceAdapter {
     {
         if (assetFilter != address(0) && token != assetFilter) return (assetInfo, false);
         (assetInfo, eligible) = _getAssetInfo(token);
-    }
-
-    function _row(INAVCalculator.Asset memory asset, uint256 amount, bool isDebt, bytes memory pid, PositionKind kind)
-        private
-        view
-        returns (INAVCalculator.PositionBalance memory)
-    {
-        return INAVCalculator.PositionBalance({
-            balanceAsset: asset,
-            balanceAdapter: address(this),
-            amount: amount,
-            isDebt: isDebt,
-            protocolBrand: PROTOCOL_BRAND,
-            protocolId: PROTOCOL_ID,
-            protocolSubId: PROTOCOL_SUB_ID,
-            positionId: pid,
-            positionKind: kind,
-            isLocked: false,
-            positionInstanceId: bytes32(0)
-        });
     }
 }

@@ -2,9 +2,9 @@
 pragma solidity ^0.8;
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {IBalanceAdapter} from "../IBalanceAdapter.sol";
+import {LabelLib} from "src/balances/LabelLib.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -198,14 +198,8 @@ contract ERC20DefaultBalanceAdapter is IBalanceAdapter, IPositionDescribable {
             address addr = abi.decode(positionId, (address));
             if (addr == NATIVE_ADDRESS) {
                 leaf = "native";
-            } else if (addr.code.length != 0) {
-                // Codesize guard: a high-level call to a codeless address reverts via extcodesize, which try/catch
-                // does NOT catch — a faulty label must never revert this (verbose-only) read.
-                try IERC20Metadata(addr).symbol() returns (string memory sym) {
-                    leaf = sym;
-                } catch {
-                    leaf = "";
-                }
+            } else {
+                leaf = LabelLib.symbol(addr, "");
             }
         }
         // Fail-open: no derivable label → empty array (IPositionDescribable convention), not `[""]`,

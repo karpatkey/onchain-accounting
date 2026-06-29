@@ -4,6 +4,7 @@ pragma solidity ^0.8;
 import {MetaBalanceAdapter} from "../MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import {LabelLib} from "src/balances/LabelLib.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
@@ -15,10 +16,6 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @dev Per-instance identity is encoded as `abi.encode(address(vault))`. Supports ERC4626-compliant Morpho vaults
 ///      (V1 and V2). Does not include Merkl or Universal Rewards Distributor rewards.
 contract MorphoVaultsMetaBalanceAdapter is MetaBalanceAdapter {
-    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.MORPHO;
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.MORPHO;
-    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.MORPHO_VAULTS;
-
     /// @param protocolName_ Human-readable protocol name (e.g. "Morpho").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
     constructor(string memory protocolName_, address navCalculator_)
@@ -54,19 +51,7 @@ contract MorphoVaultsMetaBalanceAdapter is MetaBalanceAdapter {
         }
 
         INAVCalculator.PositionBalance[] memory positions = new INAVCalculator.PositionBalance[](1);
-        positions[0] = INAVCalculator.PositionBalance({
-            balanceAsset: assetInfo,
-            balanceAdapter: address(this),
-            amount: amount,
-            isDebt: false,
-            protocolBrand: PROTOCOL_BRAND,
-            protocolId: PROTOCOL_ID,
-            protocolSubId: PROTOCOL_SUB_ID,
-            positionId: _instancePositionId(instance),
-            positionKind: PositionKind.Supplied,
-            isLocked: false,
-            positionInstanceId: bytes32(0)
-        });
+        positions[0] = _leg(assetInfo, amount, false, _instancePositionId(instance), PositionKind.Supplied);
         return positions;
     }
 
@@ -82,14 +67,21 @@ contract MorphoVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
         if (pid.length < 32) return new string[](0);
         address vault = abi.decode(pid, (address));
-        string memory leaf = "";
-        // Codesize guard: a high-level call to a codeless address reverts via extcodesize, which try/catch does
-        // NOT catch — a faulty label must never revert this (verbose-only) read.
-        if (vault.code.length != 0) {
-            try IERC4626(vault).name() returns (string memory n) {
-                leaf = n;
-            } catch {}
-        }
-        return _labels("Vault", leaf);
+        return _labels("Vault", LabelLib.name(vault, ""));
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolBrand() internal pure override returns (bytes32) {
+        return ProtocolIds.MORPHO;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolId() internal pure override returns (bytes32) {
+        return ProtocolIds.MORPHO;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolSubId() internal pure override returns (bytes32) {
+        return ProtocolIds.MORPHO_VAULTS;
     }
 }

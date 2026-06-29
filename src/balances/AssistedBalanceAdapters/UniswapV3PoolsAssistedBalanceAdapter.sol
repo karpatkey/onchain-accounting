@@ -2,10 +2,10 @@
 pragma solidity ^0.8;
 
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
+import {LabelLib} from "src/balances/LabelLib.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -463,14 +463,7 @@ contract UniswapV3PoolsAssistedBalanceAdapter is AssistedBalanceAdapter, IPositi
 
     /// @dev ERC20 symbol with a "?" fallback for non-standard tokens (e.g. bytes32 symbols) or reverts.
     function _symbol(address token) private view returns (string memory) {
-        // Explicit codesize guard: a high-level call to a codeless address reverts via Solidity's extcodesize
-        // check, which try/catch does NOT catch — so guard before the typed call (a faulty label must never revert).
-        if (token.code.length == 0) return "?";
-        try IERC20Metadata(token).symbol() returns (string memory s) {
-            return bytes(s).length == 0 ? "?" : s;
-        } catch {
-            return "?";
-        }
+        return LabelLib.symbol(token, "?");
     }
 
     /// @dev Formats a V3 fee (hundredths of a bip: 3000 = 0.3%, 500 = 0.05%, 100 = 0.01%, 10000 = 1%) as a percentage

@@ -28,20 +28,20 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @notice Protocol identifier reported on every emitted position. `virtual` so byte-compatible forks
     ///         (PancakeSwap V2, SushiSwap) report their own slug while sharing the `(address pair)` positionId
     ///         schema. Defaults to `uniswap-v2`.
-    function _protocolId() internal pure virtual returns (bytes32) {
+    function _protocolId() internal pure virtual override returns (bytes32) {
         return ProtocolIds.UNISWAP_V2;
     }
 
     /// @notice Protocol sub-identifier (the specific product) reported on every emitted position. `virtual` so
     ///         byte-compatible forks (PancakeSwap V2, SushiSwap) report their own sub-slug. For the V2 single-product
     ///         ecosystem the ecosystem and sub slug are the same value. Defaults to `uniswap-v2`.
-    function _protocolSubId() internal pure virtual returns (bytes32) {
+    function _protocolSubId() internal pure virtual override returns (bytes32) {
         return ProtocolIds.UNISWAP_V2;
     }
 
     /// @notice Protocol brand (the broadest layer) reported on every emitted position. `virtual` so byte-compatible
     ///         forks (PancakeSwap V2, SushiSwap) report their own brand. Defaults to `uniswap`.
-    function _protocolBrand() internal pure virtual returns (bytes32) {
+    function _protocolBrand() internal pure virtual override returns (bytes32) {
         return ProtocolIds.UNISWAP;
     }
 
@@ -83,10 +83,10 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
         uint256 count;
 
         (INAVCalculator.Asset memory a0, bool f0) = _eligible(token0, assetFilter);
-        if (f0 && amount0 > 0) temp[count++] = _row(a0, amount0, pid);
+        if (f0 && amount0 > 0) temp[count++] = _leg(a0, amount0, false, pid, PositionKind.Supplied);
 
         (INAVCalculator.Asset memory a1, bool f1) = _eligible(token1, assetFilter);
-        if (f1 && amount1 > 0) temp[count++] = _row(a1, amount1, pid);
+        if (f1 && amount1 > 0) temp[count++] = _leg(a1, amount1, false, pid, PositionKind.Supplied);
 
         INAVCalculator.PositionBalance[] memory positions = new INAVCalculator.PositionBalance[](count);
         for (uint256 i = 0; i < count; i++) {
@@ -110,26 +110,6 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     {
         if (assetFilter != address(0) && token != assetFilter) return (assetInfo, false);
         (assetInfo, eligible) = _getAssetInfo(token);
-    }
-
-    function _row(INAVCalculator.Asset memory asset, uint256 amount, bytes memory positionId)
-        private
-        view
-        returns (INAVCalculator.PositionBalance memory)
-    {
-        return INAVCalculator.PositionBalance({
-            balanceAsset: asset,
-            balanceAdapter: address(this),
-            amount: amount,
-            isDebt: false,
-            protocolBrand: _protocolBrand(),
-            protocolId: _protocolId(),
-            protocolSubId: _protocolSubId(),
-            positionId: positionId,
-            positionKind: PositionKind.Supplied,
-            isLocked: false,
-            positionInstanceId: bytes32(0)
-        });
     }
 
     /// @inheritdoc MetaBalanceAdapter

@@ -47,10 +47,6 @@ import {CurvePoolLib} from "./curve/CurvePoolLib.sol";
 ///      docs/decisions/0017-lp-valuation-instantaneous-amounts.md; revisit if NAV is ever consumed synchronously
 ///      on-chain.
 contract ConvexCurveLPStakingMetaBalanceAdapter is MetaBalanceAdapter {
-    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.CONVEX;
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.CONVEX;
-    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.CONVEX_CURVE_LP_STAKING;
-
     uint256 private constant _MAX_EXTRA = 8;
     uint256 private constant _CVX_TOTAL_CLIFFS = 1_000;
     uint256 private constant _CVX_REDUCTION_PER_CLIFF = 100_000e18;
@@ -113,19 +109,7 @@ contract ConvexCurveLPStakingMetaBalanceAdapter is MetaBalanceAdapter {
                             uint256 poolBal = CurvePoolLib.getPoolBalance(pool, i);
                             uint256 amount = CurvePoolLib.proRataAmount(poolBal, stakedLp, totalSupply);
                             if (amount == 0) continue;
-                            tmp[n++] = INAVCalculator.PositionBalance({
-                                balanceAsset: info,
-                                balanceAdapter: address(this),
-                                amount: amount,
-                                isDebt: false,
-                                protocolBrand: PROTOCOL_BRAND,
-                                protocolId: PROTOCOL_ID,
-                                protocolSubId: PROTOCOL_SUB_ID,
-                                positionId: pid,
-                                positionKind: PositionKind.Staking,
-                                isLocked: false,
-                                positionInstanceId: bytes32(0)
-                            });
+                            tmp[n++] = _leg(info, amount, false, pid, PositionKind.Staking);
                         }
                     }
                 }
@@ -140,19 +124,7 @@ contract ConvexCurveLPStakingMetaBalanceAdapter is MetaBalanceAdapter {
             if (crvEarned > 0 && (assetFilter == address(0) || assetFilter == crvToken)) {
                 (INAVCalculator.Asset memory info, bool found) = _getAssetInfo(crvToken);
                 if (found) {
-                    tmp[n++] = INAVCalculator.PositionBalance({
-                        balanceAsset: info,
-                        balanceAdapter: address(this),
-                        amount: crvEarned,
-                        isDebt: false,
-                        protocolBrand: PROTOCOL_BRAND,
-                        protocolId: PROTOCOL_ID,
-                        protocolSubId: PROTOCOL_SUB_ID,
-                        positionId: pid,
-                        positionKind: PositionKind.Rewards,
-                        isLocked: false,
-                        positionInstanceId: bytes32(0)
-                    });
+                    tmp[n++] = _leg(info, crvEarned, false, pid, PositionKind.Rewards);
                 }
             }
         }
@@ -163,19 +135,7 @@ contract ConvexCurveLPStakingMetaBalanceAdapter is MetaBalanceAdapter {
             if (cvxAmount > 0) {
                 (INAVCalculator.Asset memory info, bool found) = _getAssetInfo(CVX_TOKEN);
                 if (found) {
-                    tmp[n++] = INAVCalculator.PositionBalance({
-                        balanceAsset: info,
-                        balanceAdapter: address(this),
-                        amount: cvxAmount,
-                        isDebt: false,
-                        protocolBrand: PROTOCOL_BRAND,
-                        protocolId: PROTOCOL_ID,
-                        protocolSubId: PROTOCOL_SUB_ID,
-                        positionId: pid,
-                        positionKind: PositionKind.Rewards,
-                        isLocked: false,
-                        positionInstanceId: bytes32(0)
-                    });
+                    tmp[n++] = _leg(info, cvxAmount, false, pid, PositionKind.Rewards);
                 }
             }
         }
@@ -213,19 +173,7 @@ contract ConvexCurveLPStakingMetaBalanceAdapter is MetaBalanceAdapter {
                 (bool aOk, uint256 amount) = _safeUint(extraAddr, abi.encodeWithSignature("earned(address)", account));
                 if (!aOk || amount == 0) continue;
 
-                tmp[n++] = INAVCalculator.PositionBalance({
-                    balanceAsset: info,
-                    balanceAdapter: address(this),
-                    amount: amount,
-                    isDebt: false,
-                    protocolBrand: PROTOCOL_BRAND,
-                    protocolId: PROTOCOL_ID,
-                    protocolSubId: PROTOCOL_SUB_ID,
-                    positionId: pid,
-                    positionKind: PositionKind.Rewards,
-                    isLocked: false,
-                    positionInstanceId: bytes32(0)
-                });
+                tmp[n++] = _leg(info, amount, false, pid, PositionKind.Rewards);
             }
         }
 
@@ -304,6 +252,21 @@ contract ConvexCurveLPStakingMetaBalanceAdapter is MetaBalanceAdapter {
         out[0] = "Staking";
         out[1] = "Curve LP";
         out[2] = coins;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolBrand() internal pure override returns (bytes32) {
+        return ProtocolIds.CONVEX;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolId() internal pure override returns (bytes32) {
+        return ProtocolIds.CONVEX;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolSubId() internal pure override returns (bytes32) {
+        return ProtocolIds.CONVEX_CURVE_LP_STAKING;
     }
 
     /// @notice Derives the "TOKEN0/TOKEN1/…" coin-symbol string from the rewarder's underlying Curve pool ("" on

@@ -3,7 +3,7 @@ pragma solidity ^0.8;
 
 import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {LabelLib} from "src/balances/LabelLib.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {FluidVaultLib} from "src/balances/MetaBalanceAdapters/FluidVaultLib.sol";
@@ -19,10 +19,6 @@ import {FluidVaultLib} from "src/balances/MetaBalanceAdapters/FluidVaultLib.sol"
 ///      T1 vaults only — Smart vaults
 ///      (T2/T3/T4) have a different `constantsView` layout and must not be configured.
 contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
-    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.FLUID;
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.FLUID;
-    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.FLUID_VAULTS;
-
     /// @notice The Fluid VaultResolver (chain-level constant; used for NFT enumeration + per-NFT position reads).
     address public immutable VAULT_RESOLVER;
 
@@ -57,12 +53,12 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
         if (collateral > 0) {
             (INAVCalculator.Asset memory a, bool ok) = _eligible(collToken, assetFilter);
             if (ok) {
-                temp[count++] = _row(a, collateral, false, pid, PositionKind.Collateral);
+                temp[count++] = _leg(a, collateral, false, pid, PositionKind.Collateral);
             }
         }
         if (debt > 0) {
             (INAVCalculator.Asset memory a, bool ok) = _eligible(debtToken, assetFilter);
-            if (ok) temp[count++] = _row(a, debt, true, pid, PositionKind.Borrowed);
+            if (ok) temp[count++] = _leg(a, debt, true, pid, PositionKind.Borrowed);
         }
 
         INAVCalculator.PositionBalance[] memory positions = new INAVCalculator.PositionBalance[](count);
@@ -91,15 +87,22 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
         if (pid.length < 32) return new string[](0);
         address vault = abi.decode(pid, (address));
-        string memory leaf = "";
-        // Codesize guard: a high-level call to a codeless address reverts via extcodesize, which try/catch does
-        // NOT catch — a faulty label must never revert this (verbose-only) read.
-        if (vault.code.length != 0) {
-            try IERC20Metadata(vault).name() returns (string memory n) {
-                leaf = n;
-            } catch {}
-        }
-        return _labels("Vault", leaf);
+        return _labels("Vault", LabelLib.name(vault, ""));
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolBrand() internal pure override returns (bytes32) {
+        return ProtocolIds.FLUID;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolId() internal pure override returns (bytes32) {
+        return ProtocolIds.FLUID;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolSubId() internal pure override returns (bytes32) {
+        return ProtocolIds.FLUID_VAULTS;
     }
 
     function _eligible(address token, address assetFilter)
@@ -109,25 +112,5 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     {
         if (assetFilter != address(0) && token != assetFilter) return (assetInfo, false);
         (assetInfo, eligible) = _getAssetInfo(token);
-    }
-
-    function _row(INAVCalculator.Asset memory asset, uint256 amount, bool isDebt, bytes memory pid, PositionKind kind)
-        private
-        view
-        returns (INAVCalculator.PositionBalance memory)
-    {
-        return INAVCalculator.PositionBalance({
-            balanceAsset: asset,
-            balanceAdapter: address(this),
-            amount: amount,
-            isDebt: isDebt,
-            protocolBrand: PROTOCOL_BRAND,
-            protocolId: PROTOCOL_ID,
-            protocolSubId: PROTOCOL_SUB_ID,
-            positionId: pid,
-            positionKind: kind,
-            isLocked: false,
-            positionInstanceId: bytes32(0)
-        });
     }
 }

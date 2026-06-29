@@ -4,6 +4,7 @@ pragma solidity ^0.8;
 import {MetaBalanceAdapter} from "../MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {LabelLib} from "src/balances/LabelLib.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
@@ -41,10 +42,6 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      external oracles (the basket includes leveraged positions) — not a manipulation-resistant mark; acceptable
 ///      under the asynchronous NAV-consumer model (see ADR 0017), same as the AMM-LP adapters.
 contract GearboxV3CreditAccountsMetaBalanceAdapter is MetaBalanceAdapter {
-    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.GEARBOX;
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.GEARBOX_V3;
-    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.GEARBOX_V3_CREDIT_ACCOUNTS;
-
     /// @param protocolName_ Human-readable protocol name (e.g. "Gearbox").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
     constructor(string memory protocolName_, address navCalculator_)
@@ -127,7 +124,7 @@ contract GearboxV3CreditAccountsMetaBalanceAdapter is MetaBalanceAdapter {
             }
             if (bal == 0) continue;
 
-            temp[n++] = _leg(info, bal, ca, false, PositionKind.Collateral);
+            temp[n++] = _leg(info, bal, false, abi.encode(ca), PositionKind.Collateral);
         }
         return n;
     }
@@ -155,27 +152,8 @@ contract GearboxV3CreditAccountsMetaBalanceAdapter is MetaBalanceAdapter {
         (INAVCalculator.Asset memory info, bool found) = _getAssetInfo(underlying);
         if (!found) return n;
 
-        temp[n++] = _leg(info, debt, ca, true, PositionKind.Borrowed);
+        temp[n++] = _leg(info, debt, true, abi.encode(ca), PositionKind.Borrowed);
         return n;
-    }
-
-    /// @dev Builds one PositionBalance leg field-by-field (avoids a 9-field literal inside the collateral loop, which
-    ///      overflows the via_ir stack). `positionId = abi.encode(creditAccount)`; `positionInstanceId = bytes32(0)`.
-    function _leg(INAVCalculator.Asset memory info, uint256 amount, address ca, bool isDebt, PositionKind kind)
-        private
-        view
-        returns (INAVCalculator.PositionBalance memory leg)
-    {
-        leg.balanceAsset = info;
-        leg.balanceAdapter = address(this);
-        leg.amount = amount;
-        leg.isDebt = isDebt;
-        leg.protocolBrand = PROTOCOL_BRAND;
-        leg.protocolId = PROTOCOL_ID;
-        leg.protocolSubId = PROTOCOL_SUB_ID;
-        leg.positionId = abi.encode(ca);
-        leg.positionKind = kind;
-        // isLocked defaults false (the basket is freely withdrawable subject to health); positionInstanceId bytes32(0).
     }
 
     /// @inheritdoc MetaBalanceAdapter
@@ -231,10 +209,25 @@ contract GearboxV3CreditAccountsMetaBalanceAdapter is MetaBalanceAdapter {
 
         if (bytes(leaf).length == 0) {
             try ICreditManagerV3(cm).underlying() returns (address u) {
-                if (u != address(0)) leaf = _tokenSymbol(u);
+                if (u != address(0)) leaf = LabelLib.symbol(u, "");
             } catch {}
         }
         return _labels("Credit Account", leaf);
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolBrand() internal pure override returns (bytes32) {
+        return ProtocolIds.GEARBOX;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolId() internal pure override returns (bytes32) {
+        return ProtocolIds.GEARBOX_V3;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolSubId() internal pure override returns (bytes32) {
+        return ProtocolIds.GEARBOX_V3_CREDIT_ACCOUNTS;
     }
 
     //

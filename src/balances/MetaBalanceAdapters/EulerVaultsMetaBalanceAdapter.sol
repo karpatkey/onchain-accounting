@@ -4,6 +4,7 @@ pragma solidity ^0.8;
 import {MetaBalanceAdapter} from "../MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import {LabelLib} from "src/balances/LabelLib.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
@@ -53,10 +54,6 @@ interface IEVC {
 ///      factory off-chain to *propose* instances; governance approves each into the allowlist. See
 ///      BALANCE_ADAPTERS.md §6.1.
 contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
-    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.EULER;
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.EULER;
-    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.EULER_VAULTS;
-
     /// @param protocolName_ Human-readable protocol name (e.g. "Euler").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
     constructor(string memory protocolName_, address navCalculator_)
@@ -105,34 +102,10 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
         bytes memory positionId = _instancePositionId(instance);
         uint256 i = 0;
         if (supplied > 0) {
-            positions[i++] = INAVCalculator.PositionBalance({
-                balanceAsset: assetInfo,
-                balanceAdapter: address(this),
-                amount: supplied,
-                isDebt: false,
-                protocolBrand: PROTOCOL_BRAND,
-                protocolId: PROTOCOL_ID,
-                protocolSubId: PROTOCOL_SUB_ID,
-                positionId: positionId,
-                positionKind: _supplyKind(account, vaultAddr),
-                isLocked: false,
-                positionInstanceId: bytes32(0)
-            });
+            positions[i++] = _leg(assetInfo, supplied, false, positionId, _supplyKind(account, vaultAddr));
         }
         if (debt > 0) {
-            positions[i] = INAVCalculator.PositionBalance({
-                balanceAsset: assetInfo,
-                balanceAdapter: address(this),
-                amount: debt,
-                isDebt: true,
-                protocolBrand: PROTOCOL_BRAND,
-                protocolId: PROTOCOL_ID,
-                protocolSubId: PROTOCOL_SUB_ID,
-                positionId: positionId,
-                positionKind: PositionKind.Borrowed,
-                isLocked: false,
-                positionInstanceId: bytes32(0)
-            });
+            positions[i] = _leg(assetInfo, debt, true, positionId, PositionKind.Borrowed);
         }
         return positions;
     }
@@ -166,14 +139,21 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
         if (pid.length < 32) return new string[](0);
         address vault = abi.decode(pid, (address));
-        string memory leaf = "";
-        // Codesize guard: a high-level call to a codeless address reverts via extcodesize, which try/catch does
-        // NOT catch — a faulty label must never revert this (verbose-only) read.
-        if (vault.code.length != 0) {
-            try IERC4626(vault).name() returns (string memory n) {
-                leaf = n;
-            } catch {}
-        }
-        return _labels("Vault", leaf);
+        return _labels("Vault", LabelLib.name(vault, ""));
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolBrand() internal pure override returns (bytes32) {
+        return ProtocolIds.EULER;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolId() internal pure override returns (bytes32) {
+        return ProtocolIds.EULER;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolSubId() internal pure override returns (bytes32) {
+        return ProtocolIds.EULER_VAULTS;
     }
 }

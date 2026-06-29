@@ -37,10 +37,6 @@ interface IOsTokenVaultController {
 ///      Staking/Borrowed split is the same; only the signed-net `getAdapterBalances`/`getAdapterBalanceForAsset`
 ///      convenience getters of the per-vault adapter are dropped (they are not on the NAV path).
 contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceAdapter {
-    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.STAKEWISE;
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.STAKEWISE_V3;
-    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.STAKEWISE_V3_VAULTS;
-
     /// @notice The underlying staking asset all configured vaults are denominated in (chain-level constant).
     address public immutable UNDERLYING_TOKEN;
 
@@ -91,10 +87,10 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceAdapter {
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](2);
         uint256 count;
         if (vaultAssets > 0) {
-            temp[count++] = _row(asset, vaultAssets, false, pid, PositionKind.Staking);
+            temp[count++] = _leg(asset, vaultAssets, false, pid, PositionKind.Staking);
         }
         if (mintedOs > 0) {
-            temp[count++] = _row(asset, mintedOs, true, pid, PositionKind.Borrowed);
+            temp[count++] = _leg(asset, mintedOs, true, pid, PositionKind.Borrowed);
         }
 
         INAVCalculator.PositionBalance[] memory positions = new INAVCalculator.PositionBalance[](count);
@@ -119,23 +115,18 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceAdapter {
         return _labels("Vault", "");
     }
 
-    function _row(INAVCalculator.Asset memory asset, uint256 amount, bool isDebt, bytes memory pid, PositionKind kind)
-        private
-        view
-        returns (INAVCalculator.PositionBalance memory)
-    {
-        return INAVCalculator.PositionBalance({
-            balanceAsset: asset,
-            balanceAdapter: address(this),
-            amount: amount,
-            isDebt: isDebt,
-            protocolBrand: PROTOCOL_BRAND,
-            protocolId: PROTOCOL_ID,
-            protocolSubId: PROTOCOL_SUB_ID,
-            positionId: pid,
-            positionKind: kind,
-            isLocked: false,
-            positionInstanceId: bytes32(0)
-        });
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolBrand() internal pure override returns (bytes32) {
+        return ProtocolIds.STAKEWISE;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolId() internal pure override returns (bytes32) {
+        return ProtocolIds.STAKEWISE_V3;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolSubId() internal pure override returns (bytes32) {
+        return ProtocolIds.STAKEWISE_V3_VAULTS;
     }
 }

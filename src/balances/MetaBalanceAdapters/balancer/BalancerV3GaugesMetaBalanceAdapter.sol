@@ -36,10 +36,6 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceAdapter {
     using SafeCast for int128;
     using BalancerV3PoolLib for IStablePool;
 
-    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.BALANCER;
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.BALANCER_V3;
-    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.BALANCER_V3_GAUGES;
-
     /// @notice One week in seconds (gauge inflation accounting boundary).
     uint256 public constant WEEK = 7 * 86_400;
 
@@ -88,7 +84,7 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceAdapter {
                 if (!found) continue;
                 uint256 amount = pool.poolBalanceOfIndexed(staked, i);
                 if (amount == 0) continue;
-                temp[count++] = _row(assetInfo, amount, positionId, PositionKind.Staking);
+                temp[count++] = _leg(assetInfo, amount, false, positionId, PositionKind.Staking);
             }
         }
 
@@ -287,28 +283,23 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceAdapter {
         if (assetFilter != address(0) && token != assetFilter) return count;
         (INAVCalculator.Asset memory assetInfo, bool found) = _getAssetInfo(token);
         if (!found) return count;
-        temp[count] = _row(assetInfo, amount, positionId, PositionKind.Rewards);
+        temp[count] = _leg(assetInfo, amount, false, positionId, PositionKind.Rewards);
         return count + 1;
     }
 
-    function _row(INAVCalculator.Asset memory asset, uint256 amount, bytes memory positionId, PositionKind kind)
-        private
-        view
-        returns (INAVCalculator.PositionBalance memory)
-    {
-        return INAVCalculator.PositionBalance({
-            balanceAsset: asset,
-            balanceAdapter: address(this),
-            amount: amount,
-            isDebt: false,
-            protocolBrand: PROTOCOL_BRAND,
-            protocolId: PROTOCOL_ID,
-            protocolSubId: PROTOCOL_SUB_ID,
-            positionId: positionId,
-            positionKind: kind,
-            isLocked: false,
-            positionInstanceId: bytes32(0)
-        });
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolBrand() internal pure override returns (bytes32) {
+        return ProtocolIds.BALANCER;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolId() internal pure override returns (bytes32) {
+        return ProtocolIds.BALANCER_V3;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolSubId() internal pure override returns (bytes32) {
+        return ProtocolIds.BALANCER_V3_GAUGES;
     }
 
     function _rewardCount(IGaugeV3 gauge) private view returns (uint256) {

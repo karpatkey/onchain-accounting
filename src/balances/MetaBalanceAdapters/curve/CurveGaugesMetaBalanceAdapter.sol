@@ -50,10 +50,6 @@ import {CurvePoolLib} from "./CurvePoolLib.sol";
 ///      docs/decisions/0017-lp-valuation-instantaneous-amounts.md; revisit if NAV is ever consumed synchronously
 ///      on-chain.
 contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
-    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.CURVE;
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.CURVE;
-    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.CURVE_GAUGES;
-
     /// @notice Curve Minter for CRV emission. address(0) disables CRV tracking (use on L2).
     address public immutable CURVE_MINTER;
 
@@ -114,19 +110,7 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
                             uint256 amount = CurvePoolLib.proRataAmount(poolBal, stakedLp, totalSupply);
                             if (amount == 0) continue;
 
-                            tmp[n++] = INAVCalculator.PositionBalance({
-                                balanceAsset: assetInfo,
-                                balanceAdapter: address(this),
-                                amount: amount,
-                                isDebt: false,
-                                protocolBrand: PROTOCOL_BRAND,
-                                protocolId: PROTOCOL_ID,
-                                protocolSubId: PROTOCOL_SUB_ID,
-                                positionId: pid,
-                                positionKind: PositionKind.Staking,
-                                isLocked: false,
-                                positionInstanceId: bytes32(0)
-                            });
+                            tmp[n++] = _leg(assetInfo, amount, false, pid, PositionKind.Staking);
                         }
                     }
                 }
@@ -140,19 +124,7 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
             if (crvLb > 0) {
                 (INAVCalculator.Asset memory crvInfo, bool found) = _getAssetInfo(CRV_TOKEN);
                 if (found) {
-                    tmp[n++] = INAVCalculator.PositionBalance({
-                        balanceAsset: crvInfo,
-                        balanceAdapter: address(this),
-                        amount: crvLb,
-                        isDebt: false,
-                        protocolBrand: PROTOCOL_BRAND,
-                        protocolId: PROTOCOL_ID,
-                        protocolSubId: PROTOCOL_SUB_ID,
-                        positionId: pid,
-                        positionKind: PositionKind.Rewards,
-                        isLocked: false,
-                        positionInstanceId: bytes32(0)
-                    });
+                    tmp[n++] = _leg(crvInfo, crvLb, false, pid, PositionKind.Rewards);
                 }
             }
         }
@@ -170,19 +142,7 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
             uint256 amount = CurvePoolLib.claimableReward(gauge, account, rewardTok);
             if (amount == 0) continue;
 
-            tmp[n++] = INAVCalculator.PositionBalance({
-                balanceAsset: assetInfo,
-                balanceAdapter: address(this),
-                amount: amount,
-                isDebt: false,
-                protocolBrand: PROTOCOL_BRAND,
-                protocolId: PROTOCOL_ID,
-                protocolSubId: PROTOCOL_SUB_ID,
-                positionId: pid,
-                positionKind: PositionKind.Rewards,
-                isLocked: false,
-                positionInstanceId: bytes32(0)
-            });
+            tmp[n++] = _leg(assetInfo, amount, false, pid, PositionKind.Rewards);
         }
 
         positions = new INAVCalculator.PositionBalance[](n);
@@ -230,6 +190,21 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
         if (pid.length < 32) return new string[](0);
         string memory leaf = _leaf(pid);
         return _labels("Staking Gauge", leaf);
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolBrand() internal pure override returns (bytes32) {
+        return ProtocolIds.CURVE;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolId() internal pure override returns (bytes32) {
+        return ProtocolIds.CURVE;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolSubId() internal pure override returns (bytes32) {
+        return ProtocolIds.CURVE_GAUGES;
     }
 
     /// @notice Derives the "TOKEN0/TOKEN1/…" leaf from the gauge's pool coins ("" on failure).

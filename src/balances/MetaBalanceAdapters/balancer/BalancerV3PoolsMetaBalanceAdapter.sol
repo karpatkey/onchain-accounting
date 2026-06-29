@@ -24,10 +24,6 @@ import {BalancerV3PoolLib} from "./BalancerV3PoolLib.sol";
 contract BalancerV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     using BalancerV3PoolLib for IStablePool;
 
-    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.BALANCER;
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.BALANCER_V3;
-    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.BALANCER_V3_POOLS;
-
     /// @param protocolName_ Protocol identifier (e.g. "Balancer V3").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
     constructor(string memory protocolName_, address navCalculator_)
@@ -64,19 +60,7 @@ contract BalancerV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
             uint256 amount = pool.poolBalanceOfIndexed(walletBpt, i);
             if (amount == 0) continue;
 
-            temp[count++] = INAVCalculator.PositionBalance({
-                balanceAsset: assetInfo,
-                balanceAdapter: address(this),
-                amount: amount,
-                isDebt: false,
-                protocolBrand: PROTOCOL_BRAND,
-                protocolId: PROTOCOL_ID,
-                protocolSubId: PROTOCOL_SUB_ID,
-                positionId: positionId,
-                positionKind: PositionKind.Supplied,
-                isLocked: false,
-                positionInstanceId: bytes32(0)
-            });
+            temp[count++] = _leg(assetInfo, amount, false, positionId, PositionKind.Supplied);
         }
 
         INAVCalculator.PositionBalance[] memory positions = new INAVCalculator.PositionBalance[](count);
@@ -111,5 +95,20 @@ contract BalancerV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     ///         symbols joined with "/". Reverts only propagate to the `positionLabels` catch arm.
     function poolTokenSymbols(address pool) external view returns (string memory) {
         return _joinTokenSymbols(IStablePool(pool).poolTokens());
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolBrand() internal pure override returns (bytes32) {
+        return ProtocolIds.BALANCER;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolId() internal pure override returns (bytes32) {
+        return ProtocolIds.BALANCER_V3;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolSubId() internal pure override returns (bytes32) {
+        return ProtocolIds.BALANCER_V3_POOLS;
     }
 }

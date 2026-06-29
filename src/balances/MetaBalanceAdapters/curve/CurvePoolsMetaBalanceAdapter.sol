@@ -39,10 +39,6 @@ import {CurvePoolLib} from "./CurvePoolLib.sol";
 ///      consumer). See docs/decisions/0017-lp-valuation-instantaneous-amounts.md; revisit if NAV is ever consumed
 ///      synchronously on-chain.
 contract CurvePoolsMetaBalanceAdapter is MetaBalanceAdapter {
-    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.CURVE;
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.CURVE;
-    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.CURVE_POOLS;
-
     /// @param protocolName_ Human-readable name (e.g. "Curve").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
     constructor(string memory protocolName_, address navCalculator_)
@@ -87,19 +83,7 @@ contract CurvePoolsMetaBalanceAdapter is MetaBalanceAdapter {
             uint256 amount = CurvePoolLib.proRataAmount(poolBal, walletLp, totalSupply);
             if (amount == 0) continue;
 
-            tmp[n++] = INAVCalculator.PositionBalance({
-                balanceAsset: assetInfo,
-                balanceAdapter: address(this),
-                amount: amount,
-                isDebt: false,
-                protocolBrand: PROTOCOL_BRAND,
-                protocolId: PROTOCOL_ID,
-                protocolSubId: PROTOCOL_SUB_ID,
-                positionId: pid,
-                positionKind: PositionKind.Supplied,
-                isLocked: false,
-                positionInstanceId: bytes32(0)
-            });
+            tmp[n++] = _leg(assetInfo, amount, false, pid, PositionKind.Supplied);
         }
 
         positions = new INAVCalculator.PositionBalance[](n);
@@ -121,6 +105,21 @@ contract CurvePoolsMetaBalanceAdapter is MetaBalanceAdapter {
         if (pid.length < 32) return new string[](0);
         string memory leaf = _leaf(pid);
         return _labels("AMM Liquidity Pool", leaf);
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolBrand() internal pure override returns (bytes32) {
+        return ProtocolIds.CURVE;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolId() internal pure override returns (bytes32) {
+        return ProtocolIds.CURVE;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolSubId() internal pure override returns (bytes32) {
+        return ProtocolIds.CURVE_POOLS;
     }
 
     /// @notice Derives the "TOKEN0/TOKEN1/…" leaf from the pool coins ("" on failure).

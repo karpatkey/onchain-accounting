@@ -103,5 +103,16 @@
         "heartbeat": 86400
       }
     ]
+  },
+  "cbBTC": {
+    "$comment": "Coinbase Wrapped BTC. Registered so its Morpho collateral leg (MorphoMarket_cbBTC_USDC on Base) is valued. Chainlink cbBTC/USD on Base, 8 decimals.",
+    "address": "0xcbB7C0000aB88B473b1F5aFd9ef808440eED33Bf",
+    "priceFeeds": [
+      {
+        "type": "Chainlink",
+        "address": "0x07DA0E54543a844a80ABE69c8A12F22B3aA59f9D",
+        "heartbeat": 86400
+      }
+    ]
   }
 }

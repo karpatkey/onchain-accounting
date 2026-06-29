@@ -45,7 +45,7 @@
     "enabled": false
   },
   "MerklRewardsAssisted": {
-    "enabled": false
+    "enabled": true
   },
   "PancakeSwapV3_WETH_COW": {
     "enabled": false

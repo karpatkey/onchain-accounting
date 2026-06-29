@@ -169,7 +169,7 @@
     "enabled": true
   },
   "MerklRewardsAssisted": {
-    "enabled": false
+    "enabled": true
   },
   "EtherFiWithdrawalQueueAssisted": {
     "enabled": true,

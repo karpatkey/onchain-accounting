@@ -42,6 +42,6 @@
     "enabled": false
   },
   "MerklRewardsAssisted": {
-    "enabled": false
+    "enabled": true
   }
 }

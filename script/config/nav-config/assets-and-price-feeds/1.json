@@ -76,6 +76,11 @@
         "type": "Chainlink",
         "address": "0x66Ab900341C98de949EC31d11b3C4180743844F1",
         "heartbeat": 86400
+      },
+      {
+        "type": "Custom",
+        "feed": "ETHPlus",
+        "heartbeat": 86400
       }
     ]
   },
@@ -466,5 +471,26 @@
         "heartbeat": 3600
       }
     ]
+  },
+  "cbBTC": {
+    "$comment": "Coinbase Wrapped BTC. Registered so its Morpho collateral leg (MorphoMarket_cbBTC_USDC) is valued — was previously unregistered, dropping the collateral leg from NAV. Chainlink cbBTC/USD, 8 decimals.",
+    "address": "0xcbB7C0000aB88B473b1F5aFd9ef808440eED33Bf",
+    "priceFeeds": [
+      {
+        "type": "Chainlink",
+        "address": "0x2665701293fCbEB223D11A08D826563EDcCE423A",
+        "heartbeat": 86400
+      }
+    ]
+  },
+  "GNO": {
+    "address": "0x6810e776880C02933D47DB1b9fc05908e5386b96",
+    "priceFeeds": [],
+    "note": "No oracle available on mainnet. Documented-deferral entry (like GEAR) so the gap is recorded rather than silent. NAVCalculator filters per-asset against the registry, so leaving GNO unpriced drops only its leg; a priced LP pairing it still values the other side."
+  },
+  "COW": {
+    "address": "0xDEF1CA1fb7FBcDC777520aa7f396b4E015F497aB",
+    "priceFeeds": [],
+    "note": "Deferred — no reliable mainnet oracle for COW. Documented-deferral entry. COW-containing UniV3/PancakeSwap pools are intentionally disabled in chains/1.json.balanceAdapters since the COW leg can't be valued; revisit if a custom/TWAP feed is added."
   }
 }

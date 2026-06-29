@@ -8,7 +8,7 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
-/// @title Gearbox Markets Meta Balance Adapter
+/// @title Gearbox V3 Markets Meta Balance Adapter
 /// @author KPK
 /// @notice One immutable adapter that reports an account's supply position in *any* Gearbox V3 ERC4626 farming
 ///         pool — `convertToAssets(balanceOf(account))` emitted as a single `Supplied` leg in the pool's underlying.
@@ -27,7 +27,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      `ContractsRegister` and are not in its `getPools()`, while the register carries pools we do not use (incl.
 ///      deprecated/zombie entries). Use the register off-chain to *propose* instances; governance approves them.
 ///      See BALANCE_ADAPTERS.md §6.1.
-contract GearboxMarketsMetaBalanceAdapter is MetaBalanceAdapter {
+contract GearboxV3MarketsMetaBalanceAdapter is MetaBalanceAdapter {
     bytes32 private constant PROTOCOL_BRAND = ProtocolIds.GEARBOX;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.GEARBOX_V3;
     bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.GEARBOX_V3_MARKETS;

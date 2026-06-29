@@ -24,7 +24,7 @@ import {MorphoMarketsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/
 import {
     AaveV3InstancesMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/AaveV3InstancesMetaBalanceAdapter.sol";
-import {GearboxMarketsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/GearboxMarketsMetaBalanceAdapter.sol";
+import {GearboxV3MarketsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/GearboxV3MarketsMetaBalanceAdapter.sol";
 import {CapBalanceAdapter} from "src/balances/BalanceAdapters/CapBalanceAdapter.sol";
 import {CurvePoolsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/curve/CurvePoolsMetaBalanceAdapter.sol";
 import {CurveGaugesMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/curve/CurveGaugesMetaBalanceAdapter.sol";
@@ -748,7 +748,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
 
     function _deployGearboxMarketsMeta(string memory name, address navAddr) internal returns (address) {
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        return address(new GearboxMarketsMetaBalanceAdapter(protocol, navAddr));
+        return address(new GearboxV3MarketsMetaBalanceAdapter(protocol, navAddr));
     }
 
     function _deployCap(address navAddr) internal returns (address) {

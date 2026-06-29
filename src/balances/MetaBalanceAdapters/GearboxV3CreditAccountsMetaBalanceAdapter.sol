@@ -7,10 +7,10 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
-/// @title Gearbox Credit Accounts Meta Balance Adapter
+/// @title Gearbox V3 Credit Accounts Meta Balance Adapter
 /// @author KPK
 /// @notice One immutable adapter that reports an account's **borrow-side** Gearbox V3 positions — the collateral
-///         basket and the debt held in its **Credit Accounts** — complementing `GearboxMarketsMetaBalanceAdapter`,
+///         basket and the debt held in its **Credit Accounts** — complementing `GearboxV3MarketsMetaBalanceAdapter`,
 ///         which covers only the passive ERC4626 *supply* side (pool LPs). The instance coordinate is the **credit
 ///         account address** (widened to bytes32); the active set lives on NAVCalculator
 ///         (`addMetaInstances`/`removeMetaInstances`, MANAGER-gated). See ADR 0010.
@@ -40,7 +40,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      **Valuation note.** Collateral is valued at instantaneous on-chain token balances priced by NAVCalculator's
 ///      external oracles (the basket includes leveraged positions) — not a manipulation-resistant mark; acceptable
 ///      under the asynchronous NAV-consumer model (see ADR 0017), same as the AMM-LP adapters.
-contract GearboxCreditAccountsMetaBalanceAdapter is MetaBalanceAdapter {
+contract GearboxV3CreditAccountsMetaBalanceAdapter is MetaBalanceAdapter {
     bytes32 private constant PROTOCOL_BRAND = ProtocolIds.GEARBOX;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.GEARBOX_V3;
     bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.GEARBOX_V3_CREDIT_ACCOUNTS;

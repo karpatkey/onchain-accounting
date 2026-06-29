@@ -2,7 +2,7 @@
 pragma solidity ^0.8;
 
 import {Test} from "forge-std/Test.sol";
-import {GearboxMarketsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/GearboxMarketsMetaBalanceAdapter.sol";
+import {GearboxV3MarketsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/GearboxV3MarketsMetaBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -46,12 +46,12 @@ contract MockToken {
     }
 }
 
-/// @title GearboxMarketsMetaBalanceAdapter unit tests (no fork)
-contract GearboxMarketsMetaBalanceAdapterTest is Test {
+/// @title GearboxV3MarketsMetaBalanceAdapter unit tests (no fork)
+contract GearboxV3MarketsMetaBalanceAdapterTest is Test {
     using Strings for address;
 
     Mock_NAVCalculator nav;
-    GearboxMarketsMetaBalanceAdapter meta;
+    GearboxV3MarketsMetaBalanceAdapter meta;
     MockToken weth;
     MockToken wsteth;
     MockGearboxMarket marketA; // kpk WETH market
@@ -71,7 +71,7 @@ contract GearboxMarketsMetaBalanceAdapterTest is Test {
         marketA.setBalance(alice, 10e18); // 11 WETH
         marketB.setBalance(alice, 4e18); // 4 wstETH
 
-        meta = new GearboxMarketsMetaBalanceAdapter("Gearbox", address(nav));
+        meta = new GearboxV3MarketsMetaBalanceAdapter("Gearbox", address(nav));
     }
 
     function _instances() internal view returns (bytes32[] memory ins) {

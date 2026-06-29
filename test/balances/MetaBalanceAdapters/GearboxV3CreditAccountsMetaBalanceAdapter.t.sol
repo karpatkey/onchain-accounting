@@ -3,10 +3,10 @@ pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
 import {
-    GearboxCreditAccountsMetaBalanceAdapter,
+    GearboxV3CreditAccountsMetaBalanceAdapter,
     CollateralDebtData,
     CollateralCalcTask
-} from "src/balances/MetaBalanceAdapters/GearboxCreditAccountsMetaBalanceAdapter.sol";
+} from "src/balances/MetaBalanceAdapters/GearboxV3CreditAccountsMetaBalanceAdapter.sol";
 import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
@@ -107,12 +107,12 @@ contract MockCreditManager {
     }
 }
 
-/// @title GearboxCreditAccountsMetaBalanceAdapter unit tests (no fork)
+/// @title GearboxV3CreditAccountsMetaBalanceAdapter unit tests (no fork)
 /// @notice Borrow-side Gearbox V3: per credit account, one Borrowed leg (debt in the pool underlying) + one
 ///         Collateral leg per enabled token (balanceOf), keyed on the credit account as the meta instance.
-contract GearboxCreditAccountsMetaBalanceAdapterTest is Test {
+contract GearboxV3CreditAccountsMetaBalanceAdapterTest is Test {
     Mock_NAVCalculator nav;
-    GearboxCreditAccountsMetaBalanceAdapter adapter;
+    GearboxV3CreditAccountsMetaBalanceAdapter adapter;
 
     MockGearboxToken usdc; // pool underlying (debt)
     MockGearboxToken weth; // collateral, bit 1<<3
@@ -141,7 +141,7 @@ contract GearboxCreditAccountsMetaBalanceAdapterTest is Test {
 
         ca = new MockCreditAccount(address(cm));
 
-        adapter = new GearboxCreditAccountsMetaBalanceAdapter("Gearbox", address(nav));
+        adapter = new GearboxV3CreditAccountsMetaBalanceAdapter("Gearbox", address(nav));
     }
 
     function _instances() internal view returns (bytes32[] memory ins) {

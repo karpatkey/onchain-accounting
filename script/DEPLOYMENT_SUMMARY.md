@@ -347,7 +347,7 @@ script/verify/verify-all.sh
 - `ConvexRewardsMetaBalanceAdapter` - Convex staking
 - `CapBalanceAdapter` - Cap (cUSD + stcUSD aggregated → USDC)
 - `FluidFTokensMetaBalanceAdapter`, `FluidVaultsMetaBalanceAdapter` - Fluid lending + vaults
-- `GearboxMarketsMetaBalanceAdapter` - Gearbox kpk-curated markets
+- `GearboxV3MarketsMetaBalanceAdapter` - Gearbox kpk-curated markets
 - `StakeWiseV3VaultsMetaBalanceAdapter` - StakeWise V3 Genesis Vault (osETH/osGNO themselves are Custom-priced ERC20s via `osToken_CustomPriceFeed`, not balance adapters)
 - `StaderWithdrawalQueueBalanceAdapter` - Stader pending unstake requests
 - `KelpWithdrawalQueueBalanceAdapter` - Kelp DAO rsETH exit queue (multi-asset; payout assets discovered via `lrtConfig().getSupportedAssetList()`)

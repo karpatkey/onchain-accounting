@@ -20,8 +20,8 @@ import {
     MorphoMarketsMetaBalanceAdapter
 } from "../../src/balances/MetaBalanceAdapters/MorphoMarketsMetaBalanceAdapter.sol";
 import {
-    GearboxMarketsMetaBalanceAdapter
-} from "../../src/balances/MetaBalanceAdapters/GearboxMarketsMetaBalanceAdapter.sol";
+    GearboxV3MarketsMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/GearboxV3MarketsMetaBalanceAdapter.sol";
 import {EulerVaultsMetaBalanceAdapter} from "../../src/balances/MetaBalanceAdapters/EulerVaultsMetaBalanceAdapter.sol";
 import {CapBalanceAdapter} from "../../src/balances/BalanceAdapters/CapBalanceAdapter.sol";
 import {
@@ -468,7 +468,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
 
-        GearboxMarketsMetaBalanceAdapter adapter = new GearboxMarketsMetaBalanceAdapter(protocol, navCalculator);
+        GearboxV3MarketsMetaBalanceAdapter adapter = new GearboxV3MarketsMetaBalanceAdapter(protocol, navCalculator);
         return address(adapter);
     }
 

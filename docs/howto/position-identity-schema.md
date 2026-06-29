@@ -884,7 +884,7 @@ schemas are in the next section and in the per-adapter table above.)
 | `morpho-vaults` | `MORPHO_VAULTS` | `MorphoVaultsMetaBalanceAdapter` — MetaMorpho (ERC4626) vault supply |
 | `morpho-markets` | `MORPHO_MARKETS` | `MorphoMarketsMetaBalanceAdapter` — Morpho isolated-market collateral/supply/borrow |
 | `euler-vaults` | `EULER_VAULTS` | `EulerVaultsMetaBalanceAdapter` — Euler V2 vault supply/collateral/borrow |
-| `gearbox-v3` | `GEARBOX_V3` | `GearboxMarketsMetaBalanceAdapter` — Gearbox V3 passive-pool deposit |
+| `gearbox-v3` | `GEARBOX_V3` | `GearboxV3MarketsMetaBalanceAdapter` — Gearbox V3 passive-pool deposit |
 | `compound-v3` | `COMPOUND_V3` | `CompoundV3CometsMetaBalanceAdapter` — Compound V3 Comet base/collateral/rewards |
 | `fluid-ftokens` | `FLUID_FTOKENS` | `FluidFTokensMetaBalanceAdapter` — Fluid fToken (ERC4626) lending supply |
 | `fluid-vaults` | `FLUID_VAULTS` | `FluidVaultsMetaBalanceAdapter` — Fluid T1 vault collateral/borrow |
@@ -1441,7 +1441,7 @@ address widened → `abi.encode(address instance)`); overrides are flagged.
 | `EulerVaultsMetaBalanceAdapter` | `euler-vaults` | `"Euler"` | `["Vault", <vault.name()>]` (derived) | `abi.encode(address vault)` | Collateral/Supplied / Borrowed | `["Euler","Vault","eUSDC"]` |
 | `FluidFTokensMetaBalanceAdapter` | `fluid-ftokens` | `"Fluid"` | `["Lending", "<fToken.symbol()> supply"]` (derived) | `abi.encode(address fToken)` | Supplied | `["Fluid","Lending","fUSDC supply"]` |
 | `FluidVaultsMetaBalanceAdapter` | `fluid-vaults` | `"Fluid"` | `["Vault", <vault.name()>]` (derived) | `abi.encode(address vault)` | Collateral / Borrowed | `["Fluid","Vault","Fluid T1 USDC"]` |
-| `GearboxMarketsMetaBalanceAdapter` | `gearbox-v3` | `"Gearbox"` | `["Market", <market.name()>]` (derived) | `abi.encode(address market)` | Supplied | `["Gearbox","Market","dDAI"]` |
+| `GearboxV3MarketsMetaBalanceAdapter` | `gearbox-v3` | `"Gearbox"` | `["Market", <market.name()>]` (derived) | `abi.encode(address market)` | Supplied | `["Gearbox","Market","dDAI"]` |
 | `MorphoMarketsMetaBalanceAdapter` | `morpho-markets` | `"Morpho"` | `["Market", "<coll>/<loan> market"]` (derived) | **override** `abi.encode(bytes32 marketId)` (raw) | Collateral / Supplied / Borrowed | `["Morpho","Market","wETH/USDC market"]` |
 | `MorphoVaultsMetaBalanceAdapter` | `morpho-vaults` | `"Morpho"` | `["Vault", <vault.name()>]` (derived) | `abi.encode(address vault)` | Supplied | `["Morpho","Vault","Morpho DAI"]` |
 | `StakeWiseV3VaultsMetaBalanceAdapter` | `stakewise-v3` | `"StakeWise V3"` | `["Vaults", <vault.name()>]` (derived) | `abi.encode(address vault)` | Staking / Borrowed (osToken) | `["StakeWise V3","Vaults","StakeWise Vault ETH"]` |

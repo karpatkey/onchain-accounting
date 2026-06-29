@@ -2,7 +2,7 @@
 pragma solidity ^0.8;
 
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
-import {GearboxMarketsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/GearboxMarketsMetaBalanceAdapter.sol";
+import {GearboxV3MarketsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/GearboxV3MarketsMetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 interface IERC4626Min {
@@ -18,7 +18,7 @@ contract GearboxMarketsMetaParityForkTest is BalanceAdapterTestBase {
     address public constant HOLDER = 0x58e6c7ab55Aa9012eAccA16d1ED4c15795669E1C;
     uint256 public constant FORK_BLOCK = 24_068_807;
 
-    GearboxMarketsMetaBalanceAdapter public meta;
+    GearboxV3MarketsMetaBalanceAdapter public meta;
 
     function setUp() public override {
         super.setUp();
@@ -27,7 +27,7 @@ contract GearboxMarketsMetaParityForkTest is BalanceAdapterTestBase {
         vm.rollFork(FORK_BLOCK);
 
         balances = _deployBalancesForAdapter(WETH);
-        meta = new GearboxMarketsMetaBalanceAdapter("Gearbox", address(balances));
+        meta = new GearboxV3MarketsMetaBalanceAdapter("Gearbox", address(balances));
     }
 
     function _instance() internal pure returns (bytes32[] memory ins) {

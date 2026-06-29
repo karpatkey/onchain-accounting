@@ -66,7 +66,9 @@ import {
     LidoWithdrawalQueueBalanceAdapter
 } from "../../src/balances/BalanceAdapters/LidoWithdrawalQueueBalanceAdapter.sol";
 import {EthenaCooldownBalanceAdapter} from "../../src/balances/BalanceAdapters/EthenaCooldownBalanceAdapter.sol";
-import {MerklRewardsAssistedBalanceAdapter} from "../../src/balances/AssistedBalanceAdapters/MerklRewardsAssistedBalanceAdapter.sol";
+import {
+    MerklRewardsAssistedBalanceAdapter
+} from "../../src/balances/AssistedBalanceAdapters/MerklRewardsAssistedBalanceAdapter.sol";
 import {
     EtherFiWithdrawalQueueAssistedBalanceAdapter
 } from "../../src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueAssistedBalanceAdapter.sol";
@@ -502,7 +504,10 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(new CurveGaugesMetaBalanceAdapter(minter, crvToken, protocol, navCalculator));
     }
 
-    function _deployConvexCurveLPStakingMeta(string memory adapterName, address navCalculator) internal returns (address) {
+    function _deployConvexCurveLPStakingMeta(string memory adapterName, address navCalculator)
+        internal
+        returns (address)
+    {
         address booster = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "booster")
         );
@@ -698,7 +703,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address distributor = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "distributor")
         );
-        require(chainConfig.admin != address(0), "MerklRewardsAssisted: chainConfig.admin (initialOwner) not configured");
+        require(
+            chainConfig.admin != address(0), "MerklRewardsAssisted: chainConfig.admin (initialOwner) not configured"
+        );
 
         MerklRewardsAssistedBalanceAdapter adapter =
             new MerklRewardsAssistedBalanceAdapter(distributor, navCalculator, chainConfig.admin, chainConfig.admin);
@@ -722,7 +729,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
         );
         require(
-            chainConfig.admin != address(0), "EtherFiWithdrawalQueueAssisted: chainConfig.admin (initialOwner) not configured"
+            chainConfig.admin != address(0),
+            "EtherFiWithdrawalQueueAssisted: chainConfig.admin (initialOwner) not configured"
         );
 
         EtherFiWithdrawalQueueAssistedBalanceAdapter adapter = new EtherFiWithdrawalQueueAssistedBalanceAdapter(
@@ -749,7 +757,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
         );
         require(
-            chainConfig.admin != address(0), "NexusMutualStakingPoolsAssisted: chainConfig.admin (initialOwner) not configured"
+            chainConfig.admin != address(0),
+            "NexusMutualStakingPoolsAssisted: chainConfig.admin (initialOwner) not configured"
         );
 
         NexusMutualStakingPoolsAssistedBalanceAdapter adapter = new NexusMutualStakingPoolsAssistedBalanceAdapter(
@@ -758,7 +767,10 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(adapter);
     }
 
-    function _deployStakeWiseV3ExitQueueAssisted(string memory adapterName, address navCalculator) internal returns (address) {
+    function _deployStakeWiseV3ExitQueueAssisted(string memory adapterName, address navCalculator)
+        internal
+        returns (address)
+    {
         // Owner = chainConfig.admin (OIV Safe / agent role): the only caller of submitPositions / clearPosition. The
         // adapter values from live on-chain reads and verifies each tuple belongs to the account via
         // calculateExitedAssets(receiver=account), so the owner cannot fabricate amounts (under-report only). See
@@ -779,7 +791,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "exitClaimDelay")
         );
         require(
-            chainConfig.admin != address(0), "StakeWiseV3ExitQueueAssisted: chainConfig.admin (initialOwner) not configured"
+            chainConfig.admin != address(0),
+            "StakeWiseV3ExitQueueAssisted: chainConfig.admin (initialOwner) not configured"
         );
 
         StakeWiseV3ExitQueueAssistedBalanceAdapter adapter = new StakeWiseV3ExitQueueAssistedBalanceAdapter(
@@ -797,13 +810,18 @@ contract DeployBalanceAdapters is BaseDeployScript {
     /// @notice Deploys the Uniswap V3 pools assisted adapter (agent-fed NFT tokenId cache; ADR 0015). Constructor
     ///         takes (positionManager, protocol, navCalculator, admin, assistant); the assistant submits an account's
     ///         NFT tokenIds via submitTokenIds. admin+assistant = chainConfig.admin at deploy.
-    function _deployUniswapV3PoolsAssisted(string memory adapterName, address navCalculator) internal returns (address) {
+    function _deployUniswapV3PoolsAssisted(string memory adapterName, address navCalculator)
+        internal
+        returns (address)
+    {
         address positionManager = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionManager")
         );
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        require(chainConfig.admin != address(0), "UniswapV3PoolsAssisted: chainConfig.admin (initialOwner) not configured");
+        require(
+            chainConfig.admin != address(0), "UniswapV3PoolsAssisted: chainConfig.admin (initialOwner) not configured"
+        );
 
         UniswapV3PoolsAssistedBalanceAdapter adapter = new UniswapV3PoolsAssistedBalanceAdapter(
             positionManager, protocol, navCalculator, chainConfig.admin, chainConfig.admin
@@ -813,13 +831,19 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
     /// @notice Deploys the PancakeSwap V3 pools assisted adapter (subclass of the Uniswap V3 assisted adapter, differs
     ///         only in protocol-id slug). Same constructor shape as the Uniswap V3 pools assisted adapter.
-    function _deployPancakeSwapV3PoolsAssisted(string memory adapterName, address navCalculator) internal returns (address) {
+    function _deployPancakeSwapV3PoolsAssisted(string memory adapterName, address navCalculator)
+        internal
+        returns (address)
+    {
         address positionManager = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionManager")
         );
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        require(chainConfig.admin != address(0), "PancakeSwapV3PoolsAssisted: chainConfig.admin (initialOwner) not configured");
+        require(
+            chainConfig.admin != address(0),
+            "PancakeSwapV3PoolsAssisted: chainConfig.admin (initialOwner) not configured"
+        );
 
         PancakeSwapV3PoolsAssistedBalanceAdapter adapter = new PancakeSwapV3PoolsAssistedBalanceAdapter(
             positionManager, protocol, navCalculator, chainConfig.admin, chainConfig.admin

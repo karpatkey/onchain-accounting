@@ -55,8 +55,7 @@ contract GearboxV3MarketsMetaBalanceAdapter is MetaBalanceAdapter {
         if (amount == 0) return new INAVCalculator.PositionBalance[](0);
 
         INAVCalculator.PositionBalance[] memory positions = new INAVCalculator.PositionBalance[](1);
-        positions[0] =
-            _leg(assetInfo, amount, false, _instancePositionId(instance), PositionKind.Supplied);
+        positions[0] = _leg(assetInfo, amount, false, _instancePositionId(instance), PositionKind.Supplied);
         return positions;
     }
 

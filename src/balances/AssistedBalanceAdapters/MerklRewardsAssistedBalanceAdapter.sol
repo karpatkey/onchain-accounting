@@ -405,8 +405,7 @@ contract MerklRewardsAssistedBalanceAdapter is AssistedBalanceAdapter, IPosition
         for (uint256 i; i < shares.length; ++i) {
             uint256 legAmount = Math.mulDiv(unclaimed, shares[i].cumulativeAmount, tokenCumulative);
             if (legAmount == 0) continue;
-            temp[n++] =
-                _row(meta, legAmount, pid, keccak256(abi.encode(shares[i].campaignId, shares[i].subCampaignId)));
+            temp[n++] = _row(meta, legAmount, pid, keccak256(abi.encode(shares[i].campaignId, shares[i].subCampaignId)));
         }
         return n;
     }
@@ -558,7 +557,6 @@ contract MerklRewardsAssistedBalanceAdapter is AssistedBalanceAdapter, IPosition
         }
         return currentHash == root;
     }
-
 }
 
 /// @notice Minimal interface for Merkl's Distributor (Angle Labs).

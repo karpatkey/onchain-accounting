@@ -129,8 +129,14 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
     /// @dev Wrap a single (token, amount, proof) into the per-user replace submit (pranked as `owner`). Submit is
     ///      replace semantics, so this sets the user's cached set to exactly this one token.
     function _submitOne(address user, address token, uint256 amount, bytes32[] memory proof) internal {
-        MerklRewardsAssistedBalanceAdapter.Allocation[] memory allocs = new MerklRewardsAssistedBalanceAdapter.Allocation[](1);
-        allocs[0] = MerklRewardsAssistedBalanceAdapter.Allocation({token: token, cumulativeAmount: amount, proof: proof, campaigns: new MerklRewardsAssistedBalanceAdapter.CampaignShare[](0)});
+        MerklRewardsAssistedBalanceAdapter.Allocation[] memory allocs =
+            new MerklRewardsAssistedBalanceAdapter.Allocation[](1);
+        allocs[0] = MerklRewardsAssistedBalanceAdapter.Allocation({
+            token: token,
+            cumulativeAmount: amount,
+            proof: proof,
+            campaigns: new MerklRewardsAssistedBalanceAdapter.CampaignShare[](0)
+        });
         vm.prank(owner);
         adapter.submitProofs(user, allocs);
     }
@@ -143,8 +149,12 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
         MerklRewardsAssistedBalanceAdapter.Allocation[] memory allocs =
             new MerklRewardsAssistedBalanceAdapter.Allocation[](tokens.length);
         for (uint256 i; i < tokens.length; ++i) {
-            allocs[i] =
-                MerklRewardsAssistedBalanceAdapter.Allocation({token: tokens[i], cumulativeAmount: amounts[i], proof: proofs[i], campaigns: new MerklRewardsAssistedBalanceAdapter.CampaignShare[](0)});
+            allocs[i] = MerklRewardsAssistedBalanceAdapter.Allocation({
+                token: tokens[i],
+                cumulativeAmount: amounts[i],
+                proof: proofs[i],
+                campaigns: new MerklRewardsAssistedBalanceAdapter.CampaignShare[](0)
+            });
         }
         vm.prank(owner);
         adapter.submitProofs(user, allocs);
@@ -273,7 +283,9 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
         distributor.setRoot(leaf);
 
         vm.expectEmit(true, true, false, true, address(adapter));
-        emit MerklRewardsAssistedBalanceAdapter.AllocationCached(alice, address(arb), 100 ether, leaf, uint64(block.timestamp), 0);
+        emit MerklRewardsAssistedBalanceAdapter.AllocationCached(
+            alice, address(arb), 100 ether, leaf, uint64(block.timestamp), 0
+        );
         _submitOne(alice, address(arb), 100 ether, new bytes32[](0));
     }
 
@@ -408,9 +420,20 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
         amounts[1] = 50 ether;
         proofs[1] = p1;
 
-        MerklRewardsAssistedBalanceAdapter.Allocation[] memory allocs = new MerklRewardsAssistedBalanceAdapter.Allocation[](2);
-        allocs[0] = MerklRewardsAssistedBalanceAdapter.Allocation({token: tokens[0], cumulativeAmount: amounts[0], proof: p0, campaigns: new MerklRewardsAssistedBalanceAdapter.CampaignShare[](0)});
-        allocs[1] = MerklRewardsAssistedBalanceAdapter.Allocation({token: tokens[1], cumulativeAmount: amounts[1], proof: p1, campaigns: new MerklRewardsAssistedBalanceAdapter.CampaignShare[](0)});
+        MerklRewardsAssistedBalanceAdapter.Allocation[] memory allocs =
+            new MerklRewardsAssistedBalanceAdapter.Allocation[](2);
+        allocs[0] = MerklRewardsAssistedBalanceAdapter.Allocation({
+            token: tokens[0],
+            cumulativeAmount: amounts[0],
+            proof: p0,
+            campaigns: new MerklRewardsAssistedBalanceAdapter.CampaignShare[](0)
+        });
+        allocs[1] = MerklRewardsAssistedBalanceAdapter.Allocation({
+            token: tokens[1],
+            cumulativeAmount: amounts[1],
+            proof: p1,
+            campaigns: new MerklRewardsAssistedBalanceAdapter.CampaignShare[](0)
+        });
         vm.expectRevert(MerklRewardsAssistedBalanceAdapter.AmountRegression.selector);
         vm.prank(owner);
         adapter.submitProofs(alice, allocs);
@@ -435,9 +458,14 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
         bytes32 leaf = _leaf(alice, address(arb), 100 ether);
         distributor.setRoot(leaf);
 
-        MerklRewardsAssistedBalanceAdapter.Allocation[] memory allocs = new MerklRewardsAssistedBalanceAdapter.Allocation[](1);
-        allocs[0] =
-            MerklRewardsAssistedBalanceAdapter.Allocation({token: address(arb), cumulativeAmount: 100 ether, proof: new bytes32[](0), campaigns: new MerklRewardsAssistedBalanceAdapter.CampaignShare[](0)});
+        MerklRewardsAssistedBalanceAdapter.Allocation[] memory allocs =
+            new MerklRewardsAssistedBalanceAdapter.Allocation[](1);
+        allocs[0] = MerklRewardsAssistedBalanceAdapter.Allocation({
+            token: address(arb),
+            cumulativeAmount: 100 ether,
+            proof: new bytes32[](0),
+            campaigns: new MerklRewardsAssistedBalanceAdapter.CampaignShare[](0)
+        });
         vm.expectRevert(
             abi.encodeWithSelector(
                 IAccessControl.AccessControlUnauthorizedAccount.selector, stranger, keccak256("ASSISTANT_ROLE")
@@ -462,23 +490,32 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
         distributor.setRoot(root);
 
         address[] memory users = new address[](2);
-        MerklRewardsAssistedBalanceAdapter.Allocation[][] memory allocs = new MerklRewardsAssistedBalanceAdapter.Allocation[][](2);
+        MerklRewardsAssistedBalanceAdapter.Allocation[][] memory allocs =
+            new MerklRewardsAssistedBalanceAdapter.Allocation[][](2);
 
         // alice: ARB (leaf 0) + OP (leaf 2)
         users[0] = alice;
         allocs[0] = new MerklRewardsAssistedBalanceAdapter.Allocation[](2);
         (, bytes32[] memory aArb) = _buildTree4(leaves, 0);
         (, bytes32[] memory aOp) = _buildTree4(leaves, 2);
-        allocs[0][0] = MerklRewardsAssistedBalanceAdapter.Allocation(address(arb), 100 ether, aArb, new MerklRewardsAssistedBalanceAdapter.CampaignShare[](0));
-        allocs[0][1] = MerklRewardsAssistedBalanceAdapter.Allocation(address(op), 50 ether, aOp, new MerklRewardsAssistedBalanceAdapter.CampaignShare[](0));
+        allocs[0][0] = MerklRewardsAssistedBalanceAdapter.Allocation(
+            address(arb), 100 ether, aArb, new MerklRewardsAssistedBalanceAdapter.CampaignShare[](0)
+        );
+        allocs[0][1] = MerklRewardsAssistedBalanceAdapter.Allocation(
+            address(op), 50 ether, aOp, new MerklRewardsAssistedBalanceAdapter.CampaignShare[](0)
+        );
 
         // bob: ARB (leaf 1) + OP (leaf 3)
         users[1] = bob;
         allocs[1] = new MerklRewardsAssistedBalanceAdapter.Allocation[](2);
         (, bytes32[] memory bArb) = _buildTree4(leaves, 1);
         (, bytes32[] memory bOp) = _buildTree4(leaves, 3);
-        allocs[1][0] = MerklRewardsAssistedBalanceAdapter.Allocation(address(arb), 200 ether, bArb, new MerklRewardsAssistedBalanceAdapter.CampaignShare[](0));
-        allocs[1][1] = MerklRewardsAssistedBalanceAdapter.Allocation(address(op), 75 ether, bOp, new MerklRewardsAssistedBalanceAdapter.CampaignShare[](0));
+        allocs[1][0] = MerklRewardsAssistedBalanceAdapter.Allocation(
+            address(arb), 200 ether, bArb, new MerklRewardsAssistedBalanceAdapter.CampaignShare[](0)
+        );
+        allocs[1][1] = MerklRewardsAssistedBalanceAdapter.Allocation(
+            address(op), 75 ether, bOp, new MerklRewardsAssistedBalanceAdapter.CampaignShare[](0)
+        );
 
         vm.prank(owner);
         adapter.submitProofsBatch(users, allocs);
@@ -489,7 +526,8 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_submitProofsBatch_revertsOnLengthMismatch() public {
         address[] memory users = new address[](2);
-        MerklRewardsAssistedBalanceAdapter.Allocation[][] memory allocs = new MerklRewardsAssistedBalanceAdapter.Allocation[][](1); // mismatch
+        MerklRewardsAssistedBalanceAdapter.Allocation[][] memory allocs =
+            new MerklRewardsAssistedBalanceAdapter.Allocation[][](1); // mismatch
 
         vm.expectRevert(ArrayLengthMismatch.selector);
         vm.prank(owner);
@@ -783,12 +821,10 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
     ) internal {
         bytes32 leaf = _leaf(user, token, tokenCumulative);
         distributor.setRoot(leaf);
-        MerklRewardsAssistedBalanceAdapter.Allocation[] memory allocs = new MerklRewardsAssistedBalanceAdapter.Allocation[](1);
+        MerklRewardsAssistedBalanceAdapter.Allocation[] memory allocs =
+            new MerklRewardsAssistedBalanceAdapter.Allocation[](1);
         allocs[0] = MerklRewardsAssistedBalanceAdapter.Allocation({
-            token: token,
-            cumulativeAmount: tokenCumulative,
-            proof: new bytes32[](0),
-            campaigns: shares
+            token: token, cumulativeAmount: tokenCumulative, proof: new bytes32[](0), campaigns: shares
         });
         vm.prank(owner);
         adapter.submitProofs(user, allocs);
@@ -797,9 +833,11 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
     function test_positionInstanceId_carriesCampaignPair() public {
         bytes32 cid = keccak256("merkl-campaign-1");
         bytes32 sub = keccak256("merkl-subcampaign-1");
-        MerklRewardsAssistedBalanceAdapter.CampaignShare[] memory shares = new MerklRewardsAssistedBalanceAdapter.CampaignShare[](1);
-        shares[0] =
-            MerklRewardsAssistedBalanceAdapter.CampaignShare({campaignId: cid, subCampaignId: sub, cumulativeAmount: 100 ether});
+        MerklRewardsAssistedBalanceAdapter.CampaignShare[] memory shares =
+            new MerklRewardsAssistedBalanceAdapter.CampaignShare[](1);
+        shares[0] = MerklRewardsAssistedBalanceAdapter.CampaignShare({
+            campaignId: cid, subCampaignId: sub, cumulativeAmount: 100 ether
+        });
         _submitWithCampaigns(alice, address(arb), 100 ether, shares);
 
         INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositions(alice, address(0));
@@ -823,9 +861,14 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
     function test_multipleCampaigns_splitProRataByShare() public {
         bytes32 cidA = keccak256("campaign-A");
         bytes32 cidB = keccak256("campaign-B");
-        MerklRewardsAssistedBalanceAdapter.CampaignShare[] memory shares = new MerklRewardsAssistedBalanceAdapter.CampaignShare[](2);
-        shares[0] = MerklRewardsAssistedBalanceAdapter.CampaignShare({campaignId: cidA, subCampaignId: ZERO, cumulativeAmount: 60 ether});
-        shares[1] = MerklRewardsAssistedBalanceAdapter.CampaignShare({campaignId: cidB, subCampaignId: ZERO, cumulativeAmount: 40 ether});
+        MerklRewardsAssistedBalanceAdapter.CampaignShare[] memory shares =
+            new MerklRewardsAssistedBalanceAdapter.CampaignShare[](2);
+        shares[0] = MerklRewardsAssistedBalanceAdapter.CampaignShare({
+            campaignId: cidA, subCampaignId: ZERO, cumulativeAmount: 60 ether
+        });
+        shares[1] = MerklRewardsAssistedBalanceAdapter.CampaignShare({
+            campaignId: cidB, subCampaignId: ZERO, cumulativeAmount: 40 ether
+        });
         _submitWithCampaigns(alice, address(arb), 100 ether, shares); // Σ shares == 100 ether == token total
 
         INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositions(alice, address(0));
@@ -841,18 +884,23 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
     function test_submit_revertsWhenCampaignSharesDontSumToTotal() public {
         bytes32 leaf = _leaf(alice, address(arb), 100 ether);
         distributor.setRoot(leaf);
-        MerklRewardsAssistedBalanceAdapter.CampaignShare[] memory shares = new MerklRewardsAssistedBalanceAdapter.CampaignShare[](2);
-        shares[0] = MerklRewardsAssistedBalanceAdapter.CampaignShare({campaignId: keccak256("a"), subCampaignId: ZERO, cumulativeAmount: 60 ether});
-        shares[1] = MerklRewardsAssistedBalanceAdapter.CampaignShare({campaignId: keccak256("b"), subCampaignId: ZERO, cumulativeAmount: 30 ether}); // sum 90 != 100
-        MerklRewardsAssistedBalanceAdapter.Allocation[] memory allocs = new MerklRewardsAssistedBalanceAdapter.Allocation[](1);
+        MerklRewardsAssistedBalanceAdapter.CampaignShare[] memory shares =
+            new MerklRewardsAssistedBalanceAdapter.CampaignShare[](2);
+        shares[0] = MerklRewardsAssistedBalanceAdapter.CampaignShare({
+            campaignId: keccak256("a"), subCampaignId: ZERO, cumulativeAmount: 60 ether
+        });
+        shares[1] = MerklRewardsAssistedBalanceAdapter.CampaignShare({
+            campaignId: keccak256("b"), subCampaignId: ZERO, cumulativeAmount: 30 ether
+        }); // sum 90 != 100
+        MerklRewardsAssistedBalanceAdapter.Allocation[] memory allocs =
+            new MerklRewardsAssistedBalanceAdapter.Allocation[](1);
         allocs[0] = MerklRewardsAssistedBalanceAdapter.Allocation({
-            token: address(arb),
-            cumulativeAmount: 100 ether,
-            proof: new bytes32[](0),
-            campaigns: shares
+            token: address(arb), cumulativeAmount: 100 ether, proof: new bytes32[](0), campaigns: shares
         });
         vm.expectRevert(
-            abi.encodeWithSelector(MerklRewardsAssistedBalanceAdapter.CampaignSumMismatch.selector, address(arb), 90 ether, 100 ether)
+            abi.encodeWithSelector(
+                MerklRewardsAssistedBalanceAdapter.CampaignSumMismatch.selector, address(arb), 90 ether, 100 ether
+            )
         );
         vm.prank(owner);
         adapter.submitProofs(alice, allocs);
@@ -872,9 +920,14 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
         // The new assistant can submit.
         bytes32 leaf = _leaf(alice, address(arb), 100 ether);
         distributor.setRoot(leaf);
-        MerklRewardsAssistedBalanceAdapter.Allocation[] memory allocs = new MerklRewardsAssistedBalanceAdapter.Allocation[](1);
-        allocs[0] =
-            MerklRewardsAssistedBalanceAdapter.Allocation({token: address(arb), cumulativeAmount: 100 ether, proof: new bytes32[](0), campaigns: new MerklRewardsAssistedBalanceAdapter.CampaignShare[](0)});
+        MerklRewardsAssistedBalanceAdapter.Allocation[] memory allocs =
+            new MerklRewardsAssistedBalanceAdapter.Allocation[](1);
+        allocs[0] = MerklRewardsAssistedBalanceAdapter.Allocation({
+            token: address(arb),
+            cumulativeAmount: 100 ether,
+            proof: new bytes32[](0),
+            campaigns: new MerklRewardsAssistedBalanceAdapter.CampaignShare[](0)
+        });
         vm.prank(stranger);
         adapter.submitProofs(alice, allocs);
     }

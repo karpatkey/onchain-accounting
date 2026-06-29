@@ -5,7 +5,9 @@ import {Test} from "forge-std/Test.sol";
 import {
     PancakeSwapV3PoolsAssistedBalanceAdapter
 } from "src/balances/AssistedBalanceAdapters/PancakeSwapV3PoolsAssistedBalanceAdapter.sol";
-import {UniswapV3PoolsAssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsAssistedBalanceAdapter.sol";
+import {
+    UniswapV3PoolsAssistedBalanceAdapter
+} from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsAssistedBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IAssistedBalanceAdapter} from "src/balances/IAssistedBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -105,8 +107,9 @@ contract PancakeSwapV3PoolsAssistedBalanceAdapterTest is Test {
     ///         NFT (the `MockUniswapV3Pool` here has a uint8 feeProtocol both decoders accept); the ONLY difference is
     ///         the protocol-id slug.
     function test_uniswapBase_sameLegs_onlyProtocolIdDiffers() public {
-        UniswapV3PoolsAssistedBalanceAdapter base =
-            new UniswapV3PoolsAssistedBalanceAdapter(address(npm), "Uniswap V3", address(nav), address(this), address(this));
+        UniswapV3PoolsAssistedBalanceAdapter base = new UniswapV3PoolsAssistedBalanceAdapter(
+            address(npm), "Uniswap V3", address(nav), address(this), address(this)
+        );
         uint256[] memory ids = new uint256[](1);
         ids[0] = 1;
         base.submitTokenIds(alice, ids);

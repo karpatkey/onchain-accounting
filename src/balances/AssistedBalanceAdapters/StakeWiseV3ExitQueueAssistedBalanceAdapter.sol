@@ -42,7 +42,6 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      resolve to a live owed amount for `account`, and `PositionCacheFull` at `MAX_POSITIONS`. Reads still
 ///      re-verify and discard (never revert), so correctness does not depend on the write-time checks.
 contract StakeWiseV3ExitQueueAssistedBalanceAdapter is AssistedBalanceAdapter, IPositionDescribable {
-
     //
     // Types
     //

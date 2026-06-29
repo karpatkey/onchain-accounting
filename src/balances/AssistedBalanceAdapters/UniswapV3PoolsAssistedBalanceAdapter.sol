@@ -510,5 +510,4 @@ contract UniswapV3PoolsAssistedBalanceAdapter is AssistedBalanceAdapter, IPositi
             positionInstanceId: positionInstanceId
         });
     }
-
 }

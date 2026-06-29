@@ -56,9 +56,7 @@ contract StaderWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
             assertEq(positions[i].balanceAdapter, address(adapter));
             assertFalse(positions[i].isDebt);
             assertEq(
-                positions[i].positionId,
-                abi.encode(address(adapter.USER_WITHDRAWAL_MANAGER())),
-                "static positionId"
+                positions[i].positionId, abi.encode(address(adapter.USER_WITHDRAWAL_MANAGER())), "static positionId"
             );
             _assertRequestLeg(positions[i]);
             sum += positions[i].amount;

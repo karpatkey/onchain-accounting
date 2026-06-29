@@ -121,7 +121,11 @@ library UniswapV3PoolLib {
             p.liquidity
         );
         (fee0, fee1) = _computeFees(
-            pool, p, tickCurrent, IUniswapV3Pool(pool).feeGrowthGlobal0X128(), IUniswapV3Pool(pool).feeGrowthGlobal1X128()
+            pool,
+            p,
+            tickCurrent,
+            IUniswapV3Pool(pool).feeGrowthGlobal0X128(),
+            IUniswapV3Pool(pool).feeGrowthGlobal1X128()
         );
     }
 

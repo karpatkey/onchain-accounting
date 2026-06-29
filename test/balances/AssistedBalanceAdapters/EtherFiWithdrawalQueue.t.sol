@@ -379,9 +379,7 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterTest is BalanceAdapterTestB
             sum += p[i].amount;
         }
         // Distinct ids → distinct positionInstanceIds even though state is identical.
-        assertTrue(
-            p[0].positionInstanceId != p[1].positionInstanceId, "distinct ids -> distinct positionInstanceIds"
-        );
+        assertTrue(p[0].positionInstanceId != p[1].positionInstanceId, "distinct ids -> distinct positionInstanceIds");
         (uint256 agg,) = adapter.getAdapterBalanceForAsset(holder, NATIVE);
         assertEq(sum, agg, "sum of legs == aggregate");
         assertEq(sum, 5 ether);

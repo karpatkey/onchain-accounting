@@ -314,12 +314,10 @@ library PriceFeedLib {
         address[] memory assetsWithPositions;
 
         if (assetFilter == address(0)) {
-            positionBalances =
-                _getPositionBalances(allAdapters, assetIndex, account, address(0));
+            positionBalances = _getPositionBalances(allAdapters, assetIndex, account, address(0));
             assetsWithPositions = _extractUniqueAssets(positionBalances);
         } else {
-            positionBalances =
-                _getPositionBalances(allAdapters, assetIndex, account, assetFilter);
+            positionBalances = _getPositionBalances(allAdapters, assetIndex, account, assetFilter);
             if (positionBalances.length == 0) {
                 return new INAVCalculator.Position[](0);
             }
@@ -430,9 +428,8 @@ library PriceFeedLib {
         uint256 assetCount,
         address account
     ) external view returns (bool) {
-        INAVCalculator.PositionBalance[] memory positions = _getPositionBalances(
-            allAdapters, assetIndex, account, address(0)
-        );
+        INAVCalculator.PositionBalance[] memory positions =
+            _getPositionBalances(allAdapters, assetIndex, account, address(0));
         for (uint256 i = 0; i < positions.length; i++) {
             if (positions[i].amount != 0) return true;
         }
@@ -448,9 +445,7 @@ library PriceFeedLib {
         uint256 assetCount,
         address account
     ) external view returns (address[] memory) {
-        return _extractUniqueAssets(
-            _getPositionBalances(allAdapters, assetIndex, account, address(0))
-        );
+        return _extractUniqueAssets(_getPositionBalances(allAdapters, assetIndex, account, address(0)));
     }
 
     /// @notice Returns sequencer status and the registered assets whose price is currently stale. Mirrors

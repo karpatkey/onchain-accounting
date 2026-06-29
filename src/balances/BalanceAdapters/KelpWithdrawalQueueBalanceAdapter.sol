@@ -30,7 +30,6 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      `lrtConfig().getSupportedAssetList()` rather than hardcoded, mirroring the dynamic-discovery
 ///      pattern in `AaveUmbrellaBalanceAdapter.sol`.
 contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescribable {
-
     //
     // Constants
     //

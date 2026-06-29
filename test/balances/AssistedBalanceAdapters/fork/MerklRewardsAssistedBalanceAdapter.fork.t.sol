@@ -81,7 +81,8 @@ contract MerklRewardsAssistedBalanceAdapterForkTest is BalanceAdapterTestBase {
     function test_adapter_invalidProofRevertsAgainstRealRoot() public {
         // Build a leaf that is virtually guaranteed not to be in the active tree, then submit it with an
         // empty proof. The adapter should run real proof verification against the real on-chain root and revert.
-        MerklRewardsAssistedBalanceAdapter.Allocation[] memory allocs = new MerklRewardsAssistedBalanceAdapter.Allocation[](1);
+        MerklRewardsAssistedBalanceAdapter.Allocation[] memory allocs =
+            new MerklRewardsAssistedBalanceAdapter.Allocation[](1);
         allocs[0] = MerklRewardsAssistedBalanceAdapter.Allocation({
             token: MAINNET_DAI,
             cumulativeAmount: 1_000_000 ether,

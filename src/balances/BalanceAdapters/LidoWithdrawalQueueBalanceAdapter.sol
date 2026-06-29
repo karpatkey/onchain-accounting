@@ -30,7 +30,6 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      is used). NAVCalculator prices each via the registered ETH feed; the balance methods
 ///      (`getAdapterBalances`) still report the summed total.
 contract LidoWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescribable {
-
     //
     // Constants
     //

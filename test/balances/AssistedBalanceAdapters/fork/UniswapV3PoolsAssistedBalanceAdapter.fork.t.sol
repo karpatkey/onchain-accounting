@@ -2,7 +2,9 @@
 pragma solidity ^0.8;
 
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
-import {UniswapV3PoolsAssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsAssistedBalanceAdapter.sol";
+import {
+    UniswapV3PoolsAssistedBalanceAdapter
+} from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsAssistedBalanceAdapter.sol";
 import {
     INonfungiblePositionManager,
     UniswapV3PoolLib
@@ -54,7 +56,9 @@ contract UniswapV3PoolsAssistedBalanceForkTest is BalanceAdapterTestBase {
         _setupFork();
         balances = _deployBalancesForAdapter(_assets());
         // admin + assistant = this test, so it can submit the holder's tokenIds.
-        adapter = new UniswapV3PoolsAssistedBalanceAdapter(NPM, "Uniswap V3", address(balances), address(this), address(this));
+        adapter = new UniswapV3PoolsAssistedBalanceAdapter(
+            NPM, "Uniswap V3", address(balances), address(this), address(this)
+        );
         _submitHolderTokenIds();
     }
 

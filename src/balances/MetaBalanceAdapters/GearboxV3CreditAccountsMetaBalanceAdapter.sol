@@ -75,8 +75,7 @@ contract GearboxV3CreditAccountsMetaBalanceAdapter is MetaBalanceAdapter {
         // Upper bound: one Collateral leg per enabled token + one Borrowed leg. Over-allocate and resize (a tighter
         // count would mean re-reading balances/registry twice). `enabledMask` is bounded by the manager's allowed-token
         // count, and only set bits are visited.
-        INAVCalculator.PositionBalance[] memory temp =
-            new INAVCalculator.PositionBalance[](_popcount(enabledMask) + 1);
+        INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](_popcount(enabledMask) + 1);
         uint256 n;
         n = _appendCollateral(ca, cm, enabledMask, assetFilter, temp, n);
         n = _appendBorrow(ca, cm, debt, assetFilter, temp, n);

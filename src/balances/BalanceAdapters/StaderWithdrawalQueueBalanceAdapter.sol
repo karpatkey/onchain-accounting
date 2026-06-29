@@ -25,7 +25,6 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      `positionId` (the legs share the static positionId and are distinguished for display by their labels,
 ///      for NAV by summing). The balance methods (`getAdapterBalances`) still report the summed total.
 contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescribable {
-
     //
     // Errors
     //

@@ -99,7 +99,11 @@ contract MockCreditManager {
         return (0, 0, 0, 0, maskOf[ca], 0, 0, borrowerOf[ca]);
     }
 
-    function calcDebtAndCollateral(address ca, CollateralCalcTask) external view returns (CollateralDebtData memory cdd) {
+    function calcDebtAndCollateral(address ca, CollateralCalcTask)
+        external
+        view
+        returns (CollateralDebtData memory cdd)
+    {
         if (debtReverts) revert("debt");
         cdd.debt = principalOf[ca];
         cdd.accruedInterest = interestOf[ca];

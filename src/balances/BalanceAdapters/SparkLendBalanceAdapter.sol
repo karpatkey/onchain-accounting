@@ -217,8 +217,7 @@ contract SparkLendBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     {
         uint256 stableDebt;
         uint256 variableDebt;
-        (aTokenBalance, stableDebt, variableDebt,,,,,, asCollateral) =
-            DATA_PROVIDER.getUserReserveData(asset, account);
+        (aTokenBalance, stableDebt, variableDebt,,,,,, asCollateral) = DATA_PROVIDER.getUserReserveData(asset, account);
         debt = variableDebt + stableDebt;
     }
 

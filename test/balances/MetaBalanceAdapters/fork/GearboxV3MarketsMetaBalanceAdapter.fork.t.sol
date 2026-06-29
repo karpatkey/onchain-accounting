@@ -2,7 +2,9 @@
 pragma solidity ^0.8;
 
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
-import {GearboxV3MarketsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/GearboxV3MarketsMetaBalanceAdapter.sol";
+import {
+    GearboxV3MarketsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/GearboxV3MarketsMetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 interface IERC4626Min {

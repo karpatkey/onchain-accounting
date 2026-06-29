@@ -24,11 +24,15 @@ import {MorphoMarketsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/
 import {
     AaveV3InstancesMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/AaveV3InstancesMetaBalanceAdapter.sol";
-import {GearboxV3MarketsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/GearboxV3MarketsMetaBalanceAdapter.sol";
+import {
+    GearboxV3MarketsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/GearboxV3MarketsMetaBalanceAdapter.sol";
 import {CapBalanceAdapter} from "src/balances/BalanceAdapters/CapBalanceAdapter.sol";
 import {CurvePoolsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/curve/CurvePoolsMetaBalanceAdapter.sol";
 import {CurveGaugesMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/curve/CurveGaugesMetaBalanceAdapter.sol";
-import {ConvexCurveLPStakingMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/ConvexCurveLPStakingMetaBalanceAdapter.sol";
+import {
+    ConvexCurveLPStakingMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/ConvexCurveLPStakingMetaBalanceAdapter.sol";
 import {AaveV3SafetyModuleBalanceAdapter} from "src/balances/BalanceAdapters/AaveV3SafetyModuleBalanceAdapter.sol";
 import {AaveUmbrellaBalanceAdapter} from "src/balances/BalanceAdapters/AaveUmbrellaBalanceAdapter.sol";
 import {
@@ -55,7 +59,9 @@ import {
 import {
     StakeWiseV3VaultsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/StakeWiseV3VaultsMetaBalanceAdapter.sol";
-import {UniswapV3PoolsAssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsAssistedBalanceAdapter.sol";
+import {
+    UniswapV3PoolsAssistedBalanceAdapter
+} from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsAssistedBalanceAdapter.sol";
 import {
     UniswapV2PoolsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/uniswap/UniswapV2PoolsMetaBalanceAdapter.sol";
@@ -589,7 +595,10 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             // empty unless `merkl-proofs.json` has entries for this chain — see `_seedMerklProofs`.
             // This keeps the integration test exercising the Merkl wiring on every run, while
             // production deploys still honor the `enabled` flag.
-            if (!_equals(n, "MerklRewardsAssisted") && !ConfigReader.isAdapterEnabled(vm, _chainId, "balanceAdapters", n)) {
+            if (
+                !_equals(n, "MerklRewardsAssisted")
+                    && !ConfigReader.isAdapterEnabled(vm, _chainId, "balanceAdapters", n)
+            ) {
                 continue;
             }
             address adapter = _deployBalanceAdapter(n);
@@ -849,7 +858,8 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         address positionManager =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionManager"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        address a = address(new PancakeSwapV3PoolsAssistedBalanceAdapter(positionManager, protocol, navAddr, admin, admin));
+        address a =
+            address(new PancakeSwapV3PoolsAssistedBalanceAdapter(positionManager, protocol, navAddr, admin, admin));
         _assistedNftAdapters.push(a);
         _assistedNftNpms.push(positionManager);
         return a;
@@ -1128,7 +1138,8 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             for (uint256 j = i; j < users.length; j++) {
                 if (users[j] == user) cnt++;
             }
-            MerklRewardsAssistedBalanceAdapter.Allocation[] memory allocs = new MerklRewardsAssistedBalanceAdapter.Allocation[](cnt);
+            MerklRewardsAssistedBalanceAdapter.Allocation[] memory allocs =
+                new MerklRewardsAssistedBalanceAdapter.Allocation[](cnt);
             uint256 k;
             for (uint256 j = i; j < users.length; j++) {
                 if (users[j] != user) continue;

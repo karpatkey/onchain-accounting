@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 pragma solidity ^0.8;
 
-import {UniswapV3PoolsAssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsAssistedBalanceAdapter.sol";
+import {
+    UniswapV3PoolsAssistedBalanceAdapter
+} from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsAssistedBalanceAdapter.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @notice Minimal PancakeSwap V3 pool interface — identical to Uniswap V3's `slot0()` except `feeProtocol` is

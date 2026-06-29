@@ -29,7 +29,6 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      positionId; each leg's `isLocked` reflects that request's own state (finalized → `false`, pending → `true`)
 ///      and its `tokenId` (the WithdrawRequestNFT id) rides in the last `labels` entry, never in `positionId`.
 contract EtherFiWithdrawalQueueAssistedBalanceAdapter is AssistedBalanceAdapter, IPositionDescribable {
-
     //
     // State
     //

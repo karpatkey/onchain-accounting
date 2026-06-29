@@ -2,7 +2,9 @@
 pragma solidity ^0.8;
 
 import {Test} from "forge-std/Test.sol";
-import {GearboxV3MarketsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/GearboxV3MarketsMetaBalanceAdapter.sol";
+import {
+    GearboxV3MarketsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/GearboxV3MarketsMetaBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";

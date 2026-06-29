@@ -2,7 +2,9 @@
 pragma solidity ^0.8;
 
 import {Test} from "forge-std/Test.sol";
-import {UniswapV3PoolsAssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsAssistedBalanceAdapter.sol";
+import {
+    UniswapV3PoolsAssistedBalanceAdapter
+} from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsAssistedBalanceAdapter.sol";
 import {IAssistedBalanceAdapter} from "src/balances/IAssistedBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
@@ -78,8 +80,9 @@ contract UniswapV3PoolsAssistedBalanceAdapterTest is Test {
         _mint(2, address(usdc), address(weth), 500, 2_000_000, 7, 99);
 
         // admin + assistant = this test, so it can submit/clear tokenIds.
-        adapter =
-            new UniswapV3PoolsAssistedBalanceAdapter(address(npm), "Uniswap V3", address(nav), address(this), address(this));
+        adapter = new UniswapV3PoolsAssistedBalanceAdapter(
+            address(npm), "Uniswap V3", address(nav), address(this), address(this)
+        );
         adapter.submitTokenIds(alice, _ids(1, 2));
     }
 

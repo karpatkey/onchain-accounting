@@ -332,10 +332,16 @@ contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         address firstLevel = _safeAsset(stakeToken);
         if (firstLevel == address(0)) return amount;
 
-        // If the first-level asset is itself a real ERC4626 wrapper, walk one more hop to the bare
-        // reserve. Otherwise `firstLevel` is already the bare reserve and `amount` is in its units.
+        // If the first-level asset is itself a real ERC4626 wrapper (waToken), walk one more hop to the bare
+        // reserve. Use previewRedeem so a redemption fee on the wrapper (possible via Aave governance) is not
+        // over-reported (convertToAssets ignores it per EIP-4626 §4.3); fall back to convertToAssets if the
+        // wrapper reverts on preview. For a fee-less wrapper (current state) the two are equal.
         if (_isErc4626Wrapper(firstLevel)) {
-            return IERC4626Like(firstLevel).convertToAssets(amount);
+            try IERC4626Like(firstLevel).previewRedeem(amount) returns (uint256 net) {
+                return net;
+            } catch {
+                return IERC4626Like(firstLevel).convertToAssets(amount);
+            }
         }
         return amount;
     }
@@ -511,6 +517,7 @@ interface IUmbrellaStakeToken {
 interface IERC4626Like {
     function asset() external view returns (address);
     function convertToAssets(uint256 shares) external view returns (uint256);
+    function previewRedeem(uint256 shares) external view returns (uint256);
 }
 
 /// @notice Minimal interface for the Aave Umbrella RewardsController (multi-reward distributor).

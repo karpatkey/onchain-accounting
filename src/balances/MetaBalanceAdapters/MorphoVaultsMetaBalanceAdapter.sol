@@ -45,7 +45,16 @@ contract MorphoVaultsMetaBalanceAdapter is MetaBalanceAdapter {
             return new INAVCalculator.PositionBalance[](0);
         }
 
-        uint256 amount = vault.convertToAssets(vault.balanceOf(account));
+        // Use previewRedeem (net of any vault exit/withdrawal fee per EIP-4626 §4.3, which convertToAssets MUST
+        // ignore) so a fee-charging vault is not over-reported. Fall back to convertToAssets if the vault reverts
+        // on preview (e.g. paused) so the position is still reported. For fee-less vaults the two are equal.
+        uint256 shares = vault.balanceOf(account);
+        uint256 amount;
+        try vault.previewRedeem(shares) returns (uint256 redeemable) {
+            amount = redeemable;
+        } catch {
+            amount = vault.convertToAssets(shares);
+        }
         if (amount == 0) {
             return new INAVCalculator.PositionBalance[](0);
         }

@@ -131,7 +131,7 @@ contract LidoWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
                 uint256[] memory hint = WITHDRAWAL_QUEUE.findCheckpointHints(one, 1, lastCheckpoint);
                 total += WITHDRAWAL_QUEUE.getClaimableEther(one, hint)[0];
             } else {
-                total += statuses[i].amountOfStETH;
+                total += _cappedOwed(statuses[i].amountOfStETH, statuses[i].amountOfShares);
             }
         }
     }
@@ -265,7 +265,7 @@ contract LidoWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
                 amount = WITHDRAWAL_QUEUE.getClaimableEther(one, hint)[0];
                 locked = false;
             } else {
-                amount = statuses[i].amountOfStETH;
+                amount = _cappedOwed(statuses[i].amountOfStETH, statuses[i].amountOfShares);
                 locked = true;
             }
             if (amount == 0) {
@@ -290,6 +290,30 @@ contract LidoWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
         positions = new INAVCalculator.PositionBalance[](n);
         for (uint256 i = 0; i < n; i++) {
             positions[i] = temp[i];
+        }
+    }
+
+    /// @notice Conservative ETH owed for a not-yet-finalized request: min(live share value, request-time stETH).
+    /// @dev `amountOfStETH` is snapshotted at request time; a Lido NEGATIVE rebase caps the eventual payout at the
+    ///      lower post-rebase share value (`getPooledEthByShares(amountOfShares)`), so `amountOfStETH` alone would
+    ///      overstate. Take the min. A pending request does not accrue positive rebases, so in the normal case the
+    ///      min picks `amountOfStETH` (no value change). Fail-open: if the stETH read reverts, fall back to
+    ///      `amountOfStETH` (the prior behavior).
+    function _cappedOwed(uint256 amountOfStETH, uint256 amountOfShares) private view returns (uint256) {
+        // Resolve stETH first, guarded: a queue without STETH() (or a codeless return) must not revert the read —
+        // fall back to the request-time amount (prior behavior). (A revert in a `try` ARGUMENT is NOT caught, so
+        // STETH() is its own guarded call rather than inlined into the getPooledEthByShares try.)
+        address steth;
+        try WITHDRAWAL_QUEUE.STETH() returns (address s) {
+            steth = s;
+        } catch {
+            return amountOfStETH;
+        }
+        if (steth.code.length == 0) return amountOfStETH;
+        try IStETH(steth).getPooledEthByShares(amountOfShares) returns (uint256 shareValue) {
+            return shareValue < amountOfStETH ? shareValue : amountOfStETH;
+        } catch {
+            return amountOfStETH;
         }
     }
 }
@@ -339,4 +363,12 @@ interface ILidoWithdrawalQueue {
         external
         view
         returns (uint256[] memory claimableEthValues);
+
+    /// @notice The stETH (Lido) token this queue burns from — exposes the live share→ETH rate.
+    function STETH() external view returns (address);
+}
+
+/// @notice Minimal stETH view: the live ETH value of a share amount (reflects rebases, incl. negative).
+interface IStETH {
+    function getPooledEthByShares(uint256 _sharesAmount) external view returns (uint256);
 }

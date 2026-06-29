@@ -244,6 +244,9 @@ contract GearboxV3CreditAccountsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @dev Resolves the CreditManager that owns a credit account; `address(0)` if `ca` is not a Gearbox credit
     ///      account (the `creditManager()` call reverts).
     function _creditManagerOf(address ca) private view returns (address cm) {
+        // Codesize guard: a high-level call to a codeless address reverts via extcodesize, which try/catch does
+        // NOT catch — keep this fail-open (it backs both the position read and the verbose-only label).
+        if (ca.code.length == 0) return address(0);
         try ICreditAccountV3(ca).creditManager() returns (address m) {
             cm = m;
         } catch {

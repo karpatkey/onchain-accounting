@@ -127,7 +127,11 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
     /// @dev V3 Pool exposes `ADDRESSES_PROVIDER()`.
     ///      Best-effort: returns "" if the pool/provider does not expose the views (label then drops the market).
     function _marketId(address pool) internal view returns (string memory) {
+        // Codesize guards: a high-level call to a codeless address reverts via extcodesize, which try/catch does
+        // NOT catch — a faulty label must never revert this (verbose-only) read.
+        if (pool.code.length == 0) return "";
         try IAaveAddressesProviderSource(pool).ADDRESSES_PROVIDER() returns (address ap) {
+            if (ap.code.length == 0) return "";
             try IAavePoolAddressesProvider(ap).getMarketId() returns (string memory m) {
                 return m;
             } catch {

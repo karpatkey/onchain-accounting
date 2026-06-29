@@ -92,9 +92,13 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
         if (pid.length < 32) return new string[](0);
         address vault = abi.decode(pid, (address));
         string memory leaf = "";
-        try IERC20Metadata(vault).name() returns (string memory n) {
-            leaf = n;
-        } catch {}
+        // Codesize guard: a high-level call to a codeless address reverts via extcodesize, which try/catch does
+        // NOT catch — a faulty label must never revert this (verbose-only) read.
+        if (vault.code.length != 0) {
+            try IERC20Metadata(vault).name() returns (string memory n) {
+                leaf = n;
+            } catch {}
+        }
         return _labels("Vault", leaf);
     }
 

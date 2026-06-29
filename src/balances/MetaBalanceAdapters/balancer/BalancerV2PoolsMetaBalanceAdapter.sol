@@ -107,8 +107,22 @@ contract BalancerV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     ///      Per-token fail-open: a token whose `symbol()` reverts (or has no code) contributes "?". A revert in the
     ///      Vault pool-token read (e.g. a malformed/removed instance) fails open at the NAV layer (`_safeStringArray`).
     function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
+        if (pid.length < 32) return new string[](0);
         bytes32 poolId = abi.decode(pid, (bytes32));
+        // External self-call so a revert in the Vault pool-token read (bad/removed poolId) fails open to the
+        // category-only label — a faulty label must never revert the (verbose-only) labels read.
+        try this.poolTokenSymbols(poolId) returns (string memory leaf) {
+            return _labels("AMM Liquidity Pool", leaf);
+        } catch {
+            return _labels("AMM Liquidity Pool", "");
+        }
+    }
+
+    /// @notice External wrapper (enables `try/catch` isolation in `positionLabels`): the pool's underlying token
+    ///         symbols joined with "/" (BPT excluded for composable-stable pools). Reverts propagate only to the
+    ///         `positionLabels` catch arm.
+    function poolTokenSymbols(bytes32 poolId) external view returns (string memory) {
         address bpt = BalancerV2PoolLib.bptOf(poolId);
-        return _labels("AMM Liquidity Pool", _joinTokenSymbols(BalancerV2PoolLib.poolTokens(VAULT, poolId, bpt)));
+        return _joinTokenSymbols(BalancerV2PoolLib.poolTokens(VAULT, poolId, bpt));
     }
 }

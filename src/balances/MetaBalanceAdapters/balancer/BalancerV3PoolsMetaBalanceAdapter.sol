@@ -96,7 +96,20 @@ contract BalancerV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     ///      joined with "/" (e.g. "WETH/wstETH"). Per-token fail-open: a token whose `symbol()` reverts (or has no
     ///      code) contributes "?". A revert in the pool-token read fails open at the NAV layer (`_safeStringArray`).
     function positionLabels(bytes calldata positionId) external view virtual override returns (string[] memory) {
+        if (positionId.length < 32) return new string[](0);
         address pool = abi.decode(positionId, (address));
-        return _labels("AMM Liquidity Pool", _joinTokenSymbols(IStablePool(pool).poolTokens()));
+        // External self-call so a revert in the pool-token read (bad/non-pool instance) fails open to the
+        // category-only label — a faulty label must never revert the (verbose-only) labels read.
+        try this.poolTokenSymbols(pool) returns (string memory leaf) {
+            return _labels("AMM Liquidity Pool", leaf);
+        } catch {
+            return _labels("AMM Liquidity Pool", "");
+        }
+    }
+
+    /// @notice External wrapper (enables `try/catch` isolation in `positionLabels`): the pool's underlying token
+    ///         symbols joined with "/". Reverts only propagate to the `positionLabels` catch arm.
+    function poolTokenSymbols(address pool) external view returns (string memory) {
+        return _joinTokenSymbols(IStablePool(pool).poolTokens());
     }
 }

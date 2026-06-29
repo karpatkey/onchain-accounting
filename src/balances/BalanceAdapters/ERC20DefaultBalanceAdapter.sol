@@ -198,7 +198,9 @@ contract ERC20DefaultBalanceAdapter is IBalanceAdapter, IPositionDescribable {
             address addr = abi.decode(positionId, (address));
             if (addr == NATIVE_ADDRESS) {
                 leaf = "native";
-            } else {
+            } else if (addr.code.length != 0) {
+                // Codesize guard: a high-level call to a codeless address reverts via extcodesize, which try/catch
+                // does NOT catch — a faulty label must never revert this (verbose-only) read.
                 try IERC20Metadata(addr).symbol() returns (string memory sym) {
                     leaf = sym;
                 } catch {

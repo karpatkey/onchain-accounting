@@ -463,6 +463,9 @@ contract UniswapV3PoolsAssistedBalanceAdapter is AssistedBalanceAdapter, IPositi
 
     /// @dev ERC20 symbol with a "?" fallback for non-standard tokens (e.g. bytes32 symbols) or reverts.
     function _symbol(address token) private view returns (string memory) {
+        // Explicit codesize guard: a high-level call to a codeless address reverts via Solidity's extcodesize
+        // check, which try/catch does NOT catch — so guard before the typed call (a faulty label must never revert).
+        if (token.code.length == 0) return "?";
         try IERC20Metadata(token).symbol() returns (string memory s) {
             return bytes(s).length == 0 ? "?" : s;
         } catch {

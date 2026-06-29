@@ -76,9 +76,13 @@ contract FluidFTokensMetaBalanceAdapter is MetaBalanceAdapter {
         if (pid.length < 32) return new string[](0);
         address fToken = abi.decode(pid, (address));
         string memory leaf = "";
-        try IERC20Metadata(fToken).symbol() returns (string memory sym) {
-            leaf = sym;
-        } catch {}
+        // Codesize guard: a high-level call to a codeless address reverts via extcodesize, which try/catch does
+        // NOT catch — a faulty label must never revert this (verbose-only) read.
+        if (fToken.code.length != 0) {
+            try IERC20Metadata(fToken).symbol() returns (string memory sym) {
+                leaf = sym;
+            } catch {}
+        }
         return _labels("Lending", leaf);
     }
 }

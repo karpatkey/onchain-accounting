@@ -144,10 +144,23 @@ contract BalancerV2GaugesMetaBalanceAdapter is MetaBalanceAdapter {
     ///      `symbol()` reverts (or has no code) contributes "?"; a revert in the resolution chain fails open at the
     ///      NAV layer (`_safeStringArray`).
     function positionLabels(bytes calldata positionId) external view virtual override returns (string[] memory) {
+        if (positionId.length < 32) return new string[](0);
         address gauge = abi.decode(positionId, (address));
+        // External self-call so a revert anywhere in the gauge→lp_token→poolId→Vault-token chain fails open to
+        // the category-only label — a faulty label must never revert the (verbose-only) labels read.
+        try this.gaugeTokenSymbols(gauge) returns (string memory leaf) {
+            return _labels("Staking Gauge", leaf);
+        } catch {
+            return _labels("Staking Gauge", "");
+        }
+    }
+
+    /// @notice External wrapper (enables `try/catch` isolation in `positionLabels`): the staked pool's underlying
+    ///         token symbols joined with "/" (BPT excluded for composable-stable). Reverts propagate only to the
+    ///         `positionLabels` catch arm.
+    function gaugeTokenSymbols(address gauge) external view returns (string memory) {
         address bpt = IGaugeV3(gauge).lp_token();
-        address[] memory tokens = BalancerV2PoolLib.poolTokens(VAULT, IBalancerV2Pool(bpt).getPoolId(), bpt);
-        return _labels("Staking Gauge", _joinTokenSymbols(tokens));
+        return _joinTokenSymbols(BalancerV2PoolLib.poolTokens(VAULT, IBalancerV2Pool(bpt).getPoolId(), bpt));
     }
 
     //

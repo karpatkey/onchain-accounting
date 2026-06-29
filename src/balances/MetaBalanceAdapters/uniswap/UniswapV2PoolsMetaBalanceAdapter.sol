@@ -137,9 +137,20 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
         if (pid.length < 32) return new string[](0);
         address pair = abi.decode(pid, (address));
+        // External self-call so a revert in the pair token0()/token1() reads (bad/non-pair instance) fails open
+        // to the category-only label — a faulty label must never revert the (verbose-only) labels read.
+        try this.pairTokenSymbols(pair) returns (string memory leaf) {
+            return _labels("AMM Liquidity Pool", leaf);
+        } catch {
+            return _labels("AMM Liquidity Pool", "");
+        }
+    }
+
+    /// @notice External wrapper (enables `try/catch` isolation in `positionLabels`): the pair's two token symbols
+    ///         joined with "/". Reverts propagate only to the `positionLabels` catch arm.
+    function pairTokenSymbols(address pair) external view returns (string memory) {
         (address token0, address token1,,) = UniswapV2PairLib.pairAmounts(pair, address(0));
-        string memory leaf = string.concat(_symbol(token0), "/", _symbol(token1));
-        return _labels("AMM Liquidity Pool", leaf);
+        return string.concat(_symbol(token0), "/", _symbol(token1));
     }
 
     /// @notice Reads an ERC20 symbol, falling back to "?" for non-standard tokens (e.g. bytes32 symbols).

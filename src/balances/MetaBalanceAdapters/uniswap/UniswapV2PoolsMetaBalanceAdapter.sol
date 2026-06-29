@@ -3,7 +3,7 @@ pragma solidity ^0.8;
 
 import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {LabelLib} from "src/balances/LabelLib.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {UniswapV2PairLib} from "src/balances/MetaBalanceAdapters/uniswap/UniswapV2PairLib.sol";
@@ -130,15 +130,9 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     ///         joined with "/". Reverts propagate only to the `positionLabels` catch arm.
     function pairTokenSymbols(address pair) external view returns (string memory) {
         (address token0, address token1,,) = UniswapV2PairLib.pairAmounts(pair, address(0));
-        return string.concat(_symbol(token0), "/", _symbol(token1));
-    }
-
-    /// @notice Reads an ERC20 symbol, falling back to "?" for non-standard tokens (e.g. bytes32 symbols).
-    function _symbol(address token) private view returns (string memory) {
-        try IERC20Metadata(token).symbol() returns (string memory s) {
-            return bytes(s).length == 0 ? "?" : s;
-        } catch {
-            return "?";
-        }
+        // Per-token fail-open via the shared LabelLib (codesize guard + try/catch, "?" fallback) — the same
+        // convention every other AMM meta-adapter uses, and it preserves a readable leaf even if one token is
+        // codeless (the outer `try this.pairTokenSymbols` would otherwise collapse both to the bare category).
+        return string.concat(LabelLib.symbol(token0, "?"), "/", LabelLib.symbol(token1, "?"));
     }
 }

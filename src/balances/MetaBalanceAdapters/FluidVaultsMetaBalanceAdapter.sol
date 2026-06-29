@@ -2,8 +2,8 @@
 pragma solidity ^0.8;
 
 import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {LabelLib} from "src/balances/LabelLib.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {FluidVaultLib} from "src/balances/MetaBalanceAdapters/FluidVaultLib.sol";
@@ -28,7 +28,7 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     constructor(address vaultResolver_, string memory protocolName_, address navCalculator_)
         MetaBalanceAdapter(protocolName_, navCalculator_)
     {
-        require(vaultResolver_.code.length > 0, "VaultResolver must be a contract");
+        AddressCheckLib.requireContract(vaultResolver_, "VaultResolver");
         VAULT_RESOLVER = vaultResolver_;
     }
 
@@ -85,9 +85,7 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @dev Returns `["Vault", <leaf>]` where the leaf is the vault's ERC20 name ("" if unreadable). Returns an
     ///      empty array for a short positionId.
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
-        if (pid.length < 32) return new string[](0);
-        address vault = abi.decode(pid, (address));
-        return _labels("Vault", LabelLib.name(vault, ""));
+        return _addressLabels(pid, "Vault", false);
     }
 
     /// @inheritdoc MetaBalanceAdapter
@@ -105,12 +103,4 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
         return ProtocolIds.FLUID_VAULTS;
     }
 
-    function _eligible(address token, address assetFilter)
-        private
-        view
-        returns (INAVCalculator.Asset memory assetInfo, bool eligible)
-    {
-        if (assetFilter != address(0) && token != assetFilter) return (assetInfo, false);
-        (assetInfo, eligible) = _getAssetInfo(token);
-    }
 }

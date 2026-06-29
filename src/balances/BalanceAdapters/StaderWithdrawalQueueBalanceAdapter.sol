@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {IBalanceAdapter} from "../IBalanceAdapter.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
@@ -70,8 +71,8 @@ contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescri
         if (userWithdrawalManager_ == address(0) || underlyingToken_ == address(0)) {
             revert InvalidArguments();
         }
-        require(userWithdrawalManager_.code.length > 0, "UserWithdrawalManager must be a contract");
-        require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
+        AddressCheckLib.requireContract(userWithdrawalManager_, "UserWithdrawalManager");
+        AddressCheckLib.requireContract(navCalculator_, "NAVCalculator");
 
         USER_WITHDRAWAL_MANAGER = IUserWithdrawalManager(userWithdrawalManager_);
         UNDERLYING_TOKEN = underlyingToken_;

@@ -2,8 +2,10 @@
 pragma solidity ^0.8;
 
 import {IBalanceAdapter} from "../IBalanceAdapter.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {InvalidArguments} from "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -53,8 +55,8 @@ contract EthenaCooldownBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         if (stakedUSDe_ == address(0) || underlyingToken_ == address(0)) {
             revert InvalidArguments();
         }
-        require(stakedUSDe_.code.length > 0, "StakedUSDeV2 must be a contract");
-        require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
+        AddressCheckLib.requireContract(stakedUSDe_, "StakedUSDeV2");
+        AddressCheckLib.requireContract(navCalculator_, "NAVCalculator");
 
         STAKED_USDE = IStakedUSDeV2(stakedUSDe_);
         UNDERLYING_TOKEN = underlyingToken_;
@@ -167,16 +169,8 @@ contract EthenaCooldownBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         }
 
         // Underlying must be registered in NAVCalculator for the position to count in NAV.
-        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
-        INAVCalculator.Asset memory underlying;
-        bool registered;
-        for (uint256 i = 0; i < reg.length; i++) {
-            if (reg[i].asset == UNDERLYING_TOKEN) {
-                underlying = reg[i];
-                registered = true;
-                break;
-            }
-        }
+        (INAVCalculator.Asset memory underlying, bool registered) =
+            RegisteredAssetLib.find(NAV_CALCULATOR.getRegisteredAssets(), UNDERLYING_TOKEN);
         if (!registered) {
             return new INAVCalculator.PositionBalance[](0);
         }

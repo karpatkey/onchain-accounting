@@ -4,7 +4,6 @@ pragma solidity ^0.8;
 import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import {LabelLib} from "src/balances/LabelLib.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
@@ -70,9 +69,7 @@ contract GearboxV3MarketsMetaBalanceAdapter is MetaBalanceAdapter {
     ///      empty leaf is dropped and just `["Market"]` is returned (see `_labels`). Returns an empty array for a
     ///      short positionId.
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
-        if (pid.length < 32) return new string[](0);
-        address market = abi.decode(pid, (address));
-        return _labels("Market", LabelLib.name(market, ""));
+        return _addressLabels(pid, "Market", false);
     }
 
     /// @inheritdoc MetaBalanceAdapter

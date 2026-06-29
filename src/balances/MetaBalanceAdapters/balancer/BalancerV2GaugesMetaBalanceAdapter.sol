@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -50,8 +51,8 @@ contract BalancerV2GaugesMetaBalanceAdapter is MetaBalanceAdapter {
     constructor(address vault_, address balancerMinter_, string memory protocolName_, address navCalculator_)
         MetaBalanceAdapter(protocolName_, navCalculator_)
     {
-        require(vault_.code.length > 0, "Vault must be a contract");
-        require(balancerMinter_.code.length > 0, "BalancerMinter must be a contract");
+        AddressCheckLib.requireContract(vault_, "Vault");
+        AddressCheckLib.requireContract(balancerMinter_, "BalancerMinter");
         VAULT = vault_;
         BALANCER_MINTER = IBalancerMinter(balancerMinter_);
     }

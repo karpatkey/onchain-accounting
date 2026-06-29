@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {IBalanceAdapter} from "../IBalanceAdapter.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
@@ -73,8 +74,8 @@ contract LidoWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
         if (withdrawalQueue_ == address(0) || underlyingToken_ == address(0)) {
             revert InvalidArguments();
         }
-        require(withdrawalQueue_.code.length > 0, "WithdrawalQueue must be a contract");
-        require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
+        AddressCheckLib.requireContract(withdrawalQueue_, "WithdrawalQueue");
+        AddressCheckLib.requireContract(navCalculator_, "NAVCalculator");
 
         WITHDRAWAL_QUEUE = ILidoWithdrawalQueue(withdrawalQueue_);
         UNDERLYING_TOKEN = underlyingToken_;

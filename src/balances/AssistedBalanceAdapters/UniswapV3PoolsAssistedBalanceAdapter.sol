@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
@@ -112,13 +113,13 @@ contract UniswapV3PoolsAssistedBalanceAdapter is AssistedNftCacheAdapter, IPosit
         address assistant_
     ) AssistedNftCacheAdapter(admin_, assistant_) {
         if (positionManager_ == address(0) || navCalculator_ == address(0)) revert InvalidArguments();
-        require(positionManager_.code.length > 0, "PositionManager must be a contract");
-        require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
+        AddressCheckLib.requireContract(positionManager_, "PositionManager");
+        AddressCheckLib.requireContract(navCalculator_, "NAVCalculator");
         POSITION_MANAGER = positionManager_;
         FACTORY = INonfungiblePositionManager(positionManager_).factory();
         // Fail deployment early on a misconfigured NPM: a zero/EOA factory would make every getPool() call revert
         // (ABI-decode on empty returndata) and brick this adapter's NAV reads.
-        require(FACTORY.code.length > 0, "Factory must be a contract");
+        AddressCheckLib.requireContract(FACTORY, "Factory");
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
         _protocolName = protocolName_;
     }

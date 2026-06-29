@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -54,7 +55,7 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceAdapter {
         address navCalculator_
     ) MetaBalanceAdapter(protocolName_, navCalculator_) {
         require(underlyingToken_ != address(0), "underlyingToken=0");
-        require(osTokenVaultController_.code.length > 0, "osTokenVaultController not a contract");
+        AddressCheckLib.requireContract(osTokenVaultController_, "osTokenVaultController");
         UNDERLYING_TOKEN = underlyingToken_;
         OS_TOKEN_VAULT_CONTROLLER = IOsTokenVaultController(osTokenVaultController_);
     }

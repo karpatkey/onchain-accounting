@@ -4,7 +4,6 @@ pragma solidity ^0.8;
 import {MetaBalanceAdapter} from "../MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import {LabelLib} from "src/balances/LabelLib.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
@@ -137,9 +136,7 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @dev Returns `["Vault", <leaf>]` where the leaf is the vault's ERC4626 name ("" if unreadable). Returns an
     ///      empty array for a short positionId.
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
-        if (pid.length < 32) return new string[](0);
-        address vault = abi.decode(pid, (address));
-        return _labels("Vault", LabelLib.name(vault, ""));
+        return _addressLabels(pid, "Vault", false);
     }
 
     /// @inheritdoc MetaBalanceAdapter

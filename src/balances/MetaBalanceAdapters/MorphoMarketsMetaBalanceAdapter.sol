@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {MetaBalanceAdapter} from "../MetaBalanceAdapter.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {LabelLib} from "src/balances/LabelLib.sol";
@@ -30,7 +31,7 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
     constructor(address morpho_, string memory protocolName_, address navCalculator_)
         MetaBalanceAdapter(protocolName_, navCalculator_)
     {
-        require(morpho_.code.length > 0, "Morpho must be a contract");
+        AddressCheckLib.requireContract(morpho_, "Morpho");
         MORPHO = IMorpho(morpho_);
     }
 

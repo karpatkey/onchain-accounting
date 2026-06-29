@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
@@ -88,7 +89,7 @@ contract AaveV3SafetyModuleBalanceAdapter is IBalanceAdapter, IPositionDescribab
     /// @param navCalculator The NAVCalculator address (used to look up registered assets when emitting positions).
     constructor(address navCalculator) {
         if (navCalculator == address(0)) revert InvalidArguments();
-        require(navCalculator.code.length > 0, "NAVCalculator must be a contract");
+        AddressCheckLib.requireContract(navCalculator, "NAVCalculator");
         NAV_CALCULATOR = INAVCalculator(navCalculator);
     }
 

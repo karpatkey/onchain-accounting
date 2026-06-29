@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 
 import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
@@ -94,9 +95,9 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapter is AssistedBalanceAdapter,
         ) {
             revert InvalidArguments();
         }
-        require(withdrawRequestNft_.code.length > 0, "WithdrawRequestNFT must be a contract");
-        require(liquidityPool_.code.length > 0, "LiquidityPool must be a contract");
-        require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
+        AddressCheckLib.requireContract(withdrawRequestNft_, "WithdrawRequestNFT");
+        AddressCheckLib.requireContract(liquidityPool_, "LiquidityPool");
+        AddressCheckLib.requireContract(navCalculator_, "NAVCalculator");
 
         WITHDRAW_REQUEST_NFT = withdrawRequestNft_;
         LIQUIDITY_POOL = liquidityPool_;

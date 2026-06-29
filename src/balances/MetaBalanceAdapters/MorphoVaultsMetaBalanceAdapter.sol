@@ -4,7 +4,7 @@ pragma solidity ^0.8;
 import {MetaBalanceAdapter} from "../MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import {LabelLib} from "src/balances/LabelLib.sol";
+import {ERC4626RedeemLib} from "src/balances/ERC4626RedeemLib.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
@@ -45,16 +45,9 @@ contract MorphoVaultsMetaBalanceAdapter is MetaBalanceAdapter {
             return new INAVCalculator.PositionBalance[](0);
         }
 
-        // Use previewRedeem (net of any vault exit/withdrawal fee per EIP-4626 §4.3, which convertToAssets MUST
-        // ignore) so a fee-charging vault is not over-reported. Fall back to convertToAssets if the vault reverts
-        // on preview (e.g. paused) so the position is still reported. For fee-less vaults the two are equal.
-        uint256 shares = vault.balanceOf(account);
-        uint256 amount;
-        try vault.previewRedeem(shares) returns (uint256 redeemable) {
-            amount = redeemable;
-        } catch {
-            amount = vault.convertToAssets(shares);
-        }
+        // Fee-aware share→asset value: previewRedeem (net of any EIP-4626 §4.3 exit fee) with a convertToAssets
+        // fallback when preview reverts (e.g. paused). See {ERC4626RedeemLib}.
+        uint256 amount = ERC4626RedeemLib.redeemValue(address(vault), vault.balanceOf(account));
         if (amount == 0) {
             return new INAVCalculator.PositionBalance[](0);
         }
@@ -74,9 +67,7 @@ contract MorphoVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @dev Returns `["Vault", <leaf>]` where the leaf is the vault's ERC4626 name ("" if unreadable). Returns an
     ///      empty array for a short positionId.
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
-        if (pid.length < 32) return new string[](0);
-        address vault = abi.decode(pid, (address));
-        return _labels("Vault", LabelLib.name(vault, ""));
+        return _addressLabels(pid, "Vault", false);
     }
 
     /// @inheritdoc MetaBalanceAdapter

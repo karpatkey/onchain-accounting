@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {IBalanceAdapter} from "./IBalanceAdapter.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {IMetaBalanceAdapter} from "./IMetaBalanceAdapter.sol";
 import {IPositionDescribable} from "./IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -38,7 +39,7 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     /// @param protocolName_ Human-readable protocol name for verbose reads (e.g. "Morpho").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
     constructor(string memory protocolName_, address navCalculator_) {
-        require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
+        AddressCheckLib.requireContract(navCalculator_, "NAVCalculator");
         _protocolName = protocolName_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
@@ -325,5 +326,34 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     function _getAssetInfo(address asset) internal view returns (INAVCalculator.Asset memory, bool found) {
         // Shared registry lookup (RegisteredAssetLib.find) — one find implementation across the layer.
         return RegisteredAssetLib.find(NAV_CALCULATOR.getRegisteredAssets(), asset);
+    }
+
+    /// @notice The filter-then-registry gate every per-instance read applies before emitting a leg: a token is
+    ///         eligible when it matches `assetFilter` (or no filter is set) AND is registered in NAVCalculator.
+    /// @dev Combines the `assetFilter` short-circuit with `_getAssetInfo` so concrete adapters write one call instead
+    ///      of re-deciding the order each time. Returns a zeroed `assetInfo` when ineligible.
+    function _eligible(address token, address assetFilter)
+        internal
+        view
+        returns (INAVCalculator.Asset memory assetInfo, bool eligible)
+    {
+        if (assetFilter != address(0) && token != assetFilter) return (assetInfo, false);
+        (assetInfo, eligible) = _getAssetInfo(token);
+    }
+
+    /// @notice Builds the `positionLabels` `[category, leaf]` for an address-keyed `positionId`, reading the
+    ///         instance's on-chain `name()` (or `symbol()` when `useSymbol`) live and fail-open to "" — the
+    ///         single-address label shape shared by the vault/market/lending meta-adapters (Morpho, Euler, Fluid,
+    ///         Gearbox markets, Compound comets). Returns an empty array for a short/malformed positionId; the
+    ///         empty-leaf collapse is handled by {_labels}.
+    function _addressLabels(bytes calldata pid, string memory category, bool useSymbol)
+        internal
+        view
+        returns (string[] memory)
+    {
+        if (pid.length < 32) return new string[](0);
+        address addr = abi.decode(pid, (address));
+        string memory leaf = useSymbol ? LabelLib.symbol(addr, "") : LabelLib.name(addr, "");
+        return _labels(category, leaf);
     }
 }

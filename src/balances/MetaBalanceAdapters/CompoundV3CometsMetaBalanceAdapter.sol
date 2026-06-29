@@ -2,8 +2,8 @@
 pragma solidity ^0.8;
 
 import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {LabelLib} from "src/balances/LabelLib.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -35,7 +35,7 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceAdapter {
     constructor(address compoundRewards_, address rewardToken_, string memory protocolName_, address navCalculator_)
         MetaBalanceAdapter(protocolName_, navCalculator_)
     {
-        require(compoundRewards_.code.length > 0, "CompoundRewards must be a contract");
+        AddressCheckLib.requireContract(compoundRewards_, "CompoundRewards");
         require(rewardToken_ != address(0), "rewardToken=0");
         COMPOUND_REWARDS = compoundRewards_;
         REWARD_TOKEN = rewardToken_;
@@ -100,8 +100,7 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @dev Returns `["Market", <leaf>]` where the leaf is the comet's ERC20 symbol (e.g. "cUSDCv3"; "" if
     ///      unreadable, fail-open). Returns an empty array for a short positionId.
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
-        if (pid.length < 32) return new string[](0);
-        return _labels("Market", LabelLib.symbol(abi.decode(pid, (address)), ""));
+        return _addressLabels(pid, "Market", true);
     }
 
     /// @inheritdoc MetaBalanceAdapter
@@ -119,12 +118,4 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceAdapter {
         return ProtocolIds.COMPOUND_V3_COMETS;
     }
 
-    function _eligible(address token, address assetFilter)
-        private
-        view
-        returns (INAVCalculator.Asset memory assetInfo, bool eligible)
-    {
-        if (assetFilter != address(0) && token != assetFilter) return (assetInfo, false);
-        (assetInfo, eligible) = _getAssetInfo(token);
-    }
 }

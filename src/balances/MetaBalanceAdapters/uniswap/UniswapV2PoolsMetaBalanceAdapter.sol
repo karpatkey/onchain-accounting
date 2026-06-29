@@ -103,15 +103,6 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
         assets[1] = token1;
     }
 
-    function _eligible(address token, address assetFilter)
-        private
-        view
-        returns (INAVCalculator.Asset memory assetInfo, bool eligible)
-    {
-        if (assetFilter != address(0) && token != assetFilter) return (assetInfo, false);
-        (assetInfo, eligible) = _getAssetInfo(token);
-    }
-
     /// @inheritdoc MetaBalanceAdapter
     /// @dev Returns `["AMM Liquidity Pool", "sym0/sym1"]`; leaf derived on-chain from the pair's token symbols.
     function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {

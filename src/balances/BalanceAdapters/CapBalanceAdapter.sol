@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {IBalanceAdapter} from "../IBalanceAdapter.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -76,10 +77,10 @@ contract CapBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         if (cUsd_ == address(0) || stcUsd_ == address(0) || usdc_ == address(0)) {
             revert InvalidArguments();
         }
-        require(cUsd_.code.length > 0, "cUSD must be a contract");
-        require(stcUsd_.code.length > 0, "stcUSD must be a contract");
-        require(usdc_.code.length > 0, "USDC must be a contract");
-        require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
+        AddressCheckLib.requireContract(cUsd_, "cUSD");
+        AddressCheckLib.requireContract(stcUsd_, "stcUSD");
+        AddressCheckLib.requireContract(usdc_, "USDC");
+        AddressCheckLib.requireContract(navCalculator_, "NAVCalculator");
 
         CUSD = ICUsd(cUsd_);
         STCUSD = IStcUsd(stcUsd_);

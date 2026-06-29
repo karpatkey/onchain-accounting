@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {IBalanceAdapter} from "../IBalanceAdapter.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -28,8 +29,8 @@ contract SparkLendBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.SPARK_LEND;
 
     constructor(address dataProvider_, address navCalculator_) {
-        require(dataProvider_.code.length > 0, "DataProvider must be a contract");
-        require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
+        AddressCheckLib.requireContract(dataProvider_, "DataProvider");
+        AddressCheckLib.requireContract(navCalculator_, "NAVCalculator");
         DATA_PROVIDER = IProtocolDataProvider(dataProvider_);
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
         POOL = IAavePoolAddressesProvider(IAaveAddressesProviderSource(dataProvider_).ADDRESSES_PROVIDER()).getPool();

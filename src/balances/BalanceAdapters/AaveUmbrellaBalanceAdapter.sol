@@ -2,11 +2,13 @@
 pragma solidity ^0.8;
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
+import {ERC4626RedeemLib} from "src/balances/ERC4626RedeemLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -88,8 +90,8 @@ contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         if (rewardsController == address(0) || navCalculator == address(0)) {
             revert InvalidArguments();
         }
-        require(rewardsController.code.length > 0, "RewardsController must be a contract");
-        require(navCalculator.code.length > 0, "NAVCalculator must be a contract");
+        AddressCheckLib.requireContract(rewardsController, "RewardsController");
+        AddressCheckLib.requireContract(navCalculator, "NAVCalculator");
         REWARDS_CONTROLLER = IUmbrellaRewardsController(rewardsController);
         NAV_CALCULATOR = INAVCalculator(navCalculator);
     }
@@ -338,11 +340,7 @@ contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         // over-reported (convertToAssets ignores it per EIP-4626 §4.3); fall back to convertToAssets if the
         // wrapper reverts on preview. For a fee-less wrapper (current state) the two are equal.
         if (_isErc4626Wrapper(firstLevel)) {
-            try IERC4626Like(firstLevel).previewRedeem(amount) returns (uint256 net) {
-                return net;
-            } catch {
-                return IERC4626Like(firstLevel).convertToAssets(amount);
-            }
+            return ERC4626RedeemLib.redeemValue(firstLevel, amount);
         }
         return amount;
     }
@@ -499,14 +497,6 @@ interface IUmbrellaStakeToken {
     /// @notice The account's cooldown snapshot. A zero `amount` means no active cooldown.
     /// @dev Older/other stake-token versions may not expose this ABI; callers must tolerate a call/decode failure.
     function getStakerCooldown(address user) external view returns (CooldownSnapshot memory);
-}
-
-/// @notice Generic ERC4626-shaped reader used to walk wrapper layers without binding to a
-///         particular implementation (StakeToken, StataTokenV2, or any future variant).
-interface IERC4626Like {
-    function asset() external view returns (address);
-    function convertToAssets(uint256 shares) external view returns (uint256);
-    function previewRedeem(uint256 shares) external view returns (uint256);
 }
 
 /// @notice Minimal interface for the Aave Umbrella RewardsController (multi-reward distributor).

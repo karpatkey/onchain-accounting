@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
@@ -165,8 +166,8 @@ contract MerklRewardsAssistedBalanceAdapter is AssistedBalanceAdapter, IPosition
         if (distributor_ == address(0) || navCalculator_ == address(0)) {
             revert InvalidArguments();
         }
-        require(distributor_.code.length > 0, "Distributor must be a contract");
-        require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
+        AddressCheckLib.requireContract(distributor_, "Distributor");
+        AddressCheckLib.requireContract(navCalculator_, "NAVCalculator");
 
         DISTRIBUTOR = distributor_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);

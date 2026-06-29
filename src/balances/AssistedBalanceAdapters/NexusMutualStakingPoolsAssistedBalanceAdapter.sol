@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
@@ -95,9 +96,9 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedNftCacheAdapte
         ) {
             revert InvalidArguments();
         }
-        require(stakingNft_.code.length > 0, "StakingNFT must be a contract");
-        require(stakingViewer_.code.length > 0, "StakingViewer must be a contract");
-        require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
+        AddressCheckLib.requireContract(stakingNft_, "StakingNFT");
+        AddressCheckLib.requireContract(stakingViewer_, "StakingViewer");
+        AddressCheckLib.requireContract(navCalculator_, "NAVCalculator");
 
         STAKING_NFT = stakingNft_;
         STAKING_VIEWER = stakingViewer_;

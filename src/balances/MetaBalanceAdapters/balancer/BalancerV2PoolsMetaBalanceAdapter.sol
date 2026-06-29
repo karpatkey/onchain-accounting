@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -35,7 +36,7 @@ contract BalancerV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     constructor(address vault_, string memory protocolName_, address navCalculator_)
         MetaBalanceAdapter(protocolName_, navCalculator_)
     {
-        require(vault_.code.length > 0, "Vault must be a contract");
+        AddressCheckLib.requireContract(vault_, "Vault");
         VAULT = vault_;
     }
 

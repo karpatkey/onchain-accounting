@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {IBalanceAdapter} from "../IBalanceAdapter.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
@@ -67,8 +68,8 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
         if (withdrawalManager_ == address(0)) {
             revert InvalidArguments();
         }
-        require(withdrawalManager_.code.length > 0, "WithdrawalManager must be a contract");
-        require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
+        AddressCheckLib.requireContract(withdrawalManager_, "WithdrawalManager");
+        AddressCheckLib.requireContract(navCalculator_, "NAVCalculator");
 
         WITHDRAWAL_MANAGER = ILRTWithdrawalManager(withdrawalManager_);
         NAV_CALCULATOR = INAVCalculator(navCalculator_);

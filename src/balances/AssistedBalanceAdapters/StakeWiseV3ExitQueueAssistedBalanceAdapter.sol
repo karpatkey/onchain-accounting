@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 
 import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
@@ -142,8 +143,8 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapter is AssistedBalanceAdapter, I
         ) {
             revert InvalidArguments();
         }
-        require(vaultsRegistry_.code.length > 0, "VaultsRegistry must be a contract");
-        require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
+        AddressCheckLib.requireContract(vaultsRegistry_, "VaultsRegistry");
+        AddressCheckLib.requireContract(navCalculator_, "NAVCalculator");
 
         VAULTS_REGISTRY = vaultsRegistry_;
         UNDERLYING_TOKEN = underlyingToken_;

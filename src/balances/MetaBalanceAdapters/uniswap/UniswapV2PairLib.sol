@@ -3,22 +3,7 @@ pragma solidity ^0.8;
 
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {StaticCallLib} from "src/utils/StaticCallLib.sol";
-
-/// @notice Minimal Uniswap V2 pair interface.
-interface IUniswapV2Pair {
-    function token0() external view returns (address);
-    function token1() external view returns (address);
-    function factory() external view returns (address);
-    function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast);
-    function totalSupply() external view returns (uint256);
-    function balanceOf(address account) external view returns (uint256);
-    function kLast() external view returns (uint256);
-}
-
-/// @notice Minimal Uniswap V2 factory interface.
-interface IUniswapV2Factory {
-    function feeTo() external view returns (address);
-}
+import {IUniswapV2Pair, IUniswapV2Factory} from "src/balances/MetaBalanceAdapters/uniswap/IUniswapV2.sol";
 
 /// @title UniswapV2PairLib
 /// @author KPK

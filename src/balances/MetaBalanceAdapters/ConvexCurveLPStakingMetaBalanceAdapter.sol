@@ -7,6 +7,8 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {StaticCallLib} from "src/utils/StaticCallLib.sol";
 import {CurvePoolLib} from "./curve/CurvePoolLib.sol";
+import {IConvexBooster, IConvexRewarder} from "src/balances/MetaBalanceAdapters/IConvex.sol";
+import {DedupeLib} from "src/balances/MetaBalanceAdapters/DedupeLib.sol";
 import {NotAContract} from "src/errors.sol";
 
 /// @title ConvexCurveLPStakingMetaBalanceAdapter
@@ -213,14 +215,7 @@ contract ConvexCurveLPStakingMetaBalanceAdapter is MetaBalanceAdapter {
                 if (!tOk) continue;
                 (bool wOk, address ul) = _safeAddr(raw, abi.encodeWithSignature("token()"));
                 address tok = (wOk && ul != address(0)) ? ul : raw;
-                bool dup;
-                for (uint256 j; j < rn; ++j) {
-                    if (rewards[j] == tok) {
-                        dup = true;
-                        break;
-                    }
-                }
-                if (!dup) rewards[rn++] = tok;
+                if (!DedupeLib.contains(rewards, rn, tok)) rewards[rn++] = tok;
             }
         }
 
@@ -337,22 +332,4 @@ contract ConvexCurveLPStakingMetaBalanceAdapter is MetaBalanceAdapter {
     function _safeAddr(address target, bytes memory data) internal view returns (bool ok, address result) {
         return StaticCallLib.safeAddr(target, data);
     }
-}
-
-// ─── Interfaces ───────────────────────────────────────────────────────────────
-
-interface IConvexBooster {
-    function poolInfo(uint256 pid)
-        external
-        view
-        returns (address lptoken, address token, address gauge, address crvRewards, address stash, bool shutdown);
-}
-
-interface IConvexRewarder {
-    function pid() external view returns (uint256);
-    function balanceOf(address account) external view returns (uint256);
-    function earned(address account) external view returns (uint256);
-    function rewardToken() external view returns (address);
-    function extraRewardsLength() external view returns (uint256);
-    function extraRewards(uint256 index) external view returns (address);
 }

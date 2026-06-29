@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
+import {BalanceAdapterBase} from "../BalanceAdapterBase.sol";
 import {IBalanceAdapter} from "../IBalanceAdapter.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -17,7 +17,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         reserve (aToken balance → Supplied/Collateral, total debt → Borrowed).
 ///         The Borrow leg sums variable and stable debt: Aave/Spark deprecated NEW stable borrows, but
 ///         legacy stable debt can persist, so it is included to avoid understating debt (see `_reserveData`).
-contract SparkLendBalanceAdapter is IBalanceAdapter, IPositionDescribable {
+contract SparkLendBalanceAdapter is BalanceAdapterBase {
     IProtocolDataProvider public immutable DATA_PROVIDER;
     /// @notice Spark Pool address — used as the `positionId` (one position per instance; the reserve is not
     ///         encoded — reserves are distinguished by `balanceAsset` + `positionKind`).
@@ -38,10 +38,6 @@ contract SparkLendBalanceAdapter is IBalanceAdapter, IPositionDescribable {
 
     // ─── IERC165 ─────────────────────────────────────────────────────────────
 
-    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IPositionDescribable).interfaceId
-            || interfaceId == type(IERC165).interfaceId;
-    }
 
     // ─── IPositionDescribable ─────────────────────────────────────────────────
 

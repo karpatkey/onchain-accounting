@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
+import {BalanceAdapterBase} from "../BalanceAdapterBase.sol";
 import {IBalanceAdapter} from "../IBalanceAdapter.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {InvalidArguments, NotAuthorized} from "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -31,7 +31,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      total. The supported-asset set is discovered at runtime from
 ///      `lrtConfig().getSupportedAssetList()` rather than hardcoded, mirroring the dynamic-discovery
 ///      pattern in `AaveUmbrellaBalanceAdapter.sol`.
-contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescribable {
+contract KelpWithdrawalQueueBalanceAdapter is BalanceAdapterBase {
     //
     // Constants
     //
@@ -115,11 +115,6 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
         return _supportedAssets();
     }
 
-    /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IPositionDescribable).interfaceId
-            || interfaceId == type(IERC165).interfaceId;
-    }
 
     function protocolName() external pure returns (string memory) {
         return "Kelp DAO";

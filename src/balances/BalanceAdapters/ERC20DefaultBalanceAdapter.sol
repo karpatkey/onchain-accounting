@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {BalanceAdapterBase} from "../BalanceAdapterBase.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {IBalanceAdapter} from "../IBalanceAdapter.sol";
 import {LabelLib} from "src/balances/LabelLib.sol";
@@ -18,7 +18,7 @@ import "src/errors.sol";
 /// @dev Returns PositionBalance structs (balance-only data) without pricing information.
 /// @dev NAVCalculator enriches these positions with pricing data to create full Position structs.
 /// @author KPK
-contract ERC20DefaultBalanceAdapter is IBalanceAdapter, IPositionDescribable {
+contract ERC20DefaultBalanceAdapter is BalanceAdapterBase {
     using EnumerableSet for EnumerableSet.AddressSet;
 
     /// @notice Reference to NAVCalculator for asset registry access
@@ -181,11 +181,6 @@ contract ERC20DefaultBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     // IERC165 Implementation
     //
 
-    /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IPositionDescribable).interfaceId
-            || interfaceId == type(IERC165).interfaceId;
-    }
 
     function protocolName() external pure returns (string memory) {
         return "Wallet";

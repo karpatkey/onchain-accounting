@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
+import {SingleAssetBalanceAdapterBase} from "../SingleAssetBalanceAdapterBase.sol";
 import {IBalanceAdapter} from "../IBalanceAdapter.sol";
-import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {InvalidArguments} from "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -30,7 +30,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      finalization, where Lido caps the payout — for finalized requests the exact `getClaimableEther`
 ///      is used). NAVCalculator prices each via the registered ETH feed; the balance methods
 ///      (`getAdapterBalances`) still report the summed total.
-contract LidoWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescribable {
+contract LidoWithdrawalQueueBalanceAdapter is SingleAssetBalanceAdapterBase {
     //
     // Constants
     //
@@ -55,10 +55,6 @@ contract LidoWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
     /// @notice Lido WithdrawalQueueERC721 contract.
     ILidoWithdrawalQueue public immutable WITHDRAWAL_QUEUE;
 
-    /// @notice The asset under which positions are reported — the asset Lido pays on claim (native ETH).
-    /// @dev Pricing is added by NAVCalculator from this asset's registered price feed (ETH/USD).
-    address public immutable UNDERLYING_TOKEN;
-
     /// @notice Reference to NAVCalculator for asset registry access.
     INAVCalculator public immutable NAV_CALCULATOR;
 
@@ -70,15 +66,14 @@ contract LidoWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
     /// @param underlyingToken_ Address of the asset positions are denominated in — what Lido pays on
     ///        claim (native ETH; the ERC-7528 sentinel on mainnet).
     /// @param navCalculator_ The NAVCalculator address used for asset-registry filtering.
-    constructor(address withdrawalQueue_, address underlyingToken_, address navCalculator_) {
-        if (withdrawalQueue_ == address(0) || underlyingToken_ == address(0)) {
-            revert InvalidArguments();
-        }
+    constructor(address withdrawalQueue_, address underlyingToken_, address navCalculator_)
+        SingleAssetBalanceAdapterBase(underlyingToken_)
+    {
+        if (withdrawalQueue_ == address(0)) revert InvalidArguments();
         AddressCheckLib.requireContract(withdrawalQueue_, "WithdrawalQueue");
         AddressCheckLib.requireContract(navCalculator_, "NAVCalculator");
 
         WITHDRAWAL_QUEUE = ILidoWithdrawalQueue(withdrawalQueue_);
-        UNDERLYING_TOKEN = underlyingToken_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
@@ -141,17 +136,9 @@ contract LidoWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
     // IBalanceAdapter
     //
 
-    /// @inheritdoc IBalanceAdapter
-    function underlyingAssetsSupported() external view override returns (address[] memory) {
-        address[] memory assets = new address[](1);
-        assets[0] = UNDERLYING_TOKEN;
-        return assets;
-    }
-
-    /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IPositionDescribable).interfaceId
-            || interfaceId == type(IERC165).interfaceId;
+    /// @inheritdoc SingleAssetBalanceAdapterBase
+    function _owedAmount(address account) internal view override returns (uint256) {
+        return _ethOwed(account);
     }
 
     function protocolName() external pure returns (string memory) {
@@ -166,43 +153,6 @@ contract LidoWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
         out = new string[](2);
         out[0] = "Withdrawal Queue";
         out[1] = "stETH";
-    }
-
-    /// @inheritdoc IBalanceAdapter
-    function getAdapterBalanceForAsset(address account, address asset)
-        external
-        view
-        override
-        returns (uint256 amount, bool isDebt)
-    {
-        if (asset == address(0) || asset != UNDERLYING_TOKEN) {
-            return (0, false);
-        }
-        return (_ethOwed(account), false);
-    }
-
-    /// @inheritdoc IBalanceAdapter
-    function getAdapterBalances(address account)
-        external
-        view
-        override
-        returns (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt)
-    {
-        if (account == address(0)) {
-            return (new address[](0), new uint256[](0), new bool[](0));
-        }
-
-        uint256 total = _ethOwed(account);
-        if (total == 0) {
-            return (new address[](0), new uint256[](0), new bool[](0));
-        }
-
-        assets = new address[](1);
-        amounts = new uint256[](1);
-        isDebt = new bool[](1);
-        assets[0] = UNDERLYING_TOKEN;
-        amounts[0] = total;
-        isDebt[0] = false;
     }
 
     /// @inheritdoc IBalanceAdapter

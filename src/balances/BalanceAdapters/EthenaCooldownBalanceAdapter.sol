@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
+import {SingleAssetBalanceAdapterBase} from "../SingleAssetBalanceAdapterBase.sol";
 import {IBalanceAdapter} from "../IBalanceAdapter.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {InvalidArguments} from "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -22,7 +22,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      `cooldowns(account)` read gives the full pending amount. This adapter reports that amount as one
 ///      position denominated in `UNDERLYING_TOKEN` (USDe). Correctness-on-exit coverage: it is non-zero only
 ///      while an unstake is in flight.
-contract EthenaCooldownBalanceAdapter is IBalanceAdapter, IPositionDescribable {
+contract EthenaCooldownBalanceAdapter is SingleAssetBalanceAdapterBase {
     //
     // Constants
     //
@@ -38,9 +38,6 @@ contract EthenaCooldownBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     /// @notice Ethena StakedUSDeV2 (sUSDe) contract, which holds the per-account cooldown record.
     IStakedUSDeV2 public immutable STAKED_USDE;
 
-    /// @notice The asset positions are reported in (USDe). Pricing is added by NAVCalculator from its feed.
-    address public immutable UNDERLYING_TOKEN;
-
     /// @notice Reference to NAVCalculator for asset registry access.
     INAVCalculator public immutable NAV_CALCULATOR;
 
@@ -51,15 +48,14 @@ contract EthenaCooldownBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     /// @param stakedUSDe_ Address of Ethena's StakedUSDeV2 (sUSDe) contract.
     /// @param underlyingToken_ Address of USDe — the asset positions are denominated in.
     /// @param navCalculator_ The NAVCalculator address used for asset-registry filtering.
-    constructor(address stakedUSDe_, address underlyingToken_, address navCalculator_) {
-        if (stakedUSDe_ == address(0) || underlyingToken_ == address(0)) {
-            revert InvalidArguments();
-        }
+    constructor(address stakedUSDe_, address underlyingToken_, address navCalculator_)
+        SingleAssetBalanceAdapterBase(underlyingToken_)
+    {
+        if (stakedUSDe_ == address(0)) revert InvalidArguments();
         AddressCheckLib.requireContract(stakedUSDe_, "StakedUSDeV2");
         AddressCheckLib.requireContract(navCalculator_, "NAVCalculator");
 
         STAKED_USDE = IStakedUSDeV2(stakedUSDe_);
-        UNDERLYING_TOKEN = underlyingToken_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
@@ -82,17 +78,9 @@ contract EthenaCooldownBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     // IBalanceAdapter
     //
 
-    /// @inheritdoc IBalanceAdapter
-    function underlyingAssetsSupported() external view override returns (address[] memory) {
-        address[] memory assets = new address[](1);
-        assets[0] = UNDERLYING_TOKEN;
-        return assets;
-    }
-
-    /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IPositionDescribable).interfaceId
-            || interfaceId == type(IERC165).interfaceId;
+    /// @inheritdoc SingleAssetBalanceAdapterBase
+    function _owedAmount(address account) internal view override returns (uint256) {
+        return _pendingUsde(account);
     }
 
     /// @inheritdoc IPositionDescribable
@@ -106,39 +94,6 @@ contract EthenaCooldownBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         out[0] = "Unstaking Cooldown";
         out[1] = "sUSDe";
         return out;
-    }
-
-    /// @inheritdoc IBalanceAdapter
-    function getAdapterBalanceForAsset(address account, address asset)
-        external
-        view
-        override
-        returns (uint256 amount, bool isDebt)
-    {
-        if (asset == address(0) || asset != UNDERLYING_TOKEN) {
-            return (0, false);
-        }
-        return (_pendingUsde(account), false);
-    }
-
-    /// @inheritdoc IBalanceAdapter
-    function getAdapterBalances(address account)
-        external
-        view
-        override
-        returns (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt)
-    {
-        uint256 total = _pendingUsde(account);
-        if (total == 0) {
-            return (new address[](0), new uint256[](0), new bool[](0));
-        }
-
-        assets = new address[](1);
-        amounts = new uint256[](1);
-        isDebt = new bool[](1);
-        assets[0] = UNDERLYING_TOKEN;
-        amounts[0] = total;
-        isDebt[0] = false;
     }
 
     /// @inheritdoc IBalanceAdapter

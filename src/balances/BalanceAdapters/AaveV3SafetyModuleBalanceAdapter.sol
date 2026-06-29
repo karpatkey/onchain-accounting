@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {BalanceAdapterBase} from "../BalanceAdapterBase.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
@@ -26,7 +26,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      no live reads happen during construction. Reward token is AAVE for every entry today; `_records()` keeps a
 ///      per-entry `rewardToken` field so a future stake token with a non-AAVE reward (unlikely but possible) is a
 ///      one-line change.
-contract AaveV3SafetyModuleBalanceAdapter is IBalanceAdapter, IPositionDescribable {
+contract AaveV3SafetyModuleBalanceAdapter is BalanceAdapterBase {
     //
     // Constants — Mainnet Safety Module addresses
     //
@@ -114,11 +114,6 @@ contract AaveV3SafetyModuleBalanceAdapter is IBalanceAdapter, IPositionDescribab
     // IERC165
     //
 
-    /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IPositionDescribable).interfaceId
-            || interfaceId == type(IERC165).interfaceId;
-    }
 
     function protocolName() external pure returns (string memory) {
         return "Aave V3";

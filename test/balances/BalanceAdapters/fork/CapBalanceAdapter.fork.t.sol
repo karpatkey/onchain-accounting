@@ -26,7 +26,10 @@ contract CapBalanceAdapterForkTest is BalanceAdapterTestBase {
     // Expected values (from source adapter test at the same block)
     uint256 public constant EXPECTED_CUSD_BALANCE = 15_418_901_322_365_792_211_158;
     uint256 public constant EXPECTED_STCUSD_BALANCE = 14_477_229_622_350_858_108_721;
-    uint256 public constant EXPECTED_USDC_AMOUNT = 30_554_823_916;
+    // Per-leg-sum of the cUSD + stcUSD burn quotes (vigilo L-01): `_calculateBalance` floors each leg's burn quote
+    // independently and sums them, matching the NAV `getAdapterPositions` per-position total exactly. This is 1 wei
+    // below the prior single-combined-quote value (30_554_823_916) — the documented rounding of the L-01 fix.
+    uint256 public constant EXPECTED_USDC_AMOUNT = 30_554_823_915;
 
     // address(0xdead) may hold Cap dust shares — use a deterministic address with no history
     address internal unknownAccount;

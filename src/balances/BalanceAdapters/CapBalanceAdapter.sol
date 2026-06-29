@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
+import {BalanceAdapterBase} from "../BalanceAdapterBase.sol";
 import {IBalanceAdapter} from "../IBalanceAdapter.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {InvalidArguments} from "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -41,7 +41,7 @@ interface IStcUsd {
 ///      - stcUSD: ERC20.balanceOf → ERC4626 `convertToAssets` → cUSD → `getBurnAmount` → USDC. `["Savings", "stcUSD"]`.
 ///      The no-arg balance getters (`getAdapterBalances`/`getAdapterBalanceForAsset`) still report the combined
 ///      USDC total for the USDC asset; only the NAV `getAdapterPositions` path splits the legs.
-contract CapBalanceAdapter is IBalanceAdapter, IPositionDescribable {
+contract CapBalanceAdapter is BalanceAdapterBase {
     //
     // State
     //
@@ -92,11 +92,6 @@ contract CapBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     // IERC165
     //
 
-    /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IPositionDescribable).interfaceId
-            || interfaceId == type(IERC165).interfaceId;
-    }
 
     function protocolName() external pure returns (string memory) {
         return "Cap";

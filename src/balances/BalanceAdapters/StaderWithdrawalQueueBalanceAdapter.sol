@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
+import {SingleAssetBalanceAdapterBase} from "../SingleAssetBalanceAdapterBase.sol";
 import {IBalanceAdapter} from "../IBalanceAdapter.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {InvalidArguments} from "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -25,7 +25,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      request id rides in each leg's typed `positionInstanceId` (`bytes32(requestId)`), never in
 ///      `positionId` (the legs share the static positionId and are distinguished by their `positionInstanceId`,
 ///      for NAV by summing). The balance methods (`getAdapterBalances`) still report the summed total.
-contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescribable {
+contract StaderWithdrawalQueueBalanceAdapter is SingleAssetBalanceAdapterBase {
     //
     // Errors
     //
@@ -53,10 +53,6 @@ contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescri
     /// @notice Stader UserWithdrawalManager contract.
     IUserWithdrawalManager public immutable USER_WITHDRAWAL_MANAGER;
 
-    /// @notice The asset under which positions are reported (e.g. WETH).
-    /// @dev Pricing is added by NAVCalculator from this asset's registered price feed.
-    address public immutable UNDERLYING_TOKEN;
-
     /// @notice Reference to NAVCalculator for asset registry access.
     INAVCalculator public immutable NAV_CALCULATOR;
 
@@ -67,15 +63,14 @@ contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescri
     /// @param userWithdrawalManager_ Address of Stader's UserWithdrawalManager contract.
     /// @param underlyingToken_ Address of the asset positions are denominated in (e.g. WETH).
     /// @param navCalculator_ The NAVCalculator address used for asset-registry filtering.
-    constructor(address userWithdrawalManager_, address underlyingToken_, address navCalculator_) {
-        if (userWithdrawalManager_ == address(0) || underlyingToken_ == address(0)) {
-            revert InvalidArguments();
-        }
+    constructor(address userWithdrawalManager_, address underlyingToken_, address navCalculator_)
+        SingleAssetBalanceAdapterBase(underlyingToken_)
+    {
+        if (userWithdrawalManager_ == address(0)) revert InvalidArguments();
         AddressCheckLib.requireContract(userWithdrawalManager_, "UserWithdrawalManager");
         AddressCheckLib.requireContract(navCalculator_, "NAVCalculator");
 
         USER_WITHDRAWAL_MANAGER = IUserWithdrawalManager(userWithdrawalManager_);
-        UNDERLYING_TOKEN = underlyingToken_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
@@ -137,17 +132,9 @@ contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescri
     // IBalanceAdapter
     //
 
-    /// @inheritdoc IBalanceAdapter
-    function underlyingAssetsSupported() external view override returns (address[] memory) {
-        address[] memory assets = new address[](1);
-        assets[0] = UNDERLYING_TOKEN;
-        return assets;
-    }
-
-    /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IPositionDescribable).interfaceId
-            || interfaceId == type(IERC165).interfaceId;
+    /// @inheritdoc SingleAssetBalanceAdapterBase
+    function _owedAmount(address account) internal view override returns (uint256) {
+        return _ethOwed(account);
     }
 
     function protocolName() external pure returns (string memory) {
@@ -162,43 +149,6 @@ contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescri
         out = new string[](2);
         out[0] = "Withdrawal Queue";
         out[1] = "ETHx";
-    }
-
-    /// @inheritdoc IBalanceAdapter
-    function getAdapterBalanceForAsset(address account, address asset)
-        external
-        view
-        override
-        returns (uint256 amount, bool isDebt)
-    {
-        if (asset == address(0) || asset != UNDERLYING_TOKEN) {
-            return (0, false);
-        }
-        return (_ethOwed(account), false);
-    }
-
-    /// @inheritdoc IBalanceAdapter
-    function getAdapterBalances(address account)
-        external
-        view
-        override
-        returns (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt)
-    {
-        if (account == address(0)) {
-            return (new address[](0), new uint256[](0), new bool[](0));
-        }
-
-        uint256 total = _ethOwed(account);
-        if (total == 0) {
-            return (new address[](0), new uint256[](0), new bool[](0));
-        }
-
-        assets = new address[](1);
-        amounts = new uint256[](1);
-        isDebt = new bool[](1);
-        assets[0] = UNDERLYING_TOKEN;
-        amounts[0] = total;
-        isDebt[0] = false;
     }
 
     /// @inheritdoc IBalanceAdapter

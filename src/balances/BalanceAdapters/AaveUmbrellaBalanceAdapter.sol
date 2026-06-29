@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {BalanceAdapterBase} from "../BalanceAdapterBase.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
@@ -58,7 +58,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      locked leg (`isLocked=true` — active stake + a cooldown still cooling/expired) and an unlocked leg
 ///      (`isLocked=false` — a cooldown elapsed and inside the withdrawal window), both under
 ///      `positionId = abi.encode(stakeToken)` — read from `getStakerCooldown`. Total value is unchanged.
-contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
+contract AaveUmbrellaBalanceAdapter is BalanceAdapterBase {
     /// @dev Gas forwarded to single-word probes (`asset()`, `convertToAssets(uint256)`,
     ///      `UNDERLYING_ASSET_ADDRESS()`). 30k covers a normal SLOAD-and-return path comfortably
     ///      while preventing a misbehaving fallback (cf. WETH9 dispatching unknown selectors to
@@ -100,11 +100,6 @@ contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     // IERC165
     //
 
-    /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IPositionDescribable).interfaceId
-            || interfaceId == type(IERC165).interfaceId;
-    }
 
     function protocolName() external pure returns (string memory) {
         return "Aave Umbrella";

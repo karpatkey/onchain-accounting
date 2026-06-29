@@ -102,5 +102,4 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     function _protocolSubId() internal pure override returns (bytes32) {
         return ProtocolIds.FLUID_VAULTS;
     }
-
 }

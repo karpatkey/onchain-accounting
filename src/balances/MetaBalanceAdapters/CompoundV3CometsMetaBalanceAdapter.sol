@@ -117,5 +117,4 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceAdapter {
     function _protocolSubId() internal pure override returns (bytes32) {
         return ProtocolIds.COMPOUND_V3_COMETS;
     }
-
 }

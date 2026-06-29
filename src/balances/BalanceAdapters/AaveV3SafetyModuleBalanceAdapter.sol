@@ -114,7 +114,6 @@ contract AaveV3SafetyModuleBalanceAdapter is BalanceAdapterBase {
     // IERC165
     //
 
-
     function protocolName() external pure returns (string memory) {
         return "Aave V3";
     }

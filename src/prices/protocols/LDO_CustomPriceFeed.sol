@@ -23,7 +23,11 @@ contract LDO_CustomPriceFeed is TwoFeedChainlinkPriceFeed {
         uint256 ethToUsdChainlinkHeartbeat_
     )
         TwoFeedChainlinkPriceFeed(
-            ldo_, ldoToEthChainlinkAddress_, ethToUsdChainlinkAddress_, ldoToEthChainlinkHeartbeat_, ethToUsdChainlinkHeartbeat_
+            ldo_,
+            ldoToEthChainlinkAddress_,
+            ethToUsdChainlinkAddress_,
+            ldoToEthChainlinkHeartbeat_,
+            ethToUsdChainlinkHeartbeat_
         )
     {}
 }

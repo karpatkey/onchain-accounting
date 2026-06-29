@@ -181,7 +181,6 @@ contract ERC20DefaultBalanceAdapter is BalanceAdapterBase {
     // IERC165 Implementation
     //
 
-
     function protocolName() external pure returns (string memory) {
         return "Wallet";
     }

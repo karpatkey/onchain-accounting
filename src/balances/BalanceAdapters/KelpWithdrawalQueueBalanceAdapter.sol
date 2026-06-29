@@ -115,7 +115,6 @@ contract KelpWithdrawalQueueBalanceAdapter is BalanceAdapterBase {
         return _supportedAssets();
     }
 
-
     function protocolName() external pure returns (string memory) {
         return "Kelp DAO";
     }

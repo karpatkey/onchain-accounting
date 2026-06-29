@@ -38,7 +38,6 @@ contract SparkLendBalanceAdapter is BalanceAdapterBase {
 
     // ─── IERC165 ─────────────────────────────────────────────────────────────
 
-
     // ─── IPositionDescribable ─────────────────────────────────────────────────
 
     function protocolName() external pure returns (string memory) {

@@ -27,9 +27,8 @@ contract stETH_CrossRatePriceForkTest is TestEnvConfigurator {
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
 
-        oracle = new stETH_CustomPriceFeed(
-            STETH, STETH_TO_ETH, ETH_TO_USD, STETH_TO_ETH_HEARTBEAT, ETH_TO_USD_HEARTBEAT
-        );
+        oracle =
+            new stETH_CustomPriceFeed(STETH, STETH_TO_ETH, ETH_TO_USD, STETH_TO_ETH_HEARTBEAT, ETH_TO_USD_HEARTBEAT);
     }
 
     /// @dev In-EVM ground truth: price == (ETH/USD) * (stETH/ETH) / 1e18 (stETH/ETH is 18 decimals).

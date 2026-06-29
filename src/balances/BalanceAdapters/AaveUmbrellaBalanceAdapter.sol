@@ -100,7 +100,6 @@ contract AaveUmbrellaBalanceAdapter is BalanceAdapterBase {
     // IERC165
     //
 
-
     function protocolName() external pure returns (string memory) {
         return "Aave Umbrella";
     }

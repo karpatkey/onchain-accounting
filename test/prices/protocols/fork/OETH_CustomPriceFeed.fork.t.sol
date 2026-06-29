@@ -25,8 +25,7 @@ contract OETH_CrossRatePriceForkTest is TestEnvConfigurator {
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
 
-        oracle =
-            new OETH_CustomPriceFeed(OETH, OETH_TO_ETH, ETH_TO_USD, OETH_TO_ETH_HEARTBEAT, ETH_TO_USD_HEARTBEAT);
+        oracle = new OETH_CustomPriceFeed(OETH, OETH_TO_ETH, ETH_TO_USD, OETH_TO_ETH_HEARTBEAT, ETH_TO_USD_HEARTBEAT);
     }
 
     /// @dev In-EVM ground truth: price == (ETH/USD) * (OETH/ETH) / 1e18 (OETH/ETH is 18 decimals).

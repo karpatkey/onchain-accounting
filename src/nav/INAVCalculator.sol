@@ -32,14 +32,24 @@ interface INAVCalculator is IBalances {
     /// @param balanceAdapter Address of the adapter that reported this position. Provenance / audit trail — NOT part of identity.
     /// @param amount Balance magnitude (always positive); sign is implied by isDebt.
     /// @param isDebt True if debt (subtract from NAV), false if credit (add to NAV). Canonical NAV-sign signal.
-    /// @param protocolId `keccak256` of a canonical protocol slug (see `src/utils/ProtocolIds.sol`).
-    ///        Selects the `positionId` ABI-decode schema — one slug implies exactly one schema.
-    /// @param positionId ABI-encoded position identifier. Decode schema is determined by `protocolId`.
+    /// @param protocolBrand `keccak256` of the protocol brand slug (version-stripped, e.g. `aave`, `balancer`; see
+    ///        `src/utils/ProtocolIds.sol`). The broadest roll-up layer — several `protocolId`s share it
+    ///        (`aave-v3` → `aave`; `balancer-v2` + `balancer-v3` → `balancer`). Display/grouping only; NOT part of the
+    ///        stable identity key. Equals `protocolId` for unversioned protocols.
+    /// @param protocolId `keccak256` of the broad protocol-ecosystem slug (e.g. `aave-v3`, `curve`; see
+    ///        `src/utils/ProtocolIds.sol`). A roll-up / grouping key only — several `protocolSubId`s share it
+    ///        (e.g. `aave-v3-lending` + `aave-v3-safety-module` both roll up to `aave-v3`). NOT part of the stable
+    ///        identity key (it is functionally determined by `protocolSubId`).
+    /// @param protocolSubId `keccak256` of the specific protocol-product slug (e.g. `aave-v3-lending`; see
+    ///        `src/utils/ProtocolIds.sol`). Selects the `positionId` ABI-decode schema — one sub-slug implies exactly
+    ///        one schema — and is the protocol component of the stable identity key. Equals `protocolId` for
+    ///        single-product ecosystems.
+    /// @param positionId ABI-encoded position identifier. Decode schema is determined by `protocolSubId`.
     ///        e.g. for AAVE_V3_LENDING: `abi.encode(address pool)`.
     ///        Full schema table: see `src/utils/ProtocolIds.sol` and docs/howto/position-identity-schema.md.
     /// @param positionKind Semantic discriminator (Wallet / Supplied / Borrowed / Collateral / Staking / Rewards / Fees).
-    ///        Together with `protocolId`, `positionId` and `isLocked` forms the stable per-chain identity key
-    ///        `(chainId, protocolId, positionId, balanceAsset.asset, positionKind, isLocked)`.
+    ///        Together with `protocolSubId`, `positionId` and `isLocked` forms the stable per-chain identity key
+    ///        `(chainId, protocolSubId, positionId, balanceAsset.asset, positionKind, isLocked)`.
     /// @param isLocked True if this leg is NOT withdrawable right now (the pending portion of a withdrawal queue, or a
     ///        staked amount in/awaiting its unstaking cooldown); false if fully liquid / claimable now. Withdrawal-queue
     ///        and cooldown adapters keep a STATIC, timeless `positionId` (the queue/manager/asset/vault/stake-token
@@ -50,7 +60,7 @@ interface INAVCalculator is IBalances {
     ///        NFT id, a withdrawal/exit request id, or a StakeWise exit ticket (each a `uint256` widened to `bytes32`).
     ///        `bytes32(0)` for adapters with no per-item granularity. It is the SOLE ephemeral identity field, by
     ///        design: the **stable** reconciliation key
-    ///        `(chainId, protocolId, positionId, balanceAsset.asset, positionKind, isLocked)` deliberately EXCLUDES it,
+    ///        `(chainId, protocolSubId, positionId, balanceAsset.asset, positionKind, isLocked)` deliberately EXCLUDES it,
     ///        so the legs of one anchor sum and identity survives item churn. A consumer that wants per-item
     ///        granularity MAY append `positionInstanceId` to the key — gaining one position per item, at the cost of an
     ///        **ephemeral** key (it blinks in/out as items are minted/burned/claimed). Never use it for stable
@@ -62,7 +72,9 @@ interface INAVCalculator is IBalances {
         address balanceAdapter;
         uint256 amount;
         bool isDebt;
+        bytes32 protocolBrand;
         bytes32 protocolId;
+        bytes32 protocolSubId;
         bytes positionId;
         PositionKind positionKind;
         bool isLocked;
@@ -80,7 +92,9 @@ interface INAVCalculator is IBalances {
     /// @param price Price used (e.g. USD per unit of asset).
     /// @param priceDecimals Decimals of price.
     /// @param stale True if the price was stale at query time.
-    /// @param protocolId `keccak256` protocol slug. Copied from PositionBalance.
+    /// @param protocolBrand `keccak256` protocol brand slug (broadest grouping). Copied from PositionBalance.
+    /// @param protocolId `keccak256` broad ecosystem slug (grouping). Copied from PositionBalance.
+    /// @param protocolSubId `keccak256` specific protocol-product slug (identity-key component). Copied from PositionBalance.
     /// @param positionId ABI-encoded position identifier. Copied from PositionBalance.
     /// @param positionKind Semantic discriminator. Copied from PositionBalance.
     /// @param isLocked True if the leg is not withdrawable now (pending/cooling). Copied from PositionBalance.
@@ -99,7 +113,9 @@ interface INAVCalculator is IBalances {
         // True if the quote asset's own price feed was stale. When true, `value` is in USD (8dp) even though
         // `quoteAsset` is non-zero — the quote conversion was skipped. Mirrors NAV.quoteAssetStale ([9]/S2).
         bool quoteAssetStale;
+        bytes32 protocolBrand;
         bytes32 protocolId;
+        bytes32 protocolSubId;
         bytes positionId;
         PositionKind positionKind;
         bool isLocked;

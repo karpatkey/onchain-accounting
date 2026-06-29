@@ -18,7 +18,9 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @dev Reports one Supply leg per market (convertToAssets(balanceOf)) in the pool's underlying. Does not include Merkl rewards (same as
 ///      the per-market adapter).
 contract GearboxMarketsMetaBalanceAdapter is MetaBalanceAdapter {
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.GEARBOX_V3_MARKET;
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.GEARBOX;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.GEARBOX_V3;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.GEARBOX_V3_MARKET;
 
     /// @param protocolName_ Human-readable protocol name (e.g. "Gearbox").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
@@ -52,7 +54,9 @@ contract GearboxMarketsMetaBalanceAdapter is MetaBalanceAdapter {
             balanceAdapter: address(this),
             amount: amount,
             isDebt: false,
+            protocolBrand: PROTOCOL_BRAND,
             protocolId: PROTOCOL_ID,
+            protocolSubId: PROTOCOL_SUB_ID,
             positionId: _instancePositionId(instance),
             positionKind: PositionKind.Supplied,
             isLocked: false,

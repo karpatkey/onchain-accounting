@@ -97,7 +97,8 @@ contract NexusMutualStakingPoolsBalanceAdapterForkTest is BalanceAdapterTestBase
         for (uint256 i; i < p.length; i++) {
             assertEq(p[i].balanceAsset.asset, NXM);
             assertEq(p[i].balanceAdapter, address(adapter));
-            assertEq(p[i].protocolId, ProtocolIds.NEXUS_MUTUAL_STAKING);
+            assertEq(p[i].protocolSubId, ProtocolIds.NEXUS_MUTUAL_STAKING);
+            assertEq(p[i].protocolId, ProtocolIds.NEXUS_MUTUAL);
             assertFalse(p[i].isDebt);
             // positionId = the staking-pool contract address; the NFT id rides in the typed positionInstanceId.
             address pool = abi.decode(p[i].positionId, (address));

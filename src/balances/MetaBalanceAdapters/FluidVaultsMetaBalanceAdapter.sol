@@ -19,7 +19,9 @@ import {FluidVaultLib} from "src/balances/MetaBalanceAdapters/FluidVaultLib.sol"
 ///      T1 vaults only — Smart vaults
 ///      (T2/T3/T4) have a different `constantsView` layout and must not be configured.
 contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.FLUID_VAULTS;
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.FLUID;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.FLUID;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.FLUID_VAULTS;
 
     /// @notice The Fluid VaultResolver (chain-level constant; used for NFT enumeration + per-NFT position reads).
     address public immutable VAULT_RESOLVER;
@@ -115,7 +117,9 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
             balanceAdapter: address(this),
             amount: amount,
             isDebt: isDebt,
+            protocolBrand: PROTOCOL_BRAND,
             protocolId: PROTOCOL_ID,
+            protocolSubId: PROTOCOL_SUB_ID,
             positionId: pid,
             positionKind: kind,
             isLocked: false,

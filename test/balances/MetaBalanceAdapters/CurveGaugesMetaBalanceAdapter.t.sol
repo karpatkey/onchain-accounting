@@ -98,7 +98,8 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory pos =
             meta.getAdapterPositionsForInstances(alice, _instance(address(gauge)), address(0));
         assertGt(pos.length, 0);
-        assertEq(pos[0].protocolId, ProtocolIds.CURVE_GAUGE);
+        assertEq(pos[0].protocolSubId, ProtocolIds.CURVE_GAUGE);
+        assertEq(pos[0].protocolId, ProtocolIds.CURVE);
         assertEq(pos[0].positionId, abi.encode(address(gauge)));
         assertEq(pos[0].balanceAdapter, address(meta));
     }

@@ -22,6 +22,10 @@ contract SparkLendBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     address public immutable POOL;
     INAVCalculator public immutable NAV_CALCULATOR;
 
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.SPARK;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.SPARK;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.SPARK_LEND;
+
     constructor(address dataProvider_, address navCalculator_) {
         require(dataProvider_.code.length > 0, "DataProvider must be a contract");
         require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
@@ -153,7 +157,9 @@ contract SparkLendBalanceAdapter is IBalanceAdapter, IPositionDescribable {
                     balanceAdapter: address(this),
                     amount: supply,
                     isDebt: false,
-                    protocolId: ProtocolIds.SPARK_LEND,
+                    protocolBrand: PROTOCOL_BRAND,
+                    protocolId: PROTOCOL_ID,
+                    protocolSubId: PROTOCOL_SUB_ID,
                     positionId: pid,
                     positionKind: asCollateral ? PositionKind.Collateral : PositionKind.Supplied,
                     isLocked: false,
@@ -166,7 +172,9 @@ contract SparkLendBalanceAdapter is IBalanceAdapter, IPositionDescribable {
                     balanceAdapter: address(this),
                     amount: debt,
                     isDebt: true,
-                    protocolId: ProtocolIds.SPARK_LEND,
+                    protocolBrand: PROTOCOL_BRAND,
+                    protocolId: PROTOCOL_ID,
+                    protocolSubId: PROTOCOL_SUB_ID,
                     positionId: pid,
                     positionKind: PositionKind.Borrowed,
                     isLocked: false,

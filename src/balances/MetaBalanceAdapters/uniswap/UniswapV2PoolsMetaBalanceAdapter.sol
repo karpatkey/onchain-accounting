@@ -32,6 +32,19 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
         return ProtocolIds.UNISWAP_V2;
     }
 
+    /// @notice Protocol sub-identifier (the specific product) reported on every emitted position. `virtual` so
+    ///         byte-compatible forks (PancakeSwap V2, SushiSwap) report their own sub-slug. For the V2 single-product
+    ///         ecosystem the ecosystem and sub slug are the same value. Defaults to `uniswap-v2`.
+    function _protocolSubId() internal pure virtual returns (bytes32) {
+        return ProtocolIds.UNISWAP_V2;
+    }
+
+    /// @notice Protocol brand (the broadest layer) reported on every emitted position. `virtual` so byte-compatible
+    ///         forks (PancakeSwap V2, SushiSwap) report their own brand. Defaults to `uniswap`.
+    function _protocolBrand() internal pure virtual returns (bytes32) {
+        return ProtocolIds.UNISWAP;
+    }
+
     /// @notice `_mintFee` dilution coefficients `(numFactor, rootKCoeff, rootKLastCoeff)` for the protocol-fee LP
     ///         the pair would mint to `feeTo` on the next burn. Uniswap V2 captures 1/6 of fee growth → `(1, 5, 1)`.
     ///         `virtual` so a fork whose protocol-fee fraction differs (PancakeSwap V2 → `(8, 17, 8)`) reports the
@@ -109,7 +122,9 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
             balanceAdapter: address(this),
             amount: amount,
             isDebt: false,
+            protocolBrand: _protocolBrand(),
             protocolId: _protocolId(),
+            protocolSubId: _protocolSubId(),
             positionId: positionId,
             positionKind: PositionKind.Supplied,
             isLocked: false,

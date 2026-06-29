@@ -116,8 +116,10 @@ contract PancakeSwapV3PoolsBalanceAdapterTest is Test {
         assertGt(bp.length, 0);
         assertEq(bp.length, pp.length, "same legs from the same live slot0 split");
         for (uint256 i = 0; i < bp.length; i++) {
-            assertEq(bp[i].protocolId, ProtocolIds.UNISWAP_V3, "base reports uniswap-v3");
-            assertEq(pp[i].protocolId, ProtocolIds.PANCAKESWAP_V3, "PCS reports pancakeswap-v3");
+            assertEq(bp[i].protocolSubId, ProtocolIds.UNISWAP_V3, "base reports uniswap-v3");
+            assertEq(bp[i].protocolId, ProtocolIds.UNISWAP_V3);
+            assertEq(pp[i].protocolSubId, ProtocolIds.PANCAKESWAP_V3, "PCS reports pancakeswap-v3");
+            assertEq(pp[i].protocolId, ProtocolIds.PANCAKESWAP_V3);
             assertEq(bp[i].amount, pp[i].amount, "identical amounts");
         }
     }
@@ -127,8 +129,10 @@ contract PancakeSwapV3PoolsBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(alice, address(0));
         assertGt(p.length, 0);
         for (uint256 i = 0; i < p.length; i++) {
-            assertEq(p[i].protocolId, ProtocolIds.PANCAKESWAP_V3, "protocolId == pancakeswap-v3");
-            assertTrue(p[i].protocolId != ProtocolIds.UNISWAP_V3, "not the inherited uniswap-v3");
+            assertEq(p[i].protocolSubId, ProtocolIds.PANCAKESWAP_V3, "protocolId == pancakeswap-v3");
+            assertEq(p[i].protocolId, ProtocolIds.PANCAKESWAP_V3);
+            assertTrue(p[i].protocolSubId != ProtocolIds.UNISWAP_V3, "not the inherited uniswap-v3");
+            assertTrue(p[i].protocolId != ProtocolIds.UNISWAP_V3);
         }
     }
 

@@ -229,7 +229,8 @@ contract KelpWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTestBa
         for (uint256 i = 0; i < positions.length; i++) {
             assertEq(positions[i].balanceAdapter, address(oracle));
             assertFalse(positions[i].isDebt);
-            assertEq(positions[i].protocolId, ProtocolIds.KELP_WITHDRAWAL);
+            assertEq(positions[i].protocolSubId, ProtocolIds.KELP_WITHDRAWAL);
+            assertEq(positions[i].protocolId, ProtocolIds.KELP);
             assertEq(positions[i].positionId, abi.encode(WITHDRAWAL_MANAGER), "static withdrawal-manager positionId");
             assertEq(uint256(positions[i].positionKind), uint256(PositionKind.Supplied));
             _assertRequestLeg(positions[i]);

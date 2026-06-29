@@ -21,7 +21,9 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
     using Math for uint256;
     using MorphoBalancesLib for IMorpho;
 
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.MORPHO_MARKETS;
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.MORPHO;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.MORPHO;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.MORPHO_MARKETS;
 
     /// @notice The Morpho Blue singleton (protocol-global).
     IMorpho public immutable MORPHO;
@@ -143,7 +145,9 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
             balanceAdapter: address(this),
             amount: amount,
             isDebt: isDebt,
+            protocolBrand: PROTOCOL_BRAND,
             protocolId: PROTOCOL_ID,
+            protocolSubId: PROTOCOL_SUB_ID,
             positionId: pid,
             positionKind: kind,
             isLocked: false,

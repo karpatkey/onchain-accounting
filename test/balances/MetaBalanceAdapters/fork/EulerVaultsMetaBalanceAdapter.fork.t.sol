@@ -130,7 +130,8 @@ contract EulerVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
             assertEq(pos[i].balanceAdapter, address(adapter));
             assertFalse(pos[i].isDebt, "supply leg only, never debt");
             assertGt(pos[i].amount, 0);
-            assertEq(pos[i].protocolId, ProtocolIds.EULER_VAULTS);
+            assertEq(pos[i].protocolSubId, ProtocolIds.EULER_VAULTS);
+            assertEq(pos[i].protocolId, ProtocolIds.EULER);
             assertTrue(pos[i].positionKind == PositionKind.Supplied);
         }
         // WETH leg (KPK_ETH_Term) then USDC leg (kpk_RWA_USDC); identity derived on-chain from the instance coord.

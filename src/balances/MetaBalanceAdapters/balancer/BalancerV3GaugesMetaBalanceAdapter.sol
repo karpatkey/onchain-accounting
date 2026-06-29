@@ -37,7 +37,9 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceAdapter {
     using SafeCast for int128;
     using BalancerV3PoolLib for IStablePool;
 
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.BALANCER_V3_GAUGE;
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.BALANCER;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.BALANCER_V3;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.BALANCER_V3_GAUGE;
 
     /// @notice One week in seconds (gauge inflation accounting boundary).
     uint256 public constant WEEK = 7 * 86_400;
@@ -290,7 +292,9 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceAdapter {
             balanceAdapter: address(this),
             amount: amount,
             isDebt: false,
+            protocolBrand: PROTOCOL_BRAND,
             protocolId: PROTOCOL_ID,
+            protocolSubId: PROTOCOL_SUB_ID,
             positionId: positionId,
             positionKind: kind,
             isLocked: false,

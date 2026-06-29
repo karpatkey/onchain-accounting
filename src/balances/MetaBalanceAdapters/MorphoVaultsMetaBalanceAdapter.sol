@@ -15,7 +15,9 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @dev Per-instance identity is encoded as `abi.encode(address(vault))`. Supports ERC4626-compliant Morpho vaults
 ///      (V1 and V2). Does not include Merkl or Universal Rewards Distributor rewards.
 contract MorphoVaultsMetaBalanceAdapter is MetaBalanceAdapter {
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.MORPHO_VAULTS;
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.MORPHO;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.MORPHO;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.MORPHO_VAULTS;
 
     /// @param protocolName_ Human-readable protocol name (e.g. "Morpho").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
@@ -57,7 +59,9 @@ contract MorphoVaultsMetaBalanceAdapter is MetaBalanceAdapter {
             balanceAdapter: address(this),
             amount: amount,
             isDebt: false,
+            protocolBrand: PROTOCOL_BRAND,
             protocolId: PROTOCOL_ID,
+            protocolSubId: PROTOCOL_SUB_ID,
             positionId: _instancePositionId(instance),
             positionKind: PositionKind.Supplied,
             isLocked: false,

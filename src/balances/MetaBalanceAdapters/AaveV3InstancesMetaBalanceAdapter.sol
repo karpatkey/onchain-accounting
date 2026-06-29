@@ -26,7 +26,9 @@ interface IAavePoolAddressesProvider {
 ///         reserve tokens are NOT separate coordinates. Emits up to two legs per reserve (Supply/Collateral +
 ///         Borrow), matching the per-instance `AaveV3Instance` adapter. See ADR 0010.
 contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.AAVE_V3_LENDING;
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.AAVE;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.AAVE_V3;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.AAVE_V3_LENDING;
 
     /// @param protocolName_ Human-readable protocol name (e.g. "Aave V3").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
@@ -148,7 +150,9 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
             balanceAdapter: address(this),
             amount: amount,
             isDebt: isDebt,
+            protocolBrand: PROTOCOL_BRAND,
             protocolId: _getProtocolId(),
+            protocolSubId: PROTOCOL_SUB_ID,
             positionId: pid,
             positionKind: kind,
             isLocked: false,

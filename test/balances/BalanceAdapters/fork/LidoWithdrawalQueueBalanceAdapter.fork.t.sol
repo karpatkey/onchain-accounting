@@ -229,7 +229,8 @@ contract LidoWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTestBa
             assertEq(positions[i].balanceAdapter, address(oracle));
             assertFalse(positions[i].isDebt);
             assertTrue(positions[i].isLocked, "pending request -> locked leg");
-            assertEq(positions[i].protocolId, ProtocolIds.LIDO_WITHDRAWAL);
+            assertEq(positions[i].protocolSubId, ProtocolIds.LIDO_WITHDRAWAL);
+            assertEq(positions[i].protocolId, ProtocolIds.LIDO);
             assertEq(positions[i].positionId, expectedId, "static WithdrawalQueue positionId shared by both legs");
             assertEq(uint256(positions[i].positionKind), uint256(PositionKind.Supplied));
             _assertRequestLeg(positions[i]);
@@ -258,7 +259,8 @@ contract LidoWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTestBa
         uint256 sum;
         for (uint256 i = 0; i < positions.length; i++) {
             assertEq(positions[i].balanceAsset.asset, NATIVE_ETH);
-            assertEq(positions[i].protocolId, ProtocolIds.LIDO_WITHDRAWAL);
+            assertEq(positions[i].protocolSubId, ProtocolIds.LIDO_WITHDRAWAL);
+            assertEq(positions[i].protocolId, ProtocolIds.LIDO);
             assertEq(uint256(positions[i].positionKind), uint256(PositionKind.Supplied));
             assertFalse(positions[i].isLocked, "finalized request -> claimable (unlocked) leg");
             _assertRequestLeg(positions[i]);

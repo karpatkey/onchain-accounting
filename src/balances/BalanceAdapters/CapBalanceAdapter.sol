@@ -58,7 +58,9 @@ contract CapBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     INAVCalculator public immutable NAV_CALCULATOR;
 
     /// @notice Protocol ID for Cap
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.CAP;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.CAP;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.CAP;
 
     //
     // Constructor
@@ -189,7 +191,9 @@ contract CapBalanceAdapter is IBalanceAdapter, IPositionDescribable {
                 balanceAdapter: address(this),
                 amount: cUsdUsdc,
                 isDebt: false,
+                protocolBrand: PROTOCOL_BRAND,
                 protocolId: PROTOCOL_ID,
+                protocolSubId: PROTOCOL_SUB_ID,
                 positionId: abi.encode(address(CUSD)),
                 positionKind: PositionKind.Supplied,
                 isLocked: false,
@@ -202,7 +206,9 @@ contract CapBalanceAdapter is IBalanceAdapter, IPositionDescribable {
                 balanceAdapter: address(this),
                 amount: stcUsdUsdc,
                 isDebt: false,
+                protocolBrand: PROTOCOL_BRAND,
                 protocolId: PROTOCOL_ID,
+                protocolSubId: PROTOCOL_SUB_ID,
                 positionId: abi.encode(address(STCUSD)),
                 positionKind: PositionKind.Staking,
                 isLocked: false,

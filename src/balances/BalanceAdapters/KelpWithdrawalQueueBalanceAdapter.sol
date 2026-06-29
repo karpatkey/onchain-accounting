@@ -43,7 +43,9 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
     ///      handful of pending requests per asset.
     uint256 public constant MAX_REQUESTS_PROBED = 256;
 
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.KELP_WITHDRAWAL;
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.KELP;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.KELP;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.KELP_WITHDRAWAL;
 
     //
     // State
@@ -318,7 +320,9 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
                 balanceAdapter: address(this),
                 amount: owed,
                 isDebt: false,
+                protocolBrand: PROTOCOL_BRAND,
                 protocolId: PROTOCOL_ID,
+                protocolSubId: PROTOCOL_SUB_ID,
                 positionId: positionId,
                 positionKind: PositionKind.Supplied,
                 isLocked: !unlocked,

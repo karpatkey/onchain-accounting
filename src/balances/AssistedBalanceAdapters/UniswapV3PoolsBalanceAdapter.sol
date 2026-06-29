@@ -210,6 +210,19 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
         return ProtocolIds.UNISWAP_V3;
     }
 
+    /// @notice Protocol brand (broadest layer) reported on every emitted position. `virtual` so byte-compatible
+    ///         forks (PancakeSwap V3) report their own brand. Defaults to `uniswap`.
+    function _protocolBrand() internal pure virtual returns (bytes32) {
+        return ProtocolIds.UNISWAP;
+    }
+
+    /// @notice Protocol sub-identifier (the specific product) reported on every emitted position. `virtual` so
+    ///         byte-compatible forks (PancakeSwap V3) report their own slug. For the V3 adapters the ecosystem and
+    ///         the sub are the same value. Defaults to `uniswap-v3`.
+    function _protocolSubId() internal pure virtual returns (bytes32) {
+        return ProtocolIds.UNISWAP_V3;
+    }
+
     /// @inheritdoc IERC165
     /// @dev Adds {IPositionDescribable} on top of the family's base advertisement
     ///      ({IAssistedBalanceAdapter}/{IBalanceAdapter}/{IAccessControl}/{IERC165}).
@@ -492,7 +505,9 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
             balanceAdapter: address(this),
             amount: amount,
             isDebt: false,
+            protocolBrand: _protocolBrand(),
             protocolId: _protocolId(),
+            protocolSubId: _protocolSubId(),
             positionId: positionId,
             positionKind: kind,
             isLocked: false, // LP liquidity + settled fees are always withdrawable now

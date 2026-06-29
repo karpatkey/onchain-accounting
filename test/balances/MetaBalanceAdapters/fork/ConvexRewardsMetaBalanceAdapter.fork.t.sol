@@ -179,6 +179,7 @@ contract ConvexRewardsMetaForkTest is BalanceAdapterTestBase {
 
         assertGt(pos.length, 0);
         for (uint256 i; i < pos.length; ++i) {
+            assertEq(pos[i].protocolSubId, ProtocolIds.CONVEX);
             assertEq(pos[i].protocolId, ProtocolIds.CONVEX);
             assertEq(pos[i].positionId, abi.encode(REWARDER_CRVUSD_USDC));
         }

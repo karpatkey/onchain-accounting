@@ -27,7 +27,9 @@ import {BalancerV2PoolLib, IBalancerV2Pool} from "src/balances/MetaBalanceAdapte
 contract BalancerV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     using BalancerV2PoolLib for bytes32;
 
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.BALANCER_V2_POOL;
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.BALANCER;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.BALANCER_V2;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.BALANCER_V2_POOL;
 
     /// @notice The Balancer V2 Vault (custodies every pool's tokens; chain-level constant).
     address public immutable VAULT;
@@ -72,7 +74,9 @@ contract BalancerV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
                 balanceAdapter: address(this),
                 amount: amounts[i],
                 isDebt: false,
+                protocolBrand: PROTOCOL_BRAND,
                 protocolId: PROTOCOL_ID,
+                protocolSubId: PROTOCOL_SUB_ID,
                 positionId: positionId,
                 positionKind: PositionKind.Supplied,
                 isLocked: false,

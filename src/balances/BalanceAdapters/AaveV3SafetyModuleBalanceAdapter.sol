@@ -61,7 +61,9 @@ contract AaveV3SafetyModuleBalanceAdapter is IBalanceAdapter, IPositionDescribab
     /// @dev Internal record describing one Safety Module stake token. Keeping the staked / reward addresses as constants
     ///      (rather than reading them from the contract at deploy time) keeps the adapter purely view-friendly and means
     ///      a misconfiguration in source code is the only way to ship a wrong wiring — caught at review time.
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.AAVE_V3_SAFETY_MODULE;
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.AAVE;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.AAVE_V3;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.AAVE_V3_SAFETY_MODULE;
 
     struct StakeTokenRecord {
         address stakeToken;
@@ -234,7 +236,9 @@ contract AaveV3SafetyModuleBalanceAdapter is IBalanceAdapter, IPositionDescribab
                                 balanceAdapter: address(this),
                                 amount: amt,
                                 isDebt: false,
+                                protocolBrand: PROTOCOL_BRAND,
                                 protocolId: PROTOCOL_ID,
+                                protocolSubId: PROTOCOL_SUB_ID,
                                 positionId: abi.encode(address(r.stakeToken)),
                                 positionKind: PositionKind.Staking,
                                 isLocked: true,
@@ -252,7 +256,9 @@ contract AaveV3SafetyModuleBalanceAdapter is IBalanceAdapter, IPositionDescribab
                                 balanceAdapter: address(this),
                                 amount: amt,
                                 isDebt: false,
+                                protocolBrand: PROTOCOL_BRAND,
                                 protocolId: PROTOCOL_ID,
+                                protocolSubId: PROTOCOL_SUB_ID,
                                 positionId: abi.encode(address(r.stakeToken)),
                                 positionKind: PositionKind.Staking,
                                 isLocked: false,
@@ -274,7 +280,9 @@ contract AaveV3SafetyModuleBalanceAdapter is IBalanceAdapter, IPositionDescribab
                             balanceAdapter: address(this),
                             amount: rewards,
                             isDebt: false,
+                            protocolBrand: PROTOCOL_BRAND,
                             protocolId: PROTOCOL_ID,
+                            protocolSubId: PROTOCOL_SUB_ID,
                             positionId: abi.encode(address(r.stakeToken)),
                             positionKind: PositionKind.Rewards,
                             isLocked: false,

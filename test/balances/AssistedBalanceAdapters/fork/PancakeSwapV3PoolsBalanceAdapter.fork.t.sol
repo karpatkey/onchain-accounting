@@ -153,7 +153,8 @@ contract PancakeSwapV3PoolsBalanceForkTest is BalanceAdapterTestBase {
             string[] memory lbl = adapter.positionLabels(p[i].positionId);
             assertEq(lbl.length, 2, "static breadcrumb = [category, pool]");
             assertTrue(p[i].positionInstanceId != bytes32(0), "NFT id rides in positionInstanceId");
-            assertEq(p[i].protocolId, ProtocolIds.PANCAKESWAP_V3, "protocolId = pancakeswap-v3");
+            assertEq(p[i].protocolSubId, ProtocolIds.PANCAKESWAP_V3, "protocolId = pancakeswap-v3");
+            assertEq(p[i].protocolId, ProtocolIds.PANCAKESWAP_V3);
         }
     }
 

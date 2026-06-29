@@ -44,7 +44,9 @@ contract LidoWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
     ///      In practice an account never has more than a handful of requests.
     uint256 public constant MAX_REQUESTS_PROBED = 256;
 
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.LIDO_WITHDRAWAL;
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.LIDO;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.LIDO;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.LIDO_WITHDRAWAL;
 
     //
     // State
@@ -276,7 +278,9 @@ contract LidoWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
                 balanceAdapter: address(this),
                 amount: amount,
                 isDebt: false,
+                protocolBrand: PROTOCOL_BRAND,
                 protocolId: PROTOCOL_ID,
+                protocolSubId: PROTOCOL_SUB_ID,
                 positionId: positionId,
                 positionKind: PositionKind.Supplied,
                 isLocked: locked,

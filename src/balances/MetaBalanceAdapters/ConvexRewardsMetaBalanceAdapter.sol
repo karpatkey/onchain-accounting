@@ -48,7 +48,9 @@ import {CurvePoolLib} from "./curve/CurvePoolLib.sol";
 ///      docs/decisions/0017-lp-valuation-instantaneous-amounts.md; revisit if NAV is ever consumed synchronously
 ///      on-chain.
 contract ConvexRewardsMetaBalanceAdapter is MetaBalanceAdapter {
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.CONVEX;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.CONVEX;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.CONVEX;
 
     uint256 private constant _MAX_EXTRA = 8;
     uint256 private constant _CVX_TOTAL_CLIFFS = 1_000;
@@ -117,7 +119,9 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceAdapter {
                                 balanceAdapter: address(this),
                                 amount: amount,
                                 isDebt: false,
+                                protocolBrand: PROTOCOL_BRAND,
                                 protocolId: PROTOCOL_ID,
+                                protocolSubId: PROTOCOL_SUB_ID,
                                 positionId: pid,
                                 positionKind: PositionKind.Staking,
                                 isLocked: false,
@@ -142,7 +146,9 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceAdapter {
                         balanceAdapter: address(this),
                         amount: crvEarned,
                         isDebt: false,
+                        protocolBrand: PROTOCOL_BRAND,
                         protocolId: PROTOCOL_ID,
+                        protocolSubId: PROTOCOL_SUB_ID,
                         positionId: pid,
                         positionKind: PositionKind.Rewards,
                         isLocked: false,
@@ -163,7 +169,9 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceAdapter {
                         balanceAdapter: address(this),
                         amount: cvxAmount,
                         isDebt: false,
+                        protocolBrand: PROTOCOL_BRAND,
                         protocolId: PROTOCOL_ID,
+                        protocolSubId: PROTOCOL_SUB_ID,
                         positionId: pid,
                         positionKind: PositionKind.Rewards,
                         isLocked: false,
@@ -211,7 +219,9 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceAdapter {
                     balanceAdapter: address(this),
                     amount: amount,
                     isDebt: false,
+                    protocolBrand: PROTOCOL_BRAND,
                     protocolId: PROTOCOL_ID,
+                    protocolSubId: PROTOCOL_SUB_ID,
                     positionId: pid,
                     positionKind: PositionKind.Rewards,
                     isLocked: false,

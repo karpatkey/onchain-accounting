@@ -25,7 +25,9 @@ import {BalancerV3PoolLib} from "./BalancerV3PoolLib.sol";
 contract BalancerV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     using BalancerV3PoolLib for IStablePool;
 
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.BALANCER_V3_POOL;
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.BALANCER;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.BALANCER_V3;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.BALANCER_V3_POOL;
 
     /// @param protocolName_ Protocol identifier (e.g. "Balancer V3").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
@@ -68,7 +70,9 @@ contract BalancerV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
                 balanceAdapter: address(this),
                 amount: amount,
                 isDebt: false,
+                protocolBrand: PROTOCOL_BRAND,
                 protocolId: PROTOCOL_ID,
+                protocolSubId: PROTOCOL_SUB_ID,
                 positionId: positionId,
                 positionKind: PositionKind.Supplied,
                 isLocked: false,

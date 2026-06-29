@@ -31,7 +31,9 @@ contract ERC20DefaultBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     address public constant NATIVE_ADDRESS = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
 
     /// @notice Protocol ID for wallet positions
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.WALLET;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.WALLET;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.WALLET;
 
     /// @param navCalculator_ NAVCalculator address (must be non-zero)
     /// @param initialAssets Optional assets to add to the inclusion list during construction (e.g. NATIVE_ADDRESS).
@@ -299,7 +301,9 @@ contract ERC20DefaultBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         row.balanceAsset = underlyingAsset;
         row.balanceAdapter = address(this);
         row.amount = balance;
+        row.protocolBrand = PROTOCOL_BRAND;
         row.protocolId = PROTOCOL_ID;
+        row.protocolSubId = PROTOCOL_SUB_ID;
         row.positionId = abi.encode(asset);
         row.positionKind = PositionKind.Wallet;
         // isDebt, isLocked default false; positionInstanceId defaults to empty bytes.

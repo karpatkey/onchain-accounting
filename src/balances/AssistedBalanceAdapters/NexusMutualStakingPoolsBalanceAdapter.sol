@@ -41,7 +41,9 @@ contract NexusMutualStakingPoolsBalanceAdapter is AssistedBalanceAdapter, IPosit
     // Constants
     //
 
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.NEXUS_MUTUAL_STAKING;
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.NEXUS_MUTUAL;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.NEXUS_MUTUAL;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.NEXUS_MUTUAL_STAKING;
 
     /// @notice Hard cap on cached tokenIds per account. The read path iterates the cache (one `tokenInfo` per id) and
     ///         hands the survivors to `getTokens`/`getAggregatedTokens`, which iterate each token's tranches — an
@@ -431,7 +433,9 @@ contract NexusMutualStakingPoolsBalanceAdapter is AssistedBalanceAdapter, IPosit
             balanceAdapter: address(this),
             amount: amount,
             isDebt: false,
+            protocolBrand: PROTOCOL_BRAND,
             protocolId: PROTOCOL_ID,
+            protocolSubId: PROTOCOL_SUB_ID,
             positionId: positionId,
             positionKind: kind,
             isLocked: false,

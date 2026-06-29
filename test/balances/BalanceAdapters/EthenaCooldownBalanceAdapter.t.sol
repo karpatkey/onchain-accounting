@@ -197,7 +197,8 @@ contract EthenaCooldownBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(positions[0].balanceAdapter, address(adapter));
         assertEq(positions[0].amount, 4242e18);
         assertFalse(positions[0].isDebt);
-        assertEq(positions[0].protocolId, ProtocolIds.ETHENA_COOLDOWN);
+        assertEq(positions[0].protocolSubId, ProtocolIds.ETHENA_COOLDOWN);
+        assertEq(positions[0].protocolId, ProtocolIds.ETHENA);
         assertEq(
             positions[0].positionId,
             abi.encode(address(adapter.STAKED_USDE())),

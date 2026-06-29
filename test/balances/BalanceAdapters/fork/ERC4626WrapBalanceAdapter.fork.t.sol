@@ -77,6 +77,7 @@ contract ERC4626WrapBalanceAdapterForkTest_RWIV_RealHolder is BalanceAdapterTest
         assertEq(positions[0].balanceAsset.asset, address(USDC));
         assertEq(positions[0].amount, EXPECTED_USDC);
         assertFalse(positions[0].isDebt);
+        assertEq(positions[0].protocolSubId, ProtocolIds.ERC4626);
         assertEq(positions[0].protocolId, ProtocolIds.ERC4626);
         assertEq(positions[0].positionId, abi.encode(address(RWIV)));
         assertTrue(positions[0].positionKind == PositionKind.Supplied);

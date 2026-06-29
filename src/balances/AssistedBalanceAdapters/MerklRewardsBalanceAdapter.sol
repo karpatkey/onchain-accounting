@@ -57,7 +57,9 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
     // State
     //
 
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.MERKL;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.MERKL;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.MERKL;
 
     /// @notice Merkl Distributor (Angle Labs). Same address on every supported EVM chain.
     address public immutable DISTRIBUTOR;
@@ -326,7 +328,9 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
         row.balanceAsset = asset;
         row.balanceAdapter = address(this);
         row.amount = amount;
+        row.protocolBrand = PROTOCOL_BRAND;
         row.protocolId = PROTOCOL_ID;
+        row.protocolSubId = PROTOCOL_SUB_ID;
         row.positionId = pid;
         row.positionKind = PositionKind.Rewards;
         // isDebt, isLocked default false; positionInstanceId defaults to empty bytes (no ephemeral id for Merkl).

@@ -42,7 +42,9 @@ contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescri
     /// @dev Bounds gas; in practice an account never has more than a handful of pending requests.
     uint256 internal constant MAX_REQUESTS_PROBED = 256;
 
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.STADER_WITHDRAWAL;
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.STADER;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.STADER;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.STADER_WITHDRAWAL;
 
     //
     // State
@@ -261,7 +263,9 @@ contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescri
                     balanceAdapter: address(this),
                     amount: amount,
                     isDebt: false,
+                    protocolBrand: PROTOCOL_BRAND,
                     protocolId: PROTOCOL_ID,
+                    protocolSubId: PROTOCOL_SUB_ID,
                     positionId: positionId,
                     positionKind: PositionKind.Supplied,
                     isLocked: locked,

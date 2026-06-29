@@ -52,7 +52,9 @@ contract ERC4626WrapBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     INAVCalculator public immutable NAV_CALCULATOR;
 
     /// @notice Protocol ID for generic ERC4626 wrappers
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.ERC4626;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.ERC4626;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.ERC4626;
 
     //
     // Constructor
@@ -175,7 +177,9 @@ contract ERC4626WrapBalanceAdapter is IBalanceAdapter, IPositionDescribable {
             balanceAdapter: address(this),
             amount: balance,
             isDebt: false,
+            protocolBrand: PROTOCOL_BRAND,
             protocolId: PROTOCOL_ID,
+            protocolSubId: PROTOCOL_SUB_ID,
             positionId: abi.encode(address(WRAPPER)),
             positionKind: PositionKind.Supplied,
             isLocked: false,

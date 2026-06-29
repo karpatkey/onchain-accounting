@@ -292,7 +292,8 @@ contract EtherFiWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(p[0].isDebt, false);
         assertEq(p[0].balanceAdapter, address(adapter));
         assertEq(p[0].balanceAsset.asset, NATIVE);
-        assertEq(p[0].protocolId, ProtocolIds.ETHERFI_WITHDRAWAL);
+        assertEq(p[0].protocolSubId, ProtocolIds.ETHERFI_WITHDRAWAL);
+        assertEq(p[0].protocolId, ProtocolIds.ETHERFI);
         assertEq(p[0].positionId, abi.encode(adapter.WITHDRAW_REQUEST_NFT()));
         assertEq(uint8(p[0].positionKind), uint8(PositionKind.Supplied));
         assertFalse(p[0].isLocked, "finalized request -> claimable leg");

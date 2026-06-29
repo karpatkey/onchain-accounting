@@ -93,7 +93,8 @@ contract EtherFiWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase 
         for (uint256 i = 0; i < p.length; i++) {
             assertEq(p[i].balanceAsset.asset, NATIVE_ETH);
             assertEq(p[i].balanceAdapter, address(adapter));
-            assertEq(p[i].protocolId, ProtocolIds.ETHERFI_WITHDRAWAL);
+            assertEq(p[i].protocolSubId, ProtocolIds.ETHERFI_WITHDRAWAL);
+            assertEq(p[i].protocolId, ProtocolIds.ETHERFI);
             assertEq(p[i].positionId, expectedId, "static positionId shared across per-request legs");
             assertEq(uint8(p[i].positionKind), uint8(PositionKind.Supplied));
             assertFalse(p[i].isDebt);

@@ -35,6 +35,19 @@ contract PancakeSwapV2PoolsMetaBalanceAdapter is UniswapV2PoolsMetaBalanceAdapte
     }
 
     /// @inheritdoc UniswapV2PoolsMetaBalanceAdapter
+    /// @dev Reports the `pancakeswap-v2` sub-slug. PancakeSwap V2 is a single-product ecosystem, so the ecosystem
+    ///      and sub slug are the same value.
+    function _protocolSubId() internal pure override returns (bytes32) {
+        return ProtocolIds.PANCAKESWAP_V2;
+    }
+
+    /// @inheritdoc UniswapV2PoolsMetaBalanceAdapter
+    /// @dev Reports the `pancakeswap` brand (vs the inherited `uniswap`).
+    function _protocolBrand() internal pure override returns (bytes32) {
+        return ProtocolIds.PANCAKESWAP;
+    }
+
+    /// @inheritdoc UniswapV2PoolsMetaBalanceAdapter
     /// @dev PancakeSwap V2's `_mintFee` uses `liquidity = ts·(√k−√kLast)·8 / (17·√k + 8·√kLast)` — a larger
     ///      protocol-fee fraction than Uniswap's `(1, 5, 1)`. Using Uniswap's constants would understate the
     ///      dilution LP and slightly overstate the holder's reserve share whenever PancakeSwap's `feeTo` is set.

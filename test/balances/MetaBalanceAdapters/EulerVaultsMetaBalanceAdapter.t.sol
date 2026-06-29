@@ -175,7 +175,8 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
         assertFalse(pos[0].isDebt);
         assertEq(pos[0].balanceAdapter, address(adapter));
         assertEq(pos[0].positionId, abi.encode(address(vaultA)));
-        assertEq(pos[0].protocolId, ProtocolIds.EULER_VAULTS);
+        assertEq(pos[0].protocolSubId, ProtocolIds.EULER_VAULTS);
+        assertEq(pos[0].protocolId, ProtocolIds.EULER);
         assertTrue(pos[0].positionKind == PositionKind.Supplied);
 
         // vaultB position (rate applied)
@@ -293,8 +294,10 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
         assertEq(pos[1].balanceAsset.asset, address(weth));
         assertEq(pos[0].positionId, abi.encode(address(core)));
         assertEq(pos[1].positionId, abi.encode(address(core)));
-        assertEq(pos[0].protocolId, ProtocolIds.EULER_VAULTS);
-        assertEq(pos[1].protocolId, ProtocolIds.EULER_VAULTS);
+        assertEq(pos[0].protocolSubId, ProtocolIds.EULER_VAULTS);
+        assertEq(pos[0].protocolId, ProtocolIds.EULER);
+        assertEq(pos[1].protocolSubId, ProtocolIds.EULER_VAULTS);
+        assertEq(pos[1].protocolId, ProtocolIds.EULER);
     }
 
     function test_borrowOnly_noSupplyLeg() public {

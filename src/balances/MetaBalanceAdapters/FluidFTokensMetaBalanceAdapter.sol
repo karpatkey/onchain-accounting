@@ -17,7 +17,9 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         `abi.encode(address(fToken))`. See ADR 0010.
 /// @dev Reports one Supply leg per fToken (convertToAssets(balanceOf)) in its underlying.
 contract FluidFTokensMetaBalanceAdapter is MetaBalanceAdapter {
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.FLUID_FTOKENS;
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.FLUID;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.FLUID;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.FLUID_FTOKENS;
 
     /// @param protocolName_ Human-readable protocol name (e.g. "Fluid").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
@@ -50,7 +52,9 @@ contract FluidFTokensMetaBalanceAdapter is MetaBalanceAdapter {
             balanceAdapter: address(this),
             amount: amount,
             isDebt: false,
+            protocolBrand: PROTOCOL_BRAND,
             protocolId: PROTOCOL_ID,
+            protocolSubId: PROTOCOL_SUB_ID,
             positionId: _instancePositionId(instance),
             positionKind: PositionKind.Supplied,
             isLocked: false,

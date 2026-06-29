@@ -55,6 +55,19 @@ contract PancakeSwapV3PoolsBalanceAdapter is UniswapV3PoolsBalanceAdapter {
     }
 
     /// @inheritdoc UniswapV3PoolsBalanceAdapter
+    /// @dev Reports the `pancakeswap-v3` slug as the sub-id (ecosystem == sub for the V3 adapters), matching
+    ///      `_protocolId`.
+    function _protocolSubId() internal pure override returns (bytes32) {
+        return ProtocolIds.PANCAKESWAP_V3;
+    }
+
+    /// @inheritdoc UniswapV3PoolsBalanceAdapter
+    /// @dev Reports the `pancakeswap` brand (vs the inherited `uniswap`).
+    function _protocolBrand() internal pure override returns (bytes32) {
+        return ProtocolIds.PANCAKESWAP;
+    }
+
+    /// @inheritdoc UniswapV3PoolsBalanceAdapter
     /// @dev Reads `slot0` via the local `IPancakeV3Pool` ABI so the `uint32 feeProtocol` field decodes (the inherited
     ///      `uint8` decode would revert on PCS V3's high bits). Only `(sqrtPriceX96, tick)` are used.
     function _slot0(address pool) internal view override returns (uint160 sqrtPriceX96, int24 tick) {

@@ -270,6 +270,7 @@ contract ConvexRewardsMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory pos =
             meta.getAdapterPositionsForInstances(alice, _instance(address(rewarder)), address(0));
         assertGt(pos.length, 0);
+        assertEq(pos[0].protocolSubId, ProtocolIds.CONVEX);
         assertEq(pos[0].protocolId, ProtocolIds.CONVEX);
         assertEq(pos[0].positionId, abi.encode(address(rewarder)));
         assertEq(pos[0].balanceAdapter, address(meta));

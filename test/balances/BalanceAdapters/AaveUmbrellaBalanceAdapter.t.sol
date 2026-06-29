@@ -254,7 +254,8 @@ contract AaveUmbrellaBalanceMathTest is BalanceAdapterTestBase {
         bool ghoRewards;
         for (uint256 i; i < positions.length; ++i) {
             INAVCalculator.PositionBalance memory p = positions[i];
-            assertEq(p.protocolId, ProtocolIds.AAVE_V3_UMBRELLA, "protocolId == aave-v3-umbrella");
+            assertEq(p.protocolSubId, ProtocolIds.AAVE_V3_UMBRELLA, "protocolId == aave-v3-umbrella");
+            assertEq(p.protocolId, ProtocolIds.AAVE_V3);
             assertEq(p.balanceAdapter, address(oracle), "balanceAdapter == adapter");
             assertFalse(p.isDebt, "umbrella legs are never debt");
 

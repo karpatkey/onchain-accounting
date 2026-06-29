@@ -39,7 +39,9 @@ import {CurvePoolLib} from "./CurvePoolLib.sol";
 ///      consumer). See docs/decisions/0017-lp-valuation-instantaneous-amounts.md; revisit if NAV is ever consumed
 ///      synchronously on-chain.
 contract CurvePoolsMetaBalanceAdapter is MetaBalanceAdapter {
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.CURVE_POOL;
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.CURVE;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.CURVE;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.CURVE_POOL;
 
     /// @param protocolName_ Human-readable name (e.g. "Curve").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
@@ -90,7 +92,9 @@ contract CurvePoolsMetaBalanceAdapter is MetaBalanceAdapter {
                 balanceAdapter: address(this),
                 amount: amount,
                 isDebt: false,
+                protocolBrand: PROTOCOL_BRAND,
                 protocolId: PROTOCOL_ID,
+                protocolSubId: PROTOCOL_SUB_ID,
                 positionId: pid,
                 positionKind: PositionKind.Supplied,
                 isLocked: false,

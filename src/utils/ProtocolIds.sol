@@ -42,6 +42,49 @@ pragma solidity ^0.8;
 library ProtocolIds {
     bytes32 internal constant WALLET = keccak256("wallet");
 
+    // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+    // Brand ids — the broadest `PositionBalance.protocolBrand` layer (the protocol brand, version-stripped). Several
+    // ecosystem ids roll up to one brand: AAVE_V3 → AAVE; BALANCER_V2 + BALANCER_V3 → BALANCER; UNISWAP_V2 +
+    // UNISWAP_V3 → UNISWAP; etc. For unversioned protocols the brand equals the ecosystem id (CURVE, MORPHO, FLUID,
+    // EULER, LIDO, KELP, …) — those reuse the same constant; only the versioned brands need a dedicated constant here.
+    // Display/grouping only; NOT part of the stable identity key (that uses `protocolSubId`).
+    // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+    bytes32 internal constant AAVE = keccak256("aave");
+    bytes32 internal constant BALANCER = keccak256("balancer");
+    bytes32 internal constant UNISWAP = keccak256("uniswap");
+    bytes32 internal constant PANCAKESWAP = keccak256("pancakeswap");
+    bytes32 internal constant GEARBOX = keccak256("gearbox");
+    bytes32 internal constant STAKEWISE = keccak256("stakewise");
+    bytes32 internal constant COMPOUND = keccak256("compound");
+
+    // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+    // Ecosystem ids — the broad `PositionBalance.protocolId` (grouping / roll-up layer). Several per-product slugs
+    // below (the `protocolSubId`s) roll up to one of these, e.g. AAVE_V3_LENDING + AAVE_V3_SAFETY_MODULE + AAVE_V3_UMBRELLA
+    // → AAVE_V3. For single-product ecosystems the adapter uses the SAME constant for both protocolId and protocolSubId
+    // (e.g. COMPOUND_V3, CONVEX, UNISWAP_V3, CAP, MERKL, WALLET, ERC4626, CURVE) — no separate ecosystem constant needed.
+    // The version is kept in the ecosystem id where the protocol is a distinct system (aave-v3, balancer-v2/-v3,
+    // uniswap-v2/-v3), so different versions are different `protocolId`s. NOT part of the stable identity key — that
+    // uses `protocolSubId`. See INAVCalculator.PositionBalance.
+    // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+    bytes32 internal constant AAVE_V3 = keccak256("aave-v3");
+    bytes32 internal constant GEARBOX_V3 = keccak256("gearbox-v3");
+    bytes32 internal constant STAKEWISE_V3 = keccak256("stakewise-v3");
+    bytes32 internal constant MORPHO = keccak256("morpho");
+    bytes32 internal constant BALANCER_V2 = keccak256("balancer-v2");
+    bytes32 internal constant BALANCER_V3 = keccak256("balancer-v3");
+    bytes32 internal constant FLUID = keccak256("fluid");
+    bytes32 internal constant EULER = keccak256("euler");
+    bytes32 internal constant LIDO = keccak256("lido");
+    bytes32 internal constant KELP = keccak256("kelp");
+    bytes32 internal constant STADER = keccak256("stader");
+    bytes32 internal constant ETHERFI = keccak256("etherfi");
+    bytes32 internal constant ETHENA = keccak256("ethena");
+    bytes32 internal constant SPARK = keccak256("spark");
+    bytes32 internal constant NEXUS_MUTUAL = keccak256("nexus-mutual");
+    // (CURVE below doubles as the Curve ecosystem id for CURVE_POOL/CURVE_GAUGE.)
+
+    // ── Per-product slugs (`protocolSubId`; selects the positionId decode schema) ──
+
     // Aave family
     bytes32 internal constant AAVE_V3_LENDING = keccak256("aave-v3-lending");
     bytes32 internal constant AAVE_V3_SAFETY_MODULE = keccak256("aave-v3-safety-module");
@@ -87,7 +130,7 @@ library ProtocolIds {
     bytes32 internal constant SPARK_LEND = keccak256("spark-lend");
 
     // Curve / Convex
-    bytes32 internal constant CURVE = keccak256("curve"); // per-instance adapter (legacy)
+    bytes32 internal constant CURVE = keccak256("curve"); // Curve ecosystem id (protocolId for CURVE_POOL/CURVE_GAUGE)
     bytes32 internal constant CURVE_POOL = keccak256("curve-pool"); // wallet LP → (address pool)
     bytes32 internal constant CURVE_GAUGE = keccak256("curve-gauge"); // gauge-staked LP → (address gauge)
     bytes32 internal constant CONVEX = keccak256("convex");

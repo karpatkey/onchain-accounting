@@ -50,7 +50,9 @@ import {CurvePoolLib} from "./CurvePoolLib.sol";
 ///      docs/decisions/0017-lp-valuation-instantaneous-amounts.md; revisit if NAV is ever consumed synchronously
 ///      on-chain.
 contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.CURVE_GAUGE;
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.CURVE;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.CURVE;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.CURVE_GAUGE;
 
     /// @notice Curve Minter for CRV emission. address(0) disables CRV tracking (use on L2).
     address public immutable CURVE_MINTER;
@@ -117,7 +119,9 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
                                 balanceAdapter: address(this),
                                 amount: amount,
                                 isDebt: false,
+                                protocolBrand: PROTOCOL_BRAND,
                                 protocolId: PROTOCOL_ID,
+                                protocolSubId: PROTOCOL_SUB_ID,
                                 positionId: pid,
                                 positionKind: PositionKind.Staking,
                                 isLocked: false,
@@ -141,7 +145,9 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
                         balanceAdapter: address(this),
                         amount: crvLb,
                         isDebt: false,
+                        protocolBrand: PROTOCOL_BRAND,
                         protocolId: PROTOCOL_ID,
+                        protocolSubId: PROTOCOL_SUB_ID,
                         positionId: pid,
                         positionKind: PositionKind.Rewards,
                         isLocked: false,
@@ -169,7 +175,9 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
                 balanceAdapter: address(this),
                 amount: amount,
                 isDebt: false,
+                protocolBrand: PROTOCOL_BRAND,
                 protocolId: PROTOCOL_ID,
+                protocolSubId: PROTOCOL_SUB_ID,
                 positionId: pid,
                 positionKind: PositionKind.Rewards,
                 isLocked: false,

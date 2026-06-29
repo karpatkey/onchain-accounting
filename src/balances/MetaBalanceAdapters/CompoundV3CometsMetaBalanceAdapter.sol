@@ -23,7 +23,9 @@ import {CompoundV3CometLib} from "src/balances/MetaBalanceAdapters/CompoundV3Com
 contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceAdapter {
     using SafeCast for int256;
 
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.COMPOUND;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.COMPOUND_V3;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.COMPOUND_V3;
 
     /// @notice The chain's CometRewards contract (same for every comet on the chain).
     address public immutable COMPOUND_REWARDS;
@@ -130,7 +132,9 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceAdapter {
             balanceAdapter: address(this),
             amount: amount,
             isDebt: isDebt,
+            protocolBrand: PROTOCOL_BRAND,
             protocolId: PROTOCOL_ID,
+            protocolSubId: PROTOCOL_SUB_ID,
             positionId: pid,
             positionKind: kind,
             isLocked: false,

@@ -38,7 +38,9 @@ interface IOsTokenVaultController {
 ///      Staking/Borrowed split is the same; only the signed-net `getAdapterBalances`/`getAdapterBalanceForAsset`
 ///      convenience getters of the per-vault adapter are dropped (they are not on the NAV path).
 contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceAdapter {
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.STAKEWISE_V3_VAULTS;
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.STAKEWISE;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.STAKEWISE_V3;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.STAKEWISE_V3_VAULTS;
 
     /// @notice The underlying staking asset all configured vaults are denominated in (chain-level constant).
     address public immutable UNDERLYING_TOKEN;
@@ -132,7 +134,9 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceAdapter {
             balanceAdapter: address(this),
             amount: amount,
             isDebt: isDebt,
+            protocolBrand: PROTOCOL_BRAND,
             protocolId: PROTOCOL_ID,
+            protocolSubId: PROTOCOL_SUB_ID,
             positionId: pid,
             positionKind: kind,
             isLocked: false,

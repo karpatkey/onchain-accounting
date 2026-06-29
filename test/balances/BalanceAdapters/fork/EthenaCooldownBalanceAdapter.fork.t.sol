@@ -77,7 +77,8 @@ contract EthenaCooldownBalanceAdapterForkTest is BalanceAdapterTestBase {
         assertEq(positions[0].balanceAdapter, address(adapter));
         assertEq(positions[0].amount, groundTruth);
         assertFalse(positions[0].isDebt);
-        assertEq(positions[0].protocolId, ProtocolIds.ETHENA_COOLDOWN);
+        assertEq(positions[0].protocolSubId, ProtocolIds.ETHENA_COOLDOWN);
+        assertEq(positions[0].protocolId, ProtocolIds.ETHENA);
         assertEq(positions[0].positionId, abi.encode(address(adapter.STAKED_USDE())));
         assertEq(uint8(positions[0].positionKind), uint8(PositionKind.Supplied));
     }

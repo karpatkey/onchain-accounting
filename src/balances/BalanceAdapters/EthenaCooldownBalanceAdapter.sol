@@ -25,7 +25,9 @@ contract EthenaCooldownBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     // Constants
     //
 
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.ETHENA_COOLDOWN;
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.ETHENA;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.ETHENA;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.ETHENA_COOLDOWN;
 
     //
     // State
@@ -196,7 +198,9 @@ contract EthenaCooldownBalanceAdapter is IBalanceAdapter, IPositionDescribable {
             balanceAdapter: address(this),
             amount: uint256(underlyingAmount),
             isDebt: false,
+            protocolBrand: PROTOCOL_BRAND,
             protocolId: PROTOCOL_ID,
+            protocolSubId: PROTOCOL_SUB_ID,
             // Anchored on StakedUSDeV2 / sUSDe (the cooldown holder & claim target); the owed asset
             // lives in `balanceAsset`, so the sUSDe address is the non-redundant coordinate.
             positionId: abi.encode(address(STAKED_USDE)),

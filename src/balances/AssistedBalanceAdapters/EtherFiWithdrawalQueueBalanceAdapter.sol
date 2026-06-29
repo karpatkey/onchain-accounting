@@ -34,7 +34,9 @@ contract EtherFiWithdrawalQueueBalanceAdapter is AssistedBalanceAdapter, IPositi
     // State
     //
 
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.ETHERFI_WITHDRAWAL;
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.ETHERFI;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.ETHERFI;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.ETHERFI_WITHDRAWAL;
 
     /// @notice Hard cap on cached tokenIds per account. `_ethOwed` iterates the whole array on every NAV read,
     ///         and an OOG there is NOT caught by NAVCalculator's try/catch — a bloated cache would brick the
@@ -267,7 +269,9 @@ contract EtherFiWithdrawalQueueBalanceAdapter is AssistedBalanceAdapter, IPositi
                 balanceAdapter: address(this),
                 amount: owed,
                 isDebt: false,
+                protocolBrand: PROTOCOL_BRAND,
                 protocolId: PROTOCOL_ID,
+                protocolSubId: PROTOCOL_SUB_ID,
                 positionId: positionId,
                 positionKind: PositionKind.Supplied,
                 isLocked: !finalized,

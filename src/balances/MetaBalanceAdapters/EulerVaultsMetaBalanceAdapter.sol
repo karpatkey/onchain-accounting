@@ -41,7 +41,9 @@ interface IEVC {
 ///      (EulerEarn earn deposits, or core-eVault supply not enabled as collateral) is `Supplied` — determined via an
 ///      EVC `getCollaterals` lookup (under try/catch, so non-Euler/EulerEarn vaults degrade to `Supplied`).
 contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.EULER_VAULTS;
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.EULER;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.EULER;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.EULER_VAULTS;
 
     /// @param protocolName_ Human-readable protocol name (e.g. "Euler").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
@@ -96,7 +98,9 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
                 balanceAdapter: address(this),
                 amount: supplied,
                 isDebt: false,
+                protocolBrand: PROTOCOL_BRAND,
                 protocolId: PROTOCOL_ID,
+                protocolSubId: PROTOCOL_SUB_ID,
                 positionId: positionId,
                 positionKind: _supplyKind(account, vaultAddr),
                 isLocked: false,
@@ -109,7 +113,9 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
                 balanceAdapter: address(this),
                 amount: debt,
                 isDebt: true,
+                protocolBrand: PROTOCOL_BRAND,
                 protocolId: PROTOCOL_ID,
+                protocolSubId: PROTOCOL_SUB_ID,
                 positionId: positionId,
                 positionKind: PositionKind.Borrowed,
                 isLocked: false,

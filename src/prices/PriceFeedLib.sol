@@ -762,7 +762,9 @@ library PriceFeedLib {
         position.balanceAdapter = balance.balanceAdapter;
         position.amount = balance.amount;
         position.isDebt = balance.isDebt;
+        position.protocolBrand = balance.protocolBrand;
         position.protocolId = balance.protocolId;
+        position.protocolSubId = balance.protocolSubId;
         position.positionId = balance.positionId;
         position.positionKind = balance.positionKind;
         position.isLocked = balance.isLocked;

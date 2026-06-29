@@ -194,7 +194,8 @@ contract StaderWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTest
             assertEq(positions[i].balanceAdapter, address(oracle));
             assertFalse(positions[i].isDebt);
             assertTrue(positions[i].isLocked, "pending request -> locked leg");
-            assertEq(positions[i].protocolId, ProtocolIds.STADER_WITHDRAWAL);
+            assertEq(positions[i].protocolSubId, ProtocolIds.STADER_WITHDRAWAL);
+            assertEq(positions[i].protocolId, ProtocolIds.STADER);
             assertEq(
                 positions[i].positionId,
                 abi.encode(address(oracle.USER_WITHDRAWAL_MANAGER())),
@@ -233,7 +234,8 @@ contract StaderWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTest
         uint256 sum;
         for (uint256 i = 0; i < positions.length; i++) {
             assertEq(positions[i].balanceAsset.asset, MAINNET_WETH);
-            assertEq(positions[i].protocolId, ProtocolIds.STADER_WITHDRAWAL);
+            assertEq(positions[i].protocolSubId, ProtocolIds.STADER_WITHDRAWAL);
+            assertEq(positions[i].protocolId, ProtocolIds.STADER);
             assertEq(uint256(positions[i].positionKind), uint256(PositionKind.Supplied));
             assertFalse(positions[i].isLocked, "finalized request -> claimable (unlocked) leg");
             _assertRequestLeg(positions[i]);
@@ -260,7 +262,8 @@ contract StaderWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTest
         uint256 sum;
         for (uint256 i = 0; i < positions.length; i++) {
             assertEq(positions[i].balanceAsset.asset, MAINNET_WETH);
-            assertEq(positions[i].protocolId, ProtocolIds.STADER_WITHDRAWAL);
+            assertEq(positions[i].protocolSubId, ProtocolIds.STADER_WITHDRAWAL);
+            assertEq(positions[i].protocolId, ProtocolIds.STADER);
             assertEq(
                 positions[i].positionId, expectedId, "account-global positionId is the UserWithdrawalManager anchor"
             );

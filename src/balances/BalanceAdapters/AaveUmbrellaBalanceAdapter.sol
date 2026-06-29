@@ -60,7 +60,9 @@ contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     ///      `deposit()`, USDC's proxy chain) from burning the caller's remaining gas budget.
     uint256 private constant PROBE_GAS = 30_000;
 
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.AAVE_V3_UMBRELLA;
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.AAVE;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.AAVE_V3;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.AAVE_V3_UMBRELLA;
 
     //
     // State
@@ -249,7 +251,9 @@ contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
                             balanceAdapter: address(this),
                             amount: amt,
                             isDebt: false,
+                            protocolBrand: PROTOCOL_BRAND,
                             protocolId: PROTOCOL_ID,
+                            protocolSubId: PROTOCOL_SUB_ID,
                             positionId: abi.encode(address(stk)),
                             positionKind: PositionKind.Staking,
                             isLocked: true,
@@ -267,7 +271,9 @@ contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
                             balanceAdapter: address(this),
                             amount: amt,
                             isDebt: false,
+                            protocolBrand: PROTOCOL_BRAND,
                             protocolId: PROTOCOL_ID,
+                            protocolSubId: PROTOCOL_SUB_ID,
                             positionId: abi.encode(address(stk)),
                             positionKind: PositionKind.Staking,
                             isLocked: false,
@@ -285,7 +291,9 @@ contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
                     balanceAdapter: address(this),
                     amount: rewardAmount,
                     isDebt: false,
+                    protocolBrand: PROTOCOL_BRAND,
                     protocolId: PROTOCOL_ID,
+                    protocolSubId: PROTOCOL_SUB_ID,
                     positionId: abi.encode(address(stk)),
                     positionKind: PositionKind.Rewards,
                     isLocked: false,

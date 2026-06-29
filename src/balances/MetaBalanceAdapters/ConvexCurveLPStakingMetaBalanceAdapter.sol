@@ -7,6 +7,7 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {StaticCallLib} from "src/utils/StaticCallLib.sol";
 import {CurvePoolLib} from "./curve/CurvePoolLib.sol";
+import {NotAContract} from "src/errors.sol";
 
 /// @title ConvexCurveLPStakingMetaBalanceAdapter
 /// @author KPK
@@ -68,7 +69,7 @@ contract ConvexCurveLPStakingMetaBalanceAdapter is MetaBalanceAdapter {
     constructor(address booster_, address cvxToken_, string memory protocolName_, address navCalculator_)
         MetaBalanceAdapter(protocolName_, navCalculator_)
     {
-        require(booster_ == address(0) || booster_.code.length > 0, "Booster must be a contract");
+        if (booster_ != address(0) && booster_.code.length == 0) revert NotAContract("Booster");
         BOOSTER = IConvexBooster(booster_);
         CVX_TOKEN = cvxToken_;
     }

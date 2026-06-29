@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.0;
 
+import {NotAContract} from "src/errors.sol";
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
 import {
@@ -138,7 +139,7 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterTest is BalanceAdapterTestB
     }
 
     function test_constructor_revertsWhenNftNotContract() public {
-        vm.expectRevert(bytes("WithdrawRequestNFT must be a contract"));
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "WithdrawRequestNFT"));
         new EtherFiWithdrawalQueueAssistedBalanceAdapter(
             makeAddr("eoa"), address(lp), NATIVE, address(balances), address(this), address(this)
         );

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.0;
 
+import {NotAContract} from "src/errors.sol";
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.sol";
 import {
     LidoWithdrawalQueueBalanceAdapter,
@@ -131,13 +132,13 @@ contract LidoWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_constructor_revertsWhenQueueNotContract() public {
         address eoa = makeAddr("eoa");
-        vm.expectRevert(bytes("WithdrawalQueue must be a contract"));
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "WithdrawalQueue"));
         new LidoWithdrawalQueueBalanceAdapter(eoa, address(weth), address(balances));
     }
 
     function test_constructor_revertsWhenNAVNotContract() public {
         address eoa = makeAddr("eoa");
-        vm.expectRevert(bytes("NAVCalculator must be a contract"));
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "NAVCalculator"));
         new LidoWithdrawalQueueBalanceAdapter(address(queue), address(weth), eoa);
     }
 

@@ -1,5 +1,5 @@
-// OracleArgumentChecks.sol
 // SPDX-License-Identifier: BUSL-1.1
+// OracleArgumentChecks.sol
 pragma solidity ^0.8;
 
 import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";

@@ -6,6 +6,7 @@ import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
+import {InvalidArguments} from "src/errors.sol";
 
 /// @notice Interface for interacting with StakeWise v3 vaults
 interface IStakeWiseVault {
@@ -54,7 +55,7 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceAdapter {
         string memory protocolName_,
         address navCalculator_
     ) MetaBalanceAdapter(protocolName_, navCalculator_) {
-        require(underlyingToken_ != address(0), "underlyingToken=0");
+        if (underlyingToken_ == address(0)) revert InvalidArguments();
         AddressCheckLib.requireContract(osTokenVaultController_, "osTokenVaultController");
         UNDERLYING_TOKEN = underlyingToken_;
         OS_TOKEN_VAULT_CONTROLLER = IOsTokenVaultController(osTokenVaultController_);

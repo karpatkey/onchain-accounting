@@ -3,6 +3,8 @@ pragma solidity ^0.8;
 
 error InvalidArguments();
 error InvalidArgumentsWithContext(string context);
+/// @notice A constructor argument expected to be a deployed contract has no code. `name` is the dependency label.
+error NotAContract(string name);
 error NotAuthorized();
 error NotChainlinkOracle();
 
@@ -15,6 +17,7 @@ error PositionCacheFull(address account, uint256 maxPositions);
 error InvalidExitPosition(address account, address vault, uint256 positionTicket);
 
 // Bridge-specific errors
+error AlreadyInitialized();
 error InvoiceNotFound();
 error InvoiceAlreadyExists();
 error InvalidInvoiceStatus();

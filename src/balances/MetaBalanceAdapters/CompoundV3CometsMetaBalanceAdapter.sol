@@ -8,6 +8,7 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {CompoundV3CometLib} from "src/balances/MetaBalanceAdapters/CompoundV3CometLib.sol";
+import {InvalidArguments} from "src/errors.sol";
 
 /// @title Compound V3 Comets Meta Balance Adapter
 /// @author KPK
@@ -36,7 +37,7 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceAdapter {
         MetaBalanceAdapter(protocolName_, navCalculator_)
     {
         AddressCheckLib.requireContract(compoundRewards_, "CompoundRewards");
-        require(rewardToken_ != address(0), "rewardToken=0");
+        if (rewardToken_ == address(0)) revert InvalidArguments();
         COMPOUND_REWARDS = compoundRewards_;
         REWARD_TOKEN = rewardToken_;
     }

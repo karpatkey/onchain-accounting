@@ -4,11 +4,11 @@
 # Usage:  deploy-nexus.sh <chainId>
 #   e.g.  deploy-nexus.sh 1
 #
-# NexusMutualStakingPoolsAssistedBalanceAdapter is a simple immutable view adapter (no agent, no owner): it discovers
-# an account's StakingNFT positions by scanning tokenInfo(1..totalSupply) and values each via
-# StakingViewer.getTokens into per-NFT NXM-denominated Staking (active+expired) + Rewards legs
-# (positionId = abi.encode(address stakingPool), where stakingPool = StakingViewer.stakingPool(poolId);
-#  the StakingNFT tokenId is a display-only entry in PositionBalance.labels).
+# NexusMutualStakingPoolsAssistedBalanceAdapter is an assisted (agent-fed) adapter: a trusted ASSISTANT_ROLE submits
+# the account's StakingNFT tokenIds (the NFT is not owner-enumerable), and the adapter values each via
+# StakingViewer.getTokens into per-NFT NXM-denominated Staking (active+expired) + Rewards legs, re-verifying ownership
+# on every read (positionId = abi.encode(address stakingPool), where stakingPool = StakingViewer.stakingPool(poolId);
+#  the per-NFT StakingNFT tokenId is the typed PositionBalance.positionInstanceId — labels derive from positionId only).
 # NXM is priced by a custom RAMM feed (NXM_CustomPriceFeed), which dev deploy.sh does NOT auto-register
 # (it wires Chainlink assets only). So this helper, in order:
 #   1. deploys NXM_CustomPriceFeed and registerAsset()s NXM with it (Custom price type),
@@ -37,6 +37,8 @@ PRICE_TYPE_CUSTOM=3 # IPrices.PriceType.Custom
 
 # Anvil prefunded account #0 (holds MANAGER after 01_DeployNAV).
 DEV_PRIVATE_KEY="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+# Dev deployer EOA (anvil account 0) — used as both DEFAULT_ADMIN_ROLE and the initial ASSISTANT_ROLE on the adapter.
+DEPLOYER=$(cast wallet address --private-key "$DEV_PRIVATE_KEY")
 
 if ! command -v forge >/dev/null 2>&1; then export PATH="$HOME/.foundry/bin:$PATH"; fi
 if ! command -v jq >/dev/null 2>&1; then echo "error: jq not on PATH" >&2; exit 1; fi
@@ -83,7 +85,7 @@ echo "--- deploy NexusMutualStakingPoolsAssistedBalanceAdapter"
 OUT=$(
   forge create src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsAssistedBalanceAdapter.sol:NexusMutualStakingPoolsAssistedBalanceAdapter \
     --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" --broadcast \
-    --constructor-args "$STAKING_NFT" "$STAKING_VIEWER" "$NXM_TOKEN" "$NAV" 2>&1
+    --constructor-args "$STAKING_NFT" "$STAKING_VIEWER" "$NXM_TOKEN" "$NAV" "$DEPLOYER" "$DEPLOYER" 2>&1
 ) || true
 ADAPTER=$(printf '%s\n' "$OUT" | grep -i "Deployed to:" | awk '{print $3}' || true)
 if [ -z "$ADAPTER" ]; then

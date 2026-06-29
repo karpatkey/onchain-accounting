@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {BaseCustomPriceFeed} from "src/prices/BaseCustomPriceFeed.sol";
+import {NotAContract} from "src/errors.sol";
 
 /// @title osToken Custom Price Oracle
 /// @notice USD price of a StakeWise osToken (osETH, osGNO, …) = `OsTokenVaultController.convertToAssets(1e18)`
@@ -25,7 +26,7 @@ contract osToken_CustomPriceFeed is BaseCustomPriceFeed {
         address underlyingToUsdChainlinkOracle_,
         uint256 underlyingToUsdChainlinkHeartbeat_
     ) BaseCustomPriceFeed(osToken_, underlyingToUsdChainlinkOracle_, underlyingToUsdChainlinkHeartbeat_) {
-        require(osTokenVaultController_.code.length > 0, "OsTokenVaultController must be a contract");
+        if (osTokenVaultController_.code.length == 0) revert NotAContract("OsTokenVaultController");
         OS_TOKEN_VAULT_CONTROLLER = IOsTokenVaultController(osTokenVaultController_);
     }
 

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.0;
 
+import {NotAContract} from "src/errors.sol";
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.sol";
 import {
     MerklRewardsAssistedBalanceAdapter,
@@ -175,12 +176,12 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
     }
 
     function test_constructor_revertsOnNonContractDistributor() public {
-        vm.expectRevert("Distributor must be a contract");
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "Distributor"));
         new MerklRewardsAssistedBalanceAdapter(makeAddr("eoa"), address(balances), owner, owner);
     }
 
     function test_constructor_revertsOnNonContractNavCalculator() public {
-        vm.expectRevert("NAVCalculator must be a contract");
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "NAVCalculator"));
         new MerklRewardsAssistedBalanceAdapter(address(distributor), makeAddr("eoa"), owner, owner);
     }
 

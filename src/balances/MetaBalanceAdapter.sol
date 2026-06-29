@@ -10,6 +10,7 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 import {LabelLib} from "./LabelLib.sol";
 import {RegisteredAssetLib} from "./RegisteredAssetLib.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {InvalidArgumentsWithContext} from "src/errors.sol";
 
 /// @title MetaBalanceAdapter
 /// @author KPK
@@ -291,7 +292,7 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     ///      surfaces as an error (isolated per-instance by the fan-out) instead of querying a different address.
     ///      Adapters whose coordinate is a raw bytes32 (e.g. Morpho market ids) do not use this helper.
     function _toAddress(bytes32 instance) internal pure returns (address) {
-        require(uint256(instance) >> 160 == 0, "instance: not an address");
+        if (uint256(instance) >> 160 != 0) revert InvalidArgumentsWithContext("instance: not an address");
         return address(uint160(uint256(instance)));
     }
 

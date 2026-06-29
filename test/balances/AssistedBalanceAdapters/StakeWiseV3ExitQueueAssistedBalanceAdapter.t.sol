@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.0;
 
+import {NotAContract} from "src/errors.sol";
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
 import {
@@ -161,7 +162,7 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
     }
 
     function test_constructor_revertsWhenRegistryNotContract() public {
-        vm.expectRevert(bytes("VaultsRegistry must be a contract"));
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "VaultsRegistry"));
         new StakeWiseV3ExitQueueAssistedBalanceAdapter(
             makeAddr("eoa"), NATIVE, "osETH", address(balances), DELAY, address(this), address(this)
         );

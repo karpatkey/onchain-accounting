@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.0;
 
+import {NotAContract} from "src/errors.sol";
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.sol";
 import {KelpWithdrawalQueueBalanceAdapter} from "src/balances/BalanceAdapters/KelpWithdrawalQueueBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -132,13 +133,13 @@ contract KelpWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_constructor_revertsWhenManagerNotContract() public {
         address eoa = makeAddr("eoa");
-        vm.expectRevert(bytes("WithdrawalManager must be a contract"));
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "WithdrawalManager"));
         new KelpWithdrawalQueueBalanceAdapter(eoa, address(balances));
     }
 
     function test_constructor_revertsWhenNAVNotContract() public {
         address eoa = makeAddr("eoa");
-        vm.expectRevert(bytes("NAVCalculator must be a contract"));
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "NAVCalculator"));
         new KelpWithdrawalQueueBalanceAdapter(address(manager), eoa);
     }
 

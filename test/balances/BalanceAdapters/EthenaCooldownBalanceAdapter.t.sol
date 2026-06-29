@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.0;
 
+import {NotAContract} from "src/errors.sol";
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.sol";
 import {EthenaCooldownBalanceAdapter} from "src/balances/BalanceAdapters/EthenaCooldownBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -67,13 +68,13 @@ contract EthenaCooldownBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_constructor_revertsWhenStakedNotContract() public {
         address eoa = makeAddr("eoa");
-        vm.expectRevert(bytes("StakedUSDeV2 must be a contract"));
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "StakedUSDeV2"));
         new EthenaCooldownBalanceAdapter(eoa, address(usde), address(balances));
     }
 
     function test_constructor_revertsWhenNAVNotContract() public {
         address eoa = makeAddr("eoa");
-        vm.expectRevert(bytes("NAVCalculator must be a contract"));
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "NAVCalculator"));
         new EthenaCooldownBalanceAdapter(address(staked), address(usde), eoa);
     }
 

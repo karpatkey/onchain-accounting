@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.0;
 
+import {NotAContract} from "src/errors.sol";
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
@@ -168,7 +169,7 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterTest is BalanceAdapterTest
     }
 
     function test_constructor_revertsWhenNftNotContract() public {
-        vm.expectRevert(bytes("StakingNFT must be a contract"));
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "StakingNFT"));
         new NexusMutualStakingPoolsAssistedBalanceAdapter(
             makeAddr("eoa"), address(viewer), address(nxm), address(balances), address(this), address(this)
         );

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.0;
 
+import {NotAContract} from "src/errors.sol";
 import {Test} from "forge-std/Test.sol";
 import {CapBalanceAdapter} from "src/balances/BalanceAdapters/CapBalanceAdapter.sol";
 import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
@@ -87,12 +88,12 @@ contract CapBalanceAdapterTest is Test {
     }
 
     function test_constructor_invalidArgs_nonContractCUsd() public {
-        vm.expectRevert("cUSD must be a contract");
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "cUSD"));
         new CapBalanceAdapter(address(0xdead), address(mockStcUsd), address(mockUsdc), address(nav));
     }
 
     function test_constructor_invalidArgs_nonContractNavCalculator() public {
-        vm.expectRevert("NAVCalculator must be a contract");
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "NAVCalculator"));
         new CapBalanceAdapter(address(mockCUsd), address(mockStcUsd), address(mockUsdc), address(0xdead));
     }
 

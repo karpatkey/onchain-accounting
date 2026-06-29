@@ -41,7 +41,7 @@ contract ERC20DefaultBalanceAdapter is BalanceAdapterBase {
     /// @param initialAssets Optional assets to add to the inclusion list during construction (e.g. NATIVE_ADDRESS).
     ///        Used so NAVCalculator.initialize can pre-add native without calling back to the proxy during init.
     constructor(address navCalculator_, address[] memory initialAssets) {
-        require(navCalculator_ != address(0), "NAVCalculator cannot be zero address");
+        if (navCalculator_ == address(0)) revert InvalidArguments();
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
         // The seed list is NOT registry-checked here: this constructor is invoked by
         // NAVRegistryLib.deployDefaultAdapter *during NAVCalculator.initialize*, which runs inside the proxy's
@@ -226,7 +226,7 @@ contract ERC20DefaultBalanceAdapter is BalanceAdapterBase {
     function _getAssetInfo(address asset) internal view returns (INAVCalculator.Asset memory assetInfo) {
         bool found;
         (assetInfo, found) = RegisteredAssetLib.find(NAV_CALCULATOR.getRegisteredAssets(), asset);
-        require(found, "Asset not found in NAVCalculator");
+        if (!found) revert AssetNotFound();
     }
 
     /// @notice Internal helper that builds all positions for this adapter

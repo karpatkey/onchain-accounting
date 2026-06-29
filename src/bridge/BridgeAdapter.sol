@@ -66,7 +66,7 @@ abstract contract BridgeAdapter is AccessControl, ReentrancyGuard, IBridgeAdapte
         string memory providerName_,
         string memory version_
     ) internal {
-        require(!_initialized, "BridgeAdapter: already initialized");
+        if (_initialized) revert AlreadyInitialized();
         if (admin_ == address(0) || bridgeEscrow_ == address(0)) revert InvalidArguments();
         _initialized = true;
 

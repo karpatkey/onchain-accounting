@@ -3,7 +3,6 @@ pragma solidity ^0.8;
 
 import {MetaBalanceAdapter} from "../../MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -133,16 +132,14 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev Returns `["Staking Gauge", <gauge symbol>]`; the leaf is "" if the gauge's `symbol()` reverts.
+    /// @dev Returns `["Staking Gauge", "<sym0>/<sym1>/…"]` — the leaf is the staked pool's underlying token symbols
+    ///      joined with "/" (e.g. "WETH/wstETH"). Resolved gauge → `lp_token` (pool) → pool tokens. Per-token
+    ///      fail-open: a token whose `symbol()` reverts (or has no code) contributes "?"; a revert in the resolution
+    ///      chain fails open at the NAV layer (`_safeStringArray`).
     function positionLabels(bytes calldata positionId) external view virtual override returns (string[] memory) {
         address gauge = abi.decode(positionId, (address));
-        string memory leaf;
-        try IERC20Metadata(gauge).symbol() returns (string memory s) {
-            leaf = s;
-        } catch {
-            leaf = "";
-        }
-        return _labels("Staking Gauge", leaf);
+        address[] memory tokens = IStablePool(IGaugeV3(gauge).lp_token()).poolTokens();
+        return _labels("Staking Gauge", _joinTokenSymbols(tokens));
     }
 
     //

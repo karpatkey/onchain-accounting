@@ -59,7 +59,7 @@ contract BalancesHarnessForFork is Balances {
     }
 
     // -------------------------------------------------------------------------
-    // Minimal price surface (for adapters that read oracle prices, e.g. UniswapV3PoolsAssistedMeta after [2]).
+    // Minimal price surface (for adapters that read oracle prices, e.g. UniswapV3PoolsAssistedBalanceAdapter after [2]).
     // Unset assets return price 0 / stale=false → treated as unpriceable (price <= 0) by such adapters.
     // -------------------------------------------------------------------------
 

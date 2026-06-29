@@ -197,7 +197,7 @@ contract Mock_NAVCalculator is INAVCalculator {
         return 8;
     }
 
-    /// @notice Settable price surface for adapters that read oracle prices (e.g. UniswapV3PoolsAssistedMeta after [2]).
+    /// @notice Settable price surface for adapters that read oracle prices (e.g. UniswapV3PoolsAssistedBalanceAdapter after [2]).
     ///         Unset assets return price 0 / stale=false → treated as unpriceable by such adapters.
     mapping(address => PriceFeedData) private _priceData;
     mapping(address => bool) private _priceReverts;

@@ -130,9 +130,13 @@ contract SafeProxyOwner is Ownable {
             Tx calldata t = txs[i];
             totalValue += t.value;
 
+            // MultiSendCallOnly only supports Call (0); a DelegateCall would build a batch that reverts inside
+            // MultiSend. Reject it early with a clear error rather than constructing a deterministically-failing batch.
+            require(t.operation == Enum.Operation.Call, "SafeProxyOwner: MultiSendCallOnly supports Call only");
+
             // ─ operation (1 byte) │ to (20) │ value (32) │ dataLen (32) │ data (N)
             bytes memory entry = abi.encodePacked(
-                t.operation, // per-tx operation (MultiSendCallOnly only accepts Call/0)
+                t.operation, // always Call(0) — enforced above
                 t.to,
                 t.value,
                 uint256(t.data.length),

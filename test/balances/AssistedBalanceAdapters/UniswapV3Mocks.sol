@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
-// Mock contracts extracted from UniswapV3Pool.t.sol for use by UniswapV3PoolsAssistedMetaBalanceAdapter.t.sol
+// Mock contracts extracted from UniswapV3Pool.t.sol for use by UniswapV3PoolsAssistedBalanceAdapter.t.sol
 
 /// @notice Minimal Uniswap V3 pool mock — exposes the views the adapter reads.
 contract MockUniswapV3Pool {

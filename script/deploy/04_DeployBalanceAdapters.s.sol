@@ -19,7 +19,6 @@ import {
 import {
     MorphoMarketsMetaBalanceAdapter
 } from "../../src/balances/MetaBalanceAdapters/MorphoMarketsMetaBalanceAdapter.sol";
-import {ERC4626WrapBalanceAdapter} from "../../src/balances/BalanceAdapters/ERC4626WrapBalanceAdapter.sol";
 import {
     GearboxMarketsMetaBalanceAdapter
 } from "../../src/balances/MetaBalanceAdapters/GearboxMarketsMetaBalanceAdapter.sol";
@@ -132,9 +131,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("MorphoVaultsMeta"); // Meta-adapter: all Morpho vaults; instance set configured on NAV (ADR 0010)
         _deployIfEnabled("MorphoMarketsMeta"); // Meta-adapter: all Morpho markets; marketId set configured on NAV (ADR 0010)
         _deployIfEnabled("EulerVaultsMeta"); // Meta-adapter: all Euler V2 vaults (EulerEarn + core eVaults); supply/collateral + borrow legs; instance set on NAV (ADR 0010)
-
-        // --- ERC-4626 wrappers (one thin adapter per wrapper; generic ERC4626WrapBalanceAdapter) ---
-        _deployIfEnabled("ERC4626Wrap_RWIV"); // Mainnet — Nexus Mutual RWI Vault (USDC underlying)
 
         // --- Gearbox Markets (Mainnet — ETH Alpha) ---
         _deployIfEnabled("GearboxMarketsMeta"); // Meta-adapter: all Gearbox markets; market set on NAV (ADR 0010)
@@ -281,11 +277,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // Euler Vaults meta-adapter (one adapter for all Euler V2 eVaults; instance set on NAV, ADR 0010)
         if (_equals(adapterName, "EulerVaultsMeta")) {
             return _deployEulerVaultsMeta(adapterName, navCalculator);
-        }
-
-        // ERC-4626 wrap adapters (generic contract; one instance per wrapper, prefix-dispatched)
-        if (_startsWith(adapterName, "ERC4626Wrap_")) {
-            return _deployERC4626Wrap(adapterName, navCalculator);
         }
 
         // Gearbox Market meta-adapter (per-instance adapters removed — superseded by GearboxMarketsMeta)
@@ -639,14 +630,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
         FluidVaultsMetaBalanceAdapter adapter =
             new FluidVaultsMetaBalanceAdapter(vaultResolver, protocol, navCalculator);
-        return address(adapter);
-    }
-
-    function _deployERC4626Wrap(string memory adapterName, address navCalculator) internal returns (address) {
-        address wrapper = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "wrapper")
-        );
-        ERC4626WrapBalanceAdapter adapter = new ERC4626WrapBalanceAdapter(wrapper, navCalculator);
         return address(adapter);
     }
 

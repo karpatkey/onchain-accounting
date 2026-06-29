@@ -206,21 +206,6 @@ PositionBalance({
 })
 ```
 
-#### `ERC4626Wrap` — ERC4626 wrapper
-
-```solidity
-// Generic adapter for any ERC4626 share token (e.g. stata-tokens).
-PositionBalance({
-    balanceAsset:  Asset({ asset: 0x40D1…2f, symbol: "GHO", decimals: 18 }),
-    balanceAdapter: 0x<ERC4626WrapAdapter>,
-    amount:        1_000e18,               // 1 000 GHO (convertToAssets of share balance)
-    isDebt:        false,
-    protocolId:    keccak256("erc4626"),
-    positionId:    abi.encode(0x<wrapper>),  // ERC-4626 wrapper address
-    positionKind:  PositionKind.Supplied
-})
-```
-
 #### `KelpWithdrawalQueue` — rsETH exit queue
 
 ```solidity
@@ -640,14 +625,6 @@ Scenario: 2 000 cUSD held + 1 000 USDC-worth of staked stcUSD.
 | USDC  | 2 000  | +2 000      | `Supplied`   | `"Cap"`      | `["Stablecoin", "cUSD"]`   |
 | USDC  | 1 000  | +1 000      | `Staking`    | `"Cap"`      | `["Savings", "stcUSD"]`    |
 
-#### `ERC4626Wrap` — wrapper
-
-Scenario: an ERC-4626 wrapper holding 1 000 GHO equivalent.
-
-| asset | amount | value (USD) | positionKind | protocolName | labels |
-|-------|--------|-------------|--------------|--------------|---------------|
-| GHO   | 1 000  | +1 000      | `Supplied`   | `"ERC4626"`  | `["Vault"]` |
-
 #### `KelpWithdrawalQueue` — pending + claimable unstake
 
 Scenario: 3 stETH in the Kelp queue — 2 still pending, 1 claimable now. Two legs sharing one static
@@ -926,7 +903,6 @@ schemas are in the next section and in the per-adapter table above.)
 | `stakewise-v3` | `STAKEWISE_V3` | `StakeWiseV3VaultsMetaBalanceAdapter` — StakeWise V3 vault stake + osToken debt |
 | `nexus-mutual-staking` | `NEXUS_MUTUAL_STAKING` | `NexusMutualStakingPoolsBalanceAdapter` — Nexus Mutual StakingNFT stake + rewards |
 | `cap` | `CAP` | `CapBalanceAdapter` — Cap cUSD (held) and stcUSD (staked) |
-| `erc4626` | `ERC4626` | `ERC4626WrapBalanceAdapter` — generic ERC4626 wrapper share |
 | `merkl` | `MERKL` | `MerklRewardsBalanceAdapter` — unclaimed (claimable) Merkl reward tokens |
 | `lido-withdrawal` | `LIDO_WITHDRAWAL` | `LidoWithdrawalQueueBalanceAdapter` — ETH owed from the Lido stETH withdrawal queue |
 | `stader-withdrawal` | `STADER_WITHDRAWAL` | `StaderWithdrawalQueueBalanceAdapter` — ETH owed from the Stader ETHx withdrawal queue |
@@ -1102,7 +1078,6 @@ decodes use `AbiCoder.defaultAbiCoder()` from ethers.js. Protocol ID constants c
 | `UniswapV3Pools` / `PancakeSwapV3Pools` | `uniswap-v3` / `pancakeswap-v3` | `Supplied`, `Fees` |
 | `UniswapV2PoolsMeta` / `PancakeSwapV2PoolsMeta` | `uniswap-v2` / `pancakeswap-v2` | `Supplied` |
 | `Cap` | `cap` | `Supplied` (cUSD), `Staking` (stcUSD) |
-| `ERC4626Wrap` | `erc4626` | `Supplied` |
 | `MerklRewards` | `merkl` | `Rewards` |
 | `NexusMutualStakingPoolsBalanceAdapter` | `nexus-mutual-staking` | `Staking`, `Rewards` |
 | `LidoWithdrawalQueue` | `lido-withdrawal` | `Supplied` (one leg per request; `isLocked` = pending; request id in labels) |
@@ -1447,7 +1422,6 @@ legs, and a worked example — for every balance adapter on `main`.
 | `AaveV3SafetyModuleBalanceAdapter` | `aave-v3-safety-module` | `"Aave V3"` | `["Safety Module"]` (const) | `abi.encode(address stakeToken)` | Staking / Rewards | `["Aave V3","Safety Module"]` |
 | `CapBalanceAdapter` (cUSD) | `cap` | `"Cap"` | `["Stablecoin","cUSD"]` (const) | `abi.encode(address CUSD)` | Supplied | `["Cap","Stablecoin","cUSD"]` |
 | `CapBalanceAdapter` (stcUSD) | `cap` | `"Cap"` | `["Savings","stcUSD"]` (const) | `abi.encode(address STCUSD)` | Staking | `["Cap","Savings","stcUSD"]` |
-| `ERC4626WrapBalanceAdapter` | `erc4626` | `"ERC4626"` | `["Vault"]` (const) | `abi.encode(address wrapper)` | Supplied | `["ERC4626","Vault"]` |
 | `EthenaCooldownBalanceAdapter` | `ethena-cooldown` | `"Ethena"` | `["Unstaking Cooldown"]` (const) | `abi.encode(address sUSDe)` | Supplied (`isLocked` while cooling) | `["Ethena","Unstaking Cooldown"]` |
 | `SparkLendBalanceAdapter` | `spark-lend` | `"Spark"` | `["Market","SparkLend"]` (const) | `abi.encode(address POOL)` | Collateral/Supplied / Borrowed | `["Spark","Market","SparkLend"]` |
 | `LidoWithdrawalQueueBalanceAdapter` | `lido-withdrawal` | `"Lido"` | `["stETH Withdrawal Queue", "Request #<id>"]` (id derived) | `abi.encode(address withdrawalQueue)` | Supplied — one leg **per request** (each `isLocked` = pending), shared positionId | `["Lido","stETH Withdrawal Queue","Request #54321"]` |

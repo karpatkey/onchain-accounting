@@ -70,7 +70,7 @@ These are not queues but represent value that lives outside the wallet and is no
 ### Yield / structured products
 
 - **Pendle PT/YT**: principal-token (PT) and yield-token (YT) positions in markets and SY vaults. Each Pendle market issues distinct PT and YT ERC20s; the underlying value is non-trivial (PT depends on time-to-maturity, YT depends on accrued yield since last redemption). One adapter per market or per-LP.
-- **Yearn V3 vaults**: pure ERC4626; could reuse the `ERC4626Wrap` adapter or get a thin wrapper.
+- **Yearn V3 vaults**: pure ERC4626; would need a thin meta-adapter (the underlying value is `convertToAssets(balanceOf)`).
 - **Beefy vaults**: ERC4626-shaped, same pattern.
 - **Origin OETH/OUSD**: rebasing ERC20s — `ERC20DefaultBalanceAdapter` reports the current `balanceOf` correctly, but the rebasing semantic is worth a docs note.
 - **Maple direct lending pools** (beyond syrupUSDC): pool tokens with withdrawal cooldowns.

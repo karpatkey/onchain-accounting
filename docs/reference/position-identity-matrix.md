@@ -36,7 +36,6 @@ Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, pos
 | EulerVaultsMeta | `euler-vaults` | `abi.encode(address vault)` | supply (not EVC collateral) | `Supplied` | false | `vault.asset()` |
 | | | | supply (EVC collateral on) | `Collateral` | false | `vault.asset()` |
 | | | | core-eVault debt (`debtOf`) | `Borrowed` | true | `vault.asset()` |
-| ERC4626Wrap | `erc4626` | `abi.encode(address wrapper)` | wrapper shares (`convertToAssets`) | `Supplied` | false | `wrapper.asset()` |
 | Cap | `cap` | `abi.encode(address cUSD)` | held cUSD (Stablecoin) | `Supplied` | false | USDC |
 | | | `abi.encode(address stcUSD)` | staked stcUSD (Savings) | `Staking` | false | USDC |
 | AaveV3SafetyModule | `aave-v3-safety-module` | `abi.encode(address stakeToken)` | locked staked principal (active stake + cooling/expired cooldown) — `isLocked=true` | `Staking` | false | staked token (AAVE/GHO/ABPT…) |

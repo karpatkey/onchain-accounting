@@ -340,7 +340,6 @@ script/verify/verify-all.sh
 - `MorphoMarketsMetaBalanceAdapter` - Morpho direct market positions
 - `MorphoVaultsMetaBalanceAdapter` - MetaMorpho vault positions
 - `EulerVaultsMetaBalanceAdapter` - Euler V2 vaults (EulerEarn aggregator + core eVault lend/borrow)
-- `ERC4626WrapBalanceAdapter` - Generic ERC-4626 share wrappers (e.g. Aave stata-tokens)
 - `SparkLendBalanceAdapter` - Spark Lend positions
 - `BalancerV2PoolsMetaBalanceAdapter`, `BalancerV2GaugesMetaBalanceAdapter` - Balancer V2 LPs + gauges
 - `BalancerV3PoolsMetaBalanceAdapter`, `BalancerV3GaugesMetaBalanceAdapter` - Balancer V3 LPs + gauges

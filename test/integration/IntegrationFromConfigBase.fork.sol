@@ -24,7 +24,6 @@ import {MorphoMarketsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/
 import {
     AaveV3InstancesMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/AaveV3InstancesMetaBalanceAdapter.sol";
-import {ERC4626WrapBalanceAdapter} from "src/balances/BalanceAdapters/ERC4626WrapBalanceAdapter.sol";
 import {GearboxMarketsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/GearboxMarketsMetaBalanceAdapter.sol";
 import {CapBalanceAdapter} from "src/balances/BalanceAdapters/CapBalanceAdapter.sol";
 import {CurvePoolsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/curve/CurvePoolsMetaBalanceAdapter.sol";
@@ -189,9 +188,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         nav.grantRole(MANAGER, admin);
 
         _deployAllPriceFeeds();
-        // Asset registration MUST precede balance-adapter deployment because some adapter
-        // constructors (e.g. ERC4626WrapBalanceAdapter) require the underlying asset to be
-        // registered before they can deploy. Production deploy mirrors this via the Safe-TX
+        // Asset registration MUST precede balance-adapter deployment because some adapters
+        // require their underlying asset to be NAV-registered before they can value a
+        // position. Production deploy mirrors this via the Safe-TX
         // bundle ordering in 06_Configure.s.sol (registerAsset → addBalanceAdapter).
         _registerAllAssets();
         _deployAllBalanceAdapters();
@@ -624,9 +623,6 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_equals(name, "MorphoVaultsMeta")) {
             return _deployMorphoVaultsMeta(name, navAddr);
         }
-        if (_startsWith(name, "ERC4626Wrap_")) {
-            return _deployERC4626Wrap(name, navAddr);
-        }
         if (_equals(name, "GearboxMarketsMeta")) {
             return _deployGearboxMarketsMeta(name, navAddr);
         }
@@ -748,12 +744,6 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     function _deployAaveV3InstancesMeta(string memory name, address navAddr) internal returns (address) {
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
         return address(new AaveV3InstancesMetaBalanceAdapter(protocol, navAddr));
-    }
-
-    function _deployERC4626Wrap(string memory name, address navAddr) internal returns (address) {
-        address wrapper =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "wrapper"));
-        return address(new ERC4626WrapBalanceAdapter(wrapper, navAddr));
     }
 
     function _deployGearboxMarketsMeta(string memory name, address navAddr) internal returns (address) {

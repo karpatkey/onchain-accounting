@@ -592,8 +592,6 @@ The `_deployIfEnabled(...)` calls in `run()` are the authoritative source. Most 
 
 **StakeWise V3:** `StakeWiseV3VaultsMeta` (vault deposits net of minted-osToken debt — see the osETH/osGNO pricing note below)
 
-**ERC-4626 wrappers:** `ERC4626Wrap_RWIV`
-
 **Withdrawal queues:** `StaderWithdrawalQueue`, `KelpWithdrawalQueue`, `LidoWithdrawalQueue`
 
 **Rewards:** `MerklRewards` (mutable proof-verified per-(user,token) cache — ADR 0007)
@@ -604,7 +602,7 @@ The `_deployIfEnabled(...)` calls in `run()` are the authoritative source. Most 
 
 > **`ERC20Default` is special** — it's deployed inside `NAVCalculator.initialize()` (via `02_DeployProxies.s.sol`), not by `04_DeployBalanceAdapters.s.sol`. It auto-covers every asset registered on the NAVCalculator (wallet balances + native sentinel). Don't put it in the `run()` list.
 
-> **Naming discipline matters.** The `_deployAdapter` dispatcher in `04_DeployBalanceAdapters.s.sol` routes almost entirely by **exact match** (`_equals(adapterName, "AaveV3InstancesMeta")`, etc.); only the genuinely multi-instance `SparkLend_` and `ERC4626Wrap_` families are routed by prefix (`_startsWith`). A config entry whose name doesn't exactly match a dispatch branch (and isn't covered by one of those two prefixes) falls through to `"Unknown adapter type"` and the deploy is a no-op.
+> **Naming discipline matters.** The `_deployAdapter` dispatcher in `04_DeployBalanceAdapters.s.sol` routes almost entirely by **exact match** (`_equals(adapterName, "AaveV3InstancesMeta")`, etc.); only the genuinely multi-instance `SparkLend_` family is routed by prefix (`_startsWith`). A config entry whose name doesn't exactly match a dispatch branch (and isn't covered by that prefix) falls through to `"Unknown adapter type"` and the deploy is a no-op.
 
 **Invariant to check before each deploy run:** `<Name>` exists in `contracts-deployment-config/balance-adapters/<chainId>.json` (plain) or `contracts-deployment-config/meta-balance-adapters/<chainId>.json` (meta) ⇔ `04_DeployBalanceAdapters.s.sol` has `_deployIfEnabled("<Name>")` ⇔ a matching entry in `nav-config/balance-adapters/<chainId>.json` or `nav-config/meta-balance-adapters/<chainId>.json` (which `06_Configure.s.sol` reads to register it). All or none.
 
@@ -1101,7 +1099,7 @@ Phase 9: Post-deployment validation -- per chain
 
 ### "Unknown adapter type" in the `04_DeployBalanceAdapters.s.sol` output
 
-The dispatcher routes almost entirely by **exact match** (`_equals(adapterName, "<Name>")`, e.g. `Cap`, `SparkLend`, and every `*Meta` adapter); only `SparkLend_` and `ERC4626Wrap_` are routed by prefix (`_startsWith`). If you see `Unknown adapter type: <Name>`, your config entry name doesn't exactly match a dispatch branch (and isn't covered by one of those two prefixes) — fix by adding the missing branch in `_deployAdapter`. When adding a new single-instance adapter, add an `_equals(adapterName, "<Name>")` branch; the `SparkLend` branch shows the combined exact-match + prefix pattern used for families that may later grow multiple instances:
+The dispatcher routes almost entirely by **exact match** (`_equals(adapterName, "<Name>")`, e.g. `Cap`, `SparkLend`, and every `*Meta` adapter); only `SparkLend_` is routed by prefix (`_startsWith`). If you see `Unknown adapter type: <Name>`, your config entry name doesn't exactly match a dispatch branch (and isn't covered by that prefix) — fix by adding the missing branch in `_deployAdapter`. When adding a new single-instance adapter, add an `_equals(adapterName, "<Name>")` branch; the `SparkLend` branch shows the combined exact-match + prefix pattern used for families that may later grow multiple instances:
 
 ```solidity
 if (_equals(adapterName, "SparkLend") || _startsWith(adapterName, "SparkLend_")) {
@@ -1178,7 +1176,7 @@ Workflow for adding a new protocol adapter or a new instance of an existing prot
 2. **Write the unit test** under `test/balances/protocols/<Protocol>.t.sol`. Cover: constructor, `underlyingAssetsSupported`, zero balance, non-zero balance, asset filter.
 3. **Write the fork test** under `test/balances/protocols/fork/<Protocol>.fork.t.sol`. Cover: real on-chain position, real reward accruals, asset filter at a pinned block.
 4. **Add to `AdapterConsistency.t.sol`** if the protocol has non-trivial edge cases the existing cross-adapter invariants don't cover (zero balance handling, debt positions, asset filter).
-5. **Import + dispatch in `04_DeployBalanceAdapters.s.sol`**: add `import`, add `_deployIfEnabled("<Protocol>")` to `run()`, add an `_equals(adapterName, "<Protocol>")` branch in `_deployAdapter` (use a `_startsWith(adapterName, "<Protocol>_")` prefix branch only for genuinely multi-instance families, as `SparkLend`/`ERC4626Wrap` do), and a `_deploy<Protocol>()` helper that reads params.
+5. **Import + dispatch in `04_DeployBalanceAdapters.s.sol`**: add `import`, add `_deployIfEnabled("<Protocol>")` to `run()`, add an `_equals(adapterName, "<Protocol>")` branch in `_deployAdapter` (use a `_startsWith(adapterName, "<Protocol>_")` prefix branch only for genuinely multi-instance families, as `SparkLend` does), and a `_deploy<Protocol>()` helper that reads params.
 6. **Register via nav-config.** Add the `<Protocol>` key to `nav-config/balance-adapters/<chainId>.json` (or `nav-config/meta-balance-adapters/<chainId>.json`) so `06_Configure.s.sol` registers the deployed adapter.
 7. **Add config entries:** deploy config in `contracts-deployment-config/balance-adapters/<chainId>.json` (plain) or `contracts-deployment-config/meta-balance-adapters/<chainId>.json` (meta), plus the NAV registration key in `nav-config/balance-adapters/<chainId>.json` (plain) or `nav-config/meta-balance-adapters/<chainId>.json` (meta, with `instances`/`instancesRaw`).
 8. **Run full test suite.** `forge test` non-fork + fork must both be green before pushing.

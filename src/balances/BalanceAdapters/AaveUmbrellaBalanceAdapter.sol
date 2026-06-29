@@ -6,6 +6,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -234,7 +235,7 @@ contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
             if (bare == address(0)) continue;
             if (!_passesFilter(bare, assetFilter)) continue;
 
-            INAVCalculator.Asset memory assetMeta = _findRegisteredAsset(registered, bare);
+            (INAVCalculator.Asset memory assetMeta,) = RegisteredAssetLib.find(registered, bare);
             if (assetMeta.asset == address(0)) continue;
 
             // Staked-token leg(s): split by withdrawability. isLocked = non-withdrawable. The only withdrawable
@@ -460,18 +461,6 @@ contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
 
     function _passesFilter(address asset, address assetFilter) internal pure returns (bool) {
         return assetFilter == address(0) || assetFilter == asset;
-    }
-
-    function _findRegisteredAsset(INAVCalculator.Asset[] memory registered, address asset)
-        internal
-        pure
-        returns (INAVCalculator.Asset memory)
-    {
-        uint256 n = registered.length;
-        for (uint256 i; i < n; ++i) {
-            if (registered[i].asset == asset) return registered[i];
-        }
-        return INAVCalculator.Asset({asset: address(0), symbol: "", decimals: 0});
     }
 
     function _contains(address[] memory arr, uint256 length, address needle) internal pure returns (bool) {

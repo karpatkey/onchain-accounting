@@ -82,12 +82,14 @@ library PriceFeedLib {
         int256 bestPrice;
         uint256 bestTime;
         uint8 bestDecimals;
+        bool bestRateOnly; // winner so far is a rate-only feed (no push timestamp); a real-timestamp feed outranks it
         winnerIdx = type(uint256).max;
 
         for (uint256 i; i < len; ++i) {
             IPrices.PriceFeedConfig storage cfg = configs[i];
             int256 rawPrice;
             uint256 updatedAt;
+            bool rateOnly; // Custom feed with no push timestamp (latestRoundData.updatedAt == 0)
 
             if (cfg.priceType == IPrices.PriceType.Custom) {
                 uint256 customPrice;
@@ -107,14 +109,10 @@ library PriceFeedLib {
                 ) {
                     lrdUpdatedAt = u;
                 } catch {} // reverted: treat as no-timestamp oracle; sentinel updatedAt applied below
-                // KNOWN INCONSISTENCY (dormant): the block.timestamp-1 sentinel below makes a rate-only custom
-                // feed (latestRoundData.updatedAt == 0) rank by near-current freshness, so it can OUT-rank a
-                // co-configured Chainlink feed updated a few seconds ago — the opposite of the IPrices
-                // .PriceFeedConfig intent ("rate-only feeds participate but yield to any feed with a real push
-                // timestamp"). No deployed custom feed currently returns updatedAt == 0 (each derives a real
-                // timestamp from its Chainlink leg), so this is latent, not active. A correct fix tiers selection
-                // (real-timestamp feeds outrank rate-only ones) and requires regenerating the PriceFeedLib CREATE2
-                // pin — deferred to a dedicated change + team decision on the intended tie-break.
+                // A rate-only feed (no push timestamp) PARTICIPATES — the block.timestamp-1 sentinel clears the
+                // heartbeat gate below — but YIELDS to any feed with a real push timestamp (see the tiering at the
+                // winner check, per IPrices.PriceFeedConfig). The sentinel is only for gate-passing, not ranking.
+                rateOnly = lrdUpdatedAt == 0;
                 updatedAt = lrdUpdatedAt == 0 ? (block.timestamp > 0 ? block.timestamp - 1 : 0) : lrdUpdatedAt;
             } else {
                 int256 answer;
@@ -142,10 +140,17 @@ library PriceFeedLib {
 
             ++healthyFeedCount;
 
-            if (winnerIdx == type(uint256).max || effectiveTime > bestTime) {
+            // Tiering (IPrices.PriceFeedConfig): a real-timestamp feed always outranks a rate-only one; within
+            // the same class the largest effectiveTime wins. So a rate-only custom feed can never override a fresh
+            // Chainlink feed merely via the block.timestamp-1 sentinel.
+            bool wins = winnerIdx == type(uint256).max // first healthy feed
+                || (bestRateOnly && !rateOnly) // a real-timestamp feed beats the current rate-only leader
+                || (bestRateOnly == rateOnly && effectiveTime > bestTime); // same class: freshest wins
+            if (wins) {
                 bestTime = effectiveTime;
                 bestPrice = rawPrice;
                 bestDecimals = cfg.decimals;
+                bestRateOnly = rateOnly;
                 winnerIdx = i;
             }
         }

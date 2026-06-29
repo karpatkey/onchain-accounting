@@ -7,6 +7,7 @@ import {IPositionDescribable} from "./IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {LabelLib} from "./LabelLib.sol";
+import {RegisteredAssetLib} from "./RegisteredAssetLib.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 /// @title MetaBalanceAdapter
@@ -322,10 +323,7 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     /// @return asset The Asset struct (zeroed if not found).
     /// @return found True if the asset is registered in NAVCalculator.
     function _getAssetInfo(address asset) internal view returns (INAVCalculator.Asset memory, bool found) {
-        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
-        for (uint256 i = 0; i < reg.length; i++) {
-            if (reg[i].asset == asset) return (reg[i], true);
-        }
-        return (INAVCalculator.Asset({asset: address(0), symbol: "", decimals: 0}), false);
+        // Shared registry lookup (RegisteredAssetLib.find) — one find implementation across the layer.
+        return RegisteredAssetLib.find(NAV_CALCULATOR.getRegisteredAssets(), asset);
     }
 }

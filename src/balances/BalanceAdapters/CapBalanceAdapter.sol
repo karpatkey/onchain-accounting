@@ -242,23 +242,11 @@ contract CapBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     }
 
     /// @notice Combined USDC equivalent of cUSD + stcUSD; used by the no-arg balance getters.
-    /// @dev Quotes the burn on the *combined* cUSD total in one call (cUSD balance + stcUSD→cUSD), so the
-    ///      aggregate getter stays exact. The NAV `getAdapterPositions` path values each leg separately (the
-    ///      two may differ from this combined figure by at most burn-quote rounding).
+    /// @dev Sums the SAME per-leg burn quotes as the NAV `getAdapterPositions` path (cUSD leg + stcUSD leg), so the
+    ///      aggregate getter equals the per-position sum exactly — no burn-quote-rounding divergence between the two
+    ///      reporting surfaces (vigilo L-01).
     function _calculateBalance(address account) internal view returns (uint256) {
-        uint256 cUsdBalance = IERC20(address(CUSD)).balanceOf(account);
-        uint256 stcUsdBalance = IERC20(address(STCUSD)).balanceOf(account);
-
-        uint256 stcUsdToCUsd = 0;
-        if (stcUsdBalance > 0) {
-            stcUsdToCUsd = STCUSD.convertToAssets(stcUsdBalance);
-        }
-
-        uint256 totalCUsd = cUsdBalance + stcUsdToCUsd;
-        if (totalCUsd == 0) return 0;
-
-        (uint256 usdcAmount,) = CUSD.getBurnAmount(USDC, totalCUsd);
-        return usdcAmount;
+        return _cUsdLegUsdc(account) + _stcUsdLegUsdc(account);
     }
 
     /// @notice Looks up asset metadata from the NAVCalculator registry.

@@ -25,6 +25,16 @@ interface IAavePoolAddressesProvider {
 ///         to bytes32). Within an instance, reserves are enumerated trustlessly via `getAllReservesTokens()`, so
 ///         reserve tokens are NOT separate coordinates. Emits up to two legs per reserve (Supply/Collateral +
 ///         Borrow), matching the per-instance `AaveV3Instance` adapter. See ADR 0010.
+/// @dev **Instance set is a governed allowlist — not auto-enumerated.** Aave exposes an on-chain
+///      `PoolAddressesProviderRegistry` (mainnet `0xbaA999AC55EAce41CcAE355c77809e68Bb345170`,
+///      `getAddressesProvidersList()`) that lists registered markets, and this adapter could in principle read it to
+///      avoid governance seeding instances. We deliberately do NOT: the active set stays the MANAGER-curated
+///      `bytes32[]` on NAVCalculator. Rationale — (1) NAV integrity: balances are read trustlessly from the instance,
+///      so auto-including arbitrary markets would let an untrusted instance report a fabricated balance in a
+///      NAV-registered asset; the allowlist is the mitigation. (2) The registry is unreliable as a source of truth
+///      here anyway — it is stale (still lists the deprecated EtherFi market) and incomplete (omits the Horizon RWA
+///      market, whose provider was never added to it). Use the registry off-chain to *propose* instances; governance
+///      approves them. See BALANCE_ADAPTERS.md §6.1.
 contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
     bytes32 private constant PROTOCOL_BRAND = ProtocolIds.AAVE;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.AAVE_V3;

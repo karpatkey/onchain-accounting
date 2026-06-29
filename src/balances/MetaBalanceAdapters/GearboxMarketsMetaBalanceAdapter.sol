@@ -17,6 +17,16 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         See ADR 0010.
 /// @dev Reports one Supply leg per market (convertToAssets(balanceOf)) in the pool's underlying. Does not include Merkl rewards (same as
 ///      the per-market adapter).
+/// @dev **Instance set is a governed allowlist — not auto-enumerated.** Gearbox V3 exposes an on-chain
+///      `ContractsRegister` (mainnet `0xA50d4E7D8946a7c90652339CDBd262c375d54D99`, `getPools()`) listing the DAO's
+///      pools, and this adapter could read it to avoid governance seeding instances. We deliberately do NOT: the
+///      active set stays the MANAGER-curated `bytes32[]` on NAVCalculator. Rationale — (1) NAV integrity: balances
+///      are read trustlessly from the pool, so auto-including arbitrary pools would let an untrusted instance report
+///      a fabricated balance in a NAV-registered asset; the allowlist is the mitigation. (2) The register is the
+///      wrong set for us anyway — the KPK-curated markets this adapter actually serves are deployed off the main
+///      `ContractsRegister` and are not in its `getPools()`, while the register carries pools we do not use (incl.
+///      deprecated/zombie entries). Use the register off-chain to *propose* instances; governance approves them.
+///      See BALANCE_ADAPTERS.md §6.1.
 contract GearboxMarketsMetaBalanceAdapter is MetaBalanceAdapter {
     bytes32 private constant PROTOCOL_BRAND = ProtocolIds.GEARBOX;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.GEARBOX_V3;

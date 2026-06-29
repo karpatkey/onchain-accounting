@@ -40,6 +40,18 @@ interface IEVC {
 ///      A supply the account has enabled as EVC collateral is reported as `Collateral`; an unencumbered supply
 ///      (EulerEarn earn deposits, or core-eVault supply not enabled as collateral) is `Supplied` — determined via an
 ///      EVC `getCollaterals` lookup (under try/catch, so non-Euler/EulerEarn vaults degrade to `Supplied`).
+/// @dev **Instance set is a governed allowlist — not auto-enumerated.** Euler V2 exposes an on-chain
+///      `GenericFactory` (mainnet `0x29a56a1b8214D9Cf7c5561811750D5cBDb45CC8e`, `getProxyListLength()` /
+///      `getProxyListSlice()`) enumerating every deployed vault, and this adapter could read it to avoid governance
+///      seeding instances. We deliberately do NOT: the active set stays the MANAGER-curated `bytes32[]` on
+///      NAVCalculator. This is the strongest case for the allowlist because the factory is **fully permissionless** —
+///      anyone can deploy a vault (~850 exist, including junk like `eUNDEFINED-1`). Since balances are read
+///      trustlessly from the vault (`balanceOf`→`convertToAssets`, `debtOf`), auto-including factory output would let
+///      an attacker deploy a vault that reports a fabricated balance in a NAV-registered asset and inflate NAV; the
+///      registered-asset filter does not help (the attack is denominated in a registered asset). Iterating ~850
+///      vaults per account read is also impractical (the read path sizes buffers by `_metaInstanceTotal`). Use the
+///      factory off-chain to *propose* instances; governance approves each into the allowlist. See
+///      BALANCE_ADAPTERS.md §6.1.
 contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     bytes32 private constant PROTOCOL_BRAND = ProtocolIds.EULER;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.EULER;

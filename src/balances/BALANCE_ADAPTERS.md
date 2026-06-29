@@ -206,6 +206,26 @@ Most adapters pin a single instance (one vault, one pool, one market) in their c
   `addMetaBalanceAdapter` (seeded from config), and on re-runs reconciles the on-chain set against config by diffing
   `getMetaInstances` (current) vs the configured set, then emits the `addMetaInstances`/`removeMetaInstances` TX.
 
+- **Why a governed allowlist, not on-chain registry/factory enumeration.** Several of these protocols expose an
+  on-chain enumerator that lists every instance — Aave's `PoolAddressesProviderRegistry`
+  (`0xbaA999AC55EAce41CcAE355c77809e68Bb345170`), Gearbox's `ContractsRegister`
+  (`0xA50d4E7D8946a7c90652339CDBd262c375d54D99`), Euler's permissionless `GenericFactory`
+  (`0x29a56a1b8214D9Cf7c5561811750D5cBDb45CC8e`). It is tempting to have a meta-adapter read that list directly so
+  governance never has to seed instances. **We deliberately do not.** A meta-adapter reads an account's balance
+  *trustlessly from the instance contract* (`vault.balanceOf`→`convertToAssets`, `comet.balanceOf`, `dp.getUserReserveData`),
+  so auto-including whatever a factory emits is a **NAV-integrity hole**: anyone who can deploy an instance (Euler's
+  factory is fully permissionless — ~850 vaults, including junk like `eUNDEFINED-1`) could stand up a contract that
+  reports a fabricated balance in a *NAV-registered* asset and inflate NAV — the registered-asset filter does not
+  help, because the attack is denominated in a registered asset. The governed `bytes32[]` set on NAVCalculator is
+  exactly the **allowlist** that blocks this. Secondary reasons: (a) **bounded gas/DoS** — the read path sizes its
+  buffers by `_metaInstanceTotal` and fans out per instance, so iterating hundreds of factory entries per account
+  read is impractical; (b) **relevance** — a portfolio holds positions in a small curated subset, and the registries
+  are often the wrong set anyway (the KPK-curated Gearbox markets we use are *not* in Gearbox's `ContractsRegister`,
+  Aave's registry is both stale — still lists the deprecated EtherFi market — and incomplete — omits the Horizon RWA
+  market). These registries are the right tool **off-chain**: a script can read them to *propose* candidate instances,
+  but governance still approves each into the on-chain allowlist. The instance set therefore stays MANAGER-curated by
+  design. See the per-adapter docstrings (Aave V3 / Gearbox / Euler) for the specific registry each protocol exposes.
+
 ### 6.2 Human-readable labels — `IPositionDescribable`
 
 All adapters implement `IPositionDescribable` (which now declares only `protocolName()`):

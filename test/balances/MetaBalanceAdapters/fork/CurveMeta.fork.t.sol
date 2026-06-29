@@ -197,6 +197,9 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
     /// @notice Emitted positions carry a non-empty leaf label built from on-chain symbols.
     function test_positionLabels_crvUsdUsdc_gauge() public view {
         uint256 staked = _gaugeBalance(CRVUSD_USDC_GAUGE, CRVUSD_USDC_STAKER);
+        // Graceful skip: this pinned gauge staker currently holds 0 (position exited), so a hard non-zero
+        // assert would red CI on a stale pin. Pinned holders are refreshed via the integration-snapshot
+        // process, not by failing here. (Copilot PR #127.)
         if (staked == 0) return;
 
         INAVCalculator.PositionBalance[] memory pos =
@@ -210,6 +213,9 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
 
     function test_positionLabels_threepool() public view {
         uint256 walletLp = _lpBalance(THREEPOOL, THREEPOOL_HOLDER);
+        // Graceful skip: this pinned 3pool holder currently holds 0 LP (exited), so a hard non-zero assert
+        // would red CI on a stale pin. Pinned holders are refreshed via the integration-snapshot process,
+        // not by failing here. (Copilot PR #127.)
         if (walletLp == 0) return;
 
         INAVCalculator.PositionBalance[] memory pos =

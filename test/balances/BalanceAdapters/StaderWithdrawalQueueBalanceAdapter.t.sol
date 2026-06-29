@@ -283,7 +283,7 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_getAdapterPositions_perRequestLegsAndLabels() public {
         // Two requests of the SAME state (both pending/locked) must now emit TWO separate legs — one per request —
-        // each carrying its own request id in the last label, all sharing the static positionId.
+        // each carrying its own request id in positionInstanceId, all sharing the static positionId.
         manager.pushRequest(
             alice,
             7,

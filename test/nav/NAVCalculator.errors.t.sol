@@ -139,13 +139,17 @@ contract Mock_ManyLegsBalanceAdapter is IBalanceAdapter {
     {
         pos = new INAVCalculator.PositionBalance[](legCount);
         for (uint256 i; i < legCount; ++i) {
-            // Field-by-field assignment into the array element (not a 9-field struct literal) keeps this loop under
+            // Field-by-field assignment into the array element (not an 11-field struct literal) keeps this loop under
             // the via_ir stack limit. Writing straight to `pos[i]` (not via a local) makes the in-place mutation
             // unambiguous. isDebt/isLocked default false; positionInstanceId defaults to bytes32(0).
             pos[i].balanceAsset = _asset;
             pos[i].balanceAdapter = address(this);
             pos[i].amount = 1;
+            // Populate the full protocol taxonomy (brand/id/subId) so the mock models a realistic Uni/Pancake
+            // V3-style leg — the stable identity key uses protocolSubId, not protocolId alone.
+            pos[i].protocolBrand = bytes32("uniswap-mock");
             pos[i].protocolId = bytes32("uniswap-v3-mock");
+            pos[i].protocolSubId = bytes32("uniswap-v3-mock");
             pos[i].positionId = abi.encode(i);
             pos[i].positionKind = PositionKind.Supplied;
         }

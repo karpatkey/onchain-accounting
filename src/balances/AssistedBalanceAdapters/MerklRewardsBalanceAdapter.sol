@@ -37,20 +37,33 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
     ///                         root no longer matches `Distributor.getMerkleRoot()` (conservative stale handling).
     /// @param submittedAt      Timestamp of the most recent successful submission. Doubles as a freshness signal
     ///                         and a "first-time entry" check (zero ⇒ never submitted).
+    /// @param campaignId       Merkl campaign id for this (user, token) reward, from the API breakdown (display
+    ///                         coordinate only; NOT proof-backed — see {Allocation}). `bytes32(0)` if unspecified.
+    /// @param subCampaignId    Merkl sub-campaign id (display coordinate only). `bytes32(0)` if unspecified.
     struct CachedAllocation {
         uint256 cumulativeAmount;
         bytes32 root;
         uint64 submittedAt;
+        bytes32 campaignId;
+        bytes32 subCampaignId;
     }
 
-    /// @notice One (token, cumulativeAmount, proof) entry in a per-user replace submission.
+    /// @notice One (token, cumulativeAmount, proof, campaignId, subCampaignId) entry in a per-user replace submission.
     /// @param token            Reward token the leaf is for.
     /// @param cumulativeAmount Cumulative amount in the leaf (`amount` field per Merkl's leaf encoding).
     /// @param proof            Merkle proof from the Merkl API; verified against the live Distributor root.
+    /// @param campaignId       Merkl campaign id from the API `breakdowns[]` (a `bytes32`). DISPLAY/IDENTITY ONLY —
+    ///                         it rides into `positionInstanceId` and is NOT used for valuation or proof-verified
+    ///                         (the on-chain leaf is per-token, aggregated across campaigns). The reward `amount`
+    ///                         remains the proof-verified per-token total; the campaign pair only tags the position.
+    /// @param subCampaignId    Merkl sub-campaign id (a `bytes32`; encode/hash Merkl's identifier if not natively
+    ///                         32 bytes). Same display-only semantics as `campaignId`.
     struct Allocation {
         address token;
         uint256 cumulativeAmount;
         bytes32[] proof;
+        bytes32 campaignId;
+        bytes32 subCampaignId;
     }
 
     //
@@ -84,7 +97,13 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
     //
 
     event AllocationCached(
-        address indexed user, address indexed token, uint256 cumulativeAmount, bytes32 root, uint64 submittedAt
+        address indexed user,
+        address indexed token,
+        uint256 cumulativeAmount,
+        bytes32 root,
+        uint64 submittedAt,
+        bytes32 campaignId,
+        bytes32 subCampaignId
     );
     event AllocationCleared(address indexed user, address indexed token);
 
@@ -164,7 +183,14 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
         Allocation[] memory allocs = abi.decode(data, (Allocation[]));
         _clearUser(account);
         for (uint256 i; i < allocs.length; ++i) {
-            _submitProof(account, allocs[i].token, allocs[i].cumulativeAmount, allocs[i].proof);
+            _submitProof(
+                account,
+                allocs[i].token,
+                allocs[i].cumulativeAmount,
+                allocs[i].proof,
+                allocs[i].campaignId,
+                allocs[i].subCampaignId
+            );
         }
     }
 
@@ -304,7 +330,7 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
             if (!found) continue;
             uint256 bal = _unclaimed(account, tokens[i]);
             if (bal == 0) continue;
-            tmp[count++] = _row(meta, bal, pid);
+            tmp[count++] = _row(meta, bal, pid, _campaignInstanceId(account, tokens[i]));
         }
         positions = new INAVCalculator.PositionBalance[](count);
         for (uint256 i; i < count; ++i) {
@@ -317,9 +343,10 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
     /// @dev positionId is the Distributor (the claim target / trust anchor), NOT the reward token — the token is
     ///      already carried by `balanceAsset`, so encoding it here would be redundant with the reconciliation key.
     ///      Multiple reward tokens claimed from the same Distributor share this positionId and are distinguished by
-    ///      `balanceAsset.asset` (same model as Aave V3 = abi.encode(pool)). `positionInstanceId` is empty (no
-    ///      ephemeral per-item id — the reward token is the only sub-coordinate, and it lives in `balanceAsset`).
-    function _row(INAVCalculator.Asset memory asset, uint256 amount, bytes memory pid)
+    ///      `balanceAsset.asset` (same model as Aave V3 = abi.encode(pool)). `positionInstanceId` carries the
+    ///      assistant-submitted Merkl campaign coordinate (`keccak256(abi.encode(campaignId, subCampaignId))`, or
+    ///      `bytes32(0)` if unspecified) — display/identity only, NOT proof-backed and NOT part of the stable key.
+    function _row(INAVCalculator.Asset memory asset, uint256 amount, bytes memory pid, bytes32 instanceId)
         private
         view
         returns (INAVCalculator.PositionBalance memory row)
@@ -333,14 +360,33 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
         row.protocolSubId = PROTOCOL_SUB_ID;
         row.positionId = pid;
         row.positionKind = PositionKind.Rewards;
-        // isDebt, isLocked default false; positionInstanceId defaults to empty bytes (no ephemeral id for Merkl).
+        row.positionInstanceId = instanceId;
+        // isDebt, isLocked default false.
+    }
+
+    /// @dev The position's ephemeral instance id from the cached Merkl campaign coordinate:
+    ///      `keccak256(abi.encode(campaignId, subCampaignId))`, or `bytes32(0)` when no campaign was submitted (both
+    ///      zero) so a tag-less reward is not given a spurious non-zero instance id. The campaign pair is
+    ///      assistant-submitted and NOT proof-verified — it tags the position for display/granularity and never
+    ///      affects the (proof-verified per-token) reward `amount`.
+    function _campaignInstanceId(address user, address token) private view returns (bytes32) {
+        CachedAllocation storage a = allocations[user][token];
+        if (a.campaignId == bytes32(0) && a.subCampaignId == bytes32(0)) return bytes32(0);
+        return keccak256(abi.encode(a.campaignId, a.subCampaignId));
     }
 
     //
     // Internal — write
     //
 
-    function _submitProof(address user, address token, uint256 cumulativeAmount, bytes32[] memory proof) internal {
+    function _submitProof(
+        address user,
+        address token,
+        uint256 cumulativeAmount,
+        bytes32[] memory proof,
+        bytes32 campaignId,
+        bytes32 subCampaignId
+    ) internal {
         if (user == address(0) || token == address(0)) revert InvalidArguments();
 
         bytes32 root = IMerklDistributor(DISTRIBUTOR).getMerkleRoot();
@@ -363,8 +409,10 @@ contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescriba
         a.cumulativeAmount = cumulativeAmount;
         a.root = root;
         a.submittedAt = uint64(block.timestamp);
+        a.campaignId = campaignId;
+        a.subCampaignId = subCampaignId;
 
-        emit AllocationCached(user, token, cumulativeAmount, root, a.submittedAt);
+        emit AllocationCached(user, token, cumulativeAmount, root, a.submittedAt, campaignId, subCampaignId);
     }
 
     /// @dev Delete a user's entire cached allocation set (storage only, no event). Shared by `submitProofs`/batch as

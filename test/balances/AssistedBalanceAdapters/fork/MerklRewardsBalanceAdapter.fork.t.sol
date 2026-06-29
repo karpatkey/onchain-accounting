@@ -85,7 +85,9 @@ contract MerklRewardsBalanceAdapterForkTest is BalanceAdapterTestBase {
         allocs[0] = MerklRewardsBalanceAdapter.Allocation({
             token: MAINNET_DAI,
             cumulativeAmount: 1_000_000 ether,
-            proof: new bytes32[](0)
+            proof: new bytes32[](0),
+            campaignId: bytes32(0),
+            subCampaignId: bytes32(0)
         });
         vm.expectRevert(MerklRewardsBalanceAdapter.InvalidProof.selector);
         vm.prank(owner);

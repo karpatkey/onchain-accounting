@@ -3,7 +3,6 @@ pragma solidity ^0.8;
 
 import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {BalancerV2PoolLib, IBalancerV2Pool} from "src/balances/MetaBalanceAdapters/balancer/BalancerV2PoolLib.sol";
@@ -16,7 +15,7 @@ import {BalancerV2PoolLib, IBalancerV2Pool} from "src/balances/MetaBalanceAdapte
 ///         (configured via `metaInstancesRaw`), since V2 identifies pools by poolId (the BPT address is its top
 ///         160 bits). Emits one `Supply` leg per underlying pool token. The Balancer V2 Vault is the chain-level
 ///         constant pinned in the constructor. Identity derived on-chain (positionId = abi.encode(bytes32 poolId);
-///         name = BPT `name()`). See ADR 0010.
+///         label leaf = the pool's underlying token symbols joined with "/"). See ADR 0010.
 /// @dev Valuation = instantaneous on-chain amounts (ADR 0017): this adapter reports the position's current
 ///      pro-rata share of the pool's on-chain Vault balances as per-token `amount`s, which NAVCalculator prices
 ///      with external oracles — it does NOT compute a manipulation-resistant "fair" value. Imbalancing the pool
@@ -103,16 +102,13 @@ contract BalancerV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev Returns `["AMM Liquidity Pool", <BPT name>]`; the leaf is "" if the BPT's `name()` reverts.
+    /// @dev Returns `["AMM Liquidity Pool", "<sym0>/<sym1>/…"]` — the leaf is the pool's underlying token symbols
+    ///      joined with "/" (e.g. "USDC/USDT/DAI"), excluding the pool's own pre-minted BPT (composable-stable).
+    ///      Per-token fail-open: a token whose `symbol()` reverts (or has no code) contributes "?". A revert in the
+    ///      Vault pool-token read (e.g. a malformed/removed instance) fails open at the NAV layer (`_safeStringArray`).
     function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
         bytes32 poolId = abi.decode(pid, (bytes32));
-        address bpt = address(uint160(uint256(poolId) >> 96));
-        string memory leaf;
-        try IERC20Metadata(bpt).name() returns (string memory n) {
-            leaf = n;
-        } catch {
-            leaf = "";
-        }
-        return _labels("AMM Liquidity Pool", leaf);
+        address bpt = BalancerV2PoolLib.bptOf(poolId);
+        return _labels("AMM Liquidity Pool", _joinTokenSymbols(BalancerV2PoolLib.poolTokens(VAULT, poolId, bpt)));
     }
 }

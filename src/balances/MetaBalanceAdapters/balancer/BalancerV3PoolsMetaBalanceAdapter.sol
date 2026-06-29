@@ -3,7 +3,6 @@ pragma solidity ^0.8;
 
 import {MetaBalanceAdapter} from "../../MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {IStablePool} from "src/balances/MetaBalanceAdapters/balancer/IBalancerV3.sol";
@@ -93,15 +92,11 @@ contract BalancerV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev Returns `["AMM Liquidity Pool", <pool name>]`; the leaf is "" if the pool's `name()` reverts.
+    /// @dev Returns `["AMM Liquidity Pool", "<sym0>/<sym1>/…"]` — the leaf is the pool's underlying token symbols
+    ///      joined with "/" (e.g. "WETH/wstETH"). Per-token fail-open: a token whose `symbol()` reverts (or has no
+    ///      code) contributes "?". A revert in the pool-token read fails open at the NAV layer (`_safeStringArray`).
     function positionLabels(bytes calldata positionId) external view virtual override returns (string[] memory) {
         address pool = abi.decode(positionId, (address));
-        string memory leaf;
-        try IERC20Metadata(pool).name() returns (string memory n) {
-            leaf = n;
-        } catch {
-            leaf = "";
-        }
-        return _labels("AMM Liquidity Pool", leaf);
+        return _labels("AMM Liquidity Pool", _joinTokenSymbols(IStablePool(pool).poolTokens()));
     }
 }

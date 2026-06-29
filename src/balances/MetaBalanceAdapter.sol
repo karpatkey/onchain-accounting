@@ -16,6 +16,11 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 /// @dev The instance set lives on NAVCalculator (ADR 0010). The adapter reads its own set via
 ///      `NAV_CALCULATOR.getMetaInstances(address(this))` and holds no instance state or admin functions of its
 ///      own — it stays immutable. `getAdapterPositionsForInstances` is also exposed for explicit/off-chain queries.
+/// @notice Minimal ERC20 `symbol()` view used by `_joinTokenSymbols` for AMM-pool label leaves.
+interface IERC20SymbolView {
+    function symbol() external view returns (string memory);
+}
+
 abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribable {
     //
     // State
@@ -261,6 +266,28 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     ///      assisted adapters keyed on abi.encode(pool); see UniswapV3PoolsBalanceAdapter.)
     function _instancePositionId(bytes32 instance) internal view virtual returns (bytes memory) {
         return abi.encode(_toAddress(instance));
+    }
+
+    /// @notice Joins the ERC20 symbols of `tokens` with "/" — e.g. `[USDC, WETH]` → `"USDC/WETH"`,
+    ///         `[USDC, USDT, DAI]` → `"USDC/USDT/DAI"`.
+    /// @dev Fail-open (runs in the lazy, verbose-only `positionLabels` path): a token with no code or whose
+    ///      `symbol()` reverts yields `"?"` rather than reverting the whole labels read. Mirrors
+    ///      `CurvePoolLib.coinSymbols`; used by the AMM-pool meta-adapters whose label leaf is the underlying
+    ///      token set (Balancer V2/V3). Returns "" for an empty `tokens` array.
+    function _joinTokenSymbols(address[] memory tokens) internal view returns (string memory result) {
+        for (uint256 i; i < tokens.length; ++i) {
+            string memory sym;
+            if (tokens[i].code.length == 0) {
+                sym = "?";
+            } else {
+                try IERC20SymbolView(tokens[i]).symbol() returns (string memory s) {
+                    sym = s;
+                } catch {
+                    sym = "?";
+                }
+            }
+            result = i == 0 ? sym : string.concat(result, "/", sym);
+        }
     }
 
     /// @notice Looks up an asset's registry metadata.

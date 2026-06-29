@@ -15,6 +15,12 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 ///      - `ratio` comes from the ankrETH contract's `ratio()` function (18 decimals, ankrETH-per-ETH)
 ///      - `ETH/USD` comes from Chainlink oracle (8 decimals)
 ///      Result is scaled to 8 decimals: `price = ETH/USD * 1e18 / ratio`.
+/// @dev Intentionally NOT a {BaseCustomPriceFeed} subclass: `ratio()` is ankrETH-PER-ETH, so the rate enters as a
+///      DENOMINATOR (`* 1e18 / ratio`) with the division kept last for precision. BaseCustomPriceFeed assumes the
+///      rate is a direct 18-decimal multiplier (`rate * base / 1e18`); expressing this feed that way would require a
+///      pre-inverted `_rate() = 1e36 / ratio`, whose intermediate floor would shift the result by up to 1 unit. So
+///      this feed keeps its own division-last `_compute`. (The direct-multiplier rate feeds — NXM, ezETH_L2 — do
+///      use BaseCustomPriceFeed.)
 /// @author KPK
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
 contract ankrETH_CustomPriceFeed is ICustomPriceFeed {

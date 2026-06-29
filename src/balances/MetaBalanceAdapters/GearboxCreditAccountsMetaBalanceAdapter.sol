@@ -215,15 +215,23 @@ contract GearboxCreditAccountsMetaBalanceAdapter is MetaBalanceAdapter {
 
     /// @inheritdoc MetaBalanceAdapter
     /// @dev Returns `["Credit Account", <leaf>]` where the leaf is the credit manager's `name()` (e.g.
-    ///      "Gearbox USDC v3"), or "" if unreadable. Returns an empty array for a short positionId.
+    ///      "Trade WETH Tier 1"). If `name()` is missing/empty, falls back to the underlying asset symbol
+    ///      (e.g. "USDC") via `underlying()` — the same accessor the position read uses. Leaf is "" (→ just
+    ///      `["Credit Account"]`) only if both are unreadable. Returns an empty array for a short positionId.
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
         if (pid.length < 32) return new string[](0);
         address ca = abi.decode(pid, (address));
-        string memory leaf = "";
         address cm = _creditManagerOf(ca);
-        if (cm != address(0)) {
-            try ICreditManagerV3(cm).name() returns (string memory n) {
-                leaf = n;
+        if (cm == address(0)) return _labels("Credit Account", "");
+
+        string memory leaf;
+        try ICreditManagerV3(cm).name() returns (string memory n) {
+            leaf = n;
+        } catch {}
+
+        if (bytes(leaf).length == 0) {
+            try ICreditManagerV3(cm).underlying() returns (address u) {
+                if (u != address(0)) leaf = _tokenSymbol(u);
             } catch {}
         }
         return _labels("Credit Account", leaf);

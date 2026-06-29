@@ -3,7 +3,6 @@ pragma solidity ^0.8;
 
 import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
@@ -112,16 +111,12 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev Returns `["Vault", <leaf>]` where the leaf is the vault's ERC20 name ("" if unreadable). Returns an
-    ///      empty array for a short positionId.
-    function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
+    /// @dev Returns a single-element `["Vault"]`. StakeWise V3 vaults are minimal proxies with no on-chain
+    ///      ERC20 `name()`/`symbol()` (the human vault name lives off-chain via IPFS), so there is no leaf to
+    ///      derive — the category alone is the label. Returns an empty array for a short positionId.
+    function positionLabels(bytes calldata pid) external pure override returns (string[] memory) {
         if (pid.length < 32) return new string[](0);
-        address vault = abi.decode(pid, (address));
-        string memory leaf = "";
-        try IERC20Metadata(vault).name() returns (string memory n) {
-            leaf = n;
-        } catch {}
-        return _labels("Vault", leaf);
+        return _labels("Vault", "");
     }
 
     function _row(INAVCalculator.Asset memory asset, uint256 amount, bool isDebt, bytes memory pid, PositionKind kind)

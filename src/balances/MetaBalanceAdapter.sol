@@ -276,17 +276,21 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     ///      token set (Balancer V2/V3). Returns "" for an empty `tokens` array.
     function _joinTokenSymbols(address[] memory tokens) internal view returns (string memory result) {
         for (uint256 i; i < tokens.length; ++i) {
-            string memory sym;
-            if (tokens[i].code.length == 0) {
-                sym = "?";
-            } else {
-                try IERC20SymbolView(tokens[i]).symbol() returns (string memory s) {
-                    sym = s;
-                } catch {
-                    sym = "?";
-                }
-            }
+            string memory sym = _tokenSymbol(tokens[i]);
             result = i == 0 ? sym : string.concat(result, "/", sym);
+        }
+    }
+
+    /// @notice Reads a single token's ERC20 symbol, fail-open: `"?"` if the token has no code or `symbol()` reverts.
+    /// @dev The explicit codesize check matters because a high-level call to a codeless address reverts via
+    ///      Solidity's `extcodesize` check, which `try/catch` does NOT catch (mirrors `CurvePoolLib`). Used for
+    ///      single-token label leaves (e.g. an adapter's underlying-asset fallback) and by `_joinTokenSymbols`.
+    function _tokenSymbol(address token) internal view returns (string memory) {
+        if (token.code.length == 0) return "?";
+        try IERC20SymbolView(token).symbol() returns (string memory s) {
+            return s;
+        } catch {
+            return "?";
         }
     }
 

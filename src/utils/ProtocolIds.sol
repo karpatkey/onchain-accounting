@@ -23,11 +23,11 @@ pragma solidity ^0.8;
 ///        CURVE_POOL                              → (address pool)
 ///        CURVE_GAUGE                             → (address gauge)
 ///        BALANCER_V2_POOL                → (bytes32 poolId)
-///        UNISWAP_V3 / PANCAKESWAP_V3     → (address npm, uint256 tokenId)
+///        UNISWAP_V3 / PANCAKESWAP_V3     → (address pool); NFT tokenId in positionInstanceId (bytes32(tokenId))
 ///        UNISWAP_V2 / PANCAKESWAP_V2     → (address pair)
 ///        COMPOUND_V3 / FLUID_FTOKENS     → (address market)
 ///        MERKL                           → (address distributor) — reward token is in balanceAsset, not positionId
-///        NEXUS_MUTUAL_STAKING            → (uint256 tokenId, uint256 poolId)
+///        NEXUS_MUTUAL_STAKING            → (address stakingPool); StakingNFT tokenId in positionInstanceId
 ///        STADER_WITHDRAWAL              → (address userWithdrawalManager) — static coordinate
 ///        KELP_WITHDRAWAL                → (address withdrawalManager)     — static coordinate; payout asset in balanceAsset
 ///        LIDO_WITHDRAWAL                → (address withdrawalQueue)        — static coordinate

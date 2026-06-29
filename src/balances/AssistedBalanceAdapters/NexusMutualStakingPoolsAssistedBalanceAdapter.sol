@@ -36,7 +36,9 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      whose `tokenInfo` owner is not the account (fail-loud writes); reads instead **discard** an id no longer
 ///      owned (fail-open). See `docs/decisions/0015-assisted-balance-adapter-family.md` (Merkl precedent, ADR 0007).
 ///      The no-arg balance getters (`getAdapterBalances`/`getAdapterBalanceForAsset`) return the summed NXM total
-///      across the account's owned, cached positions.
+///      across the account's owned, cached positions, applying the **same** filters as the NAV path
+///      (`getAdapterPositions`) — ownership re-verified live AND the staking pool resolves — so the two views always
+///      agree (no phantom reconciliation mismatch).
 contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedNftCacheAdapter, IPositionDescribable {
     using Strings for uint256;
 
@@ -282,20 +284,38 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedNftCacheAdapte
     // Internal — valuation
     //
 
-    /// @dev The cached tokenIds still owned by `account`, re-verified live via `StakingNFT.tokenInfo`. Discards
-    ///      (never reverts) ids that were withdrawn/transferred away — the assistant can only under-report.
+    /// @dev The cached tokenIds that contribute to NAV for `account`: still owned (re-verified live via
+    ///      `StakingNFT.tokenInfo`) AND whose staking pool resolves. Discards (never reverts) ids that were
+    ///      withdrawn/transferred away — the assistant can only under-report.
+    /// @dev The pool-resolution filter (`stakingPool(poolId) != 0`) is applied here so this convenience-getter path
+    ///      matches `getAdapterPositions`/`tokenLegs` **exactly**: that path drops a token whose `poolId` does not
+    ///      resolve to a pool (line in `tokenLegs`: `if (pool == address(0)) return none;`). Without the same filter
+    ///      here, `getAdapterBalances`/`getAdapterBalanceForAsset` would count a token with an unresolvable pool that
+    ///      NAV (which reads only `getAdapterPositions`) drops — making the two views disagree and tripping off-chain
+    ///      reconciliation that cross-checks `sum(getAdapterPositions) == getAdapterBalances`. `tokenInfo` already
+    ///      returns the `poolId`, so the filter costs one extra `stakingPool` read per cached id on this non-NAV path.
     function _ownedCachedIds(address account) internal view returns (uint256[] memory ids) {
         uint256[] memory cached = _cachedTokenIds(account);
         uint256[] memory found = new uint256[](cached.length);
         uint256 n;
         for (uint256 i; i < cached.length; ++i) {
-            try INexusStakingNFT(STAKING_NFT).tokenInfo(cached[i]) returns (uint256, address owner) {
-                if (owner == account) found[n++] = cached[i];
+            try INexusStakingNFT(STAKING_NFT).tokenInfo(cached[i]) returns (uint256 poolId, address owner) {
+                if (owner == account && _poolResolves(poolId)) found[n++] = cached[i];
             } catch {}
         }
         ids = new uint256[](n);
         for (uint256 i; i < n; ++i) {
             ids[i] = found[i];
+        }
+    }
+
+    /// @dev True if `poolId` resolves to a non-zero staking-pool address — the same gate `tokenLegs` applies before
+    ///      emitting a leg. Never reverts (a reverting/unresolvable poolId reads as not-resolved, i.e. excluded).
+    function _poolResolves(uint256 poolId) private view returns (bool) {
+        try INexusStakingViewer(STAKING_VIEWER).stakingPool(poolId) returns (address pool) {
+            return pool != address(0);
+        } catch {
+            return false;
         }
     }
 

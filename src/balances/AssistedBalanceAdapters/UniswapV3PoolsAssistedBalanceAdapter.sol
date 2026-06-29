@@ -48,6 +48,14 @@ interface IUniswapV3Factory {
 ///      currently owned by the account (fail-loud writes); reads instead **discard** an id whose ownership changed or
 ///      whose NFT was burned (fail-open, so a single stale id never zeroes the whole account). See
 ///      `docs/decisions/0015-assisted-balance-adapter-family.md` (and the Merkl precedent, ADR 0007).
+/// @dev **Both pool tokens must be registered in NAVCalculator** or the WHOLE position is dropped — not just the
+///      unregistered leg ({positionLegs} returns empty when either `token0` or `token1` is unregistered). This is
+///      intentional and structural to an LP position: NAV values an LP from the *sum* of its two underlying legs,
+///      so a half-priced LP (one token registered, the other not) would silently understate that position rather
+///      than report a partial value, which is more misleading than omitting it. The operational rule is therefore
+///      to **always register both sides of every pool** an account LPs in before relying on its NAV. Consistent
+///      with the per-asset registry filter used everywhere else; a missing registration is a config gap to fix,
+///      not a valuation mode. (PancakeSwap V3 inherits this via the subclass.)
 /// @dev Valuation = **instantaneous on-chain amounts** (ADR 0017). The in-range split is computed from the pool's
 ///      current `slot0().sqrtPriceX96`/`tick` (read live via the `_slot0` hook) and the position's `liquidity` — the
 ///      true token0/token1 composition you would withdraw at this block — and fees are the full unclaimed amount

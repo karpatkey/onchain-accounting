@@ -5,6 +5,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 
 import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
+import {AssistedNftCacheAdapter} from "src/balances/AssistedBalanceAdapters/AssistedNftCacheAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
@@ -29,7 +30,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      Emits ONE native-ETH `Supplied` leg per owned cached withdrawal request, all sharing a single static
 ///      positionId; each leg's `isLocked` reflects that request's own state (finalized → `false`, pending → `true`)
 ///      and its `tokenId` (the WithdrawRequestNFT id) rides in the typed `positionInstanceId`, never in `positionId`.
-contract EtherFiWithdrawalQueueAssistedBalanceAdapter is AssistedBalanceAdapter, IPositionDescribable {
+contract EtherFiWithdrawalQueueAssistedBalanceAdapter is AssistedNftCacheAdapter, IPositionDescribable {
     //
     // State
     //
@@ -38,8 +39,9 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapter is AssistedBalanceAdapter,
     bytes32 private constant PROTOCOL_ID = ProtocolIds.ETHERFI;
     bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.ETHERFI_WITHDRAWAL;
 
-    /// @notice Hard cap on cached tokenIds per account. `_ethOwed` iterates the whole array on every NAV read,
-    ///         and an OOG there is NOT caught by NAVCalculator's try/catch — a bloated cache would brick the
+    /// @notice Hard cap on cached tokenIds per account (returned by the {_maxTokenIds} hook the shared
+    ///         {AssistedNftCacheAdapter} base enforces at submit time). `_ethOwed` iterates the whole set on every NAV
+    ///         read, and an OOG there is NOT caught by NAVCalculator's try/catch — a bloated cache would brick the
     ///         account's NAV scan. Bounding the cache at submit time keeps the read gas-bounded; the assistant must
     ///         GC claimed ids (`clearTokenId`) to stay under it. A real account never approaches 256 open requests.
     uint256 public constant MAX_TOKEN_IDS = 256;
@@ -55,20 +57,6 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapter is AssistedBalanceAdapter,
 
     /// @notice NAVCalculator — used to look up the registered native-ETH Asset metadata when emitting positions.
     INAVCalculator public immutable NAV_CALCULATOR;
-
-    /// @notice Candidate withdrawal-request tokenIds cached per account (the only thing the assistant supplies).
-    mapping(address account => uint256[] tokenIds) private _tokenIds;
-
-    /// @dev `idxPlus1` = index of `tokenId` in `_tokenIds[account]` plus 1. Zero ⇒ not present (dedup + O(1) removal).
-    mapping(address account => mapping(uint256 tokenId => uint256)) private _tokenIdIdxPlus1;
-
-    //
-    // Events
-    //
-
-    event TokenIdSubmitted(address indexed account, uint256 indexed tokenId);
-    event TokenIdCleared(address indexed account, uint256 indexed tokenId);
-    event AccountCleared(address indexed account);
 
     //
     // Constructor
@@ -88,7 +76,7 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapter is AssistedBalanceAdapter,
         address navCalculator_,
         address admin_,
         address assistant_
-    ) AssistedBalanceAdapter(admin_, assistant_) {
+    ) AssistedNftCacheAdapter(admin_, assistant_) {
         if (
             withdrawRequestNft_ == address(0) || liquidityPool_ == address(0) || underlyingToken_ == address(0)
                 || navCalculator_ == address(0)
@@ -106,74 +94,32 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapter is AssistedBalanceAdapter,
     }
 
     //
-    // Mutators (onlyRole(ASSISTANT_ROLE))
+    // Cache hooks (AssistedNftCacheAdapter)
+    //
+    // The per-account tokenId set and its CRUD — submitTokenIds / submitTokenIdsBatch / clearTokenId / clearAccount /
+    // tokenIdsOf, the events, the cap enforcement, and the delta replace — live in the shared AssistedNftCacheAdapter
+    // base. This adapter supplies only the ownership read and the cap.
     //
 
-    /// @notice Submit `account`'s **complete** set of candidate withdrawal-request tokenIds — this **replaces** the
-    ///         account's cached set entirely (the prior ids are dropped first), so the assistant always submits the
-    ///         full list, not a delta. Duplicates within the list collapse (dedup). **Reverts** `NotTokenOwner` for any
-    ///         id whose `ownerOf` is not `account` (or that reverts/burned), and `TokenIdCacheFull` past
-    ///         `MAX_TOKEN_IDS` — writes are fail-loud (matching the sibling assisted NFT-id adapters), and because they
-    ///         revert atomically, a bad list leaves the prior set untouched. Correctness does not depend on the
-    ///         ownership check (reads re-verify every time and value only live, owned, valid requests).
-    function submitTokenIds(address account, uint256[] calldata tokenIds) external onlyRole(ASSISTANT_ROLE) {
-        _submit(account, abi.encode(tokenIds)); // friendly typed wrapper → shared replace chokepoint (base)
-    }
-
-    /// @notice Batch variant: for each account, its sublist **replaces** that account's cached set. `accounts` and
-    ///         `tokenIds` must have the same length.
-    function submitTokenIdsBatch(address[] calldata accounts, uint256[][] calldata tokenIds)
-        external
-        onlyRole(ASSISTANT_ROLE)
-    {
-        bytes[] memory data = new bytes[](tokenIds.length);
-        for (uint256 i; i < tokenIds.length; ++i) {
-            data[i] = abi.encode(tokenIds[i]);
-        }
-        _submitBatch(accounts, data);
-    }
-
-    /// @inheritdoc AssistedBalanceAdapter
-    /// @dev Decodes the `uint256[]` request-id list and replaces `account`'s cached set (clear then re-add, fail-loud).
-    function _applyReplace(address account, bytes memory data) internal override {
-        uint256[] memory ids = abi.decode(data, (uint256[]));
-        _clearTokenIds(account);
-        for (uint256 i; i < ids.length; ++i) {
-            _addTokenId(account, ids[i]);
+    /// @inheritdoc AssistedNftCacheAdapter
+    /// @dev Ownership read for the cache's write-time check: wraps `IEtherFiWithdrawRequestNFT.ownerOf` so a claimed /
+    ///      burned / non-existent id (which `ownerOf` reverts on) returns `(0, false)` rather than bubbling.
+    function _ownerOf(uint256 tokenId) internal view override returns (address, bool) {
+        try IEtherFiWithdrawRequestNFT(WITHDRAW_REQUEST_NFT).ownerOf(tokenId) returns (address o) {
+            return (o, true);
+        } catch {
+            return (address(0), false);
         }
     }
 
-    /// @notice Drop a cached tokenId. Idempotent. GC for claimed/transferred requests (stale ids already read as 0).
-    function clearTokenId(address account, uint256 tokenId) external onlyRole(ASSISTANT_ROLE) {
-        if (_tokenIdIdxPlus1[account][tokenId] == 0) return;
-        _removeTokenId(account, tokenId);
-        emit TokenIdCleared(account, tokenId);
-    }
-
-    /// @notice Drop all cached tokenIds for `account`.
-    function clearAccount(address account) external onlyRole(ASSISTANT_ROLE) {
-        _clearTokenIds(account);
-        emit AccountCleared(account);
-    }
-
-    /// @dev Delete the account's cached id set (storage only, no event). Shared by `clearAccount` and the
-    ///      replace-on-submit path.
-    function _clearTokenIds(address account) private {
-        uint256[] storage ids = _tokenIds[account];
-        for (uint256 i; i < ids.length; ++i) {
-            delete _tokenIdIdxPlus1[account][ids[i]];
-        }
-        delete _tokenIds[account];
+    /// @inheritdoc AssistedNftCacheAdapter
+    function _maxTokenIds() internal pure override returns (uint256) {
+        return MAX_TOKEN_IDS;
     }
 
     //
     // Reads (view, anyone)
     //
-
-    /// @notice Candidate tokenIds currently cached for `account` (display/debug; not staleness-filtered).
-    function tokenIdsOf(address account) external view returns (uint256[] memory) {
-        return _tokenIds[account];
-    }
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) public view override(AssistedBalanceAdapter) returns (bool) {
@@ -248,7 +194,7 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapter is AssistedBalanceAdapter,
         }
         if (account == address(0)) return new INAVCalculator.PositionBalance[](0);
 
-        uint256[] memory ids = _tokenIds[account];
+        uint256[] memory ids = _cachedTokenIds(account);
         if (ids.length == 0) return new INAVCalculator.PositionBalance[](0);
 
         // Underlying must be registered in NAVCalculator for the position to count in NAV.
@@ -286,50 +232,12 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapter is AssistedBalanceAdapter,
     }
 
     //
-    // Internal — write
-    //
-
-    function _addTokenId(address account, uint256 tokenId) internal {
-        if (_tokenIdIdxPlus1[account][tokenId] != 0) return; // already cached (idempotent no-op)
-        // Cap the cache so the per-account read loop stays gas-bounded (OOG there isn't caught by NAV). The assistant
-        // must GC claimed ids to make room; a real account never approaches MAX_TOKEN_IDS open requests. **Revert**
-        // rather than silently dropping the id — writes are fail-loud (like the ownership check below), so a full
-        // cache surfaces to the assistant instead of silently omitting an owned request.
-        if (_tokenIds[account].length >= MAX_TOKEN_IDS) revert TokenIdCacheFull(account, MAX_TOKEN_IDS);
-        // Fail-loud ownership check: a non-owned (or burned) id is a caller mistake. `ownerOf` reverts for a
-        // non-existent token; surface that as NotTokenOwner too. Not load-bearing for correctness — reads re-verify.
-        try IEtherFiWithdrawRequestNFT(WITHDRAW_REQUEST_NFT).ownerOf(tokenId) returns (address o) {
-            if (o != account) revert NotTokenOwner(account, tokenId);
-        } catch {
-            revert NotTokenOwner(account, tokenId);
-        }
-        _tokenIds[account].push(tokenId);
-        _tokenIdIdxPlus1[account][tokenId] = _tokenIds[account].length;
-        emit TokenIdSubmitted(account, tokenId);
-    }
-
-    function _removeTokenId(address account, uint256 tokenId) internal {
-        uint256 idxPlus1 = _tokenIdIdxPlus1[account][tokenId];
-        if (idxPlus1 == 0) return;
-        uint256 idx = idxPlus1 - 1;
-        uint256[] storage list = _tokenIds[account];
-        uint256 lastIdx = list.length - 1;
-        if (idx != lastIdx) {
-            uint256 lastId = list[lastIdx];
-            list[idx] = lastId;
-            _tokenIdIdxPlus1[account][lastId] = idx + 1;
-        }
-        list.pop();
-        delete _tokenIdIdxPlus1[account][tokenId];
-    }
-
-    //
     // Internal — valuation
     //
 
     /// @dev Total ETH owed across the account's cached tokenIds, valued from live on-chain reads. Never reverts.
     function _ethOwed(address account) internal view returns (uint256 total) {
-        uint256[] memory ids = _tokenIds[account];
+        uint256[] memory ids = _cachedTokenIds(account);
         for (uint256 i; i < ids.length; ++i) {
             (uint256 owed,) = _owedForToken(account, ids[i]);
             total += owed;

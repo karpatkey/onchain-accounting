@@ -13,7 +13,7 @@ import {BalancerV3PoolLib} from "./BalancerV3PoolLib.sol";
 /// @notice One immutable adapter that reports an account's **wallet-held** (unstaked) Balancer V3 pool liquidity
 ///         across *any* pool — the AMM-supplied LP only, no gauge staking and no rewards (those are the separate
 ///         BalancerV3GaugesMetaBalanceAdapter). The instance coordinate is the pool (BPT) address, widened to bytes32.
-///         Emits one `Supply` leg per registered underlying pool token. See ADR 0010.
+///         Emits one `Supplied` leg per registered underlying pool token. See ADR 0010.
 /// @dev Valuation = instantaneous on-chain amounts (ADR 0017): this adapter reports the position's current
 ///      pro-rata share of the pool's on-chain balances as per-token `amount`s, which NAVCalculator prices with
 ///      external oracles — it does NOT compute a manipulation-resistant "fair" value. Imbalancing the pool can
@@ -31,7 +31,7 @@ contract BalancerV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     {}
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev `instance` is the pool (BPT) address. Emits one Supply leg per registered pool token for the account's
+    /// @dev `instance` is the pool (BPT) address. Emits one `Supplied` leg per registered pool token for the account's
     ///      wallet BPT share. Skips unregistered tokens and respects assetFilter.
     function _instancePositions(address account, bytes32 instance, address assetFilter)
         internal

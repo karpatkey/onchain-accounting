@@ -11,9 +11,9 @@ import {BalancerV2PoolLib, IBalancerV2Pool} from "src/balances/MetaBalanceAdapte
 /// @author KPK
 /// @notice One immutable adapter that reports an account's **wallet-held** (unstaked) Balancer V2 pool liquidity
 ///         across *any* pool — the AMM-supplied LP only (gauge-staked LP + rewards are the separate
-///         BalancerV2GaugesMeta adapter). The instance coordinate is the pool's **`bytes32` poolId, used directly**
-///         (configured via `metaInstancesRaw`), since V2 identifies pools by poolId (the BPT address is its top
-///         160 bits). Emits one `Supply` leg per underlying pool token. The Balancer V2 Vault is the chain-level
+///         `BalancerV2GaugesMetaBalanceAdapter`). The instance coordinate is the pool's **`bytes32` poolId, used
+///         directly** (configured via the `instancesRaw` config key), since V2 identifies pools by poolId (the BPT
+///         address is its top 160 bits). Emits one `Supplied` leg per underlying pool token. The Balancer V2 Vault is the chain-level
 ///         constant pinned in the constructor. Identity derived on-chain (positionId = abi.encode(bytes32 poolId);
 ///         label leaf = the pool's underlying token symbols joined with "/"). See ADR 0010.
 /// @dev Valuation = instantaneous on-chain amounts (ADR 0017): this adapter reports the position's current
@@ -40,7 +40,7 @@ contract BalancerV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev `instance` is the pool's `bytes32` poolId (used directly, not an address). Emits one `Supply` leg per
+    /// @dev `instance` is the pool's `bytes32` poolId (used directly, not an address). Emits one `Supplied` leg per
     ///      registered underlying pool token for the account's wallet BPT share. Skips unregistered/filtered tokens.
     function _instancePositions(address account, bytes32 instance, address assetFilter)
         internal

@@ -38,8 +38,9 @@ interface IUniswapV3Factory {
 ///         ownership on every read. The cache stores **only ids, never amounts** — a faulty or compromised assistant
 ///         cannot fabricate value; at worst it omits an id (NAV under-counts), never over-counts. positionId is the
 ///         **pool contract address** (`abi.encode(factory.getPool(token0, token1, fee))`) — each fee tier is its own
-///         deployed pool, so it uniquely identifies the pair+fee. The NFT id is not in positionId; it is surfaced as
-///         the last adapter-supplied display **label** (`["AMM Liquidity Pool", "<pool>", "NFT #<id>"]`).
+///         deployed pool, so it uniquely identifies the pair+fee. The NFT id is not in positionId; it is carried as
+///         the typed `positionInstanceId` on each emitted leg (not a label — labels are the verbose-only
+///         `["AMM Liquidity Pool", "<sym0>/<sym1> <fee>%"]` breadcrumb via {IPositionDescribable.positionLabels}).
 /// @dev Access control comes from {AssistedBalanceAdapter}: `DEFAULT_ADMIN_ROLE` administers roles and
 ///      `ASSISTANT_ROLE` gates the submit/clear mutators. `submitTokenIds` **reverts** `NotTokenOwner` for any id not
 ///      currently owned by the account (fail-loud writes); reads instead **discard** an id whose ownership changed or
@@ -260,9 +261,10 @@ contract UniswapV3PoolsAssistedBalanceAdapter is AssistedBalanceAdapter, IPositi
 
     /// @inheritdoc IBalanceAdapter
     /// @dev For each cached tokenId still owned by `account`, emits up to 4 legs: `Supplied` x2 (in-range liquidity)
-    ///      and `Fees` x2 (settled `tokensOwed`) — dropping zeros, unregistered/unpriced assets, and ids no longer
-    ///      owned, respecting `assetFilter`. positionId = abi.encode(pool) (the stable pool address); the NFT id is a
-    ///      display-only `labels` entry (an account's NFTs in the same pool share the positionId).
+    ///      and `Fees` x2 (full unclaimed: feeGrowth-since-poke + settled `tokensOwed`) — dropping zeros,
+    ///      unregistered/unpriced assets, and ids no longer owned, respecting `assetFilter`. positionId =
+    ///      abi.encode(pool) (the stable pool address); the NFT id rides
+    ///      in the typed `positionInstanceId` on each leg (an account's NFTs in the same pool share the positionId).
     function getAdapterPositions(address account, address assetFilter)
         external
         view
@@ -381,8 +383,9 @@ contract UniswapV3PoolsAssistedBalanceAdapter is AssistedBalanceAdapter, IPositi
         if (!f0reg && !f1reg) return none;
 
         // positionId = the pool contract address (each (token0, token1, fee) is its own deployed Uniswap V3 pool).
-        // The NFT id is NOT in the positionId; it rides in the display labels. Drop the position if the factory has
-        // no canonical pool for the triple (defensive: never emit a zero-pool identity that collides across pools).
+        // The NFT id is NOT in the positionId; it rides in the typed `positionInstanceId` (set below). Drop the
+        // position if the factory has no canonical pool for the triple (defensive: never emit a zero-pool identity
+        // that collides across pools).
         address pool = IUniswapV3Factory(FACTORY).getPool(p.token0, p.token1, p.fee);
         if (pool == address(0)) return none;
 

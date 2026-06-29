@@ -11,8 +11,9 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 ///        - replacing Uniswap's `FullMath.mulDiv` with OpenZeppelin's `Math.mulDiv` (mathematically
 ///          identical 512-bit semantics; both compute floor(a*b/d) and revert on division-by-zero
 ///          or uint256 overflow).
-///        - inlining the `FixedPoint96` constants needed by `getAmount0ForLiquidity` (`Q96`,
-///          `RESOLUTION`) so the adapter only depends on this single file.
+///        - inlining the `FixedPoint96` constants needed by the helpers (`RESOLUTION`, used by
+///          `getAmount0ForLiquidity`; `Q96`, used by `getAmount1ForLiquidity`) so the adapter only
+///          depends on this single file.
 ///      Only the three pure-math helpers required by the Uniswap V3 balance adapter are included
 ///      (`getAmount0ForLiquidity`, `getAmount1ForLiquidity`, `getAmountsForLiquidity`).
 library LiquidityAmounts {

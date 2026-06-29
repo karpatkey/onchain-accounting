@@ -57,7 +57,9 @@ contract CapBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     /// @notice Reference to NAVCalculator for asset registry access
     INAVCalculator public immutable NAV_CALCULATOR;
 
-    /// @notice Protocol ID for Cap
+    /// @notice 3-level protocol identity for Cap (brand / id / sub-id). Cap is a single product with no
+    ///         sub-protocols, so all three levels collapse to the same `ProtocolIds.CAP` slug; the cUSD vs.
+    ///         stcUSD leg distinction is carried by `positionId` and `positionKind`, not by the taxonomy.
     bytes32 private constant PROTOCOL_BRAND = ProtocolIds.CAP;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.CAP;
     bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.CAP;

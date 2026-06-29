@@ -5,10 +5,12 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title RegisteredAssetLib
 /// @author KPK
-/// @notice Shared helper for resolving a single registered asset's metadata out of a NAVCalculator
-///         `getRegisteredAssets()` snapshot. Several balance adapters that denominate their positions in one fixed
-///         underlying (the withdrawal-queue / exit-queue adapters) need exactly this find-by-address scan; centralising
-///         it here removes the hand-rolled copies that previously lived in each adapter.
+/// @notice Shared helper for resolving a registered asset's metadata out of a NAVCalculator
+///         `getRegisteredAssets()` snapshot. Many balance adapters need this find-by-address scan to look up the
+///         `symbol`/`decimals` of a token they value — withdrawal-/exit-queue adapters resolve a single fixed
+///         underlying (Lido, Stader, ether.fi, StakeWise V3, Kelp, Nexus Mutual), while others resolve several tokens
+///         per call (Uniswap V3 looks up both pool tokens; Merkl rewards resolve an arbitrary token list).
+///         Centralising the scan here removes the hand-rolled copies that previously lived in each adapter.
 /// @dev `internal` functions only, so this library is inlined into each caller's bytecode — it is NOT a linked/pinned
 ///      external library (no CREATE2 address, no `foundry.toml [libraries]` entry, no effect on the PriceFeedLib /
 ///      NAVRegistryLib pins).

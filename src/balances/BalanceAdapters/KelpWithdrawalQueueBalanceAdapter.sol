@@ -21,9 +21,10 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      **one position per open request** under a single static positionId (`abi.encode(withdrawalManager)`),
 ///      valued at the request's `expectedAssetAmount`. The payout asset lives in `balanceAsset.asset` (so it
 ///      is not duplicated in the positionId); each request's `isLocked` reflects its own state — `false` for a
-///      claimable request, `true` for a locked/pending one — and its stable `userNonce` rides in the last
-///      `labels` entry (`["rsETH Withdrawal Queue", "Request #<userNonce>"]`), never in `positionId` (multiple
-///      requests share the static positionId and are distinguished for display by their labels). A request
+///      claimable request, `true` for a locked/pending one — and its stable `userNonce` rides in the typed
+///      `positionInstanceId`, never in `positionId` (multiple requests share the static positionId and are
+///      distinguished by their `positionInstanceId`; the verbose-only `positionLabels` carry just
+///      `["Withdrawal Queue", "rsETH"]`). A request
 ///      counts as claimable only once the asset's lock cursor has passed the nonce AND the block delay has
 ///      elapsed (both gates, matching `completeWithdrawal`). The balance methods report the per-asset summed
 ///      total. The supported-asset set is discovered at runtime from
@@ -185,7 +186,7 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
     /// @inheritdoc IBalanceAdapter
     /// @notice Returns ONE position PER open withdrawal request under the static
     ///         `positionId = abi.encode(withdrawalManager)`. Each leg's `isLocked` reflects that request's state
-    ///         (claimable → `false`, pending → `true`) and its `userNonce` is the last `labels` entry.
+    ///         (claimable → `false`, pending → `true`) and its `userNonce` is the leg's typed `positionInstanceId`.
     /// @dev All legs share `positionId = abi.encode(withdrawalManager)`; the payout asset is in `balanceAsset.asset`,
     ///      so it is not duplicated in the positionId. For each supported+registered asset, the account's open
     ///      requests are each emitted as a separate `Supplied` leg valued at `expectedAssetAmount`. A request is
@@ -194,7 +195,7 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
     ///      (`block.number >= withdrawalStartBlock + withdrawalDelayBlocks()`) — matching `LRTWithdrawalManager`'s own
     ///      `completeWithdrawal` checks. Either gate failing → pending (`isLocked = true`). The per-asset legs sum to
     ///      `_owedForAsset`'s total for that asset; across assets they sum to `getAdapterBalances`. The request id
-    ///      (`userNonce`) rides in `labels` (display only), NOT in `positionId`. A zero-amount leg is omitted. Only
+    ///      (`userNonce`) rides in the typed `positionInstanceId`, NOT in `positionId`. A zero-amount leg is omitted. Only
     ///      assets registered in NAVCalculator (and matching `assetFilter`, if set) are emitted.
     function getAdapterPositions(address account, address assetFilter)
         external
@@ -291,8 +292,8 @@ contract KelpWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
     }
 
     /// @dev Appends one `Supplied` leg per open request of `(asset, account)` into `temp` (starting at `n`), returning
-    ///      the new count. Mirrors the inner loop of `getAdapterPositions`; extracted so the outer per-asset scope
-    ///      stays within the via_ir stack limit. `c` is the capped open-request count from the sizing pre-pass (reused
+    ///      the new count. Holds the inner per-request loop of `buildPositionsSelf`; extracted so the outer per-asset
+    ///      scope stays within the via_ir stack limit. `c` is the capped open-request count from the sizing pre-pass (reused
     ///      here rather than re-reading `userAssociatedNonces`); zero-amount requests are skipped.
     function _appendAssetLegs(
         address account,

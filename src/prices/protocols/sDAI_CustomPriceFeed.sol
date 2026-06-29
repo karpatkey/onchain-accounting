@@ -10,10 +10,10 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 /// @title sDAI Custom Price Oracle
 /// @notice Returns the USD price of sDAI by combining Chainlink’s DAI/USD feed with Maker’s DSR “chi” ratio.
 /// @dev The price is computed as `price = (DAI/USD) * (sDAI/DAI)`, where:
-///      - `DAI/USD` comes from `DAI_to_USD_chainlinkOracle` and uses `_decimals` decimals.
+///      - `DAI/USD` comes from `DAI_TO_USD_CHAINLINK_ORACLE` and uses `_decimals` decimals.
 ///      - `sDAI/DAI` is Maker’s DSR Pot `chi` (27-decimals, RAY) read via `RATE_PROVIDER`.
 ///      The function multiplies these values and scales by `10**RATIO_DECIMALS` (1e27) so the result has `_decimals`.
-///      Freshness is enforced only on the Chainlink feed using `DAI_to_USD_chainlinkHeartbeat`; if the feed is stale
+///      Freshness is enforced only on the Chainlink feed using `DAI_TO_USD_CHAINLINK_HEARTBEAT`; if the feed is stale
 ///      or any input is non-positive, the function returns `(0, true)` to signal staleness.
 /// @author KPK
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */

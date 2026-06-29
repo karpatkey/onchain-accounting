@@ -30,7 +30,8 @@ contract ERC20DefaultBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     /// @notice ERC-7528 convention for ETH address representation
     address public constant NATIVE_ADDRESS = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
 
-    /// @notice Protocol ID for wallet positions
+    /// @notice 3-level protocol taxonomy for wallet positions. Wallet is a single-product ecosystem, so all three
+    ///         levels (brand / id / sub-id) collapse to the same `ProtocolIds.WALLET` slug.
     bytes32 private constant PROTOCOL_BRAND = ProtocolIds.WALLET;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.WALLET;
     bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.WALLET;
@@ -255,7 +256,7 @@ contract ERC20DefaultBalanceAdapter is IBalanceAdapter, IPositionDescribable {
 
         // Pass 1: collect the assets with a non-zero balance. This is the only pass that needs `account`; it builds
         // no structs, so the loop stays light. (Kept separate from the row-building pass to stay under the via_ir
-        // stack limit — building the 9-field PositionBalance while `account`/`assetFilter` are still live overflows.)
+        // stack limit — building the 11-field PositionBalance while `account`/`assetFilter` are still live overflows.)
         address[] memory hitAssets = new address[](len);
         uint256[] memory hitBalances = new uint256[](len);
         uint256 positionCount = 0;
@@ -287,7 +288,7 @@ contract ERC20DefaultBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         }
     }
 
-    /// @dev Builds one wallet PositionBalance field-by-field (avoids a 9-field literal inside the per-asset loop,
+    /// @dev Builds one wallet PositionBalance field-by-field (avoids an 11-field literal inside the per-asset loop,
     ///      which overflows the via_ir stack). positionId = abi.encode(asset); positionInstanceId defaults to bytes32(0).
     function _row(INAVCalculator.Asset memory underlyingAsset, uint256 balance, address asset)
         private

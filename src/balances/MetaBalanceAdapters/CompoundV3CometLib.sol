@@ -6,7 +6,7 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import "src/errors.sol";
 
 interface ICompoundRewards {
-    /// @notice Some chains return a 4th `multiplier` value; the adapter detects via `data.length`.
+    /// @notice Some chains return a 4th `multiplier` value; the library detects via `data.length`.
     function rewardConfig(address comet) external view returns (address token, uint64 rescaleFactor, bool shouldUpscale);
 
     function rewardsClaimed(address comet, address src) external view returns (uint256);
@@ -75,10 +75,9 @@ interface CometInterface {
 /// @notice Shared read math for the Compound V3 meta-adapter. Given a Comet (market), the chain's CometRewards,
 ///         the expected reward token, and an account, it returns the account's base supply/borrow (present value
 ///         with interest accrued to `block.timestamp`), every collateral balance, and the unclaimed reward amount.
-/// @dev Ports `CompoundV3Comet`'s base-accrual + reward-accrual math verbatim, parameterized by the comet so one
-///      stateless library serves every market (the per-comet adapter snapshotted collaterals + the accrual
-///      descale factor at construction; here they are derived per call). Mirrors the per-comet adapter
-///      leg-for-leg (parity fork-tested).
+/// @dev Implements Compound V3's base-accrual + reward-accrual math, parameterized by the comet so one stateless
+///      library serves every market: collaterals and the accrual descale factor are derived per call rather than
+///      snapshotted, and the meta-adapter (`CompoundV3CometsMetaBalanceAdapter`) calls into it for every comet.
 library CompoundV3CometLib {
     using SafeCast for uint256;
     using SafeCast for int256;

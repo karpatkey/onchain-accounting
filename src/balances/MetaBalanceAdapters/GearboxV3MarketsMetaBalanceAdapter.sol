@@ -15,8 +15,8 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         The instance coordinate is the market (pool) address, widened to bytes32; the active market set lives
 ///         on NAVCalculator (`addMetaInstances`/`removeMetaInstances`). Identity is encoded as `abi.encode(address(market))`.
 ///         See ADR 0010.
-/// @dev Reports one Supply leg per market (convertToAssets(balanceOf)) in the pool's underlying. Does not include Merkl rewards (same as
-///      the per-market adapter).
+/// @dev Reports one Supply leg per market (convertToAssets(balanceOf)) in the pool's underlying. Does not include
+///      Merkl rewards (those are covered separately by MerklRewardsAssistedBalanceAdapter).
 /// @dev **Instance set is a governed allowlist — not auto-enumerated.** Gearbox V3 exposes an on-chain
 ///      `ContractsRegister` (mainnet `0xA50d4E7D8946a7c90652339CDBd262c375d54D99`, `getPools()`) listing the DAO's
 ///      pools, and this adapter could read it to avoid governance seeding instances. We deliberately do NOT: the
@@ -66,8 +66,9 @@ contract GearboxV3MarketsMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev Returns `["Market", <leaf>]` where the leaf is the market's ERC20 name ("" if unreadable). Returns an
-    ///      empty array for a short positionId.
+    /// @dev Returns `["Market", <name>]` where the leaf is the market's ERC20 name; if the name is unreadable the
+    ///      empty leaf is dropped and just `["Market"]` is returned (see `_labels`). Returns an empty array for a
+    ///      short positionId.
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
         if (pid.length < 32) return new string[](0);
         address market = abi.decode(pid, (address));

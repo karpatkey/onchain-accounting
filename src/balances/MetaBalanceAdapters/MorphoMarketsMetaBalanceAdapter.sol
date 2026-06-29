@@ -15,8 +15,8 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @notice One immutable adapter that reports an account's positions on *any* Morpho Blue market. The set of
 ///         markets to query is configured on NAVCalculator (per-adapter, MANAGER-gated) and passed as `bytes32`
 ///         instance coordinates — here the coordinate is the Morpho **marketId** itself (used directly, not an
-///         address). Emits up to three gross rows per market (collateral, loan-supply, loan-borrow), matching
-///         the per-market `MorphoMarket` adapter. See ADR 0010 (meta-adapters) and ADR 0004 (projected balances).
+///         address). Emits up to three gross rows per market (collateral, loan-supply, loan-borrow).
+///         See ADR 0010 (meta-adapters) and ADR 0004 (projected balances).
 contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
     using Math for uint256;
     using MorphoBalancesLib for IMorpho;

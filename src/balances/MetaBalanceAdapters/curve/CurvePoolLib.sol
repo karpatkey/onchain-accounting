@@ -3,7 +3,7 @@ pragma solidity ^0.8;
 
 /// @title CurvePoolLib
 /// @notice Shared helpers for reading Curve pool and gauge state across all pool/gauge generations.
-/// @dev Handles the two main interface divergences in the Curve ecosystem:
+/// @dev Handles the three main interface divergences in the Curve ecosystem:
 ///
 ///      1. INDEX TYPE: Vyper 0.1.x pools (original StableSwap) use `int128` for `coins(i)` and
 ///         `balances(i)`. All modern pools (StableSwap-NG, CryptoSwap, TriCryptoNG, TwoCryptoNG,

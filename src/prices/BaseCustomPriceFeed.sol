@@ -15,7 +15,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 ///         Concrete feeds implement only `_rate()` — the protocol's exchange rate as 18-decimal base-token
 ///         units per 1 `UNDERLYING` (e.g. ETH per rETH), i.e. the same orientation the multiply expects.
 /// @dev The 5 `ICustomPriceFeed` thunks, the immutables, the constructor validation, and the
-///      read/staleness/normalize math live here once, instead of being copy-pasted into ~17 feeds. The math is
+///      read/staleness/normalize math live here once, instead of being copy-pasted into each rate-based feed. The math is
 ///      identical to the former per-feed `_compute()`: `price = rate · baseAnswer / 1e18` (Math.Rounding.Floor),
 ///      stale when the base answer is non-positive, the base feed is past its heartbeat, or `_rate()` is 0.
 ///      Staleness uses `effectiveUpdatedAt = min(updatedAt, block.timestamp)` to avoid upstream-clock bias.

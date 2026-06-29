@@ -11,7 +11,7 @@ import {UniswapV2PairLib} from "src/balances/MetaBalanceAdapters/uniswap/Uniswap
 /// @title Uniswap V2 Pools Meta Balance Adapter
 /// @author KPK
 /// @notice One immutable adapter that reports an account's Uniswap V2 LP across *any* pair — the dilution-adjusted
-///         pro-rata share of both reserves, emitted as one `Supply` leg per token. The instance coordinate is the
+///         pro-rata share of both reserves, emitted as one `Supplied` leg per token. The instance coordinate is the
 ///         pair address, widened to bytes32; the active pair set lives on NAVCalculator (`addMetaInstances`).
 ///         Identity is derived on-chain (positionId = pair address; name = `sym0/sym1`). See ADR 0010.
 /// @dev Valuation = instantaneous on-chain amounts (ADR 0017): this adapter reports the position's current
@@ -21,9 +21,9 @@ import {UniswapV2PairLib} from "src/balances/MetaBalanceAdapters/uniswap/Uniswap
 ///      monetised: NAV is a read-only oracle consumed by an asynchronous sub/redeem layer (no atomic on-chain
 ///      consumer). See docs/decisions/0017-lp-valuation-instantaneous-amounts.md; revisit if NAV is ever consumed
 ///      synchronously on-chain.
-/// @dev The pro-rata + protocol-fee dilution math is delegated to `UniswapV2PairLib`, which mirrors the
-///      leg-for-leg. Works with canonical Uniswap V2
-///      and standard forks (SushiSwap, PancakeSwap V2) that preserve the `_mintFee` formula.
+/// @dev The pro-rata + protocol-fee dilution math is delegated to `UniswapV2PairLib`, keeping the adapter
+///      leg-for-leg identical to a real `burn`. Works with canonical Uniswap V2 and standard forks
+///      (SushiSwap, PancakeSwap V2) that preserve the `_mintFee` formula.
 contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @notice Protocol identifier reported on every emitted position. `virtual` so byte-compatible forks
     ///         (PancakeSwap V2, SushiSwap) report their own slug while sharing the `(address pair)` positionId
@@ -65,7 +65,7 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     {}
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev `instance` is the pair address. Emits up to 2 `Supply` legs, dropping zeros and unregistered assets,
+    /// @dev `instance` is the pair address. Emits up to 2 `Supplied` legs, dropping zeros and unregistered assets,
     ///      respecting `assetFilter`.
     function _instancePositions(address account, bytes32 instance, address assetFilter)
         internal

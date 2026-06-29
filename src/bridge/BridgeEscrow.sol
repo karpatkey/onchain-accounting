@@ -23,10 +23,11 @@ import "src/constants.sol";
 /// @dev See ADR 0012. There is no `fallback()` dispatcher — protocol callbacks are received and authenticated
 ///      by the adapters directly, and `releaseByInvoiceId` is callable only by an authorized adapter (never a
 ///      public fallback, never MANAGER directly), which closes the *unauthenticated* forged-payload drain
-///      (C1's permissionless vector). In this PR release still pays from the escrow's standing balance, so a
-///      MANAGER driving adapter.completeBridge with a forged payload can release from it — full closure
-///      (per-adapter provenance + per-invoice funded pass-through, H9/D4, so release draws only the funds the
-///      genuine delivery brought in) arrives with the recipient→adapter change in the follow-up PR.
+///      (C1's permissionless vector). Release is a per-invoice funded pass-through: the authenticating adapter
+///      supplies the funds in the same call (the escrow pulls exactly `amount` from it, or requires
+///      `msg.value == amount` for native) and the escrow forwards them to the account, never paying from a
+///      standing balance. So one invoice can never be funded by another's tokens and a release cannot drain
+///      pre-existing funds (H2/H9).
 /// @author KPK
 contract BridgeEscrow is
     AccessControlUpgradeable,

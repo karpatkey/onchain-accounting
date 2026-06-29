@@ -24,12 +24,13 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         **only the position coordinates, never amounts** — a holder of `ASSISTANT_ROLE` cannot fabricate value;
 ///         at worst it omits a position (NAV under-counts), never over-counts.
 /// @dev Trust model and mutability rationale: see `docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md`
-///      (generalises the Merkl precedent, ADR 0007; sibling of `EtherFiWithdrawalQueueAssisted`). Emits up to two legs PER
-///      cached exit position (per `positionTicket`) — a claimable leg (`isLocked = false`) and a locked/pending leg
-///      (`isLocked = true`) — both carrying that ticket's id in the last `labels` entry. All legs of a given vault
-///      share one static per-vault positionId (`abi.encode(vault)`); the ticket id rides in `labels`, never in
-///      `positionId`, so multiple tickets in the same vault share the positionId and are distinguished for display by
-///      their labels (and for NAV by summing). Denominated in the chain's staking asset (native ETH on mainnet).
+///      (generalises the Merkl precedent, ADR 0007; sibling of `EtherFiWithdrawalQueueAssistedBalanceAdapter`). Emits
+///      up to two legs PER cached exit position (per `positionTicket`) — a claimable leg (`isLocked = false`) and a
+///      locked/pending leg (`isLocked = true`) — both carrying that ticket's id in the typed `positionInstanceId`
+///      field. All legs of a given vault share one static per-vault positionId (`abi.encode(vault)`); the ticket id
+///      rides in `positionInstanceId`, never in `positionId`, so multiple tickets in the same vault share the
+///      positionId and are distinguished by their instance id (and for NAV by summing). Denominated in the chain's
+///      staking asset (native ETH on mainnet).
 ///      Mainnet only — every StakeWise V3 vault there settles in ETH; do not deploy on a chain with a non-ETH staking
 ///      asset against this `underlyingToken`.
 ///
@@ -78,10 +79,10 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapter is AssistedBalanceAdapter, I
     address public immutable UNDERLYING_TOKEN;
 
     /// @notice Display symbol of StakeWise's receipt/LST token for this deployment — `"osETH"` on mainnet,
-    ///         `"osGNO"` on Gnosis. Used only to build the `positionLabels` breadcrumb (`"<receiptSymbol> Exit
-    ///         Queue"`), matching the sibling queues which name the receipt token (stETH/rsETH/eETH/ETHx), not the
-    ///         payout asset. Set once at construction (no setter, so effectively immutable; a `string` cannot be a
-    ///         Solidity `immutable`). Empty ⇒ the label falls back to the bare `"Exit Queue"` category.
+    ///         `"osGNO"` on Gnosis. Used only to build the `positionLabels` breadcrumb (`["Exit Queue",
+    ///         "<receiptSymbol>"]`), matching the sibling queues which name the receipt token (stETH/rsETH/eETH/ETHx),
+    ///         not the payout asset. Set once at construction (no setter, so effectively immutable; a `string` cannot
+    ///         be a Solidity `immutable`). Empty ⇒ the label falls back to the bare `["Exit Queue"]` category.
     string public receiptSymbol;
 
     /// @notice NAVCalculator — used to look up the registered staking-asset metadata when emitting positions.
@@ -289,13 +290,13 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapter is AssistedBalanceAdapter, I
     /// @inheritdoc IBalanceAdapter
     /// @notice Returns up to TWO staking-asset `Supplied` legs PER cached exit position (per `positionTicket`) — one
     ///         claimable (`isLocked = false`) and one locked/pending (`isLocked = true`) — each carrying the ticket id
-    ///         in the last `labels` entry. All legs of a vault share that vault's static `positionId`.
+    ///         in the typed `positionInstanceId` field. All legs of a vault share that vault's static `positionId`.
     /// @dev Each cached position is valued live from on-chain reads (`_owedForPosition`), which splits it into a
     ///      claimable portion (`exitedAssets`) and a locked portion (still-queued remainder). A position contributes a
     ///      claimable leg if its claimable > 0 AND a locked leg if its locked > 0; both legs carry the SAME ticket
-    ///      label (`["Exit Queue", "Ticket #<positionTicket>"]`) and the same per-vault `positionId =
-    ///      abi.encode(vault)` (the ticket id is display-only, never in `positionId`, so multiple tickets in one vault
-    ///      share it). A zero-amount leg is omitted; a position that values to 0/0 contributes no legs. All legs sum to
+    ///      `positionInstanceId` (`bytes32(positionTicket)`) and the same per-vault `positionId = abi.encode(vault)`
+    ///      (the ticket id is the ephemeral per-item coordinate, never in `positionId`, so multiple tickets in one
+    ///      vault share it). A zero-amount leg is omitted; a position that values to 0/0 contributes no legs. All legs sum to
     ///      `_assetsOwed`. Positions not owned by `account` / claimed value to 0 and are skipped — the assistant can
     ///      only under-report. Dropped entirely if the underlying asset is not registered in NAVCalculator.
     function getAdapterPositions(address account, address assetFilter)
@@ -337,7 +338,7 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapter is AssistedBalanceAdapter, I
 
     /// @dev Appends up to two `Supplied` legs for one cached exit position into `temp` (starting at `n`), returning the
     ///      new count: a claimable leg (`isLocked=false`) if its claimable > 0 and a locked leg (`isLocked=true`) if its
-    ///      locked > 0 — both carrying the same ticket label and the same per-vault `positionId = abi.encode(vault)`.
+    ///      locked > 0 — both carrying the same ticket `positionInstanceId` and the same per-vault `positionId = abi.encode(vault)`.
     ///      A position that values to 0/0 contributes nothing. Extracted from `getAdapterPositions` to relieve stack.
     function _appendPositionLegs(
         address account,

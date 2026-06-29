@@ -370,7 +370,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             }
             // Labels are derived lazily from positionId (display only, off the NAV hot path) via a fail-open,
             // gas-capped staticcall — an adapter that doesn't implement positionLabels yields an empty array.
-            // Field-by-field assignment (not a VerbosePosition literal, which would deep-copy the 15-field Position
+            // Field-by-field assignment (not a VerbosePosition literal, which would deep-copy the 17-field Position
             // as one expression) keeps this loop under the via_ir stack limit.
             verbose[i].position = pos[i];
             verbose[i].protocolName = prevName;

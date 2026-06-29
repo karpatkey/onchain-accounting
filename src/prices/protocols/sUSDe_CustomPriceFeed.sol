@@ -15,10 +15,10 @@ import "src/errors.sol";
 /// @notice Returns the USD price of sUSDe by combining Chainlink's USDe/USD feed with the
 ///         current sUSDe→USDe exchange rate from the sUSDe ERC-4626 vault.
 /// @dev sUSDe is an ERC-4626 share token. The price is computed as
-///      `price = (USDe/USD) * (sUSDe_per_share / 10**feedDecimals)`,
-///      where `sUSDe_per_share = IERC4626(sUSDe).convertToAssets(10**feedDecimals)`.
+///      `price = (USDe/USD) * (USDe_per_share / 10**_vaultDecimals)`,
+///      where `USDe_per_share = IERC4626(sUSDe).convertToAssets(10**_vaultDecimals)`.
 ///      - The USDe/USD quote comes from `USDE_TO_USD_CHAINLINK_ORACLE` and uses `_decimals` decimals.
-///      - `convertToAssets` is linear in shares, so dividing by the same `10**_decimals` used as input
+///      - `convertToAssets` is linear in shares, so dividing by the same `10**_vaultDecimals` used as input
 ///        yields the exchange rate (totalAssets/totalSupply); the result has `_decimals` decimals.
 ///      Freshness is enforced on the Chainlink feed using `USDE_TO_USD_CHAINLINK_HEARTBEAT`.
 ///      If the feed is stale or the quoted Chainlink price is non-positive, the function returns `(0, true)`.

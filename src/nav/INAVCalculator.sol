@@ -228,8 +228,8 @@ interface INAVCalculator is IBalances {
     /// @dev Fetches decimals/symbol from ERC20 or uses native token symbol. Adds asset to default adapter inclusion list.
     /// @param asset Asset address to register (cannot be zero).
     /// @param priceFeed Price feed address (cannot be zero).
-    /// @param priceType Chainlink or Custom.
-    /// @param chainlinkHeartbeat Heartbeat for Chainlink staleness (ignored for Custom).
+    /// @param priceType Chainlink, Custom, Redstone, or API3.
+    /// @param chainlinkHeartbeat Staleness window in seconds (must be non-zero for all types).
     function registerAsset(address asset, address priceFeed, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
         external;
 
@@ -347,7 +347,7 @@ interface INAVCalculator is IBalances {
     /// @notice Computes NAV for an account in the given quote currency.
     /// @param account Account address.
     /// @param quoteAsset Quote currency; address(0) for USD. Must have a price feed if not zero.
-    /// @return nav NAV struct (value, quoteAsset, timestamp, stalePriceAssets, sequencerDown).
+    /// @return nav NAV struct (value, quoteAsset, timestamp, stalePriceAssets, sequencerDown, quoteAssetStale).
     function getAccountNav(address account, address quoteAsset) external view returns (NAV memory nav);
 
     /// @notice Returns all positions for an account with pricing in the quote currency.
@@ -400,7 +400,7 @@ interface INAVCalculator is IBalances {
 
     /// @notice Returns detailed price feed data for an asset.
     /// @param underlyingAsset Registered asset address.
-    /// @return priceFeedData PriceFeedData struct (feed, type, price, decimals, heartbeat, updatedAt, stale, sequencerDown).
+    /// @return priceFeedData PriceFeedData struct (feed, type, price, decimals, heartbeat, updatedAt, stale, sequencerDown, healthyFeedCount).
     function getPriceData(address underlyingAsset) external view returns (PriceFeedData memory priceFeedData);
 
     /// @notice Returns health status: sequencer down flag and list of assets with stale prices.

@@ -13,8 +13,9 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @author KPK
 /// @notice Reports per-reserve Supply/Collateral and Borrow positions for an account in Spark Lend.
 ///         Reads the reserve list from the Protocol Data Provider and emits up to two legs per
-///         reserve (aToken balance → Supplied/Collateral, variable debt → Borrowed).
-///         Stable debt is ignored — Aave/Spark deprecated it; all active debt is variable.
+///         reserve (aToken balance → Supplied/Collateral, total debt → Borrowed).
+///         The Borrow leg sums variable and stable debt: Aave/Spark deprecated NEW stable borrows, but
+///         legacy stable debt can persist, so it is included to avoid understating debt (see `_reserveData`).
 contract SparkLendBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     IProtocolDataProvider public immutable DATA_PROVIDER;
     /// @notice Spark Pool address — used as the `positionId` (one position per instance; the reserve is not

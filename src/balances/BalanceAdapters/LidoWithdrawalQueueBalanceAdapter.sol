@@ -22,8 +22,8 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      and emits **one position per open request**, all under a single static positionId
 ///      (`abi.encode(address(WITHDRAWAL_QUEUE))`) denominated in `UNDERLYING_TOKEN` (native ETH). Each
 ///      request's `isLocked` reflects its own state — `false` for a finalized (claimable) request,
-///      `true` for a not-yet-finalized one — and its ERC721 request id rides in the last `labels`
-///      entry (`["stETH Withdrawal Queue", "Request #<id>"]`), never in `positionId` (the id is
+///      `true` for a not-yet-finalized one — and its ERC721 request id rides in the typed
+///      `positionInstanceId` field, never in `positionId` (the id is
 ///      ephemeral — the NFT is burned on claim). `amountOfStETH` is fixed at request time and equals the
 ///      ETH paid on claim (verified on-chain; it can differ only on a negative rebase between request and
 ///      finalization, where Lido caps the payout — for finalized requests the exact `getClaimableEther`
@@ -207,13 +207,13 @@ contract LidoWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
     /// @inheritdoc IBalanceAdapter
     /// @notice Returns ONE ETH-denominated `Supplied` leg per open (un-claimed) withdrawal request, all sharing the
     ///         static `positionId = abi.encode(address(WITHDRAWAL_QUEUE))`. Each leg's `isLocked` reflects that
-    ///         request's state (finalized → `false`, pending → `true`) and its request id is the last `labels` entry.
+    ///         request's state (finalized → `false`, pending → `true`) and its request id is the typed `positionInstanceId`.
     /// @dev Per request: a finalized request (`isFinalized && lastCheckpoint != 0`) is valued at its exact
     ///      `getClaimableEther` with `isLocked = false`; any other un-claimed request is valued at `amountOfStETH`
     ///      with `isLocked = true`. Claimed requests are skipped (the NFT is burned), as are zero-amount legs. The
-    ///      legs sum to `_ethOwed`'s total. The request id rides in `labels` (display only — ephemeral), NOT in
-    ///      `positionId`, so multiple requests share the static positionId and are distinguished for display by their
-    ///      labels (and for NAV by summing). Dropped entirely if the underlying asset is not registered in
+    ///      legs sum to `_ethOwed`'s total. The request id rides in the typed `positionInstanceId` (ephemeral), NOT in
+    ///      `positionId`, so multiple requests share the static positionId and are distinguished by their
+    ///      `positionInstanceId` (and for NAV by summing). Dropped entirely if the underlying asset is not registered in
     ///      NAVCalculator. Bounded by `MAX_REQUESTS_PROBED` (over the cap → no positions).
     function getAdapterPositions(address account, address assetFilter)
         external

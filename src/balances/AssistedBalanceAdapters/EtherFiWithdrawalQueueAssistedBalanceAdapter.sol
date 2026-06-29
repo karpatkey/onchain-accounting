@@ -27,7 +27,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      `docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md` (generalises the Merkl precedent, ADR 0007).
 ///      Emits ONE native-ETH `Supplied` leg per owned cached withdrawal request, all sharing a single static
 ///      positionId; each leg's `isLocked` reflects that request's own state (finalized → `false`, pending → `true`)
-///      and its `tokenId` (the WithdrawRequestNFT id) rides in the last `labels` entry, never in `positionId`.
+///      and its `tokenId` (the WithdrawRequestNFT id) rides in the typed `positionInstanceId`, never in `positionId`.
 contract EtherFiWithdrawalQueueAssistedBalanceAdapter is AssistedBalanceAdapter, IPositionDescribable {
     //
     // State
@@ -229,13 +229,13 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapter is AssistedBalanceAdapter,
     /// @inheritdoc IBalanceAdapter
     /// @notice Returns ONE native-ETH `Supplied` leg per owned cached withdrawal request, all sharing the static
     ///         `positionId = abi.encode(WITHDRAW_REQUEST_NFT)`. Each leg's `isLocked` reflects that request's state
-    ///         (finalized → `false`, pending → `true`) and its `tokenId` is the last `labels` entry.
+    ///         (finalized → `false`, pending → `true`) and its `tokenId` is the typed `positionInstanceId`.
     /// @dev Each cached id is valued live from on-chain reads (`_owedForToken`), re-verifying ownership every read:
     ///      requests not owned by `account` / invalid / claimed / burned value to 0 and emit no leg — the assistant
     ///      can only under-report. Zero-amount legs are skipped. The legs sum to `_ethOwed`'s total. The tokenId rides
-    ///      in `labels` (display only — ephemeral), NOT in `positionId`, so multiple requests share the static
-    ///      positionId and are distinguished for display by their labels (and for NAV by summing). Dropped entirely if
-    ///      the underlying asset is not registered in NAVCalculator.
+    ///      in `positionInstanceId` (ephemeral — burned on claim), NOT in `positionId`, so multiple requests share the
+    ///      static positionId and are distinguished by their `positionInstanceId` (and for NAV by summing). Dropped
+    ///      entirely if the underlying asset is not registered in NAVCalculator.
     function getAdapterPositions(address account, address assetFilter)
         external
         view

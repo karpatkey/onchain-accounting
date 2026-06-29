@@ -15,11 +15,12 @@ import "src/errors.sol";
 /// @notice Returns the USD price of sGHO (Aave's GHO savings vault share) by combining Chainlink's
 ///         GHO/USD feed with the current sGHO→GHO exchange rate from the sGHO ERC-4626 vault.
 /// @dev sGHO is an ERC-4626 share token with GHO as its underlying asset. The price is computed as
-///      `price = (GHO/USD) * (GHO_per_share / 10^decimals)`,
-///      where `GHO_per_share = IERC4626(SGHO).convertToAssets(10^decimals)`.
+///      `price = (GHO/USD) * (GHO_per_share / 10^_vaultDecimals)`,
+///      where `GHO_per_share = IERC4626(SGHO).convertToAssets(10^_vaultDecimals)`.
 ///      - The GHO/USD quote comes from `GHO_TO_USD_CHAINLINK_ORACLE` and uses `_decimals` decimals.
-///      - `convertToAssets` uses the vault's decimals; multiplication is scaled via `Math.mulDiv`
-///        so the returned USD price has `_decimals` decimals.
+///      - `convertToAssets` is queried with one whole share scaled by the vault's decimals; the
+///        multiplication is scaled via `Math.mulDiv` (rounding down) so the returned USD price has
+///        `_decimals` decimals.
 ///      Freshness is enforced on the Chainlink feed using `GHO_TO_USD_CHAINLINK_HEARTBEAT`.
 ///      If the feed is stale or the quoted Chainlink price is non-positive, the function returns `(0, true)`.
 /// @author KPK

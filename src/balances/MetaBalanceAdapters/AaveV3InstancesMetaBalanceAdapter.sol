@@ -24,7 +24,8 @@ interface IAavePoolAddressesProvider {
 ///         `bytes32` coordinates — here each coordinate is the instance's **ProtocolDataProvider address** (widened
 ///         to bytes32). Within an instance, reserves are enumerated trustlessly via `getAllReservesTokens()`, so
 ///         reserve tokens are NOT separate coordinates. Emits up to two legs per reserve (Supply/Collateral +
-///         Borrow), matching the per-instance `AaveV3Instance` adapter. See ADR 0010.
+///         Borrow), matching the legs the now-removed per-instance Aave V3 adapter emitted before ADR 0010 folded
+///         every instance into this single meta-adapter. See ADR 0010.
 /// @dev **Instance set is a governed allowlist — not auto-enumerated.** Aave exposes an on-chain
 ///      `PoolAddressesProviderRegistry` (mainnet `0xbaA999AC55EAce41CcAE355c77809e68Bb345170`,
 ///      `getAddressesProvidersList()`) that lists registered markets, and this adapter could in principle read it to
@@ -47,7 +48,7 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
     ///      Supply/Collateral (aToken balance) and Borrow. Aave V3 deprecated NEW stable borrows but legacy stable
     ///      debt can persist, so the Borrow leg is `variableDebt + stableDebt` (dropping stable debt would understate
     ///      debt and overstate NAV). The two debt kinds are summed into ONE `Borrowed` leg rather than emitted
-    ///      separately: they would otherwise share the same `(protocolId, positionId, balanceAsset, positionKind)`
+    ///      separately: they would otherwise share the same `(protocolSubId, positionId, balanceAsset, positionKind)`
     ///      key and collide, and the sum is what NAV needs anyway. Skips unregistered reserves and respects
     ///      assetFilter.
     function _instancePositions(address account, bytes32 instance, address assetFilter)

@@ -15,11 +15,11 @@ import "src/errors.sol";
 /// @notice Returns the USD price of RWIV (Nexus Mutual RWI Vault share) by combining Chainlink's
 ///         USDC/USD feed with the current RWIV→USDC exchange rate from the RWIV ERC-4626 vault.
 /// @dev RWIV is an ERC-4626 share token with USDC as its underlying asset. The price is computed as
-///      `price = (USDC/USD) * (USDC_per_share / 10^decimals)`,
-///      where `USDC_per_share = IERC4626(RWIV).convertToAssets(10^decimals)`.
+///      `price = (USDC/USD) * (USDC_per_share / 10^_vaultDecimals)`,
+///      where `USDC_per_share = IERC4626(RWIV).convertToAssets(10^_vaultDecimals)`.
 ///      - The USDC/USD quote comes from `USDC_TO_USD_CHAINLINK_ORACLE` and uses `_decimals` decimals.
-///      - `convertToAssets` uses the vault's decimals; multiplication is scaled via `Math.mulDiv`
-///        so the returned USD price has `_decimals` decimals.
+///      - `convertToAssets` uses the vault's decimals (`_vaultDecimals`); multiplication is scaled via
+///        `Math.mulDiv` so the returned USD price has `_decimals` decimals.
 ///      Freshness is enforced on the Chainlink feed using `USDC_TO_USD_CHAINLINK_HEARTBEAT`.
 ///      If the feed is stale or the quoted Chainlink price is non-positive, the function returns `(0, true)`.
 /// @author KPK

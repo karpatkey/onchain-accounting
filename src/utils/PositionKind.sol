@@ -8,7 +8,7 @@ pragma solidity ^0.8;
 ///      Assignment rule: the kind reflects the OUTERMOST action family — what the account does to
 ///      enter/exit the position. A position exited via unstake is `Staking` regardless of what is
 ///      wrapped inside (e.g. gauge-staked LP); the inner exposure stays recoverable from
-///      `protocolId`/`positionId`. LP principal sitting unstaked in the wallet is `Supplied`.
+///      `protocolSubId`/`positionId`. LP principal sitting unstaked in the wallet is `Supplied`.
 /// @author KPK
 enum PositionKind {
     Wallet, // plain ERC20 / native-token balance held directly (ERC20DefaultBalanceAdapter)

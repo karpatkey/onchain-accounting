@@ -12,9 +12,9 @@ pragma solidity ^0.8;
 ///      - All invoices in `_activeInvoices` have a corresponding entry in `invoices`
 ///      - Destination-side release (`releaseByInvoiceId`) is callable only by an authorized adapter — there is
 ///        no `fallback()` dispatcher and MANAGER cannot call it directly, so the release path is unreachable to
-///        an attacker (ADR 0012, C1). In this PR release pays the account from the escrow's own balance; the
-///        per-invoice *funded pass-through* (escrow pulls the amount from the calling adapter, no standing pool)
-///        lands with the recipient→adapter change in the follow-up adapter-provenance PR.
+///        an attacker (ADR 0012, C1). Release is a per-invoice *funded pass-through*: the escrow pulls the
+///        amount from the calling adapter (or requires `msg.value == amount` for native) and forwards it to the
+///        account, never paying from a standing balance.
 interface IBridgeEscrow {
     //
     // Errors

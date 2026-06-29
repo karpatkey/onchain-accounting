@@ -6,7 +6,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title IMetaBalanceAdapter
 /// @author KPK
-/// @notice Interface for *meta* balance adapter adapters: a single immutable adapter that can report positions
+/// @notice Interface for *meta* balance adapters: a single immutable adapter that can report positions
 ///         for an arbitrary number of instances of one protocol (e.g. every Morpho vault, every Balancer pool).
 /// @dev A meta-adapter is universal and instance-stateless — it holds no list of "active" instances and has no
 ///      admin/write functions. The set of instances to actually query lives on NAVCalculator (per-adapter,

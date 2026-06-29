@@ -61,7 +61,9 @@ library ProtocolIds {
     // Ecosystem ids — the broad `PositionBalance.protocolId` (grouping / roll-up layer). Several per-product slugs
     // below (the `protocolSubId`s) roll up to one of these, e.g. AAVE_V3_LENDING + AAVE_V3_SAFETY_MODULE + AAVE_V3_UMBRELLA
     // → AAVE_V3. For single-product ecosystems the adapter uses the SAME constant for both protocolId and protocolSubId
-    // (e.g. CONVEX, UNISWAP_V3, CAP, MERKL, WALLET, ERC4626, CURVE) — no separate ecosystem constant needed.
+    // (e.g. UNISWAP_V3, CAP, MERKL, WALLET, ERC4626) — no separate ecosystem constant needed. (CONVEX and CURVE keep
+    // distinct per-product subIds — CONVEX_CURVE_LP_STAKING, CURVE_POOLS/CURVE_GAUGES — so for them protocolId differs
+    // from protocolSubId even though they roll up to the CONVEX/CURVE ecosystem id.)
     // The version is kept in the ecosystem id where the protocol is a distinct system (aave-v3, balancer-v2/-v3,
     // uniswap-v2/-v3), so different versions are different `protocolId`s. NOT part of the stable identity key — that
     // uses `protocolSubId`. See INAVCalculator.PositionBalance.

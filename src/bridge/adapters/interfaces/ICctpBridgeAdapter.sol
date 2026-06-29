@@ -18,8 +18,8 @@ interface ICctpBridgeAdapter is IBridgeAdapter {
     /// @param invoiceId The invoice ID (32 bytes) - indexed
     /// @param destinationDomain The CCTP domain ID of destination chain
     /// @param mintRecipient The recipient address on destination chain (as bytes32)
-    /// @param amount The amount being bridged
-    /// @param nonce The CCTP message nonce (bytes32, Circle-assigned in V2)
+    /// @param amount The amount being bridged (encoded as bytes32)
+    /// @param nonce The CCTP message nonce (bytes32); always 0 here, as TokenMessengerV2 does not return it on burn
     event CctpBridgeInitiated(
         bytes32 indexed invoiceId, uint32 destinationDomain, bytes32 mintRecipient, bytes32 amount, bytes32 nonce
     );

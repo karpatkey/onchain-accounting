@@ -33,7 +33,7 @@ contract eETH_CustomPriceFeed is ICustomPriceFeed {
     /// @notice eETH token address.
     address public immutable EETH;
 
-    /// @notice weETH token address (used to get weETH/eETH rate via getRate()).
+    /// @notice weETH token address (used to get the eETH/weETH rate via getRate()).
     address public immutable WEETH;
 
     /// @notice Chainlink oracle for weETH to ETH exchange rate.
@@ -56,7 +56,7 @@ contract eETH_CustomPriceFeed is ICustomPriceFeed {
     //
 
     /// @param eEth_ The address of the eETH token.
-    /// @param weEth_ The address of the weETH token (used to get weETH/eETH rate).
+    /// @param weEth_ The address of the weETH token (used to get the eETH/weETH rate).
     /// @param weEthToEthChainlink_ The address of the weETH to ETH Chainlink oracle.
     /// @param ethToUsdChainlinkOracle_ The address of the ETH to USD Chainlink oracle.
     /// @param weEthToEthHeartbeat_ The time in seconds after which the weETH/ETH price is considered stale.

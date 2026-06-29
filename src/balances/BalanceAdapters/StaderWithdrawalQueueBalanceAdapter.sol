@@ -21,8 +21,8 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      A Stader request is binary — fully claimable OR fully locked — so each leg is valued at that
 ///      request's owed ETH (`ethFinalized` once finalized, else the rate-converted `ethExpected`) with
 ///      `isLocked = false` for a finalized (claimable) request and `true` for a not-yet-finalized one. The
-///      request id rides in the last `labels` entry (`["ETHx Withdrawal Queue", "Request #<id>"]`), never in
-///      `positionId` (the legs share the static positionId and are distinguished for display by their labels,
+///      request id rides in each leg's typed `positionInstanceId` (`bytes32(requestId)`), never in
+///      `positionId` (the legs share the static positionId and are distinguished by their `positionInstanceId`,
 ///      for NAV by summing). The balance methods (`getAdapterBalances`) still report the summed total.
 contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     //
@@ -203,14 +203,15 @@ contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescri
     /// @inheritdoc IBalanceAdapter
     /// @notice Returns ONE ETH-denominated `Supplied` leg per open (un-claimed) withdrawal request, all sharing the
     ///         static `positionId = abi.encode(address(USER_WITHDRAWAL_MANAGER))`. Each leg's `isLocked` reflects that
-    ///         request's state (finalized → `false`, pending → `true`) and its request id is the last `labels` entry.
+    ///         request's state (finalized → `false`, pending → `true`) and its request id is the typed
+    ///         `positionInstanceId`.
     /// @dev A Stader request is binary — fully claimable OR fully locked — so each open request emits exactly one leg:
     ///      a finalized request (`ethFinalized > 0`) is valued at `ethFinalized` with `isLocked = false`; any other
     ///      un-claimed request is valued at `ethExpected` with `isLocked = true`. Claimed entries
     ///      (owner == address(0)) and zero-amount legs are skipped. The legs sum to `_ethOwed`'s total. The request id
-    ///      rides in `labels` (display only), NOT in `positionId`, so multiple requests share the static positionId and
-    ///      are distinguished for display by their labels (and for NAV by summing). Same OOB enumeration as `_ethOwed`.
-    ///      Dropped entirely if the underlying asset is not registered in NAVCalculator.
+    ///      rides in `positionInstanceId` (`bytes32(requestId)`), NOT in `positionId`, so multiple requests share the
+    ///      static positionId and are distinguished by their `positionInstanceId` (and for NAV by summing). Same OOB
+    ///      enumeration as `_ethOwed`. Dropped entirely if the underlying asset is not registered in NAVCalculator.
     function getAdapterPositions(address account, address assetFilter)
         external
         view

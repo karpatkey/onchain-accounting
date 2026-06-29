@@ -15,12 +15,12 @@ import "src/errors.sol";
 /// @notice Returns the USD price of sUSDS by combining Chainlink’s USDS/USD feed with the
 ///         current sUSDS→USDS exchange rate from the sUSDS ERC-4626 vault.
 /// @dev sUSDS is an ERC-4626 share token. The price is computed as
-///      `price = (USDS/USD) * (sUSDS_per_share / 10**feedDecimals)`,
-///      where `sUSDS_per_share = IERC4626(sUSDS).convertToAssets(10**feedDecimals)`.
-///      - The USDS/USD quote comes from `USDS_to_USD_chainlinkOracle` and uses `_decimals` decimals.
-///      - `convertToAssets` is linear in shares, so dividing by the same `10**_decimals` used as input
+///      `price = (USDS/USD) * (sUSDS_per_share / 10**vaultDecimals)`,
+///      where `sUSDS_per_share = IERC4626(sUSDS).convertToAssets(10**vaultDecimals)`.
+///      - The USDS/USD quote comes from `USDS_TO_USD_CHAINLINK_ORACLE` and uses `_decimals` decimals.
+///      - `convertToAssets` is linear in shares, so dividing by the same `10**_vaultDecimals` used as input
 ///        yields the exchange rate (totalAssets/totalSupply); the result has `_decimals` decimals.
-///      Freshness is enforced on the Chainlink feed using `USDS_to_USD_chainlinkHeartbeat`.
+///      Freshness is enforced on the Chainlink feed using `USDS_TO_USD_CHAINLINK_HEARTBEAT`.
 ///      If the feed is stale or the quoted price is non-positive, the function returns `(0, true)` to signal staleness.
 /// @author KPK
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
@@ -38,10 +38,10 @@ contract sUSDS_CustomPriceFeed is ICustomPriceFeed {
     /// @notice The Savings USDS (sUSDS) vault contract address.
     address public immutable S_USDS;
 
-    /// @notice Chainlink oracle for ETH to USD
+    /// @notice Chainlink oracle for USDS to USD
     AggregatorV3Interface public immutable USDS_TO_USD_CHAINLINK_ORACLE;
 
-    /// @notice The heartbeat interval for the ETH/USD Chainlink oracle.
+    /// @notice The heartbeat interval for the USDS/USD Chainlink oracle.
     uint256 public immutable USDS_TO_USD_CHAINLINK_HEARTBEAT;
 
     /// @notice Number of decimals the returned price is represented with.
@@ -54,7 +54,7 @@ contract sUSDS_CustomPriceFeed is ICustomPriceFeed {
     // Constructor
     //
 
-    /// @notice Initialises the balance oracle for Savings USDS.
+    /// @notice Initialises the price oracle for Savings USDS.
     /// @param sUsds_ Address of the Savings USDS (sUSDS) vault contract.
     /// @param usdsToUsdChainlinkAddress_ Address of the USDS to USD Chainlink oracle.
     /// @param usdsToUsdChainlinkHeartbeat_ The time in seconds after which the USDS/USD price is considered stale if
@@ -71,7 +71,7 @@ contract sUSDS_CustomPriceFeed is ICustomPriceFeed {
     }
 
     //
-    // IBalanceOracleCustom
+    // ICustomPriceFeed
     //
 
     function _compute()

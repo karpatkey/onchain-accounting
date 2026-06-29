@@ -58,13 +58,15 @@ contract AaveV3SafetyModuleBalanceAdapter is IBalanceAdapter, IPositionDescribab
     // Type Definitions
     //
 
-    /// @dev Internal record describing one Safety Module stake token. Keeping the staked / reward addresses as constants
-    ///      (rather than reading them from the contract at deploy time) keeps the adapter purely view-friendly and means
-    ///      a misconfiguration in source code is the only way to ship a wrong wiring — caught at review time.
+    /// @dev Three-level position taxonomy for every position this adapter emits: brand `aave`, protocol `aave-v3`,
+    ///      sub-protocol `aave-v3-safety-module`. Pinned as constants so the identity is baked into bytecode.
     bytes32 private constant PROTOCOL_BRAND = ProtocolIds.AAVE;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.AAVE_V3;
     bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.AAVE_V3_SAFETY_MODULE;
 
+    /// @dev Internal record describing one Safety Module stake token. Keeping the staked / reward addresses as constants
+    ///      (rather than reading them from the contract at deploy time) keeps the adapter purely view-friendly and means
+    ///      a misconfiguration in source code is the only way to ship a wrong wiring — caught at review time.
     struct StakeTokenRecord {
         address stakeToken;
         address stakedToken;

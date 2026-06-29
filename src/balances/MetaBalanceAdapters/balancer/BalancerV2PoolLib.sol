@@ -42,7 +42,7 @@ library BalancerV2PoolLib {
 
     /// @notice The account's share of each underlying token for `bptAmount` BPT.
     /// @return tokens The underlying tokens (BPT-in-pool excluded).
-    /// @return amounts The corresponding `balances[i] * bptAmount / effectiveSupply` (0 if supply is 0).
+    /// @return amounts The corresponding `balances[i] * bptAmount / effectiveSupply` (0 if supply or bptAmount is 0).
     function shares(address vault, bytes32 poolId, address bpt, uint256 bptAmount)
         internal
         view

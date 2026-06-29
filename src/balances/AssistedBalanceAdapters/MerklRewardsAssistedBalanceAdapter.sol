@@ -106,7 +106,7 @@ contract MerklRewardsAssistedBalanceAdapter is AssistedBalanceAdapter, IPosition
     ///         Empty ⇒ one untagged position for the token. Shares of a token sum to the token's verified cumulative.
     mapping(address user => mapping(address token => CampaignShare[])) private _campaigns;
 
-    /// @dev Per-user enumeration list. Populated on first `submitProof` for a (user, token) pair, drained by
+    /// @dev Per-user enumeration list. Populated on first `submitProofs` entry for a (user, token) pair, drained by
     ///      `clearAllocation`. Used to power `getAdapterBalances` and `getAdapterPositions` without `address(0)`
     ///      asset filtering — Merkl's universe of distributed tokens is open, so the adapter cannot enumerate it
     ///      ahead of time and `underlyingAssetsSupported()` returns empty.
@@ -157,7 +157,7 @@ contract MerklRewardsAssistedBalanceAdapter is AssistedBalanceAdapter, IPosition
     /// @param distributor_     The Merkl Distributor address. Must be a contract.
     /// @param navCalculator_   The NAVCalculator address. Must be a contract.
     /// @param admin_           Holder of `DEFAULT_ADMIN_ROLE` — administers (grants/revokes) `ASSISTANT_ROLE`. Required.
-    /// @param assistant_       Holder of `ASSISTANT_ROLE` — authorized to call `submitProof` / `clearAllocation`.
+    /// @param assistant_       Holder of `ASSISTANT_ROLE` — authorized to call `submitProofs` / `clearAllocation`.
     ///                         Optional (pass `address(0)` to grant later via `admin_`). Should be the OIV Safe.
     constructor(address distributor_, address navCalculator_, address admin_, address assistant_)
         AssistedBalanceAdapter(admin_, assistant_)
@@ -187,7 +187,7 @@ contract MerklRewardsAssistedBalanceAdapter is AssistedBalanceAdapter, IPosition
     ///      live-root proof verification is the real guarantee. `AmountRegression` still catches a decreasing duplicate
     ///      token within a single list.
     /// @param user        Account the allocations are for.
-    /// @param allocs      The user's complete set of (token, cumulativeAmount, proof) entries.
+    /// @param allocs      The user's complete set of (token, cumulativeAmount, proof, campaigns) entries.
     function submitProofs(address user, Allocation[] calldata allocs) external onlyRole(ASSISTANT_ROLE) {
         _submit(user, abi.encode(allocs)); // friendly typed wrapper → shared replace chokepoint (base)
     }
@@ -258,8 +258,9 @@ contract MerklRewardsAssistedBalanceAdapter is AssistedBalanceAdapter, IPosition
     }
 
     /// @inheritdoc IPositionDescribable
-    /// @dev `["Claimable Rewards"]` — a static category (the reward token is in `balanceAsset`; there is no ephemeral
-    ///      per-item id, so `positionInstanceId` is empty for this adapter).
+    /// @dev `["Claimable Rewards"]` — a static category (the reward token is in `balanceAsset`). The argument is
+    ///      ignored; the per-leg Merkl campaign coordinate is carried on the position's `positionInstanceId`
+    ///      (`bytes32(0)` for an untagged token), not surfaced as a label.
     function positionLabels(bytes calldata) external pure override returns (string[] memory out) {
         out = new string[](1);
         out[0] = "Claimable Rewards";
@@ -410,8 +411,8 @@ contract MerklRewardsAssistedBalanceAdapter is AssistedBalanceAdapter, IPosition
         return n;
     }
 
-    /// @notice Builds one `Rewards` PositionBalance row. Extracted from the `getAdapterPositions` loop so the 9-field
-    ///         struct literal lives in its own stack frame (keeps the loop under the via_ir stack limit).
+    /// @notice Builds one `Rewards` PositionBalance row. Extracted from the row-building loop so the 11-field
+    ///         struct lives in its own stack frame (keeps the loop under the via_ir stack limit).
     /// @dev positionId is the Distributor (the claim target / trust anchor), NOT the reward token — the token is
     ///      already carried by `balanceAsset`, so encoding it here would be redundant with the reconciliation key.
     ///      Multiple reward tokens claimed from the same Distributor share this positionId and are distinguished by
@@ -423,7 +424,7 @@ contract MerklRewardsAssistedBalanceAdapter is AssistedBalanceAdapter, IPosition
         view
         returns (INAVCalculator.PositionBalance memory row)
     {
-        // Field-by-field (not a 9-field struct literal) to stay under the via_ir stack limit on the hot path.
+        // Field-by-field (not an 11-field struct literal) to stay under the via_ir stack limit on the hot path.
         row.balanceAsset = asset;
         row.balanceAdapter = address(this);
         row.amount = amount;

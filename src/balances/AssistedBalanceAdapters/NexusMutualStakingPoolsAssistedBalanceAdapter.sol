@@ -26,8 +26,9 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         stores **only ids, never amounts** — a faulty or compromised assistant cannot fabricate value; at worst
 ///         it omits an id (NAV under-counts), never over-counts. One holder can have several positions, possibly
 ///         across several pools. positionId is the **staking-pool contract address**
-///         (`abi.encode(StakingViewer.stakingPool(poolId))`); the NFT id is surfaced as the last display **label**
-///         (`["Staking", "<pool>", "NFT #<id>"]`), not in positionId.
+///         (`abi.encode(StakingViewer.stakingPool(poolId))`); the NFT id is surfaced as the typed
+///         `positionInstanceId` on each leg (the display labels are `["Staking Pools", "Pool #<poolId>"]`), not in
+///         positionId.
 /// @dev Access control comes from {AssistedBalanceAdapter}: `DEFAULT_ADMIN_ROLE` administers roles and
 ///      `ASSISTANT_ROLE` gates the submit/clear mutators. `submitTokenIds` **reverts** `NotTokenOwner` for any id
 ///      whose `tokenInfo` owner is not the account (fail-loud writes); reads instead **discard** an id no longer
@@ -238,7 +239,7 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedBalanceAdapter
 
     /// @inheritdoc IBalanceAdapter
     /// @notice Per StakingNFT position: a `Staking` (active + expired stake) and a `Rewards` (accrued) leg, each
-    ///         keyed by `positionId == abi.encode(stakingPoolAddress)` (NFT id in the labels). Zero legs are dropped;
+    ///         keyed by `positionId == abi.encode(stakingPoolAddress)` (NFT id in `positionInstanceId`). Zero legs are dropped;
     ///         ids no longer owned by `account` are discarded. Empty if NXM is unregistered, filtered out, or the
     ///         account holds no positions.
     function getAdapterPositions(address account, address assetFilter)
@@ -315,7 +316,7 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedBalanceAdapter
         if (staking == 0 && rewards == 0) return none;
 
         // positionId = the staking-pool contract address (deterministic per poolId). The tokenId is NOT in positionId;
-        // it rides in the display labels. A zero pool (unresolvable poolId) yields no leg (under-report).
+        // it rides in the typed `positionInstanceId`. A zero pool (unresolvable poolId) yields no leg (under-report).
         address pool = INexusStakingViewer(STAKING_VIEWER).stakingPool(tokens[0].poolId);
         if (pool == address(0)) return none;
         bytes memory positionId = abi.encode(pool);
@@ -411,7 +412,7 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedBalanceAdapter
     }
 
     /// @inheritdoc IPositionDescribable
-    /// @dev `["Staking Pools", "Pool #<poolId>"]` — the numeric pool id read live via `IStakingPool.getPoolId()`,
+    /// @dev `["Staking Pools", "Pool #<poolId>"]` — the numeric pool id read live via `INexusStakingPool.getPoolId()`,
     ///      matching the Nexus UI's pool numbering. Falls back to the pool address (`"0x…"`) if the read reverts
     ///      (non-Nexus / exotic positionId). The pool's product name is off-chain (IPFS metadata) and not readable
     ///      on-chain. The per-NFT id is the typed `positionInstanceId` on each leg, NOT a label. Empty for a

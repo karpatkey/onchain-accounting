@@ -14,10 +14,11 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 /// @notice Returns the USD price of sDAI by combining Chainlink’s xDAI/USD feed with the sDAI ERC-4626 exchange rate.
 /// @dev sDAI is an ERC-4626 share token representing claims on an xDAI-denominated vault. The price is computed as:
 ///      `price = (xDAI/USD) * (assetsPerShare)`, where
-///      `assetsPerShare = IERC4626(sDAI).convertToAssets(10**shareDecimals) / 10**shareDecimals`.
+///      `assetsPerShare = IERC4626(sDAI).convertToAssets(10**_vaultDecimals) / 10**_vaultDecimals`.
 ///      - The xDAI/USD quote comes from `X_DAI_TO_USD_CHAINLINK_ORACLE` and the returned price uses `_decimals`.
 ///      - Freshness of the Chainlink feed is checked against `X_DAI_TO_USD_CHAINLINK_HEARTBEAT`; if exceeded,
-///        the function returns `(0, true)`.
+///        the function returns `(0, true)`. A non-positive Chainlink answer (`xDaiToUsdPrice <= 0`) is likewise
+///        treated as stale and returns `(0, true)`.
 ///      - Multiplication/division is performed via `Math.mulDiv(..., Math.Rounding.Floor)` so the result is
 ///        scaled back to `_decimals` and rounded down.
 /// @author KPK
@@ -34,7 +35,7 @@ contract sXDAI_CustomPriceFeed is ICustomPriceFeed {
     // State
     //
 
-    /// @notice savingsXDai contract interface
+    /// @notice Address of the Savings xDai (sDAI) ERC-4626 vault.
     address public immutable S_DAI;
 
     /// @notice Chainlink oracle for xDAI to USD

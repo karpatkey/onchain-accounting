@@ -12,14 +12,14 @@ import {CompoundV3CometLib} from "src/balances/MetaBalanceAdapters/CompoundV3Com
 /// @title Compound V3 Comets Meta Balance Adapter
 /// @author KPK
 /// @notice One immutable adapter that reports an account's position in *any* Compound V3 (Comet) market — the
-///         base-token supply (`Supplied`) or borrow (`Borrowed`), every `Collateral` leg, and unclaimed `Earned`
-///         rewards (COMP). The instance coordinate is the comet address, widened to bytes32; the active comet set
+///         base-token supply (`Supplied`) or borrow (`Borrowed`), every `Collateral` leg, and unclaimed `Rewards`
+///         (COMP). The instance coordinate is the comet address, widened to bytes32; the active comet set
 ///         lives on NAVCalculator (`addMetaInstances`/`removeMetaInstances`). The CometRewards contract and reward token (COMP) are the
 ///         chain-level constants pinned in the constructor. Identity is encoded as `abi.encode(address(comet))`.
 ///         See ADR 0010.
 /// @dev Read math (base accrual, reward accrual, collateral enumeration) is delegated to `CompoundV3CometLib`,
-///      which mirrors the per-comet `CompoundV3Comet` adapter leg-for-leg (parity fork-tested). Multi-role assets
-///      (e.g. COMP as both collateral and reward) emit one leg per role, same as the per-comet adapter.
+///      which holds the canonical per-comet read math (parity fork-tested against the real cUSDCv3 market and
+///      holders). Multi-role assets (e.g. COMP as both collateral and reward) emit one leg per role.
 contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceAdapter {
     using SafeCast for int256;
 

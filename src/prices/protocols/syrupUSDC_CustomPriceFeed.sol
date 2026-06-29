@@ -15,8 +15,8 @@ import "src/errors.sol";
 /// @notice Returns the USD price of syrupUSDC by combining Chainlink's USDC/USD feed with the
 ///         current syrupUSDC→USDC exchange rate from the syrupUSDC ERC-4626 vault.
 /// @dev syrupUSDC is an ERC-4626 share token. The price is computed as
-///      `price = (USDC/USD) * (syrupUSDC_per_share / 10^decimals)`,
-///      where `syrupUSDC_per_share = IERC4626(syrupUSDC).convertToAssets(10^decimals)`.
+///      `price = (USDC/USD) * (usdc_per_share / 10^vaultDecimals)`,
+///      where `usdc_per_share = IERC4626(syrupUSDC).convertToAssets(10^vaultDecimals)`.
 ///      - The USDC/USD quote comes from `USDC_TO_USD_CHAINLINK_ORACLE` and uses `_decimals` decimals.
 ///      - `convertToAssets` uses the vault's decimals; multiplication is scaled via `Math.mulDiv`
 ///        so the returned USD price has `_decimals` decimals.

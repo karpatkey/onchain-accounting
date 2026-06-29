@@ -10,7 +10,7 @@ pragma solidity ^0.8;
 ///      `PositionBalance` (that keeps display work off the NAV hot path). The ephemeral per-item id (Uniswap V3 NFT
 ///      id, withdrawal request id, …) is NOT a label — it is the typed `PositionBalance.positionInstanceId` field.
 ///      Clients MUST NOT use these strings for identity, indexing, or reconciliation; use the typed
-///      `protocolId` / `positionId` / `PositionKind` fields on `PositionBalance` for those purposes.
+///      `protocolSubId` / `positionId` / `PositionKind` fields on `PositionBalance` for those purposes.
 /// @author KPK
 interface IPositionDescribable {
     /// @notice Human-readable protocol name, e.g. "Aave V3", "Morpho", "Uniswap V3".

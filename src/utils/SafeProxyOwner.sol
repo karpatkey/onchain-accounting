@@ -120,7 +120,7 @@ contract SafeProxyOwner is Ownable {
     /**
      * @notice Batch-execute an array of calls from the Safe via `MultiSendCallOnly`.
      * @param safe              Address of the Gnosis Safe that will execute the batch
-     * @param txs               Array of calls to execute (to, value, data)
+     * @param txs               Array of calls to execute (to, value, data, operation)
      */
     function executeMultiSend(address safe, Tx[] calldata txs) external onlyOwner {
         uint256 totalValue; // ETH forwarded to MultiSend (sum of individual `value`s)
@@ -130,9 +130,9 @@ contract SafeProxyOwner is Ownable {
             Tx calldata t = txs[i];
             totalValue += t.value;
 
-            // ─ operation (1 byte = 0) │ to (20) │ value (32) │ dataLen (32) │ data (N)
+            // ─ operation (1 byte) │ to (20) │ value (32) │ dataLen (32) │ data (N)
             bytes memory entry = abi.encodePacked(
-                t.operation, // operation: Call
+                t.operation, // per-tx operation (MultiSendCallOnly only accepts Call/0)
                 t.to,
                 t.value,
                 uint256(t.data.length),
@@ -150,7 +150,7 @@ contract SafeProxyOwner is Ownable {
 
     /// @notice Remove this helper contract from the owner list of a Safe
     /// @dev    Discovers its predecessor in the linked list and dispatches
-    ///         a `removeOwner` transaction via `executeOnSafe`
+    ///         a `removeOwner` transaction via `_execFromSafe`
     /// @param safe Address of the target Safe
     function removeThisOwner(address safe) external onlyOwner {
         address[] memory owners = ISafe(safe).getOwners();

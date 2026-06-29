@@ -21,8 +21,8 @@ import "src/constants.sol";
 ///         positions, health, value), extracted to keep NAVCalculator under the 24 576-byte EIP-170 limit.
 /// @dev All functions are `external` so the library compiles as a separate artifact and is invoked via
 ///      DELEGATECALL — running in NAVCalculator's storage context through the passed `storage` references.
-///      The read/compute entrypoints are computeNav / computeAccountPositions / hasPositions /
-///      getAssetsWithPositions / healthCheck / calculateValue / buildPriceData. The position-bearing ones
+///      The read/compute entrypoints are computeNav / computeAccountPositions / computeNavAndPositions /
+///      hasPositions / getAssetsWithPositions / healthCheck / calculateValue / buildPriceData. The position-bearing ones
 ///      build and consume the heavy PositionBalance[]/Position[] arrays entirely inside the library, so those
 ///      arrays never cross the NAV↔library ABI boundary (which is what makes piecemeal helper extraction
 ///      counter-productive under `via_ir`). NAV reads are off-chain eth_call, so the DELEGATECALL overhead is
@@ -528,9 +528,9 @@ library PriceFeedLib {
     ///         by `assetFilter` (address(0) = all). A reverting adapter is skipped (fail-open). Mirrors the former
     ///         NAVCalculator._getPositionBalances. Each adapter is queried once and its rows retained, then a
     ///         counting pass sizes the output to the EXACT number of surviving rows (registered asset + matching
-    ///         filter) — not a fixed `2·(adapters+instances)·assetCount` heuristic, which a multi-leg meta-adapter
-    ///         (e.g. Uniswap / PancakeSwap V3, up to 4 legs per LP NFT) could overflow, and not the
-    ///         sum-of-all-returned-rows, which would over-allocate when rows are filtered out.
+    ///         filter) — not a fixed `2·(adapters+instances)·assetCount` heuristic, which a multi-leg adapter
+    ///         (e.g. the Uniswap / PancakeSwap V3 assisted adapters, up to 4 legs per LP NFT) could overflow, and not
+    ///         the sum-of-all-returned-rows, which would over-allocate when rows are filtered out.
     function _getPositionBalances(
         address[] memory allAdapters,
         mapping(address => uint256) storage assetIndex,
@@ -546,7 +546,7 @@ library PriceFeedLib {
         // Second pass (in-memory, no external calls): count exactly the rows that survive the
         // registered-asset + assetFilter predicate, so `positions` is allocated to the precise size — no
         // over-allocation from filtered-out rows, and no fixed-heuristic under-allocation that a multi-leg
-        // meta-adapter (e.g. Uniswap/PancakeSwap V3) could overflow.
+        // adapter (e.g. the Uniswap/PancakeSwap V3 assisted adapters) could overflow.
         uint256 count;
         for (uint256 i = 0; i < totalAdapters; i++) {
             INAVCalculator.PositionBalance[] memory adapterPositions = perAdapter[i];
@@ -749,7 +749,7 @@ library PriceFeedLib {
             quoteAssetDecimals
         );
 
-        // Field-by-field assignment to the named return (not a 15-field struct literal) so this stays under the
+        // Field-by-field assignment to the named return (not a 17-field struct literal) so this stays under the
         // via_ir stack limit when inlined into the per-position enrichment loop.
         position.balanceAsset = INAVCalculator.Asset({
             asset: balance.balanceAsset.asset, symbol: canonicalSymbol, decimals: canonicalDecimals

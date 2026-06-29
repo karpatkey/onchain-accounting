@@ -2,17 +2,17 @@
 pragma solidity ^0.8.0;
 
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
-import {CrossRate_CustomPriceFeed} from "src/prices/protocols/CrossRate_CustomPriceFeed.sol";
+import {stETH_CustomPriceFeed} from "src/prices/protocols/stETH_CustomPriceFeed.sol";
 import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 
-/// @title stETH CrossRate_CustomPriceFeed fork tests
+/// @title stETH_CustomPriceFeed fork tests
 /// @notice Verifies pricing stETH as `stETH/USD = (ETH/USD) * (stETH/ETH)` via the generic
-///         CrossRate_CustomPriceFeed, replacing the raw STETH/USD Chainlink feed. The point of the change:
+///         stETH_CustomPriceFeed, replacing the raw STETH/USD Chainlink feed. The point of the change:
 ///         when NAV is quoted in ETH it divides each asset's USD price by ETH/USD; with this adapter the
 ///         ETH/USD reads cancel exactly, leaving the single dedicated stETH/ETH feed (no two-feed jitter),
 ///         while still reflecting genuine stETH depeg. See the rewire runbook.
 contract stETH_CrossRatePriceForkTest is TestEnvConfigurator {
-    CrossRate_CustomPriceFeed oracle;
+    stETH_CustomPriceFeed oracle;
 
     address constant STETH = 0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84;
     address constant ETH_TO_USD = 0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419; // X/USD
@@ -27,8 +27,8 @@ contract stETH_CrossRatePriceForkTest is TestEnvConfigurator {
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
 
-        oracle = new CrossRate_CustomPriceFeed(
-            STETH, ETH_TO_USD, STETH_TO_ETH, ETH_TO_USD_HEARTBEAT, STETH_TO_ETH_HEARTBEAT
+        oracle = new stETH_CustomPriceFeed(
+            STETH, STETH_TO_ETH, ETH_TO_USD, STETH_TO_ETH_HEARTBEAT, ETH_TO_USD_HEARTBEAT
         );
     }
 

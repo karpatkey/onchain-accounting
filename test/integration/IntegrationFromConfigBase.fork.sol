@@ -81,7 +81,8 @@ import {sUSDe_CustomPriceFeed} from "src/prices/protocols/sUSDe_CustomPriceFeed.
 import {syrupUSDC_CustomPriceFeed} from "src/prices/protocols/syrupUSDC_CustomPriceFeed.sol";
 import {sGHO_CustomPriceFeed} from "src/prices/protocols/sGHO_CustomPriceFeed.sol";
 import {wstETH_CustomPriceFeed} from "src/prices/protocols/wstETH_CustomPriceFeed.sol";
-import {CrossRate_CustomPriceFeed} from "src/prices/protocols/CrossRate_CustomPriceFeed.sol";
+import {stETH_CustomPriceFeed} from "src/prices/protocols/stETH_CustomPriceFeed.sol";
+import {OETH_CustomPriceFeed} from "src/prices/protocols/OETH_CustomPriceFeed.sol";
 import {rETH_CustomPriceFeed} from "src/prices/protocols/rETH_CustomPriceFeed.sol";
 import {ankrETH_CustomPriceFeed} from "src/prices/protocols/ankrETH_CustomPriceFeed.sol";
 import {NXM_CustomPriceFeed} from "src/prices/protocols/NXM_CustomPriceFeed.sol";
@@ -356,13 +357,13 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     }
 
     function _deployStEth() internal returns (address) {
-        // stETH reuses the generic CrossRate_CustomPriceFeed: stETH/USD = (ETH/USD) x (stETH/ETH).
+        // stETH/USD = (stETH/ETH) x (ETH/USD), via the dedicated stETH_CustomPriceFeed (a CrossRate subclass).
         address underlying = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "underlyingAsset"));
         address xToUsd = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "xToUsdFeed"));
         address yToX = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "yToXFeed"));
         uint256 xToUsdHb = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "xToUsdHeartbeat"));
         uint256 yToXHb = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "yToXHeartbeat"));
-        return address(new CrossRate_CustomPriceFeed(underlying, xToUsd, yToX, xToUsdHb, yToXHb));
+        return address(new stETH_CustomPriceFeed(underlying, yToX, xToUsd, yToXHb, xToUsdHb));
     }
 
     function _deployREth() internal returns (address) {
@@ -375,13 +376,13 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     }
 
     function _deployOeth() internal returns (address) {
-        // OETH reuses the generic CrossRate_CustomPriceFeed: OETH/USD = (ETH/USD) x (OETH/ETH).
+        // OETH/USD = (OETH/ETH) x (ETH/USD), via the dedicated OETH_CustomPriceFeed (a CrossRate subclass).
         address underlying = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "OETH", "underlyingAsset"));
         address xToUsd = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "OETH", "xToUsdFeed"));
         address yToX = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "OETH", "yToXFeed"));
         uint256 xToUsdHb = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "OETH", "xToUsdHeartbeat"));
         uint256 yToXHb = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "OETH", "yToXHeartbeat"));
-        return address(new CrossRate_CustomPriceFeed(underlying, xToUsd, yToX, xToUsdHb, yToXHb));
+        return address(new OETH_CustomPriceFeed(underlying, yToX, xToUsd, yToXHb, xToUsdHb));
     }
 
     function _deployAnkrEth() internal returns (address) {

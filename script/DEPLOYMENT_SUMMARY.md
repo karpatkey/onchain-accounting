@@ -329,7 +329,7 @@ script/verify/verify-all.sh
 - `sDAI_CustomPriceFeed` - Savings DAI price
 - `LDO_CustomPriceFeed` - Lido DAO token price
 - `sUSDS_CustomPriceFeed` - Sky Savings USDS price
-- `CrossRate_CustomPriceFeed` - Cross-rate calculations
+- `CrossRateCustomPriceFeed` - Cross-rate calculations
 
 ### Balance Adapters (Protocol Integrations)
 - `ERC20DefaultBalanceAdapter` - Wallet ERC20 + native, auto-registered at NAV initialization

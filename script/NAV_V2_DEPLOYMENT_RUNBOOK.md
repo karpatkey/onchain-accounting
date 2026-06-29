@@ -432,8 +432,8 @@ The first entry in a token's `priceFeeds` array is set via `registerAsset`; any 
 | sUSDe | `sUSDe` | ✓ | `sUsde`, `usdeToUsdChainlinkAddress`, `usdeToUsdChainlinkHeartbeat` |
 | sUSDS | `sUSDS` | ✓ | `sUsds`, `usdsToUsdChainlinkAddress`, `usdsToUsdChainlinkHeartbeat` |
 | syrupUSDC | `syrupUSDC` | ✓ | `syrupUsdc`, `usdcToUsdChainlinkAddress`, `usdcToUsdChainlinkHeartbeat` |
-| stETH | `stETH` | ✓ | `underlyingAsset`, `xToUsdFeed`, `yToXFeed`, `xToUsdHeartbeat`, `yToXHeartbeat` (deploys `CrossRate_CustomPriceFeed`) |
-| OETH | `OETH` | ✓ | `underlyingAsset`, `xToUsdFeed`, `yToXFeed`, `xToUsdHeartbeat`, `yToXHeartbeat` (deploys `CrossRate_CustomPriceFeed`) |
+| stETH | `stETH` | ✓ | `underlyingAsset`, `xToUsdFeed`, `yToXFeed`, `xToUsdHeartbeat`, `yToXHeartbeat` (deploys `CrossRateCustomPriceFeed`) |
+| OETH | `OETH` | ✓ | `underlyingAsset`, `xToUsdFeed`, `yToXFeed`, `xToUsdHeartbeat`, `yToXHeartbeat` (deploys `CrossRateCustomPriceFeed`) |
 | ETHx | `ETHx` | ✓ | `ethx`, `stakePoolsManager`, `ethToUsdChainlinkOracle`, `ethToUsdChainlinkHeartbeat` |
 | ETHPlus | `ETHPlus` | ✓ | `ethPlus`, `reserveProtocolHeartbeat` |
 | osETH | `osETH` | ✓ | `osToken`, `osTokenVaultController`, `underlyingToUsdChainlinkOracle`, `underlyingToUsdChainlinkHeartbeat` |

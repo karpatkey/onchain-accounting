@@ -35,7 +35,9 @@ import {syrupUSDC_L2_CustomPriceFeed} from "../../src/prices/protocols/syrupUSDC
 
 import {ETHPlus_CustomPriceFeed} from "../../src/prices/protocols/ETHPlus_CustomPriceFeed.sol";
 
-import {CrossRate_CustomPriceFeed} from "../../src/prices/protocols/CrossRate_CustomPriceFeed.sol";
+import {stETH_CustomPriceFeed} from "../../src/prices/protocols/stETH_CustomPriceFeed.sol";
+import {lsETH_CustomPriceFeed} from "../../src/prices/protocols/lsETH_CustomPriceFeed.sol";
+import {OETH_CustomPriceFeed} from "../../src/prices/protocols/OETH_CustomPriceFeed.sol";
 import {ankrETH_CustomPriceFeed} from "../../src/prices/protocols/ankrETH_CustomPriceFeed.sol";
 import {NXM_CustomPriceFeed} from "../../src/prices/protocols/NXM_CustomPriceFeed.sol";
 
@@ -398,7 +400,7 @@ contract DeployPriceFeeds is BaseDeployScript {
     function _deployStEth() internal {
         address deployed = _readAdapterDeployed("priceFeeds", "stETH");
         if (deployed != address(0)) {
-            console2.log("stETH CrossRate_CustomPriceFeed already deployed at:", deployed);
+            console2.log("stETH_CustomPriceFeed already deployed at:", deployed);
             return;
         }
 
@@ -411,16 +413,16 @@ contract DeployPriceFeeds is BaseDeployScript {
         uint256 stEthEthHeartbeat =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "stETH", "yToXHeartbeat"));
 
-        CrossRate_CustomPriceFeed stEthAdapter =
-            new CrossRate_CustomPriceFeed(stEth, ethUsdFeed, stEthEthFeed, ethUsdHeartbeat, stEthEthHeartbeat);
+        stETH_CustomPriceFeed stEthAdapter =
+            new stETH_CustomPriceFeed(stEth, stEthEthFeed, ethUsdFeed, stEthEthHeartbeat, ethUsdHeartbeat);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "stETH", address(stEthAdapter));
-        console2.log("stETH CrossRate_CustomPriceFeed deployed at:", address(stEthAdapter));
+        console2.log("stETH_CustomPriceFeed deployed at:", address(stEthAdapter));
     }
 
     function _deployLsEth() internal {
         address deployed = _readAdapterDeployed("priceFeeds", "lsETH");
         if (deployed != address(0)) {
-            console2.log("lsETH CrossRate_CustomPriceFeed already deployed at:", deployed);
+            console2.log("lsETH_CustomPriceFeed already deployed at:", deployed);
             return;
         }
 
@@ -433,10 +435,10 @@ contract DeployPriceFeeds is BaseDeployScript {
         uint256 lsEthEthHeartbeat =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "lsETH", "yToXHeartbeat"));
 
-        CrossRate_CustomPriceFeed lsEthAdapter =
-            new CrossRate_CustomPriceFeed(lsEth, ethUsdFeed, lsEthEthFeed, ethUsdHeartbeat, lsEthEthHeartbeat);
+        lsETH_CustomPriceFeed lsEthAdapter =
+            new lsETH_CustomPriceFeed(lsEth, lsEthEthFeed, ethUsdFeed, lsEthEthHeartbeat, ethUsdHeartbeat);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "lsETH", address(lsEthAdapter));
-        console2.log("lsETH CrossRate_CustomPriceFeed deployed at:", address(lsEthAdapter));
+        console2.log("lsETH_CustomPriceFeed deployed at:", address(lsEthAdapter));
     }
 
     function _deployREth() internal {
@@ -484,7 +486,7 @@ contract DeployPriceFeeds is BaseDeployScript {
     function _deployOeth() internal {
         address deployed = _readAdapterDeployed("priceFeeds", "OETH");
         if (deployed != address(0)) {
-            console2.log("OETH CrossRate_CustomPriceFeed already deployed at:", deployed);
+            console2.log("OETH_CustomPriceFeed already deployed at:", deployed);
             return;
         }
 
@@ -497,10 +499,10 @@ contract DeployPriceFeeds is BaseDeployScript {
         uint256 oethEthHeartbeat =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "OETH", "yToXHeartbeat"));
 
-        CrossRate_CustomPriceFeed oethAdapter =
-            new CrossRate_CustomPriceFeed(oeth, ethUsdFeed, oethEthFeed, ethUsdHeartbeat, oethEthHeartbeat);
+        OETH_CustomPriceFeed oethAdapter =
+            new OETH_CustomPriceFeed(oeth, oethEthFeed, ethUsdFeed, oethEthHeartbeat, ethUsdHeartbeat);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "OETH", address(oethAdapter));
-        console2.log("OETH CrossRate_CustomPriceFeed deployed at:", address(oethAdapter));
+        console2.log("OETH_CustomPriceFeed deployed at:", address(oethAdapter));
     }
 
     function _deployAnkrEth() internal {

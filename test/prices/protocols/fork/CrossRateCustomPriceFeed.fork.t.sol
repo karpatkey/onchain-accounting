@@ -2,11 +2,11 @@
 pragma solidity ^0.8.0;
 
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
-import {CrossRate_CustomPriceFeed} from "src/prices/protocols/CrossRate_CustomPriceFeed.sol";
+import {CrossRateCustomPriceFeed} from "src/prices/protocols/CrossRateCustomPriceFeed.sol";
 
-/// @title CrossRate_CustomPriceFeed fork tests (wstETH/USD via ETH/USD * wstETH/ETH on Gnosis)
-contract CrossRate_CustomPriceFeedForkTest is TestEnvConfigurator {
-    CrossRate_CustomPriceFeed public oracle;
+/// @title CrossRateCustomPriceFeed fork tests (wstETH/USD via ETH/USD * wstETH/ETH on Gnosis)
+contract CrossRateCustomPriceFeedForkTest is TestEnvConfigurator {
+    CrossRateCustomPriceFeed public oracle;
 
     address public wsteth = address(0x6C76971f98945AE98dD7d4DFcA8711ebea946eA6); // Gnosis wstETH
     address public ethUsdChainlink = address(0xa767f745331D267c7751297D982b050c93985627); // ETH/USD
@@ -19,7 +19,7 @@ contract CrossRate_CustomPriceFeedForkTest is TestEnvConfigurator {
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
 
-        oracle = new CrossRate_CustomPriceFeed(wsteth, ethUsdChainlink, wstEthEthChainlink, HEARTBEAT, HEARTBEAT);
+        oracle = new CrossRateCustomPriceFeed(wsteth, wstEthEthChainlink, ethUsdChainlink, HEARTBEAT, HEARTBEAT);
     }
 
     function test_getLatestPrice() public view {

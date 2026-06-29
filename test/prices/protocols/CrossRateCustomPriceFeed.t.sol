@@ -2,10 +2,10 @@
 pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
-import {CrossRate_CustomPriceFeed} from "src/prices/protocols/CrossRate_CustomPriceFeed.sol";
+import {CrossRateCustomPriceFeed} from "src/prices/protocols/CrossRateCustomPriceFeed.sol";
 
-/// @title CrossRate_CustomPriceFeed unit tests (no fork)
-contract CrossRate_CustomPriceFeedTest is Test {
+/// @title CrossRateCustomPriceFeed unit tests (no fork)
+contract CrossRateCustomPriceFeedTest is Test {
     address underlyingAsset;
     address xToUsdFeed;
     address yToXFeed;
@@ -19,26 +19,26 @@ contract CrossRate_CustomPriceFeedTest is Test {
 
     function test_invalidConstructorArgs_zeroUnderlying() public {
         vm.expectRevert();
-        new CrossRate_CustomPriceFeed(address(0), xToUsdFeed, yToXFeed, HEARTBEAT, HEARTBEAT);
+        new CrossRateCustomPriceFeed(address(0), xToUsdFeed, yToXFeed, HEARTBEAT, HEARTBEAT);
     }
 
     function test_invalidConstructorArgs_zeroXToUsdFeed() public {
         vm.expectRevert();
-        new CrossRate_CustomPriceFeed(underlyingAsset, address(0), yToXFeed, HEARTBEAT, HEARTBEAT);
+        new CrossRateCustomPriceFeed(underlyingAsset, address(0), yToXFeed, HEARTBEAT, HEARTBEAT);
     }
 
     function test_invalidConstructorArgs_zeroYToXFeed() public {
         vm.expectRevert();
-        new CrossRate_CustomPriceFeed(underlyingAsset, xToUsdFeed, address(0), HEARTBEAT, HEARTBEAT);
+        new CrossRateCustomPriceFeed(underlyingAsset, xToUsdFeed, address(0), HEARTBEAT, HEARTBEAT);
     }
 
     function test_invalidConstructorArgs_zeroXToUsdHeartbeat() public {
         vm.expectRevert();
-        new CrossRate_CustomPriceFeed(underlyingAsset, xToUsdFeed, yToXFeed, 0, HEARTBEAT);
+        new CrossRateCustomPriceFeed(underlyingAsset, xToUsdFeed, yToXFeed, 0, HEARTBEAT);
     }
 
     function test_invalidConstructorArgs_zeroYToXHeartbeat() public {
         vm.expectRevert();
-        new CrossRate_CustomPriceFeed(underlyingAsset, xToUsdFeed, yToXFeed, HEARTBEAT, 0);
+        new CrossRateCustomPriceFeed(underlyingAsset, xToUsdFeed, yToXFeed, HEARTBEAT, 0);
     }
 }

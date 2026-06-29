@@ -19,7 +19,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 ///      identical to the former per-feed `_compute()`: `price = rate · baseAnswer / 1e18` (Math.Rounding.Floor),
 ///      stale when the base answer is non-positive, the base feed is past its heartbeat, or `_rate()` is 0.
 ///      Staleness uses `effectiveUpdatedAt = min(updatedAt, block.timestamp)` to avoid upstream-clock bias.
-///      Feeds whose rate is itself a Chainlink feed should use the generic `CrossRate_CustomPriceFeed` instead;
+///      Feeds whose rate is itself a Chainlink feed should use the generic `CrossRateCustomPriceFeed` instead;
 ///      feeds with no Chainlink base (e.g. ETHPlus) or a derived two-feed rate (e.g. eETH) stay bespoke.
 abstract contract BaseCustomPriceFeed is ICustomPriceFeed {
     using Math for uint256;

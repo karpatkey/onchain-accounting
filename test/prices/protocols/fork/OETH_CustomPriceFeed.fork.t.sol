@@ -2,16 +2,16 @@
 pragma solidity ^0.8.0;
 
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
-import {CrossRate_CustomPriceFeed} from "src/prices/protocols/CrossRate_CustomPriceFeed.sol";
+import {OETH_CustomPriceFeed} from "src/prices/protocols/OETH_CustomPriceFeed.sol";
 import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 
-/// @title OETH CrossRate_CustomPriceFeed fork tests
+/// @title OETH_CustomPriceFeed fork tests
 /// @notice Verifies pricing Origin OETH as `OETH/USD = (ETH/USD) * (OETH/ETH)` via the generic
-///         CrossRate_CustomPriceFeed. OETH rebases ~1:1 to ETH; the Chainlink OETH/ETH feed captures any
+///         OETH_CustomPriceFeed. OETH rebases ~1:1 to ETH; the Chainlink OETH/ETH feed captures any
 ///         genuine deviation. As with the stETH instance, the ETH/USD reads cancel when NAV is quoted
 ///         in ETH, leaving the single dedicated OETH/ETH feed.
 contract OETH_CrossRatePriceForkTest is TestEnvConfigurator {
-    CrossRate_CustomPriceFeed oracle;
+    OETH_CustomPriceFeed oracle;
 
     address constant OETH = 0x856c4Efb76C1D1AE02e20CEB03A2A6a08b0b8dC3;
     address constant ETH_TO_USD = 0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419; // X/USD
@@ -26,7 +26,7 @@ contract OETH_CrossRatePriceForkTest is TestEnvConfigurator {
         vm.rollFork(FORK_BLOCK);
 
         oracle =
-            new CrossRate_CustomPriceFeed(OETH, ETH_TO_USD, OETH_TO_ETH, ETH_TO_USD_HEARTBEAT, OETH_TO_ETH_HEARTBEAT);
+            new OETH_CustomPriceFeed(OETH, OETH_TO_ETH, ETH_TO_USD, OETH_TO_ETH_HEARTBEAT, ETH_TO_USD_HEARTBEAT);
     }
 
     /// @dev In-EVM ground truth: price == (ETH/USD) * (OETH/ETH) / 1e18 (OETH/ETH is 18 decimals).

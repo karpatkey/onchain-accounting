@@ -5,6 +5,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
+import {AssistedNftCacheAdapter} from "src/balances/AssistedBalanceAdapters/AssistedNftCacheAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
@@ -35,7 +36,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      owned (fail-open). See `docs/decisions/0015-assisted-balance-adapter-family.md` (Merkl precedent, ADR 0007).
 ///      The no-arg balance getters (`getAdapterBalances`/`getAdapterBalanceForAsset`) return the summed NXM total
 ///      across the account's owned, cached positions.
-contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedBalanceAdapter, IPositionDescribable {
+contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedNftCacheAdapter, IPositionDescribable {
     using Strings for uint256;
 
     //
@@ -46,10 +47,12 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedBalanceAdapter
     bytes32 private constant PROTOCOL_ID = ProtocolIds.NEXUS_MUTUAL;
     bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.NEXUS_MUTUAL_STAKING_POOLS;
 
-    /// @notice Hard cap on cached tokenIds per account. The read path iterates the cache (one `tokenInfo` per id) and
-    ///         hands the survivors to `getTokens`/`getAggregatedTokens`, which iterate each token's tranches — an
-    ///         unbounded set could OOG inside the viewer (NOT caught by NAVCalculator's try/catch). 64 is generous
-    ///         headroom over a real account (the OIV Safes hold a handful); the assistant must GC closed positions.
+    /// @notice Hard cap on cached tokenIds per account (returned by the {_maxTokenIds} hook the shared
+    ///         {AssistedNftCacheAdapter} base enforces at submit time). The read path iterates the cache (one
+    ///         `tokenInfo` per id) and hands the survivors to `getTokens`/`getAggregatedTokens`, which iterate each
+    ///         token's tranches — an unbounded set could OOG inside the viewer (NOT caught by NAVCalculator's
+    ///         try/catch). 64 is generous headroom over a real account (the OIV Safes hold a handful); the assistant
+    ///         must GC closed positions.
     uint256 public constant MAX_TOKEN_IDS = 64;
 
     //
@@ -68,20 +71,6 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedBalanceAdapter
     /// @notice NAVCalculator — used to look up the registered NXM asset metadata when emitting positions.
     INAVCalculator public immutable NAV_CALCULATOR;
 
-    /// @notice Candidate StakingNFT tokenIds cached per account (the only thing the assistant supplies).
-    mapping(address account => uint256[] tokenIds) private _tokenIds;
-
-    /// @dev `idxPlus1` = index of `tokenId` in `_tokenIds[account]` plus 1. Zero ⇒ not present (dedup + O(1) removal).
-    mapping(address account => mapping(uint256 tokenId => uint256)) private _tokenIdIdxPlus1;
-
-    //
-    // Events
-    //
-
-    event TokenIdSubmitted(address indexed account, uint256 indexed tokenId);
-    event TokenIdCleared(address indexed account, uint256 indexed tokenId);
-    event AccountCleared(address indexed account);
-
     //
     // Constructor
     //
@@ -99,7 +88,7 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedBalanceAdapter
         address navCalculator_,
         address admin_,
         address assistant_
-    ) AssistedBalanceAdapter(admin_, assistant_) {
+    ) AssistedNftCacheAdapter(admin_, assistant_) {
         if (
             stakingNft_ == address(0) || stakingViewer_ == address(0) || underlyingToken_ == address(0)
                 || navCalculator_ == address(0)
@@ -117,72 +106,23 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedBalanceAdapter
     }
 
     //
-    // Mutators (onlyRole(ASSISTANT_ROLE))
+    // Cache hooks (AssistedNftCacheAdapter)
     //
 
-    /// @notice Submit `account`'s **complete** set of candidate StakingNFT tokenIds — this **replaces** the account's
-    ///         cached set entirely (the prior ids are dropped first), so the assistant always submits the full list,
-    ///         not a delta. Duplicates within the list collapse (dedup). **Reverts** `NotTokenOwner` if any id's
-    ///         `tokenInfo` owner is not `account` and `TokenIdCacheFull` past `MAX_TOKEN_IDS` — writes are fail-loud,
-    ///         and because they revert atomically, a bad list leaves the prior set untouched. Correctness does not
-    ///         depend on the ownership check (reads re-verify ownership).
-    function submitTokenIds(address account, uint256[] calldata tokenIds) external onlyRole(ASSISTANT_ROLE) {
-        _submit(account, abi.encode(tokenIds)); // friendly typed wrapper → shared replace chokepoint (base)
-    }
-
-    /// @notice Batch variant: for each account, its sublist **replaces** that account's cached set. `accounts` and
-    ///         `tokenIds` must have the same length.
-    function submitTokenIdsBatch(address[] calldata accounts, uint256[][] calldata tokenIds)
-        external
-        onlyRole(ASSISTANT_ROLE)
-    {
-        bytes[] memory data = new bytes[](tokenIds.length);
-        for (uint256 i; i < tokenIds.length; ++i) {
-            data[i] = abi.encode(tokenIds[i]);
-        }
-        _submitBatch(accounts, data);
-    }
-
-    /// @inheritdoc AssistedBalanceAdapter
-    /// @dev Decodes the `uint256[]` token-id list and replaces `account`'s cached set (clear then re-add, fail-loud).
-    function _applyReplace(address account, bytes memory data) internal override {
-        uint256[] memory ids = abi.decode(data, (uint256[]));
-        _clearTokenIds(account);
-        for (uint256 i; i < ids.length; ++i) {
-            _addTokenId(account, ids[i]);
+    /// @inheritdoc AssistedNftCacheAdapter
+    /// @dev Ownership read for the cache's write-time check: wraps `INexusStakingNFT.tokenInfo` so a non-existent /
+    ///      burned id (which `tokenInfo` reverts on) returns `(0, false)` rather than bubbling.
+    function _ownerOf(uint256 tokenId) internal view override returns (address, bool) {
+        try INexusStakingNFT(STAKING_NFT).tokenInfo(tokenId) returns (uint256, address owner) {
+            return (owner, true);
+        } catch {
+            return (address(0), false);
         }
     }
 
-    /// @notice Drop a cached tokenId. Idempotent. GC for withdrawn/transferred positions (stale ids already read as 0).
-    function clearTokenId(address account, uint256 tokenId) external onlyRole(ASSISTANT_ROLE) {
-        if (_tokenIdIdxPlus1[account][tokenId] == 0) return;
-        _removeTokenId(account, tokenId);
-        emit TokenIdCleared(account, tokenId);
-    }
-
-    /// @notice Drop all cached tokenIds for `account`.
-    function clearAccount(address account) external onlyRole(ASSISTANT_ROLE) {
-        _clearTokenIds(account);
-        emit AccountCleared(account);
-    }
-
-    /// @dev Delete the account's cached id set (storage only, no event). Shared by `clearAccount` and the
-    ///      replace-on-submit path.
-    function _clearTokenIds(address account) private {
-        uint256[] storage ids = _tokenIds[account];
-        for (uint256 i; i < ids.length; ++i) {
-            delete _tokenIdIdxPlus1[account][ids[i]];
-        }
-        delete _tokenIds[account];
-    }
-
-    //
-    // Reads (view, anyone)
-    //
-
-    /// @notice Candidate tokenIds currently cached for `account` (display/debug; not ownership-filtered).
-    function tokenIdsOf(address account) external view returns (uint256[] memory) {
-        return _tokenIds[account];
+    /// @inheritdoc AssistedNftCacheAdapter
+    function _maxTokenIds() internal pure override returns (uint256) {
+        return MAX_TOKEN_IDS;
     }
 
     //
@@ -253,7 +193,7 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedBalanceAdapter
         }
         if (account == address(0)) return new INAVCalculator.PositionBalance[](0);
 
-        uint256[] memory ids = _tokenIds[account];
+        uint256[] memory ids = _cachedTokenIds(account);
         if (ids.length == 0) return new INAVCalculator.PositionBalance[](0);
 
         // NXM must be registered in NAVCalculator for the position to count in NAV. Resolve its Asset record once.
@@ -338,51 +278,13 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedBalanceAdapter
     }
 
     //
-    // Internal — write
-    //
-
-    function _addTokenId(address account, uint256 tokenId) internal {
-        if (_tokenIdIdxPlus1[account][tokenId] != 0) return; // already cached (idempotent no-op)
-        // Cap the cache so the per-account read loop stays gas-bounded (OOG there isn't caught by NAV). The assistant
-        // must GC closed positions (`clearTokenId`) to make room; a real account never approaches MAX_TOKEN_IDS
-        // positions. **Revert** rather than silently dropping the id — writes are fail-loud (like the ownership check
-        // below), so a full cache surfaces to the assistant instead of silently omitting an owned position.
-        if (_tokenIds[account].length >= MAX_TOKEN_IDS) revert TokenIdCacheFull(account, MAX_TOKEN_IDS);
-        // Fail-loud ownership check: a non-owned id is a caller mistake. `tokenInfo` reverts for a non-existent id;
-        // surface that as NotTokenOwner too.
-        try INexusStakingNFT(STAKING_NFT).tokenInfo(tokenId) returns (uint256, address owner) {
-            if (owner != account) revert NotTokenOwner(account, tokenId);
-        } catch {
-            revert NotTokenOwner(account, tokenId);
-        }
-        _tokenIds[account].push(tokenId);
-        _tokenIdIdxPlus1[account][tokenId] = _tokenIds[account].length;
-        emit TokenIdSubmitted(account, tokenId);
-    }
-
-    function _removeTokenId(address account, uint256 tokenId) internal {
-        uint256 idxPlus1 = _tokenIdIdxPlus1[account][tokenId];
-        if (idxPlus1 == 0) return;
-        uint256 idx = idxPlus1 - 1;
-        uint256[] storage list = _tokenIds[account];
-        uint256 lastIdx = list.length - 1;
-        if (idx != lastIdx) {
-            uint256 lastId = list[lastIdx];
-            list[idx] = lastId;
-            _tokenIdIdxPlus1[account][lastId] = idx + 1;
-        }
-        list.pop();
-        delete _tokenIdIdxPlus1[account][tokenId];
-    }
-
-    //
     // Internal — valuation
     //
 
     /// @dev The cached tokenIds still owned by `account`, re-verified live via `StakingNFT.tokenInfo`. Discards
     ///      (never reverts) ids that were withdrawn/transferred away — the assistant can only under-report.
     function _ownedCachedIds(address account) internal view returns (uint256[] memory ids) {
-        uint256[] memory cached = _tokenIds[account];
+        uint256[] memory cached = _cachedTokenIds(account);
         uint256[] memory found = new uint256[](cached.length);
         uint256 n;
         for (uint256 i; i < cached.length; ++i) {

@@ -101,6 +101,19 @@ contract MockStakingViewer {
     }
 }
 
+/// @notice Minimal Nexus StakingPool mock exposing `getPoolId()` for the positionLabels "Pool #<id>" leaf.
+contract MockNexusStakingPool {
+    uint256 private immutable _poolId;
+
+    constructor(uint256 poolId_) {
+        _poolId = poolId_;
+    }
+
+    function getPoolId() external view returns (uint256) {
+        return _poolId;
+    }
+}
+
 /// @title NexusMutualStakingPoolsBalanceAdapter unit tests (assisted, agent-fed)
 contract NexusMutualStakingPoolsBalanceAdapterTest is BalanceAdapterTestBase {
     NexusMutualStakingPoolsBalanceAdapter public adapter;
@@ -226,13 +239,32 @@ contract NexusMutualStakingPoolsBalanceAdapterTest is BalanceAdapterTestBase {
             assertEq(p[i].protocolId, ProtocolIds.NEXUS_MUTUAL);
             assertEq(p[i].positionId, expectedId);
             assertEq(p[i].isDebt, false);
-            // Static breadcrumb = [category, pool address] (positionId-derived); the NFT id rides in positionInstanceId.
+            // Static breadcrumb = [category, leaf]; the mock pool address has no getPoolId(), so positionLabels
+            // falls back to the pool address. The "Pool #<id>" path is covered by test_positionLabels_poolIdLeaf.
             string[] memory lbl = adapter.positionLabels(p[i].positionId);
             assertEq(lbl.length, 2);
             assertEq(lbl[0], "Staking Pools");
             assertEq(lbl[1], Strings.toHexString(viewer.poolAddr(7)));
             assertEq(p[i].positionInstanceId, bytes32(uint256(4)));
         }
+    }
+
+    function test_positionLabels_poolIdLeaf() public {
+        // A real StakingPool exposes getPoolId(); the leaf is "Pool #<id>" (matches the Nexus UI numbering).
+        MockNexusStakingPool pool = new MockNexusStakingPool(42);
+        string[] memory lbl = adapter.positionLabels(abi.encode(address(pool)));
+        assertEq(lbl.length, 2);
+        assertEq(lbl[0], "Staking Pools");
+        assertEq(lbl[1], "Pool #42");
+    }
+
+    function test_positionLabels_fallsBackToAddressWhenNoPoolId() public {
+        // A positionId whose pool has no getPoolId() (non-Nexus / EOA) falls back to the pool address.
+        address notAPool = makeAddr("notAPool");
+        string[] memory lbl = adapter.positionLabels(abi.encode(notAPool));
+        assertEq(lbl.length, 2);
+        assertEq(lbl[0], "Staking Pools");
+        assertEq(lbl[1], Strings.toHexString(notAPool));
     }
 
     /// @dev Two positions in two different pools → 4 legs, each keyed by its own (tokenId, poolId). Read order

@@ -411,14 +411,23 @@ contract NexusMutualStakingPoolsBalanceAdapter is AssistedBalanceAdapter, IPosit
     }
 
     /// @inheritdoc IPositionDescribable
-    /// @dev `["Staking Pools", "<pool address>"]`, derived purely from `positionId` (the staking pool). The per-NFT id
-    ///      is the typed `positionInstanceId` on each leg, NOT a label. Empty for a short/malformed positionId.
-    function positionLabels(bytes calldata positionId) external pure override returns (string[] memory out) {
+    /// @dev `["Staking Pools", "Pool #<poolId>"]` — the numeric pool id read live via `IStakingPool.getPoolId()`,
+    ///      matching the Nexus UI's pool numbering. Falls back to the pool address (`"0x…"`) if the read reverts
+    ///      (non-Nexus / exotic positionId). The pool's product name is off-chain (IPFS metadata) and not readable
+    ///      on-chain. The per-NFT id is the typed `positionInstanceId` on each leg, NOT a label. Empty for a
+    ///      short/malformed positionId.
+    function positionLabels(bytes calldata positionId) external view override returns (string[] memory out) {
         if (positionId.length < 32) return new string[](0);
         address pool = abi.decode(positionId, (address));
         out = new string[](2);
         out[0] = "Staking Pools";
-        out[1] = Strings.toHexString(pool);
+        // Low-level staticcall + length check (not a typed try/catch): a no-code / non-Nexus / fallback-only
+        // positionId returns success with empty data, which a typed call would then fail to decode and REVERT
+        // uncaught — this display view must never revert, so we read defensively and fall back to the address.
+        (bool ok, bytes memory data) = pool.staticcall(abi.encodeWithSelector(INexusStakingPool.getPoolId.selector));
+        out[1] = (ok && data.length >= 32)
+            ? string.concat("Pool #", Strings.toString(abi.decode(data, (uint256))))
+            : Strings.toHexString(pool);
     }
 
     function _leg(
@@ -494,4 +503,10 @@ interface INexusStakingViewer {
 
     /// @notice The (deterministic) staking-pool contract address for `poolId`. Used as the `positionId`.
     function stakingPool(uint256 poolId) external view returns (address);
+}
+
+/// @notice Minimal interface for a Nexus Mutual StakingPool — its numeric pool id, for the display label
+///         (`"Pool #<id>"`). The pool's product name is off-chain (IPFS metadata), so it is not read here.
+interface INexusStakingPool {
+    function getPoolId() external view returns (uint256);
 }

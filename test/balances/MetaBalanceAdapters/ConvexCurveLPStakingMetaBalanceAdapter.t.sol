@@ -2,7 +2,7 @@
 pragma solidity ^0.8;
 
 import {Test} from "forge-std/Test.sol";
-import {ConvexRewardsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/ConvexRewardsMetaBalanceAdapter.sol";
+import {ConvexCurveLPStakingMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/ConvexCurveLPStakingMetaBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -187,11 +187,11 @@ contract MockCvxToken {
 
 // ─── Test contract ────────────────────────────────────────────────────────────
 
-contract ConvexRewardsMetaBalanceAdapterTest is Test {
+contract ConvexCurveLPStakingMetaBalanceAdapterTest is Test {
     Mock_NAVCalculator nav;
     MockConvexBooster booster;
     MockCvxToken cvx;
-    ConvexRewardsMetaBalanceAdapter meta;
+    ConvexCurveLPStakingMetaBalanceAdapter meta;
 
     MockToken usdc;
     MockToken weth;
@@ -232,7 +232,7 @@ contract ConvexRewardsMetaBalanceAdapterTest is Test {
         rewarder = new MockConvexRewarder(address(pool), address(crv), 42);
         booster.setPool(42, address(pool));
 
-        meta = new ConvexRewardsMetaBalanceAdapter(address(booster), address(cvx), "Convex", address(nav));
+        meta = new ConvexCurveLPStakingMetaBalanceAdapter(address(booster), address(cvx), "Convex", address(nav));
     }
 
     function _instance(address r) internal pure returns (bytes32[] memory ins) {
@@ -270,7 +270,7 @@ contract ConvexRewardsMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory pos =
             meta.getAdapterPositionsForInstances(alice, _instance(address(rewarder)), address(0));
         assertGt(pos.length, 0);
-        assertEq(pos[0].protocolSubId, ProtocolIds.CONVEX);
+        assertEq(pos[0].protocolSubId, ProtocolIds.CONVEX_CURVE_LP_STAKING);
         assertEq(pos[0].protocolId, ProtocolIds.CONVEX);
         assertEq(pos[0].positionId, abi.encode(address(rewarder)));
         assertEq(pos[0].balanceAdapter, address(meta));
@@ -343,8 +343,8 @@ contract ConvexRewardsMetaBalanceAdapterTest is Test {
     }
 
     function test_noCvxToken_noCvxLeg() public {
-        ConvexRewardsMetaBalanceAdapter noCvx =
-            new ConvexRewardsMetaBalanceAdapter(address(booster), address(0), "Convex", address(nav));
+        ConvexCurveLPStakingMetaBalanceAdapter noCvx =
+            new ConvexCurveLPStakingMetaBalanceAdapter(address(booster), address(0), "Convex", address(nav));
         rewarder.setEarned(alice, 500e18);
 
         INAVCalculator.PositionBalance[] memory pos =
@@ -444,8 +444,8 @@ contract ConvexRewardsMetaBalanceAdapterTest is Test {
         assertGt(pos.length, 0);
         string[] memory labels = meta.positionLabels(pos[0].positionId);
         assertEq(labels.length, 2);
-        assertEq(labels[0], "Curve LP");
-        assertEq(labels[1], "USDC/WETH Convex");
+        assertEq(labels[0], "Staking");
+        assertEq(labels[1], "Curve LP");
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────

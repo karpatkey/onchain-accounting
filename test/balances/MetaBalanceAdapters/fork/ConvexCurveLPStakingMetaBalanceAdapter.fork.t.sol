@@ -2,13 +2,13 @@
 pragma solidity ^0.8;
 
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
-import {ConvexRewardsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/ConvexRewardsMetaBalanceAdapter.sol";
+import {ConvexCurveLPStakingMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/ConvexCurveLPStakingMetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title ConvexRewardsMetaForkTest
-/// @notice Fork tests for ConvexRewardsMetaBalanceAdapter against real mainnet contracts.
+/// @notice Fork tests for ConvexCurveLPStakingMetaBalanceAdapter against real mainnet contracts.
 ///
 /// Pools under test (from karpatkey mainnet config):
 ///   - weETH/WETH  rewarder 0x5411CC583f0b51104fA523eEF9FC77A29DF80F58  lpToken 0xDB74dfDD3...
@@ -44,7 +44,7 @@ contract ConvexRewardsMetaForkTest is BalanceAdapterTestBase {
 
     uint256 public constant FORK_BLOCK = 22_500_000;
 
-    ConvexRewardsMetaBalanceAdapter public meta;
+    ConvexCurveLPStakingMetaBalanceAdapter public meta;
 
     // Real holder with staked LP in crvUSD/USDC rewarder at FORK_BLOCK
     address public constant CRVUSD_USDC_STAKER = 0x989AEb4d175e16225E39E87d0D97A3360524AD80;
@@ -67,7 +67,7 @@ contract ConvexRewardsMetaForkTest is BalanceAdapterTestBase {
         assets[8] = address(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48); // USDC duplicate guard
         balances = _deployBalancesForAdapter(assets);
 
-        meta = new ConvexRewardsMetaBalanceAdapter(CONVEX_BOOSTER, CVX, "Convex", address(balances));
+        meta = new ConvexCurveLPStakingMetaBalanceAdapter(CONVEX_BOOSTER, CVX, "Convex", address(balances));
     }
 
     function _instances(address[] memory rewarders) internal pure returns (bytes32[] memory ins) {
@@ -179,7 +179,7 @@ contract ConvexRewardsMetaForkTest is BalanceAdapterTestBase {
 
         assertGt(pos.length, 0);
         for (uint256 i; i < pos.length; ++i) {
-            assertEq(pos[i].protocolSubId, ProtocolIds.CONVEX);
+            assertEq(pos[i].protocolSubId, ProtocolIds.CONVEX_CURVE_LP_STAKING);
             assertEq(pos[i].protocolId, ProtocolIds.CONVEX);
             assertEq(pos[i].positionId, abi.encode(REWARDER_CRVUSD_USDC));
         }

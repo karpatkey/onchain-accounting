@@ -19,7 +19,7 @@ pragma solidity ^0.8;
 ///        MORPHO_MARKETS                  → (bytes32 marketId)
 ///        BALANCER_V3_POOL                → (address pool)
 ///        BALANCER_V3_GAUGE / V2_GAUGE                  → (address gauge)
-///        CONVEX                                         → (address rewarder)
+///        CONVEX_CURVE_LP_STAKING                        → (address rewarder)
 ///        CURVE_POOL                              → (address pool)
 ///        CURVE_GAUGE                             → (address gauge)
 ///        BALANCER_V2_POOL                → (bytes32 poolId)
@@ -134,6 +134,7 @@ library ProtocolIds {
     bytes32 internal constant CURVE_POOL = keccak256("curve-pool"); // wallet LP → (address pool)
     bytes32 internal constant CURVE_GAUGE = keccak256("curve-gauge"); // gauge-staked LP → (address gauge)
     bytes32 internal constant CONVEX = keccak256("convex");
+    bytes32 internal constant CONVEX_CURVE_LP_STAKING = keccak256("convex-curve-lp-staking");
 
     // Cap
     bytes32 internal constant CAP = keccak256("cap");

@@ -32,8 +32,8 @@ import {
     CurveGaugesMetaBalanceAdapter
 } from "../../src/balances/MetaBalanceAdapters/curve/CurveGaugesMetaBalanceAdapter.sol";
 import {
-    ConvexRewardsMetaBalanceAdapter
-} from "../../src/balances/MetaBalanceAdapters/ConvexRewardsMetaBalanceAdapter.sol";
+    ConvexCurveLPStakingMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/ConvexCurveLPStakingMetaBalanceAdapter.sol";
 import {
     AaveV3SafetyModuleBalanceAdapter
 } from "../../src/balances/BalanceAdapters/AaveV3SafetyModuleBalanceAdapter.sol";
@@ -520,7 +520,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         );
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        return address(new ConvexRewardsMetaBalanceAdapter(booster, cvxToken, protocol, navCalculator));
+        return address(new ConvexCurveLPStakingMetaBalanceAdapter(booster, cvxToken, protocol, navCalculator));
     }
 
     function _deployAaveV3SafetyModule(string memory adapterName, address navCalculator) internal returns (address) {

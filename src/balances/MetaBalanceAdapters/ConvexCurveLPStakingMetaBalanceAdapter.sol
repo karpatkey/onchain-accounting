@@ -6,10 +6,9 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {StaticCallLib} from "src/utils/StaticCallLib.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {CurvePoolLib} from "./curve/CurvePoolLib.sol";
 
-/// @title ConvexRewardsMetaBalanceAdapter
+/// @title ConvexCurveLPStakingMetaBalanceAdapter
 /// @author KPK
 /// @notice One immutable adapter that reports an account's Convex-staked Curve LP positions across
 ///         any configured Convex pool, plus all claimable rewards (CRV, CVX, and extra tokens).
@@ -47,10 +46,10 @@ import {CurvePoolLib} from "./curve/CurvePoolLib.sol";
 ///      consumed by an asynchronous sub/redeem layer (no atomic on-chain consumer). See
 ///      docs/decisions/0017-lp-valuation-instantaneous-amounts.md; revisit if NAV is ever consumed synchronously
 ///      on-chain.
-contract ConvexRewardsMetaBalanceAdapter is MetaBalanceAdapter {
+contract ConvexCurveLPStakingMetaBalanceAdapter is MetaBalanceAdapter {
     bytes32 private constant PROTOCOL_BRAND = ProtocolIds.CONVEX;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.CONVEX;
-    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.CONVEX;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.CONVEX_CURVE_LP_STAKING;
 
     uint256 private constant _MAX_EXTRA = 8;
     uint256 private constant _CVX_TOTAL_CLIFFS = 1_000;
@@ -289,33 +288,12 @@ contract ConvexRewardsMetaBalanceAdapter is MetaBalanceAdapter {
     // ─── IPositionDescribable ─────────────────────────────────────────────────
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev Returns `["Curve LP", "TOKEN0/TOKEN1/… Convex"]`; leaf derived on-chain from coin symbols ("" on failure).
-    function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
-        if (pid.length < 32) return new string[](0);
-        string memory leaf = _leaf(pid);
-        return _labels("Curve LP", leaf);
-    }
-
-    /// @notice Derives the "TOKEN0/TOKEN1/… Convex" leaf from the rewarder's Curve pool coins ("" on failure).
-    function _leaf(bytes calldata pid) private view returns (string memory) {
-        address rewarder = abi.decode(pid, (address));
-        address lpToken = _lpTokenOf(rewarder);
-        if (lpToken == address(0)) return "";
-        address pool = CurvePoolLib.getPool(lpToken);
-        if (pool == address(0)) return "";
-        address[] memory coins = CurvePoolLib.getCoins(pool);
-        if (coins.length == 0) return "";
-        string memory syms;
-        for (uint256 i; i < coins.length; ++i) {
-            string memory s;
-            try IERC20Metadata(coins[i]).symbol() returns (string memory sym) {
-                s = sym;
-            } catch {
-                s = "?";
-            }
-            syms = i == 0 ? s : string.concat(syms, "/", s);
-        }
-        return string.concat(syms, " Convex");
+    /// @dev `["Staking", "Curve LP"]` — static (the staked asset is Curve LP; the specific pool coins are in each
+    ///      leg's `balanceAsset`, and the rewarder/pool is the `positionId`).
+    function positionLabels(bytes calldata) external pure override returns (string[] memory out) {
+        out = new string[](2);
+        out[0] = "Staking";
+        out[1] = "Curve LP";
     }
 
     // ─── Internal helpers ─────────────────────────────────────────────────────

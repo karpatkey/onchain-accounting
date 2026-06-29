@@ -324,6 +324,18 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     /// @notice Looks up an asset's registry metadata.
     /// @return asset The Asset struct (zeroed if not found).
     /// @return found True if the asset is registered in NAVCalculator.
+    /// @dev Each call re-fetches the full registry via `NAV_CALCULATOR.getRegisteredAssets()`, so a read that
+    ///      touches N tokens does N registry fetches. Threading a single pre-fetched registry snapshot down from
+    ///      `PriceFeedLib`/`NAVCalculator` through `getAdapterPositions` (a 3-arg overload carrying
+    ///      `INAVCalculator.Asset[] memory registeredAssets`) to eliminate that N×M re-fetch was implemented and
+    ///      then **deliberately reverted**. Reasons: (1) NAV is consumed off-chain/asynchronously (ADR 0017), so
+    ///      the gas saved on the populated path has no real-world value — there is no atomic on-chain consumer
+    ///      paying for it; and (2) eagerly fetching + ABI-copying the registry into every adapter call **regressed
+    ///      the empty-account path** from <100k to ~166k gas (the team's `gasOptimization_emptyAccount` guard),
+    ///      because adapters that early-return for empty accounts previously never fetched the registry at all.
+    ///      Net: a measurable regression on the common cheap path for a saving that does not matter. See
+    ///      `BALANCE_ADAPTERS.md` §"Rejected: registry fetch-once threading". Do not re-thread the registry unless
+    ///      NAV becomes a synchronous on-chain consumer.
     function _getAssetInfo(address asset) internal view returns (INAVCalculator.Asset memory, bool found) {
         // Shared registry lookup (RegisteredAssetLib.find) — one find implementation across the layer.
         return RegisteredAssetLib.find(NAV_CALCULATOR.getRegisteredAssets(), asset);

@@ -264,6 +264,17 @@ Concrete adapters still implement `IBalanceAdapter` (and typically `IPositionDes
 
 **Members on the base** — `MerklRewardsAssistedBalanceAdapter`, `EtherFiWithdrawalQueueAssistedBalanceAdapter`, `StakeWiseV3ExitQueueAssistedBalanceAdapter`, `UniswapV3PoolsAssistedBalanceAdapter` (and its `PancakeSwapV3PoolsAssistedBalanceAdapter` subclass), and `NexusMutualStakingPoolsAssistedBalanceAdapter` — all extend `AssistedBalanceAdapter`. The NFT-position adapters (Uniswap V3 / PancakeSwap V3 / Nexus Mutual) cache a per-account `tokenId` set submitted via `submitTokenIds`: the write **reverts** (`NotTokenOwner`) on any id not currently owned by the account, and reads **discard** ids that are no longer owned (so a single stale id never zeroes the account). They value each position live — Uniswap/PancakeSwap LP off the pool's live `slot0` (instantaneous on-chain amounts; PancakeSwap V3 overrides `_slot0` for its `uint32 feeProtocol` ABI), Nexus stake via `StakingViewer.getTokens` — re-verifying ownership (`ownerOf` / `tokenInfo`) on every read. Spot manipulation of the V3 LP split is mitigated by the asynchronous NAV consumer, not by a fair-value reconstruction (ADR 0017).
 
+### 6.4 Rejected: registry fetch-once threading
+
+When NAV reads positions it calls `getAdapterPositions(account, address(0))` on every registered adapter, and each adapter that needs to validate a token against the asset registry re-fetches the **whole** registry (`NAVCalculator.getRegisteredAssets()`) per token via `RegisteredAssetLib.find` (see `MetaBalanceAdapter._getAssetInfo`). A read that touches *N* tokens across *M* adapters therefore does *N×M* registry fetches — superficially wasteful.
+
+We implemented and then **deliberately reverted** the obvious optimisation — fetch the registry once in `PriceFeedLib`/`NAVCalculator` and thread the `INAVCalculator.Asset[]` snapshot down through a 3-arg `getAdapterPositions(account, assetFilter, registeredAssets)` overload to every adapter, eliminating the re-fetch. Two reasons:
+
+1. **The gas saving has no consumer.** NAV is read off-chain/asynchronously by the sub/redeem layer ([ADR 0017](../../docs/decisions/0017-lp-valuation-instantaneous-amounts.md)); there is no atomic on-chain caller paying for the populated-path gas, so collapsing *N×M* fetches optimises a cost nobody bears.
+2. **It regressed the cheap path.** Eagerly fetching and ABI-copying the registry into *every* adapter call pushed the empty-account read from **<100k to ~166k gas** (the team's `gasOptimization_emptyAccount` guard) — because adapters that early-return for an empty account previously never fetched the registry at all. The optimisation thus made the common cheap path *worse* in exchange for a saving that does not matter.
+
+Conclusion: keep each adapter fetching the registry lazily, only on the path that actually needs it. Re-thread the registry **only if NAV ever becomes a synchronous on-chain consumer** of a mint/redeem flow — at which point the gas does matter and the trade-off flips.
+
 ---
 
 ## 7. Implemented adapters

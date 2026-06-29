@@ -27,7 +27,7 @@ Relevant facts established during the review:
    have to *persist across the settlement window* against continuous arbitrage — which bleeds swap fees every
    block and is restored by arbitrageurs. The prior audit reached the same framing:
    *"NAV is an `eth_call` so no atomic exploit — off-chain-read concern only"*
-   (`docs/audits/2026-06-vigilo-automated-audit.md`).
+   (`docs/audits/2026-06-vigilo-adapter-audit.md`).
 
 3. **Adapters report amounts, not values — by contract.** Per `CLAUDE.md` ("adapters only report balances;
    NAVCalculator adds prices and sums values"), the pro-rata share of *current* reserves is the **accurate
@@ -36,10 +36,11 @@ Relevant facts established during the review:
    balanced stable pool) and cannot be expressed as per-token `amount`s — it would fold pricing into the
    adapter and break the adapter ↔ `NAVCalculator` separation the whole design relies on.
 
-4. **The unbounded (constant-product) case is not live.** `UniswapV2PoolsMeta` has **zero enabled
-   instances** on any chain; `PancakeSwapV2PoolsMeta` is `enabled:false`; `BalancerV2*` is `enabled:false`.
-   The live AMM-LP adapters are all **stable / correlated**: `CurvePoolsMeta` (StableSwap — crvUSD/USDC,
-   crvUSD/USDT, weETH/WETH, ETH/stETH) + `CurveGaugesMeta` / `ConvexRewardsMeta` (same pools) +
+4. **The unbounded (constant-product) case is not live.** `UniswapV2PoolsMeta` is **not configured on any
+   chain** (no entry in any `meta-balance-adapters/<chainId>.json`); `PancakeSwapV2PoolsMeta` is
+   `enabled:false` (BSC); `BalancerV2PoolsMeta`/`BalancerV2GaugesMeta` are `enabled:false` (mainnet).
+   The live AMM-LP adapters are all **stable / correlated**: `CurvePoolsMeta` (StableSwap-NG — crvUSD/USDC,
+   crvUSD/USDT, weETH/WETH, RLUSD/USDC) + `CurveGaugesMeta` / `ConvexCurveLPStakingMeta` (same pools) +
    `BalancerV3PoolsMeta` / gauges (stable GHO pools). Amplification holds these near peg, so the imbalance
    deviation is small; the `√` over-report applies to the constant-product pools, which are not enabled.
 
@@ -101,11 +102,12 @@ reconstructed `sqrtPriceX96` is the V3-specific mitigation to reinstate.
 
 ## References
 
-- Threat-model framing: `docs/audits/2026-06-vigilo-adapter-audit.md` (read-only-reentrancy `M-A2`),
-  `docs/audits/2026-06-vigilo-automated-audit.md` ("eth_call → no atomic exploit").
+- Threat-model framing: `docs/audits/2026-06-vigilo-adapter-audit.md` (read-only-reentrancy `M-A2`;
+  "eth_call → no atomic exploit", `prices/L-02`).
 - Valuation code: `src/balances/MetaBalanceAdapters/curve/CurvePoolLib.sol` (`proRataAmount`),
   `src/balances/MetaBalanceAdapters/uniswap/UniswapV2PairLib.sol` (`pairAmounts`),
   `src/balances/MetaBalanceAdapters/balancer/BalancerV3PoolLib.sol` (`poolBalanceOfIndexed`).
-- Oracle-reconstruction precedent (why V3 is different):
-  `src/balances/AssistedBalanceAdapters/UniswapV3PoolsAssistedBalanceAdapter.sol`, [ADR 0008](0008-uniswap-v3-math-libs-gpl-license.md).
+- V3 live-`slot0` valuation (and the reverted oracle-reconstruction precedent it documents in its header):
+  `src/balances/AssistedBalanceAdapters/UniswapV3PoolsAssistedBalanceAdapter.sol`; the V3 math libs it
+  depends on are covered by [ADR 0008](0008-uniswap-v3-math-libs-gpl-license.md).
 - Adapter/NAV separation + "report amounts, not values": `CLAUDE.md`, `src/balances/BALANCE_ADAPTERS.md`.

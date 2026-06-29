@@ -33,7 +33,7 @@ NAV v2 is a single, chain-local system. Each supported chain has:
 
 The NAVCalculator routes price lookups through an embedded `Prices` contract (Chainlink or Custom per asset) and position lookups through the registered balance adapters. Both are pluggable by adding/removing adapters — the proxy never needs to be upgraded to add new protocols.
 
-**Key invariant:** the Safe's NAV is the sum of signed `(amount * price / quote_price)` across every `PositionBalance` returned by every registered balance adapter, plus the inflight bridged-out escrow balance. No adapter can lie about another adapter's asset — positions are keyed on `(adapter, balanceAsset, protocolId, positionId, positionKind)` tuples.
+**Key invariant:** the Safe's NAV is the sum of signed `(amount * price / quote_price)` across every `PositionBalance` returned by every registered balance adapter, plus the inflight bridged-out escrow balance. No adapter can lie about another adapter's asset — the per-chain reconciliation key is `keccak256(abi.encode(chainId, protocolId, positionId, balanceAsset.asset, positionKind, isLocked))` (see `docs/howto/position-identity-schema.md`).
 
 ---
 
@@ -552,7 +552,7 @@ The deploy script (`04_DeployBalanceAdapters.s.sol`) supports these adapters:
 | `BalancerV2GaugesMeta` | `vault`, `balancerMinter`, `protocol` | Mainnet |
 | `CurvePoolsMeta` | `protocol` | Mainnet |
 | `CurveGaugesMeta` | `minter`, `crvToken`, `protocol` | Mainnet (pass `minter=address(0)` on L2) |
-| `ConvexRewardsMeta` | `booster`, `cvxToken`, `protocol` | Mainnet |
+| `ConvexCurveLPStakingMeta` | `booster`, `cvxToken`, `protocol` | Mainnet |
 | `StakeWiseV3VaultsMeta` | `underlyingToken`, `protocol` | Mainnet, Gnosis |
 | `Cap` | `cUsd`, `stcUsd`, `usdc` | Mainnet |
 | `LidoWithdrawalQueue` | `withdrawalQueue`, `underlyingToken` | Mainnet |
@@ -561,7 +561,7 @@ The deploy script (`04_DeployBalanceAdapters.s.sol`) supports these adapters:
 
 ### 2.3 Specific adapters currently wired in the deploy script
 
-`04_DeployBalanceAdapters.s.sol` has a single `run()` that holds the **union** of adapter names across every chain (currently 31 `_deployIfEnabled(...)` calls). There are no chain-specific dispatch functions — per-chain selection is controlled by the `enabled` flag in `contracts-deployment-config/balance-adapters/<chainId>.json` (plain) / `contracts-deployment-config/meta-balance-adapters/<chainId>.json` (meta). Most multi-instance protocols are covered by a single **meta-adapter** (ADR 0010) whose instance set is configured on `NAVCalculator` via `addMetaInstances`/`removeMetaInstances` (from `nav-config/meta-balance-adapters/<chainId>.json`), rather than one adapter per instance. Source of truth: the `run()` list in `04_DeployBalanceAdapters.s.sol`.
+`04_DeployBalanceAdapters.s.sol` has a single `run()` that holds the **union** of adapter names across every chain (currently 32 `_deployIfEnabled(...)` calls). There are no chain-specific dispatch functions — per-chain selection is controlled by the `enabled` flag in `contracts-deployment-config/balance-adapters/<chainId>.json` (plain) / `contracts-deployment-config/meta-balance-adapters/<chainId>.json` (meta). Most multi-instance protocols are covered by a single **meta-adapter** (ADR 0010) whose instance set is configured on `NAVCalculator` via `addMetaInstances`/`removeMetaInstances` (from `nav-config/meta-balance-adapters/<chainId>.json`), rather than one adapter per instance. Source of truth: the `run()` list in `04_DeployBalanceAdapters.s.sol`.
 
 To deploy additional instances (e.g., a new Curve gauge, or AaveV3 on a different chain):
 
@@ -586,15 +586,17 @@ The `_deployIfEnabled(...)` calls in `run()` are the authoritative source. Most 
 
 **Balancer:** `BalancerV3PoolsMeta`, `BalancerV3GaugesMeta`, `BalancerV2PoolsMeta`, `BalancerV2GaugesMeta`
 
-**Curve / Convex:** `CurvePoolsMeta`, `CurveGaugesMeta`, `ConvexRewardsMeta` (one meta per family covering all pools/gauges/rewarders; instances via `addMetaInstances`/`removeMetaInstances`)
+**Curve / Convex:** `CurvePoolsMeta`, `CurveGaugesMeta`, `ConvexCurveLPStakingMeta` (one meta per family covering all pools/gauges/rewarders; instances via `addMetaInstances`/`removeMetaInstances`)
 
-**DEX LP:** `UniswapV3PoolsAssistedMeta`, `PancakeSwapV3PoolsAssistedMeta`, `PancakeSwapV2PoolsMeta` (`UniswapV2PoolsMeta` is implemented and dispatchable but not yet in `run()` / enabled on any chain)
+**DEX LP:** `UniswapV3PoolsAssisted`, `PancakeSwapV3PoolsAssisted`, `PancakeSwapV2PoolsMeta` (`UniswapV2PoolsMeta` is in `run()` and dispatchable but has no config entry, so it is not enabled on any chain)
 
 **StakeWise V3:** `StakeWiseV3VaultsMeta` (vault deposits net of minted-osToken debt — see the osETH/osGNO pricing note below)
 
-**Withdrawal queues:** `StaderWithdrawalQueue`, `KelpWithdrawalQueue`, `LidoWithdrawalQueue`
+**Withdrawal / cooldown queues:** `StaderWithdrawalQueue`, `KelpWithdrawalQueue`, `LidoWithdrawalQueue`, `EthenaCooldown`
 
 **Rewards:** `MerklRewardsAssisted` (mutable proof-verified per-(user,token) cache — ADR 0007)
+
+**Assisted exit queues / NFT positions:** `EtherFiWithdrawalQueueAssisted`, `StakeWiseV3ExitQueueAssisted`, `NexusMutualStakingPoolsAssisted` (agent-fed id caches; ADR 0014/0015)
 
 **StakeWise V3 pricing note:** osETH (Mainnet) and osGNO (Gnosis) are **Custom-priced ERC20s** via `osToken_CustomPriceFeed` (`convertToAssets(1e18) × underlying/USD`); held osTokens are reported by `ERC20DefaultBalanceAdapter` (deployed by `03_DeployPriceFeeds` / registered by `RegisterAssets`, custom-feed keys `osETH` / `osGNO` in `contracts-deployment-config/custom-price-feeds/<chainId>.json`). The `StakeWiseV3VaultsMeta` adapter separately reports vault deposits net of minted-osToken debt (`vaultAssets - mintedOs`, denominated in ETH/GNO). Wired primarily for integration cross-checks; the Alpha funds do not currently use StakeWise.
 
@@ -679,7 +681,7 @@ Deployed adapter addresses are auto-saved to `script/config/deployments/<chainId
 
 Run per chain. Only adapters with `enabled: true` in config are deployed.
 
-> **⚠ Dry-run hazard.** `04_DeployBalanceAdapters.s.sol:180` (and 26 sites in `03_DeployPriceFeeds.s.sol`) calls `ConfigReader.writeAdapterAddress(...)` unconditionally — even on a bare `forge script` invocation **without `--broadcast`**. A dry run will write deterministic-test-sender CREATE2 addresses (`0x5b73...`, `0x7FA9...`, `0x34A1...`, etc.) into `script/config/deployments/<chainId>.json`. Subsequent real broadcasts will then read those bogus addresses, report "already deployed", and **silently skip every adapter** — leaving NAVCalculator wired to zero-code addresses. **After ANY exploratory `forge script` run of `03` or `04` without `--broadcast`, run `git checkout -- script/config/deployments/` before the real broadcast.** Tracked as a blocking follow-up in `docs/historical/oracle-migration-plan.md` "Aspects to improve" #4.
+> **⚠ Dry-run hazard.** `04_DeployBalanceAdapters.s.sol:231` (and 29 sites in `03_DeployPriceFeeds.s.sol`) calls `ConfigReader.writeAdapterAddress(...)` unconditionally — even on a bare `forge script` invocation **without `--broadcast`**. A dry run will write deterministic-test-sender CREATE2 addresses (`0x5b73...`, `0x7FA9...`, `0x34A1...`, etc.) into `script/config/deployments/<chainId>.json`. Subsequent real broadcasts will then read those bogus addresses, report "already deployed", and **silently skip every adapter** — leaving NAVCalculator wired to zero-code addresses. **After ANY exploratory `forge script` run of `03` or `04` without `--broadcast`, run `git checkout -- script/config/deployments/` before the real broadcast.** Tracked as a blocking follow-up in `docs/historical/oracle-migration-plan.md` "Aspects to improve" #4.
 
 ### 4.1 Mainnet
 
@@ -1172,9 +1174,9 @@ Workflow for adding a new protocol adapter or a new instance of an existing prot
 
 **New protocol entirely (e.g. a new yield primitive):**
 
-1. **Write the adapter** under `src/balances/protocols/<Protocol>.sol`. Inherit `IBalanceAdapter` — must implement `getAdapterPositions`, `getAdapterBalances`, `getAdapterBalanceForAsset`, `underlyingAssetsSupported`, and `supportsInterface`. Reference: `MorphoVault.sol` for a single-asset vault, `Convex.sol` for a multi-reward-token protocol.
-2. **Write the unit test** under `test/balances/protocols/<Protocol>.t.sol`. Cover: constructor, `underlyingAssetsSupported`, zero balance, non-zero balance, asset filter.
-3. **Write the fork test** under `test/balances/protocols/fork/<Protocol>.fork.t.sol`. Cover: real on-chain position, real reward accruals, asset filter at a pinned block.
+1. **Write the adapter** under the matching family folder — `src/balances/BalanceAdapters/<Protocol>BalanceAdapter.sol` (plain), `src/balances/MetaBalanceAdapters/<Protocol>MetaBalanceAdapter.sol` (meta), or `src/balances/AssistedBalanceAdapters/<Protocol>AssistedBalanceAdapter.sol` (assisted). Inherit `IBalanceAdapter` — must implement `getAdapterPositions`, `getAdapterBalances`, `getAdapterBalanceForAsset`, `underlyingAssetsSupported`, and `supportsInterface`. Reference: `MorphoVaultsMetaBalanceAdapter.sol` for a single-asset vault meta, `ConvexCurveLPStakingMetaBalanceAdapter.sol` for a multi-reward-token protocol.
+2. **Write the unit test** under `test/balances/<family>/<Protocol>.t.sol`. Cover: constructor, `underlyingAssetsSupported`, zero balance, non-zero balance, asset filter.
+3. **Write the fork test** under `test/balances/<family>/fork/<Protocol>.fork.t.sol`. Cover: real on-chain position, real reward accruals, asset filter at a pinned block.
 4. **Add to `AdapterConsistency.t.sol`** if the protocol has non-trivial edge cases the existing cross-adapter invariants don't cover (zero balance handling, debt positions, asset filter).
 5. **Import + dispatch in `04_DeployBalanceAdapters.s.sol`**: add `import`, add `_deployIfEnabled("<Protocol>")` to `run()`, add an `_equals(adapterName, "<Protocol>")` branch in `_deployAdapter` (use a `_startsWith(adapterName, "<Protocol>_")` prefix branch only for genuinely multi-instance families, as `SparkLend` does), and a `_deploy<Protocol>()` helper that reads params.
 6. **Register via nav-config.** Add the `<Protocol>` key to `nav-config/balance-adapters/<chainId>.json` (or `nav-config/meta-balance-adapters/<chainId>.json`) so `06_Configure.s.sol` registers the deployed adapter.
@@ -1182,7 +1184,7 @@ Workflow for adding a new protocol adapter or a new instance of an existing prot
 8. **Run full test suite.** `forge test` non-fork + fork must both be green before pushing.
 9. **Deploy + register on NAV** via Phases 4 and 6.
 
-> **Naming rule:** new balance adapter files use PascalCase. Meta-adapters (one contract per protocol covering many instances) use the `MetaBalanceAdapter` suffix (e.g. `ConvexRewardsMetaBalanceAdapter`, `MorphoVaultsMetaBalanceAdapter`); per-instance singletons use descriptive names (e.g. `SparkLendBalanceAdapter`, `AaveV3SafetyModuleBalanceAdapter`). The `balanceOf` parameter must be named `account` (enforced pattern, not `safe`).
+> **Naming rule:** new balance adapter files use PascalCase. Meta-adapters (one contract per protocol covering many instances) use the `MetaBalanceAdapter` suffix (e.g. `ConvexCurveLPStakingMetaBalanceAdapter`, `MorphoVaultsMetaBalanceAdapter`); per-instance singletons use descriptive names (e.g. `SparkLendBalanceAdapter`, `AaveV3SafetyModuleBalanceAdapter`). The `balanceOf` parameter must be named `account` (enforced pattern, not `safe`).
 
 ---
 

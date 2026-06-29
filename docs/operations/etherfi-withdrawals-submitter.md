@@ -15,7 +15,7 @@ Per cycle, two things:
 1. **Discover** each tracked account's open `WithdrawRequestNFT` tokenIds (off-chain).
 2. **Submit** the fresh ones to the deployed adapter via `submitTokenIds(account, ids)` (or `submitTokenIdsBatch`), signed by a key holding `ASSISTANT_ROLE`.
 
-Garbage-collection (`clearTokenId` / `clearAccount`) for claimed/transferred ids is an occasional cleanup, not steady-state-critical — stale ids already read as 0 (the adapter drops them when `ownerOf != account` or the request is gone).
+Garbage-collection (`clearTokenId` / `clearAccount`) for claimed/transferred ids is an occasional cleanup, not steady-state-critical — each `submitTokenIds` **replaces** the account's whole cached set, so submitting only the currently-owned ids each cycle already purges stale ones; and even an uncollected stale id reads as 0 (the adapter drops it when `ownerOf != account` or the request is gone). Explicit GC matters only when the bot stops submitting for an account (e.g. its last id was claimed and the bot skips the empty list) or to keep the cache under the `MAX_TOKEN_IDS` (256) cap — neither of which a normal account approaches.
 
 ## Discovering tokenIds (the only off-chain step)
 
@@ -25,7 +25,7 @@ ether.fi exposes no owner→tokenIds view. Recover ownership from event logs on 
 owned(account) = { tokenId : Transfer(_, account, tokenId) } minus { tokenId : Transfer(account, _, tokenId) }
 ```
 
-i.e. ERC-721 `Transfer` events where `to == account`, minus those where `from == account` (claims burn the NFT → `Transfer(account, 0x0, id)`). This is the standard NFT-inventory derivation (how Etherscan does it). An indexer/subgraph or a bounded `eth_getLogs` scan both work. The bot may submit the full owned set every cycle — the adapter dedups, and write-time `ownerOf` hygiene drops anything not currently owned.
+i.e. ERC-721 `Transfer` events where `to == account`, minus those where `from == account` (claims burn the NFT → `Transfer(account, 0x0, id)`). This is the standard NFT-inventory derivation (how Etherscan does it). An indexer/subgraph or a bounded `eth_getLogs` scan both work. The bot may submit the full owned set every cycle — `submitTokenIds` **replaces** the account's cached set wholesale and dedups within the list, so no delta tracking is needed. The write-time `ownerOf` check is **fail-loud**: any id not currently owned by `account` reverts the whole submission (`NotTokenOwner`), so the bot should submit only ids it derived as owned (a revert signals a race — an id claimed/transferred between scan and submit — to retry on the next cycle).
 
 ## Inputs
 
@@ -45,13 +45,13 @@ Cadence: **roughly daily** is sufficient for correctness (withdrawals take ~days
 ```
 ids = scan_owned_tokenIds(account)        # Transfer(to=account) − Transfer(from=account)
 if ids: submitTokenIds(account, ids)      # as ASSISTANT_ROLE holder; adapter dedups + re-verifies
-# optional GC: clearTokenId for ids whose ownerOf no longer == account (claimed/transferred)
+# (submit replaces the whole set, so stale ids self-purge; clearAccount only if you stop submitting an account)
 ```
 
 ## Failure modes
 
 - **Bot down / lagging:** newly-requested withdrawals aren't reflected until the next cycle → NAV **under-reports** that account's in-flight ETH. Never over-reports. Mitigation: same SLA as the Merkl bot.
-- **Submitting a non-owned id:** rejected at write (write-time `ownerOf` check) and would read as 0 anyway. Harmless.
+- **Submitting a non-owned id:** the write **reverts** (`NotTokenOwner`) and is atomic — the bad id and every other id in that same `submitTokenIds` list fail to land, leaving the prior cached set untouched. Never an NAV risk (it would read as 0 anyway), but the bot must filter to currently-owned ids and retry, or that account's update is skipped for the cycle.
 - **Claimed id left in the cache:** reads as 0 (the request no longer exists / `ownerOf` reverts → dropped). GC is cosmetic (storage hygiene), not correctness.
 
 ## Non-goals

@@ -12,8 +12,8 @@ This document specifies what the bot must do, how often, with what inputs and wh
 
 Exactly two things, every cycle:
 
-1. **For each (account, chain) pair the operator wants tracked**, fetch the current set of `(token, cumulativeAmount, proof)` triples from Merkl's API.
-2. **Submit each fresh triple to the deployed `MerklRewardsAssistedBalanceAdapter` on that chain** via `submitProof` or `submitProofBatch`, signed by a key holding `ASSISTANT_ROLE`.
+1. **For each (account, chain) pair the operator wants tracked**, fetch the current set of `(token, cumulativeAmount, proof, breakdowns)` allocations from Merkl's API.
+2. **Submit each account's complete allocation set to the deployed `MerklRewardsAssistedBalanceAdapter` on that chain** via `submitProofs` (or the multi-account `submitProofsBatch`), signed by a key holding `ASSISTANT_ROLE`. Submission is **replace** semantics: each `submitProofs(user, allocs)` call drops the user's entire prior cached token set and stores the supplied list, so the bot submits the user's full current allocation list every cycle — not a delta.
 
 That's the whole job. Garbage collection (`clearAllocation`) and ownership transfer are infrequent operator actions, not part of the steady-state loop.
 
@@ -34,7 +34,7 @@ The Distributor address and proof-verification rules are pinned in the adapter; 
 
 Per chain, per account, on a cadence of **roughly every 4 hours** (Merkl rotates roots every ~8h, with a 1–2h dispute window — sub-cycle frequency keeps the cache fresh):
 
-```
+```text
 for chain in chains:
     adapter = adapter_for(chain)
     for account in accounts:
@@ -44,32 +44,44 @@ for chain in chains:
         #   { token: { address, decimals, symbol },
         #     amount: "<cumulative wei as string>",
         #     claimed: "<wei as string>",
-        #     proofs: ["0xhex32", ...] }
+        #     proofs: ["0xhex32", ...],
+        #     breakdowns: [{ campaignId, subCampaignId, amount }, ...] }
 
-        # 2. Filter to entries worth submitting
-        candidates = [
-            r for r in rewards
+        # 2. Build the account's COMPLETE allocation list (replace semantics — submit
+        #    every currently-allocated token, not a delta). Keep entries with a positive
+        #    cumulative amount; an omitted token is dropped from the cache.
+        allocs = [
+            Allocation(
+                token    = r.token.address,
+                amount   = int(r.amount),            # per-token cumulative; proof-verified
+                proof    = r.proofs,
+                campaigns = [                        # optional; if non-empty MUST sum to amount
+                    CampaignShare(b.campaignId, b.subCampaignId, int(b.amount))
+                    for b in r.breakdowns
+                ],
+            )
+            for r in rewards
             if int(r.amount) > 0
-            and int(r.amount) > int(r.claimed)
-            and int(r.amount) > current_cached_amount(adapter, account, r.token.address)
         ]
 
-        if not candidates: continue
+        # 3. Skip the submission entirely if nothing changed since the cache was last
+        #    written against the current root (see below).
+        if not changed(adapter, account, allocs): continue
 
-        # 3. Submit
-        if len(candidates) == 1:
-            adapter.submitProof(account, token, amount, proof)
-        else:
-            adapter.submitProofBatch(users[], tokens[], amounts[], proofs[])
+        # 4. Submit the full list (one account) or batch across accounts.
+        adapter.submitProofs(account, allocs)
+        # or, across many accounts: adapter.submitProofsBatch(users[], allocs[][])
 ```
 
-Read `current_cached_amount` via `adapter.allocations(account, token)` — returns `(uint256 cumulativeAmount, bytes32 root, uint64 submittedAt)`. Skip entries where the API's `amount` equals the cache's `cumulativeAmount` *and* `root == adapter.DISTRIBUTOR().getMerkleRoot()` — nothing to do.
+`Allocation` is `(address token, uint256 cumulativeAmount, bytes32[] proof, CampaignShare[] campaigns)` and `CampaignShare` is `(bytes32 campaignId, bytes32 subCampaignId, uint256 cumulativeAmount)`. The `campaigns` breakdown is optional: leave it empty for one untagged position per token, or supply it to split the token into per-campaign positions — if non-empty, the shares **must** sum to the token's `cumulativeAmount`, or the call reverts with `CampaignSumMismatch`. No more than `MAX_CAMPAIGNS_PER_TOKEN` (64) shares per token, or it reverts with `TooManyCampaigns`.
+
+To decide whether a submission is worth the gas, read the current cache via `adapter.allocations(account, token)` — which returns `(uint256 cumulativeAmount, bytes32 root, uint64 submittedAt)` — for each token in the list. If, for every token, the API's `amount` equals the cache's `cumulativeAmount` *and* the cache's `root` equals `adapter.DISTRIBUTOR().getMerkleRoot()`, the cache is already current and the submission can be skipped. (Note that because each submit fully replaces the user's set, monotonicity is **not** enforced across submits — `AmountRegression` only catches a decreasing duplicate of the same token within a single list.)
 
 ## Why this is trust-minimized
 
 Three properties hold by construction; the bot does not need to be trusted to maintain any of them:
 
-1. **The bot cannot inflate amounts.** `submitProof` recomputes `keccak256(abi.encode(user, token, amount))`, runs Merkl's exact `_verifyProof` against `Distributor.getMerkleRoot()`, and reverts if the proof does not match. Submitting a fabricated amount fails on-chain.
+1. **The bot cannot inflate amounts.** For each entry, `submitProofs` recomputes `keccak256(abi.encode(user, token, cumulativeAmount))`, runs Merkl's exact sorted-pair proof verification against `Distributor.getMerkleRoot()`, and reverts if the proof does not match. Submitting a fabricated amount fails on-chain. A per-campaign `breakdowns[]` split is not individually proof-backed, but the contract requires the shares to sum to the proof-verified per-token total — so the bot can mis-split value across campaigns but can never inflate the token total.
 2. **The bot cannot suppress amounts past Merkl's own cycle.** If the bot stops running, the cache becomes stale on the next root rotation (~8h) and the adapter reports 0 for every cached entry. NAV under-counts; it never over-counts. Recovery is "start the bot again; cache reads correctly within one cycle."
 3. **Anyone can audit.** Given the on-chain root, the adapter's cached `(cumulativeAmount, root)`, and `Distributor.claimed(account, token).amount`, anyone can verify the reported balance is exactly `cumulativeAmount - claimed` and verify the cached `cumulativeAmount` against the published merkle tree.
 
@@ -83,7 +95,7 @@ Operationally:
 
 - **4-hour cadence is a good default.** Sub-cycle frequency tolerates one missed run without going stale.
 - **Don't rely on hour-aligned scheduling.** Merkl's rotation isn't strictly periodic. If the bot's run aligns badly with a rotation, the next run picks up the new root.
-- **Avoid running multiple submitters in parallel** for the same `(adapter, account, token)`. They will race; one will see `AmountRegression` if amounts have moved, but in steady state the second submission is wasted gas. Use a per-chain mutex / leader election if HA matters.
+- **Avoid running multiple submitters in parallel** for the same `(adapter, account)`. They will race; because each submit fully replaces the user's set, the later submission simply overwrites the earlier one, and in steady state it is wasted gas. Use a per-chain mutex / leader election if HA matters.
 
 ## Submission model
 
@@ -91,7 +103,7 @@ The owner of every deployed `MerklRewardsAssistedBalanceAdapter` is `chainConfig
 
 | Model | How it works | When to pick it |
 |---|---|---|
-| **Safe module** | Deploy a small Safe module that whitelists `submitProof` / `submitProofBatch` selectors on the adapter. The bot signs with a hot key authorized by the module. | Production. Hot key is constrained to "submit Merkl proofs" only — cannot move funds, cannot transfer ownership, cannot call any other adapter. Limits blast radius if the bot key is compromised. |
+| **Safe module** | Deploy a small Safe module that whitelists `submitProofs` / `submitProofsBatch` selectors on the adapter. The bot signs with a hot key authorized by the module. | Production. Hot key is constrained to "submit Merkl proofs" only — cannot move funds, cannot transfer ownership, cannot call any other adapter. Limits blast radius if the bot key is compromised. |
 | **Safe Transaction Service queue** | Bot proposes transactions; signers approve and execute manually or via automation. | Pre-production / low-volume. No hot key, but cadence depends on signer availability. |
 
 Direct EOA ownership (no Safe) is **not recommended** because the owner key would have to live wherever the bot runs.
@@ -102,10 +114,11 @@ The adapter does not care which model is used — `onlyRole(ASSISTANT_ROLE)` is 
 
 | Symptom | Likely cause | Action |
 |---|---|---|
-| `submitProof` reverts with `InvalidProof` | API returned a proof for a root that hasn't reached this chain yet, or returned a proof for `lastTree` after the dispute window closed | Re-fetch from API and retry once. If still failing, log and skip — the next cycle will recover. |
-| `submitProof` reverts with `UninitializedRoot` | Distributor's `tree.merkleRoot` is 0 (e.g., on a chain where Merkl is freshly deployed) | Disable the bot for that chain until Merkl publishes a root. |
-| `submitProof` reverts with `AmountRegression` | API returned a value lower than what's cached. Should not happen under Merkl's monotonicity invariant; suggests an API bug or campaign restructuring. | Page an operator. Do not auto-clear the cache. The owner can call `clearAllocation` manually after investigating. |
-| `submitProof` reverts with `AccessControlUnauthorizedAccount` | Bot's signer does not hold ASSISTANT_ROLE | Verify the Safe module wiring / owner address. Likely a deploy or ownership-transfer issue, not a routine failure. |
+| `submitProofs` reverts with `InvalidProof` | API returned a proof for a root that hasn't reached this chain yet, or returned a proof for `lastTree` after the dispute window closed | Re-fetch from API and retry once. If still failing, log and skip — the next cycle will recover. |
+| `submitProofs` reverts with `UninitializedRoot` | Distributor's `tree.merkleRoot` is 0 (e.g., on a chain where Merkl is freshly deployed) | Disable the bot for that chain until Merkl publishes a root. |
+| `submitProofs` reverts with `AmountRegression` | The list contains a duplicate token whose cumulative decreases within the same submission. Should not happen under Merkl's monotonicity invariant; suggests an API bug or campaign restructuring. | Page an operator. Do not auto-clear the cache. The assistant can call `clearAllocation` manually after investigating. |
+| `submitProofs` reverts with `CampaignSumMismatch` | The per-campaign `breakdowns[]` shares for a token don't sum to that token's `cumulativeAmount` | Re-fetch and recompute the breakdown; submit an empty `campaigns` list (one untagged position) if the API's breakdown can't be reconciled. |
+| `submitProofs` reverts with `AccessControlUnauthorizedAccount` | Bot's signer does not hold `ASSISTANT_ROLE` | Verify the Safe module wiring / owner address. Likely a deploy or ownership-transfer issue, not a routine failure. |
 | Cache reads as 0 even though API shows non-zero `amount` | Cached `root` does not match current `Distributor.getMerkleRoot()`. Bot has not yet run since the last root rotation. | Wait for next bot cycle. If persistent, the bot is stopped — investigate. |
 | Adapter not in NAV | Either `enabled: false` in chain config or `addBalanceAdapters` wasn't called | Check `NAVCalculator.isAdapterRegistered(adapter)`; if false, register via Safe. |
 

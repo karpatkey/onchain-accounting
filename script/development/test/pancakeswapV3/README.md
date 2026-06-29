@@ -2,20 +2,20 @@
 
 ## 1. Adapter under test
 
-`src/balances/AssistedBalanceAdapters/PancakeSwapV3PoolsAssistedBalanceAdapter.sol` — the assisted `PancakeSwapV3PoolsAssistedBalanceAdapter` (ADR 0015): one adapter serves every PancakeSwap V3 pool, agent-fed — the assistant submits an account's NFT tokenIds via `submitTokenIds` (`ASSISTANT_ROLE`); the adapter caches ids only and values each NFT live on-chain. Constructor: `(positionManager, protocolName, navCalculator, admin, assistant)`. Identity is derived on-chain (positionId = `abi.encode(address pool)`; the NFT tokenId is a display-only entry in `PositionBalance.labels` — `labels = ["Liquidity Pool", "<pool>", "NFT #<tokenId>"]`).
+`src/balances/AssistedBalanceAdapters/PancakeSwapV3PoolsAssistedBalanceAdapter.sol` — the assisted `PancakeSwapV3PoolsAssistedBalanceAdapter` (ADR 0015): one adapter serves every PancakeSwap V3 pool, agent-fed — the assistant submits an account's NFT tokenIds via `submitTokenIds` (`ASSISTANT_ROLE`); the adapter caches ids only and values each NFT live on-chain. Constructor: `(positionManager, protocolName, navCalculator, admin, assistant)`. Identity is derived on-chain: positionId = `abi.encode(address pool)`, and the NFT tokenId rides in the typed `PositionBalance.positionInstanceId` (`bytes32(tokenId)`), not in a label. The verbose-only display breadcrumb is the 2-entry `IPositionDescribable.positionLabels(positionId)` = `["AMM Liquidity Pool", "<sym0>/<sym1> <fee>%"]`, derived live from the pool decoded out of positionId. Each emitted leg also carries the 3-level taxonomy `protocolBrand` / `protocolId` / `protocolSubId` (`pancakeswap` / `pancakeswap-v3` / `pancakeswap-v3`).
 
 ### Inheritance + per-chain scope (Phase 0)
 
-- **Inheritance:** `PancakeSwapV3PoolsAssistedBalanceAdapter is UniswapV3PoolsAssistedBalanceAdapter`. PancakeSwap V3 is a byte-for-byte Uniswap V3 fork sharing every relevant view, so the subclass carries only **two overrides**:
+- **Inheritance:** `PancakeSwapV3PoolsAssistedBalanceAdapter is UniswapV3PoolsAssistedBalanceAdapter`. PancakeSwap V3 is a byte-for-byte Uniswap V3 fork sharing every relevant view, so the subclass carries only **four trivial overrides** — the three identity-slug hooks plus the `slot0` read:
   - `_slot0(pool)` — the **entire correctness surface**. PancakeSwap declares `slot0().feeProtocol` as `uint32` (Uniswap's `uint8`); Solidity 0.8's strict ABI decoder reverts on a `uint8` read whenever the high bits are set, which is the case on every active PCS pool. The override reads `slot0()` through a local `IPancakeV3Pool` interface so the `uint32` field decodes. `_slot0` is read once per pool (before the NFT loop) and feeds `getAmountsForLiquidity`, so a meaningful test needs an **active (liquidity > 0)** position.
-  - `_protocolId()` — returns `ProtocolIds.PANCAKESWAP_V3` (the parent's was an inherited constant `uniswap-v3`; see §10). All other behaviour — NFT discovery, principal/fee math, NAV filtering — is the byte-for-byte same code path the Uniswap V3 fork test exercises, **verified by inheritance** (PR #43).
-- **Per-chain scope:** PancakeSwap deploys V3 via CREATE2, so the NonfungiblePositionManager (`0x46A15B0b27311cedF172AB29E4f4766fbE7F4364`) and factory (`0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865`) — and therefore the pool bytecode and `slot0` ABI — are **byte-identical on every chain**. The adapter has **zero per-chain code branches**; only the constructor `navCalculator` and the `addMetaBalanceAdapter` pool list differ per deployment. Confirmed live: NPM + factory identical and `feeProtocol = 222825800 (> 255)` on Ethereum, Base, and Arbitrum (same value per fee tier). Optimism and Gnosis have **no** PCS V3 (no NPM code) so the adapter is never configured there. A single mainnet fork test is therefore sufficient for the chain-divergent code.
+  - the three identity hooks — `_protocolBrand()`, `_protocolId()`, `_protocolSubId()` — return the PancakeSwap slugs (`pancakeswap` / `pancakeswap-v3` / `pancakeswap-v3`); the parent's defaults are the Uniswap slugs (`uniswap` / `uniswap-v3` / `uniswap-v3`; see §10). All other behaviour — NFT discovery, principal/fee math, NAV filtering — is the byte-for-byte same code path the Uniswap V3 fork test exercises, **verified by inheritance** (PR #43).
+- **Per-chain scope:** PancakeSwap deploys V3 via CREATE2, so the NonfungiblePositionManager (`0x46A15B0b27311cedF172AB29E4f4766fbE7F4364`) and factory (`0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865`) — and therefore the pool bytecode and `slot0` ABI — are **byte-identical on every chain**. The adapter has **zero per-chain code branches**; only the constructor `navCalculator` differs per deployment (there is no governed pool list — the assistant feeds tokenIds via `submitTokenIds`). Confirmed live: NPM + factory identical and `feeProtocol = 222825800 (> 255)` on Ethereum, Base, and Arbitrum (same value per fee tier). Optimism and Gnosis have **no** PCS V3 (no NPM code) so the adapter is never configured there. A single mainnet fork test is therefore sufficient for the chain-divergent code.
 - **Math branches:** the `_slot0` override is exercised on the meaningful path by an in-range NFT (principal on both tokens + fee delta on both). Above-range, below-range, settled-`tokensOwed`, foreign-pool filter, and the 256-NFT iteration bound are all inherited and covered by the Uniswap V3 case (§2). **Coverage gap (documented, not covered):** farmed positions are staked into MasterChefV3 (`0x556B9306565093C855AEA9AE92A594704c2Cd59e`) and owned by it, not the user, so `NPM.tokenOfOwnerByIndex(account)` never sees them — the adapter misses farmed LP and pending CAKE entirely. Closing this requires a dedicated MasterChefV3 farm adapter (deferred).
 
 ## 2. Existing fork test coverage
 
 - `test/balances/AssistedBalanceAdapters/fork/UniswapV3PoolsAssistedBalanceAdapter.fork.t.sol` — the inherited math (principal/fee branches, identity, filter) on the real mainnet WBTC/WETH 0.3% pool. PancakeSwap V3 inherits all of it unchanged except `_slot0`.
-- `test/balances/AssistedBalanceAdapters/fork/PancakeSwapV3PoolsAssistedBalance.Base.fork.t.sol` → `PancakeSwapV3PoolsAssistedBalanceForkTest_Base` (pre-existing). Exercises the `_slot0` override on the real Base WETH/COW 0.25% pool, but the test holder's position is **closed** (liquidity 0) — so it only asserts the override **does not revert** and returns empty. It does not exercise the override on the principal-bearing path.
+- `test/balances/AssistedBalanceAdapters/fork/PancakeSwapV3PoolsBalance.Base.fork.t.sol` → `PancakeSwapV3PoolsAssistedBalanceForkTest_Base` (pre-existing). Exercises the `_slot0` override on the real Base WETH/COW 0.25% pool, but the test holder's position is **closed** (liquidity 0) — so it only asserts the override **does not revert** and returns empty. It does not exercise the override on the principal-bearing path.
 
 Both kept untouched as regression nets.
 
@@ -23,7 +23,7 @@ Both kept untouched as regression nets.
 
 - A **real holder with an active (liquidity > 0) in-range position**, so the `_slot0` override is exercised on the path that matters: its `sqrtPriceX96`/`tick` feed `getAmountsForLiquidity`, and the principal amounts depend on the correctly-decoded `uint32 feeProtocol` read. A `uint8` read (the inherited Uniswap path) would revert here.
 - **Ground-truth** equality against the protocol's own settlement (`NPM.decreaseLiquidity`) — see §8.
-- Assertion that `protocolId == pancakeswap-v3` (the `_protocolId` override; §10).
+- Assertion that `protocolId == protocolSubId == pancakeswap-v3` (the identity-hook overrides; §10).
 - Mainnet coverage where both pool tokens (WETH/USDT) are registered Chainlink assets, so the position also values cleanly end-to-end.
 
 ## 4. Adapter formula recap
@@ -81,7 +81,7 @@ Sanity values consumed by the §4 math. The pool's NFTs churn owners (this walle
 |---|---|
 | `case-active-holder-mainnet.json` | Per-NFT machine-readable evidence pack with state, branch, and expected amounts |
 | `query-live-balances.s.sol` | Forge script that forks Ethereum at a given block and prints the per-leg breakdown — used for ad-hoc cross-checks against the PancakeSwap UI / Debank |
-| `script/development/deploy/deploy-pancakeswap-v3-meta.sh` | Meta-based dev-anvil deploy helper: deploys the adapter + `addMetaBalanceAdapter(adapter, instances)` (atomic register + seed, the ADR-0010 equivalent of the removed per-pool helpers) |
+| `script/development/deploy/deploy-pancakeswap-v3-meta.sh` | Dev-anvil deploy helper: deploys the adapter, registers it via `addBalanceAdapters` and — given an optional account + tokenIds — seeds them via `submitTokenIds` (the assisted-adapter / ADR-0015 successor to the old meta deploy helper) |
 
 ## 7. Expected balances
 
@@ -121,17 +121,17 @@ This is the forked-EVM equivalent of a Tenderly `decreaseLiquidity` simulation: 
 
 ## 9. Wiring the live dev-anvil dashboard
 
-`script/development/deploy/deploy-pancakeswap-v3-meta.sh` deploys + registers the meta-adapter on the local mainnet anvil so the dashboard renders the holder's position for a side-channel cross-check. Run after the dev anvil is up and the NAV proxy is deployed, then refork right before handoff so the live cross-check sees minutes of drift:
+`script/development/deploy/deploy-pancakeswap-v3-meta.sh` deploys + registers the assisted adapter on the local mainnet anvil and seeds the holder's tokenIds so the dashboard renders the position for a side-channel cross-check. Its positional args are `<chainId> [account] [tokenId,tokenId,...]` — pass the holder address and its NFT ids (NOT the pool address). Run after the dev anvil is up and the NAV proxy is deployed, then refork right before handoff so the live cross-check sees minutes of drift:
 
 ```bash
 bash script/development/anvil/start-forks.sh 1
 bash script/development/deploy/deploy.sh 1
-bash script/development/deploy/deploy-pancakeswap-v3-meta.sh 1 0x6CA298D2983aB03Aa1dA7679389D955A4eFEE15C
+bash script/development/deploy/deploy-pancakeswap-v3-meta.sh 1 0x783C3255340f8Ba524452A9BE5d12a77e9Ce1F53 22279
 bash script/development/app/sync-app-env.sh 1
 # then start the Next.js dev server in app/
 ```
 
-The deployed adapter address is recorded in `script/development/state/1-addresses.json`. This step is separate from the fork test (which deploys its own adapter instance in `setUp()`) — it is purely the dashboard surface. The dashboard reads the adapter's `IPositionDescribable` layer, so the position renders under **PancakeSwap V3** with the **NFT #** label even where the typed `protocolId` is shared with Uniswap.
+The deployed adapter address is recorded in `script/development/state/1-addresses.json`. This step is separate from the fork test (which deploys its own adapter instance in `setUp()`) — it is purely the dashboard surface. The dashboard reads the adapter's `IPositionDescribable` layer, so the position renders under **PancakeSwap V3** with the `["AMM Liquidity Pool", "<sym0>/<sym1> <fee>%"]` breadcrumb and the per-NFT id taken from the typed `positionInstanceId`; the `pancakeswap-v3` `protocolId` keeps it distinct from Uniswap V3.
 
 ## 10. Test verdict (2026-06-08)
 
@@ -140,7 +140,7 @@ The deployed adapter address is recorded in `script/development/state/1-addresse
 | Pre-flight: holder has an active in-range WETH/USDT 0.05% NFT | ✅ |
 | `_slot0` override decodes `uint32 feeProtocol` on a live PCS pool (no revert) | ✅ |
 | Active position → non-zero principal on both tokens (override fed `getAmountsForLiquidity`) | ✅ |
-| Identity: positionId = `abi.encode(address pool)` (tokenId in labels); protocolId = `pancakeswap-v3` | ✅ |
+| Identity: positionId = `abi.encode(address pool)` (tokenId in `positionInstanceId`); protocolId = protocolSubId = `pancakeswap-v3` | ✅ |
 | Ground-truth: adapter principal == `NPM.decreaseLiquidity` (exact) | ✅ |
 | Cross-chain: same NPM/factory bytecode + `feeProtocol > 255` on Base & Arbitrum | ✅ |
 | Side channel: dev app vs Debank **and** PancakeSwap UI for #22279 | ✅ (sub-bp drift) |
@@ -154,6 +154,6 @@ Two findings shipped/deferred (detail in `case-active-holder-mainnet.json`):
 
 Run via:
 
-```
-FOUNDRY_PROFILE=slow forge test --match-path "test/balances/AssistedBalanceAdapters/fork/PancakeSwapV3PoolsAssistedBalance*.fork.t.sol" -vv
+```bash
+FOUNDRY_PROFILE=slow forge test --match-path "test/balances/AssistedBalanceAdapters/fork/PancakeSwapV3Pools*.fork.t.sol" -vv
 ```

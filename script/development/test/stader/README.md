@@ -2,7 +2,7 @@
 
 ## 1. Adapter under test
 
-`src/balances/BalanceAdapters/StaderWithdrawalQueueBalanceAdapter.sol` — the immutable `StaderWithdrawalQueueBalanceAdapter`. Constructor: `(userWithdrawalManager, underlyingToken, navCalculator)` where `userWithdrawalManager = Stader UserWithdrawalManager` (`0x9F0491B32DBce587c50c4C43AB303b06478193A7`) and `underlyingToken = WETH` (`0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2`). Identity is derived on-chain: `positionId = abi.encode(address userWithdrawalManager)` (static; up to two legs — claimable + locked — sharing it, told apart by `isLocked`), `protocolId = keccak256("stader-withdrawal")`, `positionKind = Supplied`.
+`src/balances/BalanceAdapters/StaderWithdrawalQueueBalanceAdapter.sol` — the immutable `StaderWithdrawalQueueBalanceAdapter`. Constructor: `(userWithdrawalManager, underlyingToken, navCalculator)` where `userWithdrawalManager = Stader UserWithdrawalManager` (`0x9F0491B32DBce587c50c4C43AB303b06478193A7`) and `underlyingToken = WETH` (`0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2`). Identity is derived on-chain: `positionId = abi.encode(address userWithdrawalManager)` (static; **one leg per open request**, all sharing it, distinguished by the typed `positionInstanceId = bytes32(requestId)` and with each leg's `isLocked` reflecting that request's state — finalized → `false`, pending → `true` ([ADR 0016](../../../../docs/decisions/0016-islocked-position-status.md))), `protocolBrand = keccak256("stader")`, `protocolId = keccak256("stader")`, `protocolSubId = keccak256("stader-withdrawal")`, `positionKind = Supplied`.
 
 ### Inheritance + per-chain scope (Phase 0)
 
@@ -39,20 +39,21 @@ All kept as regression nets.
 
 ## 4. Adapter formula recap
 
-```
-total = 0
+```text
+# static positionId shared by every leg:
+pid = abi.encode(address(USER_WITHDRAWAL_MANAGER))
 for i in 0 .. 255:                                   # MAX_REQUESTS_PROBED cap
     try id = USER_WITHDRAWAL_MANAGER.requestIdsByUserAddress(account, i)
     catch Panic(0x32) | empty-revert:  break          # end of the user's request array
     (owner, _, ethExpected, ethFinalized, _) = userWithdrawRequests(id)
     if owner == 0:                     continue        # already claimed — skip
-    if ethFinalized > 0: claimable += ethFinalized      # finalized → claimable leg
-    else:                locked    += ethExpected       # pending  → locked leg
-# static positionId, split into up to two legs sharing it (ADR 0016):
-pid = abi.encode(address(USER_WITHDRAWAL_MANAGER))
-if claimable > 0: emit PositionBalance(WETH, claimable, isDebt=false, Supplied, positionId=pid, isLocked=false)
-if locked    > 0: emit PositionBalance(WETH, locked,    isDebt=false, Supplied, positionId=pid, isLocked=true)
-# (only when WETH registered)
+    if ethFinalized > 0: amount = ethFinalized; locked = false    # finalized → claimable leg
+    else:                amount = ethExpected;  locked = true     # pending  → locked leg
+    if amount == 0:                    continue        # skip zero-amount legs
+    # one PositionBalance per open request, sharing pid, keyed by positionInstanceId:
+    emit PositionBalance(WETH, amount, isDebt=false, Supplied,
+                         positionId=pid, isLocked=locked, positionInstanceId=bytes32(id))
+# (positions emitted only when WETH is registered; the balance methods sum every request's amount)
 ```
 
 ## 5. Cherry-picked accounts
@@ -61,7 +62,7 @@ if locked    > 0: emit PositionBalance(WETH, locked,    isDebt=false, Supplied, 
 |---|---|---|---|
 | `PENDING` | `0x4D0B2dB7d38009884c3f2a15c1c212f4F4a356c9` | `ethExpected` | One PENDING (un-finalized) request 8218 (`ethFinalized == 0`) → exercises the request-time estimate branch. |
 | `FINALIZED` | `0x404186e63CA9e1D0648a5AEc0b77cD398814C47D` | `ethFinalized` | One FINALIZED-unclaimed request 8214 where `ethFinalized` (…347) is **9 wei below** `ethExpected` (…356) → exercises the finalized branch **and** proves it wins over the estimate. |
-| `MULTI` | `0xeB0CBBA408436997AfD29c50d6A9ffcCf9a2493f` | `ethFinalized` (×2) | Two open requests (8196 + 8197), both finalized → exercises the **enumeration loop summing multiple requests** into the claimable (`isLocked=false`) leg on a real fork (previously only mock-tested). Not a distinct value branch — both requests are `ethFinalized`. Also the holder used to demo the per-request-id dashboard drill-down (§9). |
+| `MULTI` | `0xeB0CBBA408436997AfD29c50d6A9ffcCf9a2493f` | `ethFinalized` (×2) | Two open requests (8196 + 8197), both finalized → exercises the **enumeration loop emitting one claimable (`isLocked=false`) leg per request** on a real fork (previously only mock-tested); the legs sum to the holder's aggregate balance. Not a distinct value branch — both requests are `ethFinalized`. Also the holder used to demo the per-request-id dashboard drill-down (§9). |
 
 ### Setup
 
@@ -86,15 +87,16 @@ if locked    > 0: emit PositionBalance(WETH, locked,    isDebt=false, Supplied, 
 
 ## 7. Expected balances
 
-Single leg per holder, denominated in WETH. Captured at the fork block in §5.
+One leg per open request, all denominated in WETH (so PENDING and FINALIZED show a single leg, MULTI shows two). Captured at the fork block in §5.
 
 ### 7a. Per-leg detail
 
-| Holder | Requests (open, un-claimed) | Leg | Token | ETH owed (raw) | ETH (humanised) | branch |
+| Holder | Request (open, un-claimed) | Leg | Token | ETH owed (raw) | ETH (humanised) | branch |
 |---|---|---|---|---|---|---|
-| `0x4D0B2dB7…` | 8218 (`ethExpected`, not finalized) | Supplied | WETH | `179475428570970280827` | 179.475428570970280827 ETH | `ethExpected` |
-| `0x404186e6…` | 8214 (`ethFinalized`, finalized) | Supplied | WETH | `10804926562492357347` | 10.804926562492357347 ETH | `ethFinalized` |
-| `0xeB0CBBA4…` | 8196 (`109058136469367`) + 8197 (`218116272938735`), both finalized | Supplied | WETH | `327174409408102` | 0.000327174409408102 ETH | `ethFinalized` (×2, summed) |
+| `0x4D0B2dB7…` | 8218 (`ethExpected`, not finalized) | Supplied (`isLocked=true`) | WETH | `179475428570970280827` | 179.475428570970280827 ETH | `ethExpected` |
+| `0x404186e6…` | 8214 (`ethFinalized`, finalized) | Supplied (`isLocked=false`) | WETH | `10804926562492357347` | 10.804926562492357347 ETH | `ethFinalized` |
+| `0xeB0CBBA4…` | 8196 (finalized) | Supplied (`isLocked=false`) | WETH | `109058136469367` | 0.000109058136469367 ETH | `ethFinalized` |
+| `0xeB0CBBA4…` | 8197 (finalized) | Supplied (`isLocked=false`) | WETH | `218116272938735` | 0.000218116272938735 ETH | `ethFinalized` |
 
 ### 7b. Per-asset summary
 
@@ -104,7 +106,7 @@ Single leg per holder, denominated in WETH. Captured at the fork block in §5.
 | `0x404186e6…` | WETH | `10804926562492357347` | 10.804926562492357347 ETH | false |
 | `0xeB0CBBA4…` | WETH | `327174409408102` | 0.000327174409408102 ETH (sum of 8196 + 8197) | false |
 
-`getAdapterBalanceForAsset(holder, WETH)`, `getAdapterBalances(holder)`, and the single `getAdapterPositions` entry all return the same value per holder.
+`getAdapterBalanceForAsset(holder, WETH)` and `getAdapterBalances(holder)` return this per-holder total; the per-request `getAdapterPositions` legs sum back to it.
 
 ## 8. Ground-truth cross-check
 
@@ -114,9 +116,9 @@ The value is a live read of Stader's own UserWithdrawalManager — there is no c
 |---|---|
 | `PENDING` (un-finalized) | `adapter == userWithdrawRequests(8218).ethExpected` and `ethFinalized == 0`. |
 | `FINALIZED` (finalized) | `adapter == userWithdrawRequests(8214).ethFinalized`, which is **strictly less than** that request's `ethExpected` (…347 < …356) — proving the branch precedence. |
-| `MULTI` (two requests) | `adapter == userWithdrawRequests(8196).ethFinalized + userWithdrawRequests(8197).ethFinalized` — both finalized, so one claimable (`isLocked=false`) leg, summed on-chain. |
+| `MULTI` (two requests) | `aggregate balance == userWithdrawRequests(8196).ethFinalized + userWithdrawRequests(8197).ethFinalized` — both finalized, so two claimable (`isLocked=false`) legs (one per request) that sum on-chain to that total. |
 
-The claimed-skip (`owner == 0`) path is exercised with mocks in `test/balances/BalanceAdapters/StaderWithdrawalQueueBalanceAdapter.t.sol` — a holder carrying a claimed-but-still-indexed id can't be relied on to exist at any given block. The tests also assert `protocolId == keccak256("stader-withdrawal")`, `positionId == abi.encode(userWithdrawalManager)`, `PositionKind.Supplied`, the claimable/locked `isLocked` split, and `balanceAdapter == address(this)`.
+The claimed-skip (`owner == 0`) path is exercised with mocks in `test/balances/BalanceAdapters/StaderWithdrawalQueueBalanceAdapter.t.sol` — a holder carrying a claimed-but-still-indexed id can't be relied on to exist at any given block. The tests also assert `protocolId == keccak256("stader")` and `protocolSubId == keccak256("stader-withdrawal")`, `positionId == abi.encode(userWithdrawalManager)`, `PositionKind.Supplied`, per-request legs each carrying their own `positionInstanceId` with the appropriate `isLocked`, and `balanceAdapter == address(this)`.
 
 ## 9. Wiring the live dev-anvil dashboard
 
@@ -131,9 +133,9 @@ bash script/development/app/sync-app-env.sh 1
 # then start the Next.js dev server in app/
 ```
 
-The position renders under **Stader** as a single **Supplied** leg denominated in WETH. The featured holders are arbitrary on-chain stakers (not tracked NAV accounts) chosen to exercise the branches; their NAV *totals* also include unrelated wallet positions, so cross-check the **Stader leg** specifically, not the account total.
+The position renders under **Stader** as one **Supplied** leg per open request, denominated in WETH (PENDING and FINALIZED show one leg, MULTI shows two). The featured holders are arbitrary on-chain stakers (not tracked NAV accounts) chosen to exercise the branches; their NAV *totals* also include unrelated wallet positions, so cross-check the **Stader legs** specifically, not the account total.
 
-**Per-request-id drill-down (display only).** The adapter splits the open requests into up to two WETH legs (claimable + locked, sharing one static positionId), and the dashboard renders sub-rows beneath them — one per Stader **request id** (Stader's identifier is a sequential `requestId`, not an ERC721 NFT like Lido), with its id, ETH amount, price, USD value, %, and a Claimable (finalized) / Pending badge. This is re-derived client-side directly from the UserWithdrawalManager (app hook `app/src/hooks/use-stader-withdrawals.ts`, rendered in `protocol-group.tsx`) and does **not** change NAV or the adapter's emitted identity — it's a reconciliation aid sharing the same generic withdrawal-row rendering as Lido. Each request is valued the **same way the adapter sums it** — `ethFinalized` for finalized requests, `ethExpected` for pending — so the rows are genuine ETH amounts and the USD values, split by ETH-owed share, sum exactly back to the claimable + locked legs. The hook mirrors the adapter's 256-request cap. For the **MULTI** holder `0xeB0CBBA4…` the leg shows `↳ #8196 (0.000109058136469367 ETH, Claimable)` + `↳ #8197 (0.000218116272938735 ETH, Claimable)`.
+**Per-request-id drill-down (display only).** The adapter emits one WETH leg per open request (all sharing one static positionId, keyed by `positionInstanceId = bytes32(requestId)`), and the dashboard renders a sub-row per Stader **request id** (Stader's identifier is a sequential `requestId`, not an ERC721 NFT like Lido), with its id, ETH amount, price, USD value, %, and a Claimable (finalized) / Pending badge. This is re-derived client-side directly from the UserWithdrawalManager (app hook `app/src/hooks/use-stader-withdrawals.ts`, rendered in `protocol-group.tsx`) and does **not** change NAV or the adapter's emitted identity — it's a reconciliation aid sharing the same generic withdrawal-row rendering as Lido. Each request is valued the **same way the adapter values it** — `ethFinalized` for finalized requests, `ethExpected` for pending — so the rows are genuine ETH amounts and the USD values, split by ETH-owed share, sum exactly back to the per-request legs. The hook mirrors the adapter's 256-request cap. For the **MULTI** holder `0xeB0CBBA4…` the two legs render as `↳ #8196 (0.000109058136469367 ETH, Claimable)` + `↳ #8197 (0.000218116272938735 ETH, Claimable)`.
 
 > ⚠ **Freshness:** `ethExpected` is fixed at request time, so the PENDING leg is stable. The FINALIZED / MULTI requests can be claimed by their owners at any time, which would zero those legs. Re-confirm the holders on-chain right before a live cross-check if material time has passed since `25_330_819`.
 
@@ -146,13 +148,13 @@ The position renders under **Stader** as a single **Supplied** leg denominated i
 | Multi-request summing across the account | ✅ (MULTI holder, real on-chain fork + unit mocks) |
 | Claimed requests skipped (`owner == 0`); above-cap accounts bounded (anti-DoS) | ✅ (unit test) |
 | Both enumeration-end sentinels (Panic 0x32 / bare empty revert); other panics/reverts propagate | ✅ (unit test) |
-| Identity: `protocolId == stader-withdrawal`, `positionId == abi.encode(userWithdrawalManager)`, `Supplied`, claimable/locked `isLocked` split, WETH-denominated | ✅ |
+| Identity: `protocolId == stader`, `protocolSubId == stader-withdrawal`, `positionId == abi.encode(userWithdrawalManager)`, `Supplied`, one leg per request keyed by `positionInstanceId` with per-request `isLocked`, WETH-denominated | ✅ |
 | Mainnet-only scope (manager not on other chains) | ✅ |
 
 **Mainnet: Stader WQ fork suites pass (both branches, original + fresh pins).** Single mainnet deployment → no cross-chain surface. Stader ETHx withdrawal queue is verified.
 
 Run via:
 
-```
+```bash
 FOUNDRY_PROFILE=slow forge test --match-path "test/balances/BalanceAdapters/fork/StaderWithdrawalQueueBalanceAdapter.fork.t.sol" -vv
 ```

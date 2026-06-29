@@ -1,6 +1,6 @@
 # Balance-adapter coverage roadmap
 
-> **PR #47 (meta-adapter framework):** Coverage was expanded significantly. A family of immutable meta-adapters now covers every instance of the protocol families below (Morpho Vaults/Markets, Aave V3, Balancer V3/V2 pools+gauges, Uniswap V3/V2, PancakeSwap V3/V2, Gearbox, Compound V3, Fluid fTokens/Vaults, StakeWise V3, Curve pools+gauges, Convex, Euler V2 — 20 meta-adapter contracts in `src/balances/{BalanceAdapters,MetaBalanceAdapters,AssistedBalanceAdapters}/`). The active instance set for each is governed on NAVCalculator via `addMetaInstances`/`removeMetaInstances` instead of deploying a contract per instance.
+> **PR #47 (meta-adapter framework):** Coverage was expanded significantly. A family of immutable meta-adapters now covers every instance of the protocol families below (Morpho Vaults/Markets, Aave V3, Balancer V3/V2 pools+gauges, Uniswap V2, PancakeSwap V2, Gearbox V3 markets, Compound V3, Fluid fTokens/Vaults, StakeWise V3, Curve pools+gauges, Convex, Euler V2 — the meta-adapter contracts live in `src/balances/MetaBalanceAdapters/`). The active instance set for each is governed on NAVCalculator via `addMetaInstances`/`removeMetaInstances` instead of deploying a contract per instance. Uniswap V3 and PancakeSwap V3 are **not** meta-adapters — their NFT positions are non-enumerable, so they live in the assisted family (`src/balances/AssistedBalanceAdapters/`); see the DEX LP section below.
 
 Living document. Tracks protocols and protocol features whose positions are **not yet** captured by NAVCalculator's balance adapters, with the goal of growing NAV coverage one PR at a time.
 
@@ -20,7 +20,7 @@ The point of these adapters is to track value that has left the LST as ERC20 but
 |---|---|---|---|
 | **Stader (ETHx)** ✅ | `0x9F0491B32DBce587c50c4C43AB303b06478193A7` | Sequential `requestId`, `requestIdsByUserAddress(address, idx)` getter, `userWithdrawRequests(id)` returns `(owner, ethXAmount, ethExpected, ethFinalized, requestBlock)`. `nextRequestIdToFinalize` gates claimability. | Implemented in this repo. |
 | **Lido (stETH)** ✅ | `WithdrawalQueueERC721` at `0x889edC2eDab5f40e902b864aD4d7AdE8E412F9B1` | ERC721. Enumerate via `getWithdrawalRequests(address) → uint256[]`. Per-id status via `getWithdrawalStatus(uint256[]) → WithdrawalRequestStatus[]` returning `amountOfStETH, amountOfShares, owner, timestamp, isFinalized, isClaimed`. | Implemented in this repo (`LidoWithdrawalQueueBalanceAdapter.sol`): reports open (un-claimed) requests as **native ETH** (the asset Lido pays on claim; priced ETH/USD) — finalized requests use exact claimable ETH (`getClaimableEther`), not-yet-finalized use `amountOfStETH`. |
-| **etherFi (eETH/weETH)** | `WithdrawRequestNFT` at `0x7d5706f6ef3F89B3951E23e557CDFBC3239D4E2c` | ERC721. Enumerate via `IERC721Enumerable.tokenOfOwnerByIndex` (the contract is enumerable). Per-id `getRequest(uint256) → (amountOfEEth, shareOfEEth, isValid, feeGwei)`. | Reports eETH amount; convert via `LiquidityPool.amountForShare()` if needed. |
+| **etherFi (eETH/weETH)** ✅ | `WithdrawRequestNFT` at `0x7d5706f6ef3F89B3951E23e557CDFBC3239D4E2c` | ERC721, but **not** `ERC721Enumerable` and no owner→tokenIds view, so positions cannot be discovered from a pure-view read. An off-chain assistant submits the account's `tokenId`s; values are read live on-chain and ownership is re-verified per read. | Implemented in this repo as an **assisted** adapter (`EtherFiWithdrawalQueueAssistedBalanceAdapter.sol`, agent-fed; ADR 0014/0015): caches ids only (never amounts) via `submitTokenIds`, emits one native-ETH `Supplied` leg per owned request under a static `positionId = abi.encode(WithdrawRequestNFT)`, each leg's `isLocked` set by request state (finalized → `false`, pending → `true`); the WithdrawRequestNFT id rides in the typed `positionInstanceId`, never in `positionId`. |
 | **Frax (frxETH/sfrxETH)** | `FraxEtherRedemptionQueue` at `0x82bA8da44Cd5261762e629dd5c605b17715727bd` | ERC721. `nftInformation(uint256)` returns the redemption metadata. | Reports ETH owed at maturity; uses `maturity` block, not finalization batches. |
 | **Renzo (ezETH)** | `WithdrawQueue` at `0xf2F305D14DCD8aaef887E0428B3c9534795D0d60` | ERC721 with explicit `withdrawRequests` mapping; sequential IDs per holder. | Newer queue; finalization tied to Renzo restaking unwinds. |
 | **Kelp (rsETH)** ✅ | `LRTWithdrawalManager` at `0x62De59c08eB5dAE4b7E6F7a8cAd3006d6965ec16` | Per-supported-asset deques: `userAssociatedNonces(asset, user) → (begin, end)` and `getUserWithdrawalRequest(asset, user, i) → (rsETHAmount, expectedAssetAmount, withdrawalStartBlock, userNonce)`. Payout-asset set discovered via `lrtConfig().getSupportedAssetList()` (stETH, ETHx, native ETH at time of writing). | Implemented in this repo (`KelpWithdrawalQueueBalanceAdapter.sol`): single multi-asset adapter; a static positionId `abi.encode(address withdrawalManager)` (payout asset carried in `balanceAsset.asset`); per NAV-registered payout asset, up to two legs — claimable + locked — sharing it, told apart by `isLocked` (ADR 0016). |
@@ -65,7 +65,7 @@ These are not queues but represent value that lives outside the wallet and is no
 
 ### Yield aggregator rewards
 
-- **Convex**: ✅ covered — `ConvexRewardsMeta` (meta-adapter, ADR 0010).
+- **Convex**: ✅ covered — `ConvexCurveLPStakingMeta` (meta-adapter, ADR 0010).
 
 ### Yield / structured products
 
@@ -81,7 +81,7 @@ These are not queues but represent value that lives outside the wallet and is no
 - **Morpho Markets**: ✅ covered — `MorphoMarketsMeta` (meta-adapter, ADR 0010).
 - **Aave V3 (all instances)**: ✅ covered — `AaveV3InstancesMeta` (meta-adapter, ADR 0010).
 - **Compound V3**: ✅ covered — `CompoundV3CometsMeta` (meta-adapter, ADR 0010).
-- **Gearbox**: ✅ covered — `GearboxV3MarketsMeta` (meta-adapter, ADR 0010).
+- **Gearbox**: ✅ supply side covered — `GearboxV3MarketsMeta` (meta-adapter, ADR 0010; the passive ERC4626 pool LPs). The borrow side (collateral basket + debt held in Credit Accounts) has a contract — `GearboxV3CreditAccountsMetaBalanceAdapter` (instance coordinate = credit-account address) — but it is not yet wired into the deploy config.
 - **Fluid**: ✅ covered — `FluidFTokensMeta` (ERC4626 lending) + `FluidVaultsMeta` (T1 collateral/debt) meta-adapters (ADR 0010).
 - **Euler V2**: ✅ covered — `EulerVaultsMeta` (meta-adapter, ADR 0010): one adapter for both EulerEarn aggregator vaults and core eVaults (EVK), reporting `Supplied`/`Collateral` and `Borrowed` legs.
 - **Ajna**: pool-based lending; inflation-bearing buckets.

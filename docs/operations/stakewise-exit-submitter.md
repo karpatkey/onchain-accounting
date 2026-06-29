@@ -13,9 +13,9 @@ This file is the contract between the on-chain adapter and the ops process that 
 Per cycle, two things:
 
 1. **Discover** each tracked account's open exit positions (off-chain): the `(vault, positionTicket, timestamp)` tuples.
-2. **Submit** the fresh ones to the deployed adapter via `submitPositions(account, positions)` (or `submitPositionsBatch`), signed by a key holding `ASSISTANT_ROLE`.
+2. **Submit** the account's complete still-live set to the deployed adapter via `submitPositions(account, positions)` (or `submitPositionsBatch`), signed by a key holding `ASSISTANT_ROLE` — the call replaces the prior cached set.
 
-Garbage-collection (`clearPosition` / `clearAccount`) for claimed positions is an occasional cleanup, not steady-state-critical — stale tuples already read as 0 (the adapter drops them when `calculateExitedAssets` returns zero, i.e. the request was claimed/deleted).
+`submitPositions` has **replace** semantics: each call discards the account's prior cached set and installs the submitted list as the complete set. So a claimed position is evicted simply by being absent from the next cycle's list — `clearPosition` / `clearAccount` are an explicit, optional GC path (e.g. between cycles), not steady-state-critical. (Stale tuples that linger in the cache also read as 0 — the adapter drops them at read time when `calculateExitedAssets` returns zero, i.e. the request was claimed/deleted.)
 
 ## Discovering positions (the only off-chain step)
 
@@ -25,7 +25,7 @@ StakeWise exposes no owner→positions view. Recover positions from event logs o
 ExitQueueEntered(address indexed owner, address indexed receiver, uint256 positionTicket, uint256 shares)
 ```
 
-For each event where `receiver == account`, record `(vault, positionTicket, blockTimestamp)` — where **`blockTimestamp` is the timestamp of the block that emitted the event**. This is load-bearing: the exit-request key is `keccak256(abi.encode(receiver, timestamp, positionTicket))`, so the timestamp must be the entry block's `block.timestamp` or the adapter will value the tuple as 0. An indexer/subgraph or a bounded `eth_getLogs` scan both work. The bot may submit the full open set every cycle — the adapter dedups, and write-time hygiene drops anything that no longer resolves to a live, account-owned position.
+For each event where `receiver == account`, record `(vault, positionTicket, blockTimestamp)` — where **`blockTimestamp` is the timestamp of the block that emitted the event**. This is load-bearing: the exit-request key is `keccak256(abi.encode(receiver, timestamp, positionTicket))`, so the timestamp must be the entry block's `block.timestamp` or the adapter will value the tuple as 0. An indexer/subgraph or a bounded `eth_getLogs` scan both work. Submit each account's **complete set of still-live positions** every cycle (`submitPositions` replaces the prior set, and dedups within the list). Do **not** include already-claimed positions: write-time validation is fail-loud — a tuple whose vault is not StakeWise-registered, or that no longer resolves to a non-zero owed amount for the account, makes `submitPositions` **revert** `InvalidExitPosition`, and because the call reverts atomically the prior set is left untouched.
 
 ## Inputs
 
@@ -44,16 +44,16 @@ The `VaultsRegistry` address and all valuation/verification rules are pinned in 
 Cadence: **roughly daily** is sufficient for correctness (validator exits take ~days), but more frequent tightens the window between a new `enterExitQueue` and NAV reflecting it. Per account, per vault:
 
 ```
-positions = scan_exit_queue_entered(vault, receiver=account)   # (vault, positionTicket, blockTimestamp)
-if positions: submitPositions(account, positions)             # as ASSISTANT_ROLE holder; adapter dedups + verifies on-chain
-# optional GC: clearPosition for tuples whose calculateExitedAssets(account,…) is now 0 (claimed)
+positions = scan_exit_queue_entered(vault, receiver=account)   # (vault, positionTicket, blockTimestamp), still-live only
+if positions: submitPositions(account, positions)             # as ASSISTANT_ROLE holder; REPLACES the set, reverts on any bad tuple
+# optional GC: clearAccount(account) / clearPosition(...) — redundant once a fresh live set has been submitted
 ```
 
 ## Failure modes
 
 - **Bot down / lagging:** newly-entered exit positions aren't reflected until the next cycle → NAV **under-reports** that account's in-flight assets. Never over-reports. Mitigation: same SLA as the Merkl bot.
-- **Submitting a tuple not owned by the account** (wrong receiver/timestamp/ticket): rejected at write (`calculateExitedAssets(account,…)` returns 0) and would read as 0 anyway. Harmless.
-- **Submitting a non-StakeWise vault:** rejected at write (`VaultsRegistry.vaults(vault)` is false). Harmless.
+- **Submitting a tuple not owned by the account** (wrong receiver/timestamp/ticket): the whole `submitPositions` call **reverts** `InvalidExitPosition` — `calculateExitedAssets(account,…)` returns 0, which fails the write-time check. The prior set is left untouched (atomic revert). Never corrupts NAV, but the cycle's submit fails until the bad tuple is removed from the list, so the bot must scan correctly. Even if a stale tuple somehow reached the cache, reads re-verify and value it as 0.
+- **Submitting a non-StakeWise vault:** same — `submitPositions` **reverts** `InvalidExitPosition` (`VaultsRegistry.vaults(vault)` is false). Atomic; prior set untouched.
 - **Claimed position left in the cache:** reads as 0 (the exit request is deleted on claim → `calculateExitedAssets` returns 0). GC is cosmetic (storage hygiene), not correctness.
 
 ## Non-goals

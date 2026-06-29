@@ -99,11 +99,16 @@ protocol, pins a block, and ships a strict-equality fork test. To make the dashb
 positions for visual cross-check vs Debank, you also need the adapter deployed + registered on the
 local anvil:
 
-1. **Pre-verification (per-protocol ad-hoc):** small bash deploy script under
-   `script/development/deploy/deploy-<protocol>.sh` that does `forge create` + `cast send addBalanceAdapters(address[])`
-   (plain adapter) or `cast send addMetaBalanceAdapter(address,bytes32[])` (meta adapter) per adapter instance. See
-   `script/development/deploy/deploy-lido-withdrawal-queue.sh` (plain) and
-   `script/development/deploy/deploy-aave-instances-meta.sh` (meta) for canonical examples.
+1. **Pre-verification (per-protocol ad-hoc):** a small bash deploy script under
+   `script/development/deploy/deploy-<protocol>.sh`. For a **plain** adapter it `forge create`s the
+   contract then `cast send addBalanceAdapters(address[])` to register it — see
+   `script/development/deploy/deploy-lido-withdrawal-queue.sh`. For a **meta** adapter the bash wrapper
+   shells out to a sibling `deploy-<protocol>.s.sol` forge script that deploys the adapter and
+   register-seeds it with a single atomic `addMetaBalanceAdapter(address,bytes32[])` (mirroring prod's
+   `06_Configure.s.sol`) — see `script/development/deploy/deploy-aave-instances-meta.sh` +
+   `deploy-aave-instances-meta.s.sol`. (Assisted/NFT-id-cached adapters follow the meta shape but seed
+   positions via `submitTokenIds` / a per-protocol submit script instead — e.g.
+   `deploy-pancakeswap-v3-meta.sh`, `submit-etherfi-positions.sh`.)
 2. **Post-verification:** the adapter is appended to `script/deploy/04_DeployBalanceAdapters.s.sol`
    and its config goes into `script/config/contracts-deployment-config/balance-adapters/<id>.json`
    (plain) or `meta-balance-adapters/<id>.json` (meta) for the deploy, plus

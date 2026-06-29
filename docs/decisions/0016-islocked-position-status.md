@@ -29,7 +29,7 @@ the app.
 
 4. **`isLocked` is part of the reconciliation key.** Because both legs share one positionId,
    `isLocked` must enter the identity key to keep the two legs distinct:
-   `keccak256(abi.encode(chainId, protocolId, positionId, balanceAsset.asset, positionKind, isLocked))`.
+   `keccak256(abi.encode(chainId, protocolSubId, positionId, balanceAsset.asset, positionKind, isLocked))`.
 
 5. **Uniform rule:** `isLocked = non-withdrawable`. `isLocked = false` only when the leg is
    **fully liquid / withdrawable now**. The claimable leg holds the withdrawable portion; the
@@ -54,12 +54,12 @@ performs the claimable/locked split.
 
 ## Static `positionId` and legs per adapter
 
-| protocolId | static `positionId` | legs |
+| protocolSubId | static `positionId` | legs |
 |---|---|---|
 | `lido-withdrawal` | `abi.encode(address withdrawalQueue)` | claimable + locked |
 | `stader-withdrawal` | `abi.encode(address userWithdrawalManager)` | claimable + locked |
 | `kelp-withdrawal` | `abi.encode(address withdrawalManager)` (payout asset in `balanceAsset`) | claimable + locked |
-| `stakewise-exit` | `abi.encode(address vault)` (per vault) | claimable (exited) + locked (queued), per vault |
+| `stakewise-v3-exit` | `abi.encode(address vault)` (per vault) | claimable (exited) + locked (queued), per vault |
 | `etherfi-withdrawal` | `abi.encode(address withdrawRequestNFT)` | claimable + locked |
 | `ethena-cooldown` | `abi.encode(address sUSDe)` | single leg, `isLocked` while cooling |
 | `aave-v3-safety-module` | `abi.encode(address stakeToken)` (both staking legs; reward leg too) | locked stake (`isLocked=true`) + unlocked stake (`isLocked=false`, cooldown elapsed-and-in-window) |
@@ -74,7 +74,7 @@ The locked portion is the amount for which the predicate below is true.
 | Lido | per request: locked while `!status.isFinalized` (claimed requests skipped) |
 | Stader | per request: locked while `ethFinalized == 0` |
 | Kelp | per request: locked while `!(userNonce < nextLockedNonce(asset) && block.number >= withdrawalStartBlock + withdrawalDelayBlocks())` |
-| StakeWise V3 | per vault: claimable = `exitedAssets`; locked = `convertToAssets(leftShares)` (partial = locked) |
+| StakeWise V3 | per position: `exitedAssets` is claimable only once `block.timestamp >= timestamp + EXIT_CLAIM_DELAY` (else locked); `convertToAssets(leftShares)` (still-queued remainder) is always locked (partial = locked) |
 | ether.fi | per request: locked while `!isFinalized(tokenId)` |
 | Ethena | single cooldown: locked until `block.timestamp >= cooldownEnd` (or `cooldownDuration == 0`) |
 | Aave SM | active stake is non-withdrawable (needs cooldown) ⇒ locked; only a cooldown elapsed-and-in-window is the unlocked leg |
@@ -92,26 +92,34 @@ positionId, locked vs unlocked told apart by `isLocked` alone. Stake tokens that
 expected cooldown ABI degrade gracefully to a single locked-stake leg (the cooldown reads are
 wrapped in try/catch).
 
-## Per-request ids live in the app, not in identity
+## Per-request ids live in `positionInstanceId`, not in the stable identity key
 
 Per-request coordinates (NFT id, ticket, nonce) are deliberately **not** in `positionId` or in
 `positionLabels`. A per-request positionId was considered and rejected: those ids are
 ephemeral (minted and burned as requests are created and claimed), so keying NAV identity on
 them would churn the reconciliation key on every request lifecycle event and defeat caching.
 `positionLabels` is therefore **unchanged** — a static breadcrumb keyed on the static
-positionId (e.g. `["Lido","stETH Withdrawal Queue"]`).
+positionId (e.g. `["Withdrawal Queue", "stETH"]` for Lido, below the `protocolName()` of `"Lido"`).
 
-Per-request detail still belongs somewhere — it lives in the **app**, which reads the queue
-contracts directly and the adapters' coordinate getters (`tokenIdsOf` on the ether.fi adapter,
-`positionsOf` on the StakeWise V3 adapter) to render an individual breakdown. NAV exposes the
-claimable/locked split; the app drills down to the request level.
+Instead, each per-request coordinate rides in the typed, optional `positionInstanceId` field
+(`bytes32`) on every leg — the NFT id / exit ticket / nonce widened to `bytes32`. It is the sole
+ephemeral identity field: the stable reconciliation key
+`(chainId, protocolSubId, positionId, balanceAsset.asset, positionKind, isLocked)` deliberately
+**excludes** it, so the legs of one anchor sum and identity survives request churn. A consumer
+that wants per-request granularity may append `positionInstanceId` to the key. The adapters also
+expose coordinate getters (`tokenIdsOf` on the ether.fi adapter, `positionsOf` on the StakeWise V3
+adapter) so the app can read the queue contracts directly and render an individual breakdown. NAV
+exposes the claimable/locked split; the app drills down to the request level.
 
 ## Notes / known limitations
 
-- **StakeWise claim delay.** StakeWise also enforces a ~24h `claimExitedAssets` delay after a
-  position's `timestamp` that is *not* gated on here, because no public getter for the vault's
-  claim delay is confirmed. Omitting it can only mark a fully-exited leg claimable slightly
-  early; the leg's still-queued shares remain on the locked leg. Revisit if a getter is confirmed.
+- **StakeWise claim delay.** StakeWise also enforces a post-checkpoint `claimExitedAssets` delay
+  (a fixed protocol constant, ~24h on V3 mainnet) after a position's `timestamp`. There is no
+  public getter for it, so it is pinned on the adapter at construction as the immutable
+  `EXIT_CLAIM_DELAY` and gated on directly: the exited portion is reported as **locked** until
+  `block.timestamp >= timestamp + EXIT_CLAIM_DELAY`, which avoids marking a fully-exited leg
+  claimable up to ~24h early. The leg's still-queued shares are always on the locked leg. The
+  owed *total* (claimable + locked) is unaffected by the gate.
 - **Kelp delay-gate fix.** The previous Kelp logic (and the app hook) treated a request as
   claimable on the nonce cursor alone, omitting the block-delay gate — a false-positive class
   matching a Sherlock-audited finding. The two-gate predicate above corrects it.

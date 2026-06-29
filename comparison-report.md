@@ -72,7 +72,7 @@ _Left side ↙ DeBank's view (from /v1/user/all_complex_protocol_list). Right si
 
 #### Wallet tokens
 
-_Left side ↙ DeBank's `/v1/user/token_list`. Right side ↘ NAV's wallet sweep via `ERC20DefaultOracle` and registered Custom price feeds._
+_Left side ↙ DeBank's `/v1/user/token_list`. Right side ↘ NAV's wallet sweep via `ERC20DefaultBalanceAdapter` and registered Custom price feeds._
 
 | Symbol | Address | │ | DeBank amount | DeBank price | DeBank $ | │ | NAV amount | NAV price | NAV $ |
 |---|---|:---:|---:|---:|---:|:---:|---:|---:|---:|
@@ -123,7 +123,7 @@ _Left side ↙ DeBank's view (from /v1/user/all_complex_protocol_list). Right si
 
 #### Wallet tokens
 
-_Left side ↙ DeBank's `/v1/user/token_list`. Right side ↘ NAV's wallet sweep via `ERC20DefaultOracle` and registered Custom price feeds._
+_Left side ↙ DeBank's `/v1/user/token_list`. Right side ↘ NAV's wallet sweep via `ERC20DefaultBalanceAdapter` and registered Custom price feeds._
 
 | Symbol | Address | │ | DeBank amount | DeBank price | DeBank $ | │ | NAV amount | NAV price | NAV $ |
 |---|---|:---:|---:|---:|---:|:---:|---:|---:|---:|
@@ -145,7 +145,7 @@ _NAV reports these but DeBank either doesn't surface them at all, or surfaces th
 
 #### Wallet tokens
 
-_Left side ↙ DeBank's `/v1/user/token_list`. Right side ↘ NAV's wallet sweep via `ERC20DefaultOracle` and registered Custom price feeds._
+_Left side ↙ DeBank's `/v1/user/token_list`. Right side ↘ NAV's wallet sweep via `ERC20DefaultBalanceAdapter` and registered Custom price feeds._
 
 | Symbol | Address | │ | DeBank amount | DeBank price | DeBank $ | │ | NAV amount | NAV price | NAV $ |
 |---|---|:---:|---:|---:|---:|:---:|---:|---:|---:|
@@ -176,7 +176,7 @@ _Left side ↙ DeBank's view (from /v1/user/all_complex_protocol_list). Right si
 
 #### Wallet tokens
 
-_Left side ↙ DeBank's `/v1/user/token_list`. Right side ↘ NAV's wallet sweep via `ERC20DefaultOracle` and registered Custom price feeds._
+_Left side ↙ DeBank's `/v1/user/token_list`. Right side ↘ NAV's wallet sweep via `ERC20DefaultBalanceAdapter` and registered Custom price feeds._
 
 | Symbol | Address | │ | DeBank amount | DeBank price | DeBank $ | │ | NAV amount | NAV price | NAV $ |
 |---|---|:---:|---:|---:|---:|:---:|---:|---:|---:|
@@ -222,7 +222,7 @@ _Left side ↙ DeBank's view (from /v1/user/all_complex_protocol_list). Right si
 
 #### Wallet tokens
 
-_Left side ↙ DeBank's `/v1/user/token_list`. Right side ↘ NAV's wallet sweep via `ERC20DefaultOracle` and registered Custom price feeds._
+_Left side ↙ DeBank's `/v1/user/token_list`. Right side ↘ NAV's wallet sweep via `ERC20DefaultBalanceAdapter` and registered Custom price feeds._
 
 | Symbol | Address | │ | DeBank amount | DeBank price | DeBank $ | │ | NAV amount | NAV price | NAV $ |
 |---|---|:---:|---:|---:|---:|:---:|---:|---:|---:|
@@ -282,7 +282,7 @@ _Left side ↙ DeBank's view (from /v1/user/all_complex_protocol_list). Right si
 
 #### Wallet tokens
 
-_Left side ↙ DeBank's `/v1/user/token_list`. Right side ↘ NAV's wallet sweep via `ERC20DefaultOracle` and registered Custom price feeds._
+_Left side ↙ DeBank's `/v1/user/token_list`. Right side ↘ NAV's wallet sweep via `ERC20DefaultBalanceAdapter` and registered Custom price feeds._
 
 | Symbol | Address | │ | DeBank amount | DeBank price | DeBank $ | │ | NAV amount | NAV price | NAV $ |
 |---|---|:---:|---:|---:|---:|:---:|---:|---:|---:|
@@ -334,7 +334,7 @@ _Left side ↙ DeBank's view (from /v1/user/all_complex_protocol_list). Right si
 
 #### Wallet tokens
 
-_Left side ↙ DeBank's `/v1/user/token_list`. Right side ↘ NAV's wallet sweep via `ERC20DefaultOracle` and registered Custom price feeds._
+_Left side ↙ DeBank's `/v1/user/token_list`. Right side ↘ NAV's wallet sweep via `ERC20DefaultBalanceAdapter` and registered Custom price feeds._
 
 | Symbol | Address | │ | DeBank amount | DeBank price | DeBank $ | │ | NAV amount | NAV price | NAV $ |
 |---|---|:---:|---:|---:|---:|:---:|---:|---:|---:|
@@ -369,7 +369,7 @@ _Left side ↙ DeBank's view (from /v1/user/all_complex_protocol_list). Right si
 
 #### Wallet tokens
 
-_Left side ↙ DeBank's `/v1/user/token_list`. Right side ↘ NAV's wallet sweep via `ERC20DefaultOracle` and registered Custom price feeds._
+_Left side ↙ DeBank's `/v1/user/token_list`. Right side ↘ NAV's wallet sweep via `ERC20DefaultBalanceAdapter` and registered Custom price feeds._
 
 | Symbol | Address | │ | DeBank amount | DeBank price | DeBank $ | │ | NAV amount | NAV price | NAV $ |
 |---|---|:---:|---:|---:|---:|:---:|---:|---:|---:|
@@ -406,7 +406,7 @@ _Left side ↙ DeBank's view (from /v1/user/all_complex_protocol_list). Right si
 
 #### Wallet tokens
 
-_Left side ↙ DeBank's `/v1/user/token_list`. Right side ↘ NAV's wallet sweep via `ERC20DefaultOracle` and registered Custom price feeds._
+_Left side ↙ DeBank's `/v1/user/token_list`. Right side ↘ NAV's wallet sweep via `ERC20DefaultBalanceAdapter` and registered Custom price feeds._
 
 | Symbol | Address | │ | DeBank amount | DeBank price | DeBank $ | │ | NAV amount | NAV price | NAV $ |
 |---|---|:---:|---:|---:|---:|:---:|---:|---:|---:|
@@ -442,7 +442,7 @@ _Left side ↙ DeBank's view (from /v1/user/all_complex_protocol_list). Right si
 
 #### Wallet tokens
 
-_Left side ↙ DeBank's `/v1/user/token_list`. Right side ↘ NAV's wallet sweep via `ERC20DefaultOracle` and registered Custom price feeds._
+_Left side ↙ DeBank's `/v1/user/token_list`. Right side ↘ NAV's wallet sweep via `ERC20DefaultBalanceAdapter` and registered Custom price feeds._
 
 | Symbol | Address | │ | DeBank amount | DeBank price | DeBank $ | │ | NAV amount | NAV price | NAV $ |
 |---|---|:---:|---:|---:|---:|:---:|---:|---:|---:|
@@ -485,7 +485,7 @@ _Left side ↙ DeBank's view (from /v1/user/all_complex_protocol_list). Right si
 
 #### Wallet tokens
 
-_Left side ↙ DeBank's `/v1/user/token_list`. Right side ↘ NAV's wallet sweep via `ERC20DefaultOracle` and registered Custom price feeds._
+_Left side ↙ DeBank's `/v1/user/token_list`. Right side ↘ NAV's wallet sweep via `ERC20DefaultBalanceAdapter` and registered Custom price feeds._
 
 | Symbol | Address | │ | DeBank amount | DeBank price | DeBank $ | │ | NAV amount | NAV price | NAV $ |
 |---|---|:---:|---:|---:|---:|:---:|---:|---:|---:|
@@ -534,7 +534,7 @@ _Left side ↙ DeBank's view (from /v1/user/all_complex_protocol_list). Right si
 
 #### Wallet tokens
 
-_Left side ↙ DeBank's `/v1/user/token_list`. Right side ↘ NAV's wallet sweep via `ERC20DefaultOracle` and registered Custom price feeds._
+_Left side ↙ DeBank's `/v1/user/token_list`. Right side ↘ NAV's wallet sweep via `ERC20DefaultBalanceAdapter` and registered Custom price feeds._
 
 | Symbol | Address | │ | DeBank amount | DeBank price | DeBank $ | │ | NAV amount | NAV price | NAV $ |
 |---|---|:---:|---:|---:|---:|:---:|---:|---:|---:|
@@ -650,7 +650,7 @@ _Left side ↙ DeBank's view (from /v1/user/all_complex_protocol_list). Right si
 
 #### Wallet tokens
 
-_Left side ↙ DeBank's `/v1/user/token_list`. Right side ↘ NAV's wallet sweep via `ERC20DefaultOracle` and registered Custom price feeds._
+_Left side ↙ DeBank's `/v1/user/token_list`. Right side ↘ NAV's wallet sweep via `ERC20DefaultBalanceAdapter` and registered Custom price feeds._
 
 | Symbol | Address | │ | DeBank amount | DeBank price | DeBank $ | │ | NAV amount | NAV price | NAV $ |
 |---|---|:---:|---:|---:|---:|:---:|---:|---:|---:|
@@ -709,7 +709,7 @@ _Left side ↙ DeBank's view (from /v1/user/all_complex_protocol_list). Right si
 
 #### Wallet tokens
 
-_Left side ↙ DeBank's `/v1/user/token_list`. Right side ↘ NAV's wallet sweep via `ERC20DefaultOracle` and registered Custom price feeds._
+_Left side ↙ DeBank's `/v1/user/token_list`. Right side ↘ NAV's wallet sweep via `ERC20DefaultBalanceAdapter` and registered Custom price feeds._
 
 | Symbol | Address | │ | DeBank amount | DeBank price | DeBank $ | │ | NAV amount | NAV price | NAV $ |
 |---|---|:---:|---:|---:|---:|:---:|---:|---:|---:|
@@ -1276,7 +1276,7 @@ _Use this section to identify missing adapter registrations, unregistered tokens
 
 ### 4.1 — DeBank protocols with value not in `supportedDeBankProtocols`
 
-_These show non-zero DeBank balance but are absent from the per-chain allowlist in `accounts.json`. If an NAV adapter exists for the protocol, consider adding it to `supportedDeBankProtocols` and registering the adapter on that chain._
+_These show non-zero DeBank balance but are absent from the per-chain allowlist in `accounts.json`. If a NAV adapter exists for the protocol, consider adding it to `supportedDeBankProtocols` and registering the adapter on that chain._
 
 | Chain | Account | Protocol | DeBank ID | Value | NAV adapter? |
 |---|---|---|---|---:|---|
@@ -1284,7 +1284,7 @@ _These show non-zero DeBank balance but are absent from the per-chain allowlist 
 | Mainnet (1) | ACCOUNT_10_MAINNET_LST_YIELD | ether.fi | `etherfi` | $4.252M | Yes (`ether.fi`) |
 | Mainnet (1) | ACCOUNT_10_MAINNET_LST_YIELD | Rocket Pool | `rocketpool` | $2.923M | Yes (`Rocket Pool`) |
 | Mainnet (1) | ACCOUNT_9_MAINNET_DIVERSIFIED | LIDO | `lido` | $1.503M | Yes (`Lido`) |
-| Mainnet (1) | ACCOUNT_9_MAINNET_DIVERSIFIED | Sablier | `sablier` | $1.061M | Yes (`Sablier`) |
+| Mainnet (1) | ACCOUNT_9_MAINNET_DIVERSIFIED | Sablier | `sablier` | $1.061M | No |
 | Mainnet (1) | ACCOUNT_11_MAINNET_COMPOUND_UNISWAP | StakeWise | `stakewise` | $621,437.50 | Yes (`Stakewise v3`, `StakeWise V3`) |
 | Mainnet (1) | ACCOUNT_9_MAINNET_DIVERSIFIED | Uniswap V3 | `uniswap3` | $410,222.56 | Yes (`Uniswap V3`) |
 | Mainnet (1) | ACCOUNT_11_MAINNET_COMPOUND_UNISWAP | Rocket Pool | `rocketpool` | $121,885.99 | Yes (`Rocket Pool`) |
@@ -1318,14 +1318,14 @@ _The protocol IS in `supportedDeBankProtocols` but no NAV position matched the i
 
 | Chain | Account | Protocol | DeBank ID | Item | Value | Hint |
 |---|---|---|---|---|---:|---|
-| Mainnet (1) | ACCOUNT_10_MAINNET_LST_YIELD | Sky | `sky` | Savings USDS (`0xa3931d71…`) | $9.330M | No `sky` protocol adapter, but USDS is/are NAV-priced: the value is already in the NAV total when held in-wallet (see this account's wallet-token rows) — a true gap only if locked in the protocol contract (withdrawal queue / savings vault) |
-| Mainnet (1) | ACCOUNT_9_MAINNET_DIVERSIFIED | LIDO | `lido` | wstETH (`0x7f39c581…`) | $355,650.82 | No `lido` protocol adapter, but stETH is/are NAV-priced: the value is already in the NAV total when held in-wallet (see this account's wallet-token rows) — a true gap only if locked in the protocol contract (withdrawal queue / savings vault) |
-| Mainnet (1) | ACCOUNT_11_MAINNET_COMPOUND_UNISWAP | Spark | `spark` | Spark Savings USDC (`0x28b3a8fb…`) | $351,386.39 | No `spark` protocol adapter, but USDC is/are NAV-priced: the value is already in the NAV total when held in-wallet (see this account's wallet-token rows) — a true gap only if locked in the protocol contract (withdrawal queue / savings vault) |
-| Mainnet (1) | ACCOUNT_2 | Kelp DAO | `kelpdao` | Locked (`0x62de59c0…`) | $292,567.26 | No `kelpdao` protocol adapter, but stETH is/are NAV-priced: the value is already in the NAV total when held in-wallet (see this account's wallet-token rows) — a true gap only if locked in the protocol contract (withdrawal queue / savings vault) |
-| Mainnet (1) | ACCOUNT_10_MAINNET_LST_YIELD | LIDO | `lido` | wstETH (`0x7f39c581…`) | $251.5505 | No `lido` protocol adapter, but stETH is/are NAV-priced: the value is already in the NAV total when held in-wallet (see this account's wallet-token rows) — a true gap only if locked in the protocol contract (withdrawal queue / savings vault) |
+| Mainnet (1) | ACCOUNT_10_MAINNET_LST_YIELD | Sky | `sky` | Savings USDS (`0xa3931d71…`) | $9.330M | No `sky` protocol adapter, but USDS is NAV-priced: the value is already in the NAV total when held in-wallet (see this account's wallet-token rows) — a true gap only if locked in the protocol contract (withdrawal queue / savings vault) |
+| Mainnet (1) | ACCOUNT_9_MAINNET_DIVERSIFIED | LIDO | `lido` | wstETH (`0x7f39c581…`) | $355,650.82 | No `lido` protocol adapter, but stETH is NAV-priced: the value is already in the NAV total when held in-wallet (see this account's wallet-token rows) — a true gap only if locked in the protocol contract (withdrawal queue / savings vault) |
+| Mainnet (1) | ACCOUNT_11_MAINNET_COMPOUND_UNISWAP | Spark | `spark` | Spark Savings USDC (`0x28b3a8fb…`) | $351,386.39 | No `spark` protocol adapter, but USDC is NAV-priced: the value is already in the NAV total when held in-wallet (see this account's wallet-token rows) — a true gap only if locked in the protocol contract (withdrawal queue / savings vault) |
+| Mainnet (1) | ACCOUNT_2 | Kelp DAO | `kelpdao` | Locked (`0x62de59c0…`) | $292,567.26 | No `kelpdao` protocol adapter, but stETH is NAV-priced: the value is already in the NAV total when held in-wallet (see this account's wallet-token rows) — a true gap only if locked in the protocol contract (withdrawal queue / savings vault) |
+| Mainnet (1) | ACCOUNT_10_MAINNET_LST_YIELD | LIDO | `lido` | wstETH (`0x7f39c581…`) | $251.5505 | No `lido` protocol adapter, but stETH is NAV-priced: the value is already in the NAV total when held in-wallet (see this account's wallet-token rows) — a true gap only if locked in the protocol contract (withdrawal queue / savings vault) |
 | Mainnet (1) | ACCOUNT_11_MAINNET_COMPOUND_UNISWAP | Aave V3 | `aave3` | Wrapped Aave Ethereum Lido GHO (`0xc71ea051…`) | $232.6242 | Adapter registered but no matching position (zero balance or position identity mismatch) |
-| Mainnet (1) | ACCOUNT_2 | LIDO | `lido` | wstETH (`0x7f39c581…`) | $104.0764 | No `lido` protocol adapter, but stETH is/are NAV-priced: the value is already in the NAV total when held in-wallet (see this account's wallet-token rows) — a true gap only if locked in the protocol contract (withdrawal queue / savings vault) |
+| Mainnet (1) | ACCOUNT_2 | LIDO | `lido` | wstETH (`0x7f39c581…`) | $104.0764 | No `lido` protocol adapter, but stETH is NAV-priced: the value is already in the NAV total when held in-wallet (see this account's wallet-token rows) — a true gap only if locked in the protocol contract (withdrawal queue / savings vault) |
 | Mainnet (1) | ACCOUNT_12_MAINNET_UNISWAP_V3_LP | Convex | `convex` | Staked (`0x49b4d1df…`) | $9.0835 | No NAV adapter/feed registered for `convex` on chain 1 |
-| Mainnet (1) | ACCOUNT_1 | Sky | `sky` | Savings USDS (`0xa3931d71…`) | $5.0715 | No `sky` protocol adapter, but USDS is/are NAV-priced: the value is already in the NAV total when held in-wallet (see this account's wallet-token rows) — a true gap only if locked in the protocol contract (withdrawal queue / savings vault) |
-| Mainnet (1) | ACCOUNT_1 | Ethena | `ethena` | sUSDe (`0x9d39a5de…`) | $4.5047 | No `ethena` protocol adapter, but USDe is/are NAV-priced: the value is already in the NAV total when held in-wallet (see this account's wallet-token rows) — a true gap only if locked in the protocol contract (withdrawal queue / savings vault) |
+| Mainnet (1) | ACCOUNT_1 | Sky | `sky` | Savings USDS (`0xa3931d71…`) | $5.0715 | No `sky` protocol adapter, but USDS is NAV-priced: the value is already in the NAV total when held in-wallet (see this account's wallet-token rows) — a true gap only if locked in the protocol contract (withdrawal queue / savings vault) |
+| Mainnet (1) | ACCOUNT_1 | Ethena | `ethena` | sUSDe (`0x9d39a5de…`) | $4.5047 | No `ethena` protocol adapter, but USDe is NAV-priced: the value is already in the NAV total when held in-wallet (see this account's wallet-token rows) — a true gap only if locked in the protocol contract (withdrawal queue / savings vault) |
 

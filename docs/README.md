@@ -65,6 +65,11 @@ Numbered ADRs. Read when you want the *why* behind a design choice.
 | [`0009-multi-feed-price-redundancy.md`](decisions/0009-multi-feed-price-redundancy.md) | Multi-feed price redundancy / freshest-feed selection. |
 | [`0010-meta-balance-adapters.md`](decisions/0010-meta-balance-adapters.md) | Meta balance-adapters: one adapter per protocol, instances governed on NAVCalculator. |
 | [`0011-nav-size-and-shared-abstractions.md`](decisions/0011-nav-size-and-shared-abstractions.md) | NAVCalculator size headroom (EIP-170) + shared adapter/feed abstractions. |
+| [`0012-bridge-provable-release-rearchitecture.md`](decisions/0012-bridge-provable-release-rearchitecture.md) | Bridge: provable destination-side release (remove the escrow fallback dispatcher, authenticate the real protocol). |
+| [`0014-agent-fed-cache-adapters-for-exit-queues.md`](decisions/0014-agent-fed-cache-adapters-for-exit-queues.md) | Agent-fed cache adapters for non-enumerable withdrawal/exit queues (ether.fi, StakeWise V3). |
+| [`0015-assisted-balance-adapter-family.md`](decisions/0015-assisted-balance-adapter-family.md) | Assisted balance-adapter family — shared interface + AccessControl base. |
+| [`0016-islocked-position-status.md`](decisions/0016-islocked-position-status.md) | `isLocked` position status (claimable vs locked) via a static positionId + two-leg split. |
+| [`0017-lp-valuation-instantaneous-amounts.md`](decisions/0017-lp-valuation-instantaneous-amounts.md) | LP-position valuation: report instantaneous underlying amounts; pool-liquidity manipulation out of scope under an async NAV consumer. |
 | [`decisions/README.md`](decisions/README.md) | ADR index + template. |
 
 ---
@@ -73,7 +78,9 @@ Numbered ADRs. Read when you want the *why* behind a design choice.
 
 | Doc | When to use |
 |---|---|
-| [`operations/merkl-proof-submitter.md`](operations/merkl-proof-submitter.md) | Periodic operator loop that fetches Merkl proofs and pushes them to the `MerklRewardsAssisted` adapter cache so unclaimed rewards stay valued in NAV. |
+| [`operations/merkl-proof-submitter.md`](operations/merkl-proof-submitter.md) | Periodic operator loop that fetches Merkl proofs and pushes them to the `MerklRewardsAssistedBalanceAdapter` cache so unclaimed rewards stay valued in NAV. |
+| [`operations/etherfi-withdrawals-submitter.md`](operations/etherfi-withdrawals-submitter.md) | Operator bot that discovers an account's ether.fi `WithdrawRequestNFT` tokenIds and submits them to the `EtherFiWithdrawalQueueAssistedBalanceAdapter` id cache (ids only — the adapter values them live). |
+| [`operations/stakewise-exit-submitter.md`](operations/stakewise-exit-submitter.md) | Operator bot that discovers an account's StakeWise V3 exit-queue positions (`(vault, positionTicket, timestamp)`) and submits them to the `StakeWiseV3ExitQueueAssistedBalanceAdapter` cache (coordinates only — the adapter values them live). |
 
 ---
 
@@ -98,6 +105,18 @@ Numbered ADRs. Read when you want the *why* behind a design choice.
 | [`script/config/README.md`](../script/config/README.md) | Per-folder index for `script/config/`. |
 | [`script/deploy/README.md`](../script/deploy/README.md) | Per-script reference for the `01_…` → `07_…` deploy scripts. |
 | [`script/test/README.md`](../script/test/README.md) | Reference for the deployment-script tests in `script/test/` (this folder also holds the snapshot-refresh and comparison-report scripts). |
+
+---
+
+## Security audits (`docs/audits/`)
+
+| Doc | What it covers |
+|---|---|
+| [`audits/2026-06-final-pre-deploy-audit.md`](audits/2026-06-final-pre-deploy-audit.md) | Final pre-deployment audit covering all of `src/` — core (NAVCalculator, PriceFeedLib, Prices, Balances), every custom price feed, and every balance + meta-balance adapter and their math libs. |
+| [`audits/2026-06-nav-core-internal-audit.md`](audits/2026-06-nav-core-internal-audit.md) | Internal audit scoped to `src/nav/`, `src/prices/`, and `src/balances/` (bridge out of scope). |
+| [`audits/2026-06-vigilo-adapter-audit.md`](audits/2026-06-vigilo-adapter-audit.md) | Vigilo per-adapter audit — each balance / meta / assisted adapter and custom price feed audited individually. |
+| [`audits/2026-06-vigilo-automated-audit.md`](audits/2026-06-vigilo-automated-audit.md) | Vigilo automated multi-agent audit across all of `src/**` plus the `01`–`07` deploy scripts. |
+| [`audits/2026-06-vigilo-remediation.md`](audits/2026-06-vigilo-remediation.md) | Remediation triage — disposition of every Vigilo finding (fixed vs. deliberately not, with reasons). Companion to the automated-audit doc. |
 
 ---
 

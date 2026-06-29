@@ -50,20 +50,24 @@ These contracts have identical bytecode + constructor input on every chain, so C
 | ERC20Default balance adapter | `TBD` |
 | Final admin / manager (Safe) | [`0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537`](https://etherscan.io/address/0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537) |
 
-**Custom price-feed adapters** (17)
+**Custom price-feed adapters** (21)
 
 | Adapter | Address |
 |---|---|
 | `ETHPlus` | `TBD` |
 | `ETHx` | `TBD` |
+| `LDO` | `TBD` |
 | `NXM` | `TBD` |
 | `OETH` | `TBD` |
+| `RWIV` | `TBD` |
 | `ankrETH` | `TBD` |
 | `eETH` | `TBD` |
 | `ezETH` | `TBD` |
+| `lsETH` | `TBD` |
 | `osETH` | `TBD` |
 | `rETH` | `TBD` |
 | `rsETH` | `TBD` |
+| `sGHO` | `TBD` |
 | `sUSDS` | `TBD` |
 | `sUSDe` | `TBD` |
 | `stETH` | `TBD` |
@@ -72,19 +76,24 @@ These contracts have identical bytecode + constructor input on every chain, so C
 | `weETH` | `TBD` |
 | `wstETH` | `TBD` |
 
-**Balance adapters** (26 excluding ERC20Default: 9 plain + 17 meta-adapters)
+**Balance adapters** (26 excluding ERC20Default: 12 plain + 14 meta-adapters)
 
-Plain (single-instance) adapters:
+Plain (single-instance) adapters — including the assisted family (externally-fed; ADR 0015), whose deploy config lives alongside the plain adapters:
 
 | Adapter | Address |
 |---|---|
 | `AaveUmbrella` | `TBD` |
 | `AaveV3SafetyModule` | `TBD` |
 | `Cap` | `TBD` |
+| `EthenaCooldown` | `TBD` |
+| `EtherFiWithdrawalQueueAssisted` | `TBD` |
 | `KelpWithdrawalQueue` | `TBD` |
 | `LidoWithdrawalQueue` | `TBD` |
+| `NexusMutualStakingPoolsAssisted` | `TBD` |
 | `SparkLend` | `TBD` |
 | `StaderWithdrawalQueue` | `TBD` |
+| `StakeWiseV3ExitQueueAssisted` | `TBD` |
+| `UniswapV3PoolsAssisted` | `TBD` |
 
 Meta-adapters (one immutable contract per protocol class; active instances governed on `NAVCalculator` — see ADR 0010):
 
@@ -94,7 +103,7 @@ Meta-adapters (one immutable contract per protocol class; active instances gover
 | `BalancerV3GaugesMeta` | `TBD` |
 | `BalancerV3PoolsMeta` | `TBD` |
 | `CompoundV3CometsMeta` | `TBD` |
-| `ConvexRewardsMeta` | `TBD` |
+| `ConvexCurveLPStakingMeta` | `TBD` |
 | `CurveGaugesMeta` | `TBD` |
 | `CurvePoolsMeta` | `TBD` |
 | `EulerVaultsMeta` | `TBD` |
@@ -104,7 +113,6 @@ Meta-adapters (one immutable contract per protocol class; active instances gover
 | `MorphoMarketsMeta` | `TBD` |
 | `MorphoVaultsMeta` | `TBD` |
 | `StakeWiseV3VaultsMeta` | `TBD` |
-| `UniswapV3PoolsAssistedMeta` | `TBD` |
 
 ---
 
@@ -129,7 +137,7 @@ Meta-adapters (one immutable contract per protocol class; active instances gover
 | `weETH_L2` | `TBD` |
 | `wstETH_L2` | `TBD` |
 
-**Balance adapters** (8 excluding ERC20Default: all meta-adapters)
+**Balance adapters** (7 excluding ERC20Default: all meta-adapters)
 
 | Adapter | Address |
 |---|---|
@@ -162,7 +170,7 @@ Meta-adapters (one immutable contract per protocol class; active instances gover
 | `weETH_L2` | `TBD` |
 | `wstETH_L2` | `TBD` |
 
-**Balance adapters** (7 excluding ERC20Default: all meta-adapters)
+**Balance adapters** (6 excluding ERC20Default: all meta-adapters)
 
 | Adapter | Address |
 |---|---|
@@ -218,11 +226,12 @@ None — this chain uses Chainlink price feeds exclusively for Alpha-fund assets
 | `sXDAI` | `TBD` |
 | `wstETH_L2` | `TBD` |
 
-**Balance adapters** (1 excluding ERC20Default: meta-adapter)
+**Balance adapters** (2 excluding ERC20Default: all meta-adapters)
 
 | Adapter | Address |
 |---|---|
 | `AaveV3InstancesMeta` | `TBD` |
+| `StakeWiseV3VaultsMeta` | `TBD` |
 
 ---
 

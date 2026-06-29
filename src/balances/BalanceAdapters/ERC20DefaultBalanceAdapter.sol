@@ -306,7 +306,7 @@ contract ERC20DefaultBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         row.protocolSubId = PROTOCOL_SUB_ID;
         row.positionId = abi.encode(asset);
         row.positionKind = PositionKind.Wallet;
-        // isDebt, isLocked default false; positionInstanceId defaults to empty bytes.
+        // isDebt, isLocked default false; positionInstanceId defaults to bytes32(0).
     }
 
     /// @notice Internal helper to get balance for a specific asset (avoids recursion)

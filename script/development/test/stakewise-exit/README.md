@@ -1,10 +1,10 @@
 # StakeWise V3 Exit Queue — balance-adapter verification
 
 ## 1. Adapter under test
-`StakeWiseV3ExitQueueBalanceAdapter` (`src/balances/AssistedBalanceAdapters/StakeWiseV3ExitQueueBalanceAdapter.sol`). Reports the in-flight assets owed to an account in StakeWise V3's exit queue (`enterExitQueue(shares, receiver)` moves vault shares into the queue and returns a `positionTicket`; the queued value is claimable once validator exits complete).
+`StakeWiseV3ExitQueueAssistedBalanceAdapter` (`src/balances/AssistedBalanceAdapters/StakeWiseV3ExitQueueAssistedBalanceAdapter.sol`). Reports the in-flight assets owed to an account in StakeWise V3's exit queue (`enterExitQueue(shares, receiver)` moves vault shares into the queue and returns a `positionTicket`; the queued value is claimable once validator exits complete).
 
 ### Inheritance + per-chain scope (Phase 0)
-- Implements `IBalanceAdapter` + `IPositionDescribable` directly, **plus `Ownable`** — the 4th documented mutable-cache adapter (after Merkl + ether.fi), per **ADR 0014** (sibling of `EtherFiWithdrawalQueue`). The mutability is a per-account `(vault, positionTicket, timestamp)` cache only; identity + all addresses are immutable.
+- Implements `IBalanceAdapter` + `IPositionDescribable` directly, **plus `Ownable`** — the 4th documented mutable-cache adapter (after Merkl + ether.fi), per **ADR 0014** (sibling of `EtherFiWithdrawalQueueAssisted`). The mutability is a per-account `(vault, positionTicket, timestamp)` cache only; identity + all addresses are immutable.
 - **Mainnet (1) only.** Every StakeWise V3 vault on mainnet settles in ETH, so the single `underlyingToken` (native-ETH sentinel) is correct. Do not deploy against this underlying on a chain with a non-ETH staking asset (e.g. GNO on Gnosis).
 
 ### Math branches (`_owedForPosition`)
@@ -16,14 +16,14 @@
 - `getAdapterPositions`: `assetFilter` mismatch → empty; native ETH not registered → empty; total `0` → empty; else, **per vault**, up to two native-ETH legs — claimable (`exitedAssets`, `isLocked=false`) + locked (`convertToAssets(leftShares)`, `isLocked=true`) — sharing the static `positionId = abi.encode(address vault)` (ADR 0016; like Lido/Stader/Kelp/ether.fi).
 
 ## 2. Fork test coverage
-`test/balances/AssistedBalanceAdapters/fork/StakeWiseV3ExitQueueBalanceAdapter.fork.t.sol` (6 tests, `FOUNDRY_PROFILE=slow`):
+`test/balances/AssistedBalanceAdapters/fork/StakeWiseV3ExitQueueAssistedBalanceAdapter.fork.t.sol` (6 tests, `FOUNDRY_PROFILE=slow`):
 - `realHolder_claimableValuation` — at block 25,380,000 submit the real ENS-Safe tuple → adapter **== independent live read AND** pinned `1000033196791603018908` wei (delta 0).
 - `realHolder_pendingValuation` — rolls to block 25,376,000 (idx == -1) → adapter values the still-queued shares via the out-of-range-index path, **== live read AND** pinned `999999999999999999999` wei (the subtle branch ADR 0014 flagged).
 - `getAdapterPositions_identity` — identity fields on the real holder.
 - `unsubmitted_reportsZero`, `submit_skipsTupleNotOwnedByAccount`, `submit_skipsUnregisteredVault` — negative cases vs the real contracts.
 
 ## 3. Unit test coverage
-`test/balances/AssistedBalanceAdapters/StakeWiseV3ExitQueueBalanceAdapter.t.sol` (30 tests, mock-only): constructor guards (×4), ASSISTANT_ROLE-gating + submit/dedup/clear (×4), valuation (claimable, fully-pending via convertToAssets, partially-exited sum, aggregation), ownership re-verify (wrong-receiver + claimed-after-submit drop), unregistered-vault drop, zero-owed drop, `try/catch` reverts on getExitQueueIndex / calculateExitedAssets / convertToAssets (→ drop, never revert), MAX_POSITIONS cap, unregistered-underlying branch, identity, ERC165, `underlyingAssetsSupported`, submitPositionsBatch (+ ArrayLengthMismatch), getAdapterBalances shape, assetFilter-matches-underlying accept path, clearPosition absent-key no-op. The mock forces the adapter to pass `type(uint256).max` when `idx < 0` (else it reverts), proving the fully-pending index logic.
+`test/balances/AssistedBalanceAdapters/StakeWiseV3ExitQueueAssistedBalanceAdapter.t.sol` (30 tests, mock-only): constructor guards (×4), ASSISTANT_ROLE-gating + submit/dedup/clear (×4), valuation (claimable, fully-pending via convertToAssets, partially-exited sum, aggregation), ownership re-verify (wrong-receiver + claimed-after-submit drop), unregistered-vault drop, zero-owed drop, `try/catch` reverts on getExitQueueIndex / calculateExitedAssets / convertToAssets (→ drop, never revert), MAX_POSITIONS cap, unregistered-underlying branch, identity, ERC165, `underlyingAssetsSupported`, submitPositionsBatch (+ ArrayLengthMismatch), getAdapterBalances shape, assetFilter-matches-underlying accept path, clearPosition absent-key no-op. The mock forces the adapter to pass `type(uint256).max` when `idx < 0` (else it reverts), proving the fully-pending index logic.
 
 ## 4. Adapter formula recap
 ```

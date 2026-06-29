@@ -44,9 +44,9 @@ import {
     BalancerV3GaugesMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/balancer/BalancerV3GaugesMetaBalanceAdapter.sol";
 import {
-    MerklRewardsBalanceAdapter,
+    MerklRewardsAssistedBalanceAdapter,
     IMerklDistributor
-} from "src/balances/AssistedBalanceAdapters/MerklRewardsBalanceAdapter.sol";
+} from "src/balances/AssistedBalanceAdapters/MerklRewardsAssistedBalanceAdapter.sol";
 import {FluidFTokensMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/FluidFTokensMetaBalanceAdapter.sol";
 import {FluidVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/FluidVaultsMetaBalanceAdapter.sol";
 import {
@@ -55,7 +55,7 @@ import {
 import {
     StakeWiseV3VaultsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/StakeWiseV3VaultsMetaBalanceAdapter.sol";
-import {UniswapV3PoolsBalanceAdapter} from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsBalanceAdapter.sol";
+import {UniswapV3PoolsAssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsAssistedBalanceAdapter.sol";
 import {
     UniswapV2PoolsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/uniswap/UniswapV2PoolsMetaBalanceAdapter.sol";
@@ -63,8 +63,8 @@ import {
     PancakeSwapV2PoolsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/pancakeswap/PancakeSwapV2PoolsMetaBalanceAdapter.sol";
 import {
-    PancakeSwapV3PoolsBalanceAdapter
-} from "src/balances/AssistedBalanceAdapters/PancakeSwapV3PoolsBalanceAdapter.sol";
+    PancakeSwapV3PoolsAssistedBalanceAdapter
+} from "src/balances/AssistedBalanceAdapters/PancakeSwapV3PoolsAssistedBalanceAdapter.sol";
 import {INonfungiblePositionManager} from "src/balances/MetaBalanceAdapters/uniswap/UniswapV3PoolLib.sol";
 
 // Price feed adapters (Mainnet)
@@ -131,7 +131,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     ///         script/test/refresh-integration-snapshot.sh; missing or empty entries are tolerated.
     string internal constant MERKL_PROOFS_JSON = "test/integration/merkl-proofs.json";
 
-    /// @notice Address of the deployed MerklRewards adapter for this chain (zero if not deployed).
+    /// @notice Address of the deployed MerklRewardsAssisted adapter for this chain (zero if not deployed).
     address internal _merklAdapter;
 
     /// @notice Deployed assisted NFT adapters (Uniswap/PancakeSwap V3) and their paired NonfungiblePositionManager.
@@ -584,12 +584,12 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         string[] memory names = ConfigReader.getEnabledAdapters(vm, _chainId, "balanceAdapters");
         for (uint256 i = 0; i < names.length; i++) {
             string memory n = names[i];
-            // MerklRewards is always deployed in the integration test (independent of the
+            // MerklRewardsAssisted is always deployed in the integration test (independent of the
             // chain-config `enabled` flag, which only gates production deploys). The cache is
             // empty unless `merkl-proofs.json` has entries for this chain — see `_seedMerklProofs`.
             // This keeps the integration test exercising the Merkl wiring on every run, while
             // production deploys still honor the `enabled` flag.
-            if (!_equals(n, "MerklRewards") && !ConfigReader.isAdapterEnabled(vm, _chainId, "balanceAdapters", n)) {
+            if (!_equals(n, "MerklRewardsAssisted") && !ConfigReader.isAdapterEnabled(vm, _chainId, "balanceAdapters", n)) {
                 continue;
             }
             address adapter = _deployBalanceAdapter(n);
@@ -623,8 +623,8 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_equals(name, "MorphoVaultsMeta")) {
             return _deployMorphoVaultsMeta(name, navAddr);
         }
-        if (_equals(name, "GearboxMarketsMeta")) {
-            return _deployGearboxMarketsMeta(name, navAddr);
+        if (_equals(name, "GearboxV3MarketsMeta")) {
+            return _deployGearboxV3MarketsMeta(name, navAddr);
         }
         if (_equals(name, "Cap")) {
             return _deployCap(navAddr);
@@ -656,8 +656,8 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_equals(name, "BalancerV2GaugesMeta")) {
             return _deployBalancerV2GaugesMeta(name, navAddr);
         }
-        if (_equals(name, "MerklRewards")) {
-            return _deployMerklRewards(name, navAddr);
+        if (_equals(name, "MerklRewardsAssisted")) {
+            return _deployMerklRewardsAssisted(name, navAddr);
         }
         if (_equals(name, "FluidFTokensMeta")) {
             return _deployFluidFTokensMeta(name, navAddr);
@@ -671,11 +671,11 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_equals(name, "StakeWiseV3VaultsMeta")) {
             return _deployStakeWiseV3VaultsMeta(name, navAddr);
         }
-        if (_equals(name, "UniswapV3Pools")) {
-            return _deployUniswapV3Pools(name, navAddr);
+        if (_equals(name, "UniswapV3PoolsAssisted")) {
+            return _deployUniswapV3PoolsAssisted(name, navAddr);
         }
-        if (_equals(name, "PancakeSwapV3Pools")) {
-            return _deployPancakeSwapV3Pools(name, navAddr);
+        if (_equals(name, "PancakeSwapV3PoolsAssisted")) {
+            return _deployPancakeSwapV3PoolsAssisted(name, navAddr);
         }
         if (_equals(name, "UniswapV2PoolsMeta") || _equals(name, "PancakeSwapV2PoolsMeta")) {
             return _deployUniswapV2PoolsMeta(name, navAddr);
@@ -746,7 +746,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return address(new AaveV3InstancesMetaBalanceAdapter(protocol, navAddr));
     }
 
-    function _deployGearboxMarketsMeta(string memory name, address navAddr) internal returns (address) {
+    function _deployGearboxV3MarketsMeta(string memory name, address navAddr) internal returns (address) {
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
         return address(new GearboxV3MarketsMetaBalanceAdapter(protocol, navAddr));
     }
@@ -791,13 +791,13 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return address(new AaveUmbrellaBalanceAdapter(rewardsController, navAddr));
     }
 
-    function _deployMerklRewards(string memory name, address navAddr) internal returns (address) {
+    function _deployMerklRewardsAssisted(string memory name, address navAddr) internal returns (address) {
         // The integration test owns the adapter (admin = msg.sender once we vm.startPrank(admin)) so
         // it can call submitProof during setup. Production deploys use chainConfig.admin instead — see
-        // script/deploy/04_DeployBalanceAdapters.s.sol::_deployMerklRewards.
+        // script/deploy/04_DeployBalanceAdapters.s.sol::_deployMerklRewardsAssisted.
         address distributor =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "distributor"));
-        address adapter = address(new MerklRewardsBalanceAdapter(distributor, navAddr, admin, admin));
+        address adapter = address(new MerklRewardsAssistedBalanceAdapter(distributor, navAddr, admin, admin));
         _merklAdapter = adapter;
         return adapter;
     }
@@ -834,22 +834,22 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             address(new StakeWiseV3VaultsMetaBalanceAdapter(underlyingToken, osTokenVaultController, protocol, navAddr));
     }
 
-    function _deployUniswapV3Pools(string memory name, address navAddr) internal returns (address) {
+    function _deployUniswapV3PoolsAssisted(string memory name, address navAddr) internal returns (address) {
         address positionManager =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionManager"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
         // admin + assistant = the `admin` prank holding MANAGER, so _seedAssistedNftTokenIds can submit tokenIds.
-        address a = address(new UniswapV3PoolsBalanceAdapter(positionManager, protocol, navAddr, admin, admin));
+        address a = address(new UniswapV3PoolsAssistedBalanceAdapter(positionManager, protocol, navAddr, admin, admin));
         _assistedNftAdapters.push(a);
         _assistedNftNpms.push(positionManager);
         return a;
     }
 
-    function _deployPancakeSwapV3Pools(string memory name, address navAddr) internal returns (address) {
+    function _deployPancakeSwapV3PoolsAssisted(string memory name, address navAddr) internal returns (address) {
         address positionManager =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionManager"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        address a = address(new PancakeSwapV3PoolsBalanceAdapter(positionManager, protocol, navAddr, admin, admin));
+        address a = address(new PancakeSwapV3PoolsAssistedBalanceAdapter(positionManager, protocol, navAddr, admin, admin));
         _assistedNftAdapters.push(a);
         _assistedNftNpms.push(positionManager);
         return a;
@@ -938,11 +938,11 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             address a = _deployedBalanceAdapters[i];
             string memory name = _deployedBalanceAdapterNames[i];
             bool isMeta = ConfigReader.isAdapterEnabled(vm, _chainId, "navMetaBalanceAdapters", name);
-            // MerklRewards is force-deployed by this harness (independent of config, see _deployAllBalanceAdapters) to
+            // MerklRewardsAssisted is force-deployed by this harness (independent of config, see _deployAllBalanceAdapters) to
             // exercise Merkl-reward NAV; it is a plain adapter not present in any nav-config file, so register it via
             // the plain path here to match that deploy-side special case.
             bool isPlain = ConfigReader.isAdapterEnabled(vm, _chainId, "navBalanceAdapters", name)
-                || _equals(name, "MerklRewards");
+                || _equals(name, "MerklRewardsAssisted");
 
             if (isMeta) {
                 // Meta path: register with an empty set; _configureMetaInstances seeds the actual instances after.
@@ -1059,14 +1059,14 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         for (uint256 j = 0; j < n; j++) {
             owned[j] = ids[j];
         }
-        UniswapV3PoolsBalanceAdapter(adapter).submitTokenIds(account, owned);
+        UniswapV3PoolsAssistedBalanceAdapter(adapter).submitTokenIds(account, owned);
     }
 
-    /// @notice Pre-populates the MerklRewards adapter cache from `merkl-proofs.json` (regenerated on
+    /// @notice Pre-populates the MerklRewardsAssisted adapter cache from `merkl-proofs.json` (regenerated on
     ///         every snapshot bump). Tolerant of missing/empty/stale fixtures: silently skips the
     ///         chain block if not present, logs and continues on per-entry verification failure.
     /// @dev    Called from setUp while vm.startPrank(admin) is active. Submitter must equal the
-    ///         adapter's owner (set to `admin` in `_deployMerklRewards`).
+    ///         adapter's owner (set to `admin` in `_deployMerklRewardsAssisted`).
     function _seedMerklProofs() internal {
         if (_merklAdapter == address(0)) return;
         if (!vm.exists(MERKL_PROOFS_JSON)) {
@@ -1088,7 +1088,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         string memory expectedRootKey = string.concat(chainKey, ".expectedRoot");
         if (vm.keyExistsJson(json, expectedRootKey)) {
             bytes32 expectedRoot = vm.parseJsonBytes32(json, expectedRootKey);
-            address distributor = MerklRewardsBalanceAdapter(_merklAdapter).DISTRIBUTOR();
+            address distributor = MerklRewardsAssistedBalanceAdapter(_merklAdapter).DISTRIBUTOR();
             bytes32 liveRoot = IMerklDistributor(distributor).getMerkleRoot();
             if (expectedRoot != bytes32(0) && expectedRoot != liveRoot) {
                 console2.log(
@@ -1128,21 +1128,21 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             for (uint256 j = i; j < users.length; j++) {
                 if (users[j] == user) cnt++;
             }
-            MerklRewardsBalanceAdapter.Allocation[] memory allocs = new MerklRewardsBalanceAdapter.Allocation[](cnt);
+            MerklRewardsAssistedBalanceAdapter.Allocation[] memory allocs = new MerklRewardsAssistedBalanceAdapter.Allocation[](cnt);
             uint256 k;
             for (uint256 j = i; j < users.length; j++) {
                 if (users[j] != user) continue;
                 consumed[j] = true;
-                allocs[k++] = MerklRewardsBalanceAdapter.Allocation({
+                allocs[k++] = MerklRewardsAssistedBalanceAdapter.Allocation({
                     token: tokens[j],
                     cumulativeAmount: vm.parseUint(amountStrs[j]),
                     proof: vm.parseJsonBytes32Array(json, string.concat(chainKey, ".proofs[", vm.toString(j), "]")),
-                    campaigns: new MerklRewardsBalanceAdapter.CampaignShare[](0)
+                    campaigns: new MerklRewardsAssistedBalanceAdapter.CampaignShare[](0)
                 });
             }
             // Fail-loud + replace: a single bad proof reverts this user's whole list (atomic), so all-or-nothing per
             // user. Fixtures are captured together against one root, so a per-user failure means re-capture is needed.
-            try MerklRewardsBalanceAdapter(_merklAdapter).submitProofs(user, allocs) {
+            try MerklRewardsAssistedBalanceAdapter(_merklAdapter).submitProofs(user, allocs) {
                 ok += cnt;
             } catch (bytes memory err) {
                 failed += cnt;

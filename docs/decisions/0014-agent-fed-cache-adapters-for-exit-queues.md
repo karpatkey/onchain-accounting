@@ -15,17 +15,17 @@ In both, the value behaves identically (see ADR-adjacent analysis in `.claude/na
 
 The shipped withdrawal-queue adapters (Lido/Stader/Kelp) work only because those protocols expose an owner→requests view. ether.fi and StakeWise don't, so a pure `view` adapter is impossible — the same structural wall Merkl hit, where the data lived off-chain.
 
-[ADR 0007](0007-merkl-trust-minimized-cache.md) resolved that for Merkl with an **owner-gated, on-chain-verified cache**: an off-chain agent (`kpk-agents/agents/automations/accounting/submit_merkl_proofs.py`) supplies the missing data, and the adapter verifies it on-chain so the agent cannot fabricate values. That agent + the `MerklRewardsBalanceAdapter` pair are now live. We reuse the pattern.
+[ADR 0007](0007-merkl-trust-minimized-cache.md) resolved that for Merkl with an **owner-gated, on-chain-verified cache**: an off-chain agent (`kpk-agents/agents/automations/accounting/submit_merkl_proofs.py`) supplies the missing data, and the adapter verifies it on-chain so the agent cannot fabricate values. That agent + the `MerklRewardsAssistedBalanceAdapter` pair are now live. We reuse the pattern.
 
 ## Decision
 
-Ship **two cache adapters** — `EtherFiWithdrawalQueueBalanceAdapter` and `StakeWiseV3ExitQueueBalanceAdapter` — as the **third and fourth documented mutable adapters** (after `MerklRewards`, ADR 0007). Each pairs with an off-chain submitter agent in `kpk-agents` that mirrors `submit_merkl_proofs.py`. (These were initially `Ownable`; they have since been consolidated, with Merkl, under the **assisted balance-adapter family** — `AssistedBalanceAdapter` on OpenZeppelin AccessControl, where `ASSISTANT_ROLE` submits and `DEFAULT_ADMIN_ROLE` administers — see [ADR 0015](0015-assisted-balance-adapter-family.md). The "owner" framing below describes the original design; substitute `ASSISTANT_ROLE` for the submit gate.)
+Ship **two cache adapters** — `EtherFiWithdrawalQueueAssistedBalanceAdapter` and `StakeWiseV3ExitQueueAssistedBalanceAdapter` — as the **third and fourth documented mutable adapters** (after `MerklRewardsAssisted`, ADR 0007). Each pairs with an off-chain submitter agent in `kpk-agents` that mirrors `submit_merkl_proofs.py`. (These were initially `Ownable`; they have since been consolidated, with Merkl, under the **assisted balance-adapter family** — `AssistedBalanceAdapter` on OpenZeppelin AccessControl, where `ASSISTANT_ROLE` submits and `DEFAULT_ADMIN_ROLE` administers — see [ADR 0015](0015-assisted-balance-adapter-family.md). The "owner" framing below describes the original design; substitute `ASSISTANT_ROLE` for the submit gate.)
 
 **Key refinement over Merkl — the cache stores *ids only*, never amounts.** Merkl caches a `(cumulativeAmount, root)` verified at write time. Here the cache stores only the **candidate id set** per account; the **amount is read live on every NAV read** and re-verified to still belong to the account. The agent therefore cannot influence the reported value *at all* — only the set of positions checked. Failure mode is strictly under-report (agent omits/lags an id), never over-report. This is a *stronger* trust model than Merkl's.
 
 ### Shared shape
 
-- Storage: `mapping(address account => uint256[] ids)` + an index map for O(1) removal (mirror `MerklRewards._userTokens`/`_userTokenIdxPlus1`).
+- Storage: `mapping(address account => uint256[] ids)` + an index map for O(1) removal (mirror `MerklRewardsAssisted._userTokens`/`_userTokenIdxPlus1`).
 - Mutators (`onlyOwner`, owner = the OIV Safe / agent role, same as Merkl):
   - `submitTokenIds(address account, uint256[] ids)` (+ a batch variant) — add candidate ids. Light write-time sanity check (id currently belongs to `account`) + a per-account `MAX` cap so the read loop stays gas-bounded; not load-bearing for correctness since reads re-verify. (StakeWise's analog submits `positionTicket`s.)
   - `clearTokenId(address account, uint256 id)` / `clearAccount(account)` — GC claimed/stale ids. Idempotent; not required for correctness (stale ids read as 0).
@@ -33,13 +33,13 @@ Ship **two cache adapters** — `EtherFiWithdrawalQueueBalanceAdapter` and `Stak
 - Identity: `protocolId = keccak256("etherfi-withdrawal")` / `keccak256("stakewise-exit")` (new slugs in `ProtocolIds.sol`); `positionId` is a **static, timeless** coordinate (the cached ids are an internal coordinate, never emitted; the owed asset lives in `balanceAsset`, not the positionId). Immutable. _(Updated by [ADR 0016](0016-islocked-position-status.md): the shipped positionIds are `abi.encode(address withdrawRequestNFT)` for ether.fi and `abi.encode(address vault)` per vault for StakeWise — not the `VaultsRegistry` anchor sketched here; the claimable and locked legs share that static positionId, told apart by `isLocked`.)_
 - Everything except the cache is immutable: queue/NPM/vault-registry addresses, NAVCalculator, identity. No upgrade path. No admin-injected amounts.
 
-### EtherFiWithdrawalQueueBalanceAdapter
+### EtherFiWithdrawalQueueAssistedBalanceAdapter
 
 - Reads `WithdrawRequestNFT` (`0x7d57…4E2c`) — native-ETH-denominated (eETH unwinds to ETH).
 - Per cached `tokenId`: `ownerOf(tokenId) == account` (the on-chain ownership check; a claimed/transferred NFT is burned/moved → drop). Then value = `getClaimableAmount(tokenId)` if `isFinalized(tokenId)`, else the request's `amountOfEEth`/share-implied ETH from `getRequest(tokenId)` (mirror the Lido WQ adapter's finalized-vs-pending valuation). Leg: `Supplied`, asset = native ETH sentinel.
 - Agent: scans `Transfer(_, account, tokenId)` minus `Transfer(account, _, tokenId)` (verified working 2026-06-24: recovers live ids for holder `0xcFFab3…1Af4`) → `submitTokenIds`.
 
-### StakeWiseV3ExitQueueBalanceAdapter
+### StakeWiseV3ExitQueueAssistedBalanceAdapter
 
 - Reads each registered StakeWise V3 vault (reuse the `StakeWiseV3VaultsMeta` instance set, or its own governed set) — staking-asset-denominated (ETH on mainnet, GNO on Gnosis).
 - Per cached `(vault, positionTicket)`: `idx = vault.getExitQueueIndex(ticket)`; `(leftTickets, exitedTickets, exitedAssets) = vault.calculateExitedAssets(account, ticket, block.timestamp, idx)`. **The `receiver=account` argument is the verification** — it returns non-zero only for tickets that genuinely belong to `account` (no `ownerOf` needed; a foreign ticket yields 0 → dropped). Value = `exitedAssets` (claimable) + the still-queued `leftTickets` converted to assets at the vault's current rate. Leg: `Supplied`, asset = staking asset.
@@ -59,7 +59,7 @@ Ship **two cache adapters** — `EtherFiWithdrawalQueueBalanceAdapter` and `Stak
 - Stale/claimed positions auto-drop at read time — no monotonicity assumptions, no read-time decisions (same conservative posture as Merkl's root-rotation handling).
 
 **Negative / watch:**
-- Two **more** mutable adapters (3rd + 4th). CLAUDE.md + `BALANCE_ADAPTERS.md` must list them alongside `MerklRewards`.
+- Two **more** mutable adapters (3rd + 4th). CLAUDE.md + `BALANCE_ADAPTERS.md` must list them alongside `MerklRewardsAssisted`.
 - Owner trust extends to **completeness** only: if the agent stops/lags, those accounts under-report. Same posture + mitigation as Merkl (Karpatkey-ops SLA, runbook). Iron Law (cannot over-report) preserved — and here even tighter (no cached amounts).
 - Operational dependency + storage growth per (account, id); `clearTokenId`/`clearAccount` are the GC primitives. Exit windows are short (~days), so churn is higher than Merkl — the agent must GC claimed ids promptly or storage drifts (harmless to correctness, just bloat).
 - StakeWise valuation of the still-queued `leftTickets` leg needs care (the queued portion's asset conversion at the current vault rate) — pin it in the fork test with a real exiting holder.

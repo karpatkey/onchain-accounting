@@ -29,7 +29,7 @@ Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, pos
 | | | | loan-side supply | `Supplied` | false | loan token |
 | | | | borrow | `Borrowed` | true | loan token |
 | MorphoVaultsMeta | `morpho-vaults` | `abi.encode(address vault)` | vault deposit (`convertToAssets`) | `Supplied` | false | `vault.asset()` |
-| GearboxMarketsMeta | `gearbox-v3` | `abi.encode(address market)` | passive-pool deposit | `Supplied` | false | `market.asset()` |
+| GearboxV3MarketsMeta | `gearbox-v3` | `abi.encode(address market)` | passive-pool deposit | `Supplied` | false | `market.asset()` |
 | FluidFTokensMeta | `fluid-ftokens` | `abi.encode(address fToken)` | lending deposit | `Supplied` | false | `fToken.asset()` |
 | FluidVaultsMeta | `fluid-vaults` | `abi.encode(address vault)` | T1 vault collateral | `Collateral` | false | supply token |
 | | | | T1 vault debt | `Borrowed` | true | borrow token |
@@ -49,11 +49,11 @@ Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, pos
 | UniswapV2PoolsMeta | `uniswap-v2` | `abi.encode(address pair)` | token0 pro-rata principal | `Supplied` | false | token0 |
 | | | | token1 pro-rata principal | `Supplied` | false | token1 |
 | PancakeSwapV2PoolsMeta | `pancakeswap-v2` | `abi.encode(address pair)` | same 2 legs as Uniswap V2 | `Supplied` | false | token0/token1 |
-| UniswapV3Pools | `uniswap-v3` | `abi.encode(address pool)` (NFT id in labels) | in-range principal, token0 | `Supplied` | false | token0 |
+| UniswapV3PoolsAssisted | `uniswap-v3` | `abi.encode(address pool)` (NFT id in labels) | in-range principal, token0 | `Supplied` | false | token0 |
 | | | | in-range principal, token1 | `Supplied` | false | token1 |
 | | | | unclaimed fees, token0 | `Fees` | false | token0 |
 | | | | unclaimed fees, token1 | `Fees` | false | token1 |
-| PancakeSwapV3Pools | `pancakeswap-v3` | `abi.encode(address pool)` (NFT id in labels) | same 4 legs as Uniswap V3 | `Supplied`/`Fees` | false | token0/token1 |
+| PancakeSwapV3PoolsAssisted | `pancakeswap-v3` | `abi.encode(address pool)` (NFT id in labels) | same 4 legs as Uniswap V3 | `Supplied`/`Fees` | false | token0/token1 |
 | BalancerV2PoolsMeta | `balancer-v2-pool` | `abi.encode(bytes32 poolId)` | per-token principal (wallet BPT) | `Supplied` | false | pool token |
 | BalancerV3PoolsMeta | `balancer-v3-pool` | `abi.encode(address pool)` | per-token principal (wallet BPT) | `Supplied` | false | pool token |
 | CurvePoolsMeta | `curve-pool` | `abi.encode(address pool)` | per-coin principal (wallet LP) | `Supplied` | false | pool coin |
@@ -71,12 +71,12 @@ Identity is the tuple `(chainId, protocolId, positionId, balanceAsset.asset, pos
 | StaderWithdrawalQueue | `stader-withdrawal` | `abi.encode(address userWithdrawalManager)` (static) | **one leg per request** — finalized = claimable ETH (`isLocked=false`), pending = `isLocked=true`; request id in last label `"Request #<id>"`, all legs share the positionId | `Supplied` | false | WETH |
 | KelpWithdrawalQueue | `kelp-withdrawal` | `abi.encode(address withdrawalManager)` (static) | **one leg per request** (per supported asset) — claimable `isLocked=false`, pending `isLocked=true` (until cursor + delay pass); `userNonce` in last label `"Request #<nonce>"`; payout asset in `balanceAsset` | `Supplied` | false | each supported asset |
 | LidoWithdrawalQueue | `lido-withdrawal` | `abi.encode(address withdrawalQueue)` (static) | **one leg per request** — finalized = claimable ETH (`isLocked=false`), pending `isLocked=true`; request id in last label `"Request #<id>"`, all legs share the positionId | `Supplied` | false | native ETH |
-| EtherFiWithdrawalQueue | `etherfi-withdrawal` | `abi.encode(address withdrawRequestNFT)` (static) | **one leg per request** (cached NFT tokenId) — finalized `isLocked=false`, pending `isLocked=true`; tokenId in last label `"Request #<id>"`, all legs share the positionId | `Supplied` | false | native ETH |
-| StakeWiseV3ExitQueue | `stakewise-exit` | `abi.encode(address vault)` (static, per vault) | **per request (positionTicket)** — up to two legs: exited assets (claimable, `isLocked=false`) + queued shares→assets (`isLocked=true`); `positionTicket` in last label `"Ticket #<id>"`, legs share the per-vault positionId | `Supplied` | false | native ETH |
+| EtherFiWithdrawalQueueAssisted | `etherfi-withdrawal` | `abi.encode(address withdrawRequestNFT)` (static) | **one leg per request** (cached NFT tokenId) — finalized `isLocked=false`, pending `isLocked=true`; tokenId in last label `"Request #<id>"`, all legs share the positionId | `Supplied` | false | native ETH |
+| StakeWiseV3ExitQueueAssisted | `stakewise-exit` | `abi.encode(address vault)` (static, per vault) | **per request (positionTicket)** — up to two legs: exited assets (claimable, `isLocked=false`) + queued shares→assets (`isLocked=true`); `positionTicket` in last label `"Ticket #<id>"`, legs share the per-vault positionId | `Supplied` | false | native ETH |
 | EthenaCooldownBalanceAdapter | `ethena-cooldown` | `abi.encode(address sUSDe)` (static, single leg) | USDe cooling — `isLocked=true` until cooldown elapsed, then `false` | `Supplied` | false | USDe |
-| NexusMutualStakingPools | `nexus-mutual-staking` | `abi.encode(address stakingPool)` (NFT id in labels) | active + expired staked NXM (per StakingNFT) | `Staking` | false | NXM |
+| NexusMutualStakingPoolsAssisted | `nexus-mutual-staking` | `abi.encode(address stakingPool)` (NFT id in labels) | active + expired staked NXM (per StakingNFT) | `Staking` | false | NXM |
 | | | | claimable rewards (per StakingNFT) | `Rewards` | false | NXM |
-| MerklRewards | `merkl` | `abi.encode(address distributor)` | unclaimed rewards (one leg per reward token, distinguished by `balanceAsset`) | `Rewards` | false | reward token |
+| MerklRewardsAssisted | `merkl` | `abi.encode(address distributor)` | unclaimed rewards (one leg per reward token, distinguished by `balanceAsset`) | `Rewards` | false | reward token |
 
 ## PositionKind usage census
 

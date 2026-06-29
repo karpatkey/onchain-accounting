@@ -21,7 +21,7 @@
       "protocol": "Morpho"
     }
   },
-  "GearboxMarketsMeta": {
+  "GearboxV3MarketsMeta": {
     "enabled": true,
     "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Gearbox V3 ERC4626 farming pool. Emits one Supply leg per market (convertToAssets(balanceOf)) in the pool's underlying. The active market set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below \u2014 each entry is the market/pool address). Identity derived on-chain: positionId = market address; name = market name(). Supersedes the per-market GearboxMarket_* adapters, disabled below.",
     "constructor": {

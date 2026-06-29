@@ -1,7 +1,7 @@
 # ether.fi Withdrawal Queue — balance-adapter verification
 
 ## 1. Adapter under test
-`EtherFiWithdrawalQueueBalanceAdapter` (`src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueBalanceAdapter.sol`). Reports the in-flight ETH owed to an account in ether.fi's withdrawal queue (eETH/weETH burned on `requestWithdraw`, ETH claimable from a `WithdrawRequestNFT`).
+`EtherFiWithdrawalQueueAssistedBalanceAdapter` (`src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueAssistedBalanceAdapter.sol`). Reports the in-flight ETH owed to an account in ether.fi's withdrawal queue (eETH/weETH burned on `requestWithdraw`, ETH claimable from a `WithdrawRequestNFT`).
 
 ### Inheritance + per-chain scope (Phase 0)
 - Implements `IBalanceAdapter` + `IPositionDescribable` directly, **plus `Ownable`** — the 3rd documented mutable-cache adapter (after Merkl), per **ADR 0014**. The mutability is a per-account `tokenId` cache only; identity + all addresses are immutable.
@@ -14,13 +14,13 @@
 - `getAdapterPositions`: `assetFilter` mismatch → empty; native ETH not registered → empty; total `0` → empty; else up to **two native-ETH legs** — claimable (`isLocked=false`, sum of finalized ids) + locked (`isLocked=true`, sum of pending ids) — sharing the static `positionId = abi.encode(address withdrawRequestNFT)` (ADR 0016; like Lido/Stader/Kelp).
 
 ## 2. Fork test coverage
-`test/balances/AssistedBalanceAdapters/fork/EtherFiWithdrawalQueue.fork.t.sol` (4 tests, `FOUNDRY_PROFILE=slow`, FORK_BLOCK 25,387,000):
+`test/balances/AssistedBalanceAdapters/fork/EtherFiWithdrawalQueueAssisted.fork.t.sol` (4 tests, `FOUNDRY_PROFILE=slow`, FORK_BLOCK 25,387,000):
 - `realHolder_pendingValuation` — submit real id #80154 → adapter **== independent live read AND** pinned `253077459762665832` wei (delta 0).
 - `getAdapterPositions_identity` — identity fields on the real holder.
 - `unsubmitted_reportsZero`, `submit_skipsIdNotOwnedByAccount` — negative cases vs the real contracts.
 
 ## 3. Unit test coverage
-`test/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueue.t.sol` (23 tests, mock-only): constructor guards (×4), owner-gating + submit/dedup/clear (×4), valuation (finalized, pending min/fee, fee-clamp, aggregation), ownership re-verify (transferred/burned/non-owned drop), `isValid` drop, unregistered-underlying branch, pending-path `try/catch` reverts (getRequest / amountForShare → drop, never revert), identity, ERC165, `underlyingAssetsSupported`.
+`test/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueAssisted.t.sol` (23 tests, mock-only): constructor guards (×4), owner-gating + submit/dedup/clear (×4), valuation (finalized, pending min/fee, fee-clamp, aggregation), ownership re-verify (transferred/burned/non-owned drop), `isValid` drop, unregistered-underlying branch, pending-path `try/catch` reverts (getRequest / amountForShare → drop, never revert), identity, ERC165, `underlyingAssetsSupported`.
 
 ## 4. Adapter formula recap
 ```

@@ -3,12 +3,12 @@ pragma solidity ^0.8;
 
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
 import {
-    PancakeSwapV3PoolsBalanceAdapter
-} from "src/balances/AssistedBalanceAdapters/PancakeSwapV3PoolsBalanceAdapter.sol";
+    PancakeSwapV3PoolsAssistedBalanceAdapter
+} from "src/balances/AssistedBalanceAdapters/PancakeSwapV3PoolsAssistedBalanceAdapter.sol";
 import {INonfungiblePositionManager} from "src/balances/MetaBalanceAdapters/uniswap/UniswapV3PoolLib.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
-/// @title PancakeSwapV3PoolsBalanceForkTest (Base)
+/// @title PancakeSwapV3PoolsAssistedBalanceForkTest (Base)
 /// @notice Validates the PancakeSwap V3 pools assisted adapter against the real Base WETH/COW 0.25% pool. The
 ///         holder's position here is closed (liquidity 0 and no settled `tokensOwed`), so the adapter returns zero
 ///         amounts; the assertion is that the call succeeds and yields zero without reverting. ADR 0017: the adapter
@@ -16,20 +16,20 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 ///         `uint32 feeProtocol` (the inherited `uint8` decode would revert), so even a zero-amount valuation
 ///         exercises that override. The holder's NFT tokenIds are discovered off the NPM and fed via
 ///         `submitTokenIds` (as the assistant would).
-contract PancakeSwapV3PoolsBalanceForkTest_Base is BalanceAdapterTestBase {
+contract PancakeSwapV3PoolsAssistedBalanceForkTest_Base is BalanceAdapterTestBase {
     address public constant NPM = 0x46A15B0b27311cedF172AB29E4f4766fbE7F4364;
     address public constant BASE_WETH = 0x4200000000000000000000000000000000000006;
     address public constant BASE_COW = 0xc694a91e6b071bF030A18BD3053A7fE09B6DaE69;
     address public constant HOLDER = 0x616dE58c011F8736fa20c7Ae5352F7f6FB9F0669;
     uint256 public constant FORK_BLOCK = 45_520_000;
 
-    PancakeSwapV3PoolsBalanceAdapter public adapter;
+    PancakeSwapV3PoolsAssistedBalanceAdapter public adapter;
 
     function setUp() public override {
         super.setUp();
         _setupFork();
         balances = _deployBalancesForAdapter(_assets());
-        adapter = new PancakeSwapV3PoolsBalanceAdapter(
+        adapter = new PancakeSwapV3PoolsAssistedBalanceAdapter(
             NPM, "PancakeSwap V3", address(balances), address(this), address(this)
         );
         _submitHolderTokenIds();

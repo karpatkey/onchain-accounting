@@ -107,5 +107,5 @@ reconstructed `sqrtPriceX96` is the V3-specific mitigation to reinstate.
   `src/balances/MetaBalanceAdapters/uniswap/UniswapV2PairLib.sol` (`pairAmounts`),
   `src/balances/MetaBalanceAdapters/balancer/BalancerV3PoolLib.sol` (`poolBalanceOfIndexed`).
 - Oracle-reconstruction precedent (why V3 is different):
-  `src/balances/AssistedBalanceAdapters/UniswapV3PoolsBalanceAdapter.sol`, [ADR 0008](0008-uniswap-v3-math-libs-gpl-license.md).
+  `src/balances/AssistedBalanceAdapters/UniswapV3PoolsAssistedBalanceAdapter.sol`, [ADR 0008](0008-uniswap-v3-math-libs-gpl-license.md).
 - Adapter/NAV separation + "report amounts, not values": `CLAUDE.md`, `src/balances/BALANCE_ADAPTERS.md`.

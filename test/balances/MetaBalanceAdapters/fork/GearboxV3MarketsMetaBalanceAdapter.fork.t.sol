@@ -9,10 +9,10 @@ interface IERC4626Min {
     function asset() external view returns (address);
 }
 
-/// @title GearboxMarketsMetaParityForkTest
+/// @title GearboxV3MarketsMetaParityForkTest
 /// @notice Fork tests for the Gearbox markets meta-adapter against real mainnet contracts.
 ///         against the real mainnet kpkWETH market and a real holder. Both adapters share one BalancesHarnessForFork.
-contract GearboxMarketsMetaParityForkTest is BalanceAdapterTestBase {
+contract GearboxV3MarketsMetaParityForkTest is BalanceAdapterTestBase {
     address public constant MARKET = 0x9396DCbf78fc526bb003665337C5E73b699571EF; // kpkWETH
     address public constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
     address public constant HOLDER = 0x58e6c7ab55Aa9012eAccA16d1ED4c15795669E1C;

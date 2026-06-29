@@ -27,7 +27,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @dev Access control follows the assisted-adapter family ({AssistedBalanceAdapter}): `DEFAULT_ADMIN_ROLE`
 ///      administers roles and `ASSISTANT_ROLE` is authorized to submit/clear allocations. Trust model and
 ///      mutability rationale: see `docs/decisions/0007-merkl-trust-minimized-cache.md`.
-contract MerklRewardsBalanceAdapter is AssistedBalanceAdapter, IPositionDescribable {
+contract MerklRewardsAssistedBalanceAdapter is AssistedBalanceAdapter, IPositionDescribable {
     //
     // Type Definitions
     //

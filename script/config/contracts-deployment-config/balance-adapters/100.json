@@ -8,7 +8,7 @@
       "positionId": "0xb50201558B00496A145fE76f7424749556E326D8"
     }
   },
-  "MerklRewards": {
+  "MerklRewardsAssisted": {
     "enabled": false,
     "constructor": {
       "distributor": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae",

@@ -241,13 +241,13 @@ PositionBalance({
 })
 ```
 
-#### `MerklRewards` — unclaimed Merkl allocation
+#### `MerklRewardsAssisted` — unclaimed Merkl allocation
 
 ```solidity
 // One leg per reward token; proof-cached balance (may lag until next proof update).
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xD533…cd52, symbol: "CRV", decimals: 18 }),
-    balanceAdapter: 0x<MerklRewardsAdapter>,
+    balanceAdapter: 0x<MerklRewardsAssistedAdapter>,
     amount:        250e18,                 // 250 CRV unclaimed
     isDebt:        false,
     protocolId:    keccak256("merkl"),
@@ -337,12 +337,12 @@ PositionBalance({
 })
 ```
 
-#### `GearboxMarketsMeta` — Gearbox V3 farming pool
+#### `GearboxV3MarketsMeta` — Gearbox V3 farming pool
 
 ```solidity
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xA0b8…6eB48, symbol: "USDC", decimals: 6 }),
-    balanceAdapter: 0x<GearboxMarketsMeta>,
+    balanceAdapter: 0x<GearboxV3MarketsMeta>,
     amount:        1_000_000_000,
     isDebt:        false,
     protocolId:    keccak256("gearbox-v3"),
@@ -515,7 +515,7 @@ PositionBalance({
 })
 ```
 
-#### `UniswapV3Pools` — Uniswap V3 NFT position
+#### `UniswapV3PoolsAssisted` — Uniswap V3 NFT position
 
 ```solidity
 // positionId = the pool contract address (factory.getPool(token0,token1,fee)). Two Supplied legs
@@ -523,7 +523,7 @@ PositionBalance({
 // is the last entry of the adapter-supplied `labels`: ["Liquidity Pool", "<pool>", "NFT #12345"].
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xA0b8…6eB48, symbol: "USDC", decimals: 6 }),
-    balanceAdapter: 0x<UniswapV3Pools>,
+    balanceAdapter: 0x<UniswapV3PoolsAssisted>,
     amount:        600_000_000,            // 600 USDC in-range liquidity (NFT #12345)
     isDebt:        false,
     protocolId:    keccak256("uniswap-v3"),
@@ -548,7 +548,7 @@ PositionBalance({
 })
 ```
 
-#### `PancakeSwapV3Pools` / `PancakeSwapV2PoolsMeta`
+#### `PancakeSwapV3PoolsAssisted` / `PancakeSwapV2PoolsMeta`
 
 Thin subclasses of the UniswapV3/V2 adapters with different factory/`pair` addresses and the
 `pancakeswap-v3` / `pancakeswap-v2` protocol slugs. All field schemas are identical (V3 positionId = pool
@@ -646,7 +646,7 @@ last label.
 | ETH   | 1.0    | +2 500      | `Supplied`   | false    | `"Lido"`     | `["stETH Withdrawal Queue","Request #54321"]` |
 | ETH   | 0.5    | +1 250      | `Supplied`   | true     | `"Lido"`     | `["stETH Withdrawal Queue","Request #54322"]` |
 
-#### `MerklRewards` — unclaimed rewards
+#### `MerklRewardsAssisted` — unclaimed rewards
 
 Scenario: 250 CRV unclaimed in Merkl distributor.
 
@@ -704,7 +704,7 @@ Scenario: 4 000 USDC supplied in an Euler V2 vault (not enabled as EVC collatera
 |-------|--------|-------------|--------------|--------------|----------------------|
 | USDC  | 4 000  | +4 000      | `Supplied`   | `"Euler"`    | `["Vault", "Euler USDC vault"]` |
 
-#### `GearboxMarketsMeta`
+#### `GearboxV3MarketsMeta`
 
 Scenario: 1 000 USDC in Gearbox USDC farming pool.
 
@@ -826,7 +826,7 @@ Scenario: Convex-staked crvUSD/USDC LP with 100 CRV + 50 CVX rewards.
 | CVX    | 50     | +150        | `Rewards`    | `"Convex"`   | `["Curve LP", "crvUSD/USDC Convex"]`     |
 | **NAV** | | **+2 200** | | | |
 
-#### `UniswapV3Pools`
+#### `UniswapV3PoolsAssisted`
 
 Scenario: one NFT position (#12345) in the USDC/WETH 0.05% pool, in-range, with 20 USDC + 0.008 WETH in accrued fees.
 
@@ -850,7 +850,7 @@ Scenario: wallet holds USDC/WETH V2 pair LP representing 700 USDC + 0.28 WETH.
 | WETH  | 0.28   | +700        | `Supplied`   | `"Uniswap V2"` | `["Liquidity Pool", "USDC/WETH LP"]`  |
 | **NAV** | | **+1 400** | | | |
 
-#### `PancakeSwapV3Pools` / `PancakeSwapV2PoolsMeta`
+#### `PancakeSwapV3PoolsAssisted` / `PancakeSwapV2PoolsMeta`
 
 Same structure as UniswapV3/V2 respectively; `protocolName` = `"PancakeSwap V3"` / `"PancakeSwap V2"`.
 
@@ -896,19 +896,19 @@ schemas are in the next section and in the per-adapter table above.)
 | `curve-gauge` | `CURVE_GAUGE` | `CurveGaugesMetaBalanceAdapter` — gauge-staked Curve LP + rewards |
 | `curve` | `CURVE` | Legacy per-instance Curve adapter — superseded on mainnet by `curve-pool` / `curve-gauge` |
 | `convex` | `CONVEX` | `ConvexRewardsMetaBalanceAdapter` — Convex-staked Curve LP + CRV/CVX/extra rewards |
-| `uniswap-v3` | `UNISWAP_V3` | `UniswapV3PoolsBalanceAdapter` — Uniswap V3 LP NFT liquidity + fees |
+| `uniswap-v3` | `UNISWAP_V3` | `UniswapV3PoolsAssistedBalanceAdapter` — Uniswap V3 LP NFT liquidity + fees |
 | `uniswap-v2` | `UNISWAP_V2` | `UniswapV2PoolsMetaBalanceAdapter` — Uniswap V2 LP |
-| `pancakeswap-v3` | `PANCAKESWAP_V3` | `PancakeSwapV3PoolsBalanceAdapter` — PancakeSwap V3 LP NFT liquidity + fees |
+| `pancakeswap-v3` | `PANCAKESWAP_V3` | `PancakeSwapV3PoolsAssistedBalanceAdapter` — PancakeSwap V3 LP NFT liquidity + fees |
 | `pancakeswap-v2` | `PANCAKESWAP_V2` | `PancakeSwapV2PoolsMetaBalanceAdapter` — PancakeSwap V2 LP |
 | `stakewise-v3` | `STAKEWISE_V3` | `StakeWiseV3VaultsMetaBalanceAdapter` — StakeWise V3 vault stake + osToken debt |
-| `nexus-mutual-staking` | `NEXUS_MUTUAL_STAKING` | `NexusMutualStakingPoolsBalanceAdapter` — Nexus Mutual StakingNFT stake + rewards |
+| `nexus-mutual-staking` | `NEXUS_MUTUAL_STAKING` | `NexusMutualStakingPoolsAssistedBalanceAdapter` — Nexus Mutual StakingNFT stake + rewards |
 | `cap` | `CAP` | `CapBalanceAdapter` — Cap cUSD (held) and stcUSD (staked) |
-| `merkl` | `MERKL` | `MerklRewardsBalanceAdapter` — unclaimed (claimable) Merkl reward tokens |
+| `merkl` | `MERKL` | `MerklRewardsAssistedBalanceAdapter` — unclaimed (claimable) Merkl reward tokens |
 | `lido-withdrawal` | `LIDO_WITHDRAWAL` | `LidoWithdrawalQueueBalanceAdapter` — ETH owed from the Lido stETH withdrawal queue |
 | `stader-withdrawal` | `STADER_WITHDRAWAL` | `StaderWithdrawalQueueBalanceAdapter` — ETH owed from the Stader ETHx withdrawal queue |
 | `kelp-withdrawal` | `KELP_WITHDRAWAL` | `KelpWithdrawalQueueBalanceAdapter` — assets owed from the Kelp rsETH exit queue |
-| `etherfi-withdrawal` | `ETHERFI_WITHDRAWAL` | `EtherFiWithdrawalQueueBalanceAdapter` — ETH owed from the ether.fi eETH withdrawal queue |
-| `stakewise-exit` | `STAKEWISE_EXIT` | `StakeWiseV3ExitQueueBalanceAdapter` — assets owed from the StakeWise V3 exit queue |
+| `etherfi-withdrawal` | `ETHERFI_WITHDRAWAL` | `EtherFiWithdrawalQueueAssistedBalanceAdapter` — ETH owed from the ether.fi eETH withdrawal queue |
+| `stakewise-exit` | `STAKEWISE_EXIT` | `StakeWiseV3ExitQueueAssistedBalanceAdapter` — assets owed from the StakeWise V3 exit queue |
 | `ethena-cooldown` | `ETHENA_COOLDOWN` | `EthenaCooldownBalanceAdapter` — USDe in the sUSDe unstaking cooldown |
 | `bridge-escrow` | `BRIDGE_ESCROW` | `BridgeEscrow` (bridge layer, **not** a balance adapter) — funds in flight across a bridge |
 
@@ -1063,7 +1063,7 @@ decodes use `AbiCoder.defaultAbiCoder()` from ethers.js. Protocol ID constants c
 | `MorphoVaultsMeta` | `morpho-vaults` | `Supplied` |
 | `MorphoMarketsMeta` | `morpho-markets` | `Collateral`, `Supplied`, `Borrowed` |
 | `EulerVaultsMeta` | `euler-vaults` | `Supplied`, `Collateral`, `Borrowed` |
-| `GearboxMarketsMeta` | `gearbox-v3` | `Supplied` |
+| `GearboxV3MarketsMeta` | `gearbox-v3` | `Supplied` |
 | `FluidFTokensMeta` | `fluid-ftokens` | `Supplied` |
 | `FluidVaultsMeta` | `fluid-vaults` | `Collateral`, `Borrowed` |
 | `CompoundV3CometsMeta` | `compound-v3` | `Supplied`, `Borrowed`, `Collateral`, `Rewards` |
@@ -1075,11 +1075,11 @@ decodes use `AbiCoder.defaultAbiCoder()` from ethers.js. Protocol ID constants c
 | `CurvePoolsMeta` | `curve-pool` | `Supplied` |
 | `CurveGaugesMeta` | `curve-gauge` | `Staking`, `Rewards` |
 | `ConvexRewardsMeta` | `convex` | `Staking`, `Rewards` |
-| `UniswapV3Pools` / `PancakeSwapV3Pools` | `uniswap-v3` / `pancakeswap-v3` | `Supplied`, `Fees` |
+| `UniswapV3PoolsAssisted` / `PancakeSwapV3PoolsAssisted` | `uniswap-v3` / `pancakeswap-v3` | `Supplied`, `Fees` |
 | `UniswapV2PoolsMeta` / `PancakeSwapV2PoolsMeta` | `uniswap-v2` / `pancakeswap-v2` | `Supplied` |
 | `Cap` | `cap` | `Supplied` (cUSD), `Staking` (stcUSD) |
-| `MerklRewards` | `merkl` | `Rewards` |
-| `NexusMutualStakingPoolsBalanceAdapter` | `nexus-mutual-staking` | `Staking`, `Rewards` |
+| `MerklRewardsAssisted` | `merkl` | `Rewards` |
+| `NexusMutualStakingPoolsAssistedBalanceAdapter` | `nexus-mutual-staking` | `Staking`, `Rewards` |
 | `LidoWithdrawalQueue` | `lido-withdrawal` | `Supplied` (one leg per request; `isLocked` = pending; request id in labels) |
 | `StaderWithdrawalQueue` | `stader-withdrawal` | `Supplied` (claimable + locked legs via `isLocked`) |
 | `KelpWithdrawalQueue` | `kelp-withdrawal` | `Supplied` (claimable + locked legs via `isLocked`, per asset) |
@@ -1458,12 +1458,12 @@ address widened → `abi.encode(address instance)`); overrides are flagged.
 
 | Adapter | `protocolId` | `protocolName()` | `PositionBalance.labels` → (source) | `positionId` schema | `PositionKind` legs | Example breadcrumb |
 |---|---|---|---|---|---|---|
-| `MerklRewardsBalanceAdapter` | `merkl` | `"Merkl"` (const) | `["Claimable Rewards"]` (const) | `abi.encode(address DISTRIBUTOR)` | Rewards | `["Merkl","Claimable Rewards"]` |
-| `EtherFiWithdrawalQueueBalanceAdapter` | `etherfi-withdrawal` | `"ether.fi"` (const) | `["eETH Withdrawal Queue", "Request #<tokenId>"]` (cached id) | `abi.encode(address withdrawRequestNFT)` | Supplied — one leg **per request** (cached NFT tokenId; each `isLocked` = pending), shared positionId | `["ether.fi","eETH Withdrawal Queue","Request #80154"]` |
-| `StakeWiseV3ExitQueueBalanceAdapter` | `stakewise-exit` | `"StakeWise V3"` (const) | `["Exit Queue", "Ticket #<positionTicket>"]` (cached id) | `abi.encode(address vault)` (per vault) | Supplied — **per request (ticket)**, up to two legs (claimable + still-queued) sharing the per-vault positionId | `["StakeWise V3","Exit Queue","Ticket #4096"]` |
-| `NexusMutualStakingPoolsBalanceAdapter` | `nexus-mutual-staking` | `"Nexus Mutual"` (const) | `["Staking", "<pool>", "NFT #<id>"]` (adapter-supplied) | `abi.encode(address stakingPool)` | Staking / Rewards | `["Nexus Mutual","Staking","0x…","NFT #180"]` |
-| `UniswapV3PoolsBalanceAdapter` | `uniswap-v3` | `"Uniswap V3"` (gov) | `["Liquidity Pool", "<pool>", "NFT #<id>"]` (adapter-supplied) | `abi.encode(address pool)` | Supplied / Fees | `["Uniswap V3","Liquidity Pool","0x…","NFT #12345"]` |
-| `PancakeSwapV3PoolsBalanceAdapter` | `pancakeswap-v3` | `"PancakeSwap V3"` (gov) | `["Liquidity Pool", "<pool>", "NFT #<id>"]` (adapter-supplied, inherited) | `abi.encode(address pool)` | Supplied / Fees | `["PancakeSwap V3","Liquidity Pool","0x…","NFT #12345"]` |
+| `MerklRewardsAssistedBalanceAdapter` | `merkl` | `"Merkl"` (const) | `["Claimable Rewards"]` (const) | `abi.encode(address DISTRIBUTOR)` | Rewards | `["Merkl","Claimable Rewards"]` |
+| `EtherFiWithdrawalQueueAssistedBalanceAdapter` | `etherfi-withdrawal` | `"ether.fi"` (const) | `["eETH Withdrawal Queue", "Request #<tokenId>"]` (cached id) | `abi.encode(address withdrawRequestNFT)` | Supplied — one leg **per request** (cached NFT tokenId; each `isLocked` = pending), shared positionId | `["ether.fi","eETH Withdrawal Queue","Request #80154"]` |
+| `StakeWiseV3ExitQueueAssistedBalanceAdapter` | `stakewise-exit` | `"StakeWise V3"` (const) | `["Exit Queue", "Ticket #<positionTicket>"]` (cached id) | `abi.encode(address vault)` (per vault) | Supplied — **per request (ticket)**, up to two legs (claimable + still-queued) sharing the per-vault positionId | `["StakeWise V3","Exit Queue","Ticket #4096"]` |
+| `NexusMutualStakingPoolsAssistedBalanceAdapter` | `nexus-mutual-staking` | `"Nexus Mutual"` (const) | `["Staking", "<pool>", "NFT #<id>"]` (adapter-supplied) | `abi.encode(address stakingPool)` | Staking / Rewards | `["Nexus Mutual","Staking","0x…","NFT #180"]` |
+| `UniswapV3PoolsAssistedBalanceAdapter` | `uniswap-v3` | `"Uniswap V3"` (gov) | `["Liquidity Pool", "<pool>", "NFT #<id>"]` (adapter-supplied) | `abi.encode(address pool)` | Supplied / Fees | `["Uniswap V3","Liquidity Pool","0x…","NFT #12345"]` |
+| `PancakeSwapV3PoolsAssistedBalanceAdapter` | `pancakeswap-v3` | `"PancakeSwap V3"` (gov) | `["Liquidity Pool", "<pool>", "NFT #<id>"]` (adapter-supplied, inherited) | `abi.encode(address pool)` | Supplied / Fees | `["PancakeSwap V3","Liquidity Pool","0x…","NFT #12345"]` |
 
 #### What each `positionId` value is
 

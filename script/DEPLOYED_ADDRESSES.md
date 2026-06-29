@@ -100,11 +100,11 @@ Meta-adapters (one immutable contract per protocol class; active instances gover
 | `EulerVaultsMeta` | `TBD` |
 | `FluidFTokensMeta` | `TBD` |
 | `FluidVaultsMeta` | `TBD` |
-| `GearboxMarketsMeta` | `TBD` |
+| `GearboxV3MarketsMeta` | `TBD` |
 | `MorphoMarketsMeta` | `TBD` |
 | `MorphoVaultsMeta` | `TBD` |
 | `StakeWiseV3VaultsMeta` | `TBD` |
-| `UniswapV3PoolsMeta` | `TBD` |
+| `UniswapV3PoolsAssistedMeta` | `TBD` |
 
 ---
 

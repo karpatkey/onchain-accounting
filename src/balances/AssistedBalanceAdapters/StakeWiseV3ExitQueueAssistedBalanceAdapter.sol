@@ -24,7 +24,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         **only the position coordinates, never amounts** — a holder of `ASSISTANT_ROLE` cannot fabricate value;
 ///         at worst it omits a position (NAV under-counts), never over-counts.
 /// @dev Trust model and mutability rationale: see `docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md`
-///      (generalises the Merkl precedent, ADR 0007; sibling of `EtherFiWithdrawalQueue`). Emits up to two legs PER
+///      (generalises the Merkl precedent, ADR 0007; sibling of `EtherFiWithdrawalQueueAssisted`). Emits up to two legs PER
 ///      cached exit position (per `positionTicket`) — a claimable leg (`isLocked = false`) and a locked/pending leg
 ///      (`isLocked = true`) — both carrying that ticket's id in the last `labels` entry. All legs of a given vault
 ///      share one static per-vault positionId (`abi.encode(vault)`); the ticket id rides in `labels`, never in
@@ -41,7 +41,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      **reverts** `InvalidExitPosition` for a tuple whose vault is not StakeWise-registered or that does not
 ///      resolve to a live owed amount for `account`, and `PositionCacheFull` at `MAX_POSITIONS`. Reads still
 ///      re-verify and discard (never revert), so correctness does not depend on the write-time checks.
-contract StakeWiseV3ExitQueueBalanceAdapter is AssistedBalanceAdapter, IPositionDescribable {
+contract StakeWiseV3ExitQueueAssistedBalanceAdapter is AssistedBalanceAdapter, IPositionDescribable {
 
     //
     // Types

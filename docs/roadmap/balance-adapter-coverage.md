@@ -25,8 +25,8 @@ The point of these adapters is to track value that has left the LST as ERC20 but
 | **Renzo (ezETH)** | `WithdrawQueue` at `0xf2F305D14DCD8aaef887E0428B3c9534795D0d60` | ERC721 with explicit `withdrawRequests` mapping; sequential IDs per holder. | Newer queue; finalization tied to Renzo restaking unwinds. |
 | **Kelp (rsETH)** ✅ | `LRTWithdrawalManager` at `0x62De59c08eB5dAE4b7E6F7a8cAd3006d6965ec16` | Per-supported-asset deques: `userAssociatedNonces(asset, user) → (begin, end)` and `getUserWithdrawalRequest(asset, user, i) → (rsETHAmount, expectedAssetAmount, withdrawalStartBlock, userNonce)`. Payout-asset set discovered via `lrtConfig().getSupportedAssetList()` (stETH, ETHx, native ETH at time of writing). | Implemented in this repo (`KelpWithdrawalQueueBalanceAdapter.sol`): single multi-asset adapter; a static positionId `abi.encode(address withdrawalManager)` (payout asset carried in `balanceAsset.asset`); per NAV-registered payout asset, up to two legs — claimable + locked — sharing it, told apart by `isLocked` (ADR 0016). |
 | **Mantle (mETH)** | `Staking` contract; `unstakeRequest`/`claimUnstakeRequest` | Sequential `unstakeRequestId` per user; struct includes `mETHLocked`, `ethRequested`, `cumulativeETHRequested`, `blockNumber`. | Similar shape to Stader. |
-| **StakeWise V3 exit queue** ✅ | per-Vault `enterExitQueue(shares)` returning a position ticket | `StakeWiseV3VaultsMetaBalanceAdapter.sol` covers active vault positions (`Staking` shares + `Borrowed` osToken legs); the exit queue is covered separately by `StakeWiseV3ExitQueueBalanceAdapter.sol` (agent-fed, ADR 0014). | Implemented in this repo: per-vault static positionId `abi.encode(address vault)`, split into claimable (`exitedAssets`) + locked (`convertToAssets(leftShares)`) legs via `isLocked`. |
-| **Rocket Pool (rETH)** — no adapter ✓ | n/a (rETH is a plain ERC20) | `RocketTokenRETH.burn()` pays ETH instantly from excess deposit-pool collateral, or **reverts** — there is no NFT / queue / pending-claim state for an adapter to read. | **No adapter needed (evaluated 2026-05).** rETH and RPL are registered, priced, and already wallet-covered by `ERC20DefaultBalanceAdapter` (rETH via `rETH_Price`, RPL via Chainlink; RPL rewards via `MerklRewards`), so nothing to add for token holdings. The only *non-tokenized* Rocket Pool positions are node-operator ones — staked RPL collateral, minipool bonded ETH, RPL rewards (`RocketNodeStaking` / minipools) — which the funds do not hold. Revisit only if a fund takes on RP node-operator exposure. |
+| **StakeWise V3 exit queue** ✅ | per-Vault `enterExitQueue(shares)` returning a position ticket | `StakeWiseV3VaultsMetaBalanceAdapter.sol` covers active vault positions (`Staking` shares + `Borrowed` osToken legs); the exit queue is covered separately by `StakeWiseV3ExitQueueAssistedBalanceAdapter.sol` (agent-fed, ADR 0014). | Implemented in this repo: per-vault static positionId `abi.encode(address vault)`, split into claimable (`exitedAssets`) + locked (`convertToAssets(leftShares)`) legs via `isLocked`. |
+| **Rocket Pool (rETH)** — no adapter ✓ | n/a (rETH is a plain ERC20) | `RocketTokenRETH.burn()` pays ETH instantly from excess deposit-pool collateral, or **reverts** — there is no NFT / queue / pending-claim state for an adapter to read. | **No adapter needed (evaluated 2026-05).** rETH and RPL are registered, priced, and already wallet-covered by `ERC20DefaultBalanceAdapter` (rETH via `rETH_Price`, RPL via Chainlink; RPL rewards via `MerklRewardsAssisted`), so nothing to add for token holdings. The only *non-tokenized* Rocket Pool positions are node-operator ones — staked RPL collateral, minipool bonded ETH, RPL rewards (`RocketNodeStaking` / minipools) — which the funds do not hold. Revisit only if a fund takes on RP node-operator exposure. |
 | **Coinbase (cbETH)** | n/a (centralised) | Off-chain wrap/unwrap. | No on-chain queue position. |
 
 ### Implementation notes (apply across the queue family)
@@ -53,9 +53,9 @@ These are not queues but represent value that lives outside the wallet and is no
 
 - **Balancer V3 pools + gauges**: ✅ covered — `BalancerV3PoolsMeta` + `BalancerV3GaugesMeta` (meta-adapters, ADR 0010).
 - **Balancer V2 pools + gauges**: ✅ covered — `BalancerV2PoolsMeta` + `BalancerV2GaugesMeta` (meta-adapters, ADR 0010).
-- **Uniswap V3**: ✅ covered — `UniswapV3Pools` (assisted adapter, ADR 0015; agent-fed NFT tokenId cache).
+- **Uniswap V3**: ✅ covered — `UniswapV3PoolsAssisted` (assisted adapter, ADR 0015; agent-fed NFT tokenId cache).
 - **Uniswap V2**: ✅ covered — `UniswapV2PoolsMeta` (meta-adapter, ADR 0010).
-- **PancakeSwap V3**: ✅ covered — `PancakeSwapV3Pools` (assisted adapter, ADR 0015; subclass of `UniswapV3Pools`).
+- **PancakeSwap V3**: ✅ covered — `PancakeSwapV3PoolsAssisted` (assisted adapter, ADR 0015; subclass of `UniswapV3PoolsAssisted`).
 - **PancakeSwap V2**: ✅ covered — `PancakeSwapV2PoolsMeta` (meta-adapter, ADR 0010).
 - **Curve pools + gauges**: ✅ covered — `CurvePoolsMeta` + `CurveGaugesMeta` (meta-adapters, ADR 0010).
 
@@ -81,7 +81,7 @@ These are not queues but represent value that lives outside the wallet and is no
 - **Morpho Markets**: ✅ covered — `MorphoMarketsMeta` (meta-adapter, ADR 0010).
 - **Aave V3 (all instances)**: ✅ covered — `AaveV3InstancesMeta` (meta-adapter, ADR 0010).
 - **Compound V3**: ✅ covered — `CompoundV3CometsMeta` (meta-adapter, ADR 0010).
-- **Gearbox**: ✅ covered — `GearboxMarketsMeta` (meta-adapter, ADR 0010).
+- **Gearbox**: ✅ covered — `GearboxV3MarketsMeta` (meta-adapter, ADR 0010).
 - **Fluid**: ✅ covered — `FluidFTokensMeta` (ERC4626 lending) + `FluidVaultsMeta` (T1 collateral/debt) meta-adapters (ADR 0010).
 - **Euler V2**: ✅ covered — `EulerVaultsMeta` (meta-adapter, ADR 0010): one adapter for both EulerEarn aggregator vaults and core eVaults (EVK), reporting `Supplied`/`Collateral` and `Borrowed` legs.
 - **Ajna**: pool-based lending; inflation-bearing buckets.

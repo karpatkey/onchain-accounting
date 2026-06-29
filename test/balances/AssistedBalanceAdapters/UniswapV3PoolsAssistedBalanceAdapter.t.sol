@@ -2,7 +2,7 @@
 pragma solidity ^0.8;
 
 import {Test} from "forge-std/Test.sol";
-import {UniswapV3PoolsBalanceAdapter} from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsBalanceAdapter.sol";
+import {UniswapV3PoolsAssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsAssistedBalanceAdapter.sol";
 import {IAssistedBalanceAdapter} from "src/balances/IAssistedBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
@@ -21,16 +21,16 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {FixedPoint128} from "src/balances/MetaBalanceAdapters/uniswap/lib/FixedPoint128.sol";
 
-/// @title UniswapV3PoolsBalanceAdapter unit tests (no fork)
-/// @notice Assisted (agent-fed) tokenId cache + per-NFT decomposition for UniswapV3Pools. The adapter reads
+/// @title UniswapV3PoolsAssistedBalanceAdapter unit tests (no fork)
+/// @notice Assisted (agent-fed) tokenId cache + per-NFT decomposition for UniswapV3PoolsAssisted. The adapter reads
 ///         `positions(tokenId)`, splits the principal at the pool's live `slot0` (instantaneous on-chain amounts;
 ///         ADR 0017) and resolves the pool address (positionId) via the factory — so these tests drive it through
 ///         the NPM/factory/pool mocks + the cache.
-contract UniswapV3PoolsBalanceAdapterTest is Test {
+contract UniswapV3PoolsAssistedBalanceAdapterTest is Test {
     Mock_NAVCalculator nav;
     MockPositionManager npm;
     MockUniswapV3Factory factory;
-    UniswapV3PoolsBalanceAdapter adapter;
+    UniswapV3PoolsAssistedBalanceAdapter adapter;
 
     MockToken wbtc; // NFT 1 token0
     MockToken weth; // shared token1
@@ -79,7 +79,7 @@ contract UniswapV3PoolsBalanceAdapterTest is Test {
 
         // admin + assistant = this test, so it can submit/clear tokenIds.
         adapter =
-            new UniswapV3PoolsBalanceAdapter(address(npm), "Uniswap V3", address(nav), address(this), address(this));
+            new UniswapV3PoolsAssistedBalanceAdapter(address(npm), "Uniswap V3", address(nav), address(this), address(this));
         adapter.submitTokenIds(alice, _ids(1, 2));
     }
 

@@ -3,18 +3,18 @@ pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
 import {
-    MerklRewardsBalanceAdapter,
+    MerklRewardsAssistedBalanceAdapter,
     IMerklDistributor
-} from "src/balances/AssistedBalanceAdapters/MerklRewardsBalanceAdapter.sol";
+} from "src/balances/AssistedBalanceAdapters/MerklRewardsAssistedBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
-/// @title MerklRewardsBalanceAdapterForkTest
-/// @notice Fork tests for `MerklRewardsBalanceAdapter`. Validates the adapter integrates cleanly with the real
+/// @title MerklRewardsAssistedBalanceAdapterForkTest
+/// @notice Fork tests for `MerklRewardsAssistedBalanceAdapter`. Validates the adapter integrates cleanly with the real
 ///         Merkl Distributor on Ethereum mainnet — `getMerkleRoot()` returns non-zero, the public `claimed`
 ///         getter works, invalid proofs revert, and uncached reads return 0. The merkle proof-verification math
-///         itself is exhaustively tested with synthetic trees in `MerklRewardsBalanceAdapter.t.sol`; capturing a real proof at
+///         itself is exhaustively tested with synthetic trees in `MerklRewardsAssistedBalanceAdapter.t.sol`; capturing a real proof at
 ///         a pinned block is brittle (Merkl rotates roots ~every 8h) and is left as a future enhancement.
-contract MerklRewardsBalanceAdapterForkTest is BalanceAdapterTestBase {
+contract MerklRewardsAssistedBalanceAdapterForkTest is BalanceAdapterTestBase {
     /// @notice Merkl Distributor — same address on every supported EVM chain.
     address public constant MERKL_DISTRIBUTOR = 0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae;
 
@@ -24,13 +24,13 @@ contract MerklRewardsBalanceAdapterForkTest is BalanceAdapterTestBase {
     address public owner = makeAddr("merkl-owner");
     address public alice = makeAddr("alice");
 
-    MerklRewardsBalanceAdapter public adapter;
+    MerklRewardsAssistedBalanceAdapter public adapter;
 
     function _setupFork() internal override {
         fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK);
         balances = _deployBalancesForAdapter(MAINNET_DAI); // any registered asset; ARB isn't on Mainnet's NAV
         // admin = assistant = `owner`.
-        adapter = new MerklRewardsBalanceAdapter(MERKL_DISTRIBUTOR, address(balances), owner, owner);
+        adapter = new MerklRewardsAssistedBalanceAdapter(MERKL_DISTRIBUTOR, address(balances), owner, owner);
     }
 
     // ============================================
@@ -81,14 +81,14 @@ contract MerklRewardsBalanceAdapterForkTest is BalanceAdapterTestBase {
     function test_adapter_invalidProofRevertsAgainstRealRoot() public {
         // Build a leaf that is virtually guaranteed not to be in the active tree, then submit it with an
         // empty proof. The adapter should run real proof verification against the real on-chain root and revert.
-        MerklRewardsBalanceAdapter.Allocation[] memory allocs = new MerklRewardsBalanceAdapter.Allocation[](1);
-        allocs[0] = MerklRewardsBalanceAdapter.Allocation({
+        MerklRewardsAssistedBalanceAdapter.Allocation[] memory allocs = new MerklRewardsAssistedBalanceAdapter.Allocation[](1);
+        allocs[0] = MerklRewardsAssistedBalanceAdapter.Allocation({
             token: MAINNET_DAI,
             cumulativeAmount: 1_000_000 ether,
             proof: new bytes32[](0),
-            campaigns: new MerklRewardsBalanceAdapter.CampaignShare[](0)
+            campaigns: new MerklRewardsAssistedBalanceAdapter.CampaignShare[](0)
         });
-        vm.expectRevert(MerklRewardsBalanceAdapter.InvalidProof.selector);
+        vm.expectRevert(MerklRewardsAssistedBalanceAdapter.InvalidProof.selector);
         vm.prank(owner);
         adapter.submitProofs(alice, allocs);
     }

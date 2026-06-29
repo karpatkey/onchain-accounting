@@ -2,21 +2,21 @@
 
 > **Historical evidence pack (pre-meta).** This verification was done against the per-pool
 > `uniswap/UniswapV3Pool.sol` adapter, which `main` has since replaced with the immutable
-> `UniswapV3PoolsMeta` meta-adapter (ADR 0010). The per-pool dev helpers
+> `UniswapV3PoolsAssistedMeta` meta-adapter (ADR 0010). The per-pool dev helpers
 > (`deploy-uniV3-adapters-mainnet.sh`, `query-live-balances.s.sol`) were removed in the meta
 > reconciliation. The ground-truth math, holders, and expected amounts below remain valid as
 > reference; the dashboard wiring (§9) will be re-done with a meta-based deploy helper when V3
-> is re-verified against `UniswapV3PoolsMeta`.
+> is re-verified against `UniswapV3PoolsAssistedMeta`.
 
 ## 1. Adapter under test
 
-`src/balances/MetaBalanceAdapters/uniswap/UniswapV3Pool.sol` — **removed** in the meta reconciliation; the live implementation is now the assisted `UniswapV3PoolsBalanceAdapter.sol` (`UniswapV3PoolsBalanceAdapter`; agent-fed, ADR 0015), which covers every pool from one contract. The per-pool adapter under test here was one instance per pool (immutable). Position discovery in the live assisted adapter is **agent-fed, not on-chain enumeration** (ADR 0015): an assistant submits the account's NFT `tokenId`s via `submitTokenIds` (the write **reverts** on any id not owned by the account), the adapter caches ids only, and on each read it re-verifies ownership via `ownerOf` (discarding ids no longer owned) before aggregating principal + fees per token from live on-chain reads. The per-pool adapter under test here instead iterated the account's NFTs from the canonical `NonfungiblePositionManager` (NPM) and filtered by `(token0, token1, fee)`; that ground-truth math is carried over unchanged.
+`src/balances/MetaBalanceAdapters/uniswap/UniswapV3Pool.sol` — **removed** in the meta reconciliation; the live implementation is now the assisted `UniswapV3PoolsAssistedBalanceAdapter.sol` (`UniswapV3PoolsAssistedBalanceAdapter`; agent-fed, ADR 0015), which covers every pool from one contract. The per-pool adapter under test here was one instance per pool (immutable). Position discovery in the live assisted adapter is **agent-fed, not on-chain enumeration** (ADR 0015): an assistant submits the account's NFT `tokenId`s via `submitTokenIds` (the write **reverts** on any id not owned by the account), the adapter caches ids only, and on each read it re-verifies ownership via `ownerOf` (discarding ids no longer owned) before aggregating principal + fees per token from live on-chain reads. The per-pool adapter under test here instead iterated the account's NFTs from the canonical `NonfungiblePositionManager` (NPM) and filtered by `(token0, token1, fee)`; that ground-truth math is carried over unchanged.
 
 The math libraries (`TickMath`, `LiquidityAmounts`, `FixedPoint128`) live under `src/balances/MetaBalanceAdapters/uniswap/lib/` and carry `GPL-2.0-or-later`. Because the adapter imports and links those libs, the adapter file itself also carries `GPL-2.0-or-later` — there is no MIT file in this compilation unit — see [`docs/decisions/0008-uniswap-v3-math-libs-gpl-license.md`](../../../../docs/decisions/0008-uniswap-v3-math-libs-gpl-license.md).
 
 ### Inheritance + per-chain scope (Phase 0)
 
-- **Inheritance:** the per-pool adapter under test was a direct `IBalanceAdapter` implementer; the live `UniswapV3PoolsBalanceAdapter` is instead an `AssistedBalanceAdapter` (agent-fed; ADR 0015). The adapter reads the pool's live `slot0` (`sqrtPriceX96`/`tick`) for the in-range split (instantaneous on-chain amounts; manipulation mitigated by the asynchronous NAV consumer, ADR 0017), so there is a `_slot0()` hook and `PancakeSwapV3PoolsBalanceAdapter` overrides both `_protocolId()` (the `pancakeswap-v3` slug) and `_slot0()`. The `uint32 feeProtocol` ABI difference is real: PancakeSwap declares `slot0().feeProtocol` as `uint32` (Uniswap's `uint8`), so the override decodes the `uint32` field.
+- **Inheritance:** the per-pool adapter under test was a direct `IBalanceAdapter` implementer; the live `UniswapV3PoolsAssistedBalanceAdapter` is instead an `AssistedBalanceAdapter` (agent-fed; ADR 0015). The adapter reads the pool's live `slot0` (`sqrtPriceX96`/`tick`) for the in-range split (instantaneous on-chain amounts; manipulation mitigated by the asynchronous NAV consumer, ADR 0017), so there is a `_slot0()` hook and `PancakeSwapV3PoolsAssistedBalanceAdapter` overrides both `_protocolId()` (the `pancakeswap-v3` slug) and `_slot0()`. The `uint32 feeProtocol` ABI difference is real: PancakeSwap declares `slot0().feeProtocol` as `uint32` (Uniswap's `uint8`), so the override decodes the `uint32` field.
 - **Per-chain scope:** Uniswap V3 is deployed on Ethereum, Optimism, Arbitrum, Base, Polygon, BSC and others; only Ethereum has V3 instances configured (now as meta-adapter instances under `script/config/nav-config/meta-balance-adapters/<chainId>.json`, governed via `addMetaInstances`) today (3 enabled: WBTC/WETH 0.3%, USDC/WETH 0.05%, WETH/USDT 0.3%). Gnosis has no Uniswap V3 deployment. The adapter has **zero per-chain code branches** — pool ABI/bytecode is identical on every chain; NPM is a constructor argument. Single-chain (mainnet) fork tests are sufficient.
 - **Math branches** exercised in this case: in-range principal, above-range principal, below-range principal, in-range fee delta, out-of-range fee delta, settled `tokensOwed`, foreign-pool filter, closed-position filter, bounded iteration at scale.
 
@@ -163,7 +163,7 @@ This is the forked-EVM equivalent of a Tenderly `decreaseLiquidity + collect` si
 
 ## 9. Wiring the live dev-anvil dashboard
 
-> **Stale (pre-meta).** `deploy-uniV3-adapters-mainnet.sh` no longer exists; the steps below are the historical per-pool flow and will be re-done with a meta-based deploy helper when V3 is re-verified against `UniswapV3PoolsMeta` (see banner).
+> **Stale (pre-meta).** `deploy-uniV3-adapters-mainnet.sh` no longer exists; the steps below are the historical per-pool flow and will be re-done with a meta-based deploy helper when V3 is re-verified against `UniswapV3PoolsAssistedMeta` (see banner).
 
 `deploy-uniV3-adapters-mainnet.sh` deploys + registers all 3 enabled mainnet V3 adapters on the local mainnet anvil so the dashboard renders both holders' positions for a side-channel cross-check. Run after the dev anvil is up and the NAV proxy is deployed:
 

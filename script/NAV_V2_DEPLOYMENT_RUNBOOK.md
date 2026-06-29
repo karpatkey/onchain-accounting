@@ -545,7 +545,7 @@ The deploy script (`04_DeployBalanceAdapters.s.sol`) supports these adapters:
 | `CompoundV3CometsMeta` | `compoundRewards`, `rewardToken`, `protocol` | Mainnet |
 | `MorphoVaultsMeta` | `protocol` | Mainnet, Arbitrum |
 | `MorphoMarketsMeta` | `morpho`, `protocol` (marketIds via `instancesRaw`) | Mainnet, Arbitrum, Base |
-| `GearboxMarketsMeta` | `protocol` | Mainnet |
+| `GearboxV3MarketsMeta` | `protocol` | Mainnet |
 | `BalancerV3PoolsMeta` | `protocol` | Mainnet |
 | `BalancerV3GaugesMeta` | `balancerMinter`, `protocol` | Mainnet |
 | `BalancerV2PoolsMeta` | `vault`, `protocol` | Mainnet |
@@ -582,19 +582,19 @@ The `_deployIfEnabled(...)` calls in `run()` are the authoritative source. Most 
 
 **Morpho:** `MorphoVaultsMeta` (vaults via `instances`), `MorphoMarketsMeta` (raw bytes32 marketIds via `instancesRaw`)
 
-**Gearbox:** `GearboxMarketsMeta`
+**Gearbox:** `GearboxV3MarketsMeta`
 
 **Balancer:** `BalancerV3PoolsMeta`, `BalancerV3GaugesMeta`, `BalancerV2PoolsMeta`, `BalancerV2GaugesMeta`
 
 **Curve / Convex:** `CurvePoolsMeta`, `CurveGaugesMeta`, `ConvexRewardsMeta` (one meta per family covering all pools/gauges/rewarders; instances via `addMetaInstances`/`removeMetaInstances`)
 
-**DEX LP:** `UniswapV3PoolsMeta`, `PancakeSwapV3PoolsMeta`, `PancakeSwapV2PoolsMeta` (`UniswapV2PoolsMeta` is implemented and dispatchable but not yet in `run()` / enabled on any chain)
+**DEX LP:** `UniswapV3PoolsAssistedMeta`, `PancakeSwapV3PoolsAssistedMeta`, `PancakeSwapV2PoolsMeta` (`UniswapV2PoolsMeta` is implemented and dispatchable but not yet in `run()` / enabled on any chain)
 
 **StakeWise V3:** `StakeWiseV3VaultsMeta` (vault deposits net of minted-osToken debt — see the osETH/osGNO pricing note below)
 
 **Withdrawal queues:** `StaderWithdrawalQueue`, `KelpWithdrawalQueue`, `LidoWithdrawalQueue`
 
-**Rewards:** `MerklRewards` (mutable proof-verified per-(user,token) cache — ADR 0007)
+**Rewards:** `MerklRewardsAssisted` (mutable proof-verified per-(user,token) cache — ADR 0007)
 
 **StakeWise V3 pricing note:** osETH (Mainnet) and osGNO (Gnosis) are **Custom-priced ERC20s** via `osToken_CustomPriceFeed` (`convertToAssets(1e18) × underlying/USD`); held osTokens are reported by `ERC20DefaultBalanceAdapter` (deployed by `03_DeployPriceFeeds` / registered by `RegisterAssets`, custom-feed keys `osETH` / `osGNO` in `contracts-deployment-config/custom-price-feeds/<chainId>.json`). The `StakeWiseV3VaultsMeta` adapter separately reports vault deposits net of minted-osToken debt (`vaultAssets - mintedOs`, denominated in ETH/GNO). Wired primarily for integration cross-checks; the Alpha funds do not currently use StakeWise.
 

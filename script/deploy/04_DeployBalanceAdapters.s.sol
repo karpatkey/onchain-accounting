@@ -66,19 +66,19 @@ import {
     LidoWithdrawalQueueBalanceAdapter
 } from "../../src/balances/BalanceAdapters/LidoWithdrawalQueueBalanceAdapter.sol";
 import {EthenaCooldownBalanceAdapter} from "../../src/balances/BalanceAdapters/EthenaCooldownBalanceAdapter.sol";
-import {MerklRewardsBalanceAdapter} from "../../src/balances/AssistedBalanceAdapters/MerklRewardsBalanceAdapter.sol";
+import {MerklRewardsAssistedBalanceAdapter} from "../../src/balances/AssistedBalanceAdapters/MerklRewardsAssistedBalanceAdapter.sol";
 import {
-    EtherFiWithdrawalQueueBalanceAdapter
-} from "../../src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueBalanceAdapter.sol";
+    EtherFiWithdrawalQueueAssistedBalanceAdapter
+} from "../../src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueAssistedBalanceAdapter.sol";
 import {
-    NexusMutualStakingPoolsBalanceAdapter
-} from "../../src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsBalanceAdapter.sol";
+    NexusMutualStakingPoolsAssistedBalanceAdapter
+} from "../../src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsAssistedBalanceAdapter.sol";
 import {
-    StakeWiseV3ExitQueueBalanceAdapter
-} from "../../src/balances/AssistedBalanceAdapters/StakeWiseV3ExitQueueBalanceAdapter.sol";
+    StakeWiseV3ExitQueueAssistedBalanceAdapter
+} from "../../src/balances/AssistedBalanceAdapters/StakeWiseV3ExitQueueAssistedBalanceAdapter.sol";
 import {
-    UniswapV3PoolsBalanceAdapter
-} from "../../src/balances/AssistedBalanceAdapters/UniswapV3PoolsBalanceAdapter.sol";
+    UniswapV3PoolsAssistedBalanceAdapter
+} from "../../src/balances/AssistedBalanceAdapters/UniswapV3PoolsAssistedBalanceAdapter.sol";
 import {
     UniswapV2PoolsMetaBalanceAdapter
 } from "../../src/balances/MetaBalanceAdapters/uniswap/UniswapV2PoolsMetaBalanceAdapter.sol";
@@ -86,8 +86,8 @@ import {
     PancakeSwapV2PoolsMetaBalanceAdapter
 } from "../../src/balances/MetaBalanceAdapters/pancakeswap/PancakeSwapV2PoolsMetaBalanceAdapter.sol";
 import {
-    PancakeSwapV3PoolsBalanceAdapter
-} from "../../src/balances/AssistedBalanceAdapters/PancakeSwapV3PoolsBalanceAdapter.sol";
+    PancakeSwapV3PoolsAssistedBalanceAdapter
+} from "../../src/balances/AssistedBalanceAdapters/PancakeSwapV3PoolsAssistedBalanceAdapter.sol";
 
 /// @title DeployBalanceAdapters
 /// @notice Deploys balance adapter adapters based on per-chain configuration
@@ -133,7 +133,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("EulerVaultsMeta"); // Meta-adapter: all Euler V2 vaults (EulerEarn + core eVaults); supply/collateral + borrow legs; instance set on NAV (ADR 0010)
 
         // --- Gearbox Markets (Mainnet — ETH Alpha) ---
-        _deployIfEnabled("GearboxMarketsMeta"); // Meta-adapter: all Gearbox markets; market set on NAV (ADR 0010)
+        _deployIfEnabled("GearboxV3MarketsMeta"); // Meta-adapter: all Gearbox markets; market set on NAV (ADR 0010)
 
         // --- Balancer V3 (meta-adapters: pools = unstaked LP, gauges = staked LP + rewards; sets on NAV, ADR 0010) ---
         _deployIfEnabled("BalancerV3PoolsMeta"); // Meta-adapter: all Balancer V3 pools (wallet LP); pool set on NAV
@@ -170,28 +170,28 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("StakeWiseV3VaultsMeta"); // Meta-adapter: all StakeWise V3 vaults; vault set on NAV (ADR 0010)
 
         // --- Merkl Rewards (single instance per chain; Distributor address is identical on every EVM chain) ---
-        _deployIfEnabled("MerklRewards");
+        _deployIfEnabled("MerklRewardsAssisted");
 
         // --- ether.fi withdrawal-queue cache adapter (agent-fed; ADR 0014) ---
-        _deployIfEnabled("EtherFiWithdrawalQueue");
+        _deployIfEnabled("EtherFiWithdrawalQueueAssisted");
 
         // --- Nexus Mutual staked NXM (brute-force view adapter: scans StakingNFT, values via StakingViewer) ---
-        _deployIfEnabled("NexusMutualStakingPools");
+        _deployIfEnabled("NexusMutualStakingPoolsAssisted");
 
         // --- StakeWise V3 exit-queue cache adapter (agent-fed; ADR 0014) ---
-        _deployIfEnabled("StakeWiseV3ExitQueue");
+        _deployIfEnabled("StakeWiseV3ExitQueueAssisted");
 
         // --- Uniswap V2 (meta-adapter: all pairs; pair set on NAV, ADR 0010) ---
         _deployIfEnabled("UniswapV2PoolsMeta"); // Meta-adapter: all Uniswap V2 pairs (shares the PancakeSwap V2 dispatch)
 
         // --- Uniswap V3 (assisted: agent-fed NFT tokenId cache; ADR 0015) ---
-        _deployIfEnabled("UniswapV3Pools"); // Assisted adapter: account's Uniswap V3 NFT positions (Supply + Fees legs)
+        _deployIfEnabled("UniswapV3PoolsAssisted"); // Assisted adapter: account's Uniswap V3 NFT positions (Supply + Fees legs)
 
         // --- PancakeSwap V2 (meta-adapter) ---
         _deployIfEnabled("PancakeSwapV2PoolsMeta"); // BSC — meta-adapter: all PancakeSwap V2 pairs
 
         // --- PancakeSwap V3 (assisted: agent-fed NFT tokenId cache; ADR 0015) ---
-        _deployIfEnabled("PancakeSwapV3Pools"); // Base — assisted adapter: account's PancakeSwap V3 NFT positions
+        _deployIfEnabled("PancakeSwapV3PoolsAssisted"); // Base — assisted adapter: account's PancakeSwap V3 NFT positions
 
         // ERC20Default is deployed in NAVCalculator.initialize() when the NAV proxy is set up (02_DeployProxies); it is not deployed here.
         // StakeWiseV3* adapters are wired above so accounts holding osETH or Genesis-Vault
@@ -279,9 +279,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return _deployEulerVaultsMeta(adapterName, navCalculator);
         }
 
-        // Gearbox Market meta-adapter (per-instance adapters removed — superseded by GearboxMarketsMeta)
-        if (_equals(adapterName, "GearboxMarketsMeta")) {
-            return _deployGearboxMarketsMeta(adapterName, navCalculator);
+        // Gearbox Market meta-adapter (per-instance adapters removed — superseded by GearboxV3MarketsMeta)
+        if (_equals(adapterName, "GearboxV3MarketsMeta")) {
+            return _deployGearboxV3MarketsMeta(adapterName, navCalculator);
         }
 
         // Cap Finance adapter
@@ -360,31 +360,31 @@ contract DeployBalanceAdapters is BaseDeployScript {
         }
 
         // Merkl Rewards: proof-cached unclaimed-reward adapter (ADR 0007).
-        if (_equals(adapterName, "MerklRewards")) {
-            return _deployMerklRewards(adapterName, navCalculator);
+        if (_equals(adapterName, "MerklRewardsAssisted")) {
+            return _deployMerklRewardsAssisted(adapterName, navCalculator);
         }
 
         // ether.fi withdrawals: id-cached withdrawal-queue adapter (ADR 0014).
-        if (_equals(adapterName, "EtherFiWithdrawalQueue")) {
-            return _deployEtherFiWithdrawalQueue(adapterName, navCalculator);
+        if (_equals(adapterName, "EtherFiWithdrawalQueueAssisted")) {
+            return _deployEtherFiWithdrawalQueueAssisted(adapterName, navCalculator);
         }
 
         // Nexus Mutual staked NXM (simple immutable view adapter; no agent).
-        if (_equals(adapterName, "NexusMutualStakingPools")) {
-            return _deployNexusMutualStakingPools(adapterName, navCalculator);
+        if (_equals(adapterName, "NexusMutualStakingPoolsAssisted")) {
+            return _deployNexusMutualStakingPoolsAssisted(adapterName, navCalculator);
         }
 
         // StakeWise V3 exit queue: ticket-cached exit-queue adapter (ADR 0014).
-        if (_equals(adapterName, "StakeWiseV3ExitQueue")) {
-            return _deployStakeWiseV3ExitQueue(adapterName, navCalculator);
+        if (_equals(adapterName, "StakeWiseV3ExitQueueAssisted")) {
+            return _deployStakeWiseV3ExitQueueAssisted(adapterName, navCalculator);
         }
 
         // Uniswap/PancakeSwap V3 assisted adapters (agent-fed NFT tokenId cache; ADR 0015)
-        if (_equals(adapterName, "UniswapV3Pools")) {
-            return _deployUniswapV3Pools(adapterName, navCalculator);
+        if (_equals(adapterName, "UniswapV3PoolsAssisted")) {
+            return _deployUniswapV3PoolsAssisted(adapterName, navCalculator);
         }
-        if (_equals(adapterName, "PancakeSwapV3Pools")) {
-            return _deployPancakeSwapV3Pools(adapterName, navCalculator);
+        if (_equals(adapterName, "PancakeSwapV3PoolsAssisted")) {
+            return _deployPancakeSwapV3PoolsAssisted(adapterName, navCalculator);
         }
         if (_equals(adapterName, "UniswapV2PoolsMeta") || _equals(adapterName, "PancakeSwapV2PoolsMeta")) {
             return _deployUniswapV2PoolsMeta(adapterName, navCalculator);
@@ -464,7 +464,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
     /// @notice Deploys the Gearbox markets meta-adapter. Constructor takes (protocol, navCalculator); the market
     ///         set is configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06 (ADR 0010).
-    function _deployGearboxMarketsMeta(string memory adapterName, address navCalculator) internal returns (address) {
+    function _deployGearboxV3MarketsMeta(string memory adapterName, address navCalculator) internal returns (address) {
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
 
@@ -681,9 +681,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(adapter);
     }
 
-    function _deployMerklRewards(string memory adapterName, address navCalculator) internal returns (address) {
+    function _deployMerklRewardsAssisted(string memory adapterName, address navCalculator) internal returns (address) {
         // Schema (chains/<id>.json):
-        //   "MerklRewards": {
+        //   "MerklRewardsAssisted": {
         //     "enabled": true,
         //     "constructor": {
         //       "distributor": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae",  // same on every supported EVM chain
@@ -698,14 +698,14 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address distributor = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "distributor")
         );
-        require(chainConfig.admin != address(0), "MerklRewards: chainConfig.admin (initialOwner) not configured");
+        require(chainConfig.admin != address(0), "MerklRewardsAssisted: chainConfig.admin (initialOwner) not configured");
 
-        MerklRewardsBalanceAdapter adapter =
-            new MerklRewardsBalanceAdapter(distributor, navCalculator, chainConfig.admin, chainConfig.admin);
+        MerklRewardsAssistedBalanceAdapter adapter =
+            new MerklRewardsAssistedBalanceAdapter(distributor, navCalculator, chainConfig.admin, chainConfig.admin);
         return address(adapter);
     }
 
-    function _deployEtherFiWithdrawalQueue(string memory adapterName, address navCalculator)
+    function _deployEtherFiWithdrawalQueueAssisted(string memory adapterName, address navCalculator)
         internal
         returns (address)
     {
@@ -722,16 +722,16 @@ contract DeployBalanceAdapters is BaseDeployScript {
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
         );
         require(
-            chainConfig.admin != address(0), "EtherFiWithdrawalQueue: chainConfig.admin (initialOwner) not configured"
+            chainConfig.admin != address(0), "EtherFiWithdrawalQueueAssisted: chainConfig.admin (initialOwner) not configured"
         );
 
-        EtherFiWithdrawalQueueBalanceAdapter adapter = new EtherFiWithdrawalQueueBalanceAdapter(
+        EtherFiWithdrawalQueueAssistedBalanceAdapter adapter = new EtherFiWithdrawalQueueAssistedBalanceAdapter(
             withdrawRequestNft, liquidityPool, underlyingToken, navCalculator, chainConfig.admin, chainConfig.admin
         );
         return address(adapter);
     }
 
-    function _deployNexusMutualStakingPools(string memory adapterName, address navCalculator)
+    function _deployNexusMutualStakingPoolsAssisted(string memory adapterName, address navCalculator)
         internal
         returns (address)
     {
@@ -749,16 +749,16 @@ contract DeployBalanceAdapters is BaseDeployScript {
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
         );
         require(
-            chainConfig.admin != address(0), "NexusMutualStakingPools: chainConfig.admin (initialOwner) not configured"
+            chainConfig.admin != address(0), "NexusMutualStakingPoolsAssisted: chainConfig.admin (initialOwner) not configured"
         );
 
-        NexusMutualStakingPoolsBalanceAdapter adapter = new NexusMutualStakingPoolsBalanceAdapter(
+        NexusMutualStakingPoolsAssistedBalanceAdapter adapter = new NexusMutualStakingPoolsAssistedBalanceAdapter(
             stakingNft, stakingViewer, underlyingToken, navCalculator, chainConfig.admin, chainConfig.admin
         );
         return address(adapter);
     }
 
-    function _deployStakeWiseV3ExitQueue(string memory adapterName, address navCalculator) internal returns (address) {
+    function _deployStakeWiseV3ExitQueueAssisted(string memory adapterName, address navCalculator) internal returns (address) {
         // Owner = chainConfig.admin (OIV Safe / agent role): the only caller of submitPositions / clearPosition. The
         // adapter values from live on-chain reads and verifies each tuple belongs to the account via
         // calculateExitedAssets(receiver=account), so the owner cannot fabricate amounts (under-report only). See
@@ -779,10 +779,10 @@ contract DeployBalanceAdapters is BaseDeployScript {
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "exitClaimDelay")
         );
         require(
-            chainConfig.admin != address(0), "StakeWiseV3ExitQueue: chainConfig.admin (initialOwner) not configured"
+            chainConfig.admin != address(0), "StakeWiseV3ExitQueueAssisted: chainConfig.admin (initialOwner) not configured"
         );
 
-        StakeWiseV3ExitQueueBalanceAdapter adapter = new StakeWiseV3ExitQueueBalanceAdapter(
+        StakeWiseV3ExitQueueAssistedBalanceAdapter adapter = new StakeWiseV3ExitQueueAssistedBalanceAdapter(
             vaultsRegistry,
             underlyingToken,
             receiptSymbol,
@@ -797,15 +797,15 @@ contract DeployBalanceAdapters is BaseDeployScript {
     /// @notice Deploys the Uniswap V3 pools assisted adapter (agent-fed NFT tokenId cache; ADR 0015). Constructor
     ///         takes (positionManager, protocol, navCalculator, admin, assistant); the assistant submits an account's
     ///         NFT tokenIds via submitTokenIds. admin+assistant = chainConfig.admin at deploy.
-    function _deployUniswapV3Pools(string memory adapterName, address navCalculator) internal returns (address) {
+    function _deployUniswapV3PoolsAssisted(string memory adapterName, address navCalculator) internal returns (address) {
         address positionManager = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionManager")
         );
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        require(chainConfig.admin != address(0), "UniswapV3Pools: chainConfig.admin (initialOwner) not configured");
+        require(chainConfig.admin != address(0), "UniswapV3PoolsAssisted: chainConfig.admin (initialOwner) not configured");
 
-        UniswapV3PoolsBalanceAdapter adapter = new UniswapV3PoolsBalanceAdapter(
+        UniswapV3PoolsAssistedBalanceAdapter adapter = new UniswapV3PoolsAssistedBalanceAdapter(
             positionManager, protocol, navCalculator, chainConfig.admin, chainConfig.admin
         );
         return address(adapter);
@@ -813,15 +813,15 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
     /// @notice Deploys the PancakeSwap V3 pools assisted adapter (subclass of the Uniswap V3 assisted adapter, differs
     ///         only in protocol-id slug). Same constructor shape as the Uniswap V3 pools assisted adapter.
-    function _deployPancakeSwapV3Pools(string memory adapterName, address navCalculator) internal returns (address) {
+    function _deployPancakeSwapV3PoolsAssisted(string memory adapterName, address navCalculator) internal returns (address) {
         address positionManager = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionManager")
         );
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        require(chainConfig.admin != address(0), "PancakeSwapV3Pools: chainConfig.admin (initialOwner) not configured");
+        require(chainConfig.admin != address(0), "PancakeSwapV3PoolsAssisted: chainConfig.admin (initialOwner) not configured");
 
-        PancakeSwapV3PoolsBalanceAdapter adapter = new PancakeSwapV3PoolsBalanceAdapter(
+        PancakeSwapV3PoolsAssistedBalanceAdapter adapter = new PancakeSwapV3PoolsAssistedBalanceAdapter(
             positionManager, protocol, navCalculator, chainConfig.admin, chainConfig.admin
         );
         return address(adapter);

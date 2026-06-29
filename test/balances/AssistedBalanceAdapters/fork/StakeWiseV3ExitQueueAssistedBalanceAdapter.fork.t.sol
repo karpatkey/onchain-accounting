@@ -4,15 +4,15 @@ pragma solidity ^0.8.0;
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
 import {BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
 import {
-    StakeWiseV3ExitQueueBalanceAdapter,
+    StakeWiseV3ExitQueueAssistedBalanceAdapter,
     IStakeWiseExitVault
-} from "src/balances/AssistedBalanceAdapters/StakeWiseV3ExitQueueBalanceAdapter.sol";
+} from "src/balances/AssistedBalanceAdapters/StakeWiseV3ExitQueueAssistedBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {InvalidExitPosition} from "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
-/// @title StakeWiseV3ExitQueueBalanceAdapterForkTest
+/// @title StakeWiseV3ExitQueueAssistedBalanceAdapterForkTest
 /// @notice Fork test against StakeWise's real Genesis vault + VaultsRegistry on mainnet.
 /// @dev Exit positions aren't enumerable, so the agent (here, the test acting as owner) submits a real
 ///      (vault, positionTicket, timestamp) tuple; the adapter values it entirely from live on-chain reads. The
@@ -23,7 +23,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///        - PENDING_BLOCK: not yet checkpointed (`getExitQueueIndex == -1`); valued via the still-queued shares
 ///          using the out-of-range-index path (the subtle branch ADR 0014 flagged).
 ///      Both states are asserted against an independent live recompute (delta 0) AND a pinned value.
-contract StakeWiseV3ExitQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
+contract StakeWiseV3ExitQueueAssistedBalanceAdapterForkTest is BalanceAdapterTestBase {
     address public constant VAULTS_REGISTRY = 0x3a0008a588772446f6e656133C2D5029CC4FC20E;
     address public constant GENESIS_VAULT = 0xAC0F906E433d58FA868F936E8A43230473652885;
     /// @dev ERC-7528 native-ETH sentinel — what StakeWise mainnet vaults settle in and how the adapter denominates.
@@ -42,7 +42,7 @@ contract StakeWiseV3ExitQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
     uint256 public constant PENDING_BLOCK = 25_376_000;
     uint256 public constant EXPECTED_PENDING = 999_999_999_999_999_999_999; // ~1000 ETH still queued
 
-    StakeWiseV3ExitQueueBalanceAdapter public adapter;
+    StakeWiseV3ExitQueueAssistedBalanceAdapter public adapter;
 
     function setUp() public override {
         super.setUp();
@@ -58,11 +58,11 @@ contract StakeWiseV3ExitQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
 
     /// @dev Deploy a fresh balances harness (native ETH registered) + adapter at the current fork block. Re-called
     ///      after rolling so reads happen against the right block without cross-fork persistence ambiguity.
-    function _freshAdapter() internal returns (StakeWiseV3ExitQueueBalanceAdapter) {
+    function _freshAdapter() internal returns (StakeWiseV3ExitQueueAssistedBalanceAdapter) {
         balances = new BalancesHarnessForFork();
         balances.registerAssetForTest(NATIVE_ETH, 18, "ETH");
         // admin = assistant = this test, so it plays the agent and submits the real tuple.
-        return new StakeWiseV3ExitQueueBalanceAdapter(
+        return new StakeWiseV3ExitQueueAssistedBalanceAdapter(
             VAULTS_REGISTRY, NATIVE_ETH, "osETH", address(balances), 1 days, address(this), address(this)
         );
     }
@@ -77,9 +77,9 @@ contract StakeWiseV3ExitQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
     }
 
     function _submit() internal {
-        StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[] memory p =
-            new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[](1);
-        p[0] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(GENESIS_VAULT, TICKET, ENTRY_TS);
+        StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition[] memory p =
+            new StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition[](1);
+        p[0] = StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition(GENESIS_VAULT, TICKET, ENTRY_TS);
         adapter.submitPositions(HOLDER, p);
     }
 
@@ -166,9 +166,9 @@ contract StakeWiseV3ExitQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
         // Submitting the real tuple under a different account → calculateExitedAssets(stranger,…) == 0 → reverts
         // (fail-loud; the zero owed amount is the on-chain ownership proxy).
         address stranger = makeAddr("stranger");
-        StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[] memory p =
-            new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[](1);
-        p[0] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(GENESIS_VAULT, TICKET, ENTRY_TS);
+        StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition[] memory p =
+            new StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition[](1);
+        p[0] = StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition(GENESIS_VAULT, TICKET, ENTRY_TS);
         vm.expectRevert(abi.encodeWithSelector(InvalidExitPosition.selector, stranger, GENESIS_VAULT, TICKET));
         adapter.submitPositions(stranger, p);
         assertEq(adapter.positionsOf(stranger).length, 0);
@@ -178,9 +178,9 @@ contract StakeWiseV3ExitQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
 
     function test_submit_revertsOnUnregisteredVault() public {
         // A non-StakeWise address is rejected at write (VaultsRegistry.vaults == false) — fail-loud.
-        StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[] memory p =
-            new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[](1);
-        p[0] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(MAINNET_WETH, TICKET, ENTRY_TS);
+        StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition[] memory p =
+            new StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition[](1);
+        p[0] = StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition(MAINNET_WETH, TICKET, ENTRY_TS);
         vm.expectRevert(abi.encodeWithSelector(InvalidExitPosition.selector, HOLDER, MAINNET_WETH, TICKET));
         adapter.submitPositions(HOLDER, p);
         assertEq(adapter.positionsOf(HOLDER).length, 0);

@@ -352,9 +352,9 @@ script/verify/verify-all.sh
 - `StaderWithdrawalQueueBalanceAdapter` - Stader pending unstake requests
 - `KelpWithdrawalQueueBalanceAdapter` - Kelp DAO rsETH exit queue (multi-asset; payout assets discovered via `lrtConfig().getSupportedAssetList()`)
 - `LidoWithdrawalQueueBalanceAdapter` - Lido stETH withdrawal queue (`WithdrawalQueueERC721`; sums open requests, reported as native ETH — the asset paid on claim)
-- `UniswapV2PoolsMetaBalanceAdapter`, `UniswapV3PoolsMetaBalanceAdapter` - Uni V2 pairs / V3 pools
-- `PancakeSwapV2PoolsMetaBalanceAdapter`, `PancakeSwapV3PoolsMetaBalanceAdapter` - PancakeSwap variants
-- `MerklRewardsBalanceAdapter` - Merkl unclaimed rewards (proof-verified mutable cache, ADR 0007)
+- `UniswapV2PoolsMetaBalanceAdapter`, `UniswapV3PoolsAssistedMetaBalanceAdapter` - Uni V2 pairs / V3 pools
+- `PancakeSwapV2PoolsMetaBalanceAdapter`, `PancakeSwapV3PoolsAssistedMetaBalanceAdapter` - PancakeSwap variants
+- `MerklRewardsAssistedBalanceAdapter` - Merkl unclaimed rewards (proof-verified mutable cache, ADR 0007)
 
 ### Bridge Adapters
 - CCIP (Chainlink)

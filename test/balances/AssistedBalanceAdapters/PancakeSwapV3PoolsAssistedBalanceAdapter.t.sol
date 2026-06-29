@@ -3,9 +3,9 @@ pragma solidity ^0.8;
 
 import {Test} from "forge-std/Test.sol";
 import {
-    PancakeSwapV3PoolsBalanceAdapter
-} from "src/balances/AssistedBalanceAdapters/PancakeSwapV3PoolsBalanceAdapter.sol";
-import {UniswapV3PoolsBalanceAdapter} from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsBalanceAdapter.sol";
+    PancakeSwapV3PoolsAssistedBalanceAdapter
+} from "src/balances/AssistedBalanceAdapters/PancakeSwapV3PoolsAssistedBalanceAdapter.sol";
+import {UniswapV3PoolsAssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsAssistedBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IAssistedBalanceAdapter} from "src/balances/IAssistedBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -21,20 +21,20 @@ import {
     MockToken
 } from "test/balances/AssistedBalanceAdapters/UniswapV3Mocks.sol";
 
-/// @title PancakeSwapV3PoolsBalanceAdapter unit tests (no fork)
+/// @title PancakeSwapV3PoolsAssistedBalanceAdapter unit tests (no fork)
 /// @notice The shared assisted tokenId cache / per-NFT principal+fee math / NAV filtering is verified by the Uniswap
 ///         V3 unit + fork tests and inherited unchanged. PancakeSwap V3 differs in exactly TWO ways: `_protocolId`
 ///         reports `pancakeswap-v3` (not the inherited `uniswap-v3`), and the `_slot0` override decodes PancakeSwap
 ///         V3's `uint32 feeProtocol` (Uniswap packs it as `uint8`) — exercised by
 ///         test_slot0_uint32FeeProtocol_decodesWithoutRevert.
-contract PancakeSwapV3PoolsBalanceAdapterTest is Test {
+contract PancakeSwapV3PoolsAssistedBalanceAdapterTest is Test {
     Mock_NAVCalculator nav;
     MockPositionManager npm;
     MockUniswapV3Factory factory;
     MockUniswapV3Pool pool; // WETH/USDT 0.05%
     MockToken weth;
     MockToken usdt;
-    PancakeSwapV3PoolsBalanceAdapter adapter;
+    PancakeSwapV3PoolsAssistedBalanceAdapter adapter;
 
     address alice = makeAddr("alice");
 
@@ -77,7 +77,7 @@ contract PancakeSwapV3PoolsBalanceAdapterTest is Test {
             })
         );
 
-        adapter = new PancakeSwapV3PoolsBalanceAdapter(
+        adapter = new PancakeSwapV3PoolsAssistedBalanceAdapter(
             address(npm), "PancakeSwap V3", address(nav), address(this), address(this)
         );
         uint256[] memory ids = new uint256[](1);
@@ -105,8 +105,8 @@ contract PancakeSwapV3PoolsBalanceAdapterTest is Test {
     ///         NFT (the `MockUniswapV3Pool` here has a uint8 feeProtocol both decoders accept); the ONLY difference is
     ///         the protocol-id slug.
     function test_uniswapBase_sameLegs_onlyProtocolIdDiffers() public {
-        UniswapV3PoolsBalanceAdapter base =
-            new UniswapV3PoolsBalanceAdapter(address(npm), "Uniswap V3", address(nav), address(this), address(this));
+        UniswapV3PoolsAssistedBalanceAdapter base =
+            new UniswapV3PoolsAssistedBalanceAdapter(address(npm), "Uniswap V3", address(nav), address(this), address(this));
         uint256[] memory ids = new uint256[](1);
         ids[0] = 1;
         base.submitTokenIds(alice, ids);
@@ -185,7 +185,7 @@ contract PancakeSwapV3PoolsBalanceAdapterTest is Test {
         ids[0] = 1;
 
         // PancakeSwap adapter: the uint32 `_slot0` decode succeeds → legs emitted, non-zero principal.
-        PancakeSwapV3PoolsBalanceAdapter pcs = new PancakeSwapV3PoolsBalanceAdapter(
+        PancakeSwapV3PoolsAssistedBalanceAdapter pcs = new PancakeSwapV3PoolsAssistedBalanceAdapter(
             address(pcsNpm), "PancakeSwap V3", address(nav), address(this), address(this)
         );
         pcs.submitTokenIds(alice, ids);

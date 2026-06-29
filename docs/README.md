@@ -73,7 +73,7 @@ Numbered ADRs. Read when you want the *why* behind a design choice.
 
 | Doc | When to use |
 |---|---|
-| [`operations/merkl-proof-submitter.md`](operations/merkl-proof-submitter.md) | Periodic operator loop that fetches Merkl proofs and pushes them to the `MerklRewards` adapter cache so unclaimed rewards stay valued in NAV. |
+| [`operations/merkl-proof-submitter.md`](operations/merkl-proof-submitter.md) | Periodic operator loop that fetches Merkl proofs and pushes them to the `MerklRewardsAssisted` adapter cache so unclaimed rewards stay valued in NAV. |
 
 ---
 

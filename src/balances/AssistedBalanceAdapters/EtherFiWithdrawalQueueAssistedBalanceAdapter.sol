@@ -28,7 +28,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      Emits ONE native-ETH `Supplied` leg per owned cached withdrawal request, all sharing a single static
 ///      positionId; each leg's `isLocked` reflects that request's own state (finalized → `false`, pending → `true`)
 ///      and its `tokenId` (the WithdrawRequestNFT id) rides in the last `labels` entry, never in `positionId`.
-contract EtherFiWithdrawalQueueBalanceAdapter is AssistedBalanceAdapter, IPositionDescribable {
+contract EtherFiWithdrawalQueueAssistedBalanceAdapter is AssistedBalanceAdapter, IPositionDescribable {
 
     //
     // State

@@ -1,6 +1,6 @@
 # Merkl proof-submitter bot — operator's guide
 
-The `MerklRewardsBalanceAdapter` adapter (`src/balances/AssistedBalanceAdapters/MerklRewardsBalanceAdapter.sol`) reports a portfolio's *unclaimed* Merkl rewards by reading an on-chain cache of `(user, token, cumulativeAmount)` tuples. The cache is populated by an off-chain bot that fetches merkle proofs from the Merkl API and submits them to the adapter, where they're verified against the live `Distributor.getMerkleRoot()` before being stored. The adapter cannot fabricate amounts; the bot cannot fabricate amounts; only Merkl's published merkle tree determines what the adapter reports. See [`docs/decisions/0007-merkl-trust-minimized-cache.md`](../decisions/0007-merkl-trust-minimized-cache.md) for the design rationale and trust model.
+The `MerklRewardsAssistedBalanceAdapter` adapter (`src/balances/AssistedBalanceAdapters/MerklRewardsAssistedBalanceAdapter.sol`) reports a portfolio's *unclaimed* Merkl rewards by reading an on-chain cache of `(user, token, cumulativeAmount)` tuples. The cache is populated by an off-chain bot that fetches merkle proofs from the Merkl API and submits them to the adapter, where they're verified against the live `Distributor.getMerkleRoot()` before being stored. The adapter cannot fabricate amounts; the bot cannot fabricate amounts; only Merkl's published merkle tree determines what the adapter reports. See [`docs/decisions/0007-merkl-trust-minimized-cache.md`](../decisions/0007-merkl-trust-minimized-cache.md) for the design rationale and trust model.
 
 > **Access control:** this adapter is in the assisted balance-adapter family — submissions are gated by `ASSISTANT_ROLE` (granted/rotated by `DEFAULT_ADMIN_ROLE`); see [ADR 0015](../decisions/0015-assisted-balance-adapter-family.md). Where this guide says "owner"/"owner key" below, read it as the `ASSISTANT_ROLE` holder.
 
@@ -13,7 +13,7 @@ This document specifies what the bot must do, how often, with what inputs and wh
 Exactly two things, every cycle:
 
 1. **For each (account, chain) pair the operator wants tracked**, fetch the current set of `(token, cumulativeAmount, proof)` triples from Merkl's API.
-2. **Submit each fresh triple to the deployed `MerklRewardsBalanceAdapter` on that chain** via `submitProof` or `submitProofBatch`, signed by a key holding `ASSISTANT_ROLE`.
+2. **Submit each fresh triple to the deployed `MerklRewardsAssistedBalanceAdapter` on that chain** via `submitProof` or `submitProofBatch`, signed by a key holding `ASSISTANT_ROLE`.
 
 That's the whole job. Garbage collection (`clearAllocation`) and ownership transfer are infrequent operator actions, not part of the steady-state loop.
 
@@ -25,8 +25,8 @@ The bot needs three pieces of operator-provided configuration:
 |---|---|---|
 | **Account list** | Operator config | One or more EVM addresses to track. Typically the OIV's per-chain accounts. |
 | **Chain list** | Operator config | Subset of {1, 10, 100, 8453, 42161}. Merkl supports more chains; only those the OIV deploys to matter. |
-| **Adapter address per chain** | `script/config/deployments/<id>.json` → `balanceAdapters.MerklRewards` | Read at startup; refresh on redeploy. |
-| **Assistant key** | Operator secret store | The key holding `ASSISTANT_ROLE` on each `MerklRewardsBalanceAdapter`. By default this is `chainConfig.admin` (the OIV Safe). The bot must be able to submit transactions as this owner — typically via a Safe Transaction Service / module / API client. Direct EOA ownership is not recommended for production. |
+| **Adapter address per chain** | `script/config/deployments/<id>.json` → `balanceAdapters.MerklRewardsAssisted` | Read at startup; refresh on redeploy. |
+| **Assistant key** | Operator secret store | The key holding `ASSISTANT_ROLE` on each `MerklRewardsAssistedBalanceAdapter`. By default this is `chainConfig.admin` (the OIV Safe). The bot must be able to submit transactions as this owner — typically via a Safe Transaction Service / module / API client. Direct EOA ownership is not recommended for production. |
 
 The Distributor address and proof-verification rules are pinned in the adapter; the bot does not need to know about them.
 
@@ -87,7 +87,7 @@ Operationally:
 
 ## Submission model
 
-The owner of every deployed `MerklRewardsBalanceAdapter` is `chainConfig.admin` — the OIV Safe. The bot must produce signed transactions on behalf of the Safe. Two reasonable shapes:
+The owner of every deployed `MerklRewardsAssistedBalanceAdapter` is `chainConfig.admin` — the OIV Safe. The bot must produce signed transactions on behalf of the Safe. Two reasonable shapes:
 
 | Model | How it works | When to pick it |
 |---|---|---|
@@ -153,7 +153,7 @@ Which is correct: the user's true total is `cum_{N+1}`, the latest cumulative al
 
 ## Reference
 
-- Adapter source: [`src/balances/AssistedBalanceAdapters/MerklRewardsBalanceAdapter.sol`](../../src/balances/AssistedBalanceAdapters/MerklRewardsBalanceAdapter.sol)
+- Adapter source: [`src/balances/AssistedBalanceAdapters/MerklRewardsAssistedBalanceAdapter.sol`](../../src/balances/AssistedBalanceAdapters/MerklRewardsAssistedBalanceAdapter.sol)
 - Trust-model ADR: [`docs/decisions/0007-merkl-trust-minimized-cache.md`](../decisions/0007-merkl-trust-minimized-cache.md)
 - Merkl Distributor source: <https://github.com/AngleProtocol/merkl-contracts/blob/main/contracts/Distributor.sol>
 - Merkl API: <https://api.merkl.xyz/v4/users/{address}/rewards?chainId={cid}>

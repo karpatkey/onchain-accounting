@@ -62,8 +62,8 @@ if [ -z "$line" ]; then
   exit 1
 fi
 adapter=$(echo "$line" | awk '{print $2}')
-echo "  PancakeSwapV3Pools: $adapter"
+echo "  PancakeSwapV3PoolsAssisted: $adapter"
 
 # Persist into the addresses file for the app / later reference.
-jq --arg a "$adapter" '. + {PancakeSwapV3Pools: $a}' "$ADDR_FILE" > "$ADDR_FILE.tmp" && mv "$ADDR_FILE.tmp" "$ADDR_FILE"
+jq --arg a "$adapter" '. + {PancakeSwapV3PoolsAssisted: $a}' "$ADDR_FILE" > "$ADDR_FILE.tmp" && mv "$ADDR_FILE.tmp" "$ADDR_FILE"
 echo "  -> recorded in $ADDR_FILE"

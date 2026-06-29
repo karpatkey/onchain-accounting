@@ -4,14 +4,14 @@ pragma solidity ^0.8.0;
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
 import {BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
 import {
-    NexusMutualStakingPoolsBalanceAdapter,
+    NexusMutualStakingPoolsAssistedBalanceAdapter,
     INexusStakingViewer
-} from "src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsBalanceAdapter.sol";
+} from "src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsAssistedBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
-/// @title NexusMutualStakingPoolsBalanceAdapterForkTest
+/// @title NexusMutualStakingPoolsAssistedBalanceAdapterForkTest
 /// @notice Fork test against Nexus Mutual's real StakingNFT + StakingViewer on mainnet.
 /// @dev The adapter is assisted (agent-fed; ADR 0015): an assistant submits an account's StakingNFT tokenIds, which
 ///      the adapter values live via `StakingViewer.getTokens` and re-verifies via `tokenInfo` per read. The Nexus
@@ -19,7 +19,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      180,184,185,186,187); the test submits those ids and asserts the per-kind sums equal an independent
 ///      `getAggregatedTokens` read of those exact ids (delta 0) AND that every emitted positionId decodes to one of
 ///      the Safe's known tokenIds.
-contract NexusMutualStakingPoolsBalanceAdapterForkTest is BalanceAdapterTestBase {
+contract NexusMutualStakingPoolsAssistedBalanceAdapterForkTest is BalanceAdapterTestBase {
     address public constant STAKING_NFT = 0xcafea508a477D94c502c253A58239fb8F948e97f;
     address public constant STAKING_VIEWER = 0xcafea5c7d25a192ba70ECA0E2dB62F835c1cF81F;
     address public constant NXM = 0xd7c49CEE7E9188cCa6AD8FF264C1DA2e69D4Cf3B;
@@ -32,7 +32,7 @@ contract NexusMutualStakingPoolsBalanceAdapterForkTest is BalanceAdapterTestBase
     uint256 public constant EXPECTED_STAKING = 74_229_519_750_529_478_080_348; // ~74,229.5 NXM active (+0 expired)
     uint256 public constant EXPECTED_REWARDS = 228_254_616_240_628_948_835; // ~228.25 NXM rewards
 
-    NexusMutualStakingPoolsBalanceAdapter public adapter;
+    NexusMutualStakingPoolsAssistedBalanceAdapter public adapter;
 
     function setUp() public override {
         super.setUp();
@@ -42,7 +42,7 @@ contract NexusMutualStakingPoolsBalanceAdapterForkTest is BalanceAdapterTestBase
         balances.registerAssetForTest(NXM, 18, "NXM");
 
         // admin + assistant = this test, so it can submit the Safe's known tokenIds (all owned by HOLDER → no revert).
-        adapter = new NexusMutualStakingPoolsBalanceAdapter(
+        adapter = new NexusMutualStakingPoolsAssistedBalanceAdapter(
             STAKING_NFT, STAKING_VIEWER, NXM, address(balances), address(this), address(this)
         );
         adapter.submitTokenIds(HOLDER, _knownIds());

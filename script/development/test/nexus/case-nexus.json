@@ -1,6 +1,6 @@
 {
   "protocol": "Nexus Mutual",
-  "adapter": "NexusMutualStakingPoolsBalanceAdapter",
+  "adapter": "NexusMutualStakingPoolsAssistedBalanceAdapter",
   "chainId": 1,
   "forkBlock": 25388000,
   "contracts": {

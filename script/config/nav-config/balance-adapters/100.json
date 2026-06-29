@@ -2,7 +2,7 @@
   "AaveV3_Gnosis": {
     "enabled": false
   },
-  "MerklRewards": {
+  "MerklRewardsAssisted": {
     "enabled": false
   }
 }

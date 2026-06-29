@@ -16,7 +16,7 @@ Option 3 is the only path that preserves the framework's "anyone can verify the 
 
 ## Decision
 
-Ship `MerklRewardsBalanceAdapter` (`src/balances/AssistedBalanceAdapters/MerklRewardsBalanceAdapter.sol`) as the **second documented mutable adapter**, scoped narrowly to a **proof-verified per-(user, token) allocation cache**. Concretely:
+Ship `MerklRewardsAssistedBalanceAdapter` (`src/balances/AssistedBalanceAdapters/MerklRewardsAssistedBalanceAdapter.sol`) as the **second documented mutable adapter**, scoped narrowly to a **proof-verified per-(user, token) allocation cache**. Concretely:
 
 - Storage: `mapping(address user => mapping(address token => CachedAllocation { uint256 cumulativeAmount, bytes32 root, uint64 submittedAt }))` plus a per-user enumeration list.
 - Mutators (`onlyRole(ASSISTANT_ROLE)` — originally `onlyOwner`; migrated to the assisted-family AccessControl model, see ADR 0015):
@@ -43,7 +43,7 @@ Ship `MerklRewardsBalanceAdapter` (`src/balances/AssistedBalanceAdapters/MerklRe
 
 - Owner trust extends to *completeness*: if the owner stops running the proof-submission bot (or refuses to submit proofs for specific accounts), NAV under-reports those accounts. The Iron Law that the owner cannot inflate balances is preserved, but the owner can selectively starve the cache. Mitigation in v1: deploy the bot inside Karpatkey ops with the same SLA as the rest of the NAV stack; document the failure mode in operational runbooks. Future enhancement: open `submitProof` to anyone (permissionless mode) once we are comfortable with the spam / storage griefing surface.
 - Roots rotate ~every 8 hours (with a 1–2h dispute window). The bot must re-submit at least that frequently or the cache reads as 0. This is a known operational obligation, not a design defect.
-- The adapter is the **second mutable balance adapter**. Reviewers, auditors, and future contributors must remember that two adapters now have admin surface area: `AaveV3SafetyModule` (none, fully immutable per ADR 0005 — listed as the "documented exception" historically but no longer mutable) and `MerklRewards` (this one, the *actual* exception going forward). CLAUDE.md and `src/balances/BALANCE_ADAPTERS.md` are updated to reflect the new wording.
+- The adapter is the **second mutable balance adapter**. Reviewers, auditors, and future contributors must remember that two adapters now have admin surface area: `AaveV3SafetyModule` (none, fully immutable per ADR 0005 — listed as the "documented exception" historically but no longer mutable) and `MerklRewardsAssisted` (this one, the *actual* exception going forward). CLAUDE.md and `src/balances/BALANCE_ADAPTERS.md` are updated to reflect the new wording.
 - Storage growth is per-(user, token) pair the bot has ever cached. `clearAllocation` exists as the cleanup primitive; expect the operator runbook to call it whenever a (user, token) reaches `cumulativeAmount == claimed`.
 - Merkl's `_verifyProof` uses `abi.encode` (32-byte padded) rather than `abi.encodePacked` like OpenZeppelin's `MerkleProof`. The adapter MUST replicate the exact sibling-combination rule. Unit tests build synthetic 1-, 2-, and 4-leaf trees with the same hashing convention and exhaustively cover the verification math; any future drift is caught at the unit-test layer.
 
@@ -66,10 +66,10 @@ Ship `MerklRewardsBalanceAdapter` (`src/balances/AssistedBalanceAdapters/MerklRe
 
 ## Reference
 
-- Adapter: `src/balances/AssistedBalanceAdapters/MerklRewardsBalanceAdapter.sol`
-- Tests: `test/balances/AssistedBalanceAdapters/MerklRewardsBalanceAdapter.t.sol` (unit, 40 tests including synthetic merkle trees), `test/balances/AssistedBalanceAdapters/fork/MerklRewardsBalanceAdapter.fork.t.sol` (Mainnet integration sanity)
+- Adapter: `src/balances/AssistedBalanceAdapters/MerklRewardsAssistedBalanceAdapter.sol`
+- Tests: `test/balances/AssistedBalanceAdapters/MerklRewardsAssistedBalanceAdapter.t.sol` (unit, 40 tests including synthetic merkle trees), `test/balances/AssistedBalanceAdapters/fork/MerklRewardsAssistedBalanceAdapter.fork.t.sol` (Mainnet integration sanity)
 - Merkl Distributor source (verified leaf encoding, `_verifyProof`, `getMerkleRoot`): https://github.com/AngleProtocol/merkl-contracts/blob/main/contracts/Distributor.sol
 - Merkl API (proof source for the bot): `https://api.merkl.xyz/v4/users/{address}/rewards?chainId={cid}`
-- Deploy schema: `script/config/contracts-deployment-config/balance-adapters/<id>.json` `MerklRewards.constructor` (`distributor`); owner = `addresses.admin` from `script/config/chains/<id>.json`.
+- Deploy schema: `script/config/contracts-deployment-config/balance-adapters/<id>.json` `MerklRewardsAssisted.constructor` (`distributor`); owner = `addresses.admin` from `script/config/chains/<id>.json`.
 - Operator's guide for the proof-submission bot: [`docs/operations/merkl-proof-submitter.md`](../operations/merkl-proof-submitter.md)
 - Operational follow-ups (NOT in this PR): bot implementation, optional permissionless mode (see Alternative 1), price feeds for new reward tokens.

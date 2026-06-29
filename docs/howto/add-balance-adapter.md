@@ -252,7 +252,7 @@ For a **meta-adapter**, add the constructor block (only chain-level constants â€
 
 ```json
 {
-  "GearboxMarketsMeta": {
+  "GearboxV3MarketsMeta": {
     "enabled": true,
     "constructor": {
       "protocol": "Gearbox"
@@ -279,7 +279,7 @@ Add the name to `nav-config/meta-balance-adapters/<chainId>.json` with its `inst
 
 ```json
 {
-  "GearboxMarketsMeta": {
+  "GearboxV3MarketsMeta": {
     "enabled": true,
     "instances": [
       "0x9396DCbf78fc526bb003665337C5E73b699571EF",
@@ -326,7 +326,7 @@ if (_equals(adapterName, "MyProtocol") || _startsWith(adapterName, "MyProtocol_"
 
 And a `_deployIfEnabled("MyProtocol")` call in `run()`.
 
-For a **meta-adapter**, the helper typically only reads a `protocol` string (the human-readable name passed to the `MetaBalanceAdapter` base constructor) plus any chain-global contract addresses the constructor needs. See `_deployGearboxMarketsMeta` or `_deploySparkLend` in the same file for concrete patterns.
+For a **meta-adapter**, the helper typically only reads a `protocol` string (the human-readable name passed to the `MetaBalanceAdapter` base constructor) plus any chain-global contract addresses the constructor needs. See `_deployGearboxV3MarketsMeta` or `_deploySparkLend` in the same file for concrete patterns.
 
 ---
 

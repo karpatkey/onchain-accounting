@@ -4,7 +4,7 @@
 # Usage:  deploy-nexus.sh <chainId>
 #   e.g.  deploy-nexus.sh 1
 #
-# NexusMutualStakingPoolsBalanceAdapter is a simple immutable view adapter (no agent, no owner): it discovers
+# NexusMutualStakingPoolsAssistedBalanceAdapter is a simple immutable view adapter (no agent, no owner): it discovers
 # an account's StakingNFT positions by scanning tokenInfo(1..totalSupply) and values each via
 # StakingViewer.getTokens into per-NFT NXM-denominated Staking (active+expired) + Rewards legs
 # (positionId = abi.encode(address stakingPool), where stakingPool = StakingViewer.stakingPool(poolId);
@@ -79,9 +79,9 @@ else
 fi
 
 # --- 2. adapter ------------------------------------------------------------------------------------------
-echo "--- deploy NexusMutualStakingPoolsBalanceAdapter"
+echo "--- deploy NexusMutualStakingPoolsAssistedBalanceAdapter"
 OUT=$(
-  forge create src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsBalanceAdapter.sol:NexusMutualStakingPoolsBalanceAdapter \
+  forge create src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsAssistedBalanceAdapter.sol:NexusMutualStakingPoolsAssistedBalanceAdapter \
     --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" --broadcast \
     --constructor-args "$STAKING_NFT" "$STAKING_VIEWER" "$NXM_TOKEN" "$NAV" 2>&1
 ) || true
@@ -91,13 +91,13 @@ if [ -z "$ADAPTER" ]; then
   echo "error: forge create produced no address (is the NAV a contract on this fork?)" >&2
   exit 1
 fi
-echo "  NexusMutualStakingPools: $ADAPTER"
+echo "  NexusMutualStakingPoolsAssisted: $ADAPTER"
 
 # --- 3. register on NAV ----------------------------------------------------------------------------------
 cast send "$NAV" "addBalanceAdapters(address[])" "[$ADAPTER]" \
   --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" >/dev/null
 echo "  registered on NAV (addBalanceAdapters)"
 
-jq --arg a "$ADAPTER" '. + {"NexusMutualStakingPools": $a}' "$ADDR_FILE" > "$ADDR_FILE.tmp" && mv "$ADDR_FILE.tmp" "$ADDR_FILE"
+jq --arg a "$ADAPTER" '. + {"NexusMutualStakingPoolsAssisted": $a}' "$ADDR_FILE" > "$ADDR_FILE.tmp" && mv "$ADDR_FILE.tmp" "$ADDR_FILE"
 echo "  recorded in $ADDR_FILE"
 echo "  -> next: sync-app-env.sh $CID, then enter 0x8e53D04644E9ab0412a8c6bd228C84da7664cFE3 in the dashboard"

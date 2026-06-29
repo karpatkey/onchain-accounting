@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 pragma solidity ^0.8;
 
-import {UniswapV3PoolsBalanceAdapter} from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsBalanceAdapter.sol";
+import {UniswapV3PoolsAssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsAssistedBalanceAdapter.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @notice Minimal PancakeSwap V3 pool interface — identical to Uniswap V3's `slot0()` except `feeProtocol` is
@@ -28,11 +28,11 @@ interface IPancakeV3Pool {
 /// @notice Assisted balance adapter for PancakeSwap V3 pools. PancakeSwap V3 is a Uniswap V3 fork sharing every view
 ///         this adapter reads, so all behaviour (assistant-fed tokenId cache, ownership-verified reads, slot0-based
 ///         principal/fee math, NAV filtering, `abi.encode(pool)` identity) is inherited from
-///         `UniswapV3PoolsBalanceAdapter`. It diverges in exactly two places: the protocol-id slug
+///         `UniswapV3PoolsAssistedBalanceAdapter`. It diverges in exactly two places: the protocol-id slug
 ///         (`pancakeswap-v3`), and the `_slot0` read — PancakeSwap V3's `slot0().feeProtocol` is `uint32` (not
 ///         `uint8`), so the inherited full-tuple decode would revert on the dirty high bits. See ADR 0017 for why
 ///         the V3 adapters read `slot0` (instantaneous on-chain amounts; manipulation mitigated by async settlement).
-contract PancakeSwapV3PoolsBalanceAdapter is UniswapV3PoolsBalanceAdapter {
+contract PancakeSwapV3PoolsAssistedBalanceAdapter is UniswapV3PoolsAssistedBalanceAdapter {
     /// @param positionManager_ The PancakeSwap V3 NonfungiblePositionManager (canonical CREATE2 address).
     /// @param protocolName_    Human-readable protocol name (e.g. "PancakeSwap V3").
     /// @param navCalculator_   NAVCalculator contract address.
@@ -44,9 +44,9 @@ contract PancakeSwapV3PoolsBalanceAdapter is UniswapV3PoolsBalanceAdapter {
         address navCalculator_,
         address admin_,
         address assistant_
-    ) UniswapV3PoolsBalanceAdapter(positionManager_, protocolName_, navCalculator_, admin_, assistant_) {}
+    ) UniswapV3PoolsAssistedBalanceAdapter(positionManager_, protocolName_, navCalculator_, admin_, assistant_) {}
 
-    /// @inheritdoc UniswapV3PoolsBalanceAdapter
+    /// @inheritdoc UniswapV3PoolsAssistedBalanceAdapter
     /// @dev Reports the `pancakeswap-v3` slug (vs the inherited `uniswap-v3`) so the typed reconciliation key
     ///      distinguishes PancakeSwap V3 LP from Uniswap V3 LP. Same positionId schema as the base —
     ///      `abi.encode(pool)` (the pool address; NFT id in the display labels).
@@ -54,20 +54,20 @@ contract PancakeSwapV3PoolsBalanceAdapter is UniswapV3PoolsBalanceAdapter {
         return ProtocolIds.PANCAKESWAP_V3;
     }
 
-    /// @inheritdoc UniswapV3PoolsBalanceAdapter
+    /// @inheritdoc UniswapV3PoolsAssistedBalanceAdapter
     /// @dev Reports the `pancakeswap-v3` slug as the sub-id (ecosystem == sub for the V3 adapters), matching
     ///      `_protocolId`.
     function _protocolSubId() internal pure override returns (bytes32) {
         return ProtocolIds.PANCAKESWAP_V3;
     }
 
-    /// @inheritdoc UniswapV3PoolsBalanceAdapter
+    /// @inheritdoc UniswapV3PoolsAssistedBalanceAdapter
     /// @dev Reports the `pancakeswap` brand (vs the inherited `uniswap`).
     function _protocolBrand() internal pure override returns (bytes32) {
         return ProtocolIds.PANCAKESWAP;
     }
 
-    /// @inheritdoc UniswapV3PoolsBalanceAdapter
+    /// @inheritdoc UniswapV3PoolsAssistedBalanceAdapter
     /// @dev Reads `slot0` via the local `IPancakeV3Pool` ABI so the `uint32 feeProtocol` field decodes (the inherited
     ///      `uint8` decode would revert on PCS V3's high bits). Only `(sqrtPriceX96, tick)` are used.
     function _slot0(address pool) internal view override returns (uint160 sqrtPriceX96, int24 tick) {

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Play the StakeWise exit-queue submitter agent on a running dev anvil fork: submit a holder's exit tuple
-# (vault, positionTicket, timestamp) into the deployed StakeWiseV3ExitQueueBalanceAdapter, so the dashboard shows
+# (vault, positionTicket, timestamp) into the deployed StakeWiseV3ExitQueueAssistedBalanceAdapter, so the dashboard shows
 # the exit-queue leg.
 #
 # Usage:  submit-stakewise-positions.sh <chainId> [holder] [vault] [positionTicket] [timestamp]
@@ -30,8 +30,8 @@ if ! command -v cast >/dev/null 2>&1; then export PATH="$HOME/.foundry/bin:$PATH
 PORT=$(jq -r ".\"$CID\".port" "$CHAINS_CFG")
 RPC="http://127.0.0.1:$PORT"
 ADDR_FILE="$STATE_DIR/$CID-addresses.json"
-ADAPTER=$(jq -r '.StakeWiseV3ExitQueue' "$ADDR_FILE")
-[ "$ADAPTER" = "null" ] || [ -z "$ADAPTER" ] && { echo "error: StakeWiseV3ExitQueue not in $ADDR_FILE — run deploy-stakewise-exit.sh $CID first" >&2; exit 1; }
+ADAPTER=$(jq -r '.StakeWiseV3ExitQueueAssisted' "$ADDR_FILE")
+[ "$ADAPTER" = "null" ] || [ -z "$ADAPTER" ] && { echo "error: StakeWiseV3ExitQueueAssisted not in $ADDR_FILE — run deploy-stakewise-exit.sh $CID first" >&2; exit 1; }
 
 echo "=== submit StakeWise exit tuple  adapter=$ADAPTER  holder=$HOLDER"
 echo "    (vault=$VAULT, positionTicket=$TICKET, timestamp=$TS)"

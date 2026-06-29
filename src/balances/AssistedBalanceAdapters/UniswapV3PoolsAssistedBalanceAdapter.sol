@@ -58,10 +58,10 @@ interface IUniswapV3Factory {
 ///      replaced with oracle reconstruction; the async-consumer model (ADR 0017) supersedes that recommendation.
 /// @dev `_slot0` is `virtual`: it reads `(sqrtPriceX96, tick)` from `IUniswapV3Pool(pool).slot0()`. PancakeSwap V3's
 ///      `slot0().feeProtocol` is `uint32` (not Uniswap's `uint8`), so the full-tuple decode differs — the
-///      `PancakeSwapV3PoolsBalanceAdapter` subclass overrides `_slot0` with a matching ABI.
+///      `PancakeSwapV3PoolsAssistedBalanceAdapter` subclass overrides `_slot0` with a matching ABI.
 ///      Licensing: links the GPL-2.0-or-later Uniswap math (TickMath, LiquidityAmounts, FixedPoint128 via
 ///      `UniswapV3PoolLib`) — combined work is GPL-2.0-or-later (ADR 0008).
-contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescribable {
+contract UniswapV3PoolsAssistedBalanceAdapter is AssistedBalanceAdapter, IPositionDescribable {
     using Strings for uint256;
 
     //
@@ -238,7 +238,7 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
     /// @inheritdoc IBalanceAdapter
     /// @notice Open-universe adapter: Uniswap V3 LP can pair any registered assets, so the universe of supported
     ///         assets is not enumerable ahead of time and this returns an empty array (same rationale as
-    ///         `MerklRewardsBalanceAdapter`; registration only needs `supportsInterface(IBalanceAdapter)`).
+    ///         `MerklRewardsAssistedBalanceAdapter`; registration only needs `supportsInterface(IBalanceAdapter)`).
     function underlyingAssetsSupported() external pure override returns (address[] memory) {
         return new address[](0);
     }
@@ -414,7 +414,7 @@ contract UniswapV3PoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescri
     }
 
     /// @dev Reads `(sqrtPriceX96, tick)` from the pool's `slot0`. `virtual` so a fork with a divergent `slot0()` ABI
-    ///      overrides just this read — `PancakeSwapV3PoolsBalanceAdapter` does so for PancakeSwap V3's `uint32`
+    ///      overrides just this read — `PancakeSwapV3PoolsAssistedBalanceAdapter` does so for PancakeSwap V3's `uint32`
     ///      `feeProtocol` field (Uniswap V3 packs it as `uint8`).
     function _slot0(address pool) internal view virtual returns (uint160 sqrtPriceX96, int24 tick) {
         (sqrtPriceX96, tick,,,,,) = IUniswapV3Pool(pool).slot0();

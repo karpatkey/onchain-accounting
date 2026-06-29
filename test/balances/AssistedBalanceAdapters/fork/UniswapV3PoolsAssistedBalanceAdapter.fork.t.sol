@@ -2,7 +2,7 @@
 pragma solidity ^0.8;
 
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
-import {UniswapV3PoolsBalanceAdapter} from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsBalanceAdapter.sol";
+import {UniswapV3PoolsAssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsAssistedBalanceAdapter.sol";
 import {
     INonfungiblePositionManager,
     UniswapV3PoolLib
@@ -32,14 +32,14 @@ interface IPool {
         returns (uint128, int128, uint256 fgOut0, uint256 fgOut1, int56, uint160, uint32, bool);
 }
 
-/// @title UniswapV3PoolsBalanceForkTest
+/// @title UniswapV3PoolsAssistedBalanceForkTest
 /// @notice Fork tests for the Uniswap V3 pools assisted adapter against real mainnet contracts, against the real
 ///         WBTC/WETH 0.3% pool and a real NFT holder. The holder's NFT tokenIds are discovered off the NPM's
 ///         ERC721Enumerable surface and fed to the adapter via `submitTokenIds` (as the off-chain assistant would).
 ///         Since ADR 0017 the adapter values each position from the pool's live `slot0` (instantaneous on-chain
 ///         amounts) — so the test recomputes the expected amounts off the same `slot0` rather than feeding the
 ///         adapter a reconstructed oracle price.
-contract UniswapV3PoolsBalanceForkTest is BalanceAdapterTestBase {
+contract UniswapV3PoolsAssistedBalanceForkTest is BalanceAdapterTestBase {
     address public constant NPM = 0xC36442b4a4522E871399CD717aBDD847Ab11FE88;
     address public constant POOL = 0xCBCdF9626bC03E24f779434178A73a0B4bad62eD; // WBTC/WETH 0.3%
     address public constant WBTC = 0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599;
@@ -47,14 +47,14 @@ contract UniswapV3PoolsBalanceForkTest is BalanceAdapterTestBase {
     address public constant HOLDER = 0xC01318baB7ee1f5ba734172bF7718b5DC6Ec90E1;
     uint256 public constant FORK_BLOCK = 24_987_608;
 
-    UniswapV3PoolsBalanceAdapter public adapter;
+    UniswapV3PoolsAssistedBalanceAdapter public adapter;
 
     function setUp() public override {
         super.setUp();
         _setupFork();
         balances = _deployBalancesForAdapter(_assets());
         // admin + assistant = this test, so it can submit the holder's tokenIds.
-        adapter = new UniswapV3PoolsBalanceAdapter(NPM, "Uniswap V3", address(balances), address(this), address(this));
+        adapter = new UniswapV3PoolsAssistedBalanceAdapter(NPM, "Uniswap V3", address(balances), address(this), address(this));
         _submitHolderTokenIds();
     }
 

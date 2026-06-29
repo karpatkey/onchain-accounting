@@ -3,8 +3,8 @@ pragma solidity ^0.8;
 
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
 import {
-    PancakeSwapV3PoolsBalanceAdapter
-} from "src/balances/AssistedBalanceAdapters/PancakeSwapV3PoolsBalanceAdapter.sol";
+    PancakeSwapV3PoolsAssistedBalanceAdapter
+} from "src/balances/AssistedBalanceAdapters/PancakeSwapV3PoolsAssistedBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -45,19 +45,19 @@ interface IPancakeNPM {
         returns (uint256 amount0, uint256 amount1);
 }
 
-/// @title PancakeSwapV3PoolsBalanceForkTest (mainnet, active positions)
+/// @title PancakeSwapV3PoolsAssistedBalanceForkTest (mainnet, active positions)
 /// @notice Verifies the PancakeSwap V3 pools assisted adapter against a real mainnet holder with an active in-wallet
 ///         (liquidity > 0) position. PancakeSwap V3 is a byte-for-byte Uniswap V3 fork; since ADR 0017 the adapter
 ///         values each position from the pool's live `slot0` (instantaneous on-chain amounts). PancakeSwap V3's
 ///         `slot0().feeProtocol` is `uint32` (Uniswap packs it as `uint8`), so this fork genuinely exercises the
 ///         PancakeSwap `_slot0` override against a real PCS V3 pool — a position is valued here without reverting,
 ///         which the inherited `uint8` decode could not do. All other valuation math is inherited from the verified
-///         UniswapV3PoolsBalanceAdapter. The holder's WETH/USDT 0.05% NFT tokenIds are discovered off the NPM and
+///         UniswapV3PoolsAssistedBalanceAdapter. The holder's WETH/USDT 0.05% NFT tokenIds are discovered off the NPM and
 ///         fed to the adapter via `submitTokenIds` (as the off-chain assistant would).
 ///
 ///         The ground-truth test burns each position's liquidity via the real NPM and asserts the adapter's reported
 ///         principal == the protocol's own settlement amounts — same NPM, same `slot0`, same archive state, same EVM.
-contract PancakeSwapV3PoolsBalanceForkTest is BalanceAdapterTestBase {
+contract PancakeSwapV3PoolsAssistedBalanceForkTest is BalanceAdapterTestBase {
     address public constant NPM = 0x46A15B0b27311cedF172AB29E4f4766fbE7F4364;
     address public constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
     address public constant USDT = 0xdAC17F958D2ee523a2206206994597C13D831ec7;
@@ -68,13 +68,13 @@ contract PancakeSwapV3PoolsBalanceForkTest is BalanceAdapterTestBase {
     // HOLDER has at least one active (liquidity > 0) WETH/USDT 0.05% position here.
     uint256 public constant FORK_BLOCK = 25_274_483;
 
-    PancakeSwapV3PoolsBalanceAdapter public adapter;
+    PancakeSwapV3PoolsAssistedBalanceAdapter public adapter;
 
     function setUp() public override {
         super.setUp(); // dispatches to the _setupFork() override below — no need to call it again
         balances = _deployBalancesForAdapter(_assets());
         // admin + assistant = this test, so it can submit the holder's tokenIds.
-        adapter = new PancakeSwapV3PoolsBalanceAdapter(
+        adapter = new PancakeSwapV3PoolsAssistedBalanceAdapter(
             NPM, "PancakeSwap V3", address(balances), address(this), address(this)
         );
         _submitHolderPoolTokenIds();

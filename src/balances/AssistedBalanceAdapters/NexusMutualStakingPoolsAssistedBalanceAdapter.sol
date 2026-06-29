@@ -34,7 +34,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      owned (fail-open). See `docs/decisions/0015-assisted-balance-adapter-family.md` (Merkl precedent, ADR 0007).
 ///      The no-arg balance getters (`getAdapterBalances`/`getAdapterBalanceForAsset`) return the summed NXM total
 ///      across the account's owned, cached positions.
-contract NexusMutualStakingPoolsBalanceAdapter is AssistedBalanceAdapter, IPositionDescribable {
+contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedBalanceAdapter, IPositionDescribable {
     using Strings for uint256;
 
     //

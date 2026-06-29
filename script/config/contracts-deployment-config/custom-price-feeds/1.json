@@ -128,7 +128,7 @@
   },
   "RWIV": {
     "enabled": true,
-    "$comment": "Nexus Mutual RWI Vault (RWIV) — ERC-4626 share, USDC underlying. Priced USDC/USD x convertToAssets(10^decimals)/10^decimals (same pattern as syrupUSDC). Makes RWIV a registered priced asset so the UniV3 USDC/RWIV pool LP (held by the Nexus Safe) can be valued by UniswapV3Pools.",
+    "$comment": "Nexus Mutual RWI Vault (RWIV) — ERC-4626 share, USDC underlying. Priced USDC/USD x convertToAssets(10^decimals)/10^decimals (same pattern as syrupUSDC). Makes RWIV a registered priced asset so the UniV3 USDC/RWIV pool LP (held by the Nexus Safe) can be valued by UniswapV3PoolsAssisted.",
     "constructor": {
       "rwiv": "0xCafEaa466736ac01e0AC9CA72644BeF348694731",
       "usdcToUsdChainlinkAddress": "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6",

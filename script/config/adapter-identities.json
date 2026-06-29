@@ -209,8 +209,8 @@
     "positionId": "<vault address>"
   },
 
-  "GearboxMarketsMeta": {
-    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Gearbox V3 ERC4626 farming pools. Constructor takes (protocol, navCalculator). The active market set lives on NAVCalculator (addMetaInstances/removeMetaInstances, configured in nav-config/meta-balance-adapters under GearboxMarketsMeta.instances — market addresses). Identity derived on-chain: positionId = market address; name = market name(). Supersedes the per-market GearboxMarket adapter.",
+  "GearboxV3MarketsMeta": {
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL Gearbox V3 ERC4626 farming pools. Constructor takes (protocol, navCalculator). The active market set lives on NAVCalculator (addMetaInstances/removeMetaInstances, configured in nav-config/meta-balance-adapters under GearboxV3MarketsMeta.instances — market addresses). Identity derived on-chain: positionId = market address; name = market name(). Supersedes the per-market GearboxMarket adapter.",
     "$perPositionFields": "type: Supply (one leg per market in its underlying)",
     "protocol": "Gearbox",
     "positionDetail": { "protocol": "Gearbox", "product": "Market", "name": "<derived: market name()>" },
@@ -226,7 +226,7 @@
   },
 
   "GearboxMarket": {
-    "$superseded": "Superseded by GearboxMarketsMeta (ADR 0010); per-market deploys disabled in chain config.",
+    "$superseded": "Superseded by GearboxV3MarketsMeta (ADR 0010); per-market deploys disabled in chain config.",
     "$perPositionFields": "type: Supply",
     "protocol": "Gearbox",
     "positionDetail": { "protocol": "Gearbox", "product": "Market", "name": "<market name>" },
@@ -269,20 +269,20 @@
     "positionDetail": { "protocol": "Ethena", "product": "Staking", "name": "USDe Cooldown" },
     "positionId": "<StakedUSDeV2 (sUSDe) address>"
   },
-  "EtherFiWithdrawalQueue": {
+  "EtherFiWithdrawalQueueAssisted": {
     "$perPositionFields": "type: Staking; single aggregated native-ETH leg per account (in-flight ether.fi withdrawals; agent-fed id cache, emitted positionId is empty)",
     "protocol": "ether.fi",
     "positionDetail": { "protocol": "ether.fi", "product": "Staking", "name": "ETH Withdrawal Queue" },
     "positionId": "<WithdrawRequestNFT address>"
   },
-  "NexusMutualStakingPools": {
+  "NexusMutualStakingPoolsAssisted": {
     "$perPositionFields": "types: Staking (active+expired stake) + Rewards (accrued), both NXM-denominated; one Staking + one Rewards leg per StakingNFT tokenId the account owns (across pools); positionId = abi.encode(address stakingPool) (StakingViewer.stakingPool(poolId)); the StakingNFT id is the last display label (labels = ['Staking','<pool>','NFT #<id>'])",
     "protocol": "Nexus Mutual",
     "positionDetail": { "protocol": "Nexus Mutual", "product": "StakingPool" },
     "positionId": "abi.encode(address stakingPool)"
   },
 
-  "StakeWiseV3ExitQueue": {
+  "StakeWiseV3ExitQueueAssisted": {
     "$perPositionFields": "type: Supplied; one native-ETH leg per exit request (per positionTicket) — up to two per ticket (claimable + still-queued), claimable gated on the post-checkpoint EXIT_CLAIM_DELAY. Agent-fed cache of (vault, positionTicket, timestamp) tuples; positionId = abi.encode(vault) (per vault, shared by a vault's tickets); the positionTicket rides in the display label, not positionId.",
     "$constructorNote": "constructor(vaultsRegistry, underlyingToken, navCalculator, exitClaimDelay, admin, assistant). exitClaimDelay is StakeWise's post-checkpoint claim delay in seconds (86400 = 24h on V3 mainnet), read from contracts-deployment-config; pins EXIT_CLAIM_DELAY.",
     "protocol": "StakeWise V3",
@@ -304,14 +304,14 @@
     "positionId": "<WithdrawalQueueERC721 address>"
   },
 
-  "MerklRewards": {
+  "MerklRewardsAssisted": {
     "$perPositionFields": "type: Rewards",
     "protocol": "Merkl",
     "positionDetail": { "protocol": "Merkl", "product": "Rewards", "name": "Unclaimed Rewards" },
     "positionId": "<Distributor address>"
   },
 
-  "UniswapV3Pools": {
+  "UniswapV3PoolsAssisted": {
     "$comment": "Assisted adapter (ADR 0015): one immutable contract for ALL Uniswap V3 pools, agent-fed. Constructor takes (positionManager, protocol, navCalculator, admin, assistant). The assistant submits an account's NFT tokenIds via submitTokenIds (ASSISTANT_ROLE); the adapter caches ids only, values each NFT live on-chain (reads the pool's live slot0 sqrtPriceX96/tick — ADR 0017; full unclaimed fees = feeGrowth delta + tokensOwed), and re-verifies ownerOf per read. Identity derived on-chain: positionId = abi.encode(pool) (factory.getPool(token0,token1,fee)); the NFT id is the last display label (labels = ['Liquidity Pool','<pool>','NFT #<id>']). Supersedes the per-pool UniswapV3Pool adapter.",
     "$perPositionFields": "type: Supply | Fees (up to 4 legs: token0/token1 liquidity + token0/token1 fees)",
     "protocol": "Uniswap V3",
@@ -327,9 +327,9 @@
     "positionId": "<derived: pair address>"
   },
 
-  "PancakeSwapV3Pools": {
-    "$comment": "Assisted adapter (ADR 0015): subclass of UniswapV3Pools differing only in protocol-id slug. Constructor takes (positionManager, protocol, navCalculator, admin, assistant). Agent-fed NFT tokenId cache; values live on-chain.",
-    "$perPositionFields": "type: Supply | Fees. Inherits UniswapV3Pools behaviour.",
+  "PancakeSwapV3PoolsAssisted": {
+    "$comment": "Assisted adapter (ADR 0015): subclass of UniswapV3PoolsAssisted differing only in protocol-id slug. Constructor takes (positionManager, protocol, navCalculator, admin, assistant). Agent-fed NFT tokenId cache; values live on-chain.",
+    "$perPositionFields": "type: Supply | Fees. Inherits UniswapV3PoolsAssisted behaviour.",
     "protocol": "PancakeSwap V3",
     "positionDetail": { "protocol": "PancakeSwap V3", "product": "LP", "name": "<derived: NFT #tokenId (label)>" },
     "positionId": "<derived: abi.encode(address pool)>"
@@ -344,7 +344,7 @@
   },
 
   "UniswapV3Pool": {
-    "$superseded": "Superseded by UniswapV3Pools (assisted adapter, ADR 0015); per-pool deploys disabled in chain config.",
+    "$superseded": "Superseded by UniswapV3PoolsAssisted (assisted adapter, ADR 0015); per-pool deploys disabled in chain config.",
     "$perPositionFields": "type: Supply | Fees",
     "protocol": "Uniswap V3",
     "positionDetail": { "protocol": "Uniswap V3", "product": "LP", "name": "<token0/token1 fee%>" },
@@ -360,7 +360,7 @@
   },
 
   "PancakeSwapV3Pool": {
-    "$superseded": "Superseded by PancakeSwapV3Pools (assisted adapter, ADR 0015).",
+    "$superseded": "Superseded by PancakeSwapV3PoolsAssisted (assisted adapter, ADR 0015).",
     "$perPositionFields": "type: Supply | Fees. Inherits UniswapV3Pool behaviour.",
     "protocol": "PancakeSwap V3",
     "positionDetail": { "protocol": "PancakeSwap V3", "product": "LP", "name": "<token0/token1 fee%>" },

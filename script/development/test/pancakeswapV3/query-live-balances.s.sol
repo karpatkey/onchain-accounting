@@ -4,8 +4,8 @@ pragma solidity ^0.8;
 import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
 import {
-    PancakeSwapV3PoolsBalanceAdapter
-} from "src/balances/AssistedBalanceAdapters/PancakeSwapV3PoolsBalanceAdapter.sol";
+    PancakeSwapV3PoolsAssistedBalanceAdapter
+} from "src/balances/AssistedBalanceAdapters/PancakeSwapV3PoolsAssistedBalanceAdapter.sol";
 import {INonfungiblePositionManager} from "src/balances/MetaBalanceAdapters/uniswap/UniswapV3PoolLib.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
@@ -22,7 +22,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 ///          script/development/test/pancakeswapV3/query-live-balances.s.sol:QueryPancakeV3LiveBalances \
 ///          --rpc-url http://127.0.0.1:8545 -vv
 ///      For a registry-free dump at an exact archive block, read getAdapterPositions in the fork test
-///      (test/balances/AssistedBalanceAdapters/fork/PancakeSwapV3PoolsBalanceAdapter.fork.t.sol), which deploys its
+///      (test/balances/AssistedBalanceAdapters/fork/PancakeSwapV3PoolsAssistedBalanceAdapter.fork.t.sol), which deploys its
 ///      own Balances harness.
 contract QueryPancakeV3LiveBalances is Script {
     address constant NPM = 0x46A15B0b27311cedF172AB29E4f4766fbE7F4364;
@@ -33,8 +33,8 @@ contract QueryPancakeV3LiveBalances is Script {
         // NAVCalculator on the fork) so _getAssetInfo resolves WETH/USDT.
         address nav = vm.envAddress("DEV_NAV_PROXY");
         // admin + assistant = this script, so it can submit the holder's tokenIds below.
-        PancakeSwapV3PoolsBalanceAdapter adapter =
-            new PancakeSwapV3PoolsBalanceAdapter(NPM, "PancakeSwap V3", nav, address(this), address(this));
+        PancakeSwapV3PoolsAssistedBalanceAdapter adapter =
+            new PancakeSwapV3PoolsAssistedBalanceAdapter(NPM, "PancakeSwap V3", nav, address(this), address(this));
 
         // Discover the holder's NFT tokenIds off the NPM's ERC721Enumerable surface and feed them to the adapter.
         uint256 bal = INonfungiblePositionManager(NPM).balanceOf(HOLDER);

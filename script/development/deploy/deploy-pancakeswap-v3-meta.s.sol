@@ -4,8 +4,8 @@ pragma solidity ^0.8;
 import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
 import {
-    PancakeSwapV3PoolsBalanceAdapter
-} from "src/balances/AssistedBalanceAdapters/PancakeSwapV3PoolsBalanceAdapter.sol";
+    PancakeSwapV3PoolsAssistedBalanceAdapter
+} from "src/balances/AssistedBalanceAdapters/PancakeSwapV3PoolsAssistedBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title DeployPancakeSwapV3 (development)
@@ -29,8 +29,8 @@ contract DeployPancakeSwapV3 is Script {
 
         // admin + assistant both = broadcaster on the dev fork, so the same key can submit tokenIds.
         address broadcaster = msg.sender;
-        PancakeSwapV3PoolsBalanceAdapter adapter =
-            new PancakeSwapV3PoolsBalanceAdapter(npm, protocolName, navProxy, broadcaster, broadcaster);
+        PancakeSwapV3PoolsAssistedBalanceAdapter adapter =
+            new PancakeSwapV3PoolsAssistedBalanceAdapter(npm, protocolName, navProxy, broadcaster, broadcaster);
 
         address[] memory adapters = new address[](1);
         adapters[0] = address(adapter);

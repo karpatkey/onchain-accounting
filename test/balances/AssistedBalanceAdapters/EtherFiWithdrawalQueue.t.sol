@@ -4,9 +4,9 @@ pragma solidity ^0.8.0;
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
 import {
-    EtherFiWithdrawalQueueBalanceAdapter,
+    EtherFiWithdrawalQueueAssistedBalanceAdapter,
     IEtherFiWithdrawRequestNFT
-} from "src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueBalanceAdapter.sol";
+} from "src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueAssistedBalanceAdapter.sol";
 import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
@@ -93,9 +93,9 @@ contract MockLiquidityPool {
     }
 }
 
-/// @title EtherFiWithdrawalQueueBalanceAdapter unit tests
-contract EtherFiWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
-    EtherFiWithdrawalQueueBalanceAdapter public adapter;
+/// @title EtherFiWithdrawalQueueAssistedBalanceAdapter unit tests
+contract EtherFiWithdrawalQueueAssistedBalanceAdapterTest is BalanceAdapterTestBase {
+    EtherFiWithdrawalQueueAssistedBalanceAdapter public adapter;
     MockWithdrawRequestNFT public nft;
     MockLiquidityPool public lp;
 
@@ -109,7 +109,7 @@ contract EtherFiWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         lp = new MockLiquidityPool();
         balances.addSupportedAssetForTest(NATIVE);
         // admin = assistant = this test contract, so it can submit ids.
-        adapter = new EtherFiWithdrawalQueueBalanceAdapter(
+        adapter = new EtherFiWithdrawalQueueAssistedBalanceAdapter(
             address(nft), address(lp), NATIVE, address(balances), address(this), address(this)
         );
     }
@@ -118,28 +118,28 @@ contract EtherFiWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_constructor_revertsOnZeroNft() public {
         vm.expectRevert(InvalidArguments.selector);
-        new EtherFiWithdrawalQueueBalanceAdapter(
+        new EtherFiWithdrawalQueueAssistedBalanceAdapter(
             address(0), address(lp), NATIVE, address(balances), address(this), address(this)
         );
     }
 
     function test_constructor_revertsOnZeroLp() public {
         vm.expectRevert(InvalidArguments.selector);
-        new EtherFiWithdrawalQueueBalanceAdapter(
+        new EtherFiWithdrawalQueueAssistedBalanceAdapter(
             address(nft), address(0), NATIVE, address(balances), address(this), address(this)
         );
     }
 
     function test_constructor_revertsOnZeroUnderlying() public {
         vm.expectRevert(InvalidArguments.selector);
-        new EtherFiWithdrawalQueueBalanceAdapter(
+        new EtherFiWithdrawalQueueAssistedBalanceAdapter(
             address(nft), address(lp), address(0), address(balances), address(this), address(this)
         );
     }
 
     function test_constructor_revertsWhenNftNotContract() public {
         vm.expectRevert(bytes("WithdrawRequestNFT must be a contract"));
-        new EtherFiWithdrawalQueueBalanceAdapter(
+        new EtherFiWithdrawalQueueAssistedBalanceAdapter(
             makeAddr("eoa"), address(lp), NATIVE, address(balances), address(this), address(this)
         );
     }
@@ -165,7 +165,7 @@ contract EtherFiWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_admin_canGrantAssistantRole() public {
         // A fresh adapter with `this` as admin only (no initial assistant); `other` is granted later by the admin.
-        EtherFiWithdrawalQueueBalanceAdapter a2 = new EtherFiWithdrawalQueueBalanceAdapter(
+        EtherFiWithdrawalQueueAssistedBalanceAdapter a2 = new EtherFiWithdrawalQueueAssistedBalanceAdapter(
             address(nft), address(lp), NATIVE, address(balances), address(this), address(0)
         );
         bytes32 role = a2.ASSISTANT_ROLE();
@@ -436,7 +436,7 @@ contract EtherFiWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
     function test_unregisteredUnderlying_positionsEmpty_butBalanceStillOwed() public {
         // Fresh NAV harness that does NOT register the native sentinel.
         BalancesHarness freshNav = new BalancesHarness();
-        EtherFiWithdrawalQueueBalanceAdapter a2 = new EtherFiWithdrawalQueueBalanceAdapter(
+        EtherFiWithdrawalQueueAssistedBalanceAdapter a2 = new EtherFiWithdrawalQueueAssistedBalanceAdapter(
             address(nft), address(lp), NATIVE, address(freshNav), address(this), address(this)
         );
         nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);

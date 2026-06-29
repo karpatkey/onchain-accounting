@@ -176,7 +176,7 @@ done
 # For each (account × chain), query the Merkl API for unclaimed reward entries and write
 # them to test/integration/merkl-proofs.json. The integration test consumes this fixture
 # in setUp (see IntegrationFromConfigBase.fork.sol::_seedMerklProofs) and submits each
-# proof against the deployed MerklRewards adapter; failed submissions are tolerated and
+# proof against the deployed MerklRewardsAssisted adapter; failed submissions are tolerated and
 # logged (NAV silently treats them as 0).
 #
 # Why this is here, after the fork-block bump and before the NAV snapshot: proofs from

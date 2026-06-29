@@ -4,8 +4,8 @@ pragma solidity ^0.8.0;
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
 import {
-    StakeWiseV3ExitQueueBalanceAdapter
-} from "src/balances/AssistedBalanceAdapters/StakeWiseV3ExitQueueBalanceAdapter.sol";
+    StakeWiseV3ExitQueueAssistedBalanceAdapter
+} from "src/balances/AssistedBalanceAdapters/StakeWiseV3ExitQueueAssistedBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
@@ -101,9 +101,9 @@ contract MockVaultsRegistry {
     }
 }
 
-/// @title StakeWiseV3ExitQueueBalanceAdapter unit tests
-contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
-    StakeWiseV3ExitQueueBalanceAdapter public adapter;
+/// @title StakeWiseV3ExitQueueAssistedBalanceAdapter unit tests
+contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBase {
+    StakeWiseV3ExitQueueAssistedBalanceAdapter public adapter;
     MockStakeWiseVault public vault;
     MockVaultsRegistry public registry;
 
@@ -122,7 +122,7 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         registry.setVault(address(vault), true);
         balances.addSupportedAssetForTest(NATIVE);
         // admin = assistant = this test contract, so it can submit positions.
-        adapter = new StakeWiseV3ExitQueueBalanceAdapter(
+        adapter = new StakeWiseV3ExitQueueAssistedBalanceAdapter(
             address(registry), NATIVE, "osETH", address(balances), DELAY, address(this), address(this)
         );
         // Warp comfortably past TS + DELAY so checkpointed positions (timestamp = TS) are past the claim delay and
@@ -134,35 +134,35 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_constructor_revertsOnZeroRegistry() public {
         vm.expectRevert(InvalidArguments.selector);
-        new StakeWiseV3ExitQueueBalanceAdapter(
+        new StakeWiseV3ExitQueueAssistedBalanceAdapter(
             address(0), NATIVE, "osETH", address(balances), DELAY, address(this), address(this)
         );
     }
 
     function test_constructor_revertsOnZeroUnderlying() public {
         vm.expectRevert(InvalidArguments.selector);
-        new StakeWiseV3ExitQueueBalanceAdapter(
+        new StakeWiseV3ExitQueueAssistedBalanceAdapter(
             address(registry), address(0), "osETH", address(balances), DELAY, address(this), address(this)
         );
     }
 
     function test_constructor_revertsOnZeroNav() public {
         vm.expectRevert(InvalidArguments.selector);
-        new StakeWiseV3ExitQueueBalanceAdapter(
+        new StakeWiseV3ExitQueueAssistedBalanceAdapter(
             address(registry), NATIVE, "osETH", address(0), DELAY, address(this), address(this)
         );
     }
 
     function test_constructor_revertsOnZeroClaimDelay() public {
         vm.expectRevert(InvalidArguments.selector);
-        new StakeWiseV3ExitQueueBalanceAdapter(
+        new StakeWiseV3ExitQueueAssistedBalanceAdapter(
             address(registry), NATIVE, "osETH", address(balances), 0, address(this), address(this)
         );
     }
 
     function test_constructor_revertsWhenRegistryNotContract() public {
         vm.expectRevert(bytes("VaultsRegistry must be a contract"));
-        new StakeWiseV3ExitQueueBalanceAdapter(
+        new StakeWiseV3ExitQueueAssistedBalanceAdapter(
             makeAddr("eoa"), NATIVE, "osETH", address(balances), DELAY, address(this), address(this)
         );
     }
@@ -184,7 +184,7 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         vault.setRequest(holder, TICKET, TS, 0, 1 ether); // claimable
         adapter.submitPositions(holder, _claimable());
         adapter.submitPositions(holder, _claimable()); // dedup
-        StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[] memory cached = adapter.positionsOf(holder);
+        StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition[] memory cached = adapter.positionsOf(holder);
         assertEq(cached.length, 1);
         assertEq(cached[0].vault, address(vault));
         assertEq(cached[0].positionTicket, TICKET);
@@ -219,12 +219,12 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         address[] memory accounts = new address[](2);
         accounts[0] = holder;
         accounts[1] = other;
-        StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[][] memory positions =
-            new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[][](2);
-        positions[0] = new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[](1);
-        positions[0][0] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(address(vault), TICKET, TS);
-        positions[1] = new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[](1);
-        positions[1][0] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(address(vault), TICKET + 1, TS);
+        StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition[][] memory positions =
+            new StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition[][](2);
+        positions[0] = new StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition[](1);
+        positions[0][0] = StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition(address(vault), TICKET, TS);
+        positions[1] = new StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition[](1);
+        positions[1][0] = StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition(address(vault), TICKET + 1, TS);
         adapter.submitPositionsBatch(accounts, positions);
         assertEq(adapter.positionsOf(holder).length, 1);
         assertEq(adapter.positionsOf(other).length, 1);
@@ -236,8 +236,8 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_submitPositionsBatch_revertsOnLengthMismatch() public {
         address[] memory accounts = new address[](2);
-        StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[][] memory positions =
-            new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[][](1);
+        StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition[][] memory positions =
+            new StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition[][](1);
         vm.expectRevert(ArrayLengthMismatch.selector);
         adapter.submitPositionsBatch(accounts, positions);
     }
@@ -253,10 +253,10 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         vault.setRequest(holder, TICKET, TS, 0, 1 ether);
         vault.setIndex(TICKET + 1, 1);
         vault.setRequest(holder, TICKET + 1, TS, 0, 2 ether);
-        StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[] memory two =
-            new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[](2);
-        two[0] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(address(vault), TICKET, TS);
-        two[1] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(address(vault), TICKET + 1, TS);
+        StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition[] memory two =
+            new StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition[](2);
+        two[0] = StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition(address(vault), TICKET, TS);
+        two[1] = StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition(address(vault), TICKET + 1, TS);
         adapter.submitPositions(holder, two);
         adapter.clearPosition(holder, address(vault), TICKET, TS);
         assertEq(adapter.positionsOf(holder).length, 1);
@@ -302,9 +302,9 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         uint256 recentTs = block.timestamp - (DELAY - 1); // delay window not yet elapsed
         vault.setIndex(TICKET, 5);
         vault.setRequest(holder, TICKET, recentTs, 0, 3 ether); // left 0, exitedAssets 3 ETH
-        StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[] memory one =
-            new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[](1);
-        one[0] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(address(vault), TICKET, recentTs);
+        StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition[] memory one =
+            new StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition[](1);
+        one[0] = StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition(address(vault), TICKET, recentTs);
         adapter.submitPositions(holder, one);
 
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
@@ -349,10 +349,10 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         vault.setRequest(holder, TICKET, TS, 0, 1 ether);
         vault.setIndex(TICKET + 1, 1);
         vault.setRequest(holder, TICKET + 1, TS, 0, 3 ether);
-        StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[] memory two =
-            new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[](2);
-        two[0] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(address(vault), TICKET, TS);
-        two[1] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(address(vault), TICKET + 1, TS);
+        StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition[] memory two =
+            new StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition[](2);
+        two[0] = StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition(address(vault), TICKET, TS);
+        two[1] = StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition(address(vault), TICKET + 1, TS);
         adapter.submitPositions(holder, two);
         (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, NATIVE);
         assertEq(amt, 4 ether);
@@ -393,23 +393,23 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
     function test_submit_revertsWhenCacheFull() public {
         uint256 cap = adapter.MAX_POSITIONS();
         // A single list of exactly MAX_POSITIONS is accepted.
-        StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[] memory many =
-            new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[](cap);
+        StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition[] memory many =
+            new StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition[](cap);
         for (uint256 i = 0; i < cap; i++) {
             vault.setIndex(i + 1, 1);
             vault.setRequest(holder, i + 1, TS, 0, 1 ether);
-            many[i] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(address(vault), i + 1, TS);
+            many[i] = StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition(address(vault), i + 1, TS);
         }
         adapter.submitPositions(holder, many);
         assertEq(adapter.positionsOf(holder).length, cap, "cache filled to MAX_POSITIONS");
 
         // A single list of MAX_POSITIONS + 1 is fail-loud (the cap+1-th add reverts).
-        StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[] memory tooMany =
-            new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[](cap + 1);
+        StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition[] memory tooMany =
+            new StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition[](cap + 1);
         for (uint256 i = 0; i < cap + 1; i++) {
             vault.setIndex(i + 1, 1);
             vault.setRequest(holder, i + 1, TS, 0, 1 ether);
-            tooMany[i] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(address(vault), i + 1, TS);
+            tooMany[i] = StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition(address(vault), i + 1, TS);
         }
         vm.expectRevert(abi.encodeWithSelector(PositionCacheFull.selector, holder, cap));
         adapter.submitPositions(holder, tooMany);
@@ -505,10 +505,10 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         vault.setIndex(TICKET + 1, -1);
         vault.setRate(1e18);
         vault.setRequest(holder, TICKET + 1, TS, 3 ether, 0); // fully pending → locked 3 ETH
-        StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[] memory two =
-            new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[](2);
-        two[0] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(address(vault), TICKET, TS);
-        two[1] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(address(vault), TICKET + 1, TS);
+        StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition[] memory two =
+            new StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition[](2);
+        two[0] = StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition(address(vault), TICKET, TS);
+        two[1] = StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition(address(vault), TICKET + 1, TS);
         adapter.submitPositions(holder, two);
 
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
@@ -592,7 +592,7 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
     function test_unregisteredUnderlying_positionsEmpty_butBalanceStillOwed() public {
         // Fresh NAV harness that does NOT register the native sentinel.
         BalancesHarness freshNav = new BalancesHarness();
-        StakeWiseV3ExitQueueBalanceAdapter a2 = new StakeWiseV3ExitQueueBalanceAdapter(
+        StakeWiseV3ExitQueueAssistedBalanceAdapter a2 = new StakeWiseV3ExitQueueAssistedBalanceAdapter(
             address(registry), NATIVE, "osETH", address(freshNav), DELAY, address(this), address(this)
         );
         vault.setIndex(TICKET, 1);
@@ -603,9 +603,9 @@ contract StakeWiseV3ExitQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(amt, 1 ether);
     }
 
-    function _claimable() internal view returns (StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[] memory p) {
-        p = new StakeWiseV3ExitQueueBalanceAdapter.ExitPosition[](1);
-        p[0] = StakeWiseV3ExitQueueBalanceAdapter.ExitPosition(address(vault), TICKET, TS);
+    function _claimable() internal view returns (StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition[] memory p) {
+        p = new StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition[](1);
+        p[0] = StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition(address(vault), TICKET, TS);
     }
 
     /// @dev Asserts a leg's static breadcrumb is `["Exit Queue", "osETH"]` (positionId-derived receipt-token category, no

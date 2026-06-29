@@ -4,22 +4,22 @@ pragma solidity ^0.8.0;
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
 import {BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
 import {
-    EtherFiWithdrawalQueueBalanceAdapter,
+    EtherFiWithdrawalQueueAssistedBalanceAdapter,
     IEtherFiWithdrawRequestNFT,
     IEtherFiLiquidityPool
-} from "src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueBalanceAdapter.sol";
+} from "src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueAssistedBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {NotTokenOwner} from "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
-/// @title EtherFiWithdrawalQueueBalanceAdapterForkTest
+/// @title EtherFiWithdrawalQueueAssistedBalanceAdapterForkTest
 /// @notice Fork test against ether.fi's real WithdrawRequestNFT + LiquidityPool on mainnet.
 /// @dev The NFT isn't enumerable, so the agent (here, the test acting as owner) submits a real tokenId; the
 ///      adapter values it entirely from live on-chain reads. Holder 0xcFFab3… owns request #80154 at FORK_BLOCK
 ///      (pending, isValid, fee 0), worth `min(amountOfEEth, amountForShare(shareOfEEth)) − fee` ETH. The test
 ///      asserts the adapter both against the pinned value AND against an independent live read (delta 0).
-contract EtherFiWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
+contract EtherFiWithdrawalQueueAssistedBalanceAdapterForkTest is BalanceAdapterTestBase {
     address public constant WITHDRAW_REQUEST_NFT = 0x7d5706f6ef3F89B3951E23e557CDFBC3239D4E2c;
     address public constant LIQUIDITY_POOL = 0x308861A430be4cce5502d0A12724771Fc6DaF216;
     /// @dev ERC-7528 native-ETH sentinel — what ether.fi pays on claim and how the adapter denominates.
@@ -31,7 +31,7 @@ contract EtherFiWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase 
     uint256 public constant TOKEN_ID = 80_154;
     uint256 public constant EXPECTED_ETH = 253_077_459_762_665_832; // ~0.2531 ETH, pending estimate at FORK_BLOCK
 
-    EtherFiWithdrawalQueueBalanceAdapter public adapter;
+    EtherFiWithdrawalQueueAssistedBalanceAdapter public adapter;
 
     function setUp() public override {
         super.setUp();
@@ -42,7 +42,7 @@ contract EtherFiWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase 
         balances.registerAssetForTest(NATIVE_ETH, 18, "ETH");
 
         // admin = assistant = this test, so it plays the assistant and submits the real tokenId.
-        adapter = new EtherFiWithdrawalQueueBalanceAdapter(
+        adapter = new EtherFiWithdrawalQueueAssistedBalanceAdapter(
             WITHDRAW_REQUEST_NFT, LIQUIDITY_POOL, NATIVE_ETH, address(balances), address(this), address(this)
         );
     }

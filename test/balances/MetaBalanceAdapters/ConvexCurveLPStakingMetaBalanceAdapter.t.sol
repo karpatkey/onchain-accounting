@@ -443,9 +443,10 @@ contract ConvexCurveLPStakingMetaBalanceAdapterTest is Test {
             meta.getAdapterPositionsForInstances(alice, _instance(address(rewarder)), address(0));
         assertGt(pos.length, 0);
         string[] memory labels = meta.positionLabels(pos[0].positionId);
-        assertEq(labels.length, 2);
+        assertEq(labels.length, 3);
         assertEq(labels[0], "Staking");
         assertEq(labels[1], "Curve LP");
+        assertEq(labels[2], "USDC/WETH");
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────

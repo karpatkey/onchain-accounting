@@ -99,7 +99,7 @@
       "0xFc3212Bd9Ad9A28Da6B2bd50a2918969C126894F"
     ]
   },
-  "ConvexRewardsMeta": {
+  "ConvexCurveLPStakingMeta": {
     "enabled": true,
     "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Convex pool. Instance coordinate = rewarder (BaseRewardPool) address. LP token resolved on-chain via rewarder.pid() \u2192 Booster.poolInfo(pid).lptoken. Emits Supplied legs (staked LP decomposed into Curve pool tokens) + Earned legs (CRV exact, CVX via cliff schedule, extra rewards). Supersedes per-instance Convex_* adapters, disabled below.",
     "instances": [

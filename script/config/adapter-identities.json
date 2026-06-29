@@ -160,8 +160,8 @@
     "positionId": "<derived: gauge address>"
   },
 
-  "ConvexRewardsMeta": {
-    "$comment": "Meta-adapter (ADR 0010): one immutable contract for the staked LP + CRV/CVX/extra rewards of ALL Convex rewarders. Constructor takes (booster, cvxToken, protocol, navCalculator); the LP is resolved via booster.poolInfo(pid()). The active rewarder set lives on NAVCalculator (addMetaInstances/removeMetaInstances, configured in nav-config/meta-balance-adapters under ConvexRewardsMeta.instances — each entry is the Convex BaseRewardPool/rewarder address). Identity derived on-chain: positionId = rewarder address hex. Supersedes the per-pool Convex adapter.",
+  "ConvexCurveLPStakingMeta": {
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for the staked LP + CRV/CVX/extra rewards of ALL Convex rewarders. Constructor takes (booster, cvxToken, protocol, navCalculator); the LP is resolved via booster.poolInfo(pid()). The active rewarder set lives on NAVCalculator (addMetaInstances/removeMetaInstances, configured in nav-config/meta-balance-adapters under ConvexCurveLPStakingMeta.instances — each entry is the Convex BaseRewardPool/rewarder address). Identity derived on-chain: positionId = rewarder address hex. Supersedes the per-pool Convex adapter.",
     "$perPositionFields": "type: Staking | Rewards (Staking=one leg per underlying pool token from the staked LP share; Rewards=CRV via earned() + CVX via the cliff schedule + extra reward tokens, unwrapping stash tokens)",
     "protocol": "Convex",
     "positionDetail": { "protocol": "Convex", "product": "LP", "name": "<derived: pool token pair>" },
@@ -178,7 +178,7 @@
   },
 
   "Convex": {
-    "$superseded": "Superseded by ConvexRewardsMeta (ADR 0010); per-pool deploys disabled in chain config.",
+    "$superseded": "Superseded by ConvexCurveLPStakingMeta (ADR 0010); per-pool deploys disabled in chain config.",
     "$perPositionFields": "type: Staking (one position per underlying asset)",
     "protocol": "Convex",
     "positionDetail": { "protocol": "Convex", "product": "LP", "name": "<pool token pair>" },

@@ -150,7 +150,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("CurveGaugesMeta"); // Meta-adapter: all Curve gauges (staked LP + CRV + rewards); gauge set on NAV
 
         // --- Convex meta-adapter (ADR 0010: all Convex pools; rewarder set on NAV) ---
-        _deployIfEnabled("ConvexRewardsMeta"); // Meta-adapter: all Convex rewarders; instance set on NAV
+        _deployIfEnabled("ConvexCurveLPStakingMeta"); // Meta-adapter: all Convex rewarders; instance set on NAV
 
         // --- Fluid Lending (meta-adapter: all fTokens; fToken set on NAV, ADR 0010) ---
         _deployIfEnabled("FluidFTokensMeta");
@@ -307,8 +307,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         }
 
         // Convex adapters
-        if (_equals(adapterName, "ConvexRewardsMeta")) {
-            return _deployConvexRewardsMeta(adapterName, navCalculator);
+        if (_equals(adapterName, "ConvexCurveLPStakingMeta")) {
+            return _deployConvexCurveLPStakingMeta(adapterName, navCalculator);
         }
 
         // AaveV3 Safety Module: a single multi-token adapter per chain (ADR 0002).
@@ -511,7 +511,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(new CurveGaugesMetaBalanceAdapter(minter, crvToken, protocol, navCalculator));
     }
 
-    function _deployConvexRewardsMeta(string memory adapterName, address navCalculator) internal returns (address) {
+    function _deployConvexCurveLPStakingMeta(string memory adapterName, address navCalculator) internal returns (address) {
         address booster = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "booster")
         );

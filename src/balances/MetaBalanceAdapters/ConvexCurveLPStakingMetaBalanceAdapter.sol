@@ -288,12 +288,35 @@ contract ConvexCurveLPStakingMetaBalanceAdapter is MetaBalanceAdapter {
     // ─── IPositionDescribable ─────────────────────────────────────────────────
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev `["Staking", "Curve LP"]` — static (the staked asset is Curve LP; the specific pool coins are in each
-    ///      leg's `balanceAsset`, and the rewarder/pool is the `positionId`).
-    function positionLabels(bytes calldata) external pure override returns (string[] memory out) {
-        out = new string[](2);
+    /// @dev `["Staking", "Curve LP", "TOKEN0/TOKEN1/…"]` — the third segment is the underlying Curve pool's coin
+    ///      symbols, derived on-chain from the rewarder's LP token. Collapses to `["Staking", "Curve LP"]` if the
+    ///      coins can't be resolved; empty array for a short positionId.
+    function positionLabels(bytes calldata pid) external view override returns (string[] memory out) {
+        if (pid.length < 32) return new string[](0);
+        string memory coins = _coins(pid);
+        if (bytes(coins).length == 0) {
+            out = new string[](2);
+            out[0] = "Staking";
+            out[1] = "Curve LP";
+            return out;
+        }
+        out = new string[](3);
         out[0] = "Staking";
         out[1] = "Curve LP";
+        out[2] = coins;
+    }
+
+    /// @notice Derives the "TOKEN0/TOKEN1/…" coin-symbol string from the rewarder's underlying Curve pool ("" on
+    ///         failure: unresolvable LP/pool/coins).
+    function _coins(bytes calldata pid) private view returns (string memory) {
+        address rewarder = abi.decode(pid, (address));
+        address lpToken = _lpTokenOf(rewarder);
+        if (lpToken == address(0)) return "";
+        address pool = CurvePoolLib.getPool(lpToken);
+        if (pool == address(0)) return "";
+        address[] memory coins = CurvePoolLib.getCoins(pool);
+        if (coins.length == 0) return "";
+        return CurvePoolLib.coinSymbols(coins);
     }
 
     // ─── Internal helpers ─────────────────────────────────────────────────────

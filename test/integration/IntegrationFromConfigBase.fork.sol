@@ -639,8 +639,8 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_equals(name, "CurveGaugesMeta")) {
             return _deployCurveGaugesMeta(name, navAddr);
         }
-        if (_equals(name, "ConvexRewardsMeta")) {
-            return _deployConvexRewardsMeta(name, navAddr);
+        if (_equals(name, "ConvexCurveLPStakingMeta")) {
+            return _deployConvexCurveLPStakingMeta(name, navAddr);
         }
         if (_equals(name, "AaveV3SafetyModule")) {
             return _deployAaveV3SafetyModule(name, navAddr);
@@ -782,7 +782,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return address(new CurveGaugesMetaBalanceAdapter(minter, crvToken, protocol, navAddr));
     }
 
-    function _deployConvexRewardsMeta(string memory name, address navAddr) internal returns (address) {
+    function _deployConvexCurveLPStakingMeta(string memory name, address navAddr) internal returns (address) {
         address booster =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "booster"));
         address cvxToken =

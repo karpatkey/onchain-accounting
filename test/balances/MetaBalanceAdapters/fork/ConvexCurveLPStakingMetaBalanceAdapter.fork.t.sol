@@ -7,7 +7,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
-/// @title ConvexRewardsMetaForkTest
+/// @title ConvexCurveLPStakingMetaForkTest
 /// @notice Fork tests for ConvexCurveLPStakingMetaBalanceAdapter against real mainnet contracts.
 ///
 /// Pools under test (from karpatkey mainnet config):
@@ -15,7 +15,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///   - crvUSD/USDC rewarder 0x44D8FaB7CD8b7877D5F79974c2F501aF6E65AbBA  lpToken 0x4DEcE678...
 ///   - crvUSD/USDT rewarder 0xD1DdB0a0815fD28932fBb194C84003683AF8a824  lpToken 0x390f3595...
 ///   - RLUSD/USDC  rewarder 0x5A71E7e04F8725fD42a216949E7099ebd08A42E3  lpToken 0xD001aE43...
-contract ConvexRewardsMetaForkTest is BalanceAdapterTestBase {
+contract ConvexCurveLPStakingMetaForkTest is BalanceAdapterTestBase {
     // ── Mainnet constants ─────────────────────────────────────────────────────
 
     address public constant CONVEX_BOOSTER = 0xF403C135812408BFbE8713b5A23a04b3D48AAE31;

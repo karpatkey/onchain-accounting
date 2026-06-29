@@ -66,14 +66,14 @@ contract FluidFTokensMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev Returns `["Lending", <leaf>]` where the leaf is "<fToken symbol> supply" ("" if unreadable). Returns an
-    ///      empty array for a short positionId.
+    /// @dev Returns `["Lending", <fToken symbol>]` (leaf "" if unreadable). Returns an empty array for a short
+    ///      positionId.
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
         if (pid.length < 32) return new string[](0);
         address fToken = abi.decode(pid, (address));
         string memory leaf = "";
         try IERC20Metadata(fToken).symbol() returns (string memory sym) {
-            leaf = string.concat(sym, " supply");
+            leaf = sym;
         } catch {}
         return _labels("Lending", leaf);
     }

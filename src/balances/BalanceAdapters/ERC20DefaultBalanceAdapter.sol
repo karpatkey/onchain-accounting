@@ -7,6 +7,7 @@ import {IBalanceAdapter} from "../IBalanceAdapter.sol";
 import {LabelLib} from "src/balances/LabelLib.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
@@ -223,13 +224,9 @@ contract ERC20DefaultBalanceAdapter is BalanceAdapterBase {
     /// @param asset The asset address to look up
     /// @return assetInfo The Asset struct containing asset address, symbol, and decimals
     function _getAssetInfo(address asset) internal view returns (INAVCalculator.Asset memory assetInfo) {
-        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
-        for (uint256 i = 0; i < reg.length; i++) {
-            if (reg[i].asset == asset) {
-                return reg[i];
-            }
-        }
-        revert("Asset not found in NAVCalculator");
+        bool found;
+        (assetInfo, found) = RegisteredAssetLib.find(NAV_CALCULATOR.getRegisteredAssets(), asset);
+        require(found, "Asset not found in NAVCalculator");
     }
 
     /// @notice Internal helper that builds all positions for this adapter

@@ -6,6 +6,7 @@ import {IBalanceAdapter} from "../IBalanceAdapter.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {InvalidArguments} from "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -247,10 +248,6 @@ contract CapBalanceAdapter is BalanceAdapterBase {
     /// @notice Looks up asset metadata from the NAVCalculator registry.
     /// @return asset The Asset struct (zeroed if not found). found True if the asset is registered.
     function _getAssetInfo(address asset) internal view returns (INAVCalculator.Asset memory, bool found) {
-        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
-        for (uint256 i = 0; i < reg.length; i++) {
-            if (reg[i].asset == asset) return (reg[i], true);
-        }
-        return (INAVCalculator.Asset({asset: address(0), symbol: "", decimals: 0}), false);
+        return RegisteredAssetLib.find(NAV_CALCULATOR.getRegisteredAssets(), asset);
     }
 }

@@ -7,6 +7,7 @@ import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -378,11 +379,8 @@ contract AaveV3SafetyModuleBalanceAdapter is BalanceAdapterBase {
         pure
         returns (INAVCalculator.Asset memory)
     {
-        uint256 n = registered.length;
-        for (uint256 i; i < n; ++i) {
-            if (registered[i].asset == asset) return registered[i];
-        }
-        return INAVCalculator.Asset({asset: address(0), symbol: "", decimals: 0});
+        (INAVCalculator.Asset memory a,) = RegisteredAssetLib.find(registered, asset);
+        return a;
     }
 }
 

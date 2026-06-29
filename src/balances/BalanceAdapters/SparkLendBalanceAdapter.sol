@@ -6,6 +6,7 @@ import {IBalanceAdapter} from "../IBalanceAdapter.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -223,10 +224,9 @@ contract SparkLendBalanceAdapter is BalanceAdapterBase {
         pure
         returns (INAVCalculator.Asset memory)
     {
-        for (uint256 i; i < reg.length; ++i) {
-            if (reg[i].asset == asset) return reg[i];
-        }
-        revert("asset not registered");
+        (INAVCalculator.Asset memory a, bool found) = RegisteredAssetLib.find(reg, asset);
+        require(found, "asset not registered");
+        return a;
     }
 }
 

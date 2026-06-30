@@ -142,7 +142,7 @@ When you spot a position in `comparison-report.md` that NAV doesn't cover (a `�
 | Bucket | When to use | Where it lives |
 |---|---|---|
 | **Untracked by design** | The gap is intentional — token has no Chainlink mainnet feed, protocol is deprecated/legacy, etc. "Will not fix unless rule changes." | `test/integration/accounts.json.chains.<chainId>.$untracked_by_design` (per-chain prose field; today only chain 1 is populated). |
-| **Pending production deploy** | Adapter / price-feed code is in the repo and the harness already exercises it; just hasn't been deployed to mainnet yet. "Wire's done, ship pending." | [`script/PENDING_DEPLOYS.md`](../script/PENDING_DEPLOYS.md) — operational checklist with the forge invocations + Safe TX flow. |
+| **Pending production deploy** | Adapter / price-feed code is in the repo and the harness already exercises it; just hasn't been deployed to a given chain yet. "Wire's done, ship pending." | [`script/deploy/README.md`](../script/deploy/README.md) — the deploy runbook (forge invocations + role flow). |
 | **Need new adapter / feed code** | The gap requires a new contract or new ADR. "Have to build something." | [`roadmap/balance-adapter-coverage.md`](roadmap/balance-adapter-coverage.md) for missing balance adapters; [`howto/add-price-feed.md`](howto/add-price-feed.md) is the recipe to fix one. |
 | **Display polish / matcher heuristics** | The math is right but the report's per-row pairing or layout could be clearer. "Visual / UX work on the report itself." | [`roadmap/comparison-report-improvements.md`](roadmap/comparison-report-improvements.md). |
 

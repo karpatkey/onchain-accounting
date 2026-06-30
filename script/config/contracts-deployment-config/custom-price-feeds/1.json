@@ -1,6 +1,7 @@
 {
   "ETHPlus": {
-    "enabled": true,
+    "$comment": "Disabled: ETH+ is priced via the Chainlink 'Calculated ETH+/USD' feed (0x66Ab900341C98de949EC31d11b3C4180743844F1), registered in nav-config. This 8-dec Custom feed is incompatible (PriceFeedDecimalsMismatch) with that 18-dec Chainlink feed, so it is not registered. Kept here only as a record; leave disabled to avoid an orphaned deploy.",
+    "enabled": false,
     "constructor": {
       "ethPlus": "0xE72B141DF173b999AE7c1aDcbF60Cc9833Ce56a8",
       "reserveProtocolHeartbeat": "86400"

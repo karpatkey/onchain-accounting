@@ -192,6 +192,6 @@ The 19 impl+proxy chains run the canonical layer only; custom price feeds and ba
 
 | Token | Feed address |
 | --- | --- |
-| sDAI | `0x749E255659C1Db8ED5C12c0C5E88F5da217B53Dd` |
+| sXDAI | `0x749E255659C1Db8ED5C12c0C5E88F5da217B53Dd` |
 | wstETH (L2) | `0xaA7E7f7F09f2C12b91245e2E761D4f9c62F7Db1d` |
 | osGNO | `0x02D6b6613952dB1ae1294C81f443F03195762BBA` |

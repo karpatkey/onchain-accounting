@@ -27,9 +27,14 @@ the app.
    `isLocked`. An account with nothing claimable (or nothing pending) emits only the one
    relevant leg. NAV totals are unchanged (sum of the two legs = the old aggregate).
 
-4. **`isLocked` is part of the reconciliation key.** Because both legs share one positionId,
-   `isLocked` must enter the identity key to keep the two legs distinct:
-   `keccak256(abi.encode(chainId, protocolSubId, positionId, balanceAsset.asset, positionKind, isLocked))`.
+4. **`isLocked` is NOT part of the reconciliation key (it is a mutable per-leg attribute).** Both
+   legs share one positionId AND one stable key
+   `keccak256(abi.encode(chainId, protocolSubId, positionId, balanceAsset.asset, positionKind))`.
+   `isLocked` is deliberately excluded: a leg flips `true→false` as its portion finalizes/unlocks,
+   so keying on it would split one economic position into two keys over its lifetime. The claimable
+   and locked legs therefore share one key and are **summed** in reconciliation (the sum is the full
+   holding); `isLocked` is read per leg for the claimable-vs-locked breakdown, not as an identity
+   discriminator.
 
 5. **Uniform rule:** `isLocked = non-withdrawable`. `isLocked = false` only when the leg is
    **fully liquid / withdrawable now**. The claimable leg holds the withdrawable portion; the
@@ -104,7 +109,7 @@ positionId (e.g. `["Withdrawal Queue", "stETH"]` for Lido, below the `protocolNa
 Instead, each per-request coordinate rides in the typed, optional `positionInstanceId` field
 (`bytes32`) on every leg — the NFT id / exit ticket / nonce widened to `bytes32`. It is the sole
 ephemeral identity field: the stable reconciliation key
-`(chainId, protocolSubId, positionId, balanceAsset.asset, positionKind, isLocked)` deliberately
+`(chainId, protocolSubId, positionId, balanceAsset.asset, positionKind)` deliberately
 **excludes** it, so the legs of one anchor sum and identity survives request churn. A consumer
 that wants per-request granularity may append `positionInstanceId` to the key. The adapters also
 expose coordinate getters (`tokenIdsOf` on the ether.fi adapter, `positionsOf` on the StakeWise V3
@@ -132,8 +137,9 @@ exposes the claimable/locked split; the app drills down to the request level.
 - The withdrawal-queue / cooldown adapters and `NAVCalculator` must be **redeployed** (the
   struct field changes all bytecode; adapters are immutable). The library pin shifts and must be
   regenerated against CI.
-- Consumers that key on the reconciliation tuple must include `isLocked` (it is now part of the
-  key). The aggregate balance getters are unchanged, so total-NAV consumers need no change.
+- Consumers that key on the reconciliation tuple must **not** include `isLocked` — it is a mutable
+  per-leg attribute, so the claimable and locked legs share one key and must be **summed**. The
+  aggregate balance getters are unchanged, so total-NAV consumers need no change.
 - The app reads `isLocked` straight from `getAccountPositions` and renders a Claimable/Pending
   badge per leg; the per-protocol `use-*-withdrawals` re-derivation hooks become redundant for
   the split, and use the adapters' coordinate getters for per-request drill-down.

@@ -48,19 +48,22 @@ interface INAVCalculator is IBalances {
     ///        e.g. for AAVE_V3_LENDING: `abi.encode(address pool)`.
     ///        Full schema table: see `src/utils/ProtocolIds.sol` and docs/howto/position-identity-schema.md.
     /// @param positionKind Semantic discriminator (Wallet / Supplied / Borrowed / Collateral / Staking / Rewards / Fees).
-    ///        Together with `protocolSubId`, `positionId` and `isLocked` forms the stable per-chain identity key
-    ///        `(chainId, protocolSubId, positionId, balanceAsset.asset, positionKind, isLocked)`.
+    ///        Together with `protocolSubId` and `positionId` forms the stable per-chain identity key
+    ///        `(chainId, protocolSubId, positionId, balanceAsset.asset, positionKind)`.
     /// @param isLocked True if this leg is NOT withdrawable right now (the pending portion of a withdrawal queue, or a
     ///        staked amount in/awaiting its unstaking cooldown); false if fully liquid / claimable now. Withdrawal-queue
     ///        and cooldown adapters keep a STATIC, timeless `positionId` (the queue/manager/asset/vault/stake-token
     ///        coordinate) and split an account's holding into up to two legs — a claimable leg (`isLocked=false`) and a
-    ///        locked leg (`isLocked=true`) — that share that positionId and are distinguished by `isLocked`. Hence
-    ///        `isLocked` is **part of the identity key**. `false` for every adapter except withdrawal-queue / cooldown legs.
+    ///        locked leg (`isLocked=true`). `isLocked` is a **mutable per-leg attribute, NOT part of the identity key**:
+    ///        a leg flips `true→false` as its portion finalizes/unlocks, so keying on it would split one economic
+    ///        position into two keys over its lifetime. The claimable and locked legs therefore share ONE key and are
+    ///        **summed** in reconciliation (the sum is the full holding); read `isLocked` per leg for the
+    ///        claimable-vs-locked breakdown. `false` for every adapter except withdrawal-queue / cooldown legs.
     /// @param positionInstanceId OPTIONAL EPHEMERAL per-item coordinate as a `bytes32` — a Uniswap V3 / PancakeSwap V3
     ///        NFT id, a withdrawal/exit request id, or a StakeWise exit ticket (each a `uint256` widened to `bytes32`).
     ///        `bytes32(0)` for adapters with no per-item granularity. It is the SOLE ephemeral identity field, by
     ///        design: the **stable** reconciliation key
-    ///        `(chainId, protocolSubId, positionId, balanceAsset.asset, positionKind, isLocked)` deliberately EXCLUDES it,
+    ///        `(chainId, protocolSubId, positionId, balanceAsset.asset, positionKind)` deliberately EXCLUDES it,
     ///        so the legs of one anchor sum and identity survives item churn. A consumer that wants per-item
     ///        granularity MAY append `positionInstanceId` to the key — gaining one position per item, at the cost of an
     ///        **ephemeral** key (it blinks in/out as items are minted/burned/claimed). Never use it for stable

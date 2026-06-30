@@ -19,7 +19,7 @@ struct PositionBalance {
     bytes32      protocolSubId;       // keccak256("protocol-product") — selects positionId schema; part of the key
     bytes        positionId;          // abi.encode(...) — stable on-chain key
     PositionKind positionKind;        // Wallet | Supplied | Borrowed | Collateral | Staking | Rewards | Fees
-    bool         isLocked;            // true = not withdrawable now (pending withdrawal OR active/cooling stake); false = withdrawable now; part of the key
+    bool         isLocked;            // true = not withdrawable now (pending withdrawal OR active/cooling stake); false = withdrawable now; mutable per-leg attribute, NOT part of the key
     bytes32      positionInstanceId;  // ephemeral per-item id (NFT/request/ticket) as bytes32; bytes32(0) when none; EXCLUDED from the key
 }
 ```
@@ -75,9 +75,9 @@ full table below.
 
 **`positionKind`** — `PositionKind`
 
-Semantic category of the leg. Together with `protocolSubId`, `positionId`,
-`balanceAsset.asset`, and `isLocked` it forms the per-chain reconciliation key:
-`keccak256(abi.encode(chainId, protocolSubId, positionId, balanceAsset.asset, positionKind, isLocked))`.
+Semantic category of the leg. Together with `protocolSubId`, `positionId`, and
+`balanceAsset.asset` it forms the per-chain reconciliation key:
+`keccak256(abi.encode(chainId, protocolSubId, positionId, balanceAsset.asset, positionKind))`.
 
 **`isLocked`** — `bool`
 
@@ -87,9 +87,12 @@ of a staking-with-cooldown adapter (Aave SM, Umbrella — active stake needs a c
 be withdrawn) are both locked; a finalized request or an in-window elapsed cooldown is unlocked.
 The withdrawal-queue / cooldown / staking-with-cooldown adapters split an account's holding
 into up to two legs that **share the same static `positionId`** — a claimable leg
-(`isLocked=false`) and a locked / pending leg (`isLocked=true`) — so `isLocked` is **part of
-the reconciliation key** (it is what distinguishes the two legs). `false` for every other
-adapter. "Partial = locked": any not-yet-withdrawable amount lands on the locked leg. See
+(`isLocked=false`) and a locked / pending leg (`isLocked=true`). `isLocked` is a **mutable
+per-leg attribute and is NOT part of the reconciliation key**: a leg flips `true→false` as its
+portion finalizes/unlocks, so keying on it would split one economic position into two keys over
+its lifetime. The two legs therefore **share one key and are summed** in reconciliation (the sum
+is the full holding); read `isLocked` per leg for the claimable-vs-locked breakdown. `false` for
+every other adapter. "Partial = locked": any not-yet-withdrawable amount lands on the locked leg. See
 [ADR 0016](../decisions/0016-islocked-position-status.md).
 
 **`positionInstanceId`** — `bytes32`
@@ -995,7 +998,8 @@ rather than overloading an existing one.
 cooldown use a static, timeless positionId — the immutable anchor (queue / manager / vault /
 sUSDe / asset), never a per-request id. They split an account's holding into up to two legs
 (a claimable leg `isLocked=false` and a pending/locked leg `isLocked=true`) that **share** that
-positionId and are distinguished by `isLocked` (which is part of the key). The Aave SM / Umbrella
+positionId and one stable key — `isLocked` is a per-leg attribute (NOT part of the key), so the two
+legs are summed in reconciliation. The Aave SM / Umbrella
 staking-with-cooldown adapters follow the same model: both staking legs share one
 `abi.encode(address stakeToken)` (no discriminator), distinguished by `isLocked` (active stake is
 non-withdrawable ⇒ locked; only a cooldown elapsed-and-in-window is unlocked), and the reward leg
@@ -1051,9 +1055,9 @@ const key = keccak256(abi.encode(
 ));
 ```
 
-`isLocked` is part of the key: it distinguishes the claimable (`isLocked=false`) vs locked
-(`isLocked=true`) legs that share a static `positionId` (the withdrawal-queue / cooldown /
-staking-with-cooldown adapters).
+`isLocked` is a per-leg attribute, NOT part of the key: the claimable (`isLocked=false`) and locked
+(`isLocked=true`) legs share a static `positionId` AND one key (the withdrawal-queue / cooldown /
+staking-with-cooldown adapters), so they are summed in reconciliation.
 
 **The key identifies a position _group_, not necessarily a single emitted leg.** Adapters that emit
 one leg per underlying item emit **multiple legs that share the same full key**, distinguished only by
@@ -1561,7 +1565,8 @@ stake/rewards; Uniswap V3 liquidity/fees; StakeWise vault/osToken-debt), all leg
 StakeWise V3) and the Ethena cooldown use a **static, timeless** `positionId` — the immutable anchor
 (queue/manager/vault or sUSDe) — never a per-request id. They split an
 account's holding into up to two legs that share that positionId: a claimable leg (`isLocked=false`)
-and a pending/locked leg (`isLocked=true`), distinguished by `isLocked` (part of the key). The owed
+and a pending/locked leg (`isLocked=true`); the two legs share one key and `isLocked` is a per-leg
+attribute (NOT part of the key), so they are summed in reconciliation. The owed
 asset lives in `balanceAsset.asset`. No adapter emits an empty `positionId`.
 
 ---

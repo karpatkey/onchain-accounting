@@ -36,6 +36,12 @@
         "type": "Custom",
         "feed": "wstETH_L2",
         "heartbeat": 86400
+      },
+      {
+        "$comment": "Independent 2nd feed (ADR 0009 redundancy): RedStone Classic Push wstETH/USD on Arbitrum (direct /USD, distinct from the wstETH_L2 cross-rate), 8 decimals.",
+        "type": "Redstone",
+        "address": "0x4C89968338b75551243C99B452c84a01888282fD",
+        "heartbeat": 86400
       }
     ]
   },

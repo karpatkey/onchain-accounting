@@ -530,6 +530,12 @@
         "type": "Chainlink",
         "address": "0x2665701293fCbEB223D11A08D826563EDcCE423A",
         "heartbeat": 86400
+      },
+      {
+        "$comment": "Independent 2nd feed (ADR 0009 redundancy): RedStone Classic Push cbBTC/USD, 8 decimals.",
+        "type": "Redstone",
+        "address": "0xE13e2BBaB029BFb324f49048CED0E95Ea30AE049",
+        "heartbeat": 86400
       }
     ]
   },

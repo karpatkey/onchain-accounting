@@ -78,20 +78,23 @@ abstract contract AssistedNftCacheAdapter is AssistedBalanceAdapter {
         uint256[] memory ids = abi.decode(data, (uint256[]));
         EnumerableSet.UintSet storage set = _tokenIds[account];
 
-        // Pass 1 — additions. Add only ids not already cached (ownership-checked + capped, fail-loud). A duplicate in
-        // `ids` is a no-op on its second occurrence (already present after the first add).
-        for (uint256 i; i < ids.length; ++i) {
-            if (!set.contains(ids[i])) _addTokenId(account, ids[i]);
-        }
-
-        // Pass 2 — removals. Drop cached ids absent from the submitted full set. Snapshot `values()` first because
-        // `remove` mutates the set (swap-pop reorders). The just-added ids are all in `ids`, so they are never removed.
+        // Pass 1 — removals. Drop cached ids absent from the submitted full set FIRST. Doing removals before
+        // additions means a full-set resubmit that rotates one id out and another in while the cache is AT the cap
+        // frees the outgoing slot before Pass 2 adds the incoming id — otherwise the add would spuriously revert
+        // `TokenIdCacheFull` even though the net size is unchanged. Snapshot `values()` first because `remove`
+        // mutates the set (swap-pop reorders).
         uint256[] memory cur = set.values();
         for (uint256 i; i < cur.length; ++i) {
             if (!_contains(ids, cur[i])) {
                 set.remove(cur[i]);
                 emit TokenIdCleared(account, cur[i]);
             }
+        }
+
+        // Pass 2 — additions. Add only ids not already cached (ownership-checked + capped, fail-loud). A duplicate in
+        // `ids` is a no-op on its second occurrence (already present after the first add).
+        for (uint256 i; i < ids.length; ++i) {
+            if (!set.contains(ids[i])) _addTokenId(account, ids[i]);
         }
     }
 

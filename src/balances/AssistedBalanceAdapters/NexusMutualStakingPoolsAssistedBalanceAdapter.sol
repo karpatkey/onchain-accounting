@@ -36,10 +36,12 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      `ASSISTANT_ROLE` gates the submit/clear mutators. `submitTokenIds` **reverts** `NotTokenOwner` for any id
 ///      whose `tokenInfo` owner is not the account (fail-loud writes); reads instead **discard** an id no longer
 ///      owned (fail-open). See `docs/decisions/0015-assisted-balance-adapter-family.md` (Merkl precedent, ADR 0007).
-///      The no-arg balance getters (`getAdapterBalances`/`getAdapterBalanceForAsset`) return the summed NXM total
-///      across the account's owned, cached positions, applying the **same** filters as the NAV path
-///      (`getAdapterPositions`) — ownership re-verified live AND the staking pool resolves — so the two views always
-///      agree (no phantom reconciliation mismatch).
+///      The no-arg balance getters (`getAdapterBalances`/`getAdapterBalanceForAsset`) sum the **same** per-id
+///      fault-isolated legs the NAV path (`getAdapterPositions`) emits — ownership re-verified live AND the staking
+///      pool resolves, with a single degenerate token dropped from both views identically — so when NXM is registered
+///      the two views agree (no phantom reconciliation mismatch). They are registration-independent (report the raw
+///      owed NXM even when NXM is unregistered, the one case where getAdapterPositions is empty because NAV can't
+///      price it).
 contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedNftValuationAdapter, IPositionDescribable {
     using Strings for uint256;
 
@@ -157,7 +159,11 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedNftValuationAd
     }
 
     /// @inheritdoc IBalanceAdapter
-    /// @notice Total NXM owed (stake + rewards). Net convenience getter; the split is in getAdapterPositions.
+    /// @notice Total NXM owed (stake + rewards). Convenience getter; the per-position split is in getAdapterPositions.
+    /// @dev Derived by SUMMING the same per-id fault-isolated legs the NAV path emits (see {_totalNxm}), so when NXM
+    ///      is registered it equals `sum(getAdapterPositions)` — including under the per-id fault isolation, where a
+    ///      degenerate token drops from both views identically rather than zeroing one view. Registration-independent:
+    ///      reports the raw owed NXM even when NXM is unregistered (NAV can't price it, so getAdapterPositions is empty).
     function getAdapterBalanceForAsset(address account, address asset)
         external
         view
@@ -165,8 +171,7 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedNftValuationAd
         returns (uint256 amount, bool isDebt)
     {
         if (asset != UNDERLYING_TOKEN || account == address(0)) return (0, false);
-        (uint256 staking, uint256 rewards) = _stakeAndRewards(account);
-        return (staking + rewards, false);
+        return (_totalNxm(account), false);
     }
 
     /// @inheritdoc IBalanceAdapter
@@ -176,8 +181,7 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedNftValuationAd
         override
         returns (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt)
     {
-        (uint256 staking, uint256 rewards) = account == address(0) ? (0, 0) : _stakeAndRewards(account);
-        uint256 total = staking + rewards;
+        uint256 total = account == address(0) ? 0 : _totalNxm(account);
         if (total == 0) return (new address[](0), new uint256[](0), new bool[](0));
         assets = new address[](1);
         amounts = new uint256[](1);
@@ -196,21 +200,46 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedNftValuationAd
         external
         view
         override
-        returns (INAVCalculator.PositionBalance[] memory positions)
+        returns (INAVCalculator.PositionBalance[] memory)
+    {
+        return _positions(account, assetFilter);
+    }
+
+    /// @dev Shared per-id position builder backing BOTH getAdapterPositions and the balance getters, so the two views
+    ///      can never diverge. NXM must be registered in NAVCalculator; its Asset record is resolved ONCE and passed
+    ///      as the read-once context to the per-id fan-out (AssistedNftValuationAdapter._collectLegs), which isolates a
+    ///      faulty NFT so it can't zero the whole set.
+    function _positions(address account, address assetFilter)
+        internal
+        view
+        returns (INAVCalculator.PositionBalance[] memory)
     {
         if (assetFilter != address(0) && assetFilter != UNDERLYING_TOKEN) {
             return new INAVCalculator.PositionBalance[](0);
         }
         if (account == address(0)) return new INAVCalculator.PositionBalance[](0);
 
-        // NXM must be registered in NAVCalculator for the position to count in NAV. Resolve its Asset record ONCE and
-        // pass it as the read-once context to the shared per-id fan-out (AssistedNftValuationAdapter._collectLegs),
-        // which isolates a faulty NFT so it can't zero the whole set.
         (INAVCalculator.Asset memory underlying, bool registered) =
             RegisteredAssetLib.find(NAV_CALCULATOR.getRegisteredAssets(), UNDERLYING_TOKEN);
         if (!registered) return new INAVCalculator.PositionBalance[](0);
 
         return _collectLegs(account, assetFilter, abi.encode(underlying));
+    }
+
+    /// @dev Total NXM across `account`'s positions, summed from the SAME per-id fault-isolated leg path the NAV view
+    ///      uses ({_collectLegs}) — so a single degenerate token drops from BOTH views identically and they never
+    ///      diverge under fault (the bug a single all-or-nothing `getAggregatedTokens` call would have). It calls
+    ///      `_collectLegs` directly rather than {_positions}, so it is registration-INDEPENDENT: the convenience
+    ///      balance getters report the raw NXM owed even when NXM is not (yet) a registered NAV asset — the leg's
+    ///      Asset metadata does not affect the summed amount. When NXM IS registered the two views agree exactly;
+    ///      when it is not, getAdapterPositions is empty (NAV can't price it) while this still surfaces the holding.
+    function _totalNxm(address account) internal view returns (uint256 total) {
+        (INAVCalculator.Asset memory underlying,) =
+            RegisteredAssetLib.find(NAV_CALCULATOR.getRegisteredAssets(), UNDERLYING_TOKEN);
+        INAVCalculator.PositionBalance[] memory legs = _collectLegs(account, address(0), abi.encode(underlying));
+        for (uint256 i; i < legs.length; ++i) {
+            total += legs[i].amount;
+        }
     }
 
     /// @inheritdoc AssistedNftValuationAdapter
@@ -267,60 +296,6 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedNftValuationAd
             out[k] = tmp[k];
         }
         return out;
-    }
-
-    //
-    // Internal — valuation
-    //
-
-    /// @dev The cached tokenIds that contribute to NAV for `account`: still owned (re-verified live via
-    ///      `StakingNFT.tokenInfo`) AND whose staking pool resolves. Discards (never reverts) ids that were
-    ///      withdrawn/transferred away — the assistant can only under-report.
-    /// @dev The pool-resolution filter (`stakingPool(poolId) != 0`) is applied here so this convenience-getter path
-    ///      matches `getAdapterPositions`/`tokenLegs` **exactly**: that path drops a token whose `poolId` does not
-    ///      resolve to a pool (line in `tokenLegs`: `if (pool == address(0)) return none;`). Without the same filter
-    ///      here, `getAdapterBalances`/`getAdapterBalanceForAsset` would count a token with an unresolvable pool that
-    ///      NAV (which reads only `getAdapterPositions`) drops — making the two views disagree and tripping off-chain
-    ///      reconciliation that cross-checks `sum(getAdapterPositions) == getAdapterBalances`. `tokenInfo` already
-    ///      returns the `poolId`, so the filter costs one extra `stakingPool` read per cached id on this non-NAV path.
-    function _ownedCachedIds(address account) internal view returns (uint256[] memory ids) {
-        uint256[] memory cached = _cachedTokenIds(account);
-        uint256[] memory found = new uint256[](cached.length);
-        uint256 n;
-        for (uint256 i; i < cached.length; ++i) {
-            try INexusStakingNFT(STAKING_NFT).tokenInfo(cached[i]) returns (uint256 poolId, address owner) {
-                if (owner == account && _poolResolves(poolId)) found[n++] = cached[i];
-            } catch {}
-        }
-        ids = new uint256[](n);
-        for (uint256 i; i < n; ++i) {
-            ids[i] = found[i];
-        }
-    }
-
-    /// @dev True if `poolId` resolves to a non-zero staking-pool address — the same gate `tokenLegs` applies before
-    ///      emitting a leg. Never reverts (a reverting/unresolvable poolId reads as not-resolved, i.e. excluded).
-    function _poolResolves(uint256 poolId) private view returns (bool) {
-        try INexusStakingViewer(STAKING_VIEWER).stakingPool(poolId) returns (address pool) {
-            return pool != address(0);
-        } catch {
-            return false;
-        }
-    }
-
-    /// @dev Total NXM owed to `account` across its owned, cached staking positions: stake (active + expired) and
-    ///      rewards, valued in one `getAggregatedTokens` call. Never reverts (degrades to 0).
-    function _stakeAndRewards(address account) internal view returns (uint256 staking, uint256 rewards) {
-        uint256[] memory ids = _ownedCachedIds(account);
-        if (ids.length == 0) return (0, 0);
-        try INexusStakingViewer(STAKING_VIEWER).getAggregatedTokens(ids) returns (
-            INexusStakingViewer.AggregatedTokens memory agg
-        ) {
-            staking = agg.totalActiveStake + agg.totalExpiredStake;
-            rewards = agg.totalRewards;
-        } catch {
-            return (0, 0);
-        }
     }
 
     /// @inheritdoc IPositionDescribable

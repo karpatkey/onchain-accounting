@@ -27,9 +27,8 @@ interface IGaugeV3 is IERC20 {
     /// @return The amount of reward tokens claimable
     // forge-lint: disable-next-line(mixed-case-function)
     function integrate_fraction(address user) external view returns (uint256);
-    /// @notice  The goal is to be able to calculate ∫(rate * balance / totalSupply dt) from 0 till checkpoint
-    /// All values are kept in units of being multiplied by 1e18
-    /// @return value ∫(rate * balance / totalSupply dt) from 0 till checkpoint
+    /// @notice Returns the current period index of the gauge's checkpoint accounting
+    /// @return The current period index
     function period() external view returns (int128);
     /// @notice The timestamp of the period
     /// @param period The period to get timestamp for

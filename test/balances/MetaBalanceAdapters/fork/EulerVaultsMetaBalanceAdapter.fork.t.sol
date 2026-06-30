@@ -130,7 +130,8 @@ contract EulerVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
             assertEq(pos[i].balanceAdapter, address(adapter));
             assertFalse(pos[i].isDebt, "supply leg only, never debt");
             assertGt(pos[i].amount, 0);
-            assertEq(pos[i].protocolId, ProtocolIds.EULER_VAULTS);
+            assertEq(pos[i].protocolSubId, ProtocolIds.EULER_VAULTS);
+            assertEq(pos[i].protocolId, ProtocolIds.EULER);
             assertTrue(pos[i].positionKind == PositionKind.Supplied);
         }
         // WETH leg (KPK_ETH_Term) then USDC leg (kpk_RWA_USDC); identity derived on-chain from the instance coord.
@@ -200,7 +201,12 @@ contract EulerVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     }
 
     function test_positionLabels_realVaultName() public view {
-        string[] memory labels = adapter.positionLabels(abi.encode(address(KPK_ETH_TERM)));
+        bytes32[] memory one = new bytes32[](1);
+        one[0] = bytes32(uint256(uint160(address(KPK_ETH_TERM))));
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(SAFE, one, address(0));
+        assertEq(pos.length, 1);
+        assertEq(pos[0].positionId, abi.encode(address(KPK_ETH_TERM)));
+        string[] memory labels = adapter.positionLabels(pos[0].positionId);
         assertEq(labels.length, 2);
         assertEq(labels[0], "Vault");
         assertEq(labels[1], "KPK ETH Yield Term");

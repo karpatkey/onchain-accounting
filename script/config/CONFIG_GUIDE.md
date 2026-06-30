@@ -19,7 +19,9 @@ script/config/
 │   ├── 42161.json                                # Arbitrum
 │   ├── 10.json                                   # Optimism
 │   ├── 8453.json                                 # Base
-│   └── 100.json                                  # Gnosis
+│   ├── 100.json                                  # Gnosis
+│   ├── 137.json                                  # Polygon
+│   └── 56.json                                   # BSC
 ├── deployments/
 │   └── <chainId>.json                            # State file: the ONLY place deployed addresses are written
 ├── contracts-deployment-config/                  # WHAT TO DEPLOY (+ constructor args) — read by 03/04/05
@@ -251,7 +253,7 @@ Enable/disable adapters per chain in `contracts-deployment-config/balance-adapte
 }
 ```
 
-### ✅ Re-run Safe
+### ✅ Safe to Re-run
 If deployment is interrupted, re-running the script will:
 - Skip adapters that are already deployed
 - Only deploy missing adapters
@@ -396,13 +398,13 @@ Add a per-chain `{newChainId}.json` file in **each** of the eight concern folder
 6. Create an empty state file `script/config/deployments/{newChainId}.json` (deployed addresses are written here by the scripts).
 7. Run deployment scripts.
 
-Example for Polygon (chain ID 137):
+Example for Linea (chain ID 59144):
 
 ```bash
-cp script/config/chains/1.json script/config/chains/137.json
-# Edit 137.json with Polygon-specific values
+cp script/config/chains/1.json script/config/chains/59144.json
+# Edit 59144.json with Linea-specific values
 forge script script/deploy/04_DeployBalanceAdapters.s.sol \
-  --rpc-url $POLYGON_RPC_URL \
+  --rpc-url $LINEA_RPC_URL \
   --account $DEPLOYER_NAME \
   --broadcast
 ```
@@ -411,7 +413,7 @@ forge script script/deploy/04_DeployBalanceAdapters.s.sol \
 
 ### Config file not found
 ```
-Error: File not found: script/config/chains/137.json
+Error: File not found: script/config/chains/59144.json
 ```
 **Solution**: Create the chain config file first.
 

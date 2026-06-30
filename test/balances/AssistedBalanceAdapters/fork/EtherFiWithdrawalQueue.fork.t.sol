@@ -4,21 +4,22 @@ pragma solidity ^0.8.0;
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
 import {BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
 import {
-    EtherFiWithdrawalQueueBalanceAdapter,
+    EtherFiWithdrawalQueueAssistedBalanceAdapter,
     IEtherFiWithdrawRequestNFT,
     IEtherFiLiquidityPool
-} from "src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueBalanceAdapter.sol";
+} from "src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueAssistedBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {NotTokenOwner} from "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
-/// @title EtherFiWithdrawalQueueBalanceAdapterForkTest
+/// @title EtherFiWithdrawalQueueAssistedBalanceAdapterForkTest
 /// @notice Fork test against ether.fi's real WithdrawRequestNFT + LiquidityPool on mainnet.
 /// @dev The NFT isn't enumerable, so the agent (here, the test acting as owner) submits a real tokenId; the
 ///      adapter values it entirely from live on-chain reads. Holder 0xcFFab3… owns request #80154 at FORK_BLOCK
 ///      (pending, isValid, fee 0), worth `min(amountOfEEth, amountForShare(shareOfEEth)) − fee` ETH. The test
 ///      asserts the adapter both against the pinned value AND against an independent live read (delta 0).
-contract EtherFiWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
+contract EtherFiWithdrawalQueueAssistedBalanceAdapterForkTest is BalanceAdapterTestBase {
     address public constant WITHDRAW_REQUEST_NFT = 0x7d5706f6ef3F89B3951E23e557CDFBC3239D4E2c;
     address public constant LIQUIDITY_POOL = 0x308861A430be4cce5502d0A12724771Fc6DaF216;
     /// @dev ERC-7528 native-ETH sentinel — what ether.fi pays on claim and how the adapter denominates.
@@ -30,7 +31,7 @@ contract EtherFiWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase 
     uint256 public constant TOKEN_ID = 80_154;
     uint256 public constant EXPECTED_ETH = 253_077_459_762_665_832; // ~0.2531 ETH, pending estimate at FORK_BLOCK
 
-    EtherFiWithdrawalQueueBalanceAdapter public adapter;
+    EtherFiWithdrawalQueueAssistedBalanceAdapter public adapter;
 
     function setUp() public override {
         super.setUp();
@@ -41,7 +42,7 @@ contract EtherFiWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase 
         balances.registerAssetForTest(NATIVE_ETH, 18, "ETH");
 
         // admin = assistant = this test, so it plays the assistant and submits the real tokenId.
-        adapter = new EtherFiWithdrawalQueueBalanceAdapter(
+        adapter = new EtherFiWithdrawalQueueAssistedBalanceAdapter(
             WITHDRAW_REQUEST_NFT, LIQUIDITY_POOL, NATIVE_ETH, address(balances), address(this), address(this)
         );
     }
@@ -84,15 +85,34 @@ contract EtherFiWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase 
         ids[0] = TOKEN_ID;
         adapter.submitTokenIds(HOLDER, ids);
 
+        // One owned cached request → one per-request leg; sum across legs == the holder's aggregate owed ETH.
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(HOLDER, address(0));
-        assertEq(p.length, 1);
-        assertEq(p[0].amount, EXPECTED_ETH);
-        assertEq(p[0].balanceAsset.asset, NATIVE_ETH);
-        assertEq(p[0].balanceAdapter, address(adapter));
-        assertEq(p[0].protocolId, ProtocolIds.ETHERFI_WITHDRAWAL);
-        assertEq(p[0].positionId, abi.encode(adapter.WITHDRAW_REQUEST_NFT()));
-        assertEq(uint8(p[0].positionKind), uint8(PositionKind.Supplied));
-        assertFalse(p[0].isDebt);
+        assertGe(p.length, 1);
+        bytes memory expectedId = abi.encode(adapter.WITHDRAW_REQUEST_NFT());
+        uint256 sum;
+        for (uint256 i = 0; i < p.length; i++) {
+            assertEq(p[i].balanceAsset.asset, NATIVE_ETH);
+            assertEq(p[i].balanceAdapter, address(adapter));
+            assertEq(p[i].protocolSubId, ProtocolIds.ETHERFI_WITHDRAWAL);
+            assertEq(p[i].protocolId, ProtocolIds.ETHERFI);
+            assertEq(p[i].positionId, expectedId, "static positionId shared across per-request legs");
+            assertEq(uint8(p[i].positionKind), uint8(PositionKind.Supplied));
+            assertFalse(p[i].isDebt);
+            assertTrue(p[i].isLocked, "request #80154 is pending -> locked leg");
+            _assertRequestLeg(p[i]);
+            sum += p[i].amount;
+        }
+        assertEq(sum, EXPECTED_ETH, "per-request legs sum to the aggregate total");
+    }
+
+    /// @dev Asserts a per-request leg: the static breadcrumb is `["Withdrawal Queue", "eETH"]` (positionId-derived, no
+    ///      ephemeral id), and the tokenId rides in the typed `positionInstanceId`.
+    function _assertRequestLeg(INAVCalculator.PositionBalance memory leg) internal view {
+        string[] memory labels = adapter.positionLabels(leg.positionId);
+        assertEq(labels.length, 2, "static breadcrumb = [category]");
+        assertEq(labels[0], "Withdrawal Queue");
+        assertEq(labels[1], "eETH");
+        assertTrue(leg.positionInstanceId != bytes32(0), "positionInstanceId carries the tokenId");
     }
 
     // ---- Negative cases against the real contracts ----
@@ -104,11 +124,12 @@ contract EtherFiWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase 
         assertEq(adapter.getAdapterPositions(HOLDER, address(0)).length, 0);
     }
 
-    function test_submit_skipsIdNotOwnedByAccount() public {
-        // Submitting HOLDER's real id under a different account is rejected at write (ownerOf != account).
+    function test_submit_revertsOnIdNotOwnedByAccount() public {
+        // Submitting HOLDER's real id under a different account is rejected at write (ownerOf != account) — fail-loud.
         address stranger = makeAddr("stranger");
         uint256[] memory ids = new uint256[](1);
         ids[0] = TOKEN_ID;
+        vm.expectRevert(abi.encodeWithSelector(NotTokenOwner.selector, stranger, TOKEN_ID));
         adapter.submitTokenIds(stranger, ids);
         assertEq(adapter.tokenIdsOf(stranger).length, 0);
         (uint256 amount,) = adapter.getAdapterBalanceForAsset(stranger, NATIVE_ETH);

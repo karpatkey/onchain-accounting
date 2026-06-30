@@ -31,7 +31,7 @@ Audit run 2026-05-11 against branch `feat/integration-test-add-accounts-616-4f20
 
 ### 1.1 Pending price feeds
 
-ETHx was the only custom feed in the *original incremental gap* (below). In the NAV v2 from-scratch redeploy **every** enabled custom feed is TBD — `03_DeployPriceFeeds.s.sol` deploys all entries with `enabled: true` in `contracts-deployment-config/custom-price-feeds/<chainId>.json` (17 on mainnet, plus 3 on Gnosis, 3 on Base, 5 on Arbitrum at the time of writing). Re-run §6 for the live count.
+ETHx was the only custom feed in the *original incremental gap* (below). In the NAV v2 from-scratch redeploy **every** enabled custom feed is TBD — `03_DeployPriceFeeds.s.sol` deploys all entries with `enabled: true` in `contracts-deployment-config/custom-price-feeds/<chainId>.json` (21 on mainnet, plus 3 on Gnosis, 3 on Base, 5 on Arbitrum at the time of writing). Re-run §6 for the live count.
 
 | Chain | Adapter key | Contract | Constructor params (in `contracts-deployment-config/custom-price-feeds/<chainId>.json` `<key>.constructor`) |
 |---|---|---|---|
@@ -39,7 +39,7 @@ ETHx was the only custom feed in the *original incremental gap* (below). In the 
 
 ### 1.2 Pending balance adapters — Mainnet (chain 1)
 
-> **⚠ Pre-ADR-0010 listing.** The per-instance keys in this section (`CompoundV3_USDC`, `Fluid_fToken_*`, `Fluid_Vault_*`, `MorphoMarket_*`, `MorphoVault_*`, `GearboxMarket_*`, `StakeWiseV3Vault_*`, `UniswapV3_*`) reflect the original audit. They are **disabled** (`enabled: false`) in the current `contracts-deployment-config/balance-adapters/1.json` — the live deploy set replaced them with **meta-adapters** per [ADR 0010](../docs/decisions/0010-meta-balance-adapters.md): `CompoundV3CometsMeta`, `FluidFTokensMeta`, `FluidVaultsMeta`, `MorphoMarketsMeta`, `MorphoVaultsMeta`, `GearboxMarketsMeta`, `StakeWiseV3VaultsMeta`, `UniswapV3PoolsMeta`, etc. (plus the still-plain `AaveUmbrella`, `AaveV3SafetyModule`, `Cap`, `SparkLend`, `ERC4626Wrap_*`, `*WithdrawalQueue`). The §6 audit script unions both deploy folders, so re-run it for the authoritative enabled set; the tables below are kept only as the family-level coverage map.
+> **⚠ Pre-ADR-0010 listing.** The per-instance keys in this section (`CompoundV3_USDC`, `Fluid_fToken_*`, `Fluid_Vault_*`, `MorphoMarket_*`, `MorphoVault_*`, `GearboxMarket_*`, `StakeWiseV3Vault_*`, `UniswapV3_*`) reflect the original audit. They are **disabled** (`enabled: false`) in the current `contracts-deployment-config/balance-adapters/1.json` — the live deploy set replaced them with **meta-adapters** per [ADR 0010](../docs/decisions/0010-meta-balance-adapters.md): `CompoundV3CometsMeta`, `FluidFTokensMeta`, `FluidVaultsMeta`, `MorphoMarketsMeta`, `MorphoVaultsMeta`, `GearboxV3MarketsMeta`, `StakeWiseV3VaultsMeta`, etc. (the Uniswap V3 keys instead moved to the **assisted** family as `UniswapV3PoolsAssisted` — a plain-config NFT-id-cached adapter, not a meta-adapter — and the still-plain `AaveUmbrella`, `AaveV3SafetyModule`, `Cap`, `SparkLend`, `*WithdrawalQueue` stay as-is). The §6 audit script unions both deploy folders, so re-run it for the authoritative enabled set; the tables below are kept only as the family-level coverage map.
 
 Sorted by family.
 
@@ -210,7 +210,7 @@ Deduplicate market IDs across the 13 vaults. Cross-reference against the `market
 
 ## 4. Gearbox markets cross-check
 
-> **Note (ADR 0010):** like the Morpho/Compound/Fluid families, the per-market `GearboxMarket_*` keys below are `enabled: false` in the current deploy config — the enabled deploy is the single `GearboxMarketsMeta` meta-adapter, which derives each market's identity on-chain from its `bytes32` market coordinate. The per-market keys remain (disabled) as the coverage map.
+> **Note (ADR 0010):** like the Morpho/Compound/Fluid families, the per-market `GearboxMarket_*` keys below are `enabled: false` in the current deploy config — the enabled deploy is the single `GearboxV3MarketsMeta` meta-adapter, which derives each market's identity on-chain from its `bytes32` market coordinate. The per-market keys remain (disabled) as the coverage map.
 
 | # | Address | On-chain symbol | On-chain name | In our config? |
 |---|---|---|---|---|

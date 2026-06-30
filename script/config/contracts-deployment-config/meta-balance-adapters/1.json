@@ -21,7 +21,7 @@
       "protocol": "Morpho"
     }
   },
-  "GearboxMarketsMeta": {
+  "GearboxV3MarketsMeta": {
     "enabled": true,
     "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Gearbox V3 ERC4626 farming pool. Emits one Supply leg per market (convertToAssets(balanceOf)) in the pool's underlying. The active market set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below \u2014 each entry is the market/pool address). Identity derived on-chain: positionId = market address; name = market name(). Supersedes the per-market GearboxMarket_* adapters, disabled below.",
     "constructor": {
@@ -76,7 +76,7 @@
       "protocol": "Curve"
     }
   },
-  "ConvexRewardsMeta": {
+  "ConvexCurveLPStakingMeta": {
     "enabled": true,
     "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Convex pool. Instance coordinate = rewarder (BaseRewardPool) address. LP token resolved on-chain via rewarder.pid() \u2192 Booster.poolInfo(pid).lptoken. Emits Supplied legs (staked LP decomposed into Curve pool tokens) + Earned legs (CRV exact, CVX via cliff schedule, extra rewards). Supersedes per-instance Convex_* adapters, disabled below.",
     "constructor": {
@@ -116,14 +116,6 @@
       "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
       "osTokenVaultController": "0x2A261e60FB14586B474C208b1B7AC6D0f5000306",
       "protocol": "StakeWise V3"
-    }
-  },
-  "UniswapV3PoolsMeta": {
-    "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Uniswap V3 pool (Supply + Fees legs from the account's NFT positions). NonfungiblePositionManager pinned in the constructor; the active pool set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below). Identity derived on-chain: positionId = pool address; name = sym0/sym1 feeTier. Supersedes the per-pool UniswapV3_* adapters, disabled below.",
-    "constructor": {
-      "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
-      "protocol": "Uniswap V3"
     }
   },
   "EulerVaultsMeta": {

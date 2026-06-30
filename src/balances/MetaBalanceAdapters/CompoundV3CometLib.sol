@@ -2,11 +2,12 @@
 pragma solidity ^0.8;
 
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import {DedupeLib} from "src/balances/MetaBalanceAdapters/DedupeLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
 interface ICompoundRewards {
-    /// @notice Some chains return a 4th `multiplier` value; the adapter detects via `data.length`.
+    /// @notice Some chains return a 4th `multiplier` value; the library detects via `data.length`.
     function rewardConfig(address comet) external view returns (address token, uint64 rescaleFactor, bool shouldUpscale);
 
     function rewardsClaimed(address comet, address src) external view returns (uint256);
@@ -75,10 +76,9 @@ interface CometInterface {
 /// @notice Shared read math for the Compound V3 meta-adapter. Given a Comet (market), the chain's CometRewards,
 ///         the expected reward token, and an account, it returns the account's base supply/borrow (present value
 ///         with interest accrued to `block.timestamp`), every collateral balance, and the unclaimed reward amount.
-/// @dev Ports `CompoundV3Comet`'s base-accrual + reward-accrual math verbatim, parameterized by the comet so one
-///      stateless library serves every market (the per-comet adapter snapshotted collaterals + the accrual
-///      descale factor at construction; here they are derived per call). Mirrors the per-comet adapter
-///      leg-for-leg (parity fork-tested).
+/// @dev Implements Compound V3's base-accrual + reward-accrual math, parameterized by the comet so one stateless
+///      library serves every market: collaterals and the accrual descale factor are derived per call rather than
+///      snapshotted, and the meta-adapter (`CompoundV3CometsMetaBalanceAdapter`) calls into it for every comet.
 library CompoundV3CometLib {
     using SafeCast for uint256;
     using SafeCast for int256;
@@ -104,23 +104,9 @@ library CompoundV3CometLib {
         tmp[m++] = CometInterface(comet).baseToken();
         for (uint8 i = 0; i < n; i++) {
             (, address asset,,,,,,) = CometExtInterface(comet).getAssetInfo(i);
-            bool seen = false;
-            for (uint256 j = 0; j < m; j++) {
-                if (tmp[j] == asset) {
-                    seen = true;
-                    break;
-                }
-            }
-            if (!seen) tmp[m++] = asset;
+            if (!DedupeLib.contains(tmp, m, asset)) tmp[m++] = asset;
         }
-        bool rewardSeen = false;
-        for (uint256 j = 0; j < m; j++) {
-            if (tmp[j] == rewardToken) {
-                rewardSeen = true;
-                break;
-            }
-        }
-        if (!rewardSeen) tmp[m++] = rewardToken;
+        if (!DedupeLib.contains(tmp, m, rewardToken)) tmp[m++] = rewardToken;
 
         address[] memory out = new address[](m);
         for (uint256 i = 0; i < m; i++) {
@@ -144,14 +130,7 @@ library CompoundV3CometLib {
         uint256 m;
         for (uint8 i = 0; i < n; i++) {
             (, address asset,,,,,,) = CometExtInterface(comet).getAssetInfo(i);
-            bool seen = false;
-            for (uint256 j = 0; j < m; j++) {
-                if (ca[j] == asset) {
-                    seen = true;
-                    break;
-                }
-            }
-            if (seen) continue;
+            if (DedupeLib.contains(ca, m, asset)) continue;
             ca[m] = asset;
             cb[m] = CometExtInterface(comet).collateralBalanceOf(account, asset);
             m++;

@@ -1,36 +1,36 @@
 # Nexus Mutual staked NXM — balance-adapter verification
 
 ## 1. Adapter under test
-`NexusMutualStakingPoolsBalanceAdapter` (`src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsBalanceAdapter.sol`). Reports an account's staked NXM across Nexus Mutual V2 staking pools as NXM-denominated `Staking` (active + expired stake) and `Rewards` legs — emitted **per StakingNFT position** (`positionId = abi.encode(tokenId, poolId)`).
+`NexusMutualStakingPoolsAssistedBalanceAdapter` (`src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsAssistedBalanceAdapter.sol`). Reports an account's staked NXM across Nexus Mutual V2 staking pools as NXM-denominated `Staking` (active + expired stake) and `Rewards` legs — emitted **per StakingNFT position** (`positionId = abi.encode(address stakingPool)`, where `stakingPool = StakingViewer.stakingPool(poolId)`; the StakingNFT tokenId rides in the typed `positionInstanceId` on each leg, not in `positionId` and not in the display labels).
 
-### Inheritance + per-chain scope (Phase 0)
-- Implements `IBalanceAdapter` + `IPositionDescribable` directly — a **simple immutable view adapter** (no `Ownable`, no agent, no cache). **Mainnet (1) only** (Nexus Mutual V2 is mainnet).
-- **Why a view adapter and not the ADR-0014 agent-fed cache (spike, 2026-06-24):** `StakingNFT` (`0xcafea508…e97f`) is **not** per-owner-enumerable (`tokenOfOwnerByIndex` reverts) and `StakingViewer` (`0xcafea5c7…cF81F`) has **no** staker→tokenIds view (only manager methods + `get*(uint256[] tokenIds)`). That's the same NFT wall as ether.fi/StakeWise — **except** `StakingNFT` is **mint-only** (no `burn`) with a tiny, monotonic `totalSupply` (~280 globally), so live tokenIds are exactly `1..totalSupply`. The adapter therefore self-discovers by scanning `tokenInfo(id) -> (poolId, owner)` over that range — feasible on-chain (ether.fi's ~80k supply made this impossible). No off-chain feeder needed.
+### Inheritance + per-chain scope
+- Extends `AssistedBalanceAdapter` and implements `IPositionDescribable` — an **assisted (agent-fed) adapter** in the ADR-0015 family, not a plain view adapter. Access control comes from the base (OZ `AccessControl`): `DEFAULT_ADMIN_ROLE` administers roles and `ASSISTANT_ROLE` gates the submit/clear mutators. **Mainnet (1) only** (Nexus Mutual V2 is mainnet).
+- **Why agent-fed and not a self-discovering view adapter:** `StakingNFT` (`0xcafea508…e97f`) is **not** per-owner-enumerable (`tokenOfOwnerByIndex` reverts) and `StakingViewer` (`0xcafea5c7…cF81F`) has **no** staker→tokenIds view (only manager methods + `get*(uint256[] tokenIds)`). That's the same NFT wall as ether.fi/StakeWise and Uniswap V3, so it joins the assisted family: an off-chain assistant (holder of `ASSISTANT_ROLE`) submits the account's StakingNFT tokenIds via `submitTokenIds`, and the adapter values each entirely from live on-chain reads, re-verifying ownership on every read. The cache stores **ids only, never amounts** — a faulty or compromised assistant can at worst omit an id (NAV under-counts), never fabricate value.
 
-### Math branches
-- `_ownedTokenIds`: `balanceOf(account)` fast-path first — **`0` ⇒ skip the scan entirely** (the common non-staker case in a NAV fan-out), else collect exactly `min(balanceOf, MAX_POSITIONS_PER_ACCOUNT)` tokens and **stop early** once found (a reverting/absent `balanceOf` falls back to the plain bounded scan). Then `totalSupply()` read (try/catch → 0 ids); scan `tokenInfo` **descending** over `totalSupply..1` (newest ids first — positions cluster at recent ids, so the early-exit triggers sooner), collect `owner == account`; a reverting `tokenInfo` is caught and skipped. There is no fixed scan cap — the loop covers the full live range (`totalSupply` ~280 today); the pathological cost (only-old-id positions, or a `balanceOf` revert) scales with `totalSupply`, and the ADR-0014 agent cache is the escape if global supply ever grows large enough to risk OOG inside a NAV read. `StakingNFT` is not ERC721Enumerable (no owner→tokenIds view), which is why discovery must scan at all.
-- `getAdapterPositions`: `assetFilter` mismatch → empty; NXM not registered → empty; else `StakingViewer.getTokens(ids)` (try/catch → empty) → for each token emit `Staking = activeStake + expiredStake` and `Rewards = rewards` (zeros dropped), `positionId = abi.encode(tokenId, poolId)`.
-- `getAdapterBalances` / `getAdapterBalanceForAsset` (no-arg): summed NXM total via `getAggregatedTokens(ids)` (try/catch → 0) → `active + expired + rewards`.
+### Cache and read path
+- **`submitTokenIds(account, tokenIds)`** (`ASSISTANT_ROLE`): **replaces** the account's full cached id set (clear then re-add; duplicates dedup). **Reverts** `NotTokenOwner` for any id whose `tokenInfo` owner ≠ `account`, and `TokenIdCacheFull` past `MAX_TOKEN_IDS` (64) — writes are fail-loud and atomic, so a bad list leaves the prior set untouched. `submitTokenIdsBatch`, `clearTokenId`, and `clearAccount` are the other mutators.
+- `getAdapterPositions`: `assetFilter` mismatch → empty; account zero → empty; no cached ids → empty; NXM not registered in NAVCalculator → empty. Otherwise, for each cached id it calls `this.tokenLegs(...)` behind a per-NFT try/catch (fail-open id isolation): re-verifies ownership via `StakingNFT.tokenInfo` (transferred/burned ids discarded), reads `StakingViewer.getTokens([id])`, and emits `Staking = activeStake + expiredStake` and `Rewards = rewards` (zero legs dropped), keyed by `positionId = abi.encode(address stakingPool)` with the tokenId in `positionInstanceId`.
+- `getAdapterBalances` / `getAdapterBalanceForAsset` (no-arg): summed NXM total over the account's owned, cached ids via `getAggregatedTokens(ids)` (try/catch → 0) → `totalActiveStake + totalExpiredStake + totalRewards`.
 
 ## 2. Fork test coverage
-`test/balances/AssistedBalanceAdapters/fork/NexusMutualStakingPoolsBalanceAdapter.fork.t.sol` (3 tests, `FOUNDRY_PROFILE=slow`, FORK_BLOCK 25,388,000):
-- `realHolder_scanMatchesAggregate` — the adapter's **scan-derived** summed total for the Nexus Safe equals an independent `getAggregatedTokens([180,184,185,186,187])` read (delta 0) **and** the pinned values.
-- `realHolder_perNftLegs` — per-NFT `Staking`/`Rewards` legs: 5–10 legs, each `positionId` decodes to a known `(tokenId, poolId)`, and the per-kind sums equal the live aggregate (delta 0).
-- `nonStaker_reportsZero` — a non-staking address reports nothing (scan finds no owned ids).
+`test/balances/AssistedBalanceAdapters/fork/NexusMutualStakingPoolsAssistedBalanceAdapter.fork.t.sol` (3 tests, `FOUNDRY_PROFILE=slow`, FORK_BLOCK 25,388,000). `setUp` submits the Safe's known tokenIds (`[180,184,185,186,187]`) via `submitTokenIds` (test acts as admin + assistant):
+- `test_realHolder_scanMatchesAggregate` — the adapter's summed total for the Nexus Safe equals an independent `getAggregatedTokens([180,184,185,186,187])` read (delta 0) **and** the pinned values.
+- `test_realHolder_perNftLegs` — per-NFT `Staking`/`Rewards` legs: 5–10 legs, each `positionId` decodes to a deployed staking-pool address (with the tokenId carried in `positionInstanceId`, and the labels asserted to be `["Staking Pools", …]`), and the per-kind sums equal the live aggregate (delta 0).
+- `test_nonStaker_reportsZero` — an address with no cached ids reports nothing.
 
 ## 3. Unit test coverage
-`test/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsBalanceAdapter.t.sol` (mock-only): constructor guards (×5), discovery + summed valuation (owned-only, other-account-excluded, wrong-asset), per-NFT `Staking`+`Rewards` leg identity (`positionId = abi.encode(tokenId, poolId)`), a **two-pool** case yielding distinct positionIds, single-leg (no-rewards / no-stake) and empty cases, asset-filter match/mismatch, unregistered-underlying drop, `getAdapterBalances` shape, the `MAX_POSITIONS_PER_ACCOUNT` cap, a high-id position (beyond the former 5000 bound) still discovered, the `balanceOf` fast-path (zero-balance skips the scan; `balanceOf` revert falls back to the full scan), `try/catch` never-revert on `tokenInfo` / `totalSupply` / `getTokens` / `getAggregatedTokens`, ERC165, `underlyingAssetsSupported`. The mock `StakingViewer` returns per-token structs for exactly the ids the adapter passes, so discovery → valuation is tested end-to-end.
+`test/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsAssistedBalanceAdapter.t.sol` (mock-only, 30 tests): constructor guards (×5: zero StakingNFT / viewer / underlying / NAV, and StakingNFT not-a-contract), role wiring from constructor args, submitted-tokens summed valuation, unsubmitted-account zero, wrong-asset zero, per-NFT `Staking`+`Rewards` leg identity (`positionId = abi.encode(address stakingPool)`; tokenId in `positionInstanceId`), the `["Staking Pools", "Pool #<id>"]` labels (with the address fallback when `getPoolId` reverts), a **two-pool** case yielding distinct positionIds, single-leg (no-rewards / no-stake) and empty cases, asset-filter match/mismatch, unregistered-underlying drop (positions empty but the no-arg balance still owed), `getAdapterBalances` shape, `submitTokenIds` is `ASSISTANT_ROLE`-gated and reverts on a non-owned id, reads discard transferred/reverting ids, `clearTokenId` / `clearAccount`, the `MAX_TOKEN_IDS` (64) per-account cap reverting when full, `try/catch` never-revert when the viewer reverts, ERC165, and `underlyingAssetsSupported`. The mock `StakingViewer` returns per-token structs for exactly the ids the adapter passes, so cache → valuation is tested end-to-end.
 
 ## 4. Adapter formula recap
-```
-if StakingNFT.balanceOf(account) == 0: return []      // non-staker fast-path, no scan
-target = min(StakingNFT.balanceOf(account), MAX_POSITIONS_PER_ACCOUNT)   // (cap if balanceOf reverts)
-ids = first `target`, scanning id = StakingNFT.totalSupply() down to 1, of { id : StakingNFT.tokenInfo(id).owner == account }
-tokens = StakingViewer.getTokens(ids)            // per-token { tokenId, poolId, activeStake, expiredStake, rewards }
-for each t in tokens:
+```text
+ids = cached tokenIds for `account`, each re-verified live: keep only those whose
+      StakingNFT.tokenInfo(id).owner == account   // transferred/burned ids discarded
+for each id in ids:
+  t = StakingViewer.getTokens([id])[0]            // { tokenId, poolId, activeStake, expiredStake, rewards }
   Staking leg = t.activeStake + t.expiredStake (NXM)   // if > 0
   Rewards leg = t.rewards (NXM)                         // if > 0
-  positionId  = abi.encode(t.tokenId, t.poolId) ; isDebt = false
+  positionId         = abi.encode(StakingViewer.stakingPool(t.poolId)) ; isDebt = false
+  positionInstanceId = bytes32(t.tokenId)              // the NFT id rides here, not in positionId or the labels
 ```
 NXM (`0xd7c4…Cf3B`) is a registered + priced NAV asset (PR #71), so NAVCalculator prices the legs.
 
@@ -48,18 +48,19 @@ NXM (`0xd7c4…Cf3B`) is a registered + priced NAV asset (PR #71), so NAVCalcula
 | `0x8e53…cFE3` | Rewards | NXM | `228254616240628948835` (~228.25) | false |
 
 ### 7b. Per-position legs
-One NXM `Staking` leg + one NXM `Rewards` leg **per StakingNFT tokenId** (zeros dropped), keyed by `abi.encode(tokenId, poolId)`; the per-kind sums equal the aggregate above. Nothing if the account stakes nothing.
+One NXM `Staking` leg + one NXM `Rewards` leg **per StakingNFT tokenId** (zeros dropped), keyed by `positionId = abi.encode(address stakingPool)` (the tokenId rides in `positionInstanceId`); the per-kind sums equal the aggregate above. Nothing if the account stakes nothing.
 
 ## 8. Ground-truth cross-check
-- **On-chain (fork test):** the adapter's per-NFT legs sum back to `getAggregatedTokens([180,184,185,186,187]).active + expired + rewards`, delta **0**, and the no-arg total getter matches the same. The adapter's scan independently rediscovers those exact 5 ids.
+- **On-chain (fork test):** the adapter's per-NFT legs sum back to `getAggregatedTokens([180,184,185,186,187]).active + expired + rewards`, delta **0**, and the no-arg total getter matches the same. The adapter values exactly the 5 submitted ids, re-verifying ownership live.
 - **Debank:** `nexus` shows "Staked" ≈ $3.35M NXM for this Safe (the "Yield" $250k line is RWIV, covered separately by #95/#103).
 
 ## 9. Wiring the live dev-anvil dashboard
-Nexus has a live holder (the Safe), so no seeding. NXM must be registered (it is, in the prod asset config).
+Nexus has a live holder (the Safe), so no balance seeding. NXM must be registered (it is, in the prod asset config). Because this is an assisted adapter, an `ASSISTANT_ROLE` holder must `submitTokenIds` the Safe's StakingNFT ids before its positions surface — `getAdapterPositions` returns empty for an account with no cached ids.
 ```bash
 bash script/development/anvil/start-forks.sh 1
 bash script/development/deploy/deploy.sh 1                       # NAV + Chainlink assets
-# register NXM (custom RAMM feed) + deploy NexusMutualStakingPools + addBalanceAdapters, then:
+# register NXM (custom RAMM feed) + deploy NexusMutualStakingPoolsAssisted + addBalanceAdapters,
+# then submitTokenIds(0x8e53…cFE3, [180,184,185,186,187]) as the assistant, then:
 bash script/development/app/sync-app-env.sh 1
 # start Next.js and enter 0x8e53D04644E9ab0412a8c6bd228C84da7664cFE3
 ```

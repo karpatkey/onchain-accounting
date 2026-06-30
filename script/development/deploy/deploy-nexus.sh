@@ -4,10 +4,11 @@
 # Usage:  deploy-nexus.sh <chainId>
 #   e.g.  deploy-nexus.sh 1
 #
-# NexusMutualStakingPoolsBalanceAdapter is a simple immutable view adapter (no agent, no owner): it discovers
-# an account's StakingNFT positions by scanning tokenInfo(1..totalSupply) and values each via
-# StakingViewer.getTokens into per-NFT NXM-denominated Staking (active+expired) + Rewards legs
-# (positionId = abi.encode(tokenId, poolId)).
+# NexusMutualStakingPoolsAssistedBalanceAdapter is an assisted (agent-fed) adapter: a trusted ASSISTANT_ROLE submits
+# the account's StakingNFT tokenIds (the NFT is not owner-enumerable), and the adapter values each via
+# StakingViewer.getTokens into per-NFT NXM-denominated Staking (active+expired) + Rewards legs, re-verifying ownership
+# on every read (positionId = abi.encode(address stakingPool), where stakingPool = StakingViewer.stakingPool(poolId);
+#  the per-NFT StakingNFT tokenId is the typed PositionBalance.positionInstanceId — labels derive from positionId only).
 # NXM is priced by a custom RAMM feed (NXM_CustomPriceFeed), which dev deploy.sh does NOT auto-register
 # (it wires Chainlink assets only). So this helper, in order:
 #   1. deploys NXM_CustomPriceFeed and registerAsset()s NXM with it (Custom price type),
@@ -36,6 +37,8 @@ PRICE_TYPE_CUSTOM=3 # IPrices.PriceType.Custom
 
 # Anvil prefunded account #0 (holds MANAGER after 01_DeployNAV).
 DEV_PRIVATE_KEY="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+# Dev deployer EOA (anvil account 0) — used as both DEFAULT_ADMIN_ROLE and the initial ASSISTANT_ROLE on the adapter.
+DEPLOYER=$(cast wallet address --private-key "$DEV_PRIVATE_KEY")
 
 if ! command -v forge >/dev/null 2>&1; then export PATH="$HOME/.foundry/bin:$PATH"; fi
 if ! command -v jq >/dev/null 2>&1; then echo "error: jq not on PATH" >&2; exit 1; fi
@@ -78,11 +81,11 @@ else
 fi
 
 # --- 2. adapter ------------------------------------------------------------------------------------------
-echo "--- deploy NexusMutualStakingPoolsBalanceAdapter"
+echo "--- deploy NexusMutualStakingPoolsAssistedBalanceAdapter"
 OUT=$(
-  forge create src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsBalanceAdapter.sol:NexusMutualStakingPoolsBalanceAdapter \
+  forge create src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsAssistedBalanceAdapter.sol:NexusMutualStakingPoolsAssistedBalanceAdapter \
     --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" --broadcast \
-    --constructor-args "$STAKING_NFT" "$STAKING_VIEWER" "$NXM_TOKEN" "$NAV" 2>&1
+    --constructor-args "$STAKING_NFT" "$STAKING_VIEWER" "$NXM_TOKEN" "$NAV" "$DEPLOYER" "$DEPLOYER" 2>&1
 ) || true
 ADAPTER=$(printf '%s\n' "$OUT" | grep -i "Deployed to:" | awk '{print $3}' || true)
 if [ -z "$ADAPTER" ]; then
@@ -90,13 +93,13 @@ if [ -z "$ADAPTER" ]; then
   echo "error: forge create produced no address (is the NAV a contract on this fork?)" >&2
   exit 1
 fi
-echo "  NexusMutualStakingPools: $ADAPTER"
+echo "  NexusMutualStakingPoolsAssisted: $ADAPTER"
 
 # --- 3. register on NAV ----------------------------------------------------------------------------------
 cast send "$NAV" "addBalanceAdapters(address[])" "[$ADAPTER]" \
   --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" >/dev/null
 echo "  registered on NAV (addBalanceAdapters)"
 
-jq --arg a "$ADAPTER" '. + {"NexusMutualStakingPools": $a}' "$ADDR_FILE" > "$ADDR_FILE.tmp" && mv "$ADDR_FILE.tmp" "$ADDR_FILE"
+jq --arg a "$ADAPTER" '. + {"NexusMutualStakingPoolsAssisted": $a}' "$ADDR_FILE" > "$ADDR_FILE.tmp" && mv "$ADDR_FILE.tmp" "$ADDR_FILE"
 echo "  recorded in $ADDR_FILE"
 echo "  -> next: sync-app-env.sh $CID, then enter 0x8e53D04644E9ab0412a8c6bd228C84da7664cFE3 in the dashboard"

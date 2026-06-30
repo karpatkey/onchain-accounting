@@ -2,17 +2,23 @@
 pragma solidity ^0.8;
 
 import {IBalanceAdapter} from "./IBalanceAdapter.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {IMetaBalanceAdapter} from "./IMetaBalanceAdapter.sol";
 import {IPositionDescribable} from "./IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {LabelLib} from "./LabelLib.sol";
+import {RegisteredAssetLib} from "./RegisteredAssetLib.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {InvalidArgumentsWithContext} from "src/errors.sol";
 
 /// @title MetaBalanceAdapter
 /// @author KPK
-/// @notice Abstract base for meta balance adapter adapters — one immutable adapter serving every instance of a
-///         protocol. Concrete adapters implement two hooks (`_instancePositions`, `_instanceAssets`); this base
+/// @notice Abstract base for meta balance adapters — one immutable adapter serving every instance of a
+///         protocol. Concrete adapters implement the per-instance hooks (`_instancePositions`, `_instanceAssets`),
+///         the identity hooks (`_protocolBrand`, `_protocolId`, `_protocolSubId`), and `positionLabels`; this base
 ///         provides the ERC165 wiring, the empty no-arg `IBalanceAdapter` methods, the per-instance fan-out
-///         with revert isolation, and shared NAVCalculator registry helpers.
+///         with revert isolation, the shared `_leg` builder, and shared NAVCalculator registry helpers.
 /// @dev The instance set lives on NAVCalculator (ADR 0010). The adapter reads its own set via
 ///      `NAV_CALCULATOR.getMetaInstances(address(this))` and holds no instance state or admin functions of its
 ///      own — it stays immutable. `getAdapterPositionsForInstances` is also exposed for explicit/off-chain queries.
@@ -34,7 +40,7 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     /// @param protocolName_ Human-readable protocol name for verbose reads (e.g. "Morpho").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
     constructor(string memory protocolName_, address navCalculator_) {
-        require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
+        AddressCheckLib.requireContract(navCalculator_, "NAVCalculator");
         _protocolName = protocolName_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
@@ -59,8 +65,9 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     }
 
     /// @inheritdoc IPositionDescribable
-    /// @dev Concrete adapters must override — derives the label hierarchy (below protocol, leaf last) from the
-    ///      encoded instance coordinate, e.g. `["Market", "wstETH/USDC"]`.
+    /// @dev Abstract — each concrete meta-adapter derives the breadcrumb from `positionId` (decode the instance
+    ///      coordinate, read its on-chain name/symbol) and returns `_labels("Category", leaf)`. Display only; the
+    ///      ephemeral per-item id (if any) is the typed `PositionBalance.positionInstanceId`, not a label.
     function positionLabels(bytes calldata positionId) external view virtual override returns (string[] memory);
 
     //
@@ -187,7 +194,7 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     //
 
     /// @notice External wrapper around the concrete per-instance position logic.
-    /// @dev Called via `this.` inside `getAdapterPositionsForInstances` so a single bad instance is isolated.
+    /// @dev Called via `this.` inside `_positionsForInstances` so a single bad instance is isolated.
     function instancePositions(address account, bytes32 instance, address assetFilter)
         external
         view
@@ -217,11 +224,50 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     function _instanceAssets(bytes32 instance) internal view virtual returns (address[] memory);
 
     //
+    // Identity hooks (overridden per adapter)
+    //
+
+    /// @notice The adapter's `protocolBrand` — the version-stripped brand roll-up (e.g. `aave`). See ProtocolIds.
+    function _protocolBrand() internal pure virtual returns (bytes32);
+
+    /// @notice The adapter's `protocolId` — the ecosystem/version roll-up (e.g. `aave-v3`). See ProtocolIds.
+    function _protocolId() internal pure virtual returns (bytes32);
+
+    /// @notice The adapter's `protocolSubId` — the per-product slug; the protocol component of the stable
+    ///         reconciliation key (e.g. `aave-v3-lending`). See ProtocolIds.
+    function _protocolSubId() internal pure virtual returns (bytes32);
+
+    //
     // Shared helpers
     //
 
-    /// @notice Assembles the `[category, leaf]` label pair for `positionLabels`, applying the fail-open
-    ///         empty-leaf convention in one place (IPositionDescribable): a leaf that could not be derived
+    /// @notice Assembles a single `PositionBalance` with this adapter's identity (the `_protocol*` hooks +
+    ///         `balanceAdapter = address(this)`), `isLocked = false`, and `positionInstanceId = bytes32(0)`.
+    /// @dev The shared leg builder for every meta-adapter — each instance read calls this instead of inlining a
+    ///      9-field struct literal (which also keeps per-adapter frames under the via_ir stack limit). Meta-adapter
+    ///      positions are never locked and carry no ephemeral per-item id (the instance coordinate lives in
+    ///      `positionId`), so those two fields are fixed here.
+    function _leg(
+        INAVCalculator.Asset memory asset,
+        uint256 amount,
+        bool isDebt,
+        bytes memory positionId,
+        PositionKind kind
+    ) internal view returns (INAVCalculator.PositionBalance memory leg) {
+        leg.balanceAsset = asset;
+        leg.balanceAdapter = address(this);
+        leg.amount = amount;
+        leg.isDebt = isDebt;
+        leg.protocolBrand = _protocolBrand();
+        leg.protocolId = _protocolId();
+        leg.protocolSubId = _protocolSubId();
+        leg.positionId = positionId;
+        leg.positionKind = kind;
+        // isLocked defaults false; positionInstanceId defaults bytes32(0).
+    }
+
+    /// @notice Assembles the `[category, leaf]` label pair returned by each meta-adapter's `positionLabels`, applying
+    ///         the fail-open empty-leaf convention in one place (IPositionDescribable): a leaf that could not be derived
     ///         (empty string, e.g. a reverting `name()`/`symbol()` read) is dropped so consumers never render
     ///         a blank trailing breadcrumb segment, while the known `category` is preserved. If both are empty,
     ///         returns an empty array. Mirrors `ERC20DefaultBalanceAdapter`'s single-segment collapse, generalised to
@@ -246,7 +292,7 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     ///      surfaces as an error (isolated per-instance by the fan-out) instead of querying a different address.
     ///      Adapters whose coordinate is a raw bytes32 (e.g. Morpho market ids) do not use this helper.
     function _toAddress(bytes32 instance) internal pure returns (address) {
-        require(uint256(instance) >> 160 == 0, "instance: not an address");
+        if (uint256(instance) >> 160 != 0) revert InvalidArgumentsWithContext("instance: not an address");
         return address(uint160(uint256(instance)));
     }
 
@@ -254,22 +300,73 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     /// @dev Default: encodes the instance as an address (address-keyed protocols).
     ///      Override when the coordinate is a raw bytes32 (e.g. Morpho market IDs, Balancer V2 poolIds).
     ///      Adapters whose positionId is not the default-encoded instance coordinate do NOT use this hook —
-    ///      they compute positionId inline in _instancePositions:
-    ///        - Aave V3: abi.encode(pool) — the instance Pool resolved from the DataProvider coordinate
-    ///          (one positionId per instance; reserves are distinguished by balanceAsset + positionKind)
-    ///        - Uniswap V3 / PancakeSwap V3: abi.encode(npm, tokenId) — one positionId per NFT
+    ///      they compute positionId inline in _instancePositions, e.g. Aave V3: abi.encode(pool) — the instance Pool
+    ///      resolved from the DataProvider coordinate (one positionId per instance; reserves are distinguished by
+    ///      balanceAsset + positionKind). (Uniswap V3 / PancakeSwap V3 are no longer meta-adapters — they are
+    ///      assisted adapters keyed on abi.encode(pool); see UniswapV3PoolsAssistedBalanceAdapter.)
     function _instancePositionId(bytes32 instance) internal view virtual returns (bytes memory) {
         return abi.encode(_toAddress(instance));
+    }
+
+    /// @notice Joins the ERC20 symbols of `tokens` with "/" — e.g. `[USDC, WETH]` → `"USDC/WETH"`,
+    ///         `[USDC, USDT, DAI]` → `"USDC/USDT/DAI"`.
+    /// @dev Fail-open (runs in the lazy, verbose-only `positionLabels` path): a token with no code or whose
+    ///      `symbol()` reverts yields `"?"` rather than reverting the whole labels read. Mirrors
+    ///      `CurvePoolLib.coinSymbols`; used by the AMM-pool meta-adapters whose label leaf is the underlying
+    ///      token set (Balancer V2/V3). Returns "" for an empty `tokens` array.
+    function _joinTokenSymbols(address[] memory tokens) internal view returns (string memory result) {
+        for (uint256 i; i < tokens.length; ++i) {
+            string memory sym = LabelLib.symbol(tokens[i], "?");
+            result = i == 0 ? sym : string.concat(result, "/", sym);
+        }
     }
 
     /// @notice Looks up an asset's registry metadata.
     /// @return asset The Asset struct (zeroed if not found).
     /// @return found True if the asset is registered in NAVCalculator.
+    /// @dev Each call re-fetches the full registry via `NAV_CALCULATOR.getRegisteredAssets()`, so a read that
+    ///      touches N tokens does N registry fetches. Threading a single pre-fetched registry snapshot down from
+    ///      `PriceFeedLib`/`NAVCalculator` through `getAdapterPositions` (a 3-arg overload carrying
+    ///      `INAVCalculator.Asset[] memory registeredAssets`) to eliminate that N×M re-fetch was implemented and
+    ///      then **deliberately reverted**. Reasons: (1) NAV is consumed off-chain/asynchronously (ADR 0017), so
+    ///      the gas saved on the populated path has no real-world value — there is no atomic on-chain consumer
+    ///      paying for it; and (2) eagerly fetching + ABI-copying the registry into every adapter call **regressed
+    ///      the empty-account path** from <100k to ~166k gas (the team's `gasOptimization_emptyAccount` guard),
+    ///      because adapters that early-return for empty accounts previously never fetched the registry at all.
+    ///      Net: a measurable regression on the common cheap path for a saving that does not matter. See
+    ///      `BALANCE_ADAPTERS.md` §"Rejected: registry fetch-once threading". Do not re-thread the registry unless
+    ///      NAV becomes a synchronous on-chain consumer.
     function _getAssetInfo(address asset) internal view returns (INAVCalculator.Asset memory, bool found) {
-        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
-        for (uint256 i = 0; i < reg.length; i++) {
-            if (reg[i].asset == asset) return (reg[i], true);
-        }
-        return (INAVCalculator.Asset({asset: address(0), symbol: "", decimals: 0}), false);
+        // Shared registry lookup (RegisteredAssetLib.find) — one find implementation across the layer.
+        return RegisteredAssetLib.find(NAV_CALCULATOR.getRegisteredAssets(), asset);
+    }
+
+    /// @notice The filter-then-registry gate every per-instance read applies before emitting a leg: a token is
+    ///         eligible when it matches `assetFilter` (or no filter is set) AND is registered in NAVCalculator.
+    /// @dev Combines the `assetFilter` short-circuit with `_getAssetInfo` so concrete adapters write one call instead
+    ///      of re-deciding the order each time. Returns a zeroed `assetInfo` when ineligible.
+    function _eligible(address token, address assetFilter)
+        internal
+        view
+        returns (INAVCalculator.Asset memory assetInfo, bool eligible)
+    {
+        if (assetFilter != address(0) && token != assetFilter) return (assetInfo, false);
+        (assetInfo, eligible) = _getAssetInfo(token);
+    }
+
+    /// @notice Builds the `positionLabels` `[category, leaf]` for an address-keyed `positionId`, reading the
+    ///         instance's on-chain `name()` (or `symbol()` when `useSymbol`) live and fail-open to "" — the
+    ///         single-address label shape shared by the vault/market/lending meta-adapters (Morpho, Euler, Fluid,
+    ///         Gearbox markets, Compound comets). Returns an empty array for a short/malformed positionId; the
+    ///         empty-leaf collapse is handled by {_labels}.
+    function _addressLabels(bytes calldata pid, string memory category, bool useSymbol)
+        internal
+        view
+        returns (string[] memory)
+    {
+        if (pid.length < 32) return new string[](0);
+        address addr = abi.decode(pid, (address));
+        string memory leaf = useSymbol ? LabelLib.symbol(addr, "") : LabelLib.name(addr, "");
+        return _labels(category, leaf);
     }
 }

@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import {NAVCalculatorForkHarness} from "test/nav/fork/NAVCalculatorForkTestBase.fork.sol";
 import {sXDAI_CustomPriceFeed} from "src/prices/protocols/sXDAI_CustomPriceFeed.sol";
-import {CrossRate_CustomPriceFeed} from "src/prices/protocols/CrossRate_CustomPriceFeed.sol";
+import {CrossRateCustomPriceFeed} from "src/prices/protocols/CrossRateCustomPriceFeed.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
@@ -29,7 +29,7 @@ contract GnosisForkNAVCalculatorTest is NAVCalculatorForkHarness {
     address public usdtUsdChainlink = address(0x68811D7DF835B1c33e6EEae8E7C141eF48d48cc7); // USDT/USD Tether (0.5%, 86400s, 8dp)
     address public wstEthEthChainlink = address(0x0064AC007fF665CF8D0D3Af5E0AD1c26a3f853eA); // wstETH-ETH rate (0.5%, 86400s, 18dp)
 
-    CrossRate_CustomPriceFeed public wstEthPriceFeed;
+    CrossRateCustomPriceFeed public wstEthPriceFeed;
 
     // Gnosis Chain token addresses
     address public gno = address(0x9C58BAcC331c9aa871AFD802DB6379a98e80CEdb);
@@ -96,10 +96,10 @@ contract GnosisForkNAVCalculatorTest is NAVCalculatorForkHarness {
     function setupRegisterAssets() internal override {
         savingsXdaiPrice = new sXDAI_CustomPriceFeed(savingsXDaiContract, daiToUsdChainlink, heartbeat);
         // wstETH/USD = (ETH/USD) * (wstETH/ETH) / 10^18
-        wstEthPriceFeed = new CrossRate_CustomPriceFeed(
+        wstEthPriceFeed = new CrossRateCustomPriceFeed(
             wsteth,
+            wstEthEthChainlink, // Y/X = wstETH/ETH (rate feed)
             ethUsdChainlink, // X/USD = ETH/USD
-            wstEthEthChainlink, // Y/X = wstETH/ETH
             heartbeat,
             heartbeat
         );

@@ -40,9 +40,16 @@ import {CurvePoolLib} from "./CurvePoolLib.sol";
 ///      positionId = abi.encode(address gauge)
 ///
 ///      Wallet-held (unstaked) LP positions are handled separately by CurvePoolsMetaBalanceAdapter.
+///
+///      Valuation = instantaneous on-chain amounts (ADR 0017): the staked LP is decomposed into the underlying
+///      pool tokens and reported as the position's current pro-rata share of the pool's on-chain balances, as
+///      per-token `amount`s that NAVCalculator prices with external oracles — it does NOT compute a
+///      manipulation-resistant "fair" value. Imbalancing the pool can transiently move the reported amounts (a
+///      donation that arbitrage reverses within a block) but cannot be monetised: NAV is a read-only oracle
+///      consumed by an asynchronous sub/redeem layer (no atomic on-chain consumer). See
+///      docs/decisions/0017-lp-valuation-instantaneous-amounts.md; revisit if NAV is ever consumed synchronously
+///      on-chain.
 contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.CURVE_GAUGE;
-
     /// @notice Curve Minter for CRV emission. address(0) disables CRV tracking (use on L2).
     address public immutable CURVE_MINTER;
 
@@ -103,16 +110,7 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
                             uint256 amount = CurvePoolLib.proRataAmount(poolBal, stakedLp, totalSupply);
                             if (amount == 0) continue;
 
-                            tmp[n++] = INAVCalculator.PositionBalance({
-                                balanceAsset: assetInfo,
-                                balanceAdapter: address(this),
-                                amount: amount,
-                                isDebt: false,
-                                protocolId: PROTOCOL_ID,
-                                positionId: pid,
-                                positionKind: PositionKind.Staking,
-                                isLocked: false
-                            });
+                            tmp[n++] = _leg(assetInfo, amount, false, pid, PositionKind.Staking);
                         }
                     }
                 }
@@ -126,16 +124,7 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
             if (crvLb > 0) {
                 (INAVCalculator.Asset memory crvInfo, bool found) = _getAssetInfo(CRV_TOKEN);
                 if (found) {
-                    tmp[n++] = INAVCalculator.PositionBalance({
-                        balanceAsset: crvInfo,
-                        balanceAdapter: address(this),
-                        amount: crvLb,
-                        isDebt: false,
-                        protocolId: PROTOCOL_ID,
-                        positionId: pid,
-                        positionKind: PositionKind.Rewards,
-                        isLocked: false
-                    });
+                    tmp[n++] = _leg(crvInfo, crvLb, false, pid, PositionKind.Rewards);
                 }
             }
         }
@@ -153,16 +142,7 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
             uint256 amount = CurvePoolLib.claimableReward(gauge, account, rewardTok);
             if (amount == 0) continue;
 
-            tmp[n++] = INAVCalculator.PositionBalance({
-                balanceAsset: assetInfo,
-                balanceAdapter: address(this),
-                amount: amount,
-                isDebt: false,
-                protocolId: PROTOCOL_ID,
-                positionId: pid,
-                positionKind: PositionKind.Rewards,
-                isLocked: false
-            });
+            tmp[n++] = _leg(assetInfo, amount, false, pid, PositionKind.Rewards);
         }
 
         positions = new INAVCalculator.PositionBalance[](n);
@@ -205,14 +185,29 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
     // ─── IPositionDescribable ─────────────────────────────────────────────────
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev Returns `["Staking Gauge", "TOKEN0/TOKEN1/… gauge"]`; leaf derived on-chain from coin symbols ("" on failure).
+    /// @dev Returns `["Staking Gauge", "TOKEN0/TOKEN1/…"]`; leaf derived on-chain from coin symbols ("" on failure).
     function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
         if (pid.length < 32) return new string[](0);
         string memory leaf = _leaf(pid);
         return _labels("Staking Gauge", leaf);
     }
 
-    /// @notice Derives the "TOKEN0/TOKEN1/… gauge" leaf from the gauge's pool coins ("" on failure).
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolBrand() internal pure override returns (bytes32) {
+        return ProtocolIds.CURVE;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolId() internal pure override returns (bytes32) {
+        return ProtocolIds.CURVE;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolSubId() internal pure override returns (bytes32) {
+        return ProtocolIds.CURVE_GAUGES;
+    }
+
+    /// @notice Derives the "TOKEN0/TOKEN1/…" leaf from the gauge's pool coins ("" on failure).
     function _leaf(bytes calldata pid) private view returns (string memory) {
         address gauge = abi.decode(pid, (address));
         address lpToken = CurvePoolLib.gaugeLpToken(gauge);
@@ -221,6 +216,6 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
         if (pool == address(0)) return "";
         address[] memory coins = CurvePoolLib.getCoins(pool);
         if (coins.length == 0) return "";
-        return string.concat(CurvePoolLib.coinSymbols(coins), " gauge");
+        return CurvePoolLib.coinSymbols(coins);
     }
 }

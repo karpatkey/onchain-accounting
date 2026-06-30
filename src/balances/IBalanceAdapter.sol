@@ -5,7 +5,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 /// @title IBalanceAdapter
-/// @notice Standard interface for balance adapter adapters (both default and custom)
+/// @notice Standard interface for balance adapters (both default and custom)
 /// @dev All balance adapters must implement this interface to work with the adapter-centric aggregation system
 /// @dev Extends ERC165 to allow on‐chain discovery with `supportsInterface`.
 /// @author KPK

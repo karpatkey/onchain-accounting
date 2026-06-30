@@ -24,12 +24,15 @@ import {MorphoMarketsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/
 import {
     AaveV3InstancesMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/AaveV3InstancesMetaBalanceAdapter.sol";
-import {ERC4626WrapBalanceAdapter} from "src/balances/BalanceAdapters/ERC4626WrapBalanceAdapter.sol";
-import {GearboxMarketsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/GearboxMarketsMetaBalanceAdapter.sol";
+import {
+    GearboxV3MarketsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/GearboxV3MarketsMetaBalanceAdapter.sol";
 import {CapBalanceAdapter} from "src/balances/BalanceAdapters/CapBalanceAdapter.sol";
 import {CurvePoolsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/curve/CurvePoolsMetaBalanceAdapter.sol";
 import {CurveGaugesMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/curve/CurveGaugesMetaBalanceAdapter.sol";
-import {ConvexRewardsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/ConvexRewardsMetaBalanceAdapter.sol";
+import {
+    ConvexCurveLPStakingMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/ConvexCurveLPStakingMetaBalanceAdapter.sol";
 import {AaveV3SafetyModuleBalanceAdapter} from "src/balances/BalanceAdapters/AaveV3SafetyModuleBalanceAdapter.sol";
 import {AaveUmbrellaBalanceAdapter} from "src/balances/BalanceAdapters/AaveUmbrellaBalanceAdapter.sol";
 import {
@@ -45,20 +48,21 @@ import {
     BalancerV3GaugesMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/balancer/BalancerV3GaugesMetaBalanceAdapter.sol";
 import {
-    MerklRewardsBalanceAdapter,
+    MerklRewardsAssistedBalanceAdapter,
     IMerklDistributor
-} from "src/balances/AssistedBalanceAdapters/MerklRewardsBalanceAdapter.sol";
+} from "src/balances/AssistedBalanceAdapters/MerklRewardsAssistedBalanceAdapter.sol";
 import {FluidFTokensMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/FluidFTokensMetaBalanceAdapter.sol";
 import {FluidVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/FluidVaultsMetaBalanceAdapter.sol";
 import {
     StaderWithdrawalQueueBalanceAdapter
 } from "src/balances/BalanceAdapters/StaderWithdrawalQueueBalanceAdapter.sol";
+import {KelpWithdrawalQueueBalanceAdapter} from "src/balances/BalanceAdapters/KelpWithdrawalQueueBalanceAdapter.sol";
 import {
     StakeWiseV3VaultsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/StakeWiseV3VaultsMetaBalanceAdapter.sol";
 import {
-    UniswapV3PoolsMetaBalanceAdapter
-} from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsMetaBalanceAdapter.sol";
+    UniswapV3PoolsAssistedBalanceAdapter
+} from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsAssistedBalanceAdapter.sol";
 import {
     UniswapV2PoolsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/uniswap/UniswapV2PoolsMetaBalanceAdapter.sol";
@@ -66,8 +70,9 @@ import {
     PancakeSwapV2PoolsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/pancakeswap/PancakeSwapV2PoolsMetaBalanceAdapter.sol";
 import {
-    PancakeSwapV3PoolsMetaBalanceAdapter
-} from "src/balances/AssistedBalanceAdapters/PancakeSwapV3PoolsMetaBalanceAdapter.sol";
+    PancakeSwapV3PoolsAssistedBalanceAdapter
+} from "src/balances/AssistedBalanceAdapters/PancakeSwapV3PoolsAssistedBalanceAdapter.sol";
+import {INonfungiblePositionManager} from "src/balances/MetaBalanceAdapters/uniswap/UniswapV3PoolLib.sol";
 
 // Price feed adapters (Mainnet)
 import {sDAI_CustomPriceFeed} from "src/prices/protocols/sDAI_CustomPriceFeed.sol";
@@ -77,7 +82,8 @@ import {sUSDe_CustomPriceFeed} from "src/prices/protocols/sUSDe_CustomPriceFeed.
 import {syrupUSDC_CustomPriceFeed} from "src/prices/protocols/syrupUSDC_CustomPriceFeed.sol";
 import {sGHO_CustomPriceFeed} from "src/prices/protocols/sGHO_CustomPriceFeed.sol";
 import {wstETH_CustomPriceFeed} from "src/prices/protocols/wstETH_CustomPriceFeed.sol";
-import {CrossRate_CustomPriceFeed} from "src/prices/protocols/CrossRate_CustomPriceFeed.sol";
+import {stETH_CustomPriceFeed} from "src/prices/protocols/stETH_CustomPriceFeed.sol";
+import {OETH_CustomPriceFeed} from "src/prices/protocols/OETH_CustomPriceFeed.sol";
 import {rETH_CustomPriceFeed} from "src/prices/protocols/rETH_CustomPriceFeed.sol";
 import {ankrETH_CustomPriceFeed} from "src/prices/protocols/ankrETH_CustomPriceFeed.sol";
 import {NXM_CustomPriceFeed} from "src/prices/protocols/NXM_CustomPriceFeed.sol";
@@ -133,8 +139,15 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     ///         script/test/refresh-integration-snapshot.sh; missing or empty entries are tolerated.
     string internal constant MERKL_PROOFS_JSON = "test/integration/merkl-proofs.json";
 
-    /// @notice Address of the deployed MerklRewards adapter for this chain (zero if not deployed).
+    /// @notice Address of the deployed MerklRewardsAssisted adapter for this chain (zero if not deployed).
     address internal _merklAdapter;
+
+    /// @notice Deployed assisted NFT adapters (Uniswap/PancakeSwap V3) and their paired NonfungiblePositionManager.
+    ///         `_seedAssistedNftTokenIds` enumerates each account's NFTs off the NPM and submits the tokenIds, so the
+    ///         adapter reports the same LP positions the prior on-chain enumeration did (these adapters are agent-fed
+    ///         and report nothing until tokenIds are submitted; ADR 0015).
+    address[] internal _assistedNftAdapters;
+    address[] internal _assistedNftNpms;
 
     /// @notice Tracked deployed adapter addresses (for diagnostics + addBalanceAdapter pass).
     address[] internal _deployedBalanceAdapters;
@@ -183,15 +196,16 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         nav.grantRole(MANAGER, admin);
 
         _deployAllPriceFeeds();
-        // Asset registration MUST precede balance-adapter deployment because some adapter
-        // constructors (e.g. ERC4626WrapBalanceAdapter) require the underlying asset to be
-        // registered before they can deploy. Production deploy mirrors this via the Safe-TX
+        // Asset registration MUST precede balance-adapter deployment because some adapters
+        // require their underlying asset to be NAV-registered before they can value a
+        // position. Production deploy mirrors this via the Safe-TX
         // bundle ordering in 06_Configure.s.sol (registerAsset → addBalanceAdapter).
         _registerAllAssets();
         _deployAllBalanceAdapters();
         _registerAllBalanceAdapters();
         _configureMetaInstances();
         _seedMerklProofs();
+        _seedAssistedNftTokenIds();
         vm.stopPrank();
     }
 
@@ -344,13 +358,13 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     }
 
     function _deployStEth() internal returns (address) {
-        // stETH reuses the generic CrossRate_CustomPriceFeed: stETH/USD = (ETH/USD) x (stETH/ETH).
+        // stETH/USD = (stETH/ETH) x (ETH/USD), via the dedicated stETH_CustomPriceFeed (a CrossRate subclass).
         address underlying = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "underlyingAsset"));
         address xToUsd = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "xToUsdFeed"));
         address yToX = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "yToXFeed"));
         uint256 xToUsdHb = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "xToUsdHeartbeat"));
         uint256 yToXHb = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "yToXHeartbeat"));
-        return address(new CrossRate_CustomPriceFeed(underlying, xToUsd, yToX, xToUsdHb, yToXHb));
+        return address(new stETH_CustomPriceFeed(underlying, yToX, xToUsd, yToXHb, xToUsdHb));
     }
 
     function _deployREth() internal returns (address) {
@@ -363,13 +377,13 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     }
 
     function _deployOeth() internal returns (address) {
-        // OETH reuses the generic CrossRate_CustomPriceFeed: OETH/USD = (ETH/USD) x (OETH/ETH).
+        // OETH/USD = (OETH/ETH) x (ETH/USD), via the dedicated OETH_CustomPriceFeed (a CrossRate subclass).
         address underlying = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "OETH", "underlyingAsset"));
         address xToUsd = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "OETH", "xToUsdFeed"));
         address yToX = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "OETH", "yToXFeed"));
         uint256 xToUsdHb = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "OETH", "xToUsdHeartbeat"));
         uint256 yToXHb = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "OETH", "yToXHeartbeat"));
-        return address(new CrossRate_CustomPriceFeed(underlying, xToUsd, yToX, xToUsdHb, yToXHb));
+        return address(new OETH_CustomPriceFeed(underlying, yToX, xToUsd, yToXHb, xToUsdHb));
     }
 
     function _deployAnkrEth() internal returns (address) {
@@ -578,12 +592,15 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         string[] memory names = ConfigReader.getEnabledAdapters(vm, _chainId, "balanceAdapters");
         for (uint256 i = 0; i < names.length; i++) {
             string memory n = names[i];
-            // MerklRewards is always deployed in the integration test (independent of the
+            // MerklRewardsAssisted is always deployed in the integration test (independent of the
             // chain-config `enabled` flag, which only gates production deploys). The cache is
             // empty unless `merkl-proofs.json` has entries for this chain — see `_seedMerklProofs`.
             // This keeps the integration test exercising the Merkl wiring on every run, while
             // production deploys still honor the `enabled` flag.
-            if (!_equals(n, "MerklRewards") && !ConfigReader.isAdapterEnabled(vm, _chainId, "balanceAdapters", n)) {
+            if (
+                !_equals(n, "MerklRewardsAssisted")
+                    && !ConfigReader.isAdapterEnabled(vm, _chainId, "balanceAdapters", n)
+            ) {
                 continue;
             }
             address adapter = _deployBalanceAdapter(n);
@@ -617,11 +634,8 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_equals(name, "MorphoVaultsMeta")) {
             return _deployMorphoVaultsMeta(name, navAddr);
         }
-        if (_startsWith(name, "ERC4626Wrap_")) {
-            return _deployERC4626Wrap(name, navAddr);
-        }
-        if (_equals(name, "GearboxMarketsMeta")) {
-            return _deployGearboxMarketsMeta(name, navAddr);
+        if (_equals(name, "GearboxV3MarketsMeta")) {
+            return _deployGearboxV3MarketsMeta(name, navAddr);
         }
         if (_equals(name, "Cap")) {
             return _deployCap(navAddr);
@@ -632,8 +646,8 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_equals(name, "CurveGaugesMeta")) {
             return _deployCurveGaugesMeta(name, navAddr);
         }
-        if (_equals(name, "ConvexRewardsMeta")) {
-            return _deployConvexRewardsMeta(name, navAddr);
+        if (_equals(name, "ConvexCurveLPStakingMeta")) {
+            return _deployConvexCurveLPStakingMeta(name, navAddr);
         }
         if (_equals(name, "AaveV3SafetyModule")) {
             return _deployAaveV3SafetyModule(name, navAddr);
@@ -653,8 +667,8 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_equals(name, "BalancerV2GaugesMeta")) {
             return _deployBalancerV2GaugesMeta(name, navAddr);
         }
-        if (_equals(name, "MerklRewards")) {
-            return _deployMerklRewards(name, navAddr);
+        if (_equals(name, "MerklRewardsAssisted")) {
+            return _deployMerklRewardsAssisted(name, navAddr);
         }
         if (_equals(name, "FluidFTokensMeta")) {
             return _deployFluidFTokensMeta(name, navAddr);
@@ -665,14 +679,17 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_equals(name, "StaderWithdrawalQueue")) {
             return _deployStaderWithdrawalQueue(name, navAddr);
         }
+        if (_equals(name, "KelpWithdrawalQueue")) {
+            return _deployKelpWithdrawalQueue(name, navAddr);
+        }
         if (_equals(name, "StakeWiseV3VaultsMeta")) {
             return _deployStakeWiseV3VaultsMeta(name, navAddr);
         }
-        if (_equals(name, "UniswapV3PoolsMeta")) {
-            return _deployUniswapV3PoolsMeta(name, navAddr);
+        if (_equals(name, "UniswapV3PoolsAssisted")) {
+            return _deployUniswapV3PoolsAssisted(name, navAddr);
         }
-        if (_equals(name, "PancakeSwapV3PoolsMeta")) {
-            return _deployPancakeSwapV3PoolsMeta(name, navAddr);
+        if (_equals(name, "PancakeSwapV3PoolsAssisted")) {
+            return _deployPancakeSwapV3PoolsAssisted(name, navAddr);
         }
         if (_equals(name, "UniswapV2PoolsMeta") || _equals(name, "PancakeSwapV2PoolsMeta")) {
             return _deployUniswapV2PoolsMeta(name, navAddr);
@@ -743,15 +760,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return address(new AaveV3InstancesMetaBalanceAdapter(protocol, navAddr));
     }
 
-    function _deployERC4626Wrap(string memory name, address navAddr) internal returns (address) {
-        address wrapper =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "wrapper"));
-        return address(new ERC4626WrapBalanceAdapter(wrapper, navAddr));
-    }
-
-    function _deployGearboxMarketsMeta(string memory name, address navAddr) internal returns (address) {
+    function _deployGearboxV3MarketsMeta(string memory name, address navAddr) internal returns (address) {
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        return address(new GearboxMarketsMetaBalanceAdapter(protocol, navAddr));
+        return address(new GearboxV3MarketsMetaBalanceAdapter(protocol, navAddr));
     }
 
     function _deployCap(address navAddr) internal returns (address) {
@@ -775,13 +786,13 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return address(new CurveGaugesMetaBalanceAdapter(minter, crvToken, protocol, navAddr));
     }
 
-    function _deployConvexRewardsMeta(string memory name, address navAddr) internal returns (address) {
+    function _deployConvexCurveLPStakingMeta(string memory name, address navAddr) internal returns (address) {
         address booster =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "booster"));
         address cvxToken =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "cvxToken"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        return address(new ConvexRewardsMetaBalanceAdapter(booster, cvxToken, protocol, navAddr));
+        return address(new ConvexCurveLPStakingMetaBalanceAdapter(booster, cvxToken, protocol, navAddr));
     }
 
     function _deployAaveV3SafetyModule(string memory name, address navAddr) internal returns (address) {
@@ -794,13 +805,13 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return address(new AaveUmbrellaBalanceAdapter(rewardsController, navAddr));
     }
 
-    function _deployMerklRewards(string memory name, address navAddr) internal returns (address) {
+    function _deployMerklRewardsAssisted(string memory name, address navAddr) internal returns (address) {
         // The integration test owns the adapter (admin = msg.sender once we vm.startPrank(admin)) so
         // it can call submitProof during setup. Production deploys use chainConfig.admin instead — see
-        // script/deploy/04_DeployBalanceAdapters.s.sol::_deployMerklRewards.
+        // script/deploy/04_DeployBalanceAdapters.s.sol::_deployMerklRewardsAssisted.
         address distributor =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "distributor"));
-        address adapter = address(new MerklRewardsBalanceAdapter(distributor, navAddr, admin, admin));
+        address adapter = address(new MerklRewardsAssistedBalanceAdapter(distributor, navAddr, admin, admin));
         _merklAdapter = adapter;
         return adapter;
     }
@@ -826,6 +837,12 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return address(new StaderWithdrawalQueueBalanceAdapter(userWithdrawalManager, underlyingToken, navAddr));
     }
 
+    function _deployKelpWithdrawalQueue(string memory name, address navAddr) internal returns (address) {
+        address withdrawalManager =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "withdrawalManager"));
+        return address(new KelpWithdrawalQueueBalanceAdapter(withdrawalManager, navAddr));
+    }
+
     function _deployStakeWiseV3VaultsMeta(string memory name, address navAddr) internal returns (address) {
         address underlyingToken =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "underlyingToken"));
@@ -837,18 +854,26 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             address(new StakeWiseV3VaultsMetaBalanceAdapter(underlyingToken, osTokenVaultController, protocol, navAddr));
     }
 
-    function _deployUniswapV3PoolsMeta(string memory name, address navAddr) internal returns (address) {
+    function _deployUniswapV3PoolsAssisted(string memory name, address navAddr) internal returns (address) {
         address positionManager =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionManager"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        return address(new UniswapV3PoolsMetaBalanceAdapter(positionManager, protocol, navAddr));
+        // admin + assistant = the `admin` prank holding MANAGER, so _seedAssistedNftTokenIds can submit tokenIds.
+        address a = address(new UniswapV3PoolsAssistedBalanceAdapter(positionManager, protocol, navAddr, admin, admin));
+        _assistedNftAdapters.push(a);
+        _assistedNftNpms.push(positionManager);
+        return a;
     }
 
-    function _deployPancakeSwapV3PoolsMeta(string memory name, address navAddr) internal returns (address) {
+    function _deployPancakeSwapV3PoolsAssisted(string memory name, address navAddr) internal returns (address) {
         address positionManager =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionManager"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        return address(new PancakeSwapV3PoolsMetaBalanceAdapter(positionManager, protocol, navAddr));
+        address a =
+            address(new PancakeSwapV3PoolsAssistedBalanceAdapter(positionManager, protocol, navAddr, admin, admin));
+        _assistedNftAdapters.push(a);
+        _assistedNftNpms.push(positionManager);
+        return a;
     }
 
     function _deployUniswapV2PoolsMeta(string memory name, address navAddr) internal returns (address) {
@@ -934,11 +959,11 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             address a = _deployedBalanceAdapters[i];
             string memory name = _deployedBalanceAdapterNames[i];
             bool isMeta = ConfigReader.isAdapterEnabled(vm, _chainId, "navMetaBalanceAdapters", name);
-            // MerklRewards is force-deployed by this harness (independent of config, see _deployAllBalanceAdapters) to
+            // MerklRewardsAssisted is force-deployed by this harness (independent of config, see _deployAllBalanceAdapters) to
             // exercise Merkl-reward NAV; it is a plain adapter not present in any nav-config file, so register it via
             // the plain path here to match that deploy-side special case.
             bool isPlain = ConfigReader.isAdapterEnabled(vm, _chainId, "navBalanceAdapters", name)
-                || _equals(name, "MerklRewards");
+                || _equals(name, "MerklRewardsAssisted");
 
             if (isMeta) {
                 // Meta path: register with an empty set; _configureMetaInstances seeds the actual instances after.
@@ -995,11 +1020,74 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         }
     }
 
-    /// @notice Pre-populates the MerklRewards adapter cache from `merkl-proofs.json` (regenerated on
+    /// @notice Feeds each account's Uniswap/PancakeSwap V3 NFT tokenIds to the assisted NFT adapters (ADR 0015),
+    ///         which report nothing until ids are submitted. The ids are discovered the same way the prior
+    ///         meta-adapter did its on-chain scan — off the NonfungiblePositionManager's `ERC721Enumerable` surface
+    ///         (`balanceOf`/`tokenOfOwnerByIndex`) — so NAV includes the same LP positions as before the refactor.
+    /// @dev Runs inside the `admin` prank that holds `ASSISTANT_ROLE` (admin == assistant at deploy). All enumerated
+    ///      ids are owned by the account, so `submitTokenIds` never hits its `NotTokenOwner` revert.
+    function _seedAssistedNftTokenIds() internal {
+        if (_assistedNftAdapters.length == 0) return;
+        string memory json = _readAccountsJson();
+
+        uint256 i;
+        while (true) {
+            string memory base = string.concat(".accounts[", vm.toString(i), "]");
+            if (!vm.keyExists(json, base)) break;
+            string memory addrStr = json.readString(string.concat(base, ".address"));
+            if (bytes(addrStr).length == 0) {
+                unchecked {
+                    ++i;
+                }
+                continue;
+            }
+            address account = vm.parseAddress(addrStr);
+            uint256[] memory enabledChains = json.readUintArray(string.concat(base, ".enabledChains"));
+            if (_contains(enabledChains, _chainId)) {
+                for (uint256 k = 0; k < _assistedNftAdapters.length; k++) {
+                    _submitOwnedNftIds(_assistedNftAdapters[k], _assistedNftNpms[k], account);
+                }
+            }
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    /// @dev Enumerates `account`'s NFTs on `npm` and submits them to the assisted adapter. Tolerant: a reverting
+    ///      enumeration (non-enumerable NPM, etc.) just leaves that account unseeded.
+    function _submitOwnedNftIds(address adapter, address npm, address account) internal {
+        // Fail-open against a no-code NPM: a high-level call to an address with no code reverts via Solidity's
+        // extcodesize check, which try/catch does NOT catch — guard explicitly so a misconfigured NPM leaves the
+        // account unseeded instead of reverting the whole integration setup.
+        if (npm.code.length == 0) return;
+        uint256 bal;
+        try INonfungiblePositionManager(npm).balanceOf(account) returns (uint256 b) {
+            bal = b;
+        } catch {
+            return;
+        }
+        if (bal == 0) return;
+        uint256[] memory ids = new uint256[](bal);
+        uint256 n;
+        for (uint256 j = 0; j < bal; j++) {
+            try INonfungiblePositionManager(npm).tokenOfOwnerByIndex(account, j) returns (uint256 id) {
+                ids[n++] = id;
+            } catch {}
+        }
+        if (n == 0) return;
+        uint256[] memory owned = new uint256[](n);
+        for (uint256 j = 0; j < n; j++) {
+            owned[j] = ids[j];
+        }
+        UniswapV3PoolsAssistedBalanceAdapter(adapter).submitTokenIds(account, owned);
+    }
+
+    /// @notice Pre-populates the MerklRewardsAssisted adapter cache from `merkl-proofs.json` (regenerated on
     ///         every snapshot bump). Tolerant of missing/empty/stale fixtures: silently skips the
     ///         chain block if not present, logs and continues on per-entry verification failure.
     /// @dev    Called from setUp while vm.startPrank(admin) is active. Submitter must equal the
-    ///         adapter's owner (set to `admin` in `_deployMerklRewards`).
+    ///         adapter's owner (set to `admin` in `_deployMerklRewardsAssisted`).
     function _seedMerklProofs() internal {
         if (_merklAdapter == address(0)) return;
         if (!vm.exists(MERKL_PROOFS_JSON)) {
@@ -1021,7 +1109,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         string memory expectedRootKey = string.concat(chainKey, ".expectedRoot");
         if (vm.keyExistsJson(json, expectedRootKey)) {
             bytes32 expectedRoot = vm.parseJsonBytes32(json, expectedRootKey);
-            address distributor = MerklRewardsBalanceAdapter(_merklAdapter).DISTRIBUTOR();
+            address distributor = MerklRewardsAssistedBalanceAdapter(_merklAdapter).DISTRIBUTOR();
             bytes32 liveRoot = IMerklDistributor(distributor).getMerkleRoot();
             if (expectedRoot != bytes32(0) && expectedRoot != liveRoot) {
                 console2.log(
@@ -1048,17 +1136,39 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             users.length == tokens.length && users.length == amountStrs.length,
             "merkl-proofs.json users/tokens/amounts length mismatch"
         );
+        // submitProofs is REPLACE semantics per user, so group the flat (user, token, amount, proof) rows by user and
+        // submit each user's complete allocation list in ONE call (else a user's 2nd token would wipe the 1st).
         uint256 ok;
         uint256 failed;
+        bool[] memory consumed = new bool[](users.length);
         for (uint256 i = 0; i < users.length; i++) {
-            string memory proofKey = string.concat(chainKey, ".proofs[", vm.toString(i), "]");
-            bytes32[] memory proof = vm.parseJsonBytes32Array(json, proofKey);
-            uint256 amount = vm.parseUint(amountStrs[i]);
-            try MerklRewardsBalanceAdapter(_merklAdapter).submitProof(users[i], tokens[i], amount, proof) {
-                ok++;
+            if (consumed[i]) continue;
+            address user = users[i];
+            // Count this user's rows.
+            uint256 cnt;
+            for (uint256 j = i; j < users.length; j++) {
+                if (users[j] == user) cnt++;
+            }
+            MerklRewardsAssistedBalanceAdapter.Allocation[] memory allocs =
+                new MerklRewardsAssistedBalanceAdapter.Allocation[](cnt);
+            uint256 k;
+            for (uint256 j = i; j < users.length; j++) {
+                if (users[j] != user) continue;
+                consumed[j] = true;
+                allocs[k++] = MerklRewardsAssistedBalanceAdapter.Allocation({
+                    token: tokens[j],
+                    cumulativeAmount: vm.parseUint(amountStrs[j]),
+                    proof: vm.parseJsonBytes32Array(json, string.concat(chainKey, ".proofs[", vm.toString(j), "]")),
+                    campaigns: new MerklRewardsAssistedBalanceAdapter.CampaignShare[](0)
+                });
+            }
+            // Fail-loud + replace: a single bad proof reverts this user's whole list (atomic), so all-or-nothing per
+            // user. Fixtures are captured together against one root, so a per-user failure means re-capture is needed.
+            try MerklRewardsAssistedBalanceAdapter(_merklAdapter).submitProofs(user, allocs) {
+                ok += cnt;
             } catch (bytes memory err) {
-                failed++;
-                console2.log("[merkl] submitProof failed (proof stale or root mismatch?) user=", users[i]);
+                failed += cnt;
+                console2.log("[merkl] submitProofs failed (proof stale or root mismatch?) user=", user);
                 console2.logBytes(err);
             }
         }

@@ -1,6 +1,6 @@
 # `script/development/test/` — balance-adapter verification evidence
 
-One folder per protocol. Each folder holds the **evidence pack** behind the strict-equality fork test we add under `test/balances/protocols/fork/<Adapter>.fork.t.sol` for that protocol.
+One folder per protocol. Each folder holds the **evidence pack** behind the strict-equality fork test we add under `test/balances/<family>/fork/<Adapter>.fork.t.sol` for that protocol (where `<family>` is `BalanceAdapters`, `MetaBalanceAdapters`, or `AssistedBalanceAdapters`).
 
 ## Methodology (per protocol)
 
@@ -12,12 +12,12 @@ The verification quality depends on this. Skipping it lets bugs hide where the a
 
 **A. Read the adapter source thoroughly.**
 - Class hierarchy: is it a direct `IBalanceAdapter` implementer or a subclass? If subclass, list every `override` — each override is a verification surface the parent's test does NOT cover. List every purely-inherited method — those are transitively covered.
-  - `PancakeSwapV2PoolsMetaBalanceAdapter is UniswapV2PoolsMetaBalanceAdapter` → thin subclass: constructor + a `_protocolId()` override returning the `pancakeswap-v2` slug; no math change. Verification: balance logic inherited from Uni V2, skip.
-  - `PancakeSwapV3PoolsMetaBalanceAdapter is UniswapV3PoolsMetaBalanceAdapter` → overrides only `_slot0()` (the `uint32 feeProtocol` ABI shim) and `_protocolId()`. Verification: minimal test exercising the overrides only.
+  - `PancakeSwapV2PoolsMetaBalanceAdapter is UniswapV2PoolsMetaBalanceAdapter` → thin subclass: constructor + `_protocolId()` / `_protocolSubId()` overrides returning the `pancakeswap-v2` slug; no math change. Verification: balance logic inherited from Uni V2, skip.
+  - `PancakeSwapV3PoolsAssistedBalanceAdapter is UniswapV3PoolsAssistedBalanceAdapter` → the adapter reads the pool's live `slot0()` (the in-range split is priced off `sqrtPriceX96`/`tick`; full unclaimed fees; ADR 0017), so the subclass overrides `_slot0()` to decode PancakeSwap V3's `uint32 feeProtocol` ABI (Uniswap's is `uint8`) **and** the identity hooks (`_protocolBrand()` / `_protocolId()` / `_protocolSubId()` — the `pancakeswap` brand and `pancakeswap-v3` slug). Verification: test the `_slot0()` override (feeProtocol decode) plus the slug overrides.
   - `SparkLendBalanceAdapter is IBalanceAdapter, IPositionDescribable` → a standalone implementer (not an Aave subclass); check the source for the leg-emission branches and treat accordingly.
 - Math branches: enumerate every `if` that affects the returned amount. Each branch needs a test case OR a documented reason it can't be exercised on a real chain. Uni V2 example: `feeTo == 0`, `feeTo != 0 && kLast == 0`, `feeTo != 0 && kLast != 0 && rootK > rootKLast`.
 - Immutable constructor args: pin in setUp + assert in a `test_immutables_*` smoke test (catches deployment-config drift).
-- Multi-leg `getAdapterPositions`: enumerate the `type` values the adapter can emit (`Supply`, `Borrow`, `Staking`, `Collateral`, `Rewards`, `Fees` — the `PositionType` constants). One leg = one assertion.
+- Multi-leg `getAdapterPositions`: enumerate the `positionKind` values the adapter can emit (`Wallet`, `Supplied`, `Borrowed`, `Collateral`, `Staking`, `Rewards`, `Fees` — the `PositionKind` enum in `src/utils/PositionKind.sol`). One leg = one assertion.
 
 **B. Read the protocol's docs per chain (our 5 chains).**
 
@@ -28,9 +28,9 @@ Scope: Ethereum (1), Gnosis (100), Base (8453), Optimism (10), Arbitrum (42161).
 - Does the protocol publish canonical per-chain addresses? Use it verbatim — don't infer from one mainnet example.
 
 **C. Read sibling adapter tests + ADRs + the identity schema.**
-- Open `test/balances/protocols/fork/<Adapter>.fork.t.sol` (and adjacent ones for related adapters). Existing fork-test patterns reveal cadence, fork-block conventions, and mock-vs-real-holder choices.
+- Open `test/balances/<family>/fork/<Adapter>.fork.t.sol` (and adjacent ones for related adapters). Existing fork-test patterns reveal cadence, fork-block conventions, and mock-vs-real-holder choices.
 - Search `docs/decisions/` for ADRs naming this adapter — they often document design constraints (immutability, trust-minimisation, math licensing, etc.).
-- Confirm the canonical `positionDetail` schema in `script/config/adapter-identities.json`. Use it verbatim. Don't invent ad-hoc keys (we already shipped a `pool` instead of `product/name` drift on Uni V2 chain config and Copilot caught it).
+- Confirm the canonical typed identity each leg must carry: `protocolBrand` / `protocolId` / `protocolSubId` (the 3-level `keccak256` slug taxonomy in `src/utils/ProtocolIds.sol`), `positionId` (ABI-encoded per `protocolSubId`), `positionKind`, `isLocked`, and the optional ephemeral `positionInstanceId`. The full schema reference is `docs/howto/position-identity-schema.md`. Display labels come from `IPositionDescribable.positionLabels(bytes positionId) → string[]` — use the shipped labels verbatim, don't invent ad-hoc ones (we already shipped a `pool` instead of `product/name` drift on Uni V2 chain config and Copilot caught it).
 
 **D. Decide verification scope.** Cases = (math branches) × (chains with divergence). Be parsimonious. Document the count + reasoning at the top of the protocol's evidence-pack README.
 
@@ -43,12 +43,12 @@ Once Phase 0 has produced a scope decision, these five steps **must happen in pa
 | 1 | **Find the account.** Cherry-pick one holder with the most complex realistic scenario for this protocol (supplied + staked + rewards, multi-leg debt, multi-pool LP, …). Goal: fewest accounts that exercise all paths. | Claude (with user sign-off on the candidate) | `holder.address` + scenario rationale |
 | 2 | **Write the test folder.** Create `script/development/test/<protocol>/` with `README.md` (case narrative + verification table) + `case-<slug>.json` (machine-readable evidence pack). | Claude | Evidence pack scaffold, populated incrementally |
 | 3 | **Run the app with the base deployments + the balance adapter under test, forked at the SELECTED block.** The dev anvil must pin at exactly the same block the fork test pins at, otherwise the side-channel cross-check vs Debank measures the wrong drift envelope. | Claude (refork helper + per-protocol adapter deploy on the fork) | User can see the holder's positions in the dashboard at the pinned block |
-| 4 | **Add the strict-equality test** to `test/balances/protocols/fork/<Adapter>.fork.t.sol`. **Augment**, don't replace — existing fork tests stay. New test contract pinned at the same selected block. | Claude | New test contract with strict-equality assertions per leg |
+| 4 | **Add the strict-equality test** to `test/balances/<family>/fork/<Adapter>.fork.t.sol`. **Augment**, don't replace — existing fork tests stay. New test contract pinned at the same selected block. | Claude | New test contract with strict-equality assertions per leg |
 | 5 | **Check everything is working as intended; fix drift.** User cross-checks the dev app vs **both Debank and the protocol's own UI** (e.g. the PancakeSwap / Uniswap / Aave app for the same holder) — the protocol UI is the highest-fidelity reference and often surfaces positions Debank aggregates or omits. Claude verifies the test passes with zero drift vs the off-chain ground truth. If any surface diverges, root-cause it (block drift, derivation difference, a position the adapter doesn't cover, or a real adapter bug). | Both, in parallel | Test ✅ + app-vs-(Debank/protocol-UI) gap explained |
 
 Drift envelope on the side channel = (now − pinned block timestamp). If you pinned at a fresh block (a few minutes back), the app-vs-(Debank/protocol-UI) gap is bounded by minutes of natural pool activity, which is normally sub-bp at the dollar scale. Larger gaps need an explanation before the protocol can be marked verified.
 
-Use **two reference surfaces, not one**: Debank for a quick aggregate sanity check, and the **protocol's own UI** for the authoritative per-position numbers. They serve different purposes — Debank can silently omit or merge positions, while the protocol UI shows exactly what the protocol itself reports (e.g. PancakeSwap's UI distinguishes a *farmed* NFT from an in-wallet LP NFT — a distinction that directly exposed the MasterChefV3 coverage gap for `PancakeSwapV3PoolsMeta`). When the two references disagree, the protocol UI wins; if the adapter matches neither, that's a finding.
+Use **two reference surfaces, not one**: Debank for a quick aggregate sanity check, and the **protocol's own UI** for the authoritative per-position numbers. They serve different purposes — Debank can silently omit or merge positions, while the protocol UI shows exactly what the protocol itself reports (e.g. PancakeSwap's UI distinguishes a *farmed* NFT from an in-wallet LP NFT — a distinction that directly exposed the MasterChefV3 coverage gap for `PancakeSwapV3PoolsAssistedBalanceAdapter`). When the two references disagree, the protocol UI wins; if the adapter matches neither, that's a finding.
 
 ### Hard constraints
 
@@ -72,7 +72,7 @@ Multiple cases per protocol are allowed when one account doesn't cover all paths
 
 | Field | Meaning |
 |---|---|
-| `protocol` | Display name matching `script/config/adapter-identities.json` |
+| `protocol` | Display name matching the `protocol` field in the adapter's per-chain deploy config under `script/config/contracts-deployment-config/` (e.g. `PancakeSwap V3`, `Uniswap V2`) |
 | `chain.id`, `chain.name` | Chain the test runs against |
 | `holder.address` | The cherry-picked account |
 | `holder.type` | `EOA` / `Contract` / `EIP-7702 delegated EOA` / `Safe` / `Treasury` — for context |
@@ -92,4 +92,4 @@ The goal is for any future contributor to be able to (a) re-derive the ground tr
 
 ## Adapters in scope
 
-Adapters from PRs #20, #25–#34, #35 (Aave V3 SM, Aave V2, Aave Umbrella, Merkl rewards, Compound V3, Stader withdrawal queue, Uniswap V2, Uniswap V3, Fluid f/Vaults T1, PancakeSwap V2/V3, plus the `PositionType` multi-leg gross-emissions capstone). Started 2026-05-21 with **Uniswap V2**. Adapters are processed one at a time; each PR appends its protocol folder under this directory and adds the protocol to `script/deploy/04_DeployBalanceAdapters.s.sol` (instances disabled by default until a KPK strategy opens a real position there).
+Adapters from PRs #20, #25–#34, #35 (Aave V3 SM, Aave V2, Aave Umbrella, Merkl rewards, Compound V3, Stader withdrawal queue, Uniswap V2, Uniswap V3, Fluid f/Vaults T1, PancakeSwap V2/V3, plus the `PositionKind` multi-leg gross-emissions capstone). Started 2026-05-21 with **Uniswap V2**. Adapters are processed one at a time; each PR appends its protocol folder under this directory and adds the protocol to `script/deploy/04_DeployBalanceAdapters.s.sol` (instances disabled by default until a KPK strategy opens a real position there).

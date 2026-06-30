@@ -2,11 +2,11 @@
 
 ## 1. Adapter under test
 
-`src/balances/MetaBalanceAdapters/EulerVaultsMetaBalanceAdapter.sol` — the immutable `EulerVaultsMetaBalanceAdapter`, a meta-adapter (ADR 0010). Constructor: `(protocolName, navCalculator)` — no per-vault constructor args; the active vault set lives on NAVCalculator (`addMetaInstances`/`removeMetaInstances`, configured in `nav-config/meta-balance-adapters/<chainId>.json` under `EulerVaultsMeta.instances` — vault addresses). Identity is derived on-chain: `positionId = abi.encode(address(vault))` (shared by both legs), `protocolId = keccak256("euler-vaults")`, `positionKind ∈ {Supplied, Collateral, Borrowed}`. A human-readable label is available off the struct via `describePosition(positionId)` → `vault.name()`.
+`src/balances/MetaBalanceAdapters/EulerVaultsMetaBalanceAdapter.sol` — the immutable `EulerVaultsMetaBalanceAdapter`, a meta-adapter (ADR 0010). Constructor: `(protocolName, navCalculator)` — no per-vault constructor args; the active vault set lives on NAVCalculator (`addMetaInstances`/`removeMetaInstances`, configured in `nav-config/meta-balance-adapters/<chainId>.json` under `EulerVaultsMeta.instances` — vault addresses). Identity is derived on-chain: `positionId = abi.encode(address(vault))` (shared by both legs), the 3-level protocol taxonomy `protocolBrand = keccak256("euler")` / `protocolId = keccak256("euler")` / `protocolSubId = keccak256("euler-vaults")`, `positionKind ∈ {Supplied, Collateral, Borrowed}`. Human-readable labels are available off the struct via `positionLabels(positionId)` → `["Vault", vault.name()]`.
 
 ### Inheritance + per-chain scope (Phase 0)
 
-- **Inheritance:** `EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter`. Overrides only `_instancePositions`, `_instanceAssets`, `describePosition`. The `…ForInstances` fan-out, ERC165, no-arg base methods returning empty, and bad-instance isolation are inherited from `MetaBalanceAdapter` (covered by its base tests + the Morpho-vaults suite). Mirrors `MorphoVaultsMetaBalanceAdapter`.
+- **Inheritance:** `EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter`. Overrides only `_instancePositions`, `_instanceAssets`, `positionLabels`, and the three identity hooks `_protocolBrand`/`_protocolId`/`_protocolSubId`. The `…ForInstances` fan-out, ERC165, no-arg base methods returning empty, the `_leg` assembly + `_instancePositionId`, and bad-instance isolation are inherited from `MetaBalanceAdapter` (covered by its base tests + the Morpho-vaults suite). Mirrors `MorphoVaultsMetaBalanceAdapter`.
 - **Per-chain scope:** both KPK-held vaults are **mainnet-only** (chainId 1) — see `script/config/nav-config/meta-balance-adapters/1.json` and `…/contracts-deployment-config/meta-balance-adapters/1.json`. So a single mainnet fork test suffices. "Mainnet-only" reflects *where KPK holds positions today*, not a code limit.
 - **Chain-agnostic by design.** The adapter has no hardcoded addresses: it reads `asset()`, `convertToAssets`, `balanceOf`, `debtOf`, and `EVC()` → `getCollaterals` from each vault at query time (the EVC is read *per-vault*, so it auto-resolves to whatever EVC the chain uses). The ERC4626 ABI is standard across EulerEarn + EVK on every chain (no per-chain shim like PancakeSwap V3's `feeProtocol`). Of our seven NAV chains, Euler V2 is live on **Ethereum (1)** and **Base (8453)** (not Optimism/BNB/Gnosis/Polygon/Arbitrum as of 2026-06). Reusing it on Base — or any future Euler chain — is pure config: deploy via `04_DeployBalanceAdapters`, add the chain's `meta-balance-adapters` deploy + nav config, and `addMetaInstances` with that chain's vault addresses. No code change.
 - **Two Euler V2 products, one adapter.** Euler V2 vaults are all ERC4626 on the EVK+EVC:
@@ -28,9 +28,9 @@ The EVC lookup is under try/catch, so a vault without `EVC()`/`getCollaterals` (
 
 ## 2. Existing test coverage
 
-Unit (`test/balances/MetaBalanceAdapters/EulerVaultsMetaBalanceAdapter.t.sol`, **16 cases**) covers every branch against mocks: ERC165, no-arg-methods-empty, multi-vault aggregation, asset filter, zero-balance skip, unregistered-asset skip, bad-instance isolation, empty-instances, `describePosition`, the borrow leg via a core-eVault mock with `debtOf` (supply+borrow, borrow-only, asset-filter), an Earn-shaped mock **without** `debtOf` proving the try/catch keeps the supply leg, and the Collateral-vs-Supplied classification via a mock EVC `getCollaterals`.
+Unit (`test/balances/MetaBalanceAdapters/EulerVaultsMetaBalanceAdapter.t.sol`, **16 cases**) covers every branch against mocks: ERC165, no-arg-methods-empty, multi-vault aggregation, asset filter, zero-balance skip, unregistered-asset skip, bad-instance isolation, empty-instances, `positionLabels`, the borrow leg via a core-eVault mock with `debtOf` (supply+borrow, borrow-only, asset-filter), an Earn-shaped mock **without** `debtOf` proving the try/catch keeps the supply leg, and the Collateral-vs-Supplied classification via a mock EVC `getCollaterals`.
 
-Fork (`test/balances/MetaBalanceAdapters/fork/EulerVaultsMetaBalanceAdapter.fork.t.sol`, **9 cases**) re-checks against real vaults at the pinned block: EulerEarn supply aggregation + NAV routing, on-chain identity, asset filter, `describePosition`, the strict-equality redemption cross-check (§8), plus the Collateral classification + borrow (`debtOf`) leg + NAV debt-netting on a real core-eVault borrower (§3).
+Fork (`test/balances/MetaBalanceAdapters/fork/EulerVaultsMetaBalanceAdapter.fork.t.sol`, **9 cases**) re-checks against real vaults at the pinned block: EulerEarn supply aggregation + NAV routing, on-chain identity, asset filter, `positionLabels`, the strict-equality redemption cross-check (§8), plus the Collateral classification + borrow (`debtOf`) leg + NAV debt-netting on a real core-eVault borrower (§3).
 
 All kept as regression nets.
 
@@ -53,7 +53,7 @@ try    debt = vault.debtOf(account)                                 # core eVaul
 catch  debt = 0                                                     # EulerEarn lacks debtOf
 emit Supplied(asset, supplied, isDebt=false)  if supplied > 0       # earn / lend / collateral
 emit Borrowed(asset, debt,     isDebt=true)   if debt > 0           # core-eVault borrow
-# both legs: positionId = abi.encode(vault), protocolId = keccak256("euler-vaults")
+# both legs: positionId = abi.encode(vault), protocolSubId = keccak256("euler-vaults"), protocolId = protocolBrand = keccak256("euler")
 ```
 
 ## 5. Cherry-picked accounts
@@ -120,7 +120,7 @@ The position value is a live read of each vault's ERC4626 / EVK accounting; the 
 | `BORROWER` (lend) | `adapter.amount == eUSDC-2.convertToAssets(balanceOf(account))`. |
 | `BORROWER` (borrow) | `adapter.amount == eWETH-2.debtOf(account)` with `isDebt = true`; routed through NAV, the leg prices to a **negative** `value` (debt is netted). |
 
-Identity is asserted in both suites: `protocolId == keccak256("euler-vaults")`, `positionId == abi.encode(vault)`, `Supplied`/`Borrowed`, `balanceAdapter == address(this)`.
+Identity is asserted in both suites: `protocolSubId == keccak256("euler-vaults")`, `protocolId == keccak256("euler")`, `positionId == abi.encode(vault)`, `Supplied`/`Borrowed`, `balanceAdapter == address(this)`.
 
 ## 9. Wiring the live dev-anvil dashboard
 
@@ -167,7 +167,7 @@ cast send $NAV "addMetaInstances(address,bytes32[])" $ADAPTER \
 | earn + lend + borrow in one account | ✅ (real borrower + seeded earn) |
 | NAV nets the borrow leg to a negative value | ✅ |
 | Borrow + collateral lookups guarded by try/catch (EulerEarn without `debtOf`/usable-collateral keeps its supply leg as `Supplied`) | ✅ (unit + fork) |
-| Identity: `protocolId == euler-vaults`, `positionId == abi.encode(vault)`, `Supplied`/`Collateral`/`Borrowed` | ✅ |
+| Identity: `protocolSubId == euler-vaults`, `protocolId == euler`, `positionId == abi.encode(vault)`, `Supplied`/`Collateral`/`Borrowed` | ✅ |
 | Mainnet-only scope | ✅ |
 
 **Mainnet: Euler fork suite (9) + unit suite (16) pass.** EulerEarn supply (both KPK vaults) and core-eVault supply/collateral + borrow (real borrower) are verified. Euler V2 vaults adapter is verified.

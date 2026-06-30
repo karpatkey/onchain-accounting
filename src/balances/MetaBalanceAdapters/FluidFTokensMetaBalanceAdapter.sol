@@ -4,7 +4,6 @@ pragma solidity ^0.8;
 import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
@@ -17,8 +16,6 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         `abi.encode(address(fToken))`. See ADR 0010.
 /// @dev Reports one Supply leg per fToken (convertToAssets(balanceOf)) in its underlying.
 contract FluidFTokensMetaBalanceAdapter is MetaBalanceAdapter {
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.FLUID_FTOKENS;
-
     /// @param protocolName_ Human-readable protocol name (e.g. "Fluid").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
     constructor(string memory protocolName_, address navCalculator_)
@@ -45,16 +42,7 @@ contract FluidFTokensMetaBalanceAdapter is MetaBalanceAdapter {
         if (amount == 0) return new INAVCalculator.PositionBalance[](0);
 
         INAVCalculator.PositionBalance[] memory positions = new INAVCalculator.PositionBalance[](1);
-        positions[0] = INAVCalculator.PositionBalance({
-            balanceAsset: assetInfo,
-            balanceAdapter: address(this),
-            amount: amount,
-            isDebt: false,
-            protocolId: PROTOCOL_ID,
-            positionId: _instancePositionId(instance),
-            positionKind: PositionKind.Supplied,
-            isLocked: false
-        });
+        positions[0] = _leg(assetInfo, amount, false, _instancePositionId(instance), PositionKind.Supplied);
         return positions;
     }
 
@@ -65,15 +53,24 @@ contract FluidFTokensMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev Returns `["Lending", <leaf>]` where the leaf is "<fToken symbol> supply" ("" if unreadable). Returns an
-    ///      empty array for a short positionId.
+    /// @dev Returns `["Lending", <fToken symbol>]` (leaf "" if unreadable). Returns an empty array for a short
+    ///      positionId.
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
-        if (pid.length < 32) return new string[](0);
-        address fToken = abi.decode(pid, (address));
-        string memory leaf = "";
-        try IERC20Metadata(fToken).symbol() returns (string memory sym) {
-            leaf = string.concat(sym, " supply");
-        } catch {}
-        return _labels("Lending", leaf);
+        return _addressLabels(pid, "Lending", true);
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolBrand() internal pure override returns (bytes32) {
+        return ProtocolIds.FLUID;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolId() internal pure override returns (bytes32) {
+        return ProtocolIds.FLUID;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolSubId() internal pure override returns (bytes32) {
+        return ProtocolIds.FLUID_FTOKENS;
     }
 }

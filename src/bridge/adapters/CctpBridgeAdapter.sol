@@ -16,8 +16,9 @@ import {InvalidArguments} from "src/errors.sol";
 /// @dev MANAGER-driven completion path: provenance is the Circle attestation verified by the
 ///      MessageTransmitter, NOT a msg.sender/protocol-callback check. On the destination chain
 ///      USDC mints directly to this adapter (mintRecipient == destinationCaller == address(this));
-///      _completeBridge then forwards the minted USDC to the escrow, and the base BridgeAdapter
-///      releases it to the account via releaseByInvoiceId AFTER _completeBridge returns.
+///      _completeBridge then leaves the minted USDC on this adapter, and the base BridgeAdapter
+///      pulls it into the escrow and releases it to the account via _fundAndRelease ->
+///      releaseByInvoiceId AFTER _completeBridge returns (funded pass-through, ADR 0012).
 /// @author KPK
 contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
     using SafeERC20 for IERC20;

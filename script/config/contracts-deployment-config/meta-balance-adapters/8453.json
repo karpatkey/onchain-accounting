@@ -44,13 +44,5 @@
       "rewardToken": "0x9e1028F5F1D5eDE59748FFceE5532509976840E0",
       "protocol": "Compound V3"
     }
-  },
-  "PancakeSwapV3PoolsMeta": {
-    "enabled": false,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every PancakeSwap V3 pool (Supply + Fees legs). NonfungiblePositionManager pinned in the constructor; the active pool set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below). Identity derived on-chain: positionId = pool address; name = sym0/sym1 feeTier. Supersedes the per-pool PancakeSwapV3_* adapters. Disabled for the same reason as below: COW on Base has no feed, so the COW leg would be silently dropped. Enable once COW is priced.",
-    "constructor": {
-      "positionManager": "0x46A15B0b27311cedF172AB29E4f4766fbE7F4364",
-      "protocol": "PancakeSwap V3"
-    }
   }
 }

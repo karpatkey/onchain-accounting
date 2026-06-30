@@ -133,10 +133,12 @@ contract AaveV3InstancesMetaUnitTest is BalanceAdapterTestBase {
         assertFalse(pos[2].isDebt);
 
         // Identity derived on-chain: positionId = abi.encode(pool) (reserve lives in balanceAsset),
-        // protocolId = AAVE_V3_LENDING.
+        // protocolSubId = AAVE_V3_LENDING, protocolId = AAVE_V3, protocolBrand = AAVE.
         for (uint256 i = 0; i < pos.length; i++) {
             assertEq(pos[i].balanceAdapter, address(adapter));
-            assertEq(pos[i].protocolId, keccak256("aave-v3-lending"));
+            assertEq(pos[i].protocolSubId, keccak256("aave-v3-lending"));
+            assertEq(pos[i].protocolId, keccak256("aave-v3"));
+            assertEq(pos[i].protocolBrand, keccak256("aave"));
             assertEq(pos[i].positionId, abi.encode(pool), "positionId = abi.encode(pool), no reserve");
         }
     }

@@ -1,9 +1,9 @@
 {
   "protocol": "PancakeSwap V3",
-  "adapter": "src/balances/AssistedBalanceAdapters/PancakeSwapV3PoolsMetaBalanceAdapter.sol",
-  "adapter_test": "test/balances/AssistedBalanceAdapters/fork/PancakeSwapV3PoolsMetaBalanceAdapter.fork.t.sol",
-  "test_contract": "PancakeSwapV3PoolsMetaParityForkTest",
-  "companion_test": "test/balances/AssistedBalanceAdapters/fork/PancakeSwapV3PoolsMeta.Base.fork.t.sol (PancakeSwapV3PoolsMetaParityForkTest_Base — closed position, no-revert only)",
+  "adapter": "src/balances/AssistedBalanceAdapters/PancakeSwapV3PoolsAssistedBalanceAdapter.sol",
+  "adapter_test": "test/balances/AssistedBalanceAdapters/fork/PancakeSwapV3PoolsAssistedBalanceAdapter.fork.t.sol",
+  "test_contract": "PancakeSwapV3PoolsAssistedBalanceForkTest",
+  "companion_test": "test/balances/AssistedBalanceAdapters/fork/PancakeSwapV3PoolsAssistedBalance.Base.fork.t.sol (PancakeSwapV3PoolsAssistedBalanceForkTest_Base — closed position, no-revert only)",
   "chain": { "id": 1, "name": "mainnet" },
   "block": {
     "number": 25274483,
@@ -24,7 +24,7 @@
       "currentTick_at_fork_block": -202019,
       "sqrtPriceX96_at_fork_block": "3253334064596920230428346",
       "feeProtocol": 222825800,
-      "feeProtocol_note": "222825800 > uint8 max (255) — the high bits are set, so the inherited uint8 slot0 read reverts; the PancakeSwapV3PoolsMeta._slot0 override decodes it as uint32. This is the entire verification surface."
+      "feeProtocol_note": "222825800 > uint8 max (255) — PCS V3 packs feeProtocol as uint32, which breaks a uint8 slot0 read. This is NOT moot: UniswapV3PoolsAssistedBalanceAdapter reads the pool's live slot0() (the in-range split is priced off sqrtPriceX96/tick; ADR 0017), and the PancakeSwapV3PoolsAssistedBalanceAdapter subclass overrides _slot0() to decode this uint32 feeProtocol ABI (plus _protocolId() for the pancakeswap-v3 slug). This field is the recorded chain evidence the _slot0 override is verified against."
     }
   ],
   "holders": [

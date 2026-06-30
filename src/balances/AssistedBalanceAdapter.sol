@@ -32,6 +32,37 @@ abstract contract AssistedBalanceAdapter is IAssistedBalanceAdapter, AccessContr
         if (assistant != address(0)) _grantRole(ASSISTANT_ROLE, assistant);
     }
 
+    //
+    // Shared submit orchestration (internal)
+    //
+
+    /// @notice Family-wide submit chokepoint, shared by every assisted adapter. Concrete adapters expose a *friendly,
+    ///         typed* public `submit…` wrapper (e.g. `submitTokenIds(address, uint256[])`) gated with
+    ///         `onlyRole(ASSISTANT_ROLE)`; that wrapper `abi.encode`s its payload and routes here so the per-account
+    ///         validation and the **replace** semantics live in one place. `data` is the adapter's element list
+    ///         ABI-encoded (the typed shape is per-adapter: a `uint256[]` of token ids, an `ExitPosition[]`, an
+    ///         `Allocation[]`, …). REPLACE semantics: the decoded list becomes the account's COMPLETE cached set.
+    /// @dev Kept internal (not a public interface method) deliberately — the public surface stays strongly typed and
+    ///      self-documenting per adapter. Access control is enforced by the caller's `onlyRole(ASSISTANT_ROLE)`.
+    function _submit(address account, bytes memory data) internal {
+        if (account == address(0)) revert InvalidArguments();
+        _applyReplace(account, data);
+    }
+
+    /// @notice Batch form of {_submit}: each account's encoded list replaces that account's cached set. `accounts` and
+    ///         `data` must have the same length.
+    function _submitBatch(address[] calldata accounts, bytes[] memory data) internal {
+        if (accounts.length != data.length) revert ArrayLengthMismatch();
+        for (uint256 i; i < accounts.length; ++i) {
+            _submit(accounts[i], data[i]);
+        }
+    }
+
+    /// @dev Decode `data` into the adapter's typed element list and REPLACE `account`'s cached set — clear the prior
+    ///      set, then re-add each element validating fail-loud (revert on a bad element so the whole submit, including
+    ///      the clear, rolls back atomically and the prior set is preserved). Implemented per adapter.
+    function _applyReplace(address account, bytes memory data) internal virtual;
+
     /// @inheritdoc IERC165
     /// @dev Reconciles ERC-165 across {AccessControl} (which advertises {IAccessControl}/{IERC165}) and this family.
     ///      Advertises {IBalanceAdapter} too — every assisted adapter is one (via {IAssistedBalanceAdapter}), and the

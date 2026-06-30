@@ -40,9 +40,19 @@ interface IEVC {
 ///      A supply the account has enabled as EVC collateral is reported as `Collateral`; an unencumbered supply
 ///      (EulerEarn earn deposits, or core-eVault supply not enabled as collateral) is `Supplied` — determined via an
 ///      EVC `getCollaterals` lookup (under try/catch, so non-Euler/EulerEarn vaults degrade to `Supplied`).
+/// @dev **Instance set is a governed allowlist — not auto-enumerated.** Euler V2 exposes an on-chain
+///      `GenericFactory` (mainnet `0x29a56a1b8214D9Cf7c5561811750D5cBDb45CC8e`, `getProxyListLength()` /
+///      `getProxyListSlice()`) enumerating every deployed vault, and this adapter could read it to avoid governance
+///      seeding instances. We deliberately do NOT: the active set stays the MANAGER-curated `bytes32[]` on
+///      NAVCalculator. This is the strongest case for the allowlist because the factory is **fully permissionless** —
+///      anyone can deploy a vault (~850 exist, including junk like `eUNDEFINED-1`). Since balances are read
+///      trustlessly from the vault (`balanceOf`→`convertToAssets`, `debtOf`), auto-including factory output would let
+///      an attacker deploy a vault that reports a fabricated balance in a NAV-registered asset and inflate NAV; the
+///      registered-asset filter does not help (the attack is denominated in a registered asset). Iterating ~850
+///      vaults per account read is also impractical (the read path sizes buffers by `_metaInstanceTotal`). Use the
+///      factory off-chain to *propose* instances; governance approves each into the allowlist. See
+///      BALANCE_ADAPTERS.md §6.1.
 contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.EULER_VAULTS;
-
     /// @param protocolName_ Human-readable protocol name (e.g. "Euler").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
     constructor(string memory protocolName_, address navCalculator_)
@@ -91,28 +101,10 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
         bytes memory positionId = _instancePositionId(instance);
         uint256 i = 0;
         if (supplied > 0) {
-            positions[i++] = INAVCalculator.PositionBalance({
-                balanceAsset: assetInfo,
-                balanceAdapter: address(this),
-                amount: supplied,
-                isDebt: false,
-                protocolId: PROTOCOL_ID,
-                positionId: positionId,
-                positionKind: _supplyKind(account, vaultAddr),
-                isLocked: false
-            });
+            positions[i++] = _leg(assetInfo, supplied, false, positionId, _supplyKind(account, vaultAddr));
         }
         if (debt > 0) {
-            positions[i] = INAVCalculator.PositionBalance({
-                balanceAsset: assetInfo,
-                balanceAdapter: address(this),
-                amount: debt,
-                isDebt: true,
-                protocolId: PROTOCOL_ID,
-                positionId: positionId,
-                positionKind: PositionKind.Borrowed,
-                isLocked: false
-            });
+            positions[i] = _leg(assetInfo, debt, true, positionId, PositionKind.Borrowed);
         }
         return positions;
     }
@@ -144,12 +136,21 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @dev Returns `["Vault", <leaf>]` where the leaf is the vault's ERC4626 name ("" if unreadable). Returns an
     ///      empty array for a short positionId.
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
-        if (pid.length < 32) return new string[](0);
-        address vault = abi.decode(pid, (address));
-        string memory leaf = "";
-        try IERC4626(vault).name() returns (string memory n) {
-            leaf = n;
-        } catch {}
-        return _labels("Vault", leaf);
+        return _addressLabels(pid, "Vault", false);
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolBrand() internal pure override returns (bytes32) {
+        return ProtocolIds.EULER;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolId() internal pure override returns (bytes32) {
+        return ProtocolIds.EULER;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolSubId() internal pure override returns (bytes32) {
+        return ProtocolIds.EULER_VAULTS;
     }
 }

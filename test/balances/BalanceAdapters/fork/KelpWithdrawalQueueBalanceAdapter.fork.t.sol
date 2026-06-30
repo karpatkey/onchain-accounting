@@ -59,12 +59,29 @@ contract KelpWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
     }
 
     function test_getAdapterPositions_realHolder() public view {
+        // One open stETH request → one per-request leg; sum across legs == the holder's aggregate owed.
         INAVCalculator.PositionBalance[] memory positions = oracle.getAdapterPositions(TEST_USER, address(0));
-        assertEq(positions.length, 1);
-        assertEq(positions[0].balanceAsset.asset, MAINNET_STETH);
-        assertEq(positions[0].balanceAdapter, address(oracle));
-        assertEq(positions[0].amount, TEST_USER_EXPECTED_STETH);
-        assertFalse(positions[0].isDebt);
+        assertGe(positions.length, 1);
+        uint256 sum;
+        for (uint256 i = 0; i < positions.length; i++) {
+            assertEq(positions[i].balanceAsset.asset, MAINNET_STETH);
+            assertEq(positions[i].balanceAdapter, address(oracle));
+            assertFalse(positions[i].isDebt);
+            assertEq(positions[i].positionId, abi.encode(WITHDRAWAL_MANAGER), "static withdrawal-manager positionId");
+            _assertRequestLeg(positions[i]);
+            sum += positions[i].amount;
+        }
+        assertEq(sum, TEST_USER_EXPECTED_STETH);
+    }
+
+    /// @dev Asserts a per-request leg: the static breadcrumb is `["Withdrawal Queue", "rsETH"]` (positionId-derived, no
+    ///      ephemeral id), and the userNonce rides in the typed `positionInstanceId`.
+    function _assertRequestLeg(INAVCalculator.PositionBalance memory leg) internal view {
+        string[] memory labels = oracle.positionLabels(leg.positionId);
+        assertEq(labels.length, 2, "static breadcrumb = [category]");
+        assertEq(labels[0], "Withdrawal Queue");
+        assertEq(labels[1], "rsETH");
+        assertTrue(leg.positionInstanceId != bytes32(0), "positionInstanceId carries the userNonce");
     }
 
     function test_getAdapterBalances_realHolder() public view {
@@ -197,25 +214,41 @@ contract KelpWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTestBa
         assertFalse(isDebt);
     }
 
-    // ---- Multi-asset getAdapterPositions: TWO legs from one oracle ----
+    // ---- Multi-asset getAdapterPositions: per-request legs across two assets from one oracle ----
 
-    function test_getAdapterPositions_twoLegs() public view {
+    function test_getAdapterPositions_perRequestLegs() public view {
+        // HOLDER has TWO open stETH requests (nonces 7177 + 7203) + ONE native-ETH request (nonce 5937) → THREE
+        // per-request legs. Per-asset sums reconstruct the aggregate; ETHx skipped (no request / unregistered).
         INAVCalculator.PositionBalance[] memory positions = oracle.getAdapterPositions(HOLDER, address(0));
-        assertEq(positions.length, 2, "stETH + native-ETH legs (ETHx skipped: no request / unregistered)");
+        assertEq(positions.length, 3, "two stETH legs + one native-ETH leg (ETHx skipped: no request / unregistered)");
 
-        // Emitted in getSupportedAssetList order: stETH (index 0), then native ETH (index 2; ETHx at 1 skipped).
-        assertEq(positions[0].balanceAsset.asset, MAINNET_STETH);
-        assertEq(positions[0].amount, STETH_EXPECTED);
-        assertEq(positions[1].balanceAsset.asset, NATIVE_ETH);
-        assertEq(positions[1].amount, NETH_EXPECTED);
-
+        uint256 stethSum;
+        uint256 nethSum;
+        uint256 stethLegs;
+        uint256 nethLegs;
         for (uint256 i = 0; i < positions.length; i++) {
             assertEq(positions[i].balanceAdapter, address(oracle));
             assertFalse(positions[i].isDebt);
-            assertEq(positions[i].protocolId, ProtocolIds.KELP_WITHDRAWAL);
+            assertEq(positions[i].protocolSubId, ProtocolIds.KELP_WITHDRAWAL);
+            assertEq(positions[i].protocolId, ProtocolIds.KELP);
             assertEq(positions[i].positionId, abi.encode(WITHDRAWAL_MANAGER), "static withdrawal-manager positionId");
             assertEq(uint256(positions[i].positionKind), uint256(PositionKind.Supplied));
+            _assertRequestLeg(positions[i]);
+
+            if (positions[i].balanceAsset.asset == MAINNET_STETH) {
+                stethSum += positions[i].amount;
+                stethLegs++;
+            } else if (positions[i].balanceAsset.asset == NATIVE_ETH) {
+                nethSum += positions[i].amount;
+                nethLegs++;
+            } else {
+                revert("unexpected asset leg");
+            }
         }
+        assertEq(stethLegs, 2, "two open stETH requests -> two legs");
+        assertEq(nethLegs, 1, "one open native-ETH request -> one leg");
+        assertEq(stethSum, STETH_EXPECTED, "stETH legs sum to the aggregate (nonces 7177 + 7203)");
+        assertEq(nethSum, NETH_EXPECTED, "native-ETH leg == single open request");
     }
 
     function test_getAdapterPositions_filterToNativeETH() public view {
@@ -223,6 +256,17 @@ contract KelpWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTestBa
         assertEq(positions.length, 1, "asset filter narrows to the native-ETH leg only");
         assertEq(positions[0].balanceAsset.asset, NATIVE_ETH);
         assertEq(positions[0].amount, NETH_EXPECTED);
+        _assertRequestLeg(positions[0]);
+    }
+
+    /// @dev Asserts a per-request leg: the static breadcrumb is `["Withdrawal Queue", "rsETH"]` (positionId-derived, no
+    ///      ephemeral id), and the userNonce rides in the typed `positionInstanceId`.
+    function _assertRequestLeg(INAVCalculator.PositionBalance memory leg) internal view {
+        string[] memory labels = oracle.positionLabels(leg.positionId);
+        assertEq(labels.length, 2, "static breadcrumb = [category]");
+        assertEq(labels[0], "Withdrawal Queue");
+        assertEq(labels[1], "rsETH");
+        assertTrue(leg.positionInstanceId != bytes32(0), "positionInstanceId carries the userNonce");
     }
 
     function test_getAdapterBalances_bothAssets() public view {

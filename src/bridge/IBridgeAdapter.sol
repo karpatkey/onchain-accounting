@@ -48,12 +48,12 @@ interface IBridgeAdapter {
     //
 
     /// @notice Initiates a bridge operation
-    /// @param messagePayload Encoded payload from BridgeEscrow (exactly 3 slots: invoiceId, amount, meta)
+    /// @param messagePayload Encoded payload from BridgeEscrow (exactly 4 slots: invoiceId, amount, nonce, meta)
     /// @dev Adapter should decode messagePayload to extract invoiceId, amount, and derive other needed data
     function bridge(bytes calldata messagePayload) external;
 
     /// @notice Completes a bridge operation on destination chain
-    /// @param messagePayload The message payload (exactly 3 slots: invoiceId, amount, meta)
+    /// @param messagePayload The message payload (exactly 4 slots: invoiceId, amount, nonce, meta)
     /// @param protocolData Bridge-specific protocol data (e.g., CCTP message+attestation, CCIP Any2EVMMessage)
     /// @dev The base adapter calls BridgeEscrow.releaseByInvoiceId(messagePayload) after _completeBridge returns. Adapter implementations must not call releaseByInvoiceId; they only perform protocol-specific completion in _completeBridge.
     function completeBridge(bytes calldata messagePayload, bytes calldata protocolData) external;
@@ -69,8 +69,9 @@ interface IBridgeAdapter {
     /// @notice Recovers stuck assets from the adapter
     /// @param asset The asset address to recover (address(0) for native tokens)
     /// @param amount The amount to recover
-    /// @param to The address to send recovered assets to
-    /// @dev Only managers can call this. Adapter-specific recovery logic.
+    /// @param to The address to send recovered assets to; must be the escrow or an escrow-authorized account
+    /// @dev Only the MANAGER_ROLE can call this. Recipient-restricted (ADR 0012, H11): recovered funds may
+    ///      only go to the escrow or an escrow-authorized account, never an arbitrary address.
     function recoverStuckAssets(address asset, uint256 amount, address to) external;
 }
 

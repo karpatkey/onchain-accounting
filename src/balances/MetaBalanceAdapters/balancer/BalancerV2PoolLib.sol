@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+
 /// @title BalancerV2PoolLib
 /// @author KPK
 /// @notice Shared pool-share math for the Balancer V2 meta-adapters (pools + gauges). Given a pool's `bytes32`
@@ -42,7 +44,7 @@ library BalancerV2PoolLib {
 
     /// @notice The account's share of each underlying token for `bptAmount` BPT.
     /// @return tokens The underlying tokens (BPT-in-pool excluded).
-    /// @return amounts The corresponding `balances[i] * bptAmount / effectiveSupply` (0 if supply is 0).
+    /// @return amounts The corresponding `balances[i] * bptAmount / effectiveSupply` (0 if supply or bptAmount is 0).
     function shares(address vault, bytes32 poolId, address bpt, uint256 bptAmount)
         internal
         view
@@ -61,7 +63,7 @@ library BalancerV2PoolLib {
         for (uint256 i = 0; i < all.length; i++) {
             if (all[i] == bpt) continue;
             tokens[k] = all[i];
-            amounts[k] = (ts == 0 || bptAmount == 0) ? 0 : (balances[i] * bptAmount) / ts;
+            amounts[k] = (ts == 0 || bptAmount == 0) ? 0 : Math.mulDiv(balances[i], bptAmount, ts);
             k++;
         }
     }

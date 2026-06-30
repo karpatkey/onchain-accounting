@@ -159,8 +159,8 @@ interface IGnosisBridgeAdapter is IBridgeAdapter {
     ///      escrow and releases. Calling it from any other address reverts.
     function onTokenTransfer(address from, uint256 value, bytes calldata data) external returns (bool);
 
-    /// @notice Receives native tokens from Omnibridge
-    /// @dev This function is called when native tokens (ETH/xDAI) are received
-    /// @dev The messagePayload should be extracted from the transaction data or stored separately
+    /// @notice Accepts native value sent to the adapter
+    /// @dev Native tokens (ETH/xDAI) are not bridged by this adapter (see `NativeTokenNotSupported`). This is kept
+    ///      payable only as a safety net so the funded pass-through native branch in the base cannot strand value.
     receive() external payable;
 }

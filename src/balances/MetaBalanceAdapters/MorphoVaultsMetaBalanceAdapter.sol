@@ -4,6 +4,7 @@ pragma solidity ^0.8;
 import {MetaBalanceAdapter} from "../MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import {ERC4626RedeemLib} from "src/balances/ERC4626RedeemLib.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
@@ -15,8 +16,6 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @dev Per-instance identity is encoded as `abi.encode(address(vault))`. Supports ERC4626-compliant Morpho vaults
 ///      (V1 and V2). Does not include Merkl or Universal Rewards Distributor rewards.
 contract MorphoVaultsMetaBalanceAdapter is MetaBalanceAdapter {
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.MORPHO_VAULTS;
-
     /// @param protocolName_ Human-readable protocol name (e.g. "Morpho").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
     constructor(string memory protocolName_, address navCalculator_)
@@ -46,22 +45,15 @@ contract MorphoVaultsMetaBalanceAdapter is MetaBalanceAdapter {
             return new INAVCalculator.PositionBalance[](0);
         }
 
-        uint256 amount = vault.convertToAssets(vault.balanceOf(account));
+        // Fee-aware share→asset value: previewRedeem (net of any EIP-4626 §4.3 exit fee) with a convertToAssets
+        // fallback when preview reverts (e.g. paused). See {ERC4626RedeemLib}.
+        uint256 amount = ERC4626RedeemLib.redeemValue(address(vault), vault.balanceOf(account));
         if (amount == 0) {
             return new INAVCalculator.PositionBalance[](0);
         }
 
         INAVCalculator.PositionBalance[] memory positions = new INAVCalculator.PositionBalance[](1);
-        positions[0] = INAVCalculator.PositionBalance({
-            balanceAsset: assetInfo,
-            balanceAdapter: address(this),
-            amount: amount,
-            isDebt: false,
-            protocolId: PROTOCOL_ID,
-            positionId: _instancePositionId(instance),
-            positionKind: PositionKind.Supplied,
-            isLocked: false
-        });
+        positions[0] = _leg(assetInfo, amount, false, _instancePositionId(instance), PositionKind.Supplied);
         return positions;
     }
 
@@ -75,12 +67,21 @@ contract MorphoVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @dev Returns `["Vault", <leaf>]` where the leaf is the vault's ERC4626 name ("" if unreadable). Returns an
     ///      empty array for a short positionId.
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
-        if (pid.length < 32) return new string[](0);
-        address vault = abi.decode(pid, (address));
-        string memory leaf = "";
-        try IERC4626(vault).name() returns (string memory n) {
-            leaf = n;
-        } catch {}
-        return _labels("Vault", leaf);
+        return _addressLabels(pid, "Vault", false);
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolBrand() internal pure override returns (bytes32) {
+        return ProtocolIds.MORPHO;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolId() internal pure override returns (bytes32) {
+        return ProtocolIds.MORPHO;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolSubId() internal pure override returns (bytes32) {
+        return ProtocolIds.MORPHO_VAULTS;
     }
 }

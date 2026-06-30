@@ -2,9 +2,10 @@
 pragma solidity ^0.8;
 
 import {MetaBalanceAdapter} from "../MetaBalanceAdapter.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {LabelLib} from "src/balances/LabelLib.sol";
 import {Id, IMorpho, MarketParams, Position} from "morpho-blue/src/interfaces/IMorpho.sol";
 import {MorphoBalancesLib} from "morpho-blue/src/libraries/periphery/MorphoBalancesLib.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -15,13 +16,11 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @notice One immutable adapter that reports an account's positions on *any* Morpho Blue market. The set of
 ///         markets to query is configured on NAVCalculator (per-adapter, MANAGER-gated) and passed as `bytes32`
 ///         instance coordinates — here the coordinate is the Morpho **marketId** itself (used directly, not an
-///         address). Emits up to three gross rows per market (collateral, loan-supply, loan-borrow), matching
-///         the per-market `MorphoMarket` adapter. See ADR 0010 (meta-adapters) and ADR 0004 (projected balances).
+///         address). Emits up to three gross rows per market (collateral, loan-supply, loan-borrow).
+///         See ADR 0010 (meta-adapters) and ADR 0004 (projected balances).
 contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
     using Math for uint256;
     using MorphoBalancesLib for IMorpho;
-
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.MORPHO_MARKETS;
 
     /// @notice The Morpho Blue singleton (protocol-global).
     IMorpho public immutable MORPHO;
@@ -32,7 +31,7 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
     constructor(address morpho_, string memory protocolName_, address navCalculator_)
         MetaBalanceAdapter(protocolName_, navCalculator_)
     {
-        require(morpho_.code.length > 0, "Morpho must be a contract");
+        AddressCheckLib.requireContract(morpho_, "Morpho");
         MORPHO = IMorpho(morpho_);
     }
 
@@ -66,16 +65,16 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
         uint256 count;
 
         if (collateralEligible && uint256(pos.collateral) > 0) {
-            temp[count++] = _row(collAsset, uint256(pos.collateral), false, pid, PositionKind.Collateral);
+            temp[count++] = _leg(collAsset, uint256(pos.collateral), false, pid, PositionKind.Collateral);
         }
 
         if (loanEligible) {
             (uint256 supplied, uint256 borrowed) = _loanLegs(mp, pos);
             if (supplied > 0) {
-                temp[count++] = _row(loanAsset, supplied, false, pid, PositionKind.Supplied);
+                temp[count++] = _leg(loanAsset, supplied, false, pid, PositionKind.Supplied);
             }
             if (borrowed > 0) {
-                temp[count++] = _row(loanAsset, borrowed, true, pid, PositionKind.Borrowed);
+                temp[count++] = _leg(loanAsset, borrowed, true, pid, PositionKind.Borrowed);
             }
         }
 
@@ -95,7 +94,7 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev Returns `["Market", <leaf>]` where the leaf is "<collateral>/<loan> market" ("" if the marketId cannot
+    /// @dev Returns `["Market", <leaf>]` where the leaf is "<collateral>/<loan>" ("" if the marketId cannot
     ///      be resolved). Returns an empty array for a short positionId.
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
         if (pid.length < 32) return new string[](0);
@@ -104,9 +103,24 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
         try MORPHO.idToMarketParams(Id.wrap(marketId)) returns (MarketParams memory mp) {
             string memory collSym = _symbol(mp.collateralToken);
             string memory loanSym = _symbol(mp.loanToken);
-            leaf = string.concat(collSym, "/", loanSym, " market");
+            leaf = string.concat(collSym, "/", loanSym);
         } catch {}
         return _labels("Market", leaf);
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolBrand() internal pure override returns (bytes32) {
+        return ProtocolIds.MORPHO;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolId() internal pure override returns (bytes32) {
+        return ProtocolIds.MORPHO;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolSubId() internal pure override returns (bytes32) {
+        return ProtocolIds.MORPHO_MARKETS;
     }
 
     /// @inheritdoc MetaBalanceAdapter
@@ -132,30 +146,9 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
         }
     }
 
-    /// @notice Assembles a single PositionBalance row with this adapter's identity.
-    function _row(INAVCalculator.Asset memory asset, uint256 amount, bool isDebt, bytes memory pid, PositionKind kind)
-        private
-        view
-        returns (INAVCalculator.PositionBalance memory)
-    {
-        return INAVCalculator.PositionBalance({
-            balanceAsset: asset,
-            balanceAdapter: address(this),
-            amount: amount,
-            isDebt: isDebt,
-            protocolId: PROTOCOL_ID,
-            positionId: pid,
-            positionKind: kind,
-            isLocked: false
-        });
-    }
-
-    /// @notice Reads an ERC20 symbol, falling back to "?" for non-standard tokens.
+    /// @notice Reads an ERC20 symbol, falling back to "?" for non-standard tokens or a codeless address (e.g. an idle
+    ///         market with no collateral token) — so the concatenated leaf stays well-formed (no leading `/` segment).
     function _symbol(address token) private view returns (string memory) {
-        try IERC20Metadata(token).symbol() returns (string memory s) {
-            return bytes(s).length == 0 ? "?" : s;
-        } catch {
-            return "?";
-        }
+        return LabelLib.symbol(token, "?");
     }
 }

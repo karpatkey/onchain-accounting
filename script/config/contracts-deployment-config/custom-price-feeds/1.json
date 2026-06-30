@@ -128,7 +128,7 @@
   },
   "RWIV": {
     "enabled": true,
-    "$comment": "Nexus Mutual RWI Vault (RWIV) — ERC-4626 share, USDC underlying. Priced USDC/USD x convertToAssets(10^decimals)/10^decimals (same pattern as syrupUSDC). Makes RWIV a registered priced asset so the UniV3 USDC/RWIV pool LP (held by the Nexus Safe) can be valued by UniswapV3PoolsMeta.",
+    "$comment": "Nexus Mutual RWI Vault (RWIV) — ERC-4626 share, USDC underlying. Priced USDC/USD x convertToAssets(10^decimals)/10^decimals (same pattern as syrupUSDC). Makes RWIV a registered priced asset so the UniV3 USDC/RWIV pool LP (held by the Nexus Safe) can be valued by UniswapV3PoolsAssisted.",
     "constructor": {
       "rwiv": "0xCafEaa466736ac01e0AC9CA72644BeF348694731",
       "usdcToUsdChainlinkAddress": "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6",
@@ -193,6 +193,39 @@
       "ramm": "0xcafea54f03E1Cc036653444e581A10a43B2487CD",
       "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
       "ethToUsdChainlinkHeartbeat": "3600"
+    }
+  },
+  "ezETHCrossRate": {
+    "enabled": true,
+    "$comment": "ezETH redundancy feed (ezETH_CrossRateCustomPriceFeed). CrossRate: ezETH/USD = ETH/USD x ezETH/ETH. yToXFeed is the Redstone Classic Push ezETH/ETH market feed (verified 99.87% vs Renzo RestakeManager rate). Independent of the primary ezETH feed (Renzo on-chain rate); added as priceFeeds[1] for freshest-wins redundancy.",
+    "constructor": {
+      "underlyingAsset": "0xbf5495Efe5DB9ce00f80364C8B423567e58d2110",
+      "xToUsdFeed": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+      "yToXFeed": "0xF4a3e183F59D2599ee3DF213ff78b1B3b1923696",
+      "xToUsdHeartbeat": "3600",
+      "yToXHeartbeat": "86400"
+    }
+  },
+  "ETHxCrossRate": {
+    "enabled": true,
+    "$comment": "ETHx redundancy feed (ETHx_CrossRateCustomPriceFeed). CrossRate: ETHx/USD = ETH/USD x ETHx/ETH. yToXFeed is the Redstone Classic Push ETHx/ETH market feed (verified 99.81% vs Stader getExchangeRate). Independent of the primary ETHx feed (Stader on-chain rate); added as priceFeeds[1] for freshest-wins redundancy.",
+    "constructor": {
+      "underlyingAsset": "0xA35b1B31Ce002FBF2058D22F30f95D405200A15b",
+      "xToUsdFeed": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+      "yToXFeed": "0xc799194cAa24E2874Efa89b4Bf5c92a530B047FF",
+      "xToUsdHeartbeat": "3600",
+      "yToXHeartbeat": "86400"
+    }
+  },
+  "osETHCrossRate": {
+    "enabled": true,
+    "$comment": "osETH redundancy feed (osETH_CrossRateCustomPriceFeed). CrossRate: osETH/USD = ETH/USD x osETH/ETH. yToXFeed is the Redstone Classic Push osETH/ETH market feed (verified 99.34% vs StakeWise osTokenVaultController rate). Independent of the primary osETH feed (StakeWise on-chain rate); added as priceFeeds[1] for freshest-wins redundancy.",
+    "constructor": {
+      "underlyingAsset": "0xf1C9acDc66974dFB6dEcB12aA385b9cD01190E38",
+      "xToUsdFeed": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+      "yToXFeed": "0x66ac817f997Efd114EDFcccdce99F3268557B32C",
+      "xToUsdHeartbeat": "3600",
+      "yToXHeartbeat": "86400"
     }
   }
 }

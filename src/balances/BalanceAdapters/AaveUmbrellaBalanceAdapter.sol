@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {BalanceAdapterBase} from "../BalanceAdapterBase.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
+import {ERC4626RedeemLib} from "src/balances/ERC4626RedeemLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -15,14 +18,16 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @author KPK
 /// @notice Reports balances across every Aave Umbrella stake token registered with a single
 ///         `RewardsController` (the protocol's trust anchor, pinned at construction). For each
-///         stake position the adapter emits up to two `PositionBalance` entries:
-///           - `(<bareReserve>, type="Staking")` — the user's principal denominated in the bare
-///             reserve token (e.g. USDC, USDT, WETH, GHO).
-///           - `(<bareReserve>, type="Rewards")` — the user's claimable but unclaimed rewards,
+///         stake position the adapter emits up to three `PositionBalance` entries:
+///           - `(<bareReserve>, PositionKind.Staking)` — the user's principal denominated in the
+///             bare reserve token (e.g. USDC, USDT, WETH, GHO). The principal is split by
+///             withdrawability into a locked leg (`isLocked=true`) and an unlocked leg
+///             (`isLocked=false`), so it may yield up to two entries.
+///           - `(<bareReserve>, PositionKind.Rewards)` — the user's claimable but unclaimed rewards,
 ///             also denominated in the bare reserve. Reward aTokens are 1:1 unit-equivalent with
 ///             their underlying reserve, so the amount returned by `calculateCurrentUserRewards`
-///             can be treated as bare-reserve-denominated. The `underlyingAsset` field disambiguates
-///             which stake token the position belongs to.
+///             can be treated as bare-reserve-denominated. The `positionId` (`abi.encode(stakeToken)`)
+///             disambiguates which stake token the position belongs to.
 /// @dev The full Umbrella stake-token set is discovered at runtime via
 ///      `RewardsController.getAllAssets()`. For each stake token the adapter follows at most one
 ///      ERC4626 wrapper hop on the `asset()` chain — `stk → waToken → bare reserve` for the
@@ -31,8 +36,8 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      `IAToken.UNDERLYING_ASSET_ADDRESS()`; tokens that do not implement that getter are treated
 ///      as already-bare (e.g. plain GHO for stkGHO.v1).
 ///
-///      Each external probe (`asset()`, `convertToAssets(uint256)`, `UNDERLYING_ASSET_ADDRESS()`,
-///      `symbol()`) is performed via a low-level staticcall with a tight gas budget (≤ 50k) so a
+///      Each external probe (`asset()`, `convertToAssets(uint256)`, `UNDERLYING_ASSET_ADDRESS()`)
+///      is performed via a low-level staticcall with a tight gas budget (`PROBE_GAS`) so a
 ///      misbehaving fallback on a non-ERC4626 token (e.g. legacy WETH9, USDC's transparent proxy)
 ///      cannot drain the parent call's gas. Probe failures are interpreted as "this token is not a
 ///      wrapper / not an aToken" and the walk falls back to the safe default.
@@ -53,14 +58,16 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      locked leg (`isLocked=true` — active stake + a cooldown still cooling/expired) and an unlocked leg
 ///      (`isLocked=false` — a cooldown elapsed and inside the withdrawal window), both under
 ///      `positionId = abi.encode(stakeToken)` — read from `getStakerCooldown`. Total value is unchanged.
-contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
+contract AaveUmbrellaBalanceAdapter is BalanceAdapterBase {
     /// @dev Gas forwarded to single-word probes (`asset()`, `convertToAssets(uint256)`,
     ///      `UNDERLYING_ASSET_ADDRESS()`). 30k covers a normal SLOAD-and-return path comfortably
     ///      while preventing a misbehaving fallback (cf. WETH9 dispatching unknown selectors to
     ///      `deposit()`, USDC's proxy chain) from burning the caller's remaining gas budget.
     uint256 private constant PROBE_GAS = 30_000;
 
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.AAVE_V3_UMBRELLA;
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.AAVE;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.AAVE_V3;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.AAVE_V3_UMBRELLA;
 
     //
     // State
@@ -83,8 +90,8 @@ contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         if (rewardsController == address(0) || navCalculator == address(0)) {
             revert InvalidArguments();
         }
-        require(rewardsController.code.length > 0, "RewardsController must be a contract");
-        require(navCalculator.code.length > 0, "NAVCalculator must be a contract");
+        AddressCheckLib.requireContract(rewardsController, "RewardsController");
+        AddressCheckLib.requireContract(navCalculator, "NAVCalculator");
         REWARDS_CONTROLLER = IUmbrellaRewardsController(rewardsController);
         NAV_CALCULATOR = INAVCalculator(navCalculator);
     }
@@ -93,17 +100,11 @@ contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     // IERC165
     //
 
-    /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IPositionDescribable).interfaceId
-            || interfaceId == type(IERC165).interfaceId;
-    }
-
     function protocolName() external pure returns (string memory) {
         return "Aave Umbrella";
     }
 
-    function positionLabels(bytes calldata) external pure returns (string[] memory) {
+    function positionLabels(bytes calldata) external pure override returns (string[] memory) {
         string[] memory out = new string[](1);
         out[0] = "Umbrella Module";
         return out;
@@ -202,10 +203,13 @@ contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     }
 
     /// @inheritdoc IBalanceAdapter
-    /// @notice Returns one PositionBalance per `(stakeToken, leg)` pair where `leg ∈ {Staking, Rewards}`.
-    /// @dev Each emitted position is self-describing through `positionDetail`. Zero-amount legs are
-    ///      skipped. Stake tokens whose bare reserve is not registered on NAVCalculator are
-    ///      silently skipped (same convention as `AaveV3InstanceBalanceAdapter`).
+    /// @notice Returns PositionBalance legs per stake token: the staking principal split by
+    ///         withdrawability into a locked and an unlocked leg (`PositionKind.Staking`), plus a
+    ///         `PositionKind.Rewards` leg — up to three legs per stake token.
+    /// @dev Each emitted position is self-describing through its typed identity fields
+    ///      (`protocolBrand`/`protocolId`/`protocolSubId`, `positionId`, `positionKind`, `isLocked`).
+    ///      Zero-amount legs are skipped. Stake tokens whose bare reserve is not registered on
+    ///      NAVCalculator are silently skipped (same convention as the Aave V3 lending adapters).
     function getAdapterPositions(address account, address assetFilter)
         external
         view
@@ -227,7 +231,7 @@ contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
             if (bare == address(0)) continue;
             if (!_passesFilter(bare, assetFilter)) continue;
 
-            INAVCalculator.Asset memory assetMeta = _findRegisteredAsset(registered, bare);
+            (INAVCalculator.Asset memory assetMeta,) = RegisteredAssetLib.find(registered, bare);
             if (assetMeta.asset == address(0)) continue;
 
             // Staked-token leg(s): split by withdrawability. isLocked = non-withdrawable. The only withdrawable
@@ -249,10 +253,13 @@ contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
                             balanceAdapter: address(this),
                             amount: amt,
                             isDebt: false,
+                            protocolBrand: PROTOCOL_BRAND,
                             protocolId: PROTOCOL_ID,
+                            protocolSubId: PROTOCOL_SUB_ID,
                             positionId: abi.encode(address(stk)),
                             positionKind: PositionKind.Staking,
-                            isLocked: true
+                            isLocked: true,
+                            positionInstanceId: bytes32(0)
                         });
                     }
                 }
@@ -266,10 +273,13 @@ contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
                             balanceAdapter: address(this),
                             amount: amt,
                             isDebt: false,
+                            protocolBrand: PROTOCOL_BRAND,
                             protocolId: PROTOCOL_ID,
+                            protocolSubId: PROTOCOL_SUB_ID,
                             positionId: abi.encode(address(stk)),
                             positionKind: PositionKind.Staking,
-                            isLocked: false
+                            isLocked: false,
+                            positionInstanceId: bytes32(0)
                         });
                     }
                 }
@@ -283,10 +293,13 @@ contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
                     balanceAdapter: address(this),
                     amount: rewardAmount,
                     isDebt: false,
+                    protocolBrand: PROTOCOL_BRAND,
                     protocolId: PROTOCOL_ID,
+                    protocolSubId: PROTOCOL_SUB_ID,
                     positionId: abi.encode(address(stk)),
                     positionKind: PositionKind.Rewards,
-                    isLocked: false
+                    isLocked: false,
+                    positionInstanceId: bytes32(0)
                 });
             }
         }
@@ -316,10 +329,12 @@ contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         address firstLevel = _safeAsset(stakeToken);
         if (firstLevel == address(0)) return amount;
 
-        // If the first-level asset is itself a real ERC4626 wrapper, walk one more hop to the bare
-        // reserve. Otherwise `firstLevel` is already the bare reserve and `amount` is in its units.
+        // If the first-level asset is itself a real ERC4626 wrapper (waToken), walk one more hop to the bare
+        // reserve. Use previewRedeem so a redemption fee on the wrapper (possible via Aave governance) is not
+        // over-reported (convertToAssets ignores it per EIP-4626 §4.3); fall back to convertToAssets if the
+        // wrapper reverts on preview. For a fee-less wrapper (current state) the two are equal.
         if (_isErc4626Wrapper(firstLevel)) {
-            return IERC4626Like(firstLevel).convertToAssets(amount);
+            return ERC4626RedeemLib.redeemValue(firstLevel, amount);
         }
         return amount;
     }
@@ -440,18 +455,6 @@ contract AaveUmbrellaBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         return assetFilter == address(0) || assetFilter == asset;
     }
 
-    function _findRegisteredAsset(INAVCalculator.Asset[] memory registered, address asset)
-        internal
-        pure
-        returns (INAVCalculator.Asset memory)
-    {
-        uint256 n = registered.length;
-        for (uint256 i; i < n; ++i) {
-            if (registered[i].asset == asset) return registered[i];
-        }
-        return INAVCalculator.Asset({asset: address(0), symbol: "", decimals: 0});
-    }
-
     function _contains(address[] memory arr, uint256 length, address needle) internal pure returns (bool) {
         for (uint256 i; i < length; ++i) {
             if (arr[i] == needle) return true;
@@ -488,13 +491,6 @@ interface IUmbrellaStakeToken {
     /// @notice The account's cooldown snapshot. A zero `amount` means no active cooldown.
     /// @dev Older/other stake-token versions may not expose this ABI; callers must tolerate a call/decode failure.
     function getStakerCooldown(address user) external view returns (CooldownSnapshot memory);
-}
-
-/// @notice Generic ERC4626-shaped reader used to walk wrapper layers without binding to a
-///         particular implementation (StakeToken, StataTokenV2, or any future variant).
-interface IERC4626Like {
-    function asset() external view returns (address);
-    function convertToAssets(uint256 shares) external view returns (uint256);
 }
 
 /// @notice Minimal interface for the Aave Umbrella RewardsController (multi-reward distributor).

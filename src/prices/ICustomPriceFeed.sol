@@ -21,10 +21,13 @@ interface ICustomPriceFeed is IERC165 {
     /// @return underlyingAsset The address of the underlying asset supported by this price feed.
     function underlyingAssetSupported() external view returns (address underlyingAsset);
 
-    /// @notice Returns the staleness data of the worst-case underlying oracle for external observability.
-    /// @dev Matches the AggregatorV3Interface.latestRoundData() signature. Prices.sol does NOT call
-    ///      this for staleness — all custom feeds handle staleness internally in getLatestPrice().
-    ///      This is provided for callers who want to inspect the underlying oracle freshness directly.
+    /// @notice Returns the staleness data of the worst-case underlying oracle.
+    /// @dev Matches the AggregatorV3Interface.latestRoundData() signature. Custom feeds still handle
+    ///      staleness internally in getLatestPrice() (its `stale` flag is honored), but the read path
+    ///      (PriceFeedLib.selectFeed, invoked via Prices) ALSO calls this and uses the returned
+    ///      `updatedAt` as the feed's freshness timestamp — for the per-feed heartbeat gate and for
+    ///      picking the freshest feed among redundant ones. A revert or a zero `updatedAt` is treated
+    ///      as a no-timestamp oracle and a `block.timestamp - 1` sentinel is applied instead.
     /// @dev For feeds backed by one Chainlink oracle: return that oracle's round data directly.
     /// @dev For feeds backed by multiple Chainlink oracles: return the tuple with the lowest
     ///      updatedAt (worst case) so callers see the most-stale input.

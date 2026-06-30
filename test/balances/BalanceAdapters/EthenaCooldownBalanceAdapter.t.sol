@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.0;
 
+import {NotAContract} from "src/errors.sol";
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.sol";
 import {EthenaCooldownBalanceAdapter} from "src/balances/BalanceAdapters/EthenaCooldownBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -67,13 +68,13 @@ contract EthenaCooldownBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_constructor_revertsWhenStakedNotContract() public {
         address eoa = makeAddr("eoa");
-        vm.expectRevert(bytes("StakedUSDeV2 must be a contract"));
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "StakedUSDeV2"));
         new EthenaCooldownBalanceAdapter(eoa, address(usde), address(balances));
     }
 
     function test_constructor_revertsWhenNAVNotContract() public {
         address eoa = makeAddr("eoa");
-        vm.expectRevert(bytes("NAVCalculator must be a contract"));
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "NAVCalculator"));
         new EthenaCooldownBalanceAdapter(address(staked), address(usde), eoa);
     }
 
@@ -92,10 +93,14 @@ contract EthenaCooldownBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(assets[0], address(usde));
     }
 
-    function test_positionLabels() public view {
-        string[] memory labels = adapter.positionLabels("");
-        assertEq(labels.length, 1);
+    function test_positionLabels() public {
+        staked.setCooldown(alice, uint104(block.timestamp + 1 days), 1234e18);
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(0));
+        assertEq(positions.length, 1);
+        string[] memory labels = adapter.positionLabels(positions[0].positionId);
+        assertEq(labels.length, 2);
         assertEq(labels[0], "Unstaking Cooldown");
+        assertEq(labels[1], "sUSDe");
     }
 
     // ---- getAdapterBalanceForAsset ----
@@ -193,7 +198,8 @@ contract EthenaCooldownBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(positions[0].balanceAdapter, address(adapter));
         assertEq(positions[0].amount, 4242e18);
         assertFalse(positions[0].isDebt);
-        assertEq(positions[0].protocolId, ProtocolIds.ETHENA_COOLDOWN);
+        assertEq(positions[0].protocolSubId, ProtocolIds.ETHENA_COOLDOWN);
+        assertEq(positions[0].protocolId, ProtocolIds.ETHENA);
         assertEq(
             positions[0].positionId,
             abi.encode(address(adapter.STAKED_USDE())),

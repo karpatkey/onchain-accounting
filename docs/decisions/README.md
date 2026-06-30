@@ -23,7 +23,7 @@ Short, numbered records of *why* the codebase looks the way it does. Read these 
 | 0004 | [Morpho: project pending interest into NAV (vs use stored values)](0004-morpho-projected-vs-stored-balances.md) | accepted |
 | 0005 | [Aave V3 Safety Module: hardcoded stake-token list, immutable adapter](0005-aave-safety-module-hardcoded-immutable.md) | accepted |
 | 0006 | [Aave Umbrella Balance Adapter: dynamic discovery via RewardsController](0006-aave-umbrella-balance-adapter.md) | accepted |
-| 0007 | [Merkl rewards adapter: owner-gated, proof-verified, trust-minimized cache](0007-merkl-trust-minimized-cache.md) | accepted |
+| 0007 | [Merkl rewards adapter: role-gated, proof-verified, trust-minimized cache](0007-merkl-trust-minimized-cache.md) | accepted |
 | 0008 | [Uniswap V3 adapter: inline GPL-2.0 math libs alongside MIT adapter code](0008-uniswap-v3-math-libs-gpl-license.md) | accepted |
 | 0009 | [Multi-feed price redundancy](0009-multi-feed-price-redundancy.md) | accepted |
 | 0010 | [Meta balance-adapters: one adapter per protocol, instances governed on NAVCalculator](0010-meta-balance-adapters.md) | accepted |
@@ -31,3 +31,5 @@ Short, numbered records of *why* the codebase looks the way it does. Read these 
 | 0012 | [Bridge: provable destination-side release (remove escrow fallback dispatcher, authenticate the real protocol)](0012-bridge-provable-release-rearchitecture.md) | accepted |
 | 0014 | [Agent-fed cache adapters for withdrawal/exit queues (ether.fi, StakeWise V3)](0014-agent-fed-cache-adapters-for-exit-queues.md) | accepted |
 | 0015 | [Assisted balance-adapter family (shared interface + AccessControl base)](0015-assisted-balance-adapter-family.md) | accepted |
+| 0016 | [`isLocked` position status (claimable vs locked) via a static positionId + two-leg split](0016-islocked-position-status.md) | accepted |
+| 0017 | [LP-position valuation: report instantaneous amounts; pool-manipulation out of scope under async NAV consumer](0017-lp-valuation-instantaneous-amounts.md) | accepted |

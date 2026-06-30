@@ -41,7 +41,7 @@
       "0xd601632eb1345413cde7418f228513bae6ca7fdc52a00384ea9239c2a9f9a935"
     ]
   },
-  "GearboxMarketsMeta": {
+  "GearboxV3MarketsMeta": {
     "enabled": true,
     "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Gearbox V3 ERC4626 farming pool. Emits one Supply leg per market (convertToAssets(balanceOf)) in the pool's underlying. The active market set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below \u2014 each entry is the market/pool address). Identity derived on-chain: positionId = market address; name = market name(). Supersedes the per-market GearboxMarket_* adapters, disabled below.",
     "instances": [
@@ -99,7 +99,7 @@
       "0xFc3212Bd9Ad9A28Da6B2bd50a2918969C126894F"
     ]
   },
-  "ConvexRewardsMeta": {
+  "ConvexCurveLPStakingMeta": {
     "enabled": true,
     "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Convex pool. Instance coordinate = rewarder (BaseRewardPool) address. LP token resolved on-chain via rewarder.pid() \u2192 Booster.poolInfo(pid).lptoken. Emits Supplied legs (staked LP decomposed into Curve pool tokens) + Earned legs (CRV exact, CVX via cliff schedule, extra rewards). Supersedes per-instance Convex_* adapters, disabled below.",
     "instances": [
@@ -148,16 +148,6 @@
     "instances": [
       "0xAC0F906E433d58FA868F936E8A43230473652885",
       "0x15639e82d2072fa510e5d2b5f0db361c823bcad3"
-    ]
-  },
-  "UniswapV3PoolsMeta": {
-    "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Uniswap V3 pool (Supply + Fees legs from the account's NFT positions). NonfungiblePositionManager pinned in the constructor; the active pool set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below). Identity derived on-chain: positionId = pool address; name = sym0/sym1 feeTier. Supersedes the per-pool UniswapV3_* adapters, disabled below.",
-    "instances": [
-      "0xCBCdF9626bC03E24f779434178A73a0B4bad62eD",
-      "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640",
-      "0x4e68Ccd3E89f51C3074ca5072bbAC773960dFa36",
-      "0x764D50759FF278b7CfB2E0e8464B742E9aB40C97"
     ]
   },
   "EulerVaultsMeta": {

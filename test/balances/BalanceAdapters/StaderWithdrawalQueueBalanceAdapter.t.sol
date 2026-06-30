@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.0;
 
+import {NotAContract} from "src/errors.sol";
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.sol";
 import {
     StaderWithdrawalQueueBalanceAdapter
@@ -88,13 +89,13 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_constructor_revertsWhenManagerNotContract() public {
         address eoa = makeAddr("eoa");
-        vm.expectRevert(bytes("UserWithdrawalManager must be a contract"));
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "UserWithdrawalManager"));
         new StaderWithdrawalQueueBalanceAdapter(eoa, address(weth), address(balances));
     }
 
     function test_constructor_revertsWhenNAVNotContract() public {
         address eoa = makeAddr("eoa");
-        vm.expectRevert(bytes("NAVCalculator must be a contract"));
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "NAVCalculator"));
         new StaderWithdrawalQueueBalanceAdapter(address(manager), address(weth), eoa);
     }
 
@@ -273,6 +274,57 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertFalse(positions[0].isDebt);
         assertTrue(positions[0].isLocked, "not-finalized request -> locked leg");
         assertEq(positions[0].positionId, abi.encode(address(manager)), "static positionId = withdrawal manager");
+        // Static breadcrumb is positionId-derived; the request id rides in positionInstanceId.
+        string[] memory lbl = adapter.positionLabels(positions[0].positionId);
+        assertEq(lbl.length, 2);
+        assertEq(lbl[0], "Withdrawal Queue");
+        assertEq(lbl[1], "ETHx");
+        assertEq(positions[0].positionInstanceId, bytes32(uint256(1)));
+    }
+
+    function test_getAdapterPositions_perRequestLegsAndLabels() public {
+        // Two requests of the SAME state (both pending/locked) must now emit TWO separate legs — one per request —
+        // each carrying its own request id in positionInstanceId, all sharing the static positionId.
+        manager.pushRequest(
+            alice,
+            7,
+            MockUserWithdrawalManager.Info({
+                owner: alice, ethXAmount: 1e18, ethExpected: 2e18, ethFinalized: 0, requestBlock: 0
+            })
+        );
+        manager.pushRequest(
+            alice,
+            42,
+            MockUserWithdrawalManager.Info({
+                owner: alice, ethXAmount: 1e18, ethExpected: 3e18, ethFinalized: 0, requestBlock: 0
+            })
+        );
+
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(weth));
+        assertEq(positions.length, 2, "one leg per request, even at the same isLocked state");
+
+        bytes memory expectedId = abi.encode(address(manager));
+        bool saw7;
+        bool saw42;
+        uint256 sum;
+        for (uint256 i = 0; i < positions.length; i++) {
+            assertEq(positions[i].positionId, expectedId, "all legs share the static positionId");
+            assertTrue(positions[i].isLocked, "both pending -> locked");
+            sum += positions[i].amount;
+            if (positions[i].positionInstanceId == bytes32(uint256(7))) {
+                saw7 = true;
+                assertEq(positions[i].amount, 2e18);
+            }
+            if (positions[i].positionInstanceId == bytes32(uint256(42))) {
+                saw42 = true;
+                assertEq(positions[i].amount, 3e18);
+            }
+        }
+        assertTrue(saw7 && saw42, "each request id surfaced as its own positionInstanceId");
+
+        // NAV-total invariance: per-request legs still sum to the aggregate balance method.
+        (uint256 agg,) = adapter.getAdapterBalanceForAsset(alice, address(weth));
+        assertEq(sum, agg, "sum of per-request legs == aggregate balance");
     }
 
     function test_getAdapterPositions_claimableOnlyLeg() public {
@@ -289,6 +341,11 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(positions[0].amount, 1.95e18, "claimable leg uses ethFinalized");
         assertFalse(positions[0].isLocked, "finalized request -> claimable leg");
         assertEq(positions[0].positionId, abi.encode(address(manager)));
+        string[] memory lbl = adapter.positionLabels(positions[0].positionId);
+        assertEq(lbl.length, 2);
+        assertEq(lbl[0], "Withdrawal Queue");
+        assertEq(lbl[1], "ETHx");
+        assertEq(positions[0].positionInstanceId, bytes32(uint256(1)));
     }
 
     function test_getAdapterPositions_mixedClaimableAndLocked() public {
@@ -321,12 +378,20 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
             assertEq(positions[i].balanceAdapter, address(adapter));
             assertFalse(positions[i].isDebt);
             assertEq(positions[i].positionId, expectedId, "both legs share the static positionId");
+            string[] memory lbl = adapter.positionLabels(positions[i].positionId);
+            assertEq(lbl.length, 2);
+            assertEq(lbl[0], "Withdrawal Queue");
+            assertEq(lbl[1], "ETHx");
             if (positions[i].isLocked) {
                 locked += positions[i].amount;
                 sawLocked = true;
+                assertEq(positions[i].positionInstanceId, bytes32(uint256(2)), "locked leg carries its own request id");
             } else {
                 claimable += positions[i].amount;
                 sawClaimable = true;
+                assertEq(
+                    positions[i].positionInstanceId, bytes32(uint256(1)), "claimable leg carries its own request id"
+                );
             }
         }
         assertTrue(sawClaimable && sawLocked, "exactly one claimable + one locked leg present");

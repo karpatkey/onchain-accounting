@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {BalanceAdapterBase} from "../BalanceAdapterBase.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {IBalanceAdapter} from "../IBalanceAdapter.sol";
+import {LabelLib} from "src/balances/LabelLib.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
@@ -18,7 +19,7 @@ import "src/errors.sol";
 /// @dev Returns PositionBalance structs (balance-only data) without pricing information.
 /// @dev NAVCalculator enriches these positions with pricing data to create full Position structs.
 /// @author KPK
-contract ERC20DefaultBalanceAdapter is IBalanceAdapter, IPositionDescribable {
+contract ERC20DefaultBalanceAdapter is BalanceAdapterBase {
     using EnumerableSet for EnumerableSet.AddressSet;
 
     /// @notice Reference to NAVCalculator for asset registry access
@@ -30,14 +31,17 @@ contract ERC20DefaultBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     /// @notice ERC-7528 convention for ETH address representation
     address public constant NATIVE_ADDRESS = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
 
-    /// @notice Protocol ID for wallet positions
+    /// @notice 3-level protocol taxonomy for wallet positions. Wallet is a single-product ecosystem, so all three
+    ///         levels (brand / id / sub-id) collapse to the same `ProtocolIds.WALLET` slug.
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.WALLET;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.WALLET;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.WALLET;
 
     /// @param navCalculator_ NAVCalculator address (must be non-zero)
     /// @param initialAssets Optional assets to add to the inclusion list during construction (e.g. NATIVE_ADDRESS).
     ///        Used so NAVCalculator.initialize can pre-add native without calling back to the proxy during init.
     constructor(address navCalculator_, address[] memory initialAssets) {
-        require(navCalculator_ != address(0), "NAVCalculator cannot be zero address");
+        if (navCalculator_ == address(0)) revert InvalidArguments();
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
         // The seed list is NOT registry-checked here: this constructor is invoked by
         // NAVRegistryLib.deployDefaultAdapter *during NAVCalculator.initialize*, which runs inside the proxy's
@@ -101,7 +105,23 @@ contract ERC20DefaultBalanceAdapter is IBalanceAdapter, IPositionDescribable {
             assetsToProcess = _getSupportedAssetsArray();
         }
 
-        positions = _buildPositions(account, assetsToProcess);
+        // Build via an external self-staticcall so the row-building runs in a fresh frame whose only params are
+        // `(account, assets)` — this keeps `getAdapterPositions`'s `account`/`assetFilter` params (which sit at the
+        // stack bottom for its whole body) off the build loop's stack, which otherwise overflows the via_ir limit.
+        // Mirrors the assisted adapters' `this.positionLegs(...)` / NAVCalculator's `this.decodeStringArray` pattern.
+        positions = this.buildPositionsSelf(account, assetsToProcess);
+    }
+
+    /// @notice External self-call entrypoint for `_buildPositions` (see the call site in `getAdapterPositions`).
+    /// @dev `msg.sender`-guarded to `address(this)` so it is not a usable external surface — it exists only to give
+    ///      the build loop its own stack frame. `view`, so the self-call is a staticcall.
+    function buildPositionsSelf(address account, address[] calldata assets)
+        external
+        view
+        returns (INAVCalculator.PositionBalance[] memory)
+    {
+        if (msg.sender != address(this)) revert NotAuthorized();
+        return _buildPositions(account, assets);
     }
 
     /// @inheritdoc IBalanceAdapter
@@ -162,17 +182,11 @@ contract ERC20DefaultBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     // IERC165 Implementation
     //
 
-    /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IPositionDescribable).interfaceId
-            || interfaceId == type(IERC165).interfaceId;
-    }
-
     function protocolName() external pure returns (string memory) {
         return "Wallet";
     }
 
-    function positionLabels(bytes calldata positionId) external view returns (string[] memory) {
+    function positionLabels(bytes calldata positionId) external view override returns (string[] memory) {
         string memory leaf;
         if (positionId.length == 0) {
             leaf = "";
@@ -181,11 +195,7 @@ contract ERC20DefaultBalanceAdapter is IBalanceAdapter, IPositionDescribable {
             if (addr == NATIVE_ADDRESS) {
                 leaf = "native";
             } else {
-                try IERC20Metadata(addr).symbol() returns (string memory sym) {
-                    leaf = sym;
-                } catch {
-                    leaf = "";
-                }
+                leaf = LabelLib.symbol(addr, "");
             }
         }
         // Fail-open: no derivable label → empty array (IPositionDescribable convention), not `[""]`,
@@ -214,13 +224,9 @@ contract ERC20DefaultBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     /// @param asset The asset address to look up
     /// @return assetInfo The Asset struct containing asset address, symbol, and decimals
     function _getAssetInfo(address asset) internal view returns (INAVCalculator.Asset memory assetInfo) {
-        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
-        for (uint256 i = 0; i < reg.length; i++) {
-            if (reg[i].asset == asset) {
-                return reg[i];
-            }
-        }
-        revert("Asset not found in NAVCalculator");
+        bool found;
+        (assetInfo, found) = RegisteredAssetLib.find(NAV_CALCULATOR.getRegisteredAssets(), asset);
+        if (!found) revert AssetNotFound();
     }
 
     /// @notice Internal helper that builds all positions for this adapter
@@ -234,47 +240,61 @@ contract ERC20DefaultBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         view
         returns (INAVCalculator.PositionBalance[] memory positions)
     {
-        if (assets.length == 0) {
+        uint256 len = assets.length;
+        if (len == 0) {
             return new INAVCalculator.PositionBalance[](0);
         }
 
-        // Pre-allocate array (estimate max size)
-        INAVCalculator.PositionBalance[] memory tempPositions = new INAVCalculator.PositionBalance[](assets.length);
+        // Pass 1: collect the assets with a non-zero balance. This is the only pass that needs `account`; it builds
+        // no structs, so the loop stays light. (Kept separate from the row-building pass to stay under the via_ir
+        // stack limit — building the 11-field PositionBalance while `account`/`assetFilter` are still live overflows.)
+        address[] memory hitAssets = new address[](len);
+        uint256[] memory hitBalances = new uint256[](len);
         uint256 positionCount = 0;
-
-        for (uint256 i = 0; i < assets.length; i++) {
-            address asset = assets[i];
-
-            // Get balance for this asset (always non-negative for this adapter)
-            uint256 balance = _getBalanceForAsset(account, asset);
-
-            // Only include non-zero balances
+        for (uint256 i = 0; i < len; i++) {
+            uint256 balance = _getBalanceForAsset(account, assets[i]);
             if (balance != 0) {
-                // Get asset info from NAVCalculator (all assets are guaranteed to be registered)
-                INAVCalculator.Asset memory underlyingAsset = _getAssetInfo(asset);
-
-                // Build position (balance-only, pricing will be added by NAVCalculator)
-                // ERC20DefaultBalanceAdapter always returns credit positions: isDebt = false, amount in uint256
-                tempPositions[positionCount] = INAVCalculator.PositionBalance({
-                    balanceAsset: underlyingAsset,
-                    balanceAdapter: address(this),
-                    amount: balance,
-                    isDebt: false,
-                    protocolId: PROTOCOL_ID,
-                    positionId: abi.encode(asset),
-                    positionKind: PositionKind.Wallet,
-                    isLocked: false
-                });
-
+                hitAssets[positionCount] = assets[i];
+                hitBalances[positionCount] = balance;
                 positionCount++;
             }
         }
 
-        // Resize to actual count
-        positions = new INAVCalculator.PositionBalance[](positionCount);
-        for (uint256 i = 0; i < positionCount; i++) {
-            positions[i] = tempPositions[i];
+        // Pass 2: build the rows in a dedicated function. Keeping it separate (params are only the hit arrays + count)
+        // ensures the row-building loop's stack does NOT also carry `getAdapterPositions`'s `account`/`assetFilter`
+        // params — which sit at the stack bottom for that function's whole body and were tipping the via_ir limit.
+        positions = _rows(hitAssets, hitBalances, positionCount);
+    }
+
+    /// @dev Builds `count` credit rows from the collected (asset, balance) hits. Separate from the collection pass so
+    ///      its loop's stack is free of the outer `account`/`assetFilter` params (via_ir stack limit).
+    function _rows(address[] memory hitAssets, uint256[] memory hitBalances, uint256 count)
+        private
+        view
+        returns (INAVCalculator.PositionBalance[] memory positions)
+    {
+        positions = new INAVCalculator.PositionBalance[](count);
+        for (uint256 i = 0; i < count; i++) {
+            positions[i] = _row(_getAssetInfo(hitAssets[i]), hitBalances[i], hitAssets[i]);
         }
+    }
+
+    /// @dev Builds one wallet PositionBalance field-by-field (avoids an 11-field literal inside the per-asset loop,
+    ///      which overflows the via_ir stack). positionId = abi.encode(asset); positionInstanceId defaults to bytes32(0).
+    function _row(INAVCalculator.Asset memory underlyingAsset, uint256 balance, address asset)
+        private
+        view
+        returns (INAVCalculator.PositionBalance memory row)
+    {
+        row.balanceAsset = underlyingAsset;
+        row.balanceAdapter = address(this);
+        row.amount = balance;
+        row.protocolBrand = PROTOCOL_BRAND;
+        row.protocolId = PROTOCOL_ID;
+        row.protocolSubId = PROTOCOL_SUB_ID;
+        row.positionId = abi.encode(asset);
+        row.positionKind = PositionKind.Wallet;
+        // isDebt, isLocked default false; positionInstanceId defaults to bytes32(0).
     }
 
     /// @notice Internal helper to get balance for a specific asset (avoids recursion)

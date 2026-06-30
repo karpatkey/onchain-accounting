@@ -3,7 +3,7 @@ pragma solidity ^0.8;
 
 import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {LabelLib} from "src/balances/LabelLib.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {UniswapV2PairLib} from "src/balances/MetaBalanceAdapters/uniswap/UniswapV2PairLib.sol";
@@ -11,18 +11,38 @@ import {UniswapV2PairLib} from "src/balances/MetaBalanceAdapters/uniswap/Uniswap
 /// @title Uniswap V2 Pools Meta Balance Adapter
 /// @author KPK
 /// @notice One immutable adapter that reports an account's Uniswap V2 LP across *any* pair — the dilution-adjusted
-///         pro-rata share of both reserves, emitted as one `Supply` leg per token. The instance coordinate is the
+///         pro-rata share of both reserves, emitted as one `Supplied` leg per token. The instance coordinate is the
 ///         pair address, widened to bytes32; the active pair set lives on NAVCalculator (`addMetaInstances`).
-///         Identity is derived on-chain (positionId = pair address; name = `sym0/sym1 LP`). See ADR 0010.
-/// @dev The pro-rata + protocol-fee dilution math is delegated to `UniswapV2PairLib`, which mirrors the
-///      leg-for-leg. Works with canonical Uniswap V2
-///      and standard forks (SushiSwap, PancakeSwap V2) that preserve the `_mintFee` formula.
+///         Identity is derived on-chain (positionId = pair address; name = `sym0/sym1`). See ADR 0010.
+/// @dev Valuation = instantaneous on-chain amounts (ADR 0017): this adapter reports the position's current
+///      pro-rata share of the pair's on-chain reserves as per-token `amount`s, which NAVCalculator prices with
+///      external oracles — it does NOT compute a manipulation-resistant "fair" value. Imbalancing the pair can
+///      transiently move the reported amounts (a donation that arbitrage reverses within a block) but cannot be
+///      monetised: NAV is a read-only oracle consumed by an asynchronous sub/redeem layer (no atomic on-chain
+///      consumer). See docs/decisions/0017-lp-valuation-instantaneous-amounts.md; revisit if NAV is ever consumed
+///      synchronously on-chain.
+/// @dev The pro-rata + protocol-fee dilution math is delegated to `UniswapV2PairLib`, keeping the adapter
+///      leg-for-leg identical to a real `burn`. Works with canonical Uniswap V2 and standard forks
+///      (SushiSwap, PancakeSwap V2) that preserve the `_mintFee` formula.
 contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @notice Protocol identifier reported on every emitted position. `virtual` so byte-compatible forks
     ///         (PancakeSwap V2, SushiSwap) report their own slug while sharing the `(address pair)` positionId
     ///         schema. Defaults to `uniswap-v2`.
-    function _protocolId() internal pure virtual returns (bytes32) {
+    function _protocolId() internal pure virtual override returns (bytes32) {
         return ProtocolIds.UNISWAP_V2;
+    }
+
+    /// @notice Protocol sub-identifier (the specific product) reported on every emitted position. `virtual` so
+    ///         byte-compatible forks (PancakeSwap V2, SushiSwap) report their own sub-slug. For the V2 single-product
+    ///         ecosystem the ecosystem and sub slug are the same value. Defaults to `uniswap-v2`.
+    function _protocolSubId() internal pure virtual override returns (bytes32) {
+        return ProtocolIds.UNISWAP_V2;
+    }
+
+    /// @notice Protocol brand (the broadest layer) reported on every emitted position. `virtual` so byte-compatible
+    ///         forks (PancakeSwap V2, SushiSwap) report their own brand. Defaults to `uniswap`.
+    function _protocolBrand() internal pure virtual override returns (bytes32) {
+        return ProtocolIds.UNISWAP;
     }
 
     /// @notice `_mintFee` dilution coefficients `(numFactor, rootKCoeff, rootKLastCoeff)` for the protocol-fee LP
@@ -45,7 +65,7 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     {}
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev `instance` is the pair address. Emits up to 2 `Supply` legs, dropping zeros and unregistered assets,
+    /// @dev `instance` is the pair address. Emits up to 2 `Supplied` legs, dropping zeros and unregistered assets,
     ///      respecting `assetFilter`.
     function _instancePositions(address account, bytes32 instance, address assetFilter)
         internal
@@ -63,10 +83,10 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
         uint256 count;
 
         (INAVCalculator.Asset memory a0, bool f0) = _eligible(token0, assetFilter);
-        if (f0 && amount0 > 0) temp[count++] = _row(a0, amount0, pid);
+        if (f0 && amount0 > 0) temp[count++] = _leg(a0, amount0, false, pid, PositionKind.Supplied);
 
         (INAVCalculator.Asset memory a1, bool f1) = _eligible(token1, assetFilter);
-        if (f1 && amount1 > 0) temp[count++] = _row(a1, amount1, pid);
+        if (f1 && amount1 > 0) temp[count++] = _leg(a1, amount1, false, pid, PositionKind.Supplied);
 
         INAVCalculator.PositionBalance[] memory positions = new INAVCalculator.PositionBalance[](count);
         for (uint256 i = 0; i < count; i++) {
@@ -83,48 +103,27 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
         assets[1] = token1;
     }
 
-    function _eligible(address token, address assetFilter)
-        private
-        view
-        returns (INAVCalculator.Asset memory assetInfo, bool eligible)
-    {
-        if (assetFilter != address(0) && token != assetFilter) return (assetInfo, false);
-        (assetInfo, eligible) = _getAssetInfo(token);
-    }
-
-    function _row(INAVCalculator.Asset memory asset, uint256 amount, bytes memory positionId)
-        private
-        view
-        returns (INAVCalculator.PositionBalance memory)
-    {
-        return INAVCalculator.PositionBalance({
-            balanceAsset: asset,
-            balanceAdapter: address(this),
-            amount: amount,
-            isDebt: false,
-            protocolId: _protocolId(),
-            positionId: positionId,
-            positionKind: PositionKind.Supplied,
-            isLocked: false
-        });
-    }
-
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev Returns `["Liquidity Pool", "sym0/sym1 LP"]`; leaf derived on-chain from the pair's token symbols.
+    /// @dev Returns `["AMM Liquidity Pool", "sym0/sym1"]`; leaf derived on-chain from the pair's token symbols.
     function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
         if (pid.length < 32) return new string[](0);
         address pair = abi.decode(pid, (address));
-        (address token0, address token1,,) = UniswapV2PairLib.pairAmounts(pair, address(0));
-        string memory leaf = string.concat(_symbol(token0), "/", _symbol(token1), " LP");
-        return _labels("Liquidity Pool", leaf);
+        // External self-call so a revert in the pair token0()/token1() reads (bad/non-pair instance) fails open
+        // to the category-only label — a faulty label must never revert the (verbose-only) labels read.
+        try this.pairTokenSymbols(pair) returns (string memory leaf) {
+            return _labels("AMM Liquidity Pool", leaf);
+        } catch {
+            return _labels("AMM Liquidity Pool", "");
+        }
     }
 
-    /// @notice Reads an ERC20 symbol, falling back to "?" for non-standard tokens (e.g. bytes32 symbols).
-    function _symbol(address token) private view returns (string memory) {
-        try IERC20Metadata(token).symbol() returns (string memory s) {
-            return bytes(s).length == 0 ? "?" : s;
-        } catch {
-            return "?";
-        }
+    /// @notice External wrapper (enables `try/catch` isolation in `positionLabels`): the pair's two token symbols
+    ///         joined with "/". Reverts propagate only to the `positionLabels` catch arm.
+    function pairTokenSymbols(address pair) external view returns (string memory) {
+        (address token0, address token1,,) = UniswapV2PairLib.pairAmounts(pair, address(0));
+        // Per-token fail-open via the shared LabelLib (codesize guard + try/catch, "?" fallback) — the same
+        // convention every other AMM meta-adapter uses, and it preserves a readable leaf even if one token is
+        // codeless (the outer `try this.pairTokenSymbols` would otherwise collapse both to the bare category).
+        return string.concat(LabelLib.symbol(token0, "?"), "/", LabelLib.symbol(token1, "?"));
     }
 }

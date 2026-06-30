@@ -5,6 +5,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {ERC20DefaultBalanceAdapter} from "src/balances/BalanceAdapters/ERC20DefaultBalanceAdapter.sol";
+import {PriceFeedNotSet} from "src/errors.sol";
 
 /// @title Mock_NAVCalculator
 /// @notice Mock implementation of INAVCalculator for adapter testing
@@ -196,9 +197,10 @@ contract Mock_NAVCalculator is INAVCalculator {
         return 8;
     }
 
-    /// @notice Settable price surface for adapters that read oracle prices (e.g. UniswapV3PoolsMeta after [2]).
+    /// @notice Settable price surface for adapters that read oracle prices (e.g. UniswapV3PoolsAssistedBalanceAdapter after [2]).
     ///         Unset assets return price 0 / stale=false → treated as unpriceable by such adapters.
     mapping(address => PriceFeedData) private _priceData;
+    mapping(address => bool) private _priceReverts;
 
     function setAssetPrice(address asset, int256 price, uint8 decimals) external {
         PriceFeedData memory d;
@@ -208,7 +210,14 @@ contract Mock_NAVCalculator is INAVCalculator {
         _priceData[asset] = d;
     }
 
+    /// @notice Make getPriceData(asset) REVERT, emulating the real NAVCalculator's PriceFeedNotSet for a registered
+    ///         asset whose feeds were all removed (exercises consumers' try/catch around getPriceData).
+    function setPriceReverts(address asset, bool reverts_) external {
+        _priceReverts[asset] = reverts_;
+    }
+
     function getPriceData(address asset) external view override returns (PriceFeedData memory) {
+        if (_priceReverts[asset]) revert PriceFeedNotSet(asset);
         return _priceData[asset];
     }
 

@@ -100,16 +100,6 @@
       "positionId": "0xa877d5BB0274dCcBA8556154a30E1cA4021a275f"
     }
   },
-  "ERC4626Wrap_RWIV": {
-    "enabled": false,
-    "$comment": "DISABLED — superseded by RWIV_CustomPriceFeed (custom price feed). With RWIV registered as a priced asset, registerAsset auto-adds it to ERC20DefaultBalanceAdapter, so the wallet adapter reports the direct RWIV holding at RWIV/USD (same convertToAssets value this wrap produced as USDC); keeping this enabled would double-count the Nexus Safe's ~$250k direct RWIV. The feed is required regardless so UniswapV3PoolsMeta can value the USDC/RWIV LP. See PR feat/rwiv-price-feed-univ3.",
-    "constructor": {
-      "wrapper": "0xcAFeAA466736ac01e0AC9Ca72644beF348694731",
-      "protocol": "Nexus Mutual",
-      "positionDetail": "{\"protocol\":\"Nexus Mutual\",\"product\":\"Vault\",\"name\":\"RWIV\"",
-      "positionId": "0xcAFeAA466736ac01e0AC9Ca72644beF348694731"
-    }
-  },
   "MorphoMarket_wstETH_USDC": {
     "enabled": false,
     "constructor": {
@@ -543,8 +533,8 @@
       "positionId": "0x889edC2eDab5f40e902b864aD4d7AdE8E412F9B1"
     }
   },
-  "MerklRewards": {
-    "enabled": false,
+  "MerklRewardsAssisted": {
+    "enabled": true,
     "constructor": {
       "distributor": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae",
       "protocol": "Merkl",
@@ -552,7 +542,7 @@
       "positionId": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae"
     }
   },
-  "EtherFiWithdrawalQueue": {
+  "EtherFiWithdrawalQueueAssisted": {
     "enabled": true,
     "$comment": "ether.fi withdrawal-queue cache adapter (agent-fed; ADR 0014). Mutable id-cache, owner = chainConfig.admin (OIV Safe); the kpk-agents submitter feeds WithdrawRequestNFT tokenIds. Native-ETH denominated; values from live reads (finalized getClaimableAmount, else min(amountOfEEth, amountForShare)-fee) and re-verifies ownerOf every read. Reports 0 until the agent submits ids. 04 reads withdrawRequestNft/liquidityPool/underlyingToken; protocol/positionDetail/positionId are identity metadata (hardcoded in the contract).",
     "constructor": {
@@ -564,27 +554,37 @@
       "positionId": "0x7d5706f6ef3F89B3951E23e557CDFBC3239D4E2c"
     }
   },
-  "NexusMutualStakingPools": {
+  "NexusMutualStakingPoolsAssisted": {
     "enabled": true,
-    "$comment": "Nexus Mutual staking pools (simple immutable view adapter; no agent). Discovers an account's StakingNFT positions by scanning tokenInfo(1..totalSupply) — the NFT is mint-only with a small global supply, so no per-owner enumeration / off-chain feeder is needed — and values each via StakingViewer.getTokens into per-NFT NXM-denominated Staking (active+expired) + Rewards legs, positionId=abi.encode(tokenId,poolId). 04 reads stakingNft/stakingViewer/underlyingToken; protocol/positionDetail/positionId are identity metadata. NXM must be a registered+priced asset (PR #71).",
+    "$comment": "Nexus Mutual staking pools (assisted adapter; agent-fed, ADR 0015). The assistant submits an account's StakingNFT tokenIds via submitTokenIds (admin+assistant = chainConfig.admin at deploy; ASSISTANT_ROLE submits, DEFAULT_ADMIN_ROLE administers); the adapter caches ids only (never amounts), values each via StakingViewer.getTokens into per-NFT NXM-denominated Staking (active+expired) + Rewards legs (positionId=abi.encode(stakingPoolAddress) (NFT id in display labels)), and re-verifies ownership via tokenInfo on every read (assistant can only under-report). 04 reads stakingNft/stakingViewer/underlyingToken; protocol/positionDetail/positionId are identity metadata. NXM must be a registered+priced asset (PR #71). Reports 0 until the agent submits ids.",
     "constructor": {
       "stakingNft": "0xcafea508a477D94c502c253A58239fb8F948e97f",
       "stakingViewer": "0xcafea5c7d25a192ba70ECA0E2dB62F835c1cF81F",
       "underlyingToken": "0xd7c49CEE7E9188cCa6AD8FF264C1DA2e69D4Cf3B",
       "protocol": "Nexus Mutual",
       "positionDetail": "{\"protocol\":\"Nexus Mutual\",\"product\":\"StakingPool\"",
-      "positionId": "abi.encode(uint256 tokenId, uint256 poolId)"
+      "positionId": "abi.encode(address stakingPool)"
     }
   },
-  "StakeWiseV3ExitQueue": {
+  "StakeWiseV3ExitQueueAssisted": {
     "enabled": true,
-    "$comment": "StakeWise V3 exit-queue cache adapter (agent-fed; ADR 0014, sibling of EtherFiWithdrawalQueue). Mutable cache of (vault, positionTicket, timestamp) tuples — never amounts — admin+assistant = chainConfig.admin at deploy (assisted-family AccessControl; ASSISTANT_ROLE submits, DEFAULT_ADMIN_ROLE administers; ADR 0015); the kpk-agents submitter (holding ASSISTANT_ROLE) feeds tuples discovered from ExitQueueEntered events. Native-ETH denominated (mainnet StakeWise vaults settle in ETH); values from live reads (calculateExitedAssets.exitedAssets + convertToAssets(leftShares)) with calculateExitedAssets(receiver=account) as the on-chain ownership check. Reports 0 until the agent submits tuples. 04 reads vaultsRegistry/underlyingToken; protocol/positionDetail/positionId are identity metadata (hardcoded in the contract).",
+    "$comment": "StakeWise V3 exit-queue cache adapter (agent-fed; ADR 0014, sibling of EtherFiWithdrawalQueueAssisted). Mutable cache of (vault, positionTicket, timestamp) tuples — never amounts — admin+assistant = chainConfig.admin at deploy (assisted-family AccessControl; ASSISTANT_ROLE submits, DEFAULT_ADMIN_ROLE administers; ADR 0015); the kpk-agents submitter (holding ASSISTANT_ROLE) feeds tuples discovered from ExitQueueEntered events. Native-ETH denominated (mainnet StakeWise vaults settle in ETH); values from live reads (calculateExitedAssets.exitedAssets + convertToAssets(leftShares)) with calculateExitedAssets(receiver=account) as the on-chain ownership check. Reports 0 until the agent submits tuples. 04 reads vaultsRegistry/underlyingToken/receiptSymbol; protocol/positionDetail/positionId are identity metadata (hardcoded in the contract). receiptSymbol names StakeWise's LST (osETH on mainnet) for the position label '<receiptSymbol> Exit Queue', matching the sibling queues.",
     "constructor": {
       "vaultsRegistry": "0x3a0008a588772446f6e656133C2D5029CC4FC20E",
       "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+      "receiptSymbol": "osETH",
+      "exitClaimDelay": "86400",
       "protocol": "StakeWise V3",
       "positionDetail": "{\"protocol\":\"StakeWise V3\",\"product\":\"Staking\",\"name\":\"Exit Queue\"",
       "positionId": "0x3a0008a588772446f6e656133C2D5029CC4FC20E"
+    }
+  },
+  "UniswapV3PoolsAssisted": {
+    "enabled": true,
+    "$comment": "Uniswap V3 pools (assisted adapter; agent-fed NFT tokenId cache, ADR 0015). The assistant submits an account's NFT tokenIds via submitTokenIds (admin+assistant = chainConfig.admin at deploy; ASSISTANT_ROLE submits, DEFAULT_ADMIN_ROLE administers); the adapter caches ids only (never amounts), values each NFT from live on-chain reads (in-range liquidity via the pool's live slot0 sqrtPriceX96/tick — ADR 0017 — plus full unclaimed fees = feeGrowth delta + settled tokensOwed), and re-verifies ownerOf on every read (assistant can only under-report). NonfungiblePositionManager pinned in the constructor. positionId = abi.encode(pool) (NFT id in display labels); legs are Supplied (liquidity) + Fees (tokensOwed). 04 reads positionManager/protocol. Supersedes the per-pool UniswapV3_* adapters, disabled below. Reports 0 until the agent submits ids.",
+    "constructor": {
+      "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+      "protocol": "Uniswap V3"
     }
   },
   "UniswapV3_WBTC_WETH_3000": {

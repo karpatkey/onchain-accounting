@@ -28,7 +28,7 @@ Morpho's own UI and the `MorphoBalancesLib` library — both maintained by Morph
 
 - NAV reflects the user's economic claim, not just the on-chain audit-stable state. For long-elapsed, high-utilization markets, the difference is non-trivial; using stored values would systematically under-state NAV.
 - Behavior matches Morpho's UI and on-chain `accrueInterest` semantics — a user who pokes the market via any operation immediately realizes the projected number, so the projection is not "imaginary," it's "uncrystallized."
-- One less special case: every other adapter we have (Aave V3, Compound III, etc.) reports realtime balances that include uncrystallized interest accrual; using projected values for Morpho keeps that pattern consistent.
+- One less special case: every other adapter we have (Aave V3, Compound V3, etc.) reports realtime balances that include uncrystallized interest accrual; using projected values for Morpho keeps that pattern consistent.
 
 **Negative / things to watch:**
 

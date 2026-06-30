@@ -69,10 +69,27 @@ contract LidoWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
         assertEq(amount, expectedClaimableEth, "Finalized request must be valued via getClaimableEther");
         assertFalse(isDebt);
 
+        // One open request → one per-request leg; sum across legs == the holder's total claimable ETH.
         INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(finalizedHolder, address(0));
-        assertEq(positions.length, 1);
-        assertEq(positions[0].balanceAsset.asset, NATIVE_ETH);
-        assertEq(positions[0].amount, expectedClaimableEth);
+        assertGe(positions.length, 1);
+        uint256 sum;
+        for (uint256 i = 0; i < positions.length; i++) {
+            assertEq(positions[i].balanceAsset.asset, NATIVE_ETH);
+            assertFalse(positions[i].isLocked, "finalized request -> claimable (unlocked) leg");
+            _assertRequestLeg(positions[i]);
+            sum += positions[i].amount;
+        }
+        assertEq(sum, expectedClaimableEth);
+    }
+
+    /// @dev Asserts a per-request leg: the static breadcrumb is `["Withdrawal Queue", "stETH"]` (positionId-derived, no
+    ///      ephemeral id), and the request id rides in the typed `positionInstanceId`.
+    function _assertRequestLeg(INAVCalculator.PositionBalance memory leg) internal view {
+        string[] memory labels = adapter.positionLabels(leg.positionId);
+        assertEq(labels.length, 2, "static breadcrumb = [category]");
+        assertEq(labels[0], "Withdrawal Queue");
+        assertEq(labels[1], "stETH");
+        assertTrue(leg.positionInstanceId != bytes32(0), "positionInstanceId carries the request id");
     }
 
     // ---- Real open position ----
@@ -84,12 +101,19 @@ contract LidoWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
     }
 
     function test_getAdapterPositions_realHolder() public view {
+        // One leg per open request; sum across legs == the holder's aggregate owed ETH.
         INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(TEST_USER, address(0));
-        assertEq(positions.length, 1);
-        assertEq(positions[0].balanceAsset.asset, NATIVE_ETH);
-        assertEq(positions[0].balanceAdapter, address(adapter));
-        assertEq(positions[0].amount, TEST_USER_EXPECTED_ETH);
-        assertFalse(positions[0].isDebt);
+        assertGe(positions.length, 1);
+        uint256 sum;
+        for (uint256 i = 0; i < positions.length; i++) {
+            assertEq(positions[i].balanceAsset.asset, NATIVE_ETH);
+            assertEq(positions[i].balanceAdapter, address(adapter));
+            assertFalse(positions[i].isDebt);
+            assertEq(positions[i].positionId, abi.encode(address(adapter.WITHDRAWAL_QUEUE())), "static positionId");
+            _assertRequestLeg(positions[i]);
+            sum += positions[i].amount;
+        }
+        assertEq(sum, TEST_USER_EXPECTED_ETH);
     }
 
     function test_getAdapterBalances_realHolder() public view {
@@ -193,19 +217,31 @@ contract LidoWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTestBa
     }
 
     function test_primary_pendingMultiRequest_position() public view {
+        // PRIMARY has TWO pending requests → TWO per-request legs (not one aggregate), each carrying its own request
+        // id in the last label, both sharing the static WithdrawalQueue positionId; the legs sum to PRIMARY_EXPECTED.
         INAVCalculator.PositionBalance[] memory positions = oracle.getAdapterPositions(PRIMARY, address(0));
-        assertEq(positions.length, 1);
-        assertEq(positions[0].balanceAsset.asset, NATIVE_ETH);
-        assertEq(positions[0].balanceAdapter, address(oracle));
-        assertEq(positions[0].amount, PRIMARY_EXPECTED_ETH);
-        assertFalse(positions[0].isDebt);
-        assertEq(positions[0].protocolId, ProtocolIds.LIDO_WITHDRAWAL);
-        assertEq(
-            positions[0].positionId,
-            abi.encode(address(oracle.WITHDRAWAL_QUEUE())),
-            "account-global positionId is the WithdrawalQueue anchor"
+        assertEq(positions.length, 2, "two pending requests -> two per-request legs");
+
+        bytes memory expectedId = abi.encode(address(oracle.WITHDRAWAL_QUEUE()));
+        uint256 sum;
+        for (uint256 i = 0; i < positions.length; i++) {
+            assertEq(positions[i].balanceAsset.asset, NATIVE_ETH);
+            assertEq(positions[i].balanceAdapter, address(oracle));
+            assertFalse(positions[i].isDebt);
+            assertTrue(positions[i].isLocked, "pending request -> locked leg");
+            assertEq(positions[i].protocolSubId, ProtocolIds.LIDO_WITHDRAWAL);
+            assertEq(positions[i].protocolId, ProtocolIds.LIDO);
+            assertEq(positions[i].positionId, expectedId, "static WithdrawalQueue positionId shared by both legs");
+            assertEq(uint256(positions[i].positionKind), uint256(PositionKind.Supplied));
+            _assertRequestLeg(positions[i]);
+            sum += positions[i].amount;
+        }
+        // The two request-id instance ids must differ (distinct requests).
+        assertTrue(
+            positions[0].positionInstanceId != positions[1].positionInstanceId,
+            "each request leg has a distinct positionInstanceId"
         );
-        assertEq(uint256(positions[0].positionKind), uint256(PositionKind.Supplied));
+        assertEq(sum, PRIMARY_EXPECTED_ETH, "per-request legs sum to the aggregate total");
     }
 
     // ---- SECONDARY: one finalized-unclaimed request, getClaimableEther branch ----
@@ -217,11 +253,29 @@ contract LidoWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTestBa
     }
 
     function test_secondary_finalized_position() public view {
+        // One finalized request → one claimable (unlocked) per-request leg.
         INAVCalculator.PositionBalance[] memory positions = oracle.getAdapterPositions(SECONDARY, address(0));
-        assertEq(positions.length, 1);
-        assertEq(positions[0].balanceAsset.asset, NATIVE_ETH);
-        assertEq(positions[0].amount, SECONDARY_EXPECTED_ETH);
-        assertEq(positions[0].protocolId, ProtocolIds.LIDO_WITHDRAWAL);
-        assertEq(uint256(positions[0].positionKind), uint256(PositionKind.Supplied));
+        assertGe(positions.length, 1);
+        uint256 sum;
+        for (uint256 i = 0; i < positions.length; i++) {
+            assertEq(positions[i].balanceAsset.asset, NATIVE_ETH);
+            assertEq(positions[i].protocolSubId, ProtocolIds.LIDO_WITHDRAWAL);
+            assertEq(positions[i].protocolId, ProtocolIds.LIDO);
+            assertEq(uint256(positions[i].positionKind), uint256(PositionKind.Supplied));
+            assertFalse(positions[i].isLocked, "finalized request -> claimable (unlocked) leg");
+            _assertRequestLeg(positions[i]);
+            sum += positions[i].amount;
+        }
+        assertEq(sum, SECONDARY_EXPECTED_ETH);
+    }
+
+    /// @dev Asserts a per-request leg: the static breadcrumb is `["Withdrawal Queue", "stETH"]` (positionId-derived, no
+    ///      ephemeral id), and the request id rides in the typed `positionInstanceId`.
+    function _assertRequestLeg(INAVCalculator.PositionBalance memory leg) internal view {
+        string[] memory labels = oracle.positionLabels(leg.positionId);
+        assertEq(labels.length, 2, "static breadcrumb = [category]");
+        assertEq(labels[0], "Withdrawal Queue");
+        assertEq(labels[1], "stETH");
+        assertTrue(leg.positionInstanceId != bytes32(0), "positionInstanceId carries the request id");
     }
 }

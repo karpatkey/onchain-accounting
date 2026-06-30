@@ -35,7 +35,12 @@ import {syrupUSDC_L2_CustomPriceFeed} from "../../src/prices/protocols/syrupUSDC
 
 import {ETHPlus_CustomPriceFeed} from "../../src/prices/protocols/ETHPlus_CustomPriceFeed.sol";
 
-import {CrossRate_CustomPriceFeed} from "../../src/prices/protocols/CrossRate_CustomPriceFeed.sol";
+import {stETH_CustomPriceFeed} from "../../src/prices/protocols/stETH_CustomPriceFeed.sol";
+import {lsETH_CustomPriceFeed} from "../../src/prices/protocols/lsETH_CustomPriceFeed.sol";
+import {OETH_CustomPriceFeed} from "../../src/prices/protocols/OETH_CustomPriceFeed.sol";
+import {ezETH_CrossRateCustomPriceFeed} from "../../src/prices/protocols/ezETH_CrossRateCustomPriceFeed.sol";
+import {ETHx_CrossRateCustomPriceFeed} from "../../src/prices/protocols/ETHx_CrossRateCustomPriceFeed.sol";
+import {osETH_CrossRateCustomPriceFeed} from "../../src/prices/protocols/osETH_CrossRateCustomPriceFeed.sol";
 import {ankrETH_CustomPriceFeed} from "../../src/prices/protocols/ankrETH_CustomPriceFeed.sol";
 import {NXM_CustomPriceFeed} from "../../src/prices/protocols/NXM_CustomPriceFeed.sol";
 
@@ -183,6 +188,18 @@ contract DeployPriceFeeds is BaseDeployScript {
         // priced convertToAssets(1e18) * underlying/USD) rather than bespoke balance adapters.
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "osETH")) {
             _deployOsToken("osETH");
+        }
+
+        // Deploy ezETH / ETHx / osETH cross-rate REDUNDANCY feeds (X/USD = ETH/USD x X/ETH; the X/ETH leg is a
+        // Redstone Classic Push market feed, independent of each asset's primary on-chain-rate feed).
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "ezETHCrossRate")) {
+            _deployEzEthCrossRate();
+        }
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "ETHxCrossRate")) {
+            _deployEthxCrossRate();
+        }
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "osETHCrossRate")) {
+            _deployOsEthCrossRate();
         }
 
         // Deploy OETH CrossRate Price Oracle (OETH/USD = ETH/USD x OETH/ETH)
@@ -398,7 +415,7 @@ contract DeployPriceFeeds is BaseDeployScript {
     function _deployStEth() internal {
         address deployed = _readAdapterDeployed("priceFeeds", "stETH");
         if (deployed != address(0)) {
-            console2.log("stETH CrossRate_CustomPriceFeed already deployed at:", deployed);
+            console2.log("stETH_CustomPriceFeed already deployed at:", deployed);
             return;
         }
 
@@ -411,16 +428,16 @@ contract DeployPriceFeeds is BaseDeployScript {
         uint256 stEthEthHeartbeat =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "stETH", "yToXHeartbeat"));
 
-        CrossRate_CustomPriceFeed stEthAdapter =
-            new CrossRate_CustomPriceFeed(stEth, ethUsdFeed, stEthEthFeed, ethUsdHeartbeat, stEthEthHeartbeat);
+        stETH_CustomPriceFeed stEthAdapter =
+            new stETH_CustomPriceFeed(stEth, stEthEthFeed, ethUsdFeed, stEthEthHeartbeat, ethUsdHeartbeat);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "stETH", address(stEthAdapter));
-        console2.log("stETH CrossRate_CustomPriceFeed deployed at:", address(stEthAdapter));
+        console2.log("stETH_CustomPriceFeed deployed at:", address(stEthAdapter));
     }
 
     function _deployLsEth() internal {
         address deployed = _readAdapterDeployed("priceFeeds", "lsETH");
         if (deployed != address(0)) {
-            console2.log("lsETH CrossRate_CustomPriceFeed already deployed at:", deployed);
+            console2.log("lsETH_CustomPriceFeed already deployed at:", deployed);
             return;
         }
 
@@ -433,10 +450,10 @@ contract DeployPriceFeeds is BaseDeployScript {
         uint256 lsEthEthHeartbeat =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "lsETH", "yToXHeartbeat"));
 
-        CrossRate_CustomPriceFeed lsEthAdapter =
-            new CrossRate_CustomPriceFeed(lsEth, ethUsdFeed, lsEthEthFeed, ethUsdHeartbeat, lsEthEthHeartbeat);
+        lsETH_CustomPriceFeed lsEthAdapter =
+            new lsETH_CustomPriceFeed(lsEth, lsEthEthFeed, ethUsdFeed, lsEthEthHeartbeat, ethUsdHeartbeat);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "lsETH", address(lsEthAdapter));
-        console2.log("lsETH CrossRate_CustomPriceFeed deployed at:", address(lsEthAdapter));
+        console2.log("lsETH_CustomPriceFeed deployed at:", address(lsEthAdapter));
     }
 
     function _deployREth() internal {
@@ -484,7 +501,7 @@ contract DeployPriceFeeds is BaseDeployScript {
     function _deployOeth() internal {
         address deployed = _readAdapterDeployed("priceFeeds", "OETH");
         if (deployed != address(0)) {
-            console2.log("OETH CrossRate_CustomPriceFeed already deployed at:", deployed);
+            console2.log("OETH_CustomPriceFeed already deployed at:", deployed);
             return;
         }
 
@@ -497,10 +514,10 @@ contract DeployPriceFeeds is BaseDeployScript {
         uint256 oethEthHeartbeat =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "OETH", "yToXHeartbeat"));
 
-        CrossRate_CustomPriceFeed oethAdapter =
-            new CrossRate_CustomPriceFeed(oeth, ethUsdFeed, oethEthFeed, ethUsdHeartbeat, oethEthHeartbeat);
+        OETH_CustomPriceFeed oethAdapter =
+            new OETH_CustomPriceFeed(oeth, oethEthFeed, ethUsdFeed, oethEthHeartbeat, ethUsdHeartbeat);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "OETH", address(oethAdapter));
-        console2.log("OETH CrossRate_CustomPriceFeed deployed at:", address(oethAdapter));
+        console2.log("OETH_CustomPriceFeed deployed at:", address(oethAdapter));
     }
 
     function _deployAnkrEth() internal {
@@ -647,6 +664,78 @@ contract DeployPriceFeeds is BaseDeployScript {
             new ezETH_CustomPriceFeed(ezEth, restakeManager, ethUsdOracle, ethUsdHeartbeat);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "ezETH", address(ezEthAdapter));
         console2.log("ezETH_CustomPriceFeed deployed at:", address(ezEthAdapter));
+    }
+
+    // CrossRate redundancy feeds: Y/USD = (X/USD) * (Y/X), X = ETH. The Y/ETH leg is a Redstone market feed,
+    // independent of the asset's primary on-chain-rate feed. Registered as priceFeeds[1] (freshest-wins).
+
+    function _deployEzEthCrossRate() internal {
+        address deployed = _readAdapterDeployed("priceFeeds", "ezETHCrossRate");
+        if (deployed != address(0)) {
+            console2.log("ezETH_CrossRateCustomPriceFeed already deployed at:", deployed);
+            return;
+        }
+        address ezEth =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ezETHCrossRate", "underlyingAsset"));
+        address ethUsdFeed =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ezETHCrossRate", "xToUsdFeed"));
+        address ezEthEthFeed =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ezETHCrossRate", "yToXFeed"));
+        uint256 ethUsdHeartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "ezETHCrossRate", "xToUsdHeartbeat"));
+        uint256 ezEthEthHeartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "ezETHCrossRate", "yToXHeartbeat"));
+
+        ezETH_CrossRateCustomPriceFeed adapter =
+            new ezETH_CrossRateCustomPriceFeed(ezEth, ezEthEthFeed, ethUsdFeed, ezEthEthHeartbeat, ethUsdHeartbeat);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "ezETHCrossRate", address(adapter));
+        console2.log("ezETH_CrossRateCustomPriceFeed deployed at:", address(adapter));
+    }
+
+    function _deployEthxCrossRate() internal {
+        address deployed = _readAdapterDeployed("priceFeeds", "ETHxCrossRate");
+        if (deployed != address(0)) {
+            console2.log("ETHx_CrossRateCustomPriceFeed already deployed at:", deployed);
+            return;
+        }
+        address ethx =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ETHxCrossRate", "underlyingAsset"));
+        address ethUsdFeed =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ETHxCrossRate", "xToUsdFeed"));
+        address ethxEthFeed =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ETHxCrossRate", "yToXFeed"));
+        uint256 ethUsdHeartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "ETHxCrossRate", "xToUsdHeartbeat"));
+        uint256 ethxEthHeartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "ETHxCrossRate", "yToXHeartbeat"));
+
+        ETHx_CrossRateCustomPriceFeed adapter =
+            new ETHx_CrossRateCustomPriceFeed(ethx, ethxEthFeed, ethUsdFeed, ethxEthHeartbeat, ethUsdHeartbeat);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "ETHxCrossRate", address(adapter));
+        console2.log("ETHx_CrossRateCustomPriceFeed deployed at:", address(adapter));
+    }
+
+    function _deployOsEthCrossRate() internal {
+        address deployed = _readAdapterDeployed("priceFeeds", "osETHCrossRate");
+        if (deployed != address(0)) {
+            console2.log("osETH_CrossRateCustomPriceFeed already deployed at:", deployed);
+            return;
+        }
+        address osEth =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "osETHCrossRate", "underlyingAsset"));
+        address ethUsdFeed =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "osETHCrossRate", "xToUsdFeed"));
+        address osEthEthFeed =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "osETHCrossRate", "yToXFeed"));
+        uint256 ethUsdHeartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "osETHCrossRate", "xToUsdHeartbeat"));
+        uint256 osEthEthHeartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "osETHCrossRate", "yToXHeartbeat"));
+
+        osETH_CrossRateCustomPriceFeed adapter =
+            new osETH_CrossRateCustomPriceFeed(osEth, osEthEthFeed, ethUsdFeed, osEthEthHeartbeat, ethUsdHeartbeat);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "osETHCrossRate", address(adapter));
+        console2.log("osETH_CrossRateCustomPriceFeed deployed at:", address(adapter));
     }
 
     function _deployEthPlus() internal {

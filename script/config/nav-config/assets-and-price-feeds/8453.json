@@ -36,6 +36,12 @@
         "type": "Custom",
         "feed": "wstETH_L2",
         "heartbeat": 86400
+      },
+      {
+        "$comment": "Independent 2nd feed (ADR 0009 redundancy): RedStone Classic Push wstETH/USD on Base (direct /USD, distinct from the wstETH_L2 cross-rate), 8 decimals.",
+        "type": "Redstone",
+        "address": "0xddE3b77040cee3387C0cA661d1b619C3acA203b0",
+        "heartbeat": 86400
       }
     ]
   },
@@ -56,6 +62,12 @@
         "type": "Custom",
         "feed": "cbETH_L2",
         "heartbeat": 86400
+      },
+      {
+        "$comment": "Independent 2nd feed (ADR 0009 redundancy): Chainlink CBETH/USD on Base (direct /USD, distinct from the cbETH_L2 cross-rate), 8 decimals.",
+        "type": "Chainlink",
+        "address": "0xd7818272B9e248357d13057AAb0B417aF31E817d",
+        "heartbeat": 1200
       }
     ]
   },
@@ -100,6 +112,29 @@
       {
         "type": "Chainlink",
         "address": "0x9DDa783DE64A9d1A60c49ca761EbE528C35BA428",
+        "heartbeat": 86400
+      }
+    ]
+  },
+  "cbBTC": {
+    "$comment": "Coinbase Wrapped BTC. Registered so its Morpho collateral leg (MorphoMarket_cbBTC_USDC on Base) is valued. Chainlink cbBTC/USD on Base, 8 decimals.",
+    "address": "0xcbB7C0000aB88B473b1F5aFd9ef808440eED33Bf",
+    "priceFeeds": [
+      {
+        "type": "Chainlink",
+        "address": "0x07DA0E54543a844a80ABE69c8A12F22B3aA59f9D",
+        "heartbeat": 86400
+      },
+      {
+        "$comment": "Independent 2nd feed (ADR 0009 redundancy): RedStone Classic Push cbBTC/USD on Base, 8 decimals.",
+        "type": "Redstone",
+        "address": "0x8B4736f5eaD8ed579Ecf65a13F9c1E8B44dEdF20",
+        "heartbeat": 86400
+      },
+      {
+        "$comment": "Independent 3rd feed (ADR 0009 redundancy): API3 cbBTC/USD dAPI via Api3ReaderProxyV1 (18-dec proxy, scaled to 8-dec at read; PriceFeedLib validates sourceDec==18).",
+        "type": "API3",
+        "address": "0xa4183Cbf2eE868dDFccd325531C4f53F737FFF68",
         "heartbeat": 86400
       }
     ]

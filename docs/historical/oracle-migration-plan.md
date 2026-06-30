@@ -393,7 +393,7 @@ Alpha funds on Optimism use only Chainlink feeds (`wstethToUsdChainlink`, `usdcT
 
 #### 1.7.g — Chain configs — pre-seed `priceFeeds` key (if required)
 
-`ConfigReader.writeAdapterAddress(...)` writes deployed price-feed addresses to `script/config/chains/{chainId}.json` at `.priceFeeds.{adapter}.deployed`. A stale comment in `ConfigReader.readAdapterParam` claims priceFeeds has been removed from chain config schema; the script still writes there, and `vm.writeJson` may refuse to create a missing parent object.
+`ConfigReader.writeAdapterAddress(...)` writes deployed price-feed addresses to `script/config/chains/{chainId}.json` at `.priceFeeds.{adapter}.deployed`. A stale comment in `ConfigReader.readAdapterParam` claims `priceFeeds` has been removed from the chain config schema; the script still writes there, and `vm.writeJson` may refuse to create a missing parent object.
 
 - [ ] Verify whether `vm.writeJson` creates `.priceFeeds.{adapter}.deployed` when `.priceFeeds` is absent; if not, pre-seed `"priceFeeds": {}` (or per-adapter sub-objects) in each chain config
 - [ ] Remove the stale comment in `ConfigReader.readAdapterParam`

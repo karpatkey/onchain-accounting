@@ -2,10 +2,11 @@
 pragma solidity ^0.8;
 
 import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
+import {InvalidArguments} from "src/errors.sol";
 
 /// @notice Interface for interacting with StakeWise v3 vaults
 interface IStakeWiseVault {
@@ -34,12 +35,10 @@ interface IOsTokenVaultController {
 ///         active vault set lives on NAVCalculator (`addMetaInstances`/`removeMetaInstances`). The underlying token (the staking asset,
 ///         e.g. the ETH sentinel on mainnet / GNO on Gnosis) is the chain-level constant pinned in the
 ///         constructor. Identity is encoded as `abi.encode(address(vault))`. See ADR 0010.
-/// @dev Reports the gross
-///      Staking/Borrowed split is the same; only the signed-net `getAdapterBalances`/`getAdapterBalanceForAsset`
-///      convenience getters of the per-vault adapter are dropped (they are not on the NAV path).
+/// @dev Reports the same gross Staking/Borrowed split a per-vault adapter would; only the signed-net
+///      `getAdapterBalances`/`getAdapterBalanceForAsset` convenience getters are dropped (the meta base returns
+///      them empty, since they are not on the NAV path).
 contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceAdapter {
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.STAKEWISE_V3;
-
     /// @notice The underlying staking asset all configured vaults are denominated in (chain-level constant).
     address public immutable UNDERLYING_TOKEN;
 
@@ -56,8 +55,8 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceAdapter {
         string memory protocolName_,
         address navCalculator_
     ) MetaBalanceAdapter(protocolName_, navCalculator_) {
-        require(underlyingToken_ != address(0), "underlyingToken=0");
-        require(osTokenVaultController_.code.length > 0, "osTokenVaultController not a contract");
+        if (underlyingToken_ == address(0)) revert InvalidArguments();
+        AddressCheckLib.requireContract(osTokenVaultController_, "osTokenVaultController");
         UNDERLYING_TOKEN = underlyingToken_;
         OS_TOKEN_VAULT_CONTROLLER = IOsTokenVaultController(osTokenVaultController_);
     }
@@ -90,10 +89,10 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceAdapter {
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](2);
         uint256 count;
         if (vaultAssets > 0) {
-            temp[count++] = _row(asset, vaultAssets, false, pid, PositionKind.Staking);
+            temp[count++] = _leg(asset, vaultAssets, false, pid, PositionKind.Staking);
         }
         if (mintedOs > 0) {
-            temp[count++] = _row(asset, mintedOs, true, pid, PositionKind.Borrowed);
+            temp[count++] = _leg(asset, mintedOs, true, pid, PositionKind.Borrowed);
         }
 
         INAVCalculator.PositionBalance[] memory positions = new INAVCalculator.PositionBalance[](count);
@@ -110,32 +109,26 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev Returns `["Vaults", <leaf>]` where the leaf is the vault's ERC20 name ("" if unreadable). Returns an
-    ///      empty array for a short positionId.
-    function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
+    /// @dev Returns a single-element `["Vault"]`. StakeWise V3 vaults are minimal proxies with no on-chain
+    ///      ERC20 `name()`/`symbol()` (the human vault name lives off-chain via IPFS), so there is no leaf to
+    ///      derive — the category alone is the label. Returns an empty array for a short positionId.
+    function positionLabels(bytes calldata pid) external pure override returns (string[] memory) {
         if (pid.length < 32) return new string[](0);
-        address vault = abi.decode(pid, (address));
-        string memory leaf = "";
-        try IERC20Metadata(vault).name() returns (string memory n) {
-            leaf = n;
-        } catch {}
-        return _labels("Vaults", leaf);
+        return _labels("Vault", "");
     }
 
-    function _row(INAVCalculator.Asset memory asset, uint256 amount, bool isDebt, bytes memory pid, PositionKind kind)
-        private
-        view
-        returns (INAVCalculator.PositionBalance memory)
-    {
-        return INAVCalculator.PositionBalance({
-            balanceAsset: asset,
-            balanceAdapter: address(this),
-            amount: amount,
-            isDebt: isDebt,
-            protocolId: PROTOCOL_ID,
-            positionId: pid,
-            positionKind: kind,
-            isLocked: false
-        });
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolBrand() internal pure override returns (bytes32) {
+        return ProtocolIds.STAKEWISE;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolId() internal pure override returns (bytes32) {
+        return ProtocolIds.STAKEWISE_V3;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolSubId() internal pure override returns (bytes32) {
+        return ProtocolIds.STAKEWISE_V3_VAULTS;
     }
 }

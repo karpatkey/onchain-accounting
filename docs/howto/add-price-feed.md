@@ -85,7 +85,7 @@ You need a custom feed if **any** of these are true:
 
 - The asset is a yield-bearing wrapper of another asset (e.g., sDAI, sUSDe, sUSDS) and the price is `(rate × underlying/USD)`.
 - The asset is a (re)staking receipt token whose rate is exposed on-chain (cbETH, wstETH, weETH, rETH, rsETH, ezETH).
-- There is no Chainlink USD feed for the asset, but you can derive the price from two existing feeds (use `CrossRate_Price`).
+- There is no Chainlink USD feed for the asset, but you can derive the price from two existing feeds (use `CrossRate_CustomPriceFeed`).
 
 If a Chainlink USD feed exists and is canonical, use Chainlink directly. Don't roll a custom feed for no reason.
 
@@ -94,7 +94,7 @@ If a Chainlink USD feed exists and is canonical, use Chainlink directly. Don't r
 | Pattern | Existing reference | When to use |
 |---|---|---|
 | `(rate × USD)` from a single Chainlink feed | `src/prices/protocols/sDAI_CustomPriceFeed.sol` (DAI/USD × DSR `chi`) | Yield-bearing wrappers with an on-chain `chi`/`rate` field |
-| LST/LRT receipt token with `getExchangeRate`-style method | `src/prices/protocols/wstETH_CustomPriceFeed.sol`, `rETH_CustomPriceFeed.sol` | Liquid staking tokens whose redeem rate is exposed on-chain |
+| LST/LRT receipt token with `getExchangeRate`-style method (extends `BaseCustomPriceFeed`, implement only `_rate()`) | `src/prices/protocols/rETH_CustomPriceFeed.sol`, `cbETH_CustomPriceFeed.sol` | Liquid staking tokens whose redeem rate is exposed on-chain as an 18-decimal rate |
 | L2 mirror of an L1 rate | `src/prices/protocols/wstETH_L2_CustomPriceFeed.sol`, `cbETH_L2_CustomPriceFeed.sol` | Same asset, but the canonical rate lives on L1; reads a Chainlink-secured rate feed on L2 instead |
 | Two Chainlink feeds composed | `src/prices/protocols/CrossRate_CustomPriceFeed.sol` | A/B × B/C when there's no direct A/USD feed |
 | Basket / aggregator | `src/prices/protocols/ETHPlus_CustomPriceFeed.sol` | Reserve-style RTokens or other basket-derived prices |
@@ -103,9 +103,9 @@ Copy the closest match and rename. Don't deviate from the structure unless you n
 
 ### B.2 Write the contract
 
-File: `src/prices/protocols/<Asset>_CustomPriceFeed.sol` (suffix `_L2_Price` for L2-specific variants).
+File: `src/prices/protocols/<Asset>_CustomPriceFeed.sol` (suffix `_L2_CustomPriceFeed` for L2-specific variants, e.g. `wstETH_L2_CustomPriceFeed.sol`).
 
-For the common "single Chainlink base feed × 18-decimal on-chain rate" case (rETH, cbETH, ezETH, rsETH, ETHx, osToken), extend `src/prices/BaseCustomPriceFeed.sol` and implement only `_rate()` — the staleness gate, decimals, `latestRoundData`, and the `rate × base / 1e18` math live in the base. Feeds with no Chainlink base (ETHPlus), a two-feed derived rate (eETH, wstETH), or a Chainlink-feed rate (use `CrossRate_Price`) stay bespoke and follow the self-contained skeleton below.
+For the common "single Chainlink base feed × 18-decimal on-chain rate" case (rETH, cbETH, ezETH, rsETH, ETHx, osToken), extend `src/prices/BaseCustomPriceFeed.sol` and implement only `_rate()` — the staleness gate, decimals, `latestRoundData`, and the `rate × base / 1e18` math live in the base. Feeds with no Chainlink base (ETHPlus), a two-feed derived rate (eETH, wstETH), or a Chainlink-feed rate (use `CrossRate_CustomPriceFeed`) stay bespoke and follow the self-contained skeleton below.
 
 Skeleton (bespoke yield-bearing pattern, à la `sDAI_CustomPriceFeed.sol`; adjust for LST/LRT or cross-rate):
 
@@ -204,7 +204,7 @@ Conventions:
 
 #### B.3.1 Unit test
 
-File: `test/prices/protocols/<Asset>_Price.t.sol`.
+File: `test/prices/protocols/<Asset>_CustomPriceFeed.t.sol`.
 
 Cover, with mocked Chainlink + mocked rate provider:
 
@@ -221,14 +221,14 @@ Cover, with mocked Chainlink + mocked rate provider:
 
 #### B.3.2 Fork test
 
-File: `test/prices/protocols/fork/<Asset>_Price.fork.t.sol`.
+File: `test/prices/protocols/fork/<Asset>_CustomPriceFeed.fork.t.sol`.
 
 Cover, against the real Chainlink + rate provider at a pinned block:
 
 - Deploy the feed, call `getLatestPrice`, assert price is in a reasonable range (e.g., $0.95–$1.05 for a USD-pegged asset, or compare to a hand-computed reference).
 - `stale == false` at the pinned block.
 
-Run with `FOUNDRY_PROFILE=slow forge test --match-path "test/prices/protocols/fork/<Asset>_Price*"`.
+Run with `FOUNDRY_PROFILE=slow forge test --match-path "test/prices/protocols/fork/<Asset>_CustomPriceFeed*"`.
 
 ### B.4 Wire chain config
 
@@ -294,8 +294,8 @@ Expect `(price > 0, decimals, false)` at a fresh block.
 PR checklist:
 
 - [ ] `forge build` clean
-- [ ] `forge test --match-path "test/prices/protocols/<Asset>_Price*"` clean
-- [ ] `FOUNDRY_PROFILE=slow forge test --match-path "test/prices/protocols/fork/<Asset>_Price*"` clean
+- [ ] `forge test --match-path "test/prices/protocols/<Asset>_CustomPriceFeed*"` clean
+- [ ] `FOUNDRY_PROFILE=slow forge test --match-path "test/prices/protocols/fork/<Asset>_CustomPriceFeed*"` clean
 - [ ] `nav-config/assets-and-price-feeds/<chainId>.json` updated for every chain where the feed applies (assets with `priceFeeds` arrays) + `contracts-deployment-config/custom-price-feeds/<chainId>.json` constructor sections for any Custom feeds
 - [ ] `_tryDeployPriceFeed` call and `_deploy<Asset>()` function added to `test/integration/IntegrationFromConfigBase.fork.sol`
 - [ ] `_deploy<Asset>()` function and dispatch block added to `script/deploy/03_DeployPriceFeeds.s.sol`

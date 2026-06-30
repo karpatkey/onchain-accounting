@@ -1,42 +1,41 @@
 # ether.fi Withdrawal Queue — balance-adapter verification
 
 ## 1. Adapter under test
-`EtherFiWithdrawalQueueBalanceAdapter` (`src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueBalanceAdapter.sol`). Reports the in-flight ETH owed to an account in ether.fi's withdrawal queue (eETH/weETH burned on `requestWithdraw`, ETH claimable from a `WithdrawRequestNFT`).
+`EtherFiWithdrawalQueueAssistedBalanceAdapter` (`src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueAssistedBalanceAdapter.sol`). Reports the in-flight ETH owed to an account in ether.fi's withdrawal queue (eETH/weETH burned on `requestWithdraw`, ETH claimable from a `WithdrawRequestNFT`).
 
 ### Inheritance + per-chain scope (Phase 0)
-- Implements `IBalanceAdapter` + `IPositionDescribable` directly, **plus `Ownable`** — the 3rd documented mutable-cache adapter (after Merkl), per **ADR 0014**. The mutability is a per-account `tokenId` cache only; identity + all addresses are immutable.
+- Extends `AssistedBalanceAdapter` (OZ `AccessControl`) and implements `IPositionDescribable` — a documented mutable-cache adapter in the **assisted balance-adapter family** ([ADR 0015](../../../../docs/decisions/0015-assisted-balance-adapter-family.md)), per **ADR 0014**. `DEFAULT_ADMIN_ROLE` administers roles; `ASSISTANT_ROLE` gates the submit/clear mutators (not `Ownable`). The mutability is a per-account `tokenId` cache only; identity + all addresses are immutable.
 - **Mainnet (1) only.** ether.fi's `WithdrawRequestNFT` (`0x7d57…4E2c`) + `LiquidityPool` (`0x3088…F216`) are mainnet; ENS / ETH-Alpha / Nexus hold eETH there.
 
 ### Math branches (`_owedForToken`)
 - `ownerOf(id) != account` (incl. burned/claimed → reverts → caught) → `0`.
 - `!isValid(id)` → `0`.
 - `isFinalized(id)` → `getClaimableAmount(id)` (exact). Else **pending** → `min(amountOfEEth, LiquidityPool.amountForShare(shareOfEEth)) − feeGwei·1gwei`, clamped at 0 — mirrors ether.fi's own claim math. Every external read is `try/catch`→0 so the scan never reverts.
-- `getAdapterPositions`: `assetFilter` mismatch → empty; native ETH not registered → empty; total `0` → empty; else up to **two native-ETH legs** — claimable (`isLocked=false`, sum of finalized ids) + locked (`isLocked=true`, sum of pending ids) — sharing the static `positionId = abi.encode(address withdrawRequestNFT)` (ADR 0016; like Lido/Stader/Kelp).
+- `getAdapterPositions`: `assetFilter` mismatch → empty; `account == address(0)` → empty; no cached ids → empty; native ETH not registered → empty; else **one native-ETH `Supplied` leg per owned cached request** (zero-amount legs skipped), each carrying its own `isLocked` (finalized → `false`, pending → `true`), all sharing the static `positionId = abi.encode(WITHDRAW_REQUEST_NFT)` with the request's `tokenId` riding in the typed `positionInstanceId`.
 
 ## 2. Fork test coverage
 `test/balances/AssistedBalanceAdapters/fork/EtherFiWithdrawalQueue.fork.t.sol` (4 tests, `FOUNDRY_PROFILE=slow`, FORK_BLOCK 25,387,000):
-- `realHolder_pendingValuation` — submit real id #80154 → adapter **== independent live read AND** pinned `253077459762665832` wei (delta 0).
-- `getAdapterPositions_identity` — identity fields on the real holder.
-- `unsubmitted_reportsZero`, `submit_skipsIdNotOwnedByAccount` — negative cases vs the real contracts.
+- `test_realHolder_pendingValuation` — submit real id #80154 → adapter **== independent live read AND** pinned `253077459762665832` wei (delta 0).
+- `test_getAdapterPositions_identity` — identity fields on the real holder.
+- `test_unsubmitted_reportsZero`, `test_submit_revertsOnIdNotOwnedByAccount` — negative cases vs the real contracts (the submit is fail-loud: it **reverts** `NotTokenOwner` on an id not owned by the account).
 
 ## 3. Unit test coverage
-`test/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueue.t.sol` (23 tests, mock-only): constructor guards (×4), owner-gating + submit/dedup/clear (×4), valuation (finalized, pending min/fee, fee-clamp, aggregation), ownership re-verify (transferred/burned/non-owned drop), `isValid` drop, unregistered-underlying branch, pending-path `try/catch` reverts (getRequest / amountForShare → drop, never revert), identity, ERC165, `underlyingAssetsSupported`.
+`test/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueue.t.sol` (30 tests, mock-only): constructor guards (×4), `ASSISTANT_ROLE` gating + role-grant + submit/dedup/clear + non-owned revert + cache-full revert, valuation (finalized, pending min/fee, fee-clamp, aggregation), ownership re-verify (transferred/burned/non-owned drop), `isValid` drop, per-request legs (locked, mixed claimable/locked, two same-state legs summing to the aggregate, non-owned cached id discarded), unregistered-underlying branch, asset-filter mismatch, zero-owed, pending-path `try/catch` reverts (getRequest / amountForShare → drop, never revert), identity, ERC165, `underlyingAssetsSupported`.
 
 ## 4. Adapter formula recap
-```
+```text
+# static positionId shared across all per-request legs:
+pid = abi.encode(WITHDRAW_REQUEST_NFT)
 for each cached tokenId with ownerOf(id)==account && isValid(id):
     val = isFinalized(id) ? getClaimableAmount(id)
                           : min(amountOfEEth, amountForShare(shareOfEEth)) − feeGwei·1gwei
-    if isFinalized(id): claimable += val      # claimable leg
-    else:               locked    += val      # locked (pending) leg
-# static positionId, split into up to two legs sharing it (ADR 0016):
-pid = abi.encode(address(WITHDRAW_REQUEST_NFT))
-if claimable > 0: emit PositionBalance{ native ETH (registered), claimable, isDebt:false,
-  protocolId: keccak256("etherfi-withdrawal"), positionId: pid, positionKind: Supplied, isLocked: false }
-if locked    > 0: emit PositionBalance{ native ETH (registered), locked,    isDebt:false,
-  protocolId: keccak256("etherfi-withdrawal"), positionId: pid, positionKind: Supplied, isLocked: true }
+    if val == 0: continue                     # zero-amount legs skipped
+    emit PositionBalance{ native ETH (registered), val, isDebt: false,
+      protocolBrand: ETHERFI, protocolId: ETHERFI, protocolSubId: ETHERFI_WITHDRAWAL,
+      positionId: pid, positionKind: Supplied,
+      isLocked: !isFinalized(id), positionInstanceId: bytes32(id) }
 ```
-Native ETH (`0xEeee…EEeE`) is a registered NAV asset, so NAVCalculator prices the leg. **The cache stores ids only — never amounts** — so the owner can only under-report, never over-report (ADR 0014).
+One native-ETH `Supplied` leg is emitted **per owned cached request** (not aggregated into claimable/locked sums); each leg's `isLocked` reflects that request's own state and its `tokenId` rides in the typed `positionInstanceId` (never in `positionId`). Native ETH (`0xEeee…EEeE`) is a registered NAV asset, so NAVCalculator prices each leg. **The cache stores ids only — never amounts** — so the assistant can only under-report, never over-report (ADR 0014).
 
 ## 5. Cherry-picked accounts
 Real holder **`0xcFFab3dFdCa60d838512c41a772e799b71dF1Af4`** owns `WithdrawRequestNFT` **#80154** (pending, isValid, fee 0, ~0.2531 ETH) at FORK_BLOCK — discovered via the `Transfer`-event scan (the same scan the agent runs). No seeding needed: unlike Ethena cooldowns, real ether.fi requests persist for days. KPK Safes (ENS / ETH-Alpha / Nexus) hold eETH and use the queue on exit.
@@ -51,7 +50,7 @@ Real holder **`0xcFFab3dFdCa60d838512c41a772e799b71dF1Af4`** owns `WithdrawReque
 | `0xcFFab3…1Af4` | ether.fi withdrawal #80154 (pending) | native ETH | `253077459762665832` (~0.2531 ETH) | Supplied | false |
 
 ### 7b. Per-asset summary
-Up to two native-ETH legs per account (claimable + locked, sharing one static positionId) — Σ of its live, owned, valid requests split by finalization; nothing otherwise.
+One native-ETH leg per owned cached request (all sharing one static positionId, each with its own `isLocked` and `positionInstanceId`) — the per-asset total is the Σ of the account's live, owned, valid requests; nothing otherwise.
 
 ## 8. Ground-truth cross-check
 - **On-chain (fork test):** `adapter.getAdapterBalanceForAsset(holder, ETH)` **== `min(amountOfEEth, amountForShare(shareOfEEth)) − fee`** read live from `WithdrawRequestNFT.getRequest` + `LiquidityPool.amountForShare`, delta **0**.
@@ -71,4 +70,4 @@ bash script/development/app/sync-app-env.sh 1
 The Safe then shows an "ether.fi" group with a ~0.2531 ETH withdrawal-queue leg.
 
 ## 10. Test verdict
-- Unit: **23/23 pass**. Fork: **4/4 pass** (strict delta 0 vs live read). `forge build`/`fmt` clean. Pin: balance-adapter (no prices-lib change) — CI's `LibraryPinConsistency` is the source of truth.
+- Unit: **30/30 pass**. Fork: **4/4 pass** (strict delta 0 vs live read). `forge build`/`fmt` clean. Pin: balance-adapter (no prices-lib change) — CI's `LibraryPinConsistency` is the source of truth.

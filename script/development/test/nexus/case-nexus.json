@@ -1,6 +1,6 @@
 {
   "protocol": "Nexus Mutual",
-  "adapter": "NexusMutualStakingPoolsBalanceAdapter",
+  "adapter": "NexusMutualStakingPoolsAssistedBalanceAdapter",
   "chainId": 1,
   "forkBlock": 25388000,
   "contracts": {
@@ -18,8 +18,8 @@
     { "tokenId": 186, "poolId": 11 },
     { "tokenId": 187, "poolId": 5 }
   ],
-  "discovery": "StakingNFT is mint-only (no burn) with totalSupply=280 globally and no per-owner enumeration; the adapter scans tokenInfo descending over totalSupply..1 for owner==account (balanceOf guard skips non-stakers and early-exits stakers; no fixed scan cap). No off-chain agent. Cross-checked vs a Transfer(to=safe) event scan, which yields the same {180,184,185,186,187}.",
-  "legsNote": "One Staking (activeStake+expiredStake) + one Rewards leg are emitted PER position (per tokenId), keyed by positionId = abi.encode(tokenId, poolId). The amounts below are the SUMS across all 5 positions (what the no-arg balance getters return and what the per-NFT legs add back up to).",
+  "discovery": "StakingNFT is mint-only (no burn) with totalSupply=280 globally and no per-owner enumeration, so the assisted adapter relies on an ASSISTANT_ROLE to submit the account's tokenIds (and re-verifies ownership per read). This case's expected set {180,184,185,186,187} was derived off-chain by scanning tokenInfo descending for owner==account, cross-checked vs a Transfer(to=safe) event scan, which yields the same ids.",
+  "legsNote": "One Staking (activeStake+expiredStake) + one Rewards leg are emitted PER position (per tokenId), keyed by positionId = abi.encode(address stakingPool) (StakingViewer.stakingPool(poolId)); the per-NFT StakingNFT tokenId is the typed PositionBalance.positionInstanceId (labels derive from positionId only: ['Staking Pools','Pool #<poolId>']). The amounts below are the SUMS across all 5 positions (what the no-arg balance getters return and what the per-NFT legs add back up to).",
   "legsAggregate": [
     {
       "name": "Staked NXM (active + expired stake, summed across 5 positions)",
@@ -41,6 +41,6 @@
   "groundTruth": "StakingViewer.getAggregatedTokens([180,184,185,186,187]) at forkBlock = (totalActiveStake 74229519750529478080348, totalExpiredStake 0, totalRewards 228254616240628948835). The adapter emits per-NFT legs via getTokens; the per-kind sums equal this aggregate (delta 0), and the no-arg total getter matches it too.",
   "delta": 0,
   "protocolId": "keccak256(\"nexus-mutual-staking\")",
-  "positionId": "abi.encode(uint256 tokenId, uint256 poolId)",
+  "positionId": "abi.encode(address stakingPool)",
   "tests": { "unit": 26, "fork": 3 }
 }

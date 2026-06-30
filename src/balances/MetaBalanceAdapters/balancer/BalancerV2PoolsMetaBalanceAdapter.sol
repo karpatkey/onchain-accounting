@@ -2,8 +2,8 @@
 pragma solidity ^0.8;
 
 import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {BalancerV2PoolLib, IBalancerV2Pool} from "src/balances/MetaBalanceAdapters/balancer/BalancerV2PoolLib.sol";
@@ -12,15 +12,20 @@ import {BalancerV2PoolLib, IBalancerV2Pool} from "src/balances/MetaBalanceAdapte
 /// @author KPK
 /// @notice One immutable adapter that reports an account's **wallet-held** (unstaked) Balancer V2 pool liquidity
 ///         across *any* pool — the AMM-supplied LP only (gauge-staked LP + rewards are the separate
-///         BalancerV2GaugesMeta adapter). The instance coordinate is the pool's **`bytes32` poolId, used directly**
-///         (configured via `metaInstancesRaw`), since V2 identifies pools by poolId (the BPT address is its top
-///         160 bits). Emits one `Supply` leg per underlying pool token. The Balancer V2 Vault is the chain-level
+///         `BalancerV2GaugesMetaBalanceAdapter`). The instance coordinate is the pool's **`bytes32` poolId, used
+///         directly** (configured via the `instancesRaw` config key), since V2 identifies pools by poolId (the BPT
+///         address is its top 160 bits). Emits one `Supplied` leg per underlying pool token. The Balancer V2 Vault is the chain-level
 ///         constant pinned in the constructor. Identity derived on-chain (positionId = abi.encode(bytes32 poolId);
-///         name = BPT `name()`). See ADR 0010.
+///         label leaf = the pool's underlying token symbols joined with "/"). See ADR 0010.
+/// @dev Valuation = instantaneous on-chain amounts (ADR 0017): this adapter reports the position's current
+///      pro-rata share of the pool's on-chain Vault balances as per-token `amount`s, which NAVCalculator prices
+///      with external oracles — it does NOT compute a manipulation-resistant "fair" value. Imbalancing the pool
+///      can transiently move the reported amounts (a donation that arbitrage reverses within a block) but cannot
+///      be monetised: NAV is a read-only oracle consumed by an asynchronous sub/redeem layer (no atomic on-chain
+///      consumer). See docs/decisions/0017-lp-valuation-instantaneous-amounts.md; revisit if NAV is ever consumed
+///      synchronously on-chain.
 contract BalancerV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     using BalancerV2PoolLib for bytes32;
-
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.BALANCER_V2_POOL;
 
     /// @notice The Balancer V2 Vault (custodies every pool's tokens; chain-level constant).
     address public immutable VAULT;
@@ -31,12 +36,12 @@ contract BalancerV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     constructor(address vault_, string memory protocolName_, address navCalculator_)
         MetaBalanceAdapter(protocolName_, navCalculator_)
     {
-        require(vault_.code.length > 0, "Vault must be a contract");
+        AddressCheckLib.requireContract(vault_, "Vault");
         VAULT = vault_;
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev `instance` is the pool's `bytes32` poolId (used directly, not an address). Emits one `Supply` leg per
+    /// @dev `instance` is the pool's `bytes32` poolId (used directly, not an address). Emits one `Supplied` leg per
     ///      registered underlying pool token for the account's wallet BPT share. Skips unregistered/filtered tokens.
     function _instancePositions(address account, bytes32 instance, address assetFilter)
         internal
@@ -60,16 +65,7 @@ contract BalancerV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
             if (assetFilter != address(0) && tokens[i] != assetFilter) continue;
             (INAVCalculator.Asset memory assetInfo, bool found) = _getAssetInfo(tokens[i]);
             if (!found) continue;
-            temp[count++] = INAVCalculator.PositionBalance({
-                balanceAsset: assetInfo,
-                balanceAdapter: address(this),
-                amount: amounts[i],
-                isDebt: false,
-                protocolId: PROTOCOL_ID,
-                positionId: positionId,
-                positionKind: PositionKind.Supplied,
-                isLocked: false
-            });
+            temp[count++] = _leg(assetInfo, amounts[i], false, positionId, PositionKind.Supplied);
         }
 
         INAVCalculator.PositionBalance[] memory positions = new INAVCalculator.PositionBalance[](count);
@@ -91,16 +87,42 @@ contract BalancerV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev Returns `["Liquidity Pool", <BPT name>]`; the leaf is "" if the BPT's `name()` reverts.
+    /// @dev Returns `["AMM Liquidity Pool", "<sym0>/<sym1>/…"]` — the leaf is the pool's underlying token symbols
+    ///      joined with "/" (e.g. "USDC/USDT/DAI"), excluding the pool's own pre-minted BPT (composable-stable).
+    ///      Per-token fail-open: a token whose `symbol()` reverts (or has no code) contributes "?". A revert in the
+    ///      Vault pool-token read (e.g. a malformed/removed instance) fails open at the NAV layer (`_safeStringArray`).
     function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
+        if (pid.length < 32) return new string[](0);
         bytes32 poolId = abi.decode(pid, (bytes32));
-        address bpt = address(uint160(uint256(poolId) >> 96));
-        string memory leaf;
-        try IERC20Metadata(bpt).name() returns (string memory n) {
-            leaf = n;
+        // External self-call so a revert in the Vault pool-token read (bad/removed poolId) fails open to the
+        // category-only label — a faulty label must never revert the (verbose-only) labels read.
+        try this.poolTokenSymbols(poolId) returns (string memory leaf) {
+            return _labels("AMM Liquidity Pool", leaf);
         } catch {
-            leaf = "";
+            return _labels("AMM Liquidity Pool", "");
         }
-        return _labels("Liquidity Pool", leaf);
+    }
+
+    /// @notice External wrapper (enables `try/catch` isolation in `positionLabels`): the pool's underlying token
+    ///         symbols joined with "/" (BPT excluded for composable-stable pools). Reverts propagate only to the
+    ///         `positionLabels` catch arm.
+    function poolTokenSymbols(bytes32 poolId) external view returns (string memory) {
+        address bpt = BalancerV2PoolLib.bptOf(poolId);
+        return _joinTokenSymbols(BalancerV2PoolLib.poolTokens(VAULT, poolId, bpt));
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolBrand() internal pure override returns (bytes32) {
+        return ProtocolIds.BALANCER;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolId() internal pure override returns (bytes32) {
+        return ProtocolIds.BALANCER_V2;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolSubId() internal pure override returns (bytes32) {
+        return ProtocolIds.BALANCER_V2_POOLS;
     }
 }

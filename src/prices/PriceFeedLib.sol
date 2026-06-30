@@ -21,8 +21,8 @@ import "src/constants.sol";
 ///         positions, health, value), extracted to keep NAVCalculator under the 24 576-byte EIP-170 limit.
 /// @dev All functions are `external` so the library compiles as a separate artifact and is invoked via
 ///      DELEGATECALL — running in NAVCalculator's storage context through the passed `storage` references.
-///      The read/compute entrypoints are computeNav / computeAccountPositions / hasPositions /
-///      getAssetsWithPositions / healthCheck / calculateValue / buildPriceData. The position-bearing ones
+///      The read/compute entrypoints are computeNav / computeAccountPositions / computeNavAndPositions /
+///      hasPositions / getAssetsWithPositions / healthCheck / calculateValue / buildPriceData. The position-bearing ones
 ///      build and consume the heavy PositionBalance[]/Position[] arrays entirely inside the library, so those
 ///      arrays never cross the NAV↔library ABI boundary (which is what makes piecemeal helper extraction
 ///      counter-productive under `via_ir`). NAV reads are off-chain eth_call, so the DELEGATECALL overhead is
@@ -82,12 +82,14 @@ library PriceFeedLib {
         int256 bestPrice;
         uint256 bestTime;
         uint8 bestDecimals;
+        bool bestRateOnly; // winner so far is a rate-only feed (no push timestamp); a real-timestamp feed outranks it
         winnerIdx = type(uint256).max;
 
         for (uint256 i; i < len; ++i) {
             IPrices.PriceFeedConfig storage cfg = configs[i];
             int256 rawPrice;
             uint256 updatedAt;
+            bool rateOnly; // Custom feed with no push timestamp (latestRoundData.updatedAt == 0)
 
             if (cfg.priceType == IPrices.PriceType.Custom) {
                 uint256 customPrice;
@@ -107,6 +109,10 @@ library PriceFeedLib {
                 ) {
                     lrdUpdatedAt = u;
                 } catch {} // reverted: treat as no-timestamp oracle; sentinel updatedAt applied below
+                // A rate-only feed (no push timestamp) PARTICIPATES — the block.timestamp-1 sentinel clears the
+                // heartbeat gate below — but YIELDS to any feed with a real push timestamp (see the tiering at the
+                // winner check, per IPrices.PriceFeedConfig). The sentinel is only for gate-passing, not ranking.
+                rateOnly = lrdUpdatedAt == 0;
                 updatedAt = lrdUpdatedAt == 0 ? (block.timestamp > 0 ? block.timestamp - 1 : 0) : lrdUpdatedAt;
             } else {
                 int256 answer;
@@ -134,10 +140,17 @@ library PriceFeedLib {
 
             ++healthyFeedCount;
 
-            if (winnerIdx == type(uint256).max || effectiveTime > bestTime) {
+            // Tiering (IPrices.PriceFeedConfig): a real-timestamp feed always outranks a rate-only one; within
+            // the same class the largest effectiveTime wins. So a rate-only custom feed can never override a fresh
+            // Chainlink feed merely via the block.timestamp-1 sentinel.
+            bool wins = winnerIdx == type(uint256).max // first healthy feed
+                || (bestRateOnly && !rateOnly) // a real-timestamp feed beats the current rate-only leader
+                || (bestRateOnly == rateOnly && effectiveTime > bestTime); // same class: freshest wins
+            if (wins) {
                 bestTime = effectiveTime;
                 bestPrice = rawPrice;
                 bestDecimals = cfg.decimals;
+                bestRateOnly = rateOnly;
                 winnerIdx = i;
             }
         }
@@ -262,7 +275,7 @@ library PriceFeedLib {
         }
 
         INAVCalculator.PositionBalance[] memory allPositions =
-            _getPositionBalances(allAdapters, metaInstanceTotal, assetIndex, assetCount, account, address(0));
+            _getPositionBalances(allAdapters, assetIndex, account, address(0));
 
         nav.sequencerDown = sequencerDown;
         if (allPositions.length == 0) {
@@ -314,12 +327,10 @@ library PriceFeedLib {
         address[] memory assetsWithPositions;
 
         if (assetFilter == address(0)) {
-            positionBalances =
-                _getPositionBalances(allAdapters, metaInstanceTotal, assetIndex, assetCount, account, address(0));
+            positionBalances = _getPositionBalances(allAdapters, assetIndex, account, address(0));
             assetsWithPositions = _extractUniqueAssets(positionBalances);
         } else {
-            positionBalances =
-                _getPositionBalances(allAdapters, metaInstanceTotal, assetIndex, assetCount, account, assetFilter);
+            positionBalances = _getPositionBalances(allAdapters, assetIndex, account, assetFilter);
             if (positionBalances.length == 0) {
                 return new INAVCalculator.Position[](0);
             }
@@ -384,7 +395,7 @@ library PriceFeedLib {
         }
 
         INAVCalculator.PositionBalance[] memory allPositions =
-            _getPositionBalances(allAdapters, metaInstanceTotal, assetIndex, assetCount, account, address(0));
+            _getPositionBalances(allAdapters, assetIndex, account, address(0));
 
         nav.sequencerDown = sequencerDown;
         if (allPositions.length == 0) {
@@ -430,9 +441,8 @@ library PriceFeedLib {
         uint256 assetCount,
         address account
     ) external view returns (bool) {
-        INAVCalculator.PositionBalance[] memory positions = _getPositionBalances(
-            allAdapters, metaInstanceTotal, assetIndex, assetCount, account, address(0)
-        );
+        INAVCalculator.PositionBalance[] memory positions =
+            _getPositionBalances(allAdapters, assetIndex, account, address(0));
         for (uint256 i = 0; i < positions.length; i++) {
             if (positions[i].amount != 0) return true;
         }
@@ -448,9 +458,7 @@ library PriceFeedLib {
         uint256 assetCount,
         address account
     ) external view returns (address[] memory) {
-        return _extractUniqueAssets(
-            _getPositionBalances(allAdapters, metaInstanceTotal, assetIndex, assetCount, account, address(0))
-        );
+        return _extractUniqueAssets(_getPositionBalances(allAdapters, assetIndex, account, address(0)));
     }
 
     /// @notice Returns sequencer status and the registered assets whose price is currently stale. Mirrors
@@ -533,30 +541,25 @@ library PriceFeedLib {
     ///         by `assetFilter` (address(0) = all). A reverting adapter is skipped (fail-open). Mirrors the former
     ///         NAVCalculator._getPositionBalances. Each adapter is queried once and its rows retained, then a
     ///         counting pass sizes the output to the EXACT number of surviving rows (registered asset + matching
-    ///         filter) — not a fixed `2·(adapters+instances)·assetCount` heuristic, which a multi-leg meta-adapter
-    ///         (e.g. Uniswap / PancakeSwap V3, up to 4 legs per LP NFT) could overflow, and not the
-    ///         sum-of-all-returned-rows, which would over-allocate when rows are filtered out. `metaInstanceTotal`
-    ///         and `assetCount` are retained in the signature for caller compatibility but no longer size the output.
+    ///         filter) — not a fixed `2·(adapters+instances)·assetCount` heuristic, which a multi-leg adapter
+    ///         (e.g. the Uniswap / PancakeSwap V3 assisted adapters, up to 4 legs per LP NFT) could overflow, and not
+    ///         the sum-of-all-returned-rows, which would over-allocate when rows are filtered out.
     function _getPositionBalances(
         address[] memory allAdapters,
-        uint256, /* metaInstanceTotal */
         mapping(address => uint256) storage assetIndex,
-        uint256, /* assetCount */
         address account,
         address assetFilter
     ) private view returns (INAVCalculator.PositionBalance[] memory positions) {
         uint256 totalAdapters = allAdapters.length;
 
-        // First pass: query each adapter once (the only external calls) and retain its returned rows.
-        INAVCalculator.PositionBalance[][] memory perAdapter = new INAVCalculator.PositionBalance[][](totalAdapters);
-        for (uint256 i = 0; i < totalAdapters; i++) {
-            perAdapter[i] = _getAdapterPositions(allAdapters[i], account, assetFilter);
-        }
+        // First pass: query each adapter once (the only external calls) and retain its returned rows. Extracted to
+        // its own frame so the per-adapter try/catch fan-out does not inline into this function's stack (via_ir).
+        INAVCalculator.PositionBalance[][] memory perAdapter = _queryAllAdapters(allAdapters, account, assetFilter);
 
         // Second pass (in-memory, no external calls): count exactly the rows that survive the
         // registered-asset + assetFilter predicate, so `positions` is allocated to the precise size — no
         // over-allocation from filtered-out rows, and no fixed-heuristic under-allocation that a multi-leg
-        // meta-adapter (e.g. Uniswap/PancakeSwap V3) could overflow.
+        // adapter (e.g. the Uniswap/PancakeSwap V3 assisted adapters) could overflow.
         uint256 count;
         for (uint256 i = 0; i < totalAdapters; i++) {
             INAVCalculator.PositionBalance[] memory adapterPositions = perAdapter[i];
@@ -575,6 +578,21 @@ library PriceFeedLib {
                     positions[k++] = adapterPositions[j];
                 }
             }
+        }
+    }
+
+    /// @notice First pass of {_getPositionBalances}: query every adapter once (the only external calls) and retain
+    ///         each adapter's returned rows. Kept in its own frame so the per-adapter try/catch fan-out does not
+    ///         inline into the caller's stack (via_ir stack limit).
+    function _queryAllAdapters(address[] memory allAdapters, address account, address assetFilter)
+        private
+        view
+        returns (INAVCalculator.PositionBalance[][] memory perAdapter)
+    {
+        uint256 totalAdapters = allAdapters.length;
+        perAdapter = new INAVCalculator.PositionBalance[][](totalAdapters);
+        for (uint256 i = 0; i < totalAdapters; i++) {
+            perAdapter[i] = _getAdapterPositions(allAdapters[i], account, assetFilter);
         }
     }
 
@@ -744,25 +762,27 @@ library PriceFeedLib {
             quoteAssetDecimals
         );
 
-        INAVCalculator.Asset memory balanceAsset = INAVCalculator.Asset({
+        // Field-by-field assignment to the named return (not a 17-field struct literal) so this stays under the
+        // via_ir stack limit when inlined into the per-position enrichment loop.
+        position.balanceAsset = INAVCalculator.Asset({
             asset: balance.balanceAsset.asset, symbol: canonicalSymbol, decimals: canonicalDecimals
         });
-        position = INAVCalculator.Position({
-            balanceAsset: balanceAsset,
-            balanceAdapter: balance.balanceAdapter,
-            amount: balance.amount,
-            isDebt: balance.isDebt,
-            protocolId: balance.protocolId,
-            positionId: balance.positionId,
-            positionKind: balance.positionKind,
-            isLocked: balance.isLocked,
-            quoteAsset: quoteAssetStruct,
-            value: value,
-            price: priceFeed.price,
-            priceDecimals: priceFeed.decimals,
-            stale: priceFeed.stale,
-            quoteAssetStale: quoteAssetStale
-        });
+        position.balanceAdapter = balance.balanceAdapter;
+        position.amount = balance.amount;
+        position.isDebt = balance.isDebt;
+        position.protocolBrand = balance.protocolBrand;
+        position.protocolId = balance.protocolId;
+        position.protocolSubId = balance.protocolSubId;
+        position.positionId = balance.positionId;
+        position.positionKind = balance.positionKind;
+        position.isLocked = balance.isLocked;
+        position.positionInstanceId = balance.positionInstanceId;
+        position.quoteAsset = quoteAssetStruct;
+        position.value = value;
+        position.price = priceFeed.price;
+        position.priceDecimals = priceFeed.decimals;
+        position.stale = priceFeed.stale;
+        position.quoteAssetStale = quoteAssetStale;
     }
 
     /// @notice Converts an amount of one asset to value in quote (USD when quotePrice is 0). Mirrors the former

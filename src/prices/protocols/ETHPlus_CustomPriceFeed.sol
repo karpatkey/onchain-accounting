@@ -103,7 +103,7 @@ contract ETHPlus_CustomPriceFeed is ICustomPriceFeed {
     ///      `basketsNeeded()` actually reflect), NOT `getPrimeBasket()` (the governance-configured target). After a default swaps
     ///      in backup collateral and the basket re-collateralizes to SOUND, the active backups differ from prime;
     ///      checking the prime set would skip the backups' oracle freshness — the unsafe direction (stale accepted
-    ///      as fresh). `basketTokens()` always matches the set being priced.
+    ///      as fresh). `quote()`'s active-basket set always matches the set being priced.
     function _minBasketLastSave(IMain main, IBasketHandler basketHandler) internal view returns (uint48 minLastSave) {
         IAssetRegistry registry = main.assetRegistry();
         // `quote(FIX_ONE, CEIL)` returns the *active* reference basket's ERC20s (the set `price()`/`basketsNeeded()`

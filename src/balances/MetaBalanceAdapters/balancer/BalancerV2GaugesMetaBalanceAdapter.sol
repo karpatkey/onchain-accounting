@@ -2,12 +2,12 @@
 pragma solidity ^0.8;
 
 import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
-import {IGaugeV3, IBalancerMinter, ITokenAdmin} from "src/balances/MetaBalanceAdapters/balancer/IBalancerV3.sol";
+import {IGaugeV3, IBalancerMinter} from "src/balances/MetaBalanceAdapters/balancer/IBalancerV3.sol";
+import {BalancerGaugeLib} from "src/balances/MetaBalanceAdapters/balancer/BalancerGaugeLib.sol";
 import {BalancerV2PoolLib, IBalancerV2Pool} from "src/balances/MetaBalanceAdapters/balancer/BalancerV2PoolLib.sol";
 
 // solhint-disable func-name-mixedcase
@@ -23,15 +23,15 @@ import {BalancerV2PoolLib, IBalancerV2Pool} from "src/balances/MetaBalanceAdapte
 /// @dev Balancer V2 and V3 share the same liquidity-gauge + BalancerMinter design, so the BAL reward math is
 ///      identical to `BalancerV3GaugesMeta`; the only difference is the staked-share computation, which for V2
 ///      reads the Vault's pool balances (`BalancerV2PoolLib`) rather than V3's per-pool scaled data.
+/// @dev Valuation = instantaneous on-chain amounts (ADR 0017): the staked LP is decomposed into the underlying
+///      pool tokens and reported as the position's current pro-rata share of the pool's on-chain Vault balances,
+///      as per-token `amount`s that NAVCalculator prices with external oracles — it does NOT compute a
+///      manipulation-resistant "fair" value. Imbalancing the pool can transiently move the reported amounts (a
+///      donation that arbitrage reverses within a block) but cannot be monetised: NAV is a read-only oracle
+///      consumed by an asynchronous sub/redeem layer (no atomic on-chain consumer). See
+///      docs/decisions/0017-lp-valuation-instantaneous-amounts.md; revisit if NAV is ever consumed synchronously
+///      on-chain.
 contract BalancerV2GaugesMetaBalanceAdapter is MetaBalanceAdapter {
-    using SafeCast for uint256;
-    using SafeCast for int128;
-
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.BALANCER_V2_GAUGE;
-
-    /// @notice One week in seconds (gauge inflation accounting boundary).
-    uint256 public constant WEEK = 7 * 86_400;
-
     /// @notice The Balancer V2 Vault (custodies every pool's tokens; chain-level constant).
     address public immutable VAULT;
 
@@ -45,8 +45,8 @@ contract BalancerV2GaugesMetaBalanceAdapter is MetaBalanceAdapter {
     constructor(address vault_, address balancerMinter_, string memory protocolName_, address navCalculator_)
         MetaBalanceAdapter(protocolName_, navCalculator_)
     {
-        require(vault_.code.length > 0, "Vault must be a contract");
-        require(balancerMinter_.code.length > 0, "BalancerMinter must be a contract");
+        AddressCheckLib.requireContract(vault_, "Vault");
+        AddressCheckLib.requireContract(balancerMinter_, "BalancerMinter");
         VAULT = vault_;
         BALANCER_MINTER = IBalancerMinter(balancerMinter_);
     }
@@ -65,7 +65,7 @@ contract BalancerV2GaugesMetaBalanceAdapter is MetaBalanceAdapter {
         address bpt = gauge.lp_token();
         bytes memory positionId = _instancePositionId(instance);
 
-        uint256 rewardCount = _rewardCount(gauge);
+        uint256 rewardCount = BalancerGaugeLib.rewardCount(gauge);
 
         // Staking legs: account's staked-BPT share of each underlying pool token (via the Vault). The poolId is only
         // needed to read the Vault balances, so resolve it lazily inside the staked branch (skips the read at 0 stake).
@@ -86,14 +86,14 @@ contract BalancerV2GaugesMetaBalanceAdapter is MetaBalanceAdapter {
             if (assetFilter != address(0) && tokens[i] != assetFilter) continue;
             (INAVCalculator.Asset memory assetInfo, bool found) = _getAssetInfo(tokens[i]);
             if (!found) continue;
-            temp[count++] = _row(assetInfo, amounts[i], positionId, PositionKind.Staking);
+            temp[count++] = _leg(assetInfo, amounts[i], false, positionId, PositionKind.Staking);
         }
 
         // Rewards legs: BAL (minted via the minter) + the gauge's extra reward tokens.
         address balToken = BALANCER_MINTER.getBalancerToken();
         count = _addReward(temp, count, balToken, claimableBal(gauge, account), positionId, assetFilter);
         for (uint256 i = 0; i < rewardCount; i++) {
-            address rt = _rewardToken(gauge, i);
+            address rt = BalancerGaugeLib.rewardToken(gauge, i);
             if (rt == address(0) || rt == balToken) continue;
             count = _addReward(temp, count, rt, gaugeRewards(gauge, account, rt), positionId, assetFilter);
         }
@@ -111,7 +111,7 @@ contract BalancerV2GaugesMetaBalanceAdapter is MetaBalanceAdapter {
         IGaugeV3 gauge = IGaugeV3(_toAddress(instance));
         address bpt = gauge.lp_token();
         address[] memory tokens = BalancerV2PoolLib.poolTokens(VAULT, IBalancerV2Pool(bpt).getPoolId(), bpt);
-        uint256 rewardCount = _rewardCount(gauge);
+        uint256 rewardCount = BalancerGaugeLib.rewardCount(gauge);
 
         assets = new address[](tokens.length + rewardCount + 1);
         uint256 n;
@@ -119,7 +119,7 @@ contract BalancerV2GaugesMetaBalanceAdapter is MetaBalanceAdapter {
             assets[n++] = tokens[i];
         }
         for (uint256 i = 0; i < rewardCount; i++) {
-            address rt = _rewardToken(gauge, i);
+            address rt = BalancerGaugeLib.rewardToken(gauge, i);
             if (rt != address(0)) assets[n++] = rt;
         }
         assets[n++] = BALANCER_MINTER.getBalancerToken();
@@ -129,16 +129,29 @@ contract BalancerV2GaugesMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev Returns `["Staking Gauge", <gauge symbol>]`; the leaf is "" if the gauge's `symbol()` reverts.
+    /// @dev Returns `["Staking Gauge", "<sym0>/<sym1>/…"]` — the leaf is the staked pool's underlying token symbols
+    ///      joined with "/" (e.g. "USDC/USDT/DAI"), excluding the pool's own pre-minted BPT (composable-stable).
+    ///      Resolved gauge → `lp_token` (BPT) → `getPoolId` → Vault pool tokens. Per-token fail-open: a token whose
+    ///      `symbol()` reverts (or has no code) contributes "?"; a revert in the resolution chain fails open at the
+    ///      NAV layer (`_safeStringArray`).
     function positionLabels(bytes calldata positionId) external view virtual override returns (string[] memory) {
+        if (positionId.length < 32) return new string[](0);
         address gauge = abi.decode(positionId, (address));
-        string memory leaf;
-        try IERC20Metadata(gauge).symbol() returns (string memory s) {
-            leaf = s;
+        // External self-call so a revert anywhere in the gauge→lp_token→poolId→Vault-token chain fails open to
+        // the category-only label — a faulty label must never revert the (verbose-only) labels read.
+        try this.gaugeTokenSymbols(gauge) returns (string memory leaf) {
+            return _labels("Staking Gauge", leaf);
         } catch {
-            leaf = "";
+            return _labels("Staking Gauge", "");
         }
-        return _labels("Staking Gauge", leaf);
+    }
+
+    /// @notice External wrapper (enables `try/catch` isolation in `positionLabels`): the staked pool's underlying
+    ///         token symbols joined with "/" (BPT excluded for composable-stable). Reverts propagate only to the
+    ///         `positionLabels` catch arm.
+    function gaugeTokenSymbols(address gauge) external view returns (string memory) {
+        address bpt = IGaugeV3(gauge).lp_token();
+        return _joinTokenSymbols(BalancerV2PoolLib.poolTokens(VAULT, IBalancerV2Pool(bpt).getPoolId(), bpt));
     }
 
     //
@@ -169,90 +182,17 @@ contract BalancerV2GaugesMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @notice Emulates the gauge `_checkpoint` integrate_fraction update for `user` (mainnet inflation model).
+    /// @dev Thin wrapper over {BalancerGaugeLib.calculateIntegrateFraction}; kept `public` so `claimableBal` can
+    ///      `try this.calculateIntegrateFraction(...)` and fall back to the L2 model. Math is shared with V3.
     function calculateIntegrateFraction(address user, IGaugeV3 gauge) public view returns (uint256) {
-        uint256 period = gauge.period().toUint256();
-        uint128 period128 = period.toUint128();
-        uint256 periodTime = gauge.period_timestamp(uint256(period128));
-        uint256 integrateInvSup = gauge.integrate_inv_supply(uint256(period128));
-        uint256 rate = gauge.inflation_rate();
-        uint256 prevFutureEpoch = gauge.future_epoch_time();
-        uint256 newRate = rate;
-
-        if (prevFutureEpoch >= periodTime) {
-            ITokenAdmin tokenAdmin = ITokenAdmin(BALANCER_MINTER.getBalancerTokenAdmin());
-            newRate = tokenAdmin.rate();
-        }
-        if (gauge.is_killed()) {
-            rate = 0;
-            newRate = 0;
-        }
-
-        if (block.timestamp > periodTime) {
-            uint256 ws = gauge.working_supply();
-            uint256 prevWeek = periodTime;
-            // forge-lint: disable-next-line(divide-before-multiply)
-            uint256 weekTime = ((periodTime + WEEK) / WEEK) * WEEK;
-            if (weekTime > block.timestamp) weekTime = block.timestamp;
-
-            for (uint256 i = 0; i < 500; i++) {
-                uint256 dt = weekTime - prevWeek;
-                // forge-lint: disable-next-line(divide-before-multiply)
-                uint256 w = gauge.getCappedRelativeWeight((prevWeek / WEEK) * WEEK);
-                if (ws > 0) {
-                    if (prevFutureEpoch >= prevWeek && prevFutureEpoch < weekTime) {
-                        integrateInvSup += rate * w * (prevFutureEpoch - prevWeek) / ws;
-                        rate = newRate;
-                        integrateInvSup += rate * w * (weekTime - prevFutureEpoch) / ws;
-                    } else {
-                        integrateInvSup += rate * w * dt / ws;
-                    }
-                }
-                if (weekTime == block.timestamp) break;
-                prevWeek = weekTime;
-                weekTime = prevWeek + WEEK;
-                if (weekTime > block.timestamp) weekTime = block.timestamp;
-            }
-        }
-
-        uint256 balFrac = gauge.integrate_fraction(user);
-        uint256 balInvPrev = gauge.integrate_inv_supply_of(user);
-        uint256 wb = gauge.working_balances(user);
-        return balFrac + (wb * (integrateInvSup - balInvPrev)) / 1e18;
+        return BalancerGaugeLib.calculateIntegrateFraction(user, gauge, BALANCER_MINTER);
     }
 
     /// @notice Emulates the gauge integrate_fraction update for `user` (L2 inflation model: per-week rate mapping).
+    /// @dev Thin wrapper over {BalancerGaugeLib.calculateIntegrateFractionL2}; kept `public` for the `this.`-call
+    ///      fallback in `claimableBal`.
     function calculateIntegrateFractionL2(address user, IGaugeV3 gauge) public view returns (uint256) {
-        uint256 period = gauge.period().toUint256();
-        uint128 period128 = period.toUint128();
-        uint256 periodTime = gauge.period_timestamp(uint256(period128));
-        uint256 integrateInvSup = gauge.integrate_inv_supply(uint256(period128));
-
-        if (block.timestamp > periodTime && !gauge.is_killed()) {
-            uint256 ws = gauge.working_supply();
-            uint256 prevWeek = periodTime;
-            // forge-lint: disable-next-line(divide-before-multiply)
-            uint256 weekTime = ((periodTime + WEEK) / WEEK) * WEEK;
-            if (weekTime > block.timestamp) weekTime = block.timestamp;
-
-            for (uint256 i = 0; i < 256; i++) {
-                uint256 dt = weekTime - prevWeek;
-                if (ws != 0) {
-                    // forge-lint: disable-next-line(divide-before-multiply)
-                    uint256 weekNumber = prevWeek / WEEK;
-                    uint256 rate = gauge.inflation_rate(weekNumber);
-                    integrateInvSup += rate * 1e18 * dt / ws;
-                }
-                if (weekTime == block.timestamp) break;
-                prevWeek = weekTime;
-                weekTime = prevWeek + WEEK;
-                if (weekTime > block.timestamp) weekTime = block.timestamp;
-            }
-        }
-
-        uint256 balFrac = gauge.integrate_fraction(user);
-        uint256 balInvPrev = gauge.integrate_inv_supply_of(user);
-        uint256 wb = gauge.working_balances(user);
-        return balFrac + (wb * (integrateInvSup - balInvPrev)) / 1e18;
+        return BalancerGaugeLib.calculateIntegrateFractionL2(user, gauge);
     }
 
     //
@@ -271,40 +211,22 @@ contract BalancerV2GaugesMetaBalanceAdapter is MetaBalanceAdapter {
         if (assetFilter != address(0) && token != assetFilter) return count;
         (INAVCalculator.Asset memory assetInfo, bool found) = _getAssetInfo(token);
         if (!found) return count;
-        temp[count] = _row(assetInfo, amount, positionId, PositionKind.Rewards);
+        temp[count] = _leg(assetInfo, amount, false, positionId, PositionKind.Rewards);
         return count + 1;
     }
 
-    function _row(INAVCalculator.Asset memory asset, uint256 amount, bytes memory positionId, PositionKind kind)
-        private
-        view
-        returns (INAVCalculator.PositionBalance memory)
-    {
-        return INAVCalculator.PositionBalance({
-            balanceAsset: asset,
-            balanceAdapter: address(this),
-            amount: amount,
-            isDebt: false,
-            protocolId: PROTOCOL_ID,
-            positionId: positionId,
-            positionKind: kind,
-            isLocked: false
-        });
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolBrand() internal pure override returns (bytes32) {
+        return ProtocolIds.BALANCER;
     }
 
-    function _rewardCount(IGaugeV3 gauge) private view returns (uint256) {
-        try gauge.reward_count() returns (uint256 c) {
-            return c;
-        } catch {
-            return 0;
-        }
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolId() internal pure override returns (bytes32) {
+        return ProtocolIds.BALANCER_V2;
     }
 
-    function _rewardToken(IGaugeV3 gauge, uint256 i) private view returns (address) {
-        try gauge.reward_tokens(i) returns (address rt) {
-            return rt;
-        } catch {
-            return address(0);
-        }
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolSubId() internal pure override returns (bytes32) {
+        return ProtocolIds.BALANCER_V2_GAUGES;
     }
 }

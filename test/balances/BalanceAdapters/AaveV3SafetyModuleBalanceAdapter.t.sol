@@ -204,7 +204,8 @@ contract AaveV3SafetyModuleBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(positions[0].amount, 1000e18);
         assertTrue(positions[0].isLocked, "active stake -> non-withdrawable -> locked");
         assertEq(positions[0].positionId, abi.encode(adapter.STK_GHO()), "staking leg positionId = stake token");
-        assertEq(positions[0].protocolId, ProtocolIds.AAVE_V3_SAFETY_MODULE);
+        assertEq(positions[0].protocolSubId, ProtocolIds.AAVE_V3_SAFETY_MODULE);
+        assertEq(positions[0].protocolId, ProtocolIds.AAVE_V3);
     }
 
     function test_getAdapterPositions_cooldownInWindow_unlockedLeg() public {

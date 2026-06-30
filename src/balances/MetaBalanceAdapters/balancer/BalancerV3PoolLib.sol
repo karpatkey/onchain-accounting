@@ -2,13 +2,14 @@
 pragma solidity ^0.8;
 
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IStablePool} from "src/balances/MetaBalanceAdapters/balancer/IBalancerV3.sol";
 
 /// @title BalancerV3PoolLib
 /// @author KPK
 /// @notice Shared pool-share math for the Balancer V3 meta-adapters (pools + gauges). Given a BPT amount, computes
 ///         the account's share of each underlying pool token, unwrapping ERC4626 pool tokens to their underlying.
-/// @dev Internal library (inlined into the adapters). Mirrors the math of the original combined
+/// @dev Internal library (inlined into the adapters). Mirrors the math of the original combined adapter across
 ///      the split meta-adapters so per-token amounts are consistent (the only difference between the
 ///      combined adapter and the split is that wallet- and gauge-held BPT are converted separately rather than
 ///      summed into a single conversion — a ≤1-wei rounding difference per token).
@@ -48,8 +49,9 @@ library BalancerV3PoolLib {
 
         if (tokenIndex >= immutableData.tokens.length) return 0;
 
-        // User's share of the live (18-dec scaled) balance.
-        uint256 tokenBalance = poolData.balancesLiveScaled18[tokenIndex] * userBalance / totalSupply;
+        // User's share of the live (18-dec scaled) balance. Math.mulDiv so an extreme supply can't overflow the
+        // intermediate product and drop the leg via the per-instance try/catch (consistent with the V2/Curve libs).
+        uint256 tokenBalance = Math.mulDiv(poolData.balancesLiveScaled18[tokenIndex], userBalance, totalSupply);
 
         // A transiently-zero scaling factor or token rate would divide-by-zero below (reverting the whole
         // instance via the per-instance try/catch). Treat it as a 0 leg so one bad rate can't drop the batch.
@@ -57,9 +59,12 @@ library BalancerV3PoolLib {
             return 0;
         }
 
-        // Undo scaling+rate back to raw token (wrapped-share) units.
-        uint256 rawUnits =
-            (tokenBalance * 1e18) / (immutableData.decimalScalingFactors[tokenIndex] * poolData.tokenRates[tokenIndex]);
+        // Undo scaling+rate back to raw token (wrapped-share) units. Math.mulDiv so the numerator product can't
+        // overflow (the L56-58 guard already rules out a zero denominator). decimalScalingFactors * tokenRates is a
+        // ~1e36 product, far below the uint256 ceiling, so the single-call form is safe.
+        uint256 rawUnits = Math.mulDiv(
+            tokenBalance, 1e18, immutableData.decimalScalingFactors[tokenIndex] * poolData.tokenRates[tokenIndex]
+        );
 
         // If the pool token is an ERC4626 wrapper, preview-redeem the shares to the underlying; otherwise raw units.
         address poolToken = address(immutableData.tokens[tokenIndex]);

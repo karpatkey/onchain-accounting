@@ -2,7 +2,7 @@
 
 ## 1. Adapter under test
 
-`src/balances/BalanceAdapters/AaveUmbrellaBalanceAdapter.sol` — the immutable `AaveUmbrellaBalanceAdapter`. Constructor: `(rewardsController, navCalculator)`. It pins **only** the Umbrella `RewardsController` as a trust anchor and discovers everything else at runtime — the full stake-token set, each stake token's bare reserve, and the reward-token→bare-reserve mapping. Identity is derived on-chain: `positionId = abi.encode(stakeToken)`, `protocolId = keccak256("aave-v3-umbrella")`, `positionLabels = ["Umbrella Module"]`.
+`src/balances/BalanceAdapters/AaveUmbrellaBalanceAdapter.sol` — the immutable `AaveUmbrellaBalanceAdapter`. Constructor: `(rewardsController, navCalculator)`. It pins **only** the Umbrella `RewardsController` as a trust anchor and discovers everything else at runtime — the full stake-token set, each stake token's bare reserve, and the reward-token→bare-reserve mapping. Identity is derived on-chain: `positionId = abi.encode(stakeToken)`, the three-level taxonomy `protocolBrand = keccak256("aave")` / `protocolId = keccak256("aave-v3")` / `protocolSubId = keccak256("aave-v3-umbrella")` (the `ProtocolIds.AAVE` / `AAVE_V3` / `AAVE_V3_UMBRELLA` constants), `positionInstanceId = bytes32(0)`, and `positionLabels(positionId) = ["Umbrella Module"]`.
 
 ### Inheritance + per-chain scope (Phase 0)
 
@@ -19,13 +19,13 @@
   | `stkGHO.v1` | `0x4f827A63755855cDf3e8f3bcD20265C833f15033` | stk → GHO (one hop) | GHO | GHO (plain) |
 
 - **Math branches** (per stake token, summed onto the bare reserve):
-  - **Staking leg** — `balanceOf(account)` shares → `convertToAssets` → at most one further ERC4626 wrapper hop (`stk → waToken → bare reserve`, or `stk → bare reserve` for `stkGHO`). `PositionKind.Staking`, `isDebt = false`.
+  - **Staking leg(s)** — `balanceOf(account)` shares → `convertToAssets` → at most one further ERC4626 wrapper hop (`stk → waToken → bare reserve`, or `stk → bare reserve` for `stkGHO`). `PositionKind.Staking`, `isDebt = false`. `getAdapterPositions` further **splits the principal by withdrawability** via Umbrella's per-user cooldown snapshot (`getStakerCooldown`): a locked leg (`isLocked = true` — active stake plus any cooldown still cooling or past its withdrawal window) and an unlocked leg (`isLocked = false` — a cooldown that has elapsed and is inside its withdrawal window). Both share `positionId = abi.encode(stakeToken)` and are told apart by `isLocked`, so a stake token can emit up to two Staking legs. The balance methods (`getAdapterBalanceForAsset` / `getAdapterBalances`) ignore the split and report the full staked principal.
   - **Rewards leg** — `RewardsController.calculateCurrentUserRewards`, each reward token mapped to its bare reserve via `IAToken.UNDERLYING_ASSET_ADDRESS()` (or itself for plain tokens like GHO). `PositionKind.Rewards`, `isDebt = false`.
-  - Zero-amount legs are skipped; a stake token may emit a Rewards leg with no Staking leg (unstaked but unclaimed rewards) or vice-versa.
+  - Zero-amount legs are skipped; a stake token may emit a Rewards leg with no Staking leg (unstaked but unclaimed rewards) or vice-versa. Worst case is three legs per stake token (locked Staking + unlocked Staking + Rewards).
 
 ## 2. Existing fork test coverage
 
-`test/balances/protocols/fork/AaveUmbrella.fork.t.sol` → `AaveUmbrellaBalanceAdapterForkTest` already covers, at the pinned block, against four real holders (one per stake token):
+`test/balances/BalanceAdapters/fork/AaveUmbrellaBalanceAdapter.fork.t.sol` → `AaveUmbrellaBalanceAdapterForkTest` already covers, at the pinned block, against four real holders (one per stake token):
 - holders have non-zero stake balances; `underlyingAssetsSupported` dedupes to the registered bare reserves;
 - every stake token reports the same RewardsController;
 - per-holder `getAdapterBalanceForAsset` equals an independent staked+rewards recomputation (§8);
@@ -36,7 +36,7 @@ All kept as regression nets.
 
 ## 3. What this case adds
 
-- **Mock-based unit test** (`test/balances/protocols/AaveUmbrella.t.sol` → `AaveUmbrellaBalanceMathTest`, + `aaveUmbrella/AaveUmbrellaMocks.sol`) — closes the both-unit-and-fork convention gap. Drives the ERC4626 walk (two-hop vs one-hop), reward bare-reserve resolution (aToken vs plain), leg emission/identity, zero-leg skipping, dedup across stake tokens sharing a reserve, and the documented asymmetry (balance methods report an unregistered reserve; `getAdapterPositions` skips it). 11 tests, no fork.
+- **Mock-based unit test** (`test/balances/BalanceAdapters/AaveUmbrellaBalanceAdapter.t.sol` → `AaveUmbrellaBalanceMathTest`, + `test/balances/BalanceAdapters/AaveUmbrellaMocks.sol`) — closes the both-unit-and-fork convention gap. Drives the ERC4626 walk (two-hop vs one-hop), reward bare-reserve resolution (aToken vs plain), leg emission/identity, the cooldown-driven locked/unlocked Staking split (`isLocked`), zero-leg skipping, dedup across stake tokens sharing a reserve, and the documented asymmetry (balance methods report an unregistered reserve; `getAdapterPositions` skips it). 13 tests, no fork. (The same file also carries the 10 early-exit / constructor / ERC165 tests in `AaveUmbrellaBalanceAdapterTest`, for 23 unit tests total.)
 - **Fork block** set to the verification block `25_287_877` — the fork test and this README's §7 figures pin the **same** block. The live dev-anvil dashboard (§9) forks at *latest* and is a sanity check that drifts from these numbers by design.
 - This evidence pack: the per-leg ground truth for a comprehensive all-four-stake-token holder, plus a dashboard wiring helper.
 
@@ -44,22 +44,32 @@ All kept as regression nets.
 
 For each stake token `stk` in `getAllAssets()` whose resolved bare reserve is registered on NAV:
 
-```
-# Staking leg
+```python
+# Staking leg(s) — split by withdrawability in getAdapterPositions
 shares  = stk.balanceOf(account)
-staked  = stk.convertToAssets(shares)              # shares -> first-level asset
-first   = stk.asset()
-if isErc4626Wrapper(first):                        # stkwaEth* family
-    staked = first.convertToAssets(staked)         # waToken -> bare reserve
-# else first IS the bare reserve (stkGHO)
-emit (bareReserve, amount=staked, Staking, isDebt=false)   if staked  > 0
+(amount, endOfCooldown, withdrawalWindow) = stk.getStakerCooldown(account)
+cooldownShares = min(amount, shares)
+inWindow       = endOfCooldown <= now <= endOfCooldown + withdrawalWindow
+unlockedShares = inWindow ? cooldownShares : 0     # withdrawable now
+lockedShares   = shares - unlockedShares           # active stake + cooling/expired cooldown
+
+def toBareReserve(s):
+    staked = stk.convertToAssets(s)                # shares -> first-level asset
+    first  = stk.asset()
+    if isErc4626Wrapper(first):                    # stkwaEth* family
+        staked = first.convertToAssets(staked)     # waToken -> bare reserve
+    return staked                                  # else first IS the bare reserve (stkGHO)
+
+emit (bareReserve, amount=toBareReserve(lockedShares),   Staking, isLocked=true,  isDebt=false)   if > 0
+emit (bareReserve, amount=toBareReserve(unlockedShares), Staking, isLocked=false, isDebt=false)   if > 0
 
 # Rewards leg
 (tokens, amounts) = RewardsController.calculateCurrentUserRewards(stk, account)
 reward = sum(amounts[i] where resolveBareReserve(tokens[i]) == bareReserve)
-emit (bareReserve, amount=reward, Rewards, isDebt=false)    if reward > 0
+emit (bareReserve, amount=reward, Rewards, isLocked=false, isDebt=false)    if reward > 0
 
-# positionId = abi.encode(stk); protocolId = keccak256("aave-v3-umbrella")
+# positionId = abi.encode(stk); positionInstanceId = bytes32(0)
+# protocolBrand=keccak256("aave"); protocolId=keccak256("aave-v3"); protocolSubId=keccak256("aave-v3-umbrella")
 ```
 
 Slashing-correct automatically: Umbrella stake tokens reduce `totalAssets` (not `totalSupply`) on slash, so the chained `convertToAssets` is post-slash-correct. Cooldown / unstake-window state does not affect `balanceOf`, so principal is always reported in full.
@@ -82,8 +92,8 @@ Slashing-correct automatically: Umbrella stake tokens reduce `totalAssets` (not 
 | Block timestamp | 1781104487 (`0x6a297f67`) — **2026-06-10 15:14:47 UTC** |
 | RewardsController (trust anchor) | `0x4655Ce3D625a63d30bA704087E52B4C31E38188B` |
 | Adapter under test | `AaveUmbrellaBalanceAdapter` |
-| Fork-test contract | `AaveUmbrellaBalanceAdapterForkTest` in `test/balances/protocols/fork/AaveUmbrella.fork.t.sol` |
-| Unit-test contract | `AaveUmbrellaBalanceMathTest` in `test/balances/protocols/AaveUmbrella.t.sol` |
+| Fork-test contract | `AaveUmbrellaBalanceAdapterForkTest` in `test/balances/BalanceAdapters/fork/AaveUmbrellaBalanceAdapter.fork.t.sol` |
+| Unit-test contract | `AaveUmbrellaBalanceMathTest` in `test/balances/BalanceAdapters/AaveUmbrellaBalanceAdapter.t.sol` |
 
 ## 6. Case files in this folder
 
@@ -130,7 +140,7 @@ Other holders (per-asset totals): `STK_WA_USDC_HOLDER` → USDC `208367191` (202
 | Staking | `stk.balanceOf` → `stk.convertToAssets` → (if `stk.asset()` is an ERC4626) `waToken.convertToAssets` |
 | Rewards | `RewardsController.calculateCurrentUserRewards`, each reward token mapped to its bare reserve via `UNDERLYING_ASSET_ADDRESS()` |
 
-This is an **in-EVM cross-check** at the forked block (same archive state, zero derivation drift). **Why no Python:** the value is a chained `convertToAssets` of live on-chain balances — there is no closed-form re-derivation to do (unlike the Uniswap V2 dilution math); the strongest available ground truth is the protocol's own conversion functions read along an independent path. These cross-check tests assert only the summed `getAdapterBalanceForAsset`; the identity assertions (`protocolId == aave-v3-umbrella`, `positionId == abi.encode(stakeToken)`, and the per-leg `PositionKind`) live in the `getAdapterPositions` tests — the unit test `test_getAdapterPositions_emitsStakingAndRewardsLegsWithIdentity` covers all three, and the fork `getAdapterPositions` tests cover `PositionKind` + `balanceAdapter`.
+This is an **in-EVM cross-check** at the forked block (same archive state, zero derivation drift). **Why no Python:** the value is a chained `convertToAssets` of live on-chain balances — there is no closed-form re-derivation to do (unlike the Uniswap V2 dilution math); the strongest available ground truth is the protocol's own conversion functions read along an independent path. These cross-check tests assert only the summed `getAdapterBalanceForAsset`; the identity assertions (`protocolSubId == aave-v3-umbrella`, `protocolId == aave-v3`, `positionId == abi.encode(stakeToken)`, and the per-leg `PositionKind`) live in the `getAdapterPositions` tests — the unit test `test_getAdapterPositions_emitsStakingAndRewardsLegsWithIdentity` covers all of them, and the fork `getAdapterPositions` tests cover `PositionKind` + `balanceAdapter`.
 
 ## 9. Wiring the live dev-anvil dashboard
 
@@ -156,15 +166,16 @@ The deployed adapter address is recorded in `script/development/state/1-addresse
 | Staking leg == independent `convertToAssets` walk | ✅ |
 | Rewards leg == `calculateCurrentUserRewards` mapped to bare reserve (aToken + plain) | ✅ |
 | Same-asset stkGHO: Staking + Rewards both GHO, distinguished by `positionKind` | ✅ |
-| Identity: `positionId == abi.encode(stakeToken)`, `protocolId == aave-v3-umbrella` | ✅ |
+| Identity: `positionId == abi.encode(stakeToken)`, `protocolSubId == aave-v3-umbrella`, `protocolId == aave-v3` | ✅ |
+| Cooldown-driven Staking split: locked (`isLocked=true`) + unlocked (`isLocked=false`) legs share `positionId` | ✅ |
 | Zero-leg skip / rewards-only leg / assetFilter | ✅ |
 | Unregistered-reserve skip in `getAdapterPositions` (balance methods still report it) | ✅ |
 
-**Mainnet: 12 / 12 fork + 21 / 21 unit tests pass.** Single mainnet deployment → no cross-chain surface. Aave Umbrella is verified.
+**Mainnet: 12 / 12 fork + 23 / 23 unit tests pass.** Single mainnet deployment → no cross-chain surface. Aave Umbrella is verified.
 
 Run via:
 
 ```bash
-forge test --match-path "test/balances/protocols/AaveUmbrella.t.sol"
-FOUNDRY_PROFILE=slow forge test --match-path "test/balances/protocols/fork/AaveUmbrella.fork.t.sol" -vv
+forge test --match-path "test/balances/BalanceAdapters/AaveUmbrellaBalanceAdapter.t.sol"
+FOUNDRY_PROFILE=slow forge test --match-path "test/balances/BalanceAdapters/fork/AaveUmbrellaBalanceAdapter.fork.t.sol" -vv
 ```

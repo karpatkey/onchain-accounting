@@ -54,7 +54,7 @@ sum → NAV { value, quoteAsset, timestamp, stalePriceAssets, sequencerDown, quo
 Authoritative reference: [`src/balances/BALANCE_ADAPTERS.md`](../src/balances/BALANCE_ADAPTERS.md) §2.
 
 Everything that goes wrong in NAV is one of three things:
-1. **The adapter returned the wrong amount or sign.** Check the adapter's `_calculateBalance` and the `isDebt` flag.
+1. **The adapter returned the wrong amount or sign.** Check the adapter's `getAdapterPositions` and the `isDebt` flag.
 2. **The asset is not registered.** Filtered out silently.
 3. **The price feed is stale or wrong.** Check Chainlink heartbeat, custom feed, or sequencer-down state.
 
@@ -70,7 +70,7 @@ function underlyingAssetsSupported() external view returns (address[]);
 function supportsInterface(bytes4) external view returns (bool);  // ERC165
 ```
 
-Returned `PositionBalance` has `amount` always positive + `isDebt` flag, plus `balanceAsset` (the `Asset` metadata — address, symbol, decimals — that `amount` is denominated in), `balanceAdapter` (`address(this)`), `protocolId` (bytes32 protocol identifier), `positionId` (bytes, abi-encoded **static** position anchor — never a per-request id), `positionKind` (enum from `PositionKind.sol`), and `isLocked` (bool — `true` for the not-withdrawable portion of a withdrawal queue / cooldown; part of the identity key). The adapter does **not** know about prices. See [`docs/howto/position-identity-schema.md`](./howto/position-identity-schema.md) for the full schema.
+Returned `PositionBalance` has `amount` always positive + `isDebt` flag, plus `balanceAsset` (the `Asset` metadata — address, symbol, decimals — that `amount` is denominated in), `balanceAdapter` (`address(this)`), a three-level protocol taxonomy of `bytes32` slugs — `protocolBrand` (broadest version-stripped roll-up, e.g. `aave`), `protocolId` (broad ecosystem slug, e.g. `aave-v3`), and `protocolSubId` (specific protocol-product slug, e.g. `aave-v3-lending`, which selects the `positionId` decode schema and is the protocol component of the identity key) — `positionId` (bytes, abi-encoded **static** position anchor — never a per-request id), `positionKind` (enum from `PositionKind.sol`), `isLocked` (bool — `true` for the not-withdrawable portion of a withdrawal queue / cooldown; part of the identity key), and `positionInstanceId` (bytes32 — an OPTIONAL ephemeral per-item coordinate such as a Uniswap V3 NFT id or a withdrawal-request id, `bytes32(0)` otherwise; deliberately excluded from the stable identity key). The adapter does **not** know about prices. See [`docs/howto/position-identity-schema.md`](./howto/position-identity-schema.md) for the full schema.
 
 Adapters live under `src/balances/{BalanceAdapters,MetaBalanceAdapters,AssistedBalanceAdapters}/` (multi-file protocols keep a `<protocol>/` subdir inside the family folder; interfaces and the `MetaBalanceAdapter`/`AssistedBalanceAdapter` bases sit directly in `src/balances/`). A folder typically contains:
 
@@ -136,7 +136,7 @@ Full workflow + schema + tolerance triage: [`./howto/refresh-integration-test-bl
 | What is registered on chain X today? | Deployed addresses: `script/config/deployments/<X>.json`. Registered assets: `script/config/nav-config/assets-and-price-feeds/<X>.json`. Balance adapters on NAV: `script/config/nav-config/{balance-adapters,meta-balance-adapters}/<X>.json` (deploy config under `contracts-deployment-config/`). |
 | Why is the framework structured this way? | [`./decisions/`](./decisions/) ADRs. |
 | How do positions flow into NAV? | [`src/balances/BALANCE_ADAPTERS.md`](../src/balances/BALANCE_ADAPTERS.md) §2 + §6 (`NAVCalculator.getAccountNav` → `PriceFeedLib.computeNav`). |
-| Why is the Merkl rewards adapter mutable while every other adapter is immutable? | [`./decisions/0007-merkl-trust-minimized-cache.md`](./decisions/0007-merkl-trust-minimized-cache.md). The Aave Safety Module was previously the documented exception (ADR 0002) but is now fully immutable per ADR 0005. |
+| Why are the assisted adapters (Merkl, exit queues, NFT pools) mutable while every other adapter is immutable? | [`./decisions/0015-assisted-balance-adapter-family.md`](./decisions/0015-assisted-balance-adapter-family.md) (family), [`./decisions/0007-merkl-trust-minimized-cache.md`](./decisions/0007-merkl-trust-minimized-cache.md) (Merkl), [`./decisions/0014-agent-fed-cache-adapters-for-exit-queues.md`](./decisions/0014-agent-fed-cache-adapters-for-exit-queues.md) (exit queues). The Aave Safety Module was previously a documented exception (ADR 0002) but is now fully immutable per ADR 0005. |
 | Bridge invoice lifecycle? | [`src/bridge/BRIDGE_ADAPTERS.md`](../src/bridge/BRIDGE_ADAPTERS.md). |
 | How are integration-test fork blocks and expected NAVs kept current? | [`./howto/refresh-integration-test-blocks.md`](./howto/refresh-integration-test-blocks.md). |
 
@@ -144,8 +144,8 @@ Full workflow + schema + tolerance triage: [`./howto/refresh-integration-test-bl
 
 These are not optional. See [`/CLAUDE.md`](../CLAUDE.md) for the canonical list. Highlights:
 
-- Adapters return `PositionBalance` with positive `amount` + `isDebt` flag. Fields include `balanceAsset`, `protocolId` (bytes32), `positionId` (bytes), `positionKind` (enum from `PositionKind.sol`), and `isLocked` (bool — withdrawable-now vs pending; part of the identity key). See `docs/howto/position-identity-schema.md`.
-- Adapters are immutable. The Merkl rewards adapter is the documented mutable-storage exception (ADR 0007).
+- Adapters return `PositionBalance` with positive `amount` + `isDebt` flag. Fields include `balanceAsset`, the three-level taxonomy `protocolBrand`/`protocolId`/`protocolSubId` (all bytes32), `positionId` (bytes), `positionKind` (enum from `PositionKind.sol`), `isLocked` (bool — withdrawable-now vs pending; a mutable per-leg attribute, excluded from the identity key), and `positionInstanceId` (bytes32 — optional ephemeral per-item coordinate, excluded from the stable identity key). See `docs/howto/position-identity-schema.md`.
+- Adapters are immutable. The documented mutable-storage exceptions form the **assisted balance-adapter family** (ADR 0015): the Merkl rewards adapter (proof-verified cache, ADR 0007) plus the agent-fed exit-queue and non-enumerable-NFT adapters (ether.fi, StakeWise V3, Uniswap V3, PancakeSwap V3, Nexus Mutual) that cache coordinates only and re-verify ownership per read (ADR 0014). They extend `AssistedBalanceAdapter` (OZ AccessControl) instead of being fully immutable.
 - Adapters are deployed with plain `new` (CREATE) from the deployer EOA in `04_DeployBalanceAdapters.s.sol` — addresses are chain-/run-specific (read from `deployments/<id>.json` `.balanceAdapters.<name>`) — and registered by `06_Configure.s.sol` calling `NAVCalculator.addBalanceAdapters` (plain) / `addMetaBalanceAdapter` (meta) directly from the deployer EOA (+ `addMetaInstances`/`removeMetaInstances` for meta-adapters). The factory/registry pattern (ADR 0001) is designed but not yet shipped.
 - Tests: every adapter ships with both a unit test and a fork test against a real holder at a pinned block.
 - The user merges PRs; we monitor CI and report.

@@ -22,7 +22,7 @@ follow-up / team decision — deliberately not rushed into immutable contracts h
 | # | Sev | Contract | Finding | Status |
 |---|-----|----------|---------|--------|
 | 1 | **High** | ERC20DefaultBalanceAdapter | Assembly `balanceOf` reads stale calldata as a phantom balance on short/empty returndata | **Fixed** |
-| 2 | **High** | UniswapV3PoolsMeta | LP principal/fees valued from manipulable `slot0` spot, not an oracle | **Fixed** |
+| 2 | **High** | UniswapV3PoolsAssistedBalanceAdapter | LP principal/fees valued from manipulable `slot0` spot, not an oracle | **Fixed** |
 | 3 | Medium | ETHPlus_Price | Heartbeat checks the configured *prime* basket, not the active reference basket | **Fixed** |
 | 4 | Medium | AaveV2InstancesMeta | Aave V2 **stable-rate debt silently dropped** → understates debt, overstates NAV | **Fixed** |
 | 5 | Medium | StakeWiseV3VaultsMeta | osToken debt leg converted through the staking-vault rate (wrong rate object) | **Fixed** |
@@ -35,7 +35,7 @@ follow-up / team decision — deliberately not rushed into immutable contracts h
 | 12 | Low | StaderWithdrawalQueue | `MAX_REQUESTS_PROBED` cap can silently undercount (claimed ids never compacted) | Acknowledged |
 | 13 | Low | BalancerV3PoolsMeta | (same root cause as #6) duplicate-underlying emission | **Fixed** |
 | 14 | Low | UniswapV2PairLib | PancakeSwap V2 inherits Uniswap's `_mintFee` constants; PCS fee fraction differs | **Fixed** |
-| 15 | Low | UniswapV3PoolsMeta | LP positions silently dropped when account holds > 256 NPM NFTs globally | Acknowledged |
+| 15 | Low | UniswapV3PoolsAssistedBalanceAdapter | LP positions silently dropped when account holds > 256 NPM NFTs globally | Acknowledged |
 | 16 | Info | ConvexRewardsMeta | Standalone-CVX stash reward (not derived from CRV) dropped | Acknowledged |
 | 17 | Info | ConvexRewardsMeta | `_lpTokenOf` trusts `pid()` success without short-returndata check | **Fixed** |
 | 18 | Info | FluidVaultLib | Fragile fixed-offset assembly decode of `positionByNftId` | Acknowledged |
@@ -140,7 +140,9 @@ overrides to `(8, 17, 8)`), threaded into `UniswapV2PairLib.pairAmounts`.
 These two were genuine **design decisions** baked into immutable / core-pricing contracts. Rather than
 hard-code a strategy unilaterally, the approach was chosen with the team and then implemented here.
 
-### [2] High — `UniswapV3PoolsMeta`: reconstruct the price from oracle feeds (no `slot0`)
+### [2] High — `UniswapV3PoolsAssistedBalanceAdapter`: reconstruct the price from oracle feeds (no `slot0`)
+> **Revisited 2026-06-28 — superseded by ADR 0017.** The async sub/redeem consumer model makes the spot-manipulation vector non-monetisable, so the V3 adapter was reverted to reading `slot0` (instantaneous on-chain amounts). See docs/decisions/0017-lp-valuation-instantaneous-amounts.md.
+
 Previously `slot0` (`sqrtPriceX96`, `tick`) fed both the in-range liquidity split
 (`getAmountsForLiquidity`) and the fee-growth branch, so the reported per-token **amounts** tracked the
 instantaneous AMM spot — an attacker who atomically moved the pool price (swap / flash-loan round-trip /
@@ -177,7 +179,7 @@ caller requesting a non-USD quote can detect the USD fallback rather than silent
   unreachable. Post-deploy entries still go through `addSupportedAsset`, which enforces registration.
 - **[12]** `StaderWithdrawalQueue` `MAX_REQUESTS_PROBED=256` bounds *lifetime* (not open) requests since
   claimed ids aren't compacted — acceptable; add a regression test for >256-lifetime accounts.
-- **[15]** `UniswapV3PoolsMeta` silently drops positions for accounts with > 256 NPM NFTs globally —
+- **[15]** `UniswapV3PoolsAssistedBalanceAdapter` silently drops positions for accounts with > 256 NPM NFTs globally —
   documented bound; off-chain reconciliation should flag monitored accounts near the cap.
 - **[16]** `ConvexRewardsMeta` drops standalone-CVX stash rewards — CVX is always minted proportionally
   to CRV in the Convex model, never as an independent stash; out of scope by design.

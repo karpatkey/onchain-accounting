@@ -15,11 +15,11 @@ import "src/constants.sol";
 
 /// @title BridgeAdapter
 /// @notice Abstract base for bridge adapters (non-upgradeable, single-initialize).
-/// @dev See ADR 0012. There is no escrow fallback dispatcher. In this PR a bridge is completed via the
+/// @dev See ADR 0012. There is no escrow fallback dispatcher. A bridge is completed via the
 ///      MANAGER-gated `completeBridge`, which runs the adapter's protocol-specific `_completeBridge` and then
-///      calls `BridgeEscrow.releaseByInvoiceId` (re-validated by the escrow). The follow-up adapter-provenance
-///      PR makes each adapter the direct on-chain recipient that authenticates the real protocol message +
-///      source sender and funds the escrow per-invoice.
+///      funds the escrow per-invoice and calls `BridgeEscrow.releaseByInvoiceId` (re-validated by the escrow).
+///      Each adapter is the direct on-chain recipient; its authenticated completion path verifies the real
+///      protocol message + source sender (against `trustedRemoteAdapter`) before releasing.
 /// @author KPK
 abstract contract BridgeAdapter is AccessControl, ReentrancyGuard, IBridgeAdapter {
     using SafeERC20 for IERC20;
@@ -66,7 +66,7 @@ abstract contract BridgeAdapter is AccessControl, ReentrancyGuard, IBridgeAdapte
         string memory providerName_,
         string memory version_
     ) internal {
-        require(!_initialized, "BridgeAdapter: already initialized");
+        if (_initialized) revert AlreadyInitialized();
         if (admin_ == address(0) || bridgeEscrow_ == address(0)) revert InvalidArguments();
         _initialized = true;
 

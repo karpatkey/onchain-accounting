@@ -98,7 +98,8 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory pos =
             meta.getAdapterPositionsForInstances(alice, _instance(address(gauge)), address(0));
         assertGt(pos.length, 0);
-        assertEq(pos[0].protocolId, ProtocolIds.CURVE_GAUGE);
+        assertEq(pos[0].protocolSubId, ProtocolIds.CURVE_GAUGES);
+        assertEq(pos[0].protocolId, ProtocolIds.CURVE);
         assertEq(pos[0].positionId, abi.encode(address(gauge)));
         assertEq(pos[0].balanceAdapter, address(meta));
     }
@@ -244,11 +245,19 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
 
     // ─── positionLabels ───────────────────────────────────────────────────────
 
-    function test_positionLabels_format() public view {
-        string[] memory labels = meta.positionLabels(abi.encode(address(gauge)));
+    function test_positionLabels_format() public {
+        pool.setTotalSupply(1_000e18);
+        pool.setPoolBalance(0, 500e6);
+        pool.setPoolBalance(1, 500e18);
+        gauge.setStaked(alice, 100e18);
+
+        INAVCalculator.PositionBalance[] memory pos =
+            meta.getAdapterPositionsForInstances(alice, _instance(address(gauge)), address(0));
+        assertGt(pos.length, 0);
+        string[] memory labels = meta.positionLabels(pos[0].positionId);
         assertEq(labels.length, 2);
         assertEq(labels[0], "Staking Gauge");
-        assertEq(labels[1], "USDC/DAI gauge");
+        assertEq(labels[1], "USDC/DAI");
     }
 
     // ─── underlyingAssetsSupported ────────────────────────────────────────────

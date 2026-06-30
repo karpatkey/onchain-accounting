@@ -27,9 +27,9 @@ The single source of truth is [`test/integration/accounts.json`](../../test/inte
 │    submissions in step 2 are tolerated (NAV treats them as 0).       │
 ├──────────────────────────────────────────────────────────────────────┤
 │ 2. forge build once (warm cache) → forge test per chain (PARALLEL)   │
-│    → deploys NAV stack (incl. MerklRewards) at the new fork, replays │
-│    fixture proofs into the cache, reads NAV per enabled account,     │
-│    emits SNAPSHOT|... lines that are applied via jq                  │
+│    → deploys NAV stack (incl. MerklRewardsAssisted) at the new       │
+│    fork, replays fixture proofs into the cache, reads NAV per        │
+│    enabled account, emits SNAPSHOT|... lines applied via jq          │
 ├──────────────────────────────────────────────────────────────────────┤
 │ 3. (optional) /v1/user/all_complex_protocol_list (1×/account) +      │
 │    /v1/user/token_list (1× per chain×account), filtered to NAV's     │
@@ -287,7 +287,7 @@ A protocol is allowlisted but one of its items produced no `LegMatch`. Diagnosti
 
 1. Confirm the canonical contract address on the target chain (protocol's docs, Etherscan, or a Debank item's `asset_token_list[].id`).
 2. Add the adapter to `script/config/contracts-deployment-config/balance-adapters/<chainId>.json` (plain) or `script/config/contracts-deployment-config/meta-balance-adapters/<chainId>.json` (meta) for the deploy config, and `script/config/nav-config/balance-adapters/<chainId>.json` or `script/config/nav-config/meta-balance-adapters/<chainId>.json` (NAV registration), following the same shape as the existing mainnet entry for that adapter.
-3. If any token the adapter introduces needs a price feed, check `src/prices/protocols/` for an existing feed contract (L2 LST feeds — `wstETH_L2_Price`, `weETH_L2_Price`, etc. — are already shipped). If none exists, flag as a follow-up (no new Solidity in this workflow).
+3. If any token the adapter introduces needs a price feed, check `src/prices/protocols/` for an existing feed contract (L2 LST feeds — `wstETH_L2_CustomPriceFeed`, `weETH_L2_CustomPriceFeed`, etc. — are already shipped). If none exists, flag as a follow-up (no new Solidity in this workflow).
 4. Re-run `refresh-integration-snapshot.sh`. Confirm the gap row clears in Section 4.1.
 
 ### Debank response cache

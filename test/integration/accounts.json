@@ -8,7 +8,7 @@
       "name": "mainnet",
       "alchemyNetwork": "eth-mainnet",
       "debankChainId": "eth",
-      "forkBlock": 25380484,
+      "forkBlock": 25426915,
       "supportedDeBankProtocols": [
         "aave2",
         "aave3",
@@ -19,6 +19,7 @@
         "curve",
         "ethena",
         "etherfi",
+        "euler2",
         "fluid",
         "gearbox",
         "kelpdao",
@@ -34,13 +35,13 @@
         "uniswap2",
         "uniswap3"
       ],
-      "$untracked_by_design": "Protocols and wallet/reward tokens deliberately excluded from this chain's allowlist (filtered-Debank ignores them; NAV doesn't track them). Re-evaluate when an adapter/feed becomes available. PROTOCOLS — full exclusion from the supportedDeBankProtocols allowlist: balancer2 (no Bal V2 adapter; LP positions remain dust on covered accounts); sablier (no adapter; lockups today only hold unpriceable tokens like COW); acrocc_v2 (Across V2 LP — not a karpatkey protocol of interest); multichain (defunct/exploited bridge); compound (Compound V2 — only V3 covered); layer3, espresso, ekubo (small ACCOUNT_12 reward bags in non-Karpatkey protocols). PARTIAL PROTOCOL COVERAGE — protocol IS in the allowlist but only some pools/markets are wired: convex (RLUSD/crvUSD/weETH/CRV pools are wired; the cvxFXS pool ACCOUNT_12 holds is not); stakewise (V3 OsToken + Genesis Vault + MetaVault are wired; legacy V2 Rewards and Staked contracts surfaced by Debank — obsolete, no new deposits — are not); uniswap3 (most observed pools are wired or disabled, but the WETH/COW pool is intentionally disabled because COW is unpriceable); spark (lending via the Aave-fork adapter is wired; the Spark Savings USDC vault is not, so a savings balance shows as drift — e.g. ACCOUNT_11); aave3 (Aave V3 lending is wired via the DataProvider query, but Aave stata-token wrap holdings — e.g. the Lido-instance aEthLidoGHO wrap ACCOUNT_11 holds, ~$233 — are invisible to getUserReserveData and have no balance adapter, so they show as drift); aave2 (Aave V2 lending — protocol deprecated and removed from NAV; aave2 stays in the allowlist only because DeBank files stkAAVE / Safety Module under it, so a residual Aave V2 lending/collateral balance shows as drift — e.g. ACCOUNT_11); kelpdao (rsETH held in wallet or as Aave collateral is priced; Kelp withdrawal-queue / locked positions are not — KelpWithdrawalQueue adapter scaffolded but not yet wired, so a Kelp lock shows as drift — e.g. ACCOUNT_2). WALLET / REWARD TOKENS without a Chainlink mainnet price feed: COW, HEX, POL (Polygon-only feed), CASHW (spam), AEVO, GEAR (Gearbox token; appears as a Merkl reward), MORPHO (Base-only feed; appears as Merkl reward and as a Balancer V3 LP component), sETH2 (StakeWise V2 legacy LST; appears in Uni V3 ETH/sETH2 LPs), EKUBO. COW-containing UniV3/PancakeSwap pools are disabled in chains/1.json.balanceAdapters since their COW leg can't be valued."
+      "$untracked_by_design": "Protocols and wallet/reward tokens deliberately excluded from this chain's allowlist (filtered-Debank ignores them; NAV doesn't track them). Re-evaluate when an adapter/feed becomes available. PROTOCOLS — full exclusion from the supportedDeBankProtocols allowlist: balancer2 (no Bal V2 adapter; LP positions remain dust on covered accounts); sablier (no adapter; lockups today only hold unpriceable tokens like COW); acrocc_v2 (Across V2 LP — not a karpatkey protocol of interest); multichain (defunct/exploited bridge); compound (Compound V2 — only V3 covered); layer3, espresso, ekubo (small ACCOUNT_12 reward bags in non-Karpatkey protocols). PARTIAL PROTOCOL COVERAGE — protocol IS in the allowlist but only some pools/markets are wired: convex (RLUSD/crvUSD/weETH/CRV pools are wired; the cvxFXS pool ACCOUNT_12 holds is not); stakewise (V3 OsToken + Genesis Vault + MetaVault are wired; legacy V2 Rewards and Staked contracts surfaced by Debank — obsolete, no new deposits — are not); uniswap3 (most observed pools are wired or disabled, but the WETH/COW pool is intentionally disabled because COW is unpriceable); spark (lending via the Aave-fork adapter is wired; the Spark Savings USDC vault is not, so a savings balance shows as drift — e.g. ACCOUNT_11); aave3 (Aave V3 lending is wired via the DataProvider query, but Aave stata-token wrap holdings — e.g. the Lido-instance aEthLidoGHO wrap ACCOUNT_11 holds, ~$233 — are invisible to getUserReserveData and have no balance adapter, so they show as drift); aave2 (Aave V2 lending — protocol deprecated and removed from NAV; aave2 stays in the allowlist only because DeBank files stkAAVE / Safety Module under it, so a residual Aave V2 lending/collateral balance shows as drift — e.g. ACCOUNT_11); kelpdao (rsETH held in wallet or as Aave collateral is priced, and Kelp withdrawal-queue / locked positions are now valued via the wired KelpWithdrawalQueue adapter — e.g. ACCOUNT_2's ~$282K lock). WALLET / REWARD TOKENS without a Chainlink mainnet price feed: COW, HEX, POL (Polygon-only feed), CASHW (spam), AEVO, GEAR (Gearbox token; appears as a Merkl reward), MORPHO (Base-only feed; appears as Merkl reward and as a Balancer V3 LP component), sETH2 (StakeWise V2 legacy LST; appears in Uni V3 ETH/sETH2 LPs), EKUBO. COW-containing UniV3/PancakeSwap pools are disabled in chains/1.json.balanceAdapters since their COW leg can't be valued."
     },
     "10": {
       "name": "optimism",
       "alchemyNetwork": "opt-mainnet",
       "debankChainId": "op",
-      "forkBlock": 153310496,
+      "forkBlock": 153590310,
       "supportedDeBankProtocols": [
         "aave3",
         "compound3",
@@ -51,7 +52,7 @@
       "name": "gnosis",
       "alchemyNetwork": "gnosis-mainnet",
       "debankChainId": "xdai",
-      "forkBlock": 46844640,
+      "forkBlock": 46953622,
       "supportedDeBankProtocols": [
         "aave3",
         "lido",
@@ -62,7 +63,7 @@
       "name": "base",
       "alchemyNetwork": "base-mainnet",
       "debankChainId": "base",
-      "forkBlock": 47715211,
+      "forkBlock": 47995025,
       "supportedDeBankProtocols": [
         "aave3",
         "balancer3",
@@ -77,7 +78,7 @@
       "name": "arbitrum",
       "alchemyNetwork": "arb-mainnet",
       "debankChainId": "arb",
-      "forkBlock": 476509627,
+      "forkBlock": 478750897,
       "supportedDeBankProtocols": [
         "aave3",
         "balancer3",
@@ -106,29 +107,29 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "21232141914",
-          "debankUsd": "175.281142"
+          "navUsd8dp": "21901211356",
+          "debankUsd": "175.305516"
         },
         "10": {
           "navUsd8dp": "0",
           "debankUsd": "0.000000"
         },
         "100": {
-          "navUsd8dp": "500866257",
-          "debankUsd": "5.010636"
+          "navUsd8dp": "500819715",
+          "debankUsd": "5.010016"
         },
         "8453": {
-          "navUsd8dp": "999946950",
-          "debankUsd": "10.011361"
+          "navUsd8dp": "999731969",
+          "debankUsd": "10.013366"
         },
         "42161": {
-          "navUsd8dp": "1004191503",
-          "debankUsd": "10.050885"
+          "navUsd8dp": "1004307231",
+          "debankUsd": "10.054219"
         }
       }
     },
     {
-      "$comment": "ETH Alpha Fund safe (the fund behind the stETH/wstETH cross-rate pricing work). Expected tolerance drift ~36%: holds ~175 stETH locked in Kelp DAO's withdrawal/redemption manager (0x62De59c0…, ~$293K) that NAV does not yet value — the KelpWithdrawalQueue adapter is scaffolded but not wired (see chains.1.$untracked_by_design → kelpdao). Its liquid legs price correctly: ~2,013 rsETH supplied vs ~1,866 WETH borrowed on Aave V3 (~$491K net) and a wstETH/WETH Spark position (~$35K net). Resolves when the Kelp adapter ships.",
+      "$comment": "ETH Alpha Fund safe (the fund behind the stETH/wstETH cross-rate pricing work). Now within tolerance (~0.9%): the ~175 stETH locked in Kelp DAO's withdrawal/redemption manager (0x62De59c0…, ~$282K) is valued by the KelpWithdrawalQueue adapter, now wired into the integration harness. Liquid legs price correctly: ~2,013 rsETH supplied vs ~1,866 WETH borrowed on Aave V3 (~$491K net) and a wstETH/WETH Spark position (~$35K net).",
       "address": "0x99b9F5F24205Cb88E33b1CC72008f644Fc23768b",
       "label": "ACCOUNT_2",
       "enabledChains": [
@@ -140,8 +141,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "52626873143184",
-          "debankUsd": "817596.467496"
+          "navUsd8dp": "79228092287002",
+          "debankUsd": "785312.264927"
         },
         "10": {
           "navUsd8dp": "0",
@@ -173,8 +174,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "19539406774",
-          "debankUsd": "195.788972"
+          "navUsd8dp": "18938496689",
+          "debankUsd": "187.788650"
         },
         "10": {
           "navUsd8dp": "0",
@@ -203,8 +204,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "1252828216356",
-          "debankUsd": "12576.519966"
+          "navUsd8dp": "1212932153864",
+          "debankUsd": "12072.366022"
         }
       }
     },
@@ -217,8 +218,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "817784450721701",
-          "debankUsd": "8181436.958099"
+          "navUsd8dp": "818484680119835",
+          "debankUsd": "8190254.891996"
         }
       }
     },
@@ -231,8 +232,8 @@
       ],
       "expected": {
         "10": {
-          "navUsd8dp": "277329554189437",
-          "debankUsd": "2773982.705494"
+          "navUsd8dp": "277306571345551",
+          "debankUsd": "2774554.736292"
         }
       }
     },
@@ -245,8 +246,8 @@
       ],
       "expected": {
         "42161": {
-          "navUsd8dp": "186618993004656",
-          "debankUsd": "1868562.633526"
+          "navUsd8dp": "186706924088079",
+          "debankUsd": "1870068.994448"
         }
       }
     },
@@ -259,8 +260,8 @@
       ],
       "expected": {
         "8453": {
-          "navUsd8dp": "72286543732169",
-          "debankUsd": "723729.518686"
+          "navUsd8dp": "68523830447287",
+          "debankUsd": "686337.220655"
         }
       }
     },
@@ -273,8 +274,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "1728664892434165",
-          "debankUsd": "17729912.371263"
+          "navUsd8dp": "1722590808053894",
+          "debankUsd": "17754006.895508"
         }
       }
     },
@@ -287,8 +288,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "7715969911069187",
-          "debankUsd": "77368659.026790"
+          "navUsd8dp": "6930386110114132",
+          "debankUsd": "69084631.615773"
         }
       }
     },
@@ -301,8 +302,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "446883184389257",
-          "debankUsd": "4820199.728248"
+          "navUsd8dp": "480571499390830",
+          "debankUsd": "5311790.484139"
         }
       }
     },
@@ -315,8 +316,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "3165838189",
-          "debankUsd": "40.227444"
+          "navUsd8dp": "3071037863",
+          "debankUsd": "38.787358"
         }
       }
     },

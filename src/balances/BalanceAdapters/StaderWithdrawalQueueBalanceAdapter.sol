@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
+import {SingleAssetBalanceAdapterBase} from "../SingleAssetBalanceAdapterBase.sol";
 import {IBalanceAdapter} from "../IBalanceAdapter.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 import {InvalidArguments} from "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -13,11 +15,17 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @author KPK
 /// @notice Reports ETH owed to an account from open requests in Stader's UserWithdrawalManager.
 /// @dev When a user requests an unstake, ETHx is burned and a sequential request id is recorded.
-///      Until claimed, the value lives as ETH owed by the manager. This adapter emits up to two positions
-///      under a single static positionId, denominated in `UNDERLYING_TOKEN` (typically WETH): a claimable
-///      leg (`isLocked = false`, finalized requests) and a locked/pending leg (`isLocked = true`, not-yet-
-///      finalized requests). The balance methods report the summed total.
-contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescribable {
+///      Until claimed, the value lives as ETH owed by the manager. This adapter enumerates the account's
+///      request ids (`requestIdsByUserAddress`), reads each request (`userWithdrawRequests`), and emits
+///      **one position per open request**, all under a single static positionId
+///      (`abi.encode(address(USER_WITHDRAWAL_MANAGER))`) denominated in `UNDERLYING_TOKEN` (typically WETH).
+///      A Stader request is binary — fully claimable OR fully locked — so each leg is valued at that
+///      request's owed ETH (`ethFinalized` once finalized, else the rate-converted `ethExpected`) with
+///      `isLocked = false` for a finalized (claimable) request and `true` for a not-yet-finalized one. The
+///      request id rides in each leg's typed `positionInstanceId` (`bytes32(requestId)`), never in
+///      `positionId` (the legs share the static positionId and are distinguished by their `positionInstanceId`,
+///      for NAV by summing). The balance methods (`getAdapterBalances`) still report the summed total.
+contract StaderWithdrawalQueueBalanceAdapter is SingleAssetBalanceAdapterBase {
     //
     // Errors
     //
@@ -34,7 +42,9 @@ contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescri
     /// @dev Bounds gas; in practice an account never has more than a handful of pending requests.
     uint256 internal constant MAX_REQUESTS_PROBED = 256;
 
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.STADER_WITHDRAWAL;
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.STADER;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.STADER;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.STADER_WITHDRAWAL;
 
     //
     // State
@@ -42,10 +52,6 @@ contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescri
 
     /// @notice Stader UserWithdrawalManager contract.
     IUserWithdrawalManager public immutable USER_WITHDRAWAL_MANAGER;
-
-    /// @notice The asset under which positions are reported (e.g. WETH).
-    /// @dev Pricing is added by NAVCalculator from this asset's registered price feed.
-    address public immutable UNDERLYING_TOKEN;
 
     /// @notice Reference to NAVCalculator for asset registry access.
     INAVCalculator public immutable NAV_CALCULATOR;
@@ -57,15 +63,14 @@ contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescri
     /// @param userWithdrawalManager_ Address of Stader's UserWithdrawalManager contract.
     /// @param underlyingToken_ Address of the asset positions are denominated in (e.g. WETH).
     /// @param navCalculator_ The NAVCalculator address used for asset-registry filtering.
-    constructor(address userWithdrawalManager_, address underlyingToken_, address navCalculator_) {
-        if (userWithdrawalManager_ == address(0) || underlyingToken_ == address(0)) {
-            revert InvalidArguments();
-        }
-        require(userWithdrawalManager_.code.length > 0, "UserWithdrawalManager must be a contract");
-        require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
+    constructor(address userWithdrawalManager_, address underlyingToken_, address navCalculator_)
+        SingleAssetBalanceAdapterBase(underlyingToken_)
+    {
+        if (userWithdrawalManager_ == address(0)) revert InvalidArguments();
+        AddressCheckLib.requireContract(userWithdrawalManager_, "UserWithdrawalManager");
+        AddressCheckLib.requireContract(navCalculator_, "NAVCalculator");
 
         USER_WITHDRAWAL_MANAGER = IUserWithdrawalManager(userWithdrawalManager_);
-        UNDERLYING_TOKEN = underlyingToken_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
@@ -127,75 +132,37 @@ contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescri
     // IBalanceAdapter
     //
 
-    /// @inheritdoc IBalanceAdapter
-    function underlyingAssetsSupported() external view override returns (address[] memory) {
-        address[] memory assets = new address[](1);
-        assets[0] = UNDERLYING_TOKEN;
-        return assets;
-    }
-
-    /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IPositionDescribable).interfaceId
-            || interfaceId == type(IERC165).interfaceId;
+    /// @inheritdoc SingleAssetBalanceAdapterBase
+    function _owedAmount(address account) internal view override returns (uint256) {
+        return _ethOwed(account);
     }
 
     function protocolName() external pure returns (string memory) {
         return "Stader";
     }
 
-    function positionLabels(bytes calldata) external pure returns (string[] memory) {
-        string[] memory out = new string[](1);
-        out[0] = "ETHx Withdrawal Queue";
-        return out;
+    /// @inheritdoc IPositionDescribable
+    /// @dev `["Withdrawal Queue", "ETHx"]` — category + the receipt-token symbol (matching the sibling queues). All
+    ///      requests share the queue `positionId`; the per-request sequential id is the typed `positionInstanceId` on
+    ///      each leg, NOT a label.
+    function positionLabels(bytes calldata) external pure override returns (string[] memory out) {
+        out = new string[](2);
+        out[0] = "Withdrawal Queue";
+        out[1] = "ETHx";
     }
 
     /// @inheritdoc IBalanceAdapter
-    function getAdapterBalanceForAsset(address account, address asset)
-        external
-        view
-        override
-        returns (uint256 amount, bool isDebt)
-    {
-        if (asset == address(0) || asset != UNDERLYING_TOKEN) {
-            return (0, false);
-        }
-        return (_ethOwed(account), false);
-    }
-
-    /// @inheritdoc IBalanceAdapter
-    function getAdapterBalances(address account)
-        external
-        view
-        override
-        returns (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt)
-    {
-        if (account == address(0)) {
-            return (new address[](0), new uint256[](0), new bool[](0));
-        }
-
-        uint256 total = _ethOwed(account);
-        if (total == 0) {
-            return (new address[](0), new uint256[](0), new bool[](0));
-        }
-
-        assets = new address[](1);
-        amounts = new uint256[](1);
-        isDebt = new bool[](1);
-        assets[0] = UNDERLYING_TOKEN;
-        amounts[0] = total;
-        isDebt[0] = false;
-    }
-
-    /// @inheritdoc IBalanceAdapter
-    /// @notice Returns up to TWO positions under a single static positionId — one claimable (`isLocked = false`)
-    ///         and one locked/pending (`isLocked = true`).
-    /// @dev Both legs share `positionId = abi.encode(address(USER_WITHDRAWAL_MANAGER))` and are distinguished only by
-    ///      `isLocked`. The account's open requests are aggregated into two sums: finalized requests
-    ///      (`ethFinalized > 0`) contribute `ethFinalized` to the claimable leg; the rest contribute `ethExpected` to
-    ///      the locked leg. The two legs sum to `_ethOwed`'s total. A zero-amount leg is omitted. Claimed entries
-    ///      (owner == address(0)) are skipped. Same OOB enumeration as `_ethOwed`. Dropped entirely if the underlying
-    ///      asset is not registered in NAVCalculator.
+    /// @notice Returns ONE ETH-denominated `Supplied` leg per open (un-claimed) withdrawal request, all sharing the
+    ///         static `positionId = abi.encode(address(USER_WITHDRAWAL_MANAGER))`. Each leg's `isLocked` reflects that
+    ///         request's state (finalized → `false`, pending → `true`) and its request id is the typed
+    ///         `positionInstanceId`.
+    /// @dev A Stader request is binary — fully claimable OR fully locked — so each open request emits exactly one leg:
+    ///      a finalized request (`ethFinalized > 0`) is valued at `ethFinalized` with `isLocked = false`; any other
+    ///      un-claimed request is valued at `ethExpected` with `isLocked = true`. Claimed entries
+    ///      (owner == address(0)) and zero-amount legs are skipped. The legs sum to `_ethOwed`'s total. The request id
+    ///      rides in `positionInstanceId` (`bytes32(requestId)`), NOT in `positionId`, so multiple requests share the
+    ///      static positionId and are distinguished by their `positionInstanceId` (and for NAV by summing). Same OOB
+    ///      enumeration as `_ethOwed`. Dropped entirely if the underlying asset is not registered in NAVCalculator.
     function getAdapterPositions(address account, address assetFilter)
         external
         view
@@ -211,24 +178,15 @@ contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescri
         }
 
         // Underlying must be registered in NAVCalculator for the position to count in NAV.
-        INAVCalculator.Asset memory underlying;
-        {
-            INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
-            bool registered;
-            for (uint256 i = 0; i < reg.length; i++) {
-                if (reg[i].asset == UNDERLYING_TOKEN) {
-                    underlying = reg[i];
-                    registered = true;
-                    break;
-                }
-            }
-            if (!registered) {
-                return new INAVCalculator.PositionBalance[](0);
-            }
+        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
+        (INAVCalculator.Asset memory underlying, bool registered) = RegisteredAssetLib.find(reg, UNDERLYING_TOKEN);
+        if (!registered) {
+            return new INAVCalculator.PositionBalance[](0);
         }
 
-        uint256 claimable;
-        uint256 locked;
+        bytes memory positionId = abi.encode(address(USER_WITHDRAWAL_MANAGER));
+        INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](MAX_REQUESTS_PROBED);
+        uint256 n;
         for (uint256 i = 0; i < MAX_REQUESTS_PROBED; i++) {
             try USER_WITHDRAWAL_MANAGER.requestIdsByUserAddress(account, i) returns (uint256 requestId) {
                 (address owner,, uint256 ethExpected, uint256 ethFinalized,) =
@@ -237,11 +195,33 @@ contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescri
                     // Already claimed (storage deleted) but id may linger in the index array — skip.
                     continue;
                 }
+
+                uint256 amount;
+                bool locked;
                 if (ethFinalized > 0) {
-                    claimable += ethFinalized;
+                    amount = ethFinalized;
+                    locked = false;
                 } else {
-                    locked += ethExpected;
+                    amount = ethExpected;
+                    locked = true;
                 }
+                if (amount == 0) {
+                    continue;
+                }
+
+                temp[n++] = INAVCalculator.PositionBalance({
+                    balanceAsset: underlying,
+                    balanceAdapter: address(this),
+                    amount: amount,
+                    isDebt: false,
+                    protocolBrand: PROTOCOL_BRAND,
+                    protocolId: PROTOCOL_ID,
+                    protocolSubId: PROTOCOL_SUB_ID,
+                    positionId: positionId,
+                    positionKind: PositionKind.Supplied,
+                    isLocked: locked,
+                    positionInstanceId: bytes32(requestId)
+                });
             } catch Panic(uint256 panicCode) {
                 // 0x32 = array index out of bounds — list exhausted.
                 if (panicCode == 0x32) {
@@ -259,42 +239,9 @@ contract StaderWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescri
             }
         }
 
-        return _statusLegs(underlying, abi.encode(address(USER_WITHDRAWAL_MANAGER)), claimable, locked);
-    }
-
-    /// @dev Up to two `Supplied` legs sharing the static positionId, distinguished by isLocked. Zero legs omitted.
-    function _statusLegs(
-        INAVCalculator.Asset memory underlying,
-        bytes memory positionId,
-        uint256 claimable,
-        uint256 locked
-    ) internal view returns (INAVCalculator.PositionBalance[] memory positions) {
-        uint256 nLegs = (claimable > 0 ? 1 : 0) + (locked > 0 ? 1 : 0);
-        positions = new INAVCalculator.PositionBalance[](nLegs);
-        uint256 j;
-        if (claimable > 0) {
-            positions[j++] = INAVCalculator.PositionBalance({
-                balanceAsset: underlying,
-                balanceAdapter: address(this),
-                amount: claimable,
-                isDebt: false,
-                protocolId: PROTOCOL_ID,
-                positionId: positionId,
-                positionKind: PositionKind.Supplied,
-                isLocked: false
-            });
-        }
-        if (locked > 0) {
-            positions[j++] = INAVCalculator.PositionBalance({
-                balanceAsset: underlying,
-                balanceAdapter: address(this),
-                amount: locked,
-                isDebt: false,
-                protocolId: PROTOCOL_ID,
-                positionId: positionId,
-                positionKind: PositionKind.Supplied,
-                isLocked: true
-            });
+        positions = new INAVCalculator.PositionBalance[](n);
+        for (uint256 i = 0; i < n; i++) {
+            positions[i] = temp[i];
         }
     }
 }

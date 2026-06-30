@@ -32,7 +32,7 @@ This deployment system uses an **EOA deployer** (`--broadcast`) with **CREATE2 d
 | `03_DeployPriceFeeds.s.sol` | Deploy custom price feed adapters; register assets/feeds (per-chain, config-driven) | Adapter addresses in config |
 | `04_DeployBalanceAdapters.s.sol` | Deploy balance adapters incl. meta-adapters (per-chain, config-driven) | Adapter addresses in config |
 | `05_DeployBridgeAdapters.s.sol` | Deploy bridge adapters (CCIP, Across, Stargate, CCTP, Gnosis, Superchain; per-chain) | Adapter addresses in config |
-| `06_Configure.s.sol` | **EOA broadcast** (deployer holds admin+MANAGER): `addBalanceAdapters` for each deployed adapter + `addMetaInstances`/`removeMetaInstances` for meta-adapters + authorize bridge adapters. Idempotent / re-runnable. | On-chain config txs |
+| `06_Configure.s.sol` | **EOA broadcast** (deployer holds admin+MANAGER): `addBalanceAdapters` for each deployed plain adapter + `addMetaBalanceAdapter` then `addMetaInstances`/`removeMetaInstances` for meta-adapters + authorize bridge adapters. Idempotent / re-runnable. | On-chain config txs |
 | `07_TransferAdminToSecurityCouncil.s.sol` | **EOA broadcast, run LAST**: grant DEFAULT_ADMIN + MANAGER to `addresses.securityCouncil` (Safe) on both proxies, revoke/renounce the deployer's roles. | On-chain role handoff |
 
 ### Upgrade Scripts (`script/upgrade/`)
@@ -329,7 +329,7 @@ script/verify/verify-all.sh
 - `sDAI_CustomPriceFeed` - Savings DAI price
 - `LDO_CustomPriceFeed` - Lido DAO token price
 - `sUSDS_CustomPriceFeed` - Sky Savings USDS price
-- `CrossRate_CustomPriceFeed` - Cross-rate calculations
+- `CrossRateCustomPriceFeed` - Cross-rate calculations
 
 ### Balance Adapters (Protocol Integrations)
 - `ERC20DefaultBalanceAdapter` - Wallet ERC20 + native, auto-registered at NAV initialization
@@ -340,22 +340,22 @@ script/verify/verify-all.sh
 - `MorphoMarketsMetaBalanceAdapter` - Morpho direct market positions
 - `MorphoVaultsMetaBalanceAdapter` - MetaMorpho vault positions
 - `EulerVaultsMetaBalanceAdapter` - Euler V2 vaults (EulerEarn aggregator + core eVault lend/borrow)
-- `ERC4626WrapBalanceAdapter` - Generic ERC-4626 share wrappers (e.g. Aave stata-tokens)
 - `SparkLendBalanceAdapter` - Spark Lend positions
 - `BalancerV2PoolsMetaBalanceAdapter`, `BalancerV2GaugesMetaBalanceAdapter` - Balancer V2 LPs + gauges
 - `BalancerV3PoolsMetaBalanceAdapter`, `BalancerV3GaugesMetaBalanceAdapter` - Balancer V3 LPs + gauges
 - `CurvePoolsMetaBalanceAdapter`, `CurveGaugesMetaBalanceAdapter` - Curve LPs + gauges
-- `ConvexRewardsMetaBalanceAdapter` - Convex staking
+- `ConvexCurveLPStakingMetaBalanceAdapter` - Convex staking
 - `CapBalanceAdapter` - Cap (cUSD + stcUSD aggregated → USDC)
 - `FluidFTokensMetaBalanceAdapter`, `FluidVaultsMetaBalanceAdapter` - Fluid lending + vaults
-- `GearboxMarketsMetaBalanceAdapter` - Gearbox kpk-curated markets
+- `GearboxV3MarketsMetaBalanceAdapter` - Gearbox kpk-curated markets
+- `GearboxV3CreditAccountsMetaBalanceAdapter` - Gearbox credit accounts
 - `StakeWiseV3VaultsMetaBalanceAdapter` - StakeWise V3 Genesis Vault (osETH/osGNO themselves are Custom-priced ERC20s via `osToken_CustomPriceFeed`, not balance adapters)
 - `StaderWithdrawalQueueBalanceAdapter` - Stader pending unstake requests
 - `KelpWithdrawalQueueBalanceAdapter` - Kelp DAO rsETH exit queue (multi-asset; payout assets discovered via `lrtConfig().getSupportedAssetList()`)
 - `LidoWithdrawalQueueBalanceAdapter` - Lido stETH withdrawal queue (`WithdrawalQueueERC721`; sums open requests, reported as native ETH — the asset paid on claim)
-- `UniswapV2PoolsMetaBalanceAdapter`, `UniswapV3PoolsMetaBalanceAdapter` - Uni V2 pairs / V3 pools
-- `PancakeSwapV2PoolsMetaBalanceAdapter`, `PancakeSwapV3PoolsMetaBalanceAdapter` - PancakeSwap variants
-- `MerklRewardsBalanceAdapter` - Merkl unclaimed rewards (proof-verified mutable cache, ADR 0007)
+- `UniswapV2PoolsMetaBalanceAdapter`, `UniswapV3PoolsAssistedBalanceAdapter` - Uni V2 pairs / V3 pools
+- `PancakeSwapV2PoolsMetaBalanceAdapter`, `PancakeSwapV3PoolsAssistedBalanceAdapter` - PancakeSwap variants
+- `MerklRewardsAssistedBalanceAdapter` - Merkl unclaimed rewards (proof-verified mutable cache, ADR 0007)
 
 ### Bridge Adapters
 - CCIP (Chainlink)

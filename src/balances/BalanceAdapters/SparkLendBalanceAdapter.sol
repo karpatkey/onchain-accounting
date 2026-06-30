@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
+import {BalanceAdapterBase} from "../BalanceAdapterBase.sol";
 import {IBalanceAdapter} from "../IBalanceAdapter.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
+import {AssetNotFound} from "src/errors.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -13,18 +16,23 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @author KPK
 /// @notice Reports per-reserve Supply/Collateral and Borrow positions for an account in Spark Lend.
 ///         Reads the reserve list from the Protocol Data Provider and emits up to two legs per
-///         reserve (aToken balance → Supplied/Collateral, variable debt → Borrowed).
-///         Stable debt is ignored — Aave/Spark deprecated it; all active debt is variable.
-contract SparkLendBalanceAdapter is IBalanceAdapter, IPositionDescribable {
+///         reserve (aToken balance → Supplied/Collateral, total debt → Borrowed).
+///         The Borrow leg sums variable and stable debt: Aave/Spark deprecated NEW stable borrows, but
+///         legacy stable debt can persist, so it is included to avoid understating debt (see `_reserveData`).
+contract SparkLendBalanceAdapter is BalanceAdapterBase {
     IProtocolDataProvider public immutable DATA_PROVIDER;
     /// @notice Spark Pool address — used as the `positionId` (one position per instance; the reserve is not
     ///         encoded — reserves are distinguished by `balanceAsset` + `positionKind`).
     address public immutable POOL;
     INAVCalculator public immutable NAV_CALCULATOR;
 
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.SPARK;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.SPARK;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.SPARK_LEND;
+
     constructor(address dataProvider_, address navCalculator_) {
-        require(dataProvider_.code.length > 0, "DataProvider must be a contract");
-        require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
+        AddressCheckLib.requireContract(dataProvider_, "DataProvider");
+        AddressCheckLib.requireContract(navCalculator_, "NAVCalculator");
         DATA_PROVIDER = IProtocolDataProvider(dataProvider_);
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
         POOL = IAavePoolAddressesProvider(IAaveAddressesProviderSource(dataProvider_).ADDRESSES_PROVIDER()).getPool();
@@ -32,18 +40,13 @@ contract SparkLendBalanceAdapter is IBalanceAdapter, IPositionDescribable {
 
     // ─── IERC165 ─────────────────────────────────────────────────────────────
 
-    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IPositionDescribable).interfaceId
-            || interfaceId == type(IERC165).interfaceId;
-    }
-
     // ─── IPositionDescribable ─────────────────────────────────────────────────
 
     function protocolName() external pure returns (string memory) {
         return "Spark";
     }
 
-    function positionLabels(bytes calldata) external pure returns (string[] memory) {
+    function positionLabels(bytes calldata) external pure override returns (string[] memory) {
         string[] memory out = new string[](2);
         out[0] = "Market";
         out[1] = "SparkLend";
@@ -153,10 +156,13 @@ contract SparkLendBalanceAdapter is IBalanceAdapter, IPositionDescribable {
                     balanceAdapter: address(this),
                     amount: supply,
                     isDebt: false,
-                    protocolId: ProtocolIds.SPARK_LEND,
+                    protocolBrand: PROTOCOL_BRAND,
+                    protocolId: PROTOCOL_ID,
+                    protocolSubId: PROTOCOL_SUB_ID,
                     positionId: pid,
                     positionKind: asCollateral ? PositionKind.Collateral : PositionKind.Supplied,
-                    isLocked: false
+                    isLocked: false,
+                    positionInstanceId: bytes32(0)
                 });
             }
             if (debt > 0) {
@@ -165,10 +171,13 @@ contract SparkLendBalanceAdapter is IBalanceAdapter, IPositionDescribable {
                     balanceAdapter: address(this),
                     amount: debt,
                     isDebt: true,
-                    protocolId: ProtocolIds.SPARK_LEND,
+                    protocolBrand: PROTOCOL_BRAND,
+                    protocolId: PROTOCOL_ID,
+                    protocolSubId: PROTOCOL_SUB_ID,
                     positionId: pid,
                     positionKind: PositionKind.Borrowed,
-                    isLocked: false
+                    isLocked: false,
+                    positionInstanceId: bytes32(0)
                 });
             }
         }
@@ -197,12 +206,18 @@ contract SparkLendBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         return false;
     }
 
+    /// @dev `debt` is `variableDebt + stableDebt`. SparkLend is an Aave V3 fork: Aave V3 deprecated NEW stable
+    ///      borrows but legacy stable debt can persist, so dropping `currentStableDebt` (the 2nd `getUserReserveData`
+    ///      return) would understate the Borrow leg and overstate NAV. Mirrors `AaveV3InstancesMetaBalanceAdapter`.
     function _reserveData(address account, address asset)
         internal
         view
-        returns (uint256 aTokenBalance, uint256 variableDebt, bool asCollateral)
+        returns (uint256 aTokenBalance, uint256 debt, bool asCollateral)
     {
-        (aTokenBalance,, variableDebt,,,,,, asCollateral) = DATA_PROVIDER.getUserReserveData(asset, account);
+        uint256 stableDebt;
+        uint256 variableDebt;
+        (aTokenBalance, stableDebt, variableDebt,,,,,, asCollateral) = DATA_PROVIDER.getUserReserveData(asset, account);
+        debt = variableDebt + stableDebt;
     }
 
     function _assetMeta(address asset, INAVCalculator.Asset[] memory reg)
@@ -210,10 +225,9 @@ contract SparkLendBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         pure
         returns (INAVCalculator.Asset memory)
     {
-        for (uint256 i; i < reg.length; ++i) {
-            if (reg[i].asset == asset) return reg[i];
-        }
-        revert("asset not registered");
+        (INAVCalculator.Asset memory a, bool found) = RegisteredAssetLib.find(reg, asset);
+        if (!found) revert AssetNotFound();
+        return a;
     }
 }
 

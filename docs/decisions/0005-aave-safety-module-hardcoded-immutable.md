@@ -8,13 +8,13 @@ ADR 0002 picked an `Ownable` adapter with an admin-managed list of registered st
 
 Reviewing that decision before implementation landed: the framework convention is more valuable than the marginal ergonomic gain. An adapter that exposes admin functions is a permanent surface area for trust, key management, and audit attention; even with a well-secured Safe behind it, every reviewer of every future change has to remember that this adapter is special. By contrast:
 
-- The legacy Safety Module set is small and slow-moving. As of 2026-05, the full set is **four stake tokens**: `stkAAVE`, `stkABPT` (Balancer V1 BPT), `stkABPTv2` (Balancer V2 AAVE/wstETH BPT), `stkGHO`. New additions (the next being Aave Umbrella, which uses a different contract architecture and will get its own adapter) are infrequent enough that "redeploy when the set changes" is not painful.
+- The legacy Safety Module set is small and slow-moving. As of 2026-05, the full set is **four stake tokens**: `stkAAVE`, `stkABPT` (Balancer V1 BPT), `stkABPTv2` (Balancer V2 AAVE/wstETH BPT), `stkGHO`. New additions (the next being Aave Umbrella, which uses a different contract architecture and got its own adapter — see ADR [0006](0006-aave-umbrella-balance-adapter.md)) are infrequent enough that "redeploy when the set changes" is not painful.
 - Reward tokens are uniform (AAVE for all four), and `STAKED_TOKEN()` for each is well-known. There's no operational reason the addresses have to be discovered at deploy time.
 - Aave does not publish an on-chain registry of SM stake tokens (see ADR 0002's earlier analysis). Without on-chain discovery, an admin-managed list is the only way to *add* tokens at runtime — which loops back to the question of whether the runtime addition itself is actually valuable.
 
 ## Decision
 
-Make `AaveV3SafetyModuleBalanceAdapter` fully **immutable** and **write-function-free**. The four legacy SM stake-token addresses, their staked / reward tokens, and their per-position labels are pinned as compile-time `address public constant` declarations and assembled in a `pure` `_records()` function. The constructor takes only `(navCalculator)` — no admin, no Ownable, no `addStakeToken` / `removeStakeToken`, no init list.
+Make `AaveV3SafetyModuleBalanceAdapter` fully **immutable** and **write-function-free**. The four legacy SM stake-token addresses and their staked / reward tokens are pinned as compile-time `address public constant` declarations, and a `pure` `_records()` function assembles them — together with a per-record `positionDetail` string — into a fixed `StakeTokenRecord[4]` table. The constructor takes only `(navCalculator)` — no admin, no Ownable, no `addStakeToken` / `removeStakeToken`, no init list.
 
 Concretely:
 
@@ -38,7 +38,7 @@ When Aave governance ships a new SM stake token, updating this adapter is a **so
 
 - Adding a new SM stake token requires a code change + redeploy + Safe transaction (remove old adapter, add new). Higher friction than the admin-call shape from 0002, but acceptable for an event that happens at most once or twice a year.
 - The adapter is **Mainnet-only** in spirit (the legacy SM is an Ethereum-mainnet protocol; deploying on another chain is meaningless). The constants are baked in; running this contract on any other chain would resolve those addresses to EOAs and revert at the first `IStakeToken.balanceOf` call. This is fine because chain config gates deployment per-chain; it's worth keeping in mind.
-- A future Aave Umbrella migration (where `stkGHO` becomes `sGHO`, etc.) requires a new adapter altogether — Umbrella uses different contracts (`Umbrella` / `StakeToken` / `RewardsController`) with different interfaces. That work goes in its own ADR.
+- An Aave Umbrella migration (where `stkGHO` becomes `sGHO`, etc.) requires a new adapter altogether — Umbrella uses different contracts (`Umbrella` / `StakeToken` / `RewardsController`) with different interfaces. That work shipped separately as `AaveUmbrellaBalanceAdapter` under ADR [0006](0006-aave-umbrella-balance-adapter.md).
 
 ## Test holders
 
@@ -57,7 +57,7 @@ When refreshing fork blocks (via the bump workflow described in `docs/howto/refr
 
 1. **Admin-managed list with Ownable (ADR 0002's design).** Rejected per the rationale above — the framework-uniformity argument outweighs the runtime-flexibility argument given how rarely the SM set changes.
 2. **Read `STAKED_TOKEN()` / `REWARD_TOKEN()` from each stake token at deploy time** (rather than hardcoding both). Rejected because it adds 8 RPC reads to construction with no upside — the staked/reward addresses are known facts, and pinning them in source surfaces wiring bugs at code review.
-3. **Discovery via on-chain registry.** Rejected because Aave does not publish one for the legacy SM. Umbrella has a partial reverse-lookup (`Umbrella.tokenForDeficitCoverage(reserve)`) combined with `Pool.getReservesList()` — but that's Umbrella-specific and will live in a future Umbrella adapter, not this one.
+3. **Discovery via on-chain registry.** Rejected because Aave does not publish one for the legacy SM. Umbrella does support on-chain discovery, but it's Umbrella-specific and lives in its own adapter (`AaveUmbrellaBalanceAdapter`, ADR [0006](0006-aave-umbrella-balance-adapter.md)) — not this one.
 
 ## Reference
 

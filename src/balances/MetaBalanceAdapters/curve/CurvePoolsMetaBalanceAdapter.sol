@@ -30,9 +30,15 @@ import {CurvePoolLib} from "./CurvePoolLib.sol";
 ///      positionId = abi.encode(address pool)
 ///
 ///      Gauge-staked LP and rewards are handled separately by CurveGaugesMetaBalanceAdapter.
+///
+///      Valuation = instantaneous on-chain amounts (ADR 0017): this adapter reports the position's current
+///      pro-rata share of the pool's on-chain balances as per-token `amount`s, which NAVCalculator prices with
+///      external oracles — it does NOT compute a manipulation-resistant "fair" value. Imbalancing the pool can
+///      transiently move the reported amounts (a donation that arbitrage reverses within a block) but cannot be
+///      monetised: NAV is a read-only oracle consumed by an asynchronous sub/redeem layer (no atomic on-chain
+///      consumer). See docs/decisions/0017-lp-valuation-instantaneous-amounts.md; revisit if NAV is ever consumed
+///      synchronously on-chain.
 contract CurvePoolsMetaBalanceAdapter is MetaBalanceAdapter {
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.CURVE_POOL;
-
     /// @param protocolName_ Human-readable name (e.g. "Curve").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
     constructor(string memory protocolName_, address navCalculator_)
@@ -77,16 +83,7 @@ contract CurvePoolsMetaBalanceAdapter is MetaBalanceAdapter {
             uint256 amount = CurvePoolLib.proRataAmount(poolBal, walletLp, totalSupply);
             if (amount == 0) continue;
 
-            tmp[n++] = INAVCalculator.PositionBalance({
-                balanceAsset: assetInfo,
-                balanceAdapter: address(this),
-                amount: amount,
-                isDebt: false,
-                protocolId: PROTOCOL_ID,
-                positionId: pid,
-                positionKind: PositionKind.Supplied,
-                isLocked: false
-            });
+            tmp[n++] = _leg(assetInfo, amount, false, pid, PositionKind.Supplied);
         }
 
         positions = new INAVCalculator.PositionBalance[](n);
@@ -103,19 +100,34 @@ contract CurvePoolsMetaBalanceAdapter is MetaBalanceAdapter {
     // ─── IPositionDescribable ─────────────────────────────────────────────────
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev Returns `["Liquidity Pool", "TOKEN0/TOKEN1/… LP"]`; leaf derived on-chain from coin symbols ("" on failure).
+    /// @dev Returns `["AMM Liquidity Pool", "TOKEN0/TOKEN1/…"]`; leaf derived on-chain from coin symbols ("" on failure).
     function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
         if (pid.length < 32) return new string[](0);
         string memory leaf = _leaf(pid);
-        return _labels("Liquidity Pool", leaf);
+        return _labels("AMM Liquidity Pool", leaf);
     }
 
-    /// @notice Derives the "TOKEN0/TOKEN1/… LP" leaf from the pool coins ("" on failure).
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolBrand() internal pure override returns (bytes32) {
+        return ProtocolIds.CURVE;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolId() internal pure override returns (bytes32) {
+        return ProtocolIds.CURVE;
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    function _protocolSubId() internal pure override returns (bytes32) {
+        return ProtocolIds.CURVE_POOLS;
+    }
+
+    /// @notice Derives the "TOKEN0/TOKEN1/…" leaf from the pool coins ("" on failure).
     function _leaf(bytes calldata pid) private view returns (string memory) {
         address pool = abi.decode(pid, (address));
         address[] memory coins = CurvePoolLib.getCoins(pool);
         if (coins.length == 0) return "";
-        return string.concat(CurvePoolLib.coinSymbols(coins), " LP");
+        return CurvePoolLib.coinSymbols(coins);
     }
 
     // ─── Internal helpers ─────────────────────────────────────────────────────

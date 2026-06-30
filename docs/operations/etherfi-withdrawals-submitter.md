@@ -1,6 +1,6 @@
 # ether.fi withdrawals submitter bot — operator's guide
 
-The `EtherFiWithdrawalQueueBalanceAdapter` (`src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueBalanceAdapter.sol`) reports a portfolio's in-flight ETH in ether.fi's withdrawal queue by reading an on-chain cache of candidate `WithdrawRequestNFT` `tokenId`s per account. The NFT is **not enumerable**, so an off-chain bot discovers the account's tokenIds and submits them. Crucially, the cache stores **only ids, never amounts** — the adapter values each id entirely from live on-chain reads (`getClaimableAmount` / `getRequest` + `LiquidityPool.amountForShare`) and re-verifies `ownerOf` on every read. The bot cannot fabricate value; at worst it omits an id (NAV under-reports), never over-reports. See [`docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md`](../decisions/0014-agent-fed-cache-adapters-for-exit-queues.md) for the trust model (generalises Merkl/ADR 0007).
+The `EtherFiWithdrawalQueueAssistedBalanceAdapter` (`src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueAssistedBalanceAdapter.sol`) reports a portfolio's in-flight ETH in ether.fi's withdrawal queue by reading an on-chain cache of candidate `WithdrawRequestNFT` `tokenId`s per account. The NFT is **not enumerable**, so an off-chain bot discovers the account's tokenIds and submits them. Crucially, the cache stores **only ids, never amounts** — the adapter values each id entirely from live on-chain reads (`getClaimableAmount` / `getRequest` + `LiquidityPool.amountForShare`) and re-verifies `ownerOf` on every read. The bot cannot fabricate value; at worst it omits an id (NAV under-reports), never over-reports. See [`docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md`](../decisions/0014-agent-fed-cache-adapters-for-exit-queues.md) for the trust model (generalises Merkl/ADR 0007).
 
 > **Access control:** this adapter is in the assisted balance-adapter family — submissions are gated by `ASSISTANT_ROLE` (granted/rotated by `DEFAULT_ADMIN_ROLE`); see [ADR 0015](../decisions/0015-assisted-balance-adapter-family.md). Where this guide says "owner"/"owner key" below, read it as the `ASSISTANT_ROLE` holder.
 
@@ -15,7 +15,7 @@ Per cycle, two things:
 1. **Discover** each tracked account's open `WithdrawRequestNFT` tokenIds (off-chain).
 2. **Submit** the fresh ones to the deployed adapter via `submitTokenIds(account, ids)` (or `submitTokenIdsBatch`), signed by a key holding `ASSISTANT_ROLE`.
 
-Garbage-collection (`clearTokenId` / `clearAccount`) for claimed/transferred ids is an occasional cleanup, not steady-state-critical — stale ids already read as 0 (the adapter drops them when `ownerOf != account` or the request is gone).
+Garbage-collection (`clearTokenId` / `clearAccount`) for claimed/transferred ids is an occasional cleanup, not steady-state-critical — each `submitTokenIds` **replaces** the account's whole cached set, so submitting only the currently-owned ids each cycle already purges stale ones; and even an uncollected stale id reads as 0 (the adapter drops it when `ownerOf != account` or the request is gone). Explicit GC matters only when the bot stops submitting for an account (e.g. its last id was claimed and the bot skips the empty list) or to keep the cache under the `MAX_TOKEN_IDS` (256) cap — neither of which a normal account approaches.
 
 ## Discovering tokenIds (the only off-chain step)
 
@@ -25,7 +25,7 @@ ether.fi exposes no owner→tokenIds view. Recover ownership from event logs on 
 owned(account) = { tokenId : Transfer(_, account, tokenId) } minus { tokenId : Transfer(account, _, tokenId) }
 ```
 
-i.e. ERC-721 `Transfer` events where `to == account`, minus those where `from == account` (claims burn the NFT → `Transfer(account, 0x0, id)`). This is the standard NFT-inventory derivation (how Etherscan does it). An indexer/subgraph or a bounded `eth_getLogs` scan both work. The bot may submit the full owned set every cycle — the adapter dedups, and write-time `ownerOf` hygiene drops anything not currently owned.
+i.e. ERC-721 `Transfer` events where `to == account`, minus those where `from == account` (claims burn the NFT → `Transfer(account, 0x0, id)`). This is the standard NFT-inventory derivation (how Etherscan does it). An indexer/subgraph or a bounded `eth_getLogs` scan both work. The bot may submit the full owned set every cycle — `submitTokenIds` **replaces** the account's cached set wholesale and dedups within the list, so no delta tracking is needed. The write-time `ownerOf` check is **fail-loud**: any id not currently owned by `account` reverts the whole submission (`NotTokenOwner`), so the bot should submit only ids it derived as owned (a revert signals a race — an id claimed/transferred between scan and submit — to retry on the next cycle).
 
 ## Inputs
 
@@ -33,7 +33,7 @@ i.e. ERC-721 `Transfer` events where `to == account`, minus those where `from ==
 |---|---|---|
 | **Account list** | Operator config | EVM addresses to track (the OIV per-chain accounts that use ether.fi). |
 | **Chains** | Operator config | ether.fi withdrawals are **mainnet (1)** only today. |
-| **Adapter address** | `script/config/deployments/1.json` → `balanceAdapters.EtherFiWithdrawalQueue` | Read at startup; refresh on redeploy. |
+| **Adapter address** | `script/config/deployments/1.json` → `balanceAdapters.EtherFiWithdrawalQueueAssisted` | Read at startup; refresh on redeploy. |
 | **Owner key** | Operator secret store | Owns the adapter (`chainConfig.admin` = OIV Safe). Submit via the Safe Transaction Service / a granted Zodiac role, same as the Merkl bot. |
 
 The `WithdrawRequestNFT` + `LiquidityPool` addresses and all valuation/verification rules are pinned in the adapter; the bot does not need them beyond event scanning.
@@ -45,13 +45,13 @@ Cadence: **roughly daily** is sufficient for correctness (withdrawals take ~days
 ```
 ids = scan_owned_tokenIds(account)        # Transfer(to=account) − Transfer(from=account)
 if ids: submitTokenIds(account, ids)      # as ASSISTANT_ROLE holder; adapter dedups + re-verifies
-# optional GC: clearTokenId for ids whose ownerOf no longer == account (claimed/transferred)
+# (submit replaces the whole set, so stale ids self-purge; clearAccount only if you stop submitting an account)
 ```
 
 ## Failure modes
 
 - **Bot down / lagging:** newly-requested withdrawals aren't reflected until the next cycle → NAV **under-reports** that account's in-flight ETH. Never over-reports. Mitigation: same SLA as the Merkl bot.
-- **Submitting a non-owned id:** rejected at write (write-time `ownerOf` check) and would read as 0 anyway. Harmless.
+- **Submitting a non-owned id:** the write **reverts** (`NotTokenOwner`) and is atomic — the bad id and every other id in that same `submitTokenIds` list fail to land, leaving the prior cached set untouched. Never an NAV risk (it would read as 0 anyway), but the bot must filter to currently-owned ids and retry, or that account's update is skipped for the cycle.
 - **Claimed id left in the cache:** reads as 0 (the request no longer exists / `ownerOf` reverts → dropped). GC is cosmetic (storage hygiene), not correctness.
 
 ## Non-goals

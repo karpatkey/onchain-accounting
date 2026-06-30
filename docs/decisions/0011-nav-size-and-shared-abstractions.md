@@ -54,26 +54,29 @@ regeneration procedure.
 
 ### PR B — `BaseCustomPriceFeed` (maintainability; follow-up)
 
-~24 of the 25 custom price feeds share an identical skeleton: the 5 `ICustomPriceFeed`
+Most of the ~27 custom price feeds share an identical skeleton: the 5 `ICustomPriceFeed`
 thunks, the immutables, the constructor with `OracleArgumentChecks`, and the Chainlink
 read + staleness preamble. Only the rate source and the multiply-and-normalize differ
 (usually 1–3 lines). Introduce an `abstract BaseCustomPriceFeed` carrying the shared surface
-with an abstract `_rate()` hook; concrete feeds collapse to ~30–40 LOC. The generic
-`CrossRate_Price` already subsumes the pure two-Chainlink-feed L2 variants. Bespoke
-outliers stay as-is: `ETHPlus_Price` (no Chainlink leg), `eETH_Price` (derived two-feed),
-`NXM_Price` (RAMM + liveness assert), `ankrETH_Price` (rate inversion).
+with an abstract `_rate()` hook; concrete feeds collapse to ~30–40 LOC (6 have migrated so
+far — `cbETH`, `rETH`, `ETHx`, `rsETH`, `ezETH`, `osToken`). The generic
+`CrossRate_CustomPriceFeed` already subsumes the pure two-Chainlink-feed L2 variants. Bespoke
+outliers stay as-is: `ETHPlus_CustomPriceFeed` (no Chainlink leg), `eETH_CustomPriceFeed` (derived two-feed),
+`NXM_CustomPriceFeed` (RAMM + liveness assert), `ankrETH_CustomPriceFeed` (rate inversion).
 
 ### PR C — `BalanceAdapter` base + `StaticCallLib` + `ArrayLib` helpers (maintainability; follow-up)
 
-- An `abstract BalanceAdapter` base for the ~12 standalone leaf adapters mirroring the
+- An `abstract BalanceAdapter` base for the standalone leaf adapters (the ~9 plain
+  contracts in `src/balances/BalanceAdapters/`) mirroring the
   existing `MetaBalanceAdapter` base — shared `supportsInterface`, one canonical
   `_getAssetInfo`, and the empty `getAdapterBalances*` stubs.
 - A `StaticCallLib` carrying the `safeUint` / `safeAddr` staticcall-and-decode helpers
-  duplicated (and already drifting) across AuraRewardsMeta, ConvexRewardsMeta, and
-  UniswapV2PairLib. Only those three call sites have migrated so far; other hand-rolled
-  copies (CurvePoolLib, FluidVaultLib, CompoundV3CometLib, AaveUmbrella) still differ subtly
-  and route around the lib. The per-adapter stash-unwrap logic in the Aura/Convex adapters
-  builds on `safeAddr` but stays in the adapters — it is not itself a `StaticCallLib` helper.
+  duplicated (and already drifting) across the Convex (`ConvexCurveLPStakingMetaBalanceAdapter`)
+  and `UniswapV2PairLib` call sites. (The Aura adapter, which shared the same copy, has since
+  been removed from the repo entirely.) Only those two call sites have migrated so far; other
+  hand-rolled copies (CurvePoolLib, FluidVaultLib, CompoundV3CometLib, AaveUmbrella) still differ
+  subtly and route around the lib. The per-adapter stash-unwrap logic in the Convex adapter
+  builds on `safeAddr` but stays in the adapter — it is not itself a `StaticCallLib` helper.
 - `ArrayLib` for the trim-to-length copy-back: it ships `copySliceAddress` (plus
   `intersection` / `deduplicateAddresses`) over **address** arrays, used today by NAVRegistryLib
   and PriceFeedLib. The analogous PositionBalance/uint copy-backs repeated across the leaf
@@ -89,4 +92,4 @@ outliers stay as-is: `ETHPlus_Price` (no Chainlink leg), `eETH_Price` (derived t
   redeploying the affected (immutable, individually-audited) feeds/adapters — so they are
   forward-looking: new feeds/adapters build on the base, existing ones migrate on redeploy.
 - The shared base contracts become higher-value audit targets (a bug there is systemic),
-  which is the deliberate trade for eliminating 24× copy-paste of the staleness/rounding math.
+  which is the deliberate trade for eliminating the per-feed copy-paste of the staleness/rounding math.

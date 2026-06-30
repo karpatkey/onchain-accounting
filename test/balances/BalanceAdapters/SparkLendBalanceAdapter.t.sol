@@ -39,8 +39,16 @@ contract MockAaveProtocolDataProvider {
         address tokenAddress;
     }
 
+    struct UserReserve {
+        uint256 aToken;
+        uint256 stableDebt;
+        uint256 variableDebt;
+        bool asCollateral;
+    }
+
     MockAddressesProviderSource public _src;
     TokenData[] public reserves;
+    mapping(address => mapping(address => UserReserve)) public userReserves;
 
     constructor() {
         _src = new MockAddressesProviderSource(address(0x1234));
@@ -54,13 +62,9 @@ contract MockAaveProtocolDataProvider {
         return reserves;
     }
 
-    function getUserReserveData(
-        address,
-        /* asset */
-        address /* user */
-    )
+    function getUserReserveData(address asset, address user)
         external
-        pure
+        view
         returns (
             uint256 currentATokenBalance,
             uint256 currentStableDebt,
@@ -73,12 +77,24 @@ contract MockAaveProtocolDataProvider {
             bool usageAsCollateralEnabled
         )
     {
-        // Return zeros for all values (can be customized in tests if needed)
-        return (0, 0, 0, 0, 0, 0, 0, 0, false);
+        UserReserve memory u = userReserves[asset][user];
+        return (u.aToken, u.stableDebt, u.variableDebt, 0, 0, 0, 0, 0, u.asCollateral);
     }
 
     function addReserve(string memory symbol, address tokenAddress) external {
         reserves.push(TokenData({symbol: symbol, tokenAddress: tokenAddress}));
+    }
+
+    /// @notice Set a user's per-reserve balances (aToken supply, stable debt, variable debt, collateral flag).
+    function setUserReserve(
+        address asset,
+        address user,
+        uint256 aToken,
+        uint256 stableDebt,
+        uint256 variableDebt,
+        bool asCollateral
+    ) external {
+        userReserves[asset][user] = UserReserve(aToken, stableDebt, variableDebt, asCollateral);
     }
 }
 
@@ -111,6 +127,35 @@ contract SparkLendBalanceAdapterTest is BalanceAdapterTestBase {
     function test_getAdapterBalanceForAsset_returns_zero_for_zero_address() public view {
         (uint256 amount,) = adapter.getAdapterBalanceForAsset(address(0), address(usdc));
         assertEq(amount, 0);
+    }
+
+    // ============================================
+    // Legacy stable debt (regression: must not be dropped → would over-report NAV)
+    // ============================================
+
+    /// @notice The Borrow leg must include legacy stable debt (SparkLend is an Aave V3 fork; `getUserReserveData`'s
+    ///         2nd return `currentStableDebt` was previously discarded, understating debt and overstating NAV).
+    function test_borrow_includesLegacyStableDebt() public {
+        address dai = makeAddr("dai");
+        mockDataProvider.addReserve("DAI", dai);
+
+        // Legacy stable debt only (no variable debt). Pre-fix this returned 0; it must now report the stable debt.
+        mockDataProvider.setUserReserve(dai, alice, 0, 3 ether, 0, false);
+        (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(alice, dai);
+        assertEq(amount, 3 ether, "legacy stable debt must be counted in the borrow leg");
+        assertTrue(isDebt, "stable-debt-only position is net debt");
+
+        // Both stable + variable debt → the borrow leg is their sum.
+        mockDataProvider.setUserReserve(dai, alice, 0, 3 ether, 2 ether, false);
+        (amount, isDebt) = adapter.getAdapterBalanceForAsset(alice, dai);
+        assertEq(amount, 5 ether, "borrow leg = variableDebt + stableDebt");
+        assertTrue(isDebt);
+
+        // Supply net of (stable + variable) debt.
+        mockDataProvider.setUserReserve(dai, alice, 10 ether, 3 ether, 2 ether, false);
+        (amount, isDebt) = adapter.getAdapterBalanceForAsset(alice, dai);
+        assertEq(amount, 5 ether, "net = supply 10 - (3 stable + 2 variable)");
+        assertFalse(isDebt);
     }
 
     // ============================================

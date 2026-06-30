@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {BalanceAdapterBase} from "../BalanceAdapterBase.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -25,7 +27,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      no live reads happen during construction. Reward token is AAVE for every entry today; `_records()` keeps a
 ///      per-entry `rewardToken` field so a future stake token with a non-AAVE reward (unlikely but possible) is a
 ///      one-line change.
-contract AaveV3SafetyModuleBalanceAdapter is IBalanceAdapter, IPositionDescribable {
+contract AaveV3SafetyModuleBalanceAdapter is BalanceAdapterBase {
     //
     // Constants — Mainnet Safety Module addresses
     //
@@ -58,11 +60,15 @@ contract AaveV3SafetyModuleBalanceAdapter is IBalanceAdapter, IPositionDescribab
     // Type Definitions
     //
 
+    /// @dev Three-level position taxonomy for every position this adapter emits: brand `aave`, protocol `aave-v3`,
+    ///      sub-protocol `aave-v3-safety-module`. Pinned as constants so the identity is baked into bytecode.
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.AAVE;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.AAVE_V3;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.AAVE_V3_SAFETY_MODULE;
+
     /// @dev Internal record describing one Safety Module stake token. Keeping the staked / reward addresses as constants
     ///      (rather than reading them from the contract at deploy time) keeps the adapter purely view-friendly and means
     ///      a misconfiguration in source code is the only way to ship a wrong wiring — caught at review time.
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.AAVE_V3_SAFETY_MODULE;
-
     struct StakeTokenRecord {
         address stakeToken;
         address stakedToken;
@@ -84,7 +90,7 @@ contract AaveV3SafetyModuleBalanceAdapter is IBalanceAdapter, IPositionDescribab
     /// @param navCalculator The NAVCalculator address (used to look up registered assets when emitting positions).
     constructor(address navCalculator) {
         if (navCalculator == address(0)) revert InvalidArguments();
-        require(navCalculator.code.length > 0, "NAVCalculator must be a contract");
+        AddressCheckLib.requireContract(navCalculator, "NAVCalculator");
         NAV_CALCULATOR = INAVCalculator(navCalculator);
     }
 
@@ -109,17 +115,11 @@ contract AaveV3SafetyModuleBalanceAdapter is IBalanceAdapter, IPositionDescribab
     // IERC165
     //
 
-    /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IPositionDescribable).interfaceId
-            || interfaceId == type(IERC165).interfaceId;
-    }
-
     function protocolName() external pure returns (string memory) {
         return "Aave V3";
     }
 
-    function positionLabels(bytes calldata) external pure returns (string[] memory) {
+    function positionLabels(bytes calldata) external pure override returns (string[] memory) {
         string[] memory out = new string[](1);
         out[0] = "Safety Module";
         return out;
@@ -234,10 +234,13 @@ contract AaveV3SafetyModuleBalanceAdapter is IBalanceAdapter, IPositionDescribab
                                 balanceAdapter: address(this),
                                 amount: amt,
                                 isDebt: false,
+                                protocolBrand: PROTOCOL_BRAND,
                                 protocolId: PROTOCOL_ID,
+                                protocolSubId: PROTOCOL_SUB_ID,
                                 positionId: abi.encode(address(r.stakeToken)),
                                 positionKind: PositionKind.Staking,
-                                isLocked: true
+                                isLocked: true,
+                                positionInstanceId: bytes32(0)
                             });
                         }
                     }
@@ -251,10 +254,13 @@ contract AaveV3SafetyModuleBalanceAdapter is IBalanceAdapter, IPositionDescribab
                                 balanceAdapter: address(this),
                                 amount: amt,
                                 isDebt: false,
+                                protocolBrand: PROTOCOL_BRAND,
                                 protocolId: PROTOCOL_ID,
+                                protocolSubId: PROTOCOL_SUB_ID,
                                 positionId: abi.encode(address(r.stakeToken)),
                                 positionKind: PositionKind.Staking,
-                                isLocked: false
+                                isLocked: false,
+                                positionInstanceId: bytes32(0)
                             });
                         }
                     }
@@ -272,10 +278,13 @@ contract AaveV3SafetyModuleBalanceAdapter is IBalanceAdapter, IPositionDescribab
                             balanceAdapter: address(this),
                             amount: rewards,
                             isDebt: false,
+                            protocolBrand: PROTOCOL_BRAND,
                             protocolId: PROTOCOL_ID,
+                            protocolSubId: PROTOCOL_SUB_ID,
                             positionId: abi.encode(address(r.stakeToken)),
                             positionKind: PositionKind.Rewards,
-                            isLocked: false
+                            isLocked: false,
+                            positionInstanceId: bytes32(0)
                         });
                     }
                 }
@@ -370,11 +379,8 @@ contract AaveV3SafetyModuleBalanceAdapter is IBalanceAdapter, IPositionDescribab
         pure
         returns (INAVCalculator.Asset memory)
     {
-        uint256 n = registered.length;
-        for (uint256 i; i < n; ++i) {
-            if (registered[i].asset == asset) return registered[i];
-        }
-        return INAVCalculator.Asset({asset: address(0), symbol: "", decimals: 0});
+        (INAVCalculator.Asset memory a,) = RegisteredAssetLib.find(registered, asset);
+        return a;
     }
 }
 

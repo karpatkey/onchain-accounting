@@ -13,7 +13,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 ///      `calculateTVLs()` reverts or supply is 0.
 /// @dev Staleness gap: calculateTVLs() reads Renzo's internal oracles, whose freshness is not independently
 ///      checked here. Only the ETH/USD Chainlink heartbeat is verified. This is an architectural constraint of
-///      Renzo on mainnet; the L2 adapter (ezETH_L2_Price) avoids this by using xRenzoDeposit.getRate() directly.
+///      Renzo on mainnet; the L2 adapter (ezETH_L2_CustomPriceFeed) avoids this by using xRenzoDeposit.getRate() directly.
 /// @author KPK
 /* solhint-disable contract-name-camelcase */
 contract ezETH_CustomPriceFeed is BaseCustomPriceFeed {

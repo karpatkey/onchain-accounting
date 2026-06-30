@@ -17,14 +17,15 @@
 - `noCooldown_emptyPositions`, `zeroAddress` — empty/negative cases against the real fork.
 
 ## 3. Unit test coverage
-`test/balances/BalanceAdapters/EthenaCooldownBalanceAdapter.t.sol` (20 tests, mock-only): constructor guards (×4), interface/describe (×3), `getAdapterBalanceForAsset` (×6 incl. active/elapsed cooldown), `getAdapterBalances` (×3), `getAdapterPositions` (×4 incl. unregistered-asset drop, asset filter, identity).
+`test/balances/BalanceAdapters/EthenaCooldownBalanceAdapter.t.sol` (23 tests, mock-only): constructor guards (×4), interface/describe (×3), `getAdapterBalanceForAsset` (×6 incl. active/elapsed cooldown), `getAdapterBalances` (×3), `getAdapterPositions` (×7 incl. unregistered-asset drop, asset filter, identity, and the `isLocked` cases — locked while cooling, unlocked after the cooldown elapsed, unlocked when cooldown disabled).
 
 ## 4. Adapter formula recap
 ```
 pending = sUSDe.cooldowns(account).underlyingAmount      // USDe, 18-dec, 0 when no cooldown
 position = PositionBalance{
   balanceAsset: USDe (registered), amount: pending, isDebt: false,
-  protocolId: keccak256("ethena-cooldown"), positionId: abi.encode(address sUSDe), positionKind: Supplied,
+  protocolBrand: keccak256("ethena"), protocolId: keccak256("ethena"), protocolSubId: keccak256("ethena-cooldown"),
+  positionId: abi.encode(address sUSDe), positionKind: Supplied, positionInstanceId: bytes32(0),
   isLocked: true while cooling (block.timestamp < cooldownEnd), false once elapsed   // ADR 0016
 }
 ```
@@ -62,4 +63,4 @@ bash script/development/app/sync-app-env.sh 1
 The seeded Safe then shows its real portfolio **plus** the new Ethena "USDe Cooldown" leg.
 
 ## 10. Test verdict
-- Unit: **20/20 pass**. Fork: **5/5 pass** (strict delta 0). `LibraryPinConsistencyTest`: 3/3 (no pin shift). `forge build`/`fmt` clean.
+- Unit: **23/23 pass**. Fork: **5/5 pass** (strict delta 0). `LibraryPinConsistencyTest`: 3/3 (no pin shift). `forge build`/`fmt` clean.

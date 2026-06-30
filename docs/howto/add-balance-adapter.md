@@ -4,7 +4,7 @@ End-to-end walkthrough. Read [`/CLAUDE.md`](../../CLAUDE.md) and [`../onboarding
 
 The framework reference is [`src/balances/BALANCE_ADAPTERS.md`](../../src/balances/BALANCE_ADAPTERS.md). This doc is the *recipe*; that doc is the *spec*.
 
-Throughout, replace `MyProtocol` with your protocol name. Pick a name that's stable, recognizable, and matches the on-chain protocol identity (e.g., `SparkLend`, `GearboxMarkets`, `BalancerV3Pools`).
+Throughout, replace `MyProtocol` with your protocol name. Pick a name that's stable, recognizable, and matches the on-chain protocol identity (e.g., `SparkLend`, `GearboxV3Markets`, `BalancerV3Pools`).
 
 ---
 
@@ -24,12 +24,12 @@ Before writing code, answer:
 
 ### Per-instance vs meta-adapter
 
-If the protocol has **many fungible instances** (Morpho vaults/markets, Balancer pools/gauges, Aave instances, Uniswap V3/V2 pools), prefer a **meta-adapter** over one contract per instance:
+If the protocol has **many fungible instances** (Morpho vaults/markets, Balancer pools/gauges, Aave instances, Uniswap/PancakeSwap V2 pairs), prefer a **meta-adapter** over one contract per instance:
 
 - **Per-instance** (the default skeleton below): pin the pool/market/vault address in the constructor. One deployed contract per instance. Right for singletons (a savings vault, a withdrawal queue, SparkLend) or one-off adapters with unusual constructor args.
-- **Meta-adapter** (`IMetaBalanceAdapter` / `MetaBalanceAdapter`): one immutable contract for *all* instances of the protocol; the active set is configured on NAVCalculator via `addMetaInstances`/`removeMetaInstances` (a `MANAGER` TX), not by deploying more contracts. Extend `MetaBalanceAdapter` and implement `_instancePositions(account, instance, assetFilter)` + `_instanceAssets(instance)`. Optionally override `_instancePositionId(bytes32 instance)` to customise positionId encoding — the default is `abi.encode(_toAddress(instance))` (address-keyed protocols); override with `abi.encode(instance)` for raw-bytes32 coordinates (Morpho marketIds, Balancer V2 poolIds); adapters where positionId varies per leg (Aave V3 per-reserve, Uniswap V3 per-NFT) skip the hook and build positionId inline. Adding a pool/vault later is a config TX, not a deploy. See `GearboxMarketsMetaBalanceAdapter.sol`, §6.1 of `src/balances/BALANCE_ADAPTERS.md`, and [ADR 0010](../decisions/0010-meta-balance-adapters.md). Meta-adapters still take **no admin functions** — the governed state lives on NAVCalculator.
+- **Meta-adapter** (`IMetaBalanceAdapter` / `MetaBalanceAdapter`): one immutable contract for *all* instances of the protocol; the active set is configured on NAVCalculator via `addMetaInstances`/`removeMetaInstances` (a `MANAGER` TX), not by deploying more contracts. Extend `MetaBalanceAdapter` and implement the two data hooks `_instancePositions(account, instance, assetFilter)` + `_instanceAssets(instance)`, plus the three identity hooks `_protocolBrand()` / `_protocolId()` / `_protocolSubId()` (the version-stripped brand, the ecosystem roll-up, and the per-product slug — see §1.1). Build each leg with the base's `_leg(asset, amount, isDebt, positionId, kind)` helper (it stamps the three identity fields, `balanceAdapter = address(this)`, `isLocked = false`, and `positionInstanceId = bytes32(0)`), and derive `positionLabels` via the base's `_labels(category, leaf)` helper. Optionally override `_instancePositionId(bytes32 instance)` to customise positionId encoding — the default is `abi.encode(_toAddress(instance))` (address-keyed protocols); override with `abi.encode(instance)` for raw-bytes32 coordinates (Morpho marketIds, Balancer V2 poolIds); adapters where positionId varies per leg (e.g. Aave V3, which builds `abi.encode(pool)` inline) skip the hook and build positionId inline. Adding a pool/vault later is a config TX, not a deploy. See `GearboxV3MarketsMetaBalanceAdapter.sol`, §6.1 of `src/balances/BALANCE_ADAPTERS.md`, and [ADR 0010](../decisions/0010-meta-balance-adapters.md). Meta-adapters still take **no admin functions** — the governed state lives on NAVCalculator.
 
-Today 20 meta-adapters cover all major multi-instance protocols (Aave V3, Compound V3, Morpho Vaults/Markets, Euler V2, Gearbox, Balancer V2/V3 pools + gauges, Curve pools + gauges, Convex, Fluid fTokens + Vaults, StakeWise V3, Uniswap V2/V3, PancakeSwap V2/V3). For a new multi-instance protocol, a meta-adapter is almost always the right choice.
+Today 19 meta-adapters cover all major multi-instance protocols (Aave V3, Compound V3, Morpho Vaults/Markets, Euler V2, Gearbox V3 markets + credit accounts, Balancer V2/V3 pools + gauges, Curve pools + gauges, Convex, Fluid fTokens + Vaults, StakeWise V3, Uniswap V2, PancakeSwap V2). For a new multi-instance protocol, a meta-adapter is almost always the right choice. (Uniswap V3 / PancakeSwap V3 are NOT meta — their NFT positions are non-enumerable, so they live in the assisted family as `UniswapV3PoolsAssistedBalanceAdapter` / `PancakeSwapV3PoolsAssistedBalanceAdapter`.)
 
 ---
 
@@ -39,24 +39,27 @@ File: `src/balances/<family>/<MyProtocol>.sol`, where `<family>` is `BalanceAdap
 
 ### 1.1 Identity pattern
 
-Every `PositionBalance` now carries typed identity fields instead of free-form strings:
+Every `PositionBalance` now carries typed identity fields instead of free-form strings. The protocol identity is a **three-level taxonomy** (`protocolBrand` → `protocolId` → `protocolSubId`):
 
 | Field | Type | What to put |
 |---|---|---|
-| `protocolId` | `bytes32` | A constant from `src/utils/ProtocolIds.sol` — `keccak256` of a lowercase kebab-case slug. Add a new constant if needed (see §1.2). |
-| `positionId` | `bytes` | `abi.encode(keyAddress)` or `abi.encode(a, b)` computed at query time, of the **static, timeless** key (never a per-request id). See the schema comments in `ProtocolIds.sol` for the canonical shape per protocol family. |
+| `protocolBrand` | `bytes32` | The broadest, version-stripped brand roll-up (e.g. `ProtocolIds.AAVE`, `ProtocolIds.BALANCER`). Display/grouping only — NOT part of the stable identity key. For unversioned protocols the brand equals the ecosystem id (reuse the same constant). |
+| `protocolId` | `bytes32` | The ecosystem/version roll-up (e.g. `ProtocolIds.AAVE_V3`). Grouping layer. For single-product ecosystems, reuse the same constant as `protocolSubId` (e.g. `CAP`, `MERKL`, `CONVEX`). |
+| `protocolSubId` | `bytes32` | The per-product slug (e.g. `ProtocolIds.AAVE_V3_LENDING`, `ProtocolIds.SPARK_LEND`) — the protocol component of the **stable reconciliation key**. Each is `keccak256` of a lowercase kebab-case slug. Add a new constant if needed (see §1.2). |
+| `positionId` | `bytes` | `abi.encode(keyAddress)` or `abi.encode(a, b)` computed at query time, of the **static, timeless** key (never a per-request id). The `protocolSubId` selects the decode schema — see the schema comments at the top of `ProtocolIds.sol`. |
 | `positionKind` | `PositionKind` | Enum from `src/utils/PositionKind.sol`: `Wallet`, `Supplied`, `Borrowed`, `Collateral`, `Staking`, `Rewards`, or `Fees`. |
-| `isLocked` | `bool` | `true` if the leg is not withdrawable now (pending withdrawal / unstaking cooldown); `false` if liquid. `false` for most adapters. Withdrawal-queue / cooldown adapters split a holding into a claimable (`false`) and a locked (`true`) leg sharing one static `positionId` — `isLocked` is part of the identity key. |
+| `isLocked` | `bool` | `true` if the leg is not withdrawable now (pending withdrawal / unstaking cooldown); `false` if liquid. `false` for most adapters. Withdrawal-queue / cooldown adapters split a holding into a claimable (`false`) and a locked (`true`) leg sharing one static `positionId` and one key; `isLocked` is a mutable per-leg attribute (NOT part of the key), so the two legs are summed in reconciliation. See [ADR 0016](../decisions/0016-islocked-position-status.md). |
+| `positionInstanceId` | `bytes32` | The **ephemeral** per-item coordinate (e.g. a Uniswap V3 NFT tokenId, a withdrawal-request id), `bytes32(0)` when there is none. It rides here as a typed field — never as a label and never in `positionId`. |
 
 ### 1.2 Adding a new ProtocolIds constant
 
-If no existing constant fits your protocol, add one to `src/utils/ProtocolIds.sol`:
+If no existing constant fits your protocol, add the slug(s) you need to `src/utils/ProtocolIds.sol` — typically a per-product `protocolSubId`, plus a `protocolId` (and `protocolBrand`) when the brand/ecosystem is not already present:
 
 ```solidity
 bytes32 internal constant MY_PROTOCOL = keccak256("my-protocol-v1");
 ```
 
-Slug rules: lowercase ASCII, kebab-case, include the major version. Document the `positionId` ABI-encode schema in the NatSpec block at the top of the file.
+Slug rules: lowercase ASCII, kebab-case, include the major version. Document the `positionId` ABI-encode schema for this `protocolSubId` in the NatSpec block at the top of the file (it is the schema clients use to decode without runtime sniffing).
 
 ### 1.3 Per-instance adapter skeleton
 
@@ -82,7 +85,9 @@ contract MyProtocolBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     /// @notice NAVCalculator (asset registry source).
     INAVCalculator public immutable NAV_CALCULATOR;
 
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.MY_PROTOCOL;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.MY_PROTOCOL;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.MY_PROTOCOL;
 
     constructor(address protocolContract_, address navCalculator_) {
         if (protocolContract_ == address(0) || navCalculator_ == address(0)) revert InvalidArguments();
@@ -106,24 +111,6 @@ contract MyProtocolBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     /// @inheritdoc IPositionDescribable
     function protocolName() external pure returns (string memory) {
         return "My Protocol";
-    }
-
-    /// @inheritdoc IPositionDescribable
-    /// @dev `positionId` is `abi.encode(protocolContract, asset)`. Returns an ordered label hierarchy
-    ///      (broadest first, leaf last); an empty array when no label can be derived — never a `[""]`
-    ///      with a trailing blank segment.
-    function positionLabels(bytes calldata positionId) external view returns (string[] memory) {
-        if (positionId.length < 64) return new string[](0);
-        (, address asset) = abi.decode(positionId, (address, address));
-        string memory leaf;
-        try IERC20Metadata(asset).symbol() returns (string memory s) {
-            leaf = string.concat(s, " supply");
-        } catch {}
-        // Fail-open: no derivable label → empty array (IPositionDescribable convention), not `[""]`.
-        if (bytes(leaf).length == 0) return new string[](0);
-        string[] memory out = new string[](1);
-        out[0] = leaf;
-        return out;
     }
 
     // ─── IBalanceAdapter ────────────────────────────────────────────────
@@ -156,11 +143,23 @@ contract MyProtocolBalanceAdapter is IBalanceAdapter, IPositionDescribable {
         //     balanceAdapter: address(this),
         //     amount: supplyAmount,
         //     isDebt: false,
+        //     protocolBrand: PROTOCOL_BRAND,
         //     protocolId: PROTOCOL_ID,
-        //     positionId: abi.encode(PROTOCOL_CONTRACT, asset),
+        //     protocolSubId: PROTOCOL_SUB_ID,
+        //     positionId: abi.encode(PROTOCOL_CONTRACT),
         //     positionKind: PositionKind.Supplied,
-        //     isLocked: false  // true only for the pending leg of a withdrawal queue / cooldown
+        //     isLocked: false,  // true only for the pending leg of a withdrawal queue / cooldown
+        //     positionInstanceId: bytes32(0)  // ephemeral per-item coordinate (NFT/request id); bytes32(0) if none
         // });
+    }
+
+    /// @dev Display hierarchy that sits below `protocolName()` (leaf last), derived on-chain from `positionId`
+    ///      (ERC20 symbols, vault/pool names, etc.). Verbose-only, gas-capped — display, never identity.
+    function positionLabels(bytes calldata positionId) external view returns (string[] memory out) {
+        // Decode `positionId`, read the relevant on-chain name(s)/symbol(s), return [category, leaf].
+        out = new string[](2);
+        out[0] = "Market";
+        out[1] = "<derived leaf>";
     }
 }
 ```
@@ -168,21 +167,21 @@ contract MyProtocolBalanceAdapter is IBalanceAdapter, IPositionDescribable {
 Reuse patterns from existing adapters:
 
 - **Per-instance, multi-asset (supply + borrow legs):** `src/balances/BalanceAdapters/SparkLendBalanceAdapter.sol`.
-- **Per-instance, single-asset vault:** `src/balances/BalanceAdapters/CapBalanceAdapter.sol`, `src/balances/BalanceAdapters/ERC4626WrapBalanceAdapter.sol`.
-- **Meta-adapter, single-leg:** `src/balances/MetaBalanceAdapters/GearboxMarketsMetaBalanceAdapter.sol`, `src/balances/MetaBalanceAdapters/MorphoVaultsMetaBalanceAdapter.sol`.
+- **Per-instance, single-asset vault:** `src/balances/BalanceAdapters/CapBalanceAdapter.sol`.
+- **Meta-adapter, single-leg:** `src/balances/MetaBalanceAdapters/GearboxV3MarketsMetaBalanceAdapter.sol`, `src/balances/MetaBalanceAdapters/MorphoVaultsMetaBalanceAdapter.sol`.
 - **Meta-adapter, multi-leg (LP + rewards):** `src/balances/MetaBalanceAdapters/curve/CurveGaugesMetaBalanceAdapter.sol`, `src/balances/MetaBalanceAdapters/balancer/BalancerV3GaugesMetaBalanceAdapter.sol`.
 
 Conventions:
 
 - All addresses set in the constructor are **immutable**. No setters.
-- `protocolId` is a `bytes32` constant declared at the class level (`bytes32 private constant PROTOCOL_ID = ProtocolIds.MY_PROTOCOL`). It is never a constructor param.
-- `positionId` is computed at query time via `abi.encode(...)`. It is never stored. The encode schema must match the NatSpec in `ProtocolIds.sol` for this protocol family.
+- The three identity ids (`protocolBrand`, `protocolId`, `protocolSubId`) are `bytes32` constants declared at the class level (e.g. `bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.MY_PROTOCOL`). They are never constructor params. For single-product, unversioned protocols all three may resolve to the same constant.
+- `positionId` is computed at query time via `abi.encode(...)`. It is never stored. The encode schema must match the NatSpec in `ProtocolIds.sol` for this `protocolSubId`.
 - `positionKind` is a `PositionKind` enum value (`Wallet`, `Supplied`, `Borrowed`, `Collateral`, `Staking`, `Rewards`, `Fees`). It is never a string.
 - `amount` in `PositionBalance` is **always positive**. Use `isDebt = true` to mark debt.
 - `balanceAdapter` is always `address(this)`. It is the audit trail.
 - For asset metadata on the `PositionBalance.balanceAsset` field, call `NAV_CALCULATOR.getRegisteredAssets()` and only emit positions for assets present in that list.
 - Use a **minimal interface** for each external protocol call — declare it at the bottom of the file (or in a sibling `I<Protocol>.sol`). Do not import the protocol's full library.
-- Implement `IPositionDescribable` (`protocolName()` pure, `positionLabels(bytes)` view returning a `string[]` label hierarchy). NAVCalculator's verbose read methods call these via try/catch, so they are non-breaking, but implementing them gives clients useful labels for free.
+- Implement `protocolName()` **and** `positionLabels(bytes positionId)` from `IPositionDescribable`. `positionLabels` returns a `string[]` display hierarchy below `protocolName` (leaf last), derived on-chain from the `positionId` (ERC20 symbols, vault/pool names, etc.). It is a lazy, verbose-only, gas-capped read off the NAV hot path (NAVCalculator's verbose views call it); display-only, never identity. The per-item ephemeral coordinate (NFT/request id) rides in `PositionBalance.positionInstanceId`, not in labels.
 
 ---
 
@@ -202,7 +201,7 @@ Cover:
 - `getAdapterBalances` returns empty arrays for zero account.
 - `getAdapterPositions` returns empty for zero account; respects `assetFilter`.
 - Non-registered assets (per `NAV_CALCULATOR.getRegisteredAssets()`) are dropped from `getAdapterPositions`.
-- `PositionBalance` fields: assert `protocolId == ProtocolIds.MY_PROTOCOL`, `positionKind == PositionKind.Supplied` (or appropriate), and `positionId == abi.encode(...)` with the expected bytes.
+- `PositionBalance` fields: assert the identity ids (`protocolBrand` / `protocolId` / `protocolSubId`) equal the expected `ProtocolIds` constants, `positionKind == PositionKind.Supplied` (or appropriate), and `positionId == abi.encode(...)` with the expected bytes.
 
 Use `Mock_NAVCalculator` (in `test/mocks/nav_calculator.sol`) and a thin mock of the protocol contract.
 
@@ -217,7 +216,7 @@ Cover:
 - Reward accrual: time-warp with `vm.warp(block.timestamp + 1 days)` and confirm rewards increase (where applicable).
 - Asset registry filtering: confirm positions for assets *not* registered with NAVCalculator are dropped.
 
-Extend `BalanceAdapterTestBase` (in `test/balances/BalanceAdapterTestBase.fork.sol`) and pin the block via the shared `getAlchemyUrl` / `createForkWithCadence` helpers from `test/TestEnvConfigurator.sol`:
+Extend `BalanceAdapterTestBase` (in `test/balances/BalanceAdapterTestBase.fork.sol`) and pin the block by overriding `_setupFork()` with the shared `getAlchemyUrl` / `createSelectForkWithCadence` helpers from `test/TestEnvConfigurator.sol`:
 
 ```solidity
 contract MyProtocolBalanceAdapterForkTest is BalanceAdapterTestBase {
@@ -225,10 +224,11 @@ contract MyProtocolBalanceAdapterForkTest is BalanceAdapterTestBase {
 
     function setUp() public override {
         super.setUp();
-        fork = createForkWithCadence(getAlchemyUrl("eth-mainnet"));
-        vm.selectFork(fork);
-        vm.rollFork(FORK_BLOCK);
-        // ...
+        // ... deploy the adapter, register assets, etc.
+    }
+
+    function _setupFork() internal override {
+        fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK);
     }
 }
 ```
@@ -260,7 +260,7 @@ For a **meta-adapter**, add the constructor block (only chain-level constants �
 
 ```json
 {
-  "GearboxMarketsMeta": {
+  "GearboxV3MarketsMeta": {
     "enabled": true,
     "constructor": {
       "protocol": "Gearbox"
@@ -287,7 +287,7 @@ Add the name to `nav-config/meta-balance-adapters/<chainId>.json` with its `inst
 
 ```json
 {
-  "GearboxMarketsMeta": {
+  "GearboxV3MarketsMeta": {
     "enabled": true,
     "instances": [
       "0x9396DCbf78fc526bb003665337C5E73b699571EF",
@@ -302,7 +302,7 @@ Instances are applied incrementally — `06_Configure` registers the meta-adapte
 Notes:
 
 - The key (`MyProtocol` or `MyProtocol_<instance>`) is the lookup name used by `04_DeployBalanceAdapters.s.sol`; the same key must appear in the matching `nav-config` file to register on NAV.
-- For multi-instance per-instance adapters, use an instance disambiguator in the key (`AaveV3_Core`, `AaveV3_Prime`).
+- For per-instance adapters deployed more than once, use a disambiguator suffix in the key matched by `_startsWith` in the dispatch (e.g. `SparkLend_<suffix>`; the legacy now-superseded per-instance Aave adapters used a chain suffix like `AaveV3_Optimism`). The base name and any suffixed variant must both route to the same `_deploy*` helper.
 - For chains where the protocol does not exist, set `"enabled": false` or omit the key.
 - The `navCalculator` param is **not** listed in `constructor` — the deploy script resolves it automatically from the deployed NAVCalculatorProxy address.
 
@@ -334,7 +334,7 @@ if (_equals(adapterName, "MyProtocol") || _startsWith(adapterName, "MyProtocol_"
 
 And a `_deployIfEnabled("MyProtocol")` call in `run()`.
 
-For a **meta-adapter**, the helper typically only reads a `protocol` string (the human-readable name passed to the `MetaBalanceAdapter` base constructor) plus any chain-global contract addresses the constructor needs. See `_deployGearboxMarketsMeta` or `_deploySparkLend` in the same file for concrete patterns.
+For a **meta-adapter**, the helper typically only reads a `protocol` string (the human-readable name passed to the `MetaBalanceAdapter` base constructor) plus any chain-global contract addresses the constructor needs. See `_deployGearboxV3MarketsMeta` or `_deploySparkLend` in the same file for concrete patterns.
 
 ---
 

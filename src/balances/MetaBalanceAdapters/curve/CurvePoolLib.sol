@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
+import {LabelLib} from "src/balances/LabelLib.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+
 /// @title CurvePoolLib
 /// @notice Shared helpers for reading Curve pool and gauge state across all pool/gauge generations.
-/// @dev Handles the two main interface divergences in the Curve ecosystem:
+/// @dev Handles the three main interface divergences in the Curve ecosystem:
 ///
 ///      1. INDEX TYPE: Vyper 0.1.x pools (original StableSwap) use `int128` for `coins(i)` and
 ///         `balances(i)`. All modern pools (StableSwap-NG, CryptoSwap, TriCryptoNG, TwoCryptoNG,
@@ -121,7 +124,7 @@ library CurvePoolLib {
         returns (uint256)
     {
         if (totalSupply == 0 || lpBalance == 0) return 0;
-        return (poolBalance * lpBalance) / totalSupply;
+        return Math.mulDiv(poolBalance, lpBalance, totalSupply);
     }
 
     // ─── Gauge helpers ────────────────────────────────────────────────────────
@@ -205,20 +208,14 @@ library CurvePoolLib {
     }
 
     /// @notice Joins coin symbols with "/" — e.g. [USDC, DAI] → "USDC/DAI".
-    /// @dev Shared by CurvePoolsMeta and CurveGaugesMeta to avoid duplicate code.
+    /// @dev Shared by CurvePoolsMeta and CurveGaugesMeta. Delegates the per-coin read to the shared
+    ///      `LabelLib.symbol` (codesize-guarded + try/catch fail-open, "?" fallback) so the convention stays
+    ///      identical to every other AMM meta-adapter — including Curve's native-ETH sentinel (0xEEee…EEeE),
+    ///      a codeless address whose high-level `symbol()` call would otherwise revert via the extcodesize check.
     function coinSymbols(address[] memory coins) internal view returns (string memory result) {
         for (uint256 i; i < coins.length; ++i) {
-            string memory sym;
-            try IERC20Symbol(coins[i]).symbol() returns (string memory s) {
-                sym = s;
-            } catch {
-                sym = "?";
-            }
+            string memory sym = LabelLib.symbol(coins[i], "?");
             result = i == 0 ? sym : string.concat(result, "/", sym);
         }
     }
-}
-
-interface IERC20Symbol {
-    function symbol() external view returns (string memory);
 }

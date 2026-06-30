@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.0;
 
+import {NotAContract} from "src/errors.sol";
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.sol";
 import {
     LidoWithdrawalQueueBalanceAdapter,
@@ -131,13 +132,13 @@ contract LidoWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_constructor_revertsWhenQueueNotContract() public {
         address eoa = makeAddr("eoa");
-        vm.expectRevert(bytes("WithdrawalQueue must be a contract"));
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "WithdrawalQueue"));
         new LidoWithdrawalQueueBalanceAdapter(eoa, address(weth), address(balances));
     }
 
     function test_constructor_revertsWhenNAVNotContract() public {
         address eoa = makeAddr("eoa");
-        vm.expectRevert(bytes("NAVCalculator must be a contract"));
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "NAVCalculator"));
         new LidoWithdrawalQueueBalanceAdapter(address(queue), address(weth), eoa);
     }
 
@@ -267,7 +268,7 @@ contract LidoWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(positions.length, 0, "Filter mismatch should produce empty");
 
         positions = adapter.getAdapterPositions(alice, address(weth));
-        // A single not-finalized request → one locked leg only.
+        // A single not-finalized request → one locked leg.
         assertEq(positions.length, 1);
         assertEq(positions[0].balanceAsset.asset, address(weth));
         assertEq(positions[0].balanceAdapter, address(adapter));
@@ -275,6 +276,45 @@ contract LidoWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertFalse(positions[0].isDebt);
         assertTrue(positions[0].isLocked, "not-finalized request -> locked leg");
         assertEq(positions[0].positionId, abi.encode(address(queue)), "static positionId = withdrawal queue");
+        // Static breadcrumb is positionId-derived (no ephemeral id); the request id rides in positionInstanceId.
+        string[] memory lbl = adapter.positionLabels(positions[0].positionId);
+        assertEq(lbl.length, 2);
+        assertEq(lbl[0], "Withdrawal Queue");
+        assertEq(lbl[1], "stETH");
+        assertEq(positions[0].positionInstanceId, bytes32(uint256(1)));
+    }
+
+    function test_getAdapterPositions_perRequestLegsAndLabels() public {
+        // Two requests of the SAME state (both pending/locked) must now emit TWO separate legs — one per request —
+        // each carrying its own request id in positionInstanceId, all sharing the static positionId.
+        queue.pushRequest(alice, 7, 2e18, false);
+        queue.pushRequest(alice, 42, 3e18, false);
+
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(weth));
+        assertEq(positions.length, 2, "one leg per request, even at the same isLocked state");
+
+        bytes memory expectedId = abi.encode(address(queue));
+        bool saw7;
+        bool saw42;
+        uint256 sum;
+        for (uint256 i = 0; i < positions.length; i++) {
+            assertEq(positions[i].positionId, expectedId, "all legs share the static positionId");
+            assertTrue(positions[i].isLocked, "both pending -> locked");
+            sum += positions[i].amount;
+            if (positions[i].positionInstanceId == bytes32(uint256(7))) {
+                saw7 = true;
+                assertEq(positions[i].amount, 2e18);
+            }
+            if (positions[i].positionInstanceId == bytes32(uint256(42))) {
+                saw42 = true;
+                assertEq(positions[i].amount, 3e18);
+            }
+        }
+        assertTrue(saw7 && saw42, "each request id surfaced as its own positionInstanceId");
+
+        // NAV-total invariance: per-request legs still sum to the aggregate balance method.
+        (uint256 agg,) = adapter.getAdapterBalanceForAsset(alice, address(weth));
+        assertEq(sum, agg, "sum of per-request legs == aggregate balance");
     }
 
     function test_getAdapterPositions_claimableOnlyLeg() public {

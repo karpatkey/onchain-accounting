@@ -28,8 +28,8 @@ is read-only accounting), but one is a denial-of-service on the core NAV read pa
 ## 1 — High — NAV read buffer overflow bricks `getAccountNav` for an account
 
 **Files:** `src/prices/PriceFeedLib.sol` (`_getPositionBalances`),
-`src/balances/AssistedBalanceAdapters/UniswapV3PoolsMetaBalanceAdapter.sol`,
-`src/balances/AssistedBalanceAdapters/PancakeSwapV3PoolsMetaBalanceAdapter.sol`.
+`src/balances/AssistedBalanceAdapters/UniswapV3PoolsAssistedBalanceAdapter.sol`,
+`src/balances/AssistedBalanceAdapters/PancakeSwapV3PoolsAssistedBalanceAdapter.sol`.
 
 `_getPositionBalances` sized its scratch buffer as
 `2 * (totalAdapters + metaInstanceTotal) * assetCount`, assuming each

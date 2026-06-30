@@ -126,7 +126,7 @@ Valuation reads Vault pool balances that can be mid-update during a join/exit/fl
 
 ### M-14 — Deploy script 07 does not strip the deployer from the three assisted adapters
 **Location:** `script/deploy/07_TransferAdminToSecurityCouncil.s.sol:57`.
-07 hands off NAVCalculator, BridgeEscrow, and the 6 bridge adapters, but **not** `MerklRewardsBalanceAdapter`, `EtherFiWithdrawalQueueBalanceAdapter`, `StakeWiseV3ExitQueueBalanceAdapter`. The deployer EOA retains `DEFAULT_ADMIN_ROLE` on all three post-deploy and can grant/revoke `ASSISTANT_ROLE`. (Note: even a hostile assistant can only under-report per the verified invariant, so blast radius is bounded — but a lingering deployer admin role contradicts the intended handoff.)
+07 hands off NAVCalculator, BridgeEscrow, and the 6 bridge adapters, but **not** `MerklRewardsAssistedBalanceAdapter`, `EtherFiWithdrawalQueueAssistedBalanceAdapter`, `StakeWiseV3ExitQueueAssistedBalanceAdapter`. The deployer EOA retains `DEFAULT_ADMIN_ROLE` on all three post-deploy and can grant/revoke `ASSISTANT_ROLE`. (Note: even a hostile assistant can only under-report per the verified invariant, so blast radius is bounded — but a lingering deployer admin role contradicts the intended handoff.)
 **Recommendation:** Extend 07 to transfer `DEFAULT_ADMIN_ROLE` of the assisted adapters to the security council and renounce the deployer's.
 
 ### M-15 — Cap adapter: per-leg vs combined burn-quote inconsistency
@@ -152,9 +152,9 @@ Positions path quotes `getBurnAmount` per leg (cUSD, stcUSD); balances path quot
 
 The user's primary concern (focus #3). For all three assisted adapters the *under-report-only* invariant **holds**:
 
-- **Merkl** (`MerklRewardsBalanceAdapter.sol`): cached leaf `keccak256(abi.encode(user, token, cumulativeAmount))` is proof-verified against the **live** Distributor root at submit; reads subtract live `claimed()`; a root-staleness guard returns 0 when the cached root ≠ live root; `submitProof` rejects amount regressions. The assistant cannot fabricate or inflate an amount.
-- **ether.fi** (`EtherFiWithdrawalQueueBalanceAdapter.sol`): cache holds request ids only; `ownerOf`/`isValid` re-checked every read; finalized requests valued via live `getClaimableAmount`, pending via the conservative `min(...)` of two live estimates minus fee. An NFT the account no longer owns contributes nothing.
-- **StakeWise V3** (`StakeWiseV3ExitQueueBalanceAdapter.sol`): `calculateExitedAssets(receiver=account, …)` returns zero for a tuple the account doesn't own; ownership is enforced by the vault, not the cache.
+- **Merkl** (`MerklRewardsAssistedBalanceAdapter.sol`): cached leaf `keccak256(abi.encode(user, token, cumulativeAmount))` is proof-verified against the **live** Distributor root at submit; reads subtract live `claimed()`; a root-staleness guard returns 0 when the cached root ≠ live root; `submitProof` rejects amount regressions. The assistant cannot fabricate or inflate an amount.
+- **ether.fi** (`EtherFiWithdrawalQueueAssistedBalanceAdapter.sol`): cache holds request ids only; `ownerOf`/`isValid` re-checked every read; finalized requests valued via live `getClaimableAmount`, pending via the conservative `min(...)` of two live estimates minus fee. An NFT the account no longer owns contributes nothing.
+- **StakeWise V3** (`StakeWiseV3ExitQueueAssistedBalanceAdapter.sol`): `calculateExitedAssets(receiver=account, …)` returns zero for a tuple the account doesn't own; ownership is enforced by the vault, not the cache.
 
 The only residual is governance hygiene (M-14): the deployer keeps `DEFAULT_ADMIN_ROLE` on these adapters after handoff.
 

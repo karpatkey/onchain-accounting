@@ -98,6 +98,12 @@
         "type": "Chainlink",
         "address": "0x22441d81416430A54336aB28765abd31a792Ad37",
         "heartbeat": 86400
+      },
+      {
+        "$comment": "Independent 2nd feed (ADR 0009 redundancy): API3 GNO/USD dAPI via Api3ReaderProxyV1 (18-dec proxy, scaled to 8-dec at read; PriceFeedLib validates sourceDec==18).",
+        "type": "API3",
+        "address": "0x1D296b93a9679AEE6e6C307AAC537cCf0b2cC77c",
+        "heartbeat": 86400
       }
     ]
   },

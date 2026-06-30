@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
+import {SingleAssetBalanceAdapterBase} from "../SingleAssetBalanceAdapterBase.sol";
 import {IBalanceAdapter} from "../IBalanceAdapter.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 import {InvalidArguments} from "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -18,14 +20,17 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      than stETH/USD, so a stETH depeg can't mis-value a claim that settles in full ETH). While
 ///      queued the value is invisible to wallet/receipt-token adapters. This adapter enumerates the
 ///      account's request ids (`getWithdrawalRequests`), reads their status (`getWithdrawalStatus`),
-///      and emits up to **two positions under a single static positionId** denominated in
-///      `UNDERLYING_TOKEN` (native ETH): a claimable leg (`isLocked = false`, finalized requests) and a
-///      locked/pending leg (`isLocked = true`, not-yet-finalized requests). `amountOfStETH` is fixed
-///      at request time and equals the ETH paid on claim (verified on-chain; it can differ only on a
-///      negative rebase between request and finalization, where Lido caps the payout — for finalized
-///      requests the exact `getClaimableEther` is used). NAVCalculator prices each via the registered
-///      ETH feed; the balance methods (`getAdapterBalances`) still report the summed total.
-contract LidoWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescribable {
+///      and emits **one position per open request**, all under a single static positionId
+///      (`abi.encode(address(WITHDRAWAL_QUEUE))`) denominated in `UNDERLYING_TOKEN` (native ETH). Each
+///      request's `isLocked` reflects its own state — `false` for a finalized (claimable) request,
+///      `true` for a not-yet-finalized one — and its ERC721 request id rides in the typed
+///      `positionInstanceId` field, never in `positionId` (the id is
+///      ephemeral — the NFT is burned on claim). `amountOfStETH` is fixed at request time and equals the
+///      ETH paid on claim (verified on-chain; it can differ only on a negative rebase between request and
+///      finalization, where Lido caps the payout — for finalized requests the exact `getClaimableEther`
+///      is used). NAVCalculator prices each via the registered ETH feed; the balance methods
+///      (`getAdapterBalances`) still report the summed total.
+contract LidoWithdrawalQueueBalanceAdapter is SingleAssetBalanceAdapterBase {
     //
     // Constants
     //
@@ -39,7 +44,9 @@ contract LidoWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
     ///      In practice an account never has more than a handful of requests.
     uint256 public constant MAX_REQUESTS_PROBED = 256;
 
-    bytes32 private constant PROTOCOL_ID = ProtocolIds.LIDO_WITHDRAWAL;
+    bytes32 private constant PROTOCOL_BRAND = ProtocolIds.LIDO;
+    bytes32 private constant PROTOCOL_ID = ProtocolIds.LIDO;
+    bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.LIDO_WITHDRAWAL;
 
     //
     // State
@@ -47,10 +54,6 @@ contract LidoWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
 
     /// @notice Lido WithdrawalQueueERC721 contract.
     ILidoWithdrawalQueue public immutable WITHDRAWAL_QUEUE;
-
-    /// @notice The asset under which positions are reported — the asset Lido pays on claim (native ETH).
-    /// @dev Pricing is added by NAVCalculator from this asset's registered price feed (ETH/USD).
-    address public immutable UNDERLYING_TOKEN;
 
     /// @notice Reference to NAVCalculator for asset registry access.
     INAVCalculator public immutable NAV_CALCULATOR;
@@ -63,15 +66,14 @@ contract LidoWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
     /// @param underlyingToken_ Address of the asset positions are denominated in — what Lido pays on
     ///        claim (native ETH; the ERC-7528 sentinel on mainnet).
     /// @param navCalculator_ The NAVCalculator address used for asset-registry filtering.
-    constructor(address withdrawalQueue_, address underlyingToken_, address navCalculator_) {
-        if (withdrawalQueue_ == address(0) || underlyingToken_ == address(0)) {
-            revert InvalidArguments();
-        }
-        require(withdrawalQueue_.code.length > 0, "WithdrawalQueue must be a contract");
-        require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
+    constructor(address withdrawalQueue_, address underlyingToken_, address navCalculator_)
+        SingleAssetBalanceAdapterBase(underlyingToken_)
+    {
+        if (withdrawalQueue_ == address(0)) revert InvalidArguments();
+        AddressCheckLib.requireContract(withdrawalQueue_, "WithdrawalQueue");
+        AddressCheckLib.requireContract(navCalculator_, "NAVCalculator");
 
         WITHDRAWAL_QUEUE = ILidoWithdrawalQueue(withdrawalQueue_);
-        UNDERLYING_TOKEN = underlyingToken_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
@@ -125,7 +127,7 @@ contract LidoWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
                 uint256[] memory hint = WITHDRAWAL_QUEUE.findCheckpointHints(one, 1, lastCheckpoint);
                 total += WITHDRAWAL_QUEUE.getClaimableEther(one, hint)[0];
             } else {
-                total += statuses[i].amountOfStETH;
+                total += _cappedOwed(statuses[i].amountOfStETH, statuses[i].amountOfShares);
             }
         }
     }
@@ -134,75 +136,36 @@ contract LidoWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
     // IBalanceAdapter
     //
 
-    /// @inheritdoc IBalanceAdapter
-    function underlyingAssetsSupported() external view override returns (address[] memory) {
-        address[] memory assets = new address[](1);
-        assets[0] = UNDERLYING_TOKEN;
-        return assets;
-    }
-
-    /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IPositionDescribable).interfaceId
-            || interfaceId == type(IERC165).interfaceId;
+    /// @inheritdoc SingleAssetBalanceAdapterBase
+    function _owedAmount(address account) internal view override returns (uint256) {
+        return _ethOwed(account);
     }
 
     function protocolName() external pure returns (string memory) {
         return "Lido";
     }
 
-    function positionLabels(bytes calldata) external pure returns (string[] memory) {
-        string[] memory out = new string[](1);
-        out[0] = "stETH Withdrawal Queue";
-        return out;
+    /// @inheritdoc IPositionDescribable
+    /// @dev `["Withdrawal Queue", "stETH"]` — category + the receipt-token symbol (matching the sibling queues). All
+    ///      requests share the queue `positionId`; the per-request ERC721 token id is the typed `positionInstanceId`
+    ///      on each leg (ephemeral — burned on claim), NOT a label.
+    function positionLabels(bytes calldata) external pure override returns (string[] memory out) {
+        out = new string[](2);
+        out[0] = "Withdrawal Queue";
+        out[1] = "stETH";
     }
 
     /// @inheritdoc IBalanceAdapter
-    function getAdapterBalanceForAsset(address account, address asset)
-        external
-        view
-        override
-        returns (uint256 amount, bool isDebt)
-    {
-        if (asset == address(0) || asset != UNDERLYING_TOKEN) {
-            return (0, false);
-        }
-        return (_ethOwed(account), false);
-    }
-
-    /// @inheritdoc IBalanceAdapter
-    function getAdapterBalances(address account)
-        external
-        view
-        override
-        returns (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt)
-    {
-        if (account == address(0)) {
-            return (new address[](0), new uint256[](0), new bool[](0));
-        }
-
-        uint256 total = _ethOwed(account);
-        if (total == 0) {
-            return (new address[](0), new uint256[](0), new bool[](0));
-        }
-
-        assets = new address[](1);
-        amounts = new uint256[](1);
-        isDebt = new bool[](1);
-        assets[0] = UNDERLYING_TOKEN;
-        amounts[0] = total;
-        isDebt[0] = false;
-    }
-
-    /// @inheritdoc IBalanceAdapter
-    /// @notice Returns up to TWO ETH-denominated `Supplied` legs under a single static positionId — one claimable
-    ///         (`isLocked = false`) and one locked/pending (`isLocked = true`).
-    /// @dev Both legs share the static `positionId = abi.encode(address(WITHDRAWAL_QUEUE))` and are distinguished only
-    ///      by `isLocked`. The account's un-claimed requests are aggregated into two sums: finalized requests
-    ///      (`isFinalized && lastCheckpoint != 0`) contribute their exact `getClaimableEther` to the claimable leg;
-    ///      all others contribute `amountOfStETH` to the locked leg. Claimed requests are skipped (the NFT is burned).
-    ///      The two legs sum to `_ethOwed`'s total. A zero-amount leg is omitted. Dropped entirely if the underlying
-    ///      asset is not registered in NAVCalculator. Bounded by `MAX_REQUESTS_PROBED` (over the cap → no positions).
+    /// @notice Returns ONE ETH-denominated `Supplied` leg per open (un-claimed) withdrawal request, all sharing the
+    ///         static `positionId = abi.encode(address(WITHDRAWAL_QUEUE))`. Each leg's `isLocked` reflects that
+    ///         request's state (finalized → `false`, pending → `true`) and its request id is the typed `positionInstanceId`.
+    /// @dev Per request: a finalized request (`isFinalized && lastCheckpoint != 0`) is valued at its exact
+    ///      `getClaimableEther` with `isLocked = false`; any other un-claimed request is valued at `amountOfStETH`
+    ///      with `isLocked = true`. Claimed requests are skipped (the NFT is burned), as are zero-amount legs. The
+    ///      legs sum to `_ethOwed`'s total. The request id rides in the typed `positionInstanceId` (ephemeral), NOT in
+    ///      `positionId`, so multiple requests share the static positionId and are distinguished by their
+    ///      `positionInstanceId` (and for NAV by summing). Dropped entirely if the underlying asset is not registered in
+    ///      NAVCalculator. Bounded by `MAX_REQUESTS_PROBED` (over the cap → no positions).
     function getAdapterPositions(address account, address assetFilter)
         external
         view
@@ -224,80 +187,84 @@ contract LidoWithdrawalQueueBalanceAdapter is IBalanceAdapter, IPositionDescriba
         }
 
         // Underlying must be registered in NAVCalculator for the position to count in NAV.
-        INAVCalculator.Asset memory underlying;
-        {
-            INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
-            bool registered;
-            for (uint256 i = 0; i < reg.length; i++) {
-                if (reg[i].asset == UNDERLYING_TOKEN) {
-                    underlying = reg[i];
-                    registered = true;
-                    break;
-                }
-            }
-            if (!registered) {
-                return new INAVCalculator.PositionBalance[](0);
-            }
+        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
+        (INAVCalculator.Asset memory underlying, bool registered) = RegisteredAssetLib.find(reg, UNDERLYING_TOKEN);
+        if (!registered) {
+            return new INAVCalculator.PositionBalance[](0);
         }
 
         uint256[] memory ids = WITHDRAWAL_QUEUE.getWithdrawalRequests(account);
         ILidoWithdrawalQueue.WithdrawalRequestStatus[] memory statuses = WITHDRAWAL_QUEUE.getWithdrawalStatus(ids);
         uint256 lastCheckpoint = WITHDRAWAL_QUEUE.getLastCheckpointIndex();
 
-        uint256 claimable;
-        uint256 locked;
+        bytes memory positionId = abi.encode(address(WITHDRAWAL_QUEUE));
+        INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](ids.length);
+        uint256 n;
         for (uint256 i = 0; i < ids.length; i++) {
             if (statuses[i].isClaimed) {
                 continue;
             }
+
+            uint256 amount;
+            bool locked;
             if (statuses[i].isFinalized && lastCheckpoint != 0) {
                 // Per-request claimable lookup (single-element array sidesteps the ascending-sort
                 // requirement of `findCheckpointHints` — see `_ethOwed`).
                 uint256[] memory one = new uint256[](1);
                 one[0] = ids[i];
                 uint256[] memory hint = WITHDRAWAL_QUEUE.findCheckpointHints(one, 1, lastCheckpoint);
-                claimable += WITHDRAWAL_QUEUE.getClaimableEther(one, hint)[0];
+                amount = WITHDRAWAL_QUEUE.getClaimableEther(one, hint)[0];
+                locked = false;
             } else {
-                locked += statuses[i].amountOfStETH;
+                amount = _cappedOwed(statuses[i].amountOfStETH, statuses[i].amountOfShares);
+                locked = true;
             }
+            if (amount == 0) {
+                continue;
+            }
+
+            temp[n++] = INAVCalculator.PositionBalance({
+                balanceAsset: underlying,
+                balanceAdapter: address(this),
+                amount: amount,
+                isDebt: false,
+                protocolBrand: PROTOCOL_BRAND,
+                protocolId: PROTOCOL_ID,
+                protocolSubId: PROTOCOL_SUB_ID,
+                positionId: positionId,
+                positionKind: PositionKind.Supplied,
+                isLocked: locked,
+                positionInstanceId: bytes32(ids[i])
+            });
         }
 
-        return _statusLegs(underlying, abi.encode(address(WITHDRAWAL_QUEUE)), claimable, locked);
+        positions = new INAVCalculator.PositionBalance[](n);
+        for (uint256 i = 0; i < n; i++) {
+            positions[i] = temp[i];
+        }
     }
 
-    /// @dev Up to two `Supplied` legs sharing the static positionId, distinguished by isLocked. Zero legs omitted.
-    function _statusLegs(
-        INAVCalculator.Asset memory underlying,
-        bytes memory positionId,
-        uint256 claimable,
-        uint256 locked
-    ) internal view returns (INAVCalculator.PositionBalance[] memory positions) {
-        uint256 nLegs = (claimable > 0 ? 1 : 0) + (locked > 0 ? 1 : 0);
-        positions = new INAVCalculator.PositionBalance[](nLegs);
-        uint256 j;
-        if (claimable > 0) {
-            positions[j++] = INAVCalculator.PositionBalance({
-                balanceAsset: underlying,
-                balanceAdapter: address(this),
-                amount: claimable,
-                isDebt: false,
-                protocolId: PROTOCOL_ID,
-                positionId: positionId,
-                positionKind: PositionKind.Supplied,
-                isLocked: false
-            });
+    /// @notice Conservative ETH owed for a not-yet-finalized request: min(live share value, request-time stETH).
+    /// @dev `amountOfStETH` is snapshotted at request time; a Lido NEGATIVE rebase caps the eventual payout at the
+    ///      lower post-rebase share value (`getPooledEthByShares(amountOfShares)`), so `amountOfStETH` alone would
+    ///      overstate. Take the min. A pending request does not accrue positive rebases, so in the normal case the
+    ///      min picks `amountOfStETH` (no value change). Fail-open: if the stETH read reverts, fall back to
+    ///      `amountOfStETH` (the prior behavior).
+    function _cappedOwed(uint256 amountOfStETH, uint256 amountOfShares) private view returns (uint256) {
+        // Resolve stETH first, guarded: a queue without STETH() (or a codeless return) must not revert the read —
+        // fall back to the request-time amount (prior behavior). (A revert in a `try` ARGUMENT is NOT caught, so
+        // STETH() is its own guarded call rather than inlined into the getPooledEthByShares try.)
+        address steth;
+        try WITHDRAWAL_QUEUE.STETH() returns (address s) {
+            steth = s;
+        } catch {
+            return amountOfStETH;
         }
-        if (locked > 0) {
-            positions[j++] = INAVCalculator.PositionBalance({
-                balanceAsset: underlying,
-                balanceAdapter: address(this),
-                amount: locked,
-                isDebt: false,
-                protocolId: PROTOCOL_ID,
-                positionId: positionId,
-                positionKind: PositionKind.Supplied,
-                isLocked: true
-            });
+        if (steth.code.length == 0) return amountOfStETH;
+        try IStETH(steth).getPooledEthByShares(amountOfShares) returns (uint256 shareValue) {
+            return shareValue < amountOfStETH ? shareValue : amountOfStETH;
+        } catch {
+            return amountOfStETH;
         }
     }
 }
@@ -347,4 +314,12 @@ interface ILidoWithdrawalQueue {
         external
         view
         returns (uint256[] memory claimableEthValues);
+
+    /// @notice The stETH (Lido) token this queue burns from — exposes the live share→ETH rate.
+    function STETH() external view returns (address);
+}
+
+/// @notice Minimal stETH view: the live ETH value of a share amount (reflects rebases, incl. negative).
+interface IStETH {
+    function getPooledEthByShares(uint256 _sharesAmount) external view returns (uint256);
 }

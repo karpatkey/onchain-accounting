@@ -1,0 +1,15 @@
+{
+  "chainId": 146,
+  "name": "sonic",
+  "rpc": "$ALCHEMY",
+  "explorer": "https://sonicscan.org",
+  "explorerApiKey": "$ETHERSCAN_API_KEY",
+  "chainlinkSequencerFeed": "0x0000000000000000000000000000000000000000",
+  "nativeTokenSymbol": "S",
+  "addresses": {
+    "securityCouncil": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
+    "admin": "0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72",
+    "manager": "0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72"
+  },
+  "$comment": "NAV impl+proxy only (not one of the 5 full-deploy chains). chainlinkSequencerFeed=address(0): no assets are priced here in this deploy so the sequencer-uptime check never runs; set a real feed via setChainlinkL2SequencerUptimeFeed before registering assets. admin+manager=deployer EOA per script/deploy/README.md (07 deferred; securityCouncil is the end-state admin). Contract verification: Etherscan V2 (api.etherscan.io/v2, ETHERSCAN_API_KEY)."
+}

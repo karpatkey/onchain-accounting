@@ -2,7 +2,7 @@
 
 End-to-end walkthrough for bringing the full stack up on a new EVM chain. The reference deploy doc is [`../../script/deploy/README.md`](../../script/deploy/README.md); this is the recipe.
 
-Seven chains are configured today: `1` (Mainnet), `10` (Optimism), `56` (BSC), `100` (Gnosis), `137` (Polygon), `42161` (Arbitrum), `8453` (Base). The pattern below assumes you're adding a similar EVM L2/L1.
+Chain configs live in `script/config/chains/<chainId>.json` — one file per supported chain; see that directory for the current set. The pattern below assumes you're adding a similar EVM L1/L2.
 
 ---
 
@@ -10,7 +10,7 @@ Seven chains are configured today: `1` (Mainnet), `10` (Optimism), `56` (BSC), `
 
 Before you write a line of config:
 
-- [ ] An RPC endpoint for the chain (Alchemy, Infura, or a self-hosted node). Set `ALCHEMY_API_KEY` (or your provider's equivalent) in your environment. To keep `"rpc": "$ALCHEMY"` in the chain config, the new chainId must also be added to the `_alchemyNetworkForChainId` map in `script/utils/ConfigReader.sol` (it currently maps only `1`, `10`, `56`, `100`, `42161`, `8453` to an Alchemy network slug); otherwise point `rpc` at a plain `$YOUR_ENV_VAR` holding the full URL — `ConfigReader` expands any `$NAME` token from the environment.
+- [ ] An RPC endpoint for the chain (Alchemy, Infura, or a self-hosted node). Set `ALCHEMY_API_KEY` (or your provider's equivalent) in your environment. To keep `"rpc": "$ALCHEMY"` in the chain config, the new chainId must also be mapped to its Alchemy network slug in the `_alchemyNetworkForChainId` map in `script/utils/ConfigReader.sol` (which maps the production chainIds — see the function for the current set); otherwise point `rpc` at a plain `$YOUR_ENV_VAR` holding the full URL — `ConfigReader` expands any `$NAME` token from the environment (e.g. chains not served by Alchemy use a dedicated endpoint var such as `$QUICKNODE_HEMI` / `$QUICKNODE_0G`).
 - [ ] A funded deployer key (`$DEPLOYER_NAME` in Foundry's keystore).
 - [ ] The block explorer's verifier endpoint and an API key (`ETHERSCAN_API_KEY` or chain-specific).
 - [ ] The OIV Safe address on this chain (must already exist).

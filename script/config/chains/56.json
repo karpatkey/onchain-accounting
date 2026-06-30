@@ -8,8 +8,8 @@
   "nativeTokenSymbol": "BNB",
   "addresses": {
     "securityCouncil": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
-    "admin": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
-    "manager": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
-    "$comment": "Roles default to the canonical karpatkey OIV Safe address used on the other 5 chains. Confirm/replace before broadcasting deploy 02 if a different Safe is preferred on BSC."
+    "admin": "0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72",
+    "manager": "0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72",
+    "$comment": "admin+manager = deployer EOA per script/deploy/README.md (the EOA holds DEFAULT_ADMIN_ROLE + MANAGER through 03-06); securityCouncil is the end-state admin that step 07 transfers to. 07 is deferred in this deploy, so admin/manager stay with the EOA."
   }
 }

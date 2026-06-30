@@ -6,7 +6,7 @@
 
 The first version of `AaveV3SafetyModuleBalanceAdapter` (`src/balances/BalanceAdapters/AaveV3SafetyModuleBalanceAdapter.sol`) followed the same shape as every other balance adapter in the framework: **one immutable instance per stake token**. Constructor: `(stakeToken, navCalculator)`. The adapter reads `STAKED_TOKEN()` and `REWARD_TOKEN()` from the stake contract at construction and pins them as immutables.
 
-This is **already token-agnostic at the bytecode level** — the same compiled contract handles stkAAVE, stkABPT, stkGHO. To support a new stake token you call the factory with a different `stakeToken` parameter and get a different deterministic address. With CREATE2, that's a single call.
+This is **already token-agnostic at the bytecode level** — the same compiled contract handles stkAAVE, stkABPT, stkGHO. To support a new stake token, you call the factory with a different `stakeToken` parameter and get a different deterministic address. With CREATE2, that's a single call.
 
 The adapter set in production at the time this ADR was written: `stkGHO` only, deployed at `0x191d6b8EdD19167e90419347d586081E2B01D8dD` on Mainnet.
 

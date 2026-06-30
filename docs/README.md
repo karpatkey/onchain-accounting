@@ -24,7 +24,7 @@ The companion is the top-level [`CLAUDE.md`](../CLAUDE.md) "Read this first by i
 | [`howto/add-balance-adapter.md`](howto/add-balance-adapter.md) | Adding a new balance adapter. End-to-end: contract, unit + fork tests, chain config, deploy + register. Read [`src/balances/BALANCE_ADAPTERS.md`](../src/balances/BALANCE_ADAPTERS.md) (framework) first. |
 | [`howto/add-price-feed.md`](howto/add-price-feed.md) | Adding a new custom price feed. Same recipe shape, framework reference is [`src/prices/PRICE_ADAPTERS.md`](../src/prices/PRICE_ADAPTERS.md). |
 | [`howto/add-chain.md`](howto/add-chain.md) | Adding a new chain — the per-concern config folders: `chains/<id>.json` (chain meta + roles), `contracts-deployment-config/` (what to deploy), `nav-config/` (assets + adapter registration), plus deploy steps. |
-| [`howto/position-identity-schema.md`](howto/position-identity-schema.md) | **Position identity reference** — `protocolId` slugs, `positionId` ABI-decode schemas per protocol, `PositionKind` enum, stable reconciliation key, TypeScript decode examples, `NAVCalculator` verbose reads. Read when building indexers, frontends, or reconciliation jobs. |
+| [`howto/position-identity-schema.md`](howto/position-identity-schema.md) | **Position identity reference** — `protocolBrand`/`protocolId`/`protocolSubId` slugs, `positionId` ABI-decode schemas per protocol, `PositionKind` enum, stable reconciliation key, TypeScript decode examples, `NAVCalculator` verbose reads. Read when building indexers, frontends, or reconciliation jobs. |
 | [`howto/refresh-integration-test-blocks.md`](howto/refresh-integration-test-blocks.md) | Bumping integration-test fork blocks, refreshing expected NAVs, cross-checking against DeBank. |
 | [`howto/verify-oracle-heartbeat.md`](howto/verify-oracle-heartbeat.md) | Looking up Chainlink heartbeats via the reference-data-directory API; per-feed link table. |
 
@@ -34,7 +34,7 @@ The companion is the top-level [`CLAUDE.md`](../CLAUDE.md) "Read this first by i
 
 | Doc | What it is |
 |---|---|
-| [`reference/position-identity-matrix.md`](reference/position-identity-matrix.md) | Enumerates every position leg each balance adapter can emit — the actual `protocolId` / `positionId` / `PositionKind` value space, verified against `src/balances/` emission code. Companion to [`howto/position-identity-schema.md`](howto/position-identity-schema.md), which defines the schema. |
+| [`reference/position-identity-matrix.md`](reference/position-identity-matrix.md) | Enumerates every position leg each balance adapter can emit — the actual `protocolSubId` / `positionId` / `PositionKind` value space, verified against `src/balances/` emission code. Companion to [`howto/position-identity-schema.md`](howto/position-identity-schema.md), which defines the schema. |
 
 ---
 

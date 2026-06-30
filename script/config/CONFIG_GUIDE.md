@@ -330,9 +330,9 @@ You should see the deployed address under `balanceAdapters.AaveV3_USDC`!
 ### Addresses
 | Field | Type | Description |
 |-------|------|-------------|
-| `securityCouncil` | address | Security-council Safe — the end-state admin (receives DEFAULT_ADMIN_ROLE in step 07). Does **not** execute deploy/config txs. |
+| `securityCouncil` | address | Security-council Safe — the end-state admin and manager (receives DEFAULT_ADMIN_ROLE + MANAGER in step 07; the deployer's MANAGER is revoked and DEFAULT_ADMIN_ROLE renounced). Does **not** execute deploy/config txs. |
 | `admin` | address | DEFAULT_ADMIN_ROLE holder. In the EOA deploy flow set to the **deployer EOA** (upgrade, authorize adapters) until step 07 hands it to the council. |
-| `manager` | address | MANAGER role (register assets, addBalanceAdapters/removeBalanceAdapters, addMetaInstances/removeMetaInstances). In the EOA flow, the **deployer EOA**. |
+| `manager` | address | MANAGER role (register assets, addBalanceAdapters/removeBalanceAdapters, addMetaInstances/removeMetaInstances). In the EOA flow, the **deployer EOA** (revoked by step 07). |
 
 ### Adapter Configuration
 

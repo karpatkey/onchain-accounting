@@ -1,4 +1,4 @@
-# 0008 — Uniswap V3 adapter: inline GPL-2.0 math libs alongside MIT adapter code
+# 0008 — Uniswap V3 adapter: inline GPL-2.0-or-later math libs alongside MIT adapter code
 
 **Status:** accepted
 

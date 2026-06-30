@@ -161,7 +161,7 @@ reader), not a fake `constructor` key.
 
 ## contracts-deployment-config/balance-adapters & meta-balance-adapters/{chainId}.json
 
-**Balance adapters to deploy on a chain.** Plain adapters live in `balance-adapters/{chainId}.json`; meta adapters live in `meta-balance-adapters/{chainId}.json` (same plain-vs-meta classification as `nav-config/`). Keyed by adapter name, each with `enabled` and `constructor`. Read by `04_DeployBalanceAdapters.s.sol`, which deploys every adapter where `enabled: true` across **both** files (plain `new …`, CREATE) and writes the address to `deployments/{chainId}.json` under `balanceAdapters` (all deployed addresses, plain and meta, share that one block). Top-level keys are adapter names — no chainId wrapper.
+**Balance adapters to deploy on a chain.** Plain and assisted adapters live in `balance-adapters/{chainId}.json`; meta adapters live in `meta-balance-adapters/{chainId}.json` (same plain/assisted-vs-meta classification as `nav-config/`). Keyed by adapter name, each with `enabled` and `constructor`. Read by `04_DeployBalanceAdapters.s.sol`, which deploys every adapter where `enabled: true` across **both** files (plain `new …`, CREATE) and writes the address to `deployments/{chainId}.json` under `balanceAdapters` (all deployed addresses, plain, assisted, and meta, share that one block). Top-level keys are adapter names — no chainId wrapper.
 
 A meta-adapter is a single deployed contract; its **instance set is NOT here** — it lives in `nav-config/meta-balance-adapters/{chainId}.json`. There is no `deployed` field here.
 
@@ -297,9 +297,9 @@ There is **no `callbackSelector` field** as of [ADR 0012](../../docs/decisions/0
 
 ## nav-config/balance-adapters & meta-balance-adapters/{chainId}.json
 
-**Balance adapters to register on NAVCalculator.** Read by `06_Configure.s.sol`, which resolves each adapter's address from `deployments/{chainId}.json .balanceAdapters.<name>`. Meta-vs-plain is **explicit** by which file the entry lives in:
+**Balance adapters to register on NAVCalculator.** Read by `06_Configure.s.sol`, which resolves each adapter's address from `deployments/{chainId}.json .balanceAdapters.<name>`. Meta-vs-plain/assisted is **explicit** by which file the entry lives in:
 
-- **`nav-config/balance-adapters/{chainId}.json`** — PLAIN adapters. Keyed by adapter name, each just `{ "enabled": true }`. `06_Configure` calls `NAVCalculator.addBalanceAdapters(...)` for the enabled ones.
+- **`nav-config/balance-adapters/{chainId}.json`** — PLAIN and ASSISTED adapters. Keyed by adapter name, each just `{ "enabled": true }`. `06_Configure` calls `NAVCalculator.addBalanceAdapters(...)` for the enabled ones.
 - **`nav-config/meta-balance-adapters/{chainId}.json`** — META adapters. Keyed by adapter name, each with `enabled` plus an instance list. `06_Configure` calls `addMetaBalanceAdapter` then reconciles the instance set via `addMetaInstances` / `removeMetaInstances` (diffed against `getMetaInstances`).
 
 `instances` holds address-coordinate instances (widened to `bytes32` on-chain). `instancesRaw` holds raw `bytes32` coordinates (e.g. Morpho marketIds / Balancer V2 poolIds); the two are mutually exclusive. These replace the old `metaInstances` / `metaInstancesRaw` keys.
@@ -336,7 +336,7 @@ There is **no `callbackSelector` field** as of [ADR 0012](../../docs/decisions/0
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `enabled` | bool | Register this adapter on NAVCalculator? |
+| `enabled` | bool | Register this adapter on NAVCalculator? (plain/assisted: via `addBalanceAdapters`; meta: via `addMetaBalanceAdapter`) |
 | `instances` | array | Meta file only: address-coordinate instances (replaces old `metaInstances`) |
 | `instancesRaw` | array | Meta file only: raw `bytes32` coordinate instances (replaces old `metaInstancesRaw`) |
 
@@ -634,7 +634,7 @@ Source-sender authentication is wired by `06_Configure.s.sol` from each adapter'
 
 See `src/bridge/BRIDGE_ADAPTERS.md` §7 for the full per-protocol detail.
 
-**CCTP domain mapping:** The CCTP adapter maps chain IDs to Circle's CCTP domain IDs (used for `depositForBurn` and receive path). Each chain that has CCTP can include `cctpDomain` in the CCTP entry's `initialize` block (`CCTP.initialize`) for reference — that entry now lives in `contracts-deployment-config/bridge-adapters/{chainId}.json`, not the chain config. The on-chain mapping is set via `CctpBridgeAdapter.setDomainMapping(chainId, domain)` (admin); deploy scripts do not call this — configure it after deployment (e.g. manage script or Safe tx). Official domain IDs (see [Circle CCTP contract addresses](https://developers.circle.com/cctp/references/contract-addresses)): Ethereum = 0, OP Mainnet = 2, Arbitrum = 3, Base = 6.
+**CCTP domain mapping:** The CCTP adapter maps chain IDs to Circle's CCTP domain IDs (used for `depositForBurn` and receive path). Each chain that has CCTP can include `cctpDomain` in the CCTP entry's `initialize` block (`CCTP.initialize`) for reference — that entry now lives in `contracts-deployment-config/bridge-adapters/{chainId}.json`, not the chain config. Known chain↔domain mappings are pre-configured automatically inside `initialize()` via `_setChainDomain`; the `cctpDomain` JSON key is therefore ignored by the deploy script. `CctpBridgeAdapter.setDomainMapping(chainId, domain)` (admin) exists only for adding new chains or overriding mappings after deployment. Official domain IDs (see [Circle CCTP contract addresses](https://developers.circle.com/cctp/references/contract-addresses)): Ethereum = 0, OP Mainnet = 2, Arbitrum = 3, Base = 6, Polygon PoS = 7.
 
 The script `script/manage/AuthorizeBridgeAdapters.s.sol` authorizes each enabled adapter with `authorizeAdapter(adapter)` only (no callback variant). Trusted source senders are configured separately via `BridgeAdapter.setTrustedRemoteAdapter` (admin), not by the authorization script.
 
@@ -757,12 +757,13 @@ URL format: `https://{network}.g.alchemy.com/v2/{apiKey}` (network is derived fr
 ### RPC URLs (optional overrides)
 
 ```bash
-# RPC URLs (optional; use when not using $ALCHEMY in chain config)
-MAINNET_RPC_URL=https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY
-ARBITRUM_RPC_URL=https://arb-mainnet.g.alchemy.com/v2/YOUR_KEY
-OPTIMISM_RPC_URL=https://opt-mainnet.g.alchemy.com/v2/YOUR_KEY
-BASE_RPC_URL=https://base-mainnet.g.alchemy.com/v2/YOUR_KEY
-GNOSIS_RPC_URL=https://rpc.gnosischain.com
+# RPC URLs — fork tests prefer these over ALCHEMY_API_KEY (TestEnvConfigurator._getChainUrl)
+MAINNET_URL=https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY
+ARBITRUM_URL=https://arb-mainnet.g.alchemy.com/v2/YOUR_KEY
+OP_URL=https://opt-mainnet.g.alchemy.com/v2/YOUR_KEY
+BASE_URL=https://base-mainnet.g.alchemy.com/v2/YOUR_KEY
+GNOSIS_URL=https://rpc.gnosischain.com
+BSC_URL=https://bnb-mainnet.g.alchemy.com/v2/YOUR_KEY
 
 # Block Explorer API Keys (for verification)
 ETHERSCAN_API_KEY=your_etherscan_api_key
@@ -822,7 +823,6 @@ MANAGER (keccak256("MANAGER"))
 │  └─ setChainlinkL2SequencerGracePeriod()
 │
 ├─ BridgeEscrow:
-│  ├─ releaseByInvoiceId() (when not called by adapter)
 │  ├─ cancelInvoice()
 │  ├─ markInvoiceCompleted()
 │  ├─ registerAsset()

@@ -1038,8 +1038,7 @@ bytes32 key = keccak256(abi.encode(
     protocolSubId,
     positionId,
     balanceAsset.asset,
-    positionKind,
-    isLocked
+    positionKind
 ));
 ```
 
@@ -1050,8 +1049,8 @@ import { keccak256, AbiCoder } from "ethers";
 
 const abi = AbiCoder.defaultAbiCoder();
 const key = keccak256(abi.encode(
-    ["uint256", "bytes32", "bytes", "address", "uint8", "bool"],
-    [chainId, position.protocolSubId, position.positionId, position.balanceAsset.asset, position.positionKind, position.isLocked]
+    ["uint256", "bytes32", "bytes", "address", "uint8"],
+    [chainId, position.protocolSubId, position.positionId, position.balanceAsset.asset, position.positionKind]
 ));
 ```
 
@@ -1078,6 +1077,9 @@ collapse those legs and under-count. Consumers needing per-item granularity read
 - `balanceAdapter` — provenance only; redeploying an adapter doesn't change the position
 - `isDebt` — the canonical NAV-sign field; read it directly, do not infer it from `positionKind`
 - `protocolBrand` / `protocolId` — display / grouping roll-ups; the key uses `protocolSubId`
+- `isLocked` — a mutable per-leg attribute; a withdrawal-queue / cooldown / staking-with-cooldown leg
+  flips `true→false` as its portion finalizes, so keying on it would split one economic position into
+  two keys over its lifetime; the claimable and locked legs share one key and are summed in reconciliation
 - `positionInstanceId` — the ephemeral per-item id; appending it yields per-item granularity at the
   cost of a key that blinks in/out as items are minted / burned / claimed
 
@@ -1102,6 +1104,7 @@ decodes use `AbiCoder.defaultAbiCoder()` from ethers.js. Protocol ID constants c
 | `MorphoMarketsMeta` | `morpho-markets` | `Collateral`, `Supplied`, `Borrowed` |
 | `EulerVaultsMeta` | `euler-vaults` | `Supplied`, `Collateral`, `Borrowed` |
 | `GearboxV3MarketsMeta` | `gearbox-v3-markets` | `Supplied` |
+| `GearboxV3CreditAccountsMeta` | `gearbox-v3-credit-accounts` | `Collateral`, `Borrowed` |
 | `FluidFTokensMeta` | `fluid-ftokens` | `Supplied` |
 | `FluidVaultsMeta` | `fluid-vaults` | `Collateral`, `Borrowed` |
 | `CompoundV3CometsMeta` | `compound-v3-comets` | `Supplied`, `Borrowed`, `Collateral`, `Rewards` |
@@ -1121,6 +1124,9 @@ decodes use `AbiCoder.defaultAbiCoder()` from ethers.js. Protocol ID constants c
 | `LidoWithdrawalQueue` | `lido-withdrawal` | `Supplied` (one leg per request; `isLocked` = pending; request id in `positionInstanceId`) |
 | `StaderWithdrawalQueue` | `stader-withdrawal` | `Supplied` (claimable + locked legs via `isLocked`) |
 | `KelpWithdrawalQueue` | `kelp-withdrawal` | `Supplied` (claimable + locked legs via `isLocked`, per asset) |
+| `EtherFiWithdrawalQueueAssisted` | `etherfi-withdrawal` | `Supplied` (one leg per request; `isLocked` = pending; request id in `positionInstanceId`) |
+| `StakeWiseV3ExitQueueAssisted` | `stakewise-v3-exit` | `Supplied` (up to two legs per ticket — claimable + queued — via `isLocked`; ticket in `positionInstanceId`) |
+| `EthenaCooldown` | `ethena-cooldown` | `Supplied` (`isLocked` while cooling) |
 
 ---
 

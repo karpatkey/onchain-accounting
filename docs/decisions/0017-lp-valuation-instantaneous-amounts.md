@@ -41,7 +41,7 @@ Relevant facts established during the review:
    `enabled:false` (BSC); `BalancerV2PoolsMeta`/`BalancerV2GaugesMeta` are `enabled:false` (mainnet).
    The live AMM-LP adapters are all **stable / correlated**: `CurvePoolsMeta` (StableSwap-NG — crvUSD/USDC,
    crvUSD/USDT, weETH/WETH, RLUSD/USDC) + `CurveGaugesMeta` / `ConvexCurveLPStakingMeta` (same pools) +
-   `BalancerV3PoolsMeta` / gauges (stable GHO pools). Amplification holds these near peg, so the imbalance
+   `BalancerV3PoolsMeta` / gauges (correlated rETH/Aave WETH + stable GHO/USDT/USDC). Amplification holds these near peg, so the imbalance
    deviation is small; the `√` over-report applies to the constant-product pools, which are not enabled.
 
 5. **There is no single "fair price" formula.** `2·√(k·pₓ·p_y)` is constant-product only. Curve StableSwap
@@ -104,6 +104,9 @@ reconstructed `sqrtPriceX96` is the V3-specific mitigation to reinstate.
 
 - Threat-model framing: `docs/audits/2026-06-vigilo-adapter-audit.md` (read-only-reentrancy `M-A2`;
   "eth_call → no atomic exploit", `prices/L-02`).
+- Oracle-reconstruction precedent (audit `[2]`): `docs/audits/2026-06-final-pre-deploy-audit.md`,
+  finding `[2]` — "LP principal/fees valued from manipulable `slot0` spot, not an oracle" (originally
+  marked Fixed; superseded by this ADR, which reverted the fix under the async-consumer model).
 - Valuation code: `src/balances/MetaBalanceAdapters/curve/CurvePoolLib.sol` (`proRataAmount`),
   `src/balances/MetaBalanceAdapters/uniswap/UniswapV2PairLib.sol` (`pairAmounts`),
   `src/balances/MetaBalanceAdapters/balancer/BalancerV3PoolLib.sol` (`poolBalanceOfIndexed`).

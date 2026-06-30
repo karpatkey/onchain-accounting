@@ -39,7 +39,7 @@ The `?proxyAddress=` query parameter is meant to narrow the result to the single
 
 ## Example links for feeds used by `nav-config/assets-and-price-feeds/<chainId>.json`
 
-The direct Chainlink feeds below (ETH/USD, USDC/USD, etc.) are recorded as an asset's `priceFeeds[].address`. The LST exchange-rate feeds (stETH/ETH, weETH/eETH, wstETH/ETH, cbETH/ETH, rsETH/ETH) are **not** — those assets use a `Custom` feed, and the proxy address below is wired in as a constructor arg of the Custom adapter in `contracts-deployment-config/custom-price-feeds/<chainId>.json` (e.g. `stEthToEthChainlinkOracle`). Either way, the heartbeat you record in config should track the feed's published `heartbeat` — some entries deliberately tighten it (e.g. mainnet USDC/USDe register `82800` against a published `86400`), so use the published value as the upper bound rather than an exact requirement.
+The direct Chainlink feeds below (ETH/USD, USDC/USD, etc.) are recorded as an asset's `priceFeeds[].address`. The LST exchange-rate feeds (stETH/ETH, weETH/eETH, wstETH/ETH, cbETH/ETH, rsETH/ETH) are **not** — those assets use a `Custom` feed, and the proxy address below is wired in as a constructor arg of the Custom adapter in `contracts-deployment-config/custom-price-feeds/<chainId>.json` (e.g. `stEthToEthChainlinkOracle`). Either way, the heartbeat you record in config should track the feed's published `heartbeat` — some entries deliberately tighten it (e.g. mainnet USDC and USDe register `82800` against a published `86400`), so use the published value as the upper bound rather than an exact requirement.
 
 ### Ethereum Mainnet
 

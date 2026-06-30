@@ -33,7 +33,7 @@ NAV v2 is a single, chain-local system. Each supported chain has:
 
 The NAVCalculator routes price lookups through an embedded `Prices` contract (Chainlink or Custom per asset) and position lookups through the registered balance adapters. Both are pluggable by adding/removing adapters — the proxy never needs to be upgraded to add new protocols.
 
-**Key invariant:** the Safe's NAV is the sum of signed `(amount * price / quote_price)` across every `PositionBalance` returned by every registered balance adapter, plus the inflight bridged-out escrow balance. No adapter can lie about another adapter's asset — the per-chain reconciliation key is `keccak256(abi.encode(chainId, protocolId, positionId, balanceAsset.asset, positionKind, isLocked))` (see `docs/howto/position-identity-schema.md`).
+**Key invariant:** the Safe's NAV is the sum of signed `(amount * price / quote_price)` across every `PositionBalance` returned by every registered balance adapter, plus the inflight bridged-out escrow balance. No adapter can lie about another adapter's asset — the per-chain reconciliation key is `keccak256(abi.encode(chainId, protocolSubId, positionId, balanceAsset.asset, positionKind))` (see `docs/howto/position-identity-schema.md`).
 
 ---
 
@@ -553,11 +553,11 @@ The deploy script (`04_DeployBalanceAdapters.s.sol`) supports these adapters:
 | `CurvePoolsMeta` | `protocol` | Mainnet |
 | `CurveGaugesMeta` | `minter`, `crvToken`, `protocol` | Mainnet (pass `minter=address(0)` on L2) |
 | `ConvexCurveLPStakingMeta` | `booster`, `cvxToken`, `protocol` | Mainnet |
-| `StakeWiseV3VaultsMeta` | `underlyingToken`, `protocol` | Mainnet, Gnosis |
+| `StakeWiseV3VaultsMeta` | `underlyingToken`, `osTokenVaultController`, `protocol` | Mainnet, Gnosis |
 | `Cap` | `cUsd`, `stcUsd`, `usdc` | Mainnet |
 | `LidoWithdrawalQueue` | `withdrawalQueue`, `underlyingToken` | Mainnet |
 | `StaderWithdrawalQueue` | `userWithdrawalManager`, `underlyingToken` | Mainnet |
-| `KelpWithdrawalQueue` | `withdrawalManager`, `lrtConfig` | Mainnet |
+| `KelpWithdrawalQueue` | `withdrawalManager` | Mainnet |
 
 ### 2.3 Specific adapters currently wired in the deploy script
 
@@ -681,7 +681,7 @@ Deployed adapter addresses are auto-saved to `script/config/deployments/<chainId
 
 Run per chain. Only adapters with `enabled: true` in config are deployed.
 
-> **⚠ Dry-run hazard.** `04_DeployBalanceAdapters.s.sol:231` (and 29 sites in `03_DeployPriceFeeds.s.sol`) calls `ConfigReader.writeAdapterAddress(...)` unconditionally — even on a bare `forge script` invocation **without `--broadcast`**. A dry run will write deterministic-test-sender CREATE2 addresses (`0x5b73...`, `0x7FA9...`, `0x34A1...`, etc.) into `script/config/deployments/<chainId>.json`. Subsequent real broadcasts will then read those bogus addresses, report "already deployed", and **silently skip every adapter** — leaving NAVCalculator wired to zero-code addresses. **After ANY exploratory `forge script` run of `03` or `04` without `--broadcast`, run `git checkout -- script/config/deployments/` before the real broadcast.** Tracked as a blocking follow-up in `docs/historical/oracle-migration-plan.md` "Aspects to improve" #4.
+> **⚠ Dry-run hazard.** `04_DeployBalanceAdapters.s.sol:232` (and 32 sites in `03_DeployPriceFeeds.s.sol`) calls `ConfigReader.writeAdapterAddress(...)` unconditionally — even on a bare `forge script` invocation **without `--broadcast`**. A dry run will write deterministic-test-sender CREATE2 addresses (`0x5b73...`, `0x7FA9...`, `0x34A1...`, etc.) into `script/config/deployments/<chainId>.json`. Subsequent real broadcasts will then read those bogus addresses, report "already deployed", and **silently skip every adapter** — leaving NAVCalculator wired to zero-code addresses. **After ANY exploratory `forge script` run of `03` or `04` without `--broadcast`, run `git checkout -- script/config/deployments/` before the real broadcast.** Tracked as a blocking follow-up in `docs/historical/oracle-migration-plan.md` "Aspects to improve" #4.
 
 ### 4.1 Mainnet
 

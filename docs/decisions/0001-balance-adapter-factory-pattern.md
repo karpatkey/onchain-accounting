@@ -6,10 +6,10 @@
 
 ## Context
 
-Before this change, every balance adapter was deployed by an ad-hoc deploy step in `script/deploy/04_DeployBalanceAdapters.s.sol` and registered by a direct call to `NAVCalculator.addBalanceAdapters(address[])` from the OIV Safe. This worked, but had three rough edges that compounded as the adapter set grew (~14 protocols, multi-chain):
+Before this change, every balance adapter was deployed by an ad-hoc deploy step in `script/deploy/04_DeployBalanceAdapters.s.sol` and registered by a direct call to `NAVCalculator.addBalanceAdapters(address[])` from the deployer EOA via `06_Configure.s.sol`. This worked, but had three rough edges that compounded as the adapter set grew (~14 protocols, multi-chain):
 
 1. **No deterministic addresses.** Adapters lived at different addresses on every chain. Cross-chain tooling (block explorers, dashboards, off-chain consumers) had to maintain per-chain address books. There was no on-chain way to ask "give me every adapter for protocol X."
-2. **Two-step ceremony.** Deploy in one transaction; register in a follow-up Safe transaction. Safe queues sometimes lagged days behind deploys, leaving "deployed but unregistered" adapters lying around.
+2. **Two-step ceremony.** Deploy in one script run (`04`); register in a separate configuration run (`06`). Script runs sometimes lagged days behind deploys, leaving "deployed but unregistered" adapters lying around.
 3. **No per-protocol grouping.** All adapters were a flat list inside NAVCalculator. There was no central index, no protocol key, no way to migrate or replace adapters in a structured way.
 
 The framework needs to support: adding new protocols frequently, deploying them on multiple chains atomically, replacing adapters cleanly, and querying the active set per protocol — all from on-chain state, not config files.
@@ -40,14 +40,14 @@ Introduce a per-protocol **factory pattern** + a **central registry**:
 
 **Negative / things to watch:**
 
-- Adapters and factories must follow the strict pattern (constructor signature, `PROTOCOL_KEY` at construction, ERC165 conformance). Deviation breaks address determinism or registry tracking. The single mutable-adapter exception (the Merkl rewards adapter — see ADR 0007; the Aave V3 Safety Module was the original exception under ADR 0002, but ADR 0005 superseded that and made it fully immutable) was added explicitly and required documentation.
+- Adapters and factories must follow the strict pattern (constructor signature, `PROTOCOL_KEY` at construction, ERC165 conformance). Deviation breaks address determinism or registry tracking. Mutable-adapter exceptions must each be added explicitly and documented; each has required a dedicated ADR (ADR 0007 for the Merkl rewards adapter; ADR 0014 for the ether.fi and StakeWise V3 exit-queue adapters; ADR 0015 for the NFT-id-cache adapters — together forming the AssistedBalanceAdapter family; the Aave V3 Safety Module was the original exception under ADR 0002, but ADR 0005 superseded that and made it fully immutable).
 - The registry is the single owner of MANAGER on NAVCalculator. If the registry is compromised, NAV adapter list is at risk. Mitigation: registry is `Ownable` and the Safe is the only authorized factory-setter / external-registrar.
 - CREATE2 with the canonical deployer requires that deployer to exist on the target chain. Standard EVM chains have it; verify before deploying to anything exotic.
 - One factory per protocol means N factory contracts to maintain. Acceptable cost for the structural benefits; partially offset by the shared base class doing all the heavy lifting.
 
 ## Reference
 
-- Implementation: `src/balances/factories/BalanceAdapterFactoryBase.sol`, `src/balances/factories/BalanceAdapterRegistry.sol`.
-- Deploy script: `script/deploy/05_DeployAdapterFactories.s.sol`.
-- Migration script: `script/deploy/06_MigrateExistingAdapters.s.sol`.
+- Planned implementation: `src/balances/factories/BalanceAdapterFactoryBase.sol`, `src/balances/factories/BalanceAdapterRegistry.sol` (not yet created; `src/balances/factories/` does not exist today).
+- Planned deploy script: `script/deploy/05_DeployAdapterFactories.s.sol` (not yet created; the current slot 05 is `05_DeployBridgeAdapters.s.sol`).
+- Planned migration script: `script/deploy/06_MigrateExistingAdapters.s.sol` (not yet created; the current slot 06 is `06_Configure.s.sol`).
 - Walkthrough: [`../howto/add-balance-adapter.md`](../howto/add-balance-adapter.md).

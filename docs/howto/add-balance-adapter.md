@@ -334,7 +334,7 @@ if (_equals(adapterName, "MyProtocol") || _startsWith(adapterName, "MyProtocol_"
 
 And a `_deployIfEnabled("MyProtocol")` call in `run()`.
 
-For a **meta-adapter**, the helper typically only reads a `protocol` string (the human-readable name passed to the `MetaBalanceAdapter` base constructor) plus any chain-global contract addresses the constructor needs. See `_deployGearboxV3MarketsMeta` or `_deploySparkLend` in the same file for concrete patterns.
+For a **meta-adapter**, the helper typically only reads a `protocol` string (the human-readable name passed to the `MetaBalanceAdapter` base constructor) plus any chain-global contract addresses the constructor needs. See `_deployGearboxV3MarketsMeta` (protocol string only) or `_deployMorphoMarketsMeta` (protocol string plus a chain-global `morpho` address) in the same file for concrete patterns.
 
 ---
 

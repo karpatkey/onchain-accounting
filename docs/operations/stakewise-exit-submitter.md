@@ -33,8 +33,8 @@ For each event where `receiver == account`, record `(vault, positionTicket, bloc
 |---|---|---|
 | **Account list** | Operator config | EVM addresses to track (the OIV per-chain accounts that use StakeWise V3). |
 | **Vaults** | StakeWise VaultsRegistry / operator config | The vaults to scan `ExitQueueEntered` on (e.g. mainnet Genesis `0xAC0F…2885`, MetaVault `0x1563…cad3`). |
-| **Chains** | Operator config | StakeWise V3 exit queues tracked here are **mainnet (1)** only today (vaults settle in ETH). |
-| **Adapter address** | `script/config/deployments/1.json` → `balanceAdapters.StakeWiseV3ExitQueueAssisted` | Read at startup; refresh on redeploy. |
+| **Chains** | Operator config | **Mainnet (1)** (ETH-denominated) and **Gnosis (100)** (GNO-denominated). Deploy configs and vault addresses are chain-specific; run a separate bot instance per chain. |
+| **Adapter address** | `script/config/deployments/<chainId>.json` → `balanceAdapters.StakeWiseV3ExitQueueAssisted` | Read at startup per chain (e.g. `1.json` for mainnet, `100.json` for Gnosis); refresh on redeploy. |
 | **Owner key** | Operator secret store | Owns the adapter (`chainConfig.admin` = OIV Safe). Submit via the Safe Transaction Service / a granted Zodiac role, same as the Merkl bot. |
 
 The `VaultsRegistry` address and all valuation/verification rules are pinned in the adapter; the bot does not need them beyond event scanning.

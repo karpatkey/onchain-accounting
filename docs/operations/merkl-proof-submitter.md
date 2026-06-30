@@ -19,7 +19,7 @@ That's the whole job. Garbage collection (`clearAllocation`) and ownership trans
 
 ## Inputs
 
-The bot needs three pieces of operator-provided configuration:
+The bot needs four pieces of operator-provided configuration:
 
 | Input | Source | Notes |
 |---|---|---|

@@ -125,7 +125,7 @@ forge script script/deploy/06_Configure.s.sol \
 
 ## Step 8: Transfer admin to the security council (run LAST)
 
-Grants DEFAULT_ADMIN_ROLE + MANAGER to `addresses.securityCouncil` on both proxies and renounces the deployer's roles:
+Grants DEFAULT_ADMIN_ROLE + MANAGER to `addresses.securityCouncil` on both proxies and any deployed bridge adapters, and renounces the deployer's roles:
 
 ```bash
 DEPLOYER_EOA=0xYourDeployerEOA \
@@ -135,12 +135,9 @@ forge script script/deploy/07_TransferAdminToSecurityCouncil.s.sol \
 
 ## Step 9: Verify Contracts
 
-```bash
-forge script script/verify/VerifyEtherscan.s.sol \
-  --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY"
+Run the wrapper, which calls the verification script for each configured chain, parses the emitted `VERIFY|...` lines, skips already-verified contracts, and submits the rest via `forge verify-contract`:
 
-# Then run the wrapper, which parses the emitted VERIFY|... lines,
-# skips already-verified contracts, and runs forge verify-contract for the rest:
+```bash
 script/verify/verify-all.sh
 ```
 

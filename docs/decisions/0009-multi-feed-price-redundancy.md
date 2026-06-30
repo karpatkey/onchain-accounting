@@ -19,11 +19,12 @@ Allow **N price feeds per asset** (N ≥ 1). On every read, pick the **freshest 
 
 ```
 for each cfg in _priceOracles[asset]:
-    rawPrice, updatedAt = read(cfg)          // per-type dispatch below
+    rawPrice, updatedAt, rateOnly = read(cfg)    // per-type dispatch below; rateOnly = Custom feed with no push timestamp
     if rawPrice <= 0 or internal stale: skip
     effectiveTime = min(updatedAt, block.timestamp)   // clock-skew normalisation
     if block.timestamp - effectiveTime >= cfg.chainlinkHeartbeat: skip  // staleness gate (>= so boundary is stale)
-    if effectiveTime > bestTime: update winner
+    // real-timestamp feeds always outrank rate-only; within same class, freshest wins
+    if (bestIsRateOnly AND NOT rateOnly) OR (sameClass AND effectiveTime > bestTime): update winner
 
 if no winner: return (0, firstFeed.decimals, true)
 else:         return (winner.price, winner.decimals, false)

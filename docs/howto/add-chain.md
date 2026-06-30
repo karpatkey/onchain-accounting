@@ -105,7 +105,7 @@ For any bridge adapters this chain should support (CCIP, CCTP, Across, Stargate,
   },
   "CCTP": {
     "enabled": true,
-    "initialize": { "admin": "0x...", "bridgeEscrow": "0x...", "version": "1.0.0" }
+    "initialize": { "admin": "0x...", "bridgeEscrow": "0x...", "tokenMessenger": "0x...", "messageTransmitter": "0x...", "version": "1.0.0" }
   }
 }
 ```

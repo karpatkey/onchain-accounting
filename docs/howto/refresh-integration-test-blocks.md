@@ -237,7 +237,7 @@ The bump script regenerates the JSON; the tests just consume it.
 
 ## Per-adapter detail and coverage-gap report (Sections 3 and 4)
 
-`comparison-report.md` has six sections; beyond the account-level drift summary (Section 1) and protocol-level pairing (Section 2), the two most useful for triage are the per-adapter detail (Section 3) and coverage-gap detection (Section 4). (Sections 5 and 6 cover the untracked-by-design footer and stale-price/sequencer flags.)
+`comparison-report.md` has five sections; beyond the account-level drift summary (Section 1) and protocol-level pairing (Section 2), the two most useful for triage are the per-adapter detail (Section 3) and coverage-gap detection (Section 4). (Section 5 covers the untracked-by-design footer.)
 
 ### Section 3 — Per-adapter granular detail
 
@@ -329,9 +329,11 @@ The `accounts.json` file includes two pre-wired placeholder slots (`ACCOUNT_PLAC
 ## Files
 
 - `test/integration/accounts.json` — source of truth.
+- `test/integration/merkl-proofs.json` — Merkl proof fixture written by the refresh script in step 1.5; consumed by `_seedMerklProofs` during setUp.
 - `test/integration/IntegrationFromConfigBase.fork.sol` — reads JSON; deploys NAV; asserts.
 - `test/integration/NAV.<Chain>.integration.fork.t.sol` — chain stubs.
 - `test/integration/debank-cache/` — persisted Debank API responses (one file per account/chain, committed).
+- `test/integration/nav-positions-<chainId>.json` — per-chain NAV position detail written by `test_emitSnapshots`; consumed by `generate-comparison-report.py` for the per-adapter detail and coverage-gap sections. Committed alongside `accounts.json` and `merkl-proofs.json`.
 - `script/test/RefreshIntegrationSnapshot.s.sol` — legacy forge script that emits `SNAPSHOT|…` lines; retained for reference but no longer invoked by the refresh script (which now uses `forge test --match-test test_emitSnapshots` — see "Known issues" above).
 - `script/test/refresh-integration-snapshot.sh` — orchestrator (cast + forge + curl + jq).
 - `script/test/generate-comparison-report.py` — renders `comparison-report.md` (NAV ↔ Debank cross-check, per-adapter detail, coverage gaps). Pass `--from-cache` to regenerate from cached Debank responses without an API key.

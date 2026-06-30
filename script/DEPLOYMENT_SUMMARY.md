@@ -353,9 +353,13 @@ script/verify/verify-all.sh
 - `StaderWithdrawalQueueBalanceAdapter` - Stader pending unstake requests
 - `KelpWithdrawalQueueBalanceAdapter` - Kelp DAO rsETH exit queue (multi-asset; payout assets discovered via `lrtConfig().getSupportedAssetList()`)
 - `LidoWithdrawalQueueBalanceAdapter` - Lido stETH withdrawal queue (`WithdrawalQueueERC721`; sums open requests, reported as native ETH — the asset paid on claim)
+- `EthenaCooldownBalanceAdapter` - Ethena sUSDe unstaking cooldown (pending USDe; single slot per account, zeroed on `unstake`)
+- `EtherFiWithdrawalQueueAssistedBalanceAdapter` - ether.fi withdrawal queue (id-only cache, valued live; ADR 0014)
+- `StakeWiseV3ExitQueueAssistedBalanceAdapter` - StakeWise V3 exit queue (id-only cache, valued live; ADR 0014)
 - `UniswapV2PoolsMetaBalanceAdapter`, `UniswapV3PoolsAssistedBalanceAdapter` - Uni V2 pairs / V3 pools
 - `PancakeSwapV2PoolsMetaBalanceAdapter`, `PancakeSwapV3PoolsAssistedBalanceAdapter` - PancakeSwap variants
 - `MerklRewardsAssistedBalanceAdapter` - Merkl unclaimed rewards (proof-verified mutable cache, ADR 0007)
+- `NexusMutualStakingPoolsAssistedBalanceAdapter` - Nexus Mutual V2 staked NXM positions per StakingNFT token (NFT id-cached, valued live)
 
 ### Bridge Adapters
 - CCIP (Chainlink)

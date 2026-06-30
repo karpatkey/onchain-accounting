@@ -120,6 +120,7 @@ Extend `07_TransferAdminToSecurityCouncil` (or add a step) to grant the security
 | M1/M2 (deploy privilege/init) | D8 |
 | M3 (registerAsset repoint) | D4 (active-invoice guard) |
 | M4/M5/M6 (CCTP bind / OP hash / Gnosis AMB) | D2 + D3 |
+| M7/M8 (fee-on-transfer / read-only reentrancy) | D4 |
 | M9 (blacklist lock) | pull-payment / per-invoice redirect (D6 recovery path) |
 | M10 (stale router approval) | revoke-on-`setRouter` (D3) |
 | L1–L8 | folded into the relevant adapter/escrow edits; doc/comment fixes (incl. the wrong "delegatecall" comment) |

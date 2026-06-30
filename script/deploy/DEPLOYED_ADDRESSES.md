@@ -4,7 +4,7 @@ Canonical deployed-address reference for the Onchain Accounting System (NAV). Th
 
 Deployed across **24 chains**: 5 fully configured (custom price feeds + balance adapters) + 19 with the NAV implementation + proxy only.
 
-- **Roles:** `DEFAULT_ADMIN_ROLE` + `MANAGER` are held by the deployer EOA `0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72` on every chain. The security-council handoff (`07_TransferAdminToSecurityCouncil`) is deferred and run as a separate later step.
+- **Roles:** `DEFAULT_ADMIN_ROLE` + `MANAGER` are held by the karpatkey security-council Safe `0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537` on every chain (granted by `07_TransferAdminToSecurityCouncil`).
 - **Bridge:** deployed-but-dormant — only the `BridgeEscrow` implementation is deployed (no proxy, adapters, or wiring).
 - **Polygon zkEVM is intentionally excluded** — the network is being sunset by Polygon, so the system is not deployed there.
 

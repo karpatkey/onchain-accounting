@@ -97,7 +97,7 @@ Numbered ADRs. Read when you want the *why* behind a design choice.
 
 | Doc | When to read |
 |---|---|
-| [`script/DEPLOYMENT_SUMMARY.md`](../script/DEPLOYMENT_SUMMARY.md) | **Architectural overview + step-by-step** of the deployment system — CREATE2, atomic proxy deploy, EOA-only deploy/config, the per-script roles (`01_…` → `07_…`; 07 deferred in the current deployment). Read first if new. |
+| [`script/DEPLOYMENT_SUMMARY.md`](../script/DEPLOYMENT_SUMMARY.md) | **Architectural overview + step-by-step** of the deployment system — CREATE2, atomic proxy deploy, EOA-only deploy/config, the per-script roles (`01_…` → `07_…`). Read first if new. |
 | [`script/deploy/DEPLOYED_ADDRESSES.md`](../script/deploy/DEPLOYED_ADDRESSES.md) | Current production addresses — canonical CREATE2 layer (same on every chain) + per-chain price feeds and balance adapters, across all 24 deployed chains. Updated after each production deploy. |
 | [`script/config/CONFIG_GUIDE.md`](../script/config/CONFIG_GUIDE.md) | Schema and conventions for `chains/<chainId>.json` plus the `contracts-deployment-config/` and `nav-config/` per-chain files. |
 | [`script/config/README.md`](../script/config/README.md) | Per-folder index for `script/config/`. |

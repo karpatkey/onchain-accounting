@@ -5,6 +5,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 
 import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
+import {SingleAssetAssistedGetters} from "src/balances/AssistedBalanceAdapters/SingleAssetAssistedGetters.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -43,7 +44,11 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      **reverts** `InvalidExitPosition` for a tuple whose vault is not StakeWise-registered or that does not
 ///      resolve to a live owed amount for `account`, and `PositionCacheFull` at `MAX_POSITIONS`. Reads still
 ///      re-verify and discard (never revert), so correctness does not depend on the write-time checks.
-contract StakeWiseV3ExitQueueAssistedBalanceAdapter is AssistedBalanceAdapter, IPositionDescribable {
+contract StakeWiseV3ExitQueueAssistedBalanceAdapter is
+    AssistedBalanceAdapter,
+    SingleAssetAssistedGetters,
+    IPositionDescribable
+{
     //
     // Types
     //
@@ -74,10 +79,6 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapter is AssistedBalanceAdapter, I
     /// @notice StakeWise VaultsRegistry — `vaults(address)` gates which vaults the cache accepts (write-time
     ///         hygiene; the immutable anchor, analogous to ether.fi pinning its WithdrawRequestNFT).
     address public immutable VAULTS_REGISTRY;
-
-    /// @notice Underlying staking asset the queue pays out (native-ETH sentinel on mainnet). Must be a registered
-    ///         NAV asset. All accepted vaults must settle in this asset.
-    address public immutable UNDERLYING_TOKEN;
 
     /// @notice Display symbol of StakeWise's receipt/LST token for this deployment — `"osETH"` on mainnet,
     ///         `"osGNO"` on Gnosis. Used only to build the `positionLabels` breadcrumb (`["Exit Queue",
@@ -136,18 +137,14 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapter is AssistedBalanceAdapter, I
         uint256 exitClaimDelay_,
         address admin_,
         address assistant_
-    ) AssistedBalanceAdapter(admin_, assistant_) {
-        if (
-            vaultsRegistry_ == address(0) || underlyingToken_ == address(0) || navCalculator_ == address(0)
-                || exitClaimDelay_ == 0
-        ) {
+    ) AssistedBalanceAdapter(admin_, assistant_) SingleAssetAssistedGetters(underlyingToken_) {
+        if (vaultsRegistry_ == address(0) || navCalculator_ == address(0) || exitClaimDelay_ == 0) {
             revert InvalidArguments();
         }
         AddressCheckLib.requireContract(vaultsRegistry_, "VaultsRegistry");
         AddressCheckLib.requireContract(navCalculator_, "NAVCalculator");
 
         VAULTS_REGISTRY = vaultsRegistry_;
-        UNDERLYING_TOKEN = underlyingToken_;
         receiptSymbol = receiptSymbol_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
         EXIT_CLAIM_DELAY = exitClaimDelay_;
@@ -230,7 +227,7 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapter is AssistedBalanceAdapter, I
     /// @inheritdoc IERC165
     /// @dev Adds {IPositionDescribable} on top of the family's base advertisement
     ///      ({IAssistedBalanceAdapter}/{IBalanceAdapter}/{IAccessControl}/{IERC165}).
-    function supportsInterface(bytes4 interfaceId) public view override(AssistedBalanceAdapter) returns (bool) {
+    function supportsInterface(bytes4 interfaceId) public view override(AssistedBalanceAdapter, IERC165) returns (bool) {
         return interfaceId == type(IPositionDescribable).interfaceId || super.supportsInterface(interfaceId);
     }
 
@@ -255,38 +252,8 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapter is AssistedBalanceAdapter, I
         out[1] = receiptSymbol;
     }
 
-    /// @inheritdoc IBalanceAdapter
-    function underlyingAssetsSupported() external view override returns (address[] memory assets) {
-        assets = new address[](1);
-        assets[0] = UNDERLYING_TOKEN;
-    }
-
-    /// @inheritdoc IBalanceAdapter
-    function getAdapterBalanceForAsset(address account, address asset)
-        external
-        view
-        override
-        returns (uint256 amount, bool isDebt)
-    {
-        if (asset != UNDERLYING_TOKEN || account == address(0)) return (0, false);
-        return (_assetsOwed(account), false);
-    }
-
-    /// @inheritdoc IBalanceAdapter
-    function getAdapterBalances(address account)
-        external
-        view
-        override
-        returns (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt)
-    {
-        uint256 owed = account == address(0) ? 0 : _assetsOwed(account);
-        if (owed == 0) return (new address[](0), new uint256[](0), new bool[](0));
-        assets = new address[](1);
-        amounts = new uint256[](1);
-        isDebt = new bool[](1);
-        assets[0] = UNDERLYING_TOKEN;
-        amounts[0] = owed;
-    }
+    // The single-asset getter triad (underlyingAssetsSupported / getAdapterBalanceForAsset / getAdapterBalances)
+    // is provided by {SingleAssetAssistedGetters}, off the {_owedAmount} hook below.
 
     /// @inheritdoc IBalanceAdapter
     /// @notice Returns up to TWO staking-asset `Supplied` legs PER cached exit position (per `positionTicket`) — one
@@ -443,8 +410,9 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapter is AssistedBalanceAdapter, I
     // Internal — valuation
     //
 
+    /// @inheritdoc SingleAssetAssistedGetters
     /// @dev Total assets owed across the account's cached positions, valued from live on-chain reads. Never reverts.
-    function _assetsOwed(address account) internal view returns (uint256 total) {
+    function _owedAmount(address account) internal view override returns (uint256 total) {
         ExitPosition[] memory list = _positions[account];
         for (uint256 i; i < list.length; ++i) {
             (uint256 claimable, uint256 locked) =

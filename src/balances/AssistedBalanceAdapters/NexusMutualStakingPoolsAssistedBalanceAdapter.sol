@@ -8,6 +8,7 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
 import {AssistedNftCacheAdapter} from "src/balances/AssistedBalanceAdapters/AssistedNftCacheAdapter.sol";
 import {AssistedNftValuationAdapter} from "src/balances/AssistedBalanceAdapters/AssistedNftValuationAdapter.sol";
+import {SingleAssetAssistedGetters} from "src/balances/AssistedBalanceAdapters/SingleAssetAssistedGetters.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
@@ -42,7 +43,11 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      the two views agree (no phantom reconciliation mismatch). They are registration-independent (report the raw
 ///      owed NXM even when NXM is unregistered, the one case where getAdapterPositions is empty because NAV can't
 ///      price it).
-contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedNftValuationAdapter, IPositionDescribable {
+contract NexusMutualStakingPoolsAssistedBalanceAdapter is
+    AssistedNftValuationAdapter,
+    SingleAssetAssistedGetters,
+    IPositionDescribable
+{
     using Strings for uint256;
 
     //
@@ -71,9 +76,6 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedNftValuationAd
     /// @notice Nexus Mutual StakingViewer — `getAggregatedTokens(ids)` totals stake + rewards in NXM.
     address public immutable STAKING_VIEWER;
 
-    /// @notice The asset positions are denominated in (NXM). Must be a registered NAV asset.
-    address public immutable UNDERLYING_TOKEN;
-
     /// @notice NAVCalculator — used to look up the registered NXM asset metadata when emitting positions.
     INAVCalculator public immutable NAV_CALCULATOR;
 
@@ -94,11 +96,8 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedNftValuationAd
         address navCalculator_,
         address admin_,
         address assistant_
-    ) AssistedNftValuationAdapter(admin_, assistant_) {
-        if (
-            stakingNft_ == address(0) || stakingViewer_ == address(0) || underlyingToken_ == address(0)
-                || navCalculator_ == address(0)
-        ) {
+    ) AssistedNftValuationAdapter(admin_, assistant_) SingleAssetAssistedGetters(underlyingToken_) {
+        if (stakingNft_ == address(0) || stakingViewer_ == address(0) || navCalculator_ == address(0)) {
             revert InvalidArguments();
         }
         AddressCheckLib.requireContract(stakingNft_, "StakingNFT");
@@ -107,7 +106,6 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedNftValuationAd
 
         STAKING_NFT = stakingNft_;
         STAKING_VIEWER = stakingViewer_;
-        UNDERLYING_TOKEN = underlyingToken_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
@@ -141,54 +139,18 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedNftValuationAd
     // IBalanceAdapter
     //
 
-    /// @inheritdoc IBalanceAdapter
-    function underlyingAssetsSupported() external view override returns (address[] memory assets) {
-        assets = new address[](1);
-        assets[0] = UNDERLYING_TOKEN;
-    }
+    // underlyingAssetsSupported / getAdapterBalanceForAsset / getAdapterBalances come from
+    // {SingleAssetAssistedGetters}, off the {_owedAmount} hook below.
 
     /// @inheritdoc IERC165
     /// @dev Adds {IPositionDescribable} on top of the family's base advertisement
     ///      ({IAssistedBalanceAdapter}/{IBalanceAdapter}/{IAccessControl}/{IERC165}).
-    function supportsInterface(bytes4 interfaceId) public view override(AssistedBalanceAdapter) returns (bool) {
+    function supportsInterface(bytes4 interfaceId) public view override(AssistedBalanceAdapter, IERC165) returns (bool) {
         return interfaceId == type(IPositionDescribable).interfaceId || super.supportsInterface(interfaceId);
     }
 
     function protocolName() external pure returns (string memory) {
         return "Nexus Mutual";
-    }
-
-    /// @inheritdoc IBalanceAdapter
-    /// @notice Total NXM owed (stake + rewards). Convenience getter; the per-position split is in getAdapterPositions.
-    /// @dev Derived by SUMMING the same per-id fault-isolated legs the NAV path emits (see {_totalNxm}), so when NXM
-    ///      is registered it equals `sum(getAdapterPositions)` — including under the per-id fault isolation, where a
-    ///      degenerate token drops from both views identically rather than zeroing one view. Registration-independent:
-    ///      reports the raw owed NXM even when NXM is unregistered (NAV can't price it, so getAdapterPositions is empty).
-    function getAdapterBalanceForAsset(address account, address asset)
-        external
-        view
-        override
-        returns (uint256 amount, bool isDebt)
-    {
-        if (asset != UNDERLYING_TOKEN || account == address(0)) return (0, false);
-        return (_totalNxm(account), false);
-    }
-
-    /// @inheritdoc IBalanceAdapter
-    function getAdapterBalances(address account)
-        external
-        view
-        override
-        returns (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt)
-    {
-        uint256 total = account == address(0) ? 0 : _totalNxm(account);
-        if (total == 0) return (new address[](0), new uint256[](0), new bool[](0));
-        assets = new address[](1);
-        amounts = new uint256[](1);
-        isDebt = new bool[](1);
-        assets[0] = UNDERLYING_TOKEN;
-        amounts[0] = total;
-        isDebt[0] = false;
     }
 
     /// @inheritdoc IBalanceAdapter
@@ -226,6 +188,7 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedNftValuationAd
         return _collectLegs(account, assetFilter, abi.encode(underlying));
     }
 
+    /// @inheritdoc SingleAssetAssistedGetters
     /// @dev Total NXM across `account`'s positions, summed from the SAME per-id fault-isolated leg path the NAV view
     ///      uses ({_collectLegs}) — so a single degenerate token drops from BOTH views identically and they never
     ///      diverge under fault (the bug a single all-or-nothing `getAggregatedTokens` call would have). It calls
@@ -233,7 +196,7 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedNftValuationAd
     ///      balance getters report the raw NXM owed even when NXM is not (yet) a registered NAV asset — the leg's
     ///      Asset metadata does not affect the summed amount. When NXM IS registered the two views agree exactly;
     ///      when it is not, getAdapterPositions is empty (NAV can't price it) while this still surfaces the holding.
-    function _totalNxm(address account) internal view returns (uint256 total) {
+    function _owedAmount(address account) internal view override returns (uint256 total) {
         (INAVCalculator.Asset memory underlying,) =
             RegisteredAssetLib.find(NAV_CALCULATOR.getRegisteredAssets(), UNDERLYING_TOKEN);
         INAVCalculator.PositionBalance[] memory legs = _collectLegs(account, address(0), abi.encode(underlying));

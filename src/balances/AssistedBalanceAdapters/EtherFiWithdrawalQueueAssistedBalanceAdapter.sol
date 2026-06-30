@@ -6,6 +6,7 @@ import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 
 import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
 import {AssistedNftCacheAdapter} from "src/balances/AssistedBalanceAdapters/AssistedNftCacheAdapter.sol";
+import {SingleAssetAssistedGetters} from "src/balances/AssistedBalanceAdapters/SingleAssetAssistedGetters.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
@@ -30,7 +31,11 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      Emits ONE native-ETH `Supplied` leg per owned cached withdrawal request, all sharing a single static
 ///      positionId; each leg's `isLocked` reflects that request's own state (finalized → `false`, pending → `true`)
 ///      and its `tokenId` (the WithdrawRequestNFT id) rides in the typed `positionInstanceId`, never in `positionId`.
-contract EtherFiWithdrawalQueueAssistedBalanceAdapter is AssistedNftCacheAdapter, IPositionDescribable {
+contract EtherFiWithdrawalQueueAssistedBalanceAdapter is
+    AssistedNftCacheAdapter,
+    SingleAssetAssistedGetters,
+    IPositionDescribable
+{
     //
     // State
     //
@@ -40,7 +45,7 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapter is AssistedNftCacheAdapter
     bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.ETHERFI_WITHDRAWAL;
 
     /// @notice Hard cap on cached tokenIds per account (returned by the {_maxTokenIds} hook the shared
-    ///         {AssistedNftCacheAdapter} base enforces at submit time). `_ethOwed` iterates the whole set on every NAV
+    ///         {AssistedNftCacheAdapter} base enforces at submit time). `_owedAmount` iterates the whole set on every NAV
     ///         read, and an OOG there is NOT caught by NAVCalculator's try/catch — a bloated cache would brick the
     ///         account's NAV scan. Bounding the cache at submit time keeps the read gas-bounded; the assistant must
     ///         GC claimed ids (`clearTokenId`) to stay under it. A real account never approaches 256 open requests.
@@ -51,9 +56,6 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapter is AssistedNftCacheAdapter
 
     /// @notice ether.fi LiquidityPool — `amountForShare` converts a request's locked shares to current ETH.
     address public immutable LIQUIDITY_POOL;
-
-    /// @notice Underlying asset the queue pays out, native ETH (sentinel). Must be a registered NAV asset.
-    address public immutable UNDERLYING_TOKEN;
 
     /// @notice NAVCalculator — used to look up the registered native-ETH Asset metadata when emitting positions.
     INAVCalculator public immutable NAV_CALCULATOR;
@@ -76,11 +78,8 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapter is AssistedNftCacheAdapter
         address navCalculator_,
         address admin_,
         address assistant_
-    ) AssistedNftCacheAdapter(admin_, assistant_) {
-        if (
-            withdrawRequestNft_ == address(0) || liquidityPool_ == address(0) || underlyingToken_ == address(0)
-                || navCalculator_ == address(0)
-        ) {
+    ) AssistedNftCacheAdapter(admin_, assistant_) SingleAssetAssistedGetters(underlyingToken_) {
+        if (withdrawRequestNft_ == address(0) || liquidityPool_ == address(0) || navCalculator_ == address(0)) {
             revert InvalidArguments();
         }
         AddressCheckLib.requireContract(withdrawRequestNft_, "WithdrawRequestNFT");
@@ -89,7 +88,6 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapter is AssistedNftCacheAdapter
 
         WITHDRAW_REQUEST_NFT = withdrawRequestNft_;
         LIQUIDITY_POOL = liquidityPool_;
-        UNDERLYING_TOKEN = underlyingToken_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
@@ -122,7 +120,7 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapter is AssistedNftCacheAdapter
     //
 
     /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) public view override(AssistedBalanceAdapter) returns (bool) {
+    function supportsInterface(bytes4 interfaceId) public view override(AssistedBalanceAdapter, IERC165) returns (bool) {
         return interfaceId == type(IPositionDescribable).interfaceId || super.supportsInterface(interfaceId);
     }
 
@@ -140,38 +138,8 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapter is AssistedNftCacheAdapter
         out[1] = "eETH";
     }
 
-    /// @inheritdoc IBalanceAdapter
-    function underlyingAssetsSupported() external view override returns (address[] memory assets) {
-        assets = new address[](1);
-        assets[0] = UNDERLYING_TOKEN;
-    }
-
-    /// @inheritdoc IBalanceAdapter
-    function getAdapterBalanceForAsset(address account, address asset)
-        external
-        view
-        override
-        returns (uint256 amount, bool isDebt)
-    {
-        if (asset != UNDERLYING_TOKEN || account == address(0)) return (0, false);
-        return (_ethOwed(account), false);
-    }
-
-    /// @inheritdoc IBalanceAdapter
-    function getAdapterBalances(address account)
-        external
-        view
-        override
-        returns (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt)
-    {
-        uint256 owed = account == address(0) ? 0 : _ethOwed(account);
-        if (owed == 0) return (new address[](0), new uint256[](0), new bool[](0));
-        assets = new address[](1);
-        amounts = new uint256[](1);
-        isDebt = new bool[](1);
-        assets[0] = UNDERLYING_TOKEN;
-        amounts[0] = owed;
-    }
+    // The single-asset getter triad (underlyingAssetsSupported / getAdapterBalanceForAsset / getAdapterBalances)
+    // is provided by {SingleAssetAssistedGetters}, off the {_owedAmount} hook below.
 
     /// @inheritdoc IBalanceAdapter
     /// @notice Returns ONE native-ETH `Supplied` leg per owned cached withdrawal request, all sharing the static
@@ -179,7 +147,7 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapter is AssistedNftCacheAdapter
     ///         (finalized → `false`, pending → `true`) and its `tokenId` is the typed `positionInstanceId`.
     /// @dev Each cached id is valued live from on-chain reads (`_owedForToken`), re-verifying ownership every read:
     ///      requests not owned by `account` / invalid / claimed / burned value to 0 and emit no leg — the assistant
-    ///      can only under-report. Zero-amount legs are skipped. The legs sum to `_ethOwed`'s total. The tokenId rides
+    ///      can only under-report. Zero-amount legs are skipped. The legs sum to `_owedAmount`'s total. The tokenId rides
     ///      in `positionInstanceId` (ephemeral — burned on claim), NOT in `positionId`, so multiple requests share the
     ///      static positionId and are distinguished by their `positionInstanceId` (and for NAV by summing). Dropped
     ///      entirely if the underlying asset is not registered in NAVCalculator.
@@ -235,8 +203,9 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapter is AssistedNftCacheAdapter
     // Internal — valuation
     //
 
+    /// @inheritdoc SingleAssetAssistedGetters
     /// @dev Total ETH owed across the account's cached tokenIds, valued from live on-chain reads. Never reverts.
-    function _ethOwed(address account) internal view returns (uint256 total) {
+    function _owedAmount(address account) internal view override returns (uint256 total) {
         uint256[] memory ids = _cachedTokenIds(account);
         for (uint256 i; i < ids.length; ++i) {
             (uint256 owed,) = _owedForToken(account, ids[i]);

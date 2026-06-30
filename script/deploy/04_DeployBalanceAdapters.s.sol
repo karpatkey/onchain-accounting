@@ -177,7 +177,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // --- ether.fi withdrawal-queue cache adapter (agent-fed; ADR 0014) ---
         _deployIfEnabled("EtherFiWithdrawalQueueAssisted");
 
-        // --- Nexus Mutual staked NXM (brute-force view adapter: scans StakingNFT, values via StakingViewer) ---
+        // --- Nexus Mutual staked NXM (assisted cache adapter; agent-fed StakingNFT tokenIds, ADR 0015; values
+        //     via StakingViewer, re-verifies ownership per read) ---
         _deployIfEnabled("NexusMutualStakingPoolsAssisted");
 
         // --- StakeWise V3 exit-queue cache adapter (agent-fed; ADR 0014) ---

@@ -1,1 +1,10 @@
-{}
+{
+  "PriceFeedLib": "0xD13245D3382b86aa0964eF838e1BC2Ac8754A900",
+  "NavRegistryLib": "0x549f6fB0EC34E18A82A320b79C968a9Ca6e7b96b",
+  "NAVCalculatorImplementation": "0x875b878d38f13F81ab344FBAC43f1DE2eB7b79A2",
+  "BridgeEscrowImplementation": "0xe2237d9776041514b1AC66856407Ed344b480De0",
+  "balanceAdapters": {
+    "ERC20Default": "0xB9b4C2fCA8C09ea6268e4e1158b84C6550385909"
+  },
+  "NAVCalculatorProxy": "0x42aC265991163Af2b0B9E59a222d31d201E39f91"
+}

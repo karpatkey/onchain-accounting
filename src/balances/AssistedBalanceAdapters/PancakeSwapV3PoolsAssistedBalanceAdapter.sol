@@ -30,8 +30,9 @@ interface IPancakeV3Pool {
 /// @notice Assisted balance adapter for PancakeSwap V3 pools. PancakeSwap V3 is a Uniswap V3 fork sharing every view
 ///         this adapter reads, so all behaviour (assistant-fed tokenId cache, ownership-verified reads, slot0-based
 ///         principal/fee math, NAV filtering, `abi.encode(pool)` identity) is inherited from
-///         `UniswapV3PoolsAssistedBalanceAdapter`. It diverges in exactly two places: the protocol-id slug
-///         (`pancakeswap-v3`), and the `_slot0` read — PancakeSwap V3's `slot0().feeProtocol` is `uint32` (not
+///         `UniswapV3PoolsAssistedBalanceAdapter`. It diverges in exactly two areas: the protocol identity (the
+///         `pancakeswap` brand plus the `pancakeswap-v3` id/sub-id slugs), and the `_slot0` read — PancakeSwap V3's
+///         `slot0().feeProtocol` is `uint32` (not
 ///         `uint8`), so the inherited full-tuple decode would revert on the dirty high bits. See ADR 0017 for why
 ///         the V3 adapters read `slot0` (instantaneous on-chain amounts; manipulation mitigated by async settlement).
 contract PancakeSwapV3PoolsAssistedBalanceAdapter is UniswapV3PoolsAssistedBalanceAdapter {

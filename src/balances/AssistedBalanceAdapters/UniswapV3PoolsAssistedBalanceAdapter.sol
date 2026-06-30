@@ -50,7 +50,7 @@ interface IUniswapV3Factory {
 ///      whose NFT was burned (fail-open, so a single stale id never zeroes the whole account). See
 ///      `docs/decisions/0015-assisted-balance-adapter-family.md` (and the Merkl precedent, ADR 0007).
 /// @dev **Both pool tokens must be registered in NAVCalculator** or the WHOLE position is dropped — not just the
-///      unregistered leg ({positionLegs} returns empty when either `token0` or `token1` is unregistered). This is
+///      unregistered leg ({_valueTokenId} returns empty when either `token0` or `token1` is unregistered). This is
 ///      intentional and structural to an LP position: NAV values an LP from the *sum* of its two underlying legs,
 ///      so a half-priced LP (one token registered, the other not) would silently understate that position rather
 ///      than report a partial value, which is more misleading than omitting it. The operational rule is therefore
@@ -82,7 +82,7 @@ contract UniswapV3PoolsAssistedBalanceAdapter is AssistedNftValuationAdapter, IP
 
     /// @notice Hard cap on cached tokenIds per account (returned by the {_maxTokenIds} hook the shared
     ///         {AssistedNftCacheAdapter} base enforces at submit time). `getAdapterPositions` iterates the whole array
-    ///         on every NAV read — each id costing an external `this.positionLegs` staticcall plus that position's live
+    ///         on every NAV read — each id costing an external `this.valueTokenIdSelf` staticcall plus that position's live
     ///         reads (`slot0` + `positions`, and for an in-range position two `ticks()` + two `feeGrowthGlobal` reads) —
     ///         and an OOG there is NOT caught by NAVCalculator's try/catch, so a bloated cache would brick the
     ///         account's NAV scan. Bounding the cache at submit time keeps the read gas-bounded; the assistant must

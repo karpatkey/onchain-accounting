@@ -70,7 +70,7 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapter is
     bytes32 private constant PROTOCOL_ID = ProtocolIds.STAKEWISE_V3;
     bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.STAKEWISE_V3_EXIT;
 
-    /// @notice Hard cap on cached exit positions per account. `_assetsOwed` iterates the whole array on every NAV
+    /// @notice Hard cap on cached exit positions per account. `_owedAmount` iterates the whole array on every NAV
     ///         read, and an OOG there is NOT caught by NAVCalculator's try/catch — a bloated cache would brick the
     ///         account's NAV scan. Bounding the cache at submit time keeps the read gas-bounded; the agent must GC
     ///         claimed positions (`clearPosition`) to stay under it. A real account never approaches 256 open exits.

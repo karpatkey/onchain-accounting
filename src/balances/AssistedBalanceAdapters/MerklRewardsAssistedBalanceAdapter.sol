@@ -182,7 +182,8 @@ contract MerklRewardsAssistedBalanceAdapter is AssistedBalanceAdapter, IPosition
     ///         list of the user's currently-allocated reward tokens, not a delta; a token omitted from the list is
     ///         removed from NAV. Each entry's proof is verified against the live Distributor merkle root, so even the
     ///         `ASSISTANT_ROLE` holder cannot fabricate amounts.
-    /// @dev **Reverts** `InvalidArguments` (zero user/token), `UninitializedRoot`, or `InvalidProof` — writes are
+    /// @dev **Reverts** `InvalidArguments` (zero user/token), `UninitializedRoot`, `InvalidProof`,
+    ///      `CampaignSumMismatch` (campaign shares don't sum to the per-token total), or `TooManyCampaigns` — writes are
     ///      fail-loud, and because they revert atomically, a bad list leaves the prior set intact. Monotonicity across
     ///      submits is no longer enforced (the cleared cache makes the `AmountRegression` guard moot across calls); the
     ///      live-root proof verification is the real guarantee. `AmountRegression` still catches a decreasing duplicate

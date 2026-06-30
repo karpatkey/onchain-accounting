@@ -92,8 +92,8 @@ import {
 } from "../../src/balances/AssistedBalanceAdapters/PancakeSwapV3PoolsAssistedBalanceAdapter.sol";
 
 /// @title DeployBalanceAdapters
-/// @notice Deploys balance adapter adapters based on per-chain configuration
-/// @dev Reads enabled adapters from script/config/chains/{chainId}.json and deploys them
+/// @notice Deploys balance adapters based on per-chain configuration
+/// @dev Reads enabled adapters from script/config/contracts-deployment-config/{balance-adapters,meta-balance-adapters}/{chainId}.json and deploys them
 contract DeployBalanceAdapters is BaseDeployScript {
     function run() public override {
         setUp();
@@ -105,7 +105,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         vm.startBroadcast();
 
         // Names below are the union of balance-adapter instances used by the ETH Alpha Fund
-        // and USD Alpha Fund across all 5 chains. Each _deployIfEnabled call only fires when the
+        // and USD Alpha Fund across all 7 chains. Each _deployIfEnabled call only fires when the
         // current chain's config has `balanceAdapters.{name}.enabled = true`, so the list can
         // include cross-chain entries safely.
 
@@ -372,7 +372,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return _deployEtherFiWithdrawalQueueAssisted(adapterName, navCalculator);
         }
 
-        // Nexus Mutual staked NXM (simple immutable view adapter; no agent).
+        // Nexus Mutual staked NXM (assisted cache adapter; agent-fed StakingNFT tokenIds, ADR 0015).
         if (_equals(adapterName, "NexusMutualStakingPoolsAssisted")) {
             return _deployNexusMutualStakingPoolsAssisted(adapterName, navCalculator);
         }
@@ -527,7 +527,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
     }
 
     function _deployAaveUmbrella(string memory adapterName, address navCalculator) internal returns (address) {
-        // Schema (chains/<id>.json):
+        // Schema (contracts-deployment-config/balance-adapters/<id>.json):
         //   "AaveUmbrella": {
         //     "enabled": true,
         //     "constructor": {
@@ -688,7 +688,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
     }
 
     function _deployMerklRewardsAssisted(string memory adapterName, address navCalculator) internal returns (address) {
-        // Schema (chains/<id>.json):
+        // Schema (contracts-deployment-config/balance-adapters/<id>.json):
         //   "MerklRewardsAssisted": {
         //     "enabled": true,
         //     "constructor": {
@@ -831,7 +831,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
     }
 
     /// @notice Deploys the PancakeSwap V3 pools assisted adapter (subclass of the Uniswap V3 assisted adapter, differs
-    ///         only in protocol-id slug). Same constructor shape as the Uniswap V3 pools assisted adapter.
+    ///         only in the protocol-identity slugs and the `_slot0` decode override). Same constructor shape as the
+    ///         Uniswap V3 pools assisted adapter.
     function _deployPancakeSwapV3PoolsAssisted(string memory adapterName, address navCalculator)
         internal
         returns (address)

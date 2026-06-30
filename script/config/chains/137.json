@@ -8,7 +8,7 @@
   "nativeTokenSymbol": "POL",
   "addresses": {
     "securityCouncil": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
-    "admin": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
-    "manager": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537"
+    "admin": "0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72",
+    "manager": "0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72"
   }
 }

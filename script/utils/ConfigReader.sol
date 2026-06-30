@@ -613,6 +613,25 @@ library ConfigReader {
         if (chainId == 100) return "gnosis-mainnet";
         if (chainId == 42161) return "arb-mainnet";
         if (chainId == 8453) return "base-mainnet";
+        if (chainId == 137) return "polygon-mainnet";
+        if (chainId == 1101) return "polygonzkevm-mainnet";
+        if (chainId == 80094) return "berachain-mainnet";
+        if (chainId == 999) return "hyperliquid-mainnet";
+        if (chainId == 57073) return "ink-mainnet";
+        if (chainId == 59144) return "linea-mainnet";
+        if (chainId == 204) return "opbnb-mainnet";
+        if (chainId == 146) return "sonic-mainnet";
+        if (chainId == 130) return "unichain-mainnet";
+        if (chainId == 534352) return "scroll-mainnet";
+        if (chainId == 196) return "xlayer-mainnet";
+        if (chainId == 42220) return "celo-mainnet";
+        if (chainId == 43114) return "avax-mainnet";
+        if (chainId == 5000) return "mantle-mainnet";
+        if (chainId == 480) return "worldchain-mainnet";
+        if (chainId == 143) return "monad-mainnet";
+        if (chainId == 9745) return "plasma-mainnet";
+        // Hemi (43111) and 0G (16661) are not on Alchemy; their chain configs set
+        // rpc to "$QUICKNODE_HEMI" / "$QUICKNODE_0G", resolved directly via _resolveEnvVar.
         return "";
     }
 

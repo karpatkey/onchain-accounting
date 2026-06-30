@@ -128,10 +128,12 @@ contract ConfigReaderTest is TestEnvConfigurator {
 
     /// @notice readPriceFeedParam reads a Custom feed's constructor arg from contracts-deployment-config/custom-price-feeds.
     function test_ReadPriceFeedParam() public view {
-        // ETHPlus is an enabled Custom feed on chain 1 with a `ethPlus` constructor arg.
+        // ETHPlus is a Custom feed on chain 1 with a `ethPlus` constructor arg. It is intentionally
+        // disabled (deployed-but-unused — ETH+ is priced via the Chainlink ETH+/USD feed), but
+        // readPriceFeedParam still reads its constructor block regardless of the enabled flag.
         string memory ethPlus = ConfigReader.readPriceFeedParam(vm, 1, "ETHPlus", "ethPlus");
         assertTrue(bytes(ethPlus).length > 0, "ETHPlus constructor arg should be set in price-feeds deploy config");
-        assertTrue(ConfigReader.isPriceFeedEnabled(vm, 1, "ETHPlus"), "ETHPlus should be enabled for deployment");
+        assertFalse(ConfigReader.isPriceFeedEnabled(vm, 1, "ETHPlus"), "ETHPlus is intentionally disabled (deployed-but-unused)");
     }
 
     /// @notice Test reading bridge adapter parameters

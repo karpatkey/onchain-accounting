@@ -122,7 +122,7 @@ Numbered ADRs. Read when you want the *why* behind a design choice.
 
 | Doc | Why kept |
 |---|---|
-| [`historical/oracle-migration-plan.md`](historical/oracle-migration-plan.md) | The NAV v1 → v2 oracle (price + balance) migration plan (PRs #10, #11, #12, completed 2026-04-17). Preserved as the authoritative record of what was ported, why specific divergences were accepted, and which follow-ups remained open at that point. **Not for current ops** — see `script/NAV_V2_DEPLOYMENT_RUNBOOK.md` for that. |
+| [`historical/oracle-migration-plan.md`](historical/oracle-migration-plan.md) | The NAV v1 → v2 oracle (price + balance) migration plan (PRs #10, #11, #12, completed 2026-04-17). Preserved as the authoritative record of what was ported, why specific divergences were accepted, and which follow-ups remained open at that point. **Not for current ops** — see [`script/deploy/README.md`](../script/deploy/README.md) for that. |
 
 ---
 

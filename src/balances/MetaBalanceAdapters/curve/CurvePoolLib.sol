@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {LabelLib} from "src/balances/LabelLib.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @title CurvePoolLib
 /// @notice Shared helpers for reading Curve pool and gauge state across all pool/gauge generations.
@@ -123,7 +124,7 @@ library CurvePoolLib {
         returns (uint256)
     {
         if (totalSupply == 0 || lpBalance == 0) return 0;
-        return (poolBalance * lpBalance) / totalSupply;
+        return Math.mulDiv(poolBalance, lpBalance, totalSupply);
     }
 
     // ─── Gauge helpers ────────────────────────────────────────────────────────

@@ -145,7 +145,12 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is
     /// @inheritdoc IERC165
     /// @dev Adds {IPositionDescribable} on top of the family's base advertisement
     ///      ({IAssistedBalanceAdapter}/{IBalanceAdapter}/{IAccessControl}/{IERC165}).
-    function supportsInterface(bytes4 interfaceId) public view override(AssistedBalanceAdapter, IERC165) returns (bool) {
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        override(AssistedBalanceAdapter, IERC165)
+        returns (bool)
+    {
         return interfaceId == type(IPositionDescribable).interfaceId || super.supportsInterface(interfaceId);
     }
 
@@ -246,8 +251,9 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is
         bytes memory positionId = abi.encode(pool);
         // The StakingNFT id is the EPHEMERAL per-item coordinate — typed `positionInstanceId`, not a label and not in
         // positionId (the stable staking-pool address; an account's NFTs in one pool share it). Breadcrumb is derived
-        // from positionId by `positionLabels`.
-        bytes32 instanceId = bytes32(tokens[0].tokenId);
+        // from positionId by `positionLabels`. Use the ownership-VERIFIED `tokenId` param, not `tokens[0].tokenId` (the
+        // viewer's echo-back), so positionInstanceId can't point at a phantom id if the viewer ever reorders its result.
+        bytes32 instanceId = bytes32(tokenId);
 
         INAVCalculator.PositionBalance[] memory tmp = new INAVCalculator.PositionBalance[](2);
         uint256 n;

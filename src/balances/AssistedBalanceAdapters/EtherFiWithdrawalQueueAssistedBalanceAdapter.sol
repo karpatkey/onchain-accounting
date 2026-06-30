@@ -120,7 +120,12 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapter is
     //
 
     /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) public view override(AssistedBalanceAdapter, IERC165) returns (bool) {
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        override(AssistedBalanceAdapter, IERC165)
+        returns (bool)
+    {
         return interfaceId == type(IPositionDescribable).interfaceId || super.supportsInterface(interfaceId);
     }
 

@@ -227,7 +227,12 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapter is
     /// @inheritdoc IERC165
     /// @dev Adds {IPositionDescribable} on top of the family's base advertisement
     ///      ({IAssistedBalanceAdapter}/{IBalanceAdapter}/{IAccessControl}/{IERC165}).
-    function supportsInterface(bytes4 interfaceId) public view override(AssistedBalanceAdapter, IERC165) returns (bool) {
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        override(AssistedBalanceAdapter, IERC165)
+        returns (bool)
+    {
         return interfaceId == type(IPositionDescribable).interfaceId || super.supportsInterface(interfaceId);
     }
 

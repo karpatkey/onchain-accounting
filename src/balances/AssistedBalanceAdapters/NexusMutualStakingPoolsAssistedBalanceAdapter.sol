@@ -7,6 +7,7 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
 import {AssistedNftCacheAdapter} from "src/balances/AssistedBalanceAdapters/AssistedNftCacheAdapter.sol";
+import {AssistedNftValuationAdapter} from "src/balances/AssistedBalanceAdapters/AssistedNftValuationAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
@@ -39,7 +40,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      across the account's owned, cached positions, applying the **same** filters as the NAV path
 ///      (`getAdapterPositions`) — ownership re-verified live AND the staking pool resolves — so the two views always
 ///      agree (no phantom reconciliation mismatch).
-contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedNftCacheAdapter, IPositionDescribable {
+contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedNftValuationAdapter, IPositionDescribable {
     using Strings for uint256;
 
     //
@@ -91,7 +92,7 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedNftCacheAdapte
         address navCalculator_,
         address admin_,
         address assistant_
-    ) AssistedNftCacheAdapter(admin_, assistant_) {
+    ) AssistedNftValuationAdapter(admin_, assistant_) {
         if (
             stakingNft_ == address(0) || stakingViewer_ == address(0) || underlyingToken_ == address(0)
                 || navCalculator_ == address(0)
@@ -126,6 +127,12 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedNftCacheAdapte
     /// @inheritdoc AssistedNftCacheAdapter
     function _maxTokenIds() internal pure override returns (uint256) {
         return MAX_TOKEN_IDS;
+    }
+
+    /// @inheritdoc AssistedNftValuationAdapter
+    /// @dev Up to 2 legs per StakingNFT: `Staking` (active + expired) + `Rewards` (accrued).
+    function _maxLegsPerId() internal pure override returns (uint256) {
+        return 2;
     }
 
     //
@@ -196,50 +203,32 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedNftCacheAdapte
         }
         if (account == address(0)) return new INAVCalculator.PositionBalance[](0);
 
-        uint256[] memory ids = _cachedTokenIds(account);
-        if (ids.length == 0) return new INAVCalculator.PositionBalance[](0);
-
-        // NXM must be registered in NAVCalculator for the position to count in NAV. Resolve its Asset record once.
-        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
-        (INAVCalculator.Asset memory underlying, bool registered) = RegisteredAssetLib.find(reg, UNDERLYING_TOKEN);
+        // NXM must be registered in NAVCalculator for the position to count in NAV. Resolve its Asset record ONCE and
+        // pass it as the read-once context to the shared per-id fan-out (AssistedNftValuationAdapter._collectLegs),
+        // which isolates a faulty NFT so it can't zero the whole set.
+        (INAVCalculator.Asset memory underlying, bool registered) =
+            RegisteredAssetLib.find(NAV_CALCULATOR.getRegisteredAssets(), UNDERLYING_TOKEN);
         if (!registered) return new INAVCalculator.PositionBalance[](0);
 
-        // Up to two legs (Staking + Rewards) per owned tokenId.
-        INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](2 * ids.length);
-        uint256 count;
-        for (uint256 i; i < ids.length; ++i) {
-            // Per-NFT fault isolation (fail-open, ADR 0015): value each id behind an external `this.` call so a revert
-            // in its live reads (`tokenInfo` / `getTokens` / `stakingPool` on a stale or exotic position) is caught
-            // here and that ONE id is discarded — it never propagates out of getAdapterPositions, where NAVCalculator's
-            // per-adapter try/catch would otherwise fail-open and drop the account's ENTIRE Nexus stake. Mirrors the
-            // Uniswap V3 adapter's `try this.positionLegs(...)` fan-out.
-            try this.tokenLegs(account, underlying, ids[i]) returns (INAVCalculator.PositionBalance[] memory legs) {
-                for (uint256 j; j < legs.length; ++j) {
-                    temp[count++] = legs[j];
-                }
-            } catch {}
-        }
-
-        positions = new INAVCalculator.PositionBalance[](count);
-        for (uint256 i; i < count; i++) {
-            positions[i] = temp[i];
-        }
+        return _collectLegs(account, assetFilter, abi.encode(underlying));
     }
 
+    /// @inheritdoc AssistedNftValuationAdapter
     /// @notice Values one cached `tokenId` into its (up to 2) legs: `Staking` (active + expired stake) + `Rewards`
     ///         (accrued), both NXM-denominated. Returns an empty array if the id is not owned by `account`, the token
     ///         has no stake/rewards, or its staking pool can't be resolved.
-    /// @dev `external` so `getAdapterPositions` can invoke it via `this.` inside a per-NFT try/catch — a revert in any
-    ///      live read (`tokenInfo` / `getTokens` / `stakingPool`) is then isolated to this one id (fail-open). Reads
-    ///      the token live and re-verifies ownership via `StakingNFT.tokenInfo` (a burned id reverts → caught by the
-    ///      caller → discarded; a transferred id returns a different owner → empty). NOT meant for external callers; it
-    ///      is `external` only to enable the self-call isolation.
-    function tokenLegs(address account, INAVCalculator.Asset calldata underlying, uint256 tokenId)
-        external
+    /// @dev `ctx` is the NXM `Asset` record (`abi.encode(INAVCalculator.Asset)`) resolved once by
+    ///      `getAdapterPositions`. The `assetFilter` is unused here — `getAdapterPositions` already short-circuits any
+    ///      filter that is neither zero nor NXM, and every leg is NXM-denominated. Reached only via the base's
+    ///      self-call isolation, so a revert in any live read (`tokenInfo` / `getTokens` / `stakingPool`) is isolated
+    ///      to this one id (fail-open). Re-verifies ownership live via `StakingNFT.tokenInfo`.
+    function _valueTokenId(address account, uint256 tokenId, address, bytes memory ctx)
+        internal
         view
+        override
         returns (INAVCalculator.PositionBalance[] memory)
     {
-        if (msg.sender != address(this)) revert NotAuthorized(); // self-call-only (external solely for try/catch isolation)
+        INAVCalculator.Asset memory underlying = abi.decode(ctx, (INAVCalculator.Asset));
         INAVCalculator.PositionBalance[] memory none = new INAVCalculator.PositionBalance[](0);
 
         // Re-verify ownership live: a burned id reverts `tokenInfo` (caught by the caller's try/catch → discarded);

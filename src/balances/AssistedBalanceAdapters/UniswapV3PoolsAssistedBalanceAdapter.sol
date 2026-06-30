@@ -7,6 +7,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
 import {AssistedNftCacheAdapter} from "src/balances/AssistedBalanceAdapters/AssistedNftCacheAdapter.sol";
+import {AssistedNftValuationAdapter} from "src/balances/AssistedBalanceAdapters/AssistedNftValuationAdapter.sol";
 import {LabelLib} from "src/balances/LabelLib.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
@@ -72,7 +73,7 @@ interface IUniswapV3Factory {
 ///      `PancakeSwapV3PoolsAssistedBalanceAdapter` subclass overrides `_slot0` with a matching ABI.
 ///      Licensing: links the GPL-2.0-or-later Uniswap math (TickMath, LiquidityAmounts, FixedPoint128 via
 ///      `UniswapV3PoolLib`) — combined work is GPL-2.0-or-later (ADR 0008).
-contract UniswapV3PoolsAssistedBalanceAdapter is AssistedNftCacheAdapter, IPositionDescribable {
+contract UniswapV3PoolsAssistedBalanceAdapter is AssistedNftValuationAdapter, IPositionDescribable {
     using Strings for uint256;
 
     //
@@ -119,7 +120,7 @@ contract UniswapV3PoolsAssistedBalanceAdapter is AssistedNftCacheAdapter, IPosit
         address navCalculator_,
         address admin_,
         address assistant_
-    ) AssistedNftCacheAdapter(admin_, assistant_) {
+    ) AssistedNftValuationAdapter(admin_, assistant_) {
         if (positionManager_ == address(0) || navCalculator_ == address(0)) revert InvalidArguments();
         AddressCheckLib.requireContract(positionManager_, "PositionManager");
         AddressCheckLib.requireContract(navCalculator_, "NAVCalculator");
@@ -150,6 +151,12 @@ contract UniswapV3PoolsAssistedBalanceAdapter is AssistedNftCacheAdapter, IPosit
     /// @inheritdoc AssistedNftCacheAdapter
     function _maxTokenIds() internal pure override returns (uint256) {
         return MAX_TOKEN_IDS;
+    }
+
+    /// @inheritdoc AssistedNftValuationAdapter
+    /// @dev Up to 4 legs per NFT: `Supplied` x2 (liq0/liq1) + `Fees` x2 (fee0/fee1).
+    function _maxLegsPerId() internal pure override returns (uint256) {
+        return 4;
     }
 
     //
@@ -224,61 +231,33 @@ contract UniswapV3PoolsAssistedBalanceAdapter is AssistedNftCacheAdapter, IPosit
         returns (INAVCalculator.PositionBalance[] memory)
     {
         if (account == address(0)) return new INAVCalculator.PositionBalance[](0);
-
-        uint256[] memory ids = _cachedTokenIds(account);
-        if (ids.length == 0) return new INAVCalculator.PositionBalance[](0);
-
         // Fetch the registry snapshot ONCE for the whole read (a single `getRegisteredAssets()` cross-contract call,
-        // not one per NFT). It is then re-encoded into calldata on each `this.positionLegs(account, reg, ...)`
-        // self-call below, so the per-NFT registry cost is the ABI copy, not a fresh fetch — the snapshot read itself
-        // stays O(1) in the number of NFTs. (Any per-NFT blow-up is bounded by NAVCalculator's per-adapter try/catch,
-        // which fails open and drops only this adapter's positions.)
-        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
-
-        // Up to 4 legs per NFT (liq0, liq1, fee0, fee1).
-        INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](ids.length * 4);
-        uint256 count;
-
-        for (uint256 i; i < ids.length; ++i) {
-            // Per-NFT fault isolation (fail-open, ADR 0015): value each id behind an external `this.` call so a
-            // revert in its live reads (slot0 / positions / ticks / feeGrowth on an exotic or stale pool) is caught
-            // here and that ONE id is discarded — it never propagates out of getAdapterPositions, where
-            // NAVCalculator's per-adapter try/catch would otherwise fail-open and drop the account's ENTIRE V3 set.
-            // Mirrors the meta-adapter's `try this.instancePositions(...)` fan-out.
-            try this.positionLegs(account, reg, ids[i], assetFilter) returns (
-                INAVCalculator.PositionBalance[] memory legs
-            ) {
-                for (uint256 j; j < legs.length; ++j) {
-                    temp[count++] = legs[j];
-                }
-            } catch {}
-        }
-
-        INAVCalculator.PositionBalance[] memory positions = new INAVCalculator.PositionBalance[](count);
-        for (uint256 i; i < count; ++i) {
-            positions[i] = temp[i];
-        }
-        return positions;
+        // not one per NFT) and pass it as the read-once context to the shared per-id fan-out
+        // (AssistedNftValuationAdapter._collectLegs), which isolates a faulty NFT so it can't zero the whole set.
+        bytes memory ctx = abi.encode(NAV_CALCULATOR.getRegisteredAssets());
+        return _collectLegs(account, assetFilter, ctx);
     }
 
     //
     // Internal — valuation
     //
 
+    /// @inheritdoc AssistedNftValuationAdapter
     /// @notice Values one cached `tokenId` into its (up to 4) legs: `Supplied` x2 (in-range split) + `Fees` x2 (full
     ///         unclaimed). Returns an empty array if the id is not owned by `account`, its pool tokens are
     ///         unregistered, the triple has no canonical pool, or nothing is in the requested `assetFilter`.
-    /// @dev `external` so `getAdapterPositions` can invoke it via `this.` inside a per-NFT try/catch — a revert in
-    ///      any live read (slot0 / positions / ticks / feeGrowth) is then isolated to this one id (fail-open). Reads
-    ///      `token0/token1/fee` from `positions(tokenId)`, resolves the pool, and values it from the pool's live
-    ///      `slot0` (in-range split) + full unclaimed fees (see contract @dev / ADR 0017). NOT meant for external
-    ///      callers; it is `external` only to enable the self-call isolation.
-    function positionLegs(address account, INAVCalculator.Asset[] calldata reg, uint256 tokenId, address assetFilter)
-        external
+    /// @dev `ctx` is the registry snapshot (`abi.encode(INAVCalculator.Asset[])`) fetched once by
+    ///      `getAdapterPositions`. Reached only via the base's self-call isolation, so a revert in any live read
+    ///      (slot0 / positions / ticks / feeGrowth) is isolated to this one id (fail-open). Reads `token0/token1/fee`
+    ///      from `positions(tokenId)`, resolves the pool, and values it from the pool's live `slot0` (in-range split)
+    ///      + full unclaimed fees (see contract @dev / ADR 0017).
+    function _valueTokenId(address account, uint256 tokenId, address assetFilter, bytes memory ctx)
+        internal
         view
+        override
         returns (INAVCalculator.PositionBalance[] memory)
     {
-        if (msg.sender != address(this)) revert NotAuthorized(); // self-call-only (external solely for try/catch isolation)
+        INAVCalculator.Asset[] memory reg = abi.decode(ctx, (INAVCalculator.Asset[]));
         INAVCalculator.PositionBalance[] memory none = new INAVCalculator.PositionBalance[](0);
 
         // Re-verify ownership: a burned id reverts `ownerOf` (caught by the caller's try/catch → discarded); a

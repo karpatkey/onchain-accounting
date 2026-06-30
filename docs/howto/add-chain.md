@@ -2,7 +2,7 @@
 
 End-to-end walkthrough for bringing the full stack up on a new EVM chain. The reference deploy doc is [`../../script/deploy/README.md`](../../script/deploy/README.md); this is the recipe.
 
-Seven chains are configured today: `1` (Mainnet), `10` (Optimism), `56` (BSC), `100` (Gnosis), `137` (Polygon), `42161` (Arbitrum), `8453` (Base). The pattern below assumes you're adding a similar EVM L2/L1.
+Chain configs live in `script/config/chains/<chainId>.json` — one file per supported chain; see that directory for the current set. The pattern below assumes you're adding a similar EVM L1/L2.
 
 ---
 

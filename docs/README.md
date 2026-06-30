@@ -97,10 +97,8 @@ Numbered ADRs. Read when you want the *why* behind a design choice.
 
 | Doc | When to read |
 |---|---|
-| [`script/DEPLOYMENT_SUMMARY.md`](../script/DEPLOYMENT_SUMMARY.md) | **Architectural overview** of the deployment system — CREATE2, atomic proxy deploy, EOA-only deploy/config with a final admin handoff to the security-council Safe, the per-script roles (`01_…` → `07_…`). Read first if new. |
-| [`script/NAV_V2_DEPLOYMENT_RUNBOOK.md`](../script/NAV_V2_DEPLOYMENT_RUNBOOK.md) | **Operational playbook** — step-by-step deploy guide. The living doc; companion to DEPLOYMENT_SUMMARY. Use when deploying to a new chain, deploying additional adapters to a live chain, registering new assets, rotating roles, validating an existing deployment. |
-| [`script/DEPLOYED_ADDRESSES.md`](../script/DEPLOYED_ADDRESSES.md) | Current production addresses per chain — NAVCalculator proxy + impl, every deployed price-feed and balance adapter. Updated after each production deploy. |
-| [`script/PENDING_DEPLOYS.md`](../script/PENDING_DEPLOYS.md) | What's wired in code but not yet on mainnet — running checklist for the next deploy session. |
+| [`script/DEPLOYMENT_SUMMARY.md`](../script/DEPLOYMENT_SUMMARY.md) | **Architectural overview + step-by-step** of the deployment system — CREATE2, atomic proxy deploy, EOA-only deploy/config, the per-script roles (`01_…` → `07_…`; 07 deferred in the current deployment). Read first if new. |
+| [`script/deploy/DEPLOYED_ADDRESSES.md`](../script/deploy/DEPLOYED_ADDRESSES.md) | Current production addresses — canonical CREATE2 layer (same on every chain) + per-chain price feeds and balance adapters, across all 24 deployed chains. Updated after each production deploy. |
 | [`script/config/CONFIG_GUIDE.md`](../script/config/CONFIG_GUIDE.md) | Schema and conventions for `chains/<chainId>.json` plus the `contracts-deployment-config/` and `nav-config/` per-chain files. |
 | [`script/config/README.md`](../script/config/README.md) | Per-folder index for `script/config/`. |
 | [`script/deploy/README.md`](../script/deploy/README.md) | Per-script reference for the `01_…` → `07_…` deploy scripts. |

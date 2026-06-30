@@ -114,9 +114,9 @@ The whole flow is **EOA-only** (deployer key + `--broadcast`; no Safe executes d
 6. `06_Configure.s.sol` — **EOA broadcast**: add balance adapters to NAV, `addMetaInstances`/`removeMetaInstances` for meta-adapters, authorize bridge adapters on BridgeEscrow (idempotent).
 7. `07_TransferAdminToSecurityCouncil.s.sol` — **last:** grants DEFAULT_ADMIN_ROLE + MANAGER to `securityCouncil` on both proxies and renounces the deployer's roles.
 
-For the operational sequencing see [`script/deploy/README.md`](../script/deploy/README.md) and [`script/NAV_V2_DEPLOYMENT_RUNBOOK.md`](../script/NAV_V2_DEPLOYMENT_RUNBOOK.md).
+For the operational sequencing see [`script/deploy/README.md`](../script/deploy/README.md) and [`script/DEPLOYMENT_SUMMARY.md`](../script/DEPLOYMENT_SUMMARY.md).
 
-Per-chain configuration is split under `script/config/`: `chains/<chainId>.json` holds chain metadata + role addresses; `contracts-deployment-config/{custom-price-feeds,balance-adapters,meta-balance-adapters,bridge-adapters}/<chainId>.json` holds what to deploy; `nav-config/{assets-and-price-feeds,balance-adapters,meta-balance-adapters}/<chainId>.json` holds what to register on NAV; `deployments/<chainId>.json` holds the resulting deployed addresses. Seven chains today: `1` (Mainnet), `10` (Optimism), `56` (BNB Chain), `100` (Gnosis), `137` (Polygon), `42161` (Arbitrum), `8453` (Base).
+Per-chain configuration is split under `script/config/`: `chains/<chainId>.json` holds chain metadata + role addresses; `contracts-deployment-config/{custom-price-feeds,balance-adapters,meta-balance-adapters,bridge-adapters}/<chainId>.json` holds what to deploy; `nav-config/{assets-and-price-feeds,balance-adapters,meta-balance-adapters}/<chainId>.json` holds what to register on NAV; `deployments/<chainId>.json` holds the resulting deployed addresses. Deployed on 24 chains (see [`script/deploy/DEPLOYED_ADDRESSES.md`](../script/deploy/DEPLOYED_ADDRESSES.md)); fully configured on Ethereum, Optimism, Arbitrum, Base, and Gnosis.
 
 Adding a new chain or new adapter is a config edit + a single deploy script run; see the `./howto/` guides.
 

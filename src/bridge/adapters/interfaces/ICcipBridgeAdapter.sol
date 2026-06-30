@@ -34,10 +34,11 @@ interface ICcipBridgeAdapter is IBridgeAdapter, IAny2EVMMessageReceiver {
     // Errors
     //
 
-    /// @notice Thrown when an invalid CCIP chain selector is provided
+    /// @notice Thrown when the destination chain has no configured CCIP chain selector
     error InvalidChainSelector();
 
-    /// @notice Thrown when an invalid CCIP router address is provided
+    /// @notice Thrown when an invalid CCIP router address is provided, or when `ccipReceive` is called by an
+    ///         address other than the configured router
     error InvalidRouter();
 
     /// @notice Thrown when message reception fails
@@ -46,8 +47,9 @@ interface ICcipBridgeAdapter is IBridgeAdapter, IAny2EVMMessageReceiver {
     /// @notice Thrown when bridge data is invalid
     error InvalidBridgeData();
 
-    /// @notice Thrown when attempting to bridge to an unsupported chain
-    /// @param chainSelector The unsupported chain selector
+    /// @notice Thrown when bridging to a chain the CCIP router does not support, or when an inbound CCIP
+    ///         message arrives carrying a source chain selector that is not mapped to a known chain ID
+    /// @param chainSelector The unsupported chain selector (destination when bridging, source when receiving)
     error UnsupportedChain(uint64 chainSelector);
 
     //

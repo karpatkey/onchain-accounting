@@ -39,7 +39,8 @@ contract AaveV3SafetyModuleBalanceAdapterForkTest is BalanceAdapterTestBase {
 
     AaveV3SafetyModuleBalanceAdapter public adapter;
 
-    // positionDetail prefix must match the constructor arg used in setUp.
+    // Leftover local helper for building expected positionDetail JSON; unused by the current tests (the adapter
+    // takes no positionDetail-prefix arg — its constructor takes only the NAVCalculator address).
     string private constant _PD_PREFIX = "{\"p\":\"t\"";
 
     function _detail(string memory typeLabel) private pure returns (string memory) {

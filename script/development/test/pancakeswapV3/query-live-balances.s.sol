@@ -10,12 +10,13 @@ import {INonfungiblePositionManager} from "src/balances/MetaBalanceAdapters/unis
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title QueryPancakeV3LiveBalances
-/// @notice Ad-hoc evidence helper: forks Ethereum at the pinned block, deploys the PancakeSwap V3 assisted adapter
-///         pointed at a minimal Balances harness, seeds the verification holder's NFT tokenIds (discovered via the
-///         NPM's ERC721Enumerable surface), and prints the per-leg breakdown the adapter emits. Used to capture the
-///         exact amounts documented in this folder's README and to cross-check against the PancakeSwap UI / a
-///         portfolio tracker.
-/// @dev The adapter only reports a token leg if that token is registered on its NAVCalculator (asset registry).
+/// @notice Ad-hoc evidence helper: runs against the RPC passed via `--rpc-url` (the dev anvil node), deploys the
+///         PancakeSwap V3 assisted adapter pointed at the NAVCalculator passed via `DEV_NAV_PROXY` (used only as the
+///         asset registry), seeds the verification holder's NFT tokenIds (discovered via the NPM's ERC721Enumerable
+///         surface), and prints the per-leg breakdown the adapter emits. Used to capture the exact amounts documented
+///         in this folder's README and to cross-check against the PancakeSwap UI / a portfolio tracker.
+/// @dev The adapter drops the WHOLE LP position unless BOTH of its pool tokens are registered on its NAVCalculator
+///      (asset registry) — it never reports a half-priced position with only one leg registered.
 ///      So point this at the dev anvil RPC, where deploy.sh has stood up a NAV proxy with WETH/USDT registered,
 ///      and pass that proxy as DEV_NAV_PROXY:
 ///        DEV_NAV_PROXY=<dev NAV proxy> forge script \
@@ -30,7 +31,8 @@ contract QueryPancakeV3LiveBalances is Script {
 
     function run() public {
         // navCalculator arg is only used as the asset registry; pass the address provided via env (a deployed
-        // NAVCalculator on the fork) so _getAssetInfo resolves WETH/USDT.
+        // NAVCalculator on the fork) so the adapter's getRegisteredAssets()/RegisteredAssetLib.find lookup resolves
+        // WETH/USDT.
         address nav = vm.envAddress("DEV_NAV_PROXY");
         // admin + assistant = this script, so it can submit the holder's tokenIds below.
         PancakeSwapV3PoolsAssistedBalanceAdapter adapter =

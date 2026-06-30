@@ -22,7 +22,7 @@ contract ConstantsInvariantTest is Test {
         );
     }
 
-    /// @notice 10^MAX_DECIMAL_EXPONENT_INT256 must fit in int256 (used in _toUsd / _fromUsd)
+    /// @notice 10^MAX_DECIMAL_EXPONENT_INT256 must fit in int256 (used in PriceFeedLib._priceConversion)
     function test_invariant_tenToMaxInt256ExponentFitsInInt256() public pure {
         uint256 pow = 10 ** MAX_DECIMAL_EXPONENT_INT256;
         assertLe(pow, uint256(type(int256).max), "10^MAX_DECIMAL_EXPONENT_INT256 must fit in int256");

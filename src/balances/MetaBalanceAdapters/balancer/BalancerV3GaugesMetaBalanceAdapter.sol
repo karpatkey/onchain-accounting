@@ -121,8 +121,9 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceAdapter {
     /// @inheritdoc MetaBalanceAdapter
     /// @dev Returns `["Staking Gauge", "<sym0>/<sym1>/…"]` — the leaf is the staked pool's underlying token symbols
     ///      joined with "/" (e.g. "WETH/wstETH"). Resolved gauge → `lp_token` (pool) → pool tokens. Per-token
-    ///      fail-open: a token whose `symbol()` reverts (or has no code) contributes "?"; a revert in the resolution
-    ///      chain fails open at the NAV layer (`_safeStringArray`).
+    ///      fail-open: a token whose `symbol()` reverts (or has no code) contributes "?"; a revert anywhere in the
+    ///      resolution chain is caught by the `try this.gaugeTokenSymbols(...)` self-call and falls open to the
+    ///      category-only label `["Staking Gauge"]`.
     function positionLabels(bytes calldata positionId) external view virtual override returns (string[] memory) {
         if (positionId.length < 32) return new string[](0);
         address gauge = abi.decode(positionId, (address));

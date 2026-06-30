@@ -96,7 +96,8 @@ export const DEPLOYED_CHAINS = [
 
 /// Per-chain NAV proxy lookup. Prefer this over a global constant — see the comment above
 /// `resolveNavAddress` for why per-chain matters on dev forks.
-/// Returns the production CREATE2 address if the chainId is not in DEPLOYED_CHAINS.
+/// For a chainId not in DEPLOYED_CHAINS, returns the global NEXT_PUBLIC_NAV_ADDRESS
+/// override if set, otherwise the production CREATE2 address.
 export function lookupNavAddress(chainId: number): `0x${string}` {
   return resolveNavAddress(chainId)
 }

@@ -32,14 +32,18 @@ interface IStargateBridgeAdapter is IBridgeAdapter, ILayerZeroComposer {
     // Errors
     //
 
-    /// @notice Thrown when an invalid LayerZero endpoint address is provided
+    /// @notice Thrown when a zero LayerZero endpoint address is provided to `initialize`/`setEndpoint`, or when
+    ///         `lzCompose` is called by an address other than the configured endpoint
     error InvalidEndpoint();
 
-    /// @notice Thrown when no Stargate V2 pool is configured for an asset
+    /// @notice Thrown when no Stargate V2 pool is configured for an asset on the bridge/completion path, or when
+    ///         `setStargatePool` is given a zero pool address or a pool whose `token()` does not equal the asset
     error InvalidPool();
 
-    /// @notice Thrown when attempting to bridge to an unsupported chain (no eid mapping)
-    /// @param dstEid The unsupported destination eid (or 0 when no mapping exists)
+    /// @notice Thrown when attempting to bridge to a chain with no eid mapping, or when an inbound message
+    ///         arrives from an eid that maps to no chain ID
+    /// @param dstEid 0 on the outbound path (the destination chain has no eid mapping); the offending source
+    ///        eid on the inbound path (no chain ID maps to it)
     error UnsupportedChain(uint32 dstEid);
 
     /// @notice Thrown when bridge data is invalid or provenance authentication fails

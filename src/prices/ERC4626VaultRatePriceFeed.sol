@@ -13,7 +13,7 @@ import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 /// @notice Shared skeleton for the "ERC-4626 vault share × Chainlink asset/USD" custom price feeds — a vault share
 ///         token whose USD price is the vault's live exchange rate (`convertToAssets`) times a Chainlink quote for
 ///         the vault's underlying asset. Concrete feeds (sUSDe, sUSDS, sXDAI, syrupUSDC, RWIV, sGHO) supply only the
-///         three constructor addresses; all of them keep their own named contract.
+///         three constructor arguments (vault, asset/USD oracle, heartbeat); all of them keep their own named contract.
 /// @dev The price is `assetUsd · convertToAssets(10**vaultDecimals) / 10**vaultDecimals` (Math.Rounding.Floor),
 ///      i.e. `(asset/USD) · (assets per share)`, returned in the asset/USD feed's own decimals. `convertToAssets`
 ///      is linear in shares, so dividing by the same `10**vaultDecimals` passed in yields the per-share rate at the

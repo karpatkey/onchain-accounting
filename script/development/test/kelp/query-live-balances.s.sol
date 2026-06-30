@@ -8,17 +8,18 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title QueryKelpWithdrawalQueueLiveBalances
 /// @notice Ad-hoc evidence helper: deploys the Kelp Withdrawal Queue adapter pointed at a deployed NAV (the asset
-///         registry) on the dev fork and prints the holder's per-asset legs. Used to capture the values in this
+///         registry) on the dev fork and prints the holder's per-request legs. Used to capture the values in this
 ///         folder's README and to cross-check against a portfolio tracker.
-/// @dev Kelp is multi-asset (one leg per Kelp-supported payout asset registered in NAV: stETH, native ETH; ETHx
-///      is skipped on the dev NAV — custom feed). Point this at the dev anvil RPC where deploy.sh stood up a NAV:
+/// @dev Kelp is multi-asset: `getAdapterPositions` emits one leg per open withdrawal request, across the
+///      Kelp-supported payout assets registered in NAV (stETH, native ETH; ETHx is skipped on the dev NAV —
+///      custom feed). Point this at the dev anvil RPC where deploy.sh stood up a NAV:
 ///        DEV_NAV_PROXY=<dev NAV proxy> forge script \
 ///          script/development/test/kelp/query-live-balances.s.sol:QueryKelpWithdrawalQueueLiveBalances \
 ///          --rpc-url http://127.0.0.1:8545 -vv
 contract QueryKelpWithdrawalQueueLiveBalances is Script {
     address constant WITHDRAWAL_MANAGER = 0x62De59c08eB5dAE4b7E6F7a8cAd3006d6965ec16;
 
-    /// @dev Multi-asset holder: two open stETH requests (summed) + one open native-ETH request.
+    /// @dev Multi-asset holder: two open stETH requests + one open native-ETH request, each emitted as its own leg.
     address constant HOLDER = 0x13833b44341288dF27cc85e3eFDA8CD3830a4d35;
 
     function run() public {

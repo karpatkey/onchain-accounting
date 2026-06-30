@@ -21,7 +21,7 @@ contract VerifyEtherscan is BaseDeployScript {
         address bridgeImpl = readDeployedAddress("BridgeEscrowImplementation");
         address bridgeProxy = readDeployedAddress("BridgeEscrowProxy");
 
-        // Proxy constructor at deploy (02a) is (placeholder, ""). Same on all chains (UUPS pattern, no owner needed).
+        // Proxy constructor at deploy (02) is (placeholder, ""). Same on all chains (UUPS pattern, no owner needed).
         address placeholder = _placeholderAddress();
         bytes memory proxyConstructorArgs = abi.encode(placeholder, "");
 
@@ -85,7 +85,7 @@ contract VerifyEtherscan is BaseDeployScript {
         returns (string memory path, bytes memory args)
     {
         // AaveV3, CompoundV3 and Morpho are meta-adapters (AaveV3InstancesMeta / CompoundV3CometsMeta /
-        // MorphoMarketsMeta). Their per-instance keys (AaveV3_*, CompoundV3_*, MorphoBlue_*) are NAV instance
+        // MorphoMarketsMeta). Their per-instance keys (AaveV3_*, CompoundV3_*, MorphoMarket_*) are NAV instance
         // coordinates, not standalone deployments, and the metas deploy under their own names — so they
         // intentionally fall through to the "verify manually" notice (§8.1) rather than being built here. Only
         // adapters with a 1:1 deploy-to-constructor mapping get an args builder below.
@@ -177,7 +177,7 @@ contract VerifyEtherscan is BaseDeployScript {
         return keccak256(bytes(a)) == keccak256(bytes(b));
     }
 
-    /// @dev One line per contract for verify-all.sh: chainId | name | address | contractPath | constructorArgsHex
+    /// @dev One line per contract for verify-all.sh, pipe-delimited: VERIFY|chainId|name|address|contractPath|constructorArgsHex
     function _emitVerify(string memory name, address addr, string memory contractPath, string memory constructorArgsHex)
         internal
         view

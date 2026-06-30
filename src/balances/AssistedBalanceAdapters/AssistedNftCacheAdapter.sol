@@ -51,8 +51,8 @@ abstract contract AssistedNftCacheAdapter is AssistedBalanceAdapter {
 
     /// @notice Submit `account`'s **complete** candidate tokenId set. Full-set semantics: the cached set is reconciled
     ///         to exactly this list (delta — see the contract NatSpec). Duplicates collapse. **Reverts** `NotTokenOwner` if a
-    ///         newly-added id is not currently owned by `account` and `TokenIdCacheFull` past the cap; the revert is
-    ///         atomic, so a bad list leaves the prior set untouched.
+    ///         newly-added id is not currently owned by `account`, and `TokenIdCacheFull` if a new id would grow the set
+    ///         past the cap; the revert is atomic, so a bad list leaves the prior set untouched.
     function submitTokenIds(address account, uint256[] calldata tokenIds) external onlyRole(ASSISTANT_ROLE) {
         _submit(account, abi.encode(tokenIds)); // typed wrapper → shared replace chokepoint (_applyReplace)
     }

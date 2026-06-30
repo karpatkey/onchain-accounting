@@ -27,7 +27,7 @@ contract QueryStaderWithdrawalQueueLiveBalances is Script {
     address constant PENDING = 0x4D0B2dB7d38009884c3f2a15c1c212f4F4a356c9;
     /// @dev Finalized holder: one finalized-unclaimed request (8214) → ethFinalized branch.
     address constant FINALIZED = 0x404186e63CA9e1D0648a5AEc0b77cD398814C47D;
-    /// @dev Multi-request holder: two open requests (8196 + 8197) → summed into one aggregated leg.
+    /// @dev Multi-request holder: two open requests (8196 + 8197) → two legs, one per request; the balance getter sums them.
     address constant MULTI = 0xeB0CBBA408436997AfD29c50d6A9ffcCf9a2493f;
 
     function run() public {

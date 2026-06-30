@@ -112,7 +112,9 @@ contract DeploymentTest is TestEnvConfigurator {
         assertTrue(nav2.hasRole(nav2.DEFAULT_ADMIN_ROLE(), ADMIN_ADDRESS), "Proxy2 not initialized");
     }
 
-    /// @notice Test that same salt + bytecode = same address across "chains" (contexts)
+    /// @notice Test that two different Create2Deployer instances produce different CREATE2 addresses for the same
+    ///         salt + bytecode (CREATE2 keys off the deployer's address, so only a shared deployer yields a shared
+    ///         address across contexts)
     function test_SameAddressAcrossContexts() public {
         bytes32 salt = keccak256("crosschain");
         bytes memory bytecode = type(NAVCalculator).creationCode;
@@ -227,7 +229,7 @@ contract DeploymentTest is TestEnvConfigurator {
     }
 
     /// @notice Test that proxy deployment yields the same proxy address on every chain (CREATE2 determinism)
-    /// @dev Uses the same formula as 02a_DeployProxies: same deployer (canonical CREATE2) + same salt + same
+    /// @dev Uses the same formula as 02_DeployProxies: same deployer (canonical CREATE2) + same salt + same
     ///      bytecode (with Empty placeholder) => same proxy address on mainnet, Arbitrum, etc.
     function test_ProxyAddressSameAcrossChains() public pure {
         address deployer = address(0x4e59b44847b379578588920cA78FbF26c0B4956C); // Canonical CREATE2 deployer

@@ -247,8 +247,9 @@ interface INAVCalculator is IBalances {
 
     /// @notice Registers one or more **non-meta** balance adapters in the global registry in a single call.
     /// @dev Reverts with InvalidArguments if the list is empty or contains a zero address, DuplicateBalanceAdapter
-    ///      if any adapter is already registered, and MetaAdapterNotAllowed if any adapter implements
-    ///      IMetaBalanceAdapter (meta-adapters must use addMetaBalanceAdapter). The batch is all-or-nothing.
+    ///      if any adapter is already registered, InvalidBalanceAdapter if any adapter does not implement
+    ///      IBalanceAdapter, and MetaAdapterNotAllowed if any adapter implements IMetaBalanceAdapter (meta-adapters
+    ///      must use addMetaBalanceAdapter). The batch is all-or-nothing.
     /// @param adapters Adapter addresses (each must implement IBalanceAdapter and NOT IMetaBalanceAdapter).
     function addBalanceAdapters(address[] calldata adapters) external;
 
@@ -281,8 +282,9 @@ interface INAVCalculator is IBalances {
     /// @notice Adds instance coordinates to a registered meta-adapter's queried set.
     /// @dev This is the governed "which instances to query" registry — adapters themselves stay immutable.
     ///      All-or-nothing: reverts DuplicateMetaInstance if any coordinate is already present or repeated within
-    ///      the batch (a duplicate would double-count NAV), InvalidArguments on an empty list, and NotMetaAdapter
-    ///      if the adapter does not implement IMetaBalanceAdapter. Coordinate values are otherwise not validated; a
+    ///      the batch (a duplicate would double-count NAV), InvalidArguments on an empty list, InvalidBalanceAdapter
+    ///      if the adapter is not registered, and NotMetaAdapter if the adapter does not implement
+    ///      IMetaBalanceAdapter. Coordinate values are otherwise not validated; a
     ///      malformed/unknown coordinate is isolated per-instance by the adapter's fan-out (cannot zero the batch).
     /// @param adapter Registered meta-adapter address.
     /// @param instances Instance coordinates to add (e.g. vault addresses widened to bytes32).
@@ -290,8 +292,9 @@ interface INAVCalculator is IBalances {
 
     /// @notice Removes instance coordinates from a registered meta-adapter's queried set.
     /// @dev All-or-nothing: reverts MetaInstanceNotFound if any coordinate is not present (a coordinate repeated
-    ///      within the batch also reverts), InvalidArguments on an empty list, and NotMetaAdapter if the adapter
-    ///      does not implement IMetaBalanceAdapter. Order is not preserved.
+    ///      within the batch also reverts), InvalidArguments on an empty list, InvalidBalanceAdapter if the adapter
+    ///      is not registered, and NotMetaAdapter if the adapter does not implement IMetaBalanceAdapter. Order is
+    ///      not preserved.
     /// @param adapter Registered meta-adapter address.
     /// @param instances Instance coordinates to remove.
     function removeMetaInstances(address adapter, bytes32[] calldata instances) external;
@@ -314,8 +317,9 @@ interface INAVCalculator is IBalances {
     /// @param newChainlinkL2UptimeFeed New uptime feed address.
     function setChainlinkL2SequencerUptimeFeed(address newChainlinkL2UptimeFeed) external;
 
-    /// @notice Sets the L2 sequencer grace period (reverts if uptime feed not set).
-    /// @param newSequencerGracePeriod Grace period in seconds.
+    /// @notice Sets the L2 sequencer grace period. Reverts UptimeFeedNotSet if the uptime feed is not set, or
+    ///         InvalidArguments if the period is below 1 hour.
+    /// @param newSequencerGracePeriod Grace period in seconds (must be at least 1 hour).
     function setChainlinkL2SequencerGracePeriod(uint256 newSequencerGracePeriod) external;
 
     //
@@ -375,6 +379,7 @@ interface INAVCalculator is IBalances {
     /// @notice Returns all positions for `account` with human-readable labels.
     /// @param account Account address.
     /// @param quoteAsset Quote currency; address(0) for USD.
+    /// @return Array of VerbosePosition structs (enriched Position plus protocolName and display labels).
     function getAccountPositionsVerbose(address account, address quoteAsset)
         external
         view
@@ -384,6 +389,7 @@ interface INAVCalculator is IBalances {
     /// @param account Account address.
     /// @param asset Asset to filter by (must be registered).
     /// @param quoteAsset Quote currency; address(0) for USD.
+    /// @return Array of VerbosePosition structs for the asset (enriched Position plus protocolName and display labels).
     function getAccountPositionsForAssetVerbose(address account, address asset, address quoteAsset)
         external
         view
@@ -392,6 +398,7 @@ interface INAVCalculator is IBalances {
     /// @notice Returns the aggregate NAV and full verbose position breakdown in one call.
     /// @param account Account address.
     /// @param quoteAsset Quote currency; address(0) for USD.
+    /// @return verboseNav VerboseNAV struct bundling the NAV snapshot with the verbose position list.
     function getAccountNavVerbose(address account, address quoteAsset)
         external
         view

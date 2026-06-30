@@ -236,6 +236,7 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapter is
         return interfaceId == type(IPositionDescribable).interfaceId || super.supportsInterface(interfaceId);
     }
 
+    /// @inheritdoc IPositionDescribable
     function protocolName() external pure returns (string memory) {
         return "StakeWise V3";
     }
@@ -270,7 +271,7 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapter is
     ///      `positionInstanceId` (`bytes32(positionTicket)`) and the same per-vault `positionId = abi.encode(vault)`
     ///      (the ticket id is the ephemeral per-item coordinate, never in `positionId`, so multiple tickets in one
     ///      vault share it). A zero-amount leg is omitted; a position that values to 0/0 contributes no legs. All legs sum to
-    ///      `_assetsOwed`. Positions not owned by `account` / claimed value to 0 and are skipped — the assistant can
+    ///      `_owedAmount`. Positions not owned by `account` / claimed value to 0 and are skipped — the assistant can
     ///      only under-report. Dropped entirely if the underlying asset is not registered in NAVCalculator.
     function getAdapterPositions(address account, address assetFilter)
         external

@@ -45,8 +45,9 @@ interface IUniswapV3Factory {
 ///         the typed `positionInstanceId` on each emitted leg (not a label — labels are the verbose-only
 ///         `["AMM Liquidity Pool", "<sym0>/<sym1> <fee>%"]` breadcrumb via {IPositionDescribable.positionLabels}).
 /// @dev Access control comes from {AssistedBalanceAdapter}: `DEFAULT_ADMIN_ROLE` administers roles and
-///      `ASSISTANT_ROLE` gates the submit/clear mutators. `submitTokenIds` **reverts** `NotTokenOwner` for any id not
-///      currently owned by the account (fail-loud writes); reads instead **discard** an id whose ownership changed or
+///      `ASSISTANT_ROLE` gates the submit/clear mutators. `submitTokenIds` carries the account's complete set and
+///      reconciles it as a delta, **reverting** `NotTokenOwner` for any newly-added id not currently owned by the
+///      account (fail-loud writes); reads instead **discard** an id whose ownership changed or
 ///      whose NFT was burned (fail-open, so a single stale id never zeroes the whole account). See
 ///      `docs/decisions/0015-assisted-balance-adapter-family.md` (and the Merkl precedent, ADR 0007).
 /// @dev **Both pool tokens must be registered in NAVCalculator** or the WHOLE position is dropped — not just the

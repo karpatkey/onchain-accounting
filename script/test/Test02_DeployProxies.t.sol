@@ -161,7 +161,7 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
 
     /// @notice Test that proxy addresses are the same across all networks
     /// @dev This verifies that using the canonical CREATE2 deployer with the same inputs
-    ///      produces the same addresses on mainnet, Arbitrum, Base, and Gnosis Chain.
+    ///      produces the same addresses on mainnet, Arbitrum, Base, Gnosis Chain, and Optimism.
     ///      This is the key benefit of using the canonical deployer - true cross-chain determinism.
     function test_ProxyAddressesSameAcrossAllNetworks() public pure {
         // List of chain IDs to test
@@ -358,9 +358,10 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
         console2.log("[OK] AtomicProxyDeployer full flow: proxies upgraded and admin granted");
     }
 
-    /// @notice Test that config can be read for all chains; Safe must be same (proxy admin in bytecode)
+    /// @notice Test that config can be read for all chains, logging per-chain Safe and implementation addresses
     /// @dev Proxy bytecode uses a placeholder impl, so implementation addresses may differ per chain.
-    ///      This test verifies Safe is consistent and logs per-chain impl addresses from config.
+    ///      This test reads config for each chain and logs per-chain impl addresses, flagging any
+    ///      Safe-address differences without asserting on them.
     function test_ImplementationAddressesSameAcrossAllNetworks() public view {
         // List of chain IDs to test
         uint256[] memory chainIds = new uint256[](5);
@@ -491,8 +492,9 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
         console2.log("[OK] Re-initialization correctly reverts");
     }
 
-    /// @notice Test that Safe Admin can initialize proxy via ProxyAdmin
-    /// @dev The Safe owns the ProxyAdmin, which can upgrade and initialize
+    /// @notice Test that Safe Admin can initialize proxy via upgradeToAndCall
+    /// @dev The Safe calls upgradeToAndCall directly on the UUPS proxy to upgrade from the
+    ///      placeholder impl and initialize in one step (UUPS has no separate ProxyAdmin)
     function test_SafeAdminCanInitializeProxy() public {
         require(chainConfig.securityCouncil != address(0), "Safe multisig address not configured");
         require(chainConfig.admin != address(0), "Admin address not configured");

@@ -223,7 +223,7 @@ contract BalanceAdapterHandlerTest is Test {
             for (uint256 j = 0; j < allAdapters.length && j < 3; j++) {
                 IBalanceAdapter adapter = IBalanceAdapter(allAdapters[j]);
 
-                // Get balance via getAdapterBalance - use try-catch to handle potential reverts
+                // Get balance via getAdapterBalances - use try-catch to handle potential reverts
                 try adapter.getAdapterBalances(account) returns (
                     address[] memory, /* assets */ uint256[] memory amounts, bool[] memory isDebt
                 ) {

@@ -34,7 +34,8 @@ interface ICctpBridgeAdapter is IBridgeAdapter {
     // Errors
     //
 
-    /// @notice Thrown when an invalid CCTP domain is provided (destination/source not configured)
+    /// @notice Thrown when the destination chain has no configured CCTP domain mapping
+    /// @dev A source domain that is not configured throws SourceDomainMismatch on completion instead
     error InvalidDomain();
 
     /// @notice Thrown when an invalid CCTP message is provided (too short / malformed)

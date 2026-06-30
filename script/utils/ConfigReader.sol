@@ -120,7 +120,7 @@ library ConfigReader {
         return string(abi.encodePacked(vm.projectRoot(), "/script/config/deployments/", vm.toString(chainId), ".json"));
     }
 
-    /// @dev Reads a file, returning "{}" if it does not exist (deployments files are created lazily).
+    /// @dev Reads a file, returning "{}" if it is missing or empty (deployments files are created lazily).
     function _readOrEmpty(Vm vm, string memory path) private view returns (string memory) {
         // forge-lint: disable-next-line(unsafe-cheatcode)
         try vm.readFile(path) returns (string memory s) {
@@ -209,7 +209,8 @@ library ConfigReader {
     }
 
     // -------------------------------------------------------------------------
-    // Balance adapters (balance-adapters.json) + bridge adapters (chains/<id>.json)
+    // Generic adapter readers (per-concern deploy/nav files; bridge adapters in
+    // contracts-deployment-config/bridge-adapters/<id>.json)
     // -------------------------------------------------------------------------
 
     /// @dev Returns the file + jsonPath prefix for an adapter section. Each concern is its own per-chain file with
@@ -306,7 +307,8 @@ library ConfigReader {
         returns (string[] memory names)
     {
         (string memory json, string memory prefix) = _adapterFileAndPrefix(vm, chainId, adapterType);
-        // Non-top-level (bridge, nested-prefix) sections: use parseJsonKeys on the prefix path as before.
+        // Nested-prefix sections (none today — every concern is a top-level per-chain file, incl. bridge): use
+        // parseJsonKeys on the prefix path.
         if (bytes(prefix).length != 0) {
             string memory jsonPath = _containerPath(prefix);
             if (!vm.keyExists(json, jsonPath)) return new string[](0);

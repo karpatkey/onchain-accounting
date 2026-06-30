@@ -157,7 +157,8 @@ contract GearboxV3CreditAccountsMetaBalanceAdapter is MetaBalanceAdapter {
 
     /// @inheritdoc MetaBalanceAdapter
     /// @dev The credit account's assets: the pool underlying (debt) + currently-enabled collateral tokens. Used by the
-    ///      non-NAV `underlyingAssetsSupported` view; returns an empty array if the credit manager can't be resolved.
+    ///      non-NAV `underlyingAssetsSupported` view; returns an empty array if the credit manager can't be resolved
+    ///      or the pool `underlying()` read reverts.
     function _instanceAssets(bytes32 instance) internal view override returns (address[] memory assets) {
         address ca = _toAddress(instance);
         address cm = _creditManagerOf(ca);

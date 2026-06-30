@@ -110,9 +110,10 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @dev Classifies a supply leg: `Collateral` if the account has enabled this vault as EVC collateral, else
-    ///      `Supplied`. Read under try/catch so a vault without `EVC()`/`getCollaterals` (EulerEarn aggregators —
-    ///      never usable as collateral — or a non-Euler ERC4626) degrades to `Supplied`. EVC caps the collateral
-    ///      list at a small length, so the membership scan is bounded.
+    ///      `Supplied`. Read under try/catch so a non-Euler ERC4626 lacking `EVC()`/`getCollaterals` degrades to
+    ///      `Supplied`. EulerEarn aggregators do expose `EVC()`, but their shares can never be enabled as
+    ///      collateral, so `getCollaterals` never lists them and they too resolve to `Supplied`. EVC caps the
+    ///      collateral list at a small length, so the membership scan is bounded.
     function _supplyKind(address account, address vaultAddr) private view returns (PositionKind) {
         try IEulerEVault(vaultAddr).EVC() returns (address evc) {
             if (evc != address(0)) {

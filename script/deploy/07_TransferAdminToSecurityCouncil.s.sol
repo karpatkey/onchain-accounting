@@ -8,11 +8,12 @@ import {MANAGER} from "../../src/constants.sol";
 import {console2} from "forge-std/console2.sol";
 
 /// @title TransferAdminToSecurityCouncil
-/// @notice Final deploy step: hands governance of the NAVCalculator and BridgeEscrow proxies from the deployer EOA
-///         to the security-council Safe, then strips the deployer of all roles.
+/// @notice Final deploy step: hands governance of the NAVCalculator and BridgeEscrow proxies plus every deployed
+///         standalone bridge adapter from the deployer EOA to the security-council Safe, then strips the deployer
+///         of all roles.
 /// @dev EOA flow (no Safe executes anything here — the deployer EOA broadcasts these txs while it still holds
-///      DEFAULT_ADMIN_ROLE):
-///        1. grant DEFAULT_ADMIN_ROLE + MANAGER to `chainConfig.securityCouncil` on both proxies
+///      DEFAULT_ADMIN_ROLE). For each target (both proxies, then each deployed bridge adapter):
+///        1. grant DEFAULT_ADMIN_ROLE + MANAGER to `chainConfig.securityCouncil`
 ///        2. revoke MANAGER from the deployer EOA
 ///        3. renounce DEFAULT_ADMIN_ROLE from the deployer EOA (OZ v5: callerConfirmation must equal msg.sender)
 ///      After this the council Safe is the sole admin/manager and the deployer holds nothing. Run LAST, after all

@@ -160,7 +160,7 @@ contract AdapterConsistencyTest is Test {
             erc20DefaultBalanceAdapter.getAdapterPositions(alice, address(0));
         INAVCalculator.PositionBalance[] memory positions2 = customAdapter.getAdapterPositions(alice, address(0));
 
-        // Both should have protocol and positionDetail
+        // Both should carry the typed protocol identity (protocolId/protocolSubId) and positionId
         if (positions1.length > 0) {}
 
         if (positions2.length > 0) {}
@@ -236,7 +236,7 @@ contract AdapterConsistencyTest is Test {
     // Balance Consistency Across Adapters
     // ============================================
 
-    /// @notice Test that getAdapterBalance matches sum of positions for all adapters
+    /// @notice Test that getAdapterBalances matches sum of positions for all adapters
     function test_consistency_balanceConsistency() public {
         usdc.mint(alice, 1000 * 10 ** usdc.decimals());
         dai.mint(alice, 2000 * 10 ** dai.decimals());

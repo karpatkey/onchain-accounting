@@ -251,8 +251,9 @@ contract StaderWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTest
     }
 
     function test_multi_sumsAcrossRequests_position() public view {
-        // TWO open requests → TWO per-request legs (one per request id), each carrying its own request id in the last
-        // label, both sharing the static UserWithdrawalManager positionId; the legs sum to MULTI_EXPECTED.
+        // TWO open requests → TWO per-request legs (one per request id), each carrying its own request id in its typed
+        // `positionInstanceId`, both sharing the static UserWithdrawalManager positionId; the legs sum to
+        // MULTI_EXPECTED_ETH.
         INAVCalculator.PositionBalance[] memory positions = oracle.getAdapterPositions(MULTI_HOLDER, address(0));
         assertEq(positions.length, 2, "two open requests -> two per-request legs");
 

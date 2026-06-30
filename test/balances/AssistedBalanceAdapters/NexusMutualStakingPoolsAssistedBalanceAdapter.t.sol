@@ -44,8 +44,9 @@ contract MockStakingNFT {
 }
 
 /// @notice Minimal mock of Nexus's StakingViewer — stores per-token (poolId, active, expired, rewards)
-///         and returns them via both `getTokens` (per-token, used for positions) and
-///         `getAggregatedTokens` (summed, used by the no-arg balance getters).
+///         and returns them via both `getTokens` (per-token; backs both the positions view and the balance
+///         getters, which sum the same per-id legs) and `getAggregatedTokens` (summed; present for ABI parity
+///         only — this adapter never calls it).
 contract MockStakingViewer {
     mapping(uint256 => uint256) public poolId;
     mapping(uint256 => uint256) public active;
@@ -435,7 +436,8 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterTest is BalanceAdapterTest
         vm.expectRevert(abi.encodeWithSelector(TokenIdCacheFull.selector, holder, cap));
         adapter.submitTokenIds(holder, tooMany);
 
-        // The reverted submit left the prior set intact (replace is atomic — the clear rolled back with the revert).
+        // The reverted submit left the prior set intact — submitTokenIds reverts atomically, so no partial delta
+        // (the failed add, or any Pass-1 removals) is committed.
         assertEq(adapter.tokenIdsOf(holder).length, cap);
     }
 

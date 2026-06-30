@@ -18,7 +18,8 @@ interface IGnosisBridgeAdapter is IBridgeAdapter {
     /// @param destinationChainId The destination chain ID
     /// @param receiver The receiver address on destination chain
     /// @param amount The amount being bridged
-    /// @param transactionHash The AMB transaction hash
+    /// @param transactionHash The AMB transaction hash; always zero at initiation, since the hash is not yet
+    ///        known on the source chain (it is recorded later on the destination chain when the message arrives)
     event GnosisBridgeInitiated(
         bytes32 indexed invoiceId, uint64 destinationChainId, address receiver, bytes32 amount, bytes32 transactionHash
     );

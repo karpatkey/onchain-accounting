@@ -11,7 +11,7 @@ import {ERC20DefaultBalanceAdapter} from "src/balances/BalanceAdapters/ERC20Defa
 import {BalancesHarness} from "test/balances/Balances.t.sol";
 
 /// @title Balance Adapter Fuzz Tests
-/// @notice Property-based fuzz tests for balance adapter adapters
+/// @notice Property-based fuzz tests for balance adapters
 contract BalanceAdapterFuzzTest is Test {
     BalancesHarness public balances;
     ERC20DefaultBalanceAdapter public erc20DefaultBalanceAdapter;
@@ -195,10 +195,10 @@ contract BalanceAdapterFuzzTest is Test {
     }
 
     // ============================================
-    // Fuzz Tests for getAdapterBalance
+    // Fuzz Tests for getAdapterBalances
     // ============================================
 
-    /// @notice Fuzz test for getAdapterBalance with random accounts
+    /// @notice Fuzz test for getAdapterBalances with random accounts
     function testFuzz_getAdapterBalances(address account, uint256 amountSeed1, uint256 amountSeed2) public {
         vm.assume(account != address(0));
 

@@ -14,7 +14,7 @@ import {BalancesHarness} from "test/balances/Balances.t.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 
 /// @title Balance Adapter Invariant Tests
-/// @notice Tests critical system invariants for balance adapter adapters
+/// @notice Tests critical system invariants for balance adapters
 contract BalanceAdapterInvariantTest is Test {
     BalancesHarness public balances;
     ERC20DefaultBalanceAdapter public erc20DefaultBalanceAdapter;

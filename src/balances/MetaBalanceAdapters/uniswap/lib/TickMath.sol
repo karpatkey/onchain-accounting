@@ -2,7 +2,7 @@
 pragma solidity ^0.8;
 
 /// @title TickMath
-/// @notice Math library for computing sqrt prices from ticks and vice versa.
+/// @notice Math library for computing sqrt prices from ticks.
 ///         Computes sqrt price for ticks of size 1.0001, i.e. sqrt(1.0001^tick) as fixed point Q64.96.
 /// @dev Adapted from Uniswap v3-core. Source:
 ///      https://github.com/Uniswap/v3-core/blob/main/contracts/libraries/TickMath.sol

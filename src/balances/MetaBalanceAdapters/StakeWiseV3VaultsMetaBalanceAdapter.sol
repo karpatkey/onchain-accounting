@@ -8,7 +8,7 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {InvalidArguments} from "src/errors.sol";
 
-/// @notice Interface for interacting with StakeWise v3 vaults
+/// @notice Interface for interacting with StakeWise V3 vaults
 interface IStakeWiseVault {
     /// @notice Converts a given amount of vault shares to the underlying asset amount
     function convertToAssets(uint256 shares) external view returns (uint256);

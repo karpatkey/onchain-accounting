@@ -53,7 +53,7 @@ interface IGaugeV3 is IERC20 {
     /// @return True if the gauge is killed
     // forge-lint: disable-next-line(mixed-case-function)
     function is_killed() external view returns (bool);
-    /// @notice the current working supply
+    /// @notice The current working supply
     /// @return The current working supply
     // forge-lint: disable-next-line(mixed-case-function)
     function working_supply() external view returns (uint256);

@@ -14,8 +14,8 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import "src/errors.sol";
 
 /// @title ERC20DefaultBalanceAdapter
-/// @notice Default adapter that automatically handles all ERC20 and Native balances
-/// @dev This adapter reads the asset registry from NAVCalculator and returns balance-only positions for all registered assets
+/// @notice Default adapter that reports wallet balances for the ERC20 and native assets in its inclusion list
+/// @dev This adapter reads asset metadata from NAVCalculator and returns balance-only positions for the assets in its inclusion list (_supportedAssets)
 /// @dev Returns PositionBalance structs (balance-only data) without pricing information.
 /// @dev NAVCalculator enriches these positions with pricing data to create full Position structs.
 /// @author KPK
@@ -179,7 +179,7 @@ contract ERC20DefaultBalanceAdapter is BalanceAdapterBase {
     }
 
     //
-    // IERC165 Implementation
+    // IPositionDescribable Implementation
     //
 
     function protocolName() external pure returns (string memory) {

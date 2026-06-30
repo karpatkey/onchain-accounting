@@ -158,7 +158,8 @@ contract KelpWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
 ///        332.890371974143452160 = 654.929338116550057314 stETH (real on-chain multi-request summing).
 ///      - **native-ETH leg** — ONE open request (nonce 5937) = 0.010734990037748145 ETH (the native-ETH
 ///        payout branch; ETH is registered via the sentinel like Lido).
-///      So `getAdapterPositions` emits TWO legs from one oracle — the multi-asset path, previously mock-only.
+///      So `getAdapterPositions` emits THREE per-request legs across TWO assets from one oracle — the
+///      multi-asset path, previously mock-only.
 ///      Kelp also supports ETHx, but this holder has no ETHx request and ETHx is not registered on the dev
 ///      NAV (custom feed) — the unit test covers the registered-vs-unregistered drop. Requests can be claimed
 ///      by the owner at any time after this block; the pin keeps them reproducible.

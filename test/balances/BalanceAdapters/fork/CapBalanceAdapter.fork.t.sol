@@ -144,7 +144,8 @@ contract CapBalanceAdapterForkTest is BalanceAdapterTestBase {
         assertTrue(sawCusd, "cUSD leg present (positionId = cUSD)");
         assertTrue(sawStcusd, "stcUSD leg present (positionId = stcUSD)");
 
-        // Per-leg amounts sum to the combined balance-getter figure (within burn-quote rounding).
+        // Per-leg amounts sum to the combined balance-getter figure exactly: both surfaces sum the same per-leg
+        // burn quotes (vigilo L-01), so there is no rounding divergence — the tolerance below is purely defensive.
         (uint256 combined,) = adapter.getAdapterBalanceForAsset(SAFE, USDC);
         assertEq(combined, EXPECTED_USDC_AMOUNT, "combined sanity");
         assertApproxEqAbs(cUsdAmt + stcUsdAmt, combined, 2, "legs sum ~= combined (rounding only)");

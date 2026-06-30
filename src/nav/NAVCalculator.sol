@@ -587,7 +587,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
 
     /// @notice Checks if the L2 sequencer is down
     /// @dev Only checks sequencer status if on L2 (uptime feed is set). On L1, always returns false.
-    /// @notice Sequencer downtime is a global issue affecting all prices, not asset-specific. It should be tracked
+    /// @dev Sequencer downtime is a global issue affecting all prices, not asset-specific. It should be tracked
     /// separately from stale prices.
     /// @return sequencerDown True if the L2 sequencer is down or within grace period, false otherwise
     function _isSequencerDown() internal view returns (bool sequencerDown) {

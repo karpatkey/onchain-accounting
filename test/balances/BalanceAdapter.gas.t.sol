@@ -112,7 +112,7 @@ contract BalanceAdapterGasTest is Test {
     // Multiple Assets Benchmarks
     // ============================================
 
-    /// @notice Benchmark gas for getAdapterBalance with varying asset counts
+    /// @notice Benchmark gas for getAdapterBalances with varying asset counts
     function test_gasBenchmark_getAdapterBalance_multipleAssets() public {
         // Use smaller asset counts to avoid gas limit issues
         uint256[] memory assetCounts = new uint256[](3);

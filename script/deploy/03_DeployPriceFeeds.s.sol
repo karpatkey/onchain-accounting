@@ -22,7 +22,7 @@ import {rsETH_CustomPriceFeed} from "../../src/prices/protocols/rsETH_CustomPric
 import {eETH_CustomPriceFeed} from "../../src/prices/protocols/eETH_CustomPriceFeed.sol";
 import {ezETH_CustomPriceFeed} from "../../src/prices/protocols/ezETH_CustomPriceFeed.sol";
 import {ETHx_CustomPriceFeed} from "../../src/prices/protocols/ETHx_CustomPriceFeed.sol";
-// sXDAI shares the sDAI contract name — aliased import to avoid a naming collision
+// sXDAI is the Gnosis savings-xDAI ERC4626 rate feed — a distinct contract from mainnet sDAI
 import {sXDAI_CustomPriceFeed} from "../../src/prices/protocols/sXDAI_CustomPriceFeed.sol";
 
 // L2 price adapters
@@ -231,7 +231,7 @@ contract DeployPriceFeeds is BaseDeployScript {
             return;
         }
 
-        // Read constructor parameters from assets config
+        // Read constructor parameters from the custom-price-feeds deploy config
         address sDai = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sDAI", "sDai"));
         address dsrManager = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sDAI", "dsrManager"));
         address daiOracle =
@@ -253,7 +253,7 @@ contract DeployPriceFeeds is BaseDeployScript {
             return;
         }
 
-        // Read constructor parameters from assets config
+        // Read constructor parameters from the custom-price-feeds deploy config
         address ldo = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "LDO", "ldo"));
         address ldoEthOracle =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "LDO", "ldoToEthChainlinkAddress"));
@@ -279,7 +279,7 @@ contract DeployPriceFeeds is BaseDeployScript {
             return;
         }
 
-        // Read constructor parameters from assets config
+        // Read constructor parameters from the custom-price-feeds deploy config
         address sUsds = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sUSDS", "sUsds"));
         address usdsUsdOracle =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sUSDS", "usdsToUsdChainlinkAddress"));
@@ -858,7 +858,8 @@ contract DeployPriceFeeds is BaseDeployScript {
         console2.log("sXDAI_CustomPriceFeed deployed at:", address(sxdaiAdapter));
     }
 
-    // Shared L2 deploy helpers — read constructor args from assets.json priceFeeds section.
+    // Shared L2 deploy helpers — read constructor args from the custom-price-feeds deploy config
+    // (contracts-deployment-config/custom-price-feeds/<chainId>.json) via ConfigReader.readPriceFeedParam.
     // The same adapter type is deployed on multiple chains (wstETH_L2 on Arbitrum, Base, Gnosis, etc.)
     // with different underlying token + feed addresses per chain; `currentChainId` selects the right row.
     function _deployWstEthL2() internal {

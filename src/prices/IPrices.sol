@@ -16,13 +16,13 @@ interface IPrices {
     /// @notice Struct representing a price feed configuration.
     /// @param priceFeed The address of the price feed contract (e.g. Chainlink aggregator or custom price feed).
     /// @param decimals The number of decimal places the price feed uses.
+    /// @param priceType The type of the price feed.
     /// @param chainlinkHeartbeat Staleness window in seconds (non-zero for all types). For Chainlink/Redstone/API3
     /// feeds this gates participation: block.timestamp - effectiveUpdatedAt >= chainlinkHeartbeat → skip feed.
     /// For Custom feeds the internal stale signal from getLatestPrice() is the primary gate; updatedAt from
     /// latestRoundData() then applies the same heartbeat gate (updatedAt==0 is treated as block.timestamp-1
     /// so rate-only feeds participate but yield to any feed with a real push timestamp), and among survivors
     /// the largest effectiveUpdatedAt wins.
-    /// @param priceType The type of the price feed.
     struct PriceFeedConfig {
         address priceFeed;
         uint8 decimals;
@@ -93,18 +93,25 @@ interface IPrices {
     error PriceFeedDecimalsMismatch(address asset, uint8 existingDecimals, uint8 newDecimals);
 
     /// @notice Returns the latest price for a given token while checking if the price is stale.
+    /// @dev Reverts PriceFeedNotSet if the asset has no registered feeds. When at least one feed is registered
+    /// but all are stale, returns price 0 with stale = true rather than reverting.
     /// @param underlyingAsset The address of the token.
-    /// @return price The latest price of the token (int256; positive for all valid prices).
+    /// @return price The latest price of the token (int256; positive for all valid prices, 0 when stale).
     /// @return decimals The amount of decimal places the price is represented with.
     /// @return stale True if all registered feeds are stale, the L2 sequencer is down, or within grace period.
     function latestPrice(address underlyingAsset) external view returns (int256 price, uint8 decimals, bool stale);
 
-    /// @notice Checks if the L2 sequencer is up and running returning True if it is not signaling staleness. If
-    /// 'chainlinkL2SequencerUptimeFeed' is the zero address (e.g. on an L1) it returns false.
+    /// @notice Checks the L2 sequencer uptime feed, returning True when it is signaling staleness (the sequencer
+    /// is down or still within the grace period). If 'chainlinkL2SequencerUptimeFeed' is the zero address (e.g. on
+    /// an L1) it returns false.
     /// @return stale True if the L2 sequencer is down or if it is within the grace period.
     function checkL2SequencerUptime() external view returns (bool stale);
 
-    /// @notice Checks if the price feed supports the given price feed type.
+    /// @notice Validates that a price feed is suitable for the given type, reverting if it is not. Returns nothing
+    /// on success. Reverts InvalidPriceOracle when the asset or feed address is zero, the feed fails the
+    /// ICustomPriceFeed/AggregatorV3 interface check for its type, or (for Chainlink/Redstone/API3) its
+    /// latestRoundData reports a non-positive answer, a zero updatedAt, or a future timestamp; reverts
+    /// InvalidPriceOracleType for an unsupported price type.
     /// @param underlyingAsset The address of the token.
     /// @param priceFeed The address of the price feed.
     /// @param priceType The type of the price feed.

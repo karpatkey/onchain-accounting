@@ -379,7 +379,8 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     }
 
     /// @notice Proves a withdrawal transaction and correlates it to its invoice.
-    /// @param withdrawalTx The withdrawal transaction to prove (its `target` must be this adapter).
+    /// @param withdrawalTx The withdrawal transaction to prove (its `target` is this adapter for ETH
+    ///        withdrawals, or the L1 bridge/messenger for ERC20 — see `_finalizeWithdrawal`).
     /// @param l2OutputIndex The L2 output index
     /// @param outputRootProof The output root proof
     /// @param withdrawalProof The withdrawal proof

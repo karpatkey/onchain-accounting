@@ -3,9 +3,11 @@
 import { useReadContracts } from 'wagmi'
 import { AUTOREFRESH_INTERVAL_MS } from '@/config/chains'
 
-// Per-request breakdown of a Kelp DAO rsETH exit-queue position. The balance adapter emits one aggregated
-// leg per Kelp-supported payout asset (stETH / ETHx / native ETH); this hook re-derives the per-request
-// detail directly from Kelp's LRTWithdrawalManager for a *display-only* drill-down. It does not affect NAV.
+// Per-request breakdown of a Kelp DAO rsETH exit-queue position. The balance adapter emits one Supplied leg
+// per open request (per Kelp-supported payout asset — stETH / ETHx / native ETH), all sharing a single static
+// positionId (abi.encode(WITHDRAWAL_MANAGER)) with the request's userNonce in the per-leg positionInstanceId,
+// so they reconcile to one account-level row per asset. This hook re-derives the per-request detail directly
+// from Kelp's LRTWithdrawalManager for a *display-only* drill-down. It does not affect NAV.
 //
 // Kelp's identifier is the request's `userNonce` within its asset queue. A request is claimable once the
 // asset's lock cursor has advanced past it (`userNonce < nextLockedNonce(asset)`); otherwise it's pending.
@@ -26,7 +28,7 @@ export type KelpOracleRef = { chainId: number; oracle: `0x${string}` }
 // Mirror the adapter's MAX_REQUESTS_PROBED — accounts above the cap have their leg capped there too.
 const MAX_REQUESTS = 256
 
-// KelpWithdrawalQueueBalanceOracle exposes the manager address as a public immutable.
+// KelpWithdrawalQueueBalanceAdapter exposes the manager address as a public immutable.
 const kelpAdapterAbi = [
   { name: 'WITHDRAWAL_MANAGER', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
 ] as const

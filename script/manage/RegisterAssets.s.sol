@@ -10,15 +10,17 @@ import {IPrices} from "../../src/prices/IPrices.sol";
 import {console2} from "forge-std/console2.sol";
 
 /// @title RegisterAssets
-/// @notice Registers each asset from `script/config/assets.json` on NAVCalculator, wiring ALL of the asset's
+/// @notice Registers each asset from `script/config/nav-config/assets-and-price-feeds/<id>.json` on NAVCalculator, wiring ALL of the asset's
 ///         configured price feeds: the first via `registerAsset`, any additional via `addPriceFeed` (ADR 0009
 ///         multi-feed redundancy). Generates a Safe tx batch and (when the signer is MANAGER) can broadcast.
 /// @dev
 ///   - Asset list per chain comes from `assets.json` keys (no hardcoded list).
 ///   - Each asset's `priceFeeds[]` drives the feeds. `Custom` feeds resolve their on-chain address from the
 ///     deployments file (`deployments/<id>.json .customPriceFeeds.<name>`), so 03_DeployPriceFeeds must run first.
-///   - Idempotent: an asset already registered with ≥1 feed is skipped; a pre-registered asset with no feed
-///     (the NATIVE_ADDRESS sentinel from initialize) is wired via addPriceFeed.
+///   - Idempotent: feeds already present on-chain are skipped, so an asset already registered with all its
+///     configured feeds is a no-op, while any new trailing feeds are topped up via addPriceFeed (ADR-0009
+///     redundancy). A pre-registered asset with no feed (the NATIVE_ADDRESS sentinel from initialize) gets its
+///     first feed via addPriceFeed too (registerAsset is used only for an unregistered asset's primary feed).
 ///   - Requires --rpc-url so the script can check on-chain registration state.
 contract RegisterAssets is BaseDeployScript {
     using ConfigReader for *;

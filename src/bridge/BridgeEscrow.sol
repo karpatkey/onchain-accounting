@@ -713,7 +713,7 @@ contract BridgeEscrow is
         }
     }
 
-    /// @notice Checks if an asset symbol has any active invoices (iterates authorized accounts; admin-only callers)
+    /// @notice Checks if an asset symbol has any active invoices (iterates authorized accounts; MANAGER-gated callers)
     function _hasActiveInvoicesForAsset(bytes6 assetSymbol) internal view returns (bool) {
         uint256 safeCount = _authorizedAccounts.length();
         for (uint256 i = 0; i < safeCount; i++) {

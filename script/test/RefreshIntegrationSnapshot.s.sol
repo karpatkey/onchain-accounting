@@ -14,19 +14,26 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 ///         deploy pipeline (NAV + every enabled price feed + every enabled balance adapter),
 ///         read the NAV for every account whose `enabledChains` includes this chain, and
 ///         emit one structured `SNAPSHOT|...` log line per (account, chain) pair to stdout.
-///         The shell wrapper (`script/test/refresh-integration-snapshot.sh`) parses those
-///         lines and applies them to accounts.json via `jq`. This script does NOT mutate
-///         the JSON itself — see ADR 0003 for why we route through stdout + jq instead of
-///         using `vm.writeJson` directly.
-/// @dev Invoked by `script/test/refresh-integration-snapshot.sh`. The shell script bumps
-///      forkBlock with `cast block-number` *before* running this, so the script always sees
-///      the latest block.
+///         Those lines use the same format the shell wrapper
+///         (`script/test/refresh-integration-snapshot.sh`) greps and applies to accounts.json
+///         via `jq`. This script does NOT mutate accounts.json itself — see ADR 0003 for why
+///         we route through stdout + jq instead of using `vm.writeJson` directly.
+/// @dev Legacy/standalone entry point: retained for reference but no longer invoked by
+///      `script/test/refresh-integration-snapshot.sh`. The shell wrapper now drives the
+///      equivalent `forge test --match-test test_emitSnapshots` path on the per-chain
+///      integration contracts instead, because `forge script` parked indefinitely against
+///      Mainnet (chain 1) while `forge test` ran the same pipeline cleanly (see
+///      docs/howto/refresh-integration-test-blocks.md). Run standalone with the Usage line
+///      below; the per-chain `forkBlock` is read from accounts.json (the shell wrapper bumps
+///      it with `cast block-number` before its own run, so a manual run sees whatever block
+///      is currently recorded).
 ///
-///      Inheriting `IntegrationFromConfigBase` reuses the entire deploy pipeline (~700 lines)
-///      without duplication. The base contract extends `Test`; mixing `Script` + `Test` works
-///      because both pull cheatcodes from the same forge-std Common module. The script simply
-///      avoids using assertions (writes results unconditionally) and Test's auto-discovery of
-///      `test_*` methods doesn't apply when invoked via `forge script`.
+///      Inheriting `IntegrationFromConfigBase` reuses the entire deploy pipeline without
+///      duplication. The base contract extends `Test` (via `TestEnvConfigurator`); mixing
+///      `Script` + `Test` works because both pull cheatcodes from the same forge-std Common
+///      module. The script simply avoids using assertions (writes results unconditionally),
+///      and Test's auto-discovery of `test_*` methods doesn't apply when invoked via
+///      `forge script`.
 ///
 ///      Usage:
 ///        CHAIN_ID=1 forge script script/test/RefreshIntegrationSnapshot.s.sol

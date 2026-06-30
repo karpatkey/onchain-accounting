@@ -113,9 +113,10 @@ contract RewardsControllerStub {}
 /// @notice Mock-driven coverage of the balance math that the early-exit unit tests above can't reach:
 ///         the ERC4626 discovery walk (two-hop `stk → wa → bare` vs one-hop `stk → bare`), reward
 ///         bare-reserve resolution (aToken `UNDERLYING_ASSET_ADDRESS()` vs a plain token), Staking +
-///         Rewards leg emission with the right identity, zero-leg skipping, the assetFilter, and the
-///         documented asymmetry where balance methods report an unregistered reserve but
-///         getAdapterPositions silently skips it.
+///         Rewards leg emission with the right identity, zero-leg skipping, the assetFilter, the
+///         cooldown-driven locked/unlocked Staking split (`isLocked`), and the documented asymmetry
+///         where balance methods report an unregistered reserve but getAdapterPositions silently
+///         skips it.
 /// @dev Conversions: a stake token / wrapper with 1e18-scaled `rate` returns `shares * rate / 1e18`.
 contract AaveUmbrellaBalanceMathTest is BalanceAdapterTestBase {
     AaveUmbrellaBalanceAdapter internal oracle;

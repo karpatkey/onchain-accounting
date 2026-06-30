@@ -316,7 +316,9 @@ contract ConfigReaderTest is TestEnvConfigurator {
 
     /// @notice The deploy-config and nav-config meta/plain splits must agree: the set of META adapters in
     ///         contracts-deployment-config/meta-balance-adapters must equal the set in nav-config/meta-balance-adapters
-    ///         (an adapter deployed as meta must be registered as meta, and vice-versa). Same for plain.
+    ///         (an adapter deployed as meta must be registered as meta, and vice-versa). Only the META split is
+    ///         asserted directly here; the plain split follows transitively, since any adapter mis-filed into a meta
+    ///         file (deploy-meta vs nav-meta) surfaces as a meta-set mismatch.
     function test_DeployMetaSplitMatchesNavSplit() public view {
         uint256[] memory chainIds = _allConfiguredChainIds();
         for (uint256 c = 0; c < chainIds.length; c++) {
@@ -452,12 +454,14 @@ contract ConfigReaderTest is TestEnvConfigurator {
         }
     }
 
-    /// @notice The set of chains that carry deployed proxy addresses today. Chain configs that
-    ///         exist only as scaffolds (e.g. chain 56 / BSC, where `deployed.NAVCalculatorProxy`
-    ///         is intentionally empty until the user broadcasts `01_`–`02_` with their deployer
-    ///         key) are *not* listed here, because the consumers of this list assert that the
-    ///         four core deployed addresses are non-zero on every chain. Add a chain ID once
-    ///         its proxies are populated in `script/config/chains/<id>.json`.
+    /// @notice The set of chains expected to carry deployed proxy/impl addresses. Chain configs that
+    ///         exist only as scaffolds (e.g. chain 56 / BSC, whose `deployments/<id>.json` is
+    ///         intentionally empty until the user broadcasts `01_`–`02_` with their deployer key)
+    ///         are *not* listed here. The consumers of this list only compare addresses across these
+    ///         chains — admin/manager parity, and CREATE2 proxy/impl equality among the addresses
+    ///         that are actually present (empty entries are skipped, not asserted non-zero) — so a
+    ///         scaffold whose deployments are still empty would add nothing to compare. Add a chain
+    ///         ID once its proxies are populated in `script/config/deployments/<id>.json`.
     function _supportedChainIds() internal pure returns (uint256[] memory) {
         uint256[] memory chainIds = new uint256[](5);
         chainIds[0] = 1;

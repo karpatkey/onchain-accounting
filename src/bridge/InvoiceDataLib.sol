@@ -8,7 +8,7 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 /// @dev Provides a standardized way to encode/decode invoice data and convert bytes6/string symbols.
 ///      The wire format is `abi.encode(invoiceId, amount, nonce, meta)` (4 slots), where
 ///      `meta = timestamp (uint64, bits 192-255) || checksum24 (bytes24, bits 0-191)`.
-///      The `nonce` is a per-(account) monotonic counter included in the checksum preimage so that
+///      The `nonce` is a per-account monotonic counter included in the checksum preimage so that
 ///      invoice identity is unique per bridge operation (see ADR 0012). The checksum is
 ///      `bytes24(keccak256(invoiceId, amount, timestamp, nonce))`.
 /// @author KPK

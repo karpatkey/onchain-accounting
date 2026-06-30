@@ -78,9 +78,10 @@ contract MockStakeTokenV3 {
 /// @dev The adapter's stake-token addresses are compile-time constants pointing at Mainnet contracts.
 ///      Without a fork those addresses are EOAs — so any test path that reaches a live
 ///      `IStakeToken.balanceOf(...)` call must run as a fork test (see the .fork.t.sol companion).
-///      Unit tests cover the surface that doesn't touch those externals: constructor guards,
-///      ERC165, underlyingAssetsSupported (hardcoded list), and the zero-account / zero-asset
-///      shortcuts in the IBalanceAdapter methods.
+///      Unit tests cover the surface reachable without a live external read: constructor guards,
+///      ERC165, underlyingAssetsSupported (hardcoded list), the zero-account / zero-asset shortcuts
+///      in the IBalanceAdapter methods, and the cooldown split / isLocked legs of getAdapterPositions
+///      exercised against a StakedTokenV3-shaped mock `vm.etch`ed onto a stake-token constant.
 contract AaveV3SafetyModuleBalanceAdapterTest is BalanceAdapterTestBase {
     AaveV3SafetyModuleBalanceAdapter public adapter;
 

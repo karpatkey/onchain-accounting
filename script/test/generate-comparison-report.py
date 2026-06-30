@@ -2,7 +2,7 @@
 """
 Generate a detailed NAV vs DeBank comparison report in Markdown.
 
-The report has six sections:
+The report has five sections:
 
   Section 1 — Account-level drift summary
   Section 2 — Protocol-level pairing (per account × chain)
@@ -11,17 +11,17 @@ The report has six sections:
                signal) and price drift (price-feed signal) can be graded independently.
   Section 4 — Coverage gaps: DeBank protocols with value not in supportedDeBankProtocols
                (4.1) and supported protocol items with no NAV match (4.2).
-  Section 5 — Untracked-by-design footer (rationale in accounts.json.$untracked_by_design)
-  Section 6 — Stale price / sequencer flags per account × chain
+  Section 5 — Untracked-by-design footer (rationale in accounts.json.chains.<id>.$untracked_by_design)
 
 NAV position detail is read from test/integration/nav-positions-<chainId>.json,
 written by IntegrationFromConfigBase during the refresh run.
 
-DeBank data is loaded from test/integration/debank-cache/ by default when that directory
-exists; otherwise a live DeBank API fetch is performed (requires DEBANK_API_KEY).
+By default a live DeBank API fetch is performed (requires DEBANK_API_KEY) and the result
+refreshes test/integration/debank-cache/; when DEBANK_API_KEY is unset, the cached data in
+that directory is used instead (and the run aborts if the cache is empty).
 
 Usage:
-    # Default: use cache if available, else call live API
+    # Default: live API fetch when DEBANK_API_KEY is set; else fall back to the cache
     . ./.env && python3 script/test/generate-comparison-report.py
 
     # Force live API call + update cache + overwrite debankUsd in accounts.json
@@ -83,7 +83,8 @@ with open(WALLET_AGGREGATING_ADAPTERS_JSON) as _wa_f:
         k: v for k, v in json.load(_wa_f).items() if not k.startswith("$")
     }
 
-# Maps NAV adapter `protocol` prefixes to DeBank protocol short-IDs.
+# Maps NAV adapter protocol-name prefixes (matched against each position's
+# `protocolName`) to DeBank protocol short-IDs.
 # Longer prefixes take priority over shorter ones.
 NAV_PROTOCOL_TO_DEBANK_IDS: dict[str, list[str]] = {
     # Old protocol strings (deployed adapters; kept for backward compat until redeployed)
@@ -153,15 +154,16 @@ WALLET_SYMBOL_TO_DEBANK_IDS: dict[str, list[str]] = {
 @dataclass
 class LegMatch:
     """One matched (or unmatched) leg: a single NAV position paired with the
-    corresponding DeBank token entry, with drift fields computed on access."""
+    corresponding DeBank token entry. Drift between the two sides is computed
+    downstream by the render helpers, not stored on this record."""
     account: str
     chain_id: str
     account_label: str
-    protocol: str           # NAV protocol name — from protocolName (new) or protocol (legacy)
+    protocol: str           # NAV protocol display name — from the protocolName field
     debank_id: str          # DeBank short id (e.g. "compound3"); "" for nav_only
     position_id: str        # NAV positionId (bytes hex, new) or hex addr string (legacy)
     position_detail: dict   # NAV positionDetail JSON object (legacy; empty dict in new format)
-    leg_kind: str           # e.g. "supply", "borrow", "reward", "fees", "staking"
+    leg_kind: str           # e.g. "Supply", "Borrow", "Rewards", "Fees", "Staking"
     symbol: str
     is_debt: bool
     nav_amount: Optional[float]           # token units
@@ -170,14 +172,14 @@ class LegMatch:
     debank_amount: Optional[float]
     debank_unit_price_usd: Optional[float]
     debank_usd: Optional[float]
-    match_stage: str   # "1", "2", "3", "3b", "pf", "nav_only"
+    match_stage: str   # "1", "1b", "2", "3", "3b", "nav_only"
     item_label: str = ""
 
 
 # ── Drift helpers ─────────────────────────────────────────────────────────────
 
 def _drift_pct(nav: Optional[float], ref: Optional[float]) -> Optional[float]:
-    """Return (nav - ref) / ref * 100, or None if either side is missing/zero."""
+    """Return (nav - ref) / ref * 100, or None if either side is None or ref is zero."""
     if nav is None or ref is None or ref == 0:
         return None
     return (nav - ref) / ref * 100.0
@@ -407,8 +409,11 @@ def build_item_tokens(item: dict) -> str:
 def _leg_kind(pos: dict) -> str:
     """Derive human-readable leg kind from positionKind (new) or positionDetail.type (legacy).
 
-    New format: positionKind is a uint8 — 0=Wallet, 1=Supplied, 2=Borrowed, 3=Collateral,
-    4=Staking, 5=Rewards, 6=Fees (matches the PositionKind enum in src/utils/PositionKind.sol).
+    New format: positionKind is a uint8 ordinal of the PositionKind enum in
+    src/utils/PositionKind.sol — 0=Wallet, 1=Supplied, 2=Borrowed, 3=Collateral, 4=Staking,
+    5=Rewards, 6=Fees — rendered here to the shorter labels "Wallet"/"Supply"/"Borrow"/
+    "Collateral"/"Staking"/"Rewards"/"Fees" (so the enum's Supplied/Borrowed surface as
+    Supply/Borrow, matching the legacy strings below). An unmapped ordinal yields "Unknown(<n>)".
     Legacy format: positionDetail.type is a string — "Supply"/"Borrow"/"Collateral"/"Staking"/etc.
     """
     # New format: positionKind uint8
@@ -433,15 +438,13 @@ def _leg_kind(pos: dict) -> str:
 def _nav_protocol(pos: dict) -> str:
     """Extract the protocol name from a NAV position dict.
 
-    New format: protocolName field (human-readable string from IPositionDescribable).
-    Legacy format: protocol field (e.g. "Compound v3 USDC").
+    Reads the protocolName field (human-readable string from IPositionDescribable),
+    returning "" when it is absent. The legacy `protocol` field is no longer consulted.
     """
-    # New format first
     name = pos.get("protocolName", "").strip()
     if name:
         return name
-    # Legacy format
-    # This helper is defined above; this line is unreachable
+    # No protocolName present → empty string; the legacy `protocol` field is intentionally not consulted.
     return ""
 
 

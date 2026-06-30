@@ -12,7 +12,7 @@ import {DeploySalts} from "./DeploySalts.sol";
 /// @title AtomicNAVProxyDeployer
 /// @notice Deploys placeholder + NAVCalculator proxy and upgrades them in a single transaction.
 /// @dev Use this to avoid front-running: all steps happen atomically so no one can insert a tx between deploy and upgrade.
-///      Admin is set to this contract (msg.sender during init); roles are handed off to adminToGrant and managerToGrant
+///      Admin is set to this contract (passed as `address(this)` into `initialize`); roles are handed off to adminToGrant and managerToGrant
 ///      before this contract renounces its own DEFAULT_ADMIN_ROLE, leaving no orphaned admin.
 contract AtomicNAVProxyDeployer {
     address private constant CANONICAL_CREATE2_DEPLOYER = address(0x4e59b44847b379578588920cA78FbF26c0B4956C);

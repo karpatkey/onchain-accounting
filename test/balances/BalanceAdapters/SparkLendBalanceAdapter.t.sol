@@ -101,7 +101,7 @@ contract MockAaveProtocolDataProvider {
 /// @title SparkLendBalanceAdapterTest
 /// @notice Unit and implementation tests for SparkLendBalanceAdapter
 /// @dev Tests adapter logic and error handling without requiring fork
-/// @dev SparkLend inherits from AaveV3Instance, so most logic is tested there
+/// @dev SparkLendBalanceAdapter extends BalanceAdapterBase; its variable+stable debt-summing logic mirrors AaveV3InstancesMetaBalanceAdapter
 contract SparkLendBalanceAdapterTest is BalanceAdapterTestBase {
     SparkLendBalanceAdapter public adapter;
     MockAaveProtocolDataProvider public mockDataProvider;

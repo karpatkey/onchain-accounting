@@ -64,8 +64,8 @@ contract MorphoVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev Returns `["Vault", <leaf>]` where the leaf is the vault's ERC4626 name ("" if unreadable). Returns an
-    ///      empty array for a short positionId.
+    /// @dev Returns `["Vault", <name>]` using the vault's ERC4626 `name()`; an unreadable name collapses to just
+    ///      `["Vault"]` (empty-leaf convention in {_labels}). Returns an empty array for a short positionId.
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
         return _addressLabels(pid, "Vault", false);
     }

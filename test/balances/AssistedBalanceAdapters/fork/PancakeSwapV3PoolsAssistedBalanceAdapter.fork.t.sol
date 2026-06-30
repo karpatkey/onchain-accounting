@@ -142,7 +142,7 @@ contract PancakeSwapV3PoolsAssistedBalanceForkTest is BalanceAdapterTestBase {
         assertGt(_sumFrom(p, USDT, true), 0, "USDT principal should be non-zero");
     }
 
-    /// @notice Identity is derived on-chain: positionId = the pool address; NFT id in labels; slug = pancakeswap-v3.
+    /// @notice Identity is derived on-chain: positionId = the pool address; NFT id in positionInstanceId; slug = pancakeswap-v3.
     function test_identityDerivedOnChain() public view {
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(HOLDER, address(0));
         assertGt(p.length, 0, "expected at least one leg");

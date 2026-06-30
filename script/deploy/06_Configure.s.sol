@@ -268,8 +268,8 @@ contract Configure is BaseDeployScript {
         names[5] = "Superchain";
     }
 
-    /// @notice Reads a meta-adapter's configured instance coordinates from config: `metaInstances` (address list,
-    ///         widened to bytes32 — for vault/pool-address adapters) unioned with `metaInstancesRaw` (raw bytes32
+    /// @notice Reads a meta-adapter's configured instance coordinates from config: `instances` (address list,
+    ///         widened to bytes32 — for vault/pool-address adapters) unioned with `instancesRaw` (raw bytes32
     ///         list — for marketId-keyed adapters like MorphoMarketsMeta). An adapter uses one or the other.
     /// @return instances The instance coordinates (empty for non-meta adapters or when unset).
     function _readMetaInstances(string memory adapterName) internal view returns (bytes32[] memory instances) {
@@ -280,7 +280,7 @@ contract Configure is BaseDeployScript {
             vm, currentChainId, "navMetaBalanceAdapters", adapterName, "instancesRaw"
         );
 
-        // The configured coordinates must be unique across `metaInstances` (addresses, widened) ∪ `metaInstancesRaw`
+        // The configured coordinates must be unique across `instances` (addresses, widened) ∪ `instancesRaw`
         // (raw bytes32). addMetaInstances is all-or-nothing and reverts DuplicateMetaInstance, so a duplicated
         // config entry surfaces as a clear, per-adapter reconcile failure ("addMetaInstances failed for <name>:
         // DuplicateMetaInstance") that must be corrected in config — it is a config error, not a transient. We do

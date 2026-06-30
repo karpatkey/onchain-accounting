@@ -31,14 +31,17 @@ interface IUmbrellaRewardsControllerForkView {
 
 /// @title AaveUmbrellaBalanceAdapterForkTest
 /// @notice Fork tests for the dynamic-discovery AaveUmbrellaBalanceAdapter against real Mainnet contracts.
-/// @dev The adapter takes only the RewardsController address as constructor input and discovers the
-///      stake-token set + bare reserves + reward-token-to-bare-reserve mapping at runtime. These
+/// @dev The adapter takes the RewardsController address (plus the NAVCalculator, used only for
+///      asset-registry lookups) as constructor input and discovers the stake-token set + bare
+///      reserves + reward-token-to-bare-reserve mapping at runtime. These
 ///      tests verify the discovery is correct against the live state at a pinned block, with real
 ///      holders chosen to have non-zero stake balances and non-zero accrued rewards on each stake
 ///      token.
 contract AaveUmbrellaBalanceAdapterForkTest is BalanceAdapterTestBase {
-    /// @notice Aave Umbrella RewardsController on Mainnet — the only address this test pins as a
-    ///         constant. The adapter under test learns everything else from here.
+    /// @notice Aave Umbrella RewardsController on Mainnet — the discovery trust anchor the adapter
+    ///         under test is given. The adapter learns the stake-token set and everything
+    ///         downstream from here; the bare reserves and holders pinned below are test-side
+    ///         constants used only for independent verification.
     IUmbrellaRewardsControllerForkView public constant REWARDS_CONTROLLER =
         IUmbrellaRewardsControllerForkView(0x4655Ce3D625a63d30bA704087E52B4C31E38188B);
 
@@ -56,7 +59,7 @@ contract AaveUmbrellaBalanceAdapterForkTest is BalanceAdapterTestBase {
 
     AaveUmbrellaBalanceAdapter public adapter;
 
-    // positionDetail prefix must match the constructor arg used in setUp.
+    // Expected positionDetail JSON prefix (protocol + product) for an Umbrella position.
     string private constant _PD_PREFIX = "{\"protocol\":\"Aave V3\",\"product\":\"Umbrella\"";
 
     function _detail(string memory typeLabel) private pure returns (string memory) {
@@ -168,7 +171,8 @@ contract AaveUmbrellaBalanceAdapterForkTest is BalanceAdapterTestBase {
 
     function test_getAdapterPositions_emitsStakedAndRewardsLegsForGHOHolder() public view {
         // stkGHO.v1 staked and rewards are BOTH in GHO, so the holder sees two GHO entries with
-        // distinct positionDetail strings — exactly the disambiguation the framework needs.
+        // distinct positionKind values (Staking vs Rewards) — exactly the disambiguation the
+        // framework needs.
         INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(STK_GHO_HOLDER, address(0));
 
         bool sawStaked;
@@ -211,8 +215,8 @@ contract AaveUmbrellaBalanceAdapterForkTest is BalanceAdapterTestBase {
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
     /// @dev Compute the expected (staked + rewards-mapped-to-bare-reserve) total for a holder by
-    ///      walking the same path as the adapter, then assert the adapter's getAdapterBalanceForAsset
-    ///      matches and that getAdapterPositions emits the right two legs with the expected labels.
+    ///      walking the same path as the adapter, then assert the adapter's discovered stake-token
+    ///      symbol matches `expectedSymbol` and that getAdapterBalanceForAsset returns that total.
     function _assertHolderBalanceMatches(address holder, address bareReserve, string memory expectedSymbol)
         internal
         view

@@ -3,9 +3,10 @@
 import { useReadContracts } from 'wagmi'
 import { AUTOREFRESH_INTERVAL_MS } from '@/config/chains'
 
-// Per-request-id breakdown of a Stader ETHx withdrawal-queue position. The balance adapter aggregates all
-// open requests into a single WETH leg (positionId = "", account-global) — see the rationale in
-// src/balances/protocols/StaderWithdrawalQueueBalanceAdapter.sol. This hook re-derives the per-request detail directly
+// Per-request-id breakdown of a Stader ETHx withdrawal-queue position. The balance adapter emits one WETH leg
+// per open request, all sharing a single static positionId (abi.encode(manager)) with the request id in the
+// per-leg positionInstanceId, so they reconcile to one account-level row — see the rationale in
+// src/balances/BalanceAdapters/StaderWithdrawalQueueBalanceAdapter.sol. This hook re-derives the per-request detail directly
 // from Stader's UserWithdrawalManager for a *display-only* drill-down; it does not affect NAV.
 //
 // Stader's identifier is a sequential `requestId` (not an ERC721 NFT like Lido), enumerated via the
@@ -20,7 +21,7 @@ export type StaderWithdrawalRequest = {
   isFinalized: boolean
 }
 
-// Keyed by `${chainId}:${oracle.toLowerCase()}` — matches the key protocol-group computes from a position.
+// Keyed by `${chainId}:${oracle.toLowerCase()}:${asset.toLowerCase()}` — matches the key protocol-group computes from a position.
 export type StaderWithdrawalsByKey = Map<string, StaderWithdrawalRequest[]>
 
 export type StaderOracleRef = { chainId: number; oracle: `0x${string}` }
@@ -31,7 +32,7 @@ export type StaderOracleRef = { chainId: number; oracle: `0x${string}` }
 // first revert anyway.
 const MAX_REQUESTS = 256
 
-// StaderWithdrawalQueueBalanceOracle exposes the manager address as a public immutable.
+// StaderWithdrawalQueueBalanceAdapter exposes the manager address as a public immutable.
 const staderAdapterAbi = [
   { name: 'USER_WITHDRAWAL_MANAGER', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
 ] as const

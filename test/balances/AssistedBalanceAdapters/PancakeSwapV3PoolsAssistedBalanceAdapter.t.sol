@@ -152,10 +152,14 @@ contract PancakeSwapV3PoolsAssistedBalanceAdapterTest is Test {
         assertEq(p[0].positionInstanceId, bytes32(uint256(1)));
     }
 
-    /// @notice ADR 0017 / the whole point of the `_slot0` override: a real PCS V3 pool packs `feeProtocol` as a
-    ///         `uint32` with bits above byte 0 set (PCS routinely has `feeProtocol > 255`). The PancakeSwap adapter's
-    ///         `_slot0` decodes that with the wider ABI, so valuing a position against such a pool does NOT revert.
-    ///         As a control, the Uniswap base adapter's `uint8` decode of the SAME returndata reverts.
+    /// @notice ADR 0017 / the `_slot0` override: a real PCS V3 pool packs `feeProtocol` as a `uint32` with bits above
+    ///         byte 0 set (PCS routinely has `feeProtocol > 255`). The PancakeSwap adapter's `_slot0` decodes that
+    ///         with the wider ABI, so valuing a position against such a pool does NOT revert. This test asserts only
+    ///         the PancakeSwap path: it sets up a PancakeSwap-ABI pool whose `feeProtocol` overflows `uint8` and pins
+    ///         that the override values it (non-zero in-range principal). The inherited `uint8` decode would revert
+    ///         on such returndata even though it skips the `feeProtocol` field — under this repo's compiler (solc
+    ///         0.8.34, via_ir) Solidity still ABI-validates the skipped value-type return and rejects the dirty high
+    ///         bits — so the override is required, not merely defensive.
     function test_slot0_uint32FeeProtocol_decodesWithoutRevert() public {
         // Fresh factory/NPM/pool wired with a PancakeSwap-ABI pool whose feeProtocol overflows uint8.
         MockUniswapV3Factory pcsFactory = new MockUniswapV3Factory();
@@ -200,12 +204,12 @@ contract PancakeSwapV3PoolsAssistedBalanceAdapterTest is Test {
         }
         assertGt(supply, 0, "non-zero in-range principal off the PancakeSwap pool");
 
-        // Note on the override's role: the inherited base `_slot0` reads only `(sqrtPriceX96, tick,,,,,)` — the
-        // differing `feeProtocol` field is a SKIPPED trailing return, and Solidity does not validate skipped
-        // value-type returns, so the base `uint8`-feeProtocol ABI would in fact decode this `uint32` returndata
-        // without reverting too. The PancakeSwap `_slot0` override is therefore a defensive, explicit-ABI measure
-        // (correct-by-construction regardless of how the compiler treats unused returns), not a strict requirement.
-        // (And per-NFT isolation would catch any such decode revert anyway, dropping just that id.) This test pins
-        // that the override path values a uint32-feeProtocol pool correctly.
+        // Note on the override's role: the inherited base `_slot0` reads only `(sqrtPriceX96, tick,,,,,)`, skipping
+        // the trailing `feeProtocol` field — but Solidity still ABI-validates that skipped value-type return, so a
+        // base `uint8`-feeProtocol decode of this `uint32` returndata reverts on the dirty high bits (confirmed under
+        // this repo's compiler: solc 0.8.34, via_ir). The PancakeSwap `_slot0` override exists precisely to read the
+        // wider ABI and avoid that revert — it is required, not merely defensive. (Per-NFT isolation would otherwise
+        // catch the decode revert and drop just that id.) This test pins that the override path values a
+        // uint32-feeProtocol pool correctly.
     }
 }

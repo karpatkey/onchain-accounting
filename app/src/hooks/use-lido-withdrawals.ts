@@ -3,14 +3,16 @@
 import { useReadContracts } from 'wagmi'
 import { AUTOREFRESH_INTERVAL_MS } from '@/config/chains'
 
-// Per-NFT-id breakdown of a Lido withdrawal-queue position. The balance adapter aggregates all open
-// requests into a single ETH leg (positionId = "", account-global) — see the rationale in
-// src/balances/protocols/LidoWithdrawalQueueBalanceAdapter.sol. This hook re-derives the per-request detail directly
+// Per-NFT-id breakdown of a Lido withdrawal-queue position. The balance adapter emits one ETH leg per
+// open request, all sharing a single static positionId (abi.encode(WITHDRAWAL_QUEUE)) with the request id in
+// the per-leg positionInstanceId, so they reconcile to one account-level row — see the rationale in
+// src/balances/BalanceAdapters/LidoWithdrawalQueueBalanceAdapter.sol. This hook re-derives the per-request detail directly
 // from Lido's WithdrawalQueueERC721 for a *display-only* drill-down; it does not affect NAV.
 export type LidoWithdrawalRequest = {
   id: bigint
-  // ETH owed for this request, matching exactly what the adapter sums: getClaimableEther for finalized
-  // requests, amountOfStETH for not-yet-finalized ones. Denominated in ETH (the asset Lido pays on claim).
+  // ETH owed for this request, valued like the adapter: getClaimableEther for finalized requests,
+  // amountOfStETH for not-yet-finalized ones (the adapter additionally caps a pending request at its live
+  // share value on a negative rebase; this display-only hook does not). Denominated in ETH (the asset Lido pays on claim).
   ethOwed: bigint
   // Raw stETH locked at request time, for reference. Equals ethOwed except on a finalized request that
   // took a negative-rebase haircut at finalization.
@@ -18,7 +20,7 @@ export type LidoWithdrawalRequest = {
   isFinalized: boolean
 }
 
-// Keyed by `${chainId}:${oracle.toLowerCase()}` — matches the key PositionRow computes from a position.
+// Keyed by `${chainId}:${oracle.toLowerCase()}:${asset.toLowerCase()}` — matches the key PositionRow computes from a position.
 export type LidoWithdrawalsByKey = Map<string, LidoWithdrawalRequest[]>
 
 export type LidoOracleRef = { chainId: number; oracle: `0x${string}` }
@@ -27,7 +29,7 @@ export type LidoOracleRef = { chainId: number; oracle: `0x${string}` }
 // there's no aggregate leg to drill into; cap here too to avoid oversized/slow reads on a refetch interval.
 const MAX_REQUESTS = 256
 
-// LidoWithdrawalQueueBalanceOracle exposes the queue address as a public immutable.
+// LidoWithdrawalQueueBalanceAdapter exposes the queue address as a public immutable.
 const lidoAdapterAbi = [
   { name: 'WITHDRAWAL_QUEUE', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
 ] as const
@@ -103,7 +105,8 @@ type RawStatus = {
 }
 
 /// Fetches the per-NFT-id breakdown for each Lido withdrawal-queue position the account holds, valuing each
-/// request the same way the adapter does (claimable ETH for finalized, amountOfStETH for pending). `lidoOracles`
+/// finalized request exactly as the adapter does (claimable ETH) and each pending one from amountOfStETH (see
+/// LidoWithdrawalRequest.ethOwed for the adapter's extra negative-rebase cap on pending). `lidoOracles`
 /// is the set of (chainId, oracle) pairs whose protocol resolved to Lido — derived from the already-fetched
 /// positions, so an account with no Lido WQ position issues no extra reads.
 export function useLidoWithdrawals(

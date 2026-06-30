@@ -44,7 +44,7 @@ abstract contract BaseDeployScript is Script {
     function run() public virtual;
 
     /// @notice Computes CREATE2 address for a contract
-    /// @param deployer The deployer address (typically Safe multisig)
+    /// @param deployer The deployer address (typically the canonical CREATE2 deployer)
     /// @param salt The CREATE2 salt
     /// @param creationCode The contract creation code
     /// @return The computed CREATE2 address

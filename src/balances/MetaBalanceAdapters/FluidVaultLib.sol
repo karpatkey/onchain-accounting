@@ -2,7 +2,7 @@
 pragma solidity ^0.8;
 
 /// @notice Minimal Fluid T1 vault interface — just the static `constantsView` getter we use to
-///         read the vault's collateral/debt tokens at construction time.
+///         read the vault's collateral/debt tokens.
 interface IFluidVaultT1 {
     struct ConstantViews {
         address liquidity;

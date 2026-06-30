@@ -232,7 +232,7 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterTest is BalanceAdapterTestB
     }
 
     function test_pending_feeExceedsGross_clampsZero() public {
-        nft.setRequest(1, holder, 1, 1, true, uint32(1e9), false, 0); // gross 1 wei, fee 1 gwei
+        nft.setRequest(1, holder, 1, 1, true, uint32(1e9), false, 0); // gross 1 wei, fee 1e9 gwei (1 ether) >> gross
         adapter.submitTokenIds(holder, _ids(1));
         (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, NATIVE);
         assertEq(amt, 0);
@@ -316,7 +316,7 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterTest is BalanceAdapterTestB
 
     function test_getAdapterPositions_perRequestLegs_mixedClaimableAndLocked() public {
         // One finalized (claimable) + one pending (locked) request → two per-request legs sharing the static
-        // positionId, each carrying its own tokenId in the last label.
+        // positionId, each carrying its own tokenId in the typed positionInstanceId.
         nft.setRequest(1, holder, 2 ether, 2 ether, true, 0, true, 2 ether); // finalized → claimable 2
         nft.setRequest(2, holder, 1 ether, 1 ether, true, 0, false, 0); // pending → locked 1 (rate 1)
         uint256[] memory ids = new uint256[](2);
@@ -484,7 +484,8 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterTest is BalanceAdapterTestB
         }
         vm.expectRevert(abi.encodeWithSelector(TokenIdCacheFull.selector, holder, cap));
         adapter.submitTokenIds(holder, tooMany);
-        // The reverted submit left the prior set intact (replace is atomic — the clear rolled back with the revert).
+        // The reverted submit left the prior set intact (the submit reverts atomically, so any partial delta changes
+        // roll back with it — the base reconciles as a delta, not a clear-and-readd).
         assertEq(adapter.tokenIdsOf(holder).length, cap, "cache unchanged after the reverted submit");
     }
 

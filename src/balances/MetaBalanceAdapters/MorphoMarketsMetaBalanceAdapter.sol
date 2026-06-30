@@ -13,7 +13,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title Morpho Markets Meta Balance Adapter
 /// @author KPK
-/// @notice One immutable adapter that reports an account's positions on *any* Morpho Blue market. The set of
+/// @notice One immutable adapter that reports an account's positions on *any* Morpho market. The set of
 ///         markets to query is configured on NAVCalculator (per-adapter, MANAGER-gated) and passed as `bytes32`
 ///         instance coordinates — here the coordinate is the Morpho **marketId** itself (used directly, not an
 ///         address). Emits up to three gross rows per market (collateral, loan-supply, loan-borrow).
@@ -22,10 +22,10 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
     using Math for uint256;
     using MorphoBalancesLib for IMorpho;
 
-    /// @notice The Morpho Blue singleton (protocol-global).
+    /// @notice The Morpho singleton (protocol-global).
     IMorpho public immutable MORPHO;
 
-    /// @param morpho_ The Morpho Blue contract address.
+    /// @param morpho_ The Morpho contract address.
     /// @param protocolName_ Human-readable protocol name (e.g. "Morpho").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
     constructor(address morpho_, string memory protocolName_, address navCalculator_)
@@ -94,8 +94,9 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev Returns `["Market", <leaf>]` where the leaf is "<collateral>/<loan>" ("" if the marketId cannot
-    ///      be resolved). Returns an empty array for a short positionId.
+    /// @dev Returns `["Market", "<collateral>/<loan>"]` where the leaf is built from the two token symbols. If the
+    ///      marketId cannot be resolved the leaf is empty and collapses to `["Market"]` (see {_labels}). Returns an
+    ///      empty array for a short positionId.
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
         if (pid.length < 32) return new string[](0);
         bytes32 marketId = abi.decode(pid, (bytes32));

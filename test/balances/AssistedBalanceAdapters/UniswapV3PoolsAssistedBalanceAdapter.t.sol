@@ -376,8 +376,8 @@ contract UniswapV3PoolsAssistedBalanceAdapterTest is Test {
         assertTrue(sawWbtc, "WBTC legs still emitted despite the reverting feed");
     }
 
-    /// @notice Per-NFT fail-open isolation: each cached NFT is valued behind a `this.positionLegs(...)` external call
-    ///         wrapped in try/catch, so a revert in ONE NFT's live reads (slot0/positions/ticks/feeGrowth) drops only
+    /// @notice Per-NFT fail-open isolation: each cached NFT is valued behind a `this.valueTokenIdSelf(...)` external
+    ///         call wrapped in try/catch, so a revert in ONE NFT's live reads (slot0/positions/ticks/feeGrowth) drops only
     ///         that id — the rest of the account's V3 set still reports. Make poolA's `slot0()` revert and assert the
     ///         read does not revert, returns ONLY poolB's 4 legs (all carrying poolB's positionId), and poolA's NFT is
     ///         silently dropped. (Before slot0 became a per-NFT live read this isolation was covered by the old
@@ -424,7 +424,8 @@ contract UniswapV3PoolsAssistedBalanceAdapterTest is Test {
         vm.expectRevert(abi.encodeWithSelector(TokenIdCacheFull.selector, alice, cap));
         adapter.submitTokenIds(alice, tooMany);
 
-        // The reverted submit left the prior set intact (replace is atomic — the clear rolled back with the revert).
+        // The reverted submit left the prior set intact (the delta is atomic — the overflow add reverts the whole tx,
+        // so no partial reconciliation is applied).
         assertEq(adapter.tokenIdsOf(alice).length, cap);
     }
 }

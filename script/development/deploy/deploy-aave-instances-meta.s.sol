@@ -9,11 +9,11 @@ import {
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title DeployAaveInstancesMeta (development)
-/// @notice Deploys the Aave V3 instances meta-adapter on the local anvil fork, registers it on
-///         NAVCalculator (addBalanceAdapter) and sets its active instance set (addMetaInstances). The instance
-///         coordinate is each instance's ProtocolDataProvider address widened to bytes32, exactly as
-///         AaveV3InstancesMeta._instancePositions decodes it via _toAddress. Registering a
-///         meta-adapter requires BOTH calls — the meta-adapter equivalent of script/deploy/06_Configure.s.sol.
+/// @notice Deploys the Aave V3 instances meta-adapter on the local anvil fork and registers it on
+///         NAVCalculator with its active instance set in a single addMetaBalanceAdapter(adapter, instances)
+///         call. The instance coordinate is each instance's ProtocolDataProvider address widened to bytes32,
+///         exactly as AaveV3InstancesMeta._instancePositions decodes it via _toAddress. This is the
+///         meta-adapter equivalent of script/deploy/06_Configure.s.sol.
 /// @dev Env vars set by the wrapper shell script:
 ///        DEV_NAV_PROXY      — deployed NAVCalculator proxy (broadcaster must hold MANAGER)
 ///        DEV_PROTOCOL_NAME  — human-readable name ("Aave V3")

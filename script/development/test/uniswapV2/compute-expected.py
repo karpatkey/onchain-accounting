@@ -6,7 +6,7 @@ For each pair: amount = lp * reserve / (totalSupply + pendingProtocolMint).
 pendingProtocolMint = totalSupply * (sqrt(k_now) - sqrt(kLast)) / (5*sqrt(k_now) + sqrt(kLast))
                      iff feeTo != 0 AND kLast != 0 AND sqrt(k_now) > sqrt(kLast).
 
-This mirrors `_pendingProtocolMint` in src/balances/protocols/UniswapV2.sol.
+This mirrors `_pendingProtocolMint` in src/balances/MetaBalanceAdapters/uniswap/UniswapV2PairLib.sol.
 """
 import json
 import math

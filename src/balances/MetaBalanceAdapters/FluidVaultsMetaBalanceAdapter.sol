@@ -15,9 +15,9 @@ import {FluidVaultLib} from "src/balances/MetaBalanceAdapters/FluidVaultLib.sol"
 ///         positions. The instance coordinate is the vault address, widened to bytes32; the active vault set
 ///         lives on NAVCalculator (`addMetaInstances`/`removeMetaInstances`). The Fluid VaultResolver is the chain-level constant
 ///         pinned in the constructor. Identity is encoded as `abi.encode(address(vault))`. See ADR 0010.
-/// @dev Read logic (tokens via `constantsView`, NFT aggregation) is delegated to `FluidVaultLib`, mirroring the
-///      T1 vaults only — Smart vaults
-///      (T2/T3/T4) have a different `constantsView` layout and must not be configured.
+/// @dev Read logic (tokens via `constantsView`, NFT aggregation) is delegated to `FluidVaultLib`, supporting
+///      T1 vaults only — Smart vaults (T2/T3/T4) have a different `constantsView` layout and must not be
+///      configured.
 contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @notice The Fluid VaultResolver (chain-level constant; used for NFT enumeration + per-NFT position reads).
     address public immutable VAULT_RESOLVER;

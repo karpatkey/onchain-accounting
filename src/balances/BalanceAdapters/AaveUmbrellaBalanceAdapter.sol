@@ -413,7 +413,7 @@ contract AaveUmbrellaBalanceAdapter is BalanceAdapterBase {
     }
 
     /// @dev Detect whether `token` looks like an ERC4626 wrapper. The probe combines two checks:
-    ///        - `asset()` succeeds and returns a non-zero contract.
+    ///        - `asset()` succeeds and returns a non-zero address.
     ///        - `convertToAssets(0)` succeeds and returns exactly 0 (the canonical ERC4626 invariant).
     ///      A token whose fallback returns garbage / empty data on unknown selectors fails one or
     ///      both checks and is correctly classified as non-wrapper.

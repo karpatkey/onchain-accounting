@@ -154,8 +154,8 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
         }
     }
 
-    /// @notice Resolves the instance's Pool address (used as first element of positionId).
-    /// @dev V3's LendingPoolAddressesProvider resolves the pool via `getPool()`.
+    /// @notice Resolves the instance's Pool address (encoded as the instance's positionId).
+    /// @dev V3's PoolAddressesProvider resolves the pool via `getPool()`.
     function _poolOf(IProtocolDataProvider dp) internal view returns (address) {
         return IAavePoolAddressesProvider(IAaveAddressesProviderSource(address(dp)).ADDRESSES_PROVIDER()).getPool();
     }

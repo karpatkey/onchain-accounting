@@ -8,7 +8,8 @@ pragma solidity ^0.8;
 ///      - `_inTransitBalances[safe][asset]` equals the sum of amounts from all BRIDGING invoices for that safe and asset
 ///      - `_inTransitBalancesAllAccounts[asset]` equals the sum of `_inTransitBalances[safe][asset]` across all safes
 ///      - `_activeInvoices[safe]` only contains invoice hashes with status BRIDGING
-///      - `completedInvoices[invoiceHash]` is only true for valid invoice hashes that have been released
+///      - `completedInvoices[invoiceHash]` is only true for valid invoice hashes that have been released on the
+///        destination chain (`releaseByInvoiceId`) or marked completed on the source chain (`markInvoiceCompleted`)
 ///      - All invoices in `_activeInvoices` have a corresponding entry in `invoices`
 ///      - Destination-side release (`releaseByInvoiceId`) is callable only by an authorized adapter — there is
 ///        no `fallback()` dispatcher and MANAGER cannot call it directly, so the release path is unreachable to
@@ -74,7 +75,8 @@ interface IBridgeEscrow {
     /// @param symbol The asset symbol (string)
     error AssetNotRegistered(string symbol);
 
-    /// @notice Thrown when the native value sent does not match the funded release/deposit amount
+    /// @notice Thrown when the native value sent is wrong for the asset: `msg.value` must equal the
+    ///         release/deposit amount for native assets, and must be zero for ERC20 assets
     error InvalidValue();
 
     //

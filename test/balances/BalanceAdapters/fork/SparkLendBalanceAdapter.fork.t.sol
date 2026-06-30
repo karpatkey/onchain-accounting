@@ -8,7 +8,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 /// @title SparkLendBalanceAdapterForkTest
 /// @notice Fork tests for SparkLendBalanceAdapter using real mainnet contracts
 /// @dev Tests adapter behavior with real Spark protocol contracts and positions
-/// @dev SparkLend inherits from AaveV3Instance, so it uses the same protocol structure
+/// @dev SparkLend uses the same Aave-V3-style protocol structure (Protocol Data Provider, aToken/debt reserves), mirroring AaveV3InstancesMetaBalanceAdapter
 contract SparkLendBalanceAdapterForkTest is BalanceAdapterTestBase {
     // Spark contract addresses (mainnet)
     address public constant DATA_PROVIDER = 0xFc21d6d146E6086B8359705C8b28512a983db0cb;

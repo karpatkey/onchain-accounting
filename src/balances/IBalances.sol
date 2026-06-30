@@ -40,10 +40,10 @@ interface IBalances {
     /// @notice Error when the balance adapter is not set.
     error BalanceAdapterNotSet();
 
-    /// @notice Error when the balance adapter is not valid
+    /// @notice Error when the balance adapter is not valid.
     error InvalidBalanceAdapter();
 
-    /// @notice Error when the balance adapter type is not valid
+    /// @notice Error when the balance adapter type is not valid.
     error InvalidBalanceAdapterType();
 
     /// @notice Error when the same balance adapter is already set.
@@ -59,11 +59,13 @@ interface IBalances {
     ///         addBalanceAdapters path; meta-adapters must use addMetaBalanceAdapter.
     error MetaAdapterNotAllowed();
 
-    /// @notice Error when a meta-instance operation targets an adapter that is not a meta-adapter
+    /// @notice Error when a meta-adapter operation (registration via addMetaBalanceAdapter, or an
+    ///         addMetaInstances / removeMetaInstances call) targets an adapter that is not a meta-adapter
     ///         (does not implement IMetaBalanceAdapter).
     error NotMetaAdapter();
 
     /// @notice Validates that the adapter implements IBalanceAdapter (reverts with InvalidBalanceAdapter if not).
+    /// @dev Reverts with InvalidArguments if `adapter` is the zero address.
     /// @param adapter The address of the adapter to check.
     function checkBalanceAdapterSupport(address adapter) external view;
 
@@ -85,6 +87,7 @@ interface IBalances {
     function isAdapterRegistered(address adapter) external view returns (bool registered);
 
     /// @notice Returns the type of a registered adapter
+    /// @dev Reverts with InvalidBalanceAdapter if the adapter is not registered.
     /// @param adapter The adapter address
     /// @return adapterType The type of the adapter
     function getAdapterType(address adapter) external view returns (AdapterType adapterType);

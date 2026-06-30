@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
-/// @notice Canonical `protocolId` constants for every balance adapter family.
-/// @dev Each constant is `keccak256` of a lowercase-ASCII, kebab-case slug that includes the
-///      protocol version.  A single `protocolId` maps to exactly one `positionId` ABI-decode schema
-///      — narrow enough that the client knows how to decode without runtime sniffing.
+/// @notice Canonical protocol-taxonomy constants — `protocolBrand`, `protocolId`, and `protocolSubId`
+///         — for every balance adapter family.
+/// @dev Each constant is `keccak256` of a lowercase-ASCII, kebab-case slug; the protocol version is
+///      baked into the slug only where the protocol is a distinct versioned system (e.g. `aave-v3`,
+///      `balancer-v2`/`-v3`), so unversioned protocols carry no version.  A single `protocolSubId`
+///      maps to exactly one `positionId` ABI-decode schema — narrow enough that the client knows how
+///      to decode without runtime sniffing.
 ///
 ///      positionId schemas (all are `abi.encode(...)`):
 ///        WALLET                          → (address asset)
@@ -25,7 +28,7 @@ pragma solidity ^0.8;
 ///        BALANCER_V2_POOLS                → (bytes32 poolId)
 ///        UNISWAP_V3 / PANCAKESWAP_V3     → (address pool); NFT tokenId in positionInstanceId (bytes32(tokenId))
 ///        UNISWAP_V2 / PANCAKESWAP_V2     → (address pair)
-///        COMPOUND_V3_COMETS / FLUID_FTOKENS     → (address market)
+///        COMPOUND_V3_COMETS / FLUID_FTOKENS     → (address comet / fToken)
 ///        MERKL                           → (address distributor) — reward token is in balanceAsset, not positionId
 ///        NEXUS_MUTUAL_STAKING_POOLS      → (address stakingPool); StakingNFT tokenId in positionInstanceId
 ///        STADER_WITHDRAWAL              → (address userWithdrawalManager) — static coordinate

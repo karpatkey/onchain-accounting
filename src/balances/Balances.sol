@@ -13,7 +13,7 @@ import {InvalidArguments} from "src/errors.sol";
 
 /// @title Balances
 /// @author KPK
-/// @notice Manages the balance adapters for different tokens and their latest balances.
+/// @notice Manages the registry of balance adapters for different tokens.
 abstract contract Balances is IBalances, Initializable {
     //
     // Libraries
@@ -152,7 +152,8 @@ abstract contract Balances is IBalances, Initializable {
     /// @notice Adds a single (non-meta) balance adapter globally.
     /// @dev Not on the production path — NAVCalculator registers through the batch `_addBalanceAdapters` /
     ///      `_addMetaBalanceAdapter`. Retained for the test harness (`addBalanceAdapterDirect`); kept thin so the
-    ///      single and batch validation stay equivalent (both delegate to `NAVRegistryLib.addBalanceAdapter`).
+    ///      single and batch validation stay equivalent (both bottom out in `NAVRegistryLib`'s shared
+    ///      `_registerAdapter` — this path via `addBalanceAdapter`, the batch via `addBalanceAdapters`).
     /// @param adapter The address of the adapter.
     function _addBalanceAdapter(address adapter) internal {
         // Storage mutation + interface validation delegated to NAVRegistryLib (external library, DELEGATECALL) to

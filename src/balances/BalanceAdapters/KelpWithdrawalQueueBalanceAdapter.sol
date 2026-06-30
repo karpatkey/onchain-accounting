@@ -16,7 +16,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @notice Reports assets owed to an account from open requests in Kelp DAO's rsETH exit queue
 ///         (the `LRTWithdrawalManager`).
 /// @dev When a user unstakes rsETH, the rsETH is burned and a per-(asset, user) withdrawal request
-///      is recorded denominated in the LST the user chose to receive (stETH, ETHx or native ETH).
+///      is recorded denominated in the asset the user chose to receive (stETH, ETHx or native ETH).
 ///      Until claimed, that value is invisible to wallet/receipt-token adapters — it only lives as a
 ///      pending claim on the manager. This adapter surfaces it: for every asset Kelp supports it emits
 ///      **one position per open request** under a single static positionId (`abi.encode(withdrawalManager)`),

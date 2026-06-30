@@ -67,8 +67,9 @@ library PriceFeedLib {
         return _selectFeedCore(priceOracles, token);
     }
 
-    /// @notice Feed-selection core, shared by the external `selectFeed` wrapper and `buildPriceData` so the latter
-    ///         reuses the logic via an internal jump rather than a second DELEGATECALL.
+    /// @notice Feed-selection core, shared by the external `selectFeed` wrapper and the library's internal compute
+    ///         paths (`buildPriceData`, `healthCheck`, `calculateValue`, `_getQuoteAssetInfo`, `_buildPriceFeedCache`)
+    ///         so they reuse the logic via an internal jump rather than a second DELEGATECALL.
     function _selectFeedCore(mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles, address token)
         private
         view
@@ -309,7 +310,7 @@ library PriceFeedLib {
     }
 
     /// @notice Computes enriched positions for an account, optionally filtered by a single asset
-    ///         (assetFilter == address(0) means all assets). Mirrors NAVCalculator._getAccountPositionsInternal.
+    ///         (assetFilter == address(0) means all assets). Mirrors the former NAVCalculator._getAccountPositionsInternal.
     /// @dev The caller validates the quote asset and (when set) the asset filter before calling.
     function computeAccountPositions(
         mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
@@ -785,8 +786,8 @@ library PriceFeedLib {
         position.quoteAssetStale = quoteAssetStale;
     }
 
-    /// @notice Converts an amount of one asset to value in quote (USD when quotePrice is 0). Mirrors the former
-    ///         NAVCalculator._priceConversion.
+    /// @notice Converts an amount of one asset to value in quote (USD when quotePrice is non-positive). Mirrors the
+    ///         former NAVCalculator._priceConversion.
     function _priceConversion(
         uint256 amount,
         bool isDebt,

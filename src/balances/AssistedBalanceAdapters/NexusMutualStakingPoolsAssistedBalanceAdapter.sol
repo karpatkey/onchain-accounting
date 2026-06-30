@@ -37,7 +37,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      `ASSISTANT_ROLE` gates the submit/clear mutators. `submitTokenIds` **reverts** `NotTokenOwner` for any id
 ///      whose `tokenInfo` owner is not the account (fail-loud writes); reads instead **discard** an id no longer
 ///      owned (fail-open). See `docs/decisions/0015-assisted-balance-adapter-family.md` (Merkl precedent, ADR 0007).
-///      The no-arg balance getters (`getAdapterBalances`/`getAdapterBalanceForAsset`) sum the **same** per-id
+///      The convenience balance getters (`getAdapterBalances`/`getAdapterBalanceForAsset`) sum the **same** per-id
 ///      fault-isolated legs the NAV path (`getAdapterPositions`) emits — ownership re-verified live AND the staking
 ///      pool resolves, with a single degenerate token dropped from both views identically — so when NXM is registered
 ///      the two views agree (no phantom reconciliation mismatch). They are registration-independent (report the raw
@@ -60,7 +60,7 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is
 
     /// @notice Hard cap on cached tokenIds per account (returned by the {_maxTokenIds} hook the shared
     ///         {AssistedNftCacheAdapter} base enforces at submit time). The read path iterates the cache (one
-    ///         `tokenInfo` per id) and hands the survivors to `getTokens`/`getAggregatedTokens`, which iterate each
+    ///         `tokenInfo` per id) and hands each survivor to `getTokens` (one call per id), which iterates each
     ///         token's tranches — an unbounded set could OOG inside the viewer (NOT caught by NAVCalculator's
     ///         try/catch). 64 is generous headroom over a real account (the OIV Safes hold a handful); the assistant
     ///         must GC closed positions.
@@ -73,7 +73,7 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is
     /// @notice Nexus Mutual StakingNFT (ERC-721; `tokenInfo(id) -> (poolId, owner)`).
     address public immutable STAKING_NFT;
 
-    /// @notice Nexus Mutual StakingViewer — `getAggregatedTokens(ids)` totals stake + rewards in NXM.
+    /// @notice Nexus Mutual StakingViewer — `getTokens(ids)` returns per-token stake + rewards in NXM.
     address public immutable STAKING_VIEWER;
 
     /// @notice NAVCalculator — used to look up the registered NXM asset metadata when emitting positions.
@@ -216,8 +216,9 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is
     /// @notice Values one cached `tokenId` into its (up to 2) legs: `Staking` (active + expired stake) + `Rewards`
     ///         (accrued), both NXM-denominated. Returns an empty array if the id is not owned by `account`, the token
     ///         has no stake/rewards, or its staking pool can't be resolved.
-    /// @dev `ctx` is the NXM `Asset` record (`abi.encode(INAVCalculator.Asset)`) resolved once by
-    ///      `getAdapterPositions`. The `assetFilter` is unused here — `getAdapterPositions` already short-circuits any
+    /// @dev `ctx` is the NXM `Asset` record (`abi.encode(INAVCalculator.Asset)`) resolved once per read by the calling
+    ///      entrypoint (`getAdapterPositions` for the NAV view, `_owedAmount` for the balance getters). The
+    ///      `assetFilter` is unused here — `getAdapterPositions` already short-circuits any
     ///      filter that is neither zero nor NXM, and every leg is NXM-denominated. Reached only via the base's
     ///      self-call isolation, so a revert in any live read (`tokenInfo` / `getTokens` / `stakingPool`) is isolated
     ///      to this one id (fail-open). Re-verifies ownership live via `StakingNFT.tokenInfo`.
@@ -320,7 +321,8 @@ interface INexusStakingNFT {
 
 /// @notice Minimal interface for Nexus Mutual's StakingViewer.
 /// @dev `Token`/`Deposit` mirror the live StakingViewer ABI field-for-field (order matters for decoding);
-///      this adapter only reads `tokenId`, `poolId`, `activeStake`, `expiredStake`, `rewards`.
+///      this adapter only reads `poolId`, `activeStake`, `expiredStake`, `rewards` (it uses the
+///      ownership-verified `tokenId` param, not the viewer's echoed-back `Token.tokenId`).
 interface INexusStakingViewer {
     struct Deposit {
         uint256 tokenId;

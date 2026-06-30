@@ -129,6 +129,7 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapter is
         return interfaceId == type(IPositionDescribable).interfaceId || super.supportsInterface(interfaceId);
     }
 
+    /// @inheritdoc IPositionDescribable
     function protocolName() external pure returns (string memory) {
         return "ether.fi";
     }

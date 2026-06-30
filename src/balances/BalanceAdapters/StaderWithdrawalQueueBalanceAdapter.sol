@@ -137,6 +137,7 @@ contract StaderWithdrawalQueueBalanceAdapter is SingleAssetBalanceAdapterBase {
         return _ethOwed(account);
     }
 
+    /// @inheritdoc IPositionDescribable
     function protocolName() external pure returns (string memory) {
         return "Stader";
     }

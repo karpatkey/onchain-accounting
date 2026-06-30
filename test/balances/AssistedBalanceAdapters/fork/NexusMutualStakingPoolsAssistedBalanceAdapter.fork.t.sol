@@ -17,8 +17,8 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      the adapter values live via `StakingViewer.getTokens` and re-verifies via `tokenInfo` per read. The Nexus
 ///      Mutual Safe (`0x8e53…cFE3`, a KPK-managed account) holds 5 positions across 5 pools (tokenIds
 ///      180,184,185,186,187); the test submits those ids and asserts the per-kind sums equal an independent
-///      `getAggregatedTokens` read of those exact ids (delta 0) AND that every emitted positionId decodes to one of
-///      the Safe's known tokenIds.
+///      `getAggregatedTokens` read of those exact ids (delta 0) AND that every emitted positionId decodes to a
+///      deployed staking-pool address (the NFT id riding in the typed positionInstanceId).
 contract NexusMutualStakingPoolsAssistedBalanceAdapterForkTest is BalanceAdapterTestBase {
     address public constant STAKING_NFT = 0xcafea508a477D94c502c253A58239fb8F948e97f;
     address public constant STAKING_VIEWER = 0xcafea5c7d25a192ba70ECA0E2dB62F835c1cF81F;

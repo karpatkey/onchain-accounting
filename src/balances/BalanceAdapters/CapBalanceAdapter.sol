@@ -40,7 +40,7 @@ interface IStcUsd {
 ///      `abi.encode(token)`), so a consumer can tell held cUSD apart from staked stcUSD:
 ///      - cUSD:   ERC20.balanceOf → `ICUsd.getBurnAmount` → USDC.            Label `["Stablecoin", "cUSD"]`.
 ///      - stcUSD: ERC20.balanceOf → ERC4626 `convertToAssets` → cUSD → `getBurnAmount` → USDC. `["Savings", "stcUSD"]`.
-///      The no-arg balance getters (`getAdapterBalances`/`getAdapterBalanceForAsset`) still report the combined
+///      The aggregate balance getters (`getAdapterBalances`/`getAdapterBalanceForAsset`) still report the combined
 ///      USDC total for the USDC asset; only the NAV `getAdapterPositions` path splits the legs.
 contract CapBalanceAdapter is BalanceAdapterBase {
     //
@@ -90,7 +90,7 @@ contract CapBalanceAdapter is BalanceAdapterBase {
     }
 
     //
-    // IERC165
+    // IPositionDescribable
     //
 
     function protocolName() external pure returns (string memory) {

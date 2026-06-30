@@ -5,7 +5,8 @@ import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transpa
 
 /// @title TransparentProxy
 /// @notice Wrapper around TransparentUpgradeableProxy for consistent naming and usage.
-/// @dev This is simply a re-export of OpenZeppelin's TransparentUpgradeableProxy.
+/// @dev A thin subclass of OpenZeppelin's TransparentUpgradeableProxy that overrides
+///      `_unsafeAllowUninitialized()` to permit deployment with empty init data.
 ///      The proxy is deployed with a placeholder implementation and a ProxyAdmin owned by Safe.
 ///      Use ProxyAdmin.upgradeAndCall() to upgrade from placeholder to real implementation.
 /// @custom:security Uses OpenZeppelin's battle-tested TransparentUpgradeableProxy pattern.

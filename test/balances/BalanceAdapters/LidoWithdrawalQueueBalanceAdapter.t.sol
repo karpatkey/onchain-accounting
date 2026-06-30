@@ -14,8 +14,10 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import "src/errors.sol";
 
 /// @notice Minimal mock of Lido's WithdrawalQueueERC721.
-/// @dev Mirrors the two view methods the adapter relies on: `getWithdrawalRequests(owner)` and
-///      `getWithdrawalStatus(ids)`.
+/// @dev Mirrors the view methods the adapter reads: `balanceOf`, `getWithdrawalRequests`,
+///      `getWithdrawalStatus`, `getLastCheckpointIndex`, `findCheckpointHints`, and
+///      `getClaimableEther`. `STETH()` is deliberately omitted so the adapter's `_cappedOwed` call
+///      fail-opens, valuing not-yet-finalized requests at their request-time `amountOfStETH`.
 contract MockLidoWithdrawalQueue {
     mapping(address => uint256[]) private _ids;
     mapping(uint256 => ILidoWithdrawalQueue.WithdrawalRequestStatus) private _status;
@@ -26,7 +28,7 @@ contract MockLidoWithdrawalQueue {
         _ids[owner].push(id);
         _status[id] = ILidoWithdrawalQueue.WithdrawalRequestStatus({
             amountOfStETH: amountOfStETH,
-            amountOfShares: amountOfStETH, // shares ~ stETH for the mock; unused by the adapter
+            amountOfShares: amountOfStETH, // shares ~ stETH for the mock; the adapter reads it only via STETH(), which this mock omits
             owner: owner,
             timestamp: 0,
             isFinalized: false,
@@ -111,7 +113,7 @@ contract LidoWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
     LidoWithdrawalQueueBalanceAdapter public adapter;
     MockLidoWithdrawalQueue public queue;
 
-    // `weth` (registered in the base) stands in for stETH as the underlying.
+    // `weth` (registered in the base) stands in for the native-ETH payout as the underlying.
     function setUp() public override {
         super.setUp();
         queue = new MockLidoWithdrawalQueue();

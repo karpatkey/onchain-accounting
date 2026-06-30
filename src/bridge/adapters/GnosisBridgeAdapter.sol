@@ -204,8 +204,8 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
     }
 
     /// @dev Authenticates that the inbound AMB message originated from the trusted sibling adapter on the
-    ///      expected source chain. Reverts unless a trusted remote adapter is configured for `srcChainId` and
-    ///      both `amb.messageSender()` and `amb.messageSourceChainId()` match it.
+    ///      expected source chain. Reverts unless a trusted remote adapter is configured for `srcChainId`,
+    ///      `amb.messageSender()` equals that remote adapter, and `amb.messageSourceChainId()` equals `srcChainId`.
     function _authenticateSource(uint64 srcChainId) internal view {
         bytes32 expectedRemote = trustedRemoteAdapter[srcChainId];
         if (expectedRemote == bytes32(0)) revert InvalidBridgeData();

@@ -164,9 +164,12 @@ abstract contract BridgeAdapter is AccessControl, ReentrancyGuard, IBridgeAdapte
     /// @notice Implement bridge-specific outbound logic
     function _bridge(InvoiceDataLib.InvoiceData memory data) internal virtual;
 
-    /// @notice Pushes tokens held by the adapter to the escrow before completion.
-    /// @dev Used by adapters whose protocol delivers tokens to the adapter (e.g. CCTP mint): `_completeBridge`
-    ///      calls this so the escrow holds the funds, then the base `completeBridge` calls `releaseByInvoiceId`.
+    /// @notice Pushes `amount` of `asset` held by the adapter straight to the escrow and emits TokensTransferredToEscrow.
+    /// @dev Legacy push-to-escrow helper, NOT on the shipped completion path. `completeBridge` instead calls
+    ///      `_fundAndRelease` (funded pass-through, ADR 0012), which leaves the funds on the adapter for the escrow
+    ///      to pull on `releaseByInvoiceId`. No shipped adapter (CCTP included) calls this; it is retained for
+    ///      derived adapters that would rather hand the escrow the tokens before release. Reverts InsufficientBalance
+    ///      if the adapter holds less than `amount`, or TransferFailed on a failed native send.
     function _transferTokensToEscrow(bytes32 invoiceId, address asset, uint256 amount) internal {
         if (_isNativeToken(asset)) {
             uint256 adapterBalance = address(this).balance;

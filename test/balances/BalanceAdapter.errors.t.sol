@@ -292,7 +292,7 @@ contract BalanceAdapterErrorTest is Test {
         assertEq(positions.length, 0, "Invalid filter should return empty array");
     }
 
-    /// @notice Test that getAdapterBalance handles empty account gracefully
+    /// @notice Test that getAdapterBalances handles empty account gracefully
     function test_RevertWhen_emptyAccount() public {
         // Account with no balances
         address emptyAccount = makeAddr("empty");

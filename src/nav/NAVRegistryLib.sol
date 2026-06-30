@@ -19,8 +19,11 @@ import "src/errors.sol";
 /// @dev Functions are `external` so the library compiles as a separate artifact and is invoked via DELEGATECALL,
 ///      operating on the caller's own storage through the passed `storage` references. Pre-linked at a deterministic
 ///      CREATE2 address (see `foundry.toml`) and deployed by `01_2_DeployNAVImplementation.s.sol` before NAVCalculator.
-///      Only the heavier, no-return mutations live here (register/unregister asset; add/remove adapter); the trivial
-///      getters and the running counts / event emission stay inline in the caller (cheaper than crossing the boundary).
+///      The heavier registry work lives here: the ERC20Default factory, asset register/unregister, single + batch
+///      adapter add/remove, meta-adapter registration, and meta-instance add/remove (several return a per-call count),
+///      plus two read helpers (getAdaptersForAsset, extractUniqueAssets). The running totals stay inline in the caller,
+///      as do the trivial getters and the single add/remove paths' event emission (the batch and meta paths emit their
+///      events here) — keeping that work in the caller is cheaper than crossing the DELEGATECALL boundary.
 /// @author KPK
 library NAVRegistryLib {
     using ERC165Checker for address;
@@ -52,8 +55,10 @@ library NAVRegistryLib {
     // -------------------------------------------------------------------------
 
     /// @notice Registers an asset in the NAV/Pricing registry.
-    /// @dev Fetches decimals and symbol: for NATIVE_ADDRESS uses 18 and `nativeTokenSymbol`; otherwise requires
-    ///      ERC20-compatible (decimals() and symbol()) and reverts if not. Mirrors the former NAVCalculator._registerAsset.
+    /// @dev Reverts InvalidArguments if `asset` is already registered. Otherwise fetches decimals and symbol: for
+    ///      NATIVE_ADDRESS uses 18 and `nativeTokenSymbol`; for any other asset requires ERC20-compatibility (both
+    ///      decimals() and symbol() must succeed) and reverts InvalidArguments if either call fails. Mirrors the
+    ///      former NAVCalculator._registerAsset.
     /// @param registeredAssets The ordered asset registry (storage ref)
     /// @param assetIndex The 1-based index map (storage ref; 0 = not registered)
     /// @param asset The asset to register
@@ -89,7 +94,7 @@ library NAVRegistryLib {
     }
 
     /// @notice Unregisters an asset from the NAV/Pricing registry (swap-remove, keeps the index map 1-based).
-    /// @dev Mirrors the former NAVCalculator._unregisterAsset.
+    /// @dev Reverts AssetNotFound if `asset` is not registered. Mirrors the former NAVCalculator._unregisterAsset.
     /// @param registeredAssets The ordered asset registry (storage ref)
     /// @param assetIndex The 1-based index map (storage ref)
     /// @param asset The asset to unregister
@@ -134,8 +139,8 @@ library NAVRegistryLib {
 
     /// @notice Registers a meta-adapter and seeds its instance set in one operation. Requires the adapter to
     ///         implement both IBalanceAdapter and IMetaBalanceAdapter. Reverts DuplicateBalanceAdapter if already
-    ///         registered, InvalidBalanceAdapter / NotMetaAdapter on the interface checks, and DuplicateMetaInstance
-    ///         on a repeated coordinate. An empty instance list is allowed (registers the meta-adapter with no
+    ///         registered, InvalidArguments on a zero adapter, InvalidBalanceAdapter / NotMetaAdapter on the interface
+    ///         checks, and DuplicateMetaInstance on a repeated coordinate. An empty instance list is allowed (registers the meta-adapter with no
     ///         instances yet). Emits BalanceAdapterAdded here (surfaces from the caller's address via DELEGATECALL);
     ///         the running counts (balanceAdapterTotalCount, _metaInstanceTotal) stay in the caller wrapper.
     /// @param isAdapterRegistered Quick-lookup registration map (storage ref)
@@ -197,6 +202,10 @@ library NAVRegistryLib {
     ///         BalanceAdapterAdded per adapter. Events emitted here surface from the caller's address (DELEGATECALL).
     ///         Reverts InvalidArguments (empty list / zero adapter), DuplicateBalanceAdapter, InvalidBalanceAdapter,
     ///         or MetaAdapterNotAllowed (a meta-adapter must use addMetaBalanceAdapter). All-or-nothing.
+    /// @param isAdapterRegistered Quick-lookup registration map (storage ref)
+    /// @param globalAdapters The global adapter list (storage ref)
+    /// @param adapterTypes The adapter-type map (storage ref)
+    /// @param adapters The non-meta adapters to add
     /// @return count Number of adapters registered (== adapters.length).
     function addBalanceAdapters(
         mapping(address => bool) storage isAdapterRegistered,
@@ -216,6 +225,11 @@ library NAVRegistryLib {
     /// @notice Batch-removes balance adapters (the whole `removeBalanceAdapters` body), emitting BalanceAdapterRemoved
     ///         per adapter (swap-remove). Reverts InvalidArguments (empty list / the ERC20Default singleton) and
     ///         InvalidBalanceAdapter (unregistered). All-or-nothing.
+    /// @param isAdapterRegistered Quick-lookup registration map (storage ref)
+    /// @param globalAdapters The global adapter list (storage ref)
+    /// @param adapterTypes The adapter-type map (storage ref)
+    /// @param erc20DefaultBalanceAdapter The default-adapter singleton that may not be removed
+    /// @param adapters The adapters to remove
     /// @return count Number of adapters removed (== adapters.length).
     function removeBalanceAdapters(
         mapping(address => bool) storage isAdapterRegistered,
@@ -249,6 +263,7 @@ library NAVRegistryLib {
     ///         Balances.getAdaptersForAsset; extracted here to keep NAVCalculator under EIP-170.
     /// @param globalAdapters The global adapter list (storage ref)
     /// @param asset The asset to match
+    /// @return The registered adapters whose underlyingAssetsSupported() lists `asset` (faulty adapters skipped)
     function getAdaptersForAsset(address[] storage globalAdapters, address asset)
         external
         view
@@ -304,8 +319,9 @@ library NAVRegistryLib {
     // -------------------------------------------------------------------------
 
     /// @notice Appends instance coordinates to a meta-adapter's set (all-or-nothing). Reverts DuplicateMetaInstance
-    ///         on a coordinate already present or repeated within the batch, InvalidArguments on an empty list, and
-    ///         InvalidBalanceAdapter if the adapter is not registered. The running total stays in the caller wrapper.
+    ///         on a coordinate already present or repeated within the batch, InvalidArguments on an empty list,
+    ///         InvalidBalanceAdapter if the adapter is not registered, and NotMetaAdapter if it is not a meta-adapter.
+    ///         The running total stays in the caller wrapper.
     /// @param isAdapterRegistered Quick-lookup registration map (storage ref)
     /// @param metaInstances The per-adapter instance-set map (storage ref)
     /// @param adapter The registered meta-adapter

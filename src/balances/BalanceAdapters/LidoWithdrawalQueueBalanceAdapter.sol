@@ -93,8 +93,10 @@ contract LidoWithdrawalQueueBalanceAdapter is SingleAssetBalanceAdapterBase {
     ///      - **finalized** → use Lido's exact claimable ETH (`getClaimableEther`). Finalization can
     ///        lock in *less* than `amountOfStETH` after a negative rebase, so using `amountOfStETH`
     ///        here would overstate NAV.
-    ///      - **not yet finalized** → fall back to `amountOfStETH` (the redemption rate isn't fixed
-    ///        until finalization; never invent one). It equals the ETH paid in the normal case.
+    ///      - **not yet finalized** → fall back to `_cappedOwed(amountOfStETH, amountOfShares)`, the
+    ///        conservative min of the live share value and the request-time `amountOfStETH` (the
+    ///        redemption rate isn't fixed until finalization; never invent one). It equals
+    ///        `amountOfStETH` — the ETH paid in the normal case — except after a negative rebase.
     ///      The claimable lookup is done per request (single-element arrays) — see the inline note on
     ///      `findCheckpointHints`'s ascending-sorted requirement. Claimed requests are skipped.
     function _ethOwed(address account) internal view returns (uint256 total) {
@@ -141,6 +143,7 @@ contract LidoWithdrawalQueueBalanceAdapter is SingleAssetBalanceAdapterBase {
         return _ethOwed(account);
     }
 
+    /// @inheritdoc IPositionDescribable
     function protocolName() external pure returns (string memory) {
         return "Lido";
     }
@@ -160,8 +163,9 @@ contract LidoWithdrawalQueueBalanceAdapter is SingleAssetBalanceAdapterBase {
     ///         static `positionId = abi.encode(address(WITHDRAWAL_QUEUE))`. Each leg's `isLocked` reflects that
     ///         request's state (finalized → `false`, pending → `true`) and its request id is the typed `positionInstanceId`.
     /// @dev Per request: a finalized request (`isFinalized && lastCheckpoint != 0`) is valued at its exact
-    ///      `getClaimableEther` with `isLocked = false`; any other un-claimed request is valued at `amountOfStETH`
-    ///      with `isLocked = true`. Claimed requests are skipped (the NFT is burned), as are zero-amount legs. The
+    ///      `getClaimableEther` with `isLocked = false`; any other un-claimed request is valued at
+    ///      `_cappedOwed(amountOfStETH, amountOfShares)` (the conservative min of the live share value and the
+    ///      request-time stETH) with `isLocked = true`. Claimed requests are skipped (the NFT is burned), as are zero-amount legs. The
     ///      legs sum to `_ethOwed`'s total. The request id rides in the typed `positionInstanceId` (ephemeral), NOT in
     ///      `positionId`, so multiple requests share the static positionId and are distinguished by their
     ///      `positionInstanceId` (and for NAV by summing). Dropped entirely if the underlying asset is not registered in

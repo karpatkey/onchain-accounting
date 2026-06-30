@@ -42,7 +42,8 @@ contract BalancerV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
 
     /// @inheritdoc MetaBalanceAdapter
     /// @dev `instance` is the pool's `bytes32` poolId (used directly, not an address). Emits one `Supplied` leg per
-    ///      registered underlying pool token for the account's wallet BPT share. Skips unregistered/filtered tokens.
+    ///      registered underlying pool token for the account's wallet BPT share. Returns an empty array when the
+    ///      account holds no BPT. Skips zero-share, filtered (non-`assetFilter`), and unregistered tokens.
     function _instancePositions(address account, bytes32 instance, address assetFilter)
         internal
         view
@@ -90,7 +91,9 @@ contract BalancerV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @dev Returns `["AMM Liquidity Pool", "<sym0>/<sym1>/…"]` — the leaf is the pool's underlying token symbols
     ///      joined with "/" (e.g. "USDC/USDT/DAI"), excluding the pool's own pre-minted BPT (composable-stable).
     ///      Per-token fail-open: a token whose `symbol()` reverts (or has no code) contributes "?". A revert in the
-    ///      Vault pool-token read (e.g. a malformed/removed instance) fails open at the NAV layer (`_safeStringArray`).
+    ///      Vault pool-token read (e.g. a malformed/removed instance) is caught by the `try/catch` self-call and falls
+    ///      open here to the category-only label `["AMM Liquidity Pool"]`. Returns an empty array for a
+    ///      short/malformed `pid` (fewer than 32 bytes).
     function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
         if (pid.length < 32) return new string[](0);
         bytes32 poolId = abi.decode(pid, (bytes32));

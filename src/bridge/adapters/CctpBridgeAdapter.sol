@@ -185,10 +185,11 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
     }
 
     /// @inheritdoc BridgeAdapter
-    /// @dev Receives the Circle-attested CCTP message, mints USDC to THIS adapter, verifies that the
-    ///      minted transfer matches the invoice, then forwards the minted USDC to the escrow. Does NOT
-    ///      call releaseByInvoiceId — the base BridgeAdapter.completeBridge invokes it immediately
-    ///      after this returns, releasing the escrow balance to the account.
+    /// @dev Receives the Circle-attested CCTP message: verifies the message matches the invoice, then
+    ///      mints USDC to THIS adapter and leaves it here — it does NOT forward the USDC to the escrow.
+    ///      Does NOT call releaseByInvoiceId either — the base BridgeAdapter.completeBridge invokes
+    ///      _fundAndRelease immediately after this returns, and the escrow pulls the minted balance and
+    ///      releases it to the account (funded pass-through, ADR 0012).
     function _completeBridge(bytes calldata messagePayload, bytes calldata protocolData) internal override {
         // Decode protocol data: the raw CCTP message and Circle's attestation over it.
         (bytes memory cctpMessage, bytes memory attestation) = abi.decode(protocolData, (bytes, bytes));

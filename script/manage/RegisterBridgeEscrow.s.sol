@@ -12,7 +12,8 @@ import {console2} from "forge-std/console2.sol";
 /// @notice Generates Safe tx to register the CCTP bridge adapter and USDC on the BridgeEscrow proxy.
 /// @dev Run per chain (--rpc-url for chain 10, 8453, 42161). Output: safe-transactions/{chainId}-register-bridge-escrow.json
 ///   - Authorizes CCTP adapter in BridgeEscrow if CCTP is enabled and deployed in chain config.
-///   - Registers USDC in BridgeEscrow asset registry if USDC address is in assets.json for this chain.
+///   - Registers USDC in BridgeEscrow asset registry if a USDC address is configured for this chain in
+///     nav-config/assets-and-price-feeds/<chainId>.json.
 contract RegisterBridgeEscrow is BaseDeployScript {
     using ConfigReader for *;
 

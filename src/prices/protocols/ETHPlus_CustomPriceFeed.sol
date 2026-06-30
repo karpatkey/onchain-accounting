@@ -26,8 +26,10 @@ import "src/errors.sol";
 ///      minimum falls behind RESERVE_PROTOCOL_HEARTBEAT, the basket price is considered stale.
 ///      Taking the minimum across components gives the worst-case freshness of the whole basket.
 ///
-/// @dev latestRoundData() exposes updatedAt = min(lastSave()) for external observability.
-///      Prices.sol does not call it for staleness — that is handled entirely in getLatestPrice().
+/// @dev latestRoundData() exposes updatedAt = min(lastSave()). getLatestPrice()'s own `stale`
+///      flag is honored, but the read path (PriceFeedLib.selectFeed, invoked via Prices) ALSO
+///      calls latestRoundData() and uses this updatedAt as the feed's freshness timestamp — for
+///      the per-feed heartbeat gate and for picking the freshest feed among redundant ones.
 ///
 /// @author KPK
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
@@ -67,8 +69,9 @@ contract ETHPlus_CustomPriceFeed is ICustomPriceFeed {
     }
 
     /// @inheritdoc ICustomPriceFeed
-    /// @dev Returns stale=true when the basket is IFFY or DISABLED, or when the worst-case
-    ///      collateral plugin refresh time exceeds RESERVE_PROTOCOL_HEARTBEAT.
+    /// @dev Returns stale=true when the basket is IFFY or DISABLED, when the worst-case collateral
+    ///      plugin refresh age reaches or exceeds RESERVE_PROTOCOL_HEARTBEAT, or when the basket
+    ///      accounting degenerates to a zero price (zero supply, basketsNeeded, or basket price).
     function getLatestPrice() external view override returns (uint256 price, bool stale) {
         (price, stale,) = _compute();
     }
@@ -86,8 +89,8 @@ contract ETHPlus_CustomPriceFeed is ICustomPriceFeed {
     /// @inheritdoc ICustomPriceFeed
     /// @dev updatedAt = min(IAsset.lastSave()) across all active basket components — the
     ///      worst-case oracle refresh age. roundId, startedAt, answeredInRound are zero
-    ///      (Reserve Protocol has no round concept). Exposed for external observability;
-    ///      staleness is handled internally in getLatestPrice().
+    ///      (Reserve Protocol has no round concept). getLatestPrice() applies its own staleness
+    ///      check, but the read path also consumes this updatedAt as the feed's freshness timestamp.
     function latestRoundData() external view override returns (uint80, int256, uint256, uint256, uint80) {
         (uint256 price, bool stale, uint256 upd) = _compute();
         return (0, stale ? int256(0) : int256(price), 0, upd, 0);

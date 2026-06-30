@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
-// Mock contracts extracted from UniswapV3Pool.t.sol for use by UniswapV3PoolsAssistedBalanceAdapter.t.sol
+// Mock contracts extracted from UniswapV3Pool.t.sol for use by the Uniswap V3 and PancakeSwap V3 assisted-adapter
+// tests (UniswapV3PoolsAssistedBalanceAdapter.t.sol and PancakeSwapV3PoolsAssistedBalanceAdapter.t.sol).
 
 /// @notice Minimal Uniswap V3 pool mock — exposes the views the adapter reads.
 contract MockUniswapV3Pool {
@@ -60,10 +61,11 @@ contract MockUniswapV3Pool {
     }
 }
 
-/// @notice Minimal PancakeSwap V3 pool mock — identical to {MockUniswapV3Pool} except `slot0().feeProtocol` is
-///         `uint32` (PancakeSwap V3 widens Uniswap's `uint8`). Used to prove the PancakeSwap adapter's `_slot0`
-///         override decodes a `feeProtocol > uint8.max` without reverting (and that the Uniswap-base `uint8` decode
-///         of the same returndata WOULD revert).
+/// @notice Minimal PancakeSwap V3 pool mock — mirrors {MockUniswapV3Pool} (minus the `slot0`-revert helper, and
+///         with `setSlot0` taking an extra `feeProtocol_` arg) but widens `slot0().feeProtocol` to `uint32`
+///         (PancakeSwap V3 widens Uniswap's `uint8`). Used to prove the PancakeSwap adapter's `_slot0` override
+///         decodes a `feeProtocol > uint8.max` without reverting (and that the Uniswap-base `uint8` decode of the
+///         same returndata WOULD revert).
 contract MockPancakeV3Pool {
     address public token0;
     address public token1;

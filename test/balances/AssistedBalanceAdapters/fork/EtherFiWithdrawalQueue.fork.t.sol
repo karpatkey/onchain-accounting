@@ -15,7 +15,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title EtherFiWithdrawalQueueAssistedBalanceAdapterForkTest
 /// @notice Fork test against ether.fi's real WithdrawRequestNFT + LiquidityPool on mainnet.
-/// @dev The NFT isn't enumerable, so the agent (here, the test acting as owner) submits a real tokenId; the
+/// @dev The NFT isn't enumerable, so the agent (here, the test acting as the assistant) submits a real tokenId; the
 ///      adapter values it entirely from live on-chain reads. Holder 0xcFFab3… owns request #80154 at FORK_BLOCK
 ///      (pending, isValid, fee 0), worth `min(amountOfEEth, amountForShare(shareOfEEth)) − fee` ETH. The test
 ///      asserts the adapter both against the pinned value AND against an independent live read (delta 0).

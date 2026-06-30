@@ -193,10 +193,6 @@ abstract contract TestSetupHelpers is Test {
     // Asset Registration Helpers
     // ============================================
 
-    /// @notice Ensures an asset is registered in NAVCalculator
-    /// @param nav The NAVCalculator contract instance
-    /// @param manager The manager address with permissions
-    /// @param asset The asset address
     /// @notice Ensures an asset is registered with a price feed
     /// @dev Assets must be registered with a price feed. This helper requires a price feed.
     /// @param nav The NAVCalculator contract instance
@@ -291,7 +287,7 @@ abstract contract TestSetupHelpers is Test {
         (bool ok, bytes memory data) = asset.staticcall(abi.encodeWithSignature("symbol()"));
         if (!ok || data.length == 0) return "";
         if (data.length == 32) {
-            // Old ERC20 (e.g. MKR) returns bytes32; left-padded, trailing zeros
+            // Old ERC20 (e.g. MKR) returns bytes32; left-aligned, trailing zeros
             bytes32 b = abi.decode(data, (bytes32));
             if (b == 0) return "";
             uint256 len;

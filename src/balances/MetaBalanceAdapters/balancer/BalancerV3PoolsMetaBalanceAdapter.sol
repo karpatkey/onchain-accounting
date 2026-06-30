@@ -32,7 +32,8 @@ contract BalancerV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
 
     /// @inheritdoc MetaBalanceAdapter
     /// @dev `instance` is the pool (BPT) address. Emits one `Supplied` leg per registered pool token for the account's
-    ///      wallet BPT share. Skips unregistered tokens and respects assetFilter.
+    ///      wallet BPT share. Returns an empty array when the account holds no BPT; skips unregistered tokens and
+    ///      zero-amount legs; respects assetFilter.
     function _instancePositions(address account, bytes32 instance, address assetFilter)
         internal
         view
@@ -78,7 +79,8 @@ contract BalancerV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @inheritdoc MetaBalanceAdapter
     /// @dev Returns `["AMM Liquidity Pool", "<sym0>/<sym1>/…"]` — the leaf is the pool's underlying token symbols
     ///      joined with "/" (e.g. "WETH/wstETH"). Per-token fail-open: a token whose `symbol()` reverts (or has no
-    ///      code) contributes "?". A revert in the pool-token read fails open at the NAV layer (`_safeStringArray`).
+    ///      code) contributes "?". A revert in the pool-token read (a bad/non-pool instance) is caught by the
+    ///      external self-call and fails open to the category-only label.
     function positionLabels(bytes calldata positionId) external view virtual override returns (string[] memory) {
         if (positionId.length < 32) return new string[](0);
         address pool = abi.decode(positionId, (address));

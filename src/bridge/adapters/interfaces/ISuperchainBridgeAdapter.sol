@@ -25,7 +25,8 @@ interface ISuperchainBridgeAdapter is IBridgeAdapter {
     /// @param invoiceId The invoice ID (32 bytes) - indexed
     /// @param destinationChainId The destination chain ID (L1)
     /// @param amount The amount being withdrawn
-    /// @param withdrawalHash The withdrawal transaction hash
+    /// @param withdrawalHash Always bytes32(0) at initiation; the real OP withdrawal hash is only known on L1
+    ///        and is set later at prove time (see SuperchainWithdrawalProven)
     event SuperchainWithdrawalInitiated(
         bytes32 indexed invoiceId, uint64 destinationChainId, bytes32 amount, bytes32 withdrawalHash
     );
@@ -147,27 +148,27 @@ interface ISuperchainBridgeAdapter is IBridgeAdapter {
 
     /// @notice Sets the L1 Standard Bridge contract address
     /// @param l1Bridge_ The L1 Standard Bridge contract address
-    /// @dev Only callable by admin role
+    /// @dev Only callable by admin role; only valid on the L1 deployment (reverts InvalidChainId on an L2)
     function setL1Bridge(address l1Bridge_) external;
 
     /// @notice Sets the L2 Standard Bridge contract address
     /// @param l2Bridge_ The L2 Standard Bridge contract address
-    /// @dev Only callable by admin role
+    /// @dev Only callable by admin role; only valid on an L2 deployment (reverts InvalidChainId on L1)
     function setL2Bridge(address l2Bridge_) external;
 
     /// @notice Sets the L1 Cross-Domain Messenger contract address
     /// @param l1Messenger_ The L1 Cross-Domain Messenger contract address
-    /// @dev Only callable by admin role
+    /// @dev Only callable by admin role; only valid on the L1 deployment (reverts InvalidChainId on an L2)
     function setL1Messenger(address l1Messenger_) external;
 
     /// @notice Sets the L2 Cross-Domain Messenger contract address
     /// @param l2Messenger_ The L2 Cross-Domain Messenger contract address
-    /// @dev Only callable by admin role
+    /// @dev Only callable by admin role; only valid on an L2 deployment (reverts InvalidChainId on L1)
     function setL2Messenger(address l2Messenger_) external;
 
     /// @notice Sets the Optimism Portal contract address
     /// @param optimismPortal_ The Optimism Portal contract address
-    /// @dev Only callable by admin role
+    /// @dev Only callable by admin role; only valid on the L1 deployment (reverts InvalidChainId on an L2)
     function setOptimismPortal(address optimismPortal_) external;
 
     //
@@ -194,8 +195,9 @@ interface ISuperchainBridgeAdapter is IBridgeAdapter {
     /// @return True if proven, false otherwise
     function isWithdrawalProven(bytes32 withdrawalHash) external view returns (bool);
 
-    /// @notice Checks if a withdrawal can be finalized (challenge period elapsed)
+    /// @notice Reports whether a withdrawal has been proven (a prerequisite for finalization)
+    /// @dev Does not check the challenge period; the Optimism Portal enforces that at finalize time
     /// @param withdrawalHash The withdrawal transaction hash
-    /// @return True if can be finalized, false otherwise
+    /// @return True if the withdrawal has been proven, false otherwise
     function canFinalizeWithdrawal(bytes32 withdrawalHash) external view returns (bool);
 }

@@ -177,6 +177,6 @@ abstract contract SuperTest is Test {
 
     error AccessControlUnauthorizedAccount(address, bytes32);
 
-    // ERC20 insufficent allowance error
+    // ERC20 insufficient allowance error
     error ERC20InsufficientAllowance(address spender, uint256 allowance, uint256 needed);
 }

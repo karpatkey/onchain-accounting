@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import {Test} from "forge-std/Test.sol";
 
 /// @title TestEnvConfigurator
-/// @notice A test library contract dedicated to importing and managing environment variables
+/// @notice An abstract test base contract dedicated to importing and managing environment variables
 /// @notice Provides utilities for constructing RPC URLs and accessing environment configuration
 /// @notice Includes fork creation helpers with cadence control to prevent RPC rate limiting
 abstract contract TestEnvConfigurator is Test {

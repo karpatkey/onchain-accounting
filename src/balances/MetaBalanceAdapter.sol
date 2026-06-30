@@ -17,7 +17,7 @@ import {InvalidArgumentsWithContext} from "src/errors.sol";
 /// @notice Abstract base for meta balance adapters — one immutable adapter serving every instance of a
 ///         protocol. Concrete adapters implement the per-instance hooks (`_instancePositions`, `_instanceAssets`),
 ///         the identity hooks (`_protocolBrand`, `_protocolId`, `_protocolSubId`), and `positionLabels`; this base
-///         provides the ERC165 wiring, the empty no-arg `IBalanceAdapter` methods, the per-instance fan-out
+///         provides the ERC165 wiring, the empty no-op `IBalanceAdapter` methods, the per-instance fan-out
 ///         with revert isolation, the shared `_leg` builder, and shared NAVCalculator registry helpers.
 /// @dev The instance set lives on NAVCalculator (ADR 0010). The adapter reads its own set via
 ///      `NAV_CALCULATOR.getMetaInstances(address(this))` and holds no instance state or admin functions of its

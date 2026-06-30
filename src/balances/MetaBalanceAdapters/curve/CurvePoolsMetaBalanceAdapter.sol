@@ -26,7 +26,7 @@ import {CurvePoolLib} from "./CurvePoolLib.sol";
 ///        - TwoCryptoNG (uint256, separate LP with minter() = pool)
 ///        - Lending pools (reports wrapped-token balances; decimals match the registered asset)
 ///
-///      For each registered pool coin with a non-zero wallet balance, one `Supplied` leg is emitted.
+///      For each registered pool coin with a non-zero pro-rata amount, one `Supplied` leg is emitted.
 ///      positionId = abi.encode(address pool)
 ///
 ///      Gauge-staked LP and rewards are handled separately by CurveGaugesMetaBalanceAdapter.

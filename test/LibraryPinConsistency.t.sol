@@ -17,8 +17,10 @@ import {ConfigReader} from "script/utils/ConfigReader.sol";
 ///         — is held stable by `solc_version` + `bytecode_hash = "none"` in foundry.toml. If a
 ///         compiler bump, a real library code change, or a build-config change shifts the bytecode,
 ///         these assertions fail in CI: regenerate the pins (LibraryPins + foundry.toml) for the new
-///         bytecode. Salt + CREATE2 deployer are reused from ConfigReader so this test can never compute a
-///         salt the deploy path (BaseDeployScript.generateSalt → ConfigReader.computeSalt) wouldn't.
+///         bytecode. The salt is computed via ConfigReader.computeSalt — the same routine the deploy path
+///         uses (BaseDeployScript.generateSalt → ConfigReader.computeSalt) — and the CREATE2 deployer is the
+///         canonical factory address both sides hard-code, so this test can never compute an address the
+///         deploy path wouldn't.
 contract LibraryPinConsistencyTest is Test {
     address internal constant CANONICAL_CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 

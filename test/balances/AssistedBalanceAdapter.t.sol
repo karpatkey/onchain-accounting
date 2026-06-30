@@ -13,7 +13,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import "src/errors.sol";
 
 /// @notice Minimal concrete to exercise the abstract base: trivial IBalanceAdapter impl plus an assistant-gated
-///         mutator that flips a flag, so we can assert the role actually gates submission.
+///         mutator that records the submitted value, so we can assert the role actually gates submission.
 contract MockAssistedAdapter is AssistedBalanceAdapter {
     uint256 public lastSubmitted;
     mapping(address account => uint256) public lastReplaced;

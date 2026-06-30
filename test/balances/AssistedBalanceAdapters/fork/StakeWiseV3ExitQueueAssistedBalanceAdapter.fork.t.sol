@@ -112,8 +112,9 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterForkTest is BalanceAdapterTes
         assertEq(p[0].positionInstanceId, bytes32(TICKET), "positionInstanceId = ticket");
     }
 
-    /// @dev Sum-based check: per-request legs (claimable + locked) sum to the aggregate `_assetsOwed`, share the
-    ///      per-vault positionId, and carry a "Ticket #<id>" leaf label.
+    /// @dev Sum-based check: per-request legs (claimable + locked) sum to the aggregate `_owedAmount`, share the
+    ///      per-vault positionId, and carry their ticket in the typed `positionInstanceId` (label stays
+    ///      `["Exit Queue", "osETH"]`).
     function test_getAdapterPositions_legsSumToAggregate() public {
         _submit();
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(HOLDER, address(0));

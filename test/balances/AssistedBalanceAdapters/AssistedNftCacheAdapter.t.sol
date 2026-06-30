@@ -31,7 +31,12 @@ contract MockNftCacheAdapter is AssistedNftCacheAdapter {
 
     // Unused IBalanceAdapter read surface — this mock exercises only the shared cache CRUD on the base, so these are
     // stubbed to empty to make the contract concrete (the concrete protocol adapters provide the real valuation).
-    function getAdapterPositions(address, address) external pure override returns (INAVCalculator.PositionBalance[] memory) {
+    function getAdapterPositions(address, address)
+        external
+        pure
+        override
+        returns (INAVCalculator.PositionBalance[] memory)
+    {
         return new INAVCalculator.PositionBalance[](0);
     }
 

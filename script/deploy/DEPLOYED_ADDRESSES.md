@@ -1,6 +1,6 @@
 # Onchain Accounting System (NAV) — Deployed Addresses
 
-Canonical deployed-address reference for the Onchain Accounting System (NAV). The machine source of truth is `script/config/deployments/<chainId>.json` per chain (written by the deploy scripts); this file is the human-readable mirror.
+Canonical deployed-address reference for the Onchain Accounting System (NAV). The machine source of truth is `script/config/deployments/<chainId>.json` per chain (written by the deploy scripts); this file mirrors those records. The one exception is `UUPSPlaceholder` — a transient CREATE2 address used only during the atomic proxy deploy, identical everywhere and not persisted in the per-chain JSON; it is listed here for completeness.
 
 Deployed across **24 chains**: 5 fully configured (custom price feeds + balance adapters) + 19 with the NAV implementation + proxy only.
 

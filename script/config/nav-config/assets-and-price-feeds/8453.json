@@ -130,6 +130,12 @@
         "type": "Redstone",
         "address": "0x8B4736f5eaD8ed579Ecf65a13F9c1E8B44dEdF20",
         "heartbeat": 86400
+      },
+      {
+        "$comment": "Independent 3rd feed (ADR 0009 redundancy): API3 cbBTC/USD dAPI via Api3ReaderProxyV1 (18-dec proxy, scaled to 8-dec at read; PriceFeedLib validates sourceDec==18).",
+        "type": "API3",
+        "address": "0xa4183Cbf2eE868dDFccd325531C4f53F737FFF68",
+        "heartbeat": 86400
       }
     ]
   }

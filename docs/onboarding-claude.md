@@ -112,7 +112,7 @@ The whole flow is **EOA-only** (deployer key + `--broadcast`; no Safe executes d
 4. `04_DeployBalanceAdapters.s.sol` — deploys per-chain balance adapters from `contracts-deployment-config/balance-adapters/<id>.json` (plain) and `contracts-deployment-config/meta-balance-adapters/<id>.json` (meta).
 5. `05_DeployBridgeAdapters.s.sol` — deploys per-chain bridge adapters (CCIP, Across, CCTP, Stargate, Superchain, Gnosis).
 6. `06_Configure.s.sol` — **EOA broadcast**: add balance adapters to NAV, `addMetaInstances`/`removeMetaInstances` for meta-adapters, authorize bridge adapters on BridgeEscrow (idempotent).
-7. `07_TransferAdminToSecurityCouncil.s.sol` — **last:** grants DEFAULT_ADMIN_ROLE + MANAGER to `securityCouncil` on both proxies and renounces the deployer's roles.
+7. `07_TransferAdminToSecurityCouncil.s.sol` — **last (deferred in the current deploy — `DEFAULT_ADMIN_ROLE` + `MANAGER` remain with the deployer EOA):** grants DEFAULT_ADMIN_ROLE + MANAGER to `securityCouncil` on both proxies and renounces the deployer's roles.
 
 For the operational sequencing see [`script/deploy/README.md`](../script/deploy/README.md) and [`script/DEPLOYMENT_SUMMARY.md`](../script/DEPLOYMENT_SUMMARY.md).
 

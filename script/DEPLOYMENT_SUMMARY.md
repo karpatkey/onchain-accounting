@@ -470,7 +470,7 @@ Note: Proxy deploy + init is done via EOA in `02_DeployProxies.s.sol` (no Safe T
 ## What Is Missing or Easy to Miss
 
 - **Config file names**: The repo uses **per-chain JSONs** at `script/config/chains/{chainId}.json`, not a single `chain-config.json` or `dev-input.json`.
-- **Chain coverage**: `script/config/chains/` has a `{chainId}.json` for each of the 24 deployed chains (see the Chains list at the top). To add another chain, create `{chainId}.json` (reuse the structure from an existing file) and add its Alchemy slug to `_alchemyNetworkForChainId` in `script/utils/ConfigReader.sol` — see `docs/howto/add-chain.md`.
+- **Chain coverage**: `script/config/chains/` has a `{chainId}.json` for each of the 24 deployed chains (see the Chains list at the top), plus configs for networks intentionally left undeployed (e.g. `1101.json` for Polygon zkEVM, which is excluded) — presence of a config does not imply a deployment. To add another chain, create `{chainId}.json` (reuse the structure from an existing file) and add its Alchemy slug to `_alchemyNetworkForChainId` in `script/utils/ConfigReader.sol` — see `docs/howto/add-chain.md`.
 - **Safe TX output path**: Generated Safe transaction files are written to **`safe-transactions/`** at the **project root** (see `SafeTxBuilder.sol`).
 - **02 is EOA-only**: Proxy deploy and init are done in **02_DeployProxies.s.sol** via EOA (no separate Safe TX for init). Use atomic deploy (default) or `USE_LEGACY_DEPLOY=1` for legacy multi-tx.
 - **Docs**: Detailed config reference is `script/config/README.md` and `script/config/CONFIG_GUIDE.md`. Deployment script details: `script/deploy/README.md`.

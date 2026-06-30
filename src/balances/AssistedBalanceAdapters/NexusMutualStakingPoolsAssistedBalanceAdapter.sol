@@ -202,8 +202,10 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is
     ///      Asset metadata does not affect the summed amount. When NXM IS registered the two views agree exactly;
     ///      when it is not, getAdapterPositions is empty (NAV can't price it) while this still surfaces the holding.
     function _owedAmount(address account) internal view override returns (uint256 total) {
-        (INAVCalculator.Asset memory underlying,) =
-            RegisteredAssetLib.find(NAV_CALCULATOR.getRegisteredAssets(), UNDERLYING_TOKEN);
+        // No registry read: the summed leg amounts (stake + rewards) do not depend on the underlying Asset metadata,
+        // so pass a zeroed Asset as the context. This keeps the convenience balance getters revert-free and uniform
+        // with the EtherFi / StakeWise siblings — a registry proxy mid-upgrade can't make getAdapterBalances revert.
+        INAVCalculator.Asset memory underlying;
         INAVCalculator.PositionBalance[] memory legs = _collectLegs(account, address(0), abi.encode(underlying));
         for (uint256 i; i < legs.length; ++i) {
             total += legs[i].amount;

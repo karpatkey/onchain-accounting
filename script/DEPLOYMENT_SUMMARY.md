@@ -374,7 +374,7 @@ script/verify/verify-all.sh
 
 ### Deployment Records (`script/config/deployments/`)
 
-The per-chain `script/config/deployments/{chainId}.json` file is the **single source of truth for deployed addresses** — broadcast logs are no longer committed. There is one file per deployed chain (24 total): the 5 fully-configured chains carry feeds + adapters, the other 19 carry the canonical layer only.
+The per-chain `script/config/deployments/{chainId}.json` file is the **single source of truth for deployed addresses** — broadcast logs are no longer committed. There is one file per deployed chain (24 total): the 5 fully-configured chains carry feeds + adapters, the other 19 carry the canonical layer only. (An empty `1101.json` stub is also present for Polygon zkEVM, which is intentionally excluded — a file's presence does not imply a deployment.)
 
 ```
 script/config/deployments/

@@ -132,7 +132,7 @@ contract PancakeSwapV3PoolsAssistedBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(alice, address(0));
         assertGt(p.length, 0);
         for (uint256 i = 0; i < p.length; i++) {
-            assertEq(p[i].protocolSubId, ProtocolIds.PANCAKESWAP_V3, "protocolId == pancakeswap-v3");
+            assertEq(p[i].protocolSubId, ProtocolIds.PANCAKESWAP_V3, "protocolSubId == pancakeswap-v3");
             assertEq(p[i].protocolId, ProtocolIds.PANCAKESWAP_V3);
             assertTrue(p[i].protocolSubId != ProtocolIds.UNISWAP_V3, "not the inherited uniswap-v3");
             assertTrue(p[i].protocolId != ProtocolIds.UNISWAP_V3);

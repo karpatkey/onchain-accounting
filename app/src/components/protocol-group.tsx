@@ -72,6 +72,13 @@ const PROTOCOL_IMG_ICONS: Record<string, string> = {
   'ether.fi': 'https://icons.llamao.fi/icons/protocols/ether.fi?w=48&h=48',
   stakewise: 'https://icons.llamao.fi/icons/protocols/stakewise?w=48&h=48',
   nexus: 'https://icons.llamao.fi/icons/protocols/nexus-mutual?w=48&h=48',
+  lido: 'https://icons.llamao.fi/icons/protocols/lido?w=48&h=48',
+  kelp: 'https://icons.llamao.fi/icons/protocols/kelp-dao?w=48&h=48',
+  stader: 'https://icons.llamao.fi/icons/protocols/stader?w=48&h=48',
+  convex: 'https://icons.llamao.fi/icons/protocols/convex-finance?w=48&h=48',
+  fluid: 'https://icons.llamao.fi/icons/protocols/fluid?w=48&h=48',
+  compound: 'https://icons.llamao.fi/icons/protocols/compound-finance?w=48&h=48',
+  merkl: 'https://icons.llamao.fi/icons/protocols/merkl?w=48&h=48',
 }
 
 const PROTOCOL_URLS: Record<string, string> = {
@@ -89,6 +96,13 @@ const PROTOCOL_URLS: Record<string, string> = {
   'ether.fi': 'https://app.ether.fi/',
   stakewise: 'https://app.stakewise.io/',
   nexus: 'https://app.nexusmutual.io/',
+  lido: 'https://stake.lido.fi/',
+  kelp: 'https://kelpdao.xyz/',
+  stader: 'https://www.staderlabs.com/',
+  convex: 'https://www.convexfinance.com/',
+  fluid: 'https://fluid.io/',
+  compound: 'https://app.compound.finance/',
+  merkl: 'https://app.merkl.xyz/',
 }
 
 function getProtocolKey(protocol: string): string {

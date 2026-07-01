@@ -58,17 +58,18 @@ abstract contract WrapperFedNftCacheAdapter is WrapperFedBalanceAdapter {
     }
 
     //
-    // Writes (permissionless — GC of provably-stale ids)
+    // Writes (WRAPPER_ROLE — GC of provably-stale ids)
     //
 
     /// @notice Drop `tokenId` from `account`'s cache **only if** it is no longer owned by `account` (burned on claim,
-    ///         transferred away, or non-existent). Permissionless: it can only *remove* an id, and only one that fails
-    ///         the live ownership check, so no live position can ever be deleted — the worst a caller can do is GC a
-    ///         dead entry the reads already value to 0. This is the cleanup path for an ether.fi `claimWithdraw` that
-    ///         runs delegatecalled from the owning Safe (which does not hold `WRAPPER_ROLE`, so cannot call {remove}).
+    ///         transferred away, or non-existent). Like {remove} it is `WRAPPER_ROLE`-gated — so the wrapper is the
+    ///         only mutator of the adapter — but it additionally verifies the id is provably stale, so it can only ever
+    ///         GC a dead entry (never delete a live position). The wrapper exposes this as its own `pruneStale`, which
+    ///         a delegatecalled `claimWithdraw` reaches by a regular self-call so the adapter is mutated *by the
+    ///         wrapper*, not by the (role-less) depositor Safe.
     /// @dev **Reverts** `NotTokenOwner` if `tokenId` is still owned by `account` (nothing to prune) so a mistaken call
     ///      is loud rather than silently pruning a live position — the check is `_ownerOf(...) == (account, true)`.
-    function pruneStale(address account, uint256 tokenId) external {
+    function pruneStale(address account, uint256 tokenId) external onlyRole(WRAPPER_ROLE) {
         (address owner, bool ok) = _ownerOf(tokenId);
         if (ok && owner == account) revert NotTokenOwner(account, tokenId);
         _removeTokenId(account, tokenId);

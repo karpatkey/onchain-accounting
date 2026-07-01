@@ -88,8 +88,8 @@ contract MockSafe {
         eeth.approve(spender, amount);
     }
 
-    function doRequest(address wrapper, address recipient, uint256 amount) external returns (uint256) {
-        return EtherFiWithdrawalQueueWrapper(wrapper).requestWithdraw(recipient, amount);
+    function doRequest(address wrapper, uint256 amount) external returns (uint256) {
+        return EtherFiWithdrawalQueueWrapper(wrapper).requestWithdraw(amount);
     }
 
     /// @dev Executes the wrapper's claim in THIS account's context, so the NFT sees msg.sender == this Safe (== owner).
@@ -158,7 +158,7 @@ contract EtherFiWithdrawalQueueWrapperTest is Test {
 
     function test_requestWithdraw_pullsEeth_mintsToCaller_andTracks() public {
         uint256 amount = 5 ether;
-        uint256 id = safe.doRequest(address(wrapper), address(safe), amount);
+        uint256 id = safe.doRequest(address(wrapper), amount);
 
         assertEq(nft.ownerOf(id), address(safe), "NFT minted to the caller (Safe)");
         assertEq(eeth.balanceOf(address(safe)), 95 ether, "eETH pulled from the Safe");
@@ -179,20 +179,14 @@ contract EtherFiWithdrawalQueueWrapperTest is Test {
                 IAccessControl.AccessControlUnauthorizedAccount.selector, stranger, keccak256("DEPOSITOR_ROLE")
             )
         );
-        wrapper.requestWithdraw(stranger, 1 ether);
-    }
-
-    function test_requestWithdraw_revertsWhenRecipientNotCaller() public {
-        vm.expectRevert(InvalidArguments.selector);
-        // Safe (DEPOSITOR) requests but names a different recipient → reverts.
-        safe.doRequest(address(wrapper), makeAddr("someoneElse"), 1 ether);
+        wrapper.requestWithdraw(1 ether);
     }
 
     // ---- claimWithdraw (DELEGATECALL by the owning Safe) ----
 
     function test_claimWithdraw_delegatecall_paysSafe_andPrunes() public {
         uint256 amount = 5 ether;
-        uint256 id = safe.doRequest(address(wrapper), address(safe), amount);
+        uint256 id = safe.doRequest(address(wrapper), amount);
         assertEq(adapter.tokenIdsOf(address(safe)).length, 1);
 
         uint256 safeEthBefore = address(safe).balance;
@@ -208,8 +202,22 @@ contract EtherFiWithdrawalQueueWrapperTest is Test {
     /// @notice A direct CALL to claimWithdraw by a non-owner reverts inside the NFT (owner-only) — the wrapper is not
     ///         the NFT owner, so this fails safe when invoked the wrong way.
     function test_claimWithdraw_directCall_byNonOwner_reverts() public {
-        uint256 id = safe.doRequest(address(wrapper), address(safe), 5 ether);
+        uint256 id = safe.doRequest(address(wrapper), 5 ether);
         vm.expectRevert("Not the owner of the NFT");
         wrapper.claimWithdraw(id); // msg.sender to NFT is the wrapper, not the owner
+    }
+
+    /// @notice pruneStale forwards to the adapter AS the wrapper (which holds WRAPPER_ROLE); a caller can only GC its
+    ///         own stale ids. Standalone GC path (also used by claimWithdraw via the SELF self-call).
+    function test_pruneStale_forwardsAsWrapper() public {
+        uint256 id = safe.doRequest(address(wrapper), 5 ether);
+        assertEq(adapter.tokenIdsOf(address(safe)).length, 1);
+        // Directly claim on the NFT so the id becomes stale (burned), then prune via the wrapper as the Safe.
+        vm.deal(address(nft), 10 ether);
+        vm.prank(address(safe));
+        nft.claimWithdraw(id); // burns the NFT (Safe is owner)
+        vm.prank(address(safe));
+        wrapper.pruneStale(id);
+        assertEq(adapter.tokenIdsOf(address(safe)).length, 0, "stale id pruned via the wrapper");
     }
 }

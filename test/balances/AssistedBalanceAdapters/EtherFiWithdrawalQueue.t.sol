@@ -242,16 +242,28 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterTest is BalanceAdapterTestB
         assertEq(adapter.tokenIdsOf(holder).length, 0);
     }
 
-    // ---- pruneStale (permissionless GC) ----
+    // ---- pruneStale (WRAPPER_ROLE-gated GC of provably-stale ids) ----
 
-    function test_pruneStale_removesBurnedId_permissionless() public {
+    function test_pruneStale_removesBurnedId() public {
         nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
         adapter.submit(holder, 1);
         nft.burn(1); // claimed → ownerOf reverts
-        // Anyone (here: `other`, with no role) can prune the now-stale id.
-        vm.prank(other);
+        // The WRAPPER_ROLE holder (this test) prunes the now-stale id.
         adapter.pruneStale(holder, 1);
         assertEq(adapter.tokenIdsOf(holder).length, 0);
+    }
+
+    function test_pruneStale_onlyWrapperRole() public {
+        nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
+        adapter.submit(holder, 1);
+        nft.burn(1);
+        vm.prank(other);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, other, keccak256("WRAPPER_ROLE")
+            )
+        );
+        adapter.pruneStale(holder, 1);
     }
 
     function test_pruneStale_removesTransferredAwayId() public {

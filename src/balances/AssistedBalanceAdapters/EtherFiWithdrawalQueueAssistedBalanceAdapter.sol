@@ -6,6 +6,7 @@ import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 
 import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
 import {AssistedNftCacheAdapter} from "src/balances/AssistedBalanceAdapters/AssistedNftCacheAdapter.sol";
+import {NftIdCache} from "src/balances/AssistedBalanceAdapters/NftIdCache.sol";
 import {SingleAssetAssistedGetters} from "src/balances/AssistedBalanceAdapters/SingleAssetAssistedGetters.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
@@ -99,7 +100,7 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapter is
     // base. This adapter supplies only the ownership read and the cap.
     //
 
-    /// @inheritdoc AssistedNftCacheAdapter
+    /// @inheritdoc NftIdCache
     /// @dev Ownership read for the cache's write-time check: wraps `IEtherFiWithdrawRequestNFT.ownerOf` so a claimed /
     ///      burned / non-existent id (which `ownerOf` reverts on) returns `(0, false)` rather than bubbling.
     function _ownerOf(uint256 tokenId) internal view override returns (address, bool) {
@@ -110,7 +111,7 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapter is
         }
     }
 
-    /// @inheritdoc AssistedNftCacheAdapter
+    /// @inheritdoc NftIdCache
     function _maxTokenIds() internal pure override returns (uint256) {
         return MAX_TOKEN_IDS;
     }

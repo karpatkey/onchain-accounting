@@ -14,7 +14,11 @@ error TokenIdCacheFull(address account, uint256 maxTokenIds);
 // Assisted exit-queue (ticket-keyed) errors — StakeWise V3 caches (vault, positionTicket, timestamp) tuples, not
 // tokenIds, so it has its own cache-full / invalid-position errors (same fail-loud-write semantics as the NFT adapters).
 error PositionCacheFull(address account, uint256 maxPositions);
+/// @notice `submit` was given a vault that is not StakeWise-registered.
 error InvalidExitPosition(address account, address vault, uint256 positionTicket);
+/// @notice `submit`'s `(vault, positionTicket, timestamp)` tuple does not resolve to a live exit position owned by
+///         `account` (the on-chain ownership proxy `calculateExitedAssets(account, …)` returned zero).
+error NotExitPositionOwner(address account, address vault, uint256 positionTicket);
 /// @notice `remove` targeted a `(vault, positionTicket, timestamp)` tuple that is not in `account`'s tracked set.
 error PositionNotTracked(address account, address vault, uint256 positionTicket);
 

@@ -8,6 +8,7 @@ import {
     IStakeWiseExitVault
 } from "src/balances/AssistedBalanceAdapters/StakeWiseV3ExitQueueAssistedBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {NotExitPositionOwner} from "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
@@ -112,10 +113,10 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterForkTest is BalanceAdapterTes
     }
 
     function test_submit_revertsOnTupleNotOwnedByAccount() public {
-        // A stranger submitting a real ticket it does not own → owed 0 for the caller → fail-loud.
+        // A stranger submitting a real ticket it does not own → owed 0 for the caller → NotExitPositionOwner.
         address stranger = makeAddr("stranger");
         vm.prank(stranger);
-        vm.expectRevert();
+        vm.expectRevert(abi.encodeWithSelector(NotExitPositionOwner.selector, stranger, GENESIS_VAULT, TICKET));
         adapter.submit(GENESIS_VAULT, TICKET, ENTRY_TS);
         assertEq(adapter.positionsOf(stranger).length, 0);
     }

@@ -140,8 +140,8 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapter is SingleAssetAssistedGetter
     /// @notice Track one of the caller's own exit positions (`account = msg.sender`). Idempotent (a duplicate tuple is
     ///         a no-op). Permissionless: the caller can only ever add its OWN positions, and fail-loud validation plus
     ///         live re-valuation mean it can only add real, owned, in-queue positions. Reverts `InvalidExitPosition` if
-    ///         the vault is not StakeWise-registered or the tuple does not resolve to a live owed amount for the caller,
-    ///         and `PositionCacheFull` past `MAX_POSITIONS`.
+    ///         the vault is not StakeWise-registered, `NotExitPositionOwner` if the ticket does not belong to the caller
+    ///         (the on-chain ownership proxy resolves to zero owed), and `PositionCacheFull` past `MAX_POSITIONS`.
     /// @dev Under the wrapper's delegatecall, `msg.sender` is the depositor Safe (so its positions are tracked); a
     ///      direct caller tracks itself.
     function submit(address vault, uint256 positionTicket, uint256 timestamp) external {
@@ -297,8 +297,9 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapter is SingleAssetAssistedGetter
     //
 
     /// @dev Add one cached position. Idempotent (a duplicate tuple is a no-op). Fail-loud validation: the vault must be
-    ///      StakeWise-registered AND the tuple must resolve to a live owed amount for `account` (the on-chain ownership
-    ///      proxy). Reverts `PositionCacheFull` past `MAX_POSITIONS` and `InvalidExitPosition` on a bad tuple.
+    ///      StakeWise-registered (else `InvalidExitPosition`) AND the tuple must resolve to a live owed amount for
+    ///      `account` — the on-chain ownership proxy, `calculateExitedAssets(account, …) > 0` — else the ticket does not
+    ///      belong to the caller and it reverts `NotExitPositionOwner`. Reverts `PositionCacheFull` past `MAX_POSITIONS`.
     function _addPosition(address account, ExitPosition memory position) internal {
         bytes32 key = _key(position.vault, position.positionTicket, position.timestamp);
         if (_positionIdxPlus1[account][key] != 0) return; // already cached (idempotent no-op)
@@ -311,8 +312,10 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapter is SingleAssetAssistedGetter
             registeredVault = false;
         }
         if (!registeredVault) revert InvalidExitPosition(account, position.vault, position.positionTicket);
+        // Ownership check: calculateExitedAssets keys on `receiver = account`, so a non-zero owed amount is the on-chain
+        // proof that this exit position belongs to `account` (StakeWise exit positions have no `ownerOf`).
         (uint256 c, uint256 l) = _owedForPosition(account, position.vault, position.positionTicket, position.timestamp);
-        if (c + l == 0) revert InvalidExitPosition(account, position.vault, position.positionTicket);
+        if (c + l == 0) revert NotExitPositionOwner(account, position.vault, position.positionTicket);
 
         _positions[account].push(position);
         _positionIdxPlus1[account][key] = _positions[account].length;

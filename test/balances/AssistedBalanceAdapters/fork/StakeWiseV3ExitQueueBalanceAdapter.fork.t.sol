@@ -4,9 +4,9 @@ pragma solidity ^0.8.0;
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
 import {BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
 import {
-    StakeWiseV3ExitQueueBalanceAdapter
+    StakeWiseV3ExitQueueBalanceAdapter,
+    IStakeWiseExitVault
 } from "src/balances/AssistedBalanceAdapters/StakeWiseV3ExitQueueBalanceAdapter.sol";
-import {IStakeWiseExitVault} from "src/balances/AssistedBalanceAdapters/StakeWiseV3ExitQueueBase.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -14,7 +14,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @title StakeWiseV3ExitQueueBalanceAdapterForkTest
 /// @notice Fork test against StakeWise's real Genesis vault + VaultsRegistry on mainnet, for the wrapper-fed adapter.
 /// @dev Same real ENS-DAO-Safe exit position and pinned states as the assisted adapter's fork test (the valuation is
-///      shared via `StakeWiseV3ExitQueueBase`). The difference here is the write path: the adapter is fed by a
+///      identical to the assisted adapter's). The difference here is the write path: the adapter is fed by a
 ///      **role-gated self-submit** — the account grants itself `DEPOSITOR_ROLE` (here the test, playing admin, grants
 ///      the real holder) and submits its OWN ticket (`account == msg.sender`). The adapter then values it entirely
 ///      from live on-chain reads in two states (checkpointed/claimable and fully-pending), asserted against an

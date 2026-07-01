@@ -4,7 +4,7 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: 'NAV Dashboard',
-  description: 'On-chain NAV and price feed monitor for karpatkey portfolios',
+  description: 'On-chain NAV and price feed monitor for KPK portfolios',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

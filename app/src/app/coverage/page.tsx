@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { TooltipProvider } from '@karpatkey/design-system'
 import { CoverageTable } from '@/components/coverage-table'
 import { DashboardNav } from '@/components/dashboard-nav'
@@ -8,9 +8,22 @@ import { useChainCoverage } from '@/hooks/use-coverage'
 import { useRefreshCooldown } from '@/hooks/use-refresh-cooldown'
 import { DEPLOYED_CHAINS } from '@/config/chains'
 
-function ChainCoveragePill({ chainIdx, isActive }: { chainIdx: number; isActive: boolean }) {
+function ChainCoveragePill({
+  chainIdx,
+  isActive,
+  onCount,
+}: {
+  chainIdx: number
+  isActive: boolean
+  onCount: (chainId: number, count: number) => void
+}) {
   const data = useChainCoverage(chainIdx)
   const config = DEPLOYED_CHAINS[chainIdx]
+
+  // Report product count up so the page can sort chains by it (strip + body share one order).
+  useEffect(() => {
+    if (!data.isLoading) onCount(config.chain.id, data.productCount)
+  }, [data.isLoading, data.productCount, config.chain.id, onCount])
 
   return (
     <a
@@ -100,6 +113,22 @@ export default function CoveragePage() {
     startCooldown()
   }, [startCooldown])
 
+  // Chains sorted by product count desc, then alphabetically. Counts are reported up from each chain's
+  // pill (which owns the data); until a chain reports, it sorts as 0 (alphabetical) then settles.
+  const [counts, setCounts] = useState<Record<number, number>>({})
+  const reportCount = useCallback((chainId: number, count: number) => {
+    setCounts((prev) => (prev[chainId] === count ? prev : { ...prev, [chainId]: count }))
+  }, [])
+  const order = useMemo(
+    () =>
+      DEPLOYED_CHAINS.map((_, i) => i).sort((a, b) => {
+        const ca = counts[DEPLOYED_CHAINS[a].chain.id] ?? 0
+        const cb = counts[DEPLOYED_CHAINS[b].chain.id] ?? 0
+        return cb - ca || DEPLOYED_CHAINS[a].label.localeCompare(DEPLOYED_CHAINS[b].label)
+      }),
+    [counts],
+  )
+
   // Scroll-spy: observe each chain section and track which is most in view.
   useEffect(() => {
     const sectionIds = DEPLOYED_CHAINS.map((c) => `chain-${c.chain.id}`)
@@ -158,16 +187,21 @@ export default function CoveragePage() {
           <div className="rounded-xl border border-neutral-300 border-l-4 border-l-violet-500 bg-violet-50/50 px-5 py-4">
             <h2 className="text-sm font-semibold text-neutral-950">What the NAV system tracks</h2>
             <p className="text-sm text-neutral-700 mt-1 max-w-3xl">
-              NAV values only the protocols and positions listed below — the ones karpatkey actively
-              uses across these accounts. Anything outside this set is intentionally not counted.
+              NAV values only the protocols and positions listed below — the ones KPK actively uses
+              across these accounts. Anything outside this set is intentionally not counted.
             </p>
           </div>
 
           {/* Chain summary strip with scroll overflow + fade mask */}
           <div className="relative">
             <div className="overflow-x-auto no-scrollbar flex items-center gap-x-6 gap-y-2 py-3 px-4 rounded-xl border border-neutral-300 bg-neutral-100 text-sm">
-              {DEPLOYED_CHAINS.map((c, idx) => (
-                <ChainCoveragePill key={idx} chainIdx={idx} isActive={activeChainId === c.chain.id} />
+              {order.map((idx) => (
+                <ChainCoveragePill
+                  key={DEPLOYED_CHAINS[idx].chain.id}
+                  chainIdx={idx}
+                  isActive={activeChainId === DEPLOYED_CHAINS[idx].chain.id}
+                  onCount={reportCount}
+                />
               ))}
             </div>
             <div className="pointer-events-none absolute inset-y-0 right-0 w-8 rounded-r-xl bg-gradient-to-l from-neutral-100 to-transparent" />
@@ -194,8 +228,12 @@ export default function CoveragePage() {
 
           {/* Chain sections */}
           <div className="space-y-6">
-            {DEPLOYED_CHAINS.map((_, idx) => (
-              <ChainCoverageSection key={`${idx}-${refreshKey}`} chainIdx={idx} searchQuery={searchQuery} />
+            {order.map((idx) => (
+              <ChainCoverageSection
+                key={`${DEPLOYED_CHAINS[idx].chain.id}-${refreshKey}`}
+                chainIdx={idx}
+                searchQuery={searchQuery}
+              />
             ))}
           </div>
           </div>

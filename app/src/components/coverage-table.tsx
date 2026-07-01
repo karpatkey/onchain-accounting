@@ -310,9 +310,14 @@ function ProductRow({
           {/* Assisted (agent-fed) adapters can't be enumerated on-chain — flag prominently + explain. */}
           {product.isAssisted && (
             <AssistedBadge>
-              Agent-fed adapter: positions are covered by coordinates (NFT / request ids) submitted by a
-              trusted assistant and re-verified on-chain each read — the assistant can only under-report,
-              never fabricate. Individual positions appear once a coordinate is submitted.
+              <span className="block font-semibold">Assisted (agent-fed) adapter</span>
+              These positions aren&rsquo;t enumerable on-chain — they&rsquo;re keyed by coordinates the
+              protocol doesn&rsquo;t index (NFT / request ids). A trusted assistant (an off-chain
+              kpk-agents automation, gated by <span className="font-mono">ASSISTANT_ROLE</span>) submits
+              only those coordinates — never amounts. Every value is read live on-chain and ownership
+              re-verified on each read, so a faulty or compromised assistant can only under-report, never
+              over-report; the security council can rotate it. A position shows up here once its
+              coordinate has been submitted.
             </AssistedBadge>
           )}
           {/* The adapter address — the on-chain audit trail (balanceAdapter), explorer-linked. */}

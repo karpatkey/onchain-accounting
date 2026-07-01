@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { TooltipProvider, Tooltip, TooltipContent, TooltipTrigger } from '@karpatkey/design-system'
 import { PriceFeedsTable, type FilterStatus } from '@/components/price-feeds-table'
 import { DashboardNav } from '@/components/dashboard-nav'
@@ -10,9 +10,22 @@ import { useRefreshCooldown } from '@/hooks/use-refresh-cooldown'
 import { isStaleWarning } from '@/lib/format'
 import { DEPLOYED_CHAINS } from '@/config/chains'
 
-function ChainHealthPill({ chainIdx, isActive }: { chainIdx: number; isActive: boolean }) {
+function ChainHealthPill({
+  chainIdx,
+  isActive,
+  onCount,
+}: {
+  chainIdx: number
+  isActive: boolean
+  onCount: (chainId: number, count: number) => void
+}) {
   const data = useChainPriceFeeds(chainIdx)
   const config = DEPLOYED_CHAINS[chainIdx]
+
+  // Report the asset count up so the page can sort chains by it (strip + body share one order).
+  useEffect(() => {
+    if (!data.isLoading) onCount(config.chain.id, data.assets.length)
+  }, [data.isLoading, data.assets.length, config.chain.id, onCount])
 
   const issueCount = data.isLoading
     ? null
@@ -186,6 +199,22 @@ export default function FeedsPage() {
     startCooldown()
   }, [startCooldown])
 
+  // Chains sorted by asset count desc, then alphabetically. Counts are reported up from each chain's
+  // pill (which owns the data); until a chain reports, it sorts as 0 (alphabetical) then settles.
+  const [counts, setCounts] = useState<Record<number, number>>({})
+  const reportCount = useCallback((chainId: number, count: number) => {
+    setCounts((prev) => (prev[chainId] === count ? prev : { ...prev, [chainId]: count }))
+  }, [])
+  const order = useMemo(
+    () =>
+      DEPLOYED_CHAINS.map((_, i) => i).sort((a, b) => {
+        const ca = counts[DEPLOYED_CHAINS[a].chain.id] ?? 0
+        const cb = counts[DEPLOYED_CHAINS[b].chain.id] ?? 0
+        return cb - ca || DEPLOYED_CHAINS[a].label.localeCompare(DEPLOYED_CHAINS[b].label)
+      }),
+    [counts],
+  )
+
   return (
     <TooltipProvider>
       <div className="min-h-screen bg-neutral-200">
@@ -210,8 +239,13 @@ export default function FeedsPage() {
         {/* Health summary strip with scroll overflow + fade mask */}
         <div className="relative">
           <div className="overflow-x-auto no-scrollbar flex items-center gap-x-6 gap-y-2 py-3 px-4 rounded-xl border border-neutral-300 bg-neutral-100 text-sm">
-            {DEPLOYED_CHAINS.map((c, idx) => (
-              <ChainHealthPill key={idx} chainIdx={idx} isActive={activeChainId === c.chain.id} />
+            {order.map((idx) => (
+              <ChainHealthPill
+                key={DEPLOYED_CHAINS[idx].chain.id}
+                chainIdx={idx}
+                isActive={activeChainId === DEPLOYED_CHAINS[idx].chain.id}
+                onCount={reportCount}
+              />
             ))}
           </div>
           {/* Fade mask on the right edge */}
@@ -283,9 +317,9 @@ export default function FeedsPage() {
 
         {/* Chain sections */}
         <div className="space-y-6">
-          {DEPLOYED_CHAINS.map((_, idx) => (
+          {order.map((idx) => (
             <ChainFeedsSection
-              key={`${idx}-${refreshKey}`}
+              key={`${DEPLOYED_CHAINS[idx].chain.id}-${refreshKey}`}
               chainIdx={idx}
               dense={dense}
               filterStatus={filterStatus}

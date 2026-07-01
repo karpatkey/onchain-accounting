@@ -237,19 +237,10 @@ export const adapterInfoAbi = [
   },
 ] as const
 
-// Minimal ERC20 — symbol() to resolve underlying assets not covered by getRegisteredAssets(), and
-// name() as a fallback for meta-instance display names when positionLabels() yields only a generic
-// category (e.g. a StakeWise / Fluid vault whose on-chain label is just "Vault").
+// Minimal ERC20 — only symbol(), to resolve underlying assets not covered by getRegisteredAssets().
 export const erc20Abi = [
   {
     name: 'symbol',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [],
-    outputs: [{ name: '', type: 'string' }],
-  },
-  {
-    name: 'name',
     type: 'function',
     stateMutability: 'view',
     inputs: [],

@@ -33,3 +33,4 @@ Short, numbered records of *why* the codebase looks the way it does. Read these 
 | 0015 | [Assisted balance-adapter family (shared interface + AccessControl base)](0015-assisted-balance-adapter-family.md) | accepted |
 | 0016 | [`isLocked` position status (claimable vs locked) via a static positionId + two-leg split](0016-islocked-position-status.md) | accepted |
 | 0017 | [LP-position valuation: report instantaneous amounts; pool-manipulation out of scope under async NAV consumer](0017-lp-valuation-instantaneous-amounts.md) | accepted |
+| 0019 | [StakeWise V3 exit-queue wrapper-fed adapter (delegatecall feeder, self-submit)](0019-stakewise-v3-exit-queue-wrapper.md) | accepted |

@@ -27,7 +27,7 @@ const PRICE_TYPES = ['Chainlink', 'Redstone', 'API3', 'Custom'] as const
 const PRICE_TYPE_CUSTOM = 3
 
 export type FilterStatus = 'all' | 'fresh' | 'warning'
-type SortKey = 'asset' | 'price' | 'redundancy' | 'status'
+type SortKey = 'asset' | 'price' | 'status'
 type SortDir = 'asc' | 'desc'
 
 // Custom feeds: heartbeat and updatedAt are the worst-case across the feed's underlying
@@ -128,7 +128,6 @@ function sortNodes(nodes: AssetFeedNode[], key: SortKey | null, dir: SortDir): A
     switch (key) {
       case 'asset':      d = a.asset.symbol.localeCompare(b.asset.symbol); break
       case 'price':      d = a.winner.price > b.winner.price ? 1 : a.winner.price < b.winner.price ? -1 : 0; break
-      case 'redundancy': d = a.healthyFeedCount - b.healthyFeedCount; break
       case 'status':     d = assetStatusScore(b) - assetStatusScore(a); break
     }
     return dir === 'asc' ? d : -d

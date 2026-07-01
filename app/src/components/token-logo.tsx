@@ -38,6 +38,8 @@ const SYMBOL_LOGO: Record<string, string> = {
   USDS:     `${CG}/39926/large/usds.webp`,
   sUSDS:    `${CG}/52721/large/sUSDS_Coin.png`,
   GHO:      `${CG}/30663/large/gho-token-logo.png`,
+  // Aave Staked GHO — on-chain symbol is "sGho" (capital S, lowercase gho); reuse the GHO logo.
+  sGho:     `${CG}/30663/large/gho-token-logo.png`,
   crvUSD:   `${CG}/30118/large/crvusd.jpg`,
   LUSD:     `${CG}/14666/large/Group_3.png`,
   FRAX:     `${CG}/13422/large/FRAX_icon.png`,

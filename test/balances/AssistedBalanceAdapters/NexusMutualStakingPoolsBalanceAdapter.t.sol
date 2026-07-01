@@ -316,25 +316,20 @@ contract NexusMutualStakingPoolsBalanceAdapterTest is BalanceAdapterTestBase {
         adapter.clearAccount(holder);
     }
 
-    // ---- Caps + never-revert ----
+    // ---- Uncapped accumulation + never-revert ----
 
-    function test_perAccountCap_revertsWhenFull() public {
-        uint256 cap = adapter.MAX_TOKEN_IDS();
-        for (uint256 i = 0; i < cap; i++) {
+    /// @notice No per-account cap: many owned ids accumulate without reverting.
+    function test_noCap_accumulatesManyIds() public {
+        uint256 count = 100; // well past the old 64 cap
+        for (uint256 i = 0; i < count; i++) {
             uint256 id = i + 1;
             nft.setToken(id, 1, holder);
             viewer.setToken(id, 1, 1, 0, 0);
             adapter.submit(holder, id);
         }
-        assertEq(adapter.tokenIdsOf(holder).length, cap);
-
-        // One more (a genuinely new id) is fail-loud.
-        uint256 overflowId = cap + 1;
-        nft.setToken(overflowId, 1, holder);
-        viewer.setToken(overflowId, 1, 1, 0, 0);
-        vm.expectRevert(abi.encodeWithSelector(TokenIdCacheFull.selector, holder, cap));
-        adapter.submit(holder, overflowId);
-        assertEq(adapter.tokenIdsOf(holder).length, cap);
+        assertEq(adapter.tokenIdsOf(holder).length, count);
+        (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, address(nxm));
+        assertEq(amt, count); // 1 active NXM each
     }
 
     function test_viewerReverts_balanceZero() public {

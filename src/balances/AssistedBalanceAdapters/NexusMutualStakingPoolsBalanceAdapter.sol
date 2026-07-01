@@ -61,13 +61,6 @@ contract NexusMutualStakingPoolsBalanceAdapter is AccessControl, IBalanceAdapter
     bytes32 private constant PROTOCOL_ID = ProtocolIds.NEXUS_MUTUAL;
     bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.NEXUS_MUTUAL_STAKING_POOLS;
 
-    /// @notice Hard cap on cached tokenIds per account. The read path iterates the cache (one `tokenInfo` per id) and
-    ///         hands each survivor to `getTokens` (one call per id), which iterates each token's tranches — an
-    ///         unbounded set could OOG inside the viewer (NOT caught by NAVCalculator's try/catch). 64 is generous
-    ///         headroom over a real account (the OIV Safes hold a handful); the wrapper GCs closed positions on
-    ///         withdraw.
-    uint256 public constant MAX_TOKEN_IDS = 64;
-
     //
     // State
     //
@@ -137,12 +130,13 @@ contract NexusMutualStakingPoolsBalanceAdapter is AccessControl, IBalanceAdapter
 
     /// @notice Track `tokenId` for `account` (idempotent). Called by the wrapper right after it forwards a deposit that
     ///         minted / topped-up the position. **Reverts** `NotTokenOwner` if `tokenId` is not currently owned by
-    ///         `account`, and `TokenIdCacheFull` if a new id would grow the set past {MAX_TOKEN_IDS}.
+    ///         `account`. No per-account cap: the wrapper only ever adds ids the caller owns via a real Nexus deposit,
+    ///         so the set is bounded by the account's own deposits; a pathological account's large read is self-
+    ///         inflicted and fail-opens (per-adapter) in NAVCalculator, never affecting other accounts.
     function submit(address account, uint256 tokenId) external onlyRole(WRAPPER_ROLE) {
         if (account == address(0)) revert InvalidArguments();
         EnumerableSet.UintSet storage set = _tokenIds[account];
         if (set.contains(tokenId)) return; // idempotent — nothing to validate or emit
-        if (set.length() >= MAX_TOKEN_IDS) revert TokenIdCacheFull(account, MAX_TOKEN_IDS);
         // Fail-loud ownership check: a non-owned / burned / non-existent id is a caller mistake.
         (address owner, bool ok) = _ownerOf(tokenId);
         if (!ok || owner != account) revert NotTokenOwner(account, tokenId);

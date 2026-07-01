@@ -155,6 +155,40 @@ contract EtherFiWithdrawalQueueWrapperTest is Test {
         new EtherFiWithdrawalQueueWrapper(makeAddr("eoa"), address(lp), address(nft), address(eeth));
     }
 
+    function test_constructor_revertsOnZeroLp() public {
+        vm.expectRevert(InvalidArguments.selector);
+        new EtherFiWithdrawalQueueWrapper(address(adapter), address(0), address(nft), address(eeth));
+    }
+
+    function test_constructor_revertsOnZeroNft() public {
+        vm.expectRevert(InvalidArguments.selector);
+        new EtherFiWithdrawalQueueWrapper(address(adapter), address(lp), address(0), address(eeth));
+    }
+
+    function test_constructor_revertsOnZeroEeth() public {
+        vm.expectRevert(InvalidArguments.selector);
+        new EtherFiWithdrawalQueueWrapper(address(adapter), address(lp), address(nft), address(0));
+    }
+
+    function test_constructor_revertsWhenLpNotContract() public {
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "LiquidityPool"));
+        new EtherFiWithdrawalQueueWrapper(address(adapter), makeAddr("eoaLp"), address(nft), address(eeth));
+    }
+
+    function test_constructor_revertsWhenNftNotContract() public {
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "WithdrawRequestNFT"));
+        new EtherFiWithdrawalQueueWrapper(address(adapter), address(lp), makeAddr("eoaNft"), address(eeth));
+    }
+
+    function test_constructor_revertsWhenEethNotContract() public {
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "eETH"));
+        new EtherFiWithdrawalQueueWrapper(address(adapter), address(lp), address(nft), makeAddr("eoaEeth"));
+    }
+
+    function test_SELF_isWrapperAddress() public view {
+        assertEq(wrapper.SELF(), address(wrapper));
+    }
+
     // ---- requestWithdraw (DELEGATECALL by the owning Safe) ----
 
     function test_requestWithdraw_delegatecall_pullsEethFromSafe_mintsToSafe_andTracks() public {
@@ -224,5 +258,29 @@ contract EtherFiWithdrawalQueueWrapperTest is Test {
         uint256[] memory ids = adapter.tokenIdsOf(address(safe));
         assertEq(ids.length, 1);
         assertEq(ids[0], id, "id registered for the Safe via the wrapper");
+    }
+
+    /// @notice The submit forwarder keys on msg.sender: submitting an id owned by someone else reverts NotTokenOwner
+    ///         (a caller can only register its own owned ids).
+    function test_submit_forwarder_revertsWhenCallerNotOwner() public {
+        uint256 id = nft.mint(address(this), 1 ether); // owned by the test contract, not the Safe
+        vm.prank(address(safe));
+        vm.expectRevert(abi.encodeWithSelector(NotTokenOwner.selector, address(safe), id));
+        wrapper.submit(id);
+    }
+
+    /// @notice The remove forwarder reverts NotTokenOwner if msg.sender does not own the id (never tracked / non-owned).
+    function test_remove_forwarder_revertsWhenCallerNotOwner() public {
+        vm.prank(address(safe));
+        vm.expectRevert(abi.encodeWithSelector(NotTokenOwner.selector, address(safe), uint256(999)));
+        wrapper.remove(999);
+    }
+
+    /// @notice A delegatecalled claim of an id the Safe does not own reverts NotTokenOwner (from the pre-burn remove,
+    ///         before ether.fi's own owner check).
+    function test_claimWithdraw_delegatecall_unownedId_reverts() public {
+        uint256 id = nft.mint(address(this), 1 ether); // owned by the test contract, not the Safe
+        vm.expectRevert(abi.encodeWithSelector(NotTokenOwner.selector, address(safe), id));
+        safe.doClaimDelegate(address(wrapper), id);
     }
 }

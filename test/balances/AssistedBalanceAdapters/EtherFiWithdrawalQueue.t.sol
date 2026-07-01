@@ -27,9 +27,24 @@ contract MockWithdrawRequestNFT {
     mapping(uint256 => bool) private _finalized;
     mapping(uint256 => uint256) private _claimable;
     bool public revertGetRequest;
+    bool public revertIsValid;
+    bool public revertIsFinalized;
+    bool public revertGetClaimable;
 
     function setRevertGetRequest(bool v) external {
         revertGetRequest = v;
+    }
+
+    function setRevertIsValid(bool v) external {
+        revertIsValid = v;
+    }
+
+    function setRevertIsFinalized(bool v) external {
+        revertIsFinalized = v;
+    }
+
+    function setRevertGetClaimable(bool v) external {
+        revertGetClaimable = v;
     }
 
     function setRequest(
@@ -64,14 +79,17 @@ contract MockWithdrawRequestNFT {
     }
 
     function getClaimableAmount(uint256 id) external view returns (uint256) {
+        require(!revertGetClaimable, "getClaimableAmount reverted");
         return _claimable[id];
     }
 
     function isFinalized(uint256 id) external view returns (bool) {
+        require(!revertIsFinalized, "isFinalized reverted");
         return _finalized[id];
     }
 
     function isValid(uint256 id) external view returns (bool) {
+        require(!revertIsValid, "isValid reverted");
         return _req[id].isValid;
     }
 }
@@ -464,5 +482,171 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterTest is BalanceAdapterTestB
         vm.expectRevert(abi.encodeWithSelector(TokenIdCacheFull.selector, holder, cap));
         adapter.submit(holder, cap + 1);
         assertEq(adapter.tokenIdsOf(holder).length, cap, "cache unchanged after the reverted submit");
+    }
+
+    // ---- Additional constructor guards ----
+
+    function test_constructor_revertsOnZeroNav() public {
+        vm.expectRevert(InvalidArguments.selector);
+        new EtherFiWithdrawalQueueAssistedBalanceAdapter(
+            address(nft), address(lp), NATIVE, address(0), address(this), address(this)
+        );
+    }
+
+    function test_constructor_revertsOnZeroAdmin() public {
+        vm.expectRevert(InvalidArguments.selector);
+        new EtherFiWithdrawalQueueAssistedBalanceAdapter(
+            address(nft), address(lp), NATIVE, address(balances), address(0), address(this)
+        );
+    }
+
+    function test_constructor_revertsWhenLpNotContract() public {
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "LiquidityPool"));
+        new EtherFiWithdrawalQueueAssistedBalanceAdapter(
+            address(nft), makeAddr("eoaLp"), NATIVE, address(balances), address(this), address(this)
+        );
+    }
+
+    function test_constructor_revertsWhenNavNotContract() public {
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "NAVCalculator"));
+        new EtherFiWithdrawalQueueAssistedBalanceAdapter(
+            address(nft), address(lp), NATIVE, makeAddr("eoaNav"), address(this), address(this)
+        );
+    }
+
+    // ---- Events ----
+
+    event TokenIdSubmitted(address indexed account, uint256 indexed tokenId);
+    event TokenIdCleared(address indexed account, uint256 indexed tokenId);
+    event AccountCleared(address indexed account);
+
+    function test_submit_emitsTokenIdSubmitted() public {
+        nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
+        vm.expectEmit(true, true, false, true, address(adapter));
+        emit TokenIdSubmitted(holder, 1);
+        adapter.submit(holder, 1);
+    }
+
+    function test_remove_emitsTokenIdCleared() public {
+        nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
+        adapter.submit(holder, 1);
+        vm.expectEmit(true, true, false, true, address(adapter));
+        emit TokenIdCleared(holder, 1);
+        adapter.remove(holder, 1);
+    }
+
+    function test_clearAccount_emitsAndClearsMultiple() public {
+        nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
+        nft.setRequest(2, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
+        adapter.submit(holder, 1);
+        adapter.submit(holder, 2);
+        assertEq(adapter.tokenIdsOf(holder).length, 2);
+        vm.expectEmit(true, false, false, false, address(adapter));
+        emit AccountCleared(holder);
+        adapter.clearAccount(holder);
+        assertEq(adapter.tokenIdsOf(holder).length, 0);
+    }
+
+    // ---- submit / remove edge cases ----
+
+    /// @notice A resubmit of an id the account has since transferred away reverts (ownership re-checked every call).
+    function test_submit_resubmitAfterTransfer_reverts() public {
+        nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
+        adapter.submit(holder, 1);
+        nft.setRequest(1, other, 1 ether, 1 ether, true, 0, true, 1 ether); // transferred to other
+        vm.expectRevert(abi.encodeWithSelector(NotTokenOwner.selector, holder, uint256(1)));
+        adapter.submit(holder, 1);
+        assertEq(adapter.tokenIdsOf(holder).length, 1, "prior cache entry preserved");
+    }
+
+    /// @notice remove of an owned-but-untracked id passes the ownership check and is a no-op (nothing cached).
+    function test_remove_uncachedOwnedId_noOp() public {
+        nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
+        adapter.remove(holder, 1); // owned but never submitted → no revert, no-op
+        assertEq(adapter.tokenIdsOf(holder).length, 0);
+    }
+
+    // ---- IBalanceAdapter getter branches ----
+
+    function test_getAdapterBalanceForAsset_wrongAsset_zero() public {
+        nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
+        adapter.submit(holder, 1);
+        (uint256 amt, bool d) = adapter.getAdapterBalanceForAsset(holder, address(0xdead));
+        assertEq(amt, 0);
+        assertEq(d, false);
+    }
+
+    function test_getAdapterBalanceForAsset_zeroAccount_zero() public view {
+        (uint256 amt, bool d) = adapter.getAdapterBalanceForAsset(address(0), NATIVE);
+        assertEq(amt, 0);
+        assertEq(d, false);
+    }
+
+    function test_getAdapterBalances_emptyWhenZero() public view {
+        (address[] memory a, uint256[] memory amts, bool[] memory d) = adapter.getAdapterBalances(holder);
+        assertEq(a.length, 0);
+        assertEq(amts.length, 0);
+        assertEq(d.length, 0);
+    }
+
+    function test_getAdapterBalances_reportsTotal() public {
+        nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
+        nft.setRequest(2, holder, 3 ether, 3 ether, true, 0, true, 3 ether);
+        adapter.submit(holder, 1);
+        adapter.submit(holder, 2);
+        (address[] memory a, uint256[] memory amts, bool[] memory d) = adapter.getAdapterBalances(holder);
+        assertEq(a.length, 1);
+        assertEq(a[0], NATIVE);
+        assertEq(amts[0], 4 ether);
+        assertEq(d[0], false);
+    }
+
+    function test_getAdapterPositions_zeroAccount_empty() public view {
+        assertEq(adapter.getAdapterPositions(address(0), address(0)).length, 0);
+    }
+
+    function test_getAdapterPositions_assetFilterUnderlying_returnsLegs() public {
+        nft.setRequest(1, holder, 2 ether, 2 ether, true, 0, true, 2 ether);
+        adapter.submit(holder, 1);
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, NATIVE);
+        assertEq(p.length, 1);
+        assertEq(p[0].amount, 2 ether);
+    }
+
+    /// @notice A cached id that values to 0 (e.g. invalidated) emits no leg; owned ones still do.
+    function test_getAdapterPositions_zeroOwedLeg_skipped() public {
+        nft.setRequest(1, holder, 2 ether, 2 ether, true, 0, true, 2 ether); // valued → leg
+        nft.setRequest(2, holder, 1 ether, 1 ether, false, 0, true, 1 ether); // owned but invalid → owed 0 → skipped
+        adapter.submit(holder, 1);
+        adapter.submit(holder, 2);
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
+        assertEq(p.length, 1, "zero-owed (invalid) leg skipped");
+        assertEq(p[0].positionInstanceId, bytes32(uint256(1)));
+    }
+
+    // ---- Remaining live-read try/catch branches (never-revert) ----
+
+    function test_finalized_getClaimableAmountReverts_dropped() public {
+        nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether); // finalized
+        adapter.submit(holder, 1);
+        nft.setRevertGetClaimable(true);
+        (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, NATIVE);
+        assertEq(amt, 0);
+    }
+
+    function test_isFinalizedReverts_dropped() public {
+        nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, false, 0);
+        adapter.submit(holder, 1);
+        nft.setRevertIsFinalized(true);
+        (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, NATIVE);
+        assertEq(amt, 0);
+    }
+
+    function test_isValidReverts_dropped() public {
+        nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
+        adapter.submit(holder, 1);
+        nft.setRevertIsValid(true);
+        (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, NATIVE);
+        assertEq(amt, 0);
     }
 }

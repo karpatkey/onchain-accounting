@@ -93,7 +93,7 @@ contract NexusMutualStakingPoolsWrapper {
         // destination = address(this): the account stakes its own NXM and owns the minted NFT, so the adapter's live
         // ownership re-verification always passes for it.
         tokenId = INexusStakingPool(poolAddress).depositTo(amount, trancheId, requestTokenId, address(this));
-        INexusStakingPoolsBalanceAdapterFeed(ADAPTER).submit(address(this), tokenId);
+        INexusMutualStakingPoolsAssistedBalanceAdapter(ADAPTER).submit(address(this), tokenId);
     }
 
     /// @notice Withdraw stake and/or rewards from `tokenId` in pool `poolAddress` (to the account, which owns it) and
@@ -115,7 +115,7 @@ contract NexusMutualStakingPoolsWrapper {
     ) external onlyDelegateCall returns (uint256 withdrawnStake, uint256 withdrawnRewards) {
         (withdrawnStake, withdrawnRewards) =
             INexusStakingPool(poolAddress).withdraw(tokenId, withdrawStake, withdrawRewards, trancheIds);
-        INexusStakingPoolsBalanceAdapterFeed(ADAPTER).remove(address(this), tokenId);
+        INexusMutualStakingPoolsAssistedBalanceAdapter(ADAPTER).remove(address(this), tokenId);
     }
 }
 
@@ -134,7 +134,7 @@ interface INexusStakingPool {
 }
 
 /// @notice Minimal interface for the wrapper-fed balance adapter's `SUBMITTER_ROLE`-gated feed surface.
-interface INexusStakingPoolsBalanceAdapterFeed {
+interface INexusMutualStakingPoolsAssistedBalanceAdapter {
     function submit(address account, uint256 tokenId) external;
     function remove(address account, uint256 tokenId) external;
 }

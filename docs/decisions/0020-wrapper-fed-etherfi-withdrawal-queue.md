@@ -1,0 +1,39 @@
+# 0020 — Wrapper-fed ether.fi withdrawal-queue adapter (`WRAPPER_ROLE`, delegatecalled claim)
+
+Status: accepted
+
+## Context
+
+The assisted balance-adapter family (ADR [0015](0015-assisted-balance-adapter-family.md)) covers adapters that cannot derive a position from on-chain state alone and need a trusted party to submit position *coordinates* (never amounts), which the adapter then values live and re-verifies per read — so the feeder can only under-report. ether.fi's withdrawal queue is one such case: requesting a withdrawal burns eETH/weETH and mints a non-enumerable `WithdrawRequestNFT`, invisible to a pure-view NAV scan. Today `EtherFiWithdrawalQueueAssistedBalanceAdapter` tracks these via an **off-chain** `ASSISTANT_ROLE` agent that polls and submits the account's `tokenId`s — leaving a staleness window between the on-chain request and the agent's next submission, and depending on an off-chain process staying live.
+
+The **wrapper-fed** approach (introduced for Nexus Mutual by ADR 0018) removes both: route the request/claim through a wrapper contract that pushes/pops the `requestId` into the adapter **atomically, in the same transaction**, with no off-chain component. This ADR adds a wrapper-fed adapter for ether.fi's withdrawal queue and captures the one way ether.fi differs materially from Nexus: **the claim is owner-only**.
+
+### The ether.fi-specific constraint (why the claim is delegatecalled)
+
+Verified against the live mainnet contracts:
+
+- `LiquidityPool.requestWithdraw(address recipient, uint256 amount)` pulls `amount` eETH from `msg.sender` and mints the `WithdrawRequestNFT` **to `recipient`**.
+- `WithdrawRequestNFT.claimWithdraw(uint256 tokenId)` does `require(ownerOf(tokenId) == msg.sender)`, **ignores ERC721 approvals**, burns the NFT and sends the ETH to `ownerOf`. `batchClaimWithdraw` has the same check; `seizeInvalidRequest` is `onlyOwner`. **There is no permissionless claim-on-behalf.**
+
+For Nexus, `withdraw` is permissionless and routes funds to the NFT owner regardless of caller, so the wrapper can `withdraw` with a normal CALL and pop the id via its `WRAPPER_ROLE`. ether.fi's owner-only claim breaks that: a `WRAPPER_ROLE` wrapper contract can never be the NFT owner *and* the tracked account at once without either (a) owning every depositor's NFT (which breaks per-account ownership re-verification) or (b) being able to claim an NFT it does not own (which the protocol forbids). Delegatecall cannot bridge this — running the wrapper's code under delegatecall executes in the caller's storage (breaking the wrapper's own roles) and does not change what a *third* contract sees as `msg.sender`.
+
+## Decision
+
+Add `EtherFiWithdrawalQueueBalanceAdapter` (wrapper-fed) alongside — **not replacing** — the assistant-fed adapter, plus `EtherFiWithdrawalQueueWrapper`. Same trust model and family invariant as ADR 0015 (cache coordinates only, value live, re-verify ownership per read → the feeder can only under-report), fed by an **on-chain contract holding `WRAPPER_ROLE`**, with an **incremental** single add/remove submit surface.
+
+- **`IWrapperFedBalanceAdapter` / `WrapperFedBalanceAdapter`** — the wrapper-fed peer of `IAssistedBalanceAdapter` / `AssistedBalanceAdapter`: `DEFAULT_ADMIN_ROLE` administers `WRAPPER_ROLE`; constructor `(admin, wrapper)` with the wrapper optional (granted after the wrapper is deployed, since the wrapper needs the adapter's address at construction). These mirror the same-named contracts introduced by ADR 0018; this PR is built independently on `main` and introduces its own copy — a follow-up should converge the two when both land.
+- **`WrapperFedNftCacheAdapter`** — `EnumerableSet.UintSet`-per-account id cache with `submit(account, tokenId)` / `remove(account, tokenId)` (`onlyRole(WRAPPER_ROLE)`, fail-loud `NotTokenOwner`/`TokenIdCacheFull`), an admin `clearAccount` rescue, and a **permissionless `pruneStale(account, tokenId)`** that removes an id **only if** it is provably no longer owned by the account (burned/transferred) — it can only ever remove a dead entry, never a live position.
+- **`EtherFiWithdrawalQueueBalanceAdapter`** — wires the cache to the shared, feeder-agnostic `EtherFiWithdrawalValuationBase` (ether.fi addresses, position identity `etherfi` / `etherfi-withdrawal`, and the `finalized → getClaimableAmount` / `pending → min(amountOfEEth, amountForShare) − fee` valuation) and the single-asset getter triad. Reports exactly the same positions as the assistant-fed sibling; only the feeder and submit surface differ.
+- **`EtherFiWithdrawalQueueWrapper`** — `DEPOSITOR_ROLE`-gated forwarder used in **two execution modes**:
+  - `requestWithdraw(recipient, amount)` — a **normal CALL**. Pulls the exact `amount` of eETH from the DEPOSITOR, forwards to `LiquidityPool.requestWithdraw(recipient = msg.sender, amount)` (so the NFT is owned by the DEPOSITOR, matching the adapter's ownership re-verification), and `submit`s the returned `requestId` for the DEPOSITOR. `recipient` is pinned to `msg.sender` to keep ether.fi's exact signature while removing the third-party-mint footgun.
+  - `claimWithdraw(tokenId)` — **DELEGATECALLed by the owning Safe**, so `msg.sender` seen by the NFT is the Safe (== owner) and the ETH flows straight to the Safe. Immutables are readable under delegatecall; the function takes no role guard and touches no wrapper storage (both would be the Safe's under delegatecall). It cleans the cache via the adapter's permissionless `pruneStale(address(this), tokenId)` — which succeeds only because the claim just burned the NFT.
+
+## Consequences
+
+- ether.fi withdrawals gain an on-chain, atomically-maintained tracking path; the assistant-fed adapter (ADR 0014/0015) is **kept** alongside it — both coexist, and which to register on `NAVCalculator` is a config decision.
+- The wrapper is deliberately dual-mode: **CALL** `requestWithdraw`, **DELEGATECALL** `claimWithdraw`. karpatkey Zodiac Roles can be configured per-function accordingly. Invoked the wrong way, each mode fails safe (a direct CALL to `claimWithdraw` by a non-owner reverts inside the NFT; a delegatecall of `requestWithdraw` reverts on the role checks). **EOA depositors cannot use the delegatecalled claim** (an EOA cannot delegatecall) — they claim directly on ether.fi; the intended DEPOSITORs are Safe/Avatar accounts.
+- `_safeMint` mints the `WithdrawRequestNFT` to the DEPOSITOR Safe, which requires the Safe's fallback handler to implement `onERC721Received` (karpatkey Safes do; the assistant-fed adapter already assumes Safes hold these NFTs).
+- On-claim cache cleanup relies on `pruneStale` (permissionless, provably-stale-only) rather than a `WRAPPER_ROLE` `remove`, because the claim runs outside the wrapper's role context. NAV correctness never depends on it — the adapter re-verifies ownership per read, so a burned id already values to 0.
+- The wrapper-fed adapter remains a documented immutability exception (assisted family), expressed through `WRAPPER_ROLE`. The family invariant is unchanged, so the safety argument (feeder can only under-report) carries over verbatim.
+- **Deploy/config wiring is deferred** to a follow-up (as ADR 0018 did for Nexus). When wired: deploy the adapter (`wrapper = address(0)`) → deploy the wrapper (needs the adapter address) → admin `grantRole(WRAPPER_ROLE, wrapper)` → grant `DEPOSITOR_ROLE`s → register the adapter on `NAVCalculator`.
+- This ADR aligns with ADR 0018's wrapper-fed family; when PR #135 and this work both land, the duplicated `IWrapperFedBalanceAdapter` / `WrapperFedBalanceAdapter` bases (and the family ADRs) should be reconciled.

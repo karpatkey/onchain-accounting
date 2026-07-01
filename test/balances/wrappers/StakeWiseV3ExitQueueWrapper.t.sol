@@ -199,15 +199,7 @@ contract StakeWiseV3ExitQueueWrapperTest is BalanceAdapterTestBase {
                 IAccessControl.AccessControlUnauthorizedAccount.selector, stranger, keccak256("DEPOSITOR_ROLE")
             )
         );
-        w.submit(stranger, address(vault), 1000, block.timestamp);
-    }
-
-    function test_submit_standalone_revertsWhenAccountNotSender() public {
-        (StakeWiseV3ExitQueueWrapper w,) = _wrapperWithMockTracker();
-        // safe holds DEPOSITOR_ROLE but tries to track a position for someone else → self-scope guard trips.
-        vm.prank(address(safe));
-        vm.expectRevert(NotAuthorized.selector);
-        w.submit(makeAddr("other"), address(vault), 1000, block.timestamp);
+        w.submit(address(vault), 1000, block.timestamp);
     }
 
     // ---- Constructor ----

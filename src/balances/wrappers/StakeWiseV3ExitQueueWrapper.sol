@@ -31,7 +31,7 @@ import "src/errors.sol";
 ///      Instead they call **back into the singleton** ({submit}/{remove}) via {SELF}; those functions run in the
 ///      singleton's context and forward to the adapter, so the adapter sees `msg.sender = the singleton` and grants
 ///      `WRAPPER_ROLE` **only to this wrapper**. {submit}/{remove} are `onlyRole(DEPOSITOR_ROLE)` (the caller Safe must
-///      be an approved depositor) and require `account == msg.sender` (a depositor can only track its OWN tickets);
+///      be an approved depositor) and track the caller (`msg.sender`), so a depositor can only track its OWN tickets;
 ///      they may also be called standalone by an approved depositor. See
 ///      `docs/decisions/0019-stakewise-v3-exit-queue-wrapper.md` (StakeWise-specific instance of the wrapper-fed
 ///      assisted family, ADR 0018).
@@ -91,28 +91,26 @@ contract StakeWiseV3ExitQueueWrapper is AccessControl {
 
         positionTicket = IStakeWiseVaultEnterExit(vault).enterExitQueue(shares, address(this));
         // Feed the adapter via the singleton (a real call to SELF), not directly, so the adapter's WRAPPER_ROLE is held
-        // only by this wrapper — never by the depositor Safe. {submit} re-checks the depositor role + account.
-        StakeWiseV3ExitQueueWrapper(SELF).submit(address(this), vault, positionTicket, block.timestamp);
+        // only by this wrapper — never by the depositor Safe. {submit} re-checks the depositor role and tracks the
+        // caller (this Safe, the SELF-call's msg.sender).
+        StakeWiseV3ExitQueueWrapper(SELF).submit(vault, positionTicket, block.timestamp);
         emit ExitQueueEntered(address(this), vault, positionTicket, block.timestamp);
     }
 
-    /// @notice Forward one exit-queue ticket to the adapter for `account`. Runs on the wrapper **singleton** (so the
-    ///         adapter call carries `msg.sender = this wrapper`, holder of the adapter's `WRAPPER_ROLE`). Invoked by
-    ///         {enterExitQueue} via {SELF}, or standalone by an approved depositor. `onlyRole(DEPOSITOR_ROLE)` and
-    ///         `account == msg.sender` — a depositor can only track its OWN tickets.
+    /// @notice Forward one exit-queue ticket to the adapter for the caller (`msg.sender`). Runs on the wrapper
+    ///         **singleton** (so the adapter call carries `msg.sender = this wrapper`, holder of the adapter's
+    ///         `WRAPPER_ROLE`). Invoked by {enterExitQueue} via {SELF}, or standalone by an approved depositor.
+    ///         `onlyRole(DEPOSITOR_ROLE)`; the tracked account is always the caller, so a depositor can only track its
+    ///         OWN tickets.
     /// @dev This is `external` by necessity: {enterExitQueue} runs in the Safe's context (delegatecall) and can only
     ///      reach the singleton — where the adapter must see `msg.sender = this wrapper` — through a real `CALL` to
     ///      {SELF}. That call is indistinguishable from a depositor calling this function directly (both carry
     ///      `msg.sender = the Safe`, and the EVM has no call-stack introspection), so this **cannot** be restricted to
     ///      "only via {enterExitQueue}". It doesn't need to be: the adapter re-validates every ticket live on-chain
-    ///      (StakeWise-registered vault + non-zero owed for `account`), so a standalone call can only ever register a
-    ///      real, account-owned, in-queue position — exactly what {enterExitQueue} would. See ADR 0019.
-    function submit(address account, address vault, uint256 positionTicket, uint256 timestamp)
-        external
-        onlyRole(DEPOSITOR_ROLE)
-    {
-        if (account != msg.sender) revert NotAuthorized();
-        IStakeWiseExitQueueTracker(ADAPTER).submit(account, vault, positionTicket, timestamp);
+    ///      (StakeWise-registered vault + non-zero owed for the account), so a standalone call can only ever register a
+    ///      real, caller-owned, in-queue position — exactly what {enterExitQueue} would. See ADR 0019.
+    function submit(address vault, uint256 positionTicket, uint256 timestamp) external onlyRole(DEPOSITOR_ROLE) {
+        IStakeWiseExitQueueTracker(ADAPTER).submit(msg.sender, vault, positionTicket, timestamp);
     }
 
     /// @notice Claim exited assets for a queue position and deregister its ticket from the adapter. Signature mirrors
@@ -132,22 +130,18 @@ contract StakeWiseV3ExitQueueWrapper is AccessControl {
 
         IStakeWiseVaultEnterExit(vault).claimExitedAssets(positionTicket, timestamp, exitQueueIndex);
         // Deregister via the singleton (see {enterExitQueue}); keeps WRAPPER_ROLE off the depositor Safe.
-        StakeWiseV3ExitQueueWrapper(SELF).remove(address(this), vault, positionTicket, timestamp);
+        StakeWiseV3ExitQueueWrapper(SELF).remove(vault, positionTicket, timestamp);
         emit ExitedAssetsClaimed(address(this), vault, positionTicket, timestamp);
     }
 
-    /// @notice Deregister one exit-queue ticket from the adapter for `account`. Runs on the wrapper singleton; same
-    ///         gating as {submit} (`onlyRole(DEPOSITOR_ROLE)` + `account == msg.sender`). Invoked by
+    /// @notice Deregister one exit-queue ticket from the adapter for the caller (`msg.sender`). Runs on the wrapper
+    ///         singleton; same gating as {submit} (`onlyRole(DEPOSITOR_ROLE)`, tracked account = caller). Invoked by
     ///         {claimExitedAssets} via {SELF}, or standalone by an approved depositor.
     /// @dev `external` for the same delegatecall reason as {submit}, and likewise not restrictable to "only via
     ///      {claimExitedAssets}". Deregistering keeps NAV within the family's under-report-only invariant, and stale
     ///      tickets already read as 0 anyway.
-    function remove(address account, address vault, uint256 positionTicket, uint256 timestamp)
-        external
-        onlyRole(DEPOSITOR_ROLE)
-    {
-        if (account != msg.sender) revert NotAuthorized();
-        IStakeWiseExitQueueTracker(ADAPTER).remove(account, vault, positionTicket, timestamp);
+    function remove(address vault, uint256 positionTicket, uint256 timestamp) external onlyRole(DEPOSITOR_ROLE) {
+        IStakeWiseExitQueueTracker(ADAPTER).remove(msg.sender, vault, positionTicket, timestamp);
     }
 
     /// @dev Delegatecall-safe `DEPOSITOR_ROLE` gate: checks the executing Safe (`address(this)`) against the wrapper

@@ -190,6 +190,17 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
         adapter.submit(address(vault), TICKET, TS);
     }
 
+    function test_submit_revertsWhenTicketOwnedByOtherAccount() public {
+        // The exit position belongs to `other` (it is the receiver). `holder` cannot submit it: the on-chain
+        // ownership proxy calculateExitedAssets(holder,…) is 0, so submit reverts InvalidExitPosition.
+        vault.setIndex(TICKET, 1);
+        vault.setRequest(other, TICKET, TS, 0, 1 ether);
+        vm.prank(holder);
+        vm.expectRevert(abi.encodeWithSelector(InvalidExitPosition.selector, holder, address(vault), TICKET));
+        adapter.submit(address(vault), TICKET, TS);
+        assertEq(adapter.positionsOf(holder).length, 0);
+    }
+
     function test_remove_dropsTrackedPosition() public {
         vault.setIndex(TICKET, 1);
         vault.setRequest(holder, TICKET, TS, 0, 1 ether);

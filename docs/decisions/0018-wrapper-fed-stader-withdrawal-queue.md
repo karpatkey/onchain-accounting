@@ -50,12 +50,14 @@ files (the shared `WrapperFed*` bases are intentionally deferred — see Consequ
   never a live position. Valuation is unchanged from the plain adapter (`ethFinalized` once finalized, else the
   rate-converted `ethExpected`; `isLocked = !finalized`), emitting one `Supplied` leg per owned cached request under the
   static `positionId = abi.encode(USER_WITHDRAWAL_MANAGER)`, with the request id in the typed `positionInstanceId`.
-- **`StaderWithdrawalQueueWrapper`** — `DEPOSITOR_ROLE`-gated forwarder used in **two execution modes**:
-  - `requestWithdraw(_ethXAmount, _owner)` — a **normal CALL**. Pulls the exact ETHx from the DEPOSITOR, `forceApprove`s
+- **`StaderWithdrawalQueueWrapper`** — a **permissionless** forwarder (no roles, holds no funds) used in **two execution
+  modes**:
+  - `requestWithdraw(_ethXAmount, _owner)` — a **normal CALL**. Pulls the exact ETHx from the caller, `forceApprove`s
     it to the manager, forwards to `requestWithdraw(_ethXAmount, _owner = msg.sender)` (so the request is owned by the
-    DEPOSITOR, matching the adapter's ownership re-verification), and `submit`s the returned `requestId` for the
-    DEPOSITOR. `_owner` is pinned to `msg.sender` to keep Stader's exact signature while removing the third-party-owner
-    footgun.
+    caller, matching the adapter's ownership re-verification), and `submit`s the returned `requestId` for the caller.
+    `_owner` is pinned to `msg.sender` to keep Stader's exact signature while ensuring a permissionless caller can only
+    ever affect its own cache entry — it cannot create a request owned by / tracked for a third party (no victim
+    cache-bloat).
   - `claim(_requestId)` — **DELEGATECALLed by the owning Safe**, so `msg.sender` seen by the manager is the Safe
     (== owner) and the ETH flows straight to the Safe. Immutables are readable under delegatecall; the function takes no
     role guard and touches no wrapper storage (both would be the Safe's under delegatecall). It cleans the cache via the
@@ -67,10 +69,9 @@ files (the shared `WrapperFed*` bases are intentionally deferred — see Consequ
 - The plain enumerating adapter is **removed** (not kept alongside): the wrapper-fed path is strictly the safer source
   of the same positions, and the grief vector on the enumerating version is a real reason not to leave it registered.
 - The wrapper is deliberately dual-mode: **CALL** `requestWithdraw`, **DELEGATECALL** `claim`. karpatkey Zodiac Roles
-  can be configured per-function accordingly. Invoked the wrong way, each mode fails safe (a direct CALL to `claim`
-  reverts inside the manager with `CallerNotAuthorizedToRedeem`; a delegatecall of `requestWithdraw` reverts on the role
-  checks). **EOA depositors cannot use the delegatecalled claim** (an EOA cannot delegatecall) — they claim directly on
-  Stader; the intended DEPOSITORs are Safe/Avatar accounts.
+  can be configured per-function accordingly. A direct CALL to `claim` by a non-owner fails safe (reverts inside the
+  manager with `CallerNotAuthorizedToRedeem`). **EOA callers cannot use the delegatecalled claim** (an EOA cannot
+  delegatecall) — they claim directly on Stader; the intended claimers are Safe/Avatar accounts.
 - On-claim cache cleanup relies on `pruneStale` (permissionless, provably-stale-only) rather than a `SUBMITTER_ROLE`
   `remove`, because the claim runs outside the wrapper's role context. NAV correctness never depends on it — the adapter
   re-verifies ownership per read, so a claimed id already values to 0.
@@ -78,8 +79,9 @@ files (the shared `WrapperFed*` bases are intentionally deferred — see Consequ
   `SUBMITTER_ROLE`. The family invariant is unchanged, so the safety argument (feeder can only under-report) carries
   over verbatim.
 - **Deploy/config wiring is deferred** to a follow-up. When wired: deploy the adapter (`submitter = address(0)`) → deploy
-  the wrapper (needs the adapter address) → admin `grantRole(SUBMITTER_ROLE, wrapper)` → grant `DEPOSITOR_ROLE`s →
-  register the adapter on `NAVCalculator`. The deploy script (`04_DeployBalanceAdapters`) already constructs the adapter
+  the wrapper (needs the adapter address) → admin `grantRole(SUBMITTER_ROLE, wrapper)` → register the adapter on
+  `NAVCalculator`. The wrapper itself is permissionless, so there are no depositor roles to grant. The deploy script
+  (`04_DeployBalanceAdapters`) already constructs the adapter
   with `admin = chainConfig.admin` and `submitter = address(0)`.
 - The shared `WrapperFed*` bases (`IWrapperFedBalanceAdapter` / `WrapperFedBalanceAdapter` / `WrapperFedNftCacheAdapter`)
   introduced by the ether.fi and Nexus wrapper-fed work are intentionally **not** used here — this PR keeps one

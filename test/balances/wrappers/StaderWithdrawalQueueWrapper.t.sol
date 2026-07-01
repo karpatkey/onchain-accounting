@@ -103,7 +103,7 @@ contract StaderWithdrawalQueueWrapperTest is Test {
         adapter = new StaderWithdrawalQueueBalanceAdapter(
             address(manager), address(weth), address(balances), address(this), address(0)
         );
-        wrapper = new StaderWithdrawalQueueWrapper(address(adapter), address(manager), address(ethx), address(this));
+        wrapper = new StaderWithdrawalQueueWrapper(address(adapter), address(manager), address(ethx));
         adapter.grantRole(adapter.SUBMITTER_ROLE(), address(wrapper));
 
         vm.deal(address(manager), 100 ether);
@@ -113,28 +113,16 @@ contract StaderWithdrawalQueueWrapperTest is Test {
 
     function test_constructor_revertsOnZeroArg() public {
         vm.expectRevert(InvalidArguments.selector);
-        new StaderWithdrawalQueueWrapper(address(0), address(manager), address(ethx), admin);
+        new StaderWithdrawalQueueWrapper(address(0), address(manager), address(ethx));
         vm.expectRevert(InvalidArguments.selector);
-        new StaderWithdrawalQueueWrapper(address(adapter), address(0), address(ethx), admin);
+        new StaderWithdrawalQueueWrapper(address(adapter), address(0), address(ethx));
         vm.expectRevert(InvalidArguments.selector);
-        new StaderWithdrawalQueueWrapper(address(adapter), address(manager), address(0), admin);
-        vm.expectRevert(InvalidArguments.selector);
-        new StaderWithdrawalQueueWrapper(address(adapter), address(manager), address(ethx), address(0));
+        new StaderWithdrawalQueueWrapper(address(adapter), address(manager), address(0));
     }
 
-    // ---- requestWithdraw (normal CALL) ----
-
-    function test_requestWithdraw_revertsForNonDepositor() public {
-        ethx.mint(alice, AMOUNT);
-        vm.startPrank(alice);
-        ethx.approve(address(wrapper), AMOUNT);
-        vm.expectRevert(); // AccessControlUnauthorizedAccount(alice, DEPOSITOR_ROLE)
-        wrapper.requestWithdraw(AMOUNT, alice);
-        vm.stopPrank();
-    }
+    // ---- requestWithdraw (normal CALL, permissionless) ----
 
     function test_requestWithdraw_revertsWhenOwnerNotCaller() public {
-        wrapper.grantRole(wrapper.DEPOSITOR_ROLE(), alice);
         ethx.mint(alice, AMOUNT);
         vm.startPrank(alice);
         ethx.approve(address(wrapper), AMOUNT);
@@ -144,7 +132,6 @@ contract StaderWithdrawalQueueWrapperTest is Test {
     }
 
     function test_requestWithdraw_pullsEthxAndTracksId() public {
-        wrapper.grantRole(wrapper.DEPOSITOR_ROLE(), alice);
         ethx.mint(alice, AMOUNT);
 
         vm.startPrank(alice);
@@ -174,7 +161,6 @@ contract StaderWithdrawalQueueWrapperTest is Test {
     function test_claim_directCallByNonOwnerReverts() public {
         // alice requests (owner = alice), then a direct CALL to wrapper.claim forwards with msg.sender = wrapper,
         // which is not the owner -> the manager rejects it. Demonstrates the fail-safe for the wrong invocation mode.
-        wrapper.grantRole(wrapper.DEPOSITOR_ROLE(), alice);
         ethx.mint(alice, AMOUNT);
         vm.startPrank(alice);
         ethx.approve(address(wrapper), AMOUNT);
@@ -187,7 +173,6 @@ contract StaderWithdrawalQueueWrapperTest is Test {
 
     function test_claim_delegatecalledBySafe_claimsAndPrunes() public {
         MockSafe safe = new MockSafe();
-        wrapper.grantRole(wrapper.DEPOSITOR_ROLE(), address(safe));
         ethx.mint(address(safe), AMOUNT);
 
         // Safe requests through the wrapper (normal CALL): owner = Safe, cache tracks the id.

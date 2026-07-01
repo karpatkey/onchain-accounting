@@ -216,8 +216,9 @@ export function useChainCoverage(chainIdx: number): ChainCoverage {
   const symbolByAddress = new Map<string, string>()
   for (const a of registeredAssets) symbolByAddress.set(a.asset.toLowerCase(), a.symbol)
 
-  // 2. Per adapter (4 calls each, interleaved, flattened): protocolName(), positionLabels(0x) and
-  //    underlyingAssetsSupported() on the adapter, and getMetaInstances(adapter) on the NAV proxy.
+  // 2. Per adapter (5 calls each, interleaved, flattened): protocolName(), positionLabels(0x),
+  //    underlyingAssetsSupported() and ASSISTANT_ROLE() on the adapter, and getMetaInstances(adapter)
+  //    on the NAV proxy.
   const perAdapterContracts = adapterAddresses.flatMap((addr) => [
     {
       chainId: chain.id,
@@ -258,7 +259,7 @@ export function useChainCoverage(chainIdx: number): ChainCoverage {
     query: { enabled: adapterAddresses.length > 0, refetchInterval: AUTOREFRESH_INTERVAL_MS },
   })
 
-  // Decode per adapter (4 calls each, interleaved). wagmi infers a union across the mixed multicall,
+  // Decode per adapter (5 calls each, interleaved). wagmi infers a union across the mixed multicall,
   // so cast each result through `unknown` to its concrete shape. Fail-open on every read.
   type RawAdapter = {
     address: `0x${string}`

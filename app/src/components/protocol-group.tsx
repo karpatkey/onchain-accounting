@@ -328,7 +328,10 @@ const MARKET_ALIASES: Record<string, string> = {
 /// oracle's positions by market so instances that share a reserve symbol (Aave Core vs Prime) render apart.
 function marketFromLabel(label: string | null): string | null {
   if (!label) return null
-  const m = label.match(/\(([^()]+)\)\s*$/)
+  // Match ONLY the Aave/Spark lending shape "<reserve> position (<market>)" — the trailing
+  // "position (…)" marker. A bare trailing "(…)" (e.g. a pool/NFT label) must NOT match, or unrelated
+  // positions would be mis-grouped under a fake "market" key.
+  const m = label.match(/\bposition \(([^()]+)\)\s*$/i)
   if (!m) return null
   const raw = m[1].trim()
   return MARKET_ALIASES[raw] ?? raw

@@ -56,6 +56,11 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @notice Bounded iteration limit for per-account position discovery. A real account holds a handful of NFT
     ///         positions, far below this; the cap keeps the per-pool enumeration gas-bounded so a wallet holding a
     ///         pathological number of NPM NFTs can never brick the account's NAV scan.
+    /// @dev The cap is over the account's FULL NPM NFT balance (the enumeration runs before the per-pool filter), so
+    ///      an account holding more than `MAX_POSITIONS` NFTs globally has any position at enumeration index
+    ///      `>= MAX_POSITIONS` silently omitted — an **under-report** (never an over-report), consistent with the
+    ///      family's safe-direction bias. 256 is far above any managed portfolio's NFT count; a wallet approaching it
+    ///      is an operational signal to split holdings, not a valuation the adapter can safely extend unbounded.
     uint256 public constant MAX_POSITIONS = 256;
 
     /// @notice The Uniswap V3 NonfungiblePositionManager (chain-level constant; same for all V3 pools on a chain).

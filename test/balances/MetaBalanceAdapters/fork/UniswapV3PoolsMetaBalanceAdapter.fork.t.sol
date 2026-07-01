@@ -153,7 +153,10 @@ contract UniswapV3PoolsMetaBalanceForkTest is BalanceAdapterTestBase {
     function _recomputeInline() internal view returns (uint256 liq0, uint256 liq1, uint256 fee0, uint256 fee1) {
         (uint160 sp, int24 tickCurrent,,,,,) = IPool(POOL).slot0();
         uint256 bal = INonfungiblePositionManager(NPM).balanceOf(HOLDER);
-        for (uint256 i = 0; i < bal; i++) {
+        // Match the adapter's MAX_POSITIONS enumeration cap so this "independent" recompute stays apples-to-apples
+        // if HOLDER ever crosses the cap (it doesn't at the pinned block, but the guard keeps the ground truth honest).
+        uint256 max = bal > meta.MAX_POSITIONS() ? meta.MAX_POSITIONS() : bal;
+        for (uint256 i = 0; i < max; i++) {
             uint256 tokenId = INonfungiblePositionManager(NPM).tokenOfOwnerByIndex(HOLDER, i);
             (uint256 a0, uint256 a1, uint256 f0, uint256 f1) = _recomputeOne(tokenId, sp, tickCurrent);
             liq0 += a0;

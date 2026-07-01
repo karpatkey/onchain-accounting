@@ -340,6 +340,15 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterTest is BalanceAdapterTest
         adapter.submit(holder, 1);
     }
 
+    /// @notice Ownership is re-verified on EVERY submit — re-submitting an already-cached id the account has since
+    ///         transferred away reverts NotTokenOwner (the check is not bypassed by the dedup).
+    function test_submit_reverifiesOwnershipOnResubmit() public {
+        _seedOne(2, 1, 100, 0, 0); // holder owns 2 and it is cached
+        nft.setToken(2, 1, other); // 2 transferred to `other`
+        vm.expectRevert(abi.encodeWithSelector(NotTokenOwner.selector, holder, uint256(2)));
+        adapter.submit(holder, 2);
+    }
+
     function test_remove_onlyWrapperRole() public {
         _seedOne(1, 1, 100, 0, 0);
         vm.prank(other);

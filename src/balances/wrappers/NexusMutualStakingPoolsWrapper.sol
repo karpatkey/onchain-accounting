@@ -92,7 +92,7 @@ contract NexusMutualStakingPoolsWrapper {
         IERC20(NXM).forceApprove(TOKEN_CONTROLLER, amount);
         // destination = address(this): the account stakes its own NXM and owns the minted NFT, so the adapter's live
         // ownership re-verification always passes for it.
-        tokenId = INexusStakingPool(poolAddress).depositTo(amount, trancheId, requestTokenId, address(this));
+        tokenId = INexusMutualStakingPool(poolAddress).depositTo(amount, trancheId, requestTokenId, address(this));
         INexusMutualStakingPoolsAssistedBalanceAdapter(ADAPTER).submit(address(this), tokenId);
     }
 
@@ -114,7 +114,7 @@ contract NexusMutualStakingPoolsWrapper {
         uint256[] calldata trancheIds
     ) external onlyDelegateCall returns (uint256 withdrawnStake, uint256 withdrawnRewards) {
         (withdrawnStake, withdrawnRewards) =
-            INexusStakingPool(poolAddress).withdraw(tokenId, withdrawStake, withdrawRewards, trancheIds);
+            INexusMutualStakingPool(poolAddress).withdraw(tokenId, withdrawStake, withdrawRewards, trancheIds);
         INexusMutualStakingPoolsAssistedBalanceAdapter(ADAPTER).remove(address(this), tokenId);
     }
 }
@@ -123,7 +123,7 @@ contract NexusMutualStakingPoolsWrapper {
 error OnlyDelegateCall();
 
 /// @notice Minimal interface for a Nexus Mutual StakingPool — only the two functions the wrapper forwards.
-interface INexusStakingPool {
+interface INexusMutualStakingPool {
     function depositTo(uint256 amount, uint256 trancheId, uint256 requestTokenId, address destination)
         external
         returns (uint256 tokenId);

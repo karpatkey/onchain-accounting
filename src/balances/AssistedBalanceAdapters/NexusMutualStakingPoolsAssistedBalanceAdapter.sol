@@ -135,13 +135,13 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AccessControl, IBalanc
     ///         inflicted and fail-opens (per-adapter) in NAVCalculator, never affecting other accounts.
     function submit(address account, uint256 tokenId) external onlyRole(SUBMITTER_ROLE) {
         if (account == address(0)) revert InvalidArguments();
-        EnumerableSet.UintSet storage set = _tokenIds[account];
-        if (set.contains(tokenId)) return; // idempotent — nothing to validate or emit
-        // Fail-loud ownership check: a non-owned / burned / non-existent id is a caller mistake.
+        // Fail-loud ownership check on EVERY submit: the tokenId must currently belong to `account`, or revert with
+        // the custom `NotTokenOwner` error. A non-owned / burned / non-existent id is a caller mistake. Checked before
+        // the dedup so it can never be bypassed by re-submitting an already-cached id.
         (address owner, bool ok) = _ownerOf(tokenId);
         if (!ok || owner != account) revert NotTokenOwner(account, tokenId);
-        set.add(tokenId);
-        emit TokenIdSubmitted(account, tokenId);
+        // Idempotent: EnumerableSet.add dedups; only emit on a genuine insert.
+        if (_tokenIds[account].add(tokenId)) emit TokenIdSubmitted(account, tokenId);
     }
 
     /// @notice Stop tracking `tokenId` for `account` (idempotent — a no-op if not cached). Called by the wrapper right
@@ -349,7 +349,7 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AccessControl, IBalanc
     }
 
     /// @inheritdoc IPositionDescribable
-    /// @dev `["Staking Pools", "Pool #<poolId>"]` — the numeric pool id read live via `INexusStakingPool.getPoolId()`,
+    /// @dev `["Staking Pools", "Pool #<poolId>"]` — the numeric pool id read live via `INexusMutualStakingPool.getPoolId()`,
     ///      matching the Nexus UI's pool numbering. Falls back to the pool address (`"0x…"`) if the read reverts
     ///      (non-Nexus / exotic positionId). Empty for a short/malformed positionId.
     function positionLabels(bytes calldata positionId) external view override returns (string[] memory out) {
@@ -360,7 +360,7 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AccessControl, IBalanc
         // Low-level staticcall + length check (not a typed try/catch): a no-code / non-Nexus / fallback-only
         // positionId returns success with empty data, which a typed call would then fail to decode and REVERT
         // uncaught — this display view must never revert, so we read defensively and fall back to the address.
-        (bool ok, bytes memory data) = pool.staticcall(abi.encodeWithSelector(INexusStakingPool.getPoolId.selector));
+        (bool ok, bytes memory data) = pool.staticcall(abi.encodeWithSelector(INexusMutualStakingPool.getPoolId.selector));
         out[1] = (ok && data.length >= 32)
             ? string.concat("Pool #", Strings.toString(abi.decode(data, (uint256))))
             : Strings.toHexString(pool);
@@ -451,6 +451,6 @@ interface INexusStakingViewer {
 
 /// @notice Minimal interface for a Nexus Mutual StakingPool — its numeric pool id, for the display label
 ///         (`"Pool #<id>"`). The pool's product name is off-chain (IPFS metadata), so it is not read here.
-interface INexusStakingPool {
+interface INexusMutualStakingPool {
     function getPoolId() external view returns (uint256);
 }

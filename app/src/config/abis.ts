@@ -163,6 +163,55 @@ export const navCalcAbi = [
     inputs: [],
     outputs: [{ name: '', type: 'uint256' }],
   },
+  // Every registered balance adapter (plain + meta + assisted). Account-less — the coverage view
+  // reads these to show which protocols/positions the NAV system values.
+  {
+    name: 'getAllAdapters',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: 'adapters', type: 'address[]' }],
+  },
+  // The active instance set governed on NAVCalculator for a meta-adapter (Aave V3 instances, Morpho
+  // markets/vaults, Curve pools, …). Non-empty only for meta-adapters; empty for plain/assisted ones.
+  {
+    name: 'getMetaInstances',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'adapter', type: 'address' }],
+    outputs: [{ name: 'instances', type: 'bytes32[]' }],
+  },
+] as const
+
+// Adapter-level introspection (IPositionDescribable + IBalanceAdapter). Read directly off each
+// adapter contract, not the NAV proxy. Fail-open: some adapters may revert on protocolName() (→
+// treated as "Unknown") or return no underlyingAssetsSupported() (e.g. Merkl rewards, Uniswap V3).
+export const adapterInfoAbi = [
+  {
+    name: 'protocolName',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'string' }],
+  },
+  {
+    name: 'underlyingAssetsSupported',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'address[]' }],
+  },
+] as const
+
+// Minimal ERC20 — only symbol(), to resolve underlying assets not covered by getRegisteredAssets().
+export const erc20Abi = [
+  {
+    name: 'symbol',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'string' }],
+  },
 ] as const
 
 export const aggregatorV3Abi = [

@@ -339,6 +339,7 @@ function PortfolioView({ account, onReset }: { account: `0x${string}`; onReset: 
           </div>
           <div className="flex items-center gap-4 text-sm">
             <a href="/" className="text-neutral-950 font-semibold underline underline-offset-4">Portfolio</a>
+            <a href={`/coverage?address=${account}`} className="text-neutral-700 hover:text-neutral-950 transition-colors">Coverage</a>
             <a href={`/feeds?address=${account}`} className="text-neutral-700 hover:text-neutral-950 transition-colors">Price Feeds</a>
             <button
               type="button" onClick={handleRefresh} disabled={!canRefresh}

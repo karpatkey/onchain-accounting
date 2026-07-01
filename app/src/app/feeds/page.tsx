@@ -137,9 +137,13 @@ export default function FeedsPage() {
   // instead of the empty landing page. Read from the URL on mount (the app reads addresses from
   // window.location, not useSearchParams — no Suspense needed).
   const [portfolioHref, setPortfolioHref] = useState('/')
+  const [coverageHref, setCoverageHref] = useState('/coverage')
   useEffect(() => {
     const addr = new URLSearchParams(window.location.search).get('address')
-    if (addr) setPortfolioHref(`/?address=${addr}`)
+    if (addr) {
+      setPortfolioHref(`/?address=${addr}`)
+      setCoverageHref(`/coverage?address=${addr}`)
+    }
   }, [])
 
   // Scroll-spy: observe each chain section and track which is most in view
@@ -212,6 +216,9 @@ export default function FeedsPage() {
             )}
           </div>
           <div className="flex shrink-0 items-center gap-2 mt-1">
+            <Link href={coverageHref} className="text-sm text-neutral-700 hover:text-neutral-950 transition-colors">
+              Coverage
+            </Link>
             <span className="text-xs text-neutral-700">{lastRefreshedLabel}</span>
             <button
               type="button"

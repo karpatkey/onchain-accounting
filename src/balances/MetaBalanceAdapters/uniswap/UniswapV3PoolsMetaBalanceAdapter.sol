@@ -56,11 +56,20 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @notice Bounded iteration limit for per-account position discovery. A real account holds a handful of NFT
     ///         positions, far below this; the cap keeps the per-pool enumeration gas-bounded so a wallet holding a
     ///         pathological number of NPM NFTs can never brick the account's NAV scan.
+    /// @dev **Why it's needed (griefing/DoS guard).** `balanceOf(account)` counts EVERY Uniswap V3 position NFT the
+    ///      account owns, and that count is attacker-controllable: NPM positions are force-mintable to any recipient
+    ///      (`mint()` takes a `recipient` and uses plain ERC721 `_mint`, no `onERC721Received` check) and freely
+    ///      transferable, so a third party can inflate an account's `balanceOf` without its consent. The meta
+    ///      framework enumerates the account's full NFT set once PER configured pool (O(pools × balanceOf)), so an
+    ///      unbounded loop would let someone spam dust position NFTs onto a tracked account and gas-exhaust the whole
+    ///      NAV read (an out-of-gas deep in the loop is not cleanly caught by the framework's per-instance try/catch).
+    ///      The cap bounds that: the worst case degrades from a full NAV-read DoS to a bounded **under-report**.
     /// @dev The cap is over the account's FULL NPM NFT balance (the enumeration runs before the per-pool filter), so
     ///      an account holding more than `MAX_POSITIONS` NFTs globally has any position at enumeration index
     ///      `>= MAX_POSITIONS` silently omitted — an **under-report** (never an over-report), consistent with the
-    ///      family's safe-direction bias. 1000 is far above any managed portfolio's NFT count; a wallet approaching it
-    ///      is an operational signal to split holdings, not a valuation the adapter can safely extend unbounded.
+    ///      family's safe-direction bias. For any real holding (`balanceOf <= MAX_POSITIONS`) the cap is a no-op and
+    ///      the loop runs the full balance. 1000 is far above any managed portfolio's NFT count; a wallet approaching
+    ///      it is an operational signal to split holdings, not a valuation the adapter can safely extend unbounded.
     uint256 public constant MAX_POSITIONS = 1000;
 
     /// @notice The Uniswap V3 NonfungiblePositionManager (chain-level constant; same for all V3 pools on a chain).

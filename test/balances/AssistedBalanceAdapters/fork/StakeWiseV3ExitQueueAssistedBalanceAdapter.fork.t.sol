@@ -13,12 +13,11 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title StakeWiseV3ExitQueueAssistedBalanceAdapterForkTest
 /// @notice Fork test against StakeWise's real Genesis vault + VaultsRegistry on mainnet, for the wrapper-fed adapter.
-/// @dev Same real ENS-DAO-Safe exit position and pinned states as the assisted adapter's fork test (the valuation is
-///      identical to the assisted adapter's). The difference here is the write path: the adapter is fed by a
-///      **role-gated self-submit** — the account grants itself `DEPOSITOR_ROLE` (here the test, playing admin, grants
-///      the real holder) and submits its OWN ticket (`account == msg.sender`). The adapter then values it entirely
-///      from live on-chain reads in two states (checkpointed/claimable and fully-pending), asserted against an
-///      independent live recompute AND a pinned value.
+/// @dev Same real ENS-DAO-Safe exit position and pinned states as the prior agent-fed adapter's fork test. The write
+///      path is **permissionless self-submit**: the account submits its OWN ticket (the adapter derives the account
+///      from `msg.sender`), so the test calls as the real holder. The adapter then values it entirely from live
+///      on-chain reads in two states (checkpointed/claimable and fully-pending), asserted against an independent live
+///      recompute AND a pinned value.
 contract StakeWiseV3ExitQueueAssistedBalanceAdapterForkTest is BalanceAdapterTestBase {
     address public constant VAULTS_REGISTRY = 0x3a0008a588772446f6e656133C2D5029CC4FC20E;
     address public constant GENESIS_VAULT = 0xAC0F906E433d58FA868F936E8A43230473652885;
@@ -49,14 +48,13 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterForkTest is BalanceAdapterTes
     }
 
     /// @dev Fresh balances harness (native ETH registered) + adapter at the current fork block, with the real holder
-    ///      approved as a depositor so it can self-submit its real ticket.
+    ///      permissionless + self-scoped, so the test submits the real ticket by calling as HOLDER.
     function _freshAdapter() internal returns (StakeWiseV3ExitQueueAssistedBalanceAdapter a) {
         balances = new BalancesHarnessForFork();
         balances.registerAssetForTest(NATIVE_ETH, 18, "ETH");
         a = new StakeWiseV3ExitQueueAssistedBalanceAdapter(
-            VAULTS_REGISTRY, NATIVE_ETH, "osETH", address(balances), 1 days, address(this)
+            VAULTS_REGISTRY, NATIVE_ETH, "osETH", address(balances), 1 days
         );
-        a.grantRole(a.WRAPPER_ROLE(), address(this)); // this test plays the wrapper (sole feeder)
     }
 
     function _liveOwed(uint256 ticket, uint256 ts) internal view returns (uint256) {
@@ -68,7 +66,8 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterForkTest is BalanceAdapterTes
     }
 
     function _submit() internal {
-        adapter.submit(HOLDER, GENESIS_VAULT, TICKET, ENTRY_TS);
+        vm.prank(HOLDER);
+        adapter.submit(GENESIS_VAULT, TICKET, ENTRY_TS);
     }
 
     function test_realHolder_claimableValuation() public {
@@ -113,10 +112,11 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterForkTest is BalanceAdapterTes
     }
 
     function test_submit_revertsOnTupleNotOwnedByAccount() public {
-        // The wrapper (this test) submitting a real ticket under an account that does not own it → owed 0 → fail-loud.
+        // A stranger submitting a real ticket it does not own → owed 0 for the caller → fail-loud.
         address stranger = makeAddr("stranger");
+        vm.prank(stranger);
         vm.expectRevert();
-        adapter.submit(stranger, GENESIS_VAULT, TICKET, ENTRY_TS);
+        adapter.submit(GENESIS_VAULT, TICKET, ENTRY_TS);
         assertEq(adapter.positionsOf(stranger).length, 0);
     }
 }

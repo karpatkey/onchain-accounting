@@ -6,12 +6,11 @@ import {StakeWiseV3ExitQueueWrapper} from "src/balances/wrappers/StakeWiseV3Exit
 import {
     StakeWiseV3ExitQueueAssistedBalanceAdapter
 } from "src/balances/AssistedBalanceAdapters/StakeWiseV3ExitQueueAssistedBalanceAdapter.sol";
-import {NotAuthorized, InvalidArguments} from "src/errors.sol";
-import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
+import {InvalidArguments} from "src/errors.sol";
 
 /// @notice Minimal Safe stand-in that delegatecalls a target — mirrors how a Gnosis Safe executes a delegatecall
 ///         action. Under the delegatecall, `address(this)` is this Safe, which is exactly the context the wrapper
-///         relies on (it forces `receiver = address(this)` and tracks the position for `address(this)`).
+///         relies on (it forces `receiver = address(this)` and the adapter tracks `address(this)`).
 contract MockSafe {
     function exec(address target, bytes calldata data) external returns (bytes memory) {
         (bool ok, bytes memory ret) = target.delegatecall(data);
@@ -24,7 +23,8 @@ contract MockSafe {
     }
 }
 
-/// @notice Records submit/remove calls, standing in for the balance adapter to isolate the wrapper's behavior.
+/// @notice Records submit/remove calls, standing in for the balance adapter to isolate the wrapper's behavior. The
+///         adapter self-scopes by msg.sender, so the mock records msg.sender as the tracked account.
 contract MockTracker {
     address public lastAccount;
     address public lastVault;
@@ -33,16 +33,16 @@ contract MockTracker {
     uint256 public submits;
     uint256 public removes;
 
-    function submit(address account, address vault, uint256 positionTicket, uint256 timestamp) external {
-        lastAccount = account;
+    function submit(address vault, uint256 positionTicket, uint256 timestamp) external {
+        lastAccount = msg.sender;
         lastVault = vault;
         lastTicket = positionTicket;
         lastTimestamp = timestamp;
         submits++;
     }
 
-    function remove(address account, address vault, uint256 positionTicket, uint256 timestamp) external {
-        lastAccount = account;
+    function remove(address vault, uint256 positionTicket, uint256 timestamp) external {
+        lastAccount = msg.sender;
         lastVault = vault;
         lastTicket = positionTicket;
         lastTimestamp = timestamp;
@@ -108,6 +108,8 @@ contract MockVaultsRegistry {
 }
 
 /// @title StakeWiseV3ExitQueueWrapper unit tests
+/// @notice The wrapper is permissionless (no roles/admin): a Safe delegatecalls it to enter/claim and feed the adapter,
+///         which self-scopes by msg.sender. `onlyDelegateCall` is the only guard — a direct call reverts.
 contract StakeWiseV3ExitQueueWrapperTest is BalanceAdapterTestBase {
     address constant NATIVE = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
     uint256 constant DELAY = 1 days;
@@ -124,12 +126,11 @@ contract StakeWiseV3ExitQueueWrapperTest is BalanceAdapterTestBase {
         registry.setVault(address(vault), true);
     }
 
-    // ---- Isolated (mock tracker): receiver forcing, gating, adapter calls ----
+    // ---- Isolated (mock tracker): receiver forcing + adapter calls ----
 
     function _wrapperWithMockTracker() internal returns (StakeWiseV3ExitQueueWrapper w, MockTracker t) {
         t = new MockTracker();
-        w = new StakeWiseV3ExitQueueWrapper(address(t), address(this));
-        w.grantRole(w.DEPOSITOR_ROLE(), address(safe));
+        w = new StakeWiseV3ExitQueueWrapper(address(t));
     }
 
     function test_enterExitQueue_forcesReceiverAndSubmits() public {
@@ -141,18 +142,10 @@ contract StakeWiseV3ExitQueueWrapperTest is BalanceAdapterTestBase {
         assertEq(vault.lastEnterReceiver(), address(safe), "receiver forced to the Safe");
         assertEq(vault.lastEnterShares(), 5 ether);
         assertEq(t.submits(), 1);
-        assertEq(t.lastAccount(), address(safe), "tracked under the Safe (the delegatecall context)");
+        assertEq(t.lastAccount(), address(safe), "adapter fed with msg.sender = the Safe");
         assertEq(t.lastVault(), address(vault));
         assertEq(t.lastTicket(), ticket);
         assertEq(t.lastTimestamp(), block.timestamp);
-    }
-
-    function test_enterExitQueue_revertsWithoutDepositorRole() public {
-        MockTracker t = new MockTracker();
-        StakeWiseV3ExitQueueWrapper w = new StakeWiseV3ExitQueueWrapper(address(t), address(this));
-        // safe was NOT granted DEPOSITOR_ROLE on the wrapper.
-        vm.expectRevert(NotAuthorized.selector);
-        safe.exec(address(w), abi.encodeCall(w.enterExitQueue, (address(vault), 5 ether)));
     }
 
     function test_enterExitQueue_revertsOnDirectCall() public {
@@ -181,53 +174,22 @@ contract StakeWiseV3ExitQueueWrapperTest is BalanceAdapterTestBase {
         assertEq(t.lastTicket(), ticket);
     }
 
-    function test_claimExitedAssets_revertsWithoutDepositorRole() public {
-        MockTracker t = new MockTracker();
-        StakeWiseV3ExitQueueWrapper w = new StakeWiseV3ExitQueueWrapper(address(t), address(this));
-        vm.expectRevert(NotAuthorized.selector);
-        safe.exec(address(w), abi.encodeCall(w.claimExitedAssets, (address(vault), 1000, block.timestamp, 1)));
-    }
-
-    // ---- Standalone submit/remove gating (the guard that lives on the wrapper, not the adapter) ----
-
-    function test_submit_standalone_revertsWithoutDepositorRole() public {
-        (StakeWiseV3ExitQueueWrapper w,) = _wrapperWithMockTracker();
-        address stranger = makeAddr("stranger");
-        vm.prank(stranger);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, stranger, keccak256("DEPOSITOR_ROLE")
-            )
-        );
-        w.submit(address(vault), 1000, block.timestamp);
-    }
-
     // ---- Constructor ----
 
     function test_constructor_revertsOnZeroAdapter() public {
         vm.expectRevert(InvalidArguments.selector);
-        new StakeWiseV3ExitQueueWrapper(address(0), address(this));
-    }
-
-    function test_constructor_revertsOnZeroAdmin() public {
-        MockTracker t = new MockTracker();
-        vm.expectRevert(InvalidArguments.selector);
-        new StakeWiseV3ExitQueueWrapper(address(t), address(0));
+        new StakeWiseV3ExitQueueWrapper(address(0));
     }
 
     // ---- End-to-end with the real adapter + full mock vault ----
 
     function test_endToEnd_enterTracksBalance_thenClaimClears() public {
         StakeWiseV3ExitQueueAssistedBalanceAdapter adapter = new StakeWiseV3ExitQueueAssistedBalanceAdapter(
-            address(registry), NATIVE, "osETH", address(balances), DELAY, address(this)
+            address(registry), NATIVE, "osETH", address(balances), DELAY
         );
         balances.addSupportedAssetForTest(NATIVE);
-        StakeWiseV3ExitQueueWrapper w = new StakeWiseV3ExitQueueWrapper(address(adapter), address(this));
-        // The Safe is an approved depositor on the WRAPPER only; the adapter's WRAPPER_ROLE is held by the wrapper
-        // singleton (never by depositors). The wrapper feeds the adapter via a self-call, so adapter.submit's
-        // msg.sender is the wrapper.
-        w.grantRole(w.DEPOSITOR_ROLE(), address(safe));
-        adapter.grantRole(adapter.WRAPPER_ROLE(), address(w));
+        StakeWiseV3ExitQueueWrapper w = new StakeWiseV3ExitQueueWrapper(address(adapter));
+        // No roles anywhere: the Safe delegatecalls the wrapper, which feeds the adapter with msg.sender = the Safe.
 
         bytes memory ret = safe.exec(address(w), abi.encodeCall(w.enterExitQueue, (address(vault), 7 ether)));
         uint256 ticket = abi.decode(ret, (uint256));

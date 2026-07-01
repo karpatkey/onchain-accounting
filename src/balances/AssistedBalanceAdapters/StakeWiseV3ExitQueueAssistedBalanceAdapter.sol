@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
-import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 import {SingleAssetAssistedGetters} from "src/balances/AssistedBalanceAdapters/SingleAssetAssistedGetters.sol";
@@ -18,19 +17,19 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @title StakeWise V3 Exit-Queue Assisted Balance Adapter (wrapper-fed)
 /// @author KPK
 /// @notice Reports the in-flight assets owed to an account in StakeWise V3's exit queue, valued entirely from live
-///         on-chain reads. The ticket cache is fed **on-chain** by a trusted wrapper contract (not by an off-chain
-///         agent): a depositor Safe delegatecalls `StakeWiseV3ExitQueueWrapper`, which — in the same transaction it
-///         enters/exits the StakeWise queue — records the resulting ticket here via {submit}/{remove}. The exit
-///         position the Safe created is owned on-chain by the Safe (`receiver = the Safe`), and the wrapper passes that
-///         Safe as `account`, so the valuation (keyed on `receiver = account`) needs no extra bookkeeping.
+///         on-chain reads. The ticket cache is fed **on-chain** by the position owner itself: {submit}/{remove} are
+///         **permissionless and self-scoped to `msg.sender`**. In practice a depositor Safe delegatecalls
+///         `StakeWiseV3ExitQueueWrapper`, which — in the same transaction it enters/exits the StakeWise queue — records
+///         the resulting ticket here (the wrapper's call to the adapter carries `msg.sender = the Safe`, so the Safe's
+///         positions are tracked). The exit position is owned on-chain by that same Safe (`receiver = the Safe`), so
+///         the valuation (keyed on `receiver = account`) needs no extra bookkeeping.
 /// @dev Trust model and mutability rationale: see `docs/decisions/0019-stakewise-v3-exit-queue-wrapper.md` (a
-///      StakeWise-specific instance of the wrapper-fed assisted family, ADR 0018). {submit}/{remove} are
-///      `onlyRole(WRAPPER_ROLE)`, and `WRAPPER_ROLE` is granted **only to the wrapper singleton** — never to individual
-///      depositors. The wrapper (which itself gates the depositor allowlist and forwards the caller as `account`) is
-///      the sole feeder, so the adapter trusts a single address. It upholds the assisted-family invariant (ADR 0015):
-///      the cache stores **only position coordinates, never amounts**; every read values live on-chain against
-///      `receiver = account`, so a faulty or compromised feeder can only under-report, never over-report. Writes are
-///      incremental (one ticket at a time), matching the wrapper's enter→submit / claim→remove flow.
+///      StakeWise-specific instance of the wrapper-fed assisted family, ADR 0018). No access control: {submit}/{remove}
+///      derive the account from `msg.sender`, so a caller can only ever add/remove its OWN tickets — nobody can touch
+///      another account's set. It upholds the assisted-family invariant (ADR 0015): the cache stores **only position
+///      coordinates, never amounts**; every read values live on-chain against `receiver = account`, so a faulty caller
+///      can only under-report, never over-report. Writes are incremental (one ticket at a time), matching the wrapper's
+///      enter→submit / claim→remove flow.
 ///
 ///      Emits up to two `Supplied` legs PER cached exit position (per `positionTicket`) — a claimable leg
 ///      (`isLocked = false`) and a locked/pending leg (`isLocked = true`) — both carrying that ticket's id in the typed
@@ -44,7 +43,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      exit positions have no `ownerOf`). Reads never revert (all external reads try/catch to 0).
 ///      NOTE: kept as a single self-contained contract for now; the cache + valuation may later be abstracted into a
 ///      shared base.
-contract StakeWiseV3ExitQueueAssistedBalanceAdapter is AccessControl, SingleAssetAssistedGetters, IPositionDescribable {
+contract StakeWiseV3ExitQueueAssistedBalanceAdapter is SingleAssetAssistedGetters, IPositionDescribable {
     //
     // Types
     //
@@ -61,11 +60,6 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapter is AccessControl, SingleAsse
     //
     // State
     //
-
-    /// @notice Role allowed to feed exit-queue tickets. Granted **only to the {StakeWiseV3ExitQueueWrapper} singleton**
-    ///         (the sole feeder); `DEFAULT_ADMIN_ROLE` administers it. Depositors never hold this role — the wrapper
-    ///         gates the depositor allowlist itself and forwards the depositor as `account`.
-    bytes32 public constant WRAPPER_ROLE = keccak256("WRAPPER_ROLE");
 
     bytes32 private constant PROTOCOL_BRAND = ProtocolIds.STAKEWISE;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.STAKEWISE_V3;
@@ -120,19 +114,14 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapter is AccessControl, SingleAsse
     /// @param navCalculator_   NAVCalculator. Must be a contract.
     /// @param exitClaimDelay_  StakeWise's post-checkpoint claim delay in seconds (24h = `86400` on V3 mainnet). Must
     ///                         be non-zero.
-    /// @param admin_     Holder of `DEFAULT_ADMIN_ROLE` — administers `WRAPPER_ROLE`. Required.
     constructor(
         address vaultsRegistry_,
         address underlyingToken_,
         string memory receiptSymbol_,
         address navCalculator_,
-        uint256 exitClaimDelay_,
-        address admin_
+        uint256 exitClaimDelay_
     ) SingleAssetAssistedGetters(underlyingToken_) {
-        if (
-            vaultsRegistry_ == address(0) || navCalculator_ == address(0) || exitClaimDelay_ == 0
-                || admin_ == address(0)
-        ) {
+        if (vaultsRegistry_ == address(0) || navCalculator_ == address(0) || exitClaimDelay_ == 0) {
             revert InvalidArguments();
         }
         AddressCheckLib.requireContract(vaultsRegistry_, "VaultsRegistry");
@@ -142,38 +131,34 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapter is AccessControl, SingleAsse
         receiptSymbol = receiptSymbol_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
         EXIT_CLAIM_DELAY = exitClaimDelay_;
-        _grantRole(DEFAULT_ADMIN_ROLE, admin_);
     }
 
     //
-    // Mutators
+    // Mutators (permissionless; self-scoped to `msg.sender`)
     //
 
-    /// @notice Track one exit position for `account`. Idempotent (a duplicate tuple is a no-op). `onlyRole(WRAPPER_ROLE)`
-    ///         — only the wrapper singleton may call it; it forwards the depositor Safe that entered the queue as
-    ///         `account`. Fail-loud: reverts `InvalidExitPosition` if the vault is not StakeWise-registered or the tuple
-    ///         does not resolve to a live owed amount for `account`, and `PositionCacheFull` past `MAX_POSITIONS`. Not
-    ///         load-bearing for correctness — reads re-verify and value only live, account-owned positions.
-    function submit(address account, address vault, uint256 positionTicket, uint256 timestamp)
-        external
-        onlyRole(WRAPPER_ROLE)
-    {
-        _addPosition(account, ExitPosition(vault, positionTicket, timestamp));
+    /// @notice Track one of the caller's own exit positions (`account = msg.sender`). Idempotent (a duplicate tuple is
+    ///         a no-op). Permissionless: the caller can only ever add its OWN positions, and fail-loud validation plus
+    ///         live re-valuation mean it can only add real, owned, in-queue positions. Reverts `InvalidExitPosition` if
+    ///         the vault is not StakeWise-registered or the tuple does not resolve to a live owed amount for the caller,
+    ///         and `PositionCacheFull` past `MAX_POSITIONS`.
+    /// @dev Under the wrapper's delegatecall, `msg.sender` is the depositor Safe (so its positions are tracked); a
+    ///      direct caller tracks itself.
+    function submit(address vault, uint256 positionTicket, uint256 timestamp) external {
+        _addPosition(msg.sender, ExitPosition(vault, positionTicket, timestamp));
     }
 
-    /// @notice Stop tracking one exit position for `account` (e.g. once claimed). Idempotent. `onlyRole(WRAPPER_ROLE)`.
-    function remove(address account, address vault, uint256 positionTicket, uint256 timestamp)
-        external
-        onlyRole(WRAPPER_ROLE)
-    {
-        _removePositionByCoords(account, vault, positionTicket, timestamp);
+    /// @notice Stop tracking one of the caller's own exit positions (e.g. once claimed). Idempotent. Permissionless and
+    ///         self-scoped to `msg.sender`, so no one can deregister another account's positions.
+    function remove(address vault, uint256 positionTicket, uint256 timestamp) external {
+        _removePositionByCoords(msg.sender, vault, positionTicket, timestamp);
     }
 
-    /// @notice Admin escape hatch: drop all cached positions for `account` (GC for a decommissioned depositor). Stale
-    ///         tuples already read as 0, so this only trims the read loop.
-    function clearAccount(address account) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        _clearPositions(account);
-        emit AccountCleared(account);
+    /// @notice Drop all of the caller's own cached positions (self-service GC). Stale tuples already read as 0, so this
+    ///         only trims the read loop.
+    function clearAccount() external {
+        _clearPositions(msg.sender);
+        emit AccountCleared(msg.sender);
     }
 
     //
@@ -299,10 +284,10 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapter is AccessControl, SingleAsse
     }
 
     /// @inheritdoc IERC165
-    /// @dev Advertises {IBalanceAdapter} + {IPositionDescribable} on top of AccessControl's {IAccessControl}/{IERC165}.
-    function supportsInterface(bytes4 interfaceId) public view override(AccessControl, IERC165) returns (bool) {
+    /// @dev Advertises {IBalanceAdapter} + {IPositionDescribable} + {IERC165}.
+    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
         return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IPositionDescribable).interfaceId
-            || super.supportsInterface(interfaceId);
+            || interfaceId == type(IERC165).interfaceId;
     }
 
     //

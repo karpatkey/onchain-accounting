@@ -772,12 +772,11 @@ contract DeployBalanceAdapters is BaseDeployScript {
         internal
         returns (address)
     {
-        // admin = chainConfig.admin (OIV Safe): DEFAULT_ADMIN_ROLE, administers WRAPPER_ROLE. The adapter is
-        // wrapper-fed: WRAPPER_ROLE is granted only to the StakeWiseV3ExitQueueWrapper singleton, which each depositor
-        // Safe delegatecalls (the Safe holds DEPOSITOR_ROLE on the wrapper) to submit/remove its OWN tickets. The
-        // adapter values from live on-chain reads and verifies each tuple belongs to the account via
-        // calculateExitedAssets(receiver=account), so the feeder cannot fabricate amounts (under-report only). See
-        // docs/decisions/0019-stakewise-v3-exit-queue-wrapper.md. NOTE: the wrapper deploy + WRAPPER_ROLE grant are a
+        // The adapter is wrapper-fed and permissionless: submit/remove self-scope to msg.sender, so a caller can only
+        // add/remove its OWN tickets. In practice each depositor Safe delegatecalls the StakeWiseV3ExitQueueWrapper,
+        // which feeds the adapter for the Safe. The adapter values from live on-chain reads and verifies each tuple
+        // belongs to the account via calculateExitedAssets(receiver=account), so a caller cannot fabricate amounts
+        // (under-report only). See docs/decisions/0019-stakewise-v3-exit-queue-wrapper.md. NOTE: the wrapper deploy is a
         // follow-up; this only deploys the adapter.
         address vaultsRegistry = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vaultsRegistry")
@@ -794,13 +793,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
         uint256 exitClaimDelay = vm.parseUint(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "exitClaimDelay")
         );
-        require(
-            chainConfig.admin != address(0),
-            "StakeWiseV3ExitQueueAssisted: chainConfig.admin (initialOwner) not configured"
-        );
 
         StakeWiseV3ExitQueueAssistedBalanceAdapter adapter = new StakeWiseV3ExitQueueAssistedBalanceAdapter(
-            vaultsRegistry, underlyingToken, receiptSymbol, navCalculator, exitClaimDelay, chainConfig.admin
+            vaultsRegistry, underlyingToken, receiptSymbol, navCalculator, exitClaimDelay
         );
         return address(adapter);
     }

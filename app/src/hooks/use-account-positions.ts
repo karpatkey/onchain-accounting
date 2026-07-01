@@ -15,29 +15,36 @@ export type OnchainPosition = {
   price: bigint
   priceDecimals: number
   stale: boolean
-  // Display fields synthesised from the typed-identity API + the adapter's IPositionDescribable layer.
+  // Human protocol name from the adapter's IPositionDescribable layer (e.g. "Aave V3", "Morpho", "Wallet").
+  // The dashboard groups on this. Falls back to a truncated protocolId slug if the adapter returns none.
   protocol: string
-  // PositionKind → the leg-type discriminator (Supply/Borrow/Collateral/Staking/Rewards/Fees); null for Wallet.
-  type: string | null
-  // The instance's display label — the adapter's positionLabels() leaf (e.g. "WBTC/WETH 0.3%", "NFT #22279");
-  // null for Wallet legs and when the adapter exposes no name().
-  poolLabel: string | null
+  // Ordered display hierarchy BELOW the protocol, leaf last, sourced on-chain from IPositionDescribable
+  // (positionLabels). Empty for simple positions. Drives the card title / sub-headers — see protocol-group.tsx.
+  labels: readonly string[]
   // The on-chain position identity (abi.encode(...) per protocol). Legs of one logical position (e.g. a
-  // StakeWise vault's Staking + Borrow legs) share it, so the dashboard can group matched legs by vault.
+  // StakeWise vault's Staking + Borrow legs, or every reserve of an Aave market) share it, so the dashboard
+  // groups matched legs by it.
   positionId: string
   // The machine-level protocol slug hash (keccak256, e.g. keccak256("stakewise-exit")). Not rendered — used
   // as an unambiguous discriminator when the human `protocol` name is shared across adapters (e.g. the
   // StakeWise V3 vaults meta and the StakeWise exit-queue adapter both report "StakeWise V3").
   protocolId: `0x${string}`
+  // PositionKind enum (src/utils/PositionKind.sol): 0 Wallet, 1 Supplied, 2 Borrowed, 3 Collateral, 4 Staking,
+  // 5 Rewards, 6 Fees. Drives the per-leg role tag (see KIND_TO_TYPE in protocol-group.tsx).
+  positionKind: number
   // True if this leg is not withdrawable now (a pending withdrawal-queue request, or a staked amount in/awaiting
   // its unstaking cooldown). False for fully-liquid legs and for every non-queue/non-cooldown adapter.
   isLocked: boolean
+  // Ephemeral per-item coordinate (NFT / request / ticket id as bytes32), bytes32(0) when none. Display only —
+  // excluded from the stable identity key.
+  positionInstanceId: `0x${string}`
 }
 
-// Raw tuple as returned by the typed-identity getAccountPositions (src/nav/INAVCalculator.sol :: Position).
+// Raw inner Position tuple as returned by getAccountPositionsVerbose (src/nav/INAVCalculator.sol :: Position).
+// Field names mirror the on-chain struct (balanceAsset / balanceAdapter); the hook aliases them below.
 type RawPosition = {
-  underlyingAsset: { asset: `0x${string}`; symbol: string; decimals: number }
-  balanceOracle: `0x${string}`
+  balanceAsset: { asset: `0x${string}`; symbol: string; decimals: number }
+  balanceAdapter: `0x${string}`
   amount: bigint
   isDebt: boolean
   quoteAsset: { asset: `0x${string}`; symbol: string; decimals: number }
@@ -46,39 +53,21 @@ type RawPosition = {
   priceDecimals: number
   stale: boolean
   quoteAssetStale: boolean
+  protocolBrand: `0x${string}`
   protocolId: `0x${string}`
+  protocolSubId: `0x${string}`
   positionId: `0x${string}`
   positionKind: number
   isLocked: boolean
+  positionInstanceId: `0x${string}`
 }
 
-// IPositionDescribable (src/balances/IPositionDescribable.sol) — the display layer. protocolName() returns the
-// human protocol name ("PancakeSwap V3"); positionLabels(positionId) returns an ordered hierarchy below the
-// protocol, leaf last (e.g. ["Liquidity Pool", "NFT #22279"]). The dashboard renders these rather than the
-// machine-level protocolId (a keccak slug, e.g. pancakeswap-v3): the slug and the human name are independent
-// fields, so rendering never depends on the protocolId value. (For now we render the leaf — the last element;
-// the full breadcrumb is a follow-up.)
-const describableAbi = [
-  { name: 'protocolName', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'string' }] },
-  {
-    name: 'positionLabels',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [{ name: 'positionId', type: 'bytes' }],
-    outputs: [{ type: 'string[]' }],
-  },
-] as const
-
-// PositionKind enum (src/utils/PositionKind.sol) → the leg-type label the dashboard renders on each row.
-// Wallet legs (kind 0) render flat with no type sub-header.
-const KIND_TO_TYPE: Record<number, string | null> = {
-  0: null, // Wallet
-  1: 'Supply', // Supplied
-  2: 'Borrow', // Borrowed
-  3: 'Collateral',
-  4: 'Staking',
-  5: 'Rewards',
-  6: 'Fees',
+// VerbosePosition tuple (src/nav/INAVCalculator.sol :: VerbosePosition) — the typed Position plus the
+// human protocolName and the on-chain display label hierarchy (leaf last), both from IPositionDescribable.
+type RawVerbosePosition = {
+  position: RawPosition
+  protocolName: string
+  labels: readonly string[]
 }
 
 export type ChainPositions = {
@@ -90,12 +79,14 @@ export type ChainPositions = {
 }
 
 export function useAccountPositions(account: `0x${string}` | undefined): { chains: ChainPositions[]; refetch: () => void } {
-  // Phase 1 — typed positions per chain.
+  // One verbose read per chain. This bundles what used to be two multicall phases (typed getAccountPositions,
+  // then a separate protocolName()/positionLabels() sweep over each (chain, oracle, positionId)) into a single
+  // getAccountPositionsVerbose call that returns the typed Position plus its human name and display labels.
   const posContracts = DEPLOYED_CHAINS.map(({ chain, navAddress }) => ({
     chainId: chain.id,
     address: navAddress,
     abi: navCalcAbi,
-    functionName: 'getAccountPositions' as const,
+    functionName: 'getAccountPositionsVerbose' as const,
     args: [account ?? zeroAddress, zeroAddress] as const,
   }))
 
@@ -104,81 +95,18 @@ export function useAccountPositions(account: `0x${string}` | undefined): { chain
     query: { enabled: !!account, refetchInterval: AUTOREFRESH_INTERVAL_MS },
   })
 
-  const rawByChain: RawPosition[][] = DEPLOYED_CHAINS.map((_, i) => {
-    const r = posData?.[i]
-    return r?.status === 'success' ? (r.result as RawPosition[]) : []
-  })
-
-  // Phase 2 — display labels from the adapter's IPositionDescribable. One protocolName() per (chain, oracle)
-  // and one positionLabels() per distinct (chain, oracle, positionId). Multi-leg positions (e.g. Supply + Fees)
-  // share a positionId, so de-duping keeps the positionLabels call-count proportional to logical positions, not legs.
-  const describeKey = (chainId: number, oracle: string, positionId: string) =>
-    `${chainId}:${oracle.toLowerCase()}:${positionId}`
-  const nameContracts: { chainId: number; address: `0x${string}`; abi: typeof describableAbi; functionName: 'protocolName'; key: string }[] = []
-  const seenNameKeys = new Set<string>()
-  const describeContracts: { chainId: number; address: `0x${string}`; abi: typeof describableAbi; functionName: 'positionLabels'; args: readonly [`0x${string}`] }[] = []
-  const seenDescribeKeys = new Set<string>()
-
-  rawByChain.forEach((positions, ci) => {
-    const chainId = DEPLOYED_CHAINS[ci].chain.id
-    for (const p of positions) {
-      const key = `${chainId}:${p.balanceOracle.toLowerCase()}`
-      if (!seenNameKeys.has(key)) {
-        seenNameKeys.add(key)
-        nameContracts.push({ chainId, address: p.balanceOracle, abi: describableAbi, functionName: 'protocolName', key })
-      }
-      const dKey = describeKey(chainId, p.balanceOracle, p.positionId)
-      if (!seenDescribeKeys.has(dKey)) {
-        seenDescribeKeys.add(dKey)
-        describeContracts.push({ chainId, address: p.balanceOracle, abi: describableAbi, functionName: 'positionLabels', args: [p.positionId] })
-      }
-    }
-  })
-
-  const allMeta = [
-    ...nameContracts.map(({ chainId, address, abi, functionName }) => ({ chainId, address, abi, functionName })),
-    ...describeContracts.map(({ chainId, address, abi, functionName, args }) => ({ chainId, address, abi, functionName, args })),
-  ]
-
-  const { data: metaData } = useReadContracts({
-    contracts: allMeta,
-    query: { enabled: !!account && allMeta.length > 0, refetchInterval: AUTOREFRESH_INTERVAL_MS },
-  })
-
-  const nameByKey = new Map<string, string>()
-  nameContracts.forEach((c, i) => {
-    const r = metaData?.[i]
-    if (r?.status === 'success' && typeof r.result === 'string' && r.result.length > 0) nameByKey.set(c.key, r.result)
-  })
-  const describeOffset = nameContracts.length
-  const labelByDescribeKey = new Map<string, string>()
-  describeContracts.forEach((c, i) => {
-    const r = metaData?.[describeOffset + i]
-    // positionLabels returns an ordered hierarchy (leaf last). Render the leaf as the per-position label
-    // for now (matches the prior single-string behaviour); the full breadcrumb is a follow-up.
-    if (r?.status === 'success' && Array.isArray(r.result) && r.result.length > 0) {
-      const leaf = r.result[r.result.length - 1] as string
-      if (leaf.length > 0) labelByDescribeKey.set(describeKey(c.chainId, c.address, c.args[0]), leaf)
-    }
-  })
-
-  // Assemble. Labels are looked up by (chain, oracle, positionId), so the legs of a multi-leg position share one result.
   const chains = DEPLOYED_CHAINS.map(({ chain, label }, ci) => {
-    const raw = rawByChain[ci]
-    const positions: OnchainPosition[] = raw.map((p) => {
-      const protocol = nameByKey.get(`${chain.id}:${p.balanceOracle.toLowerCase()}`) ?? `${p.protocolId.slice(0, 10)}…`
-      const posLabel = labelByDescribeKey.get(describeKey(chain.id, p.balanceOracle, p.positionId))
-      const type = KIND_TO_TYPE[p.positionKind] ?? null
-      // Wallet rows (kind 0) group under one oracle sub-header; their positionLabels() leaf is just the token
-      // symbol, so using it as the label would render a misleading header (first token's symbol over a mixed-token
-      // wallet group). The symbol is already shown per row — omit the label for Wallet; keep it for protocol
-      // positions where it's a real label (e.g. "NFT #22279"). When positionLabels() is empty (e.g. StakeWise
-      // V3 Gnosis vaults don't implement name()), `poolLabel` stays null — the per-vault layout groups by
-      // positionId and renders the full vault address from it, so no synthetic label is needed here.
-      const poolLabel = posLabel && p.positionKind !== 0 ? posLabel : null
+    const result = posData?.[ci]
+    const verbose: RawVerbosePosition[] =
+      result?.status === 'success' ? (result.result as RawVerbosePosition[]) : []
+    const positions: OnchainPosition[] = verbose.map((v) => {
+      const p = v.position
+      // protocolName is authoritative for grouping; only fall back to a truncated slug if the adapter's
+      // IPositionDescribable returned an empty name (should not happen for registered adapters).
+      const protocol = v.protocolName.length > 0 ? v.protocolName : `${p.protocolId.slice(0, 10)}…`
       return {
-        underlyingAsset: p.underlyingAsset,
-        balanceOracle: p.balanceOracle,
+        underlyingAsset: p.balanceAsset,
+        balanceOracle: p.balanceAdapter,
         amount: p.amount,
         isDebt: p.isDebt,
         quoteAsset: p.quoteAsset,
@@ -187,14 +115,14 @@ export function useAccountPositions(account: `0x${string}` | undefined): { chain
         priceDecimals: p.priceDecimals,
         stale: p.stale,
         protocol,
-        type,
-        poolLabel,
+        labels: v.labels,
         positionId: p.positionId,
         protocolId: p.protocolId,
+        positionKind: p.positionKind,
         isLocked: p.isLocked,
+        positionInstanceId: p.positionInstanceId,
       }
     })
-    const result = posData?.[ci]
     return {
       chainId: chain.id,
       label,

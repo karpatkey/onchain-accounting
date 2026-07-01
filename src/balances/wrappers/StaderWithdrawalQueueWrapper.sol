@@ -34,8 +34,8 @@ import "src/errors.sol";
 ///         must **delegatecall** this function: then `address(this)` is the Safe, `msg.sender` seen by the manager is
 ///         the Safe (== the owner ✓), and ETH flows straight to the Safe. Immutables (`USER_WITHDRAWAL_MANAGER`,
 ///         `ADAPTER`) are embedded in bytecode, so they are readable under delegatecall. It touches **no** wrapper
-///         storage. Cache cleanup calls the adapter's **permissionless** `pruneStale(address(this), _requestId)`, which
-///         removes the id only because the claim just deleted the request (so it is provably no longer owned) — it can
+///         storage. Cache cleanup calls the adapter's **permissionless** `remove(address(this), _requestId)`, which
+///         drops the id only because the claim just deleted the request (so it is provably no longer owned) — it can
 ///         never delete a live position.
 ///
 ///      A direct CALL to `claim` by a non-owner simply reverts inside the manager (`CallerNotAuthorizedToRedeem`), so it
@@ -86,20 +86,20 @@ contract StaderWithdrawalQueueWrapper {
         IERC20(ETHX).forceApprove(USER_WITHDRAWAL_MANAGER, _ethXAmount);
 
         requestId = IStaderUserWithdrawalManager(USER_WITHDRAWAL_MANAGER).requestWithdraw(_ethXAmount, msg.sender);
-        IStaderWithdrawalFeed(ADAPTER).submit(msg.sender, requestId);
+        IStaderWithdrawalQueueAssistedBalanceAdapter(ADAPTER).submit(msg.sender, requestId);
     }
 
     /// @notice Claim withdrawal request `_requestId` from Stader and stop tracking it. **Must be DELEGATECALLed by the
     ///         owning Safe** (see contract NatSpec): Stader's claim hard-requires `msg.sender == userRequest.owner`.
     ///         Under delegatecall `msg.sender` seen by the manager is the Safe (== owner), the ETH flows to the Safe,
-    ///         and the now-deleted request is pruned from the adapter cache via the permissionless `pruneStale`. Touches
+    ///         and the now-deleted request is dropped from the adapter cache via the permissionless `remove`. Touches
     ///         no wrapper storage. Mirrors `UserWithdrawalManager.claim`'s signature.
     /// @param _requestId The withdrawal request id to claim (owned by the delegatecalling Safe).
     function claim(uint256 _requestId) external {
         IStaderUserWithdrawalManager(USER_WITHDRAWAL_MANAGER).claim(_requestId);
-        // address(this) is the Safe under delegatecall — the account the id was submitted for. pruneStale removes it
-        // only because the claim just deleted the request (provably no longer owned); it can never delete a live one.
-        IStaderWithdrawalFeed(ADAPTER).pruneStale(address(this), _requestId);
+        // address(this) is the Safe under delegatecall — the account the id was submitted for. remove drops it only
+        // because the claim just deleted the request (provably no longer owned); it can never delete a live one.
+        IStaderWithdrawalQueueAssistedBalanceAdapter(ADAPTER).remove(address(this), _requestId);
     }
 }
 
@@ -114,7 +114,7 @@ interface IStaderUserWithdrawalManager {
 }
 
 /// @notice Minimal interface for the balance adapter's feed surface used by this wrapper.
-interface IStaderWithdrawalFeed {
+interface IStaderWithdrawalQueueAssistedBalanceAdapter {
     function submit(address account, uint256 requestId) external;
-    function pruneStale(address account, uint256 requestId) external;
+    function remove(address account, uint256 requestId) external;
 }

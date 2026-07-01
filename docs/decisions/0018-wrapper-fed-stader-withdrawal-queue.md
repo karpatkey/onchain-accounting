@@ -43,11 +43,11 @@ files (the shared `WrapperFed*` bases are intentionally deferred — see Consequ
 
 - **`StaderWithdrawalQueueBalanceAdapter`** — `AccessControl` (`DEFAULT_ADMIN_ROLE` administers `SUBMITTER_ROLE`) +
   the single-asset getter triad (WETH) + an `EnumerableSet.UintSet`-per-account request-id cache. `submit(account,
-  requestId)` / `remove(account, requestId)` are `onlyRole(SUBMITTER_ROLE)` (fail-loud `NotTokenOwner` /
-  `TokenIdCacheFull`); an admin `clearAccount` rescues a mis-fed account; and a **permissionless
-  `pruneStale(account, requestId)`** removes an id **only if** it is provably no longer owned by the account (claimed →
-  the manager deletes the request, so its owner reads back as `address(0)`) — it can only ever remove a dead entry,
-  never a live position. Valuation is unchanged from the plain adapter (`ethFinalized` once finalized, else the
+  requestId)` is `onlyRole(SUBMITTER_ROLE)` (fail-loud `NotTokenOwner` / `TokenIdCacheFull`); an admin `clearAccount`
+  rescues a mis-fed account; and a **permissionless `remove(account, requestId)`** drops an id **only if** it is
+  provably no longer owned by the account (claimed → the manager deletes the request, so its owner reads back as
+  `address(0)`) — it can only ever remove a dead entry, never a live position. Valuation is unchanged from the plain
+  adapter (`ethFinalized` once finalized, else the
   rate-converted `ethExpected`; `isLocked = !finalized`), emitting one `Supplied` leg per owned cached request under the
   static `positionId = abi.encode(USER_WITHDRAWAL_MANAGER)`, with the request id in the typed `positionInstanceId`.
 - **`StaderWithdrawalQueueWrapper`** — a **permissionless** forwarder (no roles, holds no funds) used in **two execution
@@ -61,7 +61,7 @@ files (the shared `WrapperFed*` bases are intentionally deferred — see Consequ
   - `claim(_requestId)` — **DELEGATECALLed by the owning Safe**, so `msg.sender` seen by the manager is the Safe
     (== owner) and the ETH flows straight to the Safe. Immutables are readable under delegatecall; the function takes no
     role guard and touches no wrapper storage (both would be the Safe's under delegatecall). It cleans the cache via the
-    adapter's permissionless `pruneStale(address(this), _requestId)` — which succeeds only because the claim just
+    adapter's permissionless `remove(address(this), _requestId)` — which succeeds only because the claim just
     deleted the request.
 
 ## Consequences
@@ -72,7 +72,7 @@ files (the shared `WrapperFed*` bases are intentionally deferred — see Consequ
   can be configured per-function accordingly. A direct CALL to `claim` by a non-owner fails safe (reverts inside the
   manager with `CallerNotAuthorizedToRedeem`). **EOA callers cannot use the delegatecalled claim** (an EOA cannot
   delegatecall) — they claim directly on Stader; the intended claimers are Safe/Avatar accounts.
-- On-claim cache cleanup relies on `pruneStale` (permissionless, provably-stale-only) rather than a `SUBMITTER_ROLE`
+- On-claim cache cleanup relies on the permissionless, provably-stale-only `remove` rather than a `SUBMITTER_ROLE`
   `remove`, because the claim runs outside the wrapper's role context. NAV correctness never depends on it — the adapter
   re-verifies ownership per read, so a claimed id already values to 0.
 - The wrapper-fed adapter remains a documented immutability exception (assisted family), expressed through

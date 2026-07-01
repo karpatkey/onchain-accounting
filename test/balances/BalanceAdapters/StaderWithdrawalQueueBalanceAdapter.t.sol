@@ -135,12 +135,6 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         adapter.submit(alice, 1);
     }
 
-    function test_remove_revertsForNonSubmitter() public {
-        vm.prank(alice);
-        vm.expectRevert();
-        adapter.remove(alice, 1);
-    }
-
     function test_clearAccount_revertsForNonAdmin() public {
         vm.prank(alice);
         vm.expectRevert();
@@ -191,26 +185,20 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         adapter.submit(alice, overflowId);
     }
 
-    // ---- remove / pruneStale / clearAccount ----
+    // ---- remove (permissionless, provably-stale-only) / clearAccount ----
 
-    function test_remove_dropsId() public {
-        _seed(alice, 1, 1e18, 0);
-        adapter.remove(alice, 1);
-        assertEq(adapter.requestIdsOf(alice).length, 0);
-    }
-
-    function test_pruneStale_revertsWhenStillOwned() public {
+    function test_remove_revertsWhenStillOwned() public {
         _seed(alice, 1, 1e18, 0);
         vm.expectRevert(abi.encodeWithSelector(NotTokenOwner.selector, alice, uint256(1)));
-        adapter.pruneStale(alice, 1);
+        adapter.remove(alice, 1);
     }
 
-    function test_pruneStale_removesClaimedIdPermissionlessly() public {
+    function test_remove_removesClaimedIdPermissionlessly() public {
         _seed(alice, 1, 1e18, 0);
         manager.clearOwner(1); // simulate claim -> owner becomes address(0)
-        // Anyone can prune a provably-stale id.
+        // Anyone can remove a provably-stale id.
         vm.prank(bob);
-        adapter.pruneStale(alice, 1);
+        adapter.remove(alice, 1);
         assertEq(adapter.requestIdsOf(alice).length, 0);
     }
 

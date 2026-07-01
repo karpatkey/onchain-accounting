@@ -52,7 +52,7 @@ contract StaderWithdrawalQueueBalanceAdapter is AccessControl, SingleAssetAssist
     /// @notice Hard cap on cached request ids per account. `_owedAmount` / `getAdapterPositions` iterate the whole set
     ///         on every NAV read, and an OOG there is NOT caught by NAVCalculator's try/catch — a bloated cache would
     ///         brick the account's NAV scan. Bounding the cache at submit time keeps the read gas-bounded; the wrapper
-    ///         GCs claimed ids via {pruneStale}. A real account never approaches 256 open requests.
+    ///         GCs claimed ids via {remove}. A real account never approaches 256 open requests.
     uint256 public constant MAX_REQUESTS = 256;
 
     bytes32 private constant PROTOCOL_BRAND = ProtocolIds.STADER;
@@ -125,31 +125,25 @@ contract StaderWithdrawalQueueBalanceAdapter is AccessControl, SingleAssetAssist
         emit RequestIdSubmitted(account, requestId);
     }
 
-    /// @notice Stop tracking `requestId` for `account` (idempotent — a no-op if not cached).
-    function remove(address account, uint256 requestId) external onlyRole(SUBMITTER_ROLE) {
-        if (_requestIds[account].remove(requestId)) emit RequestIdCleared(account, requestId);
-    }
-
     //
     // Writes (permissionless — GC of provably-stale ids)
     //
 
-    /// @notice Drop `requestId` from `account`'s cache **only if** it is no longer owned by `account` (claimed — the
-    ///         manager deletes the request, so its owner reads back as `address(0)`). Permissionless: it can only
+    /// @notice Stop tracking `requestId` for `account` — but **only if** it is no longer owned by `account` (claimed —
+    ///         the manager deletes the request, so its owner reads back as `address(0)`). Permissionless: it can only
     ///         *remove* an id, and only one that fails the live ownership check, so no live position can ever be
     ///         deleted. This is the cleanup path for a `claim` executed *outside* the wrapper's `SUBMITTER_ROLE`
-    ///         context — a Stader `claim` delegatecalled by the owning Safe (which does not hold `SUBMITTER_ROLE`, so
-    ///         cannot call {remove}).
-    /// @dev **Reverts** `NotTokenOwner` if `requestId` is still owned by `account` (nothing to prune) so a mistaken
-    ///      call is loud rather than silently pruning a live position.
-    function pruneStale(address account, uint256 requestId) external {
+    ///         context — a Stader `claim` delegatecalled by the owning Safe (which does not hold `SUBMITTER_ROLE`).
+    /// @dev **Reverts** `NotTokenOwner` if `requestId` is still owned by `account` (nothing to remove) so a mistaken
+    ///      call is loud rather than silently dropping a live position. Idempotent for an already-absent id.
+    function remove(address account, uint256 requestId) external {
         (address owner, bool live) = _ownerOf(requestId);
         if (live && owner == account) revert NotTokenOwner(account, requestId);
         if (_requestIds[account].remove(requestId)) emit RequestIdCleared(account, requestId);
     }
 
     /// @notice Drop all cached request ids for `account`. Admin-gated rescue (e.g. to reset a mis-fed account); the
-    ///         normal path is the wrapper's per-request {submit}/{remove}.
+    ///         normal path is the wrapper's per-request {submit} / stale-{remove}.
     function clearAccount(address account) external onlyRole(DEFAULT_ADMIN_ROLE) {
         EnumerableSet.UintSet storage set = _requestIds[account];
         for (uint256 n = set.length(); n > 0; --n) {

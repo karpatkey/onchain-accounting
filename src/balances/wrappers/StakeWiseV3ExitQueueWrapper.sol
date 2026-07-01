@@ -86,6 +86,13 @@ contract StakeWiseV3ExitQueueWrapper is AccessControl {
     ///         adapter call carries `msg.sender = this wrapper`, holder of the adapter's `WRAPPER_ROLE`). Invoked by
     ///         {enterExitQueue} via {SELF}, or standalone by an approved depositor. `onlyRole(DEPOSITOR_ROLE)` and
     ///         `account == msg.sender` — a depositor can only track its OWN tickets.
+    /// @dev This is `external` by necessity: {enterExitQueue} runs in the Safe's context (delegatecall) and can only
+    ///      reach the singleton — where the adapter must see `msg.sender = this wrapper` — through a real `CALL` to
+    ///      {SELF}. That call is indistinguishable from a depositor calling this function directly (both carry
+    ///      `msg.sender = the Safe`, and the EVM has no call-stack introspection), so this **cannot** be restricted to
+    ///      "only via {enterExitQueue}". It doesn't need to be: the adapter re-validates every ticket live on-chain
+    ///      (StakeWise-registered vault + non-zero owed for `account`), so a standalone call can only ever register a
+    ///      real, account-owned, in-queue position — exactly what {enterExitQueue} would. See ADR 0019.
     function submit(address account, address vault, uint256 positionTicket, uint256 timestamp)
         external
         onlyRole(DEPOSITOR_ROLE)
@@ -116,6 +123,9 @@ contract StakeWiseV3ExitQueueWrapper is AccessControl {
     /// @notice Deregister one exit-queue ticket from the adapter for `account`. Runs on the wrapper singleton; same
     ///         gating as {submit} (`onlyRole(DEPOSITOR_ROLE)` + `account == msg.sender`). Invoked by
     ///         {claimExitedAssets} via {SELF}, or standalone by an approved depositor.
+    /// @dev `external` for the same delegatecall reason as {submit}, and likewise not restrictable to "only via
+    ///      {claimExitedAssets}". Deregistering keeps NAV within the family's under-report-only invariant, and stale
+    ///      tickets already read as 0 anyway.
     function remove(address account, address vault, uint256 positionTicket, uint256 timestamp)
         external
         onlyRole(DEPOSITOR_ROLE)

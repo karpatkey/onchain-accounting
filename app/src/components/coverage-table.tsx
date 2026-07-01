@@ -144,17 +144,20 @@ function instanceAppUrl(brandKey: string, instance: CoverageInstance, chainId: n
   return null
 }
 
-// Small "i" info affordance with a hover tooltip — explains a product / category inline (replaces the
-// old adapter-type badge).
-function InfoTip({ children }: { children: React.ReactNode }) {
+// Attention-calling badge for assisted (agent-fed) adapters — amber so it stands out from the quiet tree,
+// labelled "Assisted" with the how-it-works explanation on hover.
+function AssistedBadge({ children }: { children: React.ReactNode }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <span
-          className="inline-flex h-3.5 w-3.5 shrink-0 cursor-default items-center justify-center rounded-full border border-neutral-400 text-[9px] font-semibold text-neutral-600"
-          aria-label="More info"
+          className="inline-flex shrink-0 cursor-default items-center gap-1 rounded-full border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800"
+          aria-label="Assisted adapter — how it works"
         >
-          i
+          <span className="inline-flex h-3 w-3 items-center justify-center rounded-full bg-amber-500 text-[8px] font-bold text-white">
+            i
+          </span>
+          Assisted
         </span>
       </TooltipTrigger>
       <TooltipContent className="max-w-xs">{children}</TooltipContent>
@@ -304,13 +307,13 @@ function ProductRow({
           {product.isMeta && (
             <span className="text-xs text-neutral-600 tabular-nums">{product.instances.length}</span>
           )}
-          {/* Assisted (agent-fed) adapters can't be enumerated on-chain — explain how they're covered. */}
+          {/* Assisted (agent-fed) adapters can't be enumerated on-chain — flag prominently + explain. */}
           {product.isAssisted && (
-            <InfoTip>
+            <AssistedBadge>
               Agent-fed adapter: positions are covered by coordinates (NFT / request ids) submitted by a
               trusted assistant and re-verified on-chain each read — the assistant can only under-report,
               never fabricate. Individual positions appear once a coordinate is submitted.
-            </InfoTip>
+            </AssistedBadge>
           )}
           {/* The adapter address — the on-chain audit trail (balanceAdapter), explorer-linked. */}
           <AddressChip address={product.adapter} chainId={chainId} className="text-xs text-neutral-600" />

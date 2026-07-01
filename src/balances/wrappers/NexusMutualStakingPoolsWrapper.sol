@@ -17,11 +17,13 @@ import "src/errors.sol";
 ///         caller; `withdraw` forwards to the pool and pops the `tokenId`. The adapter grants this contract
 ///         `WRAPPER_ROLE`, so any address the admin grants `DEPOSITOR_ROLE` gets its Nexus positions tracked
 ///         automatically as it deposits/withdraws through the wrapper.
-/// @dev **Pure forwarder — custody is arranged off-chain.** Nexus's `depositTo` pulls `amount` NXM from `msg.sender`
-///      (= this wrapper) via `tokenController.depositStakedNXM`, so the wrapper must already hold the NXM; `depositTo`
-///      only sets the exact-`amount` allowance to the `TOKEN_CONTROLLER` right before the call (`forceApprove`). It
-///      does **not** move NXM between users. `withdraw` requires this wrapper to be authorized on the `StakingNFT`
-///      (the NFT owner, or its approved operator) — arranged off-chain.
+/// @dev **NXM is pulled from the caller.** Nexus's `depositTo` pulls `amount` NXM from `msg.sender` (= this wrapper)
+///      via `tokenController.depositStakedNXM`, so `depositTo` first `transferFrom`s the exact `amount` from the
+///      DEPOSITOR into this wrapper, then sets the exact-`amount` allowance to the `TOKEN_CONTROLLER` right before the
+///      pool call (`forceApprove`). The DEPOSITOR must therefore approve this wrapper to spend its NXM beforehand. The
+///      wrapper is otherwise custody-free: it holds no NXM between calls (the deposit consumes exactly what it pulled).
+///      `withdraw` requires this wrapper to be authorized on the `StakingNFT` (the NFT owner, or its approved operator)
+///      — arranged off-chain.
 ///
 ///      **Tracked account = the caller.** Both mutators track/untrack for `msg.sender` (the `DEPOSITOR_ROLE` holder),
 ///      matching the adapter's live ownership re-verification. Nexus mints/tops-up the position to `destination`, which
@@ -67,7 +69,7 @@ contract NexusMutualStakingPoolsWrapper is AccessControl {
     ///         Mirrors the Nexus pool's `depositTo`, prepended with `poolAddress`. Reverts (rolling back the deposit)
     ///         if the resulting NFT is not owned by `msg.sender` — set `destination` to `msg.sender`.
     /// @param poolAddress   The Nexus staking pool.
-    /// @param amount        NXM to stake (this wrapper must hold it).
+    /// @param amount        NXM to stake (pulled from `msg.sender` — the DEPOSITOR must approve this wrapper first).
     /// @param trancheId     Target tranche.
     /// @param requestTokenId 0 to mint a new StakingNFT, or an existing id to top it up.
     /// @param destination   Recipient/owner of the StakingNFT — must equal `msg.sender` (see contract NatSpec).
@@ -79,8 +81,10 @@ contract NexusMutualStakingPoolsWrapper is AccessControl {
         uint256 requestTokenId,
         address destination
     ) external onlyRole(DEPOSITOR_ROLE) returns (uint256 tokenId) {
-        // Exact-amount allowance for the TokenController (Nexus pulls NXM from this wrapper). forceApprove tolerates
-        // tokens that require resetting a non-zero allowance.
+        // Pull the NXM from the DEPOSITOR, then set the exact-amount allowance for the TokenController (Nexus pulls
+        // NXM from this wrapper via tokenController.depositStakedNXM). forceApprove tolerates tokens that require
+        // resetting a non-zero allowance.
+        IERC20(NXM).safeTransferFrom(msg.sender, address(this), amount);
         IERC20(NXM).forceApprove(TOKEN_CONTROLLER, amount);
         tokenId = INexusStakingPool(poolAddress).depositTo(amount, trancheId, requestTokenId, destination);
         // Track for the caller. Fail-loud: reverts NotTokenOwner (rolling back the deposit) if destination != msg.sender.

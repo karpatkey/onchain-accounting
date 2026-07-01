@@ -99,8 +99,10 @@ contract NexusMutualStakingPoolsWrapperTest is BalanceAdapterTestBase {
         adapter.grantRole(WRAPPER_ROLE, address(wrapper));
         wrapper.grantRole(DEPOSITOR_ROLE, depositor);
 
-        // Pre-fund the wrapper with NXM (pure forwarder — custody arranged off-chain).
-        deal(address(nxm), address(wrapper), 1e24);
+        // NXM is pulled from the DEPOSITOR: fund the depositor and approve the wrapper to spend it.
+        deal(address(nxm), depositor, 1e24);
+        vm.prank(depositor);
+        nxm.approve(address(wrapper), type(uint256).max);
     }
 
     // ---- Constructor ----
@@ -141,6 +143,7 @@ contract NexusMutualStakingPoolsWrapperTest is BalanceAdapterTestBase {
 
     function test_depositTo_forwardsAndTracks() public {
         pool.setNextTokenId(7);
+        uint256 depositorBefore = nxm.balanceOf(depositor);
         vm.prank(depositor);
         uint256 id = wrapper.depositTo(address(pool), 100, 3, 0, depositor);
 
@@ -149,7 +152,10 @@ contract NexusMutualStakingPoolsWrapperTest is BalanceAdapterTestBase {
         assertEq(pool.lastTranche(), 3);
         assertEq(pool.lastRequestId(), 0);
         assertEq(pool.lastDestination(), depositor);
-        // Allowance to the TokenController was set to exactly `amount` (nothing pulled it in the mock).
+        // NXM was pulled from the depositor into the wrapper (the mock pool/controller does not pull further).
+        assertEq(nxm.balanceOf(depositor), depositorBefore - 100);
+        assertEq(nxm.balanceOf(address(wrapper)), 100);
+        // Allowance to the TokenController was set to exactly `amount`.
         assertEq(nxm.allowance(address(wrapper), address(tokenController)), 100);
         // The id is now tracked for the caller.
         uint256[] memory tracked = adapter.tokenIdsOf(depositor);

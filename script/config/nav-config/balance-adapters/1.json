@@ -173,7 +173,7 @@
   },
   "EtherFiWithdrawalQueueAssisted": {
     "enabled": true,
-    "$comment": "ether.fi withdrawal-queue cache adapter (ADR 0014). Registered via addBalanceAdapters; reports 0 until the kpk-agents submitter feeds tokenIds."
+    "$comment": "ether.fi withdrawal-queue cache adapter (wrapper-fed; ADR 0020). Registered via addBalanceAdapters; reports 0 until the EtherFiWithdrawalQueueWrapper (WRAPPER_ROLE) feeds tokenIds."
   },
   "NexusMutualStakingPoolsAssisted": {
     "enabled": true,

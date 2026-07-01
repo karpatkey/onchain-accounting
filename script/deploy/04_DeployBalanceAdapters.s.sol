@@ -717,9 +717,12 @@ contract DeployBalanceAdapters is BaseDeployScript {
         internal
         returns (address)
     {
-        // Owner = chainConfig.admin (OIV Safe / agent role): the only caller of submitTokenIds / clearTokenId. The
-        // adapter values from live on-chain reads and re-verifies ownership every read, so the owner cannot
-        // fabricate amounts (under-report only). See docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md.
+        // admin = chainConfig.admin (OIV Safe): administers WRAPPER_ROLE. This is now the WRAPPER-fed adapter — its
+        // submit/remove are gated on WRAPPER_ROLE, held by the EtherFiWithdrawalQueueWrapper, which is granted AFTER
+        // it is deployed (it needs this adapter's address at construction), so the wrapper arg is address(0) here.
+        // The adapter values from live on-chain reads and re-verifies ownership every read, so the feeder can only
+        // under-report. See docs/decisions/0020-wrapper-fed-etherfi-withdrawal-queue.md. (Wrapper deploy + WRAPPER_ROLE
+        // grant wiring is a deferred follow-up.)
         address withdrawRequestNft = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "withdrawRequestNft")
         );
@@ -735,7 +738,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         );
 
         EtherFiWithdrawalQueueAssistedBalanceAdapter adapter = new EtherFiWithdrawalQueueAssistedBalanceAdapter(
-            withdrawRequestNft, liquidityPool, underlyingToken, navCalculator, chainConfig.admin, chainConfig.admin
+            withdrawRequestNft, liquidityPool, underlyingToken, navCalculator, chainConfig.admin, address(0)
         );
         return address(adapter);
     }

@@ -12,7 +12,7 @@ import "src/errors.sol";
 /// @title EtherFiWithdrawalQueueWrapper
 /// @author KPK
 /// @notice `DEPOSITOR_ROLE`-gated forwarder around ether.fi's withdrawal queue that keeps the wrapper-fed
-///         {EtherFiWithdrawalQueueBalanceAdapter} id-cache current **on-chain, atomically**. Any address the admin
+///         {EtherFiWithdrawalQueueAssistedBalanceAdapter} id-cache current **on-chain, atomically**. Any address the admin
 ///         grants `DEPOSITOR_ROLE` gets its ether.fi withdrawal requests tracked automatically as it requests/claims
 ///         through this wrapper. The adapter grants this contract `WRAPPER_ROLE`.
 ///
@@ -63,7 +63,7 @@ contract EtherFiWithdrawalQueueWrapper is AccessControl {
     /// @notice eETH token — pulled from the DEPOSITOR on `requestWithdraw` and approved to the LiquidityPool.
     address public immutable EETH;
 
-    /// @param adapter_            The wrapper-fed {EtherFiWithdrawalQueueBalanceAdapter}. Must be a contract.
+    /// @param adapter_            The wrapper-fed {EtherFiWithdrawalQueueAssistedBalanceAdapter}. Must be a contract.
     /// @param liquidityPool_      ether.fi LiquidityPool. Must be a contract.
     /// @param withdrawRequestNft_ ether.fi WithdrawRequestNFT. Must be a contract.
     /// @param eeth_               eETH token. Must be a contract.

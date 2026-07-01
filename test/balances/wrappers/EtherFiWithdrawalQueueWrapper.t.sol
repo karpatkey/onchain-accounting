@@ -8,9 +8,9 @@ import {Mock_ERC20} from "test/mocks/tokens.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
 import {EtherFiWithdrawalQueueWrapper} from "src/balances/wrappers/EtherFiWithdrawalQueueWrapper.sol";
 import {
-    EtherFiWithdrawalQueueBalanceAdapter
-} from "src/balances/WrapperFedBalanceAdapters/EtherFiWithdrawalQueueBalanceAdapter.sol";
-import {IEtherFiWithdrawRequestNFT} from "src/balances/WrapperFedBalanceAdapters/EtherFiWithdrawalValuationBase.sol";
+    EtherFiWithdrawalQueueAssistedBalanceAdapter
+} from "src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueAssistedBalanceAdapter.sol";
+import {IEtherFiWithdrawRequestNFT} from "src/balances/AssistedBalanceAdapters/EtherFiWithdrawalValuationBase.sol";
 import {NotAContract} from "src/errors.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
@@ -113,7 +113,7 @@ contract EtherFiWithdrawalQueueWrapperTest is Test {
     MockClaimNFT nft;
     MockLiquidityPool lp;
     BalancesHarness balances;
-    EtherFiWithdrawalQueueBalanceAdapter adapter;
+    EtherFiWithdrawalQueueAssistedBalanceAdapter adapter;
     EtherFiWithdrawalQueueWrapper wrapper;
     MockSafe safe;
 
@@ -125,7 +125,7 @@ contract EtherFiWithdrawalQueueWrapperTest is Test {
         balances.addSupportedAssetForTest(NATIVE);
 
         // Adapter first (wrapper unknown at construction) → deploy wrapper → grant WRAPPER_ROLE to the wrapper.
-        adapter = new EtherFiWithdrawalQueueBalanceAdapter(
+        adapter = new EtherFiWithdrawalQueueAssistedBalanceAdapter(
             address(nft), address(lp), NATIVE, address(balances), address(this), address(0)
         );
         wrapper = new EtherFiWithdrawalQueueWrapper(

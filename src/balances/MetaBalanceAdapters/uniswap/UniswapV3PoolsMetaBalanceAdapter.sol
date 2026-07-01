@@ -114,6 +114,12 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
         address token1 = IUniswapV3Pool(pool).token1();
         uint24 fee = IUniswapV3Pool(pool).fee();
 
+        // Fast path: a non-zero `assetFilter` matching neither pool token can only ever yield an empty result, so
+        // skip the two registry lookups, the live `slot0` read, and the whole NFT enumeration below.
+        if (assetFilter != address(0) && assetFilter != token0 && assetFilter != token1) {
+            return new INAVCalculator.PositionBalance[](0);
+        }
+
         // Both tokens must be registered: valuing the LP split needs both oracle prices. `assetFilter` only gates
         // which legs are emitted (f0reg/f1reg).
         (INAVCalculator.Asset memory a0, bool reg0) = _getAssetInfo(token0);

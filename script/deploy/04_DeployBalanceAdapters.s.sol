@@ -811,10 +811,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
     /// @notice Deploys the Uniswap V3 pools meta-adapter (ADR 0010; on-chain NFT enumeration via the NPM's
     ///         ERC721Enumerable surface). Constructor takes (positionManager, protocol, navCalculator); the active
     ///         pool set lives on NAVCalculator (nav-config instances). Reverts the interim assisted adapter.
-    function _deployUniswapV3PoolsMeta(string memory adapterName, address navCalculator)
-        internal
-        returns (address)
-    {
+    function _deployUniswapV3PoolsMeta(string memory adapterName, address navCalculator) internal returns (address) {
         address positionManager = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionManager")
         );

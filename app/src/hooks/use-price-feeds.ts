@@ -6,6 +6,15 @@ import { AUTOREFRESH_INTERVAL_MS, DEPLOYED_CHAINS } from '@/config/chains'
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const
 
+// IPrices.PriceType.API3. An API3 dAPI reports an 18-decimal answer via latestRoundData(), but the
+// contract stores the feed's config decimals as 8 and normalises each raw read with `answer / 1e10`
+// (see PriceFeedLib._selectFeedCore). We mirror that here so the per-feed price displays at the same
+// 8-decimal scale as the winning price; otherwise the raw 18-dec answer formatted at 8 dp overstates
+// the price by 1e10. Chainlink/Redstone need no scaling (config.decimals == feed.decimals()); Custom
+// feeds return latestRoundData().answer already at their config decimals.
+const PRICE_TYPE_API3 = 2
+const API3_SCALE_DOWN = 10n ** 10n
+
 export type OnchainAsset = {
   asset: `0x${string}`
   symbol: string
@@ -196,6 +205,8 @@ export function useChainPriceFeeds(chainIdx: number): ChainPriceFeeds {
       price = tuple[1]
       updatedAt = tuple[3]
       available = true
+      // API3 answers are 18-dec; normalise to the config's 8-dec scale (mirrors the contract).
+      if (Number(cfg.priceType) === PRICE_TYPE_API3) price = price / API3_SCALE_DOWN
     }
 
     const winner = winners[ref.assetIdx]

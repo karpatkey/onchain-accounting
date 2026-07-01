@@ -118,6 +118,7 @@ const KIND_TO_TYPE: Record<number, string | null> = {
 }
 
 const KIND_COLLATERAL = 3
+const KIND_WALLET = 0
 
 function legRole(positionKind: number): string | null {
   return KIND_TO_TYPE[positionKind] ?? null
@@ -571,9 +572,11 @@ function PositionSection({
             typeGroups.length > 1 && typeGroups.some((tg) => tg.type !== null)
           return (
             <Fragment key={`${oracle}-${si}`}>
-              {/* Sub-header only when there's a real market/pool label (skip plain wallet holdings). Show its
-                  total only when it aggregates >1 row; for a single leg it would just repeat the row amount. */}
-              {sg.label !== null && (
+              {/* Sub-header only when there's a real market/pool label. Skip wallet holdings (kind 0): their
+                  label leaf is just the token name, which repeats the token symbol on the row below — a
+                  redundant header. Show the total only when it aggregates >1 row; for a single leg it would
+                  just repeat the row amount. */}
+              {sg.label !== null && !sg.positions.every((p) => p.positionKind === KIND_WALLET) && (
                 <PoolSubHeader label={sg.label} total={sg.positions.length > 1 ? subTotal : null} isDebt={isDebt} />
               )}
               {renderTypeSubHeaders

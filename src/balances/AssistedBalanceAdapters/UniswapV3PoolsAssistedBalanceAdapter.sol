@@ -6,9 +6,8 @@ import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
+import {AssistedNftCacheAdapter} from "src/balances/AssistedBalanceAdapters/AssistedNftCacheAdapter.sol";
 import {AssistedNftValuationAdapter} from "src/balances/AssistedBalanceAdapters/AssistedNftValuationAdapter.sol";
-import {NftIdCache} from "src/balances/AssistedBalanceAdapters/NftIdCache.sol";
-import {NftIdValuation} from "src/balances/AssistedBalanceAdapters/NftIdValuation.sol";
 import {LabelLib} from "src/balances/LabelLib.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
@@ -139,7 +138,7 @@ contract UniswapV3PoolsAssistedBalanceAdapter is AssistedNftValuationAdapter, IP
     // Cache hooks (AssistedNftCacheAdapter)
     //
 
-    /// @inheritdoc NftIdCache
+    /// @inheritdoc AssistedNftCacheAdapter
     /// @dev Ownership read for the cache's write-time check: wraps `INonfungiblePositionManager.ownerOf` so a
     ///      non-existent / burned id (which `ownerOf` reverts on) returns `(0, false)` rather than bubbling.
     function _ownerOf(uint256 tokenId) internal view override returns (address, bool) {
@@ -150,12 +149,12 @@ contract UniswapV3PoolsAssistedBalanceAdapter is AssistedNftValuationAdapter, IP
         }
     }
 
-    /// @inheritdoc NftIdCache
+    /// @inheritdoc AssistedNftCacheAdapter
     function _maxTokenIds() internal pure override returns (uint256) {
         return MAX_TOKEN_IDS;
     }
 
-    /// @inheritdoc NftIdValuation
+    /// @inheritdoc AssistedNftValuationAdapter
     /// @dev Up to 4 legs per NFT: `Supplied` x2 (liq0/liq1) + `Fees` x2 (fee0/fee1).
     function _maxLegsPerId() internal pure override returns (uint256) {
         return 4;
@@ -244,7 +243,7 @@ contract UniswapV3PoolsAssistedBalanceAdapter is AssistedNftValuationAdapter, IP
     // Internal — valuation
     //
 
-    /// @inheritdoc NftIdValuation
+    /// @inheritdoc AssistedNftValuationAdapter
     /// @notice Values one cached `tokenId` into its (up to 4) legs: `Supplied` x2 (in-range split) + `Fees` x2 (full
     ///         unclaimed). Returns an empty array if the id is not owned by `account`, its pool tokens are
     ///         unregistered, the triple has no canonical pool, or nothing is in the requested `assetFilter`.

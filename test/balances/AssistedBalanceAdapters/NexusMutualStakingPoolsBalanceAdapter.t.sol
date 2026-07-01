@@ -14,7 +14,6 @@ import {
 import {NexusMutualStakingPoolsBalanceAdapter} from
     "src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {IWrapperFedBalanceAdapter} from "src/balances/IWrapperFedBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
@@ -354,7 +353,6 @@ contract NexusMutualStakingPoolsBalanceAdapterTest is BalanceAdapterTestBase {
     // ---- Interface ----
 
     function test_supportsInterface() public view {
-        assertTrue(adapter.supportsInterface(type(IWrapperFedBalanceAdapter).interfaceId));
         assertTrue(adapter.supportsInterface(type(IBalanceAdapter).interfaceId));
         assertTrue(adapter.supportsInterface(type(IPositionDescribable).interfaceId));
         assertTrue(adapter.supportsInterface(type(IAccessControl).interfaceId));

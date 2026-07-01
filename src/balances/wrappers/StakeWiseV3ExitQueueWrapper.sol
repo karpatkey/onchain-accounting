@@ -54,6 +54,19 @@ contract StakeWiseV3ExitQueueWrapper is AccessControl {
         address indexed account, address indexed vault, uint256 positionTicket, uint256 timestamp
     );
 
+    /// @notice Thrown when an entrypoint that must be delegatecalled is called directly on the singleton.
+    error NotDelegateCall();
+
+    /// @dev Reverts unless the current call is a delegatecall (running in a caller's context, not the singleton's).
+    ///      Under delegatecall `address(this)` is the caller Safe; on a direct call it is this deployment (`== SELF`,
+    ///      the address pinned at construction). {enterExitQueue} / {claimExitedAssets} rely on running in the Safe's
+    ///      context (so the vault sees `msg.sender = Safe`), so a direct call is always a mistake — fail loud here
+    ///      instead of letting the vault revert obscurely.
+    modifier onlyDelegateCall() {
+        if (address(this) == SELF) revert NotDelegateCall();
+        _;
+    }
+
     /// @param adapter_ The {StakeWiseV3ExitQueueAssistedBalanceAdapter} to feed. Must be a contract.
     /// @param admin_   Holder of `DEFAULT_ADMIN_ROLE` — administers `DEPOSITOR_ROLE`. Required.
     constructor(address adapter_, address admin_) {
@@ -68,11 +81,12 @@ contract StakeWiseV3ExitQueueWrapper is AccessControl {
     ///         Mirrors the vault's `enterExitQueue(shares, receiver)`, with `vault` prepended and `receiver` dropped:
     ///         the receiver is always forced to the executing Safe (`address(this)`), so only the Safe can claim and
     ///         claimed assets are paid to it.
-    /// @dev MUST be delegatecalled by the depositor Safe. Locks `shares` of the Safe's `vault` shares into the queue.
+    /// @dev MUST be delegatecalled by the depositor Safe (enforced by {onlyDelegateCall}). Locks `shares` of the Safe's
+    ///      `vault` shares into the queue.
     /// @param vault  StakeWise V3 vault.
     /// @param shares Vault shares to move into the exit queue (burned from the Safe).
     /// @return positionTicket The ticket assigned by the vault, now tracked on the adapter for the Safe.
-    function enterExitQueue(address vault, uint256 shares) external returns (uint256 positionTicket) {
+    function enterExitQueue(address vault, uint256 shares) external onlyDelegateCall returns (uint256 positionTicket) {
         _requireDepositor();
 
         positionTicket = IStakeWiseVaultEnterExit(vault).enterExitQueue(shares, address(this));
@@ -103,14 +117,16 @@ contract StakeWiseV3ExitQueueWrapper is AccessControl {
 
     /// @notice Claim exited assets for a queue position and deregister its ticket from the adapter. Signature mirrors
     ///         the vault's `claimExitedAssets(positionTicket, timestamp, exitQueueIndex)`, with `vault` prepended.
-    /// @dev MUST be delegatecalled by the depositor Safe (StakeWise keys the claim on `msg.sender = Safe`). Claimed
-    ///      assets are paid to the Safe by the vault; the wrapper only forwards the call and updates the adapter.
+    /// @dev MUST be delegatecalled by the depositor Safe (enforced by {onlyDelegateCall}; StakeWise keys the claim on
+    ///      `msg.sender = Safe`). Claimed assets are paid to the Safe by the vault; the wrapper only forwards the call
+    ///      and updates the adapter.
     /// @param vault          StakeWise V3 vault.
     /// @param positionTicket The exit position's ticket.
     /// @param timestamp      Entry timestamp (part of the exit-request key; the same value registered on `submit`).
     /// @param exitQueueIndex Checkpoint index for the position (from `getExitQueueIndex`).
     function claimExitedAssets(address vault, uint256 positionTicket, uint256 timestamp, uint256 exitQueueIndex)
         external
+        onlyDelegateCall
     {
         _requireDepositor();
 

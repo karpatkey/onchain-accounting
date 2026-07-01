@@ -155,6 +155,19 @@ contract StakeWiseV3ExitQueueWrapperTest is BalanceAdapterTestBase {
         safe.exec(address(w), abi.encodeCall(w.enterExitQueue, (address(vault), 5 ether)));
     }
 
+    function test_enterExitQueue_revertsOnDirectCall() public {
+        (StakeWiseV3ExitQueueWrapper w,) = _wrapperWithMockTracker();
+        // Called directly on the singleton (not via delegatecall) → address(this) == SELF → NotDelegateCall.
+        vm.expectRevert(StakeWiseV3ExitQueueWrapper.NotDelegateCall.selector);
+        w.enterExitQueue(address(vault), 5 ether);
+    }
+
+    function test_claimExitedAssets_revertsOnDirectCall() public {
+        (StakeWiseV3ExitQueueWrapper w,) = _wrapperWithMockTracker();
+        vm.expectRevert(StakeWiseV3ExitQueueWrapper.NotDelegateCall.selector);
+        w.claimExitedAssets(address(vault), 1000, block.timestamp, 1);
+    }
+
     function test_claimExitedAssets_claimsAndRemoves() public {
         (StakeWiseV3ExitQueueWrapper w, MockTracker t) = _wrapperWithMockTracker();
         bytes memory ret = safe.exec(address(w), abi.encodeCall(w.enterExitQueue, (address(vault), 5 ether)));

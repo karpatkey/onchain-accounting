@@ -24,7 +24,6 @@ import type {
 } from '@/hooks/use-coverage'
 import { TokenLogo } from '@/components/token-logo'
 import { AddressChip } from '@/components/address-chip'
-import { explorerAddressUrl } from '@/config/chains'
 
 // --- protocol icons (keyed by brandKey / normalised name) --------------------
 // Replicated from the portfolio ProtocolGroup lookup: design-system CircleColor icons where they
@@ -132,19 +131,17 @@ const CHAIN_SLUG: Record<number, string> = {
   8453: 'base',
 }
 
-function instanceAppUrl(
-  brandKey: string,
-  instance: CoverageInstance,
-  chainId: number,
-  protocolUrl: string | null,
-): string | null {
+// A deep-link to the SPECIFIC instance in the protocol's app (a market/vault page) — NOT the landing
+// page (that lives on the protocol header). Returns null when no reliable per-instance URL exists, so
+// we show no app link rather than repeating the landing page. Extend per-protocol as patterns firm up.
+function instanceAppUrl(brandKey: string, instance: CoverageInstance, chainId: number): string | null {
   const slug = CHAIN_SLUG[chainId]
   if (brandKey === 'morpho' && slug) {
     // Morpho market ids are raw 32-byte hashes (no address); vaults are addresses.
     if (!instance.address) return `https://app.morpho.org/${slug}/market/${instance.id}`
     return `https://app.morpho.org/${slug}/vault/${instance.address}`
   }
-  return protocolUrl
+  return null
 }
 
 // Small "i" info affordance with a hover tooltip — explains a product / category inline (replaces the
@@ -222,18 +219,16 @@ function InstanceRow({
   instance,
   brandKey,
   displayName,
-  protocolUrl,
   chainId,
   isLast,
 }: {
   instance: CoverageInstance
   brandKey: string
   displayName: string
-  protocolUrl: string | null
   chainId: number
   isLast: boolean
 }) {
-  const appUrl = instanceAppUrl(brandKey, instance, chainId, protocolUrl)
+  const appUrl = instanceAppUrl(brandKey, instance, chainId)
   return (
     <div className="flex items-center gap-2 py-1.5 pl-12 pr-3">
       <span className="text-neutral-400 select-none leading-5" aria-hidden>
@@ -271,23 +266,25 @@ function ProductRow({
   product,
   brandKey,
   displayName,
-  protocolUrl,
   chainId,
   isLast,
 }: {
   product: CoverageProduct
   brandKey: string
   displayName: string
-  protocolUrl: string | null
   chainId: number
   isLast: boolean
 }) {
-  // Show underlying-token chips only where the tokens ARE the coverage: wallet holdings and staking
-  // modules (Safety Module / Umbrella). For queues / cooldowns / rewards / lending markets the feature
-  // label is the point — the token wall is noise (per product guidance). The wallet lists ALL its tokens
-  // (that IS the "tokens we track directly" statement); staking modules are short, so no cap needed there.
+  // Show underlying-token chips where the tokens ARE the coverage: wallet holdings, staking modules
+  // (Safety Module / Umbrella), and any plain adapter whose feature label couldn't be derived on-chain
+  // (productLabel fell back to the protocol name — e.g. Cap) so at least its assets convey what's covered.
+  // Queues / cooldowns / rewards / markets keep just the feature label (the token wall is noise).
   const isWallet = /^wallet/i.test(product.productLabel)
-  const showsTokens = !product.isMeta && (isWallet || /^(safety module|umbrella)/i.test(product.productLabel))
+  const labelIsFallback = product.productLabel === product.protocolName
+  const showsTokens =
+    !product.isMeta &&
+    (isWallet || /^(safety module|umbrella)/i.test(product.productLabel) || labelIsFallback) &&
+    product.assets.length > 0
   const shownAssets = showsTokens ? product.assets : []
 
   return (
@@ -305,18 +302,17 @@ function ProductRow({
           {/* The specific token/name below the feature (e.g. "Withdrawal Queue · stETH"), muted. */}
           {product.detail && <span className="text-xs text-neutral-600">· {product.detail}</span>}
           {product.isMeta && (
-            <>
-              <span className="text-xs text-neutral-600 tabular-nums">{product.instances.length}</span>
-              {product.category && (
-                <InfoTip>
-                  {`One immutable meta-adapter values every registered ${product.category.toLowerCase()} listed below — added or removed by config, not redeploy.`}
-                </InfoTip>
-              )}
-            </>
+            <span className="text-xs text-neutral-600 tabular-nums">{product.instances.length}</span>
           )}
-          {/* Link to the product in the protocol's app, then the adapter address (the on-chain audit
-              trail / balanceAdapter, explorer-linked) — split so the app link and the contract are distinct. */}
-          {protocolUrl && <ExtLinkIcon href={protocolUrl} title={`Open in ${displayName}`} />}
+          {/* Assisted (agent-fed) adapters can't be enumerated on-chain — explain how they're covered. */}
+          {product.isAssisted && (
+            <InfoTip>
+              Agent-fed adapter: positions are covered by coordinates (NFT / request ids) submitted by a
+              trusted assistant and re-verified on-chain each read — the assistant can only under-report,
+              never fabricate. Individual positions appear once a coordinate is submitted.
+            </InfoTip>
+          )}
+          {/* The adapter address — the on-chain audit trail (balanceAdapter), explorer-linked. */}
           <AddressChip address={product.adapter} chainId={chainId} className="text-xs text-neutral-600" />
         </div>
 
@@ -344,7 +340,6 @@ function ProductRow({
                 instance={inst}
                 brandKey={brandKey}
                 displayName={displayName}
-                protocolUrl={protocolUrl}
                 chainId={chainId}
                 isLast={ii === product.instances.length - 1}
               />
@@ -462,7 +457,6 @@ export function CoverageTable({ data, searchQuery = '' }: CoverageTableProps) {
                     product={product}
                     brandKey={p.brandKey}
                     displayName={p.displayName}
-                    protocolUrl={p.url}
                     chainId={chainId}
                     isLast={pi === p.products.length - 1}
                   />

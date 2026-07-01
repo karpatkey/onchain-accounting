@@ -225,6 +225,16 @@ export const adapterInfoAbi = [
     inputs: [{ name: 'instances', type: 'bytes32[]' }],
     outputs: [{ name: '', type: 'address[]' }],
   },
+  // AssistedBalanceAdapter public constant — succeeds only on the assisted family (agent-fed adapters:
+  // Merkl, ether.fi/StakeWise exit queues, Uniswap V3, Nexus). Reverts on plain/meta adapters. Used
+  // purely to detect "assisted" so we can explain how those positions are covered.
+  {
+    name: 'ASSISTANT_ROLE',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'bytes32' }],
+  },
 ] as const
 
 // Minimal ERC20 — symbol() to resolve underlying assets not covered by getRegisteredAssets(), and

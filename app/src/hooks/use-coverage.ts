@@ -41,11 +41,15 @@ export type CoverageInstance = {
 // (the leaf); meta-adapters carry `instances` (the markets/pools/vaults, each valued live).
 export type CoverageProduct = {
   adapter: `0x${string}`
+  protocolName: string
   productLabel: string
   // Secondary leaf for plain adapters — the specific token/name below the feature (e.g. feature
   // "Withdrawal Queue" + detail "stETH"). null for meta adapters and single-label features.
   detail: string | null
   isMeta: boolean
+  // Assisted (agent-fed) adapter — its positions are covered via submitted coordinates, not derived
+  // from on-chain enumeration. Drives a "how it works" hint (Uniswap V3, Nexus, Merkl, exit queues).
+  isAssisted: boolean
   category: string | null
   instances: CoverageInstance[]
   assets: CoverageAsset[]
@@ -241,6 +245,12 @@ export function useChainCoverage(chainIdx: number): ChainCoverage {
       abi: adapterInfoAbi,
       functionName: 'underlyingAssetsSupported' as const,
     },
+    {
+      chainId: chain.id,
+      address: addr,
+      abi: adapterInfoAbi,
+      functionName: 'ASSISTANT_ROLE' as const,
+    },
   ])
 
   const { data: perAdapterData, isLoading: perAdapterLoading } = useReadContracts({
@@ -256,12 +266,14 @@ export function useChainCoverage(chainIdx: number): ChainCoverage {
     productLabels: string[]
     instanceIds: `0x${string}`[]
     assetAddresses: `0x${string}`[]
+    isAssisted: boolean
   }
   const rawAdapters: RawAdapter[] = adapterAddresses.map((address, i) => {
-    const nameR = perAdapterData?.[i * 4]
-    const labelsR = perAdapterData?.[i * 4 + 1]
-    const instR = perAdapterData?.[i * 4 + 2]
-    const assetsR = perAdapterData?.[i * 4 + 3]
+    const nameR = perAdapterData?.[i * 5]
+    const labelsR = perAdapterData?.[i * 5 + 1]
+    const instR = perAdapterData?.[i * 5 + 2]
+    const assetsR = perAdapterData?.[i * 5 + 3]
+    const roleR = perAdapterData?.[i * 5 + 4]
 
     const protocolName =
       nameR?.status === 'success' && (nameR.result as unknown as string)
@@ -280,7 +292,11 @@ export function useChainCoverage(chainIdx: number): ChainCoverage {
         ? [...(assetsR.result as unknown as readonly `0x${string}`[])]
         : []
 
-    return { address, protocolName, productLabels, instanceIds, assetAddresses }
+    // Assisted adapters (agent-fed: Merkl, ether.fi/StakeWise exit, Uniswap V3, Nexus) expose the public
+    // ASSISTANT_ROLE constant; plain/meta adapters revert. Used only to explain how they're covered.
+    const isAssisted = roleR?.status === 'success'
+
+    return { address, protocolName, productLabels, instanceIds, assetAddresses, isAssisted }
   })
 
   // 3. Per instance across all adapters (flattened): positionLabels(<raw instance bytes32>) on that adapter.
@@ -420,16 +436,20 @@ export function useChainCoverage(chainIdx: number): ChainCoverage {
       detail = leaf && !/^0x[0-9a-f]/i.test(leaf) ? leaf : null
     }
 
-    const assets: CoverageAsset[] = ra.assetAddresses.map((asset) => ({
-      address: (csAddress(asset) ?? asset) as `0x${string}`,
-      symbol: symbolByAddress.get(asset.toLowerCase()) ?? `${asset.slice(0, 6)}…${asset.slice(-4)}`,
-    }))
+    const assets: CoverageAsset[] = ra.assetAddresses
+      .map((asset) => ({
+        address: (csAddress(asset) ?? asset) as `0x${string}`,
+        symbol: symbolByAddress.get(asset.toLowerCase()) ?? `${asset.slice(0, 6)}…${asset.slice(-4)}`,
+      }))
+      .sort((a, b) => a.symbol.localeCompare(b.symbol))
 
     return {
       adapter: ra.address,
+      protocolName: ra.protocolName,
       productLabel,
       detail,
       isMeta,
+      isAssisted: ra.isAssisted,
       category: sharedCategory,
       instances,
       assets,

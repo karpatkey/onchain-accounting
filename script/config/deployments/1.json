@@ -31,7 +31,7 @@
     "EtherFiWithdrawalQueueAssisted": "0xa290B8b24e7ed169fB16F9A35d86a5ED01d173D2",
     "NexusMutualStakingPoolsAssisted": "0x8D0237436A4Be679Bf059DCC177e09EA1f6C3094",
     "StakeWiseV3ExitQueueAssisted": "0xa7aCE959c28686c22E239c2Eb8AC79cf7B6FF7e1",
-    "UniswapV3PoolsAssisted": "0x7fff8527DfCB5D4E00cfa81c2af702D15b1c0521"
+    "UniswapV3PoolsMeta": "0x1eb0Ce47a196D7BE9ba3F2B7ED78299751c80287"
   },
   "NAVCalculatorProxy": "0x42aC265991163Af2b0B9E59a222d31d201E39f91",
   "customPriceFeeds": {

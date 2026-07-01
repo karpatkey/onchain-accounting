@@ -197,7 +197,9 @@ function PortfolioView({ account, onReset }: { account: `0x${string}`; onReset: 
       })
     }
     else if (sortOrder === 'name-asc') g = [...g].sort((a, b) => a.protocol.localeCompare(b.protocol))
-    return g
+    // Wallet holdings always render on top, regardless of sort order (the ERC20Default adapter's
+    // protocolName() is "Wallet"). Stable partition — preserves the sorted order of the rest.
+    return [...g.filter((gr) => gr.protocol === 'Wallet'), ...g.filter((gr) => gr.protocol !== 'Wallet')]
   }, [allGroups, hideDust, sortOrder])
 
   // Lido withdrawal-queue oracles the account touches — drives the per-NFT-id drill-down (display only;

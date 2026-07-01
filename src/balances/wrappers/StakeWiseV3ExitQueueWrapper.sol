@@ -17,15 +17,23 @@ import "src/errors.sol";
 ///         `receiver` and the claimer — which is exactly what delegatecall gives: the wrapper's code runs in the
 ///         Safe's context, so `address(this)` is the Safe, the vault sees `msg.sender = Safe`, the exit position is
 ///         owned by the Safe, and claimed assets are paid to the Safe. No custody or asset-forwarding logic is needed.
-/// @dev **Delegatecall-only design.** Because the wrapper executes against the *caller's* (Safe's) storage:
-///      - it performs **no storage writes** in {enterExitQueue} / {claimExitedAssets} (a write would corrupt Safe
-///        storage), and
-///      - its `DEPOSITOR_ROLE` gate cannot use the inherited `onlyRole` modifier (that reads Safe storage). Instead it
-///        checks the role against the wrapper **singleton's own** storage via the immutable {SELF} (bytecode-embedded,
-///        so readable under delegatecall): `IAccessControl(SELF).hasRole(DEPOSITOR_ROLE, address(this))` — i.e. "is the
-///        executing Safe an approved depositor?". Admins grant/revoke `DEPOSITOR_ROLE` by calling the singleton
+/// @dev **Delegatecall-only design.** Because {enterExitQueue} / {claimExitedAssets} execute against the *caller's*
+///      (Safe's) storage:
+///      - they perform **no storage writes** (a write would corrupt Safe storage), and
+///      - their `DEPOSITOR_ROLE` gate cannot use the inherited `onlyRole` modifier (that reads Safe storage). Instead
+///        they check the role against the wrapper **singleton's own** storage via the immutable {SELF} (bytecode-
+///        embedded, so readable under delegatecall): `IAccessControl(SELF).hasRole(DEPOSITOR_ROLE, address(this))` — i.e.
+///        "is the executing Safe an approved depositor?". Admins grant/revoke `DEPOSITOR_ROLE` by calling the singleton
 ///        directly (a normal, non-delegatecall transaction, where the inherited AccessControl machinery applies).
-///      See `docs/decisions/0019-stakewise-v3-exit-queue-wrapper.md` (StakeWise-specific instance of the wrapper-fed
+///
+///      **Feeding the adapter via a self-call.** The delegatecalled entrypoints do NOT call the adapter directly — that
+///      call would carry `msg.sender = the Safe`, forcing the adapter to grant its `WRAPPER_ROLE` to every depositor.
+///      Instead they call **back into the singleton** ({submit}/{remove}) via {SELF}; those functions run in the
+///      singleton's context and forward to the adapter, so the adapter sees `msg.sender = the singleton` and grants
+///      `WRAPPER_ROLE` **only to this wrapper**. {submit}/{remove} are `onlyRole(DEPOSITOR_ROLE)` (the caller Safe must
+///      be an approved depositor) and require `account == msg.sender` (a depositor can only track its OWN tickets);
+///      they may also be called standalone by an approved depositor. See
+///      `docs/decisions/0019-stakewise-v3-exit-queue-wrapper.md` (StakeWise-specific instance of the wrapper-fed
 ///      assisted family, ADR 0018).
 contract StakeWiseV3ExitQueueWrapper is AccessControl {
     /// @notice Role identifying an approved depositor Safe. Held on the singleton's storage; checked via {SELF}.
@@ -70,8 +78,22 @@ contract StakeWiseV3ExitQueueWrapper is AccessControl {
         if (receiver != address(this)) revert InvalidArguments();
 
         positionTicket = IStakeWiseVaultEnterExit(vault).enterExitQueue(shares, address(this));
-        IStakeWiseExitQueueTracker(ADAPTER).submit(address(this), vault, positionTicket, block.timestamp);
+        // Feed the adapter via the singleton (a real call to SELF), not directly, so the adapter's WRAPPER_ROLE is held
+        // only by this wrapper — never by the depositor Safe. {submit} re-checks the depositor role + account.
+        StakeWiseV3ExitQueueWrapper(SELF).submit(address(this), vault, positionTicket, block.timestamp);
         emit ExitQueueEntered(address(this), vault, positionTicket, block.timestamp);
+    }
+
+    /// @notice Forward one exit-queue ticket to the adapter for `account`. Runs on the wrapper **singleton** (so the
+    ///         adapter call carries `msg.sender = this wrapper`, holder of the adapter's `WRAPPER_ROLE`). Invoked by
+    ///         {enterExitQueue} via {SELF}, or standalone by an approved depositor. `onlyRole(DEPOSITOR_ROLE)` and
+    ///         `account == msg.sender` — a depositor can only track its OWN tickets.
+    function submit(address account, address vault, uint256 positionTicket, uint256 timestamp)
+        external
+        onlyRole(DEPOSITOR_ROLE)
+    {
+        if (account != msg.sender) revert NotAuthorized();
+        IStakeWiseExitQueueTracker(ADAPTER).submit(account, vault, positionTicket, timestamp);
     }
 
     /// @notice Claim exited assets for a queue position and deregister its ticket from the adapter. Signature mirrors
@@ -88,8 +110,20 @@ contract StakeWiseV3ExitQueueWrapper is AccessControl {
         _requireDepositor();
 
         IStakeWiseVaultEnterExit(vault).claimExitedAssets(positionTicket, timestamp, exitQueueIndex);
-        IStakeWiseExitQueueTracker(ADAPTER).remove(address(this), vault, positionTicket, timestamp);
+        // Deregister via the singleton (see {enterExitQueue}); keeps WRAPPER_ROLE off the depositor Safe.
+        StakeWiseV3ExitQueueWrapper(SELF).remove(address(this), vault, positionTicket, timestamp);
         emit ExitedAssetsClaimed(address(this), vault, positionTicket, timestamp);
+    }
+
+    /// @notice Deregister one exit-queue ticket from the adapter for `account`. Runs on the wrapper singleton; same
+    ///         gating as {submit} (`onlyRole(DEPOSITOR_ROLE)` + `account == msg.sender`). Invoked by
+    ///         {claimExitedAssets} via {SELF}, or standalone by an approved depositor.
+    function remove(address account, address vault, uint256 positionTicket, uint256 timestamp)
+        external
+        onlyRole(DEPOSITOR_ROLE)
+    {
+        if (account != msg.sender) revert NotAuthorized();
+        IStakeWiseExitQueueTracker(ADAPTER).remove(account, vault, positionTicket, timestamp);
     }
 
     /// @dev Delegatecall-safe `DEPOSITOR_ROLE` gate: checks the executing Safe (`address(this)`) against the wrapper

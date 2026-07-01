@@ -7,6 +7,7 @@ import {
     StakeWiseV3ExitQueueAssistedBalanceAdapter
 } from "src/balances/AssistedBalanceAdapters/StakeWiseV3ExitQueueAssistedBalanceAdapter.sol";
 import {NotAuthorized, InvalidArguments} from "src/errors.sol";
+import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
 /// @notice Minimal Safe stand-in that delegatecalls a target — mirrors how a Gnosis Safe executes a delegatecall
 ///         action. Under the delegatecall, `address(this)` is this Safe, which is exactly the context the wrapper
@@ -183,6 +184,28 @@ contract StakeWiseV3ExitQueueWrapperTest is BalanceAdapterTestBase {
         safe.exec(address(w), abi.encodeCall(w.claimExitedAssets, (address(vault), 1000, block.timestamp, 1)));
     }
 
+    // ---- Standalone submit/remove gating (the guard that lives on the wrapper, not the adapter) ----
+
+    function test_submit_standalone_revertsWithoutDepositorRole() public {
+        (StakeWiseV3ExitQueueWrapper w,) = _wrapperWithMockTracker();
+        address stranger = makeAddr("stranger");
+        vm.prank(stranger);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, stranger, keccak256("DEPOSITOR_ROLE")
+            )
+        );
+        w.submit(stranger, address(vault), 1000, block.timestamp);
+    }
+
+    function test_submit_standalone_revertsWhenAccountNotSender() public {
+        (StakeWiseV3ExitQueueWrapper w,) = _wrapperWithMockTracker();
+        // safe holds DEPOSITOR_ROLE but tries to track a position for someone else → self-scope guard trips.
+        vm.prank(address(safe));
+        vm.expectRevert(NotAuthorized.selector);
+        w.submit(makeAddr("other"), address(vault), 1000, block.timestamp);
+    }
+
     // ---- Constructor ----
 
     function test_constructor_revertsOnZeroAdapter() public {
@@ -204,10 +227,11 @@ contract StakeWiseV3ExitQueueWrapperTest is BalanceAdapterTestBase {
         );
         balances.addSupportedAssetForTest(NATIVE);
         StakeWiseV3ExitQueueWrapper w = new StakeWiseV3ExitQueueWrapper(address(adapter), address(this));
-        // The Safe must be an approved depositor on BOTH: the wrapper (delegatecall role check) and the adapter
-        // (self-submit: msg.sender == the Safe under delegatecall).
+        // The Safe is an approved depositor on the WRAPPER only; the adapter's WRAPPER_ROLE is held by the wrapper
+        // singleton (never by depositors). The wrapper feeds the adapter via a self-call, so adapter.submit's
+        // msg.sender is the wrapper.
         w.grantRole(w.DEPOSITOR_ROLE(), address(safe));
-        adapter.grantRole(adapter.DEPOSITOR_ROLE(), address(safe));
+        adapter.grantRole(adapter.WRAPPER_ROLE(), address(w));
 
         bytes memory ret =
             safe.exec(address(w), abi.encodeCall(w.enterExitQueue, (address(vault), 7 ether, address(safe))));

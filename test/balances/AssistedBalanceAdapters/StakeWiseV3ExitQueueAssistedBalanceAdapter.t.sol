@@ -97,10 +97,9 @@ contract MockVaultsRegistry {
 }
 
 /// @title StakeWiseV3ExitQueueAssistedBalanceAdapter unit tests
-/// @notice Wrapper-fed sibling of the assisted adapter: same valuation, but writes are role-gated self-submits
-///         (`DEPOSITOR_ROLE` + `account == msg.sender`) fed one ticket at a time. The valuation surface is exercised
-///         the same way as the assisted adapter's test; the write surface (submit/remove/self-submit gating) is the
-///         part that differs.
+/// @notice Wrapper-fed exit-queue adapter: `submit`/`remove` are `onlyRole(WRAPPER_ROLE)` (held only by the wrapper),
+///         fed one ticket at a time. This test plays the wrapper (grants itself WRAPPER_ROLE). The depositor allowlist
+///         + `account == msg.sender` scoping is enforced on the wrapper, covered in the wrapper test.
 contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBase {
     StakeWiseV3ExitQueueAssistedBalanceAdapter public adapter;
     MockStakeWiseVault public vault;
@@ -123,16 +122,15 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
         adapter = new StakeWiseV3ExitQueueAssistedBalanceAdapter(
             address(registry), NATIVE, "osETH", address(balances), DELAY, address(this)
         );
-        // Approve `holder` and `other` as depositors so they can self-submit.
-        adapter.grantRole(adapter.DEPOSITOR_ROLE(), holder);
-        adapter.grantRole(adapter.DEPOSITOR_ROLE(), other);
+        // This test contract plays the wrapper singleton: grant it WRAPPER_ROLE so it can feed the adapter. (The
+        // depositor allowlist + account==msg.sender scoping live on the wrapper, exercised in the wrapper test.)
+        adapter.grantRole(adapter.WRAPPER_ROLE(), address(this));
         vm.warp(TS + DELAY + 1);
     }
 
     // ---- Helpers ----
 
     function _submit(address account, uint256 ticket, uint256 ts) internal {
-        vm.prank(account);
         adapter.submit(account, address(vault), ticket, ts);
     }
 
@@ -180,32 +178,18 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
         );
     }
 
-    // ---- Access control / self-submit ----
+    // ---- Access control (WRAPPER_ROLE) ----
+    // The depositor allowlist + account==msg.sender scoping is enforced on the wrapper, not here — see the wrapper test.
 
-    function test_submit_revertsWithoutDepositorRole() public {
+    function test_submit_revertsWithoutWrapperRole() public {
         address stranger = makeAddr("stranger");
         vm.prank(stranger);
         vm.expectRevert(
             abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, stranger, keccak256("DEPOSITOR_ROLE")
+                IAccessControl.AccessControlUnauthorizedAccount.selector, stranger, keccak256("WRAPPER_ROLE")
             )
         );
         adapter.submit(stranger, address(vault), TICKET, TS);
-    }
-
-    function test_submit_revertsWhenAccountNotSender() public {
-        // holder has the role but submits on behalf of `other` → self-submit guard trips.
-        vault.setIndex(TICKET, 1);
-        vault.setRequest(other, TICKET, TS, 0, 1 ether);
-        vm.prank(holder);
-        vm.expectRevert(NotAuthorized.selector);
-        adapter.submit(other, address(vault), TICKET, TS);
-    }
-
-    function test_remove_revertsWhenAccountNotSender() public {
-        vm.prank(holder);
-        vm.expectRevert(NotAuthorized.selector);
-        adapter.remove(other, address(vault), TICKET, TS);
     }
 
     function test_submit_storesValidPosition_andDedups() public {
@@ -224,7 +208,6 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
         registry.setVault(address(vault), false);
         vault.setIndex(TICKET, 1);
         vault.setRequest(holder, TICKET, TS, 0, 1 ether);
-        vm.prank(holder);
         vm.expectRevert(abi.encodeWithSelector(InvalidExitPosition.selector, holder, address(vault), TICKET));
         adapter.submit(holder, address(vault), TICKET, TS);
         assertEq(adapter.positionsOf(holder).length, 0);
@@ -232,7 +215,6 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
 
     function test_submit_revertsOnTupleWithZeroOwed() public {
         vault.setIndex(TICKET, 1); // registered vault, but no request → owed 0
-        vm.prank(holder);
         vm.expectRevert(abi.encodeWithSelector(InvalidExitPosition.selector, holder, address(vault), TICKET));
         adapter.submit(holder, address(vault), TICKET, TS);
     }
@@ -245,13 +227,11 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
         _submit(holder, TICKET, TS);
         _submit(holder, TICKET + 1, TS);
 
-        vm.prank(holder);
         adapter.remove(holder, address(vault), TICKET, TS);
         assertEq(adapter.positionsOf(holder).length, 1);
         assertEq(adapter.positionsOf(holder)[0].positionTicket, TICKET + 1);
 
         // Removing a never-tracked / already-removed tuple is a no-op (no revert).
-        vm.prank(holder);
         adapter.remove(holder, address(vault), TICKET, TS);
         assertEq(adapter.positionsOf(holder).length, 1);
     }
@@ -282,7 +262,6 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
 
         vault.setIndex(cap + 1, 1);
         vault.setRequest(holder, cap + 1, TS, 0, 1 ether);
-        vm.prank(holder);
         vm.expectRevert(abi.encodeWithSelector(PositionCacheFull.selector, holder, cap));
         adapter.submit(holder, address(vault), cap + 1, TS);
     }
@@ -471,10 +450,9 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
         StakeWiseV3ExitQueueAssistedBalanceAdapter a2 = new StakeWiseV3ExitQueueAssistedBalanceAdapter(
             address(registry), NATIVE, "osETH", address(freshNav), DELAY, address(this)
         );
-        a2.grantRole(a2.DEPOSITOR_ROLE(), holder);
+        a2.grantRole(a2.WRAPPER_ROLE(), address(this));
         vault.setIndex(TICKET, 1);
         vault.setRequest(holder, TICKET, TS, 0, 1 ether);
-        vm.prank(holder);
         a2.submit(holder, address(vault), TICKET, TS);
         assertEq(a2.getAdapterPositions(holder, address(0)).length, 0);
         (uint256 amt,) = a2.getAdapterBalanceForAsset(holder, NATIVE);

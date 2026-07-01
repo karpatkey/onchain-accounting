@@ -772,12 +772,12 @@ contract DeployBalanceAdapters is BaseDeployScript {
         internal
         returns (address)
     {
-        // admin = chainConfig.admin (OIV Safe): DEFAULT_ADMIN_ROLE, administers DEPOSITOR_ROLE. The adapter is
-        // wrapper-fed (role-gated self-submit): each depositor Safe holds DEPOSITOR_ROLE and, via a delegatecalled
-        // StakeWiseV3ExitQueueWrapper, submits/removes its OWN tickets (account == msg.sender). The adapter values
-        // from live on-chain reads and verifies each tuple belongs to the account via
-        // calculateExitedAssets(receiver=account), so a depositor cannot fabricate amounts (under-report only). See
-        // docs/decisions/0019-stakewise-v3-exit-queue-wrapper.md. NOTE: DEPOSITOR_ROLE grants (and wrapper deploy) are a
+        // admin = chainConfig.admin (OIV Safe): DEFAULT_ADMIN_ROLE, administers WRAPPER_ROLE. The adapter is
+        // wrapper-fed: WRAPPER_ROLE is granted only to the StakeWiseV3ExitQueueWrapper singleton, which each depositor
+        // Safe delegatecalls (the Safe holds DEPOSITOR_ROLE on the wrapper) to submit/remove its OWN tickets. The
+        // adapter values from live on-chain reads and verifies each tuple belongs to the account via
+        // calculateExitedAssets(receiver=account), so the feeder cannot fabricate amounts (under-report only). See
+        // docs/decisions/0019-stakewise-v3-exit-queue-wrapper.md. NOTE: the wrapper deploy + WRAPPER_ROLE grant are a
         // follow-up; this only deploys the adapter.
         address vaultsRegistry = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vaultsRegistry")

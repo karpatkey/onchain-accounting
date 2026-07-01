@@ -56,7 +56,7 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterForkTest is BalanceAdapterTes
         a = new StakeWiseV3ExitQueueAssistedBalanceAdapter(
             VAULTS_REGISTRY, NATIVE_ETH, "osETH", address(balances), 1 days, address(this)
         );
-        a.grantRole(a.DEPOSITOR_ROLE(), HOLDER);
+        a.grantRole(a.WRAPPER_ROLE(), address(this)); // this test plays the wrapper (sole feeder)
     }
 
     function _liveOwed(uint256 ticket, uint256 ts) internal view returns (uint256) {
@@ -68,7 +68,6 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterForkTest is BalanceAdapterTes
     }
 
     function _submit() internal {
-        vm.prank(HOLDER);
         adapter.submit(HOLDER, GENESIS_VAULT, TICKET, ENTRY_TS);
     }
 
@@ -114,10 +113,8 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterForkTest is BalanceAdapterTes
     }
 
     function test_submit_revertsOnTupleNotOwnedByAccount() public {
-        // A stranger with the role submitting its OWN (address) but a ticket it does not own → owed 0 → fail-loud.
+        // The wrapper (this test) submitting a real ticket under an account that does not own it → owed 0 → fail-loud.
         address stranger = makeAddr("stranger");
-        adapter.grantRole(adapter.DEPOSITOR_ROLE(), stranger);
-        vm.prank(stranger);
         vm.expectRevert();
         adapter.submit(stranger, GENESIS_VAULT, TICKET, ENTRY_TS);
         assertEq(adapter.positionsOf(stranger).length, 0);

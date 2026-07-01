@@ -74,7 +74,7 @@ contract StakeWiseV3ExitQueueWrapper {
     /// @return positionTicket The ticket assigned by the vault, now tracked on the adapter for the Safe.
     function enterExitQueue(address vault, uint256 shares) external onlyDelegateCall returns (uint256 positionTicket) {
         positionTicket = IStakeWiseVaultEnterExit(vault).enterExitQueue(shares, address(this));
-        IStakeWiseExitQueueTracker(BALANCE_ADAPTER).submit(vault, positionTicket, block.timestamp);
+        IStakeWiseV3ExitQueueAssistedBalanceAdapter(BALANCE_ADAPTER).submit(vault, positionTicket, block.timestamp);
         emit ExitQueueEntered(address(this), vault, positionTicket, block.timestamp);
     }
 
@@ -92,7 +92,7 @@ contract StakeWiseV3ExitQueueWrapper {
         onlyDelegateCall
     {
         IStakeWiseVaultEnterExit(vault).claimExitedAssets(positionTicket, timestamp, exitQueueIndex);
-        IStakeWiseExitQueueTracker(BALANCE_ADAPTER).remove(vault, positionTicket, timestamp);
+        IStakeWiseV3ExitQueueAssistedBalanceAdapter(BALANCE_ADAPTER).remove(vault, positionTicket, timestamp);
         emit ExitedAssetsClaimed(address(this), vault, positionTicket, timestamp);
     }
 }
@@ -107,7 +107,7 @@ interface IStakeWiseVaultEnterExit {
 }
 
 /// @notice Minimal interface for the wrapper-fed balance adapter's tracking mutators (self-scoped to `msg.sender`).
-interface IStakeWiseExitQueueTracker {
+interface IStakeWiseV3ExitQueueAssistedBalanceAdapter {
     function submit(address vault, uint256 positionTicket, uint256 timestamp) external;
     function remove(address vault, uint256 positionTicket, uint256 timestamp) external;
 }

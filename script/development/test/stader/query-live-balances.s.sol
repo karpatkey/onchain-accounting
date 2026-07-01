@@ -25,15 +25,27 @@ contract QueryStaderWithdrawalQueueLiveBalances is Script {
 
     /// @dev Pending holder: one un-finalized request (8218) → ethExpected branch.
     address constant PENDING = 0x4D0B2dB7d38009884c3f2a15c1c212f4F4a356c9;
+    uint256 constant PENDING_ID = 8218;
     /// @dev Finalized holder: one finalized-unclaimed request (8214) → ethFinalized branch.
     address constant FINALIZED = 0x404186e63CA9e1D0648a5AEc0b77cD398814C47D;
+    uint256 constant FINALIZED_ID = 8214;
     /// @dev Multi-request holder: two open requests (8196 + 8197) → two legs, one per request; the balance getter sums them.
     address constant MULTI = 0xeB0CBBA408436997AfD29c50d6A9ffcCf9a2493f;
+    uint256 constant MULTI_ID_A = 8196;
+    uint256 constant MULTI_ID_B = 8197;
 
     function run() public {
         address nav = vm.envAddress("DEV_NAV_PROXY");
+        // The adapter is wrapper-fed (id-cached): deploy with this script as admin + SUBMITTER_ROLE, then seed the
+        // documented request ids for each holder so the live reads have something to value. On a fork at the pinned
+        // state these ids are owned by the holders, so submit passes; if the fork has moved past a claim, submit reverts
+        // NotTokenOwner (re-pin the block).
         StaderWithdrawalQueueBalanceAdapter adapter =
-            new StaderWithdrawalQueueBalanceAdapter(USER_WITHDRAWAL_MANAGER, WETH, nav);
+            new StaderWithdrawalQueueBalanceAdapter(USER_WITHDRAWAL_MANAGER, WETH, nav, address(this), address(this));
+        adapter.submit(PENDING, PENDING_ID);
+        adapter.submit(FINALIZED, FINALIZED_ID);
+        adapter.submit(MULTI, MULTI_ID_A);
+        adapter.submit(MULTI, MULTI_ID_B);
 
         _print(adapter, "PENDING (1 un-finalized)", PENDING);
         _print(adapter, "FINALIZED (1 finalized)", FINALIZED);

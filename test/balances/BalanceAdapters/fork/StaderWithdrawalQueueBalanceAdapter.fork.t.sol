@@ -22,6 +22,8 @@ contract StaderWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
 
     address public constant TEST_USER = 0x5066bc626C292d02ACFef8d002905877148Cb37A;
     uint256 public constant TEST_USER_EXPECTED_ETH = 37_440_331_321_957_283_515;
+    /// @dev TEST_USER's single open request id at FORK_BLOCK (owned by TEST_USER, so `submit` accepts it).
+    uint256 public constant TEST_USER_REQ_ID = 8056;
 
     StaderWithdrawalQueueBalanceAdapter public adapter;
 
@@ -29,7 +31,12 @@ contract StaderWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
         super.setUp();
         _setupFork();
         balances = _deployBalancesForAdapter(MAINNET_WETH);
-        adapter = new StaderWithdrawalQueueBalanceAdapter(USER_WITHDRAWAL_MANAGER, MAINNET_WETH, address(balances));
+        // Wrapper-fed adapter: this test contract holds SUBMITTER_ROLE and seeds the cache with TEST_USER's real
+        // request id (owned by TEST_USER on-chain at FORK_BLOCK, so submit's ownership check passes).
+        adapter = new StaderWithdrawalQueueBalanceAdapter(
+            USER_WITHDRAWAL_MANAGER, MAINNET_WETH, address(balances), address(this), address(this)
+        );
+        adapter.submit(TEST_USER, TEST_USER_REQ_ID);
     }
 
     function _setupFork() internal override {
@@ -165,7 +172,15 @@ contract StaderWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTest
         // super.setUp() already invokes _setupFork() (overridden below) via virtual dispatch — no second call.
         super.setUp();
         balances = _deployBalancesForAdapter(MAINNET_WETH);
-        oracle = new StaderWithdrawalQueueBalanceAdapter(USER_WITHDRAWAL_MANAGER, MAINNET_WETH, address(balances));
+        // Wrapper-fed adapter: this test contract holds SUBMITTER_ROLE and seeds each holder's real, on-chain-owned
+        // request id(s) at FORK_BLOCK so the cache mirrors what the wrapper would have submitted at request time.
+        oracle = new StaderWithdrawalQueueBalanceAdapter(
+            USER_WITHDRAWAL_MANAGER, MAINNET_WETH, address(balances), address(this), address(this)
+        );
+        oracle.submit(PENDING_HOLDER, 8218);
+        oracle.submit(FINALIZED_HOLDER, 8214);
+        oracle.submit(MULTI_HOLDER, 8196);
+        oracle.submit(MULTI_HOLDER, 8197);
     }
 
     function _setupFork() internal override {

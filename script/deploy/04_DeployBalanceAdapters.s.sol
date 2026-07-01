@@ -79,8 +79,8 @@ import {
     StakeWiseV3ExitQueueAssistedBalanceAdapter
 } from "../../src/balances/AssistedBalanceAdapters/StakeWiseV3ExitQueueAssistedBalanceAdapter.sol";
 import {
-    UniswapV3PoolsAssistedBalanceAdapter
-} from "../../src/balances/AssistedBalanceAdapters/UniswapV3PoolsAssistedBalanceAdapter.sol";
+    UniswapV3PoolsMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/uniswap/UniswapV3PoolsMetaBalanceAdapter.sol";
 import {
     UniswapV2PoolsMetaBalanceAdapter
 } from "../../src/balances/MetaBalanceAdapters/uniswap/UniswapV2PoolsMetaBalanceAdapter.sol";
@@ -88,8 +88,8 @@ import {
     PancakeSwapV2PoolsMetaBalanceAdapter
 } from "../../src/balances/MetaBalanceAdapters/pancakeswap/PancakeSwapV2PoolsMetaBalanceAdapter.sol";
 import {
-    PancakeSwapV3PoolsAssistedBalanceAdapter
-} from "../../src/balances/AssistedBalanceAdapters/PancakeSwapV3PoolsAssistedBalanceAdapter.sol";
+    PancakeSwapV3PoolsMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/pancakeswap/PancakeSwapV3PoolsMetaBalanceAdapter.sol";
 
 /// @title DeployBalanceAdapters
 /// @notice Deploys balance adapters based on per-chain configuration
@@ -187,14 +187,14 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // --- Uniswap V2 (meta-adapter: all pairs; pair set on NAV, ADR 0010) ---
         _deployIfEnabled("UniswapV2PoolsMeta"); // Meta-adapter: all Uniswap V2 pairs (shares the PancakeSwap V2 dispatch)
 
-        // --- Uniswap V3 (assisted: agent-fed NFT tokenId cache; ADR 0015) ---
-        _deployIfEnabled("UniswapV3PoolsAssisted"); // Assisted adapter: account's Uniswap V3 NFT positions (Supply + Fees legs)
+        // --- Uniswap V3 (meta-adapter: on-chain NFT enumeration; ADR 0010) ---
+        _deployIfEnabled("UniswapV3PoolsMeta"); // Meta-adapter: all configured Uniswap V3 pools; NFTs enumerated on-chain
 
         // --- PancakeSwap V2 (meta-adapter) ---
         _deployIfEnabled("PancakeSwapV2PoolsMeta"); // BSC — meta-adapter: all PancakeSwap V2 pairs
 
-        // --- PancakeSwap V3 (assisted: agent-fed NFT tokenId cache; ADR 0015) ---
-        _deployIfEnabled("PancakeSwapV3PoolsAssisted"); // Base — assisted adapter: account's PancakeSwap V3 NFT positions
+        // --- PancakeSwap V3 (meta-adapter; disabled in config — never deployed, kept for parity) ---
+        _deployIfEnabled("PancakeSwapV3PoolsMeta"); // meta-adapter: PancakeSwap V3 pools (on-chain NFT enumeration)
 
         // ERC20Default is deployed in NAVCalculator.initialize() when the NAV proxy is set up (02_DeployProxies); it is not deployed here.
         // StakeWiseV3* adapters are wired above so accounts holding osETH or Genesis-Vault
@@ -382,12 +382,12 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return _deployStakeWiseV3ExitQueueAssisted(adapterName, navCalculator);
         }
 
-        // Uniswap/PancakeSwap V3 assisted adapters (agent-fed NFT tokenId cache; ADR 0015)
-        if (_equals(adapterName, "UniswapV3PoolsAssisted")) {
-            return _deployUniswapV3PoolsAssisted(adapterName, navCalculator);
+        // Uniswap/PancakeSwap V3 meta-adapters (on-chain NFT enumeration; ADR 0010)
+        if (_equals(adapterName, "UniswapV3PoolsMeta")) {
+            return _deployUniswapV3PoolsMeta(adapterName, navCalculator);
         }
-        if (_equals(adapterName, "PancakeSwapV3PoolsAssisted")) {
-            return _deployPancakeSwapV3PoolsAssisted(adapterName, navCalculator);
+        if (_equals(adapterName, "PancakeSwapV3PoolsMeta")) {
+            return _deployPancakeSwapV3PoolsMeta(adapterName, navCalculator);
         }
         if (_equals(adapterName, "UniswapV2PoolsMeta") || _equals(adapterName, "PancakeSwapV2PoolsMeta")) {
             return _deployUniswapV2PoolsMeta(adapterName, navCalculator);
@@ -808,10 +808,10 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(adapter);
     }
 
-    /// @notice Deploys the Uniswap V3 pools assisted adapter (agent-fed NFT tokenId cache; ADR 0015). Constructor
-    ///         takes (positionManager, protocol, navCalculator, admin, assistant); the assistant submits an account's
-    ///         NFT tokenIds via submitTokenIds. admin+assistant = chainConfig.admin at deploy.
-    function _deployUniswapV3PoolsAssisted(string memory adapterName, address navCalculator)
+    /// @notice Deploys the Uniswap V3 pools meta-adapter (ADR 0010; on-chain NFT enumeration via the NPM's
+    ///         ERC721Enumerable surface). Constructor takes (positionManager, protocol, navCalculator); the active
+    ///         pool set lives on NAVCalculator (nav-config instances). Reverts the interim assisted adapter.
+    function _deployUniswapV3PoolsMeta(string memory adapterName, address navCalculator)
         internal
         returns (address)
     {
@@ -820,20 +820,16 @@ contract DeployBalanceAdapters is BaseDeployScript {
         );
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        require(
-            chainConfig.admin != address(0), "UniswapV3PoolsAssisted: chainConfig.admin (initialOwner) not configured"
-        );
 
-        UniswapV3PoolsAssistedBalanceAdapter adapter = new UniswapV3PoolsAssistedBalanceAdapter(
-            positionManager, protocol, navCalculator, chainConfig.admin, chainConfig.admin
-        );
+        UniswapV3PoolsMetaBalanceAdapter adapter =
+            new UniswapV3PoolsMetaBalanceAdapter(positionManager, protocol, navCalculator);
         return address(adapter);
     }
 
-    /// @notice Deploys the PancakeSwap V3 pools assisted adapter (subclass of the Uniswap V3 assisted adapter, differs
-    ///         only in the protocol-identity slugs and the `_slot0` decode override). Same constructor shape as the
-    ///         Uniswap V3 pools assisted adapter.
-    function _deployPancakeSwapV3PoolsAssisted(string memory adapterName, address navCalculator)
+    /// @notice Deploys the PancakeSwap V3 pools meta-adapter (subclass of the Uniswap V3 meta-adapter, differs only
+    ///         in the protocol-identity slugs and the `_slot0` uint32-feeProtocol decode override). Same constructor
+    ///         shape as the Uniswap V3 pools meta-adapter.
+    function _deployPancakeSwapV3PoolsMeta(string memory adapterName, address navCalculator)
         internal
         returns (address)
     {
@@ -842,14 +838,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
         );
         string memory protocol =
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "protocol");
-        require(
-            chainConfig.admin != address(0),
-            "PancakeSwapV3PoolsAssisted: chainConfig.admin (initialOwner) not configured"
-        );
 
-        PancakeSwapV3PoolsAssistedBalanceAdapter adapter = new PancakeSwapV3PoolsAssistedBalanceAdapter(
-            positionManager, protocol, navCalculator, chainConfig.admin, chainConfig.admin
-        );
+        PancakeSwapV3PoolsMetaBalanceAdapter adapter =
+            new PancakeSwapV3PoolsMetaBalanceAdapter(positionManager, protocol, navCalculator);
         return address(adapter);
     }
 

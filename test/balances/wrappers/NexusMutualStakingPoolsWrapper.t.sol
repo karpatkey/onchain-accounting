@@ -8,13 +8,14 @@ import {MockStakingNFT, MockStakingViewer} from
     "test/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsAssistedBalanceAdapter.t.sol";
 import {NexusMutualStakingPoolsAssistedBalanceAdapter} from
     "src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsAssistedBalanceAdapter.sol";
-import {NexusMutualStakingPoolsWrapper} from "src/balances/wrappers/NexusMutualStakingPoolsWrapper.sol";
+import {NexusMutualStakingPoolsWrapper, OnlyDelegateCall} from
+    "src/balances/wrappers/NexusMutualStakingPoolsWrapper.sol";
+import {WrapperDelegateCaller} from "test/balances/wrappers/WrapperDelegateCaller.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
 /// @notice Minimal Nexus StakingPool mock: `depositTo` mints the StakingNFT to `destination` (recording args) and
-///         returns the tokenId; `withdraw` returns preset amounts (recording the id). Mirrors the two functions the
-///         wrapper forwards.
+///         returns the tokenId; `withdraw` returns preset amounts (recording the id).
 contract MockNexusPool {
     MockStakingNFT public immutable nft;
 
@@ -64,18 +65,16 @@ contract MockNexusPool {
 /// @notice A deployed no-op contract to stand in for Nexus's TokenController (only needs code for requireContract).
 contract MockTokenController {}
 
-/// @title NexusMutualStakingPoolsWrapper unit tests
+/// @title NexusMutualStakingPoolsWrapper unit tests (delegatecall-only module)
 contract NexusMutualStakingPoolsWrapperTest is BalanceAdapterTestBase {
     NexusMutualStakingPoolsAssistedBalanceAdapter public adapter;
     NexusMutualStakingPoolsWrapper public wrapper;
+    WrapperDelegateCaller public account; // the delegatecalling staking account (holds NXM + SUBMITTER_ROLE)
     MockStakingNFT public nft;
     MockStakingViewer public viewer;
     MockNexusPool public pool;
     MockTokenController public tokenController;
     Mock_ERC20 public nxm;
-
-    address depositor = makeAddr("depositor");
-    address other = makeAddr("other");
 
     bytes32 constant SUBMITTER_ROLE = keccak256("SUBMITTER_ROLE");
 
@@ -87,17 +86,15 @@ contract NexusMutualStakingPoolsWrapperTest is BalanceAdapterTestBase {
         pool = new MockNexusPool(nft);
         tokenController = new MockTokenController();
 
-        // adapter: admin = this, wrapper granted SUBMITTER_ROLE after wrapper deploy (it needs the adapter address).
         adapter = new NexusMutualStakingPoolsAssistedBalanceAdapter(
             address(nft), address(viewer), address(nxm), address(balances), address(this), address(0)
         );
         wrapper = new NexusMutualStakingPoolsWrapper(address(adapter), address(nxm), address(tokenController));
-        adapter.grantRole(SUBMITTER_ROLE, address(wrapper));
 
-        // The wrapper is permissionless — fund the caller and approve the wrapper to pull its NXM.
-        deal(address(nxm), depositor, 1e24);
-        vm.prank(depositor);
-        nxm.approve(address(wrapper), type(uint256).max);
+        // The delegatecalling account is the one that holds SUBMITTER_ROLE and the NXM (address(this) in the module).
+        account = new WrapperDelegateCaller();
+        adapter.grantRole(SUBMITTER_ROLE, address(account));
+        deal(address(nxm), address(account), 1e24);
     }
 
     // ---- Constructor ----
@@ -128,83 +125,74 @@ contract NexusMutualStakingPoolsWrapperTest is BalanceAdapterTestBase {
         assertEq(wrapper.TOKEN_CONTROLLER(), address(tokenController));
     }
 
-    // ---- depositTo ----
+    // ---- Delegatecall gating ----
 
-    function test_depositTo_forwardsAndTracks() public {
+    function test_depositTo_revertsOnDirectCall() public {
+        vm.expectRevert(OnlyDelegateCall.selector);
+        wrapper.depositTo(address(pool), 100, 3, 0);
+    }
+
+    function test_withdraw_revertsOnDirectCall() public {
+        uint256[] memory tranches = new uint256[](0);
+        vm.expectRevert(OnlyDelegateCall.selector);
+        wrapper.withdraw(address(pool), 7, true, true, tranches);
+    }
+
+    // ---- depositTo (via delegatecall) ----
+
+    function test_depositTo_viaDelegatecall_tracksForAccount() public {
         pool.setNextTokenId(7);
-        uint256 depositorBefore = nxm.balanceOf(depositor);
-        vm.prank(depositor);
-        uint256 id = wrapper.depositTo(address(pool), 100, 3, 0);
+        viewer.setToken(7, 1, 100, 0, 0); // value the minted position at 100 NXM active stake
+
+        uint256 id = account.deposit(address(wrapper), address(pool), 100, 3, 0);
 
         assertEq(id, 7);
         assertEq(pool.lastAmount(), 100);
         assertEq(pool.lastTranche(), 3);
-        assertEq(pool.lastRequestId(), 0);
-        assertEq(pool.lastDestination(), depositor); // wrapper hardcodes destination = caller
-        // NXM was pulled from the depositor into the wrapper (the mock pool does not pull further).
-        assertEq(nxm.balanceOf(depositor), depositorBefore - 100);
-        assertEq(nxm.balanceOf(address(wrapper)), 100);
-        // The wrapper approved the TokenController (NXM operator) the exact amount so operatorTransfer can pull it.
-        assertEq(nxm.allowance(address(wrapper), address(tokenController)), 100);
-        // The id is now tracked for the caller.
-        uint256[] memory tracked = adapter.tokenIdsOf(depositor);
+        assertEq(pool.lastDestination(), address(account)); // destination = address(this) = the account
+        // The module approved the TokenController from the account's context (no transferFrom — delegatecall).
+        assertEq(nxm.allowance(address(account), address(tokenController)), 100);
+        // Tracked + valued for the account.
+        uint256[] memory tracked = adapter.tokenIdsOf(address(account));
         assertEq(tracked.length, 1);
         assertEq(tracked[0], 7);
-    }
-
-    /// @notice The wrapper is permissionless: any address with NXM can stake through it and is tracked for itself.
-    function test_depositTo_permissionless() public {
-        deal(address(nxm), other, 1e21);
-        vm.prank(other);
-        nxm.approve(address(wrapper), type(uint256).max);
-        pool.setNextTokenId(9);
-        vm.prank(other);
-        uint256 id = wrapper.depositTo(address(pool), 100, 3, 0);
-        assertEq(id, 9);
-        uint256[] memory tracked = adapter.tokenIdsOf(other);
-        assertEq(tracked.length, 1);
-        assertEq(tracked[0], 9);
+        (uint256 bal,) = adapter.getAdapterBalanceForAsset(address(account), address(nxm));
+        assertEq(bal, 100);
     }
 
     /// @notice A top-up (requestTokenId != 0) returns the same id; tracking is idempotent.
     function test_depositTo_topUp_idempotent() public {
         pool.setNextTokenId(7);
-        vm.startPrank(depositor);
-        wrapper.depositTo(address(pool), 100, 3, 0); // mints id 7
-        uint256 id2 = wrapper.depositTo(address(pool), 50, 3, 7); // top-up id 7
-        vm.stopPrank();
+        account.deposit(address(wrapper), address(pool), 100, 3, 0); // mints id 7
+        uint256 id2 = account.deposit(address(wrapper), address(pool), 50, 3, 7); // top-up id 7
         assertEq(id2, 7);
         assertEq(pool.lastRequestId(), 7);
-        assertEq(adapter.tokenIdsOf(depositor).length, 1);
+        assertEq(adapter.tokenIdsOf(address(account)).length, 1);
     }
 
-    // ---- withdraw ----
+    // ---- withdraw (via delegatecall) ----
 
-    function test_withdraw_forwardsAndUntracks() public {
+    function test_withdraw_viaDelegatecall_untracks() public {
         pool.setNextTokenId(7);
-        vm.prank(depositor);
-        wrapper.depositTo(address(pool), 100, 3, 0);
-        assertEq(adapter.tokenIdsOf(depositor).length, 1);
+        account.deposit(address(wrapper), address(pool), 100, 3, 0);
+        assertEq(adapter.tokenIdsOf(address(account)).length, 1);
 
         pool.setWithdrawReturns(80, 5);
         uint256[] memory tranches = new uint256[](1);
         tranches[0] = 3;
-        vm.prank(depositor);
-        (uint256 s, uint256 r) = wrapper.withdraw(address(pool), 7, true, true, tranches);
+        (uint256 s, uint256 r) = account.withdraw(address(wrapper), address(pool), 7, true, true, tranches);
 
         assertEq(s, 80);
         assertEq(r, 5);
         assertEq(pool.lastWithdrawId(), 7);
-        assertEq(adapter.tokenIdsOf(depositor).length, 0); // untracked
+        assertEq(adapter.tokenIdsOf(address(account)).length, 0); // untracked
     }
 
     function test_withdraw_untrackIsIdempotentForUncachedId() public {
-        // Withdrawing an id the caller never tracked simply forwards and no-ops the remove (no revert).
         pool.setWithdrawReturns(1, 0);
         uint256[] memory tranches = new uint256[](0);
-        vm.prank(depositor);
-        (uint256 s,) = wrapper.withdraw(address(pool), 999, true, false, tranches);
+        (uint256 s,) = account.withdraw(address(wrapper), address(pool), 999, true, false, tranches);
         assertEq(s, 1);
-        assertEq(adapter.tokenIdsOf(depositor).length, 0);
+        assertEq(adapter.tokenIdsOf(address(account)).length, 0);
     }
 }

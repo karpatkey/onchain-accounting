@@ -332,10 +332,19 @@ export function PriceFeedsTable({ data, dense = false, filterStatus = 'all', sea
             const winnerFeed = node.feeds.find((f) => f.isWinner)
             return (
               <Fragment key={addr}>
-                {/* Asset parent row */}
+                {/* Asset parent row — clickable + keyboard-operable (Enter/Space) to expand/collapse. */}
                 <Tr
                   className="hover:bg-neutral-50 transition-colors cursor-pointer border-t-2 border-neutral-200"
                   onClick={() => toggle(addr)}
+                  role="button"
+                  tabIndex={0}
+                  aria-expanded={!isCollapsed}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      toggle(addr)
+                    }
+                  }}
                 >
                   <Td className={td}>
                     <div className="flex items-center gap-1.5">

@@ -86,11 +86,6 @@
         "type": "Chainlink",
         "address": "0x66Ab900341C98de949EC31d11b3C4180743844F1",
         "heartbeat": 86400
-      },
-      {
-        "type": "Custom",
-        "feed": "ETHPlus",
-        "heartbeat": 86400
       }
     ]
   },

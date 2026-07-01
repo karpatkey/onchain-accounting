@@ -1,9 +1,9 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import Link from 'next/link'
 import { TooltipProvider, Tooltip, TooltipContent, TooltipTrigger } from '@karpatkey/design-system'
 import { PriceFeedsTable, type FilterStatus } from '@/components/price-feeds-table'
+import { DashboardNav } from '@/components/dashboard-nav'
 import { SequencerDetailCard } from '@/components/sequencer-detail-card'
 import { useChainPriceFeeds } from '@/hooks/use-price-feeds'
 import { useRefreshCooldown } from '@/hooks/use-refresh-cooldown'
@@ -129,21 +129,15 @@ export default function FeedsPage() {
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [activeChainId, setActiveChainId] = useState<number | null>(null)
-  const [isRefreshing, setIsRefreshing] = useState(false)
-  const { canRefresh, secondsLeft, startCooldown, lastRefreshedLabel } = useRefreshCooldown()
+  const [address, setAddress] = useState<string | null>(null)
+  const { canRefresh, secondsLeft, startCooldown } = useRefreshCooldown()
   const searchRef = useRef<HTMLInputElement>(null)
 
-  // Preserve the ?address= when going back so "Portfolio" returns to the same account's dashboard
-  // instead of the empty landing page. Read from the URL on mount (the app reads addresses from
-  // window.location, not useSearchParams — no Suspense needed).
-  const [portfolioHref, setPortfolioHref] = useState('/')
-  const [coverageHref, setCoverageHref] = useState('/coverage')
+  // The app reads the account from the URL (not useSearchParams — no Suspense needed); the shared nav
+  // carries it across tabs.
   useEffect(() => {
     const addr = new URLSearchParams(window.location.search).get('address')
-    if (addr) {
-      setPortfolioHref(`/?address=${addr}`)
-      setCoverageHref(`/coverage?address=${addr}`)
-    }
+    if (addr) setAddress(addr)
   }, [])
 
   // Scroll-spy: observe each chain section and track which is most in view
@@ -188,52 +182,29 @@ export default function FeedsPage() {
   }, [])
 
   const handleRefresh = useCallback(() => {
-    setIsRefreshing(true)
     setRefreshKey((k) => k + 1)
     startCooldown()
-    setTimeout(() => setIsRefreshing(false), 800)
   }, [startCooldown])
 
   return (
     <TooltipProvider>
-      <div className="space-y-4">
+      <div className="min-h-screen bg-neutral-200">
+        <div className="max-w-6xl mx-auto px-4 pb-12">
+          <DashboardNav
+            active="feeds"
+            address={address}
+            refresh={{ onClick: handleRefresh, canRefresh, secondsLeft }}
+          />
+          <div className="space-y-4">
 
-        {/* Header row */}
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <Link
-              href={portfolioHref}
-              className="group inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-2.5 py-1 text-xs font-medium text-neutral-700 shadow-sm transition-colors hover:border-neutral-500 hover:text-neutral-950 mb-3"
-            >
-              <span aria-hidden className="transition-transform group-hover:-translate-x-0.5">←</span>
-              Portfolio
-            </Link>
-            <h1 className={`font-bold text-neutral-950 ${dense ? 'text-xl' : 'text-2xl'}`}>Price Feeds</h1>
-            {!dense && (
-              <p className="text-sm text-neutral-700 mt-1">
-                Chainlink and custom feed health across all deployed chains.
-              </p>
-            )}
-          </div>
-          <div className="flex shrink-0 items-center gap-2 mt-1">
-            <Link href={coverageHref} className="text-sm text-neutral-700 hover:text-neutral-950 transition-colors">
-              Coverage
-            </Link>
-            <span className="text-xs text-neutral-700">{lastRefreshedLabel}</span>
-            <button
-              type="button"
-              onClick={handleRefresh}
-              disabled={!canRefresh}
-              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm tabular-nums transition-colors ${
-                canRefresh
-                  ? 'border-neutral-300 bg-white text-neutral-700 shadow-sm hover:border-neutral-500 hover:text-neutral-950'
-                  : 'border-neutral-200 bg-neutral-100 text-neutral-700 opacity-70 cursor-not-allowed'
-              }`}
-            >
-              <span aria-hidden className={isRefreshing ? 'inline-block animate-spin' : 'inline-block'}>↻</span>
-              {canRefresh ? 'Refresh' : `${secondsLeft}s`}
-            </button>
-          </div>
+        {/* Title */}
+        <div>
+          <h1 className={`font-bold text-neutral-950 ${dense ? 'text-xl' : 'text-2xl'}`}>Price Feeds</h1>
+          {!dense && (
+            <p className="text-sm text-neutral-700 mt-1">
+              Chainlink and custom feed health across all deployed chains.
+            </p>
+          )}
         </div>
 
         {/* Health summary strip with scroll overflow + fade mask */}
@@ -321,6 +292,8 @@ export default function FeedsPage() {
               searchQuery={searchQuery}
             />
           ))}
+        </div>
+          </div>
         </div>
       </div>
     </TooltipProvider>

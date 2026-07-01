@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
-import Link from 'next/link'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { TooltipProvider } from '@karpatkey/design-system'
 import { CoverageTable } from '@/components/coverage-table'
+import { DashboardNav } from '@/components/dashboard-nav'
 import { useChainCoverage } from '@/hooks/use-coverage'
+import { useRefreshCooldown } from '@/hooks/use-refresh-cooldown'
 import { DEPLOYED_CHAINS } from '@/config/chains'
 
 function ChainCoveragePill({ chainIdx, isActive }: { chainIdx: number; isActive: boolean }) {
@@ -67,7 +68,7 @@ function ChainCoverageSection({ chainIdx, searchQuery }: { chainIdx: number; sea
         {!data.isLoading && (
           <span className="text-xs text-neutral-700">
             {data.protocols.length} {data.protocols.length === 1 ? 'protocol' : 'protocols'} ·{' '}
-            {data.adapterCount} {data.adapterCount === 1 ? 'adapter' : 'adapters'}
+            {data.productCount} {data.productCount === 1 ? 'product' : 'products'}
           </span>
         )}
       </div>
@@ -82,20 +83,22 @@ function ChainCoverageSection({ chainIdx, searchQuery }: { chainIdx: number; sea
 export default function CoveragePage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [activeChainId, setActiveChainId] = useState<number | null>(null)
+  const [address, setAddress] = useState<string | null>(null)
+  const [refreshKey, setRefreshKey] = useState(0)
   const searchRef = useRef<HTMLInputElement>(null)
+  const { canRefresh, secondsLeft, startCooldown } = useRefreshCooldown()
 
-  // Preserve the ?address= when going back so "Portfolio" returns to the same account's dashboard
-  // instead of the empty landing page. Read from the URL on mount (the app reads addresses from
-  // window.location, not useSearchParams — no Suspense needed).
-  const [portfolioHref, setPortfolioHref] = useState('/')
-  const [feedsHref, setFeedsHref] = useState('/feeds')
+  // The app reads the account from the URL (not useSearchParams — no Suspense needed); the shared nav
+  // carries it across tabs.
   useEffect(() => {
     const addr = new URLSearchParams(window.location.search).get('address')
-    if (addr) {
-      setPortfolioHref(`/?address=${addr}`)
-      setFeedsHref(`/feeds?address=${addr}`)
-    }
+    if (addr) setAddress(addr)
   }, [])
+
+  const handleRefresh = useCallback(() => {
+    setRefreshKey((k) => k + 1)
+    startCooldown()
+  }, [startCooldown])
 
   // Scroll-spy: observe each chain section and track which is most in view.
   useEffect(() => {
@@ -135,29 +138,20 @@ export default function CoveragePage() {
 
   return (
     <TooltipProvider>
-      <div className="space-y-4">
-          {/* Header row */}
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <Link
-                href={portfolioHref}
-                className="group inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-2.5 py-1 text-xs font-medium text-neutral-700 shadow-sm transition-colors hover:border-neutral-500 hover:text-neutral-950 mb-3"
-              >
-                <span aria-hidden className="transition-transform group-hover:-translate-x-0.5">
-                  ←
-                </span>
-                Portfolio
-              </Link>
-              <h1 className="font-bold text-neutral-950 text-2xl">Coverage</h1>
-              <p className="text-sm text-neutral-700 mt-1">
-                The protocols and positions the NAV system tracks, per chain.
-              </p>
-            </div>
-            <div className="flex shrink-0 items-center gap-3 mt-1 text-sm">
-              <Link href={feedsHref} className="text-neutral-700 hover:text-neutral-950 transition-colors">
-                Price Feeds
-              </Link>
-            </div>
+      <div className="min-h-screen bg-neutral-200">
+        <div className="max-w-6xl mx-auto px-4 pb-12">
+          <DashboardNav
+            active="coverage"
+            address={address}
+            refresh={{ onClick: handleRefresh, canRefresh, secondsLeft }}
+          />
+          <div className="space-y-4">
+          {/* Title */}
+          <div>
+            <h1 className="font-bold text-neutral-950 text-2xl">Coverage</h1>
+            <p className="text-sm text-neutral-700 mt-1">
+              The protocols and positions the NAV system tracks, per chain.
+            </p>
           </div>
 
           {/* Scope banner */}
@@ -201,9 +195,11 @@ export default function CoveragePage() {
           {/* Chain sections */}
           <div className="space-y-6">
             {DEPLOYED_CHAINS.map((_, idx) => (
-              <ChainCoverageSection key={idx} chainIdx={idx} searchQuery={searchQuery} />
+              <ChainCoverageSection key={`${idx}-${refreshKey}`} chainIdx={idx} searchQuery={searchQuery} />
             ))}
           </div>
+          </div>
+        </div>
       </div>
     </TooltipProvider>
   )

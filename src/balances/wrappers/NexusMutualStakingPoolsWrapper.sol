@@ -22,14 +22,16 @@ import "src/errors.sol";
 ///      DEPOSITOR into this wrapper, then sets the exact-`amount` allowance to the `TOKEN_CONTROLLER` right before the
 ///      pool call (`forceApprove`). The DEPOSITOR must therefore approve this wrapper to spend its NXM beforehand. The
 ///      wrapper is otherwise custody-free: it holds no NXM between calls (the deposit consumes exactly what it pulled).
-///      `withdraw` requires this wrapper to be authorized on the `StakingNFT` (the NFT owner, or its approved operator)
-///      — arranged off-chain.
+///      On `withdraw`, Nexus sends the withdrawn stake + rewards to `StakingNFT.ownerOf(tokenId)` (the token owner),
+///      **not** to `msg.sender` — and since `depositTo` mints the NFT to the caller, the owner is the DEPOSITOR, so the
+///      withdrawn NXM flows **directly from Nexus to the DEPOSITOR** and never touches this wrapper. Nexus `withdraw`
+///      is permissionless (funds always route to the owner regardless of caller), so the wrapper needs no `StakingNFT`
+///      operator approval.
 ///
 ///      **Tracked account = the caller.** Both mutators track/untrack for `msg.sender` (the `DEPOSITOR_ROLE` holder),
-///      matching the adapter's live ownership re-verification. Nexus mints/tops-up the position to `destination`, which
-///      stays in `depositTo`'s signature (matching the pool ABI). The adapter's `submit` is **fail-loud**: if the
-///      resulting NFT is not owned by `msg.sender` (i.e. `destination != msg.sender`), `submit` reverts `NotTokenOwner`
-///      and the whole deposit reverts atomically — so a caller must set `destination` to itself. `withdraw` pops the
+///      matching the adapter's live ownership re-verification. `depositTo` hardcodes the pool's `destination` to
+///      `msg.sender` (the NFT is always minted/topped-up to the caller), so the position is always owned by the tracked
+///      account — the `destination` parameter is intentionally omitted from the wrapper's signature. `withdraw` pops the
 ///      `tokenId` unconditionally; because Nexus does not burn the `StakingNFT` on withdraw, a *partial* withdrawal
 ///      stops tracking any remaining stake (a safe under-report per ADR 0015 — a later top-up re-adds the id).
 contract NexusMutualStakingPoolsWrapper is AccessControl {
@@ -66,33 +68,33 @@ contract NexusMutualStakingPoolsWrapper is AccessControl {
     }
 
     /// @notice Deposit `amount` NXM into staking pool `poolAddress` and track the resulting StakingNFT for the caller.
-    ///         Mirrors the Nexus pool's `depositTo`, prepended with `poolAddress`. Reverts (rolling back the deposit)
-    ///         if the resulting NFT is not owned by `msg.sender` — set `destination` to `msg.sender`.
+    ///         Mirrors the Nexus pool's `depositTo`, prepended with `poolAddress` and with `destination` omitted — the
+    ///         NFT is always minted/topped-up to `msg.sender`, so the tracked account always owns it.
     /// @param poolAddress   The Nexus staking pool.
     /// @param amount        NXM to stake (pulled from `msg.sender` — the DEPOSITOR must approve this wrapper first).
     /// @param trancheId     Target tranche.
-    /// @param requestTokenId 0 to mint a new StakingNFT, or an existing id to top it up.
-    /// @param destination   Recipient/owner of the StakingNFT — must equal `msg.sender` (see contract NatSpec).
+    /// @param requestTokenId 0 to mint a new StakingNFT, or an existing id (owned by the caller) to top it up.
     /// @return tokenId The minted/topped-up StakingNFT id (tracked for `msg.sender`).
-    function depositTo(
-        address poolAddress,
-        uint256 amount,
-        uint256 trancheId,
-        uint256 requestTokenId,
-        address destination
-    ) external onlyRole(DEPOSITOR_ROLE) returns (uint256 tokenId) {
+    function depositTo(address poolAddress, uint256 amount, uint256 trancheId, uint256 requestTokenId)
+        external
+        onlyRole(DEPOSITOR_ROLE)
+        returns (uint256 tokenId)
+    {
         // Pull the NXM from the DEPOSITOR, then set the exact-amount allowance for the TokenController (Nexus pulls
         // NXM from this wrapper via tokenController.depositStakedNXM). forceApprove tolerates tokens that require
         // resetting a non-zero allowance.
         IERC20(NXM).safeTransferFrom(msg.sender, address(this), amount);
         IERC20(NXM).forceApprove(TOKEN_CONTROLLER, amount);
-        tokenId = INexusStakingPool(poolAddress).depositTo(amount, trancheId, requestTokenId, destination);
-        // Track for the caller. Fail-loud: reverts NotTokenOwner (rolling back the deposit) if destination != msg.sender.
+        // destination = msg.sender: the NFT is always owned by the tracked account, so the adapter's live ownership
+        // re-verification always passes for it.
+        tokenId = INexusStakingPool(poolAddress).depositTo(amount, trancheId, requestTokenId, msg.sender);
         INexusStakingPoolsBalanceAdapterFeed(ADAPTER).submit(msg.sender, tokenId);
     }
 
     /// @notice Withdraw stake and/or rewards from `tokenId` in pool `poolAddress`, and stop tracking `tokenId` for the
-    ///         caller. Mirrors the Nexus pool's `withdraw`, prepended with `poolAddress`.
+    ///         caller. Mirrors the Nexus pool's `withdraw`, prepended with `poolAddress`. Nexus sends the withdrawn NXM
+    ///         to the token owner (`StakingNFT.ownerOf(tokenId)`) — the DEPOSITOR who minted it — so the funds go
+    ///         directly to the caller and never touch this wrapper.
     /// @param poolAddress     The Nexus staking pool.
     /// @param tokenId         The StakingNFT to withdraw from.
     /// @param withdrawStake   Withdraw unlocked stake.

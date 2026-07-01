@@ -145,13 +145,13 @@ contract NexusMutualStakingPoolsWrapperTest is BalanceAdapterTestBase {
         pool.setNextTokenId(7);
         uint256 depositorBefore = nxm.balanceOf(depositor);
         vm.prank(depositor);
-        uint256 id = wrapper.depositTo(address(pool), 100, 3, 0, depositor);
+        uint256 id = wrapper.depositTo(address(pool), 100, 3, 0);
 
         assertEq(id, 7);
         assertEq(pool.lastAmount(), 100);
         assertEq(pool.lastTranche(), 3);
         assertEq(pool.lastRequestId(), 0);
-        assertEq(pool.lastDestination(), depositor);
+        assertEq(pool.lastDestination(), depositor); // wrapper hardcodes destination = caller
         // NXM was pulled from the depositor into the wrapper (the mock pool/controller does not pull further).
         assertEq(nxm.balanceOf(depositor), depositorBefore - 100);
         assertEq(nxm.balanceOf(address(wrapper)), 100);
@@ -168,25 +168,15 @@ contract NexusMutualStakingPoolsWrapperTest is BalanceAdapterTestBase {
         vm.expectRevert(
             abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, other, DEPOSITOR_ROLE)
         );
-        wrapper.depositTo(address(pool), 100, 3, 0, other);
-    }
-
-    /// @notice destination != caller → the resulting NFT is not owned by the caller, so the adapter's fail-loud
-    ///         `submit` reverts NotTokenOwner and the whole deposit rolls back.
-    function test_depositTo_revertsWhenDestinationNotCaller() public {
-        pool.setNextTokenId(7);
-        vm.prank(depositor);
-        vm.expectRevert(abi.encodeWithSelector(NotTokenOwner.selector, depositor, uint256(7)));
-        wrapper.depositTo(address(pool), 100, 3, 0, other);
-        assertEq(adapter.tokenIdsOf(depositor).length, 0);
+        wrapper.depositTo(address(pool), 100, 3, 0);
     }
 
     /// @notice A top-up (requestTokenId != 0) returns the same id; tracking is idempotent.
     function test_depositTo_topUp_idempotent() public {
         pool.setNextTokenId(7);
         vm.startPrank(depositor);
-        wrapper.depositTo(address(pool), 100, 3, 0, depositor); // mints id 7
-        uint256 id2 = wrapper.depositTo(address(pool), 50, 3, 7, depositor); // top-up id 7
+        wrapper.depositTo(address(pool), 100, 3, 0); // mints id 7
+        uint256 id2 = wrapper.depositTo(address(pool), 50, 3, 7); // top-up id 7
         vm.stopPrank();
         assertEq(id2, 7);
         assertEq(pool.lastRequestId(), 7);
@@ -198,7 +188,7 @@ contract NexusMutualStakingPoolsWrapperTest is BalanceAdapterTestBase {
     function test_withdraw_forwardsAndUntracks() public {
         pool.setNextTokenId(7);
         vm.prank(depositor);
-        wrapper.depositTo(address(pool), 100, 3, 0, depositor);
+        wrapper.depositTo(address(pool), 100, 3, 0);
         assertEq(adapter.tokenIdsOf(depositor).length, 1);
 
         pool.setWithdrawReturns(80, 5);

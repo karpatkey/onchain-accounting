@@ -17,16 +17,23 @@ import "src/errors.sol";
 ///         caller; `withdraw` forwards to the pool and pops the `tokenId`. The adapter grants this contract
 ///         `SUBMITTER_ROLE`, so any address the admin grants `DEPOSITOR_ROLE` gets its Nexus positions tracked
 ///         automatically as it deposits/withdraws through the wrapper.
-/// @dev **NXM is pulled from the caller.** Nexus's `depositTo` pulls `amount` NXM from `msg.sender` (= this wrapper)
-///      via `tokenController.depositStakedNXM`, so `depositTo` first `transferFrom`s the exact `amount` from the
-///      DEPOSITOR into this wrapper, then sets the exact-`amount` allowance to the `TOKEN_CONTROLLER` right before the
-///      pool call (`forceApprove`). The DEPOSITOR must therefore approve this wrapper to spend its NXM beforehand. The
-///      wrapper is otherwise custody-free: it holds no NXM between calls (the deposit consumes exactly what it pulled).
+/// @dev **NXM is pulled from the caller.** `depositTo` `transferFrom`s the exact `amount` of NXM from the DEPOSITOR
+///      into this wrapper; Nexus then pulls it from the wrapper (`msg.sender`) inside `pool.depositTo` via
+///      `TokenController.depositStakedNXM` → `NXMToken.operatorTransfer(wrapper, amount)`. That is an **operator**
+///      transfer (the TokenController is NXM's operator), so it needs **no ERC20 allowance** — the wrapper only has to
+///      *hold* the `amount` at call time. The DEPOSITOR must approve this wrapper to spend its NXM beforehand, and the
+///      wrapper is otherwise custody-free (it holds no NXM between calls — the deposit consumes exactly what it pulled).
+///
+///      **Prerequisite: the wrapper must be a whitelisted Nexus member.** NXM's `transferFrom` gates on the
+///      *recipient* (`canTransfer(to)` → `require(whiteListed[to])`), so the `transferFrom(DEPOSITOR → wrapper)` only
+///      succeeds if this wrapper is a whitelisted member. Enrolling the wrapper as a Nexus member is a one-time
+///      operational step that must be done before deposits work; it is **not** enforceable in the wrapper's code.
+///
 ///      On `withdraw`, Nexus sends the withdrawn stake + rewards to `StakingNFT.ownerOf(tokenId)` (the token owner),
 ///      **not** to `msg.sender` — and since `depositTo` mints the NFT to the caller, the owner is the DEPOSITOR, so the
 ///      withdrawn NXM flows **directly from Nexus to the DEPOSITOR** and never touches this wrapper. Nexus `withdraw`
 ///      is permissionless (funds always route to the owner regardless of caller), so the wrapper needs no `StakingNFT`
-///      operator approval.
+///      operator approval and no member enrollment for the withdraw path.
 ///
 ///      **Tracked account = the caller.** Both mutators track/untrack for `msg.sender` (the `DEPOSITOR_ROLE` holder),
 ///      matching the adapter's live ownership re-verification. `depositTo` hardcodes the pool's `destination` to
@@ -43,27 +50,21 @@ contract NexusMutualStakingPoolsWrapper is AccessControl {
     /// @notice The wrapper-fed balance adapter this wrapper feeds (holds `SUBMITTER_ROLE` on it).
     address public immutable ADAPTER;
 
-    /// @notice NXM token (pulled from this wrapper by Nexus on deposit).
+    /// @notice NXM token (pulled from this wrapper by Nexus on deposit, via the TokenController's operator transfer).
     address public immutable NXM;
 
-    /// @notice Nexus TokenController — the spender that pulls NXM in `depositTo` (`depositStakedNXM(msg.sender, …)`).
-    address public immutable TOKEN_CONTROLLER;
-
-    /// @param adapter_         The wrapper-fed {NexusMutualStakingPoolsAssistedBalanceAdapter}. Must be a contract.
-    /// @param nxm_             NXM token. Must be a contract.
-    /// @param tokenController_ Nexus TokenController (NXM spender). Must be a contract.
-    /// @param admin_           Holder of `DEFAULT_ADMIN_ROLE` (administers `DEPOSITOR_ROLE`). Required.
-    constructor(address adapter_, address nxm_, address tokenController_, address admin_) {
-        if (adapter_ == address(0) || nxm_ == address(0) || tokenController_ == address(0) || admin_ == address(0)) {
+    /// @param adapter_ The wrapper-fed {NexusMutualStakingPoolsAssistedBalanceAdapter}. Must be a contract.
+    /// @param nxm_     NXM token. Must be a contract.
+    /// @param admin_   Holder of `DEFAULT_ADMIN_ROLE` (administers `DEPOSITOR_ROLE`). Required.
+    constructor(address adapter_, address nxm_, address admin_) {
+        if (adapter_ == address(0) || nxm_ == address(0) || admin_ == address(0)) {
             revert InvalidArguments();
         }
         AddressCheckLib.requireContract(adapter_, "adapter");
         AddressCheckLib.requireContract(nxm_, "NXM");
-        AddressCheckLib.requireContract(tokenController_, "TokenController");
 
         ADAPTER = adapter_;
         NXM = nxm_;
-        TOKEN_CONTROLLER = tokenController_;
         _grantRole(DEFAULT_ADMIN_ROLE, admin_);
     }
 
@@ -80,11 +81,10 @@ contract NexusMutualStakingPoolsWrapper is AccessControl {
         onlyRole(DEPOSITOR_ROLE)
         returns (uint256 tokenId)
     {
-        // Pull the NXM from the DEPOSITOR, then set the exact-amount allowance for the TokenController (Nexus pulls
-        // NXM from this wrapper via tokenController.depositStakedNXM). forceApprove tolerates tokens that require
-        // resetting a non-zero allowance.
+        // Pull the NXM from the DEPOSITOR into this wrapper. Nexus then pulls it from the wrapper inside depositTo via
+        // TokenController.operatorTransfer (operator privilege — no ERC20 allowance needed). Requires this wrapper to
+        // be a whitelisted Nexus member (NXM transferFrom gates on the recipient) — see the contract NatSpec.
         IERC20(NXM).safeTransferFrom(msg.sender, address(this), amount);
-        IERC20(NXM).forceApprove(TOKEN_CONTROLLER, amount);
         // destination = msg.sender: the NFT is always owned by the tracked account, so the adapter's live ownership
         // re-verification always passes for it.
         tokenId = INexusStakingPool(poolAddress).depositTo(amount, trancheId, requestTokenId, msg.sender);

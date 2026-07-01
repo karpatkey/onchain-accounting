@@ -113,6 +113,26 @@ export const navCalcAbi = [
       },
     ],
   },
+  // All configured price feeds for an asset (the redundancy set). Field order mirrors the
+  // on-chain IPrices.PriceFeedConfig struct: priceFeed, decimals, priceType, chainlinkHeartbeat.
+  {
+    name: 'getPriceFeeds',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'asset', type: 'address' }],
+    outputs: [
+      {
+        name: 'configs',
+        type: 'tuple[]',
+        components: [
+          { name: 'priceFeed', type: 'address' },
+          { name: 'decimals', type: 'uint8' },
+          { name: 'priceType', type: 'uint8' },
+          { name: 'chainlinkHeartbeat', type: 'uint256' },
+        ],
+      },
+    ],
+  },
   {
     name: 'getRegisteredAssets',
     type: 'function',

@@ -190,7 +190,7 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
         adapter.submit(address(vault), TICKET, TS);
     }
 
-    function test_remove_dropsTrackedPosition_andIsIdempotent() public {
+    function test_remove_dropsTrackedPosition() public {
         vault.setIndex(TICKET, 1);
         vault.setRequest(holder, TICKET, TS, 0, 1 ether);
         vault.setIndex(TICKET + 1, 1);
@@ -202,11 +202,34 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
         adapter.remove(address(vault), TICKET, TS);
         assertEq(adapter.positionsOf(holder).length, 1);
         assertEq(adapter.positionsOf(holder)[0].positionTicket, TICKET + 1);
+    }
 
-        // Removing a never-tracked / already-removed tuple is a no-op (no revert).
+    function test_remove_revertsWhenNotTracked() public {
+        // Never-tracked tuple → PositionNotTracked (the ticket must belong to the caller).
+        vm.prank(holder);
+        vm.expectRevert(abi.encodeWithSelector(PositionNotTracked.selector, holder, address(vault), TICKET));
+        adapter.remove(address(vault), TICKET, TS);
+
+        // And removing the same tuple twice reverts on the second call.
+        vault.setIndex(TICKET, 1);
+        vault.setRequest(holder, TICKET, TS, 0, 1 ether);
+        _submit(holder, TICKET, TS);
         vm.prank(holder);
         adapter.remove(address(vault), TICKET, TS);
-        assertEq(adapter.positionsOf(holder).length, 1);
+        vm.prank(holder);
+        vm.expectRevert(abi.encodeWithSelector(PositionNotTracked.selector, holder, address(vault), TICKET));
+        adapter.remove(address(vault), TICKET, TS);
+    }
+
+    function test_remove_revertsWhenTrackedByOtherAccount() public {
+        // `holder` tracks the ticket; `other` cannot remove it (self-scoped to msg.sender).
+        vault.setIndex(TICKET, 1);
+        vault.setRequest(holder, TICKET, TS, 0, 1 ether);
+        _submit(holder, TICKET, TS);
+        vm.prank(other);
+        vm.expectRevert(abi.encodeWithSelector(PositionNotTracked.selector, other, address(vault), TICKET));
+        adapter.remove(address(vault), TICKET, TS);
+        assertEq(adapter.positionsOf(holder).length, 1, "holder's position untouched");
     }
 
     function test_clearAccount_self() public {

@@ -15,6 +15,8 @@ error TokenIdCacheFull(address account, uint256 maxTokenIds);
 // tokenIds, so it has its own cache-full / invalid-position errors (same fail-loud-write semantics as the NFT adapters).
 error PositionCacheFull(address account, uint256 maxPositions);
 error InvalidExitPosition(address account, address vault, uint256 positionTicket);
+/// @notice `remove` targeted a `(vault, positionTicket, timestamp)` tuple that is not in `account`'s tracked set.
+error PositionNotTracked(address account, address vault, uint256 positionTicket);
 
 // Bridge-specific errors
 error AlreadyInitialized();

@@ -148,8 +148,10 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapter is SingleAssetAssistedGetter
         _addPosition(msg.sender, ExitPosition(vault, positionTicket, timestamp));
     }
 
-    /// @notice Stop tracking one of the caller's own exit positions (e.g. once claimed). Idempotent. Permissionless and
-    ///         self-scoped to `msg.sender`, so no one can deregister another account's positions.
+    /// @notice Stop tracking one of the caller's own exit positions (e.g. once claimed). Permissionless and self-scoped
+    ///         to `msg.sender`, so no one can deregister another account's positions. **Reverts** `PositionNotTracked`
+    ///         if the `(vault, positionTicket, timestamp)` tuple is not currently tracked for the caller — the ticket
+    ///         must belong to `msg.sender`.
     function remove(address vault, uint256 positionTicket, uint256 timestamp) external {
         _removePositionByCoords(msg.sender, vault, positionTicket, timestamp);
     }
@@ -317,13 +319,13 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapter is SingleAssetAssistedGetter
         emit PositionSubmitted(account, position.vault, position.positionTicket, position.timestamp);
     }
 
-    /// @dev Drop one cached position by its coordinates. Idempotent — returns silently (emitting nothing) if the tuple
-    ///      was not cached; emits `PositionCleared` when it was removed.
+    /// @dev Drop one cached position by its coordinates. **Reverts** `PositionNotTracked` if the tuple is not in
+    ///      `account`'s tracked set — the ticket must belong to the account. Emits `PositionCleared` on success.
     function _removePositionByCoords(address account, address vault, uint256 positionTicket, uint256 timestamp)
         internal
     {
         bytes32 key = _key(vault, positionTicket, timestamp);
-        if (_positionIdxPlus1[account][key] == 0) return;
+        if (_positionIdxPlus1[account][key] == 0) revert PositionNotTracked(account, vault, positionTicket);
         _removePosition(account, key);
         emit PositionCleared(account, vault, positionTicket, timestamp);
     }

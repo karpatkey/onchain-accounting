@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
-import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
@@ -16,34 +15,29 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
-/// @title Stader Withdrawal Queue Balance Adapter (id-cached, wrapper-fed)
+/// @title Stader Withdrawal Queue Balance Adapter (id-cached, self-fed)
 /// @author KPK
 /// @notice Reports the in-flight ETH owed to an account from open requests in Stader's `UserWithdrawalManager`.
 ///         Requesting an unstake burns ETHx and records a sequential `requestId` owned by the account; until claimed,
 ///         the value lives as ETH owed by the manager and is invisible to a wallet/receipt-token scan. Rather than
 ///         enumerate `requestIdsByUserAddress` on-chain (griefable — anyone can `requestWithdraw(amount, _owner=victim)`
-///         to bloat a victim's array past the probe cap), a trusted **wrapper contract** (holder of `SUBMITTER_ROLE` —
-///         the {StaderWithdrawalQueueWrapper}) pushes the account's `requestId` via {submit} **atomically as it forwards
-///         the withdrawal request**, so the id cache is kept current on-chain in the same transaction.
-/// @dev Assisted-family adapter (ADR 0014 / 0015): the cache stores **only request ids, never amounts**, and every read
-///      re-verifies ownership (`userWithdrawRequests(id).owner == account`) and re-values live, so a faulty or
-///      compromised feeder can only under-report NAV, never over-report. Ownership + valuation come straight from the
+///         to bloat a victim's array past the probe cap), each account tracks its **own** request ids in this cache via
+///         {submit}: the cache is keyed on `msg.sender`, so an account can only ever feed (or clean) its own entry —
+///         nobody can touch a third party's cache. The intended caller is a Safe that **delegatecalls** the
+///         {StaderWithdrawalQueueWrapper}, which forwards the Stader `requestWithdraw`/`claim` and updates this cache
+///         atomically in the same transaction (see that contract).
+/// @dev Assisted-family adapter (ADR 0014 / 0015 / 0018): the cache stores **only request ids, never amounts**, and
+///      every read re-verifies ownership (`userWithdrawRequests(id).owner == account`) and re-values live, so a stale or
+///      wrong id can only under-report NAV, never over-report. Ownership + valuation come straight from the
 ///      `UserWithdrawalManager` public getters, which return a zeroed tuple for a claimed/unknown id (owner deleted on
 ///      claim) rather than reverting — no enumeration, no OOB-sentinel handling. Denominated in `UNDERLYING_TOKEN`
 ///      (WETH): the claim pays native ETH whose amount is fixed at finalization, so NAV prices it via ETH/USD and an
 ///      ETHx exchange-rate move can't mis-value a queued claim. Emits ONE `Supplied` leg per owned cached request, all
 ///      sharing the static `positionId = abi.encode(address(USER_WITHDRAWAL_MANAGER))`; each leg's `isLocked` reflects
 ///      that request's state (finalized → `false`, pending → `true`) and its request id rides in the typed
-///      `positionInstanceId` (`bytes32(requestId)`), never in `positionId`.
-contract StaderWithdrawalQueueBalanceAdapter is AccessControl, SingleAssetAssistedGetters, IPositionDescribable {
+///      `positionInstanceId` (`bytes32(requestId)`), never in `positionId`. The adapter holds no roles and no admin.
+contract StaderWithdrawalQueueBalanceAdapter is SingleAssetAssistedGetters, IPositionDescribable {
     using EnumerableSet for EnumerableSet.UintSet;
-
-    //
-    // Roles
-    //
-
-    /// @notice Role allowed to feed the adapter by submitting/removing request ids (held by the wrapper contract).
-    bytes32 public constant SUBMITTER_ROLE = keccak256("SUBMITTER_ROLE");
 
     //
     // Constants
@@ -51,8 +45,9 @@ contract StaderWithdrawalQueueBalanceAdapter is AccessControl, SingleAssetAssist
 
     /// @notice Hard cap on cached request ids per account. `_owedAmount` / `getAdapterPositions` iterate the whole set
     ///         on every NAV read, and an OOG there is NOT caught by NAVCalculator's try/catch — a bloated cache would
-    ///         brick the account's NAV scan. Bounding the cache at submit time keeps the read gas-bounded; the wrapper
-    ///         GCs claimed ids via {remove}. A real account never approaches 256 open requests.
+    ///         brick the account's NAV scan. Bounding the cache at submit time keeps the read gas-bounded; claimed ids
+    ///         are GC'd via {remove}. A real account never approaches 256 open requests, and because the cache is keyed
+    ///         on `msg.sender` only the account itself can grow its own cache.
     uint256 public constant MAX_REQUESTS = 256;
 
     bytes32 private constant PROTOCOL_BRAND = ProtocolIds.STADER;
@@ -69,13 +64,12 @@ contract StaderWithdrawalQueueBalanceAdapter is AccessControl, SingleAssetAssist
     /// @notice Reference to NAVCalculator for asset registry access.
     INAVCalculator public immutable NAV_CALCULATOR;
 
-    /// @notice Candidate request ids cached per account (the only thing the wrapper supplies). An
-    ///         `EnumerableSet.UintSet` gives dedup, O(1) membership/removal, and `values()` enumeration.
+    /// @notice Candidate request ids cached per account. An `EnumerableSet.UintSet` gives dedup, O(1)
+    ///         membership/removal, and `values()` enumeration.
     mapping(address account => EnumerableSet.UintSet) private _requestIds;
 
     event RequestIdSubmitted(address indexed account, uint256 indexed requestId);
     event RequestIdCleared(address indexed account, uint256 indexed requestId);
-    event AccountCleared(address indexed account);
 
     //
     // Constructor
@@ -84,72 +78,48 @@ contract StaderWithdrawalQueueBalanceAdapter is AccessControl, SingleAssetAssist
     /// @param userWithdrawalManager_ Address of Stader's UserWithdrawalManager contract. Must be a contract.
     /// @param underlyingToken_       Address of the asset positions are denominated in (WETH).
     /// @param navCalculator_         The NAVCalculator address used for asset-registry filtering. Must be a contract.
-    /// @param admin_                 Holder of `DEFAULT_ADMIN_ROLE` (administers `SUBMITTER_ROLE`). Required.
-    /// @param submitter_             Initial holder of `SUBMITTER_ROLE` — the {StaderWithdrawalQueueWrapper}. Optional
-    ///                               (pass `address(0)` and grant after the wrapper is deployed, since the wrapper needs
-    ///                               this adapter's address at construction).
-    constructor(
-        address userWithdrawalManager_,
-        address underlyingToken_,
-        address navCalculator_,
-        address admin_,
-        address submitter_
-    ) SingleAssetAssistedGetters(underlyingToken_) {
-        if (userWithdrawalManager_ == address(0) || admin_ == address(0)) revert InvalidArguments();
+    constructor(address userWithdrawalManager_, address underlyingToken_, address navCalculator_)
+        SingleAssetAssistedGetters(underlyingToken_)
+    {
+        if (userWithdrawalManager_ == address(0)) revert InvalidArguments();
         AddressCheckLib.requireContract(userWithdrawalManager_, "UserWithdrawalManager");
         AddressCheckLib.requireContract(navCalculator_, "NAVCalculator");
 
         USER_WITHDRAWAL_MANAGER = IUserWithdrawalManager(userWithdrawalManager_);
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
-
-        _grantRole(DEFAULT_ADMIN_ROLE, admin_);
-        if (submitter_ != address(0)) _grantRole(SUBMITTER_ROLE, submitter_);
     }
 
     //
-    // Writes (SUBMITTER_ROLE)
+    // Writes (permissionless — each account feeds/cleans its own cache, keyed on msg.sender)
     //
 
-    /// @notice Track `requestId` for `account` (idempotent). Called by the wrapper right after it forwards a
-    ///         `requestWithdraw` that created the request. **Reverts** `NotTokenOwner` if `requestId` is not currently
-    ///         owned by `account`, and `TokenIdCacheFull` if a new id would grow the set past {MAX_REQUESTS}.
-    /// @dev Re-submitting an already-cached id is a no-op (no cap/ownership re-check, no event).
-    function submit(address account, uint256 requestId) external onlyRole(SUBMITTER_ROLE) {
-        if (account == address(0)) revert InvalidArguments();
-        EnumerableSet.UintSet storage set = _requestIds[account];
+    /// @notice Track `requestId` for the caller (idempotent). Called by a Safe that delegatecalls the wrapper right
+    ///         after it forwards a `requestWithdraw` that created the request, so the cache is updated atomically.
+    ///         **Reverts** `NotTokenOwner` if `requestId` is not currently owned by the caller, and `TokenIdCacheFull`
+    ///         if a new id would grow the caller's set past {MAX_REQUESTS}.
+    /// @dev Keyed on `msg.sender`: an account can only ever add ids it actually owns to its own cache, so no third party
+    ///      can bloat it. Re-submitting an already-cached id is a no-op (no cap/ownership re-check, no event).
+    function submit(uint256 requestId) external {
+        EnumerableSet.UintSet storage set = _requestIds[msg.sender];
         if (set.contains(requestId)) return; // idempotent — nothing to validate or emit
-        if (set.length() >= MAX_REQUESTS) revert TokenIdCacheFull(account, MAX_REQUESTS);
+        if (set.length() >= MAX_REQUESTS) revert TokenIdCacheFull(msg.sender, MAX_REQUESTS);
         (address owner,) = _ownerOf(requestId);
-        if (owner != account) revert NotTokenOwner(account, requestId);
+        if (owner != msg.sender) revert NotTokenOwner(msg.sender, requestId);
         set.add(requestId);
-        emit RequestIdSubmitted(account, requestId);
+        emit RequestIdSubmitted(msg.sender, requestId);
     }
 
-    //
-    // Writes (permissionless — GC of provably-stale ids)
-    //
-
-    /// @notice Stop tracking `requestId` for `account` — but **only if** it is no longer owned by `account` (claimed —
-    ///         the manager deletes the request, so its owner reads back as `address(0)`). Permissionless: it can only
-    ///         *remove* an id, and only one that fails the live ownership check, so no live position can ever be
-    ///         deleted. This is the cleanup path for a `claim` executed *outside* the wrapper's `SUBMITTER_ROLE`
-    ///         context — a Stader `claim` delegatecalled by the owning Safe (which does not hold `SUBMITTER_ROLE`).
-    /// @dev **Reverts** `NotTokenOwner` if `requestId` is still owned by `account` (nothing to remove) so a mistaken
-    ///      call is loud rather than silently dropping a live position. Idempotent for an already-absent id.
-    function remove(address account, uint256 requestId) external {
+    /// @notice Stop tracking `requestId` for the caller — but **only if** it is no longer owned by the caller (claimed —
+    ///         the manager deletes the request, so its owner reads back as `address(0)`). It can only ever remove an id
+    ///         that fails the live ownership check, so no live position can ever be dropped. This is the cleanup path a
+    ///         Safe runs (via the delegatecalled wrapper) right after it claims.
+    /// @dev Keyed on `msg.sender`. **Reverts** `NotTokenOwner` if `requestId` is still owned by the caller (nothing to
+    ///      remove) so a mistaken call is loud rather than silently dropping a live position. Idempotent for an
+    ///      already-absent id.
+    function remove(uint256 requestId) external {
         (address owner, bool live) = _ownerOf(requestId);
-        if (live && owner == account) revert NotTokenOwner(account, requestId);
-        if (_requestIds[account].remove(requestId)) emit RequestIdCleared(account, requestId);
-    }
-
-    /// @notice Drop all cached request ids for `account`. Admin-gated rescue (e.g. to reset a mis-fed account); the
-    ///         normal path is the wrapper's per-request {submit} / stale-{remove}.
-    function clearAccount(address account) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        EnumerableSet.UintSet storage set = _requestIds[account];
-        for (uint256 n = set.length(); n > 0; --n) {
-            set.remove(set.at(n - 1));
-        }
-        emit AccountCleared(account);
+        if (live && owner == msg.sender) revert NotTokenOwner(msg.sender, requestId);
+        if (_requestIds[msg.sender].remove(requestId)) emit RequestIdCleared(msg.sender, requestId);
     }
 
     //
@@ -177,9 +147,9 @@ contract StaderWithdrawalQueueBalanceAdapter is AccessControl, SingleAssetAssist
     }
 
     /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) public view override(AccessControl, IERC165) returns (bool) {
+    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
         return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IPositionDescribable).interfaceId
-            || super.supportsInterface(interfaceId);
+            || interfaceId == type(IERC165).interfaceId;
     }
 
     /// @inheritdoc IBalanceAdapter
@@ -188,9 +158,8 @@ contract StaderWithdrawalQueueBalanceAdapter is AccessControl, SingleAssetAssist
     ///         request's state (finalized → `false`, pending → `true`) and its request id is the typed
     ///         `positionInstanceId`.
     /// @dev Each cached id is valued live (`_owedForRequest`), re-verifying ownership every read: requests not owned by
-    ///      `account` / claimed value to 0 and emit no leg — the wrapper can only under-report. Zero-amount legs are
-    ///      skipped. The legs sum to `_owedAmount`'s total. Dropped entirely if the underlying asset is not registered
-    ///      in NAVCalculator.
+    ///      `account` / claimed value to 0 and emit no leg. Zero-amount legs are skipped. The legs sum to `_owedAmount`'s
+    ///      total. Dropped entirely if the underlying asset is not registered in NAVCalculator.
     function getAdapterPositions(address account, address assetFilter)
         external
         view

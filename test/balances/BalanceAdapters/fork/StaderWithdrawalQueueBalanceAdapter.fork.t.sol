@@ -31,12 +31,11 @@ contract StaderWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
         super.setUp();
         _setupFork();
         balances = _deployBalancesForAdapter(MAINNET_WETH);
-        // Wrapper-fed adapter: this test contract holds SUBMITTER_ROLE and seeds the cache with TEST_USER's real
-        // request id (owned by TEST_USER on-chain at FORK_BLOCK, so submit's ownership check passes).
-        adapter = new StaderWithdrawalQueueBalanceAdapter(
-            USER_WITHDRAWAL_MANAGER, MAINNET_WETH, address(balances), address(this), address(this)
-        );
-        adapter.submit(TEST_USER, TEST_USER_REQ_ID);
+        // Self-fed id-cache: seed TEST_USER's real request id by pranking as TEST_USER (submit is keyed on msg.sender;
+        // the id is owned by TEST_USER on-chain at FORK_BLOCK, so the ownership check passes).
+        adapter = new StaderWithdrawalQueueBalanceAdapter(USER_WITHDRAWAL_MANAGER, MAINNET_WETH, address(balances));
+        vm.prank(TEST_USER);
+        adapter.submit(TEST_USER_REQ_ID);
     }
 
     function _setupFork() internal override {
@@ -172,15 +171,17 @@ contract StaderWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTest
         // super.setUp() already invokes _setupFork() (overridden below) via virtual dispatch — no second call.
         super.setUp();
         balances = _deployBalancesForAdapter(MAINNET_WETH);
-        // Wrapper-fed adapter: this test contract holds SUBMITTER_ROLE and seeds each holder's real, on-chain-owned
-        // request id(s) at FORK_BLOCK so the cache mirrors what the wrapper would have submitted at request time.
-        oracle = new StaderWithdrawalQueueBalanceAdapter(
-            USER_WITHDRAWAL_MANAGER, MAINNET_WETH, address(balances), address(this), address(this)
-        );
-        oracle.submit(PENDING_HOLDER, 8218);
-        oracle.submit(FINALIZED_HOLDER, 8214);
-        oracle.submit(MULTI_HOLDER, 8196);
-        oracle.submit(MULTI_HOLDER, 8197);
+        // Self-fed id-cache: seed each holder's real, on-chain-owned request id(s) at FORK_BLOCK by pranking as that
+        // holder (submit is keyed on msg.sender), mirroring what each holder's Safe would have submitted itself.
+        oracle = new StaderWithdrawalQueueBalanceAdapter(USER_WITHDRAWAL_MANAGER, MAINNET_WETH, address(balances));
+        vm.prank(PENDING_HOLDER);
+        oracle.submit(8218);
+        vm.prank(FINALIZED_HOLDER);
+        oracle.submit(8214);
+        vm.startPrank(MULTI_HOLDER);
+        oracle.submit(8196);
+        oracle.submit(8197);
+        vm.stopPrank();
     }
 
     function _setupFork() internal override {

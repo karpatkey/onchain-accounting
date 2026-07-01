@@ -1,4 +1,4 @@
-# 0018 — Wrapper-fed Stader withdrawal-queue adapter (`SUBMITTER_ROLE`, delegatecalled claim)
+# 0018 — Self-fed Stader withdrawal-queue adapter (msg.sender-keyed cache, delegatecalled wrapper)
 
 Status: accepted
 
@@ -15,10 +15,11 @@ manager *does* expose `requestIdsByUserAddress(user, i)`, so the position is tec
 `StaderWithdrawalQueueBalanceAdapter` did exactly that. But that enumeration is **griefable**: `requestWithdraw` lets
 anyone set `_owner` to a victim, so an attacker can push junk request ids into a victim's array to bloat it past the
 adapter's probe cap (making real requests beyond the cap invisible) or toward an OOG on the NAV read (which is **not**
-caught by NAVCalculator's try/catch). A `SUBMITTER_ROLE`-gated cache counts only requests a trusted wrapper actually
-created for that account, removing the grief vector and keeping the read gas-bounded.
+caught by NAVCalculator's try/catch). A cache **keyed on `msg.sender`** — where an account can only ever add ids to its
+*own* entry — counts only requests the account tracked for itself, removing the grief vector and keeping the read
+gas-bounded, without needing any role or trusted feeder.
 
-### The Stader-specific constraint (why the claim is delegatecalled)
+### The Stader-specific constraint (why the wrapper is delegatecalled)
 
 Verified against the live mainnet contract (`UserWithdrawalManager` `0x9F0491…93A7`, impl `0x678f0d5…`):
 
@@ -27,63 +28,61 @@ Verified against the live mainnet contract (`UserWithdrawalManager` `0x9F0491…
 - `claim(uint256 _requestId)` does `if (msg.sender != userRequest.owner) revert CallerNotAuthorizedToRedeem();` and
   sends the ETH **to `userRequest.owner`**. **There is no permissionless claim-on-behalf.**
 
-This is the same shape as ether.fi's owner-only claim: a `SUBMITTER_ROLE` wrapper contract can never be the request
-owner *and* the tracked account at once without either owning every depositor's request (which breaks per-account
-ownership re-verification) or being able to claim a request it does not own (which the protocol forbids). Delegatecall
-cannot be bridged around this — running the wrapper's code under delegatecall executes in the caller's storage (breaking
-the wrapper's own roles) and does not change what the *manager* sees as `msg.sender`.
+Because the adapter caches per `msg.sender` and Stader's claim is owner-only, the account that owns the Stader request
+must be the one that both feeds the cache and claims. The wrapper is therefore **delegatecalled by the owning Safe** for
+*both* entrypoints: under delegatecall `address(this)` is the Safe, so the Safe is simultaneously the ETHx holder, the
+Stader request owner, the adapter's `msg.sender`, and the ETH recipient — everything lines up on one address with no
+roles and no custody. (A normal CALL can't achieve this: the wrapper would be `msg.sender`/owner, so it could neither
+feed the caller's cache nor claim the caller's owner-only request.)
 
 ## Decision
 
-Replace the plain enumerating `StaderWithdrawalQueueBalanceAdapter` with a **wrapper-fed** adapter of the same name, plus
-a `StaderWithdrawalQueueWrapper`. Same trust model and family invariant as ADR 0015 (cache coordinates only, value live,
-re-verify ownership per read → the feeder can only under-report), fed by an **on-chain contract holding
-`SUBMITTER_ROLE`**, with an **incremental** single add/remove submit surface. Both contracts are single, self-contained
-files (the shared `WrapperFed*` bases are intentionally deferred — see Consequences).
+Replace the plain enumerating `StaderWithdrawalQueueBalanceAdapter` with a **self-fed** adapter of the same name, plus a
+`StaderWithdrawalQueueWrapper`. Same family invariant as ADR 0015 (cache coordinates only, value live, re-verify
+ownership per read → the cache can only under-report), but fed by **each account itself** (`msg.sender`-keyed) rather
+than by a role-holding feeder. Both contracts are single, self-contained files (the shared `WrapperFed*` bases are
+intentionally deferred — see Consequences), and neither holds any role, admin, or funds.
 
-- **`StaderWithdrawalQueueBalanceAdapter`** — `AccessControl` (`DEFAULT_ADMIN_ROLE` administers `SUBMITTER_ROLE`) +
-  the single-asset getter triad (WETH) + an `EnumerableSet.UintSet`-per-account request-id cache. `submit(account,
-  requestId)` is `onlyRole(SUBMITTER_ROLE)` (fail-loud `NotTokenOwner` / `TokenIdCacheFull`); an admin `clearAccount`
-  rescues a mis-fed account; and a **permissionless `remove(account, requestId)`** drops an id **only if** it is
-  provably no longer owned by the account (claimed → the manager deletes the request, so its owner reads back as
-  `address(0)`) — it can only ever remove a dead entry, never a live position. Valuation is unchanged from the plain
-  adapter (`ethFinalized` once finalized, else the
-  rate-converted `ethExpected`; `isLocked = !finalized`), emitting one `Supplied` leg per owned cached request under the
-  static `positionId = abi.encode(USER_WITHDRAWAL_MANAGER)`, with the request id in the typed `positionInstanceId`.
-- **`StaderWithdrawalQueueWrapper`** — a **permissionless** forwarder (no roles, holds no funds) used in **two execution
-  modes**:
-  - `requestWithdraw(_ethXAmount, _owner)` — a **normal CALL**. Pulls the exact ETHx from the caller, `forceApprove`s
-    it to the manager, forwards to `requestWithdraw(_ethXAmount, _owner = msg.sender)` (so the request is owned by the
-    caller, matching the adapter's ownership re-verification), and `submit`s the returned `requestId` for the caller.
-    `_owner` is pinned to `msg.sender` to keep Stader's exact signature while ensuring a permissionless caller can only
-    ever affect its own cache entry — it cannot create a request owned by / tracked for a third party (no victim
-    cache-bloat).
-  - `claim(_requestId)` — **DELEGATECALLed by the owning Safe**, so `msg.sender` seen by the manager is the Safe
-    (== owner) and the ETH flows straight to the Safe. Immutables are readable under delegatecall; the function takes no
-    role guard and touches no wrapper storage (both would be the Safe's under delegatecall). It cleans the cache via the
-    adapter's permissionless `remove(address(this), _requestId)` — which succeeds only because the claim just
-    deleted the request.
+- **`StaderWithdrawalQueueBalanceAdapter`** — the single-asset getter triad (WETH) + an `EnumerableSet.UintSet`-per-
+  account request-id cache, **keyed on `msg.sender`** with no access control. `submit(requestId)` adds an id to the
+  caller's own cache (fail-loud `NotTokenOwner` if the caller doesn't own it / `TokenIdCacheFull` at the cap);
+  `remove(requestId)` drops an id from the caller's cache **only if** it is provably no longer owned by the caller
+  (claimed → the manager deletes the request, so its owner reads back as `address(0)`) — it can only ever remove a dead
+  entry, never a live position. There is no admin and no bulk clear: because only the account can grow its own cache and
+  can always `remove` its own stale ids, none is needed. Valuation is unchanged from the plain adapter (`ethFinalized`
+  once finalized, else the rate-converted `ethExpected`; `isLocked = !finalized`), emitting one `Supplied` leg per owned
+  cached request under the static `positionId = abi.encode(USER_WITHDRAWAL_MANAGER)`, with the request id in the typed
+  `positionInstanceId`.
+- **`StaderWithdrawalQueueWrapper`** — a stateless, role-free helper **DELEGATECALLed by the owning Safe** for both
+  entrypoints (under delegatecall `address(this)` is the Safe; the immutables are read from the wrapper's bytecode):
+  - `requestWithdraw(_ethXAmount, _owner)` — `forceApprove`s the manager for the ETHx (from the Safe, which holds it —
+    no `transferFrom` from a separate depositor), forwards to `requestWithdraw(_ethXAmount, _owner)`, and `submit`s the
+    returned `requestId` (cached for `msg.sender` == the Safe). `_owner` mirrors Stader's signature and is pinned to
+    `address(this)` (the Safe), so the request owner, the tracked account, and the adapter's `msg.sender` are all the
+    same Safe.
+  - `claim(_requestId)` — forwards to `claim` (`msg.sender` == the Safe == owner ✓, ETH to the Safe) and calls the
+    adapter's `remove(_requestId)` to drop the now-deleted (provably-stale) id from the Safe's cache.
 
 ## Consequences
 
-- The plain enumerating adapter is **removed** (not kept alongside): the wrapper-fed path is strictly the safer source
-  of the same positions, and the grief vector on the enumerating version is a real reason not to leave it registered.
-- The wrapper is deliberately dual-mode: **CALL** `requestWithdraw`, **DELEGATECALL** `claim`. karpatkey Zodiac Roles
-  can be configured per-function accordingly. A direct CALL to `claim` by a non-owner fails safe (reverts inside the
-  manager with `CallerNotAuthorizedToRedeem`). **EOA callers cannot use the delegatecalled claim** (an EOA cannot
-  delegatecall) — they claim directly on Stader; the intended claimers are Safe/Avatar accounts.
-- On-claim cache cleanup relies on the permissionless, provably-stale-only `remove` rather than a `SUBMITTER_ROLE`
-  `remove`, because the claim runs outside the wrapper's role context. NAV correctness never depends on it — the adapter
-  re-verifies ownership per read, so a claimed id already values to 0.
-- The wrapper-fed adapter remains a documented immutability exception (assisted family), expressed through
-  `SUBMITTER_ROLE`. The family invariant is unchanged, so the safety argument (feeder can only under-report) carries
-  over verbatim.
-- **Deploy/config wiring is deferred** to a follow-up. When wired: deploy the adapter (`submitter = address(0)`) → deploy
-  the wrapper (needs the adapter address) → admin `grantRole(SUBMITTER_ROLE, wrapper)` → register the adapter on
-  `NAVCalculator`. The wrapper itself is permissionless, so there are no depositor roles to grant. The deploy script
-  (`04_DeployBalanceAdapters`) already constructs the adapter
-  with `admin = chainConfig.admin` and `submitter = address(0)`.
+- The plain enumerating adapter is **removed** (not kept alongside): the self-fed path is strictly the safer source of
+  the same positions, and the grief vector on the enumerating version is a real reason not to leave it registered.
+- Both wrapper entrypoints are **DELEGATECALL-only**. karpatkey Zodiac Roles configure the Safe to delegatecall the
+  wrapper per-function. Invoked as a normal CALL each fails safe: `requestWithdraw` requires `_owner == address(this)`
+  (the wrapper) and then reverts pulling ETHx from the fund-less wrapper; `claim` forwards with `msg.sender == wrapper
+  != owner` and reverts inside the manager (`CallerNotAuthorizedToRedeem`). **EOAs cannot delegatecall**, so the
+  intended callers are Safe/Avatar accounts (an EOA would use Stader directly).
+- The cache needs **no role and no admin**: it is keyed on `msg.sender`, so an account can only add ids it owns to its
+  own entry, and `remove` only ever drops the caller's own provably-stale ids. NAV correctness never depends on `remove`
+  — the adapter re-verifies ownership per read, so a claimed id already values to 0 whether or not it's been removed.
+- The adapter remains a documented immutability exception (assisted family): it stores per-account coordinates rather
+  than deriving them purely from a view. The family invariant is unchanged (can only under-report), now enforced by
+  `msg.sender`-keying instead of a role.
+- **Deploy/config wiring is deferred** to a follow-up. When wired: deploy the adapter → deploy the wrapper (needs the
+  adapter address) → register the adapter on `NAVCalculator`. There are no roles to grant on either contract; accounts
+  feed the cache by delegatecalling the wrapper. The deploy script (`04_DeployBalanceAdapters`) constructs the adapter
+  with the original `(userWithdrawalManager, underlyingToken, navCalculator)` signature.
 - The shared `WrapperFed*` bases (`IWrapperFedBalanceAdapter` / `WrapperFedBalanceAdapter` / `WrapperFedNftCacheAdapter`)
   introduced by the ether.fi and Nexus wrapper-fed work are intentionally **not** used here — this PR keeps one
-  self-contained contract per concern per the request ("abstract stuff later"). When those bases land on `main`, this
-  adapter should be reconciled onto them (its `SUBMITTER_ROLE` maps to that family's `WRAPPER_ROLE`).
+  self-contained contract per concern per the request ("abstract stuff later"). Those use a `WRAPPER_ROLE` feeder; this
+  adapter's `msg.sender`-keyed model is a different (role-free) point in the same design space.

@@ -834,12 +834,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         );
         address underlyingToken =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "underlyingToken"));
-        // Wrapper-fed adapter: admin = this harness, SUBMITTER_ROLE granted to the wrapper post-deploy (deferred). With
-        // an empty cache the adapter reports 0 for every account — correct here, as the covered holder's ETHx is a
-        // wallet balance (ERC20DefaultBalanceAdapter), not an open withdrawal request.
-        return address(
-            new StaderWithdrawalQueueBalanceAdapter(userWithdrawalManager, underlyingToken, navAddr, address(this), address(0))
-        );
+        // Self-fed id-cache adapter (ADR 0018). With an empty cache it reports 0 for every account — correct here, as
+        // the covered holder's ETHx is a wallet balance (ERC20DefaultBalanceAdapter), not an open withdrawal request.
+        return address(new StaderWithdrawalQueueBalanceAdapter(userWithdrawalManager, underlyingToken, navAddr));
     }
 
     function _deployKelpWithdrawalQueue(string memory name, address navAddr) internal returns (address) {

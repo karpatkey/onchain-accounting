@@ -10,47 +10,41 @@ import "src/errors.sol";
 
 /// @title StaderWithdrawalQueueWrapper
 /// @author KPK
-/// @notice **Permissionless** forwarder around Stader's `UserWithdrawalManager` that keeps the
-///         {StaderWithdrawalQueueBalanceAdapter} id-cache current **on-chain, atomically**. Anyone can request/claim
-///         through this wrapper for their own account, and the resulting Stader withdrawal request is tracked
-///         automatically. The wrapper holds no roles and custodies no funds; the adapter grants this contract
-///         `SUBMITTER_ROLE` so it is the single trusted feeder.
+/// @notice Stateless, role-free helper **meant to be DELEGATECALLed by the owning Safe** to route Stader
+///         withdrawal-queue requests/claims while keeping the {StaderWithdrawalQueueBalanceAdapter} id-cache current
+///         on-chain, atomically. Both entrypoints run in the Safe's context (`address(this)` is the Safe), so the Safe
+///         is the Stader request owner AND the `msg.sender` the adapter's `msg.sender`-keyed cache records against — no
+///         roles, no allowances to this contract, no custody.
 ///
-/// @dev **This contract is used in two DIFFERENT execution modes — read this carefully.**
+/// @dev **Both functions MUST be DELEGATECALLed by the owning Safe.** Under delegatecall, `address(this)` is the Safe,
+///      `msg.sender` seen by the manager/adapter is the Safe, and the immutables (`USER_WITHDRAWAL_MANAGER`, `ADAPTER`,
+///      `ETHX`) are read from this contract's bytecode. The Safe already custodies the ETHx, so `requestWithdraw` just
+///      approves the manager (from the Safe) and forwards — there is no `transferFrom` from a separate depositor and
+///      this contract never holds funds.
 ///
-///      1. **`requestWithdraw` — a normal CALL.** The caller calls the wrapper directly. The wrapper pulls the exact
-///         `_ethXAmount` of ETHx from the caller (`transferFrom` — the caller must approve this wrapper first), sets the
-///         exact-amount allowance to the `USER_WITHDRAWAL_MANAGER` (`forceApprove`), forwards to
-///         `UserWithdrawalManager.requestWithdraw(_ethXAmount, _owner = caller)` — so the recorded request owner is the
-///         caller — and then `submit`s the returned `requestId` for the caller into the adapter (the wrapper holds
-///         `SUBMITTER_ROLE`). The wrapper custodies no ETHx between calls. `_owner` is kept in the signature to match
-///         `UserWithdrawalManager.requestWithdraw` exactly, but is pinned to `msg.sender` (`_owner != msg.sender`
-///         reverts): this keeps the caller from creating (and having the adapter track) a request owned by a third
-///         party, so a permissionless caller can only ever affect its own cache entry — never bloat a victim's cache.
+///      1. **`requestWithdraw`** — `forceApprove`s the manager for `_ethXAmount` ETHx (from the Safe), forwards to
+///         `UserWithdrawalManager.requestWithdraw(_ethXAmount, _owner)` (so the request is owned by the Safe), and
+///         `submit`s the returned `requestId` (the adapter caches it for `msg.sender` == the Safe). `_owner` mirrors
+///         Stader's signature and is pinned to `address(this)` (the Safe) — the request owner, the tracked account, and
+///         the adapter's `msg.sender` are then all the same Safe, so the ownership re-verification always passes.
+///      2. **`claim`** — forwards to `UserWithdrawalManager.claim(_requestId)` (Stader requires `msg.sender == owner`;
+///         under delegatecall that is the Safe ✓, ETH flows to the Safe) and then calls the adapter's `remove` to drop
+///         the now-deleted (provably-stale) request id from the Safe's cache.
 ///
-///      2. **`claim` — a DELEGATECALL from the owning Safe.** Stader's `UserWithdrawalManager.claim(_requestId)`
-///         hard-requires `msg.sender == userRequest.owner` (reverts `CallerNotAuthorizedToRedeem`) and sends the ETH to
-///         `userRequest.owner`, so a plain CALL through the wrapper cannot claim on the owner's behalf. The owning Safe
-///         must **delegatecall** this function: then `address(this)` is the Safe, `msg.sender` seen by the manager is
-///         the Safe (== the owner ✓), and ETH flows straight to the Safe. Immutables (`USER_WITHDRAWAL_MANAGER`,
-///         `ADAPTER`) are embedded in bytecode, so they are readable under delegatecall. It touches **no** wrapper
-///         storage. Cache cleanup calls the adapter's **permissionless** `remove(address(this), _requestId)`, which
-///         drops the id only because the claim just deleted the request (so it is provably no longer owned) — it can
-///         never delete a live position.
-///
-///      A direct CALL to `claim` by a non-owner simply reverts inside the manager (`CallerNotAuthorizedToRedeem`), so it
-///      fails safe if invoked the wrong way. EOA callers cannot use the delegatecalled claim (an EOA cannot
-///      delegatecall); they claim directly on Stader. The intended claimers are Safe/Avatar accounts.
+///      A **normal CALL** to either function fails safe: `requestWithdraw` requires `_owner == address(this)` (the
+///      wrapper) and would then pull ETHx from the fund-less wrapper and revert; `claim` would forward with
+///      `msg.sender == wrapper != owner` and revert inside the manager (`CallerNotAuthorizedToRedeem`). EOAs cannot
+///      delegatecall, so the intended callers are Safe/Avatar accounts.
 contract StaderWithdrawalQueueWrapper {
     using SafeERC20 for IERC20;
 
-    /// @notice The balance adapter this wrapper feeds (holds `SUBMITTER_ROLE` on it).
+    /// @notice The balance adapter this wrapper feeds (the Safe's `submit`/`remove` target under delegatecall).
     address public immutable ADAPTER;
 
     /// @notice Stader UserWithdrawalManager — the `requestWithdraw`/`claim` target.
     address public immutable USER_WITHDRAWAL_MANAGER;
 
-    /// @notice ETHx token — pulled from the caller on `requestWithdraw` and approved to the UserWithdrawalManager.
+    /// @notice ETHx token — approved to the UserWithdrawalManager (from the Safe) on `requestWithdraw`.
     address public immutable ETHX;
 
     /// @param adapter_               The {StaderWithdrawalQueueBalanceAdapter}. Must be a contract.
@@ -69,37 +63,38 @@ contract StaderWithdrawalQueueWrapper {
         ETHX = ethx_;
     }
 
-    /// @notice Request a withdrawal of `_ethXAmount` ETHx from Stader and track the resulting request for the caller.
-    ///         **Normal CALL** (see contract NatSpec). Mirrors `UserWithdrawalManager.requestWithdraw`'s signature.
-    /// @param _ethXAmount ETHx to withdraw (pulled from `msg.sender` — the caller must approve this wrapper first).
-    /// @param _owner      Must equal `msg.sender` — the request is always recorded for (and tracked for) the caller.
-    /// @return requestId The created withdrawal request id (tracked for `msg.sender`).
+    /// @notice Request a withdrawal of `_ethXAmount` ETHx from Stader and track the resulting request. **Must be
+    ///         DELEGATECALLed by the owning Safe** (see contract NatSpec). Mirrors
+    ///         `UserWithdrawalManager.requestWithdraw`'s signature.
+    /// @param _ethXAmount ETHx to withdraw (approved to the manager from the delegatecalling Safe, which holds it).
+    /// @param _owner      Must equal `address(this)` — under delegatecall this is the Safe, so the request is owned by
+    ///                    (and tracked for) the Safe.
+    /// @return requestId The created withdrawal request id (tracked for the Safe).
     function requestWithdraw(uint256 _ethXAmount, address _owner) external returns (uint256 requestId) {
-        // Pin the request owner / tracked account to the caller so the adapter's live ownership re-verification always
-        // passes for it (and a permissionless caller can't record a withdrawal owned by / tracked for a third party).
-        if (_owner != msg.sender) revert InvalidArguments();
+        // Under delegatecall address(this) is the Safe. Pin the request owner / tracked account to the Safe so the
+        // adapter's msg.sender-keyed cache and its live ownership re-verification both line up on the Safe.
+        if (_owner != address(this)) revert InvalidArguments();
 
-        // Pull the ETHx from the caller, then set the exact-amount allowance for the UserWithdrawalManager (it pulls
-        // ETHx from this wrapper on requestWithdraw). forceApprove tolerates tokens that require resetting a non-zero
-        // allowance.
-        IERC20(ETHX).safeTransferFrom(msg.sender, address(this), _ethXAmount);
+        // The Safe holds the ETHx; approve the manager (from the Safe) for the exact amount it will pull. forceApprove
+        // tolerates tokens that require resetting a non-zero allowance.
         IERC20(ETHX).forceApprove(USER_WITHDRAWAL_MANAGER, _ethXAmount);
 
-        requestId = IStaderUserWithdrawalManager(USER_WITHDRAWAL_MANAGER).requestWithdraw(_ethXAmount, msg.sender);
-        IStaderWithdrawalQueueAssistedBalanceAdapter(ADAPTER).submit(msg.sender, requestId);
+        requestId = IStaderUserWithdrawalManager(USER_WITHDRAWAL_MANAGER).requestWithdraw(_ethXAmount, _owner);
+        // msg.sender seen by the adapter is the Safe (== _owner), so it caches the id for the Safe.
+        IStaderWithdrawalQueueAssistedBalanceAdapter(ADAPTER).submit(requestId);
     }
 
     /// @notice Claim withdrawal request `_requestId` from Stader and stop tracking it. **Must be DELEGATECALLed by the
     ///         owning Safe** (see contract NatSpec): Stader's claim hard-requires `msg.sender == userRequest.owner`.
     ///         Under delegatecall `msg.sender` seen by the manager is the Safe (== owner), the ETH flows to the Safe,
-    ///         and the now-deleted request is dropped from the adapter cache via the permissionless `remove`. Touches
-    ///         no wrapper storage. Mirrors `UserWithdrawalManager.claim`'s signature.
+    ///         and the now-deleted request is dropped from the Safe's adapter cache via `remove`. Mirrors
+    ///         `UserWithdrawalManager.claim`'s signature.
     /// @param _requestId The withdrawal request id to claim (owned by the delegatecalling Safe).
     function claim(uint256 _requestId) external {
         IStaderUserWithdrawalManager(USER_WITHDRAWAL_MANAGER).claim(_requestId);
-        // address(this) is the Safe under delegatecall — the account the id was submitted for. remove drops it only
-        // because the claim just deleted the request (provably no longer owned); it can never delete a live one.
-        IStaderWithdrawalQueueAssistedBalanceAdapter(ADAPTER).remove(address(this), _requestId);
+        // msg.sender seen by the adapter is the Safe. remove drops the id only because the claim just deleted the
+        // request (provably no longer owned); it can never delete a live one.
+        IStaderWithdrawalQueueAssistedBalanceAdapter(ADAPTER).remove(_requestId);
     }
 }
 
@@ -113,8 +108,8 @@ interface IStaderUserWithdrawalManager {
     function claim(uint256 _requestId) external;
 }
 
-/// @notice Minimal interface for the balance adapter's feed surface used by this wrapper.
+/// @notice Minimal interface for the balance adapter's feed surface used by this wrapper (keyed on `msg.sender`).
 interface IStaderWithdrawalQueueAssistedBalanceAdapter {
-    function submit(address account, uint256 requestId) external;
-    function remove(address account, uint256 requestId) external;
+    function submit(uint256 requestId) external;
+    function remove(uint256 requestId) external;
 }

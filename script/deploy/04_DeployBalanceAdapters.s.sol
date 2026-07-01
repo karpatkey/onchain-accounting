@@ -646,18 +646,11 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address underlyingToken = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
         );
-        // Wrapper-fed adapter (ADR 0015): the SUBMITTER_ROLE wrapper submits an account's Stader request ids
-        // atomically as it forwards requestWithdraw; the adapter values each via userWithdrawRequests and re-verifies
-        // ownership per read, so the submitter can only under-report (id-cache, never amounts). admin = chainConfig.admin
-        // at deploy; SUBMITTER_ROLE is granted to the StaderWithdrawalQueueWrapper post-deploy (the wrapper needs this
-        // adapter's address at construction — deploy wiring is a follow-up, see the wrapper-fed Stader ADR).
-        require(
-            chainConfig.admin != address(0),
-            "StaderWithdrawalQueue: chainConfig.admin (initialOwner) not configured"
-        );
-        StaderWithdrawalQueueBalanceAdapter adapter = new StaderWithdrawalQueueBalanceAdapter(
-            userWithdrawalManager, underlyingToken, navCalculator, chainConfig.admin, address(0)
-        );
+        // Self-fed id-cache adapter (ADR 0018): each account tracks its own Stader request ids via the adapter's
+        // msg.sender-keyed submit/remove — no roles, no admin. Accounts feed it by delegatecalling the
+        // StaderWithdrawalQueueWrapper (deployed separately; needs this adapter's address at construction).
+        StaderWithdrawalQueueBalanceAdapter adapter =
+            new StaderWithdrawalQueueBalanceAdapter(userWithdrawalManager, underlyingToken, navCalculator);
         return address(adapter);
     }
 

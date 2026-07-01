@@ -36,16 +36,19 @@ contract QueryStaderWithdrawalQueueLiveBalances is Script {
 
     function run() public {
         address nav = vm.envAddress("DEV_NAV_PROXY");
-        // The adapter is wrapper-fed (id-cached): deploy with this script as admin + SUBMITTER_ROLE, then seed the
-        // documented request ids for each holder so the live reads have something to value. On a fork at the pinned
-        // state these ids are owned by the holders, so submit passes; if the fork has moved past a claim, submit reverts
-        // NotTokenOwner (re-pin the block).
+        // The adapter is a self-fed id-cache keyed on msg.sender: seed each holder's documented request ids by pranking
+        // as that holder (works in `forge script` simulation). On a fork at the pinned state these ids are owned by the
+        // holders, so submit passes; if the fork has moved past a claim, submit reverts NotTokenOwner (re-pin the block).
         StaderWithdrawalQueueBalanceAdapter adapter =
-            new StaderWithdrawalQueueBalanceAdapter(USER_WITHDRAWAL_MANAGER, WETH, nav, address(this), address(this));
-        adapter.submit(PENDING, PENDING_ID);
-        adapter.submit(FINALIZED, FINALIZED_ID);
-        adapter.submit(MULTI, MULTI_ID_A);
-        adapter.submit(MULTI, MULTI_ID_B);
+            new StaderWithdrawalQueueBalanceAdapter(USER_WITHDRAWAL_MANAGER, WETH, nav);
+        vm.prank(PENDING);
+        adapter.submit(PENDING_ID);
+        vm.prank(FINALIZED);
+        adapter.submit(FINALIZED_ID);
+        vm.startPrank(MULTI);
+        adapter.submit(MULTI_ID_A);
+        adapter.submit(MULTI_ID_B);
+        vm.stopPrank();
 
         _print(adapter, "PENDING (1 un-finalized)", PENDING);
         _print(adapter, "FINALIZED (1 finalized)", FINALIZED);

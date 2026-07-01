@@ -10,11 +10,10 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
-/// @notice Minimal mock of Stader's UserWithdrawalManager for the wrapper-fed adapter.
+/// @notice Minimal mock of Stader's UserWithdrawalManager for the self-fed adapter.
 /// @dev The cache-based adapter only reads the `userWithdrawRequests(id)` public mapping getter (ownership + amounts);
 ///      it no longer enumerates `requestIdsByUserAddress`. The getter returns a zeroed tuple for an unknown/claimed id.
 contract MockUserWithdrawalManager {
@@ -38,24 +37,21 @@ contract MockUserWithdrawalManager {
     }
 }
 
-/// @title StaderWithdrawalQueueBalanceAdapter unit tests (wrapper-fed, id-cached)
+/// @title StaderWithdrawalQueueBalanceAdapter unit tests (self-fed, id-cached)
 contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
     StaderWithdrawalQueueBalanceAdapter public adapter;
     MockUserWithdrawalManager public manager;
 
-    address internal submitter = makeAddr("submitter");
-
     function setUp() public override {
         super.setUp();
         manager = new MockUserWithdrawalManager();
-        // This test contract holds SUBMITTER_ROLE so it can seed the cache directly; `admin` holds DEFAULT_ADMIN_ROLE.
-        adapter = new StaderWithdrawalQueueBalanceAdapter(
-            address(manager), address(weth), address(balances), admin, address(this)
-        );
+        adapter = new StaderWithdrawalQueueBalanceAdapter(address(manager), address(weth), address(balances));
     }
 
     // ---- helpers ----
 
+    /// @dev Cache `id` for `owner` the way the adapter requires: the request must be owned by `owner`, and the submit
+    ///      must come from `owner` (the cache is keyed on msg.sender).
     function _seed(address owner, uint256 id, uint256 ethExpected, uint256 ethFinalized) internal {
         manager.setRequest(
             id,
@@ -63,46 +59,32 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
                 owner: owner, ethXAmount: 1e18, ethExpected: ethExpected, ethFinalized: ethFinalized, requestBlock: 0
             })
         );
-        adapter.submit(owner, id);
+        vm.prank(owner);
+        adapter.submit(id);
     }
 
     // ---- Constructor ----
 
     function test_constructor_revertsOnZeroManager() public {
         vm.expectRevert(InvalidArguments.selector);
-        new StaderWithdrawalQueueBalanceAdapter(address(0), address(weth), address(balances), admin, address(0));
+        new StaderWithdrawalQueueBalanceAdapter(address(0), address(weth), address(balances));
     }
 
     function test_constructor_revertsOnZeroUnderlying() public {
         vm.expectRevert(InvalidArguments.selector);
-        new StaderWithdrawalQueueBalanceAdapter(address(manager), address(0), address(balances), admin, address(0));
-    }
-
-    function test_constructor_revertsOnZeroAdmin() public {
-        vm.expectRevert(InvalidArguments.selector);
-        new StaderWithdrawalQueueBalanceAdapter(
-            address(manager), address(weth), address(balances), address(0), address(0)
-        );
+        new StaderWithdrawalQueueBalanceAdapter(address(manager), address(0), address(balances));
     }
 
     function test_constructor_revertsWhenManagerNotContract() public {
         address eoa = makeAddr("eoa");
         vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "UserWithdrawalManager"));
-        new StaderWithdrawalQueueBalanceAdapter(eoa, address(weth), address(balances), admin, address(0));
+        new StaderWithdrawalQueueBalanceAdapter(eoa, address(weth), address(balances));
     }
 
     function test_constructor_revertsWhenNAVNotContract() public {
         address eoa = makeAddr("eoa");
         vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "NAVCalculator"));
-        new StaderWithdrawalQueueBalanceAdapter(address(manager), address(weth), eoa, admin, address(0));
-    }
-
-    function test_constructor_grantsRoles() public {
-        StaderWithdrawalQueueBalanceAdapter a = new StaderWithdrawalQueueBalanceAdapter(
-            address(manager), address(weth), address(balances), admin, submitter
-        );
-        assertTrue(a.hasRole(a.DEFAULT_ADMIN_ROLE(), admin));
-        assertTrue(a.hasRole(a.SUBMITTER_ROLE(), submitter));
+        new StaderWithdrawalQueueBalanceAdapter(address(manager), address(weth), eoa);
     }
 
     // ---- Interface ----
@@ -110,7 +92,6 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
     function test_supportsInterface() public view {
         assertTrue(adapter.supportsInterface(type(IBalanceAdapter).interfaceId));
         assertTrue(adapter.supportsInterface(type(IPositionDescribable).interfaceId));
-        assertTrue(adapter.supportsInterface(type(IAccessControl).interfaceId));
         assertTrue(adapter.supportsInterface(type(IERC165).interfaceId));
         assertFalse(adapter.supportsInterface(0xdeadbeef));
     }
@@ -121,27 +102,7 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(assets[0], address(weth));
     }
 
-    // ---- Access control on the feed surface ----
-
-    function test_submit_revertsForNonSubmitter() public {
-        manager.setRequest(
-            1,
-            MockUserWithdrawalManager.Info({
-                owner: alice, ethXAmount: 1e18, ethExpected: 1e18, ethFinalized: 0, requestBlock: 0
-            })
-        );
-        vm.prank(alice);
-        vm.expectRevert(); // AccessControlUnauthorizedAccount(alice, SUBMITTER_ROLE)
-        adapter.submit(alice, 1);
-    }
-
-    function test_clearAccount_revertsForNonAdmin() public {
-        vm.prank(alice);
-        vm.expectRevert();
-        adapter.clearAccount(alice);
-    }
-
-    // ---- submit ----
+    // ---- submit (permissionless, keyed on msg.sender) ----
 
     function test_submit_addsAndIsIdempotent() public {
         _seed(alice, 1, 1e18, 0);
@@ -150,13 +111,24 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(ids[0], 1);
 
         // Re-submitting the same id is a no-op (no revert, no duplicate).
-        adapter.submit(alice, 1);
+        vm.prank(alice);
+        adapter.submit(1);
         assertEq(adapter.requestIdsOf(alice).length, 1);
     }
 
-    function test_submit_revertsOnZeroAccount() public {
-        vm.expectRevert(InvalidArguments.selector);
-        adapter.submit(address(0), 1);
+    function test_submit_cachesForCallerOnly() public {
+        // A request owned by alice can only be cached by alice — bob submitting it caches nothing for alice (it lands
+        // in bob's own cache attempt, which fails the ownership check).
+        manager.setRequest(
+            1,
+            MockUserWithdrawalManager.Info({
+                owner: alice, ethXAmount: 1e18, ethExpected: 1e18, ethFinalized: 0, requestBlock: 0
+            })
+        );
+        vm.prank(bob);
+        vm.expectRevert(abi.encodeWithSelector(NotTokenOwner.selector, bob, uint256(1)));
+        adapter.submit(1);
+        assertEq(adapter.requestIdsOf(alice).length, 0, "bob cannot feed alice's cache");
     }
 
     function test_submit_revertsWhenNotOwner() public {
@@ -166,47 +138,43 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
                 owner: bob, ethXAmount: 1e18, ethExpected: 1e18, ethFinalized: 0, requestBlock: 0
             })
         );
+        vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(NotTokenOwner.selector, alice, uint256(1)));
-        adapter.submit(alice, 1);
+        adapter.submit(1);
     }
 
     function test_submit_revertsWhenCacheFull() public {
-        for (uint256 i = 1; i <= adapter.MAX_REQUESTS(); i++) {
+        uint256 cap = adapter.MAX_REQUESTS();
+        for (uint256 i = 1; i <= cap; i++) {
             _seed(alice, i, 1e18, 0);
         }
-        uint256 overflowId = adapter.MAX_REQUESTS() + 1;
+        uint256 overflowId = cap + 1;
         manager.setRequest(
             overflowId,
             MockUserWithdrawalManager.Info({
                 owner: alice, ethXAmount: 1e18, ethExpected: 1e18, ethFinalized: 0, requestBlock: 0
             })
         );
-        vm.expectRevert(abi.encodeWithSelector(TokenIdCacheFull.selector, alice, adapter.MAX_REQUESTS()));
-        adapter.submit(alice, overflowId);
+        // Capture `cap` above so no external call sits between the prank and submit (it would consume the prank).
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(TokenIdCacheFull.selector, alice, cap));
+        adapter.submit(overflowId);
     }
 
-    // ---- remove (permissionless, provably-stale-only) / clearAccount ----
+    // ---- remove (permissionless, provably-stale-only, keyed on msg.sender) ----
 
     function test_remove_revertsWhenStillOwned() public {
         _seed(alice, 1, 1e18, 0);
+        vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(NotTokenOwner.selector, alice, uint256(1)));
-        adapter.remove(alice, 1);
+        adapter.remove(1);
     }
 
-    function test_remove_removesClaimedIdPermissionlessly() public {
+    function test_remove_dropsClaimedId() public {
         _seed(alice, 1, 1e18, 0);
         manager.clearOwner(1); // simulate claim -> owner becomes address(0)
-        // Anyone can remove a provably-stale id.
-        vm.prank(bob);
-        adapter.remove(alice, 1);
-        assertEq(adapter.requestIdsOf(alice).length, 0);
-    }
-
-    function test_clearAccount_dropsAll() public {
-        _seed(alice, 1, 1e18, 0);
-        _seed(alice, 2, 2e18, 0);
-        vm.prank(admin);
-        adapter.clearAccount(alice);
+        vm.prank(alice);
+        adapter.remove(1);
         assertEq(adapter.requestIdsOf(alice).length, 0);
     }
 
@@ -283,16 +251,16 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_getAdapterPositions_emptyWhenAssetUnregistered() public {
         address unregisteredAsset = makeAddr("unregisteredAsset");
-        StaderWithdrawalQueueBalanceAdapter freshAdapter = new StaderWithdrawalQueueBalanceAdapter(
-            address(manager), unregisteredAsset, address(balances), admin, address(this)
-        );
+        StaderWithdrawalQueueBalanceAdapter freshAdapter =
+            new StaderWithdrawalQueueBalanceAdapter(address(manager), unregisteredAsset, address(balances));
         manager.setRequest(
             1,
             MockUserWithdrawalManager.Info({
                 owner: alice, ethXAmount: 1e18, ethExpected: 1e18, ethFinalized: 0, requestBlock: 0
             })
         );
-        freshAdapter.submit(alice, 1);
+        vm.prank(alice);
+        freshAdapter.submit(1);
 
         INAVCalculator.PositionBalance[] memory positions = freshAdapter.getAdapterPositions(alice, address(0));
         assertEq(positions.length, 0, "Unregistered underlying should not produce positions");

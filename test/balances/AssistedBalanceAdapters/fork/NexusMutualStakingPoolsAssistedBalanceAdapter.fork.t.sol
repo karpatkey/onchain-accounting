@@ -8,6 +8,12 @@ import {NexusMutualStakingPoolsAssistedBalanceAdapter, INexusStakingViewer} from
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
+import {NotTokenOwner} from "src/errors.sol";
+
+/// @notice Minimal ERC-721 transfer surface for the real StakingNFT (to exercise read-time ownership discard).
+interface IStakingNFTLike {
+    function transferFrom(address from, address to, uint256 tokenId) external;
+}
 
 /// @title NexusMutualStakingPoolsAssistedBalanceAdapterForkTest
 /// @notice Fork test against Nexus Mutual's real StakingNFT + StakingViewer on mainnet.
@@ -118,5 +124,57 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterForkTest is BalanceAdapter
         (uint256 amount,) = adapter.getAdapterBalanceForAsset(stranger, NXM);
         assertEq(amount, 0);
         assertEq(adapter.getAdapterPositions(stranger, address(0)).length, 0);
+    }
+
+    /// @notice submit reverts NotTokenOwner for a real id not owned by the submitted account (id 180 belongs to the
+    ///         Safe, not `stranger`).
+    function test_submit_revertsForNonOwnedId() public {
+        address stranger = makeAddr("stranger");
+        vm.expectRevert(abi.encodeWithSelector(NotTokenOwner.selector, stranger, uint256(180)));
+        adapter.submit(stranger, 180);
+    }
+
+    /// @notice remove is ownership-checked too: removing a real id for an account that doesn't own it reverts.
+    function test_remove_revertsForNonOwnedId() public {
+        address stranger = makeAddr("stranger");
+        vm.expectRevert(abi.encodeWithSelector(NotTokenOwner.selector, stranger, uint256(180)));
+        adapter.remove(stranger, 180);
+    }
+
+    /// @notice remove untracks an owned id: the Safe's total drops by exactly id 180's live value.
+    function test_remove_untracksOwnedId() public {
+        (uint256 amtBefore,) = adapter.getAdapterBalanceForAsset(HOLDER, NXM);
+        uint256 one = _valueOf(180);
+
+        adapter.remove(HOLDER, 180);
+
+        assertEq(adapter.tokenIdsOf(HOLDER).length, 4, "one id untracked");
+        (uint256 amtAfter,) = adapter.getAdapterBalanceForAsset(HOLDER, NXM);
+        assertEq(amtAfter, amtBefore - one, "total drops by id 180's value");
+    }
+
+    /// @notice Reads fail open: after the Safe transfers a cached StakingNFT away, that id is discarded on reads even
+    ///         though it stays in the cache (ownership re-verified live via `tokenInfo`).
+    function test_read_discardsTransferredId() public {
+        address stranger = makeAddr("stranger");
+        (uint256 amtBefore,) = adapter.getAdapterBalanceForAsset(HOLDER, NXM);
+        uint256 one = _valueOf(180);
+
+        vm.prank(HOLDER);
+        IStakingNFTLike(STAKING_NFT).transferFrom(HOLDER, stranger, 180);
+
+        // Still cached (the assistant/wrapper hasn't GC'd it) but discarded on read since it's no longer owned.
+        assertEq(adapter.tokenIdsOf(HOLDER).length, 5, "cache unchanged");
+        (uint256 amtAfter,) = adapter.getAdapterBalanceForAsset(HOLDER, NXM);
+        assertEq(amtAfter, amtBefore - one, "transferred id discarded from the read");
+    }
+
+    /// @dev Live NXM value (active + expired stake + rewards) of a single tokenId via the viewer.
+    function _valueOf(uint256 tokenId) internal view returns (uint256) {
+        uint256[] memory one = new uint256[](1);
+        one[0] = tokenId;
+        INexusStakingViewer.AggregatedTokens memory agg =
+            INexusStakingViewer(STAKING_VIEWER).getAggregatedTokens(one);
+        return agg.totalActiveStake + agg.totalExpiredStake + agg.totalRewards;
     }
 }

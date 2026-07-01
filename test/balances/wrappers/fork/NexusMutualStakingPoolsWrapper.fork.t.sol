@@ -8,6 +8,8 @@ import {NexusMutualStakingPoolsAssistedBalanceAdapter} from
 import {NexusMutualStakingPoolsWrapper} from "src/balances/wrappers/NexusMutualStakingPoolsWrapper.sol";
 import {WrapperDelegateCaller} from "test/balances/wrappers/WrapperDelegateCaller.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
 
 interface IStakingViewerLike {
     function stakingPool(uint256 poolId) external view returns (address);
@@ -103,14 +105,22 @@ contract NexusMutualStakingPoolsWrapperForkTest is BalanceAdapterTestBase {
 
     /// @dev First public staking pool (scan poolIds 1..30 via the viewer; skip private/nonexistent).
     function _firstPublicPool() internal view returns (address) {
-        for (uint256 pid = 1; pid <= 30; ++pid) {
+        address[] memory pools = _publicPools(1);
+        return pools[0];
+    }
+
+    /// @dev The first `count` distinct public staking pools (scan poolIds 1..40 via the viewer; skip private/nonexistent).
+    function _publicPools(uint256 count) internal view returns (address[] memory found) {
+        found = new address[](count);
+        uint256 n;
+        for (uint256 pid = 1; pid <= 40 && n < count; ++pid) {
             address pool = IStakingViewerLike(STAKING_VIEWER).stakingPool(pid);
             if (pool == address(0)) continue;
             try IStakingPoolLike(pool).isPrivatePool() returns (bool priv) {
-                if (!priv) return pool;
+                if (!priv) found[n++] = pool;
             } catch {}
         }
-        return address(0);
+        require(n == count, "not enough public pools");
     }
 
     /// @dev Deposit AMOUNT into `pool`'s current active tranche as the account; returns (pool, trancheId, tokenId).
@@ -156,5 +166,52 @@ contract NexusMutualStakingPoolsWrapperForkTest is BalanceAdapterTestBase {
         // Nexus pays the NFT owner (the account) directly.
         assertGt(IERC20(NXM).balanceOf(address(account)), accountNxmAfterDeposit, "account received withdrawn NXM");
         assertEq(adapter.tokenIdsOf(address(account)).length, 0, "tokenId untracked after withdraw");
+    }
+
+    /// @notice Topping up the same StakingNFT (requestTokenId != 0) returns the same id: one tracked id, ~2x stake.
+    function test_topUp_sameTokenId_accumulatesStake() public {
+        (address pool, uint256 trancheId, uint256 tokenId) = _deposit();
+        uint256 id2 = account.deposit(address(wrapper), pool, AMOUNT, trancheId, tokenId);
+
+        assertEq(id2, tokenId, "top-up returns the same StakingNFT id");
+        uint256[] memory tracked = adapter.tokenIdsOf(address(account));
+        assertEq(tracked.length, 1, "still one tracked id");
+        (uint256 bal,) = adapter.getAdapterBalanceForAsset(address(account), NXM);
+        assertApproxEqRel(bal, 2 * AMOUNT, 0.01e18, "staked NXM ~= 2x amount after top-up");
+    }
+
+    /// @notice Staking into two distinct pools yields two independently-tracked StakingNFTs, summed in the balance.
+    function test_twoPools_distinctTrackedIds() public {
+        address[] memory pools = _publicPools(2);
+        uint256 trancheId = block.timestamp / TRANCHE_DURATION;
+
+        uint256 id0 = account.deposit(address(wrapper), pools[0], AMOUNT, trancheId, 0);
+        uint256 id1 = account.deposit(address(wrapper), pools[1], AMOUNT, trancheId, 0);
+
+        assertTrue(id0 != id1, "distinct StakingNFT ids");
+        assertEq(adapter.tokenIdsOf(address(account)).length, 2, "two tracked ids");
+        (uint256 bal,) = adapter.getAdapterBalanceForAsset(address(account), NXM);
+        assertApproxEqRel(bal, 2 * AMOUNT, 0.01e18, "total ~= sum of both stakes");
+    }
+
+    /// @notice After a wrapper deposit, getAdapterPositions emits a Staking leg keyed by the pool address for the
+    ///         account, with the tokenId in positionInstanceId.
+    function test_deposit_getAdapterPositions_stakingLeg() public {
+        (address pool,, uint256 tokenId) = _deposit();
+
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(address(account), address(0));
+        assertGe(p.length, 1, "at least a Staking leg");
+
+        bool foundStaking;
+        for (uint256 i; i < p.length; ++i) {
+            assertEq(p[i].balanceAsset.asset, NXM);
+            assertEq(p[i].positionId, abi.encode(pool), "positionId = staking pool address");
+            assertEq(p[i].positionInstanceId, bytes32(tokenId), "tokenId in positionInstanceId");
+            if (p[i].positionKind == PositionKind.Staking) {
+                foundStaking = true;
+                assertApproxEqRel(p[i].amount, AMOUNT, 0.01e18, "Staking leg ~= deposited amount");
+            }
+        }
+        assertTrue(foundStaking, "a Staking leg is present");
     }
 }

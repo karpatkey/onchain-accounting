@@ -543,7 +543,7 @@ PositionBalance({
 })
 ```
 
-#### `UniswapV3PoolsAssisted` — Uniswap V3 NFT position
+#### `UniswapV3PoolsMeta` — Uniswap V3 NFT position
 
 ```solidity
 // positionId = the pool contract address (factory.getPool(token0,token1,fee)). Two Supplied legs
@@ -551,7 +551,7 @@ PositionBalance({
 // is the typed positionInstanceId on each leg.
 PositionBalance({
     balanceAsset:       Asset({ asset: 0xA0b8…6eB48, symbol: "USDC", decimals: 6 }),
-    balanceAdapter:     0x<UniswapV3PoolsAssisted>,
+    balanceAdapter:     0x<UniswapV3PoolsMeta>,
     amount:             600_000_000,            // 600 USDC in-range liquidity (NFT #12345)
     isDebt:             false,
     protocolSubId:      keccak256("uniswap-v3"), // protocolId = protocolSubId; protocolBrand = keccak256("uniswap")
@@ -576,7 +576,7 @@ PositionBalance({
 })
 ```
 
-#### `PancakeSwapV3PoolsAssisted` / `PancakeSwapV2PoolsMeta`
+#### `PancakeSwapV3PoolsMeta` / `PancakeSwapV2PoolsMeta`
 
 Thin subclasses of the UniswapV3/V2 adapters with different factory/`pair` addresses and the
 `pancakeswap-v3` / `pancakeswap-v2` protocol slugs. All field schemas are identical (V3 positionId = pool
@@ -856,7 +856,7 @@ Scenario: Convex-staked crvUSD/USDC LP with 100 CRV + 50 CVX rewards.
 | CVX    | 50     | +150        | `Rewards`    | `"Convex"`   | `["Staking", "Curve LP", "crvUSD/USDC"]`     |
 | **NAV** | | **+2 200** | | | |
 
-#### `UniswapV3PoolsAssisted`
+#### `UniswapV3PoolsMeta`
 
 Scenario: one NFT position (#12345) in the USDC/WETH 0.05% pool, in-range, with 20 USDC + 0.008 WETH in accrued fees.
 
@@ -880,7 +880,7 @@ Scenario: wallet holds USDC/WETH V2 pair LP representing 700 USDC + 0.28 WETH.
 | WETH  | 0.28   | +700        | `Supplied`   | `"Uniswap V2"` | `["AMM Liquidity Pool", "USDC/WETH"]`  |
 | **NAV** | | **+1 400** | | | |
 
-#### `PancakeSwapV3PoolsAssisted` / `PancakeSwapV2PoolsMeta`
+#### `PancakeSwapV3PoolsMeta` / `PancakeSwapV2PoolsMeta`
 
 Same structure as UniswapV3/V2 respectively; `protocolName` = `"PancakeSwap V3"` / `"PancakeSwap V2"`.
 
@@ -927,9 +927,9 @@ schemas are in the next section and in the per-adapter table above.)
 | `curve-pools` | `CURVE_POOLS` | `CurvePoolsMetaBalanceAdapter` — wallet-held Curve LP |
 | `curve-gauges` | `CURVE_GAUGES` | `CurveGaugesMetaBalanceAdapter` — gauge-staked Curve LP + rewards |
 | `convex-curve-lp-staking` | `CONVEX_CURVE_LP_STAKING` | `ConvexCurveLPStakingMetaBalanceAdapter` — Convex-staked Curve LP + CRV/CVX/extra rewards |
-| `uniswap-v3` | `UNISWAP_V3` | `UniswapV3PoolsAssistedBalanceAdapter` — Uniswap V3 LP NFT liquidity + fees |
+| `uniswap-v3` | `UNISWAP_V3` | `UniswapV3PoolsMetaBalanceAdapter` — Uniswap V3 LP NFT liquidity + fees |
 | `uniswap-v2` | `UNISWAP_V2` | `UniswapV2PoolsMetaBalanceAdapter` — Uniswap V2 LP |
-| `pancakeswap-v3` | `PANCAKESWAP_V3` | `PancakeSwapV3PoolsAssistedBalanceAdapter` — PancakeSwap V3 LP NFT liquidity + fees |
+| `pancakeswap-v3` | `PANCAKESWAP_V3` | `PancakeSwapV3PoolsMetaBalanceAdapter` — PancakeSwap V3 LP NFT liquidity + fees |
 | `pancakeswap-v2` | `PANCAKESWAP_V2` | `PancakeSwapV2PoolsMetaBalanceAdapter` — PancakeSwap V2 LP |
 | `stakewise-v3-vaults` | `STAKEWISE_V3_VAULTS` | `StakeWiseV3VaultsMetaBalanceAdapter` — StakeWise V3 vault stake + osToken debt |
 | `nexus-mutual-staking-pools` | `NEXUS_MUTUAL_STAKING_POOLS` | `NexusMutualStakingPoolsAssistedBalanceAdapter` — Nexus Mutual StakingNFT stake + rewards |
@@ -1065,7 +1065,7 @@ the ephemeral `positionInstanceId` (never part of the key):
 - the withdrawal queues — **one leg per open request** (Lido / Stader / Kelp / ether.fi / StakeWise
   V3); the request id (ERC721 request id / `userNonce` / cached tokenId / `positionTicket`) is the
   `positionInstanceId`;
-- the non-enumerable-NFT adapters — **one leg per NFT** (Uniswap V3 / PancakeSwap V3 / Nexus Mutual);
+- the NFT-position adapters — **one leg per NFT** (Uniswap V3 / PancakeSwap V3 / Nexus Mutual);
   the NFT id is the `positionInstanceId`.
 
 This is by design: the per-item id is ephemeral (a withdrawal request is burned on claim; an LP/stake
@@ -1113,7 +1113,7 @@ decodes use `AbiCoder.defaultAbiCoder()` from ethers.js. Protocol ID constants c
 | `CurvePoolsMeta` | `curve-pools` | `Supplied` |
 | `CurveGaugesMeta` | `curve-gauges` | `Staking`, `Rewards` |
 | `ConvexCurveLPStakingMeta` | `convex-curve-lp-staking` | `Staking`, `Rewards` |
-| `UniswapV3PoolsAssisted` / `PancakeSwapV3PoolsAssisted` | `uniswap-v3` / `pancakeswap-v3` | `Supplied`, `Fees` |
+| `UniswapV3PoolsMeta` / `PancakeSwapV3PoolsMeta` | `uniswap-v3` / `pancakeswap-v3` | `Supplied`, `Fees` |
 | `UniswapV2PoolsMeta` / `PancakeSwapV2PoolsMeta` | `uniswap-v2` / `pancakeswap-v2` | `Supplied` |
 | `Cap` | `cap` | `Supplied` (cUSD), `Staking` (stcUSD) |
 | `MerklRewardsAssisted` | `merkl` | `Rewards` |
@@ -1513,8 +1513,8 @@ address widened → `abi.encode(address instance)`); overrides are flagged.
 | `EtherFiWithdrawalQueueAssistedBalanceAdapter` | `etherfi-withdrawal` | `"ether.fi"` (const) | `["Withdrawal Queue", "eETH"]` (const) | `abi.encode(address withdrawRequestNFT)` | Supplied — one leg **per request** (cached NFT tokenId in `positionInstanceId`; each `isLocked` = pending), shared positionId | `["ether.fi","Withdrawal Queue","eETH"]` |
 | `StakeWiseV3ExitQueueAssistedBalanceAdapter` | `stakewise-v3-exit` | `"StakeWise V3"` (const) | `["Exit Queue", <receiptSymbol>]` (derived) | `abi.encode(address vault)` (per vault) | Supplied — **per request (ticket)** with the `positionTicket` in `positionInstanceId`, up to two legs (claimable + still-queued) sharing the per-vault positionId | `["StakeWise V3","Exit Queue","osETH"]` |
 | `NexusMutualStakingPoolsAssistedBalanceAdapter` | `nexus-mutual-staking-pools` | `"Nexus Mutual"` (const) | `["Staking Pools", "Pool #<id>"]` (derived) | `abi.encode(address stakingPool)` | Staking / Rewards | `["Nexus Mutual","Staking Pools","Pool #5"]` |
-| `UniswapV3PoolsAssistedBalanceAdapter` | `uniswap-v3` | `"Uniswap V3"` (gov) | `["AMM Liquidity Pool", "<sym0>/<sym1> <fee>%"]` (derived) | `abi.encode(address pool)` | Supplied / Fees | `["Uniswap V3","AMM Liquidity Pool","USDC/WETH 0.05%"]` |
-| `PancakeSwapV3PoolsAssistedBalanceAdapter` | `pancakeswap-v3` | `"PancakeSwap V3"` (gov) | `["AMM Liquidity Pool", "<sym0>/<sym1> <fee>%"]` (derived, inherited) | `abi.encode(address pool)` | Supplied / Fees | `["PancakeSwap V3","AMM Liquidity Pool","CAKE/WBNB 0.25%"]` |
+| `UniswapV3PoolsMetaBalanceAdapter` | `uniswap-v3` | `"Uniswap V3"` (gov) | `["AMM Liquidity Pool", "<sym0>/<sym1> <fee>%"]` (derived) | `abi.encode(address pool)` | Supplied / Fees | `["Uniswap V3","AMM Liquidity Pool","USDC/WETH 0.05%"]` |
+| `PancakeSwapV3PoolsMetaBalanceAdapter` | `pancakeswap-v3` | `"PancakeSwap V3"` (gov) | `["AMM Liquidity Pool", "<sym0>/<sym1> <fee>%"]` (derived, inherited) | `abi.encode(address pool)` | Supplied / Fees | `["PancakeSwap V3","AMM Liquidity Pool","CAKE/WBNB 0.25%"]` |
 
 #### What each `positionId` value is
 

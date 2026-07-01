@@ -50,5 +50,10 @@
       "0x2c776041CCFe903071AF44aa147368a9c8EEA518",
       "0x46e6b214b524310239732D51387075E0e70970bf"
     ]
+  },
+  "PancakeSwapV3PoolsMeta": {
+    "enabled": false,
+    "$comment": "Meta-adapter (ADR 0010): PancakeSwap V3 pools via on-chain NFT enumeration. Registered via addMetaBalanceAdapter + addMetaInstances when enabled. Disabled: COW on Base has no feed. Enable + add pool instances (both tokens must be registered) once COW is priced.",
+    "instances": []
   }
 }

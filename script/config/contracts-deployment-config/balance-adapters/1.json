@@ -579,14 +579,6 @@
       "positionId": "0x3a0008a588772446f6e656133C2D5029CC4FC20E"
     }
   },
-  "UniswapV3PoolsAssisted": {
-    "enabled": true,
-    "$comment": "Uniswap V3 pools (assisted adapter; agent-fed NFT tokenId cache, ADR 0015). The assistant submits an account's NFT tokenIds via submitTokenIds (admin+assistant = chainConfig.admin at deploy; ASSISTANT_ROLE submits, DEFAULT_ADMIN_ROLE administers); the adapter caches ids only (never amounts), values each NFT from live on-chain reads (in-range liquidity via the pool's live slot0 sqrtPriceX96/tick — ADR 0017 — plus full unclaimed fees = feeGrowth delta + settled tokensOwed), and re-verifies ownerOf on every read (assistant can only under-report). NonfungiblePositionManager pinned in the constructor. positionId = abi.encode(pool) (NFT id in display labels); legs are Supplied (liquidity) + Fees (tokensOwed). 04 reads positionManager/protocol. Supersedes the per-pool UniswapV3_* adapters, disabled below. Reports 0 until the agent submits ids.",
-    "constructor": {
-      "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
-      "protocol": "Uniswap V3"
-    }
-  },
   "UniswapV3_WBTC_WETH_3000": {
     "enabled": false,
     "constructor": {

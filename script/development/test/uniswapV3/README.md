@@ -1,13 +1,13 @@
 # Uniswap V3 — balance-adapter verification
 
-> **Historical evidence pack (pre-assisted).** This verification was done against the per-pool
-> `uniswap/UniswapV3Pool.sol` adapter, which `main` has since replaced with the assisted
-> `UniswapV3PoolsAssistedBalanceAdapter` (ADR 0015 — Uniswap V3 is **not** a meta-adapter; its NFT
-> positions are non-enumerable). The per-pool dev helpers
-> (`deploy-uniV3-adapters-mainnet.sh`, `query-live-balances.s.sol`) were removed in the
-> meta→assisted reconciliation. The ground-truth math, holders, and expected amounts below remain
-> valid as reference; the dashboard wiring (§9) will be re-done with an assisted-adapter deploy
-> helper when V3 is re-verified against `UniswapV3PoolsAssistedBalanceAdapter`.
+> **Historical evidence pack.** The live implementation is now the meta-adapter
+> `UniswapV3PoolsMetaBalanceAdapter` (ADR 0010) — Uniswap V3 **is** a meta-adapter: the
+> NonfungiblePositionManager is `ERC721Enumerable`, so an account's LP NFTs are enumerated fully
+> on-chain (`balanceOf`/`tokenOfOwnerByIndex`/`positions`), no off-chain assistant. (This reverted an
+> interim assisted classification — see ADR 0015's amendment.) The per-pool dev helpers
+> (`deploy-uniV3-adapters-mainnet.sh`, `query-live-balances.s.sol`) were removed earlier. The
+> ground-truth math, holders, and expected amounts below remain valid as reference; the live
+> coverage is now driven by the meta-adapter's configured pool set (`nav-config/meta-balance-adapters/1.json`).
 
 ## 1. Adapter under test
 

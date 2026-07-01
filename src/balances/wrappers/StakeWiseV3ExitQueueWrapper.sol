@@ -65,17 +65,15 @@ contract StakeWiseV3ExitQueueWrapper is AccessControl {
     }
 
     /// @notice Enter the StakeWise V3 exit queue for `vault` and register the resulting ticket on the adapter.
-    ///         Signature mirrors the vault's `enterExitQueue(shares, receiver)`, with `vault` prepended.
-    /// @dev MUST be delegatecalled by the depositor Safe. `receiver` must be the executing Safe (`address(this)`) — the
-    ///      exit position and its future claim/assets belong to the receiver, and only the Safe can claim; a different
-    ///      receiver would strand the position. Locks `shares` of the Safe's `vault` shares into the exit queue.
-    /// @param vault    StakeWise V3 vault.
-    /// @param shares   Vault shares to move into the exit queue (burned from the Safe).
-    /// @param receiver Must equal `address(this)` (the executing Safe).
+    ///         Mirrors the vault's `enterExitQueue(shares, receiver)`, with `vault` prepended and `receiver` dropped:
+    ///         the receiver is always forced to the executing Safe (`address(this)`), so only the Safe can claim and
+    ///         claimed assets are paid to it.
+    /// @dev MUST be delegatecalled by the depositor Safe. Locks `shares` of the Safe's `vault` shares into the queue.
+    /// @param vault  StakeWise V3 vault.
+    /// @param shares Vault shares to move into the exit queue (burned from the Safe).
     /// @return positionTicket The ticket assigned by the vault, now tracked on the adapter for the Safe.
-    function enterExitQueue(address vault, uint256 shares, address receiver) external returns (uint256 positionTicket) {
+    function enterExitQueue(address vault, uint256 shares) external returns (uint256 positionTicket) {
         _requireDepositor();
-        if (receiver != address(this)) revert InvalidArguments();
 
         positionTicket = IStakeWiseVaultEnterExit(vault).enterExitQueue(shares, address(this));
         // Feed the adapter via the singleton (a real call to SELF), not directly, so the adapter's WRAPPER_ROLE is held

@@ -135,8 +135,7 @@ contract StakeWiseV3ExitQueueWrapperTest is BalanceAdapterTestBase {
     function test_enterExitQueue_forcesReceiverAndSubmits() public {
         (StakeWiseV3ExitQueueWrapper w, MockTracker t) = _wrapperWithMockTracker();
 
-        bytes memory ret =
-            safe.exec(address(w), abi.encodeCall(w.enterExitQueue, (address(vault), 5 ether, address(safe))));
+        bytes memory ret = safe.exec(address(w), abi.encodeCall(w.enterExitQueue, (address(vault), 5 ether)));
         uint256 ticket = abi.decode(ret, (uint256));
 
         assertEq(vault.lastEnterReceiver(), address(safe), "receiver forced to the Safe");
@@ -148,25 +147,17 @@ contract StakeWiseV3ExitQueueWrapperTest is BalanceAdapterTestBase {
         assertEq(t.lastTimestamp(), block.timestamp);
     }
 
-    function test_enterExitQueue_revertsOnWrongReceiver() public {
-        (StakeWiseV3ExitQueueWrapper w,) = _wrapperWithMockTracker();
-        // receiver != address(this) (the Safe) → InvalidArguments (bubbled through the delegatecall).
-        vm.expectRevert(InvalidArguments.selector);
-        safe.exec(address(w), abi.encodeCall(w.enterExitQueue, (address(vault), 5 ether, makeAddr("notSafe"))));
-    }
-
     function test_enterExitQueue_revertsWithoutDepositorRole() public {
         MockTracker t = new MockTracker();
         StakeWiseV3ExitQueueWrapper w = new StakeWiseV3ExitQueueWrapper(address(t), address(this));
         // safe was NOT granted DEPOSITOR_ROLE on the wrapper.
         vm.expectRevert(NotAuthorized.selector);
-        safe.exec(address(w), abi.encodeCall(w.enterExitQueue, (address(vault), 5 ether, address(safe))));
+        safe.exec(address(w), abi.encodeCall(w.enterExitQueue, (address(vault), 5 ether)));
     }
 
     function test_claimExitedAssets_claimsAndRemoves() public {
         (StakeWiseV3ExitQueueWrapper w, MockTracker t) = _wrapperWithMockTracker();
-        bytes memory ret =
-            safe.exec(address(w), abi.encodeCall(w.enterExitQueue, (address(vault), 5 ether, address(safe))));
+        bytes memory ret = safe.exec(address(w), abi.encodeCall(w.enterExitQueue, (address(vault), 5 ether)));
         uint256 ticket = abi.decode(ret, (uint256));
         uint256 ts = block.timestamp;
 
@@ -233,8 +224,7 @@ contract StakeWiseV3ExitQueueWrapperTest is BalanceAdapterTestBase {
         w.grantRole(w.DEPOSITOR_ROLE(), address(safe));
         adapter.grantRole(adapter.WRAPPER_ROLE(), address(w));
 
-        bytes memory ret =
-            safe.exec(address(w), abi.encodeCall(w.enterExitQueue, (address(vault), 7 ether, address(safe))));
+        bytes memory ret = safe.exec(address(w), abi.encodeCall(w.enterExitQueue, (address(vault), 7 ether)));
         uint256 ticket = abi.decode(ret, (uint256));
         uint256 ts = block.timestamp;
 

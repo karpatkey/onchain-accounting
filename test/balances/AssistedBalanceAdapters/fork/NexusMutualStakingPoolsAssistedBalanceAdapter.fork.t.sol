@@ -3,22 +3,20 @@ pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
 import {BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
-import {
-    NexusMutualStakingPoolsAssistedBalanceAdapter,
-    INexusStakingViewer
-} from "src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsAssistedBalanceAdapter.sol";
+import {NexusMutualStakingPoolsAssistedBalanceAdapter, INexusStakingViewer} from
+    "src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsAssistedBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title NexusMutualStakingPoolsAssistedBalanceAdapterForkTest
 /// @notice Fork test against Nexus Mutual's real StakingNFT + StakingViewer on mainnet.
-/// @dev The adapter is assisted (agent-fed; ADR 0015): an assistant submits an account's StakingNFT tokenIds, which
-///      the adapter values live via `StakingViewer.getTokens` and re-verifies via `tokenInfo` per read. The Nexus
-///      Mutual Safe (`0x8e53…cFE3`, a KPK-managed account) holds 5 positions across 5 pools (tokenIds
-///      180,184,185,186,187); the test submits those ids and asserts the per-kind sums equal an independent
-///      `getAggregatedTokens` read of those exact ids (delta 0) AND that every emitted positionId decodes to a
-///      deployed staking-pool address (the NFT id riding in the typed positionInstanceId).
+/// @dev The adapter is wrapper-fed: a `WRAPPER_ROLE` holder feeds coordinates via incremental `submit(account, id)`,
+///      valued live via `StakingViewer.getTokens` with ownership re-verified per read via `tokenInfo`. The Nexus
+///      Mutual Safe (`0x8e53…cFE3`) holds 5 positions across
+///      5 pools (tokenIds 180,184,185,186,187); the test submits them one by one and asserts the per-kind sums equal an
+///      independent `getAggregatedTokens` read of those exact ids (delta 0) AND that every emitted positionId decodes
+///      to a deployed staking-pool address (the NFT id riding in the typed positionInstanceId).
 contract NexusMutualStakingPoolsAssistedBalanceAdapterForkTest is BalanceAdapterTestBase {
     address public constant STAKING_NFT = 0xcafea508a477D94c502c253A58239fb8F948e97f;
     address public constant STAKING_VIEWER = 0xcafea5c7d25a192ba70ECA0E2dB62F835c1cF81F;
@@ -41,11 +39,14 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterForkTest is BalanceAdapter
         balances = new BalancesHarnessForFork();
         balances.registerAssetForTest(NXM, 18, "NXM");
 
-        // admin + assistant = this test, so it can submit the Safe's known tokenIds (all owned by HOLDER → no revert).
+        // admin + wrapper = this test, so it can submit the Safe's known tokenIds (all owned by HOLDER → no revert).
         adapter = new NexusMutualStakingPoolsAssistedBalanceAdapter(
             STAKING_NFT, STAKING_VIEWER, NXM, address(balances), address(this), address(this)
         );
-        adapter.submitTokenIds(HOLDER, _knownIds());
+        uint256[] memory ids = _knownIds();
+        for (uint256 i; i < ids.length; ++i) {
+            adapter.submit(HOLDER, ids[i]);
+        }
     }
 
     function _setupFork() internal override {
@@ -54,8 +55,7 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterForkTest is BalanceAdapter
         vm.rollFork(FORK_BLOCK);
     }
 
-    /// @dev Independent live read of the Safe's known tokenIds — the ground truth the adapter's scan
-    ///      must reproduce.
+    /// @dev Independent live read of the Safe's known tokenIds — the ground truth the adapter's scan must reproduce.
     function _liveTotals() internal view returns (uint256 staking, uint256 rewards) {
         INexusStakingViewer.AggregatedTokens memory agg =
             INexusStakingViewer(STAKING_VIEWER).getAggregatedTokens(_knownIds());
@@ -73,12 +73,9 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterForkTest is BalanceAdapter
 
     function test_realHolder_scanMatchesAggregate() public {
         (uint256 staking, uint256 rewards) = _liveTotals();
-        // Sanity: the pinned values are the live state at FORK_BLOCK.
         assertEq(staking, EXPECTED_STAKING, "pinned staking drift");
         assertEq(rewards, EXPECTED_REWARDS, "pinned rewards drift");
 
-        // The adapter values the Safe's 5 submitted positions and totals them — must equal the independent
-        // aggregate of those exact ids (delta 0).
         (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(HOLDER, NXM);
         assertEq(amount, staking + rewards, "adapter total must equal live getAggregatedTokens (delta 0)");
         assertFalse(isDebt);
@@ -88,7 +85,6 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterForkTest is BalanceAdapter
         (uint256 staking, uint256 rewards) = _liveTotals();
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(HOLDER, address(0));
 
-        // 5 positions → up to 10 legs (Staking+Rewards each, zero legs dropped); at least the 5 Staking legs.
         assertGe(p.length, 5, "expected at least one Staking leg per position");
         assertLe(p.length, 10, "at most two legs per position");
 
@@ -100,7 +96,6 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterForkTest is BalanceAdapter
             assertEq(p[i].protocolSubId, ProtocolIds.NEXUS_MUTUAL_STAKING_POOLS);
             assertEq(p[i].protocolId, ProtocolIds.NEXUS_MUTUAL);
             assertFalse(p[i].isDebt);
-            // positionId = the staking-pool contract address; the NFT id rides in the typed positionInstanceId.
             address pool = abi.decode(p[i].positionId, (address));
             assertGt(pool.code.length, 0, "positionId resolves to a deployed staking pool");
             string[] memory lbl = adapter.positionLabels(p[i].positionId);
@@ -114,7 +109,6 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterForkTest is BalanceAdapter
                 rewardsSum += p[i].amount;
             }
         }
-        // Per-NFT legs must sum back to the independent aggregate (delta 0).
         assertEq(stakingSum, staking, "per-NFT staking legs must sum to live total");
         assertEq(rewardsSum, rewards, "per-NFT rewards legs must sum to live total");
     }

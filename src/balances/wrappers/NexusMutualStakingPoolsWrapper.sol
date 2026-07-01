@@ -12,7 +12,7 @@ import "src/errors.sol";
 /// @title NexusMutualStakingPoolsWrapper
 /// @author KPK
 /// @notice Thin, `DEPOSITOR_ROLE`-gated forwarder around Nexus Mutual V2 staking pools that keeps the wrapper-fed
-///         {NexusMutualStakingPoolsBalanceAdapter} id-cache current **on-chain, atomically**. `depositTo` forwards to
+///         {NexusMutualStakingPoolsAssistedBalanceAdapter} id-cache current **on-chain, atomically**. `depositTo` forwards to
 ///         the pool and, in the same transaction, pushes the returned StakingNFT `tokenId` into the adapter for the
 ///         caller; `withdraw` forwards to the pool and pops the `tokenId`. The adapter grants this contract
 ///         `WRAPPER_ROLE`, so any address the admin grants `DEPOSITOR_ROLE` gets its Nexus positions tracked
@@ -49,7 +49,7 @@ contract NexusMutualStakingPoolsWrapper is AccessControl {
     /// @notice Nexus TokenController — the spender that pulls NXM in `depositTo` (`depositStakedNXM(msg.sender, …)`).
     address public immutable TOKEN_CONTROLLER;
 
-    /// @param adapter_         The wrapper-fed {NexusMutualStakingPoolsBalanceAdapter}. Must be a contract.
+    /// @param adapter_         The wrapper-fed {NexusMutualStakingPoolsAssistedBalanceAdapter}. Must be a contract.
     /// @param nxm_             NXM token. Must be a contract.
     /// @param tokenController_ Nexus TokenController (NXM spender). Must be a contract.
     /// @param admin_           Holder of `DEFAULT_ADMIN_ROLE` (administers `DEPOSITOR_ROLE`). Required.

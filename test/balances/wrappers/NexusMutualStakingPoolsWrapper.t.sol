@@ -6,8 +6,8 @@ import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
 import {MockStakingNFT, MockStakingViewer} from
     "test/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsAssistedBalanceAdapter.t.sol";
-import {NexusMutualStakingPoolsBalanceAdapter} from
-    "src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsBalanceAdapter.sol";
+import {NexusMutualStakingPoolsAssistedBalanceAdapter} from
+    "src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsAssistedBalanceAdapter.sol";
 import {NexusMutualStakingPoolsWrapper} from "src/balances/wrappers/NexusMutualStakingPoolsWrapper.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
@@ -67,7 +67,7 @@ contract MockTokenController {}
 
 /// @title NexusMutualStakingPoolsWrapper unit tests
 contract NexusMutualStakingPoolsWrapperTest is BalanceAdapterTestBase {
-    NexusMutualStakingPoolsBalanceAdapter public adapter;
+    NexusMutualStakingPoolsAssistedBalanceAdapter public adapter;
     NexusMutualStakingPoolsWrapper public wrapper;
     MockStakingNFT public nft;
     MockStakingViewer public viewer;
@@ -90,7 +90,7 @@ contract NexusMutualStakingPoolsWrapperTest is BalanceAdapterTestBase {
         pool = new MockNexusPool(nft);
 
         // adapter: admin = this, wrapper granted after wrapper deploy (it needs the adapter address).
-        adapter = new NexusMutualStakingPoolsBalanceAdapter(
+        adapter = new NexusMutualStakingPoolsAssistedBalanceAdapter(
             address(nft), address(viewer), address(nxm), address(balances), address(this), address(0)
         );
         wrapper = new NexusMutualStakingPoolsWrapper(

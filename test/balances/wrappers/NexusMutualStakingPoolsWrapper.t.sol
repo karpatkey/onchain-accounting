@@ -9,7 +9,6 @@ import {MockStakingNFT, MockStakingViewer} from
 import {NexusMutualStakingPoolsAssistedBalanceAdapter} from
     "src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsAssistedBalanceAdapter.sol";
 import {NexusMutualStakingPoolsWrapper} from "src/balances/wrappers/NexusMutualStakingPoolsWrapper.sol";
-import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
@@ -79,7 +78,6 @@ contract NexusMutualStakingPoolsWrapperTest is BalanceAdapterTestBase {
     address other = makeAddr("other");
 
     bytes32 constant SUBMITTER_ROLE = keccak256("SUBMITTER_ROLE");
-    bytes32 constant DEPOSITOR_ROLE = keccak256("DEPOSITOR_ROLE");
 
     function setUp() public override {
         super.setUp();
@@ -89,16 +87,14 @@ contract NexusMutualStakingPoolsWrapperTest is BalanceAdapterTestBase {
         pool = new MockNexusPool(nft);
         tokenController = new MockTokenController();
 
-        // adapter: admin = this, wrapper granted after wrapper deploy (it needs the adapter address).
+        // adapter: admin = this, wrapper granted SUBMITTER_ROLE after wrapper deploy (it needs the adapter address).
         adapter = new NexusMutualStakingPoolsAssistedBalanceAdapter(
             address(nft), address(viewer), address(nxm), address(balances), address(this), address(0)
         );
-        wrapper =
-            new NexusMutualStakingPoolsWrapper(address(adapter), address(nxm), address(tokenController), address(this));
+        wrapper = new NexusMutualStakingPoolsWrapper(address(adapter), address(nxm), address(tokenController));
         adapter.grantRole(SUBMITTER_ROLE, address(wrapper));
-        wrapper.grantRole(DEPOSITOR_ROLE, depositor);
 
-        // NXM is pulled from the DEPOSITOR: fund the depositor and approve the wrapper to spend it.
+        // The wrapper is permissionless — fund the caller and approve the wrapper to pull its NXM.
         deal(address(nxm), depositor, 1e24);
         vm.prank(depositor);
         nxm.approve(address(wrapper), type(uint256).max);
@@ -108,34 +104,28 @@ contract NexusMutualStakingPoolsWrapperTest is BalanceAdapterTestBase {
 
     function test_constructor_revertsOnZeroAdapter() public {
         vm.expectRevert(InvalidArguments.selector);
-        new NexusMutualStakingPoolsWrapper(address(0), address(nxm), address(tokenController), address(this));
+        new NexusMutualStakingPoolsWrapper(address(0), address(nxm), address(tokenController));
     }
 
     function test_constructor_revertsOnZeroNxm() public {
         vm.expectRevert(InvalidArguments.selector);
-        new NexusMutualStakingPoolsWrapper(address(adapter), address(0), address(tokenController), address(this));
+        new NexusMutualStakingPoolsWrapper(address(adapter), address(0), address(tokenController));
     }
 
     function test_constructor_revertsOnZeroTokenController() public {
         vm.expectRevert(InvalidArguments.selector);
-        new NexusMutualStakingPoolsWrapper(address(adapter), address(nxm), address(0), address(this));
-    }
-
-    function test_constructor_revertsOnZeroAdmin() public {
-        vm.expectRevert(InvalidArguments.selector);
-        new NexusMutualStakingPoolsWrapper(address(adapter), address(nxm), address(tokenController), address(0));
+        new NexusMutualStakingPoolsWrapper(address(adapter), address(nxm), address(0));
     }
 
     function test_constructor_revertsWhenTokenControllerNotContract() public {
         vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "TokenController"));
-        new NexusMutualStakingPoolsWrapper(address(adapter), address(nxm), makeAddr("eoa"), address(this));
+        new NexusMutualStakingPoolsWrapper(address(adapter), address(nxm), makeAddr("eoa"));
     }
 
     function test_immutables() public view {
         assertEq(wrapper.ADAPTER(), address(adapter));
         assertEq(wrapper.NXM(), address(nxm));
         assertEq(wrapper.TOKEN_CONTROLLER(), address(tokenController));
-        assertTrue(wrapper.hasRole(wrapper.DEFAULT_ADMIN_ROLE(), address(this)));
     }
 
     // ---- depositTo ----
@@ -162,12 +152,18 @@ contract NexusMutualStakingPoolsWrapperTest is BalanceAdapterTestBase {
         assertEq(tracked[0], 7);
     }
 
-    function test_depositTo_onlyDepositor() public {
+    /// @notice The wrapper is permissionless: any address with NXM can stake through it and is tracked for itself.
+    function test_depositTo_permissionless() public {
+        deal(address(nxm), other, 1e21);
         vm.prank(other);
-        vm.expectRevert(
-            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, other, DEPOSITOR_ROLE)
-        );
-        wrapper.depositTo(address(pool), 100, 3, 0);
+        nxm.approve(address(wrapper), type(uint256).max);
+        pool.setNextTokenId(9);
+        vm.prank(other);
+        uint256 id = wrapper.depositTo(address(pool), 100, 3, 0);
+        assertEq(id, 9);
+        uint256[] memory tracked = adapter.tokenIdsOf(other);
+        assertEq(tracked.length, 1);
+        assertEq(tracked[0], 9);
     }
 
     /// @notice A top-up (requestTokenId != 0) returns the same id; tracking is idempotent.
@@ -200,15 +196,6 @@ contract NexusMutualStakingPoolsWrapperTest is BalanceAdapterTestBase {
         assertEq(r, 5);
         assertEq(pool.lastWithdrawId(), 7);
         assertEq(adapter.tokenIdsOf(depositor).length, 0); // untracked
-    }
-
-    function test_withdraw_onlyDepositor() public {
-        uint256[] memory tranches = new uint256[](0);
-        vm.prank(other);
-        vm.expectRevert(
-            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, other, DEPOSITOR_ROLE)
-        );
-        wrapper.withdraw(address(pool), 7, true, true, tranches);
     }
 
     function test_withdraw_untrackIsIdempotentForUncachedId() public {

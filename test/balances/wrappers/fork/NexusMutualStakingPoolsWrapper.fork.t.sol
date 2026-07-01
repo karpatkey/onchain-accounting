@@ -63,7 +63,6 @@ contract NexusMutualStakingPoolsWrapperForkTest is BalanceAdapterTestBase {
     NexusMutualStakingPoolsWrapper public wrapper;
 
     bytes32 constant SUBMITTER_ROLE = keccak256("SUBMITTER_ROLE");
-    bytes32 constant DEPOSITOR_ROLE = keccak256("DEPOSITOR_ROLE");
 
     function setUp() public override {
         super.setUp();
@@ -75,9 +74,8 @@ contract NexusMutualStakingPoolsWrapperForkTest is BalanceAdapterTestBase {
         adapter = new NexusMutualStakingPoolsAssistedBalanceAdapter(
             STAKING_NFT, STAKING_VIEWER, NXM, address(balances), address(this), address(0)
         );
-        wrapper = new NexusMutualStakingPoolsWrapper(address(adapter), NXM, TOKEN_CONTROLLER, address(this));
+        wrapper = new NexusMutualStakingPoolsWrapper(address(adapter), NXM, TOKEN_CONTROLLER);
         adapter.grantRole(SUBMITTER_ROLE, address(wrapper));
-        wrapper.grantRole(DEPOSITOR_ROLE, depositor);
 
         // Real membership enrollment: the wrapper must be a Nexus member to receive/hold NXM (and for operatorTransfer
         // to pull from it). No storage pokes — the actual Registry.join flow.

@@ -133,6 +133,15 @@ export default function FeedsPage() {
   const { canRefresh, secondsLeft, startCooldown, lastRefreshedLabel } = useRefreshCooldown()
   const searchRef = useRef<HTMLInputElement>(null)
 
+  // Preserve the ?address= when going back so "Portfolio" returns to the same account's dashboard
+  // instead of the empty landing page. Read from the URL on mount (the app reads addresses from
+  // window.location, not useSearchParams — no Suspense needed).
+  const [portfolioHref, setPortfolioHref] = useState('/')
+  useEffect(() => {
+    const addr = new URLSearchParams(window.location.search).get('address')
+    if (addr) setPortfolioHref(`/?address=${addr}`)
+  }, [])
+
   // Scroll-spy: observe each chain section and track which is most in view
   useEffect(() => {
     const sectionIds = DEPLOYED_CHAINS.map((c) => `chain-${c.chain.id}`)
@@ -186,13 +195,14 @@ export default function FeedsPage() {
       <div className="space-y-4">
 
         {/* Header row */}
-        <div className="flex items-start justify-between">
-          <div>
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
             <Link
-              href="/"
-              className="inline-flex items-center gap-1 text-sm font-medium text-neutral-700 hover:text-neutral-950 mb-3 transition-colors"
+              href={portfolioHref}
+              className="group inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-2.5 py-1 text-xs font-medium text-neutral-700 shadow-sm transition-colors hover:border-neutral-500 hover:text-neutral-950 mb-3"
             >
-              ← Portfolio
+              <span aria-hidden className="transition-transform group-hover:-translate-x-0.5">←</span>
+              Portfolio
             </Link>
             <h1 className={`font-bold text-neutral-950 ${dense ? 'text-xl' : 'text-2xl'}`}>Price Feeds</h1>
             {!dense && (
@@ -201,19 +211,20 @@ export default function FeedsPage() {
               </p>
             )}
           </div>
-          <div className="flex items-center gap-3 mt-1">
+          <div className="flex shrink-0 items-center gap-2 mt-1">
             <span className="text-xs text-neutral-700">{lastRefreshedLabel}</span>
             <button
               type="button"
               onClick={handleRefresh}
               disabled={!canRefresh}
-              className={`tabular-nums text-sm transition-colors ${
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm tabular-nums transition-colors ${
                 canRefresh
-                  ? 'text-neutral-700 hover:text-neutral-950'
-                  : 'text-neutral-700 opacity-70 cursor-not-allowed'
-              } ${isRefreshing ? 'animate-spin' : ''}`}
+                  ? 'border-neutral-300 bg-white text-neutral-700 shadow-sm hover:border-neutral-500 hover:text-neutral-950'
+                  : 'border-neutral-200 bg-neutral-100 text-neutral-700 opacity-70 cursor-not-allowed'
+              }`}
             >
-              ↻{canRefresh ? ' Refresh' : ` ${secondsLeft}s`}
+              <span aria-hidden className={isRefreshing ? 'inline-block animate-spin' : 'inline-block'}>↻</span>
+              {canRefresh ? 'Refresh' : `${secondsLeft}s`}
             </button>
           </div>
         </div>

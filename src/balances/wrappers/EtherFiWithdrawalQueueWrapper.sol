@@ -20,9 +20,7 @@ import "src/errors.sol";
 /// @dev **Both `requestWithdraw` and `claimWithdraw` MUST be DELEGATECALLed by the depositor Safe.** Under delegatecall
 ///      `address(this)` is the Safe and the wrapper's immutables (`SELF`, `ADAPTER`, `LIQUIDITY_POOL`,
 ///      `WITHDRAW_REQUEST_NFT`, `EETH`) are still readable (they live in the wrapper's bytecode). A *direct* call to
-///      either reverts naturally — `requestWithdraw` because the LiquidityPool would pull eETH from this wrapper (which
-///      holds none), `claimWithdraw` because ether.fi's `claimWithdraw` hard-requires `ownerOf(tokenId) == msg.sender`
-///      (approvals ignored) and the wrapper is not the owner.
+///      either reverts `NotDelegateCall` (the {onlyDelegateCall} guard: on a direct call `address(this) == SELF`).
 ///
 ///      - `requestWithdraw(amount)` runs as the Safe: it approves the LiquidityPool to spend the Safe's eETH and calls
 ///        `LiquidityPool.requestWithdraw(recipient = address(this) = Safe, amount)` **directly**, so the eETH is pulled
@@ -81,13 +79,23 @@ contract EtherFiWithdrawalQueueWrapper {
         EETH = eeth_;
     }
 
+    /// @dev Reverts unless the current call is a delegatecall (running in a caller's context, not the singleton's).
+    ///      Under delegatecall `address(this)` is the caller Safe; on a direct call it is this deployment (`== SELF`,
+    ///      the address pinned at construction). {requestWithdraw} / {claimWithdraw} rely on running in the Safe's
+    ///      context (so ether.fi sees `msg.sender = Safe`), so a direct call is always a mistake — fail loud here
+    ///      instead of letting ether.fi revert obscurely.
+    modifier onlyDelegateCall() {
+        if (address(this) == SELF) revert NotDelegateCall();
+        _;
+    }
+
     /// @notice Request a withdrawal of `amount` eETH from ether.fi and track the resulting WithdrawRequestNFT for the
     ///         caller. **Must be DELEGATECALLed by the owning Safe** (see contract NatSpec). Runs as the Safe: approves
     ///         the LiquidityPool for the Safe's eETH and calls it directly (NFT minted to the Safe), then feeds the
     ///         returned `requestId` to the adapter via the `SELF` self-call.
     /// @param amount eETH to withdraw (pulled directly from the delegatecalling Safe by the LiquidityPool).
     /// @return requestId The minted WithdrawRequestNFT id (tracked for the Safe).
-    function requestWithdraw(uint256 amount) external returns (uint256 requestId) {
+    function requestWithdraw(uint256 amount) external onlyDelegateCall returns (uint256 requestId) {
         // Running as the Safe: approve the LiquidityPool to pull the Safe's eETH (forceApprove tolerates tokens that
         // require resetting a non-zero allowance), then request directly. recipient = address(this) = the Safe, so the
         // NFT is owned by the tracked account and the adapter's live ownership re-verification passes for it.
@@ -101,7 +109,7 @@ contract EtherFiWithdrawalQueueWrapper {
     ///         Runs as the Safe (== owner), ETH flows to the Safe, and the now-burned id is pruned via the `SELF`
     ///         self-call.
     /// @param tokenId The WithdrawRequestNFT id to claim (owned by the delegatecalling Safe).
-    function claimWithdraw(uint256 tokenId) external {
+    function claimWithdraw(uint256 tokenId) external onlyDelegateCall {
         IWithdrawRequestNFTClaim(WITHDRAW_REQUEST_NFT).claimWithdraw(tokenId);
         EtherFiWithdrawalQueueWrapper(SELF).pruneStale(tokenId);
     }

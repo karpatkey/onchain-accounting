@@ -172,10 +172,10 @@ contract EtherFiWithdrawalQueueWrapperTest is Test {
         assertEq(owed, amount, "adapter values the tracked request");
     }
 
-    /// @notice A direct CALL to requestWithdraw reverts: the LiquidityPool would pull eETH from this wrapper (which
-    ///         holds none), so it fails safe when invoked the wrong way — it must be delegatecalled by the Safe.
+    /// @notice A direct CALL to requestWithdraw reverts `NotDelegateCall` (the onlyDelegateCall guard) — it must be
+    ///         delegatecalled by the Safe.
     function test_requestWithdraw_directCall_reverts() public {
-        vm.expectRevert();
+        vm.expectRevert(NotDelegateCall.selector);
         wrapper.requestWithdraw(5 ether);
     }
 
@@ -196,12 +196,12 @@ contract EtherFiWithdrawalQueueWrapperTest is Test {
         assertEq(adapter.tokenIdsOf(address(safe)).length, 0, "claimed id pruned from the adapter cache");
     }
 
-    /// @notice A direct CALL to claimWithdraw by a non-owner reverts inside the NFT (owner-only) — the wrapper is not
-    ///         the NFT owner, so this fails safe when invoked the wrong way.
-    function test_claimWithdraw_directCall_byNonOwner_reverts() public {
+    /// @notice A direct CALL to claimWithdraw reverts `NotDelegateCall` (the onlyDelegateCall guard fires before the
+    ///         NFT owner check) — it must be delegatecalled by the Safe.
+    function test_claimWithdraw_directCall_reverts() public {
         uint256 id = safe.doRequestDelegate(address(wrapper), 5 ether);
-        vm.expectRevert("Not the owner of the NFT");
-        wrapper.claimWithdraw(id); // msg.sender to NFT is the wrapper, not the owner
+        vm.expectRevert(NotDelegateCall.selector);
+        wrapper.claimWithdraw(id);
     }
 
     /// @notice pruneStale forwards to the adapter AS the wrapper (which holds WRAPPER_ROLE); a caller can only GC its

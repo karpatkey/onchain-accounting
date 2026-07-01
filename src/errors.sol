@@ -7,6 +7,8 @@ error InvalidArgumentsWithContext(string context);
 error NotAContract(string name);
 error NotAuthorized();
 error NotChainlinkOracle();
+/// @notice Thrown when an entrypoint that must be delegatecalled is called directly on the singleton.
+error NotDelegateCall();
 
 // Assisted balance-adapter errors
 error NotTokenOwner(address account, uint256 tokenId);

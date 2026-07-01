@@ -7,11 +7,12 @@ import {BalancesHarness} from "test/balances/Balances.t.sol";
 import {
     EtherFiWithdrawalQueueAssistedBalanceAdapter
 } from "src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueAssistedBalanceAdapter.sol";
-import {IEtherFiWithdrawRequestNFT} from "src/balances/AssistedBalanceAdapters/EtherFiWithdrawalValuationBase.sol";
+import {
+    IEtherFiWithdrawRequestNFT
+} from "src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueAssistedBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
-import {IWrapperFedBalanceAdapter} from "src/balances/IWrapperFedBalanceAdapter.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -431,7 +432,6 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterTest is BalanceAdapterTestB
     function test_supportsInterface() public view {
         assertTrue(adapter.supportsInterface(type(IBalanceAdapter).interfaceId));
         assertTrue(adapter.supportsInterface(type(IPositionDescribable).interfaceId));
-        assertTrue(adapter.supportsInterface(type(IWrapperFedBalanceAdapter).interfaceId));
         assertTrue(adapter.supportsInterface(type(IERC165).interfaceId));
     }
 

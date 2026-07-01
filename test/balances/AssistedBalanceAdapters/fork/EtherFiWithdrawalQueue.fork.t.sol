@@ -9,7 +9,7 @@ import {
 import {
     IEtherFiWithdrawRequestNFT,
     IEtherFiLiquidityPool
-} from "src/balances/AssistedBalanceAdapters/EtherFiWithdrawalValuationBase.sol";
+} from "src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueAssistedBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {NotTokenOwner} from "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";

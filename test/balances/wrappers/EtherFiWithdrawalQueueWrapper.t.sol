@@ -10,7 +10,7 @@ import {EtherFiWithdrawalQueueWrapper} from "src/balances/wrappers/EtherFiWithdr
 import {
     EtherFiWithdrawalQueueAssistedBalanceAdapter
 } from "src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueAssistedBalanceAdapter.sol";
-import {IEtherFiWithdrawRequestNFT} from "src/balances/AssistedBalanceAdapters/EtherFiWithdrawalValuationBase.sol";
+import {IEtherFiWithdrawRequestNFT} from "src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueAssistedBalanceAdapter.sol";
 import {NotAContract} from "src/errors.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";

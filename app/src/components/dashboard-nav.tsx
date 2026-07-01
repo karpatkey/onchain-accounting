@@ -27,7 +27,9 @@ export function DashboardNav({
   refresh?: { onClick: () => void; canRefresh: boolean; secondsLeft: number }
   right?: ReactNode
 }) {
-  const q = address ? `?address=${address}` : ''
+  // encodeURIComponent the address: it originates as user/URL text, so escape meta-characters before it
+  // becomes part of an href (neutralises the CodeQL js/xss-through-dom flow, per config/chains.ts).
+  const q = address ? `?address=${encodeURIComponent(address)}` : ''
   return (
     <div className="flex items-center justify-between py-4">
       <Link href={`/${q}`} className="flex items-center gap-2">

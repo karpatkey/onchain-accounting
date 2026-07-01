@@ -177,4 +177,73 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterForkTest is BalanceAdapter
             INexusStakingViewer(STAKING_VIEWER).getAggregatedTokens(one);
         return agg.totalActiveStake + agg.totalExpiredStake + agg.totalRewards;
     }
+
+    // ---- Happy paths for additional real StakingNFT holders on mainnet (block 25,388,000) ----
+    //
+    // Each account below genuinely owns the listed StakingNFT tokenIds at FORK_BLOCK (discovered on-chain). For each,
+    // submitting its ids and reading the adapter must reproduce Nexus's own `getAggregatedTokens` for those exact ids
+    // (delta 0), and the per-NFT position legs must sum to the same, each keyed by a deployed staking-pool address.
+
+    function test_realHolder_0x546a() public {
+        _assertHappyPath(0x546a0cB802377153B4fEAe052a5ed14C98B3CC9C, _ids8(25, 41, 75, 94, 137, 143, 144, 218));
+    }
+
+    function test_realHolder_0x8C87() public {
+        _assertHappyPath(0x8C878B8f805472C0b70eD66a71c0B33da3d233c8, _ids5(65, 66, 140, 189, 190));
+    }
+
+    function test_realHolder_0x49Fe() public {
+        _assertHappyPath(0x49Fe6d0096Ec9a51A59231c2D46F09a339d16296, _ids5(90, 91, 92, 182, 183));
+    }
+
+    /// @dev Submit `ids` for `account`, then assert the adapter's balance AND its per-NFT position legs both equal the
+    ///      independent live `getAggregatedTokens(ids)` total (delta 0), with each leg keyed by a deployed pool.
+    function _assertHappyPath(address account, uint256[] memory ids) internal {
+        for (uint256 i; i < ids.length; ++i) {
+            adapter.submit(account, ids[i]);
+        }
+        INexusStakingViewer.AggregatedTokens memory agg = INexusStakingViewer(STAKING_VIEWER).getAggregatedTokens(ids);
+        uint256 expected = agg.totalActiveStake + agg.totalExpiredStake + agg.totalRewards;
+        assertGt(expected, 0, "fixture holds non-zero NXM");
+
+        (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(account, NXM);
+        assertEq(amount, expected, "adapter total == live getAggregatedTokens (delta 0)");
+        assertFalse(isDebt);
+
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(account, address(0));
+        uint256 sum;
+        for (uint256 i; i < p.length; ++i) {
+            assertEq(p[i].balanceAsset.asset, NXM);
+            assertEq(p[i].protocolSubId, ProtocolIds.NEXUS_MUTUAL_STAKING_POOLS);
+            assertFalse(p[i].isDebt);
+            assertGt(abi.decode(p[i].positionId, (address)).code.length, 0, "positionId is a deployed pool");
+            sum += p[i].amount;
+        }
+        assertEq(sum, expected, "position legs sum to the live aggregate");
+    }
+
+    function _ids5(uint256 a, uint256 b, uint256 c, uint256 d, uint256 e) internal pure returns (uint256[] memory ids) {
+        ids = new uint256[](5);
+        ids[0] = a;
+        ids[1] = b;
+        ids[2] = c;
+        ids[3] = d;
+        ids[4] = e;
+    }
+
+    function _ids8(uint256 a, uint256 b, uint256 c, uint256 d, uint256 e, uint256 f, uint256 g, uint256 h)
+        internal
+        pure
+        returns (uint256[] memory ids)
+    {
+        ids = new uint256[](8);
+        ids[0] = a;
+        ids[1] = b;
+        ids[2] = c;
+        ids[3] = d;
+        ids[4] = e;
+        ids[5] = f;
+        ids[6] = g;
+        ids[7] = h;
+    }
 }

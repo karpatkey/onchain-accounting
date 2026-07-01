@@ -32,7 +32,7 @@ contract StakeWiseV3ExitQueueWrapper {
 
     /// @notice The balance adapter fed by this wrapper ({StakeWiseV3ExitQueueAssistedBalanceAdapter}). Immutable, so it
     ///         is readable from the wrapper's bytecode under delegatecall.
-    address public immutable ADAPTER;
+    address public immutable BALANCE_ADAPTER;
 
     /// @notice Emitted (in the Safe's context) when the Safe enters the exit queue and the ticket is registered.
     event ExitQueueEntered(address indexed account, address indexed vault, uint256 positionTicket, uint256 timestamp);
@@ -54,12 +54,12 @@ contract StakeWiseV3ExitQueueWrapper {
         _;
     }
 
-    /// @param adapter_ The {StakeWiseV3ExitQueueAssistedBalanceAdapter} to feed. Must be a contract.
-    constructor(address adapter_) {
-        if (adapter_ == address(0)) revert InvalidArguments();
-        AddressCheckLib.requireContract(adapter_, "ExitQueueAdapter");
+    /// @param balanceAdapter_ The {StakeWiseV3ExitQueueAssistedBalanceAdapter} to feed. Must be a contract.
+    constructor(address balanceAdapter_) {
+        if (balanceAdapter_ == address(0)) revert InvalidArguments();
+        AddressCheckLib.requireContract(balanceAdapter_, "ExitQueueAdapter");
         SELF = address(this);
-        ADAPTER = adapter_;
+        BALANCE_ADAPTER = balanceAdapter_;
     }
 
     /// @notice Enter the StakeWise V3 exit queue for `vault` and register the resulting ticket on the adapter.
@@ -74,7 +74,7 @@ contract StakeWiseV3ExitQueueWrapper {
     /// @return positionTicket The ticket assigned by the vault, now tracked on the adapter for the Safe.
     function enterExitQueue(address vault, uint256 shares) external onlyDelegateCall returns (uint256 positionTicket) {
         positionTicket = IStakeWiseVaultEnterExit(vault).enterExitQueue(shares, address(this));
-        IStakeWiseExitQueueTracker(ADAPTER).submit(vault, positionTicket, block.timestamp);
+        IStakeWiseExitQueueTracker(BALANCE_ADAPTER).submit(vault, positionTicket, block.timestamp);
         emit ExitQueueEntered(address(this), vault, positionTicket, block.timestamp);
     }
 
@@ -92,7 +92,7 @@ contract StakeWiseV3ExitQueueWrapper {
         onlyDelegateCall
     {
         IStakeWiseVaultEnterExit(vault).claimExitedAssets(positionTicket, timestamp, exitQueueIndex);
-        IStakeWiseExitQueueTracker(ADAPTER).remove(vault, positionTicket, timestamp);
+        IStakeWiseExitQueueTracker(BALANCE_ADAPTER).remove(vault, positionTicket, timestamp);
         emit ExitedAssetsClaimed(address(this), vault, positionTicket, timestamp);
     }
 }

@@ -44,5 +44,13 @@
       "rewardToken": "0x9e1028F5F1D5eDE59748FFceE5532509976840E0",
       "protocol": "Compound V3"
     }
+  },
+  "PancakeSwapV3PoolsMeta": {
+    "enabled": false,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every configured PancakeSwap V3 pool via on-chain NFT enumeration (NPM is ERC721Enumerable). Thin subclass of UniswapV3PoolsMeta overriding _slot0() to decode PancakeSwap V3's uint32 feeProtocol ABI plus the protocol-id slug. NonfungiblePositionManager pinned in the constructor; the active pool set lives on NAVCalculator (nav-config instances). 04 reads positionManager/protocol. Disabled: COW on Base has no feed, so a WETH/COW pool's COW leg cannot be valued — the adapter drops any instance whose tokens aren't both registered. Enable + add pool instances once COW is priced.",
+    "constructor": {
+      "positionManager": "0x46A15B0b27311cedF172AB29E4f4766fbE7F4364",
+      "protocol": "PancakeSwap V3"
+    }
   }
 }

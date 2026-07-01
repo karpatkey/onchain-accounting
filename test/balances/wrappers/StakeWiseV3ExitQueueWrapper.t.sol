@@ -4,8 +4,8 @@ pragma solidity ^0.8.0;
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.sol";
 import {StakeWiseV3ExitQueueWrapper} from "src/balances/wrappers/StakeWiseV3ExitQueueWrapper.sol";
 import {
-    StakeWiseV3ExitQueueBalanceAdapter
-} from "src/balances/AssistedBalanceAdapters/StakeWiseV3ExitQueueBalanceAdapter.sol";
+    StakeWiseV3ExitQueueAssistedBalanceAdapter
+} from "src/balances/AssistedBalanceAdapters/StakeWiseV3ExitQueueAssistedBalanceAdapter.sol";
 import {NotAuthorized, InvalidArguments} from "src/errors.sol";
 
 /// @notice Minimal Safe stand-in that delegatecalls a target — mirrors how a Gnosis Safe executes a delegatecall
@@ -199,7 +199,7 @@ contract StakeWiseV3ExitQueueWrapperTest is BalanceAdapterTestBase {
     // ---- End-to-end with the real adapter + full mock vault ----
 
     function test_endToEnd_enterTracksBalance_thenClaimClears() public {
-        StakeWiseV3ExitQueueBalanceAdapter adapter = new StakeWiseV3ExitQueueBalanceAdapter(
+        StakeWiseV3ExitQueueAssistedBalanceAdapter adapter = new StakeWiseV3ExitQueueAssistedBalanceAdapter(
             address(registry), NATIVE, "osETH", address(balances), DELAY, address(this)
         );
         balances.addSupportedAssetForTest(NATIVE);

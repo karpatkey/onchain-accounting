@@ -283,8 +283,8 @@
   },
 
   "StakeWiseV3ExitQueueAssisted": {
-    "$perPositionFields": "type: Supplied; one native-ETH leg per exit request (per positionTicket) — up to two per ticket (claimable + still-queued), claimable gated on the post-checkpoint EXIT_CLAIM_DELAY. Agent-fed cache of (vault, positionTicket, timestamp) tuples; positionId = abi.encode(vault) (per vault, shared by a vault's tickets); the positionTicket rides in the display label, not positionId.",
-    "$constructorNote": "constructor(vaultsRegistry, underlyingToken, navCalculator, exitClaimDelay, admin, assistant). exitClaimDelay is StakeWise's post-checkpoint claim delay in seconds (86400 = 24h on V3 mainnet), read from contracts-deployment-config; pins EXIT_CLAIM_DELAY.",
+    "$perPositionFields": "type: Supplied; one native-ETH leg per exit request (per positionTicket) — up to two per ticket (claimable + still-queued), claimable gated on the post-checkpoint EXIT_CLAIM_DELAY. Wrapper-fed (delegatecall) cache of (vault, positionTicket, timestamp) tuples; positionId = abi.encode(vault) (per vault, shared by a vault's tickets); the positionTicket rides in positionInstanceId, not positionId.",
+    "$constructorNote": "constructor(vaultsRegistry, underlyingToken, receiptSymbol, navCalculator, exitClaimDelay, admin). Wrapper-fed (ADR 0019): DEPOSITOR_ROLE (not ASSISTANT_ROLE) is granted to each depositor Safe, which submits/removes its own tickets via a delegatecalled StakeWiseV3ExitQueueWrapper. exitClaimDelay is StakeWise's post-checkpoint claim delay in seconds (86400 = 24h on V3 mainnet), read from contracts-deployment-config; pins EXIT_CLAIM_DELAY.",
     "protocol": "StakeWise V3",
     "positionDetail": { "protocol": "StakeWise V3", "product": "Staking", "name": "Exit Queue" },
     "positionId": "abi.encode(address vault)"

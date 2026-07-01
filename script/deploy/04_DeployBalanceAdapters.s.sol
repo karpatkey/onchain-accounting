@@ -772,10 +772,13 @@ contract DeployBalanceAdapters is BaseDeployScript {
         internal
         returns (address)
     {
-        // Owner = chainConfig.admin (OIV Safe / agent role): the only caller of submitPositions / clearPosition. The
-        // adapter values from live on-chain reads and verifies each tuple belongs to the account via
-        // calculateExitedAssets(receiver=account), so the owner cannot fabricate amounts (under-report only). See
-        // docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md.
+        // admin = chainConfig.admin (OIV Safe): DEFAULT_ADMIN_ROLE, administers DEPOSITOR_ROLE. The adapter is
+        // wrapper-fed (role-gated self-submit): each depositor Safe holds DEPOSITOR_ROLE and, via a delegatecalled
+        // StakeWiseV3ExitQueueWrapper, submits/removes its OWN tickets (account == msg.sender). The adapter values
+        // from live on-chain reads and verifies each tuple belongs to the account via
+        // calculateExitedAssets(receiver=account), so a depositor cannot fabricate amounts (under-report only). See
+        // docs/decisions/0019-stakewise-v3-exit-queue-wrapper.md. NOTE: DEPOSITOR_ROLE grants (and wrapper deploy) are a
+        // follow-up; this only deploys the adapter.
         address vaultsRegistry = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vaultsRegistry")
         );
@@ -797,13 +800,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         );
 
         StakeWiseV3ExitQueueAssistedBalanceAdapter adapter = new StakeWiseV3ExitQueueAssistedBalanceAdapter(
-            vaultsRegistry,
-            underlyingToken,
-            receiptSymbol,
-            navCalculator,
-            exitClaimDelay,
-            chainConfig.admin,
-            chainConfig.admin
+            vaultsRegistry, underlyingToken, receiptSymbol, navCalculator, exitClaimDelay, chainConfig.admin
         );
         return address(adapter);
     }

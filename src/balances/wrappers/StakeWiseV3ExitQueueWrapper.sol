@@ -12,7 +12,7 @@ import "src/errors.sol";
 /// @author KPK
 /// @notice A thin **delegatecall action** contract that a depositor Safe delegatecalls to enter / exit the StakeWise
 ///         V3 exit queue and, in the *same* transaction, register / deregister the resulting `positionTicket` on
-///         {StakeWiseV3ExitQueueBalanceAdapter} so the queued value stays visible to NAV. StakeWise exit positions are
+///         {StakeWiseV3ExitQueueAssistedBalanceAdapter} so the queued value stays visible to NAV. StakeWise exit positions are
 ///         not enumerable and StakeWise keys `claimExitedAssets` on `msg.sender`, so the Safe must be both the
 ///         `receiver` and the claimer — which is exactly what delegatecall gives: the wrapper's code runs in the
 ///         Safe's context, so `address(this)` is the Safe, the vault sees `msg.sender = Safe`, the exit position is
@@ -35,7 +35,7 @@ contract StakeWiseV3ExitQueueWrapper is AccessControl {
     ///         caller Safe, so role checks must target this fixed singleton to hit the real role storage.
     address public immutable SELF;
 
-    /// @notice The balance adapter fed by this wrapper ({StakeWiseV3ExitQueueBalanceAdapter}). Immutable, so it is
+    /// @notice The balance adapter fed by this wrapper ({StakeWiseV3ExitQueueAssistedBalanceAdapter}). Immutable, so it is
     ///         readable from the wrapper's bytecode under delegatecall.
     address public immutable ADAPTER;
 
@@ -46,7 +46,7 @@ contract StakeWiseV3ExitQueueWrapper is AccessControl {
         address indexed account, address indexed vault, uint256 positionTicket, uint256 timestamp
     );
 
-    /// @param adapter_ The {StakeWiseV3ExitQueueBalanceAdapter} to feed. Must be a contract.
+    /// @param adapter_ The {StakeWiseV3ExitQueueAssistedBalanceAdapter} to feed. Must be a contract.
     /// @param admin_   Holder of `DEFAULT_ADMIN_ROLE` — administers `DEPOSITOR_ROLE`. Required.
     constructor(address adapter_, address admin_) {
         if (adapter_ == address(0) || admin_ == address(0)) revert InvalidArguments();

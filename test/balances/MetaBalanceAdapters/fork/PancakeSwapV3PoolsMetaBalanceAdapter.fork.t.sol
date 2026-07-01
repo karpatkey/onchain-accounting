@@ -141,7 +141,10 @@ contract PancakeSwapV3PoolsMetaBalanceForkTest is BalanceAdapterTestBase {
         uint256 settledWeth;
         uint256 settledUsdt;
         uint256 active;
+        // Match the adapter's MAX_POSITIONS enumeration cap so this ground-truth loop stays apples-to-apples with
+        // what the adapter actually values if HOLDER ever crosses the cap (it doesn't at the pinned block).
         uint256 n = IPancakeNPM(NPM).balanceOf(HOLDER);
+        if (n > meta.MAX_POSITIONS()) n = meta.MAX_POSITIONS();
         for (uint256 i = 0; i < n; i++) {
             uint256 tokenId = IPancakeNPM(NPM).tokenOfOwnerByIndex(HOLDER, i);
             (,, address t0, address t1, uint24 fee,,, uint128 liquidity,,,,) = IPancakeNPM(NPM).positions(tokenId);

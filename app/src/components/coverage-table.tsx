@@ -2,7 +2,6 @@
 
 import { Fragment, useState } from 'react'
 import {
-  Badge,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -17,9 +16,15 @@ import {
   GearboxCircleColor,
   EulerCircleColor,
 } from '@karpatkey/design-system'
-import type { ChainCoverage, ProtocolCoverage, CoverageAsset } from '@/hooks/use-coverage'
+import type {
+  ChainCoverage,
+  ProtocolCoverage,
+  CoverageProduct,
+  CoverageInstance,
+} from '@/hooks/use-coverage'
 import { TokenLogo } from '@/components/token-logo'
 import { AddressChip } from '@/components/address-chip'
+import { explorerAddressUrl } from '@/config/chains'
 
 // --- protocol icons (keyed by brandKey / normalised name) --------------------
 // Replicated from the portfolio ProtocolGroup lookup: design-system CircleColor icons where they
@@ -75,10 +80,10 @@ function imgIconFor(brandKey: string): string | null {
   return null
 }
 
-function WalletIcon() {
+function WalletIcon({ size = 'w-6 h-6' }: { size?: string }) {
   return (
     <svg
-      className="w-6 h-6 text-neutral-700 shrink-0"
+      className={`${size} text-neutral-700 shrink-0`}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -93,103 +98,232 @@ function WalletIcon() {
   )
 }
 
-function ProtocolIcon({ brandKey, displayName }: { brandKey: string; displayName: string }) {
-  if (normalize(brandKey) === 'wallet') return <WalletIcon />
+function ProtocolIcon({
+  brandKey,
+  displayName,
+  size = 'w-6 h-6',
+}: {
+  brandKey: string
+  displayName: string
+  size?: string
+}) {
+  if (normalize(brandKey) === 'wallet') return <WalletIcon size={size} />
   const Icon = iconComponentFor(brandKey)
-  if (Icon) return <Icon className="w-6 h-6" />
+  if (Icon) return <Icon className={size} />
   const imgUrl = imgIconFor(brandKey)
   // biome-ignore lint/performance/noImgElement: dev dashboard, CDN logo, no Next image optimization needed
-  if (imgUrl) return <img src={imgUrl} alt={displayName} className="w-6 h-6 rounded-full shrink-0" />
+  if (imgUrl) return <img src={imgUrl} alt={displayName} className={`${size} rounded-full shrink-0`} />
   return (
-    <div className="w-6 h-6 rounded-full bg-neutral-300 flex items-center justify-center text-[10px] font-semibold text-neutral-700 shrink-0">
+    <div
+      className={`${size} rounded-full bg-neutral-300 flex items-center justify-center text-[9px] font-semibold text-neutral-700 shrink-0`}
+    >
       {displayName.slice(0, 2).toUpperCase()}
     </div>
   )
 }
 
-// --- overlapping asset logos (parent-row summary) ----------------------------
+// Protocol app deep-links per instance. Baseline = the protocol's app landing (passed in); Morpho gets a
+// true market/vault deep-link built from the instance coordinate. Extend per-protocol as needed.
+const CHAIN_SLUG: Record<number, string> = {
+  1: 'ethereum',
+  10: 'optimism',
+  100: 'gnosis',
+  42161: 'arbitrum',
+  8453: 'base',
+}
 
-const MAX_LOGOS = 6
+function instanceAppUrl(
+  brandKey: string,
+  instance: CoverageInstance,
+  chainId: number,
+  protocolUrl: string | null,
+): string | null {
+  const slug = CHAIN_SLUG[chainId]
+  if (brandKey === 'morpho' && slug) {
+    // Morpho market ids are raw 32-byte hashes (no address); vaults are addresses.
+    if (!instance.address) return `https://app.morpho.org/${slug}/market/${instance.id}`
+    return `https://app.morpho.org/${slug}/vault/${instance.address}`
+  }
+  return protocolUrl
+}
 
-function AssetLogoStack({ assets, chainId }: { assets: CoverageAsset[]; chainId: number }) {
-  if (assets.length === 0) return null
-  const shown = assets.slice(0, MAX_LOGOS)
-  const overflow = assets.length - shown.length
+// Small "i" info affordance with a hover tooltip — explains a product / category inline (replaces the
+// old adapter-type badge).
+function InfoTip({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex items-center">
-      <div className="flex items-center -space-x-1.5">
-        {shown.map((a) => (
-          <span key={a.address} className="ring-2 ring-white rounded-full">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="inline-flex">
-                  <TokenLogo symbol={a.symbol} address={a.address} chainId={chainId} className="w-5 h-5" />
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>{a.symbol}</TooltipContent>
-            </Tooltip>
-          </span>
-        ))}
-      </div>
-      {overflow > 0 && (
-        <span className="ml-1.5 text-xs font-medium text-neutral-700 tabular-nums">+{overflow}</span>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          className="inline-flex h-3.5 w-3.5 shrink-0 cursor-default items-center justify-center rounded-full border border-neutral-400 text-[9px] font-semibold text-neutral-600"
+          aria-label="More info"
+        >
+          i
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs">{children}</TooltipContent>
+    </Tooltip>
+  )
+}
+
+// A protocol's summary line: "N products · M markets/pools/vaults" (only the parts that are > 0). No token
+// stack in the header — the specific markets/pools live in the tree below.
+function summaryText(p: ProtocolCoverage): string {
+  const parts: string[] = []
+  if (p.productCount > 0)
+    parts.push(`${p.productCount} ${p.productCount === 1 ? 'product' : 'products'}`)
+  if (p.instanceCount > 0) {
+    // Prefer the shared instance category for a natural noun ("markets", "pools", "vaults", "gauges").
+    const noun = instanceNoun(p)
+    parts.push(`${p.instanceCount} ${noun}`)
+  }
+  return parts.join(' · ')
+}
+
+// Derive a lowercase plural noun for a protocol's instances from their on-chain category. Falls back to
+// the generic "markets/pools/vaults" when a protocol mixes categories or exposes none.
+function instanceNoun(p: ProtocolCoverage): string {
+  const cats = new Set(
+    p.products.filter((pr) => pr.isMeta && pr.category).map((pr) => (pr.category as string).toLowerCase()),
+  )
+  if (cats.size === 1) {
+    const cat = [...cats][0]
+    if (cat.includes('gauge')) return p.instanceCount === 1 ? 'gauge' : 'gauges'
+    if (cat.includes('vault')) return p.instanceCount === 1 ? 'vault' : 'vaults'
+    if (cat.includes('pool')) return p.instanceCount === 1 ? 'pool' : 'pools'
+    if (cat.includes('market')) return p.instanceCount === 1 ? 'market' : 'markets'
+  }
+  return p.instanceCount === 1 ? 'market/pool/vault' : 'markets/pools/vaults'
+}
+
+// A small external-link glyph (matches the AddressChip icon set; the design-system <Launch> renders
+// oversized here, so we use the same inline SVG the chip uses, at a fixed 14px).
+function ExtLinkIcon({ href, title }: { href: string; title: string }) {
+  if (!/^https:\/\//.test(href)) return null
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={title}
+      onClick={(e) => e.stopPropagation()}
+      className="shrink-0 cursor-pointer p-1 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-200 transition-colors rounded"
+    >
+      <svg className="w-3.5 h-3.5" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+        <path d="M5 2H2a1 1 0 00-1 1v7a1 1 0 001 1h7a1 1 0 001-1V8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+        <path d="M8 1h3v3M7 5l4-4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </a>
+  )
+}
+
+// --- instance (leaf) sub-row ------------------------------------------------
+
+function InstanceRow({
+  instance,
+  brandKey,
+  displayName,
+  protocolUrl,
+  chainId,
+  isLast,
+}: {
+  instance: CoverageInstance
+  brandKey: string
+  displayName: string
+  protocolUrl: string | null
+  chainId: number
+  isLast: boolean
+}) {
+  const appUrl = instanceAppUrl(brandKey, instance, chainId, protocolUrl)
+  return (
+    <div className="flex items-center gap-2 py-1.5 pl-12 pr-3">
+      <span className="text-neutral-400 select-none leading-5" aria-hidden>
+        {isLast ? '└' : '├'}
+      </span>
+      {/* Leading icon: the instance's underlying tokens (a pool/vault's assets), else the protocol icon. */}
+      {instance.tokens.length > 0 ? (
+        <span className="flex items-center -space-x-1 shrink-0">
+          {instance.tokens.slice(0, 3).map((t, i) => (
+            <TokenLogo
+              key={`${t.address}-${i}`}
+              symbol={t.symbol}
+              address={t.address}
+              chainId={chainId}
+              className="w-4 h-4 rounded-full ring-1 ring-white"
+            />
+          ))}
+        </span>
+      ) : (
+        <ProtocolIcon brandKey={brandKey} displayName={displayName} size="w-4 h-4" />
+      )}
+      <span className="text-sm text-neutral-800 truncate">{instance.name}</span>
+      {/* App link (protocol app / market page) then explorer link — separate from the name. */}
+      {appUrl && <ExtLinkIcon href={appUrl} title={`Open in ${displayName}`} />}
+      {instance.address && (
+        <AddressChip address={instance.address} chainId={chainId} className="text-[11px] text-neutral-600" />
       )}
     </div>
   )
 }
 
-// A protocol's summary line: "N products · M markets · K assets" (only the parts that are > 0).
-function summaryText(p: ProtocolCoverage): string {
-  const parts: string[] = []
-  if (p.adapters.length > 0)
-    parts.push(`${p.adapters.length} ${p.adapters.length === 1 ? 'product' : 'products'}`)
-  if (p.instanceCount > 0)
-    parts.push(`${p.instanceCount} ${p.instanceCount === 1 ? 'market/vault' : 'markets/vaults'}`)
-  if (p.assetCount > 0) parts.push(`${p.assetCount} ${p.assetCount === 1 ? 'asset' : 'assets'}`)
-  return parts.join(' · ')
-}
+// --- product row -------------------------------------------------------------
 
-// --- child (adapter/product) row ---------------------------------------------
-
-function AdapterRow({
-  adapter,
+function ProductRow({
+  product,
+  brandKey,
+  displayName,
+  protocolUrl,
   chainId,
   isLast,
 }: {
-  adapter: ProtocolCoverage['adapters'][number]
+  product: CoverageProduct
+  brandKey: string
+  displayName: string
+  protocolUrl: string | null
   chainId: number
   isLast: boolean
 }) {
+  // Show underlying-token chips only where the tokens ARE the coverage: wallet holdings and staking
+  // modules (Safety Module / Umbrella). For queues / cooldowns / rewards / lending markets the feature
+  // label is the point — the token wall is noise (per product guidance). The wallet lists ALL its tokens
+  // (that IS the "tokens we track directly" statement); staking modules are short, so no cap needed there.
+  const isWallet = /^wallet/i.test(product.productLabel)
+  const showsTokens = !product.isMeta && (isWallet || /^(safety module|umbrella)/i.test(product.productLabel))
+  const shownAssets = showsTokens ? product.assets : []
+
   return (
     <div className="flex items-start gap-3 py-2.5 pl-6 pr-3">
       <span className="text-neutral-400 select-none leading-6" aria-hidden>
         {isLast ? '└' : '├'}
       </span>
+      {/* Leading product icon — the protocol mark (keeps every position visually anchored). */}
+      <span className="mt-0.5 shrink-0">
+        <ProtocolIcon brandKey={brandKey} displayName={displayName} size="w-4 h-4" />
+      </span>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-medium text-neutral-950">{adapter.protocolName}</span>
-          {adapter.isMeta ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Badge variant="generic" className="text-xs bg-violet-100 text-violet-700 cursor-default">
-                  Meta · {adapter.instanceCount} {adapter.instanceCount === 1 ? 'market' : 'markets'}
-                </Badge>
-              </TooltipTrigger>
-              <TooltipContent className="max-w-xs">
-                Multi-instance adapter — one immutable contract values every registered instance
-                (markets / vaults / pools). Instances are governed on NAVCalculator.
-              </TooltipContent>
-            </Tooltip>
-          ) : (
-            <Badge variant="generic" className="text-xs">
-              Direct
-            </Badge>
+          <span className="text-sm font-medium text-neutral-950">{product.productLabel}</span>
+          {/* The specific token/name below the feature (e.g. "Withdrawal Queue · stETH"), muted. */}
+          {product.detail && <span className="text-xs text-neutral-600">· {product.detail}</span>}
+          {product.isMeta && (
+            <>
+              <span className="text-xs text-neutral-600 tabular-nums">{product.instances.length}</span>
+              {product.category && (
+                <InfoTip>
+                  {`One immutable meta-adapter values every registered ${product.category.toLowerCase()} listed below — added or removed by config, not redeploy.`}
+                </InfoTip>
+              )}
+            </>
           )}
-          <AddressChip address={adapter.address} chainId={chainId} className="text-xs text-neutral-700" />
+          {/* Link to the product in the protocol's app, then the adapter address (the on-chain audit
+              trail / balanceAdapter, explorer-linked) — split so the app link and the contract are distinct. */}
+          {protocolUrl && <ExtLinkIcon href={protocolUrl} title={`Open in ${displayName}`} />}
+          <AddressChip address={product.adapter} chainId={chainId} className="text-xs text-neutral-600" />
         </div>
-        {adapter.assets.length > 0 && (
+
+        {/* Wallet / staking leaf: the underlying-asset chips (they ARE the coverage here). */}
+        {shownAssets.length > 0 && (
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-            {adapter.assets.map((a) => (
+            {shownAssets.map((a) => (
               <span
                 key={a.address}
                 className="inline-flex items-center gap-1 rounded-full bg-neutral-100 border border-neutral-200 pl-1 pr-2 py-0.5"
@@ -200,9 +334,44 @@ function AdapterRow({
             ))}
           </div>
         )}
+
+        {/* Meta product: its instances (markets / pools / vaults / gauges) as deeper sub-rows. */}
+        {product.isMeta && product.instances.length > 0 && (
+          <div className="mt-1">
+            {product.instances.map((inst, ii) => (
+              <InstanceRow
+                key={inst.id}
+                instance={inst}
+                brandKey={brandKey}
+                displayName={displayName}
+                protocolUrl={protocolUrl}
+                chainId={chainId}
+                isLast={ii === product.instances.length - 1}
+              />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
+}
+
+// --- filtering ---------------------------------------------------------------
+
+/// Match a protocol against a search query — by display name, or by any product / instance name. Returns a
+/// filtered protocol (products narrowed to matching ones when the match is on a product/instance) or null.
+function filterProtocol(p: ProtocolCoverage, q: string): ProtocolCoverage | null {
+  if (!q) return p
+  if (p.displayName.toLowerCase().includes(q)) return p
+  const products = p.products.filter(
+    (pr) =>
+      pr.productLabel.toLowerCase().includes(q) ||
+      (pr.category?.toLowerCase().includes(q) ?? false) ||
+      pr.instances.some((i) => i.name.toLowerCase().includes(q)) ||
+      pr.assets.some((a) => a.symbol.toLowerCase().includes(q)),
+  )
+  if (products.length === 0) return null
+  return { ...p, products }
 }
 
 // --- component ---------------------------------------------------------------
@@ -241,7 +410,9 @@ export function CoverageTable({ data, searchQuery = '' }: CoverageTableProps) {
     return <p className="text-sm text-neutral-700 py-4">No adapters registered on this chain yet.</p>
 
   const q = searchQuery.trim().toLowerCase()
-  const displayed = q ? protocols.filter((p) => p.displayName.toLowerCase().includes(q)) : protocols
+  const displayed = q
+    ? protocols.map((p) => filterProtocol(p, q)).filter((p): p is ProtocolCoverage => p !== null)
+    : protocols
 
   if (displayed.length === 0) {
     return (
@@ -258,38 +429,42 @@ export function CoverageTable({ data, searchQuery = '' }: CoverageTableProps) {
         return (
           <Fragment key={p.brandKey}>
             {/* Protocol parent row */}
-            <button
-              type="button"
-              onClick={() => toggle(p.brandKey)}
-              className="w-full flex items-center gap-3 px-3 py-3 text-left bg-white hover:bg-neutral-50 transition-colors"
-            >
-              <span className="text-neutral-500 w-3 inline-block select-none shrink-0" aria-hidden>
-                {isCollapsed ? '▸' : '▾'}
-              </span>
-              <ProtocolIcon brandKey={p.brandKey} displayName={p.displayName} />
-              <div className="min-w-0 flex-1">
-                <div className="font-semibold text-neutral-950 truncate">{p.displayName}</div>
-                <div className="text-xs text-neutral-700">{summaryText(p)}</div>
-              </div>
-              <AssetLogoStack
-                assets={Array.from(
-                  new Map(
-                    p.adapters.flatMap((a) => a.assets).map((a) => [a.address.toLowerCase(), a]),
-                  ).values(),
-                )}
-                chainId={chainId}
-              />
-            </button>
+            <div className="flex items-center gap-2 bg-white hover:bg-neutral-50 transition-colors">
+              <button
+                type="button"
+                onClick={() => toggle(p.brandKey)}
+                className="flex flex-1 items-center gap-3 px-3 py-3 text-left min-w-0"
+              >
+                <span className="text-neutral-500 w-3 inline-block select-none shrink-0" aria-hidden>
+                  {isCollapsed ? '▸' : '▾'}
+                </span>
+                <ProtocolIcon brandKey={p.brandKey} displayName={p.displayName} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-semibold text-neutral-950 truncate">{p.displayName}</span>
+                  </div>
+                  <div className="text-xs text-neutral-700">{summaryText(p)}</div>
+                </div>
+              </button>
+              {p.url && (
+                <span className="mr-2 shrink-0">
+                  <ExtLinkIcon href={p.url} title={`Open ${p.displayName}`} />
+                </span>
+              )}
+            </div>
 
-            {/* Child adapter rows */}
+            {/* Child product rows */}
             {!isCollapsed && (
               <div className="bg-neutral-50/60 divide-y divide-neutral-100">
-                {p.adapters.map((adapter, ai) => (
-                  <AdapterRow
-                    key={adapter.address}
-                    adapter={adapter}
+                {p.products.map((product, pi) => (
+                  <ProductRow
+                    key={product.adapter}
+                    product={product}
+                    brandKey={p.brandKey}
+                    displayName={p.displayName}
+                    protocolUrl={p.url}
                     chainId={chainId}
-                    isLast={ai === p.adapters.length - 1}
+                    isLast={pi === p.products.length - 1}
                   />
                 ))}
               </div>

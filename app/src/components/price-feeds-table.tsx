@@ -265,7 +265,8 @@ interface PriceFeedsTableProps {
 
 export function PriceFeedsTable({ data, dense = false, filterStatus = 'all', searchQuery = '' }: PriceFeedsTableProps) {
   const { nodes, isLoading, isError, chainId, sequencerDown } = data
-  const [sortKey, setSortKey] = useState<SortKey | null>(null)
+  // Default to alphabetical by asset (Wallet-style pinning doesn't apply to feeds); the header stays sortable.
+  const [sortKey, setSortKey] = useState<SortKey | null>('asset')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   // Collapsed set — default expanded so the redundancy is visible at a glance. Keyed by asset address.
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())

@@ -201,12 +201,45 @@ export const adapterInfoAbi = [
     inputs: [],
     outputs: [{ name: '', type: 'address[]' }],
   },
+  // On-chain display labels for a positionId (IPositionDescribable). Called with EMPTY bytes (0x) it
+  // returns the adapter's product label(s): on a plain adapter e.g. ["Safety Module"] or a
+  // ["Category", "Product"] pair; on a meta-adapter it returns [] (the labels live per-instance).
+  // Called with a raw 32-byte instance coordinate (from getMetaInstances) it returns the instance's
+  // ["Category", "Instance Name"] pair (e.g. ["Market", "Aave Ethereum Market"], ["AMM Liquidity Pool",
+  // "WETH/rETH"]). Fail-open: some adapters revert / return [] for coordinates they don't recognise.
+  {
+    name: 'positionLabels',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'positionId', type: 'bytes' }],
+    outputs: [{ name: '', type: 'string[]' }],
+  },
+  // IMetaBalanceAdapter — the underlying assets a specific meta instance covers (a Fluid vault's
+  // collateral+debt, a pool's tokens, …). Used to name/iconify instances whose positionLabels only
+  // yield a generic category ("Vault") and to render per-instance token logos. Fail-open on plain
+  // adapters (which don't implement it) → empty.
+  {
+    name: 'underlyingAssetsSupportedForInstances',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'instances', type: 'bytes32[]' }],
+    outputs: [{ name: '', type: 'address[]' }],
+  },
 ] as const
 
-// Minimal ERC20 — only symbol(), to resolve underlying assets not covered by getRegisteredAssets().
+// Minimal ERC20 — symbol() to resolve underlying assets not covered by getRegisteredAssets(), and
+// name() as a fallback for meta-instance display names when positionLabels() yields only a generic
+// category (e.g. a StakeWise / Fluid vault whose on-chain label is just "Vault").
 export const erc20Abi = [
   {
     name: 'symbol',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'string' }],
+  },
+  {
+    name: 'name',
     type: 'function',
     stateMutability: 'view',
     inputs: [],

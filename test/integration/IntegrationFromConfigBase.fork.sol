@@ -61,8 +61,8 @@ import {
     StakeWiseV3VaultsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/StakeWiseV3VaultsMetaBalanceAdapter.sol";
 import {
-    UniswapV3PoolsAssistedBalanceAdapter
-} from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsAssistedBalanceAdapter.sol";
+    UniswapV3PoolsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/uniswap/UniswapV3PoolsMetaBalanceAdapter.sol";
 import {
     UniswapV2PoolsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/uniswap/UniswapV2PoolsMetaBalanceAdapter.sol";
@@ -70,9 +70,8 @@ import {
     PancakeSwapV2PoolsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/pancakeswap/PancakeSwapV2PoolsMetaBalanceAdapter.sol";
 import {
-    PancakeSwapV3PoolsAssistedBalanceAdapter
-} from "src/balances/AssistedBalanceAdapters/PancakeSwapV3PoolsAssistedBalanceAdapter.sol";
-import {INonfungiblePositionManager} from "src/balances/MetaBalanceAdapters/uniswap/UniswapV3PoolLib.sol";
+    PancakeSwapV3PoolsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/pancakeswap/PancakeSwapV3PoolsMetaBalanceAdapter.sol";
 
 // Price feed adapters (Mainnet)
 import {sDAI_CustomPriceFeed} from "src/prices/protocols/sDAI_CustomPriceFeed.sol";
@@ -142,13 +141,6 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     /// @notice Address of the deployed MerklRewardsAssisted adapter for this chain (zero if not deployed).
     address internal _merklAdapter;
 
-    /// @notice Deployed assisted NFT adapters (Uniswap/PancakeSwap V3) and their paired NonfungiblePositionManager.
-    ///         `_seedAssistedNftTokenIds` enumerates each account's NFTs off the NPM and submits the tokenIds, so the
-    ///         adapter reports the same LP positions the prior on-chain enumeration did (these adapters are agent-fed
-    ///         and report nothing until tokenIds are submitted; ADR 0015).
-    address[] internal _assistedNftAdapters;
-    address[] internal _assistedNftNpms;
-
     /// @notice Tracked deployed adapter addresses (for diagnostics + addBalanceAdapter pass).
     address[] internal _deployedBalanceAdapters;
 
@@ -205,7 +197,6 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         _registerAllBalanceAdapters();
         _configureMetaInstances();
         _seedMerklProofs();
-        _seedAssistedNftTokenIds();
         vm.stopPrank();
     }
 
@@ -685,11 +676,11 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_equals(name, "StakeWiseV3VaultsMeta")) {
             return _deployStakeWiseV3VaultsMeta(name, navAddr);
         }
-        if (_equals(name, "UniswapV3PoolsAssisted")) {
-            return _deployUniswapV3PoolsAssisted(name, navAddr);
+        if (_equals(name, "UniswapV3PoolsMeta")) {
+            return _deployUniswapV3PoolsMeta(name, navAddr);
         }
-        if (_equals(name, "PancakeSwapV3PoolsAssisted")) {
-            return _deployPancakeSwapV3PoolsAssisted(name, navAddr);
+        if (_equals(name, "PancakeSwapV3PoolsMeta")) {
+            return _deployPancakeSwapV3PoolsMeta(name, navAddr);
         }
         if (_equals(name, "UniswapV2PoolsMeta") || _equals(name, "PancakeSwapV2PoolsMeta")) {
             return _deployUniswapV2PoolsMeta(name, navAddr);
@@ -854,26 +845,20 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             address(new StakeWiseV3VaultsMetaBalanceAdapter(underlyingToken, osTokenVaultController, protocol, navAddr));
     }
 
-    function _deployUniswapV3PoolsAssisted(string memory name, address navAddr) internal returns (address) {
+    function _deployUniswapV3PoolsMeta(string memory name, address navAddr) internal returns (address) {
         address positionManager =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionManager"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        // admin + assistant = the `admin` prank holding MANAGER, so _seedAssistedNftTokenIds can submit tokenIds.
-        address a = address(new UniswapV3PoolsAssistedBalanceAdapter(positionManager, protocol, navAddr, admin, admin));
-        _assistedNftAdapters.push(a);
-        _assistedNftNpms.push(positionManager);
-        return a;
+        // Meta-adapter: pool set configured via _configureMetaInstances (nav-config instances). NFTs are
+        // enumerated on-chain, so no assistant/tokenId seeding is needed.
+        return address(new UniswapV3PoolsMetaBalanceAdapter(positionManager, protocol, navAddr));
     }
 
-    function _deployPancakeSwapV3PoolsAssisted(string memory name, address navAddr) internal returns (address) {
+    function _deployPancakeSwapV3PoolsMeta(string memory name, address navAddr) internal returns (address) {
         address positionManager =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionManager"));
         string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
-        address a =
-            address(new PancakeSwapV3PoolsAssistedBalanceAdapter(positionManager, protocol, navAddr, admin, admin));
-        _assistedNftAdapters.push(a);
-        _assistedNftNpms.push(positionManager);
-        return a;
+        return address(new PancakeSwapV3PoolsMetaBalanceAdapter(positionManager, protocol, navAddr));
     }
 
     function _deployUniswapV2PoolsMeta(string memory name, address navAddr) internal returns (address) {
@@ -1018,69 +1003,6 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             nav.addMetaInstances(a, instances);
             console2.log("[meta] addMetaInstances", name, instances.length);
         }
-    }
-
-    /// @notice Feeds each account's Uniswap/PancakeSwap V3 NFT tokenIds to the assisted NFT adapters (ADR 0015),
-    ///         which report nothing until ids are submitted. The ids are discovered the same way the prior
-    ///         meta-adapter did its on-chain scan — off the NonfungiblePositionManager's `ERC721Enumerable` surface
-    ///         (`balanceOf`/`tokenOfOwnerByIndex`) — so NAV includes the same LP positions as before the refactor.
-    /// @dev Runs inside the `admin` prank that holds `ASSISTANT_ROLE` (admin == assistant at deploy). All enumerated
-    ///      ids are owned by the account, so `submitTokenIds` never hits its `NotTokenOwner` revert.
-    function _seedAssistedNftTokenIds() internal {
-        if (_assistedNftAdapters.length == 0) return;
-        string memory json = _readAccountsJson();
-
-        uint256 i;
-        while (true) {
-            string memory base = string.concat(".accounts[", vm.toString(i), "]");
-            if (!vm.keyExists(json, base)) break;
-            string memory addrStr = json.readString(string.concat(base, ".address"));
-            if (bytes(addrStr).length == 0) {
-                unchecked {
-                    ++i;
-                }
-                continue;
-            }
-            address account = vm.parseAddress(addrStr);
-            uint256[] memory enabledChains = json.readUintArray(string.concat(base, ".enabledChains"));
-            if (_contains(enabledChains, _chainId)) {
-                for (uint256 k = 0; k < _assistedNftAdapters.length; k++) {
-                    _submitOwnedNftIds(_assistedNftAdapters[k], _assistedNftNpms[k], account);
-                }
-            }
-            unchecked {
-                ++i;
-            }
-        }
-    }
-
-    /// @dev Enumerates `account`'s NFTs on `npm` and submits them to the assisted adapter. Tolerant: a reverting
-    ///      enumeration (non-enumerable NPM, etc.) just leaves that account unseeded.
-    function _submitOwnedNftIds(address adapter, address npm, address account) internal {
-        // Fail-open against a no-code NPM: a high-level call to an address with no code reverts via Solidity's
-        // extcodesize check, which try/catch does NOT catch — guard explicitly so a misconfigured NPM leaves the
-        // account unseeded instead of reverting the whole integration setup.
-        if (npm.code.length == 0) return;
-        uint256 bal;
-        try INonfungiblePositionManager(npm).balanceOf(account) returns (uint256 b) {
-            bal = b;
-        } catch {
-            return;
-        }
-        if (bal == 0) return;
-        uint256[] memory ids = new uint256[](bal);
-        uint256 n;
-        for (uint256 j = 0; j < bal; j++) {
-            try INonfungiblePositionManager(npm).tokenOfOwnerByIndex(account, j) returns (uint256 id) {
-                ids[n++] = id;
-            } catch {}
-        }
-        if (n == 0) return;
-        uint256[] memory owned = new uint256[](n);
-        for (uint256 j = 0; j < n; j++) {
-            owned[j] = ids[j];
-        }
-        UniswapV3PoolsAssistedBalanceAdapter(adapter).submitTokenIds(account, owned);
     }
 
     /// @notice Pre-populates the MerklRewardsAssisted adapter cache from `merkl-proofs.json` (regenerated on

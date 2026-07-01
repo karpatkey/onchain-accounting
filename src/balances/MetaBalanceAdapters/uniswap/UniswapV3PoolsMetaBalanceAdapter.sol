@@ -27,8 +27,8 @@ import {
 /// @dev Position discovery is fully on-chain: the NPM is `ERC721Enumerable`, so this reads `balanceOf(account)`
 ///      and iterates `tokenOfOwnerByIndex(account, i)` (bounded by `MAX_POSITIONS`), then `positions(tokenId)`,
 ///      keeping only the NFTs whose `(token0, token1, fee)` matches this pool. No off-chain assistant is needed
-///      (this supersedes the interim assisted `UniswapV3PoolsAssistedBalanceAdapter`, which cached agent-submitted
-///      tokenIds; the NPM being enumerable makes that unnecessary). Because the framework calls
+///      (this supersedes an interim assisted variant that cached agent-submitted tokenIds; the NPM being
+///      enumerable makes that unnecessary). Because the framework calls
 ///      `_instancePositions` once per configured pool, an account's NFTs are re-enumerated per pool — O(pools ×
 ///      NFTs), bounded and cheap for the handful of configured pools.
 /// @dev Identity: positionId = `abi.encode(pool)` (each `(token0, token1, fee)` triple is its own deployed pool, so

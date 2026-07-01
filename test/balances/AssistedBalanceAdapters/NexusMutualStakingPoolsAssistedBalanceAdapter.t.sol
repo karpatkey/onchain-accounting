@@ -367,10 +367,20 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterTest is BalanceAdapterTest
         assertEq(amt, 200);
     }
 
-    function test_remove_idempotentOnUncached() public {
+    /// @notice Owned-but-uncached id: remove passes the ownership check and is a no-op (no revert, no event).
+    function test_remove_ownedButUncached_noop() public {
         _seedOne(1, 1, 100, 0, 0);
-        adapter.remove(holder, 999); // never cached — no-op, no revert
+        nft.setToken(999, 1, holder); // holder owns 999 but it was never cached
+        adapter.remove(holder, 999);
         assertEq(adapter.tokenIdsOf(holder).length, 1);
+    }
+
+    /// @notice remove verifies ownership too — removing an id not owned by `account` reverts NotTokenOwner.
+    function test_remove_revertsOnNonOwnedId() public {
+        _seedOne(1, 1, 100, 0, 0);
+        nft.setToken(1, 1, other); // 1 transferred away from holder
+        vm.expectRevert(abi.encodeWithSelector(NotTokenOwner.selector, holder, uint256(1)));
+        adapter.remove(holder, 1);
     }
 
     /// @notice Reads are fail-open: an id transferred away after submission is silently discarded.

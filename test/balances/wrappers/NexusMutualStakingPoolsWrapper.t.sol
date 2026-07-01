@@ -188,7 +188,10 @@ contract NexusMutualStakingPoolsWrapperTest is BalanceAdapterTestBase {
         assertEq(adapter.tokenIdsOf(address(account)).length, 0); // untracked
     }
 
-    function test_withdraw_untrackIsIdempotentForUncachedId() public {
+    function test_withdraw_untrackIsIdempotentForOwnedButUncachedId() public {
+        // The account owns id 999 (Nexus does not burn the NFT on withdraw) but it was never cached: remove passes the
+        // ownership check and is a no-op.
+        nft.setToken(999, 1, address(account));
         pool.setWithdrawReturns(1, 0);
         uint256[] memory tranches = new uint256[](0);
         (uint256 s,) = account.withdraw(address(wrapper), address(pool), 999, true, false, tranches);

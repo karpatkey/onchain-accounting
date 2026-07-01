@@ -144,9 +144,15 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AccessControl, IBalanc
         if (_tokenIds[account].add(tokenId)) emit TokenIdSubmitted(account, tokenId);
     }
 
-    /// @notice Stop tracking `tokenId` for `account` (idempotent — a no-op if not cached). Called by the wrapper right
-    ///         after it forwards a withdrawal for the position.
+    /// @notice Stop tracking `tokenId` for `account`. Called by the wrapper right after it forwards a withdrawal for
+    ///         the position (Nexus does not burn the StakingNFT on withdraw, so the account still owns it). Verifies
+    ///         the tokenId belongs to `account` (fail-loud, custom error) — symmetric with {submit}; a no-op (no
+    ///         event) if the account owns it but it was not cached.
     function remove(address account, uint256 tokenId) external onlyRole(SUBMITTER_ROLE) {
+        if (account == address(0)) revert InvalidArguments();
+        // Fail-loud ownership check: the tokenId must currently belong to `account`, or revert `NotTokenOwner`.
+        (address owner, bool ok) = _ownerOf(tokenId);
+        if (!ok || owner != account) revert NotTokenOwner(account, tokenId);
         if (_tokenIds[account].remove(tokenId)) emit TokenIdCleared(account, tokenId);
     }
 

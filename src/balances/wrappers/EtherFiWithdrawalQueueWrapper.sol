@@ -27,12 +27,12 @@ import "src/errors.sol";
 ///        straight from the Safe and the minted `WithdrawRequestNFT` is owned by the Safe. It then feeds the adapter by
 ///        a regular call to `EtherFiWithdrawalQueueWrapper(SELF).submit(requestId)`.
 ///      - `claimWithdraw(tokenId)` runs as the Safe: `WithdrawRequestNFT.claimWithdraw(tokenId)` (Safe == owner, ETH to
-///        Safe), then `EtherFiWithdrawalQueueWrapper(SELF).pruneStale(tokenId)`.
+///        Safe), then `EtherFiWithdrawalQueueWrapper(SELF).remove(tokenId)`.
 ///
-///      The `submit` / `pruneStale` methods are the regular-call forwarders reached via the `SELF` self-call (and are
-///      independently callable). They forward to the adapter's `WRAPPER_ROLE`-gated `submit` / `pruneStale` **as this
+///      The `submit` / `remove` methods are the regular-call forwarders reached via the `SELF` self-call (and are
+///      independently callable). They forward to the adapter's `WRAPPER_ROLE`-gated `submit` / `remove` **as this
 ///      wrapper**, keyed to `msg.sender` (the Safe). They are permissionless because the adapter re-verifies ownership
-///      per id, keyed to that same `msg.sender`: a caller can only ever add/prune ids it actually owns (or has ceased
+///      per id, keyed to that same `msg.sender`: a caller can only ever add/remove ids it actually owns (or has ceased
 ///      to own), for its own account — never over-report, never touch another account. See
 ///      `docs/decisions/0020-wrapper-fed-etherfi-withdrawal-queue.md`.
 contract EtherFiWithdrawalQueueWrapper {
@@ -106,12 +106,12 @@ contract EtherFiWithdrawalQueueWrapper {
 
     /// @notice Claim withdrawal request `tokenId` from ether.fi and stop tracking it. **Must be DELEGATECALLed by the
     ///         owning Safe** (see contract NatSpec): ether.fi's claim hard-requires `ownerOf(tokenId) == msg.sender`.
-    ///         Runs as the Safe (== owner), ETH flows to the Safe, and the now-burned id is pruned via the `SELF`
+    ///         Runs as the Safe (== owner), ETH flows to the Safe, and the now-burned id is removed via the `SELF`
     ///         self-call.
     /// @param tokenId The WithdrawRequestNFT id to claim (owned by the delegatecalling Safe).
     function claimWithdraw(uint256 tokenId) external onlyDelegateCall {
         IWithdrawRequestNFTClaim(WITHDRAW_REQUEST_NFT).claimWithdraw(tokenId);
-        EtherFiWithdrawalQueueWrapper(SELF).pruneStale(tokenId);
+        EtherFiWithdrawalQueueWrapper(SELF).remove(tokenId);
     }
 
     /// @notice Track `tokenId` for `msg.sender` by forwarding to the adapter's `WRAPPER_ROLE`-gated `submit` (this
@@ -120,17 +120,17 @@ contract EtherFiWithdrawalQueueWrapper {
     ///         `msg.sender` owns `tokenId`, so a caller can only register its own owned ids for its own account.
     /// @param tokenId The WithdrawRequestNFT id to track for `msg.sender`.
     function submit(uint256 tokenId) external {
-        IEtherFiWithdrawalFeed(ADAPTER).submit(msg.sender, tokenId);
+        IEtherFiWithdrawalQueueAssistedBalanceAdapter(ADAPTER).submit(msg.sender, tokenId);
     }
 
     /// @notice Prune `tokenId` from `msg.sender`'s adapter cache by forwarding to the adapter's `WRAPPER_ROLE`-gated
-    ///         `pruneStale` (this wrapper is the role holder). The adapter removes the id **only if** it is no longer
+    ///         `remove` (this wrapper is the role holder). The adapter removes the id **only if** it is no longer
     ///         owned by `msg.sender` (e.g. burned on claim), so this can never delete a live position — safe to leave
     ///         open. Reached via the `SELF` self-call from the delegatecalled {claimWithdraw}, and independently
     ///         callable to GC a stale id.
     /// @param tokenId The WithdrawRequestNFT id to stop tracking for `msg.sender`.
-    function pruneStale(uint256 tokenId) external {
-        IEtherFiWithdrawalFeed(ADAPTER).pruneStale(msg.sender, tokenId);
+    function remove(uint256 tokenId) external {
+        IEtherFiWithdrawalQueueAssistedBalanceAdapter(ADAPTER).remove(msg.sender, tokenId);
     }
 }
 
@@ -148,7 +148,7 @@ interface IWithdrawRequestNFTClaim {
 }
 
 /// @notice Minimal interface for the wrapper-fed balance adapter's feed surface used by this wrapper.
-interface IEtherFiWithdrawalFeed {
+interface IEtherFiWithdrawalQueueAssistedBalanceAdapter {
     function submit(address account, uint256 tokenId) external;
-    function pruneStale(address account, uint256 tokenId) external;
+    function remove(address account, uint256 tokenId) external;
 }

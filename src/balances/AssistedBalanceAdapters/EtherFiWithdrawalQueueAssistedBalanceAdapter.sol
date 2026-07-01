@@ -21,7 +21,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         eETH/weETH and mints a `WithdrawRequestNFT`; the queued ETH is then invisible to a pure-view NAV scan (the
 ///         NFT is not `ERC721Enumerable` and exposes no owner→tokenIds view). A trusted **wrapper contract** (holder of
 ///         `WRAPPER_ROLE` — the `EtherFiWithdrawalQueueWrapper`) pushes/pops the account's `requestId`s via
-///         `submit` / `remove` / `pruneStale` **atomically as it forwards the withdrawal request/claim**, so the id
+///         `submit` / `remove` **atomically as it forwards the withdrawal request/claim**, so the id
 ///         cache is kept current on-chain in the same transaction — no off-chain agent. This adapter values each cached
 ///         id entirely from live on-chain reads, re-verifying ownership on every read. The cache stores **only ids,
 ///         never amounts**, so the wrapper cannot fabricate value — at worst it omits an id (NAV under-counts), never
@@ -42,13 +42,13 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapter is AccessControl, IBalance
     // Roles / constants
     //
 
-    /// @notice Role allowed to feed the cache (submit/remove/pruneStale). Held by the wrapper contract.
+    /// @notice Role allowed to feed the cache (submit/remove). Held by the wrapper contract.
     bytes32 public constant WRAPPER_ROLE = keccak256("WRAPPER_ROLE");
 
     /// @notice Hard cap on cached tokenIds per account. `_owedAmount` / `getAdapterPositions` iterate the whole set on
     ///         every NAV read, and an OOG there is NOT caught by NAVCalculator's try/catch — a bloated cache would
     ///         brick the account's NAV scan. Bounding the cache at submit time keeps reads gas-bounded; the wrapper GCs
-    ///         claimed ids via {pruneStale}. A real account never approaches 256 open requests.
+    ///         claimed ids via {remove}. A real account never approaches 256 open requests.
     uint256 public constant MAX_TOKEN_IDS = 256;
 
     bytes32 private constant PROTOCOL_BRAND = ProtocolIds.ETHERFI;
@@ -123,25 +123,26 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapter is AccessControl, IBalance
     //
 
     /// @notice Track `tokenId` for `account` (idempotent). Called by the wrapper right after it forwards a request that
-    ///         minted the WithdrawRequestNFT. **Reverts** `NotTokenOwner` if `tokenId` is not currently owned by
-    ///         `account`, and `TokenIdCacheFull` if a new id would grow the set past the cap.
+    ///         minted the WithdrawRequestNFT. Verifies on **every** call that the requestId (WithdrawRequestNFT
+    ///         `tokenId`) currently corresponds to `account`.
+    /// @dev **Reverts** the custom error `NotTokenOwner` if `account` is not the current owner of `tokenId` (wrong
+    ///      account, burned, or non-existent), and `TokenIdCacheFull` if a new id would grow the set past the cap.
     function submit(address account, uint256 tokenId) external onlyRole(WRAPPER_ROLE) {
         if (account == address(0)) revert InvalidArguments();
+        // The requestId must correspond to `account`: re-check ownership on every submit (not only on first add), so a
+        // resubmit of an id `account` no longer owns is rejected loud rather than silently kept.
+        (address owner, bool ok) = _ownerOf(tokenId);
+        if (!ok || owner != account) revert NotTokenOwner(account, tokenId);
         _addTokenId(account, tokenId);
     }
 
-    /// @notice Stop tracking `tokenId` for `account` (idempotent — a no-op if not cached).
+    /// @notice Stop tracking `tokenId` for `account`, **only if** it is no longer owned by `account` (burned on claim,
+    ///         transferred away, or non-existent). `WRAPPER_ROLE`-gated (the wrapper is the sole cache mutator); it can
+    ///         only ever GC a provably-dead entry, never drop a live position. The wrapper reaches this from a
+    ///         delegatecalled `claimWithdraw` via a regular self-call so the caller here is the wrapper (the role
+    ///         holder), not the depositor Safe.
+    /// @dev **Reverts** `NotTokenOwner` if `tokenId` is still owned by `account` (nothing to remove).
     function remove(address account, uint256 tokenId) external onlyRole(WRAPPER_ROLE) {
-        _removeTokenId(account, tokenId);
-    }
-
-    /// @notice Drop `tokenId` from `account`'s cache **only if** it is no longer owned by `account` (burned on claim,
-    ///         transferred away, or non-existent). `WRAPPER_ROLE`-gated like {submit}/{remove} — the wrapper is the sole
-    ///         cache mutator — but it additionally verifies the id is provably stale, so it can only ever GC a dead
-    ///         entry, never delete a live position. The wrapper reaches this from a delegatecalled `claimWithdraw` via a
-    ///         regular self-call so the caller here is the wrapper (the role holder), not the depositor Safe.
-    /// @dev **Reverts** `NotTokenOwner` if `tokenId` is still owned by `account` (nothing to prune).
-    function pruneStale(address account, uint256 tokenId) external onlyRole(WRAPPER_ROLE) {
         (address owner, bool ok) = _ownerOf(tokenId);
         if (ok && owner == account) revert NotTokenOwner(account, tokenId);
         _removeTokenId(account, tokenId);
@@ -278,13 +279,13 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapter is AccessControl, IBalance
     // Internal — cache mutation
     //
 
-    /// @dev Add a single id (idempotent; cap + fail-loud ownership check). Re-adding an already-cached id is a no-op.
+    /// @dev Add a single id to the cache (idempotent; caller {submit} has already verified `account` owns it).
+    ///      Re-adding an already-cached id is a no-op; a new id is capped at {MAX_TOKEN_IDS} (fail-loud
+    ///      `TokenIdCacheFull`).
     function _addTokenId(address account, uint256 tokenId) private {
         EnumerableSet.UintSet storage set = _tokenIds[account];
         if (set.contains(tokenId)) return;
         if (set.length() >= MAX_TOKEN_IDS) revert TokenIdCacheFull(account, MAX_TOKEN_IDS);
-        (address owner, bool ok) = _ownerOf(tokenId);
-        if (!ok || owner != account) revert NotTokenOwner(account, tokenId);
         set.add(tokenId);
         emit TokenIdSubmitted(account, tokenId);
     }
@@ -307,7 +308,7 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapter is AccessControl, IBalance
         }
     }
 
-    /// @dev Ownership read for the write-time check and {pruneStale}: wraps `ownerOf` so a claimed / burned /
+    /// @dev Ownership read for the write-time check and {remove}: wraps `ownerOf` so a claimed / burned /
     ///      non-existent id (which `ownerOf` reverts on) returns `(0, false)` rather than bubbling.
     function _ownerOf(uint256 tokenId) private view returns (address, bool) {
         try IEtherFiWithdrawRequestNFT(WITHDRAW_REQUEST_NFT).ownerOf(tokenId) returns (address o) {

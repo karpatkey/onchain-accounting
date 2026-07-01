@@ -221,15 +221,6 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterTest is BalanceAdapterTestB
         assertEq(adapter.tokenIdsOf(holder).length, 0);
     }
 
-    function test_remove_stopsTracking_idempotent() public {
-        nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
-        adapter.submit(holder, 1);
-        adapter.remove(holder, 1);
-        assertEq(adapter.tokenIdsOf(holder).length, 0);
-        adapter.remove(holder, 1); // idempotent — no revert
-        assertEq(adapter.tokenIdsOf(holder).length, 0);
-    }
-
     function test_clearAccount_onlyAdmin() public {
         nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
         adapter.submit(holder, 1);
@@ -243,44 +234,31 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterTest is BalanceAdapterTestB
         assertEq(adapter.tokenIdsOf(holder).length, 0);
     }
 
-    // ---- pruneStale (WRAPPER_ROLE-gated GC of provably-stale ids) ----
+    // ---- remove (WRAPPER_ROLE-gated GC of provably-stale ids) ----
 
-    function test_pruneStale_removesBurnedId() public {
+    function test_remove_removesBurnedId() public {
         nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
         adapter.submit(holder, 1);
         nft.burn(1); // claimed → ownerOf reverts
-        // The WRAPPER_ROLE holder (this test) prunes the now-stale id.
-        adapter.pruneStale(holder, 1);
+        // The WRAPPER_ROLE holder (this test) removes the now-stale id.
+        adapter.remove(holder, 1);
         assertEq(adapter.tokenIdsOf(holder).length, 0);
     }
 
-    function test_pruneStale_onlyWrapperRole() public {
-        nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
-        adapter.submit(holder, 1);
-        nft.burn(1);
-        vm.prank(other);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, other, keccak256("WRAPPER_ROLE")
-            )
-        );
-        adapter.pruneStale(holder, 1);
-    }
-
-    function test_pruneStale_removesTransferredAwayId() public {
+    function test_remove_removesTransferredAwayId() public {
         nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
         adapter.submit(holder, 1);
         nft.setRequest(1, other, 1 ether, 1 ether, true, 0, true, 1 ether); // transferred to other
-        adapter.pruneStale(holder, 1);
+        adapter.remove(holder, 1);
         assertEq(adapter.tokenIdsOf(holder).length, 0);
     }
 
-    /// @notice pruneStale must NOT delete a still-owned (live) position — it reverts NotTokenOwner instead.
-    function test_pruneStale_revertsOnLiveId() public {
+    /// @notice remove must NOT delete a still-owned (live) position — it reverts NotTokenOwner instead.
+    function test_remove_revertsOnLiveId() public {
         nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
         adapter.submit(holder, 1);
         vm.expectRevert(abi.encodeWithSelector(NotTokenOwner.selector, holder, uint256(1)));
-        adapter.pruneStale(holder, 1);
+        adapter.remove(holder, 1);
         assertEq(adapter.tokenIdsOf(holder).length, 1, "live id is preserved");
     }
 

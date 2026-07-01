@@ -62,6 +62,9 @@ contract MockNexusPool {
     }
 }
 
+/// @notice A deployed no-op contract to stand in for Nexus's TokenController (only needs code for requireContract).
+contract MockTokenController {}
+
 /// @title NexusMutualStakingPoolsWrapper unit tests
 contract NexusMutualStakingPoolsWrapperTest is BalanceAdapterTestBase {
     NexusMutualStakingPoolsAssistedBalanceAdapter public adapter;
@@ -69,6 +72,7 @@ contract NexusMutualStakingPoolsWrapperTest is BalanceAdapterTestBase {
     MockStakingNFT public nft;
     MockStakingViewer public viewer;
     MockNexusPool public pool;
+    MockTokenController public tokenController;
     Mock_ERC20 public nxm;
 
     address depositor = makeAddr("depositor");
@@ -83,12 +87,14 @@ contract NexusMutualStakingPoolsWrapperTest is BalanceAdapterTestBase {
         viewer = new MockStakingViewer();
         nxm = _createAndRegisterToken("NXM", 18);
         pool = new MockNexusPool(nft);
+        tokenController = new MockTokenController();
 
         // adapter: admin = this, wrapper granted after wrapper deploy (it needs the adapter address).
         adapter = new NexusMutualStakingPoolsAssistedBalanceAdapter(
             address(nft), address(viewer), address(nxm), address(balances), address(this), address(0)
         );
-        wrapper = new NexusMutualStakingPoolsWrapper(address(adapter), address(nxm), address(this));
+        wrapper =
+            new NexusMutualStakingPoolsWrapper(address(adapter), address(nxm), address(tokenController), address(this));
         adapter.grantRole(SUBMITTER_ROLE, address(wrapper));
         wrapper.grantRole(DEPOSITOR_ROLE, depositor);
 
@@ -102,27 +108,33 @@ contract NexusMutualStakingPoolsWrapperTest is BalanceAdapterTestBase {
 
     function test_constructor_revertsOnZeroAdapter() public {
         vm.expectRevert(InvalidArguments.selector);
-        new NexusMutualStakingPoolsWrapper(address(0), address(nxm), address(this));
+        new NexusMutualStakingPoolsWrapper(address(0), address(nxm), address(tokenController), address(this));
     }
 
     function test_constructor_revertsOnZeroNxm() public {
         vm.expectRevert(InvalidArguments.selector);
-        new NexusMutualStakingPoolsWrapper(address(adapter), address(0), address(this));
+        new NexusMutualStakingPoolsWrapper(address(adapter), address(0), address(tokenController), address(this));
+    }
+
+    function test_constructor_revertsOnZeroTokenController() public {
+        vm.expectRevert(InvalidArguments.selector);
+        new NexusMutualStakingPoolsWrapper(address(adapter), address(nxm), address(0), address(this));
     }
 
     function test_constructor_revertsOnZeroAdmin() public {
         vm.expectRevert(InvalidArguments.selector);
-        new NexusMutualStakingPoolsWrapper(address(adapter), address(nxm), address(0));
+        new NexusMutualStakingPoolsWrapper(address(adapter), address(nxm), address(tokenController), address(0));
     }
 
-    function test_constructor_revertsWhenAdapterNotContract() public {
-        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "adapter"));
-        new NexusMutualStakingPoolsWrapper(makeAddr("eoa"), address(nxm), address(this));
+    function test_constructor_revertsWhenTokenControllerNotContract() public {
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "TokenController"));
+        new NexusMutualStakingPoolsWrapper(address(adapter), address(nxm), makeAddr("eoa"), address(this));
     }
 
     function test_immutables() public view {
         assertEq(wrapper.ADAPTER(), address(adapter));
         assertEq(wrapper.NXM(), address(nxm));
+        assertEq(wrapper.TOKEN_CONTROLLER(), address(tokenController));
         assertTrue(wrapper.hasRole(wrapper.DEFAULT_ADMIN_ROLE(), address(this)));
     }
 
@@ -142,6 +154,8 @@ contract NexusMutualStakingPoolsWrapperTest is BalanceAdapterTestBase {
         // NXM was pulled from the depositor into the wrapper (the mock pool does not pull further).
         assertEq(nxm.balanceOf(depositor), depositorBefore - 100);
         assertEq(nxm.balanceOf(address(wrapper)), 100);
+        // The wrapper approved the TokenController (NXM operator) the exact amount so operatorTransfer can pull it.
+        assertEq(nxm.allowance(address(wrapper), address(tokenController)), 100);
         // The id is now tracked for the caller.
         uint256[] memory tracked = adapter.tokenIdsOf(depositor);
         assertEq(tracked.length, 1);

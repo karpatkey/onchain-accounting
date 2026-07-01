@@ -17,12 +17,15 @@ import "src/errors.sol";
 ///         caller; `withdraw` forwards to the pool and pops the `tokenId`. The adapter grants this contract
 ///         `SUBMITTER_ROLE`, so any address the admin grants `DEPOSITOR_ROLE` gets its Nexus positions tracked
 ///         automatically as it deposits/withdraws through the wrapper.
-/// @dev **NXM is pulled from the caller.** `depositTo` `transferFrom`s the exact `amount` of NXM from the DEPOSITOR
-///      into this wrapper; Nexus then pulls it from the wrapper (`msg.sender`) inside `pool.depositTo` via
-///      `TokenController.depositStakedNXM` → `NXMToken.operatorTransfer(wrapper, amount)`. That is an **operator**
-///      transfer (the TokenController is NXM's operator), so it needs **no ERC20 allowance** — the wrapper only has to
-///      *hold* the `amount` at call time. The DEPOSITOR must approve this wrapper to spend its NXM beforehand, and the
-///      wrapper is otherwise custody-free (it holds no NXM between calls — the deposit consumes exactly what it pulled).
+/// @dev **NXM is pulled from the caller, then re-approved to the TokenController.** `depositTo` `transferFrom`s the
+///      exact `amount` of NXM from the DEPOSITOR into this wrapper, then approves the `TOKEN_CONTROLLER` for that
+///      `amount`. Nexus pulls it from the wrapper inside `pool.depositTo` via
+///      `TokenController.depositStakedNXM` → `NXMToken.operatorTransfer(wrapper, amount)`. Although `operatorTransfer`
+///      is operator-privileged, the **deployed** NXM token (Solidity 0.5.7) implements it via the shared
+///      `_transferFrom`, which **decrements `_allowed[wrapper][operator]`** — so the wrapper must hold an NXM allowance
+///      to the operator (the TokenController), or the transfer underflows and reverts. The wrapper is otherwise
+///      custody-free (it holds no NXM between calls — the deposit consumes exactly what it pulled). The DEPOSITOR must
+///      approve this wrapper to spend its NXM beforehand.
 ///
 ///      **Prerequisite: the wrapper must be a whitelisted Nexus member.** NXM's `transferFrom` gates on the
 ///      *recipient* (`canTransfer(to)` → `require(whiteListed[to])`), so the `transferFrom(DEPOSITOR → wrapper)` only
@@ -53,18 +56,25 @@ contract NexusMutualStakingPoolsWrapper is AccessControl {
     /// @notice NXM token (pulled from this wrapper by Nexus on deposit, via the TokenController's operator transfer).
     address public immutable NXM;
 
-    /// @param adapter_ The wrapper-fed {NexusMutualStakingPoolsAssistedBalanceAdapter}. Must be a contract.
-    /// @param nxm_     NXM token. Must be a contract.
-    /// @param admin_   Holder of `DEFAULT_ADMIN_ROLE` (administers `DEPOSITOR_ROLE`). Required.
-    constructor(address adapter_, address nxm_, address admin_) {
-        if (adapter_ == address(0) || nxm_ == address(0) || admin_ == address(0)) {
+    /// @notice Nexus TokenController — the NXM `operator` that pulls staked NXM in `depositTo`. The wrapper approves
+    ///         it the exact deposit `amount` each call (the deployed NXM's `operatorTransfer` consumes this allowance).
+    address public immutable TOKEN_CONTROLLER;
+
+    /// @param adapter_         The wrapper-fed {NexusMutualStakingPoolsAssistedBalanceAdapter}. Must be a contract.
+    /// @param nxm_             NXM token. Must be a contract.
+    /// @param tokenController_ Nexus TokenController (the NXM operator). Must be a contract.
+    /// @param admin_           Holder of `DEFAULT_ADMIN_ROLE` (administers `DEPOSITOR_ROLE`). Required.
+    constructor(address adapter_, address nxm_, address tokenController_, address admin_) {
+        if (adapter_ == address(0) || nxm_ == address(0) || tokenController_ == address(0) || admin_ == address(0)) {
             revert InvalidArguments();
         }
         AddressCheckLib.requireContract(adapter_, "adapter");
         AddressCheckLib.requireContract(nxm_, "NXM");
+        AddressCheckLib.requireContract(tokenController_, "TokenController");
 
         ADAPTER = adapter_;
         NXM = nxm_;
+        TOKEN_CONTROLLER = tokenController_;
         _grantRole(DEFAULT_ADMIN_ROLE, admin_);
     }
 
@@ -81,10 +91,12 @@ contract NexusMutualStakingPoolsWrapper is AccessControl {
         onlyRole(DEPOSITOR_ROLE)
         returns (uint256 tokenId)
     {
-        // Pull the NXM from the DEPOSITOR into this wrapper. Nexus then pulls it from the wrapper inside depositTo via
-        // TokenController.operatorTransfer (operator privilege — no ERC20 allowance needed). Requires this wrapper to
-        // be a whitelisted Nexus member (NXM transferFrom gates on the recipient) — see the contract NatSpec.
+        // Pull the NXM from the DEPOSITOR into this wrapper, then approve the TokenController (NXM operator) for the
+        // exact amount: the deployed NXM's operatorTransfer runs through _transferFrom, which decrements the operator's
+        // allowance, so a zero allowance would underflow-revert. Requires this wrapper to be a whitelisted Nexus member
+        // (NXM transferFrom gates on the recipient) — see the contract NatSpec.
         IERC20(NXM).safeTransferFrom(msg.sender, address(this), amount);
+        IERC20(NXM).forceApprove(TOKEN_CONTROLLER, amount);
         // destination = msg.sender: the NFT is always owned by the tracked account, so the adapter's live ownership
         // re-verification always passes for it.
         tokenId = INexusStakingPool(poolAddress).depositTo(amount, trancheId, requestTokenId, msg.sender);

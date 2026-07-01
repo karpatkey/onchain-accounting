@@ -78,7 +78,7 @@ contract NexusMutualStakingPoolsWrapperTest is BalanceAdapterTestBase {
     address depositor = makeAddr("depositor");
     address other = makeAddr("other");
 
-    bytes32 constant WRAPPER_ROLE = keccak256("WRAPPER_ROLE");
+    bytes32 constant SUBMITTER_ROLE = keccak256("SUBMITTER_ROLE");
     bytes32 constant DEPOSITOR_ROLE = keccak256("DEPOSITOR_ROLE");
 
     function setUp() public override {
@@ -96,7 +96,7 @@ contract NexusMutualStakingPoolsWrapperTest is BalanceAdapterTestBase {
         wrapper = new NexusMutualStakingPoolsWrapper(
             address(adapter), address(nxm), address(tokenController), address(this)
         );
-        adapter.grantRole(WRAPPER_ROLE, address(wrapper));
+        adapter.grantRole(SUBMITTER_ROLE, address(wrapper));
         wrapper.grantRole(DEPOSITOR_ROLE, depositor);
 
         // NXM is pulled from the DEPOSITOR: fund the depositor and approve the wrapper to spend it.

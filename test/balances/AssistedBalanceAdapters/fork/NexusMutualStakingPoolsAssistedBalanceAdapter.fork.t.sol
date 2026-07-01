@@ -11,7 +11,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title NexusMutualStakingPoolsAssistedBalanceAdapterForkTest
 /// @notice Fork test against Nexus Mutual's real StakingNFT + StakingViewer on mainnet.
-/// @dev The adapter is wrapper-fed: a `WRAPPER_ROLE` holder feeds coordinates via incremental `submit(account, id)`,
+/// @dev The adapter is wrapper-fed: a `SUBMITTER_ROLE` holder feeds coordinates via incremental `submit(account, id)`,
 ///      valued live via `StakingViewer.getTokens` with ownership re-verified per read via `tokenInfo`. The Nexus
 ///      Mutual Safe (`0x8e53…cFE3`) holds 5 positions across
 ///      5 pools (tokenIds 180,184,185,186,187); the test submits them one by one and asserts the per-kind sums equal an

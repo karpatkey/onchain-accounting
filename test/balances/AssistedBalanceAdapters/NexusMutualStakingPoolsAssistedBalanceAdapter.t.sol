@@ -114,7 +114,7 @@ contract MockNexusStakingPool {
 }
 
 /// @title NexusMutualStakingPoolsAssistedBalanceAdapter unit tests (wrapper-fed)
-/// @notice The Nexus staking adapter is wrapper-fed: a `WRAPPER_ROLE` contract feeds coordinates via incremental
+/// @notice The Nexus staking adapter is wrapper-fed: a `SUBMITTER_ROLE` contract feeds coordinates via incremental
 ///         `submit`/`remove` (single id). Covers the feed surface, per-NFT valuation legs, labels, read-time
 ///         ownership discard, fault isolation, and interface support.
 contract NexusMutualStakingPoolsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
@@ -126,7 +126,7 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterTest is BalanceAdapterTest
     address holder = makeAddr("holder");
     address other = makeAddr("other");
 
-    bytes32 constant WRAPPER_ROLE = keccak256("WRAPPER_ROLE");
+    bytes32 constant SUBMITTER_ROLE = keccak256("SUBMITTER_ROLE");
 
     function setUp() public override {
         super.setUp();
@@ -177,16 +177,16 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterTest is BalanceAdapterTest
     }
 
     function test_roles_grantedToConstructorArgs() public view {
-        assertTrue(adapter.hasRole(WRAPPER_ROLE, address(this)));
+        assertTrue(adapter.hasRole(SUBMITTER_ROLE, address(this)));
         assertTrue(adapter.hasRole(adapter.DEFAULT_ADMIN_ROLE(), address(this)));
-        assertFalse(adapter.hasRole(WRAPPER_ROLE, other));
+        assertFalse(adapter.hasRole(SUBMITTER_ROLE, other));
     }
 
     function test_constructor_wrapperOptional() public {
         NexusMutualStakingPoolsAssistedBalanceAdapter a2 = new NexusMutualStakingPoolsAssistedBalanceAdapter(
             address(nft), address(viewer), address(nxm), address(balances), address(this), address(0)
         );
-        assertFalse(a2.hasRole(WRAPPER_ROLE, address(this)));
+        assertFalse(a2.hasRole(SUBMITTER_ROLE, address(this)));
         assertTrue(a2.hasRole(a2.DEFAULT_ADMIN_ROLE(), address(this)));
     }
 
@@ -321,7 +321,7 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterTest is BalanceAdapterTest
         nft.setToken(1, 1, holder);
         vm.prank(other);
         vm.expectRevert(
-            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, other, WRAPPER_ROLE)
+            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, other, SUBMITTER_ROLE)
         );
         adapter.submit(holder, 1);
     }
@@ -344,7 +344,7 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterTest is BalanceAdapterTest
         _seedOne(1, 1, 100, 0, 0);
         vm.prank(other);
         vm.expectRevert(
-            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, other, WRAPPER_ROLE)
+            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, other, SUBMITTER_ROLE)
         );
         adapter.remove(holder, 1);
     }

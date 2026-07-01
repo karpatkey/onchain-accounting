@@ -15,7 +15,7 @@ import "src/errors.sol";
 ///         {NexusMutualStakingPoolsAssistedBalanceAdapter} id-cache current **on-chain, atomically**. `depositTo` forwards to
 ///         the pool and, in the same transaction, pushes the returned StakingNFT `tokenId` into the adapter for the
 ///         caller; `withdraw` forwards to the pool and pops the `tokenId`. The adapter grants this contract
-///         `WRAPPER_ROLE`, so any address the admin grants `DEPOSITOR_ROLE` gets its Nexus positions tracked
+///         `SUBMITTER_ROLE`, so any address the admin grants `DEPOSITOR_ROLE` gets its Nexus positions tracked
 ///         automatically as it deposits/withdraws through the wrapper.
 /// @dev **NXM is pulled from the caller.** Nexus's `depositTo` pulls `amount` NXM from `msg.sender` (= this wrapper)
 ///      via `tokenController.depositStakedNXM`, so `depositTo` first `transferFrom`s the exact `amount` from the
@@ -40,7 +40,7 @@ contract NexusMutualStakingPoolsWrapper is AccessControl {
     /// @notice Role allowed to deposit/withdraw through the wrapper (and thereby have its Nexus positions tracked).
     bytes32 public constant DEPOSITOR_ROLE = keccak256("DEPOSITOR_ROLE");
 
-    /// @notice The wrapper-fed balance adapter this wrapper feeds (holds `WRAPPER_ROLE` on it).
+    /// @notice The wrapper-fed balance adapter this wrapper feeds (holds `SUBMITTER_ROLE` on it).
     address public immutable ADAPTER;
 
     /// @notice NXM token (pulled from this wrapper by Nexus on deposit).
@@ -126,7 +126,7 @@ interface INexusStakingPool {
         returns (uint256 withdrawnStake, uint256 withdrawnRewards);
 }
 
-/// @notice Minimal interface for the wrapper-fed balance adapter's `WRAPPER_ROLE`-gated feed surface.
+/// @notice Minimal interface for the wrapper-fed balance adapter's `SUBMITTER_ROLE`-gated feed surface.
 interface INexusStakingPoolsBalanceAdapterFeed {
     function submit(address account, uint256 tokenId) external;
     function remove(address account, uint256 tokenId) external;

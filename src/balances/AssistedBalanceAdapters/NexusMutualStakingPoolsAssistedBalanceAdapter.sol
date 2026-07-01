@@ -22,7 +22,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         (active + expired stake) and `Rewards` legs — emitted **per StakingNFT position**. Each stake is an ERC-721
 ///         `StakingNFT`; the NFT is not per-owner-enumerable and the StakingViewer exposes no owner→tokenIds view, so a
 ///         pure-view adapter cannot discover the positions cheaply. Instead, a trusted **wrapper contract** (holder of
-///         `WRAPPER_ROLE` — the `NexusMutualStakingPoolsWrapper`) pushes/pops the account's `tokenId`s via
+///         `SUBMITTER_ROLE` — the `NexusMutualStakingPoolsWrapper`) pushes/pops the account's `tokenId`s via
 ///         {submit}/{remove} **atomically as it forwards deposits/withdrawals** to the Nexus staking pool, so the id
 ///         cache is kept current on-chain in the same transaction that changes the position. This adapter then values
 ///         each cached id entirely from live on-chain reads (`StakingViewer.getTokens`), re-verifying ownership on
@@ -35,7 +35,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @dev Assisted-family member (ADR 0015), wrapper-fed variant (ADR 0018): it is the documented immutability exception
 ///      and upholds the family invariant — cache coordinates only (never amounts), value every read live on-chain,
 ///      re-verify ownership per read — so the feeder can only **under-report, never over-report**. Access control is OZ
-///      `AccessControl`: `DEFAULT_ADMIN_ROLE` administers `WRAPPER_ROLE`, and `WRAPPER_ROLE` (held by the wrapper) gates
+///      `AccessControl`: `DEFAULT_ADMIN_ROLE` administers `SUBMITTER_ROLE`, and `SUBMITTER_ROLE` (held by the wrapper) gates
 ///      the {submit}/{remove} mutators. {submit} **reverts** `NotTokenOwner` for any id whose `tokenInfo` owner is not
 ///      the account (fail-loud writes); reads instead **discard** an id no longer owned (fail-open). The convenience
 ///      balance getters (`getAdapterBalances`/`getAdapterBalanceForAsset`) sum the **same** per-id fault-isolated legs
@@ -55,7 +55,7 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AccessControl, IBalanc
     //
 
     /// @notice Role (held by the wrapper contract) authorized to feed/unfeed cached tokenIds via {submit}/{remove}.
-    bytes32 public constant WRAPPER_ROLE = keccak256("WRAPPER_ROLE");
+    bytes32 public constant SUBMITTER_ROLE = keccak256("SUBMITTER_ROLE");
 
     bytes32 private constant PROTOCOL_BRAND = ProtocolIds.NEXUS_MUTUAL;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.NEXUS_MUTUAL;
@@ -94,8 +94,8 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AccessControl, IBalanc
     /// @param stakingViewer_   Nexus StakingViewer. Must be a contract.
     /// @param underlyingToken_ NXM token address. Must be non-zero.
     /// @param navCalculator_   NAVCalculator. Must be a contract.
-    /// @param admin_           Holder of `DEFAULT_ADMIN_ROLE` (administers `WRAPPER_ROLE`). Required.
-    /// @param wrapper_         Initial holder of `WRAPPER_ROLE` (the wrapper contract; optional — pass `address(0)` and
+    /// @param admin_           Holder of `DEFAULT_ADMIN_ROLE` (administers `SUBMITTER_ROLE`). Required.
+    /// @param wrapper_         Initial holder of `SUBMITTER_ROLE` (the wrapper contract; optional — pass `address(0)` and
     ///        grant after the wrapper is deployed, since the wrapper needs this adapter's address at construction).
     constructor(
         address stakingNft_,
@@ -121,11 +121,11 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AccessControl, IBalanc
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin_);
-        if (wrapper_ != address(0)) _grantRole(WRAPPER_ROLE, wrapper_);
+        if (wrapper_ != address(0)) _grantRole(SUBMITTER_ROLE, wrapper_);
     }
 
     //
-    // Writes (WRAPPER_ROLE) + admin rescue
+    // Writes (SUBMITTER_ROLE) + admin rescue
     //
 
     /// @notice Track `tokenId` for `account` (idempotent). Called by the wrapper right after it forwards a deposit that
@@ -133,7 +133,7 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AccessControl, IBalanc
     ///         `account`. No per-account cap: the wrapper only ever adds ids the caller owns via a real Nexus deposit,
     ///         so the set is bounded by the account's own deposits; a pathological account's large read is self-
     ///         inflicted and fail-opens (per-adapter) in NAVCalculator, never affecting other accounts.
-    function submit(address account, uint256 tokenId) external onlyRole(WRAPPER_ROLE) {
+    function submit(address account, uint256 tokenId) external onlyRole(SUBMITTER_ROLE) {
         if (account == address(0)) revert InvalidArguments();
         EnumerableSet.UintSet storage set = _tokenIds[account];
         if (set.contains(tokenId)) return; // idempotent — nothing to validate or emit
@@ -146,7 +146,7 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AccessControl, IBalanc
 
     /// @notice Stop tracking `tokenId` for `account` (idempotent — a no-op if not cached). Called by the wrapper right
     ///         after it forwards a withdrawal for the position.
-    function remove(address account, uint256 tokenId) external onlyRole(WRAPPER_ROLE) {
+    function remove(address account, uint256 tokenId) external onlyRole(SUBMITTER_ROLE) {
         if (_tokenIds[account].remove(tokenId)) emit TokenIdCleared(account, tokenId);
     }
 

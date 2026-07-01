@@ -136,15 +136,15 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapter is AccessControl, IBalance
         _addTokenId(account, tokenId);
     }
 
-    /// @notice Stop tracking `tokenId` for `account`, **only if** it is no longer owned by `account` (burned on claim,
-    ///         transferred away, or non-existent). `WRAPPER_ROLE`-gated (the wrapper is the sole cache mutator); it can
-    ///         only ever GC a provably-dead entry, never drop a live position. The wrapper reaches this from a
-    ///         delegatecalled `claimWithdraw` via a regular self-call so the caller here is the wrapper (the role
-    ///         holder), not the depositor Safe.
-    /// @dev **Reverts** `NotTokenOwner` if `tokenId` is still owned by `account` (nothing to remove).
+    /// @notice Stop tracking `tokenId` for `account`. Verifies the id currently **belongs to** `account` (the same
+    ///         ownership check as {submit}); `WRAPPER_ROLE`-gated (the wrapper is the sole cache mutator). The wrapper
+    ///         calls this from `claimWithdraw` **before** the claim burns the NFT (while the Safe still owns it), via a
+    ///         regular self-call so the caller here is the wrapper (the role holder), not the depositor Safe.
+    /// @dev **Reverts** the custom error `NotTokenOwner` if `account` is not the current owner of `tokenId` (wrong
+    ///      account, burned, or non-existent).
     function remove(address account, uint256 tokenId) external onlyRole(WRAPPER_ROLE) {
         (address owner, bool ok) = _ownerOf(tokenId);
-        if (ok && owner == account) revert NotTokenOwner(account, tokenId);
+        if (!ok || owner != account) revert NotTokenOwner(account, tokenId);
         _removeTokenId(account, tokenId);
     }
 

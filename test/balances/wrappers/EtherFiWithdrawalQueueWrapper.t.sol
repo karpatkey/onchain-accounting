@@ -204,17 +204,15 @@ contract EtherFiWithdrawalQueueWrapperTest is Test {
         wrapper.claimWithdraw(id);
     }
 
-    /// @notice remove forwards to the adapter AS the wrapper (which holds WRAPPER_ROLE); a caller can only GC its
-    ///         own stale ids. Standalone GC path (also used by claimWithdraw via the SELF self-call).
+    /// @notice remove forwards to the adapter AS the wrapper (which holds WRAPPER_ROLE), keyed to msg.sender; the
+    ///         adapter requires the id still belongs to the caller. Standalone untrack path (also used by
+    ///         claimWithdraw via the SELF self-call, before the burn).
     function test_remove_forwardsAsWrapper() public {
-        uint256 id = safe.doRequestDelegate(address(wrapper), 5 ether);
+        uint256 id = safe.doRequestDelegate(address(wrapper), 5 ether); // Safe owns the request
         assertEq(adapter.tokenIdsOf(address(safe)).length, 1);
-        // Directly claim on the NFT so the id becomes stale (burned), then prune via the wrapper as the Safe.
         vm.prank(address(safe));
-        nft.claimWithdraw(id); // burns the NFT (Safe is owner)
-        vm.prank(address(safe));
-        wrapper.remove(id);
-        assertEq(adapter.tokenIdsOf(address(safe)).length, 0, "stale id pruned via the wrapper");
+        wrapper.remove(id); // owned → untracks
+        assertEq(adapter.tokenIdsOf(address(safe)).length, 0, "owned id untracked via the wrapper");
     }
 
     /// @notice submit forwards to the adapter AS the wrapper, keyed to msg.sender — a caller registers only its own

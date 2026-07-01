@@ -234,32 +234,34 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterTest is BalanceAdapterTestB
         assertEq(adapter.tokenIdsOf(holder).length, 0);
     }
 
-    // ---- remove (WRAPPER_ROLE-gated GC of provably-stale ids) ----
+    // ---- remove (WRAPPER_ROLE-gated; requires the id to belong to the account) ----
 
-    function test_remove_removesBurnedId() public {
+    /// @notice remove verifies the id belongs to the account (like submit) and untracks it.
+    function test_remove_removesOwnedId() public {
         nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
         adapter.submit(holder, 1);
-        nft.burn(1); // claimed → ownerOf reverts
-        // The WRAPPER_ROLE holder (this test) removes the now-stale id.
         adapter.remove(holder, 1);
         assertEq(adapter.tokenIdsOf(holder).length, 0);
     }
 
-    function test_remove_removesTransferredAwayId() public {
+    /// @notice remove reverts NotTokenOwner if the id is no longer owned by the account (burned).
+    function test_remove_revertsOnBurnedId() public {
+        nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
+        adapter.submit(holder, 1);
+        nft.burn(1); // ownerOf now reverts
+        vm.expectRevert(abi.encodeWithSelector(NotTokenOwner.selector, holder, uint256(1)));
+        adapter.remove(holder, 1);
+        assertEq(adapter.tokenIdsOf(holder).length, 1, "cache unchanged after the reverted remove");
+    }
+
+    /// @notice remove reverts NotTokenOwner if the id has been transferred to another account.
+    function test_remove_revertsOnTransferredAwayId() public {
         nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
         adapter.submit(holder, 1);
         nft.setRequest(1, other, 1 ether, 1 ether, true, 0, true, 1 ether); // transferred to other
-        adapter.remove(holder, 1);
-        assertEq(adapter.tokenIdsOf(holder).length, 0);
-    }
-
-    /// @notice remove must NOT delete a still-owned (live) position — it reverts NotTokenOwner instead.
-    function test_remove_revertsOnLiveId() public {
-        nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
-        adapter.submit(holder, 1);
         vm.expectRevert(abi.encodeWithSelector(NotTokenOwner.selector, holder, uint256(1)));
         adapter.remove(holder, 1);
-        assertEq(adapter.tokenIdsOf(holder).length, 1, "live id is preserved");
+        assertEq(adapter.tokenIdsOf(holder).length, 1, "cache unchanged after the reverted remove");
     }
 
     // ---- Valuation ----

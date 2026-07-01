@@ -106,12 +106,13 @@ contract EtherFiWithdrawalQueueWrapper {
 
     /// @notice Claim withdrawal request `tokenId` from ether.fi and stop tracking it. **Must be DELEGATECALLed by the
     ///         owning Safe** (see contract NatSpec): ether.fi's claim hard-requires `ownerOf(tokenId) == msg.sender`.
-    ///         Runs as the Safe (== owner), ETH flows to the Safe, and the now-burned id is removed via the `SELF`
-    ///         self-call.
+    ///         Runs as the Safe (== owner). The adapter's `remove` requires the id still belongs to the Safe, so it is
+    ///         untracked (via the `SELF` self-call) **before** the claim burns the NFT; the claim then sends the ETH to
+    ///         the Safe.
     /// @param tokenId The WithdrawRequestNFT id to claim (owned by the delegatecalling Safe).
     function claimWithdraw(uint256 tokenId) external onlyDelegateCall {
-        IWithdrawRequestNFTClaim(WITHDRAW_REQUEST_NFT).claimWithdraw(tokenId);
         EtherFiWithdrawalQueueWrapper(SELF).remove(tokenId);
+        IWithdrawRequestNFTClaim(WITHDRAW_REQUEST_NFT).claimWithdraw(tokenId);
     }
 
     /// @notice Track `tokenId` for `msg.sender` by forwarding to the adapter's `WRAPPER_ROLE`-gated `submit` (this
@@ -123,11 +124,10 @@ contract EtherFiWithdrawalQueueWrapper {
         IEtherFiWithdrawalQueueAssistedBalanceAdapter(ADAPTER).submit(msg.sender, tokenId);
     }
 
-    /// @notice Prune `tokenId` from `msg.sender`'s adapter cache by forwarding to the adapter's `WRAPPER_ROLE`-gated
-    ///         `remove` (this wrapper is the role holder). The adapter removes the id **only if** it is no longer
-    ///         owned by `msg.sender` (e.g. burned on claim), so this can never delete a live position — safe to leave
-    ///         open. Reached via the `SELF` self-call from the delegatecalled {claimWithdraw}, and independently
-    ///         callable to GC a stale id.
+    /// @notice Stop tracking `tokenId` for `msg.sender` by forwarding to the adapter's `WRAPPER_ROLE`-gated `remove`
+    ///         (this wrapper is the role holder). The adapter requires `msg.sender` currently owns `tokenId` (reverts
+    ///         `NotTokenOwner` otherwise). Reached via the `SELF` self-call from the delegatecalled {claimWithdraw}
+    ///         (before the burn), and independently callable to untrack an owned id.
     /// @param tokenId The WithdrawRequestNFT id to stop tracking for `msg.sender`.
     function remove(uint256 tokenId) external {
         IEtherFiWithdrawalQueueAssistedBalanceAdapter(ADAPTER).remove(msg.sender, tokenId);

@@ -4,8 +4,8 @@ pragma solidity ^0.8.0;
 import {NotAContract} from "src/errors.sol";
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.sol";
 import {
-    StaderWithdrawalQueueBalanceAdapter
-} from "src/balances/BalanceAdapters/StaderWithdrawalQueueBalanceAdapter.sol";
+    StaderWithdrawalQueueAssistedBalanceAdapter
+} from "src/balances/AssistedBalanceAdapters/StaderWithdrawalQueueAssistedBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
@@ -37,15 +37,15 @@ contract MockUserWithdrawalManager {
     }
 }
 
-/// @title StaderWithdrawalQueueBalanceAdapter unit tests (self-fed, id-cached)
-contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
-    StaderWithdrawalQueueBalanceAdapter public adapter;
+/// @title StaderWithdrawalQueueAssistedBalanceAdapter unit tests (self-fed, id-cached)
+contract StaderWithdrawalQueueAssistedBalanceAdapterTest is BalanceAdapterTestBase {
+    StaderWithdrawalQueueAssistedBalanceAdapter public adapter;
     MockUserWithdrawalManager public manager;
 
     function setUp() public override {
         super.setUp();
         manager = new MockUserWithdrawalManager();
-        adapter = new StaderWithdrawalQueueBalanceAdapter(address(manager), address(weth), address(balances));
+        adapter = new StaderWithdrawalQueueAssistedBalanceAdapter(address(manager), address(weth), address(balances));
     }
 
     // ---- helpers ----
@@ -67,24 +67,24 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_constructor_revertsOnZeroManager() public {
         vm.expectRevert(InvalidArguments.selector);
-        new StaderWithdrawalQueueBalanceAdapter(address(0), address(weth), address(balances));
+        new StaderWithdrawalQueueAssistedBalanceAdapter(address(0), address(weth), address(balances));
     }
 
     function test_constructor_revertsOnZeroUnderlying() public {
         vm.expectRevert(InvalidArguments.selector);
-        new StaderWithdrawalQueueBalanceAdapter(address(manager), address(0), address(balances));
+        new StaderWithdrawalQueueAssistedBalanceAdapter(address(manager), address(0), address(balances));
     }
 
     function test_constructor_revertsWhenManagerNotContract() public {
         address eoa = makeAddr("eoa");
         vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "UserWithdrawalManager"));
-        new StaderWithdrawalQueueBalanceAdapter(eoa, address(weth), address(balances));
+        new StaderWithdrawalQueueAssistedBalanceAdapter(eoa, address(weth), address(balances));
     }
 
     function test_constructor_revertsWhenNAVNotContract() public {
         address eoa = makeAddr("eoa");
         vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "NAVCalculator"));
-        new StaderWithdrawalQueueBalanceAdapter(address(manager), address(weth), eoa);
+        new StaderWithdrawalQueueAssistedBalanceAdapter(address(manager), address(weth), eoa);
     }
 
     // ---- Interface ----
@@ -257,8 +257,8 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_getAdapterPositions_emptyWhenAssetUnregistered() public {
         address unregisteredAsset = makeAddr("unregisteredAsset");
-        StaderWithdrawalQueueBalanceAdapter freshAdapter =
-            new StaderWithdrawalQueueBalanceAdapter(address(manager), unregisteredAsset, address(balances));
+        StaderWithdrawalQueueAssistedBalanceAdapter freshAdapter =
+            new StaderWithdrawalQueueAssistedBalanceAdapter(address(manager), unregisteredAsset, address(balances));
         manager.setRequest(
             1,
             MockUserWithdrawalManager.Info({

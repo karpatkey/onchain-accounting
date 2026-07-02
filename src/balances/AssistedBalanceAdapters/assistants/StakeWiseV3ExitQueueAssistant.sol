@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
-import {BalanceAdapterWrapper} from "src/balances/AssistedBalanceAdapters/wrappers/BalanceAdapterWrapper.sol";
+import {BalanceAdapterAssistant} from "src/balances/AssistedBalanceAdapters/assistants/BalanceAdapterAssistant.sol";
 
-/// @title StakeWise V3 Exit-Queue Wrapper
+/// @title StakeWise V3 Exit-Queue Assistant
 /// @author KPK
 /// @notice Delegatecall-only action a depositor Safe delegatecalls to enter / exit the StakeWise V3 exit queue and, in
 ///         the same transaction, register / deregister the resulting `positionTicket` on
 ///         {StakeWiseV3ExitQueueAssistedBalanceAdapter} so the queued value stays visible to NAV. StakeWise keys
 ///         `claimExitedAssets` on `msg.sender` and vault shares are non-transferable, so the Safe must be both the
-///         `receiver` and the claimer — exactly what delegatecall gives: the wrapper's code runs in the Safe's context,
+///         `receiver` and the claimer — exactly what delegatecall gives: the assistant's code runs in the Safe's context,
 ///         so `address(this)` is the Safe, the vault sees `msg.sender = Safe`, and the exit position is owned by (and
 ///         claimed to) the Safe. No custody, no asset-forwarding.
-/// @dev Extends {BalanceAdapterWrapper} for the `SELF` / {onlyDelegateCall} guard and immutable `ADAPTER`. No token
+/// @dev Extends {BalanceAdapterAssistant} for the `SELF` / {onlyDelegateCall} guard and immutable `ADAPTER`. No token
 ///      approval is needed (shares live in the vault). The adapter is permissionless and self-scopes by `msg.sender`,
-///      so the wrapper's call (carrying `msg.sender = the Safe`) tracks exactly the Safe's own positions. See
-///      [ADR 0018](../../../../docs/decisions/0018-wrapper-fed-assisted-balance-adapters.md).
-contract StakeWiseV3ExitQueueWrapper is BalanceAdapterWrapper {
+///      so the assistant's call (carrying `msg.sender = the Safe`) tracks exactly the Safe's own positions. See
+///      [ADR 0018](../../../../docs/decisions/0018-assistant-fed-assisted-balance-adapters.md).
+contract StakeWiseV3ExitQueueAssistant is BalanceAdapterAssistant {
     /// @notice Emitted (in the Safe's context) when the Safe enters the exit queue and the ticket is registered.
     event ExitQueueEntered(address indexed account, address indexed vault, uint256 positionTicket, uint256 timestamp);
     /// @notice Emitted (in the Safe's context) when the Safe claims and the ticket is deregistered.
@@ -25,7 +25,7 @@ contract StakeWiseV3ExitQueueWrapper is BalanceAdapterWrapper {
     );
 
     /// @param adapter_ The {StakeWiseV3ExitQueueAssistedBalanceAdapter} to feed. Must be a contract.
-    constructor(address adapter_) BalanceAdapterWrapper(adapter_) {}
+    constructor(address adapter_) BalanceAdapterAssistant(adapter_) {}
 
     /// @notice Enter the StakeWise V3 exit queue for `vault` and register the resulting ticket on the adapter. Mirrors
     ///         the vault's `enterExitQueue(shares, receiver)`, with `vault` prepended and `receiver` forced to the
@@ -65,7 +65,7 @@ interface IStakeWiseVaultEnterExit {
     function claimExitedAssets(uint256 positionTicket, uint256 timestamp, uint256 exitQueueIndex) external;
 }
 
-/// @notice Minimal interface for the wrapper-fed balance adapter's tracking mutators (self-scoped to `msg.sender`).
+/// @notice Minimal interface for the assistant-fed balance adapter's tracking mutators (self-scoped to `msg.sender`).
 interface IStakeWiseV3ExitQueueAssistedBalanceAdapter {
     function submit(address vault, uint256 positionTicket, uint256 timestamp) external;
     function remove(address vault, uint256 positionTicket, uint256 timestamp) external;

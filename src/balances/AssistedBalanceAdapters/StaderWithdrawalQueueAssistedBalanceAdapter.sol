@@ -13,22 +13,22 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
-/// @title Stader Withdrawal Queue Balance Adapter (id-cached, wrapper-fed)
+/// @title Stader Withdrawal Queue Balance Adapter (id-cached, assistant-fed)
 /// @author KPK
 /// @notice Reports the in-flight ETH owed to an account from open requests in Stader's `UserWithdrawalManager`.
 ///         Requesting an unstake burns ETHx and records a sequential `requestId` owned by the account; until claimed,
 ///         the value lives as ETH owed by the manager and is invisible to a wallet/receipt-token scan. Rather than
 ///         enumerate `requestIdsByUserAddress` on-chain (griefable — anyone can `requestWithdraw(amount, _owner=victim)`
 ///         to bloat a victim's array), each account tracks its **own** request ids via {submit}, keyed on `msg.sender`.
-///         The intended caller is a Safe that **delegatecalls** the `StaderWithdrawalQueueWrapper`.
-/// @dev Member of the permissionless wrapper-fed assisted family ([ADR 0018](../../../docs/decisions/0018-wrapper-fed-assisted-balance-adapters.md)),
+///         The intended caller is a Safe that **delegatecalls** the `StaderWithdrawalQueueAssistant`.
+/// @dev Member of the permissionless assistant-fed assisted family ([ADR 0018](../../../docs/decisions/0018-assistant-fed-assisted-balance-adapters.md)),
 ///      extending the single {AssistedCoordCache}: the coordinate is `abi.encode(requestId)`. The cache stores **only
 ///      request ids, never amounts**; every read re-verifies ownership (`userWithdrawRequests(id).owner == account`) and
 ///      re-values live → a stale or wrong id can only under-report NAV. Denominated in `UNDERLYING_TOKEN` (WETH); the
 ///      claim pays native ETH whose amount is fixed at finalization. Emits ONE `Supplied` leg per owned cached request
 ///      (finalized → `isLocked=false`, pending → `true`), all sharing `positionId = abi.encode(USER_WITHDRAWAL_MANAGER)`,
 ///      the request id in `positionInstanceId`.
-contract StaderWithdrawalQueueBalanceAdapter is AssistedCoordCache, IPositionDescribable {
+contract StaderWithdrawalQueueAssistedBalanceAdapter is AssistedCoordCache, IPositionDescribable {
     /// @notice Hard cap on cached request ids per account (read-loop gas bound). A real account never approaches it.
     uint256 public constant MAX_REQUESTS = 256;
 

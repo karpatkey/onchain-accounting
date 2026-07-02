@@ -936,7 +936,7 @@ schemas are in the next section and in the per-adapter table above.)
 | `cap` | `CAP` | `CapBalanceAdapter` — Cap cUSD (held) and stcUSD (staked) |
 | `merkl` | `MERKL` | `MerklRewardsAssistedBalanceAdapter` — unclaimed (claimable) Merkl reward tokens |
 | `lido-withdrawal` | `LIDO_WITHDRAWAL` | `LidoWithdrawalQueueBalanceAdapter` — ETH owed from the Lido stETH withdrawal queue |
-| `stader-withdrawal` | `STADER_WITHDRAWAL` | `StaderWithdrawalQueueBalanceAdapter` — ETH owed from the Stader ETHx withdrawal queue |
+| `stader-withdrawal` | `STADER_WITHDRAWAL` | `StaderWithdrawalQueueAssistedBalanceAdapter` — ETH owed from the Stader ETHx withdrawal queue |
 | `kelp-withdrawal` | `KELP_WITHDRAWAL` | `KelpWithdrawalQueueBalanceAdapter` — assets owed from the Kelp rsETH exit queue |
 | `etherfi-withdrawal` | `ETHERFI_WITHDRAWAL` | `EtherFiWithdrawalQueueAssistedBalanceAdapter` — ETH owed from the ether.fi eETH withdrawal queue |
 | `stakewise-v3-exit` | `STAKEWISE_V3_EXIT` | `StakeWiseV3ExitQueueAssistedBalanceAdapter` — assets owed from the StakeWise V3 exit queue |
@@ -1475,7 +1475,7 @@ legs, and a worked example — for every balance adapter on `main`.
 | `EthenaCooldownBalanceAdapter` | `ethena-cooldown` | `"Ethena"` | `["Unstaking Cooldown"]` (const) | `abi.encode(address sUSDe)` | Supplied (`isLocked` while cooling) | `["Ethena","Unstaking Cooldown"]` |
 | `SparkLendBalanceAdapter` | `spark-lend` | `"Spark"` | `["Market","SparkLend"]` (const) | `abi.encode(address POOL)` | Collateral/Supplied / Borrowed | `["Spark","Market","SparkLend"]` |
 | `LidoWithdrawalQueueBalanceAdapter` | `lido-withdrawal` | `"Lido"` | `["Withdrawal Queue", "stETH"]` (const) | `abi.encode(address withdrawalQueue)` | Supplied — one leg **per request** (each `isLocked` = pending), shared positionId, request id in `positionInstanceId` | `["Lido","Withdrawal Queue","stETH"]` |
-| `StaderWithdrawalQueueBalanceAdapter` | `stader-withdrawal` | `"Stader"` | `["Withdrawal Queue", "ETHx"]` (const) | `abi.encode(address userWithdrawalManager)` | Supplied — one leg **per request** (each `isLocked` = pending), shared positionId, request id in `positionInstanceId` | `["Stader","Withdrawal Queue","ETHx"]` |
+| `StaderWithdrawalQueueAssistedBalanceAdapter` | `stader-withdrawal` | `"Stader"` | `["Withdrawal Queue", "ETHx"]` (const) | `abi.encode(address userWithdrawalManager)` | Supplied — one leg **per request** (each `isLocked` = pending), shared positionId, request id in `positionInstanceId` | `["Stader","Withdrawal Queue","ETHx"]` |
 | `KelpWithdrawalQueueBalanceAdapter` | `kelp-withdrawal` | `"Kelp DAO"` | `["Withdrawal Queue", "rsETH"]` (const) | `abi.encode(address withdrawalManager)` | Supplied — one leg **per request** per asset (each `isLocked` = pending), shared positionId, request id in `positionInstanceId` | `["Kelp DAO","Withdrawal Queue","rsETH"]` |
 
 #### Meta-adapters (`src/balances/MetaBalanceAdapters/`)

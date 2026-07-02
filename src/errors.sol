@@ -7,21 +7,14 @@ error InvalidArgumentsWithContext(string context);
 error NotAContract(string name);
 error NotAuthorized();
 error NotChainlinkOracle();
-/// @notice Thrown when a wrapper entrypoint that must be delegatecalled is called directly on the singleton
-///         (`address(this) == SELF`). Canonical delegatecall-guard error for the wrapper-fed family (`BalanceAdapterWrapper`).
+/// @notice Thrown when an assistant entrypoint that must be delegatecalled is called directly on the singleton
+///         (`address(this) == SELF`). Canonical delegatecall-guard error for the assistant-fed family (`BalanceAdapterAssistant`).
 error NotDelegateCall();
-/// @notice A wrapper entrypoint was told to track/act for an account other than the executing context
-///         (`address(this)`, i.e. the delegatecalling Safe). Canonical wrapper self-scope check (`_requireSelf`).
-error WrapperAccountMismatch(address expected, address provided);
+/// @notice An assistant entrypoint was told to track/act for an account other than the executing context
+///         (`address(this)`, i.e. the delegatecalling Safe). Canonical assistant self-scope check (`_requireSelf`).
+error AssistantAccountMismatch(address expected, address provided);
 
-// Legacy agent-fed assisted balance-adapter errors (ASSISTANT_ROLE family: Merkl, …). See {IAssistantFedBalanceAdapter}.
-error NotTokenOwner(address account, uint256 tokenId);
-error TokenIdCacheFull(address account, uint256 maxTokenIds);
-// Legacy exit-queue (ticket-keyed) errors — still used by adapters not yet migrated onto the {AssistedCoordCache} base.
-error PositionCacheFull(address account, uint256 maxPositions);
-error InvalidExitPosition(address account, address vault, uint256 positionTicket);
-
-// Permissionless wrapper-fed assisted balance-adapter family (ADR 0018) — shared coordinate-cache errors, used by the
+// Permissionless assistant-fed assisted balance-adapter family (ADR 0018) — shared coordinate-cache errors, used by the
 // single {AssistedCoordCache} base (every coordinate is an `abi.encode`d blob). The coordinate is identified by `id`
 // (a tokenId / requestId / positionTicket, from `_coordId`); the full tuple, where richer, rides in the cache's events.
 /// @notice `submit` was given a coordinate not currently owned by the caller (`msg.sender`).

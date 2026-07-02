@@ -6,8 +6,8 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
 import {
-    EtherFiWithdrawalQueueWrapper
-} from "src/balances/AssistedBalanceAdapters/wrappers/EtherFiWithdrawalQueueWrapper.sol";
+    EtherFiWithdrawalQueueAssistant
+} from "src/balances/AssistedBalanceAdapters/assistants/EtherFiWithdrawalQueueAssistant.sol";
 import {
     EtherFiWithdrawalQueueAssistedBalanceAdapter
 } from "src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueAssistedBalanceAdapter.sol";
@@ -111,8 +111,8 @@ contract MockSafe {
     receive() external payable {}
 }
 
-/// @title EtherFiWithdrawalQueueWrapper unit tests
-contract EtherFiWithdrawalQueueWrapperTest is Test {
+/// @title EtherFiWithdrawalQueueAssistant unit tests
+contract EtherFiWithdrawalQueueAssistantTest is Test {
     address constant NATIVE = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
     Mock_ERC20 eeth;
@@ -120,7 +120,7 @@ contract EtherFiWithdrawalQueueWrapperTest is Test {
     MockLiquidityPool lp;
     BalancesHarness balances;
     EtherFiWithdrawalQueueAssistedBalanceAdapter adapter;
-    EtherFiWithdrawalQueueWrapper wrapper;
+    EtherFiWithdrawalQueueAssistant wrapper;
     MockSafe safe;
 
     function setUp() public {
@@ -132,7 +132,7 @@ contract EtherFiWithdrawalQueueWrapperTest is Test {
 
         // Adapter first (wrapper unknown at construction) → deploy wrapper → grant WRAPPER_ROLE to the wrapper.
         adapter = new EtherFiWithdrawalQueueAssistedBalanceAdapter(address(nft), address(lp), NATIVE, address(balances));
-        wrapper = new EtherFiWithdrawalQueueWrapper(address(adapter), address(lp), address(nft), address(eeth));
+        wrapper = new EtherFiWithdrawalQueueAssistant(address(adapter), address(lp), address(nft), address(eeth));
 
         safe = new MockSafe();
 
@@ -146,42 +146,42 @@ contract EtherFiWithdrawalQueueWrapperTest is Test {
 
     function test_constructor_revertsOnZeroArg() public {
         vm.expectRevert(InvalidArguments.selector);
-        new EtherFiWithdrawalQueueWrapper(address(0), address(lp), address(nft), address(eeth));
+        new EtherFiWithdrawalQueueAssistant(address(0), address(lp), address(nft), address(eeth));
     }
 
     function test_constructor_revertsWhenAdapterNotContract() public {
         vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "adapter"));
-        new EtherFiWithdrawalQueueWrapper(makeAddr("eoa"), address(lp), address(nft), address(eeth));
+        new EtherFiWithdrawalQueueAssistant(makeAddr("eoa"), address(lp), address(nft), address(eeth));
     }
 
     function test_constructor_revertsOnZeroLp() public {
         vm.expectRevert(InvalidArguments.selector);
-        new EtherFiWithdrawalQueueWrapper(address(adapter), address(0), address(nft), address(eeth));
+        new EtherFiWithdrawalQueueAssistant(address(adapter), address(0), address(nft), address(eeth));
     }
 
     function test_constructor_revertsOnZeroNft() public {
         vm.expectRevert(InvalidArguments.selector);
-        new EtherFiWithdrawalQueueWrapper(address(adapter), address(lp), address(0), address(eeth));
+        new EtherFiWithdrawalQueueAssistant(address(adapter), address(lp), address(0), address(eeth));
     }
 
     function test_constructor_revertsOnZeroEeth() public {
         vm.expectRevert(InvalidArguments.selector);
-        new EtherFiWithdrawalQueueWrapper(address(adapter), address(lp), address(nft), address(0));
+        new EtherFiWithdrawalQueueAssistant(address(adapter), address(lp), address(nft), address(0));
     }
 
     function test_constructor_revertsWhenLpNotContract() public {
         vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "LiquidityPool"));
-        new EtherFiWithdrawalQueueWrapper(address(adapter), makeAddr("eoaLp"), address(nft), address(eeth));
+        new EtherFiWithdrawalQueueAssistant(address(adapter), makeAddr("eoaLp"), address(nft), address(eeth));
     }
 
     function test_constructor_revertsWhenNftNotContract() public {
         vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "WithdrawRequestNFT"));
-        new EtherFiWithdrawalQueueWrapper(address(adapter), address(lp), makeAddr("eoaNft"), address(eeth));
+        new EtherFiWithdrawalQueueAssistant(address(adapter), address(lp), makeAddr("eoaNft"), address(eeth));
     }
 
     function test_constructor_revertsWhenEethNotContract() public {
         vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "eETH"));
-        new EtherFiWithdrawalQueueWrapper(address(adapter), address(lp), address(nft), makeAddr("eoaEeth"));
+        new EtherFiWithdrawalQueueAssistant(address(adapter), address(lp), address(nft), makeAddr("eoaEeth"));
     }
 
     function test_SELF_isWrapperAddress() public view {

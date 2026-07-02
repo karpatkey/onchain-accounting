@@ -13,7 +13,7 @@ import "src/errors.sol";
 
 /// @title AssistedCoordCache
 /// @author KPK
-/// @notice The single cache base for the **permissionless, wrapper-fed** assisted balance-adapter family. A position
+/// @notice The single cache base for the **permissionless, assistant-fed** assisted balance-adapter family. A position
 ///         *coordinate* is an opaque `bytes` blob, so ONE cache serves every member regardless of coordinate shape:
 ///         a bare `uint256` NFT tokenId / withdrawal requestId (`abi.encode(id)`) or a richer tuple (StakeWise V3 exit
 ///         positions, `abi.encode(vault, positionTicket, timestamp)`). It holds the per-account coordinate-record cache
@@ -23,7 +23,7 @@ import "src/errors.sol";
 ///         {_removeCoord}, and implements {_valueCoord} (decode + value live), {_validateCoord} (fail-loud write-time
 ///         hygiene), {_removable}, {_coordId}, {_maxCoords}, {_maxLegsPerCoord}.
 /// @dev Permissionless & self-scoped: no roles; all mutators key on `msg.sender`, so a caller can only ever touch its
-///      OWN set. The canonical feeder is a {BalanceAdapterWrapper} the owner Safe delegatecalls (so `msg.sender` is the
+///      OWN set. The canonical feeder is a {BalanceAdapterAssistant} the owner Safe delegatecalls (so `msg.sender` is the
 ///      Safe). The family invariant holds — coordinates only, valued live, ownership re-verified per read → under-report
 ///      only. Uses a `bytes[]` array + `key → idxPlus1` map for dedup and O(1) swap-pop removal. Reads isolate each
 ///      coordinate behind a self-`staticcall` ({valueCoordSelf}), so a revert-prone valuation (e.g. Nexus's

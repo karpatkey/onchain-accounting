@@ -4,8 +4,8 @@ pragma solidity ^0.8.0;
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
 import {BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
 import {
-    StakeWiseV3ExitQueueWrapper
-} from "src/balances/AssistedBalanceAdapters/wrappers/StakeWiseV3ExitQueueWrapper.sol";
+    StakeWiseV3ExitQueueAssistant
+} from "src/balances/AssistedBalanceAdapters/assistants/StakeWiseV3ExitQueueAssistant.sol";
 import {
     StakeWiseV3ExitQueueAssistedBalanceAdapter,
     IStakeWiseExitVault
@@ -28,7 +28,7 @@ contract DelegateExecutor {
     receive() external payable {}
 }
 
-/// @title StakeWiseV3ExitQueueWrapperForkTest
+/// @title StakeWiseV3ExitQueueAssistantForkTest
 /// @notice Fork test of the wrapper's enter/claim paths against StakeWise's real Genesis vault on mainnet, using real
 ///         accounts with real funds. The wrapper is delegatecall-only, so each test etches a {DelegateExecutor} onto a
 ///         real holder and drives the wrapper through it — mirroring a Safe delegatecall (`address(this)` = the holder,
@@ -36,7 +36,7 @@ contract DelegateExecutor {
 /// @dev Candidates (block 25,440,928):
 ///        - Deposit: ENS DAO Safe `0x4F20…FE64` holds ~9,713 Genesis-vault shares → can enterExitQueue.
 ///        - Redeem:  `0x0447…cd98` has a checkpointed, past-delay, unclaimed exit position (~59 ETH) → can claim.
-contract StakeWiseV3ExitQueueWrapperForkTest is BalanceAdapterTestBase {
+contract StakeWiseV3ExitQueueAssistantForkTest is BalanceAdapterTestBase {
     address public constant VAULTS_REGISTRY = 0x3a0008a588772446f6e656133C2D5029CC4FC20E;
     address public constant GENESIS_VAULT = 0xAC0F906E433d58FA868F936E8A43230473652885;
     address public constant NATIVE_ETH = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
@@ -58,7 +58,7 @@ contract StakeWiseV3ExitQueueWrapperForkTest is BalanceAdapterTestBase {
     uint256 public constant CLAIM2_INDEX = 1467;
 
     StakeWiseV3ExitQueueAssistedBalanceAdapter public adapter;
-    StakeWiseV3ExitQueueWrapper public wrapper;
+    StakeWiseV3ExitQueueAssistant public wrapper;
 
     function setUp() public override {
         super.setUp();
@@ -68,7 +68,7 @@ contract StakeWiseV3ExitQueueWrapperForkTest is BalanceAdapterTestBase {
         adapter = new StakeWiseV3ExitQueueAssistedBalanceAdapter(
             VAULTS_REGISTRY, NATIVE_ETH, "osETH", address(balances), 1 days
         );
-        wrapper = new StakeWiseV3ExitQueueWrapper(address(adapter));
+        wrapper = new StakeWiseV3ExitQueueAssistant(address(adapter));
     }
 
     function _setupFork() internal override {

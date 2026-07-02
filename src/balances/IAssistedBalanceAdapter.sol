@@ -5,18 +5,18 @@ import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 
 /// @title IAssistedBalanceAdapter
 /// @author KPK
-/// @notice Marker interface for the **permissionless, wrapper-fed** assisted balance-adapter family — adapters whose
+/// @notice Marker interface for the **permissionless, assistant-fed** assisted balance-adapter family — adapters whose
 ///         positions cannot be derived from on-chain state alone (non-enumerable NFTs, withdrawal/exit-queue tickets)
 ///         and are instead fed their position *coordinates* on-chain by the position owner itself. The canonical
-///         feeder is a small wrapper contract ({IBalanceAdapterWrapper}) that a depositor Safe `delegatecall`s: in the
+///         feeder is a small assistant contract ({IBalanceAdapterAssistant}) that a depositor Safe `delegatecall`s: in the
 ///         same transaction it enters/exits a protocol, it pushes/pops the resulting coordinate onto the adapter, and
 ///         because it runs under `delegatecall` the adapter sees `msg.sender = the Safe = the position owner`.
 /// @dev **Trust model (family invariant).** Every member caches **only position coordinates, never amounts**; values
 ///      each read entirely from live on-chain reads; and re-verifies ownership on every read (discarding coordinates
 ///      no longer owned). A faulty or malicious feeder can therefore only **under-report, never over-report**.
 ///
-///      **Permissionless & self-scoped.** Unlike the legacy off-chain-agent family ({IAssistantFedBalanceAdapter},
-///      which gates submission behind `ASSISTANT_ROLE` because one agent feeds many accounts), this family needs no
+///      **Permissionless & self-scoped.** Unlike a role-gated off-chain-agent design (where one agent feeds many
+///      accounts and submission is gated behind an `ASSISTANT_ROLE`), this family needs no
 ///      roles and no AccessControl: the submit/remove mutators derive the account from `msg.sender`, so a caller can
 ///      only ever add/remove its OWN coordinates — nobody can touch another account's set. The interface deliberately
 ///      does NOT prescribe the `submit`/`remove` signatures, since the coordinate shape is per-protocol (a bare

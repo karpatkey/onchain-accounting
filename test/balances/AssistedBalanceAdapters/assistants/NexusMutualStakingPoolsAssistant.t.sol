@@ -12,9 +12,9 @@ import {
     NexusMutualStakingPoolsAssistedBalanceAdapter
 } from "src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsAssistedBalanceAdapter.sol";
 import {
-    NexusMutualStakingPoolsWrapper
-} from "src/balances/AssistedBalanceAdapters/wrappers/NexusMutualStakingPoolsWrapper.sol";
-import {WrapperDelegateCaller} from "test/balances/AssistedBalanceAdapters/wrappers/WrapperDelegateCaller.sol";
+    NexusMutualStakingPoolsAssistant
+} from "src/balances/AssistedBalanceAdapters/assistants/NexusMutualStakingPoolsAssistant.sol";
+import {AssistantDelegateCaller} from "test/balances/AssistedBalanceAdapters/assistants/AssistantDelegateCaller.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
@@ -69,11 +69,11 @@ contract MockNexusPool {
 /// @notice A deployed no-op contract to stand in for Nexus's TokenController (only needs code for requireContract).
 contract MockTokenController {}
 
-/// @title NexusMutualStakingPoolsWrapper unit tests (delegatecall-only module)
-contract NexusMutualStakingPoolsWrapperTest is BalanceAdapterTestBase {
+/// @title NexusMutualStakingPoolsAssistant unit tests (delegatecall-only module)
+contract NexusMutualStakingPoolsAssistantTest is BalanceAdapterTestBase {
     NexusMutualStakingPoolsAssistedBalanceAdapter public adapter;
-    NexusMutualStakingPoolsWrapper public wrapper;
-    WrapperDelegateCaller public account; // the delegatecalling staking account (holds NXM; feeds the adapter as itself)
+    NexusMutualStakingPoolsAssistant public wrapper;
+    AssistantDelegateCaller public account; // the delegatecalling staking account (holds NXM; feeds the adapter as itself)
     MockStakingNFT public nft;
     MockStakingViewer public viewer;
     MockNexusPool public pool;
@@ -91,11 +91,11 @@ contract NexusMutualStakingPoolsWrapperTest is BalanceAdapterTestBase {
         adapter = new NexusMutualStakingPoolsAssistedBalanceAdapter(
             address(nft), address(viewer), address(nxm), address(balances)
         );
-        wrapper = new NexusMutualStakingPoolsWrapper(address(adapter), address(nxm), address(tokenController));
+        wrapper = new NexusMutualStakingPoolsAssistant(address(adapter), address(nxm), address(tokenController));
 
         // The delegatecalling account holds the NXM and feeds the permissionless adapter as itself (address(this) in
         // the module); no role grant needed.
-        account = new WrapperDelegateCaller();
+        account = new AssistantDelegateCaller();
         deal(address(nxm), address(account), 1e24);
     }
 
@@ -103,22 +103,22 @@ contract NexusMutualStakingPoolsWrapperTest is BalanceAdapterTestBase {
 
     function test_constructor_revertsOnZeroAdapter() public {
         vm.expectRevert(InvalidArguments.selector);
-        new NexusMutualStakingPoolsWrapper(address(0), address(nxm), address(tokenController));
+        new NexusMutualStakingPoolsAssistant(address(0), address(nxm), address(tokenController));
     }
 
     function test_constructor_revertsOnZeroNxm() public {
         vm.expectRevert(InvalidArguments.selector);
-        new NexusMutualStakingPoolsWrapper(address(adapter), address(0), address(tokenController));
+        new NexusMutualStakingPoolsAssistant(address(adapter), address(0), address(tokenController));
     }
 
     function test_constructor_revertsOnZeroTokenController() public {
         vm.expectRevert(InvalidArguments.selector);
-        new NexusMutualStakingPoolsWrapper(address(adapter), address(nxm), address(0));
+        new NexusMutualStakingPoolsAssistant(address(adapter), address(nxm), address(0));
     }
 
     function test_constructor_revertsWhenTokenControllerNotContract() public {
         vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "TokenController"));
-        new NexusMutualStakingPoolsWrapper(address(adapter), address(nxm), makeAddr("eoa"));
+        new NexusMutualStakingPoolsAssistant(address(adapter), address(nxm), makeAddr("eoa"));
     }
 
     function test_immutables() public view {

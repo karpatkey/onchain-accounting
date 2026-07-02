@@ -5,8 +5,8 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
 import {BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
 import {
-    EtherFiWithdrawalQueueWrapper
-} from "src/balances/AssistedBalanceAdapters/wrappers/EtherFiWithdrawalQueueWrapper.sol";
+    EtherFiWithdrawalQueueAssistant
+} from "src/balances/AssistedBalanceAdapters/assistants/EtherFiWithdrawalQueueAssistant.sol";
 import {
     EtherFiWithdrawalQueueAssistedBalanceAdapter
 } from "src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueAssistedBalanceAdapter.sol";
@@ -65,7 +65,7 @@ contract ForkSafe {
     receive() external payable {}
 }
 
-/// @title EtherFiWithdrawalQueueWrapper end-to-end fork test (real ether.fi contracts + real funds)
+/// @title EtherFiWithdrawalQueueAssistant end-to-end fork test (real ether.fi contracts + real funds)
 /// @notice Exercises the full wrapper flow against mainnet ether.fi at a pinned block:
 ///         - **deposit**: a test Safe funded with **real eETH** (sourced from the weETH wrapper, a ~1.7M-eETH holder)
 ///           delegatecalls `requestWithdraw`, which calls the real LiquidityPool directly — a real `WithdrawRequestNFT`
@@ -75,7 +75,7 @@ contract ForkSafe {
 ///           in the Safe and the id is removed from the adapter cache.
 /// @dev The wrapper is delegatecall-only, so the depositor/claimant is a contract we control (`ForkSafe`), funded from
 ///      real on-chain holders — this is the delegatecall analogue of using a real EOA holder.
-contract EtherFiWithdrawalQueueWrapperForkTest is BalanceAdapterTestBase {
+contract EtherFiWithdrawalQueueAssistantForkTest is BalanceAdapterTestBase {
     address public constant WITHDRAW_REQUEST_NFT = 0x7d5706f6ef3F89B3951E23e557CDFBC3239D4E2c;
     address public constant LIQUIDITY_POOL = 0x308861A430be4cce5502d0A12724771Fc6DaF216;
     address public constant EETH = 0x35fA164735182de50811E8e2E824cFb9B6118ac2;
@@ -92,7 +92,7 @@ contract EtherFiWithdrawalQueueWrapperForkTest is BalanceAdapterTestBase {
     uint256 public constant FORK_BLOCK = 25_410_000;
 
     EtherFiWithdrawalQueueAssistedBalanceAdapter public adapter;
-    EtherFiWithdrawalQueueWrapper public wrapper;
+    EtherFiWithdrawalQueueAssistant public wrapper;
     ForkSafe public safe;
 
     function setUp() public override {
@@ -106,7 +106,7 @@ contract EtherFiWithdrawalQueueWrapperForkTest is BalanceAdapterTestBase {
         adapter = new EtherFiWithdrawalQueueAssistedBalanceAdapter(
             WITHDRAW_REQUEST_NFT, LIQUIDITY_POOL, NATIVE_ETH, address(balances)
         );
-        wrapper = new EtherFiWithdrawalQueueWrapper(address(adapter), LIQUIDITY_POOL, WITHDRAW_REQUEST_NFT, EETH);
+        wrapper = new EtherFiWithdrawalQueueAssistant(address(adapter), LIQUIDITY_POOL, WITHDRAW_REQUEST_NFT, EETH);
 
         safe = new ForkSafe();
     }

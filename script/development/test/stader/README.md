@@ -2,11 +2,11 @@
 
 ## 1. Adapter under test
 
-`src/balances/BalanceAdapters/StaderWithdrawalQueueBalanceAdapter.sol` — the immutable `StaderWithdrawalQueueBalanceAdapter`. Constructor: `(userWithdrawalManager, underlyingToken, navCalculator)` where `userWithdrawalManager = Stader UserWithdrawalManager` (`0x9F0491B32DBce587c50c4C43AB303b06478193A7`) and `underlyingToken = WETH` (`0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2`). Identity is derived on-chain: `positionId = abi.encode(address userWithdrawalManager)` (static; **one leg per open request**, all sharing it, distinguished by the typed `positionInstanceId = bytes32(requestId)` and with each leg's `isLocked` reflecting that request's state — finalized → `false`, pending → `true` ([ADR 0016](../../../../docs/decisions/0016-islocked-position-status.md))), `protocolBrand = keccak256("stader")`, `protocolId = keccak256("stader")`, `protocolSubId = keccak256("stader-withdrawal")`, `positionKind = Supplied`.
+`src/balances/AssistedBalanceAdapters/StaderWithdrawalQueueAssistedBalanceAdapter.sol` — the immutable `StaderWithdrawalQueueAssistedBalanceAdapter`. Constructor: `(userWithdrawalManager, underlyingToken, navCalculator)` where `userWithdrawalManager = Stader UserWithdrawalManager` (`0x9F0491B32DBce587c50c4C43AB303b06478193A7`) and `underlyingToken = WETH` (`0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2`). Identity is derived on-chain: `positionId = abi.encode(address userWithdrawalManager)` (static; **one leg per open request**, all sharing it, distinguished by the typed `positionInstanceId = bytes32(requestId)` and with each leg's `isLocked` reflecting that request's state — finalized → `false`, pending → `true` ([ADR 0016](../../../../docs/decisions/0016-islocked-position-status.md))), `protocolBrand = keccak256("stader")`, `protocolId = keccak256("stader")`, `protocolSubId = keccak256("stader-withdrawal")`, `positionKind = Supplied`.
 
 ### Inheritance + per-chain scope (Phase 0)
 
-- **Inheritance:** none — `StaderWithdrawalQueueBalanceAdapter` implements `IBalanceAdapter` + `IPositionDescribable` directly. No base contract, no overrides.
+- **Inheritance:** none — `StaderWithdrawalQueueAssistedBalanceAdapter` implements `IBalanceAdapter` + `IPositionDescribable` directly. No base contract, no overrides.
 - **Per-chain scope:** Stader's `UserWithdrawalManager` is **mainnet-only**. So mainnet (chainId 1) is the only chain that enables `StaderWithdrawalQueue` — see `script/config/nav-config/balance-adapters/1.json` and `script/config/contracts-deployment-config/balance-adapters/1.json`. A single mainnet fork test is sufficient; no per-chain branches.
 - **Denomination — WETH, not ETHx:** when a user requests an unstake, **ETHx is burned** and a sequential request id is recorded; the claim later pays out **native ETH**. The adapter denominates the queued position in WETH and NAV prices it via **ETH/USD**, so an ETHx exchange-rate move can't mis-value a claim whose ETH amount is already fixed. While queued, the value is invisible to wallet/receipt-token oracles — this adapter is the only thing that surfaces it.
 - **Gas bound (anti-DoS):** the adapter probes `requestIdsByUserAddress(account, i)` from `i = 0` and **caps at `MAX_REQUESTS_PROBED = 256`**, so a crafted account with a huge request array can't OOG the NAV read (an OOG is **not** caught by NAVCalculator's try/catch). A real account never approaches the cap.
@@ -24,17 +24,17 @@ Registration gating is asymmetric (same as sGHO / Aave Umbrella / Lido WQ): `get
 
 ## 2. Existing fork test coverage
 
-`test/balances/BalanceAdapters/fork/StaderWithdrawalQueueBalanceAdapter.fork.t.sol` already had `StaderWithdrawalQueueBalanceAdapterForkTest` covering the **pending** branch against the real contract:
+`test/balances/BalanceAdapters/fork/StaderWithdrawalQueueAssistedBalanceAdapter.fork.t.sol` already had `StaderWithdrawalQueueAssistedBalanceAdapterForkTest` covering the **pending** branch against the real contract:
 - un-finalized holder `0x5066bc62…` (id 8056, `ethExpected = 37.440331321957283515 ETH`, `ethFinalized = 0`) @ block `25_015_000`.
 - plus zero-address / unknown-holder / unsupported-asset / asset-filter-mismatch / interface / immutables.
 
-The unit test (`test/balances/BalanceAdapters/StaderWithdrawalQueueBalanceAdapter.t.sol`) covers the mock-only edges: constructor reverts, `ethExpected` vs `ethFinalized` preference, **multi-request summing**, **claimed-skip** (`owner == 0`), unregistered underlying, and **both enumeration-end sentinels** (non-OOB panic → `UnexpectedPanic`; non-empty revert re-thrown).
+The unit test (`test/balances/BalanceAdapters/StaderWithdrawalQueueAssistedBalanceAdapter.t.sol`) covers the mock-only edges: constructor reverts, `ethExpected` vs `ethFinalized` preference, **multi-request summing**, **claimed-skip** (`owner == 0`), unregistered underlying, and **both enumeration-end sentinels** (non-OOB panic → `UnexpectedPanic`; non-empty revert re-thrown).
 
 All kept as regression nets.
 
 ## 3. What this case adds
 
-- A **fresh three-holder pin at the verification block `25_330_819`** (`StaderWithdrawalQueueBalanceAdapterForkTest_Fresh`) — augments, doesn't replace. One holder per case (PENDING, FINALIZED, MULTI — see §5), at minutes-fresh state, so the dev-anvil dashboard (§9) shows live-relevant positions for a side-channel cross-check. The original suite only exercised `ethExpected`; the new finalized holder exercises `ethFinalized` **and proves it is preferred** (its `ethFinalized` is 9 wei below its `ethExpected`), and the MULTI holder exercises real on-chain multi-request summing.
+- A **fresh three-holder pin at the verification block `25_330_819`** (`StaderWithdrawalQueueAssistedBalanceAdapterForkTest_Fresh`) — augments, doesn't replace. One holder per case (PENDING, FINALIZED, MULTI — see §5), at minutes-fresh state, so the dev-anvil dashboard (§9) shows live-relevant positions for a side-channel cross-check. The original suite only exercised `ethExpected`; the new finalized holder exercises `ethFinalized` **and proves it is preferred** (its `ethFinalized` is 9 wei below its `ethExpected`), and the MULTI holder exercises real on-chain multi-request summing.
 - This evidence pack: README + case JSON + query script + dev deploy helper, bringing Stader WQ up to the same 10-section structure as the other verified protocols.
 
 ## 4. Adapter formula recap
@@ -74,8 +74,8 @@ for i in 0 .. 255:                                   # MAX_REQUESTS_PROBED cap
 | UserWithdrawalManager | `0x9F0491B32DBce587c50c4C43AB303b06478193A7` |
 | Underlying (WETH) | `0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2` |
 | Queue state at block | nextRequestId 8219, nextRequestIdToFinalize 8215 (ids ≤ 8214 finalized, 8215–8218 pending) |
-| Adapter under test | `StaderWithdrawalQueueBalanceAdapter` |
-| Fork-test contract | `StaderWithdrawalQueueBalanceAdapterForkTest_Fresh` in `test/balances/BalanceAdapters/fork/StaderWithdrawalQueueBalanceAdapter.fork.t.sol` |
+| Adapter under test | `StaderWithdrawalQueueAssistedBalanceAdapter` |
+| Fork-test contract | `StaderWithdrawalQueueAssistedBalanceAdapterForkTest_Fresh` in `test/balances/BalanceAdapters/fork/StaderWithdrawalQueueAssistedBalanceAdapter.fork.t.sol` |
 
 ## 6. Case files in this folder
 
@@ -118,7 +118,7 @@ The value is a live read of Stader's own UserWithdrawalManager — there is no c
 | `FINALIZED` (finalized) | `adapter == userWithdrawRequests(8214).ethFinalized`, which is **strictly less than** that request's `ethExpected` (…347 < …356) — proving the branch precedence. |
 | `MULTI` (two requests) | `aggregate balance == userWithdrawRequests(8196).ethFinalized + userWithdrawRequests(8197).ethFinalized` — both finalized, so two claimable (`isLocked=false`) legs (one per request) that sum on-chain to that total. |
 
-The claimed-skip (`owner == 0`) path is exercised with mocks in `test/balances/BalanceAdapters/StaderWithdrawalQueueBalanceAdapter.t.sol` — a holder carrying a claimed-but-still-indexed id can't be relied on to exist at any given block. The tests also assert `protocolId == keccak256("stader")` and `protocolSubId == keccak256("stader-withdrawal")`, `positionId == abi.encode(userWithdrawalManager)`, `PositionKind.Supplied`, per-request legs each carrying their own `positionInstanceId` with the appropriate `isLocked`, and `balanceAdapter == address(this)`.
+The claimed-skip (`owner == 0`) path is exercised with mocks in `test/balances/BalanceAdapters/StaderWithdrawalQueueAssistedBalanceAdapter.t.sol` — a holder carrying a claimed-but-still-indexed id can't be relied on to exist at any given block. The tests also assert `protocolId == keccak256("stader")` and `protocolSubId == keccak256("stader-withdrawal")`, `positionId == abi.encode(userWithdrawalManager)`, `PositionKind.Supplied`, per-request legs each carrying their own `positionInstanceId` with the appropriate `isLocked`, and `balanceAdapter == address(this)`.
 
 ## 9. Wiring the live dev-anvil dashboard
 
@@ -156,5 +156,5 @@ The position renders under **Stader** as one **Supplied** leg per open request, 
 Run via:
 
 ```bash
-FOUNDRY_PROFILE=slow forge test --match-path "test/balances/BalanceAdapters/fork/StaderWithdrawalQueueBalanceAdapter.fork.t.sol" -vv
+FOUNDRY_PROFILE=slow forge test --match-path "test/balances/BalanceAdapters/fork/StaderWithdrawalQueueAssistedBalanceAdapter.fork.t.sol" -vv
 ```

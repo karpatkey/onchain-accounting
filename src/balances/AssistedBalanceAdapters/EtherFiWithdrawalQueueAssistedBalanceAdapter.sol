@@ -13,19 +13,19 @@ import "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
-/// @title ether.fi Withdrawals Balance Adapter (id-cached, wrapper-fed)
+/// @title ether.fi Withdrawals Balance Adapter (id-cached, assistant-fed)
 /// @author KPK
 /// @notice Reports the in-flight ETH owed to an account in ether.fi's withdrawal queue. Requesting a withdrawal burns
 ///         eETH/weETH and mints a `WithdrawRequestNFT`; the queued ETH is then invisible to a pure-view NAV scan. The
-///         canonical feeder is `EtherFiWithdrawalQueueWrapper`, which the owner Safe delegatecalls so the adapter sees
+///         canonical feeder is `EtherFiWithdrawalQueueAssistant`, which the owner Safe delegatecalls so the adapter sees
 ///         `msg.sender = Safe = owner`: it pushes the `requestId` on `requestWithdraw` and pops it on `claimWithdraw`,
 ///         atomically. Each cached id is valued live, re-verifying ownership every read; the cache stores **ids only,
 ///         never amounts**.
-/// @dev Member of the permissionless wrapper-fed assisted family ([ADR 0018](../../../docs/decisions/0018-wrapper-fed-assisted-balance-adapters.md)),
+/// @dev Member of the permissionless assistant-fed assisted family ([ADR 0018](../../../docs/decisions/0018-assistant-fed-assisted-balance-adapters.md)),
 ///      extending the single {AssistedCoordCache}: the coordinate is `abi.encode(tokenId)`. Supersedes the earlier
 ///      off-chain-agent (ASSISTANT_ROLE) ether.fi adapter of ADR 0014. {_removable} = "no longer owned by the caller":
 ///      ether.fi's `claimWithdraw` **burns** the NFT, so a claimed id becomes removable while a still-owned (pending)
-///      id cannot be dropped (CoordinateStillLive) — the wrapper claims first, then removes. Emits ONE native-ETH
+///      id cannot be dropped (CoordinateStillLive) — the assistant claims first, then removes. Emits ONE native-ETH
 ///      `Supplied` leg per owned cached request, `positionId = abi.encode(WITHDRAW_REQUEST_NFT)`, `isLocked = !finalized`,
 ///      the tokenId in `positionInstanceId`.
 contract EtherFiWithdrawalQueueAssistedBalanceAdapter is AssistedCoordCache, IPositionDescribable {

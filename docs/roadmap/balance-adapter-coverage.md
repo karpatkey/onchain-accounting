@@ -4,7 +4,7 @@
 
 Living document. Tracks protocols and protocol features whose positions are **not yet** captured by NAVCalculator's balance adapters, with the goal of growing NAV coverage one PR at a time.
 
-The Stader withdrawal-queue adapter (`src/balances/BalanceAdapters/StaderWithdrawalQueueBalanceAdapter.sol`) is the reference template for the **withdrawal-queue** family below: a single immutable adapter that enumerates an account's open requests on a protocol-specific manager and reports credit positions in the underlying asset under a static positionId, split into claimable vs locked legs (ADR 0016). Most LST queues fit that shape with cosmetic differences in enumeration (sequential ID vs. ERC721 NFT) and request struct layout.
+The Stader withdrawal-queue adapter (`src/balances/AssistedBalanceAdapters/StaderWithdrawalQueueAssistedBalanceAdapter.sol`) is the reference template for the **withdrawal-queue** family below: a single immutable adapter that enumerates an account's open requests on a protocol-specific manager and reports credit positions in the underlying asset under a static positionId, split into claimable vs locked legs (ADR 0016). Most LST queues fit that shape with cosmetic differences in enumeration (sequential ID vs. ERC721 NFT) and request struct layout.
 
 When picking the next protocol to add, prioritise by **whether kpk actually parks value there** rather than by protocol prominence — the catch-all `ERC20DefaultBalanceAdapter` already covers wallet ERC20 holdings, so a new adapter only earns its keep when there is value parked outside the wallet (a queue, a vault wrapper, a debt position).
 
@@ -108,7 +108,7 @@ These are not queues but represent value that lives outside the wallet and is no
 
 1. Pick a row whose protocol kpk **actually uses or imminently will**.
 2. Confirm the contract addresses, struct layouts, and finalization semantics by reading the protocol's source on GitHub + Etherscan (don't trust this doc for live values — it ages).
-3. Mirror `StaderWithdrawalQueueBalanceAdapter.sol` (queue family) or whichever existing adapter is closest in shape.
+3. Mirror `StaderWithdrawalQueueAssistedBalanceAdapter.sol` (queue family) or whichever existing adapter is closest in shape.
 4. Each adapter ships in its own PR with: contract + unit tests + fork test against a real holder + deploy-config entry (`script/config/contracts-deployment-config/balance-adapters/<chainId>.json` for plain adapters, or `script/config/contracts-deployment-config/meta-balance-adapters/<chainId>.json` for meta-adapters) + dispatch wiring in `04_DeployBalanceAdapters.s.sol` + a NAV-registration entry in the chain's `script/config/nav-config/balance-adapters/<chainId>.json` (plain) or `script/config/nav-config/meta-balance-adapters/<chainId>.json` (meta), which `06_Configure.s.sol` reads to register the adapter.
 5. Update this file: cross off the row or add caveats discovered during implementation.
 

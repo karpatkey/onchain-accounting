@@ -3,8 +3,8 @@ pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.sol";
 import {
-    StakeWiseV3ExitQueueWrapper
-} from "src/balances/AssistedBalanceAdapters/wrappers/StakeWiseV3ExitQueueWrapper.sol";
+    StakeWiseV3ExitQueueAssistant
+} from "src/balances/AssistedBalanceAdapters/assistants/StakeWiseV3ExitQueueAssistant.sol";
 import {
     StakeWiseV3ExitQueueAssistedBalanceAdapter
 } from "src/balances/AssistedBalanceAdapters/StakeWiseV3ExitQueueAssistedBalanceAdapter.sol";
@@ -109,10 +109,10 @@ contract MockVaultsRegistry {
     }
 }
 
-/// @title StakeWiseV3ExitQueueWrapper unit tests
+/// @title StakeWiseV3ExitQueueAssistant unit tests
 /// @notice The wrapper is permissionless (no roles/admin): a Safe delegatecalls it to enter/claim and feed the adapter,
 ///         which self-scopes by msg.sender. `onlyDelegateCall` is the only guard — a direct call reverts.
-contract StakeWiseV3ExitQueueWrapperTest is BalanceAdapterTestBase {
+contract StakeWiseV3ExitQueueAssistantTest is BalanceAdapterTestBase {
     address constant NATIVE = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
     uint256 constant DELAY = 1 days;
 
@@ -130,13 +130,13 @@ contract StakeWiseV3ExitQueueWrapperTest is BalanceAdapterTestBase {
 
     // ---- Isolated (mock tracker): receiver forcing + adapter calls ----
 
-    function _wrapperWithMockTracker() internal returns (StakeWiseV3ExitQueueWrapper w, MockTracker t) {
+    function _wrapperWithMockTracker() internal returns (StakeWiseV3ExitQueueAssistant w, MockTracker t) {
         t = new MockTracker();
-        w = new StakeWiseV3ExitQueueWrapper(address(t));
+        w = new StakeWiseV3ExitQueueAssistant(address(t));
     }
 
     function test_enterExitQueue_forcesReceiverAndSubmits() public {
-        (StakeWiseV3ExitQueueWrapper w, MockTracker t) = _wrapperWithMockTracker();
+        (StakeWiseV3ExitQueueAssistant w, MockTracker t) = _wrapperWithMockTracker();
 
         bytes memory ret = safe.exec(address(w), abi.encodeCall(w.enterExitQueue, (address(vault), 5 ether)));
         uint256 ticket = abi.decode(ret, (uint256));
@@ -151,20 +151,20 @@ contract StakeWiseV3ExitQueueWrapperTest is BalanceAdapterTestBase {
     }
 
     function test_enterExitQueue_revertsOnDirectCall() public {
-        (StakeWiseV3ExitQueueWrapper w,) = _wrapperWithMockTracker();
+        (StakeWiseV3ExitQueueAssistant w,) = _wrapperWithMockTracker();
         // Called directly on the singleton (not via delegatecall) → address(this) == SELF → NotDelegateCall.
         vm.expectRevert(NotDelegateCall.selector);
         w.enterExitQueue(address(vault), 5 ether);
     }
 
     function test_claimExitedAssets_revertsOnDirectCall() public {
-        (StakeWiseV3ExitQueueWrapper w,) = _wrapperWithMockTracker();
+        (StakeWiseV3ExitQueueAssistant w,) = _wrapperWithMockTracker();
         vm.expectRevert(NotDelegateCall.selector);
         w.claimExitedAssets(address(vault), 1000, block.timestamp, 1);
     }
 
     function test_claimExitedAssets_claimsAndRemoves() public {
-        (StakeWiseV3ExitQueueWrapper w, MockTracker t) = _wrapperWithMockTracker();
+        (StakeWiseV3ExitQueueAssistant w, MockTracker t) = _wrapperWithMockTracker();
         bytes memory ret = safe.exec(address(w), abi.encodeCall(w.enterExitQueue, (address(vault), 5 ether)));
         uint256 ticket = abi.decode(ret, (uint256));
         uint256 ts = block.timestamp;
@@ -180,12 +180,12 @@ contract StakeWiseV3ExitQueueWrapperTest is BalanceAdapterTestBase {
 
     function test_constructor_revertsOnZeroAdapter() public {
         vm.expectRevert(InvalidArguments.selector);
-        new StakeWiseV3ExitQueueWrapper(address(0));
+        new StakeWiseV3ExitQueueAssistant(address(0));
     }
 
     function test_constructor_revertsWhenAdapterNotContract() public {
         vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "adapter"));
-        new StakeWiseV3ExitQueueWrapper(makeAddr("eoa"));
+        new StakeWiseV3ExitQueueAssistant(makeAddr("eoa"));
     }
 
     // ---- End-to-end with the real adapter + full mock vault ----
@@ -195,7 +195,7 @@ contract StakeWiseV3ExitQueueWrapperTest is BalanceAdapterTestBase {
             address(registry), NATIVE, "osETH", address(balances), DELAY
         );
         balances.addSupportedAssetForTest(NATIVE);
-        StakeWiseV3ExitQueueWrapper w = new StakeWiseV3ExitQueueWrapper(address(adapter));
+        StakeWiseV3ExitQueueAssistant w = new StakeWiseV3ExitQueueAssistant(address(adapter));
         // No roles anywhere: the Safe delegatecalls the wrapper, which feeds the adapter with msg.sender = the Safe.
 
         bytes memory ret = safe.exec(address(w), abi.encodeCall(w.enterExitQueue, (address(vault), 7 ether)));

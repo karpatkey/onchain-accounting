@@ -7,11 +7,11 @@ import {Mock_ERC20} from "test/mocks/tokens.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
 
 import {
-    StaderWithdrawalQueueWrapper
-} from "src/balances/AssistedBalanceAdapters/wrappers/StaderWithdrawalQueueWrapper.sol";
+    StaderWithdrawalQueueAssistant
+} from "src/balances/AssistedBalanceAdapters/assistants/StaderWithdrawalQueueAssistant.sol";
 import {
-    StaderWithdrawalQueueBalanceAdapter
-} from "src/balances/BalanceAdapters/StaderWithdrawalQueueBalanceAdapter.sol";
+    StaderWithdrawalQueueAssistedBalanceAdapter
+} from "src/balances/AssistedBalanceAdapters/StaderWithdrawalQueueAssistedBalanceAdapter.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
@@ -93,14 +93,14 @@ contract MockSafe {
     receive() external payable {}
 }
 
-/// @title StaderWithdrawalQueueWrapper unit tests (delegatecall-only)
-contract StaderWithdrawalQueueWrapperTest is Test {
+/// @title StaderWithdrawalQueueAssistant unit tests (delegatecall-only)
+contract StaderWithdrawalQueueAssistantTest is Test {
     Mock_ERC20 internal ethx;
     Mock_ERC20 internal weth;
     BalancesHarness internal balances;
     MockStaderUserWithdrawalManager internal manager;
-    StaderWithdrawalQueueBalanceAdapter internal adapter;
-    StaderWithdrawalQueueWrapper internal wrapper;
+    StaderWithdrawalQueueAssistedBalanceAdapter internal adapter;
+    StaderWithdrawalQueueAssistant internal wrapper;
 
     address internal alice = makeAddr("alice");
 
@@ -114,8 +114,8 @@ contract StaderWithdrawalQueueWrapperTest is Test {
         manager = new MockStaderUserWithdrawalManager(IERC20(address(ethx)));
 
         // The adapter is self-fed (no roles); the wrapper only needs the adapter/manager/ethx addresses.
-        adapter = new StaderWithdrawalQueueBalanceAdapter(address(manager), address(weth), address(balances));
-        wrapper = new StaderWithdrawalQueueWrapper(address(adapter), address(manager), address(ethx));
+        adapter = new StaderWithdrawalQueueAssistedBalanceAdapter(address(manager), address(weth), address(balances));
+        wrapper = new StaderWithdrawalQueueAssistant(address(adapter), address(manager), address(ethx));
 
         vm.deal(address(manager), 100 ether);
     }
@@ -124,11 +124,11 @@ contract StaderWithdrawalQueueWrapperTest is Test {
 
     function test_constructor_revertsOnZeroArg() public {
         vm.expectRevert(InvalidArguments.selector);
-        new StaderWithdrawalQueueWrapper(address(0), address(manager), address(ethx));
+        new StaderWithdrawalQueueAssistant(address(0), address(manager), address(ethx));
         vm.expectRevert(InvalidArguments.selector);
-        new StaderWithdrawalQueueWrapper(address(adapter), address(0), address(ethx));
+        new StaderWithdrawalQueueAssistant(address(adapter), address(0), address(ethx));
         vm.expectRevert(InvalidArguments.selector);
-        new StaderWithdrawalQueueWrapper(address(adapter), address(manager), address(0));
+        new StaderWithdrawalQueueAssistant(address(adapter), address(manager), address(0));
     }
 
     // ---- requestWithdraw (DELEGATECALL) ----
@@ -159,7 +159,7 @@ contract StaderWithdrawalQueueWrapperTest is Test {
         MockSafe safe = new MockSafe();
         ethx.mint(address(safe), AMOUNT);
         // Under delegatecall address(this) is the Safe; _requireSelf rejects _owner != the Safe.
-        vm.expectRevert(abi.encodeWithSelector(WrapperAccountMismatch.selector, address(safe), alice));
+        vm.expectRevert(abi.encodeWithSelector(AssistantAccountMismatch.selector, address(safe), alice));
         safe.delegateRequestWithdrawWithOwner(address(wrapper), AMOUNT, alice); // _owner != address(this)
     }
 

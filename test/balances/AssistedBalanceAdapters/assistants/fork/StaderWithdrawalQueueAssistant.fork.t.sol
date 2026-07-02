@@ -5,11 +5,11 @@ import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {
-    StaderWithdrawalQueueWrapper
-} from "src/balances/AssistedBalanceAdapters/wrappers/StaderWithdrawalQueueWrapper.sol";
+    StaderWithdrawalQueueAssistant
+} from "src/balances/AssistedBalanceAdapters/assistants/StaderWithdrawalQueueAssistant.sol";
 import {
-    StaderWithdrawalQueueBalanceAdapter
-} from "src/balances/BalanceAdapters/StaderWithdrawalQueueBalanceAdapter.sol";
+    StaderWithdrawalQueueAssistedBalanceAdapter
+} from "src/balances/AssistedBalanceAdapters/StaderWithdrawalQueueAssistedBalanceAdapter.sol";
 
 /// @notice Safe stand-in that DELEGATECALLs the wrapper (both entrypoints are delegatecall-only), so the live Stader
 ///         manager and the adapter see this contract as `msg.sender` / the request owner.
@@ -37,7 +37,7 @@ interface IStaderUWM {
     function claim(uint256 requestId) external;
 }
 
-/// @title StaderWithdrawalQueueWrapperForkTest
+/// @title StaderWithdrawalQueueAssistantForkTest
 /// @notice End-to-end fork tests against Stader's LIVE `UserWithdrawalManager` with REAL funds — the deposit path
 ///         through the wrapper (real ETHx), and the redeem path (real finalized request, real `claim`).
 /// @dev Pinned at block 25_330_819. Candidates verified on-chain at that block:
@@ -45,7 +45,7 @@ interface IStaderUWM {
 ///        the test Safe, which then requests a withdrawal through the wrapper against the live manager.
 ///      - Redeem candidate: EOA `0x4041…C47D` owns request 8214, finalized (`nextRequestIdToFinalize` = 8215) and
 ///        unclaimed, `ethFinalized` = 10.804926562492357347 ETH; the manager holds ~854 ETH so the claim pays out.
-contract StaderWithdrawalQueueWrapperForkTest is BalanceAdapterTestBase {
+contract StaderWithdrawalQueueAssistantForkTest is BalanceAdapterTestBase {
     address public constant USER_WITHDRAWAL_MANAGER = 0x9F0491B32DBce587c50c4C43AB303b06478193A7;
     address public constant ETHX = 0xA35b1B31Ce002FBF2058D22F30f95D405200A15b;
 
@@ -59,15 +59,16 @@ contract StaderWithdrawalQueueWrapperForkTest is BalanceAdapterTestBase {
     uint256 public constant FINALIZED_REQ_ID = 8214;
     uint256 public constant FINALIZED_ETH = 10_804_926_562_492_357_347;
 
-    StaderWithdrawalQueueBalanceAdapter public adapter;
-    StaderWithdrawalQueueWrapper public wrapper;
+    StaderWithdrawalQueueAssistedBalanceAdapter public adapter;
+    StaderWithdrawalQueueAssistant public wrapper;
     ForkMockSafe public safe;
 
     function setUp() public override {
         super.setUp();
         balances = _deployBalancesForAdapter(MAINNET_WETH);
-        adapter = new StaderWithdrawalQueueBalanceAdapter(USER_WITHDRAWAL_MANAGER, MAINNET_WETH, address(balances));
-        wrapper = new StaderWithdrawalQueueWrapper(address(adapter), USER_WITHDRAWAL_MANAGER, ETHX);
+        adapter =
+            new StaderWithdrawalQueueAssistedBalanceAdapter(USER_WITHDRAWAL_MANAGER, MAINNET_WETH, address(balances));
+        wrapper = new StaderWithdrawalQueueAssistant(address(adapter), USER_WITHDRAWAL_MANAGER, ETHX);
         safe = new ForkMockSafe();
     }
 
@@ -79,7 +80,7 @@ contract StaderWithdrawalQueueWrapperForkTest is BalanceAdapterTestBase {
 
     // ---- Deposit: real ETHx through the wrapper's (delegatecalled) requestWithdraw ----
 
-    function test_deposit_realFunds_viaWrapperDelegatecall() public {
+    function test_deposit_realFunds_viaAssistantDelegatecall() public {
         uint256 amount = 1e18; // 1 ETHx — previewWithdraw ~1.09 ETH, within the manager's [1e14, 1e22] bounds.
 
         // Fund the Safe with REAL ETHx pulled from a real holder (the Balancer Vault).

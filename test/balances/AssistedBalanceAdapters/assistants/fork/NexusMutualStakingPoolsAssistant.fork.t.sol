@@ -7,9 +7,9 @@ import {
     NexusMutualStakingPoolsAssistedBalanceAdapter
 } from "src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsAssistedBalanceAdapter.sol";
 import {
-    NexusMutualStakingPoolsWrapper
-} from "src/balances/AssistedBalanceAdapters/wrappers/NexusMutualStakingPoolsWrapper.sol";
-import {WrapperDelegateCaller} from "test/balances/AssistedBalanceAdapters/wrappers/WrapperDelegateCaller.sol";
+    NexusMutualStakingPoolsAssistant
+} from "src/balances/AssistedBalanceAdapters/assistants/NexusMutualStakingPoolsAssistant.sol";
+import {AssistantDelegateCaller} from "test/balances/AssistedBalanceAdapters/assistants/AssistantDelegateCaller.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -30,16 +30,16 @@ interface INexusRegistry {
     function isMember(address member) external view returns (bool);
 }
 
-/// @title NexusMutualStakingPoolsWrapper fork test (real Nexus deposit + withdraw, delegatecall module)
+/// @title NexusMutualStakingPoolsAssistant fork test (real Nexus deposit + withdraw, delegatecall module)
 /// @notice End-to-end against live Nexus Mutual on mainnet. The wrapper is a **delegatecall-only** logic module, so the
-///         staking **account** is a {WrapperDelegateCaller} that `delegatecall`s it — under the delegatecall
+///         staking **account** is a {AssistantDelegateCaller} that `delegatecall`s it — under the delegatecall
 ///         `address(this)` is the account, which holds the NXM, is the Nexus member, owns the StakingNFT, and holds
 ///         `SUBMITTER_ROLE`. Exercises account→(delegatecall)wrapper.depositTo → pool.depositTo →
 ///         TokenController.operatorTransfer → StakingNFT mint → adapter.submit → live valuation, and the withdraw path.
 /// @dev Membership is granted via the **real** on-chain flow (no storage pokes): governor-pranked
 ///      `Registry.setKycAuthAddress` + EIP-712 `Registry.join` (KYC-signer + 0.002 ETH fee). The account's NXM is
 ///      transferred from the Nexus Mutual Safe (`0x8e53…cFE3`, a real member).
-contract NexusMutualStakingPoolsWrapperForkTest is BalanceAdapterTestBase {
+contract NexusMutualStakingPoolsAssistantForkTest is BalanceAdapterTestBase {
     address public constant STAKING_NFT = 0xcafea508a477D94c502c253A58239fb8F948e97f;
     address public constant STAKING_VIEWER = 0xcafea5c7d25a192ba70ECA0E2dB62F835c1cF81F;
     address public constant NXM = 0xd7c49CEE7E9188cCa6AD8FF264C1DA2e69D4Cf3B;
@@ -57,8 +57,8 @@ contract NexusMutualStakingPoolsWrapperForkTest is BalanceAdapterTestBase {
     uint256 public constant AMOUNT = 100e18; // 100 NXM
 
     NexusMutualStakingPoolsAssistedBalanceAdapter public adapter;
-    NexusMutualStakingPoolsWrapper public wrapper;
-    WrapperDelegateCaller public account; // the delegatecalling staking account
+    NexusMutualStakingPoolsAssistant public wrapper;
+    AssistantDelegateCaller public account; // the delegatecalling staking account
 
     function setUp() public override {
         super.setUp();
@@ -68,10 +68,10 @@ contract NexusMutualStakingPoolsWrapperForkTest is BalanceAdapterTestBase {
         balances.registerAssetForTest(NXM, 18, "NXM");
 
         adapter = new NexusMutualStakingPoolsAssistedBalanceAdapter(STAKING_NFT, STAKING_VIEWER, NXM, address(balances));
-        wrapper = new NexusMutualStakingPoolsWrapper(address(adapter), NXM, TOKEN_CONTROLLER);
+        wrapper = new NexusMutualStakingPoolsAssistant(address(adapter), NXM, TOKEN_CONTROLLER);
 
         // The delegatecalling account is the real actor: it holds SUBMITTER_ROLE, is a Nexus member, and holds NXM.
-        account = new WrapperDelegateCaller();
+        account = new AssistantDelegateCaller();
         _enrollNexusMember(address(account));
 
         // Fund the account with real NXM from the Safe (a member); the account is now whitelisted so it can receive.

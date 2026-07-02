@@ -14,21 +14,21 @@ import "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
-/// @title Nexus Mutual Staking Pools Assisted Balance Adapter (id-cached, wrapper-fed)
+/// @title Nexus Mutual Staking Pools Assisted Balance Adapter (id-cached, assistant-fed)
 /// @author KPK
 /// @notice Reports an account's staked NXM across Nexus Mutual V2 staking pools, as NXM-denominated `Staking`
 ///         (active + expired stake) and `Rewards` legs — emitted **per StakingNFT position**. The StakingNFT is not
 ///         per-owner-enumerable, so a trusted feeder pushes/pops the account's `tokenId`s via {submit}/{remove}. The
-///         canonical feeder is `NexusMutualStakingPoolsWrapper`, delegatecalled by the owner Safe so the adapter sees
+///         canonical feeder is `NexusMutualStakingPoolsAssistant`, delegatecalled by the owner Safe so the adapter sees
 ///         `msg.sender = Safe = owner`. Each cached id is valued live (`StakingViewer.getTokens`), re-verifying
 ///         ownership via `StakingNFT.tokenInfo` every read; the cache stores **ids only, never amounts**.
-/// @dev Member of the permissionless wrapper-fed assisted family ([ADR 0018](../../../docs/decisions/0018-wrapper-fed-assisted-balance-adapters.md)),
+/// @dev Member of the permissionless assistant-fed assisted family ([ADR 0018](../../../docs/decisions/0018-assistant-fed-assisted-balance-adapters.md)),
 ///      extending the single {AssistedCoordCache}: the coordinate is `abi.encode(tokenId)`. `StakingViewer.getTokens`
 ///      can revert, but {AssistedCoordCache} values each coordinate behind a self-`staticcall`, so a bad id is isolated.
 ///      positionId is the **staking-pool contract address** (`StakingViewer.stakingPool(poolId)`); the NFT id rides in
 ///      `positionInstanceId`. **{_removable} = `true`**: Nexus does NOT burn the StakingNFT on withdraw (the account
 ///      keeps owning an emptied position), so the default "removable iff no longer owned" would wrongly block the
-///      wrapper's post-withdraw untrack — dropping a still-owned, withdrawn position is under-report-safe.
+///      assistant's post-withdraw untrack — dropping a still-owned, withdrawn position is under-report-safe.
 contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedCoordCache, IPositionDescribable {
     using Strings for uint256;
 
@@ -139,7 +139,7 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedCoordCache, IP
 
     /// @inheritdoc AssistedCoordCache
     /// @dev Nexus does not burn the StakingNFT on withdraw, so the default (removable iff no longer owned) would never
-    ///      let the wrapper untrack after a withdraw. Permit removal for any tracked id; a withdrawn-but-owned position
+    ///      let the assistant untrack after a withdraw. Permit removal for any tracked id; a withdrawn-but-owned position
     ///      dropped from cache only under-reports (safe).
     function _removable(address, bytes memory) internal pure override returns (bool) {
         return true;

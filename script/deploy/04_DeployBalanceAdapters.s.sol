@@ -57,8 +57,8 @@ import {
 } from "../../src/balances/MetaBalanceAdapters/FluidFTokensMetaBalanceAdapter.sol";
 import {FluidVaultsMetaBalanceAdapter} from "../../src/balances/MetaBalanceAdapters/FluidVaultsMetaBalanceAdapter.sol";
 import {
-    StaderWithdrawalQueueBalanceAdapter
-} from "../../src/balances/BalanceAdapters/StaderWithdrawalQueueBalanceAdapter.sol";
+    StaderWithdrawalQueueAssistedBalanceAdapter
+} from "../../src/balances/AssistedBalanceAdapters/StaderWithdrawalQueueAssistedBalanceAdapter.sol";
 import {
     KelpWithdrawalQueueBalanceAdapter
 } from "../../src/balances/BalanceAdapters/KelpWithdrawalQueueBalanceAdapter.sol";
@@ -66,9 +66,6 @@ import {
     LidoWithdrawalQueueBalanceAdapter
 } from "../../src/balances/BalanceAdapters/LidoWithdrawalQueueBalanceAdapter.sol";
 import {EthenaCooldownBalanceAdapter} from "../../src/balances/BalanceAdapters/EthenaCooldownBalanceAdapter.sol";
-import {
-    MerklRewardsAssistedBalanceAdapter
-} from "../../src/balances/AssistedBalanceAdapters/MerklRewardsAssistedBalanceAdapter.sol";
 import {
     EtherFiWithdrawalQueueAssistedBalanceAdapter
 } from "../../src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueAssistedBalanceAdapter.sol";
@@ -170,9 +167,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         // --- StakeWise V3 (Mainnet) — Genesis Vault deposit (osETH itself is now a Custom-priced ERC20, not a balance adapter) ---
         _deployIfEnabled("StakeWiseV3VaultsMeta"); // Meta-adapter: all StakeWise V3 vaults; vault set on NAV (ADR 0010)
-
-        // --- Merkl Rewards (single instance per chain; Distributor address is identical on every EVM chain) ---
-        _deployIfEnabled("MerklRewardsAssisted");
 
         // --- ether.fi withdrawal-queue cache adapter (agent-fed; ADR 0014) ---
         _deployIfEnabled("EtherFiWithdrawalQueueAssisted");
@@ -360,11 +354,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // Lido stETH withdrawal queue
         if (_equals(adapterName, "LidoWithdrawalQueue")) {
             return _deployLidoWithdrawalQueue(adapterName, navCalculator);
-        }
-
-        // Merkl Rewards: proof-cached unclaimed-reward adapter (ADR 0007).
-        if (_equals(adapterName, "MerklRewardsAssisted")) {
-            return _deployMerklRewardsAssisted(adapterName, navCalculator);
         }
 
         // ether.fi withdrawals: id-cached withdrawal-queue adapter (ADR 0014).
@@ -646,8 +635,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address underlyingToken = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
         );
-        StaderWithdrawalQueueBalanceAdapter adapter =
-            new StaderWithdrawalQueueBalanceAdapter(userWithdrawalManager, underlyingToken, navCalculator);
+        StaderWithdrawalQueueAssistedBalanceAdapter adapter =
+            new StaderWithdrawalQueueAssistedBalanceAdapter(userWithdrawalManager, underlyingToken, navCalculator);
         return address(adapter);
     }
 
@@ -684,32 +673,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
         );
         LidoWithdrawalQueueBalanceAdapter adapter =
             new LidoWithdrawalQueueBalanceAdapter(withdrawalQueue, underlyingToken, navCalculator);
-        return address(adapter);
-    }
-
-    function _deployMerklRewardsAssisted(string memory adapterName, address navCalculator) internal returns (address) {
-        // Schema (contracts-deployment-config/balance-adapters/<id>.json):
-        //   "MerklRewardsAssisted": {
-        //     "enabled": true,
-        //     "constructor": {
-        //       "distributor": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae",  // same on every supported EVM chain
-        //       "protocol": "Merkl",
-        //       "positionDetail": "{\"protocol\":\"Merkl\",\"product\":\"Rewards\"",
-        //       "positionId": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae"
-        //     }
-        //   }
-        // Owner is set to chainConfig.admin (the OIV Safe). The Safe will be the only address that can call
-        // submitProofs / clearAllocation. Proof verification on-chain prevents the owner from fabricating amounts;
-        // see docs/decisions/0007-merkl-trust-minimized-cache.md.
-        address distributor = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "distributor")
-        );
-        require(
-            chainConfig.admin != address(0), "MerklRewardsAssisted: chainConfig.admin (initialOwner) not configured"
-        );
-
-        MerklRewardsAssistedBalanceAdapter adapter =
-            new MerklRewardsAssistedBalanceAdapter(distributor, navCalculator, chainConfig.admin, chainConfig.admin);
         return address(adapter);
     }
 

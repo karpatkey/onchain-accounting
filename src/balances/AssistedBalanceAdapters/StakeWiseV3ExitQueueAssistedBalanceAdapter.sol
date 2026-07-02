@@ -13,14 +13,14 @@ import "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
-/// @title StakeWise V3 Exit-Queue Assisted Balance Adapter (coordinate-cached, wrapper-fed)
+/// @title StakeWise V3 Exit-Queue Assisted Balance Adapter (coordinate-cached, assistant-fed)
 /// @author KPK
 /// @notice Reports the in-flight assets owed to an account in StakeWise V3's exit queue, valued entirely from live
 ///         on-chain reads. The exit position's coordinate is a **tuple** `(vault, positionTicket, timestamp)` — the
-///         `StakeWiseV3ExitQueueWrapper` a depositor Safe delegatecalls records it here (adapter sees `msg.sender = Safe`),
+///         `StakeWiseV3ExitQueueAssistant` a depositor Safe delegatecalls records it here (adapter sees `msg.sender = Safe`),
 ///         in the same tx it enters/claims the queue. The exit position is owned on-chain by that same Safe
 ///         (`receiver = the Safe`), so the valuation (keyed on `receiver = account`) needs no extra bookkeeping.
-/// @dev Permissionless wrapper-fed member ([ADR 0018](../../../docs/decisions/0018-wrapper-fed-assisted-balance-adapters.md)),
+/// @dev Permissionless assistant-fed member ([ADR 0018](../../../docs/decisions/0018-assistant-fed-assisted-balance-adapters.md)),
 ///      extending {AssistedCoordCache} (tuple coordinate, not a bare uint256). The cache stores **only coordinates,
 ///      never amounts**; every read values live against `receiver = account` (a tuple that isn't the account's resolves
 ///      to zero owed and is dropped) → under-report only. StakeWise exit positions have no `ownerOf`, so the ownership

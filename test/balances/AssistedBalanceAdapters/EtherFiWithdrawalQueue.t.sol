@@ -162,7 +162,7 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterTest is BalanceAdapterTestB
         assertEq(cached[0], 1);
     }
 
-    /// @notice Writes are fail-loud: submitting an id not owned by the account reverts NotTokenOwner.
+    /// @notice Writes are fail-loud: submitting an id not owned by the account reverts CoordinateNotOwned.
     function test_submit_revertsOnNonOwnedId() public {
         nft.setRequest(1, other, 1 ether, 1 ether, true, 0, true, 1 ether);
         vm.expectRevert(abi.encodeWithSelector(CoordinateNotOwned.selector, holder, uint256(1)));
@@ -387,7 +387,7 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterTest is BalanceAdapterTestB
         assertEq(amt, 0);
     }
 
-    /// @notice Writes are fail-loud at the cap: submitting one id past MAX_TOKEN_IDS reverts TokenIdCacheFull.
+    /// @notice Writes are fail-loud at the cap: submitting one id past MAX_TOKEN_IDS reverts CoordinateCacheFull.
     function test_submit_revertsWhenCacheFull() public {
         uint256 cap = adapter.MAX_TOKEN_IDS();
         for (uint256 i = 0; i < cap; i++) {

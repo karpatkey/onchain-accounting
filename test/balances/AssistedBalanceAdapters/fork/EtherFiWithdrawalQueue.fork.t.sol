@@ -17,10 +17,10 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title EtherFiWithdrawalQueueAssistedBalanceAdapter (wrapper-fed) fork test
 /// @notice Fork test against ether.fi's real WithdrawRequestNFT + LiquidityPool on mainnet.
-/// @dev The NFT isn't enumerable, so the wrapper (here, the test acting as the `WRAPPER_ROLE` holder) submits a real
-///      tokenId; the adapter values it entirely from live on-chain reads. Holder 0xcFFab3… owns request #80154 at
-///      FORK_BLOCK (pending, isValid, fee 0), worth `min(amountOfEEth, amountForShare(shareOfEEth)) − fee` ETH. The
-///      valuation math is identical to the assistant-fed sibling; only the feeder differs.
+/// @dev The NFT isn't enumerable, so the position coordinate must be submitted: `submit` is permissionless and
+///      `msg.sender`-keyed, so the test pranks as the real holder and submits its own tokenId; the adapter values it
+///      entirely from live on-chain reads. Holder 0xcFFab3… owns request #80154 at FORK_BLOCK (pending, isValid,
+///      fee 0), worth `min(amountOfEEth, amountForShare(shareOfEEth)) − fee` ETH.
 contract EtherFiWithdrawalQueueAssistedBalanceAdapterForkTest is BalanceAdapterTestBase {
     address public constant WITHDRAW_REQUEST_NFT = 0x7d5706f6ef3F89B3951E23e557CDFBC3239D4E2c;
     address public constant LIQUIDITY_POOL = 0x308861A430be4cce5502d0A12724771Fc6DaF216;
@@ -42,7 +42,7 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterForkTest is BalanceAdapterT
         balances = new BalancesHarnessForFork();
         balances.registerAssetForTest(NATIVE_ETH, 18, "ETH");
 
-        // admin = wrapper = this test, so it plays the wrapper and submits the real tokenId.
+        // Permissionless adapter: no admin/roles. The test later pranks as the real holder and self-submits the tokenId.
         adapter = new EtherFiWithdrawalQueueAssistedBalanceAdapter(
             WITHDRAW_REQUEST_NFT, LIQUIDITY_POOL, NATIVE_ETH, address(balances)
         );

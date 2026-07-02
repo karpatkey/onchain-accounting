@@ -533,15 +533,6 @@
       "positionId": "0x889edC2eDab5f40e902b864aD4d7AdE8E412F9B1"
     }
   },
-  "MerklRewardsAssisted": {
-    "enabled": true,
-    "constructor": {
-      "distributor": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae",
-      "protocol": "Merkl",
-      "positionDetail": "{\"protocol\":\"Merkl\",\"product\":\"Rewards\",\"name\":\"Unclaimed Rewards\"",
-      "positionId": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae"
-    }
-  },
   "EtherFiWithdrawalQueueAssisted": {
     "enabled": true,
     "$comment": "ether.fi withdrawal-queue cache adapter (agent-fed; ADR 0014). Mutable id-cache, owner = chainConfig.admin (OIV Safe); the kpk-agents submitter feeds WithdrawRequestNFT tokenIds. Native-ETH denominated; values from live reads (finalized getClaimableAmount, else min(amountOfEEth, amountForShare)-fee) and re-verifies ownerOf every read. Reports 0 until the agent submits ids. 04 reads withdrawRequestNft/liquidityPool/underlyingToken; protocol/positionDetail/positionId are identity metadata (hardcoded in the contract).",

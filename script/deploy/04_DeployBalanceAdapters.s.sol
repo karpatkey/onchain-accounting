@@ -168,14 +168,14 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // --- StakeWise V3 (Mainnet) — Genesis Vault deposit (osETH itself is now a Custom-priced ERC20, not a balance adapter) ---
         _deployIfEnabled("StakeWiseV3VaultsMeta"); // Meta-adapter: all StakeWise V3 vaults; vault set on NAV (ADR 0010)
 
-        // --- ether.fi withdrawal-queue cache adapter (agent-fed; ADR 0014) ---
+        // --- ether.fi withdrawal-queue cache adapter (assisted; permissionless assistant-fed, ADR 0018) ---
         _deployIfEnabled("EtherFiWithdrawalQueueAssisted");
 
-        // --- Nexus Mutual staked NXM (assisted cache adapter; agent-fed StakingNFT tokenIds, ADR 0015; values
-        //     via StakingViewer, re-verifies ownership per read) ---
+        // --- Nexus Mutual staked NXM (assisted cache adapter; StakingNFT tokenIds, ADR 0015/0018 permissionless
+        //     assistant-fed; values via StakingViewer, re-verifies ownership per read) ---
         _deployIfEnabled("NexusMutualStakingPoolsAssisted");
 
-        // --- StakeWise V3 exit-queue cache adapter (agent-fed; ADR 0014) ---
+        // --- StakeWise V3 exit-queue cache adapter (assisted; permissionless assistant-fed, ADR 0018) ---
         _deployIfEnabled("StakeWiseV3ExitQueueAssisted");
 
         // --- Uniswap V2 (meta-adapter: all pairs; pair set on NAV, ADR 0010) ---

@@ -7,7 +7,7 @@ import {
 
 /// @notice Test stand-in for a staking account (e.g. an OIV Safe / Safe module user) that `delegatecall`s the
 ///         delegatecall-only {NexusMutualStakingPoolsAssistant}. Under the delegatecall, `address(this)` is this
-///         contract, so it is the account that holds NXM, owns the StakingNFT,.
+///         contract, so it is the account that holds NXM and owns the StakingNFT.
 contract AssistantDelegateCaller {
     function deposit(address wrapper, address pool, uint256 amount, uint256 trancheId, uint256 requestTokenId)
         external

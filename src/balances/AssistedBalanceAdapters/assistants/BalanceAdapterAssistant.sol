@@ -18,7 +18,7 @@ import "src/errors.sol";
 ///      `msg.sender = Safe`. A *direct* call to a delegatecall-only entrypoint has `address(this) == SELF` and is
 ///      rejected by {onlyDelegateCall} (fail loud, canonical {NotDelegateCall}), rather than letting the protocol
 ///      revert obscurely. The base holds no roles, no custody, and no mutable state (delegatecall-storage-collision
-///      safe): access to *which* Safe may run a assistant is governed at the Safe/Zodiac layer, not here.
+///      safe): access to *which* Safe may run an assistant is governed at the Safe/Zodiac layer, not here.
 abstract contract BalanceAdapterAssistant is IBalanceAdapterAssistant {
     /// @inheritdoc IBalanceAdapterAssistant
     address public immutable override SELF;

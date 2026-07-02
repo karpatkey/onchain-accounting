@@ -140,7 +140,7 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
     function test_immutables() public view {
         assertEq(address(adapter.USER_WITHDRAWAL_MANAGER()), address(manager));
         assertEq(adapter.UNDERLYING_TOKEN(), address(weth));
-        assertEq(adapter.MAX_REQUESTS_PROBED(), 1000);
+        assertEq(adapter.MAX_REQUESTS_PROBED(), 500);
     }
 
     // ---- Balances ----
@@ -245,7 +245,7 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
     /// @notice An account whose live-request list exceeds MAX_REQUESTS_PROBED is skipped (reported 0) — the safe,
     ///         under-report direction, bounding gas against a griefed array.
     function test_overCap_skips() public {
-        manager.bloat(holder, 1001, 1 ether); // > MAX_REQUESTS_PROBED (1000)
+        manager.bloat(holder, 501, 1 ether); // > MAX_REQUESTS_PROBED (500)
         (uint256 amount,) = adapter.getAdapterBalanceForAsset(holder, address(weth));
         assertEq(amount, 0, "over the cap => reported as 0");
         assertEq(adapter.getAdapterPositions(holder, address(0)).length, 0);

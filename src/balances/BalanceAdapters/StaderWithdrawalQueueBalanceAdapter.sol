@@ -31,25 +31,27 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      request owned by this account by burning their own ETHx — but they donate that ETH to the account and cannot
 ///      recover it, so the injected value is **real, claimable, and self-funded** (equivalent to an airdrop, which the
 ///      wallet ERC20 adapter likewise reports). The residual is cache/gas bloat: the read loops the account's live
-///      requests, each an external `userWithdrawRequests` read. {MAX_REQUESTS_PROBED} equals Stader's own
-///      `maxNonRedeemedUserRequestCount` (1000), so a legitimate account is never skipped, but the flip side is that
-///      the "> cap → skip" guard never engages within protocol rules — an attacker can, by donating real ETHx per
-///      request, fill a victim's array toward 1000 and make every subsequent NAV read for that account pay up to ~1000
-///      external reads. This is tolerated: NAV reads are async/off-chain (ADR 0017), the griefer permanently loses the
-///      donated ETH, and no legit account is ever silently zeroed by a lower cap. A future Stader cap increase would
-///      warrant a re-deploy with a gas-appropriate bound (the enumeration cannot both stay unbounded and OOG-safe).
+///      requests, each an external `userWithdrawRequests` read. To keep that read provably gas-bounded,
+///      {MAX_REQUESTS_PROBED} (500) is set **below** Stader's own `maxNonRedeemedUserRequestCount` (1000), so the
+///      "> cap → skip" guard is reachable: an account pushed past it (only via self-funded third-party request-spam —
+///      a real account never approaches 500) is reported as 0 (safe under-report) instead of risking an OOG that
+///      NAVCalculator's per-adapter try/catch can't rescue. The griefing is tolerated: NAV reads are async/off-chain
+///      (ADR 0017), the griefer permanently loses the donated ETH, and the worst case is a bounded read or a
+///      safe-direction zero — never an over-report.
 contract StaderWithdrawalQueueBalanceAdapter is SingleAssetBalanceAdapterBase {
     //
     // Constants
     //
 
     /// @notice Hard cap on the number of open requests this adapter will read for an account.
-    /// @dev Bounds gas: matches Stader's own `maxNonRedeemedUserRequestCount` (1000 on mainnet), so no legitimate
-    ///      account is ever skipped (the protocol enforces `requestIdsByUserAddress[owner].length <= 1000`). An account
-    ///      over the cap is reported as 0 rather than risking an out-of-gas revert in the NAV read (an OOG is NOT caught
-    ///      by NAVCalculator's try/catch, so it would DoS the whole NAV call). Skipping (reporting 0) is the safe,
-    ///      under-report direction.
-    uint256 public constant MAX_REQUESTS_PROBED = 1000;
+    /// @dev Set **strictly below** Stader's own `maxNonRedeemedUserRequestCount` (1000 on mainnet) so the skip-guard is
+    ///      actually reachable and the per-read gas is provably bounded (≤ this many external `userWithdrawRequests`
+    ///      reads). An account whose live-request count exceeds this is reported as 0 rather than risking an out-of-gas
+    ///      revert in the NAV read (an OOG is NOT caught by NAVCalculator's try/catch, so it would DoS the whole NAV
+    ///      call) — skipping (reporting 0) is the safe, under-report direction. A real account never approaches 500;
+    ///      only third-party request-spam (see the contract NatSpec) can push an account here, and that self-funded
+    ///      griefing then yields an under-report, not an OOG. If Stader ever lowers its own cap below this, revisit.
+    uint256 public constant MAX_REQUESTS_PROBED = 500;
 
     bytes32 private constant PROTOCOL_BRAND = ProtocolIds.STADER;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.STADER;
@@ -263,6 +265,6 @@ interface IStaderConfig {
 /// @notice Minimal interface for Stader's StaderStakePoolsManager — the live ETHx→ETH re-conversion used to cap a
 ///         pending request's stale request-time estimate.
 interface IStaderStakePoolsManager {
-    /// @notice Current ETH value of `ethXAmount` ETHx (ERC4626-style preview at the live exchange rate).
+    /// @notice Current ETH value of `ethXAmount` ETHx at the live exchange rate (Stader's shares→assets preview).
     function previewWithdraw(uint256 ethXAmount) external view returns (uint256);
 }

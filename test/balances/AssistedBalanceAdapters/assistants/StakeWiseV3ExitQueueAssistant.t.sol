@@ -217,7 +217,6 @@ contract StakeWiseV3ExitQueueAssistantTest is BalanceAdapterTestBase {
         assertEq(t.removes(), 0); // remove reverted internally → not counted (ticket kept)
     }
 
-    /// @notice A non-CoordinateStillLive revert from remove (e.g. CoordinateNotCached) bubbles up and reverts the claim.
     /// @notice An untracked ticket (e.g. cleared via clearAccount) makes remove revert CoordinateNotCached; the
     ///         assistant swallows it so the claim still succeeds (nothing to untrack — never block the claim).
     function test_claimExitedAssets_untrackedTicket_swallowsAndClaims() public {

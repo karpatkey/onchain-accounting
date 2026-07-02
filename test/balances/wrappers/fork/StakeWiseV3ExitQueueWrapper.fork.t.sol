@@ -40,14 +40,20 @@ contract StakeWiseV3ExitQueueWrapperForkTest is BalanceAdapterTestBase {
     address public constant NATIVE_ETH = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
     uint256 public constant BLOCK = 25_440_928;
 
-    // Deposit-capable holder (has vault shares at BLOCK).
+    // Deposit-capable holders (hold vault shares at BLOCK): ENS DAO Safe (~9,713) and 0x3428… (~4,668).
     address public constant SHAREHOLDER = 0x4F2083f5fBede34C2714aFfb3105539775f7FE64;
+    address public constant SHAREHOLDER2 = 0x34284C27A2304132aF751b0dEc5bBa2CF98eD039;
 
-    // Redeem-capable holder: checkpointed, past-delay, unclaimed exit position at BLOCK.
+    // Redeem-capable holders: checkpointed, past-delay, unclaimed exit positions at BLOCK (~59 ETH and ~17.87 ETH).
     address public constant CLAIMER = 0x044755C6866a83C150c140F61CFD6dD80559CD98;
     uint256 public constant CLAIM_TICKET = 0x3369f8c7db81fb8b13d7;
     uint256 public constant CLAIM_ENTRY_TS = 1_782_636_371;
     uint256 public constant CLAIM_INDEX = 1468;
+
+    address public constant CLAIMER2 = 0x7fc304492ee5CD07bAF900BfD86aFe66A731d82f;
+    uint256 public constant CLAIM2_TICKET = 0x3368929130022f47ef13;
+    uint256 public constant CLAIM2_ENTRY_TS = 1_782_530_135;
+    uint256 public constant CLAIM2_INDEX = 1467;
 
     StakeWiseV3ExitQueueAssistedBalanceAdapter public adapter;
     StakeWiseV3ExitQueueWrapper public wrapper;
@@ -75,52 +81,61 @@ contract StakeWiseV3ExitQueueWrapperForkTest is BalanceAdapterTestBase {
         return DelegateExecutor(payable(holder));
     }
 
-    // ---- Deposit: real shares-holder enters the queue through the wrapper ----
-
-    function test_fork_enterExitQueue_tracksNewPosition() public {
-        uint256 sharesToExit = 1 ether;
-        assertGe(
-            IStakeWiseExitVault(GENESIS_VAULT).convertToAssets(sharesToExit), 0, "sanity: vault convertToAssets works"
-        );
-
-        DelegateExecutor exec = _executorAt(SHAREHOLDER);
+    /// @dev Real shares-holder enters the queue through the wrapper; asserts the adapter tracks + values it live.
+    function _assertEnter(address holder, uint256 sharesToExit) internal {
+        DelegateExecutor exec = _executorAt(holder);
         bytes memory ret =
             exec.exec(address(wrapper), abi.encodeCall(wrapper.enterExitQueue, (GENESIS_VAULT, sharesToExit)));
         uint256 ticket = abi.decode(ret, (uint256));
 
         // The adapter now tracks the Safe's brand-new position and values it live (fully-pending → via convertToAssets).
-        StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition[] memory cached = adapter.positionsOf(SHAREHOLDER);
+        StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition[] memory cached = adapter.positionsOf(holder);
         assertEq(cached.length, 1, "one tracked position");
         assertEq(cached[0].vault, GENESIS_VAULT);
         assertEq(cached[0].positionTicket, ticket);
-        (uint256 owed,) = adapter.getAdapterBalanceForAsset(SHAREHOLDER, NATIVE_ETH);
+        (uint256 owed,) = adapter.getAdapterBalanceForAsset(holder, NATIVE_ETH);
         assertGt(owed, 0, "freshly-entered position is valued > 0");
         assertApproxEqRel(owed, IStakeWiseExitVault(GENESIS_VAULT).convertToAssets(sharesToExit), 0.01e18);
     }
 
-    // ---- Redeem: real checkpointed position claimed through the wrapper ----
-
-    function test_fork_claimExitedAssets_paysHolderAndUntracks() public {
-        // Sanity: the position is checkpointed and unclaimed at BLOCK.
+    /// @dev Real checkpointed position claimed through the wrapper; asserts assets are paid to the holder + untracked.
+    function _assertClaim(address holder, uint256 ticket, uint256 ts, uint256 idx) internal {
         (uint256 left,, uint256 exitedAssets) =
-            IStakeWiseExitVault(GENESIS_VAULT).calculateExitedAssets(CLAIMER, CLAIM_TICKET, CLAIM_ENTRY_TS, CLAIM_INDEX);
+            IStakeWiseExitVault(GENESIS_VAULT).calculateExitedAssets(holder, ticket, ts, idx);
         assertEq(left, 0, "fully exited");
         assertGt(exitedAssets, 0, "unclaimed, owed > 0");
 
         // Track the ticket (as the claimer) so the wrapper's post-claim remove succeeds.
-        vm.prank(CLAIMER);
-        adapter.submit(GENESIS_VAULT, CLAIM_TICKET, CLAIM_ENTRY_TS);
-        assertEq(adapter.positionsOf(CLAIMER).length, 1);
+        vm.prank(holder);
+        adapter.submit(GENESIS_VAULT, ticket, ts);
+        assertEq(adapter.positionsOf(holder).length, 1);
 
-        uint256 balBefore = CLAIMER.balance;
-        DelegateExecutor exec = _executorAt(CLAIMER);
-        exec.exec(
-            address(wrapper),
-            abi.encodeCall(wrapper.claimExitedAssets, (GENESIS_VAULT, CLAIM_TICKET, CLAIM_ENTRY_TS, CLAIM_INDEX))
-        );
+        uint256 balBefore = holder.balance;
+        DelegateExecutor exec = _executorAt(holder);
+        exec.exec(address(wrapper), abi.encodeCall(wrapper.claimExitedAssets, (GENESIS_VAULT, ticket, ts, idx)));
 
         // Claimed ETH was paid to the holder, and the wrapper deregistered the ticket.
-        assertEq(CLAIMER.balance - balBefore, exitedAssets, "holder received the exited assets");
-        assertEq(adapter.positionsOf(CLAIMER).length, 0, "ticket deregistered after claim");
+        assertEq(holder.balance - balBefore, exitedAssets, "holder received the exited assets");
+        assertEq(adapter.positionsOf(holder).length, 0, "ticket deregistered after claim");
+    }
+
+    // ---- Deposit: real shares-holders enter the queue through the wrapper ----
+
+    function test_fork_enterExitQueue_ensSafe() public {
+        _assertEnter(SHAREHOLDER, 1 ether);
+    }
+
+    function test_fork_enterExitQueue_secondHolder() public {
+        _assertEnter(SHAREHOLDER2, 2 ether);
+    }
+
+    // ---- Redeem: real checkpointed positions claimed through the wrapper ----
+
+    function test_fork_claimExitedAssets_holder0447() public {
+        _assertClaim(CLAIMER, CLAIM_TICKET, CLAIM_ENTRY_TS, CLAIM_INDEX);
+    }
+
+    function test_fork_claimExitedAssets_holder7fc3() public {
+        _assertClaim(CLAIMER2, CLAIM2_TICKET, CLAIM2_ENTRY_TS, CLAIM2_INDEX);
     }
 }

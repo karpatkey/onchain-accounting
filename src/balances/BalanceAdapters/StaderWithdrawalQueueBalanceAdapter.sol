@@ -40,6 +40,20 @@ contract StaderWithdrawalQueueBalanceAdapter is SingleAssetAssistedGetters, IPos
     using EnumerableSet for EnumerableSet.UintSet;
 
     //
+    // Errors
+    //
+
+    /// @notice Thrown by {submit} when `requestId` is not currently owned by the caller (so it can't be cached for it).
+    error RequestNotOwnedByAccount(address account, uint256 requestId);
+
+    /// @notice Thrown by {remove} when `requestId` is not in the caller's cache (nothing of theirs to remove).
+    error RequestNotCached(address account, uint256 requestId);
+
+    /// @notice Thrown by {remove} when `requestId` is still owned by the caller (a live position — not yet claimed —
+    ///         so removing it would make the caller's own NAV under-report). Only a claimed id may be removed.
+    error RequestNotClaimed(address account, uint256 requestId);
+
+    //
     // Constants
     //
 
@@ -95,31 +109,32 @@ contract StaderWithdrawalQueueBalanceAdapter is SingleAssetAssistedGetters, IPos
 
     /// @notice Track `requestId` for the caller (idempotent). Called by a Safe that delegatecalls the wrapper right
     ///         after it forwards a `requestWithdraw` that created the request, so the cache is updated atomically.
-    ///         **Reverts** `NotTokenOwner` if `requestId` is not currently owned by the caller, and `TokenIdCacheFull`
-    ///         if a new id would grow the caller's set past {MAX_REQUESTS}.
+    ///         **Reverts** `RequestNotOwnedByAccount` if `requestId` is not currently owned by the caller (verified
+    ///         against the manager), and `TokenIdCacheFull` if a new id would grow the caller's set past {MAX_REQUESTS}.
     /// @dev Keyed on `msg.sender`: an account can only ever add ids it actually owns to its own cache, so no third party
     ///      can bloat it. Re-submitting an already-cached id is a no-op (no cap/ownership re-check, no event).
     function submit(uint256 requestId) external {
         EnumerableSet.UintSet storage set = _requestIds[msg.sender];
         if (set.contains(requestId)) return; // idempotent — nothing to validate or emit
         if (set.length() >= MAX_REQUESTS) revert TokenIdCacheFull(msg.sender, MAX_REQUESTS);
-        (address owner,) = _ownerOf(requestId);
-        if (owner != msg.sender) revert NotTokenOwner(msg.sender, requestId);
+        if (_ownerOf(requestId) != msg.sender) revert RequestNotOwnedByAccount(msg.sender, requestId);
         set.add(requestId);
         emit RequestIdSubmitted(msg.sender, requestId);
     }
 
-    /// @notice Stop tracking `requestId` for the caller — but **only if** it is no longer owned by the caller (claimed —
-    ///         the manager deletes the request, so its owner reads back as `address(0)`). It can only ever remove an id
-    ///         that fails the live ownership check, so no live position can ever be dropped. This is the cleanup path a
-    ///         Safe runs (via the delegatecalled wrapper) right after it claims.
-    /// @dev Keyed on `msg.sender`. **Reverts** `NotTokenOwner` if `requestId` is still owned by the caller (nothing to
-    ///      remove) so a mistaken call is loud rather than silently dropping a live position. Idempotent for an
-    ///      already-absent id.
+    /// @notice Stop tracking `requestId` for the caller. Requires the id to (1) be in the caller's cache and (2) have
+    ///         been claimed — the manager deletes a request on claim, so its owner reads back as `address(0)`. This is
+    ///         the cleanup path a Safe runs (via the delegatecalled wrapper) right after it claims.
+    /// @dev Keyed on `msg.sender`, and the cache is itself the record that the id belonged to the caller (a verified
+    ///      {submit} put it there), so no manager lookup of a claimed request's former owner is needed. **Reverts**
+    ///      `RequestNotCached` if the id isn't in the caller's cache, and `RequestNotClaimed` if it is still owned by
+    ///      the caller (a live position) — so a mistaken call is loud and a live position can never be dropped.
     function remove(uint256 requestId) external {
-        (address owner, bool live) = _ownerOf(requestId);
-        if (live && owner == msg.sender) revert NotTokenOwner(msg.sender, requestId);
-        if (_requestIds[msg.sender].remove(requestId)) emit RequestIdCleared(msg.sender, requestId);
+        EnumerableSet.UintSet storage set = _requestIds[msg.sender];
+        if (!set.contains(requestId)) revert RequestNotCached(msg.sender, requestId);
+        if (_ownerOf(requestId) == msg.sender) revert RequestNotClaimed(msg.sender, requestId);
+        set.remove(requestId);
+        emit RequestIdCleared(msg.sender, requestId);
     }
 
     //
@@ -238,11 +253,10 @@ contract StaderWithdrawalQueueBalanceAdapter is SingleAssetAssistedGetters, IPos
         return (ethExpected, false);
     }
 
-    /// @dev The request's current owner and whether it is live (owner != 0). A claimed request has its storage entry
-    ///      deleted by the manager, so `owner` reads back as `address(0)`; the public getter never reverts.
-    function _ownerOf(uint256 requestId) internal view returns (address owner, bool live) {
-        (address o,,,,) = USER_WITHDRAWAL_MANAGER.userWithdrawRequests(requestId);
-        return (o, o != address(0));
+    /// @dev The request's current owner. A claimed request has its storage entry deleted by the manager, so `owner`
+    ///      reads back as `address(0)`; the public getter never reverts.
+    function _ownerOf(uint256 requestId) internal view returns (address owner) {
+        (owner,,,,) = USER_WITHDRAWAL_MANAGER.userWithdrawRequests(requestId);
     }
 }
 

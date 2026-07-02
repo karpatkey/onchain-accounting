@@ -45,11 +45,13 @@ intentionally deferred — see Consequences), and neither holds any role, admin,
 
 - **`StaderWithdrawalQueueBalanceAdapter`** — the single-asset getter triad (WETH) + an `EnumerableSet.UintSet`-per-
   account request-id cache, **keyed on `msg.sender`** with no access control. `submit(requestId)` adds an id to the
-  caller's own cache (fail-loud `NotTokenOwner` if the caller doesn't own it / `TokenIdCacheFull` at the cap);
-  `remove(requestId)` drops an id from the caller's cache **only if** it is provably no longer owned by the caller
-  (claimed → the manager deletes the request, so its owner reads back as `address(0)`) — it can only ever remove a dead
-  entry, never a live position. There is no admin and no bulk clear: because only the account can grow its own cache and
-  can always `remove` its own stale ids, none is needed. Valuation is unchanged from the plain adapter (`ethFinalized`
+  caller's own cache (reverts `RequestNotOwnedByAccount` if the manager says the caller doesn't own it, or
+  `TokenIdCacheFull` at the cap). `remove(requestId)` drops an id from the caller's cache, requiring the id to be
+  **cached** (reverts `RequestNotCached` otherwise) **and claimed** (reverts `RequestNotClaimed` if it is still owned by
+  the caller — a live position); a claimed request has its manager record deleted, so its owner reads back as
+  `address(0)`. So `remove` can never drop a live position, and the cache itself is the record that the id belonged to
+  the caller — no lookup of a claimed request's former owner is needed (the manager no longer stores it). There is no
+  admin and no bulk clear. Valuation is unchanged from the plain adapter (`ethFinalized`
   once finalized, else the rate-converted `ethExpected`; `isLocked = !finalized`), emitting one `Supplied` leg per owned
   cached request under the static `positionId = abi.encode(USER_WITHDRAWAL_MANAGER)`, with the request id in the typed
   `positionInstanceId`.
@@ -67,11 +69,11 @@ intentionally deferred — see Consequences), and neither holds any role, admin,
 
 - The plain enumerating adapter is **removed** (not kept alongside): the self-fed path is strictly the safer source of
   the same positions, and the grief vector on the enumerating version is a real reason not to leave it registered.
-- Both wrapper entrypoints are **DELEGATECALL-only**. karpatkey Zodiac Roles configure the Safe to delegatecall the
-  wrapper per-function. Invoked as a normal CALL each fails safe: `requestWithdraw` requires `_owner == address(this)`
-  (the wrapper) and then reverts pulling ETHx from the fund-less wrapper; `claim` forwards with `msg.sender == wrapper
-  != owner` and reverts inside the manager (`CallerNotAuthorizedToRedeem`). **EOAs cannot delegatecall**, so the
-  intended callers are Safe/Avatar accounts (an EOA would use Stader directly).
+- Both wrapper entrypoints are **DELEGATECALL-only**, enforced by an `onlyDelegateCall` guard (compares `address(this)`
+  to the `SELF` address pinned at construction). karpatkey Zodiac Roles configure the Safe to delegatecall the wrapper
+  per-function. A normal CALL reverts `NotDelegateCall` up front, so a wrong invocation fails loud and early rather than
+  obscurely inside Stader. **EOAs cannot delegatecall**, so the intended callers are Safe/Avatar accounts (an EOA would
+  use Stader directly).
 - The cache needs **no role and no admin**: it is keyed on `msg.sender`, so an account can only add ids it owns to its
   own entry, and `remove` only ever drops the caller's own provably-stale ids. NAV correctness never depends on `remove`
   — the adapter re-verifies ownership per read, so a claimed id already values to 0 whether or not it's been removed.

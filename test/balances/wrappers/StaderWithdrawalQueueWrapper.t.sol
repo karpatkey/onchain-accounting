@@ -160,24 +160,18 @@ contract StaderWithdrawalQueueWrapperTest is Test {
         safe.delegateRequestWithdrawWithOwner(address(wrapper), AMOUNT, alice); // _owner != address(this)
     }
 
-    function test_requestWithdraw_normalCallFailsSafe() public {
-        // A normal CALL runs with address(this) == wrapper, so _owner must be the wrapper; anything else reverts
-        // InvalidArguments. (Passing the wrapper itself would then revert pulling ETHx from the fund-less wrapper.)
-        vm.expectRevert(InvalidArguments.selector);
+    function test_requestWithdraw_normalCallReverts() public {
+        // A direct (non-delegate) CALL runs on the singleton (address(this) == SELF) -> onlyDelegateCall reverts.
+        vm.expectRevert(StaderWithdrawalQueueWrapper.NotDelegateCall.selector);
         wrapper.requestWithdraw(AMOUNT, alice);
     }
 
     // ---- claim ----
 
-    function test_claim_directCallByNonOwnerReverts() public {
-        // A Safe requests (owner = Safe), then a direct CALL to wrapper.claim forwards with msg.sender = wrapper, which
-        // is not the owner -> the manager rejects it. Demonstrates the fail-safe for the wrong invocation mode.
-        MockSafe safe = new MockSafe();
-        ethx.mint(address(safe), AMOUNT);
-        uint256 requestId = safe.delegateRequestWithdraw(address(wrapper), AMOUNT);
-
-        vm.expectRevert(MockStaderUserWithdrawalManager.CallerNotAuthorizedToRedeem.selector);
-        wrapper.claim(requestId);
+    function test_claim_normalCallReverts() public {
+        // A direct (non-delegate) CALL to claim reverts on the onlyDelegateCall guard before touching Stader.
+        vm.expectRevert(StaderWithdrawalQueueWrapper.NotDelegateCall.selector);
+        wrapper.claim(1);
     }
 
     function test_claim_delegatecalledBySafe_claimsAndPrunes() public {

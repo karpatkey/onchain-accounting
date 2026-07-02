@@ -126,7 +126,11 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
             })
         );
         vm.prank(bob);
-        vm.expectRevert(abi.encodeWithSelector(NotTokenOwner.selector, bob, uint256(1)));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                StaderWithdrawalQueueBalanceAdapter.RequestNotOwnedByAccount.selector, bob, uint256(1)
+            )
+        );
         adapter.submit(1);
         assertEq(adapter.requestIdsOf(alice).length, 0, "bob cannot feed alice's cache");
     }
@@ -139,7 +143,11 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
             })
         );
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(NotTokenOwner.selector, alice, uint256(1)));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                StaderWithdrawalQueueBalanceAdapter.RequestNotOwnedByAccount.selector, alice, uint256(1)
+            )
+        );
         adapter.submit(1);
     }
 
@@ -161,16 +169,26 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         adapter.submit(overflowId);
     }
 
-    // ---- remove (permissionless, provably-stale-only, keyed on msg.sender) ----
+    // ---- remove (permissionless, keyed on msg.sender: must be cached AND claimed) ----
+
+    function test_remove_revertsWhenNotCached() public {
+        vm.prank(alice);
+        vm.expectRevert(
+            abi.encodeWithSelector(StaderWithdrawalQueueBalanceAdapter.RequestNotCached.selector, alice, uint256(9))
+        );
+        adapter.remove(9);
+    }
 
     function test_remove_revertsWhenStillOwned() public {
-        _seed(alice, 1, 1e18, 0);
+        _seed(alice, 1, 1e18, 0); // cached and still live (not claimed)
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(NotTokenOwner.selector, alice, uint256(1)));
+        vm.expectRevert(
+            abi.encodeWithSelector(StaderWithdrawalQueueBalanceAdapter.RequestNotClaimed.selector, alice, uint256(1))
+        );
         adapter.remove(1);
     }
 
-    function test_remove_dropsClaimedId() public {
+    function test_remove_dropsCachedClaimedId() public {
         _seed(alice, 1, 1e18, 0);
         manager.clearOwner(1); // simulate claim -> owner becomes address(0)
         vm.prank(alice);

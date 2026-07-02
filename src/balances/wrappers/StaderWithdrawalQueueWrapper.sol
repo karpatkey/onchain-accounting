@@ -31,12 +31,14 @@ import "src/errors.sol";
 ///         under delegatecall that is the Safe ✓, ETH flows to the Safe) and then calls the adapter's `remove` to drop
 ///         the now-deleted (provably-stale) request id from the Safe's cache.
 ///
-///      A **normal CALL** to either function fails safe: `requestWithdraw` requires `_owner == address(this)` (the
-///      wrapper) and would then pull ETHx from the fund-less wrapper and revert; `claim` would forward with
-///      `msg.sender == wrapper != owner` and revert inside the manager (`CallerNotAuthorizedToRedeem`). EOAs cannot
-///      delegatecall, so the intended callers are Safe/Avatar accounts.
+///      A **normal CALL** to either function reverts `NotDelegateCall` (the {onlyDelegateCall} guard: on a direct call
+///      `address(this) == SELF`), so a wrong invocation fails loud and early. EOAs cannot delegatecall, so the intended
+///      callers are Safe/Avatar accounts.
 contract StaderWithdrawalQueueWrapper {
     using SafeERC20 for IERC20;
+
+    /// @notice Thrown when an entrypoint that must be delegatecalled is called directly on the singleton.
+    error NotDelegateCall();
 
     /// @notice The balance adapter this wrapper feeds (the Safe's `submit`/`remove` target under delegatecall).
     address public immutable ADAPTER;
@@ -46,6 +48,20 @@ contract StaderWithdrawalQueueWrapper {
 
     /// @notice ETHx token — approved to the UserWithdrawalManager (from the Safe) on `requestWithdraw`.
     address public immutable ETHX;
+
+    /// @notice This deployment's own address, pinned at construction — used by {onlyDelegateCall} to tell a delegatecall
+    ///         (running in a Safe's context) from a direct call on the singleton.
+    address private immutable SELF;
+
+    /// @dev Reverts unless the current call is a delegatecall (running in a caller's context, not the singleton's).
+    ///      Under delegatecall `address(this)` is the caller Safe; on a direct call it is this deployment (`== SELF`,
+    ///      the address pinned at construction). {requestWithdraw} / {claim} rely on running in the Safe's context (so
+    ///      Stader/the adapter see `msg.sender = Safe`), so a direct call is always a mistake — fail loud here instead
+    ///      of letting Stader revert obscurely.
+    modifier onlyDelegateCall() {
+        if (address(this) == SELF) revert NotDelegateCall();
+        _;
+    }
 
     /// @param adapter_               The {StaderWithdrawalQueueBalanceAdapter}. Must be a contract.
     /// @param userWithdrawalManager_ Stader UserWithdrawalManager. Must be a contract.
@@ -61,6 +77,7 @@ contract StaderWithdrawalQueueWrapper {
         ADAPTER = adapter_;
         USER_WITHDRAWAL_MANAGER = userWithdrawalManager_;
         ETHX = ethx_;
+        SELF = address(this);
     }
 
     /// @notice Request a withdrawal of `_ethXAmount` ETHx from Stader and track the resulting request. **Must be
@@ -70,7 +87,11 @@ contract StaderWithdrawalQueueWrapper {
     /// @param _owner      Must equal `address(this)` — under delegatecall this is the Safe, so the request is owned by
     ///                    (and tracked for) the Safe.
     /// @return requestId The created withdrawal request id (tracked for the Safe).
-    function requestWithdraw(uint256 _ethXAmount, address _owner) external returns (uint256 requestId) {
+    function requestWithdraw(uint256 _ethXAmount, address _owner)
+        external
+        onlyDelegateCall
+        returns (uint256 requestId)
+    {
         // Under delegatecall address(this) is the Safe. Pin the request owner / tracked account to the Safe so the
         // adapter's msg.sender-keyed cache and its live ownership re-verification both line up on the Safe.
         if (_owner != address(this)) revert InvalidArguments();
@@ -90,7 +111,7 @@ contract StaderWithdrawalQueueWrapper {
     ///         and the now-deleted request is dropped from the Safe's adapter cache via `remove`. Mirrors
     ///         `UserWithdrawalManager.claim`'s signature.
     /// @param _requestId The withdrawal request id to claim (owned by the delegatecalling Safe).
-    function claim(uint256 _requestId) external {
+    function claim(uint256 _requestId) external onlyDelegateCall {
         IStaderUserWithdrawalManager(USER_WITHDRAWAL_MANAGER).claim(_requestId);
         // msg.sender seen by the adapter is the Safe. remove drops the id only because the claim just deleted the
         // request (provably no longer owned); it can never delete a live one.

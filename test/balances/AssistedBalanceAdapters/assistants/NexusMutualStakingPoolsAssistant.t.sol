@@ -212,13 +212,16 @@ contract NexusMutualStakingPoolsAssistantTest is BalanceAdapterTestBase {
         assertEq(bal, 100);
     }
 
-    function test_withdraw_uncachedId_reverts() public {
-        // The account owns id 999 (Nexus does not burn the NFT on withdraw) but it was never cached: the wrapper's
-        // remove is fail-loud (CoordinateNotCached), so the whole delegatecalled withdraw reverts.
+    function test_withdraw_uncachedId_swallowsAndWithdraws() public {
+        // The account owns id 999 (Nexus does not burn the NFT on withdraw) but it was never cached (e.g. minted
+        // outside the assistant, or cleared via clearAccount). The trailing remove reverts CoordinateNotCached, which
+        // the module swallows — the withdraw itself must still succeed (nothing to untrack).
         nft.setToken(999, 1, address(account));
-        pool.setWithdrawReturns(1, 0);
+        pool.setWithdrawReturns(7, 0);
         uint256[] memory tranches = new uint256[](0);
-        vm.expectRevert(abi.encodeWithSelector(CoordinateNotCached.selector, address(account), uint256(999)));
-        account.withdraw(address(wrapper), address(pool), 999, true, false, tranches);
+        (uint256 s,) = account.withdraw(address(wrapper), address(pool), 999, true, false, tranches);
+        assertEq(s, 7, "withdraw executed despite the id not being tracked");
+        assertEq(pool.lastWithdrawId(), 999);
+        assertEq(adapter.tokenIdsOf(address(account)).length, 0, "still nothing tracked");
     }
 }

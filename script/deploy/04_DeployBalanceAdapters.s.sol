@@ -76,6 +76,15 @@ import {
     StakeWiseV3ExitQueueAssistedBalanceAdapter
 } from "../../src/balances/AssistedBalanceAdapters/StakeWiseV3ExitQueueAssistedBalanceAdapter.sol";
 import {
+    EtherFiWithdrawalQueueAssistant
+} from "../../src/balances/AssistedBalanceAdapters/assistants/EtherFiWithdrawalQueueAssistant.sol";
+import {
+    NexusMutualStakingPoolsAssistant
+} from "../../src/balances/AssistedBalanceAdapters/assistants/NexusMutualStakingPoolsAssistant.sol";
+import {
+    StakeWiseV3ExitQueueAssistant
+} from "../../src/balances/AssistedBalanceAdapters/assistants/StakeWiseV3ExitQueueAssistant.sol";
+import {
     UniswapV3PoolsMetaBalanceAdapter
 } from "../../src/balances/MetaBalanceAdapters/uniswap/UniswapV3PoolsMetaBalanceAdapter.sol";
 import {
@@ -190,6 +199,12 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // --- PancakeSwap V3 (meta-adapter; disabled in config — never deployed, kept for parity) ---
         _deployIfEnabled("PancakeSwapV3PoolsMeta"); // meta-adapter: PancakeSwap V3 pools (on-chain NFT enumeration)
 
+        // --- Assistants for the permissionless assisted adapters (ADR 0018) ---
+        // Delegatecall helpers the owner Safe uses to enter/stake while keeping the adapter cache current. Deployed
+        // alongside their adapters (not NAV-registered); recorded in the deployment state so the ops team can whitelist
+        // them on the Roles modifier. Stader is a plain adapter and has no assistant.
+        _deployAssistantsIfEnabled();
+
         // ERC20Default is deployed in NAVCalculator.initialize() when the NAV proxy is set up (02_DeployProxies); it is not deployed here.
         // StakeWiseV3* adapters are wired above so accounts holding osETH or Genesis-Vault
         // deposits get full coverage in the integration report.
@@ -225,6 +240,63 @@ contract DeployBalanceAdapters is BaseDeployScript {
             // Save to config
             ConfigReader.writeAdapterAddress(vm, currentChainId, "balanceAdapters", adapterName, adapter);
             console2.log("  Deployed at:", adapter);
+        }
+    }
+
+    /// @notice Deploys the delegatecall assistants paired with the permissionless assisted adapters (ADR 0018), when
+    ///         their adapters are deployed. Assistants are NOT NAV-registered (they are not balance adapters); they are
+    ///         recorded in the deployment state for the ops team to whitelist on the Roles modifier. Idempotent — skips
+    ///         an assistant already recorded. Constructor args beyond the adapter address are read from the paired
+    ///         adapter's config (`tokenController` for Nexus, `eeth` for ether.fi; StakeWise needs only the adapter).
+    function _deployAssistantsIfEnabled() internal {
+        // ether.fi
+        address etherfiAdapter = _readAdapterDeployed("balanceAdapters", "EtherFiWithdrawalQueueAssisted");
+        if (etherfiAdapter != address(0) && readDeployedAddress("EtherFiWithdrawalQueueAssistant") == address(0)) {
+            address liquidityPool = vm.parseAddress(
+                ConfigReader.readAdapterParam(
+                    vm, currentChainId, "balanceAdapters", "EtherFiWithdrawalQueueAssisted", "liquidityPool"
+                )
+            );
+            address withdrawRequestNft = vm.parseAddress(
+                ConfigReader.readAdapterParam(
+                    vm, currentChainId, "balanceAdapters", "EtherFiWithdrawalQueueAssisted", "withdrawRequestNft"
+                )
+            );
+            address eeth = vm.parseAddress(
+                ConfigReader.readAdapterParam(
+                    vm, currentChainId, "balanceAdapters", "EtherFiWithdrawalQueueAssisted", "eeth"
+                )
+            );
+            address assistant =
+                address(new EtherFiWithdrawalQueueAssistant(etherfiAdapter, liquidityPool, withdrawRequestNft, eeth));
+            saveDeployedAddress("EtherFiWithdrawalQueueAssistant", assistant);
+            console2.log("Deployed EtherFiWithdrawalQueueAssistant:", assistant);
+        }
+
+        // Nexus Mutual (underlyingToken on the adapter config is NXM, reused as the assistant's NXM arg)
+        address nexusAdapter = _readAdapterDeployed("balanceAdapters", "NexusMutualStakingPoolsAssisted");
+        if (nexusAdapter != address(0) && readDeployedAddress("NexusMutualStakingPoolsAssistant") == address(0)) {
+            address nxm = vm.parseAddress(
+                ConfigReader.readAdapterParam(
+                    vm, currentChainId, "balanceAdapters", "NexusMutualStakingPoolsAssisted", "underlyingToken"
+                )
+            );
+            address tokenController = vm.parseAddress(
+                ConfigReader.readAdapterParam(
+                    vm, currentChainId, "balanceAdapters", "NexusMutualStakingPoolsAssisted", "tokenController"
+                )
+            );
+            address assistant = address(new NexusMutualStakingPoolsAssistant(nexusAdapter, nxm, tokenController));
+            saveDeployedAddress("NexusMutualStakingPoolsAssistant", assistant);
+            console2.log("Deployed NexusMutualStakingPoolsAssistant:", assistant);
+        }
+
+        // StakeWise V3 (assistant needs only the adapter)
+        address stakewiseAdapter = _readAdapterDeployed("balanceAdapters", "StakeWiseV3ExitQueueAssisted");
+        if (stakewiseAdapter != address(0) && readDeployedAddress("StakeWiseV3ExitQueueAssistant") == address(0)) {
+            address assistant = address(new StakeWiseV3ExitQueueAssistant(stakewiseAdapter));
+            saveDeployedAddress("StakeWiseV3ExitQueueAssistant", assistant);
+            console2.log("Deployed StakeWiseV3ExitQueueAssistant:", assistant);
         }
     }
 

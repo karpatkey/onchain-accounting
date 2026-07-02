@@ -2,7 +2,7 @@
 pragma solidity ^0.8;
 
 import {BalanceAdapterAssistant} from "src/balances/AssistedBalanceAdapters/assistants/BalanceAdapterAssistant.sol";
-import {CoordinateStillLive} from "src/errors.sol";
+import {CoordinateNotCached, CoordinateStillLive} from "src/errors.sol";
 
 /// @title StakeWise V3 Exit-Queue Assistant
 /// @author KPK
@@ -53,14 +53,16 @@ contract StakeWiseV3ExitQueueAssistant is BalanceAdapterAssistant {
         onlyDelegateCall
     {
         IStakeWiseVaultEnterExit(vault).claimExitedAssets(positionTicket, timestamp, exitQueueIndex);
-        // Deregister only once the ticket is fully consumed. A partial claim leaves owed shares under this ticket, so
-        // the adapter reverts `CoordinateStillLive` — swallow that and keep it tracked (its residual stays valued);
-        // any other revert (e.g. `CoordinateNotCached`) bubbles up. NOTE: StakeWise re-queues a not-yet-checkpointed
+        // Best-effort deregister — never block the claim itself. A partial claim leaves owed shares under this ticket,
+        // so the adapter reverts `CoordinateStillLive` (keep it tracked; its residual stays valued). A ticket that
+        // isn't tracked — cleared via `clearAccount`, or entered outside the assistant — reverts `CoordinateNotCached`
+        // (nothing to untrack). Swallow both; bubble anything else. NOTE: StakeWise re-queues a not-yet-checkpointed
         // remainder under a NEW ticket; that new ticket is a distinct coordinate the caller must `submit` (from the
         // vault's re-queue event) — this assistant only manages the ticket it was given.
         try IStakeWiseV3ExitQueueAssistedBalanceAdapter(ADAPTER).remove(vault, positionTicket, timestamp) {}
         catch (bytes memory reason) {
-            if (bytes4(reason) != CoordinateStillLive.selector) {
+            bytes4 sel = bytes4(reason);
+            if (sel != CoordinateStillLive.selector && sel != CoordinateNotCached.selector) {
                 assembly {
                     revert(add(reason, 0x20), mload(reason))
                 }

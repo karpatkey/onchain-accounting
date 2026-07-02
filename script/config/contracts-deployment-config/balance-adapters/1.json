@@ -542,7 +542,8 @@
       "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
       "protocol": "ether.fi",
       "positionDetail": "{\"protocol\":\"ether.fi\",\"product\":\"Staking\",\"name\":\"ETH Withdrawal Queue\"",
-      "positionId": "0x7d5706f6ef3F89B3951E23e557CDFBC3239D4E2c"
+      "positionId": "0x7d5706f6ef3F89B3951E23e557CDFBC3239D4E2c",
+      "eeth": "0x35fA164735182de50811E8e2E824cFb9B6118ac2"
     }
   },
   "NexusMutualStakingPoolsAssisted": {
@@ -554,7 +555,8 @@
       "underlyingToken": "0xd7c49CEE7E9188cCa6AD8FF264C1DA2e69D4Cf3B",
       "protocol": "Nexus Mutual",
       "positionDetail": "{\"protocol\":\"Nexus Mutual\",\"product\":\"StakingPool\"",
-      "positionId": "abi.encode(address stakingPool)"
+      "positionId": "abi.encode(address stakingPool)",
+      "tokenController": "0x5407381b6c251cFd498ccD4A1d877739CB7960B8"
     }
   },
   "StakeWiseV3ExitQueueAssisted": {

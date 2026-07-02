@@ -86,13 +86,15 @@ contract NexusMutualStakingPoolsAssistant is BalanceAdapterAssistant {
     ) external onlyDelegateCall returns (uint256 withdrawnStake, uint256 withdrawnRewards) {
         (withdrawnStake, withdrawnRewards) =
             INexusMutualStakingPool(poolAddress).withdraw(tokenId, withdrawStake, withdrawRewards, trancheIds);
-        // Untrack only once the position is fully emptied. Nexus does not burn the StakingNFT, so a partial or
-        // rewards-only withdraw leaves live stake — the adapter then reverts `CoordinateStillLive`, which we swallow
-        // and keep the id tracked (its residual stays valued; a later full withdraw re-syncs it). Any other revert
-        // (e.g. `CoordinateNotCached` for an untracked id) bubbles up.
+        // Best-effort untrack — never block the withdraw itself. Nexus does not burn the StakingNFT, so a partial or
+        // rewards-only withdraw leaves live stake and the adapter reverts `CoordinateStillLive` (keep it tracked; a
+        // later full withdraw re-syncs). And an id that isn't tracked — cleared via `clearAccount`, or acquired
+        // outside the assistant — reverts `CoordinateNotCached` (nothing to untrack). Swallow both; bubble anything
+        // else.
         try INexusMutualStakingPoolsAssistedBalanceAdapter(ADAPTER).remove(tokenId) {}
         catch (bytes memory reason) {
-            if (bytes4(reason) != CoordinateStillLive.selector) {
+            bytes4 sel = bytes4(reason);
+            if (sel != CoordinateStillLive.selector && sel != CoordinateNotCached.selector) {
                 assembly {
                     revert(add(reason, 0x20), mload(reason))
                 }

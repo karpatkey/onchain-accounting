@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
 import {BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
-import {NexusMutualStakingPoolsAssistedBalanceAdapter} from
+import {NexusMutualStakingPoolsAssistedBalanceAdapter, INexusStakingViewer} from
     "src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsAssistedBalanceAdapter.sol";
 import {NexusMutualStakingPoolsWrapper} from "src/balances/wrappers/NexusMutualStakingPoolsWrapper.sol";
 import {WrapperDelegateCaller} from "test/balances/wrappers/WrapperDelegateCaller.sol";
@@ -123,6 +123,26 @@ contract NexusMutualStakingPoolsWrapperForkTest is BalanceAdapterTestBase {
         require(n == count, "not enough public pools");
     }
 
+    /// @dev The account's NXM balance.
+    function _nxm(address a) internal view returns (uint256) {
+        return IERC20(NXM).balanceOf(a);
+    }
+
+    /// @dev Assert the adapter's reported NXM balance for `account` equals Nexus's own `getAggregatedTokens` over the
+    ///      account's currently-cached ids (delta 0) — the faithful correctness property. The ~65k-wei stake↔shares
+    ///      rounding lives entirely inside Nexus's math, which the adapter mirrors exactly.
+    function _assertAdapterMatchesNexus(address acct) internal view {
+        uint256[] memory ids = adapter.tokenIdsOf(acct);
+        uint256 nexusTotal;
+        if (ids.length != 0) {
+            INexusStakingViewer.AggregatedTokens memory agg =
+                INexusStakingViewer(STAKING_VIEWER).getAggregatedTokens(ids);
+            nexusTotal = agg.totalActiveStake + agg.totalExpiredStake + agg.totalRewards;
+        }
+        (uint256 bal,) = adapter.getAdapterBalanceForAsset(acct, NXM);
+        assertEq(bal, nexusTotal, "adapter balance == Nexus getAggregatedTokens (delta 0)");
+    }
+
     /// @dev Deposit AMOUNT into `pool`'s current active tranche as the account; returns (pool, trancheId, tokenId).
     function _deposit() internal returns (address pool, uint256 trancheId, uint256 tokenId) {
         pool = _firstPublicPool();
@@ -132,18 +152,20 @@ contract NexusMutualStakingPoolsWrapperForkTest is BalanceAdapterTestBase {
     }
 
     function test_deposit_realPool_mintsTracksAndValues() public {
-        uint256 accountNxmBefore = IERC20(NXM).balanceOf(address(account));
+        // Before: adapter reports nothing.
+        _assertAdapterMatchesNexus(address(account));
+        assertEq(adapter.tokenIdsOf(address(account)).length, 0, "untracked before deposit");
+        uint256 nxmBefore = _nxm(address(account));
+
         (,, uint256 tokenId) = _deposit();
 
+        // After: the account spent exactly the deposited amount, and the adapter reports exactly Nexus's staked value.
         assertGt(tokenId, 0, "a StakingNFT was minted");
-        assertEq(IERC20(NXM).balanceOf(address(account)), accountNxmBefore - AMOUNT, "account NXM staked");
-
+        assertEq(nxmBefore - _nxm(address(account)), AMOUNT, "account NXM spent == deposited amount");
         uint256[] memory tracked = adapter.tokenIdsOf(address(account));
         assertEq(tracked.length, 1);
         assertEq(tracked[0], tokenId);
-        (uint256 bal, bool isDebt) = adapter.getAdapterBalanceForAsset(address(account), NXM);
-        assertFalse(isDebt);
-        assertApproxEqRel(bal, AMOUNT, 0.01e18, "staked NXM valued ~= deposited amount");
+        _assertAdapterMatchesNexus(address(account));
     }
 
     function test_deposit_directCallReverts() public {
@@ -153,31 +175,59 @@ contract NexusMutualStakingPoolsWrapperForkTest is BalanceAdapterTestBase {
     }
 
     function test_depositThenWithdraw_realPool_untracksAndReturnsNxm() public {
-        (address pool, uint256 trancheId, uint256 tokenId) = _deposit();
-        uint256 accountNxmAfterDeposit = IERC20(NXM).balanceOf(address(account));
+        // Before deposit: adapter reports 0.
+        _assertAdapterMatchesNexus(address(account));
+        uint256 nxmBefore = _nxm(address(account));
 
-        // Warp past the tranche's expiry so the stake becomes withdrawable, then withdraw it through the wrapper.
+        (address pool, uint256 trancheId, uint256 tokenId) = _deposit();
+
+        // After deposit: account spent exactly the deposited amount; adapter mirrors Nexus's staked value exactly.
+        assertEq(nxmBefore - _nxm(address(account)), AMOUNT, "account NXM spent == deposited amount");
+        assertEq(adapter.tokenIdsOf(address(account)).length, 1, "one tracked id after deposit");
+        _assertAdapterMatchesNexus(address(account));
+
+        // Warp past the tranche's expiry so the stake becomes withdrawable. (Note: between expiry and the withdraw's
+        // internal processExpirations, Nexus's viewer reverts "expirations not processed", so we don't read it here —
+        // the withdraw call below runs the expirations.)
         vm.warp((trancheId + 1) * TRANCHE_DURATION + 1);
+        uint256 nxmBeforeWithdraw = _nxm(address(account));
+
+        // FULLY withdraw (stake + rewards) so the position is claimed (zero value) and remove is allowed to untrack it.
         uint256[] memory tranches = new uint256[](1);
         tranches[0] = trancheId;
-        (uint256 withdrawnStake,) = account.withdraw(address(wrapper), pool, tokenId, true, false, tranches);
+        (uint256 withdrawnStake, uint256 withdrawnRewards) =
+            account.withdraw(address(wrapper), pool, tokenId, true, true, tranches);
+        uint256 claimed = withdrawnStake + withdrawnRewards;
 
-        assertGt(withdrawnStake, 0, "stake withdrawn");
-        // Nexus pays the NFT owner (the account) directly.
-        assertGt(IERC20(NXM).balanceOf(address(account)), accountNxmAfterDeposit, "account received withdrawn NXM");
+        assertGt(claimed, 0, "something was claimed");
+        // Nexus pays the NFT owner (the account) directly — the account received exactly the claimed amount.
+        assertEq(_nxm(address(account)) - nxmBeforeWithdraw, claimed, "account received == claimed amount");
+        // After full withdraw: the id is untracked and the adapter reports 0 (== Nexus for the now-empty cache).
         assertEq(adapter.tokenIdsOf(address(account)).length, 0, "tokenId untracked after withdraw");
+        _assertAdapterMatchesNexus(address(account));
     }
 
     /// @notice Topping up the same StakingNFT (requestTokenId != 0) returns the same id: one tracked id, ~2x stake.
     function test_topUp_sameTokenId_accumulatesStake() public {
+        // Before: adapter reports 0.
+        _assertAdapterMatchesNexus(address(account));
+        uint256 nxmBefore = _nxm(address(account));
+
         (address pool, uint256 trancheId, uint256 tokenId) = _deposit();
+
+        // After first deposit: account spent exactly AMOUNT; adapter mirrors Nexus.
+        assertEq(nxmBefore - _nxm(address(account)), AMOUNT, "account NXM spent == deposited amount (1st)");
+        assertEq(adapter.tokenIdsOf(address(account)).length, 1, "one tracked id after first deposit");
+        _assertAdapterMatchesNexus(address(account));
+
+        uint256 nxmBeforeTopUp = _nxm(address(account));
         uint256 id2 = account.deposit(address(wrapper), pool, AMOUNT, trancheId, tokenId);
 
+        // After top-up: same id, account spent exactly AMOUNT again, adapter still mirrors Nexus exactly.
         assertEq(id2, tokenId, "top-up returns the same StakingNFT id");
-        uint256[] memory tracked = adapter.tokenIdsOf(address(account));
-        assertEq(tracked.length, 1, "still one tracked id");
-        (uint256 bal,) = adapter.getAdapterBalanceForAsset(address(account), NXM);
-        assertApproxEqRel(bal, 2 * AMOUNT, 0.01e18, "staked NXM ~= 2x amount after top-up");
+        assertEq(nxmBeforeTopUp - _nxm(address(account)), AMOUNT, "account NXM spent == deposited amount (top-up)");
+        assertEq(adapter.tokenIdsOf(address(account)).length, 1, "still one tracked id");
+        _assertAdapterMatchesNexus(address(account));
     }
 
     /// @notice Staking into two distinct pools yields two independently-tracked StakingNFTs, summed in the balance.
@@ -185,33 +235,45 @@ contract NexusMutualStakingPoolsWrapperForkTest is BalanceAdapterTestBase {
         address[] memory pools = _publicPools(2);
         uint256 trancheId = block.timestamp / TRANCHE_DURATION;
 
-        uint256 id0 = account.deposit(address(wrapper), pools[0], AMOUNT, trancheId, 0);
-        uint256 id1 = account.deposit(address(wrapper), pools[1], AMOUNT, trancheId, 0);
+        // Before: adapter reports 0.
+        _assertAdapterMatchesNexus(address(account));
 
+        uint256 nxm0 = _nxm(address(account));
+        uint256 id0 = account.deposit(address(wrapper), pools[0], AMOUNT, trancheId, 0);
+        // After first pool: account spent exactly AMOUNT, one tracked id, adapter mirrors Nexus.
+        assertEq(nxm0 - _nxm(address(account)), AMOUNT, "account NXM spent == deposited amount (pool 0)");
+        assertEq(adapter.tokenIdsOf(address(account)).length, 1, "one tracked id after first pool");
+        _assertAdapterMatchesNexus(address(account));
+
+        uint256 nxm1 = _nxm(address(account));
+        uint256 id1 = account.deposit(address(wrapper), pools[1], AMOUNT, trancheId, 0);
+        // After second pool: two distinct tracked ids, account spent exactly AMOUNT again, adapter mirrors Nexus.
         assertTrue(id0 != id1, "distinct StakingNFT ids");
+        assertEq(nxm1 - _nxm(address(account)), AMOUNT, "account NXM spent == deposited amount (pool 1)");
         assertEq(adapter.tokenIdsOf(address(account)).length, 2, "two tracked ids");
-        (uint256 bal,) = adapter.getAdapterBalanceForAsset(address(account), NXM);
-        assertApproxEqRel(bal, 2 * AMOUNT, 0.01e18, "total ~= sum of both stakes");
+        _assertAdapterMatchesNexus(address(account));
     }
 
     /// @notice After a wrapper deposit, getAdapterPositions emits a Staking leg keyed by the pool address for the
     ///         account, with the tokenId in positionInstanceId.
     function test_deposit_getAdapterPositions_stakingLeg() public {
+        // Before: no positions for the account.
+        assertEq(adapter.getAdapterPositions(address(account), address(0)).length, 0, "no positions before deposit");
+
         (address pool,, uint256 tokenId) = _deposit();
 
-        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(address(account), address(0));
-        assertGe(p.length, 1, "at least a Staking leg");
+        // After: exactly one Staking leg, valued at exactly Nexus's recorded stake for the new token.
+        uint256[] memory one = new uint256[](1);
+        one[0] = tokenId;
+        INexusStakingViewer.AggregatedTokens memory agg = INexusStakingViewer(STAKING_VIEWER).getAggregatedTokens(one);
+        uint256 nexusStake = agg.totalActiveStake + agg.totalExpiredStake + agg.totalRewards;
 
-        bool foundStaking;
-        for (uint256 i; i < p.length; ++i) {
-            assertEq(p[i].balanceAsset.asset, NXM);
-            assertEq(p[i].positionId, abi.encode(pool), "positionId = staking pool address");
-            assertEq(p[i].positionInstanceId, bytes32(tokenId), "tokenId in positionInstanceId");
-            if (p[i].positionKind == PositionKind.Staking) {
-                foundStaking = true;
-                assertApproxEqRel(p[i].amount, AMOUNT, 0.01e18, "Staking leg ~= deposited amount");
-            }
-        }
-        assertTrue(foundStaking, "a Staking leg is present");
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(address(account), address(0));
+        assertEq(p.length, 1, "exactly one (Staking) leg for a fresh deposit");
+        assertEq(p[0].balanceAsset.asset, NXM);
+        assertEq(p[0].positionId, abi.encode(pool), "positionId = staking pool address");
+        assertEq(p[0].positionInstanceId, bytes32(tokenId), "tokenId in positionInstanceId");
+        assertEq(uint8(p[0].positionKind), uint8(PositionKind.Staking), "Staking leg");
+        assertEq(p[0].amount, nexusStake, "Staking leg == Nexus's recorded stake for the token");
     }
 }

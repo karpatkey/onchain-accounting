@@ -8,7 +8,7 @@ import {NexusMutualStakingPoolsAssistedBalanceAdapter, INexusStakingViewer} from
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
-import {NotTokenOwner} from "src/errors.sol";
+import {NotTokenOwner, TokenIdNotClaimed} from "src/errors.sol";
 
 /// @notice Minimal ERC-721 transfer surface for the real StakingNFT (to exercise read-time ownership discard).
 interface IStakingNFTLike {
@@ -141,16 +141,13 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterForkTest is BalanceAdapter
         adapter.remove(stranger, 180);
     }
 
-    /// @notice remove untracks an owned id: the Safe's total drops by exactly id 180's live value.
-    function test_remove_untracksOwnedId() public {
-        (uint256 amtBefore,) = adapter.getAdapterBalanceForAsset(HOLDER, NXM);
-        uint256 one = _valueOf(180);
-
+    /// @notice remove reverts TokenIdNotClaimed for the Safe's real, still-valued position (id 180 holds NXM), so a
+    ///         live position can never be untracked; the cache is unchanged.
+    function test_remove_revertsIfNotClaimed() public {
+        assertGt(_valueOf(180), 0, "id 180 still holds NXM (not claimed)");
+        vm.expectRevert(abi.encodeWithSelector(TokenIdNotClaimed.selector, HOLDER, uint256(180)));
         adapter.remove(HOLDER, 180);
-
-        assertEq(adapter.tokenIdsOf(HOLDER).length, 4, "one id untracked");
-        (uint256 amtAfter,) = adapter.getAdapterBalanceForAsset(HOLDER, NXM);
-        assertEq(amtAfter, amtBefore - one, "total drops by id 180's value");
+        assertEq(adapter.tokenIdsOf(HOLDER).length, 5, "cache unchanged");
     }
 
     /// @notice Reads fail open: after the Safe transfers a cached StakingNFT away, that id is discarded on reads even
@@ -199,6 +196,12 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterForkTest is BalanceAdapter
     /// @dev Submit `ids` for `account`, then assert the adapter's balance AND its per-NFT position legs both equal the
     ///      independent live `getAggregatedTokens(ids)` total (delta 0), with each leg keyed by a deployed pool.
     function _assertHappyPath(address account, uint256[] memory ids) internal {
+        // Before: nothing submitted for this account yet — the adapter reports zero on every surface.
+        (uint256 amtBefore,) = adapter.getAdapterBalanceForAsset(account, NXM);
+        assertEq(amtBefore, 0, "adapter reports 0 before submit");
+        assertEq(adapter.getAdapterPositions(account, address(0)).length, 0, "no positions before submit");
+        assertEq(adapter.tokenIdsOf(account).length, 0, "no cached ids before submit");
+
         for (uint256 i; i < ids.length; ++i) {
             adapter.submit(account, ids[i]);
         }

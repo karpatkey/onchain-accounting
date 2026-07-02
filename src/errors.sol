@@ -11,6 +11,9 @@ error NotChainlinkOracle();
 // Assisted balance-adapter errors
 error NotTokenOwner(address account, uint256 tokenId);
 error TokenIdCacheFull(address account, uint256 maxTokenIds);
+/// @notice `remove` was called for a tokenId whose position still holds value (stake/rewards) — it must be fully
+///         claimed (withdrawn to zero) before it can be untracked.
+error TokenIdNotClaimed(address account, uint256 tokenId);
 // Assisted exit-queue (ticket-keyed) errors — StakeWise V3 caches (vault, positionTicket, timestamp) tuples, not
 // tokenIds, so it has its own cache-full / invalid-position errors (same fail-loud-write semantics as the NFT adapters).
 error PositionCacheFull(address account, uint256 maxPositions);

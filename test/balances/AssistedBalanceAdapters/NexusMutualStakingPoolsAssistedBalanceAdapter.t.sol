@@ -361,10 +361,18 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterTest is BalanceAdapterTest
     function test_remove_stopsTracking() public {
         _seedOne(1, 1, 100, 0, 0);
         _seedOne(2, 1, 200, 0, 0);
+        viewer.setToken(1, 1, 0, 0, 0); // fully claim token 1 (zero remaining value) so it can be untracked
         adapter.remove(holder, 1);
         assertEq(adapter.tokenIdsOf(holder).length, 1);
         (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, address(nxm));
         assertEq(amt, 200);
+    }
+
+    /// @notice remove reverts TokenIdNotClaimed for a still-valued position (must be fully withdrawn first).
+    function test_remove_revertsIfNotClaimed() public {
+        _seedOne(1, 1, 100, 0, 0); // holder owns 1, value 100 (not claimed)
+        vm.expectRevert(abi.encodeWithSelector(TokenIdNotClaimed.selector, holder, uint256(1)));
+        adapter.remove(holder, 1);
     }
 
     /// @notice Owned-but-uncached id: remove passes the ownership check and is a no-op (no revert, no event).

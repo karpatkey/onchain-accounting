@@ -145,15 +145,29 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AccessControl, IBalanc
     }
 
     /// @notice Stop tracking `tokenId` for `account`. Called by the wrapper right after it forwards a withdrawal for
-    ///         the position (Nexus does not burn the StakingNFT on withdraw, so the account still owns it). Verifies
-    ///         the tokenId belongs to `account` (fail-loud, custom error) — symmetric with {submit}; a no-op (no
-    ///         event) if the account owns it but it was not cached.
+    ///         the position (Nexus does not burn the StakingNFT on withdraw, so the account still owns it). Fail-loud:
+    ///         reverts `NotTokenOwner` unless the tokenId currently belongs to `account`, and `TokenIdNotClaimed`
+    ///         unless the position is fully claimed (zero remaining stake + rewards) — so a still-valued position can
+    ///         never be untracked (which would under-report NAV). A no-op (no event) if the account owns a claimed id
+    ///         that was not cached.
     function remove(address account, uint256 tokenId) external onlyRole(SUBMITTER_ROLE) {
         if (account == address(0)) revert InvalidArguments();
         // Fail-loud ownership check: the tokenId must currently belong to `account`, or revert `NotTokenOwner`.
         (address owner, bool ok) = _ownerOf(tokenId);
         if (!ok || owner != account) revert NotTokenOwner(account, tokenId);
+        // The position must be fully claimed (withdrawn to zero) before untracking, or revert `TokenIdNotClaimed`.
+        if (_positionValue(tokenId) != 0) revert TokenIdNotClaimed(account, tokenId);
         if (_tokenIds[account].remove(tokenId)) emit TokenIdCleared(account, tokenId);
+    }
+
+    /// @dev Live NXM value of `tokenId` (active + expired stake + accrued rewards) via `StakingViewer.getTokens`; 0
+    ///      for a fully-claimed position. Reached only after the ownership check confirmed the token exists.
+    function _positionValue(uint256 tokenId) internal view returns (uint256) {
+        uint256[] memory one = new uint256[](1);
+        one[0] = tokenId;
+        INexusStakingViewer.Token[] memory t = INexusStakingViewer(STAKING_VIEWER).getTokens(one);
+        if (t.length == 0) return 0;
+        return t[0].activeStake + t[0].expiredStake + t[0].rewards;
     }
 
     /// @notice Drop all cached tokenIds for `account`. Admin-gated rescue (e.g. to reset a mis-fed account); the

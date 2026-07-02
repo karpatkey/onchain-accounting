@@ -29,9 +29,10 @@ import "src/errors.sol";
 ///      `delegatecall` this module rather than calling it directly.
 ///
 ///      On `withdraw`, Nexus routes the withdrawn stake + rewards to `StakingNFT.ownerOf(tokenId)` (the account) and is
-///      permissionless. `withdraw` pops the `tokenId` unconditionally; because Nexus does not burn the `StakingNFT` on
-///      withdraw, a *partial* withdrawal stops tracking any remaining stake (a safe under-report per ADR 0015 — a later
-///      top-up re-adds the id).
+///      permissionless. `withdraw` then calls the adapter's `remove`, which **reverts `TokenIdNotClaimed` unless the
+///      position is fully claimed** (zero remaining stake + rewards). So only a full withdrawal untracks the position;
+///      a *partial* withdrawal reverts the whole call — the adapter never untracks a still-valued position (which would
+///      under-report NAV). To exit fully, withdraw all stake **and** rewards across every tranche the position spans.
 contract NexusMutualStakingPoolsWrapper {
     using SafeERC20 for IERC20;
 

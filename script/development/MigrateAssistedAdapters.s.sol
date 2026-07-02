@@ -286,9 +286,7 @@ contract MigrateAssistedAdapters is Script {
             vm.writeJson(vm.toString(address(etherfiAssistant)), DEPLOYMENTS_PATH, ".EtherFiWithdrawalQueueAssistant");
             vm.writeJson(vm.toString(address(stakewiseAssistant)), DEPLOYMENTS_PATH, ".StakeWiseV3ExitQueueAssistant");
             console2.log("Persisted 6 adapter + 3 assistant addresses to", DEPLOYMENTS_PATH);
-            console2.log(
-                "MANUAL (cheatcodes can't delete a JSON key): remove the obsolete Merkl entry with"
-            );
+            console2.log("MANUAL (cheatcodes can't delete a JSON key): remove the obsolete Merkl entry with");
             console2.log("  jq 'del(.balanceAdapters.MerklRewardsAssisted)' script/config/deployments/1.json | sponge");
         } else {
             console2.log("NOT persisted to deployments/1.json (set PERSIST_DEPLOYMENTS=1 on the broadcast to write).");

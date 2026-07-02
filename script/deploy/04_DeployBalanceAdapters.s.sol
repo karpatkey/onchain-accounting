@@ -717,9 +717,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         internal
         returns (address)
     {
-        // Owner = chainConfig.admin (OIV Safe / agent role): the only caller of submitTokenIds / clearTokenId. The
-        // adapter values from live on-chain reads and re-verifies ownership every read, so the owner cannot
-        // fabricate amounts (under-report only). See docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md.
+        // Permissionless wrapper-fed adapter (ADR 0018): no admin/assistant roles — the id cache is msg.sender-keyed
+        // and fed on-chain by the delegatecall wrapper. NAV registration + wrapper deploy/grant wiring deferred.
         address withdrawRequestNft = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "withdrawRequestNft")
         );
@@ -729,13 +728,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address underlyingToken = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
         );
-        require(
-            chainConfig.admin != address(0),
-            "EtherFiWithdrawalQueueAssisted: chainConfig.admin (initialOwner) not configured"
-        );
 
         EtherFiWithdrawalQueueAssistedBalanceAdapter adapter = new EtherFiWithdrawalQueueAssistedBalanceAdapter(
-            withdrawRequestNft, liquidityPool, underlyingToken, navCalculator, chainConfig.admin, chainConfig.admin
+            withdrawRequestNft, liquidityPool, underlyingToken, navCalculator
         );
         return address(adapter);
     }

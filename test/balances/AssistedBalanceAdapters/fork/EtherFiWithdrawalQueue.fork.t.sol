@@ -4,21 +4,23 @@ pragma solidity ^0.8.0;
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
 import {BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
 import {
-    EtherFiWithdrawalQueueAssistedBalanceAdapter,
+    EtherFiWithdrawalQueueAssistedBalanceAdapter
+} from "src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueAssistedBalanceAdapter.sol";
+import {
     IEtherFiWithdrawRequestNFT,
     IEtherFiLiquidityPool
 } from "src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueAssistedBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {NotTokenOwner} from "src/errors.sol";
+import {CoordinateNotOwned} from "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
-/// @title EtherFiWithdrawalQueueAssistedBalanceAdapterForkTest
+/// @title EtherFiWithdrawalQueueAssistedBalanceAdapter (wrapper-fed) fork test
 /// @notice Fork test against ether.fi's real WithdrawRequestNFT + LiquidityPool on mainnet.
-/// @dev The NFT isn't enumerable, so the agent (here, the test acting as the assistant) submits a real tokenId; the
-///      adapter values it entirely from live on-chain reads. Holder 0xcFFab3… owns request #80154 at FORK_BLOCK
-///      (pending, isValid, fee 0), worth `min(amountOfEEth, amountForShare(shareOfEEth)) − fee` ETH. The test
-///      asserts the adapter both against the pinned value AND against an independent live read (delta 0).
+/// @dev The NFT isn't enumerable, so the wrapper (here, the test acting as the `WRAPPER_ROLE` holder) submits a real
+///      tokenId; the adapter values it entirely from live on-chain reads. Holder 0xcFFab3… owns request #80154 at
+///      FORK_BLOCK (pending, isValid, fee 0), worth `min(amountOfEEth, amountForShare(shareOfEEth)) − fee` ETH. The
+///      valuation math is identical to the assistant-fed sibling; only the feeder differs.
 contract EtherFiWithdrawalQueueAssistedBalanceAdapterForkTest is BalanceAdapterTestBase {
     address public constant WITHDRAW_REQUEST_NFT = 0x7d5706f6ef3F89B3951E23e557CDFBC3239D4E2c;
     address public constant LIQUIDITY_POOL = 0x308861A430be4cce5502d0A12724771Fc6DaF216;
@@ -37,13 +39,12 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterForkTest is BalanceAdapterT
         super.setUp();
         _setupFork();
 
-        // Native ETH registered directly (the codeless sentinel can't be probed for decimals()/symbol()).
         balances = new BalancesHarnessForFork();
         balances.registerAssetForTest(NATIVE_ETH, 18, "ETH");
 
-        // admin = assistant = this test, so it plays the assistant and submits the real tokenId.
+        // admin = wrapper = this test, so it plays the wrapper and submits the real tokenId.
         adapter = new EtherFiWithdrawalQueueAssistedBalanceAdapter(
-            WITHDRAW_REQUEST_NFT, LIQUIDITY_POOL, NATIVE_ETH, address(balances), address(this), address(this)
+            WITHDRAW_REQUEST_NFT, LIQUIDITY_POOL, NATIVE_ETH, address(balances)
         );
     }
 
@@ -66,13 +67,11 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterForkTest is BalanceAdapterT
     // ---- Real pending request: strict equality vs live read + pinned value ----
 
     function test_realHolder_pendingValuation() public {
-        // Sanity: the request is the state we pinned against.
         assertEq(IEtherFiWithdrawRequestNFT(WITHDRAW_REQUEST_NFT).ownerOf(TOKEN_ID), HOLDER, "owner mismatch");
         assertFalse(IEtherFiWithdrawRequestNFT(WITHDRAW_REQUEST_NFT).isFinalized(TOKEN_ID), "should be pending");
 
-        uint256[] memory ids = new uint256[](1);
-        ids[0] = TOKEN_ID;
-        adapter.submitTokenIds(HOLDER, ids);
+        vm.prank(HOLDER);
+        adapter.submit(TOKEN_ID);
 
         (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(HOLDER, NATIVE_ETH);
         assertEq(amount, _liveOwed(TOKEN_ID), "adapter must equal an independent live read (delta 0)");
@@ -81,11 +80,9 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterForkTest is BalanceAdapterT
     }
 
     function test_getAdapterPositions_identity() public {
-        uint256[] memory ids = new uint256[](1);
-        ids[0] = TOKEN_ID;
-        adapter.submitTokenIds(HOLDER, ids);
+        vm.prank(HOLDER);
+        adapter.submit(TOKEN_ID);
 
-        // One owned cached request → one per-request leg; sum across legs == the holder's aggregate owed ETH.
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(HOLDER, address(0));
         assertGe(p.length, 1);
         bytes memory expectedId = abi.encode(adapter.WITHDRAW_REQUEST_NFT());
@@ -105,11 +102,9 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterForkTest is BalanceAdapterT
         assertEq(sum, EXPECTED_ETH, "per-request legs sum to the aggregate total");
     }
 
-    /// @dev Asserts a per-request leg: the static breadcrumb is `["Withdrawal Queue", "eETH"]` (positionId-derived, no
-    ///      ephemeral id), and the tokenId rides in the typed `positionInstanceId`.
     function _assertRequestLeg(INAVCalculator.PositionBalance memory leg) internal view {
         string[] memory labels = adapter.positionLabels(leg.positionId);
-        assertEq(labels.length, 2, "static breadcrumb = [category]");
+        assertEq(labels.length, 2, "static breadcrumb = [category, symbol]");
         assertEq(labels[0], "Withdrawal Queue");
         assertEq(labels[1], "eETH");
         assertTrue(leg.positionInstanceId != bytes32(0), "positionInstanceId carries the tokenId");
@@ -118,21 +113,16 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterForkTest is BalanceAdapterT
     // ---- Negative cases against the real contracts ----
 
     function test_unsubmitted_reportsZero() public view {
-        // Adapter only reports cached ids; without a submission there is nothing to value.
         (uint256 amount,) = adapter.getAdapterBalanceForAsset(HOLDER, NATIVE_ETH);
         assertEq(amount, 0);
         assertEq(adapter.getAdapterPositions(HOLDER, address(0)).length, 0);
     }
 
     function test_submit_revertsOnIdNotOwnedByAccount() public {
-        // Submitting HOLDER's real id under a different account is rejected at write (ownerOf != account) — fail-loud.
         address stranger = makeAddr("stranger");
-        uint256[] memory ids = new uint256[](1);
-        ids[0] = TOKEN_ID;
-        vm.expectRevert(abi.encodeWithSelector(NotTokenOwner.selector, stranger, TOKEN_ID));
-        adapter.submitTokenIds(stranger, ids);
+        vm.expectRevert(abi.encodeWithSelector(CoordinateNotOwned.selector, stranger, TOKEN_ID));
+        vm.prank(stranger);
+        adapter.submit(TOKEN_ID);
         assertEq(adapter.tokenIdsOf(stranger).length, 0);
-        (uint256 amount,) = adapter.getAdapterBalanceForAsset(stranger, NATIVE_ETH);
-        assertEq(amount, 0);
     }
 }

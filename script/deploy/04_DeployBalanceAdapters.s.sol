@@ -57,8 +57,8 @@ import {
 } from "../../src/balances/MetaBalanceAdapters/FluidFTokensMetaBalanceAdapter.sol";
 import {FluidVaultsMetaBalanceAdapter} from "../../src/balances/MetaBalanceAdapters/FluidVaultsMetaBalanceAdapter.sol";
 import {
-    StaderWithdrawalQueueAssistedBalanceAdapter
-} from "../../src/balances/AssistedBalanceAdapters/StaderWithdrawalQueueAssistedBalanceAdapter.sol";
+    StaderWithdrawalQueueBalanceAdapter
+} from "../../src/balances/BalanceAdapters/StaderWithdrawalQueueBalanceAdapter.sol";
 import {
     KelpWithdrawalQueueBalanceAdapter
 } from "../../src/balances/BalanceAdapters/KelpWithdrawalQueueBalanceAdapter.sol";
@@ -635,8 +635,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address underlyingToken = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
         );
-        StaderWithdrawalQueueAssistedBalanceAdapter adapter =
-            new StaderWithdrawalQueueAssistedBalanceAdapter(userWithdrawalManager, underlyingToken, navCalculator);
+        StaderWithdrawalQueueBalanceAdapter adapter =
+            new StaderWithdrawalQueueBalanceAdapter(userWithdrawalManager, underlyingToken, navCalculator);
         return address(adapter);
     }
 

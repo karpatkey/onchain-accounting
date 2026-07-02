@@ -50,8 +50,8 @@ import {
 import {FluidFTokensMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/FluidFTokensMetaBalanceAdapter.sol";
 import {FluidVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/FluidVaultsMetaBalanceAdapter.sol";
 import {
-    StaderWithdrawalQueueAssistedBalanceAdapter
-} from "src/balances/AssistedBalanceAdapters/StaderWithdrawalQueueAssistedBalanceAdapter.sol";
+    StaderWithdrawalQueueBalanceAdapter
+} from "src/balances/BalanceAdapters/StaderWithdrawalQueueBalanceAdapter.sol";
 import {KelpWithdrawalQueueBalanceAdapter} from "src/balances/BalanceAdapters/KelpWithdrawalQueueBalanceAdapter.sol";
 import {
     StakeWiseV3VaultsMetaBalanceAdapter
@@ -791,7 +791,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         );
         address underlyingToken =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "underlyingToken"));
-        return address(new StaderWithdrawalQueueAssistedBalanceAdapter(userWithdrawalManager, underlyingToken, navAddr));
+        return address(new StaderWithdrawalQueueBalanceAdapter(userWithdrawalManager, underlyingToken, navAddr));
     }
 
     function _deployKelpWithdrawalQueue(string memory name, address navAddr) internal returns (address) {

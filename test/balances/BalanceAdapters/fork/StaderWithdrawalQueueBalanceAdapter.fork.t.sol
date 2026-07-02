@@ -3,40 +3,36 @@ pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
 import {
-    StaderWithdrawalQueueAssistedBalanceAdapter
-} from "src/balances/AssistedBalanceAdapters/StaderWithdrawalQueueAssistedBalanceAdapter.sol";
+    StaderWithdrawalQueueBalanceAdapter
+} from "src/balances/BalanceAdapters/StaderWithdrawalQueueBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
-/// @title StaderWithdrawalQueueAssistedBalanceAdapterForkTest
+/// @title StaderWithdrawalQueueBalanceAdapterForkTest
 /// @notice Fork tests against Stader's UserWithdrawalManager on mainnet.
-/// @dev TEST_USER below is a real account with one open (pre-finalization) request id 8056 at FORK_BLOCK,
-///      with `ethExpected = 37.440331321957283515` ETH and `ethFinalized = 0` (so the adapter reports ethExpected).
-contract StaderWithdrawalQueueAssistedBalanceAdapterForkTest is BalanceAdapterTestBase {
+/// @dev The adapter enumerates the holder's LIVE requests on-chain via `getRequestIdsByUser` (no seeding). TEST_USER
+///      below is a real account with one open (pre-finalization) request id 8056 at FORK_BLOCK, with
+///      `ethExpected = 37.440331321957283515` ETH and `ethFinalized = 0` (so the adapter reports ethExpected).
+contract StaderWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
     address public constant USER_WITHDRAWAL_MANAGER = 0x9F0491B32DBce587c50c4C43AB303b06478193A7;
 
     uint256 public constant FORK_BLOCK = 25_015_000;
 
     address public constant TEST_USER = 0x5066bc626C292d02ACFef8d002905877148Cb37A;
     uint256 public constant TEST_USER_EXPECTED_ETH = 37_440_331_321_957_283_515;
-    /// @dev TEST_USER's single open request id at FORK_BLOCK (owned by TEST_USER, so `submit` accepts it).
+    /// @dev TEST_USER's single open request id at FORK_BLOCK (returned by getRequestIdsByUser).
     uint256 public constant TEST_USER_REQ_ID = 8056;
 
-    StaderWithdrawalQueueAssistedBalanceAdapter public adapter;
+    StaderWithdrawalQueueBalanceAdapter public adapter;
 
     function setUp() public override {
         super.setUp();
         _setupFork();
         balances = _deployBalancesForAdapter(MAINNET_WETH);
-        // Self-fed id-cache: seed TEST_USER's real request id by pranking as TEST_USER (submit is keyed on msg.sender;
-        // the id is owned by TEST_USER on-chain at FORK_BLOCK, so the ownership check passes).
-        adapter =
-            new StaderWithdrawalQueueAssistedBalanceAdapter(USER_WITHDRAWAL_MANAGER, MAINNET_WETH, address(balances));
-        vm.prank(TEST_USER);
-        adapter.submit(TEST_USER_REQ_ID);
+        adapter = new StaderWithdrawalQueueBalanceAdapter(USER_WITHDRAWAL_MANAGER, MAINNET_WETH, address(balances));
     }
 
     function _setupFork() internal override {
@@ -132,19 +128,20 @@ contract StaderWithdrawalQueueAssistedBalanceAdapterForkTest is BalanceAdapterTe
     }
 }
 
-/// @title StaderWithdrawalQueueAssistedBalanceAdapterForkTest_Fresh
+/// @title StaderWithdrawalQueueBalanceAdapterForkTest_Fresh
 /// @notice Fresh dual-holder pin at the verification block (augments the original suite above; does not replace it).
 /// @dev Captured 2026-06-16 at block 25_330_819 — see `script/development/test/stader/README.md`.
 ///      Queue state at the block: nextRequestId 8219, nextRequestIdToFinalize 8215 (so ids ≤ 8214 are finalized,
-///      8215–8218 are still pending). One holder per math branch:
+///      8215–8218 are still pending). The adapter enumerates each holder's live requests on-chain (no seeding). One
+///      holder per math branch:
 ///      - PENDING `0x4D0B2dB7…` — one un-finalized request 8218 (`ethFinalized == 0`) → valued via `ethExpected`
 ///        = 179.475428570970280827 ETH.
 ///      - FINALIZED `0x404186e6…` — one finalized-unclaimed request 8214 where `ethFinalized` (…347) is **9 wei
 ///        below** `ethExpected` (…356), so the adapter reporting …347 proves it prefers `ethFinalized` over the
 ///        rate-converted estimate. The finalized request can be claimed by its owner at any time after this block —
-///        the pin keeps it reproducible. Multi-request summing and the claimed-skip path are covered with mocks in
-///        the unit test (a single holder spanning both branches doesn't exist on-chain at this block).
-contract StaderWithdrawalQueueAssistedBalanceAdapterForkTest_Fresh is BalanceAdapterTestBase {
+///        the pin keeps it reproducible.
+///      - MULTI `0xeB0C…` — two open requests (8196 + 8197) → exercises real on-chain multi-request summing.
+contract StaderWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTestBase {
     address public constant USER_WITHDRAWAL_MANAGER = 0x9F0491B32DBce587c50c4C43AB303b06478193A7;
 
     uint256 public constant FORK_BLOCK = 25_330_819;
@@ -159,31 +156,20 @@ contract StaderWithdrawalQueueAssistedBalanceAdapterForkTest_Fresh is BalanceAda
     uint256 public constant FINALIZED_EXPECTED_ETH = 10_804_926_562_492_357_347;
     uint256 public constant FINALIZED_ETH_EXPECTED_FIELD = 10_804_926_562_492_357_356;
 
-    /// @dev Two open requests (8196 + 8197), both finalized → exercises real on-chain multi-request summing
-    ///      (previously only covered with mocks). 8196 = 109058136469367 wei, 8197 = 218116272938735 wei.
+    /// @dev Two open requests (8196 + 8197), both finalized → exercises real on-chain multi-request summing.
+    ///      8196 = 109058136469367 wei, 8197 = 218116272938735 wei.
     address public constant MULTI_HOLDER = 0xeB0CBBA408436997AfD29c50d6A9ffcCf9a2493f;
     uint256 public constant MULTI_REQ_8196_ETH = 109_058_136_469_367;
     uint256 public constant MULTI_REQ_8197_ETH = 218_116_272_938_735;
     uint256 public constant MULTI_EXPECTED_ETH = MULTI_REQ_8196_ETH + MULTI_REQ_8197_ETH;
 
-    StaderWithdrawalQueueAssistedBalanceAdapter public oracle;
+    StaderWithdrawalQueueBalanceAdapter public oracle;
 
     function setUp() public override {
         // super.setUp() already invokes _setupFork() (overridden below) via virtual dispatch — no second call.
         super.setUp();
         balances = _deployBalancesForAdapter(MAINNET_WETH);
-        // Self-fed id-cache: seed each holder's real, on-chain-owned request id(s) at FORK_BLOCK by pranking as that
-        // holder (submit is keyed on msg.sender), mirroring what each holder's Safe would have submitted itself.
-        oracle =
-            new StaderWithdrawalQueueAssistedBalanceAdapter(USER_WITHDRAWAL_MANAGER, MAINNET_WETH, address(balances));
-        vm.prank(PENDING_HOLDER);
-        oracle.submit(8218);
-        vm.prank(FINALIZED_HOLDER);
-        oracle.submit(8214);
-        vm.startPrank(MULTI_HOLDER);
-        oracle.submit(8196);
-        oracle.submit(8197);
-        vm.stopPrank();
+        oracle = new StaderWithdrawalQueueBalanceAdapter(USER_WITHDRAWAL_MANAGER, MAINNET_WETH, address(balances));
     }
 
     function _setupFork() internal override {

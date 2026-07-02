@@ -355,7 +355,7 @@ script/verify/verify-all.sh
 - `GearboxV3MarketsMetaBalanceAdapter` - Gearbox kpk-curated markets
 - `GearboxV3CreditAccountsMetaBalanceAdapter` - Gearbox credit accounts
 - `StakeWiseV3VaultsMetaBalanceAdapter` - StakeWise V3 Genesis Vault (osETH/osGNO themselves are Custom-priced ERC20s via `osToken_CustomPriceFeed`, not balance adapters)
-- `StaderWithdrawalQueueAssistedBalanceAdapter` - Stader pending unstake requests
+- `StaderWithdrawalQueueBalanceAdapter` - Stader pending unstake requests
 - `KelpWithdrawalQueueBalanceAdapter` - Kelp DAO rsETH exit queue (multi-asset; payout assets discovered via `lrtConfig().getSupportedAssetList()`)
 - `LidoWithdrawalQueueBalanceAdapter` - Lido stETH withdrawal queue (`WithdrawalQueueERC721`; sums open requests, reported as native ETH — the asset paid on claim)
 - `UniswapV2PoolsMetaBalanceAdapter`, `UniswapV3PoolsMetaBalanceAdapter` - Uni V2 pairs / V3 pools (V3 NFTs enumerated on-chain)

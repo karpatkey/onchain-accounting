@@ -4,8 +4,8 @@ pragma solidity ^0.8;
 import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
 import {
-    StaderWithdrawalQueueAssistedBalanceAdapter
-} from "src/balances/AssistedBalanceAdapters/StaderWithdrawalQueueAssistedBalanceAdapter.sol";
+    StaderWithdrawalQueueBalanceAdapter
+} from "src/balances/BalanceAdapters/StaderWithdrawalQueueBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title QueryStaderWithdrawalQueueLiveBalances
@@ -32,18 +32,15 @@ contract QueryStaderWithdrawalQueueLiveBalances is Script {
 
     function run() public {
         address nav = vm.envAddress("DEV_NAV_PROXY");
-        StaderWithdrawalQueueAssistedBalanceAdapter adapter =
-            new StaderWithdrawalQueueAssistedBalanceAdapter(USER_WITHDRAWAL_MANAGER, WETH, nav);
+        StaderWithdrawalQueueBalanceAdapter adapter =
+            new StaderWithdrawalQueueBalanceAdapter(USER_WITHDRAWAL_MANAGER, WETH, nav);
 
         _print(adapter, "PENDING (1 un-finalized)", PENDING);
         _print(adapter, "FINALIZED (1 finalized)", FINALIZED);
         _print(adapter, "MULTI (2 requests summed)", MULTI);
     }
 
-    function _print(StaderWithdrawalQueueAssistedBalanceAdapter adapter, string memory label, address holder)
-        internal
-        view
-    {
+    function _print(StaderWithdrawalQueueBalanceAdapter adapter, string memory label, address holder) internal view {
         (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(holder, WETH);
         console2.log("=== Stader WQ holder:", label);
         console2.log("  address:  ", holder);

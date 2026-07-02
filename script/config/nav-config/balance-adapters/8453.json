@@ -49,9 +49,5 @@
   },
   "PancakeSwapV3_WETH_COW": {
     "enabled": false
-  },
-  "PancakeSwapV3PoolsAssisted": {
-    "enabled": false,
-    "$comment": "PancakeSwap V3 pools assisted adapter (agent-fed NFT tokenId cache; ADR 0015). Registered via addBalanceAdapters when enabled. Disabled: COW on Base has no feed, so the COW leg would be silently dropped. Enable once COW is priced."
   }
 }

@@ -311,11 +311,11 @@
     "positionId": "<Distributor address>"
   },
 
-  "UniswapV3PoolsAssisted": {
-    "$comment": "Assisted adapter (ADR 0015): one immutable contract for ALL Uniswap V3 pools, agent-fed. Constructor takes (positionManager, protocol, navCalculator, admin, assistant). The assistant submits an account's NFT tokenIds via submitTokenIds (ASSISTANT_ROLE); the adapter caches ids only, values each NFT live on-chain (reads the pool's live slot0 sqrtPriceX96/tick — ADR 0017; full unclaimed fees = feeGrowth delta + tokensOwed), and re-verifies ownerOf per read. Identity derived on-chain: positionId = abi.encode(pool) (factory.getPool(token0,token1,fee)); the NFT id is the last display label (labels = ['Liquidity Pool','<pool>','NFT #<id>']). Supersedes the per-pool UniswapV3Pool adapter.",
+  "UniswapV3PoolsMeta": {
+    "$comment": "Meta-adapter (ADR 0010): one immutable contract for ALL configured Uniswap V3 pools. Constructor takes (positionManager, protocol, navCalculator). LP NFTs are enumerated on-chain via the ERC721Enumerable NonfungiblePositionManager (balanceOf/tokenOfOwnerByIndex/positions), keeping those matching the pool's (token0,token1,fee); values each live off the pool's slot0 sqrtPriceX96/tick — ADR 0017; full unclaimed fees = feeGrowth delta + tokensOwed. The active pool set lives on NAVCalculator (instances — pool addresses). Identity derived on-chain: positionId = abi.encode(pool); the NFT tokenId rides in positionInstanceId. Supersedes the per-pool UniswapV3Pool adapter (and the interim UniswapV3PoolsAssisted — see ADR 0015's amendment).",
     "$perPositionFields": "type: Supply | Fees (up to 4 legs: token0/token1 liquidity + token0/token1 fees)",
     "protocol": "Uniswap V3",
-    "positionDetail": { "protocol": "Uniswap V3", "product": "LP", "name": "<derived: NFT #tokenId (label)>" },
+    "positionDetail": { "protocol": "Uniswap V3", "product": "LP", "name": "<derived: sym0/sym1 fee%>" },
     "positionId": "<derived: abi.encode(address pool)>"
   },
 
@@ -327,11 +327,11 @@
     "positionId": "<derived: pair address>"
   },
 
-  "PancakeSwapV3PoolsAssisted": {
-    "$comment": "Assisted adapter (ADR 0015): subclass of UniswapV3PoolsAssisted differing only in protocol-id slug. Constructor takes (positionManager, protocol, navCalculator, admin, assistant). Agent-fed NFT tokenId cache; values live on-chain.",
-    "$perPositionFields": "type: Supply | Fees. Inherits UniswapV3PoolsAssisted behaviour.",
+  "PancakeSwapV3PoolsMeta": {
+    "$comment": "Meta-adapter (ADR 0010): thin subclass of UniswapV3PoolsMeta differing only in the protocol-id slug and the _slot0 override (PancakeSwap V3's feeProtocol is uint32, not Uniswap's uint8). Constructor takes (positionManager, protocol, navCalculator). On-chain NFT enumeration; values live off slot0.",
+    "$perPositionFields": "type: Supply | Fees. Inherits UniswapV3PoolsMeta behaviour.",
     "protocol": "PancakeSwap V3",
-    "positionDetail": { "protocol": "PancakeSwap V3", "product": "LP", "name": "<derived: NFT #tokenId (label)>" },
+    "positionDetail": { "protocol": "PancakeSwap V3", "product": "LP", "name": "<derived: sym0/sym1 fee%>" },
     "positionId": "<derived: abi.encode(address pool)>"
   },
 
@@ -344,7 +344,7 @@
   },
 
   "UniswapV3Pool": {
-    "$superseded": "Superseded by UniswapV3PoolsAssisted (assisted adapter, ADR 0015); per-pool deploys disabled in chain config.",
+    "$superseded": "Superseded by UniswapV3PoolsMeta (meta-adapter, ADR 0010); per-pool deploys disabled in chain config.",
     "$perPositionFields": "type: Supply | Fees",
     "protocol": "Uniswap V3",
     "positionDetail": { "protocol": "Uniswap V3", "product": "LP", "name": "<token0/token1 fee%>" },
@@ -360,7 +360,7 @@
   },
 
   "PancakeSwapV3Pool": {
-    "$superseded": "Superseded by PancakeSwapV3PoolsAssisted (assisted adapter, ADR 0015).",
+    "$superseded": "Superseded by PancakeSwapV3PoolsMeta (meta-adapter, ADR 0010).",
     "$perPositionFields": "type: Supply | Fees. Inherits UniswapV3Pool behaviour.",
     "protocol": "PancakeSwap V3",
     "positionDetail": { "protocol": "PancakeSwap V3", "product": "LP", "name": "<token0/token1 fee%>" },

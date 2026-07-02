@@ -107,7 +107,9 @@ reconstructed `sqrtPriceX96` is the V3-specific mitigation to reinstate.
 - Valuation code: `src/balances/MetaBalanceAdapters/curve/CurvePoolLib.sol` (`proRataAmount`),
   `src/balances/MetaBalanceAdapters/uniswap/UniswapV2PairLib.sol` (`pairAmounts`),
   `src/balances/MetaBalanceAdapters/balancer/BalancerV3PoolLib.sol` (`poolBalanceOfIndexed`).
-- V3 live-`slot0` valuation (and the reverted oracle-reconstruction precedent it documents in its header):
-  `src/balances/AssistedBalanceAdapters/UniswapV3PoolsAssistedBalanceAdapter.sol`; the V3 math libs it
-  depends on are covered by [ADR 0008](0008-uniswap-v3-math-libs-gpl-license.md).
+- V3 live-`slot0` valuation: `src/balances/MetaBalanceAdapters/uniswap/UniswapV3PoolsMetaBalanceAdapter.sol`
+  (+ its `UniswapV3PoolLib` read math and the `PancakeSwapV3PoolsMetaBalanceAdapter` subclass); the V3 math libs
+  it depends on are covered by [ADR 0008](0008-uniswap-v3-math-libs-gpl-license.md). (These were briefly assisted
+  adapters; ADR [0015](0015-assisted-balance-adapter-family.md)'s amendment records the revert to meta-adapters —
+  the valuation described here is unchanged.)
 - Adapter/NAV separation + "report amounts, not values": `CLAUDE.md`, `src/balances/BALANCE_ADAPTERS.md`.

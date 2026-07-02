@@ -302,8 +302,7 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     ///      Adapters whose positionId is not the default-encoded instance coordinate do NOT use this hook —
     ///      they compute positionId inline in _instancePositions, e.g. Aave V3: abi.encode(pool) — the instance Pool
     ///      resolved from the DataProvider coordinate (one positionId per instance; reserves are distinguished by
-    ///      balanceAsset + positionKind). (Uniswap V3 / PancakeSwap V3 are no longer meta-adapters — they are
-    ///      assisted adapters keyed on abi.encode(pool); see UniswapV3PoolsAssistedBalanceAdapter.)
+    ///      balanceAsset + positionKind).
     function _instancePositionId(bytes32 instance) internal view virtual returns (bytes memory) {
         return abi.encode(_toAddress(instance));
     }

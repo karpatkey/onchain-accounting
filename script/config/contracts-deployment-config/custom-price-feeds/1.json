@@ -1,6 +1,7 @@
 {
   "ETHPlus": {
-    "enabled": true,
+    "$comment": "Disabled: ETH+ is priced via the Chainlink 'Calculated ETH+/USD' feed (0x66Ab900341C98de949EC31d11b3C4180743844F1), registered in nav-config. This 8-dec Custom feed is incompatible (PriceFeedDecimalsMismatch) with that 18-dec Chainlink feed, so it is not registered. Kept here only as a record; leave disabled to avoid an orphaned deploy.",
+    "enabled": false,
     "constructor": {
       "ethPlus": "0xE72B141DF173b999AE7c1aDcbF60Cc9833Ce56a8",
       "reserveProtocolHeartbeat": "86400"
@@ -128,7 +129,7 @@
   },
   "RWIV": {
     "enabled": true,
-    "$comment": "Nexus Mutual RWI Vault (RWIV) — ERC-4626 share, USDC underlying. Priced USDC/USD x convertToAssets(10^decimals)/10^decimals (same pattern as syrupUSDC). Makes RWIV a registered priced asset so the UniV3 USDC/RWIV pool LP (held by the Nexus Safe) can be valued by UniswapV3PoolsAssisted.",
+    "$comment": "Nexus Mutual RWI Vault (RWIV) — ERC-4626 share, USDC underlying. Priced USDC/USD x convertToAssets(10^decimals)/10^decimals (same pattern as syrupUSDC). Makes RWIV a registered priced asset so the UniV3 USDC/RWIV pool LP (held by the Nexus Safe) can be valued by UniswapV3PoolsMeta (pool 0x764D50759FF278b7CfB2E0e8464B742E9aB40C97 must be in that adapter's instance list).",
     "constructor": {
       "rwiv": "0xCafEaa466736ac01e0AC9CA72644BeF348694731",
       "usdcToUsdChainlinkAddress": "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6",

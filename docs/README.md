@@ -97,10 +97,8 @@ Numbered ADRs. Read when you want the *why* behind a design choice.
 
 | Doc | When to read |
 |---|---|
-| [`script/DEPLOYMENT_SUMMARY.md`](../script/DEPLOYMENT_SUMMARY.md) | **Architectural overview** of the deployment system — CREATE2, atomic proxy deploy, EOA-only deploy/config with a final admin handoff to the security-council Safe, the per-script roles (`01_…` → `07_…`). Read first if new. |
-| [`script/NAV_V2_DEPLOYMENT_RUNBOOK.md`](../script/NAV_V2_DEPLOYMENT_RUNBOOK.md) | **Operational playbook** — step-by-step deploy guide. The living doc; companion to DEPLOYMENT_SUMMARY. Use when deploying to a new chain, deploying additional adapters to a live chain, registering new assets, rotating roles, validating an existing deployment. |
-| [`script/DEPLOYED_ADDRESSES.md`](../script/DEPLOYED_ADDRESSES.md) | Current production addresses per chain — NAVCalculator proxy + impl, every deployed price-feed and balance adapter. Updated after each production deploy. |
-| [`script/PENDING_DEPLOYS.md`](../script/PENDING_DEPLOYS.md) | What's wired in code but not yet on mainnet — running checklist for the next deploy session. |
+| [`script/DEPLOYMENT_SUMMARY.md`](../script/DEPLOYMENT_SUMMARY.md) | **Architectural overview + step-by-step** of the deployment system — CREATE2, atomic proxy deploy, EOA-only deploy/config, the per-script roles (`01_…` → `07_…`). Read first if new. |
+| [`script/deploy/DEPLOYED_ADDRESSES.md`](../script/deploy/DEPLOYED_ADDRESSES.md) | Current production addresses — canonical CREATE2 layer (same on every chain) + per-chain price feeds and balance adapters, across all 24 deployed chains. Updated after each production deploy. |
 | [`script/config/CONFIG_GUIDE.md`](../script/config/CONFIG_GUIDE.md) | Schema and conventions for `chains/<chainId>.json` plus the `contracts-deployment-config/` and `nav-config/` per-chain files. |
 | [`script/config/README.md`](../script/config/README.md) | Per-folder index for `script/config/`. |
 | [`script/deploy/README.md`](../script/deploy/README.md) | Per-script reference for the `01_…` → `07_…` deploy scripts. |
@@ -124,7 +122,7 @@ Numbered ADRs. Read when you want the *why* behind a design choice.
 
 | Doc | Why kept |
 |---|---|
-| [`historical/oracle-migration-plan.md`](historical/oracle-migration-plan.md) | The NAV v1 → v2 oracle (price + balance) migration plan (PRs #10, #11, #12, completed 2026-04-17). Preserved as the authoritative record of what was ported, why specific divergences were accepted, and which follow-ups remained open at that point. **Not for current ops** — see `script/NAV_V2_DEPLOYMENT_RUNBOOK.md` for that. |
+| [`historical/oracle-migration-plan.md`](historical/oracle-migration-plan.md) | The NAV v1 → v2 oracle (price + balance) migration plan (PRs #10, #11, #12, completed 2026-04-17). Preserved as the authoritative record of what was ported, why specific divergences were accepted, and which follow-ups remained open at that point. **Not for current ops** — see [`script/deploy/README.md`](../script/deploy/README.md) for that. |
 
 ---
 
@@ -144,7 +142,7 @@ When you spot a position in `comparison-report.md` that NAV doesn't cover (a `�
 | Bucket | When to use | Where it lives |
 |---|---|---|
 | **Untracked by design** | The gap is intentional — token has no Chainlink mainnet feed, protocol is deprecated/legacy, etc. "Will not fix unless rule changes." | `test/integration/accounts.json.chains.<chainId>.$untracked_by_design` (per-chain prose field; today only chain 1 is populated). |
-| **Pending production deploy** | Adapter / price-feed code is in the repo and the harness already exercises it; just hasn't been deployed to mainnet yet. "Wire's done, ship pending." | [`script/PENDING_DEPLOYS.md`](../script/PENDING_DEPLOYS.md) — operational checklist with the forge invocations + Safe TX flow. |
+| **Pending production deploy** | Adapter / price-feed code is in the repo and the harness already exercises it; just hasn't been deployed to a given chain yet. "Wire's done, ship pending." | [`script/deploy/README.md`](../script/deploy/README.md) — the deploy runbook (forge invocations + role flow). |
 | **Need new adapter / feed code** | The gap requires a new contract or new ADR. "Have to build something." | [`roadmap/balance-adapter-coverage.md`](roadmap/balance-adapter-coverage.md) for missing balance adapters; [`howto/add-price-feed.md`](howto/add-price-feed.md) is the recipe to fix one. |
 | **Display polish / matcher heuristics** | The math is right but the report's per-row pairing or layout could be clearer. "Visual / UX work on the report itself." | [`roadmap/comparison-report-improvements.md`](roadmap/comparison-report-improvements.md). |
 

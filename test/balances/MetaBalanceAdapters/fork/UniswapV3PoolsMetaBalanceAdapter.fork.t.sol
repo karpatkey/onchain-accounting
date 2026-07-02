@@ -3,8 +3,8 @@ pragma solidity ^0.8;
 
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
 import {
-    UniswapV3PoolsAssistedBalanceAdapter
-} from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsAssistedBalanceAdapter.sol";
+    UniswapV3PoolsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/uniswap/UniswapV3PoolsMetaBalanceAdapter.sol";
 import {
     INonfungiblePositionManager,
     UniswapV3PoolLib
@@ -34,14 +34,12 @@ interface IPool {
         returns (uint128, int128, uint256 fgOut0, uint256 fgOut1, int56, uint160, uint32, bool);
 }
 
-/// @title UniswapV3PoolsAssistedBalanceForkTest
-/// @notice Fork tests for the Uniswap V3 pools assisted adapter against real mainnet contracts, against the real
-///         WBTC/WETH 0.3% pool and a real NFT holder. The holder's NFT tokenIds are discovered off the NPM's
-///         ERC721Enumerable surface and fed to the adapter via `submitTokenIds` (as the off-chain assistant would).
-///         Since ADR 0017 the adapter values each position from the pool's live `slot0` (instantaneous on-chain
-///         amounts) — so the test recomputes the expected amounts off the same `slot0` rather than feeding the
-///         adapter a reconstructed oracle price.
-contract UniswapV3PoolsAssistedBalanceForkTest is BalanceAdapterTestBase {
+/// @title UniswapV3PoolsMetaBalanceForkTest
+/// @notice Fork tests for the Uniswap V3 pools meta-adapter against real mainnet contracts — the real WBTC/WETH 0.3%
+///         pool and a real NFT holder. The adapter enumerates the holder's NFTs on-chain (the NPM is
+///         ERC721Enumerable — no assistant/submit step) and values each position from the pool's live `slot0`
+///         (instantaneous on-chain amounts; ADR 0017). The test recomputes the expected amounts off the same `slot0`.
+contract UniswapV3PoolsMetaBalanceForkTest is BalanceAdapterTestBase {
     address public constant NPM = 0xC36442b4a4522E871399CD717aBDD847Ab11FE88;
     address public constant POOL = 0xCBCdF9626bC03E24f779434178A73a0B4bad62eD; // WBTC/WETH 0.3%
     address public constant WBTC = 0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599;
@@ -49,28 +47,13 @@ contract UniswapV3PoolsAssistedBalanceForkTest is BalanceAdapterTestBase {
     address public constant HOLDER = 0xC01318baB7ee1f5ba734172bF7718b5DC6Ec90E1;
     uint256 public constant FORK_BLOCK = 24_987_608;
 
-    UniswapV3PoolsAssistedBalanceAdapter public adapter;
+    UniswapV3PoolsMetaBalanceAdapter public meta;
 
     function setUp() public override {
         super.setUp();
         _setupFork();
         balances = _deployBalancesForAdapter(_assets());
-        // admin + assistant = this test, so it can submit the holder's tokenIds.
-        adapter = new UniswapV3PoolsAssistedBalanceAdapter(
-            NPM, "Uniswap V3", address(balances), address(this), address(this)
-        );
-        _submitHolderTokenIds();
-    }
-
-    /// @notice Discover the holder's NFT tokenIds off the NPM (ERC721Enumerable) and submit them, mirroring the
-    ///         off-chain assistant. All enumerated ids are owned by HOLDER, so submitTokenIds never reverts.
-    function _submitHolderTokenIds() internal {
-        uint256 bal = INonfungiblePositionManager(NPM).balanceOf(HOLDER);
-        uint256[] memory ids = new uint256[](bal);
-        for (uint256 i = 0; i < bal; i++) {
-            ids[i] = INonfungiblePositionManager(NPM).tokenOfOwnerByIndex(HOLDER, i);
-        }
-        if (ids.length > 0) adapter.submitTokenIds(HOLDER, ids);
+        meta = new UniswapV3PoolsMetaBalanceAdapter(NPM, "Uniswap V3", address(balances));
     }
 
     function _setupFork() internal override {
@@ -85,8 +68,13 @@ contract UniswapV3PoolsAssistedBalanceForkTest is BalanceAdapterTestBase {
         a[1] = WETH;
     }
 
+    function _poolInstance() internal pure returns (bytes32[] memory ins) {
+        ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(POOL)));
+    }
+
     function _token(address token) internal view returns (uint256 sum) {
-        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(HOLDER, token);
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(HOLDER, _poolInstance(), token);
         for (uint256 i = 0; i < p.length; i++) {
             sum += p[i].amount;
         }
@@ -99,18 +87,19 @@ contract UniswapV3PoolsAssistedBalanceForkTest is BalanceAdapterTestBase {
     }
 
     function test_identityDerivedOnChain() public view {
-        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(HOLDER, address(0));
+        INAVCalculator.PositionBalance[] memory p =
+            meta.getAdapterPositionsForInstances(HOLDER, _poolInstance(), address(0));
         assertGt(p.length, 0);
         for (uint256 i = 0; i < p.length; i++) {
             // positionId = the pool contract address.
             address pool = abi.decode(p[i].positionId, (address));
-            assertTrue(pool != address(0), "positionId = non-zero pool address");
-            assertGt(pool.code.length, 0, "positionId resolves to a deployed pool");
+            assertEq(pool, POOL, "positionId = the configured pool");
             // NFT id rides in the typed positionInstanceId; the static breadcrumb is positionId-derived.
-            string[] memory lbl = adapter.positionLabels(p[i].positionId);
+            string[] memory lbl = meta.positionLabels(p[i].positionId);
             assertEq(lbl.length, 2, "static breadcrumb = [category, pool]");
             assertEq(lbl[0], "AMM Liquidity Pool");
-            assertEq(p[i].positionInstanceId != bytes32(0), true, "NFT id rides in positionInstanceId");
+            assertTrue(p[i].positionInstanceId != bytes32(0), "NFT id rides in positionInstanceId");
+            assertFalse(p[i].isLocked, "LP liquidity + unclaimed fees are always withdrawable");
         }
     }
 
@@ -120,10 +109,11 @@ contract UniswapV3PoolsAssistedBalanceForkTest is BalanceAdapterTestBase {
     ///         `tokensOwed`/accruing-fee assembly itself, NOT by calling `UniswapV3PoolLib.positionAmounts` — so a bug
     ///         in the lib's assembly of that math would be caught here (rather than masked by a self-consistency
     ///         check against the same code path the adapter uses). The recomputed fees include the accruing-since-poke
-    ///         component (>= tokensOwed), proving the adapter no longer reports settled `tokensOwed` alone.
+    ///         component (>= tokensOwed), proving the adapter reports the full unclaimed fee, not settled tokensOwed.
     function test_amountsMatchLiveSlot0Recompute() public view {
         // Aggregate the adapter's WBTC/WETH split (Supplied) and fees (Fees) for the holder's WBTC/WETH 0.3% NFTs.
-        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(HOLDER, address(0));
+        INAVCalculator.PositionBalance[] memory p =
+            meta.getAdapterPositionsForInstances(HOLDER, _poolInstance(), address(0));
         uint256 adapterLiqWbtc;
         uint256 adapterLiqWeth;
         uint256 adapterFeeWbtc;
@@ -150,7 +140,7 @@ contract UniswapV3PoolsAssistedBalanceForkTest is BalanceAdapterTestBase {
         assertEq(adapterFeeWbtc, fee0, "WBTC fee == independent inline recompute (feeGrowth + tokensOwed)");
         assertEq(adapterFeeWeth, fee1, "WETH fee == independent inline recompute (feeGrowth + tokensOwed)");
         // The accruing-since-poke component is genuinely valued: the holder has live liquidity in this pool, so the
-        // recomputed fee is at least the settled tokensOwed and the principal split is non-zero.
+        // principal split is non-zero.
         assertTrue(liq0 > 0 || liq1 > 0, "holder has in-range principal in the WBTC/WETH pool");
     }
 
@@ -163,7 +153,10 @@ contract UniswapV3PoolsAssistedBalanceForkTest is BalanceAdapterTestBase {
     function _recomputeInline() internal view returns (uint256 liq0, uint256 liq1, uint256 fee0, uint256 fee1) {
         (uint160 sp, int24 tickCurrent,,,,,) = IPool(POOL).slot0();
         uint256 bal = INonfungiblePositionManager(NPM).balanceOf(HOLDER);
-        for (uint256 i = 0; i < bal; i++) {
+        // Match the adapter's MAX_POSITIONS enumeration cap so this "independent" recompute stays apples-to-apples
+        // if HOLDER ever crosses the cap (it doesn't at the pinned block, but the guard keeps the ground truth honest).
+        uint256 max = bal > meta.MAX_POSITIONS() ? meta.MAX_POSITIONS() : bal;
+        for (uint256 i = 0; i < max; i++) {
             uint256 tokenId = INonfungiblePositionManager(NPM).tokenOfOwnerByIndex(HOLDER, i);
             (uint256 a0, uint256 a1, uint256 f0, uint256 f1) = _recomputeOne(tokenId, sp, tickCurrent);
             liq0 += a0;

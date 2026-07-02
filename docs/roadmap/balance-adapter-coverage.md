@@ -1,6 +1,6 @@
 # Balance-adapter coverage roadmap
 
-> **PR #47 (meta-adapter framework):** Coverage was expanded significantly. A family of immutable meta-adapters now covers every instance of the protocol families below (Morpho Vaults/Markets, Aave V3, Balancer V3/V2 pools+gauges, Uniswap V2, PancakeSwap V2, Gearbox V3 markets, Compound V3, Fluid fTokens/Vaults, StakeWise V3, Curve pools+gauges, Convex, Euler V2 — the meta-adapter contracts live in `src/balances/MetaBalanceAdapters/`). The active instance set for each is governed on NAVCalculator via `addMetaInstances`/`removeMetaInstances` instead of deploying a contract per instance. Uniswap V3 and PancakeSwap V3 are **not** meta-adapters — their NFT positions are non-enumerable, so they live in the assisted family (`src/balances/AssistedBalanceAdapters/`); see the DEX LP section below.
+> **PR #47 (meta-adapter framework):** Coverage was expanded significantly. A family of immutable meta-adapters now covers every instance of the protocol families below (Morpho Vaults/Markets, Aave V3, Balancer V3/V2 pools+gauges, Uniswap V2/V3, PancakeSwap V2/V3, Gearbox V3 markets, Compound V3, Fluid fTokens/Vaults, StakeWise V3, Curve pools+gauges, Convex, Euler V2 — the meta-adapter contracts live in `src/balances/MetaBalanceAdapters/`). The active instance set for each is governed on NAVCalculator via `addMetaInstances`/`removeMetaInstances` instead of deploying a contract per instance. Uniswap V3 and PancakeSwap V3 are **also** meta-adapters — their `NonfungiblePositionManager` is `ERC721Enumerable`, so an account's LP NFTs are enumerable on-chain (no off-chain assistant); see the DEX LP section below.
 
 Living document. Tracks protocols and protocol features whose positions are **not yet** captured by NAVCalculator's balance adapters, with the goal of growing NAV coverage one PR at a time.
 
@@ -53,9 +53,9 @@ These are not queues but represent value that lives outside the wallet and is no
 
 - **Balancer V3 pools + gauges**: ✅ covered — `BalancerV3PoolsMeta` + `BalancerV3GaugesMeta` (meta-adapters, ADR 0010).
 - **Balancer V2 pools + gauges**: ✅ covered — `BalancerV2PoolsMeta` + `BalancerV2GaugesMeta` (meta-adapters, ADR 0010).
-- **Uniswap V3**: ✅ covered — `UniswapV3PoolsAssisted` (assisted adapter, ADR 0015; agent-fed NFT tokenId cache).
+- **Uniswap V3**: ✅ covered — `UniswapV3PoolsMeta` (meta-adapter, ADR 0010; on-chain NFT enumeration via the `ERC721Enumerable` NonfungiblePositionManager).
 - **Uniswap V2**: ✅ covered — `UniswapV2PoolsMeta` (meta-adapter, ADR 0010).
-- **PancakeSwap V3**: ✅ covered — `PancakeSwapV3PoolsAssisted` (assisted adapter, ADR 0015; subclass of `UniswapV3PoolsAssisted`).
+- **PancakeSwap V3**: ✅ covered — `PancakeSwapV3PoolsMeta` (meta-adapter, ADR 0010; subclass of `UniswapV3PoolsMeta` overriding the `uint32 feeProtocol` `_slot0` decode).
 - **PancakeSwap V2**: ✅ covered — `PancakeSwapV2PoolsMeta` (meta-adapter, ADR 0010).
 - **Curve pools + gauges**: ✅ covered — `CurvePoolsMeta` + `CurveGaugesMeta` (meta-adapters, ADR 0010).
 

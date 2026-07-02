@@ -754,8 +754,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
         );
         // Permissionless wrapper-fed adapter (ADR 0018): no admin/assistant roles — the id cache is msg.sender-keyed
         // and fed on-chain by the delegatecall wrapper. NAV registration + wrapper deploy/grant wiring deferred.
-        NexusMutualStakingPoolsAssistedBalanceAdapter adapter =
-            new NexusMutualStakingPoolsAssistedBalanceAdapter(stakingNft, stakingViewer, underlyingToken, navCalculator);
+        NexusMutualStakingPoolsAssistedBalanceAdapter adapter = new NexusMutualStakingPoolsAssistedBalanceAdapter(
+            stakingNft, stakingViewer, underlyingToken, navCalculator
+        );
         return address(adapter);
     }
 

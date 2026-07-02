@@ -126,11 +126,7 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
             })
         );
         vm.prank(bob);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                CoordinateNotOwned.selector, bob, uint256(1)
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(CoordinateNotOwned.selector, bob, uint256(1)));
         adapter.submit(1);
         assertEq(adapter.requestIdsOf(alice).length, 0, "bob cannot feed alice's cache");
     }
@@ -143,11 +139,7 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
             })
         );
         vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                CoordinateNotOwned.selector, alice, uint256(1)
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(CoordinateNotOwned.selector, alice, uint256(1)));
         adapter.submit(1);
     }
 
@@ -173,18 +165,14 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_remove_revertsWhenNotCached() public {
         vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(CoordinateNotCached.selector, alice, uint256(9))
-        );
+        vm.expectRevert(abi.encodeWithSelector(CoordinateNotCached.selector, alice, uint256(9)));
         adapter.remove(9);
     }
 
     function test_remove_revertsWhenStillOwned() public {
         _seed(alice, 1, 1e18, 0); // cached and still live (not claimed)
         vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(CoordinateStillLive.selector, alice, uint256(1))
-        );
+        vm.expectRevert(abi.encodeWithSelector(CoordinateStillLive.selector, alice, uint256(1)));
         adapter.remove(1);
     }
 

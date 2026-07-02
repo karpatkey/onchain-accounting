@@ -4,7 +4,9 @@ pragma solidity ^0.8.0;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
 import {BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
-import {EtherFiWithdrawalQueueWrapper} from "src/balances/AssistedBalanceAdapters/wrappers/EtherFiWithdrawalQueueWrapper.sol";
+import {
+    EtherFiWithdrawalQueueWrapper
+} from "src/balances/AssistedBalanceAdapters/wrappers/EtherFiWithdrawalQueueWrapper.sol";
 import {
     EtherFiWithdrawalQueueAssistedBalanceAdapter
 } from "src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueAssistedBalanceAdapter.sol";

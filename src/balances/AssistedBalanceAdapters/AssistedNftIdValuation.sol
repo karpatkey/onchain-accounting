@@ -19,7 +19,9 @@ import "src/errors.sol";
 abstract contract AssistedNftIdValuation is AssistedNftIdCache {
     /// @param underlyingToken_ The reported underlying asset. Must be non-zero.
     /// @param navCalculator_   NAVCalculator. Must be a contract.
-    constructor(address underlyingToken_, address navCalculator_) AssistedNftIdCache(underlyingToken_, navCalculator_) {}
+    constructor(address underlyingToken_, address navCalculator_)
+        AssistedNftIdCache(underlyingToken_, navCalculator_)
+    {}
 
     /// @inheritdoc AssistedNftIdCache
     /// @dev Overrides the direct loop with per-id fault isolation: each id is valued in its own external call frame, so
@@ -39,8 +41,9 @@ abstract contract AssistedNftIdValuation is AssistedNftIdCache {
         for (uint256 i; i < ids.length; ++i) {
             // Per-id fault isolation (fail-open): a revert in this id's live reads is caught here and only that id is
             // discarded; it never propagates out of getAdapterPositions.
-            try this.valueTokenIdSelf(account, ids[i], underlying) returns (INAVCalculator.PositionBalance[] memory legs)
-            {
+            try this.valueTokenIdSelf(account, ids[i], underlying) returns (
+                INAVCalculator.PositionBalance[] memory legs
+            ) {
                 for (uint256 j; j < legs.length; ++j) {
                     temp[count++] = legs[j];
                 }

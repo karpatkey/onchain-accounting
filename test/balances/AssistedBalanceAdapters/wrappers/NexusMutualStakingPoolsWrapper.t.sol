@@ -4,12 +4,16 @@ pragma solidity ^0.8.0;
 import {NotAContract} from "src/errors.sol";
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
-import {MockStakingNFT, MockStakingViewer} from
-    "test/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsAssistedBalanceAdapter.t.sol";
-import {NexusMutualStakingPoolsAssistedBalanceAdapter} from
-    "src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsAssistedBalanceAdapter.sol";
-import {NexusMutualStakingPoolsWrapper} from
-    "src/balances/AssistedBalanceAdapters/wrappers/NexusMutualStakingPoolsWrapper.sol";
+import {
+    MockStakingNFT,
+    MockStakingViewer
+} from "test/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsAssistedBalanceAdapter.t.sol";
+import {
+    NexusMutualStakingPoolsAssistedBalanceAdapter
+} from "src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsAssistedBalanceAdapter.sol";
+import {
+    NexusMutualStakingPoolsWrapper
+} from "src/balances/AssistedBalanceAdapters/wrappers/NexusMutualStakingPoolsWrapper.sol";
 import {WrapperDelegateCaller} from "test/balances/AssistedBalanceAdapters/wrappers/WrapperDelegateCaller.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";

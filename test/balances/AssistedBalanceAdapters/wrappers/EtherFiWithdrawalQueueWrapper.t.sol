@@ -5,7 +5,9 @@ import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
-import {EtherFiWithdrawalQueueWrapper} from "src/balances/AssistedBalanceAdapters/wrappers/EtherFiWithdrawalQueueWrapper.sol";
+import {
+    EtherFiWithdrawalQueueWrapper
+} from "src/balances/AssistedBalanceAdapters/wrappers/EtherFiWithdrawalQueueWrapper.sol";
 import {
     EtherFiWithdrawalQueueAssistedBalanceAdapter
 } from "src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueAssistedBalanceAdapter.sol";
@@ -129,9 +131,7 @@ contract EtherFiWithdrawalQueueWrapperTest is Test {
         balances.addSupportedAssetForTest(NATIVE);
 
         // Adapter first (wrapper unknown at construction) → deploy wrapper → grant WRAPPER_ROLE to the wrapper.
-        adapter = new EtherFiWithdrawalQueueAssistedBalanceAdapter(
-            address(nft), address(lp), NATIVE, address(balances)
-        );
+        adapter = new EtherFiWithdrawalQueueAssistedBalanceAdapter(address(nft), address(lp), NATIVE, address(balances));
         wrapper = new EtherFiWithdrawalQueueWrapper(address(adapter), address(lp), address(nft), address(eeth));
 
         safe = new MockSafe();
@@ -236,7 +236,6 @@ contract EtherFiWithdrawalQueueWrapperTest is Test {
         vm.expectRevert(NotDelegateCall.selector);
         wrapper.claimWithdraw(id);
     }
-
 
     /// @notice A delegatecalled claim of an id the Safe does not own reverts inside ether.fi's owner check (the claim
     ///         runs first now).

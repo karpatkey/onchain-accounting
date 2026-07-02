@@ -3,8 +3,10 @@ pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
 import {BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
-import {NexusMutualStakingPoolsAssistedBalanceAdapter, INexusStakingViewer} from
-    "src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsAssistedBalanceAdapter.sol";
+import {
+    NexusMutualStakingPoolsAssistedBalanceAdapter,
+    INexusStakingViewer
+} from "src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsAssistedBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -45,8 +47,7 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterForkTest is BalanceAdapter
         balances = new BalancesHarnessForFork();
         balances.registerAssetForTest(NXM, 18, "NXM");
 
-        adapter =
-            new NexusMutualStakingPoolsAssistedBalanceAdapter(STAKING_NFT, STAKING_VIEWER, NXM, address(balances));
+        adapter = new NexusMutualStakingPoolsAssistedBalanceAdapter(STAKING_NFT, STAKING_VIEWER, NXM, address(balances));
         // Permissionless: the account itself submits its ids (all owned by HOLDER → no revert).
         uint256[] memory ids = _knownIds();
         for (uint256 i; i < ids.length; ++i) {

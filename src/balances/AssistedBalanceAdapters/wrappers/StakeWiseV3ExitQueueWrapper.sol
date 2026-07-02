@@ -20,7 +20,9 @@ contract StakeWiseV3ExitQueueWrapper is BalanceAdapterWrapper {
     /// @notice Emitted (in the Safe's context) when the Safe enters the exit queue and the ticket is registered.
     event ExitQueueEntered(address indexed account, address indexed vault, uint256 positionTicket, uint256 timestamp);
     /// @notice Emitted (in the Safe's context) when the Safe claims and the ticket is deregistered.
-    event ExitedAssetsClaimed(address indexed account, address indexed vault, uint256 positionTicket, uint256 timestamp);
+    event ExitedAssetsClaimed(
+        address indexed account, address indexed vault, uint256 positionTicket, uint256 timestamp
+    );
 
     /// @param adapter_ The {StakeWiseV3ExitQueueAssistedBalanceAdapter} to feed. Must be a contract.
     constructor(address adapter_) BalanceAdapterWrapper(adapter_) {}

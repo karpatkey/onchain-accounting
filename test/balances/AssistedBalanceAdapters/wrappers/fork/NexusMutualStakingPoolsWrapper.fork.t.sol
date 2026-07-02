@@ -3,9 +3,12 @@ pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
 import {BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
-import {NexusMutualStakingPoolsAssistedBalanceAdapter} from
-    "src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsAssistedBalanceAdapter.sol";
-import {NexusMutualStakingPoolsWrapper} from "src/balances/AssistedBalanceAdapters/wrappers/NexusMutualStakingPoolsWrapper.sol";
+import {
+    NexusMutualStakingPoolsAssistedBalanceAdapter
+} from "src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsAssistedBalanceAdapter.sol";
+import {
+    NexusMutualStakingPoolsWrapper
+} from "src/balances/AssistedBalanceAdapters/wrappers/NexusMutualStakingPoolsWrapper.sol";
 import {WrapperDelegateCaller} from "test/balances/AssistedBalanceAdapters/wrappers/WrapperDelegateCaller.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -57,7 +60,6 @@ contract NexusMutualStakingPoolsWrapperForkTest is BalanceAdapterTestBase {
     NexusMutualStakingPoolsWrapper public wrapper;
     WrapperDelegateCaller public account; // the delegatecalling staking account
 
-
     function setUp() public override {
         super.setUp();
         _setupFork();
@@ -65,9 +67,7 @@ contract NexusMutualStakingPoolsWrapperForkTest is BalanceAdapterTestBase {
         balances = new BalancesHarnessForFork();
         balances.registerAssetForTest(NXM, 18, "NXM");
 
-        adapter = new NexusMutualStakingPoolsAssistedBalanceAdapter(
-            STAKING_NFT, STAKING_VIEWER, NXM, address(balances)
-        );
+        adapter = new NexusMutualStakingPoolsAssistedBalanceAdapter(STAKING_NFT, STAKING_VIEWER, NXM, address(balances));
         wrapper = new NexusMutualStakingPoolsWrapper(address(adapter), NXM, TOKEN_CONTROLLER);
 
         // The delegatecalling account is the real actor: it holds SUBMITTER_ROLE, is a Nexus member, and holds NXM.

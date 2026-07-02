@@ -4,7 +4,9 @@ pragma solidity ^0.8.0;
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-import {StaderWithdrawalQueueWrapper} from "src/balances/AssistedBalanceAdapters/wrappers/StaderWithdrawalQueueWrapper.sol";
+import {
+    StaderWithdrawalQueueWrapper
+} from "src/balances/AssistedBalanceAdapters/wrappers/StaderWithdrawalQueueWrapper.sol";
 import {
     StaderWithdrawalQueueBalanceAdapter
 } from "src/balances/BalanceAdapters/StaderWithdrawalQueueBalanceAdapter.sol";

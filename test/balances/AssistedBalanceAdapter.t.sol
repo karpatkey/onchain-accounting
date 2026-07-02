@@ -185,7 +185,9 @@ contract AssistedBalanceAdapterTest is Test {
     }
 
     function test_SupportsInterface() public view {
-        assertTrue(adapter.supportsInterface(type(IAssistantFedBalanceAdapter).interfaceId), "IAssistantFedBalanceAdapter");
+        assertTrue(
+            adapter.supportsInterface(type(IAssistantFedBalanceAdapter).interfaceId), "IAssistantFedBalanceAdapter"
+        );
         assertTrue(adapter.supportsInterface(type(IBalanceAdapter).interfaceId), "IBalanceAdapter");
         assertTrue(adapter.supportsInterface(type(IAccessControl).interfaceId), "IAccessControl");
         assertTrue(adapter.supportsInterface(type(IERC165).interfaceId), "IERC165");

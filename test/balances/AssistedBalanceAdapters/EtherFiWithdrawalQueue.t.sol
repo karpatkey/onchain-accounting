@@ -128,39 +128,29 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterTest is BalanceAdapterTestB
         lp = new MockLiquidityPool();
         balances.addSupportedAssetForTest(NATIVE);
         // admin = wrapper = this test contract, so it holds WRAPPER_ROLE and can submit/remove ids.
-        adapter = new EtherFiWithdrawalQueueAssistedBalanceAdapter(
-            address(nft), address(lp), NATIVE, address(balances)
-        );
+        adapter = new EtherFiWithdrawalQueueAssistedBalanceAdapter(address(nft), address(lp), NATIVE, address(balances));
     }
 
     // ---- Constructor ----
 
     function test_constructor_revertsOnZeroNft() public {
         vm.expectRevert(InvalidArguments.selector);
-        new EtherFiWithdrawalQueueAssistedBalanceAdapter(
-            address(0), address(lp), NATIVE, address(balances)
-        );
+        new EtherFiWithdrawalQueueAssistedBalanceAdapter(address(0), address(lp), NATIVE, address(balances));
     }
 
     function test_constructor_revertsOnZeroLp() public {
         vm.expectRevert(InvalidArguments.selector);
-        new EtherFiWithdrawalQueueAssistedBalanceAdapter(
-            address(nft), address(0), NATIVE, address(balances)
-        );
+        new EtherFiWithdrawalQueueAssistedBalanceAdapter(address(nft), address(0), NATIVE, address(balances));
     }
 
     function test_constructor_revertsOnZeroUnderlying() public {
         vm.expectRevert(InvalidArguments.selector);
-        new EtherFiWithdrawalQueueAssistedBalanceAdapter(
-            address(nft), address(lp), address(0), address(balances)
-        );
+        new EtherFiWithdrawalQueueAssistedBalanceAdapter(address(nft), address(lp), address(0), address(balances));
     }
 
     function test_constructor_revertsWhenNftNotContract() public {
         vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "WithdrawRequestNFT"));
-        new EtherFiWithdrawalQueueAssistedBalanceAdapter(
-            makeAddr("eoa"), address(lp), NATIVE, address(balances)
-        );
+        new EtherFiWithdrawalQueueAssistedBalanceAdapter(makeAddr("eoa"), address(lp), NATIVE, address(balances));
     }
 
     function test_submit_storesOwnedId_andDedups() public {
@@ -179,7 +169,6 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterTest is BalanceAdapterTestB
         adapter.submit(1);
         assertEq(adapter.tokenIdsOf(holder).length, 0);
     }
-
 
     // ---- remove (WRAPPER_ROLE-gated; requires the request to have been claimed/burned) ----
 
@@ -373,9 +362,8 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterTest is BalanceAdapterTestB
 
     function test_unregisteredUnderlying_positionsEmpty_butBalanceStillOwed() public {
         BalancesHarness freshNav = new BalancesHarness();
-        EtherFiWithdrawalQueueAssistedBalanceAdapter a2 = new EtherFiWithdrawalQueueAssistedBalanceAdapter(
-            address(nft), address(lp), NATIVE, address(freshNav)
-        );
+        EtherFiWithdrawalQueueAssistedBalanceAdapter a2 =
+            new EtherFiWithdrawalQueueAssistedBalanceAdapter(address(nft), address(lp), NATIVE, address(freshNav));
         nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
         a2.submit(1);
         assertEq(a2.getAdapterPositions(holder, address(0)).length, 0);
@@ -423,9 +411,7 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterTest is BalanceAdapterTestB
 
     function test_constructor_revertsWhenLpNotContract() public {
         vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "LiquidityPool"));
-        new EtherFiWithdrawalQueueAssistedBalanceAdapter(
-            address(nft), makeAddr("eoaLp"), NATIVE, address(balances)
-        );
+        new EtherFiWithdrawalQueueAssistedBalanceAdapter(address(nft), makeAddr("eoaLp"), NATIVE, address(balances));
     }
 
     function test_constructor_revertsWhenNavNotContract() public {

@@ -154,16 +154,18 @@ contract NexusMutualStakingPoolsAssistantForkTest is BalanceAdapterTestBase {
         (address pool, uint256 trancheId, uint256 tokenId) = _deposit();
         uint256 accountNxmAfterDeposit = IERC20(NXM).balanceOf(address(account));
 
-        // Warp past the tranche's expiry so the stake becomes withdrawable, then withdraw it through the wrapper.
+        // Warp past the tranche's expiry so the stake becomes withdrawable, then FULLY withdraw (stake + rewards)
+        // through the wrapper. A full withdraw empties the position, so the wrapper untracks it; a partial / rewards-
+        // only withdraw would instead keep the still-live residual tracked (covered by the unit tests).
         vm.warp((trancheId + 1) * TRANCHE_DURATION + 1);
         uint256[] memory tranches = new uint256[](1);
         tranches[0] = trancheId;
-        (uint256 withdrawnStake,) = account.withdraw(address(wrapper), pool, tokenId, true, false, tranches);
+        (uint256 withdrawnStake,) = account.withdraw(address(wrapper), pool, tokenId, true, true, tranches);
 
         assertGt(withdrawnStake, 0, "stake withdrawn");
         // Nexus pays the NFT owner (the account) directly.
         assertGt(IERC20(NXM).balanceOf(address(account)), accountNxmAfterDeposit, "account received withdrawn NXM");
-        assertEq(adapter.tokenIdsOf(address(account)).length, 0, "tokenId untracked after withdraw");
+        assertEq(adapter.tokenIdsOf(address(account)).length, 0, "tokenId untracked after full withdraw");
     }
 
     /// @notice Topping up the same StakingNFT (requestTokenId != 0) returns the same id: one tracked id, ~2x stake.

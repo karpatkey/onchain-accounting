@@ -10,7 +10,7 @@ import {
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
-import {CoordinateNotOwned, CoordinateNotCached} from "src/errors.sol";
+import {CoordinateNotOwned, CoordinateNotCached, CoordinateStillLive} from "src/errors.sol";
 
 /// @notice Minimal ERC-721 transfer surface for the real StakingNFT (to exercise read-time ownership discard).
 interface IStakingNFTLike {
@@ -144,17 +144,17 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterForkTest is BalanceAdapter
         adapter.remove(180);
     }
 
-    /// @notice remove untracks an owned id: the Safe's total drops by exactly id 180's live value.
-    function test_remove_untracksOwnedId() public {
-        (uint256 amtBefore,) = adapter.getAdapterBalanceForAsset(HOLDER, NXM);
-        uint256 one = _valueOf(180);
+    /// @notice remove is fail-loud for a still-live owned id (CoordinateStillLive): a live position is never dropped
+    ///         from the cache — it can only leave once fully emptied or no longer owned (see {_removable}).
+    function test_remove_revertsForLiveOwnedId() public {
+        assertGt(_valueOf(180), 0, "id 180 is live at the pinned block");
+        uint256 lenBefore = adapter.tokenIdsOf(HOLDER).length;
 
         vm.prank(HOLDER);
+        vm.expectRevert(abi.encodeWithSelector(CoordinateStillLive.selector, HOLDER, uint256(180)));
         adapter.remove(180);
 
-        assertEq(adapter.tokenIdsOf(HOLDER).length, 4, "one id untracked");
-        (uint256 amtAfter,) = adapter.getAdapterBalanceForAsset(HOLDER, NXM);
-        assertEq(amtAfter, amtBefore - one, "total drops by id 180's value");
+        assertEq(adapter.tokenIdsOf(HOLDER).length, lenBefore, "still tracked");
     }
 
     /// @notice Reads fail open: after the Safe transfers a cached StakingNFT away, that id is discarded on reads even

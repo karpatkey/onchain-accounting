@@ -22,15 +22,14 @@
     "ConvexCurveLPStakingMeta": "0x823FCF30B4a76A75DE402af08c0C9D04bBfBe95F",
     "FluidFTokensMeta": "0xaCBE56d6d844fC62d3bF2cd0FAa911853916D434",
     "FluidVaultsMeta": "0xEb7eDaE4bdEb9170F722B312a8D64104E1F0aD45",
-    "StaderWithdrawalQueue": "0x98c1C89b34aed91191c447C96fe947782FDF866c",
-    "KelpWithdrawalQueue": "0x9CB4DBD309b89cf6BB457AB507e85F56FbbC5C61",
-    "LidoWithdrawalQueue": "0xe1C20772f74304cf278AaBe844231A3bD9c35f6E",
+    "StaderWithdrawalQueue": "0xe43BdCeb764971b1CEd97dA8612815DaEF23E423",
+    "KelpWithdrawalQueue": "0x56c246DA9dAACE268D8B4583aF20d2E9957be8c1",
+    "LidoWithdrawalQueue": "0x6147A0220C790e6B5294fFE9AD6B27bc1AA2F674",
     "EthenaCooldown": "0xc9dBccbFb847Dcf41189F77AEd9e60E292789EC8",
     "StakeWiseV3VaultsMeta": "0x1598188996DBB5E3d42Db7f1FaF706Cb6cbdE0B8",
-    "MerklRewardsAssisted": "0x0b8c4954ceb7B4795D479801D829Fc1f5F2E7Da7",
-    "EtherFiWithdrawalQueueAssisted": "0xa290B8b24e7ed169fB16F9A35d86a5ED01d173D2",
-    "NexusMutualStakingPoolsAssisted": "0x8D0237436A4Be679Bf059DCC177e09EA1f6C3094",
-    "StakeWiseV3ExitQueueAssisted": "0xa7aCE959c28686c22E239c2Eb8AC79cf7B6FF7e1",
+    "EtherFiWithdrawalQueueAssisted": "0xb0a8A75618925e0A53EE820529Ad1A2F6a18bF12",
+    "NexusMutualStakingPoolsAssisted": "0xB73b3a6B65B1465D305870F7933aF8CC140d3C0B",
+    "StakeWiseV3ExitQueueAssisted": "0xb9A7A8ac57383969703f67f61d48fa7142640815",
     "UniswapV3PoolsMeta": "0x1eb0Ce47a196D7BE9ba3F2B7ED78299751c80287"
   },
   "NAVCalculatorProxy": "0x42aC265991163Af2b0B9E59a222d31d201E39f91",
@@ -59,5 +58,8 @@
     "ankrETH": "0x68dA22D5c021c018B7abdF35fBa79075b6B34282",
     "NXM": "0xedE67f248eED27e871019496992A51a1D5472752",
     "wNXM": "0x7e321cc0436e2DeE1800C7D70E6f5aD56f1263C5"
-  }
+  },
+  "NexusMutualStakingPoolsAssistant": "0x8a887C7Fa17dbba626497024833778354785c580",
+  "EtherFiWithdrawalQueueAssistant": "0xd45cB5B6791156f657D682b3c70689980f4fe8D5",
+  "StakeWiseV3ExitQueueAssistant": "0x13845Fc9DFfDf1AFb8B1Cf22eA298C01C8d7F71B"
 }

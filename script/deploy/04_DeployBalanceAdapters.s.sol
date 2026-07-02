@@ -356,17 +356,17 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return _deployLidoWithdrawalQueue(adapterName, navCalculator);
         }
 
-        // ether.fi withdrawals: id-cached withdrawal-queue adapter (ADR 0014).
+        // ether.fi withdrawals: id-cached withdrawal-queue adapter (assisted; ADR 0018).
         if (_equals(adapterName, "EtherFiWithdrawalQueueAssisted")) {
             return _deployEtherFiWithdrawalQueueAssisted(adapterName, navCalculator);
         }
 
-        // Nexus Mutual staked NXM (assisted cache adapter; agent-fed StakingNFT tokenIds, ADR 0015).
+        // Nexus Mutual staked NXM (assisted cache adapter; StakingNFT tokenIds, ADR 0015/0018).
         if (_equals(adapterName, "NexusMutualStakingPoolsAssisted")) {
             return _deployNexusMutualStakingPoolsAssisted(adapterName, navCalculator);
         }
 
-        // StakeWise V3 exit queue: ticket-cached exit-queue adapter (ADR 0014).
+        // StakeWise V3 exit queue: ticket-cached exit-queue adapter (assisted; ADR 0018).
         if (_equals(adapterName, "StakeWiseV3ExitQueueAssisted")) {
             return _deployStakeWiseV3ExitQueueAssisted(adapterName, navCalculator);
         }
@@ -680,8 +680,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         internal
         returns (address)
     {
-        // Permissionless wrapper-fed adapter (ADR 0018): no admin/assistant roles — the id cache is msg.sender-keyed
-        // and fed on-chain by the delegatecall wrapper. NAV registration + wrapper deploy/grant wiring deferred.
+        // Permissionless assistant-fed adapter (ADR 0018): no admin/roles — the id cache is msg.sender-keyed
+        // and fed on-chain by the delegatecall assistant. NAV registration + assistant deploy wiring deferred.
         address withdrawRequestNft = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "withdrawRequestNft")
         );
@@ -702,10 +702,10 @@ contract DeployBalanceAdapters is BaseDeployScript {
         internal
         returns (address)
     {
-        // Assisted adapter (agent-fed; ADR 0015): the assistant submits an account's StakingNFT tokenIds via
-        // submitTokenIds; the adapter values each via StakingViewer.getTokens and re-verifies ownership via
-        // tokenInfo per read, so the assistant can only under-report (id-cache, never amounts). admin+assistant =
-        // chainConfig.admin at deploy. underlyingToken = NXM.
+        // Assisted adapter (permissionless assistant-fed; ADR 0015/0018): the caller submits an account's StakingNFT
+        // tokenIds via the msg.sender-keyed submit; the adapter values each via StakingViewer.getTokens and re-verifies
+        // ownership via tokenInfo per read, so a feeder can only under-report (id-cache, never amounts). No roles.
+        // underlyingToken = NXM.
         address stakingNft = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "stakingNft")
         );
@@ -715,8 +715,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address underlyingToken = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
         );
-        // Permissionless wrapper-fed adapter (ADR 0018): no admin/assistant roles — the id cache is msg.sender-keyed
-        // and fed on-chain by the delegatecall wrapper. NAV registration + wrapper deploy/grant wiring deferred.
+        // Permissionless assistant-fed adapter (ADR 0018): no admin/roles — the id cache is msg.sender-keyed
+        // and fed on-chain by the delegatecall assistant. NAV registration + assistant deploy wiring deferred.
         NexusMutualStakingPoolsAssistedBalanceAdapter adapter = new NexusMutualStakingPoolsAssistedBalanceAdapter(
             stakingNft, stakingViewer, underlyingToken, navCalculator
         );
@@ -727,10 +727,10 @@ contract DeployBalanceAdapters is BaseDeployScript {
         internal
         returns (address)
     {
-        // Owner = chainConfig.admin (OIV Safe / agent role): the only caller of submitPositions / clearPosition. The
-        // adapter values from live on-chain reads and verifies each tuple belongs to the account via
-        // calculateExitedAssets(receiver=account), so the owner cannot fabricate amounts (under-report only). See
-        // docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md.
+        // Permissionless assistant-fed (ADR 0018): submit/remove are msg.sender-keyed (no roles). The adapter values
+        // from live on-chain reads and verifies each tuple belongs to the account via calculateExitedAssets(
+        // receiver=account), so a feeder cannot fabricate amounts (under-report only). See
+        // docs/decisions/0018-assistant-fed-assisted-balance-adapters.md.
         address vaultsRegistry = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vaultsRegistry")
         );
@@ -746,13 +746,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         uint256 exitClaimDelay = vm.parseUint(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "exitClaimDelay")
         );
-        require(
-            chainConfig.admin != address(0),
-            "StakeWiseV3ExitQueueAssisted: chainConfig.admin (initialOwner) not configured"
-        );
-
-        // Permissionless wrapper-fed adapter (ADR 0018): no admin/assistant roles — the coordinate cache is
-        // msg.sender-keyed and fed on-chain by the delegatecall wrapper. NAV registration + wrapper wiring deferred.
+        // Permissionless assistant-fed adapter (ADR 0018): no admin/roles — the coordinate cache is msg.sender-keyed
+        // and fed on-chain by the delegatecall assistant. NAV registration + assistant wiring deferred.
         StakeWiseV3ExitQueueAssistedBalanceAdapter adapter = new StakeWiseV3ExitQueueAssistedBalanceAdapter(
             vaultsRegistry, underlyingToken, receiptSymbol, navCalculator, exitClaimDelay
         );

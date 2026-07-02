@@ -146,15 +146,6 @@
       "positionId": "0x46e6b214b524310239732D51387075E0e70970bf"
     }
   },
-  "MerklRewardsAssisted": {
-    "enabled": true,
-    "constructor": {
-      "distributor": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae",
-      "protocol": "Merkl",
-      "positionDetail": "{\"protocol\":\"Merkl\",\"product\":\"Rewards\",\"name\":\"Unclaimed Rewards\"",
-      "positionId": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae"
-    }
-  },
   "PancakeSwapV3_WETH_COW": {
     "enabled": false,
     "constructor": {

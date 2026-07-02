@@ -134,14 +134,5 @@
       "positionDetail": "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"WETH\"",
       "positionId": "0x6f7D514bbD4aFf3BcD1140B7344b32f063dEe486"
     }
-  },
-  "MerklRewardsAssisted": {
-    "enabled": true,
-    "constructor": {
-      "distributor": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae",
-      "protocol": "Merkl",
-      "positionDetail": "{\"protocol\":\"Merkl\",\"product\":\"Rewards\",\"name\":\"Unclaimed Rewards\"",
-      "positionId": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae"
-    }
   }
 }

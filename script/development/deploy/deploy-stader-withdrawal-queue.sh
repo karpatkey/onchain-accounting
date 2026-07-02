@@ -4,7 +4,7 @@
 # Usage:  deploy-stader-withdrawal-queue.sh <chainId>
 #   e.g.  deploy-stader-withdrawal-queue.sh 1
 #
-# StaderWithdrawalQueueBalanceAdapter is a standalone (non-meta) adapter pointed at Stader's
+# StaderWithdrawalQueueAssistedBalanceAdapter is a standalone (non-meta) adapter pointed at Stader's
 # UserWithdrawalManager. It reports the ETH owed across an account's open (un-claimed) withdrawal
 # requests, denominated in WETH (the position is ETH owed by the manager once ETHx is burned; priced
 # via ETH/USD). This helper `forge create`s it and calls addBalanceAdapters on the dev NAV. WETH must be
@@ -46,7 +46,7 @@ echo "    underlyingToken:       $UNDERLYING_TOKEN (WETH)"
 # Capture the full output non-fatally (under `set -e`, a piped grep no-match would otherwise abort
 # the script before the guard below runs and swallow the forge error).
 OUT=$(
-  forge create src/balances/BalanceAdapters/StaderWithdrawalQueueBalanceAdapter.sol:StaderWithdrawalQueueBalanceAdapter \
+  forge create src/balances/AssistedBalanceAdapters/StaderWithdrawalQueueAssistedBalanceAdapter.sol:StaderWithdrawalQueueAssistedBalanceAdapter \
     --rpc-url "$RPC" --private-key "$DEV_PRIVATE_KEY" --broadcast \
     --constructor-args "$USER_WITHDRAWAL_MANAGER" "$UNDERLYING_TOKEN" "$NAV" 2>&1
 ) || true

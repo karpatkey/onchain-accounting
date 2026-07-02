@@ -24,7 +24,10 @@ import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 ///      universal self-service mutator below.
 interface IAssistedBalanceAdapter is IBalanceAdapter {
     /// @notice Drop **all** of the caller's own cached position coordinates (self-service garbage collection). Keyed on
-    ///         `msg.sender`, so it can only clear the caller's own set. Purely a read-loop trim: stale coordinates
-    ///         already value to 0 and are discarded per read, so clearing them never changes reported NAV.
+    ///         `msg.sender`, so it can only clear the caller's own set — never another account's. This is
+    ///         unconditional: unlike per-coordinate `remove` (which reverts `CoordinateStillLive` while a position is
+    ///         live), `clearAccount` does **not** check liveness, so any still-live positions stop being reported until
+    ///         re-submitted. Consistent with the family invariant it only ever **under-reports** the caller's own NAV;
+    ///         it is not NAV-neutral when live coordinates are present.
     function clearAccount() external;
 }

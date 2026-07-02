@@ -3,6 +3,9 @@ pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
 
 import {StaderWithdrawalQueueWrapper} from "src/balances/wrappers/StaderWithdrawalQueueWrapper.sol";
 import {
@@ -75,6 +78,17 @@ contract StaderWithdrawalQueueWrapperForkTest is BalanceAdapterTestBase {
         vm.rollFork(FORK_BLOCK);
     }
 
+    /// @dev Fund `s` with real ETHx pulled from the Balancer Vault (which holds ~130 ETHx at FORK_BLOCK).
+    function _fund(ForkMockSafe s, uint256 amount) internal {
+        vm.prank(ETHX_WHALE);
+        IERC20(ETHX).transfer(address(s), amount);
+    }
+
+    /// @dev The manager's rate-converted `ethExpected` for a request (what the adapter values a pending request at).
+    function _ethExpected(uint256 requestId) internal view returns (uint256 ethExpected) {
+        (,, ethExpected,,) = IStaderUWM(USER_WITHDRAWAL_MANAGER).userWithdrawRequests(requestId);
+    }
+
     // ---- Deposit: real ETHx through the wrapper's (delegatecalled) requestWithdraw ----
 
     function test_deposit_realFunds_viaWrapperDelegatecall() public {
@@ -104,6 +118,71 @@ contract StaderWithdrawalQueueWrapperForkTest is BalanceAdapterTestBase {
         (uint256 amt, bool isDebt) = adapter.getAdapterBalanceForAsset(address(safe), MAINNET_WETH);
         assertEq(amt, ethExpected, "adapter values the pending request at ethExpected");
         assertFalse(isDebt);
+    }
+
+    function test_deposit_realFunds_emitsPositionLeg() public {
+        uint256 amount = 2e18; // 2 ETHx
+        _fund(safe, amount);
+
+        uint256 requestId = safe.delegateRequestWithdraw(address(wrapper), amount);
+        uint256 ethExpected = _ethExpected(requestId);
+
+        // One pending leg, fully described from live on-chain data.
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(address(safe), address(0));
+        assertEq(positions.length, 1, "one leg per open request");
+        INAVCalculator.PositionBalance memory leg = positions[0];
+        assertEq(leg.balanceAsset.asset, MAINNET_WETH);
+        assertEq(leg.balanceAdapter, address(adapter));
+        assertEq(leg.amount, ethExpected, "pending leg valued at ethExpected");
+        assertFalse(leg.isDebt);
+        assertTrue(leg.isLocked, "pending request -> locked leg");
+        assertEq(uint256(leg.positionKind), uint256(PositionKind.Supplied));
+        assertEq(leg.protocolId, ProtocolIds.STADER);
+        assertEq(leg.protocolSubId, ProtocolIds.STADER_WITHDRAWAL);
+        assertEq(leg.positionId, abi.encode(USER_WITHDRAWAL_MANAGER), "static positionId = the manager");
+        assertEq(leg.positionInstanceId, bytes32(requestId), "request id rides in positionInstanceId");
+
+        string[] memory labels = adapter.positionLabels(leg.positionId);
+        assertEq(labels.length, 2);
+        assertEq(labels[0], "Withdrawal Queue");
+        assertEq(labels[1], "ETHx");
+    }
+
+    function test_deposit_realFunds_multipleRequestsFromOneSafe() public {
+        _fund(safe, 3e18);
+
+        uint256 id1 = safe.delegateRequestWithdraw(address(wrapper), 1e18);
+        uint256 id2 = safe.delegateRequestWithdraw(address(wrapper), 2e18);
+        assertTrue(id1 != id2, "distinct request ids");
+
+        // Both ids tracked for the Safe; balance sums both requests; one leg each.
+        assertEq(adapter.requestIdsOf(address(safe)).length, 2, "both requests cached");
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(address(safe), MAINNET_WETH);
+        assertEq(amount, _ethExpected(id1) + _ethExpected(id2), "balance sums both open requests");
+        assertEq(adapter.getAdapterPositions(address(safe), address(0)).length, 2, "one leg per request");
+    }
+
+    function test_deposit_realFunds_twoSafesTrackedIndependently() public {
+        ForkMockSafe safeB = new ForkMockSafe();
+        _fund(safe, 1e18);
+        _fund(safeB, 4e18);
+
+        uint256 idA = safe.delegateRequestWithdraw(address(wrapper), 1e18);
+        uint256 idB = safeB.delegateRequestWithdraw(address(wrapper), 4e18);
+
+        // Each Safe's cache holds only its own request; neither sees the other's.
+        uint256[] memory idsA = adapter.requestIdsOf(address(safe));
+        uint256[] memory idsB = adapter.requestIdsOf(address(safeB));
+        assertEq(idsA.length, 1);
+        assertEq(idsA[0], idA);
+        assertEq(idsB.length, 1);
+        assertEq(idsB[0], idB);
+
+        (uint256 amtA,) = adapter.getAdapterBalanceForAsset(address(safe), MAINNET_WETH);
+        (uint256 amtB,) = adapter.getAdapterBalanceForAsset(address(safeB), MAINNET_WETH);
+        assertEq(amtA, _ethExpected(idA), "Safe A balance = its own request only");
+        assertEq(amtB, _ethExpected(idB), "Safe B balance = its own request only");
+        assertGt(amtB, amtA, "the 4 ETHx request is worth more than the 1 ETHx request");
     }
 
     // ---- Redeem: real finalized request, real claim on the live manager, adapter cleanup ----

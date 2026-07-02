@@ -140,7 +140,6 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
     function test_immutables() public view {
         assertEq(address(adapter.USER_WITHDRAWAL_MANAGER()), address(manager));
         assertEq(adapter.UNDERLYING_TOKEN(), address(weth));
-        assertEq(adapter.MAX_REQUESTS_PROBED(), 500);
     }
 
     // ---- Balances ----
@@ -242,13 +241,14 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(adapter.getAdapterPositions(holder, address(0)).length, 0);
     }
 
-    /// @notice An account whose live-request list exceeds MAX_REQUESTS_PROBED is skipped (reported 0) — the safe,
-    ///         under-report direction, bounding gas against a griefed array.
-    function test_overCap_skips() public {
-        manager.bloat(holder, 501, 1 ether); // > MAX_REQUESTS_PROBED (500)
+    /// @notice There is no adapter-level cap: a large live-request list is read in full (every request contributes its
+    ///         real, claimable value). A griefed queue makes the read expensive but never zeroes a real balance — see the
+    ///         contract NatSpec / docs/operations/stader-withdrawal-queue-griefing.md.
+    function test_largeList_readInFull() public {
+        manager.bloat(holder, 600, 1 ether); // well beyond the old 500 cap and toward Stader's 1000 ceiling
         (uint256 amount,) = adapter.getAdapterBalanceForAsset(holder, address(weth));
-        assertEq(amount, 0, "over the cap => reported as 0");
-        assertEq(adapter.getAdapterPositions(holder, address(0)).length, 0);
+        assertEq(amount, 600 ether, "every request is summed, not skipped");
+        assertEq(adapter.getAdapterPositions(holder, address(0)).length, 600, "one leg per request");
     }
 
     // ---- IPositionDescribable / ERC165 ----

@@ -26,32 +26,25 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      `positionInstanceId` (ephemeral — the entry is deleted on claim). The balance getters
 ///      (`getAdapterBalances`) report the summed total.
 ///
-///      **On-chain enumeration vs. third-party injection.** `requestWithdraw(ethXAmount, _owner)` pulls the *caller's*
-///      ETHx but records the request under an arbitrary `_owner` (claimable only by `_owner`). So anyone can plant a
-///      request owned by this account by burning their own ETHx — but they donate that ETH to the account and cannot
-///      recover it, so the injected value is **real, claimable, and self-funded** (equivalent to an airdrop, which the
-///      wallet ERC20 adapter likewise reports). The residual is cache/gas bloat: the read loops the account's live
-///      requests, each an external `userWithdrawRequests` read. To keep that read provably gas-bounded,
-///      {MAX_REQUESTS_PROBED} (500) is set **below** Stader's own `maxNonRedeemedUserRequestCount` (1000), so the
-///      "> cap → skip" guard is reachable: an account pushed past it (only via self-funded third-party request-spam —
-///      a real account never approaches 500) is reported as 0 (safe under-report) instead of risking an OOG that
-///      NAVCalculator's per-adapter try/catch can't rescue. The griefing is tolerated: NAV reads are async/off-chain
-///      (ADR 0017), the griefer permanently loses the donated ETH, and the worst case is a bounded read or a
-///      safe-direction zero — never an over-report.
+///      **On-chain enumeration vs. third-party injection — no adapter-level cap.** `requestWithdraw(ethXAmount, _owner)`
+///      pulls the *caller's* ETHx but records the request under an arbitrary `_owner` (claimable only by `_owner`). So
+///      anyone can plant a request owned by this account by burning their own ETHx — but they donate that ETH to the
+///      account and cannot recover it, so the injected value is **real, claimable, and self-funded** (equivalent to an
+///      airdrop, which the wallet ERC20 adapter likewise reports). The read therefore loops *every* live request (one
+///      external `userWithdrawRequests` read each), with no adapter-imposed skip guard — the only bound is Stader's own
+///      `maxNonRedeemedUserRequestCount` (1000 on mainnet). This is deliberate: skipping (reporting 0) above some cap
+///      would silently zero a *real, claimable* balance, whereas reporting it fully is always the honest, over-report-safe
+///      answer. The residual is gas: an account griefed toward the 1000 ceiling makes its own NAV read expensive
+///      (measured ~17-20k gas/request; ~20M at 1000), which under a constrained gas budget can OOG the aggregate
+///      `getAccountNav` for **that account only**. That failure is liveness-only and safe: NAV reads are async/off-chain
+///      (ADR 0017), a reverting read means the consumer (the shares layer) simply does not process that account's
+///      request rather than acting on a wrong value — never a mis-valuation, never an over-report, and never affecting
+///      any other account. The griefer permanently loses the donated ETH, and the account can restore its own read by
+///      claiming/pruning its queue. See `docs/operations/stader-withdrawal-queue-griefing.md`.
 contract StaderWithdrawalQueueBalanceAdapter is SingleAssetBalanceAdapterBase {
     //
     // Constants
     //
-
-    /// @notice Hard cap on the number of open requests this adapter will read for an account.
-    /// @dev Set **strictly below** Stader's own `maxNonRedeemedUserRequestCount` (1000 on mainnet) so the skip-guard is
-    ///      actually reachable and the per-read gas is provably bounded (≤ this many external `userWithdrawRequests`
-    ///      reads). An account whose live-request count exceeds this is reported as 0 rather than risking an out-of-gas
-    ///      revert in the NAV read (an OOG is NOT caught by NAVCalculator's try/catch, so it would DoS the whole NAV
-    ///      call) — skipping (reporting 0) is the safe, under-report direction. A real account never approaches 500;
-    ///      only third-party request-spam (see the contract NatSpec) can push an account here, and that self-funded
-    ///      griefing then yields an under-report, not an OOG. If Stader ever lowers its own cap below this, revisit.
-    uint256 public constant MAX_REQUESTS_PROBED = 500;
 
     bytes32 private constant PROTOCOL_BRAND = ProtocolIds.STADER;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.STADER;
@@ -104,7 +97,7 @@ contract StaderWithdrawalQueueBalanceAdapter is SingleAssetBalanceAdapterBase {
 
     /// @inheritdoc SingleAssetBalanceAdapterBase
     /// @dev Sums the ETH owed across `account`'s open (un-claimed) requests. Enumerates `getRequestIdsByUser` (live-only,
-    ///      protocol-bounded to 1000) and values each via {_owedForRequest}. Over the cap → 0 (see {MAX_REQUESTS_PROBED}).
+    ///      protocol-bounded to 1000) and values each via {_owedForRequest}. No adapter-level cap — see contract NatSpec.
     function _owedAmount(address account) internal view override returns (uint256 total) {
         uint256[] memory ids = _liveRequestIds(account);
         for (uint256 i = 0; i < ids.length; i++) {
@@ -122,8 +115,8 @@ contract StaderWithdrawalQueueBalanceAdapter is SingleAssetBalanceAdapterBase {
     ///         `positionId = abi.encode(address(USER_WITHDRAWAL_MANAGER))`. Each leg's `isLocked` reflects that
     ///         request's state (finalized → `false`, pending → `true`) and its request id is the typed
     ///         `positionInstanceId`.
-    /// @dev Dropped entirely if the underlying asset is not registered in NAVCalculator, or if the account's open-request
-    ///      count exceeds {MAX_REQUESTS_PROBED}. Zero-amount legs are skipped. The legs sum to {_owedAmount}'s total.
+    /// @dev Dropped entirely if the underlying asset is not registered in NAVCalculator. Zero-amount legs are skipped.
+    ///      The legs sum to {_owedAmount}'s total.
     function getAdapterPositions(address account, address assetFilter)
         external
         view
@@ -194,17 +187,15 @@ contract StaderWithdrawalQueueBalanceAdapter is SingleAssetBalanceAdapterBase {
     // Internal
     //
 
-    /// @dev The account's LIVE (un-claimed) request ids, or an empty array if none / `account == 0` / the list exceeds
-    ///      {MAX_REQUESTS_PROBED}. `getRequestIdsByUser` returns `requestIdsByUserAddress[account]`, which Stader keeps
-    ///      pruned to only un-claimed requests (swap-and-pop on claim) and caps at 1000.
+    /// @dev The account's LIVE (un-claimed) request ids, or an empty array if none / `account == 0`.
+    ///      `getRequestIdsByUser` returns `requestIdsByUserAddress[account]`, which Stader keeps pruned to only
+    ///      un-claimed requests (swap-and-pop on claim) and caps at 1000. No adapter-level cap is applied on top — see
+    ///      the contract NatSpec for why the full list is always read.
     function _liveRequestIds(address account) internal view returns (uint256[] memory ids) {
         if (account == address(0)) {
             return new uint256[](0);
         }
         ids = USER_WITHDRAWAL_MANAGER.getRequestIdsByUser(account);
-        if (ids.length > MAX_REQUESTS_PROBED) {
-            return new uint256[](0);
-        }
     }
 
     /// @dev ETH owed for a single request and whether it is finalized. `amount` is 0 if not owned by `account` (a

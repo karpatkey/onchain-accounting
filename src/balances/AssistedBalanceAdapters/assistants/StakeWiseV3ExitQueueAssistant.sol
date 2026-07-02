@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {BalanceAdapterAssistant} from "src/balances/AssistedBalanceAdapters/assistants/BalanceAdapterAssistant.sol";
+import {CoordinateStillLive} from "src/errors.sol";
 
 /// @title StakeWise V3 Exit-Queue Assistant
 /// @author KPK
@@ -39,9 +40,10 @@ contract StakeWiseV3ExitQueueAssistant is BalanceAdapterAssistant {
         emit ExitQueueEntered(address(this), vault, positionTicket, block.timestamp);
     }
 
-    /// @notice Claim exited assets for a queue position and deregister its ticket. Mirrors the vault's
-    ///         `claimExitedAssets(positionTicket, timestamp, exitQueueIndex)`, with `vault` prepended.
-    ///         **Delegatecall-only** (StakeWise keys the claim on `msg.sender = Safe`).
+    /// @notice Claim exited assets for a queue position and deregister its ticket **once fully consumed** (a partial
+    ///         claim keeps the ticket tracked for its residual). Mirrors the vault's `claimExitedAssets(positionTicket,
+    ///         timestamp, exitQueueIndex)`, with `vault` prepended. **Delegatecall-only** (StakeWise keys the claim on
+    ///         `msg.sender = Safe`).
     /// @param vault          StakeWise V3 vault.
     /// @param positionTicket The exit position's ticket.
     /// @param timestamp      Entry timestamp (part of the exit-request key; the same value registered on enter).
@@ -51,7 +53,19 @@ contract StakeWiseV3ExitQueueAssistant is BalanceAdapterAssistant {
         onlyDelegateCall
     {
         IStakeWiseVaultEnterExit(vault).claimExitedAssets(positionTicket, timestamp, exitQueueIndex);
-        IStakeWiseV3ExitQueueAssistedBalanceAdapter(ADAPTER).remove(vault, positionTicket, timestamp);
+        // Deregister only once the ticket is fully consumed. A partial claim leaves owed shares under this ticket, so
+        // the adapter reverts `CoordinateStillLive` — swallow that and keep it tracked (its residual stays valued);
+        // any other revert (e.g. `CoordinateNotCached`) bubbles up. NOTE: StakeWise re-queues a not-yet-checkpointed
+        // remainder under a NEW ticket; that new ticket is a distinct coordinate the caller must `submit` (from the
+        // vault's re-queue event) — this assistant only manages the ticket it was given.
+        try IStakeWiseV3ExitQueueAssistedBalanceAdapter(ADAPTER).remove(vault, positionTicket, timestamp) {}
+        catch (bytes memory reason) {
+            if (bytes4(reason) != CoordinateStillLive.selector) {
+                assembly {
+                    revert(add(reason, 0x20), mload(reason))
+                }
+            }
+        }
         emit ExitedAssetsClaimed(address(this), vault, positionTicket, timestamp);
     }
 }

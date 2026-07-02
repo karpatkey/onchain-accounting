@@ -20,10 +20,10 @@ import "src/errors.sol";
 ///      custody and no Nexus membership of its own: the account holds the NXM, is the member, and owns the minted NFT.
 ///      There is no `transferFrom`; the account's own NXM is staked directly (`depositTo(destination = address(this))`),
 ///      and the position is tracked/untracked for the account (the adapter's `msg.sender`-keyed cache sees the account).
-///      The module only sets the account's NXM allowance to the `TOKEN_CONTROLLER`. On `withdraw` the id is popped
-///      unconditionally (the adapter's {_removable} is overridden to allow it) — Nexus does not burn the StakingNFT on
-///      withdraw, so a *partial* withdrawal stops tracking any remaining stake (safe under-report; a later top-up re-adds
-///      it). See [ADR 0018](../../../../docs/decisions/0018-assistant-fed-assisted-balance-adapters.md).
+///      The module only sets the account's NXM allowance to the `TOKEN_CONTROLLER`. On `withdraw` the id is popped only
+///      once the position is fully emptied: the adapter's {_removable} is value-based, so a *partial* / rewards-only
+///      withdrawal (leaving live stake) reverts `CoordinateStillLive`, which the module swallows to keep the residual
+///      tracked. See [ADR 0018](../../../../docs/decisions/0018-assistant-fed-assisted-balance-adapters.md).
 contract NexusMutualStakingPoolsAssistant is BalanceAdapterAssistant {
     using SafeERC20 for IERC20;
 
@@ -86,7 +86,18 @@ contract NexusMutualStakingPoolsAssistant is BalanceAdapterAssistant {
     ) external onlyDelegateCall returns (uint256 withdrawnStake, uint256 withdrawnRewards) {
         (withdrawnStake, withdrawnRewards) =
             INexusMutualStakingPool(poolAddress).withdraw(tokenId, withdrawStake, withdrawRewards, trancheIds);
-        INexusMutualStakingPoolsAssistedBalanceAdapter(ADAPTER).remove(tokenId);
+        // Untrack only once the position is fully emptied. Nexus does not burn the StakingNFT, so a partial or
+        // rewards-only withdraw leaves live stake — the adapter then reverts `CoordinateStillLive`, which we swallow
+        // and keep the id tracked (its residual stays valued; a later full withdraw re-syncs it). Any other revert
+        // (e.g. `CoordinateNotCached` for an untracked id) bubbles up.
+        try INexusMutualStakingPoolsAssistedBalanceAdapter(ADAPTER).remove(tokenId) {}
+        catch (bytes memory reason) {
+            if (bytes4(reason) != CoordinateStillLive.selector) {
+                assembly {
+                    revert(add(reason, 0x20), mload(reason))
+                }
+            }
+        }
     }
 }
 

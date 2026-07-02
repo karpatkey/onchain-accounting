@@ -174,12 +174,15 @@ contract NexusMutualStakingPoolsAssistantTest is BalanceAdapterTestBase {
 
     // ---- withdraw (via delegatecall) ----
 
-    function test_withdraw_viaDelegatecall_untracks() public {
+    /// @notice A FULL withdraw empties the position (no stake/rewards left), so the module untracks the id.
+    function test_withdraw_full_untracks() public {
         pool.setNextTokenId(7);
+        viewer.setToken(7, 1, 100, 0, 0);
         account.deposit(address(wrapper), address(pool), 100, 3, 0);
         assertEq(adapter.tokenIdsOf(address(account)).length, 1);
 
         pool.setWithdrawReturns(80, 5);
+        viewer.setToken(7, 1, 0, 0, 0); // fully withdrawn: the position now values to 0 → removable
         uint256[] memory tranches = new uint256[](1);
         tranches[0] = 3;
         (uint256 s, uint256 r) = account.withdraw(address(wrapper), address(pool), 7, true, true, tranches);
@@ -187,7 +190,26 @@ contract NexusMutualStakingPoolsAssistantTest is BalanceAdapterTestBase {
         assertEq(s, 80);
         assertEq(r, 5);
         assertEq(pool.lastWithdrawId(), 7);
-        assertEq(adapter.tokenIdsOf(address(account)).length, 0); // untracked
+        assertEq(adapter.tokenIdsOf(address(account)).length, 0); // untracked (fully emptied)
+    }
+
+    /// @notice A PARTIAL / rewards-only withdraw leaves live stake; the module must KEEP tracking the id (the adapter
+    ///         reverts CoordinateStillLive, which the module swallows) — proving the position is not silently dropped.
+    function test_withdraw_partial_keepsTracking() public {
+        pool.setNextTokenId(7);
+        viewer.setToken(7, 1, 100, 0, 0);
+        account.deposit(address(wrapper), address(pool), 100, 3, 0);
+        assertEq(adapter.tokenIdsOf(address(account)).length, 1);
+
+        pool.setWithdrawReturns(0, 5); // rewards-only withdraw; 100 active stake remains (viewer unchanged)
+        uint256[] memory tranches = new uint256[](1);
+        tranches[0] = 3;
+        account.withdraw(address(wrapper), address(pool), 7, false, true, tranches);
+
+        assertEq(pool.lastWithdrawId(), 7);
+        assertEq(adapter.tokenIdsOf(address(account)).length, 1); // still tracked (residual stake preserved)
+        (uint256 bal,) = adapter.getAdapterBalanceForAsset(address(account), address(nxm));
+        assertEq(bal, 100);
     }
 
     function test_withdraw_uncachedId_reverts() public {

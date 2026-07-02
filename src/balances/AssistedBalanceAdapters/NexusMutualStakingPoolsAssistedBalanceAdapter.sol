@@ -25,9 +25,9 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      extending the single {AssistedCoordCache}: the coordinate is `abi.encode(tokenId)`. `StakingViewer.getTokens`
 ///      can revert, but {AssistedCoordCache} values each coordinate behind a self-`staticcall`, so a bad id is isolated.
 ///      positionId is the **staking-pool contract address** (`StakingViewer.stakingPool(poolId)`); the NFT id rides in
-///      `positionInstanceId`. **{_removable} = `true`**: Nexus does NOT burn the StakingNFT on withdraw (the account
-///      keeps owning an emptied position), so the default "removable iff no longer owned" would wrongly block the
-///      assistant's post-withdraw untrack — dropping a still-owned, withdrawn position is under-report-safe.
+///      `positionInstanceId`. **{_removable} is value-based**: Nexus does NOT burn the StakingNFT on withdraw, so "no
+///      longer owned" is not a liveness proxy — an id is removable only once it is no longer owned by the account OR is
+///      fully emptied (no stake/rewards). A partial/rewards-only withdraw leaves a live position that stays tracked.
 contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedCoordCache, IPositionDescribable {
     using Strings for uint256;
 
@@ -68,8 +68,9 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedCoordCache, IP
         _submitCoord(abi.encode(tokenId));
     }
 
-    /// @notice Stop tracking `tokenId` for the caller. **Reverts** `CoordinateNotCached` if not tracked. (Nexus does not
-    ///         burn the NFT on withdraw, so removal is unconditional for a tracked id — see {_removable}.)
+    /// @notice Stop tracking `tokenId` for the caller. **Reverts** `CoordinateNotCached` if not tracked, and
+    ///         `CoordinateStillLive` if the position is still live (owned with active/expired stake or rewards) — a
+    ///         still-live id is never silently dropped (see {_removable}).
     function remove(uint256 tokenId) external {
         _removeCoord(abi.encode(tokenId));
     }
@@ -137,11 +138,24 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedCoordCache, IP
     }
 
     /// @inheritdoc AssistedCoordCache
-    /// @dev Nexus does not burn the StakingNFT on withdraw, so the default (removable iff no longer owned) would never
-    ///      let the assistant untrack after a withdraw. Permit removal for any tracked id; a withdrawn-but-owned position
-    ///      dropped from cache only under-reports (safe).
-    function _removable(address, bytes memory) internal pure override returns (bool) {
-        return true;
+    /// @dev Nexus does not burn the StakingNFT on withdraw, so "no longer owned" is not a reliable liveness proxy.
+    ///      Removable iff the position no longer resolves to a live amount for `account`: either the id is no longer
+    ///      owned by `account`, or it is owned but fully emptied (no active/expired stake and no rewards). A still-live
+    ///      (partial/rewards-only) position is NOT removable, so a later partial withdraw can never silently drop it —
+    ///      matching the family "under-report only" invariant. On an unresolvable `getTokens` read, err toward keeping
+    ///      the id (return false) so a maybe-live position is never dropped.
+    function _removable(address account, bytes memory coord) internal view override returns (bool) {
+        uint256 tokenId = abi.decode(coord, (uint256));
+        (address owner, bool ok) = _ownerOf(tokenId);
+        if (!ok || owner != account) return true; // transferred / burned away → safe to drop
+        uint256[] memory one = new uint256[](1);
+        one[0] = tokenId;
+        try INexusStakingViewer(STAKING_VIEWER).getTokens(one) returns (INexusStakingViewer.Token[] memory tokens) {
+            if (tokens.length == 0) return true;
+            return tokens[0].activeStake + tokens[0].expiredStake + tokens[0].rewards == 0;
+        } catch {
+            return false; // cannot confirm the position is dead → keep tracking it
+        }
     }
 
     /// @inheritdoc AssistedCoordCache

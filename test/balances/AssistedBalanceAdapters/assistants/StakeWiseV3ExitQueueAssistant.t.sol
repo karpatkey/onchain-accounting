@@ -8,7 +8,13 @@ import {
 import {
     StakeWiseV3ExitQueueAssistedBalanceAdapter
 } from "src/balances/AssistedBalanceAdapters/StakeWiseV3ExitQueueAssistedBalanceAdapter.sol";
-import {InvalidArguments, NotAContract, NotDelegateCall} from "src/errors.sol";
+import {
+    CoordinateNotCached,
+    CoordinateStillLive,
+    InvalidArguments,
+    NotAContract,
+    NotDelegateCall
+} from "src/errors.sol";
 
 /// @notice Minimal Safe stand-in that delegatecalls a target — mirrors how a Gnosis Safe executes a delegatecall
 ///         action. Under the delegatecall, `address(this)` is this Safe, which is exactly the context the wrapper
@@ -35,6 +41,15 @@ contract MockTracker {
     uint256 public submits;
     uint256 public removes;
 
+    // Simulate the real adapter's fail-loud removal guards, to exercise the assistant's selective catch.
+    bool public revertStillLive; // partial claim: position still owed
+    bool public revertNotCached; // ticket was never tracked
+
+    function setRemoveReverts(bool stillLive, bool notCached) external {
+        revertStillLive = stillLive;
+        revertNotCached = notCached;
+    }
+
     function submit(address vault, uint256 positionTicket, uint256 timestamp) external {
         lastAccount = msg.sender;
         lastVault = vault;
@@ -44,6 +59,8 @@ contract MockTracker {
     }
 
     function remove(address vault, uint256 positionTicket, uint256 timestamp) external {
+        if (revertStillLive) revert CoordinateStillLive(msg.sender, positionTicket);
+        if (revertNotCached) revert CoordinateNotCached(msg.sender, positionTicket);
         lastAccount = msg.sender;
         lastVault = vault;
         lastTicket = positionTicket;
@@ -174,6 +191,33 @@ contract StakeWiseV3ExitQueueAssistantTest is BalanceAdapterTestBase {
         assertEq(t.removes(), 1);
         assertEq(t.lastAccount(), address(safe));
         assertEq(t.lastTicket(), ticket);
+    }
+
+    /// @notice A partial claim leaves the ticket still owed; the adapter reverts CoordinateStillLive on remove, which
+    ///         the assistant swallows — the claim itself still succeeds (the residual stays tracked, never dropped).
+    function test_claimExitedAssets_partialClaim_keepsTracking() public {
+        (StakeWiseV3ExitQueueAssistant w, MockTracker t) = _wrapperWithMockTracker();
+        bytes memory ret = safe.exec(address(w), abi.encodeCall(w.enterExitQueue, (address(vault), 5 ether)));
+        uint256 ticket = abi.decode(ret, (uint256));
+        uint256 ts = block.timestamp;
+
+        t.setRemoveReverts(true, false); // position still owed after the partial claim
+        // Does not revert: the CoordinateStillLive from remove is swallowed and the ticket stays tracked.
+        safe.exec(address(w), abi.encodeCall(w.claimExitedAssets, (address(vault), ticket, ts, 1)));
+        assertEq(vault.lastClaimTicket(), ticket); // claim happened
+        assertEq(t.removes(), 0); // remove reverted internally → not counted (ticket kept)
+    }
+
+    /// @notice A non-CoordinateStillLive revert from remove (e.g. CoordinateNotCached) bubbles up and reverts the claim.
+    function test_claimExitedAssets_bubblesNonStillLive() public {
+        (StakeWiseV3ExitQueueAssistant w, MockTracker t) = _wrapperWithMockTracker();
+        bytes memory ret = safe.exec(address(w), abi.encodeCall(w.enterExitQueue, (address(vault), 5 ether)));
+        uint256 ticket = abi.decode(ret, (uint256));
+        uint256 ts = block.timestamp;
+
+        t.setRemoveReverts(false, true); // simulate an untracked ticket
+        vm.expectRevert(abi.encodeWithSelector(CoordinateNotCached.selector, address(safe), ticket));
+        safe.exec(address(w), abi.encodeCall(w.claimExitedAssets, (address(vault), ticket, ts, 1)));
     }
 
     // ---- Constructor ----

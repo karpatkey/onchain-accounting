@@ -315,9 +315,11 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterTest is BalanceAdapterTest
         adapter.submit(2);
     }
 
-    function test_remove_stopsTracking() public {
+    /// @notice Removing an emptied (fully-withdrawn) id stops tracking it; a still-live sibling is untouched.
+    function test_remove_emptiedIdStopsTracking() public {
         _seedOne(1, 1, 100, 0, 0);
         _seedOne(2, 1, 200, 0, 0);
+        viewer.setToken(1, 1, 0, 0, 0); // id 1 fully withdrawn (owned, but no stake/rewards) → removable
         vm.prank(holder);
         adapter.remove(1);
         assertEq(adapter.tokenIdsOf(holder).length, 1);
@@ -334,11 +336,19 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterTest is BalanceAdapterTest
         adapter.remove(999);
     }
 
-    /// @notice Nexus does not burn the StakingNFT on withdraw, so remove is unconditional for a cached id (the
-    ///         adapter's `_removable` is overridden to `true`): even an id transferred away is removable.
-    function test_remove_cachedRemovesUnconditionally() public {
+    /// @notice A still-live position (owned, with active/expired stake or rewards) is NOT removable — remove is
+    ///         fail-loud (CoordinateStillLive), so a partial/rewards-only withdraw can never silently drop it.
+    function test_remove_liveIdReverts() public {
         _seedOne(1, 1, 100, 0, 0);
-        nft.setToken(1, 1, other); // 1 transferred away from holder
+        vm.prank(holder);
+        vm.expectRevert(abi.encodeWithSelector(CoordinateStillLive.selector, holder, uint256(1)));
+        adapter.remove(1);
+    }
+
+    /// @notice Nexus does not burn the StakingNFT, but an id transferred away is no longer owned → removable.
+    function test_remove_transferredAwayIdRemovable() public {
+        _seedOne(1, 1, 100, 0, 0);
+        nft.setToken(1, 1, other); // 1 transferred away from holder → no longer owned
         vm.prank(holder);
         adapter.remove(1);
         assertEq(adapter.tokenIdsOf(holder).length, 0);

@@ -70,6 +70,11 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterForkTest is BalanceAdapterT
         assertEq(IEtherFiWithdrawRequestNFT(WITHDRAW_REQUEST_NFT).ownerOf(TOKEN_ID), HOLDER, "owner mismatch");
         assertFalse(IEtherFiWithdrawRequestNFT(WITHDRAW_REQUEST_NFT).isFinalized(TOKEN_ID), "should be pending");
 
+        // Before: the request exists on-chain but is not tracked, so the adapter reports 0.
+        (uint256 before_,) = adapter.getAdapterBalanceForAsset(HOLDER, NATIVE_ETH);
+        assertEq(before_, 0, "adapter reports 0 before the id is submitted");
+        assertEq(adapter.tokenIdsOf(HOLDER).length, 0, "nothing tracked before");
+
         adapter.submit(HOLDER, TOKEN_ID);
 
         (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(HOLDER, NATIVE_ETH);
@@ -79,6 +84,9 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterForkTest is BalanceAdapterT
     }
 
     function test_getAdapterPositions_identity() public {
+        // Before: no legs reported for the holder.
+        assertEq(adapter.getAdapterPositions(HOLDER, address(0)).length, 0, "no legs before submit");
+
         adapter.submit(HOLDER, TOKEN_ID);
 
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(HOLDER, address(0));

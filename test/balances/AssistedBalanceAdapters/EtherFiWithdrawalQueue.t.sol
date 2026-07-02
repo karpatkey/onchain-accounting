@@ -219,6 +219,7 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterTest is BalanceAdapterTestB
 
     function test_submit_storesOwnedId_andDedups() public {
         nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
+        assertEq(adapter.tokenIdsOf(holder).length, 0, "nothing tracked before");
         adapter.submit(holder, 1);
         adapter.submit(holder, 1); // idempotent
         uint256[] memory cached = adapter.tokenIdsOf(holder);
@@ -258,9 +259,10 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterTest is BalanceAdapterTestB
     function test_remove_removesClaimedId() public {
         nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
         adapter.submit(holder, 1);
+        assertEq(adapter.tokenIdsOf(holder).length, 1, "tracked before remove");
         nft.burn(1); // claimed → ownerOf reverts
         adapter.remove(holder, 1);
-        assertEq(adapter.tokenIdsOf(holder).length, 0);
+        assertEq(adapter.tokenIdsOf(holder).length, 0, "untracked after remove");
     }
 
     /// @notice remove reverts RequestNotClaimed if the request still exists (still owned — not yet claimed).
@@ -286,6 +288,8 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterTest is BalanceAdapterTestB
 
     function test_finalized_usesGetClaimableAmount() public {
         nft.setRequest(1, holder, 5 ether, 5 ether, true, 0, true, 4_999_000_000_000_000_000);
+        (uint256 before_,) = adapter.getAdapterBalanceForAsset(holder, NATIVE);
+        assertEq(before_, 0, "0 before submit");
         adapter.submit(holder, 1);
         (uint256 amt, bool d) = adapter.getAdapterBalanceForAsset(holder, NATIVE);
         assertEq(amt, 4_999_000_000_000_000_000);
@@ -296,6 +300,8 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterTest is BalanceAdapterTestB
         // amountOfEEth = 10, shareValue = 9.8 (rate 0.98), fee = 0.1 → min(10,9.8) - 0.1 = 9.7
         lp.setRate(0.98e18);
         nft.setRequest(1, holder, 10 ether, 10 ether, true, uint32(0.1e9), false, 0);
+        (uint256 before_,) = adapter.getAdapterBalanceForAsset(holder, NATIVE);
+        assertEq(before_, 0, "0 before submit");
         adapter.submit(holder, 1);
         (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, NATIVE);
         assertEq(amt, 9.7 ether);
@@ -334,6 +340,8 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterTest is BalanceAdapterTestB
     function test_aggregatesAcrossIds() public {
         nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
         nft.setRequest(2, holder, 3 ether, 3 ether, true, 0, true, 3 ether);
+        (uint256 before_,) = adapter.getAdapterBalanceForAsset(holder, NATIVE);
+        assertEq(before_, 0, "0 before submits");
         adapter.submit(holder, 1);
         adapter.submit(holder, 2);
         (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, NATIVE);
@@ -352,6 +360,7 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterTest is BalanceAdapterTestB
 
     function test_getAdapterPositions_identity() public {
         nft.setRequest(1, holder, 2 ether, 2 ether, true, 0, true, 2 ether); // finalized → claimable
+        assertEq(adapter.getAdapterPositions(holder, address(0)).length, 0, "no legs before submit");
         adapter.submit(holder, 1);
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
         assertEq(p.length, 1);
@@ -592,6 +601,8 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterTest is BalanceAdapterTestB
     function test_getAdapterBalances_reportsTotal() public {
         nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
         nft.setRequest(2, holder, 3 ether, 3 ether, true, 0, true, 3 ether);
+        (address[] memory a0,,) = adapter.getAdapterBalances(holder);
+        assertEq(a0.length, 0, "empty before submits");
         adapter.submit(holder, 1);
         adapter.submit(holder, 2);
         (address[] memory a, uint256[] memory amts, bool[] memory d) = adapter.getAdapterBalances(holder);

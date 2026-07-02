@@ -120,6 +120,15 @@ contract EtherFiWithdrawalQueueWrapperForkTest is BalanceAdapterTestBase {
         return gross > fee ? gross - fee : 0;
     }
 
+    /// @dev The "before" baseline for happy-path tests: the adapter reports nothing for `account`.
+    function _assertNothingReported(address account) internal view {
+        assertEq(adapter.tokenIdsOf(account).length, 0, "before: no ids tracked");
+        (uint256 owed, bool isDebt) = adapter.getAdapterBalanceForAsset(account, NATIVE_ETH);
+        assertEq(owed, 0, "before: adapter reports 0");
+        assertFalse(isDebt, "before: not debt");
+        assertEq(adapter.getAdapterPositions(account, address(0)).length, 0, "before: no position legs");
+    }
+
     // ---- Deposit: real eETH → requestWithdraw → real NFT minted to the Safe → tracked + valued ----
 
     function test_requestWithdraw_realEeth_mintsToSafe_andTracks() public {
@@ -129,6 +138,9 @@ contract EtherFiWithdrawalQueueWrapperForkTest is BalanceAdapterTestBase {
         vm.prank(EETH_WHALE);
         IERC20(EETH).transfer(address(safe), 2 ether);
         assertGe(IERC20(EETH).balanceOf(address(safe)), amount, "safe holds eETH");
+
+        // Before: the adapter reports nothing for the Safe.
+        _assertNothingReported(address(safe));
 
         // Delegatecalled request: real LiquidityPool pulls eETH from the Safe and mints a real WithdrawRequestNFT to it.
         uint256 id = safe.doRequestDelegate(address(wrapper), amount);
@@ -140,14 +152,26 @@ contract EtherFiWithdrawalQueueWrapperForkTest is BalanceAdapterTestBase {
         assertEq(ids.length, 1);
         assertEq(ids[0], id, "requestId tracked for the Safe");
 
+        // The request records exactly `amount` eETH as the deposited principal.
+        assertEq(
+            IEtherFiWithdrawRequestNFT(WITHDRAW_REQUEST_NFT).getRequest(id).amountOfEEth,
+            uint96(amount),
+            "request principal == deposited amount"
+        );
+
+        // The adapter's variation (0 -> owed) equals the on-chain value of the request the deposit created — i.e. the
+        // deposited principal net of ether.fi's eETH-share rounding (~1 wei) and fee (0 here), so ≈ `amount`.
         (uint256 owed,) = adapter.getAdapterBalanceForAsset(address(safe), NATIVE_ETH);
-        assertEq(owed, _liveOwedPending(id), "adapter equals an independent live read (delta 0)");
-        assertApproxEqAbs(owed, amount, 0.01 ether, "pending value ~ requested eETH");
+        assertEq(owed, _liveOwedPending(id), "adapter variation == the deposited request's live value (delta 0)");
+        assertApproxEqAbs(owed, amount, 3, "deposited-request value == `amount` within share-rounding dust");
     }
 
     // ---- Claim: real finalized request → track → delegatecalled claim pays the Safe → id removed ----
 
     function test_claimWithdraw_realFinalizedRequest_paysSafe_andRemoves() public {
+        // Before: the adapter reports nothing for the Safe.
+        _assertNothingReported(address(safe));
+
         // Seed the real finalized request into the Safe (WithdrawRequestNFT is a transferable ERC721).
         vm.prank(FINALIZED_HOLDER);
         IWithdrawRequestNFTTransfer(WITHDRAW_REQUEST_NFT)
@@ -157,20 +181,26 @@ contract EtherFiWithdrawalQueueWrapperForkTest is BalanceAdapterTestBase {
             address(safe),
             "request now owned by the Safe"
         );
+        // Owning the NFT alone does not make the adapter report it — it must be tracked.
+        (uint256 owedUntracked,) = adapter.getAdapterBalanceForAsset(address(safe), NATIVE_ETH);
+        assertEq(owedUntracked, 0, "owned-but-untracked reports 0");
 
         // Track it via the wrapper (submit forwarder) and check the adapter values it at the finalized claimable amount.
         safe.trackViaWrapper(address(wrapper), FINALIZED_TOKEN_ID);
-        (uint256 owed,) = adapter.getAdapterBalanceForAsset(address(safe), NATIVE_ETH);
-        assertEq(owed, FINALIZED_CLAIMABLE, "finalized request valued at getClaimableAmount");
+        (uint256 owedBefore,) = adapter.getAdapterBalanceForAsset(address(safe), NATIVE_ETH);
+        assertEq(owedBefore, FINALIZED_CLAIMABLE, "finalized request valued at getClaimableAmount");
 
         // Delegatecalled claim: ether.fi sends the ETH to the owner (the Safe), burns the NFT; the wrapper removes it.
         uint256 balBefore = address(safe).balance;
         safe.doClaimDelegate(address(wrapper), FINALIZED_TOKEN_ID);
-
-        assertEq(address(safe).balance, balBefore + FINALIZED_CLAIMABLE, "real ETH paid to the Safe");
-        assertEq(adapter.tokenIdsOf(address(safe)).length, 0, "claimed id removed from the adapter cache");
+        uint256 received = address(safe).balance - balBefore;
         (uint256 owedAfter,) = adapter.getAdapterBalanceForAsset(address(safe), NATIVE_ETH);
+
+        assertEq(received, FINALIZED_CLAIMABLE, "real ETH received == claimed amount");
         assertEq(owedAfter, 0, "nothing owed after claim");
+        assertEq(adapter.tokenIdsOf(address(safe)).length, 0, "claimed id removed from the adapter cache");
+        // The adapter's variation exactly matches the claimed amount (== the ETH received).
+        assertEq(owedBefore - owedAfter, received, "adapter variation == claimed amount == ETH received");
     }
 
     // ---- More happy paths (real funds/accounts) ----
@@ -181,12 +211,19 @@ contract EtherFiWithdrawalQueueWrapperForkTest is BalanceAdapterTestBase {
         vm.prank(EETH_WHALE);
         IERC20(EETH).transfer(address(safe), 5 ether);
 
+        // Before: nothing tracked/valued.
+        _assertNothingReported(address(safe));
+
         uint256 id1 = safe.doRequestDelegate(address(wrapper), 1 ether);
         uint256 id2 = safe.doRequestDelegate(address(wrapper), 2 ether);
         assertTrue(id1 != id2, "distinct request ids");
 
         assertEq(adapter.tokenIdsOf(address(safe)).length, 2, "both requests tracked");
+        // Each request records its deposited principal exactly (1 and 2 eETH).
+        assertEq(IEtherFiWithdrawRequestNFT(WITHDRAW_REQUEST_NFT).getRequest(id1).amountOfEEth, uint96(1 ether));
+        assertEq(IEtherFiWithdrawRequestNFT(WITHDRAW_REQUEST_NFT).getRequest(id2).amountOfEEth, uint96(2 ether));
 
+        // The adapter's variation (0 -> owed) equals the sum of the two deposited requests' on-chain values.
         (uint256 owed,) = adapter.getAdapterBalanceForAsset(address(safe), NATIVE_ETH);
         assertEq(owed, _liveOwedPending(id1) + _liveOwedPending(id2), "aggregate == sum of independent live reads");
         assertApproxEqAbs(owed, 3 ether, 0.02 ether, "~ 1 + 2 eETH pending");
@@ -200,6 +237,9 @@ contract EtherFiWithdrawalQueueWrapperForkTest is BalanceAdapterTestBase {
     /// @notice The real finalized request valued via getAdapterPositions for its real owner: one native-ETH leg,
     ///         isLocked=false, amount == getClaimableAmount, tracked through the wrapper's submit forwarder.
     function test_getAdapterPositions_realFinalizedRequest_isLockedFalse() public {
+        // Before: nothing tracked/valued for the real owner.
+        _assertNothingReported(FINALIZED_HOLDER);
+
         vm.prank(FINALIZED_HOLDER);
         wrapper.submit(FINALIZED_TOKEN_ID); // adapter.submit(FINALIZED_HOLDER, id) as the wrapper (WRAPPER_ROLE)
 
@@ -221,6 +261,10 @@ contract EtherFiWithdrawalQueueWrapperForkTest is BalanceAdapterTestBase {
     function test_pendingDeposit_andFinalizedClaim_coexist() public {
         vm.prank(EETH_WHALE);
         IERC20(EETH).transfer(address(safe), 2 ether);
+
+        // Before: nothing tracked/valued.
+        _assertNothingReported(address(safe));
+
         uint256 pendingId = safe.doRequestDelegate(address(wrapper), 1 ether);
 
         vm.prank(FINALIZED_HOLDER);
@@ -229,12 +273,20 @@ contract EtherFiWithdrawalQueueWrapperForkTest is BalanceAdapterTestBase {
         safe.trackViaWrapper(address(wrapper), FINALIZED_TOKEN_ID);
 
         assertEq(adapter.tokenIdsOf(address(safe)).length, 2, "pending + finalized tracked");
-        (uint256 owed,) = adapter.getAdapterBalanceForAsset(address(safe), NATIVE_ETH);
-        assertEq(owed, _liveOwedPending(pendingId) + FINALIZED_CLAIMABLE, "pending estimate + finalized claimable");
+        (uint256 owedBefore,) = adapter.getAdapterBalanceForAsset(address(safe), NATIVE_ETH);
+        assertEq(
+            owedBefore, _liveOwedPending(pendingId) + FINALIZED_CLAIMABLE, "pending estimate + finalized claimable"
+        );
 
         uint256 balBefore = address(safe).balance;
         safe.doClaimDelegate(address(wrapper), FINALIZED_TOKEN_ID);
-        assertEq(address(safe).balance, balBefore + FINALIZED_CLAIMABLE, "real ETH from the finalized claim");
+        uint256 received = address(safe).balance - balBefore;
+        (uint256 owedAfter,) = adapter.getAdapterBalanceForAsset(address(safe), NATIVE_ETH);
+
+        assertEq(received, FINALIZED_CLAIMABLE, "real ETH from the finalized claim == claimed amount");
+        // The adapter's variation exactly matches the claimed amount; the pending request's value is untouched.
+        assertEq(owedBefore - owedAfter, received, "adapter variation == claimed amount");
+        assertEq(owedAfter, _liveOwedPending(pendingId), "only the pending request's value remains");
 
         uint256[] memory left = adapter.tokenIdsOf(address(safe));
         assertEq(left.length, 1, "only the pending request remains tracked");

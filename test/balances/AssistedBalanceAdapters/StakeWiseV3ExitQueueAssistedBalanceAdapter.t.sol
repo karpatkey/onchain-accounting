@@ -88,10 +88,20 @@ contract MockStakeWiseVault {
 }
 
 contract MockVaultsRegistry {
-    mapping(address => bool) public vaults;
+    mapping(address => bool) private _vaults;
+    bool public revertVaults;
 
     function setVault(address v, bool ok) external {
-        vaults[v] = ok;
+        _vaults[v] = ok;
+    }
+
+    function setRevertVaults(bool v) external {
+        revertVaults = v;
+    }
+
+    function vaults(address v) external view returns (bool) {
+        require(!revertVaults, "registry revert");
+        return _vaults[v];
     }
 }
 
@@ -158,6 +168,11 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
         new StakeWiseV3ExitQueueAssistedBalanceAdapter(makeAddr("eoa"), NATIVE, "osETH", address(balances), DELAY);
     }
 
+    function test_constructor_revertsWhenNavNotContract() public {
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "NAVCalculator"));
+        new StakeWiseV3ExitQueueAssistedBalanceAdapter(address(registry), NATIVE, "osETH", makeAddr("eoa"), DELAY);
+    }
+
     // ---- Write surface (permissionless, self-scoped) ----
     // submit/remove are permissionless and self-scoped to msg.sender; there is no role to test here.
 
@@ -187,6 +202,16 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
         vault.setIndex(TICKET, 1); // registered vault, but no request → owed 0 → not the caller's position
         vm.prank(holder);
         vm.expectRevert(abi.encodeWithSelector(NotExitPositionOwner.selector, holder, address(vault), TICKET));
+        adapter.submit(address(vault), TICKET, TS);
+    }
+
+    function test_submit_revertsWhenRegistryCallReverts() public {
+        // The VaultsRegistry membership read is try/catch'd → a reverting registry is treated as "not registered".
+        registry.setRevertVaults(true);
+        vault.setIndex(TICKET, 1);
+        vault.setRequest(holder, TICKET, TS, 0, 1 ether);
+        vm.prank(holder);
+        vm.expectRevert(abi.encodeWithSelector(InvalidExitPosition.selector, holder, address(vault), TICKET));
         adapter.submit(address(vault), TICKET, TS);
     }
 
@@ -432,14 +457,99 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
         assertEq(adapter.getAdapterPositions(holder, address(0xdead)).length, 0);
     }
 
+    function test_getAdapterPositions_assetFilterMatchesUnderlying() public {
+        vault.setIndex(TICKET, 1);
+        vault.setRequest(holder, TICKET, TS, 0, 2 ether);
+        _submit(holder, TICKET, TS);
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, NATIVE);
+        assertEq(p.length, 1);
+        assertEq(p[0].amount, 2 ether);
+        assertEq(p[0].balanceAsset.asset, NATIVE);
+    }
+
     function test_getAdapterPositions_zeroOwed_empty() public view {
         assertEq(adapter.getAdapterPositions(holder, address(0)).length, 0);
+    }
+
+    function test_getAdapterPositions_zeroAccount_empty() public view {
+        assertEq(adapter.getAdapterPositions(address(0), address(0)).length, 0);
+    }
+
+    function test_getAdapterPositions_fullyPendingLockedLeg() public {
+        // idx == -1 → fully pending → one locked leg valued via convertToAssets(leftShares).
+        vault.setIndex(TICKET, -1);
+        vault.setRate(1e18);
+        vault.setRequest(holder, TICKET, TS, 4 ether, 0);
+        _submit(holder, TICKET, TS);
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
+        assertEq(p.length, 1);
+        assertTrue(p[0].isLocked, "still-queued shares -> locked leg");
+        assertEq(p[0].amount, 4 ether);
+        assertEq(p[0].positionId, abi.encode(address(vault)));
+        assertEq(p[0].positionInstanceId, bytes32(TICKET));
+    }
+
+    function test_getAdapterPositions_twoPositionsSameVault_distinctInstanceIds() public {
+        vault.setIndex(TICKET, 1);
+        vault.setRequest(holder, TICKET, TS, 0, 1 ether); // claimable 1 ETH
+        vault.setIndex(TICKET + 1, -1);
+        vault.setRate(1e18);
+        vault.setRequest(holder, TICKET + 1, TS, 3 ether, 0); // fully-pending → locked 3 ETH
+        _submit(holder, TICKET, TS);
+        _submit(holder, TICKET + 1, TS);
+
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
+        assertEq(p.length, 2, "one leg per position");
+        bytes memory expectedId = abi.encode(address(vault));
+        uint256 total;
+        bool sawA;
+        bool sawB;
+        for (uint256 i; i < p.length; i++) {
+            assertEq(p[i].positionId, expectedId, "same vault -> shared positionId");
+            total += p[i].amount;
+            if (p[i].positionInstanceId == bytes32(TICKET)) {
+                sawA = true;
+                assertFalse(p[i].isLocked);
+                assertEq(p[i].amount, 1 ether);
+            } else if (p[i].positionInstanceId == bytes32(TICKET + 1)) {
+                sawB = true;
+                assertTrue(p[i].isLocked);
+                assertEq(p[i].amount, 3 ether);
+            }
+        }
+        assertTrue(sawA && sawB, "distinct per-ticket instance ids");
+        assertEq(total, 4 ether);
+    }
+
+    function test_getAdapterBalanceForAsset_wrongAssetOrZeroAccount_returnsZero() public {
+        vault.setIndex(TICKET, 1);
+        vault.setRequest(holder, TICKET, TS, 0, 2 ether);
+        _submit(holder, TICKET, TS);
+        (uint256 wrong, bool wd) = adapter.getAdapterBalanceForAsset(holder, address(0xdead));
+        assertEq(wrong, 0);
+        assertFalse(wd);
+        (uint256 zeroAcct,) = adapter.getAdapterBalanceForAsset(address(0), NATIVE);
+        assertEq(zeroAcct, 0);
     }
 
     function test_supportsInterface() public view {
         assertTrue(adapter.supportsInterface(type(IBalanceAdapter).interfaceId));
         assertTrue(adapter.supportsInterface(type(IPositionDescribable).interfaceId));
         assertTrue(adapter.supportsInterface(type(IERC165).interfaceId));
+        assertFalse(adapter.supportsInterface(0xffffffff));
+    }
+
+    function test_protocolName() public view {
+        assertEq(adapter.protocolName(), "StakeWise V3");
+    }
+
+    function test_positionLabels_fallbackWhenNoReceiptSymbol() public {
+        // Empty receiptSymbol → bare ["Exit Queue"] breadcrumb.
+        StakeWiseV3ExitQueueAssistedBalanceAdapter a2 =
+            new StakeWiseV3ExitQueueAssistedBalanceAdapter(address(registry), NATIVE, "", address(balances), DELAY);
+        string[] memory labels = a2.positionLabels(abi.encode(address(vault)));
+        assertEq(labels.length, 1);
+        assertEq(labels[0], "Exit Queue");
     }
 
     function test_underlyingAssetsSupported() public view {

@@ -6,7 +6,7 @@ import {StakeWiseV3ExitQueueWrapper} from "src/balances/wrappers/StakeWiseV3Exit
 import {
     StakeWiseV3ExitQueueAssistedBalanceAdapter
 } from "src/balances/AssistedBalanceAdapters/StakeWiseV3ExitQueueAssistedBalanceAdapter.sol";
-import {InvalidArguments} from "src/errors.sol";
+import {InvalidArguments, NotAContract} from "src/errors.sol";
 
 /// @notice Minimal Safe stand-in that delegatecalls a target — mirrors how a Gnosis Safe executes a delegatecall
 ///         action. Under the delegatecall, `address(this)` is this Safe, which is exactly the context the wrapper
@@ -179,6 +179,11 @@ contract StakeWiseV3ExitQueueWrapperTest is BalanceAdapterTestBase {
     function test_constructor_revertsOnZeroAdapter() public {
         vm.expectRevert(InvalidArguments.selector);
         new StakeWiseV3ExitQueueWrapper(address(0));
+    }
+
+    function test_constructor_revertsWhenAdapterNotContract() public {
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "ExitQueueAdapter"));
+        new StakeWiseV3ExitQueueWrapper(makeAddr("eoa"));
     }
 
     // ---- End-to-end with the real adapter + full mock vault ----

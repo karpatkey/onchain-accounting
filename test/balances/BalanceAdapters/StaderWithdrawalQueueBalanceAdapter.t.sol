@@ -29,6 +29,13 @@ contract MockUserWithdrawalManager {
     mapping(uint256 => Info) public userWithdrawRequests;
     mapping(address => uint256[]) private _ids;
 
+    /// @notice The StaderConfig the adapter derives the StakePoolManager from (auto-getter matches `staderConfig()`).
+    address public staderConfig;
+
+    function setStaderConfig(address config) external {
+        staderConfig = config;
+    }
+
     function getRequestIdsByUser(address owner) external view returns (uint256[] memory) {
         return _ids[owner];
     }
@@ -57,10 +64,45 @@ contract MockUserWithdrawalManager {
     }
 }
 
+/// @notice Mock StaderStakePoolManager — `previewWithdraw` returns a settable value (the live ETHx→ETH re-conversion).
+///         Default `type(uint256).max` so the pending cap `min(ethExpected, preview)` never bites (picks ethExpected),
+///         keeping the non-cap tests unaffected; a test lowers it to exercise the cap.
+contract MockStaderStakePoolManager {
+    uint256 public previewReturn = type(uint256).max;
+    bool public shouldRevert;
+
+    function setPreviewReturn(uint256 v) external {
+        previewReturn = v;
+    }
+
+    function setShouldRevert(bool v) external {
+        shouldRevert = v;
+    }
+
+    function previewWithdraw(uint256) external view returns (uint256) {
+        require(!shouldRevert, "preview revert");
+        return previewReturn;
+    }
+}
+
+/// @notice Mock StaderConfig — only the getter the adapter derives the StakePoolManager from.
+contract MockStaderConfig {
+    address public stakePoolManager;
+
+    constructor(address spm) {
+        stakePoolManager = spm;
+    }
+
+    function getStakePoolManager() external view returns (address) {
+        return stakePoolManager;
+    }
+}
+
 /// @title StaderWithdrawalQueueBalanceAdapter unit tests (plain, on-chain enumeration via getRequestIdsByUser)
 contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
     StaderWithdrawalQueueBalanceAdapter public adapter;
     MockUserWithdrawalManager public manager;
+    MockStaderStakePoolManager public spm;
 
     address holder = makeAddr("holder");
     address other = makeAddr("other");
@@ -68,6 +110,8 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
     function setUp() public override {
         super.setUp();
         manager = new MockUserWithdrawalManager();
+        spm = new MockStaderStakePoolManager();
+        manager.setStaderConfig(address(new MockStaderConfig(address(spm))));
         adapter = new StaderWithdrawalQueueBalanceAdapter(address(manager), address(weth), address(balances));
     }
 
@@ -131,6 +175,29 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(p[0].protocolSubId, ProtocolIds.STADER_WITHDRAWAL);
         assertEq(p[0].positionId, abi.encode(address(manager)));
         assertEq(p[0].positionInstanceId, bytes32(uint256(8196)));
+    }
+
+    /// @notice A pending request is capped at the LIVE re-conversion when the ETHx/ETH rate has dropped below the
+    ///         request-time estimate: owed = min(ethExpected, previewWithdraw(ethXAmount)). When the live value is
+    ///         higher, the (lower) request-time estimate stands — never an over-report.
+    function test_pendingRequest_cappedByLiveRate() public {
+        manager.addRequest(holder, 8196, 5 ether, 0); // pending, ethExpected 5e18 (mock ethXAmount 1e18)
+
+        spm.setPreviewReturn(3 ether); // live re-conversion dropped below the request-time estimate
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(holder, address(weth));
+        assertEq(amount, 3 ether, "pending capped at the live value on a rate drop");
+
+        spm.setPreviewReturn(9 ether); // live value above the estimate → estimate retained
+        (amount,) = adapter.getAdapterBalanceForAsset(holder, address(weth));
+        assertEq(amount, 5 ether, "request-time estimate retained when the live value is higher");
+    }
+
+    /// @notice If the live re-conversion reverts, the pending value fails open to the request-time estimate.
+    function test_pendingRequest_liveRevert_failsOpenToEstimate() public {
+        manager.addRequest(holder, 8196, 5 ether, 0);
+        spm.setShouldRevert(true);
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(holder, address(weth));
+        assertEq(amount, 5 ether, "falls back to ethExpected when previewWithdraw reverts");
     }
 
     function test_finalizedRequest_valuedAtEthFinalized_notLocked() public {

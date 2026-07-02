@@ -30,9 +30,14 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      ETHx but records the request under an arbitrary `_owner` (claimable only by `_owner`). So anyone can plant a
 ///      request owned by this account by burning their own ETHx — but they donate that ETH to the account and cannot
 ///      recover it, so the injected value is **real, claimable, and self-funded** (equivalent to an airdrop, which the
-///      wallet ERC20 adapter likewise reports). The only residual is cache/gas bloat: the read is bounded by the
-///      protocol's own 1000-request cap (`MAX_REQUESTS_PROBED`); an account whose live-request count exceeds that is
-///      skipped (reported as 0) so a pathological array can never OOG the NAV read.
+///      wallet ERC20 adapter likewise reports). The residual is cache/gas bloat: the read loops the account's live
+///      requests, each an external `userWithdrawRequests` read. {MAX_REQUESTS_PROBED} equals Stader's own
+///      `maxNonRedeemedUserRequestCount` (1000), so a legitimate account is never skipped, but the flip side is that
+///      the "> cap → skip" guard never engages within protocol rules — an attacker can, by donating real ETHx per
+///      request, fill a victim's array toward 1000 and make every subsequent NAV read for that account pay up to ~1000
+///      external reads. This is tolerated: NAV reads are async/off-chain (ADR 0017), the griefer permanently loses the
+///      donated ETH, and no legit account is ever silently zeroed by a lower cap. A future Stader cap increase would
+///      warrant a re-deploy with a gas-appropriate bound (the enumeration cannot both stay unbounded and OOG-safe).
 contract StaderWithdrawalQueueBalanceAdapter is SingleAssetBalanceAdapterBase {
     //
     // Constants
@@ -57,6 +62,11 @@ contract StaderWithdrawalQueueBalanceAdapter is SingleAssetBalanceAdapterBase {
     /// @notice Stader UserWithdrawalManager contract (source of the per-account request list + per-request data).
     IUserWithdrawalManager public immutable USER_WITHDRAWAL_MANAGER;
 
+    /// @notice Stader StaderStakePoolsManager — its `previewWithdraw` gives the LIVE ETH value of a request's burned
+    ///         ETHx, used to cap a not-yet-finalized request's stale request-time estimate (see {_owedForRequest}).
+    ///         Derived at construction from `USER_WITHDRAWAL_MANAGER.staderConfig().getStakePoolManager()`.
+    IStaderStakePoolsManager public immutable STAKE_POOL_MANAGER;
+
     /// @notice Reference to NAVCalculator for asset registry access.
     INAVCalculator public immutable NAV_CALCULATOR;
 
@@ -77,6 +87,13 @@ contract StaderWithdrawalQueueBalanceAdapter is SingleAssetBalanceAdapterBase {
 
         USER_WITHDRAWAL_MANAGER = IUserWithdrawalManager(userWithdrawalManager_);
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
+
+        // Derive the StakePoolManager (for the live pending-request cap) from Stader's own config graph. Immutable —
+        // no extra constructor arg. requireContract fails loud if the graph doesn't resolve to a contract at deploy.
+        address stakePoolManager =
+            IStaderConfig(IUserWithdrawalManager(userWithdrawalManager_).staderConfig()).getStakePoolManager();
+        AddressCheckLib.requireContract(stakePoolManager, "StakePoolManager");
+        STAKE_POOL_MANAGER = IStaderStakePoolsManager(stakePoolManager);
     }
 
     //
@@ -189,18 +206,32 @@ contract StaderWithdrawalQueueBalanceAdapter is SingleAssetBalanceAdapterBase {
     }
 
     /// @dev ETH owed for a single request and whether it is finalized. `amount` is 0 if not owned by `account` (a
-    ///      claimed/unknown id reads back with `owner == address(0)`). finalized (`ethFinalized > 0`) → exact
-    ///      `ethFinalized`; pending → the rate-converted `ethExpected` estimate.
+    ///      claimed/unknown id reads back with `owner == address(0)`). Finalized (`ethFinalized > 0`) → exact
+    ///      `ethFinalized`. Pending → the CONSERVATIVE min of the request-time estimate `ethExpected` and the LIVE
+    ///      re-conversion of the burned ETHx (`previewWithdraw(ethXAmount)`): `ethExpected` is frozen at request time,
+    ///      so a subsequent ETHx/ETH rate drop (slashing / exit penalty) would leave it overstating the true owed
+    ///      amount until finalization — the cap tracks the live rate down (mirrors the Lido adapter's `_cappedOwed`).
     function _owedForRequest(address account, uint256 requestId)
         internal
         view
         returns (uint256 amount, bool finalized)
     {
-        (address owner,, uint256 ethExpected, uint256 ethFinalized,) =
+        (address owner, uint256 ethXAmount, uint256 ethExpected, uint256 ethFinalized,) =
             USER_WITHDRAWAL_MANAGER.userWithdrawRequests(requestId);
         if (owner != account) return (0, false);
         if (ethFinalized > 0) return (ethFinalized, true);
-        return (ethExpected, false);
+        return (_cappedPending(ethXAmount, ethExpected), false);
+    }
+
+    /// @dev Conservative value for a not-yet-finalized request: `min(ethExpected, previewWithdraw(ethXAmount))`.
+    ///      Fail-open — if the live re-conversion reverts, fall back to `ethExpected` (the prior behaviour), so a
+    ///      StakePoolManager hiccup can never revert the read.
+    function _cappedPending(uint256 ethXAmount, uint256 ethExpected) internal view returns (uint256) {
+        try STAKE_POOL_MANAGER.previewWithdraw(ethXAmount) returns (uint256 live) {
+            return live < ethExpected ? live : ethExpected;
+        } catch {
+            return ethExpected;
+        }
     }
 }
 
@@ -209,6 +240,9 @@ interface IUserWithdrawalManager {
     /// @notice The list of ongoing (un-claimed) withdraw request ids for `owner`. Pruned on claim (swap-and-pop) and
     ///         capped by the protocol at `maxNonRedeemedUserRequestCount`.
     function getRequestIdsByUser(address owner) external view returns (uint256[] memory requestIds);
+
+    /// @notice The StaderConfig contract (the protocol's address registry).
+    function staderConfig() external view returns (address);
 
     /// @return owner Owner of the request (zero after a successful claim).
     /// @return ethXAmount Amount of ETHx originally burned to create the request.
@@ -219,4 +253,16 @@ interface IUserWithdrawalManager {
         external
         view
         returns (address owner, uint256 ethXAmount, uint256 ethExpected, uint256 ethFinalized, uint256 requestBlock);
+}
+
+/// @notice Minimal interface for Stader's StaderConfig (address registry) — only the getter this adapter needs.
+interface IStaderConfig {
+    function getStakePoolManager() external view returns (address);
+}
+
+/// @notice Minimal interface for Stader's StaderStakePoolsManager — the live ETHx→ETH re-conversion used to cap a
+///         pending request's stale request-time estimate.
+interface IStaderStakePoolsManager {
+    /// @notice Current ETH value of `ethXAmount` ETHx (ERC4626-style preview at the live exchange rate).
+    function previewWithdraw(uint256 ethXAmount) external view returns (uint256);
 }

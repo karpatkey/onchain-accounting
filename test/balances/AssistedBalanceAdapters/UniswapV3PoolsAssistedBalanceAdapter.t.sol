@@ -5,7 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {
     UniswapV3PoolsAssistedBalanceAdapter
 } from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsAssistedBalanceAdapter.sol";
-import {IAssistedBalanceAdapter} from "src/balances/IAssistedBalanceAdapter.sol";
+import {IAssistantFedBalanceAdapter} from "src/balances/IAssistantFedBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -125,7 +125,7 @@ contract UniswapV3PoolsAssistedBalanceAdapterTest is Test {
     }
 
     function test_supportsInterface() public view {
-        assertTrue(adapter.supportsInterface(type(IAssistedBalanceAdapter).interfaceId));
+        assertTrue(adapter.supportsInterface(type(IAssistantFedBalanceAdapter).interfaceId));
         assertTrue(adapter.supportsInterface(type(IBalanceAdapter).interfaceId));
         assertTrue(adapter.supportsInterface(type(IPositionDescribable).interfaceId));
         assertTrue(adapter.supportsInterface(type(IAccessControl).interfaceId));

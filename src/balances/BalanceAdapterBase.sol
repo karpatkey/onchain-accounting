@@ -12,7 +12,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 ///         repeats verbatim — `supportsInterface` advertising that pair plus {IERC165}. Concrete adapters implement
 ///         the balance/position reads and the {IPositionDescribable} display hooks.
 /// @dev Plain adapters stay immutable (no Ownable/admin). The assisted family has its own base
-///      ({AssistedBalanceAdapter}); meta-adapters have {MetaBalanceAdapter}. `supportsInterface` is `virtual` so an
+///      ({AssistantFedBalanceAdapter}); meta-adapters have {MetaBalanceAdapter}. `supportsInterface` is `virtual` so an
 ///      adapter advertising an extra interface can override and `super`-chain.
 abstract contract BalanceAdapterBase is IBalanceAdapter, IPositionDescribable {
     /// @inheritdoc IERC165

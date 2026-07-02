@@ -9,7 +9,7 @@ import {
     UniswapV3PoolsAssistedBalanceAdapter
 } from "src/balances/AssistedBalanceAdapters/UniswapV3PoolsAssistedBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
-import {IAssistedBalanceAdapter} from "src/balances/IAssistedBalanceAdapter.sol";
+import {IAssistantFedBalanceAdapter} from "src/balances/IAssistantFedBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -88,7 +88,7 @@ contract PancakeSwapV3PoolsAssistedBalanceAdapterTest is Test {
     }
 
     function test_supportsInterface() public view {
-        assertTrue(adapter.supportsInterface(type(IAssistedBalanceAdapter).interfaceId));
+        assertTrue(adapter.supportsInterface(type(IAssistantFedBalanceAdapter).interfaceId));
         assertTrue(adapter.supportsInterface(type(IBalanceAdapter).interfaceId));
         assertTrue(adapter.supportsInterface(type(IERC165).interfaceId));
     }

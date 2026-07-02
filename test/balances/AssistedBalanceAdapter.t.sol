@@ -3,8 +3,8 @@ pragma solidity ^0.8;
 
 import {Test} from "forge-std/Test.sol";
 
-import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
-import {IAssistedBalanceAdapter} from "src/balances/IAssistedBalanceAdapter.sol";
+import {AssistantFedBalanceAdapter} from "src/balances/AssistantFedBalanceAdapter.sol";
+import {IAssistantFedBalanceAdapter} from "src/balances/IAssistantFedBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
@@ -14,11 +14,11 @@ import "src/errors.sol";
 
 /// @notice Minimal concrete to exercise the abstract base: trivial IBalanceAdapter impl plus an assistant-gated
 ///         mutator that records the submitted value, so we can assert the role actually gates submission.
-contract MockAssistedAdapter is AssistedBalanceAdapter {
+contract MockAssistedAdapter is AssistantFedBalanceAdapter {
     uint256 public lastSubmitted;
     mapping(address account => uint256) public lastReplaced;
 
-    constructor(address admin, address assistant) AssistedBalanceAdapter(admin, assistant) {}
+    constructor(address admin, address assistant) AssistantFedBalanceAdapter(admin, assistant) {}
 
     function submit(uint256 value) external onlyRole(ASSISTANT_ROLE) {
         lastSubmitted = value;
@@ -41,7 +41,7 @@ contract MockAssistedAdapter is AssistedBalanceAdapter {
         _submitBatch(accounts, data);
     }
 
-    /// @inheritdoc AssistedBalanceAdapter
+    /// @inheritdoc AssistantFedBalanceAdapter
     function _applyReplace(address account, bytes memory data) internal override {
         lastReplaced[account] = abi.decode(data, (uint256));
     }
@@ -185,7 +185,7 @@ contract AssistedBalanceAdapterTest is Test {
     }
 
     function test_SupportsInterface() public view {
-        assertTrue(adapter.supportsInterface(type(IAssistedBalanceAdapter).interfaceId), "IAssistedBalanceAdapter");
+        assertTrue(adapter.supportsInterface(type(IAssistantFedBalanceAdapter).interfaceId), "IAssistantFedBalanceAdapter");
         assertTrue(adapter.supportsInterface(type(IBalanceAdapter).interfaceId), "IBalanceAdapter");
         assertTrue(adapter.supportsInterface(type(IAccessControl).interfaceId), "IAccessControl");
         assertTrue(adapter.supportsInterface(type(IERC165).interfaceId), "IERC165");

@@ -8,7 +8,7 @@ import {
     EtherFiWithdrawalQueueAssistedBalanceAdapter,
     IEtherFiWithdrawRequestNFT
 } from "src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueAssistedBalanceAdapter.sol";
-import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
+import {AssistantFedBalanceAdapter} from "src/balances/AssistantFedBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";

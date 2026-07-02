@@ -5,7 +5,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
-import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
+import {AssistantFedBalanceAdapter} from "src/balances/AssistantFedBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -25,10 +25,10 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         the live Distributor merkle root, so even the `ASSISTANT_ROLE` holder cannot fabricate amounts. The
 ///         assistant is trusted only to keep the cache fresh; failure to do so makes NAV under-count rewards but never
 ///         over-count.
-/// @dev Access control follows the assisted-adapter family ({AssistedBalanceAdapter}): `DEFAULT_ADMIN_ROLE`
+/// @dev Access control follows the assisted-adapter family ({AssistantFedBalanceAdapter}): `DEFAULT_ADMIN_ROLE`
 ///      administers roles and `ASSISTANT_ROLE` is authorized to submit/clear allocations. Trust model and
 ///      mutability rationale: see `docs/decisions/0007-merkl-trust-minimized-cache.md`.
-contract MerklRewardsAssistedBalanceAdapter is AssistedBalanceAdapter, IPositionDescribable {
+contract MerklRewardsAssistedBalanceAdapter is AssistantFedBalanceAdapter, IPositionDescribable {
     //
     // Type Definitions
     //
@@ -161,7 +161,7 @@ contract MerklRewardsAssistedBalanceAdapter is AssistedBalanceAdapter, IPosition
     /// @param assistant_       Holder of `ASSISTANT_ROLE` — authorized to call `submitProofs` / `clearAllocation`.
     ///                         Optional (pass `address(0)` to grant later via `admin_`). Should be the OIV Safe.
     constructor(address distributor_, address navCalculator_, address admin_, address assistant_)
-        AssistedBalanceAdapter(admin_, assistant_)
+        AssistantFedBalanceAdapter(admin_, assistant_)
     {
         if (distributor_ == address(0) || navCalculator_ == address(0)) {
             revert InvalidArguments();
@@ -207,7 +207,7 @@ contract MerklRewardsAssistedBalanceAdapter is AssistedBalanceAdapter, IPosition
         _submitBatch(users, data);
     }
 
-    /// @inheritdoc AssistedBalanceAdapter
+    /// @inheritdoc AssistantFedBalanceAdapter
     /// @dev Decodes the `Allocation[]` list and replaces `account`'s (the user's) cached token set — clear, then
     ///      verify each leaf against the live Distributor root and store, fail-loud.
     function _applyReplace(address account, bytes memory data) internal override {
@@ -249,9 +249,9 @@ contract MerklRewardsAssistedBalanceAdapter is AssistedBalanceAdapter, IPosition
     }
 
     /// @inheritdoc IERC165
-    /// @dev Adds {IPositionDescribable} on top of the interfaces advertised by {AssistedBalanceAdapter}
-    ///      ({IAssistedBalanceAdapter}, {IBalanceAdapter}, {IAccessControl}, {IERC165}).
-    function supportsInterface(bytes4 interfaceId) public view override(AssistedBalanceAdapter) returns (bool) {
+    /// @dev Adds {IPositionDescribable} on top of the interfaces advertised by {AssistantFedBalanceAdapter}
+    ///      ({IAssistantFedBalanceAdapter}, {IBalanceAdapter}, {IAccessControl}, {IERC165}).
+    function supportsInterface(bytes4 interfaceId) public view override(AssistantFedBalanceAdapter) returns (bool) {
         return interfaceId == type(IPositionDescribable).interfaceId || super.supportsInterface(interfaceId);
     }
 

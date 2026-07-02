@@ -4,7 +4,7 @@ pragma solidity ^0.8;
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 
-import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
+import {AssistantFedBalanceAdapter} from "src/balances/AssistantFedBalanceAdapter.sol";
 import {AssistedNftCacheAdapter} from "src/balances/AssistedBalanceAdapters/AssistedNftCacheAdapter.sol";
 import {SingleAssetAssistedGetters} from "src/balances/AssistedBalanceAdapters/SingleAssetAssistedGetters.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
@@ -25,7 +25,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         `submitTokenIds`; this adapter then values them entirely from live on-chain reads, re-verifying ownership on
 ///         every read. The cache stores **only ids, never amounts**, so the assistant cannot fabricate value — at worst it omits an id (NAV
 ///         under-counts), never over-counts.
-/// @dev Access control comes from {AssistedBalanceAdapter}: `DEFAULT_ADMIN_ROLE` administers roles and `ASSISTANT_ROLE`
+/// @dev Access control comes from {AssistantFedBalanceAdapter}: `DEFAULT_ADMIN_ROLE` administers roles and `ASSISTANT_ROLE`
 ///      gates the submit/clear mutators. Trust model and mutability rationale: see
 ///      `docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md` (generalises the Merkl precedent, ADR 0007).
 ///      Emits ONE native-ETH `Supplied` leg per owned cached withdrawal request, all sharing a single static
@@ -123,7 +123,7 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapter is
     function supportsInterface(bytes4 interfaceId)
         public
         view
-        override(AssistedBalanceAdapter, IERC165)
+        override(AssistantFedBalanceAdapter, IERC165)
         returns (bool)
     {
         return interfaceId == type(IPositionDescribable).interfaceId || super.supportsInterface(interfaceId);

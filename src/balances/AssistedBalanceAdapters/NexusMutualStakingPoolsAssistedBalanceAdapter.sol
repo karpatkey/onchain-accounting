@@ -5,7 +5,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
-import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
+import {AssistantFedBalanceAdapter} from "src/balances/AssistantFedBalanceAdapter.sol";
 import {AssistedNftCacheAdapter} from "src/balances/AssistedBalanceAdapters/AssistedNftCacheAdapter.sol";
 import {AssistedNftValuationAdapter} from "src/balances/AssistedBalanceAdapters/AssistedNftValuationAdapter.sol";
 import {SingleAssetAssistedGetters} from "src/balances/AssistedBalanceAdapters/SingleAssetAssistedGetters.sol";
@@ -33,7 +33,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         (`abi.encode(StakingViewer.stakingPool(poolId))`); the NFT id is surfaced as the typed
 ///         `positionInstanceId` on each leg (the display labels are `["Staking Pools", "Pool #<poolId>"]`), not in
 ///         positionId.
-/// @dev Access control comes from {AssistedBalanceAdapter}: `DEFAULT_ADMIN_ROLE` administers roles and
+/// @dev Access control comes from {AssistantFedBalanceAdapter}: `DEFAULT_ADMIN_ROLE` administers roles and
 ///      `ASSISTANT_ROLE` gates the submit/clear mutators. `submitTokenIds` **reverts** `NotTokenOwner` for any id
 ///      whose `tokenInfo` owner is not the account (fail-loud writes); reads instead **discard** an id no longer
 ///      owned (fail-open). See `docs/decisions/0015-assisted-balance-adapter-family.md` (Merkl precedent, ADR 0007).
@@ -144,11 +144,11 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is
 
     /// @inheritdoc IERC165
     /// @dev Adds {IPositionDescribable} on top of the family's base advertisement
-    ///      ({IAssistedBalanceAdapter}/{IBalanceAdapter}/{IAccessControl}/{IERC165}).
+    ///      ({IAssistantFedBalanceAdapter}/{IBalanceAdapter}/{IAccessControl}/{IERC165}).
     function supportsInterface(bytes4 interfaceId)
         public
         view
-        override(AssistedBalanceAdapter, IERC165)
+        override(AssistantFedBalanceAdapter, IERC165)
         returns (bool)
     {
         return interfaceId == type(IPositionDescribable).interfaceId || super.supportsInterface(interfaceId);

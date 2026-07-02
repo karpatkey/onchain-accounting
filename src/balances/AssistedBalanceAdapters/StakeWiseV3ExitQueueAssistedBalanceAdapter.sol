@@ -4,7 +4,7 @@ pragma solidity ^0.8;
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 
-import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
+import {AssistantFedBalanceAdapter} from "src/balances/AssistantFedBalanceAdapter.sol";
 import {SingleAssetAssistedGetters} from "src/balances/AssistedBalanceAdapters/SingleAssetAssistedGetters.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
@@ -45,7 +45,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      resolve to a live owed amount for `account`, and `PositionCacheFull` at `MAX_POSITIONS`. Reads still
 ///      re-verify and discard (never revert), so correctness does not depend on the write-time checks.
 contract StakeWiseV3ExitQueueAssistedBalanceAdapter is
-    AssistedBalanceAdapter,
+    AssistantFedBalanceAdapter,
     SingleAssetAssistedGetters,
     IPositionDescribable
 {
@@ -137,7 +137,7 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapter is
         uint256 exitClaimDelay_,
         address admin_,
         address assistant_
-    ) AssistedBalanceAdapter(admin_, assistant_) SingleAssetAssistedGetters(underlyingToken_) {
+    ) AssistantFedBalanceAdapter(admin_, assistant_) SingleAssetAssistedGetters(underlyingToken_) {
         if (vaultsRegistry_ == address(0) || navCalculator_ == address(0) || exitClaimDelay_ == 0) {
             revert InvalidArguments();
         }
@@ -178,7 +178,7 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapter is
         _submitBatch(accounts, data);
     }
 
-    /// @inheritdoc AssistedBalanceAdapter
+    /// @inheritdoc AssistantFedBalanceAdapter
     /// @dev Decodes the `ExitPosition[]` list and replaces `account`'s cached set (clear then re-add, fail-loud).
     function _applyReplace(address account, bytes memory data) internal override {
         ExitPosition[] memory positions = abi.decode(data, (ExitPosition[]));
@@ -226,11 +226,11 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapter is
 
     /// @inheritdoc IERC165
     /// @dev Adds {IPositionDescribable} on top of the family's base advertisement
-    ///      ({IAssistedBalanceAdapter}/{IBalanceAdapter}/{IAccessControl}/{IERC165}).
+    ///      ({IAssistantFedBalanceAdapter}/{IBalanceAdapter}/{IAccessControl}/{IERC165}).
     function supportsInterface(bytes4 interfaceId)
         public
         view
-        override(AssistedBalanceAdapter, IERC165)
+        override(AssistantFedBalanceAdapter, IERC165)
         returns (bool)
     {
         return interfaceId == type(IPositionDescribable).interfaceId || super.supportsInterface(interfaceId);

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
-import {AssistedBalanceAdapter} from "../AssistedBalanceAdapter.sol";
+import {AssistantFedBalanceAdapter} from "../AssistantFedBalanceAdapter.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
@@ -30,7 +30,7 @@ import "src/errors.sol";
 ///      normal operation the assistant — which derives the list from chain state — simply omits a transferred id, so
 ///      the delta removes it. Events reflect the actual delta: {TokenIdSubmitted} per genuinely-added id,
 ///      {TokenIdCleared} per removed id (not one blanket re-emit of the whole set).
-abstract contract AssistedNftCacheAdapter is AssistedBalanceAdapter {
+abstract contract AssistedNftCacheAdapter is AssistantFedBalanceAdapter {
     using EnumerableSet for EnumerableSet.UintSet;
 
     /// @notice Candidate tokenIds cached per account (the only thing the assistant supplies). An `EnumerableSet.UintSet`
@@ -43,7 +43,7 @@ abstract contract AssistedNftCacheAdapter is AssistedBalanceAdapter {
 
     /// @param admin     Holder of `DEFAULT_ADMIN_ROLE`.
     /// @param assistant Initial `ASSISTANT_ROLE` holder (may be `address(0)`).
-    constructor(address admin, address assistant) AssistedBalanceAdapter(admin, assistant) {}
+    constructor(address admin, address assistant) AssistantFedBalanceAdapter(admin, assistant) {}
 
     //
     // Writes (ASSISTANT_ROLE)
@@ -70,7 +70,7 @@ abstract contract AssistedNftCacheAdapter is AssistedBalanceAdapter {
         _submitBatch(accounts, data);
     }
 
-    /// @inheritdoc AssistedBalanceAdapter
+    /// @inheritdoc AssistantFedBalanceAdapter
     /// @dev Decodes the `uint256[]` token-id list and reconciles `account`'s cached set against it as a **delta**:
     ///      add submitted ids not already cached (fail-loud: cap + ownership), remove cached ids absent from the
     ///      submission. Skipping already-cached ids is what makes an unchanged resubmit free (no `ownerOf`, no SSTORE).

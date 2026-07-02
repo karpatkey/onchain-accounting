@@ -11,7 +11,7 @@ import {InvalidArguments} from "src/errors.sol";
 ///         Implements `underlyingAssetsSupported` / `getAdapterBalanceForAsset` / `getAdapterBalances` off one
 ///         {_owedAmount} hook. This mirrors {SingleAssetBalanceAdapterBase} (which serves the *plain* family) for the
 ///         assisted family, which cannot inherit it: the assisted adapters extend the AccessControl-based
-///         {AssistedBalanceAdapter}, a different base hierarchy.
+///         {AssistantFedBalanceAdapter}, a different base hierarchy.
 /// @dev A mix-in: a concrete adapter inherits this ALONGSIDE its cache base (e.g.
 ///      `is AssistedNftCacheAdapter, SingleAssetAssistedGetters, IPositionDescribable`) and implements only
 ///      {_owedAmount} plus the NAV `getAdapterPositions` path (which carries the per-position kinds / lock status)

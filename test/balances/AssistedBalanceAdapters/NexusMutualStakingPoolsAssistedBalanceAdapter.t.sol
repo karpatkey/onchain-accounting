@@ -10,7 +10,7 @@ import {
     INexusStakingViewer
 } from "src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsAssistedBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {IAssistedBalanceAdapter} from "src/balances/IAssistedBalanceAdapter.sol";
+import {IAssistantFedBalanceAdapter} from "src/balances/IAssistantFedBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
@@ -457,7 +457,7 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterTest is BalanceAdapterTest
     // ---- Interface ----
 
     function test_supportsInterface() public view {
-        assertTrue(adapter.supportsInterface(type(IAssistedBalanceAdapter).interfaceId));
+        assertTrue(adapter.supportsInterface(type(IAssistantFedBalanceAdapter).interfaceId));
         assertTrue(adapter.supportsInterface(type(IBalanceAdapter).interfaceId));
         assertTrue(adapter.supportsInterface(type(IPositionDescribable).interfaceId));
         assertTrue(adapter.supportsInterface(type(IAccessControl).interfaceId));

@@ -5,7 +5,7 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
-import {AssistedBalanceAdapter} from "src/balances/AssistedBalanceAdapter.sol";
+import {AssistantFedBalanceAdapter} from "src/balances/AssistantFedBalanceAdapter.sol";
 import {AssistedNftCacheAdapter} from "src/balances/AssistedBalanceAdapters/AssistedNftCacheAdapter.sol";
 import {AssistedNftValuationAdapter} from "src/balances/AssistedBalanceAdapters/AssistedNftValuationAdapter.sol";
 import {LabelLib} from "src/balances/LabelLib.sol";
@@ -44,7 +44,7 @@ interface IUniswapV3Factory {
 ///         deployed pool, so it uniquely identifies the pair+fee. The NFT id is not in positionId; it is carried as
 ///         the typed `positionInstanceId` on each emitted leg (not a label — labels are the verbose-only
 ///         `["AMM Liquidity Pool", "<sym0>/<sym1> <fee>%"]` breadcrumb via {IPositionDescribable.positionLabels}).
-/// @dev Access control comes from {AssistedBalanceAdapter}: `DEFAULT_ADMIN_ROLE` administers roles and
+/// @dev Access control comes from {AssistantFedBalanceAdapter}: `DEFAULT_ADMIN_ROLE` administers roles and
 ///      `ASSISTANT_ROLE` gates the submit/clear mutators. `submitTokenIds` carries the account's complete set and
 ///      reconciles it as a delta, **reverting** `NotTokenOwner` for any newly-added id not currently owned by the
 ///      account (fail-loud writes); reads instead **discard** an id whose ownership changed or
@@ -186,8 +186,8 @@ contract UniswapV3PoolsAssistedBalanceAdapter is AssistedNftValuationAdapter, IP
 
     /// @inheritdoc IERC165
     /// @dev Adds {IPositionDescribable} on top of the family's base advertisement
-    ///      ({IAssistedBalanceAdapter}/{IBalanceAdapter}/{IAccessControl}/{IERC165}).
-    function supportsInterface(bytes4 interfaceId) public view override(AssistedBalanceAdapter) returns (bool) {
+    ///      ({IAssistantFedBalanceAdapter}/{IBalanceAdapter}/{IAccessControl}/{IERC165}).
+    function supportsInterface(bytes4 interfaceId) public view override(AssistantFedBalanceAdapter) returns (bool) {
         return interfaceId == type(IPositionDescribable).interfaceId || super.supportsInterface(interfaceId);
     }
 

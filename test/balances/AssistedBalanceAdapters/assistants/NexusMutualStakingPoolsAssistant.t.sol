@@ -69,6 +69,18 @@ contract MockNexusPool {
 /// @notice A deployed no-op contract to stand in for Nexus's TokenController (only needs code for requireContract).
 contract MockTokenController {}
 
+/// @notice A remove() revert the assistant must NOT swallow (neither CoordinateStillLive nor CoordinateNotCached).
+error MockUnexpectedRemoveError();
+
+/// @notice Stand-in adapter whose remove() reverts with an unexpected error, to exercise the assistant's bubble path.
+contract MockRevertingNexusAdapter {
+    function submit(uint256) external {}
+
+    function remove(uint256) external pure {
+        revert MockUnexpectedRemoveError();
+    }
+}
+
 /// @title NexusMutualStakingPoolsAssistant unit tests (delegatecall-only module)
 contract NexusMutualStakingPoolsAssistantTest is BalanceAdapterTestBase {
     NexusMutualStakingPoolsAssistedBalanceAdapter public adapter;
@@ -223,5 +235,17 @@ contract NexusMutualStakingPoolsAssistantTest is BalanceAdapterTestBase {
         assertEq(s, 7, "withdraw executed despite the id not being tracked");
         assertEq(pool.lastWithdrawId(), 999);
         assertEq(adapter.tokenIdsOf(address(account)).length, 0, "still nothing tracked");
+    }
+
+    /// @notice An unexpected remove() revert (neither CoordinateStillLive nor CoordinateNotCached) bubbles up and
+    ///         reverts the whole withdraw — the assistant only swallows the two expected cache errors.
+    function test_withdraw_bubblesUnexpectedRemoveError() public {
+        MockRevertingNexusAdapter mockAdapter = new MockRevertingNexusAdapter();
+        NexusMutualStakingPoolsAssistant w =
+            new NexusMutualStakingPoolsAssistant(address(mockAdapter), address(nxm), address(tokenController));
+        pool.setWithdrawReturns(1, 0);
+        uint256[] memory tranches = new uint256[](0);
+        vm.expectRevert(MockUnexpectedRemoveError.selector);
+        account.withdraw(address(w), address(pool), 5, true, false, tranches);
     }
 }

@@ -217,13 +217,16 @@ contract LidoWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_getAdapterBalanceForAsset_sumsLargeListInFull() public {
         // No adapter-level cap: a large (e.g. griefed / third-party-inflated) list is read in full — every
-        // request is real, claimable ETH, so summing it all is the honest, over-report-safe answer.
-        uint256 n = 400;
+        // request is real, claimable ETH, so summing it all is the honest, over-report-safe answer. `n` is well
+        // past the old 256 cap (regression guard: a re-introduced skip/truncate would drop this below n*1e18).
+        uint256 n = 1000;
         for (uint256 i = 0; i < n; i++) {
             queue.pushRequest(alice, i + 1, 1e18, false);
         }
         (uint256 amount,) = adapter.getAdapterBalanceForAsset(alice, address(weth));
         assertEq(amount, n * 1e18, "large list is summed in full, never truncated or zeroed");
+        // The positions path must emit the same count of legs — no silent cap on either surface.
+        assertEq(adapter.getAdapterPositions(alice, address(0)).length, n, "one leg per request, uncapped");
     }
 
     // ---- getAdapterBalances ----

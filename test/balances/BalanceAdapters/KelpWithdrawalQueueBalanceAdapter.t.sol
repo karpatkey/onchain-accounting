@@ -194,8 +194,9 @@ contract KelpWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_getAdapterBalanceForAsset_sumsLargeListInFull() public {
         // No adapter-level cap: a large open-request list (self-inflicted — Kelp requests are keyed to the
-        // unstaking msg.sender, so they cannot be third-party-injected) is summed in full, never truncated.
-        uint256 n = 300;
+        // unstaking msg.sender, so they cannot be third-party-injected) is summed in full, never truncated. `n` is
+        // well past the old 256 cap (regression guard: a re-introduced truncate would drop this below n*1e18).
+        uint256 n = 1000;
         for (uint256 i = 0; i < n; i++) {
             manager.pushRequest(address(steth), alice, 1e18);
         }

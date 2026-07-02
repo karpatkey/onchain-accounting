@@ -74,6 +74,11 @@ abstract contract AssistedCoordCache is IAssistedBalanceAdapter {
 
     /// @notice Candidate coordinate blobs currently cached for `account` (display/debug; not staleness-filtered).
     function coordsOf(address account) external view returns (bytes[] memory) {
+        return _cachedCoords(account);
+    }
+
+    /// @dev The cached coordinate blobs for `account`, for the concrete adapter's typed read helpers / valuation.
+    function _cachedCoords(address account) internal view returns (bytes[] memory) {
         return _coords[account];
     }
 

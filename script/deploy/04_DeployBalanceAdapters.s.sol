@@ -787,14 +787,10 @@ contract DeployBalanceAdapters is BaseDeployScript {
             "StakeWiseV3ExitQueueAssisted: chainConfig.admin (initialOwner) not configured"
         );
 
+        // Permissionless wrapper-fed adapter (ADR 0018): no admin/assistant roles — the coordinate cache is
+        // msg.sender-keyed and fed on-chain by the delegatecall wrapper. NAV registration + wrapper wiring deferred.
         StakeWiseV3ExitQueueAssistedBalanceAdapter adapter = new StakeWiseV3ExitQueueAssistedBalanceAdapter(
-            vaultsRegistry,
-            underlyingToken,
-            receiptSymbol,
-            navCalculator,
-            exitClaimDelay,
-            chainConfig.admin,
-            chainConfig.admin
+            vaultsRegistry, underlyingToken, receiptSymbol, navCalculator, exitClaimDelay
         );
         return address(adapter);
     }

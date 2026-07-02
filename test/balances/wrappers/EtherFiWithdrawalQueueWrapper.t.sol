@@ -244,9 +244,12 @@ contract EtherFiWithdrawalQueueWrapperTest is Test {
     function test_remove_forwardsAsWrapper() public {
         uint256 id = safe.doRequestDelegate(address(wrapper), 5 ether); // Safe owns the request
         assertEq(adapter.tokenIdsOf(address(safe)).length, 1);
+        // Claim on the NFT (burns it), then untrack via the wrapper — adapter.remove requires the id be claimed.
         vm.prank(address(safe));
-        wrapper.remove(id); // owned → untracks
-        assertEq(adapter.tokenIdsOf(address(safe)).length, 0, "owned id untracked via the wrapper");
+        nft.claimWithdraw(id); // burns (Safe is owner)
+        vm.prank(address(safe));
+        wrapper.remove(id);
+        assertEq(adapter.tokenIdsOf(address(safe)).length, 0, "claimed id untracked via the wrapper");
     }
 
     /// @notice submit forwards to the adapter AS the wrapper, keyed to msg.sender — a caller registers only its own
@@ -269,18 +272,19 @@ contract EtherFiWithdrawalQueueWrapperTest is Test {
         wrapper.submit(id);
     }
 
-    /// @notice The remove forwarder reverts NotTokenOwner if msg.sender does not own the id (never tracked / non-owned).
-    function test_remove_forwarder_revertsWhenCallerNotOwner() public {
+    /// @notice The remove forwarder reverts RequestNotClaimed if the request still exists (not yet claimed).
+    function test_remove_forwarder_revertsWhenNotClaimed() public {
+        uint256 id = nft.mint(address(safe), 1 ether); // exists (not claimed)
         vm.prank(address(safe));
-        vm.expectRevert(abi.encodeWithSelector(NotTokenOwner.selector, address(safe), uint256(999)));
-        wrapper.remove(999);
+        vm.expectRevert(abi.encodeWithSelector(RequestNotClaimed.selector, address(safe), id));
+        wrapper.remove(id);
     }
 
-    /// @notice A delegatecalled claim of an id the Safe does not own reverts NotTokenOwner (from the pre-burn remove,
-    ///         before ether.fi's own owner check).
+    /// @notice A delegatecalled claim of an id the Safe does not own reverts inside ether.fi's owner check (the claim
+    ///         runs first now).
     function test_claimWithdraw_delegatecall_unownedId_reverts() public {
         uint256 id = nft.mint(address(this), 1 ether); // owned by the test contract, not the Safe
-        vm.expectRevert(abi.encodeWithSelector(NotTokenOwner.selector, address(safe), id));
+        vm.expectRevert("Not the owner of the NFT");
         safe.doClaimDelegate(address(wrapper), id);
     }
 }

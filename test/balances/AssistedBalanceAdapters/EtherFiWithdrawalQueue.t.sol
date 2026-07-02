@@ -252,32 +252,32 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterTest is BalanceAdapterTestB
         assertEq(adapter.tokenIdsOf(holder).length, 0);
     }
 
-    // ---- remove (WRAPPER_ROLE-gated; requires the id to belong to the account) ----
+    // ---- remove (WRAPPER_ROLE-gated; requires the request to have been claimed/burned) ----
 
-    /// @notice remove verifies the id belongs to the account (like submit) and untracks it.
-    function test_remove_removesOwnedId() public {
+    /// @notice remove untracks a claimed (burned) request.
+    function test_remove_removesClaimedId() public {
         nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
         adapter.submit(holder, 1);
+        nft.burn(1); // claimed → ownerOf reverts
         adapter.remove(holder, 1);
         assertEq(adapter.tokenIdsOf(holder).length, 0);
     }
 
-    /// @notice remove reverts NotTokenOwner if the id is no longer owned by the account (burned).
-    function test_remove_revertsOnBurnedId() public {
+    /// @notice remove reverts RequestNotClaimed if the request still exists (still owned — not yet claimed).
+    function test_remove_revertsOnLiveOwnedId() public {
         nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
         adapter.submit(holder, 1);
-        nft.burn(1); // ownerOf now reverts
-        vm.expectRevert(abi.encodeWithSelector(NotTokenOwner.selector, holder, uint256(1)));
+        vm.expectRevert(abi.encodeWithSelector(RequestNotClaimed.selector, holder, uint256(1)));
         adapter.remove(holder, 1);
         assertEq(adapter.tokenIdsOf(holder).length, 1, "cache unchanged after the reverted remove");
     }
 
-    /// @notice remove reverts NotTokenOwner if the id has been transferred to another account.
-    function test_remove_revertsOnTransferredAwayId() public {
+    /// @notice remove reverts RequestNotClaimed if the request still exists but was transferred away (not claimed).
+    function test_remove_revertsOnTransferredButUnclaimed() public {
         nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
         adapter.submit(holder, 1);
-        nft.setRequest(1, other, 1 ether, 1 ether, true, 0, true, 1 ether); // transferred to other
-        vm.expectRevert(abi.encodeWithSelector(NotTokenOwner.selector, holder, uint256(1)));
+        nft.setRequest(1, other, 1 ether, 1 ether, true, 0, true, 1 ether); // transferred, still exists
+        vm.expectRevert(abi.encodeWithSelector(RequestNotClaimed.selector, holder, uint256(1)));
         adapter.remove(holder, 1);
         assertEq(adapter.tokenIdsOf(holder).length, 1, "cache unchanged after the reverted remove");
     }
@@ -530,6 +530,7 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterTest is BalanceAdapterTestB
     function test_remove_emitsTokenIdCleared() public {
         nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
         adapter.submit(holder, 1);
+        nft.burn(1); // claimed → removable
         vm.expectEmit(true, true, false, true, address(adapter));
         emit TokenIdCleared(holder, 1);
         adapter.remove(holder, 1);
@@ -559,10 +560,9 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterTest is BalanceAdapterTestB
         assertEq(adapter.tokenIdsOf(holder).length, 1, "prior cache entry preserved");
     }
 
-    /// @notice remove of an owned-but-untracked id passes the ownership check and is a no-op (nothing cached).
-    function test_remove_uncachedOwnedId_noOp() public {
-        nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
-        adapter.remove(holder, 1); // owned but never submitted → no revert, no-op
+    /// @notice remove of a claimed (nonexistent) but untracked id passes the claimed check and is a no-op.
+    function test_remove_uncachedClaimedId_noOp() public {
+        adapter.remove(holder, 999); // ownerOf(999) reverts → claimed/gone → no-op, no revert
         assertEq(adapter.tokenIdsOf(holder).length, 0);
     }
 

@@ -87,18 +87,12 @@ contract NexusMutualStakingPoolsAssistant is BalanceAdapterAssistant {
         (withdrawnStake, withdrawnRewards) =
             INexusMutualStakingPool(poolAddress).withdraw(tokenId, withdrawStake, withdrawRewards, trancheIds);
         // Best-effort untrack — never block the withdraw itself. Nexus does not burn the StakingNFT, so a partial or
-        // rewards-only withdraw leaves live stake and the adapter reverts `CoordinateStillLive` (keep it tracked; a
-        // later full withdraw re-syncs). And an id that isn't tracked — cleared via `clearAccount`, or acquired
-        // outside the assistant — reverts `CoordinateNotCached` (nothing to untrack). Swallow both; bubble anything
-        // else.
+        // rewards-only withdraw leaves live stake (adapter reverts `CoordinateStillLive` → keep it tracked); an
+        // untracked id reverts `CoordinateNotCached` (nothing to untrack). {_bubbleUnlessCacheRevert} swallows both and
+        // re-throws anything else.
         try INexusMutualStakingPoolsAssistedBalanceAdapter(ADAPTER).remove(tokenId) {}
         catch (bytes memory reason) {
-            bytes4 sel = bytes4(reason);
-            if (sel != CoordinateStillLive.selector && sel != CoordinateNotCached.selector) {
-                assembly {
-                    revert(add(reason, 0x20), mload(reason))
-                }
-            }
+            _bubbleUnlessCacheRevert(reason);
         }
     }
 }

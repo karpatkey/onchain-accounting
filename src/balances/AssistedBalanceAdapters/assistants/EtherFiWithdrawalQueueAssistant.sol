@@ -72,17 +72,12 @@ contract EtherFiWithdrawalQueueAssistant is BalanceAdapterAssistant {
     function claimWithdraw(uint256 tokenId) external onlyDelegateCall {
         IWithdrawRequestNFTClaim(WITHDRAW_REQUEST_NFT).claimWithdraw(tokenId);
         // Best-effort untrack — never block the claim. Normally the id is tracked and the burned NFT makes it
-        // removable, but a request cleared via `clearAccount` or acquired outside the assistant is not tracked and
-        // `remove` reverts `CoordinateNotCached` (and, defensively, `CoordinateStillLive` if it somehow re-resolves as
-        // owned). Swallow both; bubble anything else.
+        // removable; an untracked request (cleared via `clearAccount` or acquired outside the assistant) reverts
+        // `CoordinateNotCached`. {_bubbleUnlessCacheRevert} swallows the expected cache-state reverts and re-throws
+        // anything else.
         try IEtherFiWithdrawalQueueAssistedBalanceAdapter(ADAPTER).remove(tokenId) {}
         catch (bytes memory reason) {
-            bytes4 sel = bytes4(reason);
-            if (sel != CoordinateStillLive.selector && sel != CoordinateNotCached.selector) {
-                assembly {
-                    revert(add(reason, 0x20), mload(reason))
-                }
-            }
+            _bubbleUnlessCacheRevert(reason);
         }
     }
 }

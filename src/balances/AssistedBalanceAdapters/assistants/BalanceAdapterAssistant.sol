@@ -51,4 +51,21 @@ abstract contract BalanceAdapterAssistant is IBalanceAdapterAssistant {
     function _requireSelf(address account) internal view {
         if (account != address(this)) revert AssistantAccountMismatch(address(this), account);
     }
+
+    /// @notice Best-effort untrack helper for the `withdraw`/`claim` entrypoints: given the raw revert `reason` from a
+    ///         failed `ADAPTER.remove(...)`, swallow the two expected cache-state reverts and re-throw anything else.
+    ///         `CoordinateNotCached` = the id was never tracked (cleared via `clearAccount`, or acquired outside the
+    ///         assistant) — nothing to untrack. `CoordinateStillLive` = the position is still live after a partial
+    ///         withdraw/claim — keep it tracked. Both are safe to ignore because the adapter re-verifies ownership and
+    ///         re-values live on every read: a coordinate left cached only ever **under-reports** (a fully-consumed or
+    ///         no-longer-owned one resolves to 0), never over-reports. Any other revert is a real fault and is
+    ///         re-thrown verbatim so the op fails loud rather than silently continuing.
+    function _bubbleUnlessCacheRevert(bytes memory reason) internal pure {
+        bytes4 sel = bytes4(reason);
+        if (sel != CoordinateStillLive.selector && sel != CoordinateNotCached.selector) {
+            assembly {
+                revert(add(reason, 0x20), mload(reason))
+            }
+        }
+    }
 }

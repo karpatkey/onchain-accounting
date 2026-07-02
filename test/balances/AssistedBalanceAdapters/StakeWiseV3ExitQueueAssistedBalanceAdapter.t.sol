@@ -279,6 +279,13 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
         assertEq(adapter.positionsOf(holder).length, 0);
     }
 
+    function test_clearAccount_emptyIsNoop() public {
+        // No tracked positions → clearAccount() is a no-op (no revert, still empty).
+        vm.prank(holder);
+        adapter.clearAccount();
+        assertEq(adapter.positionsOf(holder).length, 0);
+    }
+
     function test_submit_revertsWhenCacheFull() public {
         uint256 cap = adapter.MAX_POSITIONS();
         for (uint256 i = 0; i < cap; i++) {
@@ -473,6 +480,27 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
 
     function test_getAdapterPositions_zeroAccount_empty() public view {
         assertEq(adapter.getAdapterPositions(address(0), address(0)).length, 0);
+    }
+
+    function test_getAdapterPositions_skipsZeroValuedTrackedPosition() public {
+        // Two tracked tickets; one is later claimed (its live read is 0) and must contribute NO legs, while the other
+        // still produces its leg — exercising the per-position skip and the temp-array resize (sized 2*N, filled 1).
+        vault.setIndex(TICKET, 1);
+        vault.setRequest(holder, TICKET, TS, 0, 2 ether);
+        vault.setIndex(TICKET + 1, 1);
+        vault.setRequest(holder, TICKET + 1, TS, 0, 5 ether);
+        _submit(holder, TICKET, TS);
+        _submit(holder, TICKET + 1, TS);
+
+        // TICKET gets claimed → its request now values to 0 (but stays cached).
+        vault.clearRequest(holder, TICKET, TS);
+
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
+        assertEq(p.length, 1, "zero-valued tracked position contributes no legs");
+        assertEq(p[0].positionInstanceId, bytes32(TICKET + 1));
+        assertEq(p[0].amount, 5 ether);
+        // The read-time skip does not mutate the cache — both tuples remain tracked.
+        assertEq(adapter.positionsOf(holder).length, 2);
     }
 
     function test_getAdapterPositions_fullyPendingLockedLeg() public {

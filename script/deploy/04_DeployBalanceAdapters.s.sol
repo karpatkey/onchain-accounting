@@ -757,14 +757,10 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address underlyingToken = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
         );
-        require(
-            chainConfig.admin != address(0),
-            "NexusMutualStakingPoolsAssisted: chainConfig.admin (initialOwner) not configured"
-        );
-
-        NexusMutualStakingPoolsAssistedBalanceAdapter adapter = new NexusMutualStakingPoolsAssistedBalanceAdapter(
-            stakingNft, stakingViewer, underlyingToken, navCalculator, chainConfig.admin, chainConfig.admin
-        );
+        // Permissionless wrapper-fed adapter (ADR 0018): no admin/assistant roles — the id cache is msg.sender-keyed
+        // and fed on-chain by the delegatecall wrapper. NAV registration + wrapper deploy/grant wiring deferred.
+        NexusMutualStakingPoolsAssistedBalanceAdapter adapter =
+            new NexusMutualStakingPoolsAssistedBalanceAdapter(stakingNft, stakingViewer, underlyingToken, navCalculator);
         return address(adapter);
     }
 

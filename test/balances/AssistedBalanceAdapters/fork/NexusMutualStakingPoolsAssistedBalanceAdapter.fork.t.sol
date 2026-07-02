@@ -3,22 +3,26 @@ pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
 import {BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
-import {
-    NexusMutualStakingPoolsAssistedBalanceAdapter,
-    INexusStakingViewer
-} from "src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsAssistedBalanceAdapter.sol";
+import {NexusMutualStakingPoolsAssistedBalanceAdapter, INexusStakingViewer} from
+    "src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsAssistedBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
+import {CoordinateNotOwned, CoordinateNotCached} from "src/errors.sol";
+
+/// @notice Minimal ERC-721 transfer surface for the real StakingNFT (to exercise read-time ownership discard).
+interface IStakingNFTLike {
+    function transferFrom(address from, address to, uint256 tokenId) external;
+}
 
 /// @title NexusMutualStakingPoolsAssistedBalanceAdapterForkTest
 /// @notice Fork test against Nexus Mutual's real StakingNFT + StakingViewer on mainnet.
-/// @dev The adapter is assisted (agent-fed; ADR 0015): an assistant submits an account's StakingNFT tokenIds, which
-///      the adapter values live via `StakingViewer.getTokens` and re-verifies via `tokenInfo` per read. The Nexus
-///      Mutual Safe (`0x8e53…cFE3`, a KPK-managed account) holds 5 positions across 5 pools (tokenIds
-///      180,184,185,186,187); the test submits those ids and asserts the per-kind sums equal an independent
-///      `getAggregatedTokens` read of those exact ids (delta 0) AND that every emitted positionId decodes to a
-///      deployed staking-pool address (the NFT id riding in the typed positionInstanceId).
+/// @dev The adapter is permissionless wrapper-fed: `submit(id)` / `remove(id)` are `msg.sender`-keyed, valued live via
+///      `StakingViewer.getTokens` with ownership re-verified per read via `tokenInfo`. The Nexus Mutual Safe
+///      (`0x8e53…cFE3`) holds 5 positions across 5 pools (tokenIds 180,184,185,186,187); the test submits them one by
+///      one (pranking the Safe) and asserts the per-kind sums equal an independent `getAggregatedTokens` read of those
+///      exact ids (delta 0) AND that every emitted positionId decodes to a deployed staking-pool address (the NFT id
+///      riding in the typed positionInstanceId).
 contract NexusMutualStakingPoolsAssistedBalanceAdapterForkTest is BalanceAdapterTestBase {
     address public constant STAKING_NFT = 0xcafea508a477D94c502c253A58239fb8F948e97f;
     address public constant STAKING_VIEWER = 0xcafea5c7d25a192ba70ECA0E2dB62F835c1cF81F;
@@ -41,11 +45,14 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterForkTest is BalanceAdapter
         balances = new BalancesHarnessForFork();
         balances.registerAssetForTest(NXM, 18, "NXM");
 
-        // admin + assistant = this test, so it can submit the Safe's known tokenIds (all owned by HOLDER → no revert).
-        adapter = new NexusMutualStakingPoolsAssistedBalanceAdapter(
-            STAKING_NFT, STAKING_VIEWER, NXM, address(balances), address(this), address(this)
-        );
-        adapter.submitTokenIds(HOLDER, _knownIds());
+        adapter =
+            new NexusMutualStakingPoolsAssistedBalanceAdapter(STAKING_NFT, STAKING_VIEWER, NXM, address(balances));
+        // Permissionless: the account itself submits its ids (all owned by HOLDER → no revert).
+        uint256[] memory ids = _knownIds();
+        for (uint256 i; i < ids.length; ++i) {
+            vm.prank(HOLDER);
+            adapter.submit(ids[i]);
+        }
     }
 
     function _setupFork() internal override {
@@ -54,8 +61,7 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterForkTest is BalanceAdapter
         vm.rollFork(FORK_BLOCK);
     }
 
-    /// @dev Independent live read of the Safe's known tokenIds — the ground truth the adapter's scan
-    ///      must reproduce.
+    /// @dev Independent live read of the Safe's known tokenIds — the ground truth the adapter's scan must reproduce.
     function _liveTotals() internal view returns (uint256 staking, uint256 rewards) {
         INexusStakingViewer.AggregatedTokens memory agg =
             INexusStakingViewer(STAKING_VIEWER).getAggregatedTokens(_knownIds());
@@ -73,12 +79,9 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterForkTest is BalanceAdapter
 
     function test_realHolder_scanMatchesAggregate() public {
         (uint256 staking, uint256 rewards) = _liveTotals();
-        // Sanity: the pinned values are the live state at FORK_BLOCK.
         assertEq(staking, EXPECTED_STAKING, "pinned staking drift");
         assertEq(rewards, EXPECTED_REWARDS, "pinned rewards drift");
 
-        // The adapter values the Safe's 5 submitted positions and totals them — must equal the independent
-        // aggregate of those exact ids (delta 0).
         (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(HOLDER, NXM);
         assertEq(amount, staking + rewards, "adapter total must equal live getAggregatedTokens (delta 0)");
         assertFalse(isDebt);
@@ -88,7 +91,6 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterForkTest is BalanceAdapter
         (uint256 staking, uint256 rewards) = _liveTotals();
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(HOLDER, address(0));
 
-        // 5 positions → up to 10 legs (Staking+Rewards each, zero legs dropped); at least the 5 Staking legs.
         assertGe(p.length, 5, "expected at least one Staking leg per position");
         assertLe(p.length, 10, "at most two legs per position");
 
@@ -100,7 +102,6 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterForkTest is BalanceAdapter
             assertEq(p[i].protocolSubId, ProtocolIds.NEXUS_MUTUAL_STAKING_POOLS);
             assertEq(p[i].protocolId, ProtocolIds.NEXUS_MUTUAL);
             assertFalse(p[i].isDebt);
-            // positionId = the staking-pool contract address; the NFT id rides in the typed positionInstanceId.
             address pool = abi.decode(p[i].positionId, (address));
             assertGt(pool.code.length, 0, "positionId resolves to a deployed staking pool");
             string[] memory lbl = adapter.positionLabels(p[i].positionId);
@@ -114,7 +115,6 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterForkTest is BalanceAdapter
                 rewardsSum += p[i].amount;
             }
         }
-        // Per-NFT legs must sum back to the independent aggregate (delta 0).
         assertEq(stakingSum, staking, "per-NFT staking legs must sum to live total");
         assertEq(rewardsSum, rewards, "per-NFT rewards legs must sum to live total");
     }
@@ -124,5 +124,125 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterForkTest is BalanceAdapter
         (uint256 amount,) = adapter.getAdapterBalanceForAsset(stranger, NXM);
         assertEq(amount, 0);
         assertEq(adapter.getAdapterPositions(stranger, address(0)).length, 0);
+    }
+
+    /// @notice submit reverts CoordinateNotOwned for a real id not owned by the caller (id 180 belongs to the Safe,
+    ///         not `stranger`).
+    function test_submit_revertsForNonOwnedId() public {
+        address stranger = makeAddr("stranger");
+        vm.prank(stranger);
+        vm.expectRevert(abi.encodeWithSelector(CoordinateNotOwned.selector, stranger, uint256(180)));
+        adapter.submit(180);
+    }
+
+    /// @notice remove is fail-loud for an id the caller never cached (CoordinateNotCached), keyed on msg.sender.
+    function test_remove_revertsForUncachedId() public {
+        address stranger = makeAddr("stranger");
+        vm.prank(stranger);
+        vm.expectRevert(abi.encodeWithSelector(CoordinateNotCached.selector, stranger, uint256(180)));
+        adapter.remove(180);
+    }
+
+    /// @notice remove untracks an owned id: the Safe's total drops by exactly id 180's live value.
+    function test_remove_untracksOwnedId() public {
+        (uint256 amtBefore,) = adapter.getAdapterBalanceForAsset(HOLDER, NXM);
+        uint256 one = _valueOf(180);
+
+        vm.prank(HOLDER);
+        adapter.remove(180);
+
+        assertEq(adapter.tokenIdsOf(HOLDER).length, 4, "one id untracked");
+        (uint256 amtAfter,) = adapter.getAdapterBalanceForAsset(HOLDER, NXM);
+        assertEq(amtAfter, amtBefore - one, "total drops by id 180's value");
+    }
+
+    /// @notice Reads fail open: after the Safe transfers a cached StakingNFT away, that id is discarded on reads even
+    ///         though it stays in the cache (ownership re-verified live via `tokenInfo`).
+    function test_read_discardsTransferredId() public {
+        address stranger = makeAddr("stranger");
+        (uint256 amtBefore,) = adapter.getAdapterBalanceForAsset(HOLDER, NXM);
+        uint256 one = _valueOf(180);
+
+        vm.prank(HOLDER);
+        IStakingNFTLike(STAKING_NFT).transferFrom(HOLDER, stranger, 180);
+
+        // Still cached (the wrapper hasn't GC'd it) but discarded on read since it's no longer owned.
+        assertEq(adapter.tokenIdsOf(HOLDER).length, 5, "cache unchanged");
+        (uint256 amtAfter,) = adapter.getAdapterBalanceForAsset(HOLDER, NXM);
+        assertEq(amtAfter, amtBefore - one, "transferred id discarded from the read");
+    }
+
+    /// @dev Live NXM value (active + expired stake + rewards) of a single tokenId via the viewer.
+    function _valueOf(uint256 tokenId) internal view returns (uint256) {
+        uint256[] memory one = new uint256[](1);
+        one[0] = tokenId;
+        INexusStakingViewer.AggregatedTokens memory agg = INexusStakingViewer(STAKING_VIEWER).getAggregatedTokens(one);
+        return agg.totalActiveStake + agg.totalExpiredStake + agg.totalRewards;
+    }
+
+    // ---- Happy paths for additional real StakingNFT holders on mainnet (block 25,388,000) ----
+
+    function test_realHolder_0x546a() public {
+        _assertHappyPath(0x546a0cB802377153B4fEAe052a5ed14C98B3CC9C, _ids8(25, 41, 75, 94, 137, 143, 144, 218));
+    }
+
+    function test_realHolder_0x8C87() public {
+        _assertHappyPath(0x8C878B8f805472C0b70eD66a71c0B33da3d233c8, _ids5(65, 66, 140, 189, 190));
+    }
+
+    function test_realHolder_0x49Fe() public {
+        _assertHappyPath(0x49Fe6d0096Ec9a51A59231c2D46F09a339d16296, _ids5(90, 91, 92, 182, 183));
+    }
+
+    /// @dev Submit `ids` AS `account` (permissionless, msg.sender-keyed), then assert the adapter's balance AND its
+    ///      per-NFT position legs both equal the independent live `getAggregatedTokens(ids)` total (delta 0).
+    function _assertHappyPath(address account, uint256[] memory ids) internal {
+        for (uint256 i; i < ids.length; ++i) {
+            vm.prank(account);
+            adapter.submit(ids[i]);
+        }
+        INexusStakingViewer.AggregatedTokens memory agg = INexusStakingViewer(STAKING_VIEWER).getAggregatedTokens(ids);
+        uint256 expected = agg.totalActiveStake + agg.totalExpiredStake + agg.totalRewards;
+        assertGt(expected, 0, "fixture holds non-zero NXM");
+
+        (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(account, NXM);
+        assertEq(amount, expected, "adapter total == live getAggregatedTokens (delta 0)");
+        assertFalse(isDebt);
+
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(account, address(0));
+        uint256 sum;
+        for (uint256 i; i < p.length; ++i) {
+            assertEq(p[i].balanceAsset.asset, NXM);
+            assertEq(p[i].protocolSubId, ProtocolIds.NEXUS_MUTUAL_STAKING_POOLS);
+            assertFalse(p[i].isDebt);
+            assertGt(abi.decode(p[i].positionId, (address)).code.length, 0, "positionId is a deployed pool");
+            sum += p[i].amount;
+        }
+        assertEq(sum, expected, "position legs sum to the live aggregate");
+    }
+
+    function _ids5(uint256 a, uint256 b, uint256 c, uint256 d, uint256 e) internal pure returns (uint256[] memory ids) {
+        ids = new uint256[](5);
+        ids[0] = a;
+        ids[1] = b;
+        ids[2] = c;
+        ids[3] = d;
+        ids[4] = e;
+    }
+
+    function _ids8(uint256 a, uint256 b, uint256 c, uint256 d, uint256 e, uint256 f, uint256 g, uint256 h)
+        internal
+        pure
+        returns (uint256[] memory ids)
+    {
+        ids = new uint256[](8);
+        ids[0] = a;
+        ids[1] = b;
+        ids[2] = c;
+        ids[3] = d;
+        ids[4] = e;
+        ids[5] = f;
+        ids[6] = g;
+        ids[7] = h;
     }
 }

@@ -1,140 +1,60 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
-import {SingleAssetBalanceAdapterBase} from "../SingleAssetBalanceAdapterBase.sol";
-import {IBalanceAdapter} from "../IBalanceAdapter.sol";
-import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
-import {IPositionDescribable} from "../IPositionDescribable.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+
+import {AssistedNftIdCache} from "src/balances/AssistedBalanceAdapters/AssistedNftIdCache.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
+import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
-import {InvalidArguments} from "src/errors.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
+import "src/errors.sol";
 
-/// @title Stader Withdrawal Queue Balance Adapter
+/// @title Stader Withdrawal Queue Balance Adapter (id-cached, wrapper-fed)
 /// @author KPK
-/// @notice Reports ETH owed to an account from open requests in Stader's UserWithdrawalManager.
-/// @dev When a user requests an unstake, ETHx is burned and a sequential request id is recorded.
-///      Until claimed, the value lives as ETH owed by the manager. This adapter enumerates the account's
-///      request ids (`requestIdsByUserAddress`), reads each request (`userWithdrawRequests`), and emits
-///      **one position per open request**, all under a single static positionId
-///      (`abi.encode(address(USER_WITHDRAWAL_MANAGER))`) denominated in `UNDERLYING_TOKEN` (typically WETH).
-///      A Stader request is binary — fully claimable OR fully locked — so each leg is valued at that
-///      request's owed ETH (`ethFinalized` once finalized, else the rate-converted `ethExpected`) with
-///      `isLocked = false` for a finalized (claimable) request and `true` for a not-yet-finalized one. The
-///      request id rides in each leg's typed `positionInstanceId` (`bytes32(requestId)`), never in
-///      `positionId` (the legs share the static positionId and are distinguished by their `positionInstanceId`,
-///      for NAV by summing). The balance methods (`getAdapterBalances`) still report the summed total.
-contract StaderWithdrawalQueueBalanceAdapter is SingleAssetBalanceAdapterBase {
-    //
-    // Errors
-    //
-
-    /// @notice Thrown when `requestIdsByUserAddress` panics with a code other than 0x32 (array OOB).
-    /// @dev Surfaces the unexpected panic rather than silently treating it as enumeration end.
-    error UnexpectedPanic(uint256 panicCode);
-
-    //
-    // Constants
-    //
-
-    /// @notice Hard cap on the number of request slots probed per account.
-    /// @dev Bounds gas; in practice an account never has more than a handful of pending requests.
-    uint256 internal constant MAX_REQUESTS_PROBED = 256;
+/// @notice Reports the in-flight ETH owed to an account from open requests in Stader's `UserWithdrawalManager`.
+///         Requesting an unstake burns ETHx and records a sequential `requestId` owned by the account; until claimed,
+///         the value lives as ETH owed by the manager and is invisible to a wallet/receipt-token scan. Rather than
+///         enumerate `requestIdsByUserAddress` on-chain (griefable — anyone can `requestWithdraw(amount, _owner=victim)`
+///         to bloat a victim's array past the probe cap), each account tracks its **own** request ids via {submit},
+///         keyed on `msg.sender`. The intended caller is a Safe that **delegatecalls** the `StaderWithdrawalQueueWrapper`,
+///         which forwards the Stader `requestWithdraw`/`claim` and updates this cache atomically in the same transaction.
+/// @dev Member of the permissionless wrapper-fed assisted family ([ADR 0018](../../../docs/decisions/0018-wrapper-fed-assisted-balance-adapters.md)),
+///      extending {AssistedNftIdCache}: the cache stores **only request ids, never amounts**, every read re-verifies
+///      ownership (`userWithdrawRequests(id).owner == account`) and re-values live, so a stale or wrong id can only
+///      under-report NAV. Denominated in `UNDERLYING_TOKEN` (WETH): the claim pays native ETH whose amount is fixed at
+///      finalization. Emits ONE `Supplied` leg per owned cached request, all sharing the static
+///      `positionId = abi.encode(address(USER_WITHDRAWAL_MANAGER))`; each leg's `isLocked` reflects the request's state
+///      (finalized → `false`, pending → `true`) and its request id rides in `positionInstanceId`. The default
+///      {_removable} (removable iff no longer owned) is correct: a claimed request has its owner deleted to `address(0)`.
+contract StaderWithdrawalQueueBalanceAdapter is AssistedNftIdCache, IPositionDescribable {
+    /// @notice Hard cap on cached request ids per account (read-loop gas bound). A real account never approaches it.
+    uint256 public constant MAX_REQUESTS = 256;
 
     bytes32 private constant PROTOCOL_BRAND = ProtocolIds.STADER;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.STADER;
     bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.STADER_WITHDRAWAL;
 
-    //
-    // State
-    //
-
-    /// @notice Stader UserWithdrawalManager contract.
+    /// @notice Stader UserWithdrawalManager contract (source of ownership + per-request data).
     IUserWithdrawalManager public immutable USER_WITHDRAWAL_MANAGER;
 
-    /// @notice Reference to NAVCalculator for asset registry access.
-    INAVCalculator public immutable NAV_CALCULATOR;
-
-    //
-    // Constructor
-    //
-
-    /// @param userWithdrawalManager_ Address of Stader's UserWithdrawalManager contract.
-    /// @param underlyingToken_ Address of the asset positions are denominated in (e.g. WETH).
-    /// @param navCalculator_ The NAVCalculator address used for asset-registry filtering.
+    /// @param userWithdrawalManager_ Address of Stader's UserWithdrawalManager contract. Must be a contract.
+    /// @param underlyingToken_       Address of the asset positions are denominated in (WETH). Must be non-zero.
+    /// @param navCalculator_         The NAVCalculator address used for asset-registry filtering. Must be a contract.
     constructor(address userWithdrawalManager_, address underlyingToken_, address navCalculator_)
-        SingleAssetBalanceAdapterBase(underlyingToken_)
+        AssistedNftIdCache(underlyingToken_, navCalculator_)
     {
         if (userWithdrawalManager_ == address(0)) revert InvalidArguments();
         AddressCheckLib.requireContract(userWithdrawalManager_, "UserWithdrawalManager");
-        AddressCheckLib.requireContract(navCalculator_, "NAVCalculator");
-
         USER_WITHDRAWAL_MANAGER = IUserWithdrawalManager(userWithdrawalManager_);
-        NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
-    //
-    // Balance computation
-    //
-
-    /// @notice Sums the ETH owed across all open withdrawal requests for `account`.
-    /// @dev Iterates `requestIdsByUserAddress(account, i)` until the auto-generated getter signals
-    ///      array-out-of-bounds, then reads each request via `userWithdrawRequests(id)`. Skips
-    ///      entries deleted on claim (owner == address(0)). Uses `ethFinalized` once the batch has
-    ///      been finalized; otherwise falls back to `ethExpected` (the rate-converted estimate at
-    ///      request time).
-    /// @dev OOB enumeration end is detected via two complementary paths:
-    ///      1. **Modern Solidity (≥0.8)**: array OOB raises Panic(0x32).
-    ///      2. **Legacy Solidity (Stader's deployed UserWithdrawalManager)**: array OOB raises a
-    ///         bare empty revert with no return data.
-    ///      Any other panic / revert with data propagates as `UnexpectedPanic` / re-thrown bytes
-    ///      so NAVCalculator's outer try/catch surfaces the failure rather than the adapter
-    ///      silently undercounting NAV.
-    function _ethOwed(address account) internal view returns (uint256 total) {
-        if (account == address(0)) {
-            return 0;
-        }
-
-        for (uint256 i = 0; i < MAX_REQUESTS_PROBED; i++) {
-            try USER_WITHDRAWAL_MANAGER.requestIdsByUserAddress(account, i) returns (uint256 requestId) {
-                (address owner,, uint256 ethExpected, uint256 ethFinalized,) =
-                    USER_WITHDRAWAL_MANAGER.userWithdrawRequests(requestId);
-
-                if (owner == address(0)) {
-                    // Already claimed: storage entry deleted, but the id may still sit in the user's
-                    // index array on some Stader deployments. Skip it.
-                    continue;
-                }
-
-                total += ethFinalized > 0 ? ethFinalized : ethExpected;
-            } catch Panic(uint256 panicCode) {
-                // 0x32 = array index out of bounds — list exhausted, return what we have.
-                if (panicCode == 0x32) {
-                    return total;
-                }
-                revert UnexpectedPanic(panicCode);
-            } catch (bytes memory data) {
-                // Legacy-compiled getter raises a bare revert (no return data) when the index is
-                // past the end of the array. Treat empty revert as the OOB sentinel; anything else
-                // is a real error and is bubbled up.
-                if (data.length == 0) {
-                    return total;
-                }
-                assembly {
-                    revert(add(data, 0x20), mload(data))
-                }
-            }
-        }
-    }
-
-    //
-    // IBalanceAdapter
-    //
-
-    /// @inheritdoc SingleAssetBalanceAdapterBase
-    function _owedAmount(address account) internal view override returns (uint256) {
-        return _ethOwed(account);
+    /// @notice Candidate request ids currently cached for `account` (display/debug; not ownership-filtered).
+    function requestIdsOf(address account) external view returns (uint256[] memory) {
+        return _cachedTokenIds(account);
     }
 
     /// @inheritdoc IPositionDescribable
@@ -143,118 +63,85 @@ contract StaderWithdrawalQueueBalanceAdapter is SingleAssetBalanceAdapterBase {
     }
 
     /// @inheritdoc IPositionDescribable
-    /// @dev `["Withdrawal Queue", "ETHx"]` — category + the receipt-token symbol (matching the sibling queues). All
-    ///      requests share the queue `positionId`; the per-request sequential id is the typed `positionInstanceId` on
-    ///      each leg, NOT a label.
+    /// @dev `["Withdrawal Queue", "ETHx"]` — category + the receipt-token symbol (matching the sibling queues).
     function positionLabels(bytes calldata) external pure override returns (string[] memory out) {
         out = new string[](2);
         out[0] = "Withdrawal Queue";
         out[1] = "ETHx";
     }
 
-    /// @inheritdoc IBalanceAdapter
-    /// @notice Returns ONE ETH-denominated `Supplied` leg per open (un-claimed) withdrawal request, all sharing the
-    ///         static `positionId = abi.encode(address(USER_WITHDRAWAL_MANAGER))`. Each leg's `isLocked` reflects that
-    ///         request's state (finalized → `false`, pending → `true`) and its request id is the typed
-    ///         `positionInstanceId`.
-    /// @dev A Stader request is binary — fully claimable OR fully locked — so each open request emits exactly one leg:
-    ///      a finalized request (`ethFinalized > 0`) is valued at `ethFinalized` with `isLocked = false`; any other
-    ///      un-claimed request is valued at `ethExpected` with `isLocked = true`. Claimed entries
-    ///      (owner == address(0)) and zero-amount legs are skipped. The legs sum to `_ethOwed`'s total. The request id
-    ///      rides in `positionInstanceId` (`bytes32(requestId)`), NOT in `positionId`, so multiple requests share the
-    ///      static positionId and are distinguished by their `positionInstanceId` (and for NAV by summing). Same OOB
-    ///      enumeration as `_ethOwed`. Dropped entirely if the underlying asset is not registered in NAVCalculator.
-    function getAdapterPositions(address account, address assetFilter)
-        external
+    /// @inheritdoc IERC165
+    function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
+        return interfaceId == type(IPositionDescribable).interfaceId || super.supportsInterface(interfaceId);
+    }
+
+    //
+    // Hooks
+    //
+
+    /// @inheritdoc AssistedNftIdCache
+    function _maxTokenIds() internal pure override returns (uint256) {
+        return MAX_REQUESTS;
+    }
+
+    /// @inheritdoc AssistedNftIdCache
+    function _maxLegsPerId() internal pure override returns (uint256) {
+        return 1;
+    }
+
+    /// @inheritdoc AssistedNftIdCache
+    /// @dev A claimed request has its manager storage entry deleted (`owner == address(0)`), so it reads back unowned.
+    function _ownerOf(uint256 requestId) internal view override returns (address owner, bool ok) {
+        (address o,,,,) = USER_WITHDRAWAL_MANAGER.userWithdrawRequests(requestId);
+        return (o, o != address(0));
+    }
+
+    /// @inheritdoc AssistedNftIdCache
+    /// @notice ONE ETH `Supplied` leg per owned cached request (finalized → `isLocked=false`, pending → `true`); the
+    ///         request id rides in `positionInstanceId`, all sharing `positionId = abi.encode(USER_WITHDRAWAL_MANAGER)`.
+    function _valueTokenId(address account, uint256 requestId, INAVCalculator.Asset memory underlying)
+        internal
         view
         override
-        returns (INAVCalculator.PositionBalance[] memory positions)
+        returns (INAVCalculator.PositionBalance[] memory)
     {
-        // Asset-filter mismatch → no positions for this adapter.
-        if (assetFilter != address(0) && assetFilter != UNDERLYING_TOKEN) {
-            return new INAVCalculator.PositionBalance[](0);
-        }
-        if (account == address(0)) {
-            return new INAVCalculator.PositionBalance[](0);
-        }
+        (uint256 amount, bool finalized) = _owedForRequest(account, requestId);
+        if (amount == 0) return new INAVCalculator.PositionBalance[](0);
+        INAVCalculator.PositionBalance[] memory legs = new INAVCalculator.PositionBalance[](1);
+        legs[0] = INAVCalculator.PositionBalance({
+            balanceAsset: underlying,
+            balanceAdapter: address(this),
+            amount: amount,
+            isDebt: false,
+            protocolBrand: PROTOCOL_BRAND,
+            protocolId: PROTOCOL_ID,
+            protocolSubId: PROTOCOL_SUB_ID,
+            positionId: abi.encode(address(USER_WITHDRAWAL_MANAGER)),
+            positionKind: PositionKind.Supplied,
+            isLocked: !finalized,
+            positionInstanceId: bytes32(requestId)
+        });
+        return legs;
+    }
 
-        // Underlying must be registered in NAVCalculator for the position to count in NAV.
-        INAVCalculator.Asset[] memory reg = NAV_CALCULATOR.getRegisteredAssets();
-        (INAVCalculator.Asset memory underlying, bool registered) = RegisteredAssetLib.find(reg, UNDERLYING_TOKEN);
-        if (!registered) {
-            return new INAVCalculator.PositionBalance[](0);
-        }
-
-        bytes memory positionId = abi.encode(address(USER_WITHDRAWAL_MANAGER));
-        INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](MAX_REQUESTS_PROBED);
-        uint256 n;
-        for (uint256 i = 0; i < MAX_REQUESTS_PROBED; i++) {
-            try USER_WITHDRAWAL_MANAGER.requestIdsByUserAddress(account, i) returns (uint256 requestId) {
-                (address owner,, uint256 ethExpected, uint256 ethFinalized,) =
-                    USER_WITHDRAWAL_MANAGER.userWithdrawRequests(requestId);
-                if (owner == address(0)) {
-                    // Already claimed (storage deleted) but id may linger in the index array — skip.
-                    continue;
-                }
-
-                uint256 amount;
-                bool locked;
-                if (ethFinalized > 0) {
-                    amount = ethFinalized;
-                    locked = false;
-                } else {
-                    amount = ethExpected;
-                    locked = true;
-                }
-                if (amount == 0) {
-                    continue;
-                }
-
-                temp[n++] = INAVCalculator.PositionBalance({
-                    balanceAsset: underlying,
-                    balanceAdapter: address(this),
-                    amount: amount,
-                    isDebt: false,
-                    protocolBrand: PROTOCOL_BRAND,
-                    protocolId: PROTOCOL_ID,
-                    protocolSubId: PROTOCOL_SUB_ID,
-                    positionId: positionId,
-                    positionKind: PositionKind.Supplied,
-                    isLocked: locked,
-                    positionInstanceId: bytes32(requestId)
-                });
-            } catch Panic(uint256 panicCode) {
-                // 0x32 = array index out of bounds — list exhausted.
-                if (panicCode == 0x32) {
-                    break;
-                }
-                revert UnexpectedPanic(panicCode);
-            } catch (bytes memory data) {
-                // Legacy getter: bare empty revert is the OOB sentinel; anything else is a real error.
-                if (data.length == 0) {
-                    break;
-                }
-                assembly {
-                    revert(add(data, 0x20), mload(data))
-                }
-            }
-        }
-
-        positions = new INAVCalculator.PositionBalance[](n);
-        for (uint256 i = 0; i < n; i++) {
-            positions[i] = temp[i];
-        }
+    /// @dev ETH owed for a single request and whether it is finalized. `amount` is 0 if the request is not owned by
+    ///      `account` (claimed → owner deleted). Mirrors the manager's accounting: finalized (`ethFinalized > 0`) → the
+    ///      exact `ethFinalized`; pending → the rate-converted `ethExpected` estimate at request time.
+    function _owedForRequest(address account, uint256 requestId)
+        internal
+        view
+        returns (uint256 amount, bool finalized)
+    {
+        (address owner,, uint256 ethExpected, uint256 ethFinalized,) =
+            USER_WITHDRAWAL_MANAGER.userWithdrawRequests(requestId);
+        if (owner != account) return (0, false);
+        if (ethFinalized > 0) return (ethFinalized, true);
+        return (ethExpected, false);
     }
 }
 
 /// @notice Minimal interface for Stader's UserWithdrawalManager.
-/// @dev Mirrors the Solidity-auto-generated getters for the public mappings used by the adapter.
 interface IUserWithdrawalManager {
-    /// @notice Returns the request id at position `index` of the user's request array.
-    /// @dev Reverts with array-out-of-bounds when `index >= userRequests.length`.
-    function requestIdsByUserAddress(address user, uint256 index) external view returns (uint256 requestId);
-
-    /// @notice Returns the per-request `UserWithdrawInfo` tuple for a given request id.
     /// @return owner Owner of the request (zero after a successful claim).
     /// @return ethXAmount Amount of ETHx originally burned to create the request.
     /// @return ethExpected Estimated ETH owed at request time (rate-converted).

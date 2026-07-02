@@ -9,11 +9,10 @@ import {
     NexusMutualStakingPoolsAssistedBalanceAdapter,
     INexusStakingViewer
 } from "src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsAssistedBalanceAdapter.sol";
+import {IAssistedBalanceAdapter} from "src/balances/IAssistedBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {IAssistantFedBalanceAdapter} from "src/balances/IAssistantFedBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
-import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -43,10 +42,8 @@ contract MockStakingNFT {
     }
 }
 
-/// @notice Minimal mock of Nexus's StakingViewer — stores per-token (poolId, active, expired, rewards)
-///         and returns them via both `getTokens` (per-token; backs both the positions view and the balance
-///         getters, which sum the same per-id legs) and `getAggregatedTokens` (summed; present for ABI parity
-///         only — this adapter never calls it).
+/// @notice Minimal mock of Nexus's StakingViewer — stores per-token (poolId, active, expired, rewards) and returns
+///         them via `getTokens` / `getAggregatedTokens`.
 contract MockStakingViewer {
     mapping(uint256 => uint256) public poolId;
     mapping(uint256 => uint256) public active;
@@ -116,7 +113,10 @@ contract MockNexusStakingPool {
     }
 }
 
-/// @title NexusMutualStakingPoolsAssistedBalanceAdapter unit tests (assisted, agent-fed)
+/// @title NexusMutualStakingPoolsAssistedBalanceAdapter unit tests (permissionless, wrapper-fed)
+/// @notice The Nexus staking adapter is permissionless wrapper-fed: `submit`/`remove` are `msg.sender`-keyed (the
+///         owner Safe delegatecalls the wrapper, so the adapter sees the Safe as `msg.sender`). Covers the feed
+///         surface, per-NFT valuation legs, labels, read-time ownership discard, fault isolation, and interfaces.
 contract NexusMutualStakingPoolsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
     NexusMutualStakingPoolsAssistedBalanceAdapter public adapter;
     MockStakingNFT public nft;
@@ -126,16 +126,13 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterTest is BalanceAdapterTest
     address holder = makeAddr("holder");
     address other = makeAddr("other");
 
-    bytes32 constant ASSISTANT_ROLE = keccak256("ASSISTANT_ROLE");
-
     function setUp() public override {
         super.setUp();
         nft = new MockStakingNFT();
         viewer = new MockStakingViewer();
         nxm = _createAndRegisterToken("NXM", 18);
-        // admin + assistant = this test, so it can submit/clear tokenIds.
         adapter = new NexusMutualStakingPoolsAssistedBalanceAdapter(
-            address(nft), address(viewer), address(nxm), address(balances), address(this), address(this)
+            address(nft), address(viewer), address(nxm), address(balances)
         );
     }
 
@@ -143,77 +140,66 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterTest is BalanceAdapterTest
 
     function test_constructor_revertsOnZeroNft() public {
         vm.expectRevert(InvalidArguments.selector);
-        new NexusMutualStakingPoolsAssistedBalanceAdapter(
-            address(0), address(viewer), address(nxm), address(balances), address(this), address(this)
-        );
+        new NexusMutualStakingPoolsAssistedBalanceAdapter(address(0), address(viewer), address(nxm), address(balances));
     }
 
     function test_constructor_revertsOnZeroViewer() public {
         vm.expectRevert(InvalidArguments.selector);
-        new NexusMutualStakingPoolsAssistedBalanceAdapter(
-            address(nft), address(0), address(nxm), address(balances), address(this), address(this)
-        );
+        new NexusMutualStakingPoolsAssistedBalanceAdapter(address(nft), address(0), address(nxm), address(balances));
     }
 
     function test_constructor_revertsOnZeroUnderlying() public {
         vm.expectRevert(InvalidArguments.selector);
-        new NexusMutualStakingPoolsAssistedBalanceAdapter(
-            address(nft), address(viewer), address(0), address(balances), address(this), address(this)
-        );
+        new NexusMutualStakingPoolsAssistedBalanceAdapter(address(nft), address(viewer), address(0), address(balances));
     }
 
     function test_constructor_revertsOnZeroNav() public {
         vm.expectRevert(InvalidArguments.selector);
-        new NexusMutualStakingPoolsAssistedBalanceAdapter(
-            address(nft), address(viewer), address(nxm), address(0), address(this), address(this)
-        );
+        new NexusMutualStakingPoolsAssistedBalanceAdapter(address(nft), address(viewer), address(nxm), address(0));
     }
 
     function test_constructor_revertsWhenNftNotContract() public {
         vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "StakingNFT"));
         new NexusMutualStakingPoolsAssistedBalanceAdapter(
-            makeAddr("eoa"), address(viewer), address(nxm), address(balances), address(this), address(this)
+            makeAddr("eoa"), address(viewer), address(nxm), address(balances)
         );
     }
 
-    function test_roles_grantedToConstructorArgs() public view {
-        assertTrue(adapter.hasRole(ASSISTANT_ROLE, address(this)));
-        assertTrue(adapter.hasRole(adapter.DEFAULT_ADMIN_ROLE(), address(this)));
-        assertFalse(adapter.hasRole(ASSISTANT_ROLE, other));
-    }
+    // ---- Feed (permissionless, msg.sender-keyed) + valuation ----
 
-    // ---- Discovery (agent-fed) + valuation ----
-
-    /// @dev Seed an owned token for `holder` in pool `pool`, value it, and submit its id to the cache.
+    /// @dev Seed an owned token for `holder` in pool `pool`, value it, and submit its id AS the holder (single).
     function _seedOne(uint256 id, uint256 pool, uint256 a, uint256 e, uint256 r) internal {
         nft.setToken(id, pool, holder);
         viewer.setToken(id, pool, a, e, r);
-        uint256[] memory ids = new uint256[](1);
-        ids[0] = id;
-        adapter.submitTokenIds(holder, ids);
+        vm.prank(holder);
+        adapter.submit(id);
     }
 
-    function test_submittedTokensAggregate() public {
-        // Submit is replace semantics, so both ids must go in ONE list (two separate submits would replace, not
-        // accumulate). Seed the mock state for both, then submit them together.
-        nft.setToken(2, 1, holder);
-        viewer.setToken(2, 1, 100, 10, 3);
-        nft.setToken(5, 1, holder);
-        viewer.setToken(5, 1, 100, 10, 3); // each owned: 100 active + 10 expired + 3 rewards
-        uint256[] memory ids = new uint256[](2);
-        ids[0] = 2;
-        ids[1] = 5;
-        adapter.submitTokenIds(holder, ids);
+    /// @notice Incremental submits ACCUMULATE (unlike the assistant-fed full-set replace).
+    function test_submit_accumulates() public {
+        _seedOne(2, 1, 100, 10, 3);
+        _seedOne(5, 1, 100, 10, 3);
+        assertEq(adapter.tokenIdsOf(holder).length, 2);
         (uint256 amt, bool d) = adapter.getAdapterBalanceForAsset(holder, address(nxm));
         // staking = (100+10)*2 = 220; rewards = 3*2 = 6; total = 226
         assertEq(amt, 226);
         assertEq(d, false);
     }
 
+    /// @notice Re-submitting an already-cached id is a no-op (idempotent) — the count and value do not change.
+    function test_submit_idempotent() public {
+        _seedOne(2, 1, 100, 0, 5);
+        vm.prank(holder);
+        adapter.submit(2); // duplicate
+        assertEq(adapter.tokenIdsOf(holder).length, 1);
+        (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, address(nxm));
+        assertEq(amt, 105);
+    }
+
     function test_unsubmittedAccount_zero() public {
         _seedOne(3, 1, 100, 0, 5);
         (uint256 amt,) = adapter.getAdapterBalanceForAsset(other, address(nxm));
-        assertEq(amt, 0); // `other` has no submitted ids
+        assertEq(amt, 0);
     }
 
     function test_balanceForWrongAsset_zero() public {
@@ -228,12 +214,11 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterTest is BalanceAdapterTest
         _seedOne(4, 7, 100, 20, 7); // pool 7
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
         assertEq(p.length, 2);
-        // leg 0 = Staking (active+expired = 120), leg 1 = Rewards (7)
         assertEq(uint8(p[0].positionKind), uint8(PositionKind.Staking));
         assertEq(p[0].amount, 120);
         assertEq(uint8(p[1].positionKind), uint8(PositionKind.Rewards));
         assertEq(p[1].amount, 7);
-        bytes memory expectedId = abi.encode(viewer.poolAddr(7)); // positionId = staking-pool address
+        bytes memory expectedId = abi.encode(viewer.poolAddr(7));
         for (uint256 i; i < 2; i++) {
             assertEq(p[i].balanceAsset.asset, address(nxm));
             assertEq(p[i].balanceAdapter, address(adapter));
@@ -241,8 +226,6 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterTest is BalanceAdapterTest
             assertEq(p[i].protocolId, ProtocolIds.NEXUS_MUTUAL);
             assertEq(p[i].positionId, expectedId);
             assertEq(p[i].isDebt, false);
-            // Static breadcrumb = [category, leaf]; the mock pool address has no getPoolId(), so positionLabels
-            // falls back to the pool address. The "Pool #<id>" path is covered by test_positionLabels_poolIdLeaf.
             string[] memory lbl = adapter.positionLabels(p[i].positionId);
             assertEq(lbl.length, 2);
             assertEq(lbl[0], "Staking Pools");
@@ -252,7 +235,6 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterTest is BalanceAdapterTest
     }
 
     function test_positionLabels_poolIdLeaf() public {
-        // A real StakingPool exposes getPoolId(); the leaf is "Pool #<id>" (matches the Nexus UI numbering).
         MockNexusStakingPool pool = new MockNexusStakingPool(42);
         string[] memory lbl = adapter.positionLabels(abi.encode(address(pool)));
         assertEq(lbl.length, 2);
@@ -260,58 +242,24 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterTest is BalanceAdapterTest
         assertEq(lbl[1], "Pool #42");
     }
 
-    function test_positionLabels_fallsBackToAddressWhenNoPoolId() public {
-        // A positionId whose pool has no getPoolId() (non-Nexus / EOA) falls back to the pool address.
-        address notAPool = makeAddr("notAPool");
-        string[] memory lbl = adapter.positionLabels(abi.encode(notAPool));
-        assertEq(lbl.length, 2);
-        assertEq(lbl[0], "Staking Pools");
-        assertEq(lbl[1], Strings.toHexString(notAPool));
-    }
-
-    /// @dev Two positions in two different pools → 4 legs, each keyed by its own (tokenId, poolId). Read order
-    ///      follows the cache (submission) order: token 1 then token 2.
     function test_positions_twoPools_distinctPositionIds() public {
         nft.setToken(1, 7, holder);
         viewer.setToken(1, 7, 100, 0, 1);
         nft.setToken(2, 9, holder);
         viewer.setToken(2, 9, 200, 0, 2);
-        uint256[] memory ids = new uint256[](2);
-        ids[0] = 1;
-        ids[1] = 2;
-        adapter.submitTokenIds(holder, ids);
+        vm.prank(holder);
+        adapter.submit(1);
+        vm.prank(holder);
+        adapter.submit(2);
 
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
-        assertEq(p.length, 4); // (Staking+Rewards) x 2 tokens
-        // token 1 → pool 7 (cache order); positionId = pool address, NFT id in positionInstanceId
+        assertEq(p.length, 4);
         assertEq(p[0].positionId, abi.encode(viewer.poolAddr(7)));
-        assertEq(p[1].positionId, abi.encode(viewer.poolAddr(7)));
         assertEq(p[0].positionInstanceId, bytes32(uint256(1)));
         assertEq(p[0].amount, 100);
-        assertEq(p[1].amount, 1);
-        // token 2 → pool 9
         assertEq(p[2].positionId, abi.encode(viewer.poolAddr(9)));
-        assertEq(p[3].positionId, abi.encode(viewer.poolAddr(9)));
         assertEq(p[2].positionInstanceId, bytes32(uint256(2)));
         assertEq(p[2].amount, 200);
-        assertEq(p[3].amount, 2);
-    }
-
-    function test_positions_onlyStakingWhenNoRewards() public {
-        _seedOne(1, 3, 50, 0, 0);
-        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
-        assertEq(p.length, 1);
-        assertEq(uint8(p[0].positionKind), uint8(PositionKind.Staking));
-        assertEq(p[0].amount, 50);
-        assertEq(p[0].positionId, abi.encode(viewer.poolAddr(3)));
-    }
-
-    function test_positions_onlyRewardsWhenNoStake() public {
-        _seedOne(1, 3, 0, 0, 9);
-        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
-        assertEq(p.length, 1);
-        assertEq(uint8(p[0].positionKind), uint8(PositionKind.Rewards));
-        assertEq(p[0].amount, 9);
     }
 
     function test_positions_emptyWhenNothingSubmitted() public view {
@@ -320,23 +268,22 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterTest is BalanceAdapterTest
 
     function test_positions_assetFilterMatch_andMismatch() public {
         _seedOne(1, 1, 100, 0, 0);
-        assertEq(adapter.getAdapterPositions(holder, address(nxm)).length, 1); // match → leg
-        assertEq(adapter.getAdapterPositions(holder, address(weth)).length, 0); // mismatch → empty
+        assertEq(adapter.getAdapterPositions(holder, address(nxm)).length, 1);
+        assertEq(adapter.getAdapterPositions(holder, address(weth)).length, 0);
     }
 
     function test_unregisteredUnderlying_positionsEmpty_butBalanceOwed() public {
         BalancesHarness freshNav = new BalancesHarness();
         NexusMutualStakingPoolsAssistedBalanceAdapter a2 = new NexusMutualStakingPoolsAssistedBalanceAdapter(
-            address(nft), address(viewer), address(nxm), address(freshNav), address(this), address(this)
+            address(nft), address(viewer), address(nxm), address(freshNav)
         );
         nft.setToken(1, 1, holder);
         viewer.setToken(1, 1, 100, 0, 5);
-        uint256[] memory ids = new uint256[](1);
-        ids[0] = 1;
-        a2.submitTokenIds(holder, ids);
-        assertEq(a2.getAdapterPositions(holder, address(0)).length, 0); // NXM not registered → dropped
+        vm.prank(holder);
+        a2.submit(1);
+        assertEq(a2.getAdapterPositions(holder, address(0)).length, 0);
         (uint256 amt,) = a2.getAdapterBalanceForAsset(holder, address(nxm));
-        assertEq(amt, 105); // balance still computed
+        assertEq(amt, 105);
     }
 
     function test_getAdapterBalances_shape() public {
@@ -348,97 +295,101 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterTest is BalanceAdapterTest
         assertEq(isDebt[0], false);
     }
 
-    // ---- Assisted-cache behaviour ----
+    // ---- Feed cache behaviour ----
 
-    function test_submit_onlyAssistantRole() public {
-        nft.setToken(1, 1, holder);
-        uint256[] memory ids = new uint256[](1);
-        ids[0] = 1;
-        vm.prank(other);
-        vm.expectRevert(
-            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, other, ASSISTANT_ROLE)
-        );
-        adapter.submitTokenIds(holder, ids);
-    }
-
-    /// @notice Writes are fail-loud: submitting an id not owned by the account reverts NotTokenOwner.
+    /// @notice Writes are fail-loud: submitting an id not owned by the caller reverts CoordinateNotOwned.
     function test_submit_revertsOnNonOwnedId() public {
         nft.setToken(1, 1, other); // owned by `other`, not holder
-        uint256[] memory ids = new uint256[](1);
-        ids[0] = 1;
-        vm.expectRevert(abi.encodeWithSelector(NotTokenOwner.selector, holder, uint256(1)));
-        adapter.submitTokenIds(holder, ids);
+        vm.prank(holder);
+        vm.expectRevert(abi.encodeWithSelector(CoordinateNotOwned.selector, holder, uint256(1)));
+        adapter.submit(1);
+    }
+
+    /// @notice Ownership is re-verified on EVERY submit — re-submitting an already-cached id the caller has since
+    ///         transferred away reverts CoordinateNotOwned (the check is not bypassed by the dedup).
+    function test_submit_reverifiesOwnershipOnResubmit() public {
+        _seedOne(2, 1, 100, 0, 0); // holder owns 2 and it is cached
+        nft.setToken(2, 1, other); // 2 transferred to `other`
+        vm.prank(holder);
+        vm.expectRevert(abi.encodeWithSelector(CoordinateNotOwned.selector, holder, uint256(2)));
+        adapter.submit(2);
+    }
+
+    function test_remove_stopsTracking() public {
+        _seedOne(1, 1, 100, 0, 0);
+        _seedOne(2, 1, 200, 0, 0);
+        vm.prank(holder);
+        adapter.remove(1);
+        assertEq(adapter.tokenIdsOf(holder).length, 1);
+        (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, address(nxm));
+        assertEq(amt, 200);
+    }
+
+    /// @notice Removing an id the caller never cached is fail-loud (CoordinateNotCached), even if the caller owns it.
+    function test_remove_uncachedReverts() public {
+        _seedOne(1, 1, 100, 0, 0);
+        nft.setToken(999, 1, holder); // holder owns 999 but it was never cached
+        vm.prank(holder);
+        vm.expectRevert(abi.encodeWithSelector(CoordinateNotCached.selector, holder, uint256(999)));
+        adapter.remove(999);
+    }
+
+    /// @notice Nexus does not burn the StakingNFT on withdraw, so remove is unconditional for a cached id (the
+    ///         adapter's `_removable` is overridden to `true`): even an id transferred away is removable.
+    function test_remove_cachedRemovesUnconditionally() public {
+        _seedOne(1, 1, 100, 0, 0);
+        nft.setToken(1, 1, other); // 1 transferred away from holder
+        vm.prank(holder);
+        adapter.remove(1);
+        assertEq(adapter.tokenIdsOf(holder).length, 0);
     }
 
     /// @notice Reads are fail-open: an id transferred away after submission is silently discarded.
     function test_read_discardsTransferredId() public {
         _seedOne(1, 1, 100, 0, 0);
         _seedOne(2, 1, 200, 0, 0);
-        nft.setToken(1, 1, other); // token 1 moves to `other`
+        nft.setToken(1, 1, other);
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
-        assertEq(p.length, 1, "transferred token discarded; remaining token reported");
-        assertEq(p[0].positionId, abi.encode(viewer.poolAddr(1)));
+        assertEq(p.length, 1);
         assertEq(p[0].positionInstanceId, bytes32(uint256(2)));
         (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, address(nxm));
         assertEq(amt, 200);
     }
 
-    /// @notice Reads are fail-open: an id whose tokenInfo reverts is silently discarded.
     function test_read_discardsRevertingId() public {
         _seedOne(2, 1, 100, 0, 0);
         _seedOne(4, 1, 100, 0, 0);
-        nft.setRevertId(2); // tokenInfo(2) reverts → skipped
+        nft.setRevertId(2);
         (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, address(nxm));
-        assertEq(amt, 100); // only token 4 counted
+        assertEq(amt, 100);
     }
 
-    function test_clearTokenId() public {
-        _seedOne(1, 1, 100, 0, 0);
-        _seedOne(2, 1, 200, 0, 0);
-        adapter.clearTokenId(holder, 1);
-        assertEq(adapter.tokenIdsOf(holder).length, 1);
-        (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, address(nxm));
-        assertEq(amt, 200);
-    }
+    // ---- Self-service clear ----
 
-    function test_clearAccount() public {
+    function test_clearAccount_self() public {
         _seedOne(1, 1, 100, 0, 0);
-        adapter.clearAccount(holder);
+        vm.prank(holder);
+        adapter.clearAccount();
         assertEq(adapter.tokenIdsOf(holder).length, 0);
         (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, address(nxm));
         assertEq(amt, 0);
     }
 
-    // ---- Caps + never-revert ----
+    // ---- Accumulation + never-revert ----
 
-    function test_perAccountCap_revertsWhenFull() public {
-        uint256 cap = adapter.MAX_TOKEN_IDS();
-        // A single list of exactly MAX_TOKEN_IDS owned ids is accepted.
-        uint256[] memory ids = new uint256[](cap);
-        for (uint256 i = 0; i < cap; i++) {
-            uint256 id = i + 1;
-            nft.setToken(id, 1, holder); // holder owns ALL
-            viewer.setToken(id, 1, 1, 0, 0); // 1 active each
-            ids[i] = id;
-        }
-        adapter.submitTokenIds(holder, ids);
-        assertEq(adapter.tokenIdsOf(holder).length, cap);
-
-        // A single list of MAX_TOKEN_IDS + 1 is fail-loud (the cap+1-th add reverts). Submit is replace semantics, so
-        // the cap is hit within one list, not by accumulating across calls.
-        uint256[] memory tooMany = new uint256[](cap + 1);
-        for (uint256 i = 0; i < cap + 1; i++) {
+    /// @notice Many owned ids accumulate (well past the old 64 cap; the shared cap is 256).
+    function test_accumulatesManyIds() public {
+        uint256 count = 100;
+        for (uint256 i = 0; i < count; i++) {
             uint256 id = i + 1;
             nft.setToken(id, 1, holder);
             viewer.setToken(id, 1, 1, 0, 0);
-            tooMany[i] = id;
+            vm.prank(holder);
+            adapter.submit(id);
         }
-        vm.expectRevert(abi.encodeWithSelector(TokenIdCacheFull.selector, holder, cap));
-        adapter.submitTokenIds(holder, tooMany);
-
-        // The reverted submit left the prior set intact — submitTokenIds reverts atomically, so no partial delta
-        // (the failed add, or any Pass-1 removals) is committed.
-        assertEq(adapter.tokenIdsOf(holder).length, cap);
+        assertEq(adapter.tokenIdsOf(holder).length, count);
+        (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, address(nxm));
+        assertEq(amt, count); // 1 active NXM each
     }
 
     function test_viewerReverts_balanceZero() public {
@@ -451,16 +402,15 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterTest is BalanceAdapterTest
     function test_viewerReverts_positionsEmpty() public {
         _seedOne(1, 1, 100, 0, 5);
         viewer.setRevert(true);
-        assertEq(adapter.getAdapterPositions(holder, address(0)).length, 0); // getTokens revert → empty
+        assertEq(adapter.getAdapterPositions(holder, address(0)).length, 0);
     }
 
     // ---- Interface ----
 
     function test_supportsInterface() public view {
-        assertTrue(adapter.supportsInterface(type(IAssistantFedBalanceAdapter).interfaceId));
         assertTrue(adapter.supportsInterface(type(IBalanceAdapter).interfaceId));
+        assertTrue(adapter.supportsInterface(type(IAssistedBalanceAdapter).interfaceId));
         assertTrue(adapter.supportsInterface(type(IPositionDescribable).interfaceId));
-        assertTrue(adapter.supportsInterface(type(IAccessControl).interfaceId));
         assertTrue(adapter.supportsInterface(type(IERC165).interfaceId));
     }
 

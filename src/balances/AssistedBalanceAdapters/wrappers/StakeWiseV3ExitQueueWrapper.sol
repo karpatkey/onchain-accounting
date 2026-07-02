@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
-import {BalanceAdapterWrapper} from "src/balances/wrappers/BalanceAdapterWrapper.sol";
+import {BalanceAdapterWrapper} from "src/balances/AssistedBalanceAdapters/wrappers/BalanceAdapterWrapper.sol";
 
 /// @title StakeWise V3 Exit-Queue Wrapper
 /// @author KPK
@@ -15,7 +15,7 @@ import {BalanceAdapterWrapper} from "src/balances/wrappers/BalanceAdapterWrapper
 /// @dev Extends {BalanceAdapterWrapper} for the `SELF` / {onlyDelegateCall} guard and immutable `ADAPTER`. No token
 ///      approval is needed (shares live in the vault). The adapter is permissionless and self-scopes by `msg.sender`,
 ///      so the wrapper's call (carrying `msg.sender = the Safe`) tracks exactly the Safe's own positions. See
-///      [ADR 0018](../../../docs/decisions/0018-wrapper-fed-assisted-balance-adapters.md).
+///      [ADR 0018](../../../../docs/decisions/0018-wrapper-fed-assisted-balance-adapters.md).
 contract StakeWiseV3ExitQueueWrapper is BalanceAdapterWrapper {
     /// @notice Emitted (in the Safe's context) when the Safe enters the exit queue and the ticket is registered.
     event ExitQueueEntered(address indexed account, address indexed vault, uint256 positionTicket, uint256 timestamp);

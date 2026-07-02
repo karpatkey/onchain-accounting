@@ -4,7 +4,7 @@ pragma solidity ^0.8;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import {BalanceAdapterWrapper} from "src/balances/wrappers/BalanceAdapterWrapper.sol";
+import {BalanceAdapterWrapper} from "src/balances/AssistedBalanceAdapters/wrappers/BalanceAdapterWrapper.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
@@ -21,7 +21,7 @@ import "src/errors.sol";
 ///      claim-on-behalf), which the delegatecall satisfies (Safe == owner). Because the adapter's `remove` requires the
 ///      request to be **claimed** (the NFT burned → no longer owned → removable), {claimWithdraw} claims **first**, then
 ///      removes. EOAs cannot delegatecall, so the intended callers are Safe/Avatar accounts (gated at the Safe layer).
-///      See [ADR 0018](../../../docs/decisions/0018-wrapper-fed-assisted-balance-adapters.md).
+///      See [ADR 0018](../../../../docs/decisions/0018-wrapper-fed-assisted-balance-adapters.md).
 contract EtherFiWithdrawalQueueWrapper is BalanceAdapterWrapper {
     using SafeERC20 for IERC20;
 

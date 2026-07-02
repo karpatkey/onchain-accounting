@@ -5,8 +5,8 @@ import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.
 import {BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
 import {NexusMutualStakingPoolsAssistedBalanceAdapter} from
     "src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsAssistedBalanceAdapter.sol";
-import {NexusMutualStakingPoolsWrapper} from "src/balances/wrappers/NexusMutualStakingPoolsWrapper.sol";
-import {WrapperDelegateCaller} from "test/balances/wrappers/WrapperDelegateCaller.sol";
+import {NexusMutualStakingPoolsWrapper} from "src/balances/AssistedBalanceAdapters/wrappers/NexusMutualStakingPoolsWrapper.sol";
+import {WrapperDelegateCaller} from "test/balances/AssistedBalanceAdapters/wrappers/WrapperDelegateCaller.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";

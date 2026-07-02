@@ -5,7 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
-import {EtherFiWithdrawalQueueWrapper} from "src/balances/wrappers/EtherFiWithdrawalQueueWrapper.sol";
+import {EtherFiWithdrawalQueueWrapper} from "src/balances/AssistedBalanceAdapters/wrappers/EtherFiWithdrawalQueueWrapper.sol";
 import {
     EtherFiWithdrawalQueueAssistedBalanceAdapter
 } from "src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueAssistedBalanceAdapter.sol";

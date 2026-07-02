@@ -4,7 +4,7 @@ pragma solidity ^0.8;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import {BalanceAdapterWrapper} from "src/balances/wrappers/BalanceAdapterWrapper.sol";
+import {BalanceAdapterWrapper} from "src/balances/AssistedBalanceAdapters/wrappers/BalanceAdapterWrapper.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
@@ -19,7 +19,7 @@ import "src/errors.sol";
 /// @dev Extends {BalanceAdapterWrapper} for the shared `SELF` / {onlyDelegateCall} guard, the immutable `ADAPTER`, and
 ///      {_requireSelf}. A **normal CALL** to either entrypoint reverts `NotDelegateCall`. EOAs cannot delegatecall, so
 ///      the intended callers are Safe/Avatar accounts. The Safe already custodies the ETHx, so `requestWithdraw` just
-///      approves the manager (from the Safe) and forwards. See [ADR 0018](../../../docs/decisions/0018-wrapper-fed-assisted-balance-adapters.md).
+///      approves the manager (from the Safe) and forwards. See [ADR 0018](../../../../docs/decisions/0018-wrapper-fed-assisted-balance-adapters.md).
 contract StaderWithdrawalQueueWrapper is BalanceAdapterWrapper {
     using SafeERC20 for IERC20;
 

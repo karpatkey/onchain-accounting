@@ -9,8 +9,8 @@ import {MockStakingNFT, MockStakingViewer} from
 import {NexusMutualStakingPoolsAssistedBalanceAdapter} from
     "src/balances/AssistedBalanceAdapters/NexusMutualStakingPoolsAssistedBalanceAdapter.sol";
 import {NexusMutualStakingPoolsWrapper} from
-    "src/balances/wrappers/NexusMutualStakingPoolsWrapper.sol";
-import {WrapperDelegateCaller} from "test/balances/wrappers/WrapperDelegateCaller.sol";
+    "src/balances/AssistedBalanceAdapters/wrappers/NexusMutualStakingPoolsWrapper.sol";
+import {WrapperDelegateCaller} from "test/balances/AssistedBalanceAdapters/wrappers/WrapperDelegateCaller.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 

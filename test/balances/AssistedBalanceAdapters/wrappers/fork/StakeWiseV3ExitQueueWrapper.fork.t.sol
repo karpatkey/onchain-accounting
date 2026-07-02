@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
 import {BalancesHarnessForFork} from "test/TestSetupHelpers.sol";
-import {StakeWiseV3ExitQueueWrapper} from "src/balances/wrappers/StakeWiseV3ExitQueueWrapper.sol";
+import {StakeWiseV3ExitQueueWrapper} from "src/balances/AssistedBalanceAdapters/wrappers/StakeWiseV3ExitQueueWrapper.sol";
 import {
     StakeWiseV3ExitQueueAssistedBalanceAdapter,
     IStakeWiseExitVault

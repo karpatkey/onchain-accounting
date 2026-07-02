@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.0;
 
-import {NexusMutualStakingPoolsWrapper} from "src/balances/wrappers/NexusMutualStakingPoolsWrapper.sol";
+import {NexusMutualStakingPoolsWrapper} from "src/balances/AssistedBalanceAdapters/wrappers/NexusMutualStakingPoolsWrapper.sol";
 
 /// @notice Test stand-in for a staking account (e.g. an OIV Safe / Safe module user) that `delegatecall`s the
 ///         delegatecall-only {NexusMutualStakingPoolsWrapper}. Under the delegatecall, `address(this)` is this

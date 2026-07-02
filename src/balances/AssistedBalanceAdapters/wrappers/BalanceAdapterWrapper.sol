@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
-import {IBalanceAdapterWrapper} from "src/balances/wrappers/IBalanceAdapterWrapper.sol";
+import {IBalanceAdapterWrapper} from "src/balances/AssistedBalanceAdapters/wrappers/IBalanceAdapterWrapper.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";

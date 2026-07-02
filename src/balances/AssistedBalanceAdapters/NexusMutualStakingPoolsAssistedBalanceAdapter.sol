@@ -4,8 +4,8 @@ pragma solidity ^0.8;
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
-import {AssistedNftIdCache} from "./AssistedNftIdCache.sol";
-import {AssistedNftIdValuation} from "./AssistedNftIdValuation.sol";
+import {AssistedCoordCache} from "./AssistedCoordCache.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
@@ -19,16 +19,17 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @notice Reports an account's staked NXM across Nexus Mutual V2 staking pools, as NXM-denominated `Staking`
 ///         (active + expired stake) and `Rewards` legs — emitted **per StakingNFT position**. The StakingNFT is not
 ///         per-owner-enumerable, so a trusted feeder pushes/pops the account's `tokenId`s via {submit}/{remove}. The
-///         canonical feeder is `NexusMutualStakingPoolsWrapper`, which the owner Safe delegatecalls so the adapter sees
+///         canonical feeder is `NexusMutualStakingPoolsWrapper`, delegatecalled by the owner Safe so the adapter sees
 ///         `msg.sender = Safe = owner`. Each cached id is valued live (`StakingViewer.getTokens`), re-verifying
 ///         ownership via `StakingNFT.tokenInfo` every read; the cache stores **ids only, never amounts**.
-/// @dev Permissionless wrapper-fed member ([ADR 0018](../../../docs/decisions/0018-wrapper-fed-assisted-balance-adapters.md)),
-///      extending {AssistedNftIdValuation} for the per-id fail-open self-`staticcall` fan-out (`StakingViewer.getTokens`
-///      can revert). positionId is the **staking-pool contract address** (`StakingViewer.stakingPool(poolId)`); the NFT
-///      id rides in `positionInstanceId`. **{_removable} is overridden to `true`**: Nexus does NOT burn the StakingNFT on
-///      withdraw (the account keeps owning an emptied position), so the default "removable iff no longer owned" would
-///      wrongly block the wrapper's post-withdraw untrack — dropping a still-owned, withdrawn position is under-report-safe.
-contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedNftIdValuation, IPositionDescribable {
+/// @dev Member of the permissionless wrapper-fed assisted family ([ADR 0018](../../../docs/decisions/0018-wrapper-fed-assisted-balance-adapters.md)),
+///      extending the single {AssistedCoordCache}: the coordinate is `abi.encode(tokenId)`. `StakingViewer.getTokens`
+///      can revert, but {AssistedCoordCache} values each coordinate behind a self-`staticcall`, so a bad id is isolated.
+///      positionId is the **staking-pool contract address** (`StakingViewer.stakingPool(poolId)`); the NFT id rides in
+///      `positionInstanceId`. **{_removable} = `true`**: Nexus does NOT burn the StakingNFT on withdraw (the account
+///      keeps owning an emptied position), so the default "removable iff no longer owned" would wrongly block the
+///      wrapper's post-withdraw untrack — dropping a still-owned, withdrawn position is under-report-safe.
+contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedCoordCache, IPositionDescribable {
     using Strings for uint256;
 
     /// @notice Hard cap on cached tokenIds per account (read-loop gas bound). A real account never approaches it.
@@ -49,7 +50,7 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedNftIdValuation
     /// @param underlyingToken_ NXM token address. Must be non-zero.
     /// @param navCalculator_   NAVCalculator. Must be a contract.
     constructor(address stakingNft_, address stakingViewer_, address underlyingToken_, address navCalculator_)
-        AssistedNftIdValuation(underlyingToken_, navCalculator_)
+        AssistedCoordCache(underlyingToken_, navCalculator_)
     {
         if (stakingNft_ == address(0) || stakingViewer_ == address(0)) revert InvalidArguments();
         AddressCheckLib.requireContract(stakingNft_, "StakingNFT");
@@ -58,21 +59,46 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedNftIdValuation
         STAKING_VIEWER = stakingViewer_;
     }
 
+    //
+    // Typed feed surface (permissionless, msg.sender-keyed)
+    //
+
+    /// @notice Track `tokenId` for the caller (idempotent). **Reverts** `CoordinateNotOwned` if not owned by the caller,
+    ///         `CoordinateCacheFull` past {MAX_TOKEN_IDS}.
+    function submit(uint256 tokenId) external {
+        _submitCoord(abi.encode(tokenId));
+    }
+
+    /// @notice Stop tracking `tokenId` for the caller. **Reverts** `CoordinateNotCached` if not tracked. (Nexus does not
+    ///         burn the NFT on withdraw, so removal is unconditional for a tracked id — see {_removable}.)
+    function remove(uint256 tokenId) external {
+        _removeCoord(abi.encode(tokenId));
+    }
+
+    /// @notice Candidate tokenIds currently cached for `account` (display/debug; not ownership-filtered).
+    function tokenIdsOf(address account) external view returns (uint256[] memory ids) {
+        bytes[] memory coords = _cachedCoords(account);
+        ids = new uint256[](coords.length);
+        for (uint256 i; i < coords.length; ++i) {
+            ids[i] = abi.decode(coords[i], (uint256));
+        }
+    }
+
     /// @inheritdoc IPositionDescribable
     function protocolName() external pure returns (string memory) {
         return "Nexus Mutual";
     }
 
     /// @inheritdoc IPositionDescribable
-    /// @dev `["Staking Pools", "Pool #<poolId>"]` — the numeric pool id read live via `getPoolId()`, matching the Nexus
-    ///      UI. Falls back to the pool address if the read reverts. Empty for a short/malformed positionId.
+    /// @dev `["Staking Pools", "Pool #<poolId>"]` — the numeric pool id read live via `getPoolId()`. Falls back to the
+    ///      pool address if the read reverts. Empty for a short/malformed positionId.
     function positionLabels(bytes calldata positionId) external view override returns (string[] memory out) {
         if (positionId.length < 32) return new string[](0);
         address pool = abi.decode(positionId, (address));
         out = new string[](2);
         out[0] = "Staking Pools";
-        // Low-level staticcall + length check (not a typed try/catch): a no-code / non-Nexus positionId returns success
-        // with empty data, which a typed call would fail to decode and revert uncaught — this view must never revert.
+        // Low-level staticcall + length check: a no-code / non-Nexus positionId returns success with empty data, which a
+        // typed call would fail to decode and revert uncaught — this display view must never revert.
         (bool ok, bytes memory data) =
             pool.staticcall(abi.encodeWithSelector(INexusMutualStakingPool.getPoolId.selector));
         out[1] = (ok && data.length >= 32)
@@ -89,44 +115,47 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedNftIdValuation
     // Hooks
     //
 
-    /// @inheritdoc AssistedNftIdCache
-    function _maxTokenIds() internal pure override returns (uint256) {
+    /// @inheritdoc AssistedCoordCache
+    function _maxCoords() internal pure override returns (uint256) {
         return MAX_TOKEN_IDS;
     }
 
-    /// @inheritdoc AssistedNftIdCache
-    function _maxLegsPerId() internal pure override returns (uint256) {
+    /// @inheritdoc AssistedCoordCache
+    function _maxLegsPerCoord() internal pure override returns (uint256) {
         return 2;
     }
 
-    /// @inheritdoc AssistedNftIdCache
-    /// @dev Nexus does not burn the StakingNFT on withdraw — the account keeps owning an emptied position — so the
-    ///      default (removable iff no longer owned) would never let the wrapper untrack after a withdraw. Permit
-    ///      removal unconditionally; a withdrawn-but-owned position dropped from cache only under-reports (safe).
-    function _removable(address, uint256) internal pure override returns (bool) {
+    /// @inheritdoc AssistedCoordCache
+    function _coordId(bytes memory coord) internal pure override returns (uint256) {
+        return abi.decode(coord, (uint256));
+    }
+
+    /// @inheritdoc AssistedCoordCache
+    function _validateCoord(address account, bytes memory coord) internal view override {
+        uint256 tokenId = abi.decode(coord, (uint256));
+        (address owner, bool ok) = _ownerOf(tokenId);
+        if (!ok || owner != account) revert CoordinateNotOwned(account, tokenId);
+    }
+
+    /// @inheritdoc AssistedCoordCache
+    /// @dev Nexus does not burn the StakingNFT on withdraw, so the default (removable iff no longer owned) would never
+    ///      let the wrapper untrack after a withdraw. Permit removal for any tracked id; a withdrawn-but-owned position
+    ///      dropped from cache only under-reports (safe).
+    function _removable(address, bytes memory) internal pure override returns (bool) {
         return true;
     }
 
-    /// @inheritdoc AssistedNftIdCache
-    /// @dev Wraps `tokenInfo` so a non-existent / burned id (which reverts) returns `(0, false)`.
-    function _ownerOf(uint256 tokenId) internal view override returns (address owner, bool ok) {
-        try INexusStakingNFT(STAKING_NFT).tokenInfo(tokenId) returns (uint256, address o) {
-            return (o, true);
-        } catch {
-            return (address(0), false);
-        }
-    }
-
-    /// @inheritdoc AssistedNftIdCache
+    /// @inheritdoc AssistedCoordCache
     /// @notice Values one cached `tokenId` into its (up to 2) legs: `Staking` (active + expired) + `Rewards`, NXM-
-    ///         denominated. Empty if not owned by `account`, no stake/rewards, or the pool can't be resolved.
-    ///         Re-verifies ownership live via `tokenInfo`; reached via the self-`staticcall`, so it may revert freely.
-    function _valueTokenId(address account, uint256 tokenId, INAVCalculator.Asset memory underlying)
+    ///         denominated. Empty if not owned by `account`, no stake/rewards, or the pool can't be resolved. Reached
+    ///         via the self-`staticcall`, so it may revert freely (`getTokens` reverts are isolated).
+    function _valueCoord(address account, bytes memory coord, INAVCalculator.Asset memory underlying)
         internal
         view
         override
         returns (INAVCalculator.PositionBalance[] memory)
     {
+        uint256 tokenId = abi.decode(coord, (uint256));
         INAVCalculator.PositionBalance[] memory none = new INAVCalculator.PositionBalance[](0);
 
         (, address owner) = INexusStakingNFT(STAKING_NFT).tokenInfo(tokenId);
@@ -156,6 +185,15 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedNftIdValuation
             outLegs[k] = tmp[k];
         }
         return outLegs;
+    }
+
+    /// @dev Ownership read wrapping `tokenInfo` so a non-existent / burned id returns `(0, false)`.
+    function _ownerOf(uint256 tokenId) internal view returns (address owner, bool ok) {
+        try INexusStakingNFT(STAKING_NFT).tokenInfo(tokenId) returns (uint256, address o) {
+            return (o, true);
+        } catch {
+            return (address(0), false);
+        }
     }
 
     function _leg(

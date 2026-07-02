@@ -13,18 +13,21 @@ import "src/errors.sol";
 
 /// @title AssistedCoordCache
 /// @author KPK
-/// @notice Sibling of {AssistedNftIdCache} for the **permissionless, wrapper-fed** assisted adapters whose position
-///         coordinate is a **tuple** rather than a bare `uint256` — e.g. StakeWise V3 exit positions, keyed by
-///         `(vault, positionTicket, timestamp)` whose full preimage the valuation needs. It holds the per-account
-///         coordinate-record cache (opaque `bytes` blobs, deduped by their keccak key) and its `msg.sender`-keyed CRUD,
-///         plus the single-underlying-asset {IBalanceAdapter} getter surface. The concrete adapter exposes a *typed*
-///         `submit`/`remove` that `abi.encode`s its tuple and routes to {_submitCoord}/{_removeCoord}, and implements
-///         {_valueCoord} (decode + value live) and {_validateCoord} (fail-loud write-time hygiene).
-/// @dev Permissionless & self-scoped (same trust model as {AssistedNftIdCache}): no roles; all mutators key on
-///      `msg.sender`, so a caller can only ever touch its OWN set. The family invariant holds — coordinates only, valued
-///      live, ownership re-verified per read → under-report only. Uses a `bytes[]` array + `key → idxPlus1` map for
-///      dedup and O(1) swap-pop removal. Valuation is a direct loop (no self-`staticcall` isolation): tuple valuations
-///      here are internally try/catch-safe, so they never revert out of the read.
+/// @notice The single cache base for the **permissionless, wrapper-fed** assisted balance-adapter family. A position
+///         *coordinate* is an opaque `bytes` blob, so ONE cache serves every member regardless of coordinate shape:
+///         a bare `uint256` NFT tokenId / withdrawal requestId (`abi.encode(id)`) or a richer tuple (StakeWise V3 exit
+///         positions, `abi.encode(vault, positionTicket, timestamp)`). It holds the per-account coordinate-record cache
+///         (blobs deduped by their keccak key) and its `msg.sender`-keyed CRUD, plus the single-underlying-asset
+///         {IBalanceAdapter} getter surface and the per-coordinate fail-open valuation fan-out. The concrete adapter
+///         exposes a *typed* `submit`/`remove` that `abi.encode`s its coordinate and routes to {_submitCoord}/
+///         {_removeCoord}, and implements {_valueCoord} (decode + value live), {_validateCoord} (fail-loud write-time
+///         hygiene), {_removable}, {_coordId}, {_maxCoords}, {_maxLegsPerCoord}.
+/// @dev Permissionless & self-scoped: no roles; all mutators key on `msg.sender`, so a caller can only ever touch its
+///      OWN set. The canonical feeder is a {BalanceAdapterWrapper} the owner Safe delegatecalls (so `msg.sender` is the
+///      Safe). The family invariant holds — coordinates only, valued live, ownership re-verified per read → under-report
+///      only. Uses a `bytes[]` array + `key → idxPlus1` map for dedup and O(1) swap-pop removal. Reads isolate each
+///      coordinate behind a self-`staticcall` ({valueCoordSelf}), so a revert-prone valuation (e.g. Nexus's
+///      `StakingViewer.getTokens`) only drops that one coordinate, never the account's whole set.
 abstract contract AssistedCoordCache is IAssistedBalanceAdapter {
     /// @notice The single asset this adapter reports. Must be a registered NAV asset for {getAdapterPositions} to count
     ///         it; the balance getters report it regardless (registration-independent).
@@ -41,8 +44,10 @@ abstract contract AssistedCoordCache is IAssistedBalanceAdapter {
     ///      present (dedup + O(1) removal).
     mapping(address account => mapping(bytes32 key => uint256)) private _idxPlus1;
 
-    event CoordSubmitted(address indexed account, bytes32 indexed key);
-    event CoordCleared(address indexed account, bytes32 indexed key);
+    /// @notice `id` is the concrete adapter's human-facing coordinate id ({_coordId}: a tokenId / requestId /
+    ///         positionTicket) — indexed so consumers can filter, matching the legacy per-adapter events.
+    event CoordSubmitted(address indexed account, uint256 indexed id);
+    event CoordCleared(address indexed account, uint256 indexed id);
     event AccountCleared(address indexed account);
 
     /// @param underlyingToken_ The reported underlying asset. Must be non-zero.
@@ -153,15 +158,17 @@ abstract contract AssistedCoordCache is IAssistedBalanceAdapter {
     function _submitCoord(bytes memory coord) internal {
         address account = msg.sender;
         bytes32 key = keccak256(coord);
+        // Re-validate on EVERY submit (before the dedup early-return) so a resubmit of an already-cached coordinate the
+        // caller has since transferred away is rejected loud rather than silently kept.
+        _validateCoord(account, coord); // fail-loud write-time hygiene
         if (_idxPlus1[account][key] != 0) return; // already cached (idempotent no-op)
         if (_coords[account].length >= _maxCoords()) revert CoordinateCacheFull(account, _maxCoords());
-        _validateCoord(account, coord); // fail-loud write-time hygiene
         _coords[account].push(coord);
         _idxPlus1[account][key] = _coords[account].length;
-        emit CoordSubmitted(account, key);
+        emit CoordSubmitted(account, _coordId(coord));
     }
 
-    /// @dev Drop one coordinate for the caller. Fail-loud (symmetric with {AssistedNftIdCache.remove}): **reverts**
+    /// @dev Drop one coordinate for the caller. Fail-loud: **reverts**
     ///      `CoordinateNotCached` if the caller isn't tracking `coord`, and `CoordinateStillLive` if it is not yet
     ///      removable (see {_removable}) — so a live position is never silently dropped. Keyed on `msg.sender`.
     function _removeCoord(bytes memory coord) internal {
@@ -180,7 +187,7 @@ abstract contract AssistedCoordCache is IAssistedBalanceAdapter {
         }
         list.pop();
         delete _idxPlus1[account][key];
-        emit CoordCleared(account, key);
+        emit CoordCleared(account, _coordId(coord));
     }
 
     //
@@ -196,8 +203,11 @@ abstract contract AssistedCoordCache is IAssistedBalanceAdapter {
         }
     }
 
-    /// @dev Values every cached coordinate of `account` into a flat leg array (direct loop; {_valueCoord} is
-    ///      internally safe).
+    /// @dev Values every cached coordinate of `account` into a flat leg array, isolating each coordinate behind a
+    ///      per-item `this.valueCoordSelf(...)` staticcall wrapped in try/catch — so a revert in one coordinate's live
+    ///      reads discards only THAT coordinate and never propagates out of {getAdapterPositions} (where NAVCalculator's
+    ///      per-adapter try/catch would otherwise fail-open and drop the account's ENTIRE set). Coordinates whose
+    ///      valuation is internally safe pay only the extra call frame (negligible on the async NAV read path, ADR 0017).
     function _collect(address account, INAVCalculator.Asset memory underlying)
         internal
         view
@@ -210,16 +220,31 @@ abstract contract AssistedCoordCache is IAssistedBalanceAdapter {
             new INAVCalculator.PositionBalance[](list.length * _maxLegsPerCoord());
         uint256 count;
         for (uint256 i; i < list.length; ++i) {
-            INAVCalculator.PositionBalance[] memory legs = _valueCoord(account, list[i], underlying);
-            for (uint256 j; j < legs.length; ++j) {
-                temp[count++] = legs[j];
-            }
+            try this.valueCoordSelf(account, list[i], underlying) returns (
+                INAVCalculator.PositionBalance[] memory legs
+            ) {
+                for (uint256 j; j < legs.length; ++j) {
+                    temp[count++] = legs[j];
+                }
+            } catch {}
         }
 
         positions = new INAVCalculator.PositionBalance[](count);
         for (uint256 i; i < count; ++i) {
             positions[i] = temp[i];
         }
+    }
+
+    /// @notice External self-call entrypoint for {_valueCoord}, enabling the per-coordinate try/catch isolation in
+    ///         {_collect}. `msg.sender`-guarded to `address(this)` so it is not a usable external surface; it is
+    ///         `external` (so the self-call is a staticcall) ONLY to give each coordinate its own revert frame.
+    function valueCoordSelf(address account, bytes calldata coord, INAVCalculator.Asset calldata underlying)
+        external
+        view
+        returns (INAVCalculator.PositionBalance[] memory)
+    {
+        if (msg.sender != address(this)) revert NotAuthorized();
+        return _valueCoord(account, coord, underlying);
     }
 
     //
@@ -247,8 +272,9 @@ abstract contract AssistedCoordCache is IAssistedBalanceAdapter {
     ///         (under-report only). Implemented per adapter (the liveness proxy is protocol-specific).
     function _removable(address account, bytes memory coord) internal view virtual returns (bool);
 
-    /// @notice Values a single cached coordinate into its legs (empty if it contributes nothing). Decodes `coord`,
-    ///         re-verifies ownership live, and MUST NOT revert (all external reads try/catch to 0).
+    /// @notice Values a single cached coordinate into its legs (empty if it contributes nothing — not owned, claimed,
+    ///         zero amount). Decodes `coord` and re-verifies ownership live. Reached only via the self-`staticcall` in
+    ///         {_collect}, so it MAY revert freely — the caller isolates it (a reverting coordinate is discarded).
     function _valueCoord(address account, bytes memory coord, INAVCalculator.Asset memory underlying)
         internal
         view

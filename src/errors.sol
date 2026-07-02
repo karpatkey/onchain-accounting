@@ -21,9 +21,9 @@ error TokenIdCacheFull(address account, uint256 maxTokenIds);
 error PositionCacheFull(address account, uint256 maxPositions);
 error InvalidExitPosition(address account, address vault, uint256 positionTicket);
 
-// Permissionless wrapper-fed assisted balance-adapter family (ADR 0018) — shared coordinate-cache errors, used by both
-// the uint256-id cache ({AssistedNftIdCache}) and the tuple cache ({AssistedCoordCache}). The coordinate is identified
-// by `id` (a tokenId / requestId / positionTicket); the full tuple, where richer, rides in the cache's events.
+// Permissionless wrapper-fed assisted balance-adapter family (ADR 0018) — shared coordinate-cache errors, used by the
+// single {AssistedCoordCache} base (every coordinate is an `abi.encode`d blob). The coordinate is identified by `id`
+// (a tokenId / requestId / positionTicket, from `_coordId`); the full tuple, where richer, rides in the cache's events.
 /// @notice `submit` was given a coordinate not currently owned by the caller (`msg.sender`).
 error CoordinateNotOwned(address account, uint256 id);
 /// @notice `submit` would grow the caller's cache past its per-account cap.

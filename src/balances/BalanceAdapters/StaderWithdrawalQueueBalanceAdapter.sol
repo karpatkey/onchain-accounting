@@ -3,7 +3,7 @@ pragma solidity ^0.8;
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
-import {AssistedNftIdCache} from "src/balances/AssistedBalanceAdapters/AssistedNftIdCache.sol";
+import {AssistedCoordCache} from "src/balances/AssistedBalanceAdapters/AssistedCoordCache.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -19,18 +19,16 @@ import "src/errors.sol";
 ///         Requesting an unstake burns ETHx and records a sequential `requestId` owned by the account; until claimed,
 ///         the value lives as ETH owed by the manager and is invisible to a wallet/receipt-token scan. Rather than
 ///         enumerate `requestIdsByUserAddress` on-chain (griefable — anyone can `requestWithdraw(amount, _owner=victim)`
-///         to bloat a victim's array past the probe cap), each account tracks its **own** request ids via {submit},
-///         keyed on `msg.sender`. The intended caller is a Safe that **delegatecalls** the `StaderWithdrawalQueueWrapper`,
-///         which forwards the Stader `requestWithdraw`/`claim` and updates this cache atomically in the same transaction.
+///         to bloat a victim's array), each account tracks its **own** request ids via {submit}, keyed on `msg.sender`.
+///         The intended caller is a Safe that **delegatecalls** the `StaderWithdrawalQueueWrapper`.
 /// @dev Member of the permissionless wrapper-fed assisted family ([ADR 0018](../../../docs/decisions/0018-wrapper-fed-assisted-balance-adapters.md)),
-///      extending {AssistedNftIdCache}: the cache stores **only request ids, never amounts**, every read re-verifies
-///      ownership (`userWithdrawRequests(id).owner == account`) and re-values live, so a stale or wrong id can only
-///      under-report NAV. Denominated in `UNDERLYING_TOKEN` (WETH): the claim pays native ETH whose amount is fixed at
-///      finalization. Emits ONE `Supplied` leg per owned cached request, all sharing the static
-///      `positionId = abi.encode(address(USER_WITHDRAWAL_MANAGER))`; each leg's `isLocked` reflects the request's state
-///      (finalized → `false`, pending → `true`) and its request id rides in `positionInstanceId`. The default
-///      {_removable} (removable iff no longer owned) is correct: a claimed request has its owner deleted to `address(0)`.
-contract StaderWithdrawalQueueBalanceAdapter is AssistedNftIdCache, IPositionDescribable {
+///      extending the single {AssistedCoordCache}: the coordinate is `abi.encode(requestId)`. The cache stores **only
+///      request ids, never amounts**; every read re-verifies ownership (`userWithdrawRequests(id).owner == account`) and
+///      re-values live → a stale or wrong id can only under-report NAV. Denominated in `UNDERLYING_TOKEN` (WETH); the
+///      claim pays native ETH whose amount is fixed at finalization. Emits ONE `Supplied` leg per owned cached request
+///      (finalized → `isLocked=false`, pending → `true`), all sharing `positionId = abi.encode(USER_WITHDRAWAL_MANAGER)`,
+///      the request id in `positionInstanceId`.
+contract StaderWithdrawalQueueBalanceAdapter is AssistedCoordCache, IPositionDescribable {
     /// @notice Hard cap on cached request ids per account (read-loop gas bound). A real account never approaches it.
     uint256 public constant MAX_REQUESTS = 256;
 
@@ -45,16 +43,36 @@ contract StaderWithdrawalQueueBalanceAdapter is AssistedNftIdCache, IPositionDes
     /// @param underlyingToken_       Address of the asset positions are denominated in (WETH). Must be non-zero.
     /// @param navCalculator_         The NAVCalculator address used for asset-registry filtering. Must be a contract.
     constructor(address userWithdrawalManager_, address underlyingToken_, address navCalculator_)
-        AssistedNftIdCache(underlyingToken_, navCalculator_)
+        AssistedCoordCache(underlyingToken_, navCalculator_)
     {
         if (userWithdrawalManager_ == address(0)) revert InvalidArguments();
         AddressCheckLib.requireContract(userWithdrawalManager_, "UserWithdrawalManager");
         USER_WITHDRAWAL_MANAGER = IUserWithdrawalManager(userWithdrawalManager_);
     }
 
+    //
+    // Typed feed surface (permissionless, msg.sender-keyed) — routes to the shared coordinate cache.
+    //
+
+    /// @notice Track `requestId` for the caller (idempotent). **Reverts** `CoordinateNotOwned` if not currently owned by
+    ///         the caller, and `CoordinateCacheFull` past {MAX_REQUESTS}.
+    function submit(uint256 requestId) external {
+        _submitCoord(abi.encode(requestId));
+    }
+
+    /// @notice Stop tracking `requestId` for the caller (once claimed). **Reverts** `CoordinateNotCached` if not tracked,
+    ///         and `CoordinateStillLive` if still owned (not yet claimed).
+    function remove(uint256 requestId) external {
+        _removeCoord(abi.encode(requestId));
+    }
+
     /// @notice Candidate request ids currently cached for `account` (display/debug; not ownership-filtered).
-    function requestIdsOf(address account) external view returns (uint256[] memory) {
-        return _cachedTokenIds(account);
+    function requestIdsOf(address account) external view returns (uint256[] memory ids) {
+        bytes[] memory coords = _cachedCoords(account);
+        ids = new uint256[](coords.length);
+        for (uint256 i; i < coords.length; ++i) {
+            ids[i] = abi.decode(coords[i], (uint256));
+        }
     }
 
     /// @inheritdoc IPositionDescribable
@@ -79,32 +97,44 @@ contract StaderWithdrawalQueueBalanceAdapter is AssistedNftIdCache, IPositionDes
     // Hooks
     //
 
-    /// @inheritdoc AssistedNftIdCache
-    function _maxTokenIds() internal pure override returns (uint256) {
+    /// @inheritdoc AssistedCoordCache
+    function _maxCoords() internal pure override returns (uint256) {
         return MAX_REQUESTS;
     }
 
-    /// @inheritdoc AssistedNftIdCache
-    function _maxLegsPerId() internal pure override returns (uint256) {
+    /// @inheritdoc AssistedCoordCache
+    function _maxLegsPerCoord() internal pure override returns (uint256) {
         return 1;
     }
 
-    /// @inheritdoc AssistedNftIdCache
-    /// @dev A claimed request has its manager storage entry deleted (`owner == address(0)`), so it reads back unowned.
-    function _ownerOf(uint256 requestId) internal view override returns (address owner, bool ok) {
-        (address o,,,,) = USER_WITHDRAWAL_MANAGER.userWithdrawRequests(requestId);
-        return (o, o != address(0));
+    /// @inheritdoc AssistedCoordCache
+    function _coordId(bytes memory coord) internal pure override returns (uint256) {
+        return abi.decode(coord, (uint256));
     }
 
-    /// @inheritdoc AssistedNftIdCache
-    /// @notice ONE ETH `Supplied` leg per owned cached request (finalized → `isLocked=false`, pending → `true`); the
-    ///         request id rides in `positionInstanceId`, all sharing `positionId = abi.encode(USER_WITHDRAWAL_MANAGER)`.
-    function _valueTokenId(address account, uint256 requestId, INAVCalculator.Asset memory underlying)
+    /// @inheritdoc AssistedCoordCache
+    /// @dev The request must be owned by the caller (the manager records it under `_owner`); a claimed/unknown id reads
+    ///      back with `owner == address(0)`.
+    function _validateCoord(address account, bytes memory coord) internal view override {
+        uint256 requestId = abi.decode(coord, (uint256));
+        if (_ownerOf(requestId) != account) revert CoordinateNotOwned(account, requestId);
+    }
+
+    /// @inheritdoc AssistedCoordCache
+    /// @dev Removable once claimed — the manager deletes the request on claim, so its owner reads back as `address(0)`.
+    function _removable(address account, bytes memory coord) internal view override returns (bool) {
+        return _ownerOf(abi.decode(coord, (uint256))) != account;
+    }
+
+    /// @inheritdoc AssistedCoordCache
+    /// @notice ONE ETH `Supplied` leg for the owned cached request (finalized → `isLocked=false`, pending → `true`).
+    function _valueCoord(address account, bytes memory coord, INAVCalculator.Asset memory underlying)
         internal
         view
         override
         returns (INAVCalculator.PositionBalance[] memory)
     {
+        uint256 requestId = abi.decode(coord, (uint256));
         (uint256 amount, bool finalized) = _owedForRequest(account, requestId);
         if (amount == 0) return new INAVCalculator.PositionBalance[](0);
         INAVCalculator.PositionBalance[] memory legs = new INAVCalculator.PositionBalance[](1);
@@ -124,9 +154,8 @@ contract StaderWithdrawalQueueBalanceAdapter is AssistedNftIdCache, IPositionDes
         return legs;
     }
 
-    /// @dev ETH owed for a single request and whether it is finalized. `amount` is 0 if the request is not owned by
-    ///      `account` (claimed → owner deleted). Mirrors the manager's accounting: finalized (`ethFinalized > 0`) → the
-    ///      exact `ethFinalized`; pending → the rate-converted `ethExpected` estimate at request time.
+    /// @dev ETH owed for a single request and whether it is finalized. `amount` is 0 if not owned by `account` (claimed).
+    ///      finalized (`ethFinalized > 0`) → exact `ethFinalized`; pending → the rate-converted `ethExpected` estimate.
     function _owedForRequest(address account, uint256 requestId)
         internal
         view
@@ -137,6 +166,11 @@ contract StaderWithdrawalQueueBalanceAdapter is AssistedNftIdCache, IPositionDes
         if (owner != account) return (0, false);
         if (ethFinalized > 0) return (ethFinalized, true);
         return (ethExpected, false);
+    }
+
+    /// @dev The request's current owner (zero after a claim — the manager deletes the entry; the getter never reverts).
+    function _ownerOf(uint256 requestId) internal view returns (address owner) {
+        (owner,,,,) = USER_WITHDRAWAL_MANAGER.userWithdrawRequests(requestId);
     }
 }
 

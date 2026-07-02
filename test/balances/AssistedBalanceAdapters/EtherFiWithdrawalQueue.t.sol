@@ -421,23 +421,23 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterTest is BalanceAdapterTestB
 
     // ---- Events ----
 
-    event TokenIdSubmitted(address indexed account, uint256 indexed tokenId);
-    event TokenIdCleared(address indexed account, uint256 indexed tokenId);
+    event CoordSubmitted(address indexed account, uint256 indexed id);
+    event CoordCleared(address indexed account, uint256 indexed id);
     event AccountCleared(address indexed account);
 
-    function test_submit_emitsTokenIdSubmitted() public {
+    function test_submit_emitsCoordSubmitted() public {
         nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
         vm.expectEmit(true, true, false, true, address(adapter));
-        emit TokenIdSubmitted(holder, 1);
+        emit CoordSubmitted(holder, 1);
         adapter.submit(1);
     }
 
-    function test_remove_emitsTokenIdCleared() public {
+    function test_remove_emitsCoordCleared() public {
         nft.setRequest(1, holder, 1 ether, 1 ether, true, 0, true, 1 ether);
         adapter.submit(1);
         nft.burn(1); // claimed → removable
         vm.expectEmit(true, true, false, true, address(adapter));
-        emit TokenIdCleared(holder, 1);
+        emit CoordCleared(holder, 1);
         adapter.remove(1);
     }
 

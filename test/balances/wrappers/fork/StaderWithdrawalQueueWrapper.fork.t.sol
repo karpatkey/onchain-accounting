@@ -89,14 +89,22 @@ contract StaderWithdrawalQueueWrapperForkTest is BalanceAdapterTestBase {
         (,, ethExpected,,) = IStaderUWM(USER_WITHDRAWAL_MANAGER).userWithdrawRequests(requestId);
     }
 
+    /// @dev The adapter's reported WETH balance for `account`.
+    function _adapterBal(address account) internal view returns (uint256 amt) {
+        (amt,) = adapter.getAdapterBalanceForAsset(account, MAINNET_WETH);
+    }
+
     // ---- Deposit: real ETHx through the wrapper's (delegatecalled) requestWithdraw ----
 
     function test_deposit_realFunds_viaWrapperDelegatecall() public {
         uint256 amount = 1e18; // 1 ETHx — previewWithdraw ~1.09 ETH, within the manager's [1e14, 1e22] bounds.
 
+        // BEFORE: the Safe has no tracked position.
+        uint256 balBefore = _adapterBal(address(safe));
+        assertEq(balBefore, 0, "no tracked position before the deposit");
+
         // Fund the Safe with REAL ETHx pulled from a real holder (the Balancer Vault).
-        vm.prank(ETHX_WHALE);
-        IERC20(ETHX).transfer(address(safe), amount);
+        _fund(safe, amount);
         assertEq(IERC20(ETHX).balanceOf(address(safe)), amount, "Safe funded with real ETHx");
 
         // The Safe delegatecalls the wrapper, which requests the withdrawal on the LIVE manager and submits the id.
@@ -111,21 +119,23 @@ contract StaderWithdrawalQueueWrapperForkTest is BalanceAdapterTestBase {
         assertEq(IERC20(ETHX).balanceOf(address(safe)), 0, "ETHx pulled by the manager");
         assertEq(IERC20(ETHX).balanceOf(address(wrapper)), 0, "wrapper never custodies ETHx");
 
-        // The adapter tracks the id for the Safe and values it at the manager's ethExpected (pending -> locked).
+        // AFTER: the adapter tracks the id and its reported balance rose by EXACTLY the deposited request's ETH value.
         uint256[] memory ids = adapter.requestIdsOf(address(safe));
         assertEq(ids.length, 1, "id cached for the Safe");
         assertEq(ids[0], requestId);
-        (uint256 amt, bool isDebt) = adapter.getAdapterBalanceForAsset(address(safe), MAINNET_WETH);
-        assertEq(amt, ethExpected, "adapter values the pending request at ethExpected");
-        assertFalse(isDebt);
+        uint256 balAfter = _adapterBal(address(safe));
+        assertEq(balAfter, ethExpected, "adapter values the pending request at ethExpected");
+        assertEq(balAfter - balBefore, ethExpected, "adapter balance rose by exactly the deposited ETH value");
     }
 
     function test_deposit_realFunds_emitsPositionLeg() public {
         uint256 amount = 2e18; // 2 ETHx
+        assertEq(_adapterBal(address(safe)), 0, "no tracked position before the deposit");
         _fund(safe, amount);
 
         uint256 requestId = safe.delegateRequestWithdraw(address(wrapper), amount);
         uint256 ethExpected = _ethExpected(requestId);
+        assertEq(_adapterBal(address(safe)), ethExpected, "adapter balance == the deposited request's ETH value");
 
         // One pending leg, fully described from live on-chain data.
         INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(address(safe), address(0));
@@ -150,15 +160,21 @@ contract StaderWithdrawalQueueWrapperForkTest is BalanceAdapterTestBase {
 
     function test_deposit_realFunds_multipleRequestsFromOneSafe() public {
         _fund(safe, 3e18);
+        assertEq(_adapterBal(address(safe)), 0, "no tracked position before any deposit");
 
+        // First deposit: balance rises by exactly this request's ETH value.
         uint256 id1 = safe.delegateRequestWithdraw(address(wrapper), 1e18);
+        assertEq(_adapterBal(address(safe)), _ethExpected(id1), "balance after 1st == request 1 value");
+
+        // Second deposit: balance rises by exactly the second request's value (delta check).
+        uint256 balBeforeSecond = _adapterBal(address(safe));
         uint256 id2 = safe.delegateRequestWithdraw(address(wrapper), 2e18);
         assertTrue(id1 != id2, "distinct request ids");
+        assertEq(_adapterBal(address(safe)) - balBeforeSecond, _ethExpected(id2), "delta == request 2 value");
 
-        // Both ids tracked for the Safe; balance sums both requests; one leg each.
+        // Both ids tracked; total balance sums both requests; one leg each.
         assertEq(adapter.requestIdsOf(address(safe)).length, 2, "both requests cached");
-        (uint256 amount,) = adapter.getAdapterBalanceForAsset(address(safe), MAINNET_WETH);
-        assertEq(amount, _ethExpected(id1) + _ethExpected(id2), "balance sums both open requests");
+        assertEq(_adapterBal(address(safe)), _ethExpected(id1) + _ethExpected(id2), "total sums both open requests");
         assertEq(adapter.getAdapterPositions(address(safe), address(0)).length, 2, "one leg per request");
     }
 
@@ -166,6 +182,10 @@ contract StaderWithdrawalQueueWrapperForkTest is BalanceAdapterTestBase {
         ForkMockSafe safeB = new ForkMockSafe();
         _fund(safe, 1e18);
         _fund(safeB, 4e18);
+
+        // BEFORE: both Safes report nothing.
+        assertEq(_adapterBal(address(safe)), 0, "Safe A empty before");
+        assertEq(_adapterBal(address(safeB)), 0, "Safe B empty before");
 
         uint256 idA = safe.delegateRequestWithdraw(address(wrapper), 1e18);
         uint256 idB = safeB.delegateRequestWithdraw(address(wrapper), 4e18);
@@ -178,11 +198,10 @@ contract StaderWithdrawalQueueWrapperForkTest is BalanceAdapterTestBase {
         assertEq(idsB.length, 1);
         assertEq(idsB[0], idB);
 
-        (uint256 amtA,) = adapter.getAdapterBalanceForAsset(address(safe), MAINNET_WETH);
-        (uint256 amtB,) = adapter.getAdapterBalanceForAsset(address(safeB), MAINNET_WETH);
-        assertEq(amtA, _ethExpected(idA), "Safe A balance = its own request only");
-        assertEq(amtB, _ethExpected(idB), "Safe B balance = its own request only");
-        assertGt(amtB, amtA, "the 4 ETHx request is worth more than the 1 ETHx request");
+        // AFTER: each Safe's reported balance rose by EXACTLY its own deposit's ETH value — no cross-contamination.
+        assertEq(_adapterBal(address(safe)), _ethExpected(idA), "Safe A balance = its own request only");
+        assertEq(_adapterBal(address(safeB)), _ethExpected(idB), "Safe B balance = its own request only");
+        assertGt(_adapterBal(address(safeB)), _adapterBal(address(safe)), "4 ETHx request worth more than 1 ETHx");
     }
 
     // ---- Redeem: real finalized request, real claim on the live manager, adapter cleanup ----
@@ -192,21 +211,25 @@ contract StaderWithdrawalQueueWrapperForkTest is BalanceAdapterTestBase {
         vm.prank(FINALIZED_HOLDER);
         adapter.submit(FINALIZED_REQ_ID);
 
-        // Finalized -> valued at ethFinalized, unlocked (claimable).
-        (uint256 amt,) = adapter.getAdapterBalanceForAsset(FINALIZED_HOLDER, MAINNET_WETH);
-        assertEq(amt, FINALIZED_ETH, "finalized request valued at ethFinalized");
+        // BEFORE: finalized -> valued at ethFinalized, unlocked (claimable).
+        uint256 adapterBefore = _adapterBal(FINALIZED_HOLDER);
+        assertEq(adapterBefore, FINALIZED_ETH, "finalized request valued at ethFinalized before claim");
 
         // Real claim on the LIVE manager: ETH flows to the holder, the request is deleted.
-        uint256 balBefore = FINALIZED_HOLDER.balance;
+        uint256 ethBefore = FINALIZED_HOLDER.balance;
         vm.prank(FINALIZED_HOLDER);
         IStaderUWM(USER_WITHDRAWAL_MANAGER).claim(FINALIZED_REQ_ID);
-        assertEq(FINALIZED_HOLDER.balance, balBefore + FINALIZED_ETH, "ETH claimed to the holder");
+        uint256 ethReceived = FINALIZED_HOLDER.balance - ethBefore;
+        assertEq(ethReceived, FINALIZED_ETH, "ETH claimed to the holder");
         (address ownerAfter,,,,) = IStaderUWM(USER_WITHDRAWAL_MANAGER).userWithdrawRequests(FINALIZED_REQ_ID);
         assertEq(ownerAfter, address(0), "request deleted on claim");
 
-        // The claimed request now values to 0, and the provably-stale id can be removed from the cache.
-        (uint256 amtAfter,) = adapter.getAdapterBalanceForAsset(FINALIZED_HOLDER, MAINNET_WETH);
-        assertEq(amtAfter, 0, "claimed request no longer valued");
+        // AFTER: the adapter no longer values it, and its balance dropped by EXACTLY the ETH the holder claimed.
+        uint256 adapterAfter = _adapterBal(FINALIZED_HOLDER);
+        assertEq(adapterAfter, 0, "claimed request no longer valued");
+        assertEq(adapterBefore - adapterAfter, ethReceived, "adapter balance fell by exactly the claimed amount");
+
+        // The provably-claimed id can then be removed from the cache.
         vm.prank(FINALIZED_HOLDER);
         adapter.remove(FINALIZED_REQ_ID);
         assertEq(adapter.requestIdsOf(FINALIZED_HOLDER).length, 0, "cache cleaned after claim");

@@ -22,6 +22,8 @@ contract StaderWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
 
     address public constant TEST_USER = 0x5066bc626C292d02ACFef8d002905877148Cb37A;
     uint256 public constant TEST_USER_EXPECTED_ETH = 37_440_331_321_957_283_515;
+    /// @dev TEST_USER's single open request id at FORK_BLOCK (owned by TEST_USER, so `submit` accepts it).
+    uint256 public constant TEST_USER_REQ_ID = 8056;
 
     StaderWithdrawalQueueBalanceAdapter public adapter;
 
@@ -29,7 +31,11 @@ contract StaderWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
         super.setUp();
         _setupFork();
         balances = _deployBalancesForAdapter(MAINNET_WETH);
+        // Self-fed id-cache: seed TEST_USER's real request id by pranking as TEST_USER (submit is keyed on msg.sender;
+        // the id is owned by TEST_USER on-chain at FORK_BLOCK, so the ownership check passes).
         adapter = new StaderWithdrawalQueueBalanceAdapter(USER_WITHDRAWAL_MANAGER, MAINNET_WETH, address(balances));
+        vm.prank(TEST_USER);
+        adapter.submit(TEST_USER_REQ_ID);
     }
 
     function _setupFork() internal override {
@@ -165,7 +171,17 @@ contract StaderWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTest
         // super.setUp() already invokes _setupFork() (overridden below) via virtual dispatch — no second call.
         super.setUp();
         balances = _deployBalancesForAdapter(MAINNET_WETH);
+        // Self-fed id-cache: seed each holder's real, on-chain-owned request id(s) at FORK_BLOCK by pranking as that
+        // holder (submit is keyed on msg.sender), mirroring what each holder's Safe would have submitted itself.
         oracle = new StaderWithdrawalQueueBalanceAdapter(USER_WITHDRAWAL_MANAGER, MAINNET_WETH, address(balances));
+        vm.prank(PENDING_HOLDER);
+        oracle.submit(8218);
+        vm.prank(FINALIZED_HOLDER);
+        oracle.submit(8214);
+        vm.startPrank(MULTI_HOLDER);
+        oracle.submit(8196);
+        oracle.submit(8197);
+        vm.stopPrank();
     }
 
     function _setupFork() internal override {

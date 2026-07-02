@@ -37,6 +37,13 @@ The account restores its own read simply by **claiming / pruning** its finalized
 - **Remediation.** Have the account **claim** its finalized requests to prune the array; the claimed ETH is the account's to keep (the griefer funded it). No contract change or redeploy is needed — the adapter is immutable and correct regardless of list size.
 - **Do not** treat a griefed account's transiently-reverting NAV read as a valuation error; it is the designed fail-safe. Re-read after pruning.
 
+## Sibling withdrawal-queue adapters (same no-cap stance)
+
+The same reasoning applies to the other queue adapters; the decisive factor is NAVCalculator's **fail-open** per-adapter try/catch (`PriceFeedLib._getAdapterPositions`): a reverting or capped adapter is caught and contributes an empty set, so NAV *succeeds with a silent under-report* rather than failing. A cap therefore buys no safety — it only converts would-be-honest reads into deterministic zeros/truncations. So none of these cap:
+
+- **`LidoWithdrawalQueueBalanceAdapter`** — like Stader, third-party griefable (Lido's `requestWithdrawals(amounts, _owner)` takes an arbitrary owner, and withdrawal NFTs are transferable ERC721), and **unbounded** (no protocol per-account ceiling). An O(1) `balanceOf` still short-circuits the common zero case. Worst case is a bigger version of Stader's: a cheap, unbounded, hard-to-remediate per-account NAV-read cost — but still liveness-only and safe.
+- **`KelpWithdrawalQueueBalanceAdapter`** — **not** third-party griefable: Kelp records requests under the unstaking `msg.sender` (no arbitrary-owner param), so a large per-(asset,account) count is purely self-inflicted. Its old cap did silent *truncation* (read first N, drop the rest) — the worst failure mode — now removed.
+
 ## Related
 
 - Contract NatSpec on `StaderWithdrawalQueueBalanceAdapter` (the "On-chain enumeration vs. third-party injection — no adapter-level cap" block).

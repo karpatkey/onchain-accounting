@@ -192,15 +192,15 @@ contract KelpWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(amount, 3.15e18);
     }
 
-    function test_getAdapterBalanceForAsset_capsAtMaxRequestsProbed() public {
-        // A pathological account with more open requests than the cap must not iterate unbounded:
-        // the adapter sums only the first MAX_REQUESTS_PROBED and never reverts/OOGs.
-        uint256 cap = adapter.MAX_REQUESTS_PROBED();
-        for (uint256 i = 0; i < cap + 5; i++) {
+    function test_getAdapterBalanceForAsset_sumsLargeListInFull() public {
+        // No adapter-level cap: a large open-request list (self-inflicted — Kelp requests are keyed to the
+        // unstaking msg.sender, so they cannot be third-party-injected) is summed in full, never truncated.
+        uint256 n = 300;
+        for (uint256 i = 0; i < n; i++) {
             manager.pushRequest(address(steth), alice, 1e18);
         }
         (uint256 amount,) = adapter.getAdapterBalanceForAsset(alice, address(steth));
-        assertEq(amount, cap * 1e18, "Should sum exactly MAX_REQUESTS_PROBED requests");
+        assertEq(amount, n * 1e18, "large list is summed in full, never truncated");
     }
 
     function test_getAdapterBalanceForAsset_skipsClaimedFront() public {

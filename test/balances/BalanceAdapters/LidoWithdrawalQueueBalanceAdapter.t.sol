@@ -215,24 +215,15 @@ contract LidoWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(amount, 3e18, "Claimed request must be excluded");
     }
 
-    function test_getAdapterBalanceForAsset_sumsUpToCap() public {
-        uint256 cap = adapter.MAX_REQUESTS_PROBED();
-        for (uint256 i = 0; i < cap; i++) {
+    function test_getAdapterBalanceForAsset_sumsLargeListInFull() public {
+        // No adapter-level cap: a large (e.g. griefed / third-party-inflated) list is read in full — every
+        // request is real, claimable ETH, so summing it all is the honest, over-report-safe answer.
+        uint256 n = 400;
+        for (uint256 i = 0; i < n; i++) {
             queue.pushRequest(alice, i + 1, 1e18, false);
         }
         (uint256 amount,) = adapter.getAdapterBalanceForAsset(alice, address(weth));
-        assertEq(amount, cap * 1e18, "Exactly MAX_REQUESTS_PROBED open requests: all summed");
-    }
-
-    function test_getAdapterBalanceForAsset_skipsWhenAboveCap() public {
-        // Lido's queue is not ERC721Enumerable, so an account with more open requests than the cap
-        // is skipped (return 0) rather than materialising an unbounded, attacker-inflatable id list.
-        uint256 cap = adapter.MAX_REQUESTS_PROBED();
-        for (uint256 i = 0; i < cap + 1; i++) {
-            queue.pushRequest(alice, i + 1, 1e18, false);
-        }
-        (uint256 amount,) = adapter.getAdapterBalanceForAsset(alice, address(weth));
-        assertEq(amount, 0, "Above cap: skipped to bound gas");
+        assertEq(amount, n * 1e18, "large list is summed in full, never truncated or zeroed");
     }
 
     // ---- getAdapterBalances ----

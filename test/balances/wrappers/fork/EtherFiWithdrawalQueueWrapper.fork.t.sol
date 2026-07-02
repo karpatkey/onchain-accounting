@@ -12,6 +12,9 @@ import {
     IEtherFiWithdrawRequestNFT,
     IEtherFiLiquidityPool
 } from "src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueAssistedBalanceAdapter.sol";
+import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @notice ERC721 transfer surface of ether.fi's WithdrawRequestNFT (for seeding a real finalized request into the
 ///         test Safe in the claim test).
@@ -168,5 +171,73 @@ contract EtherFiWithdrawalQueueWrapperForkTest is BalanceAdapterTestBase {
         assertEq(adapter.tokenIdsOf(address(safe)).length, 0, "claimed id removed from the adapter cache");
         (uint256 owedAfter,) = adapter.getAdapterBalanceForAsset(address(safe), NATIVE_ETH);
         assertEq(owedAfter, 0, "nothing owed after claim");
+    }
+
+    // ---- More happy paths (real funds/accounts) ----
+
+    /// @notice Two real-eETH deposits are tracked independently and their live pending values aggregate; two pending
+    ///         legs with distinct request ids.
+    function test_requestWithdraw_multipleDeposits_aggregate() public {
+        vm.prank(EETH_WHALE);
+        IERC20(EETH).transfer(address(safe), 5 ether);
+
+        uint256 id1 = safe.doRequestDelegate(address(wrapper), 1 ether);
+        uint256 id2 = safe.doRequestDelegate(address(wrapper), 2 ether);
+        assertTrue(id1 != id2, "distinct request ids");
+
+        assertEq(adapter.tokenIdsOf(address(safe)).length, 2, "both requests tracked");
+
+        (uint256 owed,) = adapter.getAdapterBalanceForAsset(address(safe), NATIVE_ETH);
+        assertEq(owed, _liveOwedPending(id1) + _liveOwedPending(id2), "aggregate == sum of independent live reads");
+        assertApproxEqAbs(owed, 3 ether, 0.02 ether, "~ 1 + 2 eETH pending");
+
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(address(safe), address(0));
+        assertEq(p.length, 2, "two per-request legs");
+        assertTrue(p[0].isLocked && p[1].isLocked, "both pending -> locked");
+        assertTrue(p[0].positionInstanceId != p[1].positionInstanceId, "distinct positionInstanceIds");
+    }
+
+    /// @notice The real finalized request valued via getAdapterPositions for its real owner: one native-ETH leg,
+    ///         isLocked=false, amount == getClaimableAmount, tracked through the wrapper's submit forwarder.
+    function test_getAdapterPositions_realFinalizedRequest_isLockedFalse() public {
+        vm.prank(FINALIZED_HOLDER);
+        wrapper.submit(FINALIZED_TOKEN_ID); // adapter.submit(FINALIZED_HOLDER, id) as the wrapper (WRAPPER_ROLE)
+
+        (uint256 owed,) = adapter.getAdapterBalanceForAsset(FINALIZED_HOLDER, NATIVE_ETH);
+        assertEq(owed, FINALIZED_CLAIMABLE, "finalized -> getClaimableAmount");
+
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(FINALIZED_HOLDER, address(0));
+        assertEq(p.length, 1);
+        assertEq(p[0].amount, FINALIZED_CLAIMABLE);
+        assertFalse(p[0].isLocked, "finalized request -> not locked");
+        assertEq(p[0].balanceAsset.asset, NATIVE_ETH);
+        assertEq(uint8(p[0].positionKind), uint8(PositionKind.Supplied));
+        assertEq(p[0].protocolSubId, ProtocolIds.ETHERFI_WITHDRAWAL);
+        assertEq(p[0].positionInstanceId, bytes32(FINALIZED_TOKEN_ID));
+    }
+
+    /// @notice A pending real-eETH deposit and a transferred-in real finalized request coexist and aggregate; claiming
+    ///         the finalized one leaves the pending one tracked.
+    function test_pendingDeposit_andFinalizedClaim_coexist() public {
+        vm.prank(EETH_WHALE);
+        IERC20(EETH).transfer(address(safe), 2 ether);
+        uint256 pendingId = safe.doRequestDelegate(address(wrapper), 1 ether);
+
+        vm.prank(FINALIZED_HOLDER);
+        IWithdrawRequestNFTTransfer(WITHDRAW_REQUEST_NFT)
+            .transferFrom(FINALIZED_HOLDER, address(safe), FINALIZED_TOKEN_ID);
+        safe.trackViaWrapper(address(wrapper), FINALIZED_TOKEN_ID);
+
+        assertEq(adapter.tokenIdsOf(address(safe)).length, 2, "pending + finalized tracked");
+        (uint256 owed,) = adapter.getAdapterBalanceForAsset(address(safe), NATIVE_ETH);
+        assertEq(owed, _liveOwedPending(pendingId) + FINALIZED_CLAIMABLE, "pending estimate + finalized claimable");
+
+        uint256 balBefore = address(safe).balance;
+        safe.doClaimDelegate(address(wrapper), FINALIZED_TOKEN_ID);
+        assertEq(address(safe).balance, balBefore + FINALIZED_CLAIMABLE, "real ETH from the finalized claim");
+
+        uint256[] memory left = adapter.tokenIdsOf(address(safe));
+        assertEq(left.length, 1, "only the pending request remains tracked");
+        assertEq(left[0], pendingId);
     }
 }

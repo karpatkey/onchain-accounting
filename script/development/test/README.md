@@ -48,7 +48,7 @@ Once Phase 0 has produced a scope decision, these five steps **must happen in pa
 
 Drift envelope on the side channel = (now − pinned block timestamp). If you pinned at a fresh block (a few minutes back), the app-vs-(Debank/protocol-UI) gap is bounded by minutes of natural pool activity, which is normally sub-bp at the dollar scale. Larger gaps need an explanation before the protocol can be marked verified.
 
-Use **two reference surfaces, not one**: Debank for a quick aggregate sanity check, and the **protocol's own UI** for the authoritative per-position numbers. They serve different purposes — Debank can silently omit or merge positions, while the protocol UI shows exactly what the protocol itself reports (e.g. PancakeSwap's UI distinguishes a *farmed* NFT from an in-wallet LP NFT — a distinction that directly exposed the MasterChefV3 coverage gap for `PancakeSwapV3PoolsAssistedBalanceAdapter`). When the two references disagree, the protocol UI wins; if the adapter matches neither, that's a finding.
+Use **two reference surfaces, not one**: Debank for a quick aggregate sanity check, and the **protocol's own UI** for the authoritative per-position numbers. They serve different purposes — Debank can silently omit or merge positions, while the protocol UI shows exactly what the protocol itself reports (e.g. PancakeSwap's UI distinguishes a *farmed* NFT from an in-wallet LP NFT — a distinction that directly exposed the MasterChefV3 coverage gap for `PancakeSwapV3PoolsMetaBalanceAdapter`). When the two references disagree, the protocol UI wins; if the adapter matches neither, that's a finding.
 
 ### Hard constraints
 

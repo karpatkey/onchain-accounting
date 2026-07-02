@@ -104,7 +104,7 @@ abstract contract AssistantSafeRolesForkBase is BalanceAdapterTestBase, SafeOver
             IRolesMod.execTransactionWithRole, (assistant, 0, data, IRolesMod.Operation.DelegateCall, TEST_ROLE, true)
         );
         vm.prank(managerOwner);
-        ISafeMinimal(MANAGER_SAFE)
+        bool success = ISafeMinimal(MANAGER_SAFE)
             .execTransaction(
                 ROLES_MODIFIER,
                 0,
@@ -117,5 +117,8 @@ abstract contract AssistantSafeRolesForkBase is BalanceAdapterTestBase, SafeOver
                 payable(address(0)),
                 buildPrevalidatedSignature(managerOwner)
             );
+        // Safe can return false (rather than revert) when safeTxGas != 0; assert so a non-executing tx fails loud
+        // instead of a test passing without the delegatecall having happened.
+        require(success, "manager Safe execTransaction did not succeed");
     }
 }

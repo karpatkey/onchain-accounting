@@ -141,6 +141,15 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
         adapter.submit(address(vault), ticket, ts);
     }
 
+    /// @dev Asserts the adapter reports nothing for `account` (used as the "before" state in happy-path tests).
+    function _assertReportsNothing(address account) internal view {
+        (uint256 owed, bool isDebt) = adapter.getAdapterBalanceForAsset(account, NATIVE);
+        assertEq(owed, 0, "reports zero owed");
+        assertFalse(isDebt);
+        assertEq(adapter.getAdapterPositions(account, address(0)).length, 0, "no legs");
+        assertEq(adapter.positionsOf(account).length, 0, "not tracked");
+    }
+
     // ---- Constructor ----
 
     function test_constructor_revertsOnZeroRegistry() public {
@@ -177,6 +186,7 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
     // submit/remove are permissionless and self-scoped to msg.sender; there is no role to test here.
 
     function test_submit_storesValidPosition_andDedups() public {
+        _assertReportsNothing(holder); // before
         vault.setIndex(TICKET, 1);
         vault.setRequest(holder, TICKET, TS, 0, 1 ether);
         _submit(holder, TICKET, TS);
@@ -234,10 +244,19 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
         _submit(holder, TICKET, TS);
         _submit(holder, TICKET + 1, TS);
 
+        // Before: both tracked, owed = 1 + 2 ether.
+        assertEq(adapter.positionsOf(holder).length, 2);
+        (uint256 owedBefore,) = adapter.getAdapterBalanceForAsset(holder, NATIVE);
+        assertEq(owedBefore, 3 ether);
+
         vm.prank(holder);
         adapter.remove(address(vault), TICKET, TS);
+
+        // After: only TICKET+1 remains, owed drops to 2 ether.
         assertEq(adapter.positionsOf(holder).length, 1);
         assertEq(adapter.positionsOf(holder)[0].positionTicket, TICKET + 1);
+        (uint256 owedAfter,) = adapter.getAdapterBalanceForAsset(holder, NATIVE);
+        assertEq(owedAfter, 2 ether);
     }
 
     function test_remove_revertsWhenNotTracked() public {
@@ -305,6 +324,7 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
     // ---- Valuation (shared with the assisted adapter) ----
 
     function test_claimable_usesExitedAssets() public {
+        _assertReportsNothing(holder); // before
         vault.setIndex(TICKET, 1465);
         vault.setRequest(holder, TICKET, TS, 0, 4_999_000_000_000_000_000);
         _submit(holder, TICKET, TS);
@@ -314,6 +334,7 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
     }
 
     function test_fullyPending_valuesQueuedSharesViaConvertToAssets() public {
+        _assertReportsNothing(holder); // before
         vault.setIndex(TICKET, -1);
         vault.setRate(0.98e18);
         vault.setRequest(holder, TICKET, TS, 10 ether, 0);
@@ -323,6 +344,7 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
     }
 
     function test_partiallyExited_sumsExitedPlusQueued() public {
+        _assertReportsNothing(holder); // before
         vault.setIndex(TICKET, 7);
         vault.setRate(1e18);
         vault.setRequest(holder, TICKET, TS, 3 ether, 2 ether);
@@ -361,6 +383,7 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
     }
 
     function test_aggregatesAcrossPositions() public {
+        _assertReportsNothing(holder); // before
         vault.setIndex(TICKET, 1);
         vault.setRequest(holder, TICKET, TS, 0, 1 ether);
         vault.setIndex(TICKET + 1, 1);
@@ -403,6 +426,7 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
     // ---- Positions / identity ----
 
     function test_getAdapterPositions_identity() public {
+        _assertReportsNothing(holder); // before
         vault.setIndex(TICKET, 1);
         vault.setRequest(holder, TICKET, TS, 0, 2 ether);
         _submit(holder, TICKET, TS);
@@ -422,6 +446,7 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
     }
 
     function test_getAdapterPositions_mixedClaimableAndLocked() public {
+        _assertReportsNothing(holder); // before
         vault.setIndex(TICKET, 7);
         vault.setRate(1e18);
         vault.setRequest(holder, TICKET, TS, 3 ether, 2 ether);
@@ -445,6 +470,7 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
     }
 
     function test_getAdapterBalances_shape() public {
+        _assertReportsNothing(holder); // before
         vault.setIndex(TICKET, 1);
         vault.setRequest(holder, TICKET, TS, 0, 2 ether);
         _submit(holder, TICKET, TS);
@@ -465,6 +491,7 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
     }
 
     function test_getAdapterPositions_assetFilterMatchesUnderlying() public {
+        _assertReportsNothing(holder); // before
         vault.setIndex(TICKET, 1);
         vault.setRequest(holder, TICKET, TS, 0, 2 ether);
         _submit(holder, TICKET, TS);
@@ -504,6 +531,7 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
     }
 
     function test_getAdapterPositions_fullyPendingLockedLeg() public {
+        _assertReportsNothing(holder); // before
         // idx == -1 → fully pending → one locked leg valued via convertToAssets(leftShares).
         vault.setIndex(TICKET, -1);
         vault.setRate(1e18);
@@ -518,6 +546,7 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
     }
 
     function test_getAdapterPositions_twoPositionsSameVault_distinctInstanceIds() public {
+        _assertReportsNothing(holder); // before
         vault.setIndex(TICKET, 1);
         vault.setRequest(holder, TICKET, TS, 0, 1 ether); // claimable 1 ETH
         vault.setIndex(TICKET + 1, -1);

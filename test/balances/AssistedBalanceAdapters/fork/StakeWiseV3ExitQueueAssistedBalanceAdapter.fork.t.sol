@@ -81,6 +81,11 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterForkTest is BalanceAdapterTes
     }
 
     function _submit() internal {
+        // Before: the adapter reports nothing for HOLDER (proves the submit is what makes the position appear).
+        (uint256 owedBefore,) = adapter.getAdapterBalanceForAsset(HOLDER, NATIVE_ETH);
+        assertEq(owedBefore, 0, "zero owed before submit");
+        assertEq(adapter.getAdapterPositions(HOLDER, address(0)).length, 0, "no legs before submit");
+        assertEq(adapter.positionsOf(HOLDER).length, 0, "not tracked before submit");
         vm.prank(HOLDER);
         adapter.submit(GENESIS_VAULT, TICKET, ENTRY_TS);
     }
@@ -140,6 +145,12 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterForkTest is BalanceAdapterTes
     function test_realHolders_multipleAccounts_valuedLive() public {
         vm.rollFork(MULTI_BLOCK);
         adapter = _freshAdapter();
+
+        // Before: the adapter reports nothing for either holder.
+        (uint256 aBefore,) = adapter.getAdapterBalanceForAsset(HOLDER_A, NATIVE_ETH);
+        (uint256 bBefore,) = adapter.getAdapterBalanceForAsset(HOLDER_B, NATIVE_ETH);
+        assertEq(aBefore, 0, "A zero before submit");
+        assertEq(bBefore, 0, "B zero before submit");
 
         vm.prank(HOLDER_A);
         adapter.submit(GENESIS_VAULT, TICKET_A, ENTRY_TS_A);

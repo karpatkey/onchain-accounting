@@ -81,42 +81,72 @@ contract StakeWiseV3ExitQueueWrapperForkTest is BalanceAdapterTestBase {
         return DelegateExecutor(payable(holder));
     }
 
-    /// @dev Real shares-holder enters the queue through the wrapper; asserts the adapter tracks + values it live.
+    /// @dev Real shares-holder enters the queue through the wrapper; asserts the adapter reports nothing BEFORE and
+    ///      tracks + values the new position AFTER.
     function _assertEnter(address holder, uint256 sharesToExit) internal {
+        // Before: the adapter reports nothing for this holder.
+        (uint256 owedBefore,) = adapter.getAdapterBalanceForAsset(holder, NATIVE_ETH);
+        assertEq(owedBefore, 0, "zero owed before enter");
+        assertEq(adapter.positionsOf(holder).length, 0, "no tracked position before enter");
+        assertEq(adapter.getAdapterPositions(holder, address(0)).length, 0, "no legs before enter");
+
         DelegateExecutor exec = _executorAt(holder);
         bytes memory ret =
             exec.exec(address(wrapper), abi.encodeCall(wrapper.enterExitQueue, (GENESIS_VAULT, sharesToExit)));
         uint256 ticket = abi.decode(ret, (uint256));
 
-        // The adapter now tracks the Safe's brand-new position and values it live (fully-pending → via convertToAssets).
+        // After: the adapter tracks the Safe's brand-new position and values it live (fully-pending → convertToAssets).
         StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition[] memory cached = adapter.positionsOf(holder);
-        assertEq(cached.length, 1, "one tracked position");
+        assertEq(cached.length, 1, "one tracked position after enter");
         assertEq(cached[0].vault, GENESIS_VAULT);
         assertEq(cached[0].positionTicket, ticket);
-        (uint256 owed,) = adapter.getAdapterBalanceForAsset(holder, NATIVE_ETH);
-        assertGt(owed, 0, "freshly-entered position is valued > 0");
-        assertApproxEqRel(owed, IStakeWiseExitVault(GENESIS_VAULT).convertToAssets(sharesToExit), 0.01e18);
+        assertEq(adapter.getAdapterPositions(holder, address(0)).length, 1, "one leg after enter");
+        (uint256 owedAfter,) = adapter.getAdapterBalanceForAsset(holder, NATIVE_ETH);
+        assertGt(owedAfter, 0, "freshly-entered position is valued > 0");
+        // Variation == the deposited amount: a just-entered position is fully pending, so the adapter reports exactly
+        // the asset value of the shares moved into the queue (owedBefore is 0, so the delta equals owedAfter).
+        assertEq(
+            owedAfter - owedBefore,
+            IStakeWiseExitVault(GENESIS_VAULT).convertToAssets(sharesToExit),
+            "adapter's reported increase == deposited shares' asset value"
+        );
     }
 
-    /// @dev Real checkpointed position claimed through the wrapper; asserts assets are paid to the holder + untracked.
+    /// @dev Real checkpointed position claimed through the wrapper; asserts the adapter's report at each step: nothing
+    ///      before submit, the owed exit assets once tracked, and nothing again after the claim untracks it.
     function _assertClaim(address holder, uint256 ticket, uint256 ts, uint256 idx) internal {
         (uint256 left,, uint256 exitedAssets) =
             IStakeWiseExitVault(GENESIS_VAULT).calculateExitedAssets(holder, ticket, ts, idx);
         assertEq(left, 0, "fully exited");
         assertGt(exitedAssets, 0, "unclaimed, owed > 0");
 
+        // Before submit: the adapter reports nothing for this holder.
+        (uint256 owedBefore,) = adapter.getAdapterBalanceForAsset(holder, NATIVE_ETH);
+        assertEq(owedBefore, 0, "zero owed before submit");
+        assertEq(adapter.positionsOf(holder).length, 0, "not tracked before submit");
+
         // Track the ticket (as the claimer) so the wrapper's post-claim remove succeeds.
         vm.prank(holder);
         adapter.submit(GENESIS_VAULT, ticket, ts);
-        assertEq(adapter.positionsOf(holder).length, 1);
+
+        // After submit / before claim: the adapter reports the owed exit assets.
+        assertEq(adapter.positionsOf(holder).length, 1, "tracked after submit");
+        (uint256 owedTracked,) = adapter.getAdapterBalanceForAsset(holder, NATIVE_ETH);
+        assertEq(owedTracked, exitedAssets, "adapter reports the owed exit assets once tracked");
+        assertEq(adapter.getAdapterPositions(holder, address(0)).length, 1, "one leg once tracked");
 
         uint256 balBefore = holder.balance;
         DelegateExecutor exec = _executorAt(holder);
         exec.exec(address(wrapper), abi.encodeCall(wrapper.claimExitedAssets, (GENESIS_VAULT, ticket, ts, idx)));
 
-        // Claimed ETH was paid to the holder, and the wrapper deregistered the ticket.
-        assertEq(holder.balance - balBefore, exitedAssets, "holder received the exited assets");
+        // After: claimed ETH paid to the holder; the wrapper deregistered the ticket and the adapter reports nothing.
+        assertEq(holder.balance - balBefore, exitedAssets, "holder received exactly the claimed amount");
         assertEq(adapter.positionsOf(holder).length, 0, "ticket deregistered after claim");
+        (uint256 owedAfter,) = adapter.getAdapterBalanceForAsset(holder, NATIVE_ETH);
+        assertEq(owedAfter, 0, "zero owed after claim");
+        assertEq(adapter.getAdapterPositions(holder, address(0)).length, 0, "no legs after claim");
+        // Variation == the claimed amount: the adapter's reported balance drops by exactly what was claimed.
+        assertEq(owedTracked - owedAfter, exitedAssets, "adapter's reported decrease == claimed amount");
     }
 
     // ---- Deposit: real shares-holders enter the queue through the wrapper ----

@@ -150,20 +150,21 @@ Every assistant is two entrypoints:
 - **open** (deposit / request-withdraw / enter-queue): optional `forceApprove`, forward to the protocol (receiver pinned to the Safe), then `ADAPTER.submit(coord)`.
 - **close** (withdraw / claim): forward to the protocol, then `ADAPTER.remove(coord)`.
 
-Because both run as the Safe, the `submit`/`remove` calls carry `msg.sender = Safe` and land in the Safe's own cache. Ordering matters when a claim burns the coordinate: **claim first, then remove** (the adapter's `_removable` requires the coordinate be gone — see ether.fi/Stader below).
+Because both run as the Safe, the `submit`/`remove` calls carry `msg.sender = Safe` and land in the Safe's own cache. Ordering matters when a claim burns the coordinate: **claim first, then remove** (the adapter's `_removable` requires the coordinate be gone — see ether.fi below).
 
 ---
 
 ## 6. Members
 
-| Adapter (`*AssistedBalanceAdapter` / `Stader…`) | Coordinate | Legs | `_removable` policy | Assistant entrypoints |
+| Adapter (`*AssistedBalanceAdapter`) | Coordinate | Legs | `_removable` policy | Assistant entrypoints |
 |---|---|---|---|---|
-| **NexusMutualStakingPools** | `abi.encode(tokenId)` | up to 2: `Staking` (active+expired) + `Rewards`, NXM | **always `true`** — Nexus doesn't burn the `StakingNFT` on withdraw, so the account keeps owning an emptied position; dropping it is under-report-safe | `depositTo(pool, amount, tranche, reqId)` → submit; `withdraw(pool, tokenId, …)` → remove. Approves NXM to the TokenController |
-| **StakeWiseV3ExitQueue** | `abi.encode(vault, positionTicket, timestamp)` | up to 2: claimable + locked `Supplied`, ETH | claimed/consumed → owed 0 | `enterExitQueue(vault, shares)` (receiver forced to the Safe) → submit; `claimExitedAssets(vault, ticket, ts, idx)` → remove |
-| **EtherFiWithdrawalQueue** | `abi.encode(requestId)` | 1 `Supplied`, native ETH (`isLocked = !finalized`) | no longer owned — `claimWithdraw` **burns** the NFT | `requestWithdraw(amount)` (approves eETH, recipient = Safe) → submit; `claimWithdraw(tokenId)` (claim burns) → remove |
-| **StaderWithdrawalQueue** | `abi.encode(requestId)` | 1 `Supplied`, WETH-denominated (ETH payout) | no longer owned — the manager deletes the request on claim | `requestWithdraw(ethX, _owner)` (`_requireSelf(_owner)`, approves ETHx) → submit; `claim(requestId)` → remove |
+| **NexusMutualStakingPools** | `abi.encode(tokenId)` | up to 2: `Staking` (active+expired) + `Rewards`, NXM | **value-based** — Nexus doesn't burn the `StakingNFT` on withdraw, so "no longer owned" isn't a liveness proxy; removable only when the id is no longer owned by the account OR fully emptied (no stake/rewards), so a partial/rewards-only withdraw keeps a still-live position tracked | `depositTo(pool, amount, tranche, reqId)` → submit; `withdraw(pool, tokenId, …)` → remove (best-effort). Approves NXM to the TokenController |
+| **StakeWiseV3ExitQueue** | `abi.encode(vault, positionTicket, timestamp)` | up to 2: claimable + locked `Supplied`, ETH | claimed/consumed → owed 0 | `enterExitQueue(vault, shares)` (receiver forced to the Safe) → submit; `claimExitedAssets(vault, ticket, ts, idx)` → remove (best-effort) |
+| **EtherFiWithdrawalQueue** | `abi.encode(requestId)` | 1 `Supplied`, native ETH (`isLocked = !finalized`) | no longer owned — `claimWithdraw` **burns** the NFT | `requestWithdraw(amount)` (approves eETH, recipient = Safe) → submit; `claimWithdraw(tokenId)` (claim burns) → remove (best-effort) |
 
 Each adapter shares a static per-adapter `positionId` (e.g. the WithdrawRequestNFT / manager / vault address, or Nexus's staking-pool address) and rides the per-item coordinate id in `positionInstanceId`. Each is paired with a `…Assistant` in `assistants/`.
+
+> **Not a member: Stader.** Stader's withdrawal queue is a **plain** `BalanceAdapter` (`src/balances/BalanceAdapters/StaderWithdrawalQueueBalanceAdapter.sol`), not an assisted one: it enumerates an account's live requests on-chain via `getRequestIdsByUser` (claim-pruned, protocol-capped), so it needs no assistant. See ADR 0018 "Consequences" for the rationale.
 
 ---
 

@@ -7,14 +7,28 @@ error InvalidArgumentsWithContext(string context);
 error NotAContract(string name);
 error NotAuthorized();
 error NotChainlinkOracle();
+/// @notice Thrown when an assistant entrypoint that must be delegatecalled is called directly on the singleton
+///         (`address(this) == SELF`). Canonical delegatecall-guard error for the assistant-fed family (`BalanceAdapterAssistant`).
+error NotDelegateCall();
+/// @notice An assistant entrypoint was told to track/act for an account other than the executing context
+///         (`address(this)`, i.e. the delegatecalling Safe). Canonical assistant self-scope check (`_requireSelf`).
+error AssistantAccountMismatch(address expected, address provided);
 
-// Assisted balance-adapter errors
-error NotTokenOwner(address account, uint256 tokenId);
-error TokenIdCacheFull(address account, uint256 maxTokenIds);
-// Assisted exit-queue (ticket-keyed) errors — StakeWise V3 caches (vault, positionTicket, timestamp) tuples, not
-// tokenIds, so it has its own cache-full / invalid-position errors (same fail-loud-write semantics as the NFT adapters).
-error PositionCacheFull(address account, uint256 maxPositions);
-error InvalidExitPosition(address account, address vault, uint256 positionTicket);
+// Permissionless assistant-fed assisted balance-adapter family (ADR 0018) — shared coordinate-cache errors, used by the
+// single {AssistedCoordCache} base (every coordinate is an `abi.encode`d blob). The coordinate is identified by `id`
+// (a tokenId / requestId / positionTicket, from `_coordId`); the full tuple, where richer, rides in the cache's events.
+/// @notice `submit` was given a coordinate not currently owned by the caller (`msg.sender`).
+error CoordinateNotOwned(address account, uint256 id);
+/// @notice `submit` would grow the caller's cache past its per-account cap.
+error CoordinateCacheFull(address account, uint256 maxCoordinates);
+/// @notice `remove` targeted a coordinate not in the caller's cache.
+error CoordinateNotCached(address account, uint256 id);
+/// @notice `remove` targeted a coordinate the caller still owns (a live position) — refused so a live position is never
+///         dropped (would under-report the caller's own NAV). Only a claimed/consumed coordinate may be removed.
+error CoordinateStillLive(address account, uint256 id);
+/// @notice `submit` was given a coordinate that failed the adapter's write-time protocol validation (e.g. an
+///         unregistered target). Distinct from {CoordinateNotOwned} (ownership) — this is a malformed/invalid coordinate.
+error InvalidCoordinate(address account, uint256 id);
 
 // Bridge-specific errors
 error AlreadyInitialized();

@@ -67,9 +67,6 @@ import {
 } from "../../src/balances/BalanceAdapters/LidoWithdrawalQueueBalanceAdapter.sol";
 import {EthenaCooldownBalanceAdapter} from "../../src/balances/BalanceAdapters/EthenaCooldownBalanceAdapter.sol";
 import {
-    MerklRewardsAssistedBalanceAdapter
-} from "../../src/balances/AssistedBalanceAdapters/MerklRewardsAssistedBalanceAdapter.sol";
-import {
     EtherFiWithdrawalQueueAssistedBalanceAdapter
 } from "../../src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueAssistedBalanceAdapter.sol";
 import {
@@ -78,6 +75,15 @@ import {
 import {
     StakeWiseV3ExitQueueAssistedBalanceAdapter
 } from "../../src/balances/AssistedBalanceAdapters/StakeWiseV3ExitQueueAssistedBalanceAdapter.sol";
+import {
+    EtherFiWithdrawalQueueAssistant
+} from "../../src/balances/AssistedBalanceAdapters/assistants/EtherFiWithdrawalQueueAssistant.sol";
+import {
+    NexusMutualStakingPoolsAssistant
+} from "../../src/balances/AssistedBalanceAdapters/assistants/NexusMutualStakingPoolsAssistant.sol";
+import {
+    StakeWiseV3ExitQueueAssistant
+} from "../../src/balances/AssistedBalanceAdapters/assistants/StakeWiseV3ExitQueueAssistant.sol";
 import {
     UniswapV3PoolsMetaBalanceAdapter
 } from "../../src/balances/MetaBalanceAdapters/uniswap/UniswapV3PoolsMetaBalanceAdapter.sol";
@@ -171,17 +177,14 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // --- StakeWise V3 (Mainnet) — Genesis Vault deposit (osETH itself is now a Custom-priced ERC20, not a balance adapter) ---
         _deployIfEnabled("StakeWiseV3VaultsMeta"); // Meta-adapter: all StakeWise V3 vaults; vault set on NAV (ADR 0010)
 
-        // --- Merkl Rewards (single instance per chain; Distributor address is identical on every EVM chain) ---
-        _deployIfEnabled("MerklRewardsAssisted");
-
-        // --- ether.fi withdrawal-queue cache adapter (agent-fed; ADR 0014) ---
+        // --- ether.fi withdrawal-queue cache adapter (assisted; permissionless assistant-fed, ADR 0018) ---
         _deployIfEnabled("EtherFiWithdrawalQueueAssisted");
 
-        // --- Nexus Mutual staked NXM (assisted cache adapter; agent-fed StakingNFT tokenIds, ADR 0015; values
-        //     via StakingViewer, re-verifies ownership per read) ---
+        // --- Nexus Mutual staked NXM (assisted cache adapter; StakingNFT tokenIds, ADR 0015/0018 permissionless
+        //     assistant-fed; values via StakingViewer, re-verifies ownership per read) ---
         _deployIfEnabled("NexusMutualStakingPoolsAssisted");
 
-        // --- StakeWise V3 exit-queue cache adapter (agent-fed; ADR 0014) ---
+        // --- StakeWise V3 exit-queue cache adapter (assisted; permissionless assistant-fed, ADR 0018) ---
         _deployIfEnabled("StakeWiseV3ExitQueueAssisted");
 
         // --- Uniswap V2 (meta-adapter: all pairs; pair set on NAV, ADR 0010) ---
@@ -195,6 +198,12 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         // --- PancakeSwap V3 (meta-adapter; disabled in config — never deployed, kept for parity) ---
         _deployIfEnabled("PancakeSwapV3PoolsMeta"); // meta-adapter: PancakeSwap V3 pools (on-chain NFT enumeration)
+
+        // --- Assistants for the permissionless assisted adapters (ADR 0018) ---
+        // Delegatecall helpers the owner Safe uses to enter/stake while keeping the adapter cache current. Deployed
+        // alongside their adapters (not NAV-registered); recorded in the deployment state so the ops team can whitelist
+        // them on the Roles modifier. Stader is a plain adapter and has no assistant.
+        _deployAssistantsIfEnabled();
 
         // ERC20Default is deployed in NAVCalculator.initialize() when the NAV proxy is set up (02_DeployProxies); it is not deployed here.
         // StakeWiseV3* adapters are wired above so accounts holding osETH or Genesis-Vault
@@ -231,6 +240,63 @@ contract DeployBalanceAdapters is BaseDeployScript {
             // Save to config
             ConfigReader.writeAdapterAddress(vm, currentChainId, "balanceAdapters", adapterName, adapter);
             console2.log("  Deployed at:", adapter);
+        }
+    }
+
+    /// @notice Deploys the delegatecall assistants paired with the permissionless assisted adapters (ADR 0018), when
+    ///         their adapters are deployed. Assistants are NOT NAV-registered (they are not balance adapters); they are
+    ///         recorded in the deployment state for the ops team to whitelist on the Roles modifier. Idempotent — skips
+    ///         an assistant already recorded. Constructor args beyond the adapter address are read from the paired
+    ///         adapter's config (`tokenController` for Nexus, `eeth` for ether.fi; StakeWise needs only the adapter).
+    function _deployAssistantsIfEnabled() internal {
+        // ether.fi
+        address etherfiAdapter = _readAdapterDeployed("balanceAdapters", "EtherFiWithdrawalQueueAssisted");
+        if (etherfiAdapter != address(0) && readDeployedAddress("EtherFiWithdrawalQueueAssistant") == address(0)) {
+            address liquidityPool = vm.parseAddress(
+                ConfigReader.readAdapterParam(
+                    vm, currentChainId, "balanceAdapters", "EtherFiWithdrawalQueueAssisted", "liquidityPool"
+                )
+            );
+            address withdrawRequestNft = vm.parseAddress(
+                ConfigReader.readAdapterParam(
+                    vm, currentChainId, "balanceAdapters", "EtherFiWithdrawalQueueAssisted", "withdrawRequestNft"
+                )
+            );
+            address eeth = vm.parseAddress(
+                ConfigReader.readAdapterParam(
+                    vm, currentChainId, "balanceAdapters", "EtherFiWithdrawalQueueAssisted", "eeth"
+                )
+            );
+            address assistant =
+                address(new EtherFiWithdrawalQueueAssistant(etherfiAdapter, liquidityPool, withdrawRequestNft, eeth));
+            saveDeployedAddress("EtherFiWithdrawalQueueAssistant", assistant);
+            console2.log("Deployed EtherFiWithdrawalQueueAssistant:", assistant);
+        }
+
+        // Nexus Mutual (underlyingToken on the adapter config is NXM, reused as the assistant's NXM arg)
+        address nexusAdapter = _readAdapterDeployed("balanceAdapters", "NexusMutualStakingPoolsAssisted");
+        if (nexusAdapter != address(0) && readDeployedAddress("NexusMutualStakingPoolsAssistant") == address(0)) {
+            address nxm = vm.parseAddress(
+                ConfigReader.readAdapterParam(
+                    vm, currentChainId, "balanceAdapters", "NexusMutualStakingPoolsAssisted", "underlyingToken"
+                )
+            );
+            address tokenController = vm.parseAddress(
+                ConfigReader.readAdapterParam(
+                    vm, currentChainId, "balanceAdapters", "NexusMutualStakingPoolsAssisted", "tokenController"
+                )
+            );
+            address assistant = address(new NexusMutualStakingPoolsAssistant(nexusAdapter, nxm, tokenController));
+            saveDeployedAddress("NexusMutualStakingPoolsAssistant", assistant);
+            console2.log("Deployed NexusMutualStakingPoolsAssistant:", assistant);
+        }
+
+        // StakeWise V3 (assistant needs only the adapter)
+        address stakewiseAdapter = _readAdapterDeployed("balanceAdapters", "StakeWiseV3ExitQueueAssisted");
+        if (stakewiseAdapter != address(0) && readDeployedAddress("StakeWiseV3ExitQueueAssistant") == address(0)) {
+            address assistant = address(new StakeWiseV3ExitQueueAssistant(stakewiseAdapter));
+            saveDeployedAddress("StakeWiseV3ExitQueueAssistant", assistant);
+            console2.log("Deployed StakeWiseV3ExitQueueAssistant:", assistant);
         }
     }
 
@@ -362,22 +428,17 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return _deployLidoWithdrawalQueue(adapterName, navCalculator);
         }
 
-        // Merkl Rewards: proof-cached unclaimed-reward adapter (ADR 0007).
-        if (_equals(adapterName, "MerklRewardsAssisted")) {
-            return _deployMerklRewardsAssisted(adapterName, navCalculator);
-        }
-
-        // ether.fi withdrawals: id-cached withdrawal-queue adapter (ADR 0014).
+        // ether.fi withdrawals: id-cached withdrawal-queue adapter (assisted; ADR 0018).
         if (_equals(adapterName, "EtherFiWithdrawalQueueAssisted")) {
             return _deployEtherFiWithdrawalQueueAssisted(adapterName, navCalculator);
         }
 
-        // Nexus Mutual staked NXM (assisted cache adapter; agent-fed StakingNFT tokenIds, ADR 0015).
+        // Nexus Mutual staked NXM (assisted cache adapter; StakingNFT tokenIds, ADR 0015/0018).
         if (_equals(adapterName, "NexusMutualStakingPoolsAssisted")) {
             return _deployNexusMutualStakingPoolsAssisted(adapterName, navCalculator);
         }
 
-        // StakeWise V3 exit queue: ticket-cached exit-queue adapter (ADR 0014).
+        // StakeWise V3 exit queue: ticket-cached exit-queue adapter (assisted; ADR 0018).
         if (_equals(adapterName, "StakeWiseV3ExitQueueAssisted")) {
             return _deployStakeWiseV3ExitQueueAssisted(adapterName, navCalculator);
         }
@@ -687,39 +748,12 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(adapter);
     }
 
-    function _deployMerklRewardsAssisted(string memory adapterName, address navCalculator) internal returns (address) {
-        // Schema (contracts-deployment-config/balance-adapters/<id>.json):
-        //   "MerklRewardsAssisted": {
-        //     "enabled": true,
-        //     "constructor": {
-        //       "distributor": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae",  // same on every supported EVM chain
-        //       "protocol": "Merkl",
-        //       "positionDetail": "{\"protocol\":\"Merkl\",\"product\":\"Rewards\"",
-        //       "positionId": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae"
-        //     }
-        //   }
-        // Owner is set to chainConfig.admin (the OIV Safe). The Safe will be the only address that can call
-        // submitProofs / clearAllocation. Proof verification on-chain prevents the owner from fabricating amounts;
-        // see docs/decisions/0007-merkl-trust-minimized-cache.md.
-        address distributor = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "distributor")
-        );
-        require(
-            chainConfig.admin != address(0), "MerklRewardsAssisted: chainConfig.admin (initialOwner) not configured"
-        );
-
-        MerklRewardsAssistedBalanceAdapter adapter =
-            new MerklRewardsAssistedBalanceAdapter(distributor, navCalculator, chainConfig.admin, chainConfig.admin);
-        return address(adapter);
-    }
-
     function _deployEtherFiWithdrawalQueueAssisted(string memory adapterName, address navCalculator)
         internal
         returns (address)
     {
-        // Owner = chainConfig.admin (OIV Safe / agent role): the only caller of submitTokenIds / clearTokenId. The
-        // adapter values from live on-chain reads and re-verifies ownership every read, so the owner cannot
-        // fabricate amounts (under-report only). See docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md.
+        // Permissionless assistant-fed adapter (ADR 0018): no admin/roles — the id cache is msg.sender-keyed
+        // and fed on-chain by the delegatecall assistant. NAV registration + assistant deploy wiring deferred.
         address withdrawRequestNft = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "withdrawRequestNft")
         );
@@ -729,13 +763,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address underlyingToken = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
         );
-        require(
-            chainConfig.admin != address(0),
-            "EtherFiWithdrawalQueueAssisted: chainConfig.admin (initialOwner) not configured"
-        );
 
         EtherFiWithdrawalQueueAssistedBalanceAdapter adapter = new EtherFiWithdrawalQueueAssistedBalanceAdapter(
-            withdrawRequestNft, liquidityPool, underlyingToken, navCalculator, chainConfig.admin, chainConfig.admin
+            withdrawRequestNft, liquidityPool, underlyingToken, navCalculator
         );
         return address(adapter);
     }
@@ -744,10 +774,10 @@ contract DeployBalanceAdapters is BaseDeployScript {
         internal
         returns (address)
     {
-        // Assisted adapter (agent-fed; ADR 0015): the assistant submits an account's StakingNFT tokenIds via
-        // submitTokenIds; the adapter values each via StakingViewer.getTokens and re-verifies ownership via
-        // tokenInfo per read, so the assistant can only under-report (id-cache, never amounts). admin+assistant =
-        // chainConfig.admin at deploy. underlyingToken = NXM.
+        // Assisted adapter (permissionless assistant-fed; ADR 0015/0018): the caller submits an account's StakingNFT
+        // tokenIds via the msg.sender-keyed submit; the adapter values each via StakingViewer.getTokens and re-verifies
+        // ownership via tokenInfo per read, so a feeder can only under-report (id-cache, never amounts). No roles.
+        // underlyingToken = NXM.
         address stakingNft = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "stakingNft")
         );
@@ -757,13 +787,10 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address underlyingToken = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
         );
-        require(
-            chainConfig.admin != address(0),
-            "NexusMutualStakingPoolsAssisted: chainConfig.admin (initialOwner) not configured"
-        );
-
+        // Permissionless assistant-fed adapter (ADR 0018): no admin/roles — the id cache is msg.sender-keyed
+        // and fed on-chain by the delegatecall assistant. NAV registration + assistant deploy wiring deferred.
         NexusMutualStakingPoolsAssistedBalanceAdapter adapter = new NexusMutualStakingPoolsAssistedBalanceAdapter(
-            stakingNft, stakingViewer, underlyingToken, navCalculator, chainConfig.admin, chainConfig.admin
+            stakingNft, stakingViewer, underlyingToken, navCalculator
         );
         return address(adapter);
     }
@@ -772,10 +799,10 @@ contract DeployBalanceAdapters is BaseDeployScript {
         internal
         returns (address)
     {
-        // Owner = chainConfig.admin (OIV Safe / agent role): the only caller of submitPositions / clearPosition. The
-        // adapter values from live on-chain reads and verifies each tuple belongs to the account via
-        // calculateExitedAssets(receiver=account), so the owner cannot fabricate amounts (under-report only). See
-        // docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md.
+        // Permissionless assistant-fed (ADR 0018): submit/remove are msg.sender-keyed (no roles). The adapter values
+        // from live on-chain reads and verifies each tuple belongs to the account via calculateExitedAssets(
+        // receiver=account), so a feeder cannot fabricate amounts (under-report only). See
+        // docs/decisions/0018-assistant-fed-assisted-balance-adapters.md.
         address vaultsRegistry = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vaultsRegistry")
         );
@@ -791,19 +818,10 @@ contract DeployBalanceAdapters is BaseDeployScript {
         uint256 exitClaimDelay = vm.parseUint(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "exitClaimDelay")
         );
-        require(
-            chainConfig.admin != address(0),
-            "StakeWiseV3ExitQueueAssisted: chainConfig.admin (initialOwner) not configured"
-        );
-
+        // Permissionless assistant-fed adapter (ADR 0018): no admin/roles — the coordinate cache is msg.sender-keyed
+        // and fed on-chain by the delegatecall assistant. NAV registration + assistant wiring deferred.
         StakeWiseV3ExitQueueAssistedBalanceAdapter adapter = new StakeWiseV3ExitQueueAssistedBalanceAdapter(
-            vaultsRegistry,
-            underlyingToken,
-            receiptSymbol,
-            navCalculator,
-            exitClaimDelay,
-            chainConfig.admin,
-            chainConfig.admin
+            vaultsRegistry, underlyingToken, receiptSymbol, navCalculator, exitClaimDelay
         );
         return address(adapter);
     }

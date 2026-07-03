@@ -11,8 +11,7 @@
     "MorphoMarketsMeta": "0x3bA6936Ff18a6d04Bc98A03d9f657A46cBEb9a07",
     "BalancerV3PoolsMeta": "0xe0Bd18970d051310871a1bE19E9457692573a55C",
     "BalancerV3GaugesMeta": "0x89352Ad9Fa6f35d127c0Fc26300A2Cb55e50E625",
-    "FluidFTokensMeta": "0xBD9C499907f69dD2d5C90D7FFD55f9748B59A04a",
-    "MerklRewardsAssisted": "0xdC1a1d15163aaad6B8f3094ee03b25AF915781f6"
+    "FluidFTokensMeta": "0xBD9C499907f69dD2d5C90D7FFD55f9748B59A04a"
   },
   "NAVCalculatorProxy": "0x42aC265991163Af2b0B9E59a222d31d201E39f91",
   "customPriceFeeds": {

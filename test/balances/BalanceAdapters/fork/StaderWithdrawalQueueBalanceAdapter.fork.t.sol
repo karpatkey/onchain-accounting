@@ -13,8 +13,9 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title StaderWithdrawalQueueBalanceAdapterForkTest
 /// @notice Fork tests against Stader's UserWithdrawalManager on mainnet.
-/// @dev TEST_USER below is a real account with one open (pre-finalization) request id 8056 at FORK_BLOCK,
-///      with `ethExpected = 37.440331321957283515` ETH and `ethFinalized = 0` (so the adapter reports ethExpected).
+/// @dev The adapter enumerates the holder's LIVE requests on-chain via `getRequestIdsByUser` (no seeding). TEST_USER
+///      below is a real account with one open (pre-finalization) request id 8056 at FORK_BLOCK, with
+///      `ethExpected = 37.440331321957283515` ETH and `ethFinalized = 0` (so the adapter reports ethExpected).
 contract StaderWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
     address public constant USER_WITHDRAWAL_MANAGER = 0x9F0491B32DBce587c50c4C43AB303b06478193A7;
 
@@ -22,6 +23,8 @@ contract StaderWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
 
     address public constant TEST_USER = 0x5066bc626C292d02ACFef8d002905877148Cb37A;
     uint256 public constant TEST_USER_EXPECTED_ETH = 37_440_331_321_957_283_515;
+    /// @dev TEST_USER's single open request id at FORK_BLOCK (returned by getRequestIdsByUser).
+    uint256 public constant TEST_USER_REQ_ID = 8056;
 
     StaderWithdrawalQueueBalanceAdapter public adapter;
 
@@ -129,14 +132,15 @@ contract StaderWithdrawalQueueBalanceAdapterForkTest is BalanceAdapterTestBase {
 /// @notice Fresh dual-holder pin at the verification block (augments the original suite above; does not replace it).
 /// @dev Captured 2026-06-16 at block 25_330_819 — see `script/development/test/stader/README.md`.
 ///      Queue state at the block: nextRequestId 8219, nextRequestIdToFinalize 8215 (so ids ≤ 8214 are finalized,
-///      8215–8218 are still pending). One holder per math branch:
+///      8215–8218 are still pending). The adapter enumerates each holder's live requests on-chain (no seeding). One
+///      holder per math branch:
 ///      - PENDING `0x4D0B2dB7…` — one un-finalized request 8218 (`ethFinalized == 0`) → valued via `ethExpected`
 ///        = 179.475428570970280827 ETH.
 ///      - FINALIZED `0x404186e6…` — one finalized-unclaimed request 8214 where `ethFinalized` (…347) is **9 wei
 ///        below** `ethExpected` (…356), so the adapter reporting …347 proves it prefers `ethFinalized` over the
 ///        rate-converted estimate. The finalized request can be claimed by its owner at any time after this block —
-///        the pin keeps it reproducible. Multi-request summing and the claimed-skip path are covered with mocks in
-///        the unit test (a single holder spanning both branches doesn't exist on-chain at this block).
+///        the pin keeps it reproducible.
+///      - MULTI `0xeB0C…` — two open requests (8196 + 8197) → exercises real on-chain multi-request summing.
 contract StaderWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTestBase {
     address public constant USER_WITHDRAWAL_MANAGER = 0x9F0491B32DBce587c50c4C43AB303b06478193A7;
 
@@ -152,8 +156,8 @@ contract StaderWithdrawalQueueBalanceAdapterForkTest_Fresh is BalanceAdapterTest
     uint256 public constant FINALIZED_EXPECTED_ETH = 10_804_926_562_492_357_347;
     uint256 public constant FINALIZED_ETH_EXPECTED_FIELD = 10_804_926_562_492_357_356;
 
-    /// @dev Two open requests (8196 + 8197), both finalized → exercises real on-chain multi-request summing
-    ///      (previously only covered with mocks). 8196 = 109058136469367 wei, 8197 = 218116272938735 wei.
+    /// @dev Two open requests (8196 + 8197), both finalized → exercises real on-chain multi-request summing.
+    ///      8196 = 109058136469367 wei, 8197 = 218116272938735 wei.
     address public constant MULTI_HOLDER = 0xeB0CBBA408436997AfD29c50d6A9ffcCf9a2493f;
     uint256 public constant MULTI_REQ_8196_ETH = 109_058_136_469_367;
     uint256 public constant MULTI_REQ_8197_ETH = 218_116_272_938_735;

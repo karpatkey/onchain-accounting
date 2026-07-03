@@ -35,15 +35,6 @@ contract LidoWithdrawalQueueBalanceAdapter is SingleAssetBalanceAdapterBase {
     // Constants
     //
 
-    /// @notice Hard cap on the number of open requests an account may have for this adapter to read it.
-    /// @dev Bounds gas: an account whose open-request count (`balanceOf`) exceeds this is skipped
-    ///      (reported as 0) so a pathological account can't make NAV reads run out of gas — an
-    ///      out-of-gas revert is NOT caught by NAVCalculator's try/catch, so it would DoS the whole
-    ///      NAV call. The check is on `balanceOf` rather than the returned id array because Lido's
-    ///      queue is not `ERC721Enumerable`, so `getWithdrawalRequests` can only return the full set.
-    ///      In practice an account never has more than a handful of requests.
-    uint256 public constant MAX_REQUESTS_PROBED = 256;
-
     bytes32 private constant PROTOCOL_BRAND = ProtocolIds.LIDO;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.LIDO;
     bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.LIDO_WITHDRAWAL;
@@ -83,12 +74,15 @@ contract LidoWithdrawalQueueBalanceAdapter is SingleAssetBalanceAdapterBase {
 
     /// @notice Sums the ETH owed across `account`'s open (un-claimed) withdrawal requests.
     /// @dev Reads `balanceOf` (the count of open request NFTs — claiming burns the NFT) FIRST, in
-    ///      O(1), so the unbounded id list is never materialised when the count is pathological.
-    ///      Lido's `WithdrawalQueueERC721` is NOT `ERC721Enumerable` (no `tokenOfOwnerByIndex`) and
-    ///      `getWithdrawalRequests` returns the *entire* id set, so there is no way to read a bounded
-    ///      slice. If the count exceeds `MAX_REQUESTS_PROBED` we skip (return 0) rather than risk
-    ///      OOG'ing the NAV read on a list an attacker can inflate by transferring withdrawal NFTs in
-    ///      — an OOG is NOT caught by NAVCalculator's try/catch. A real account never approaches the cap.
+    ///      O(1), to short-circuit the common zero case without materialising the id list. There is
+    ///      **no adapter-level cap**: the full request set is read and summed. A third party can inflate
+    ///      an account's list (arbitrary `_owner` on `requestWithdrawals`, or transferring withdrawal
+    ///      NFTs in), but every such request is real, claimable ETH donated to the account — capping
+    ///      would silently *under-report* a real balance, whereas reading it fully is always honest. The
+    ///      only residual is gas: a griefed list makes that account's own NAV read expensive; under
+    ///      NAVCalculator's fail-open try/catch that degrades to an omitted leg or a fail-safe revert for
+    ///      **that account only**, never a mis-valuation of any other account (see the Stader sibling's
+    ///      `docs/operations/stader-withdrawal-queue-griefing.md` — same reasoning; Lido is unbounded).
     /// @dev Per request (since the position is denominated in ETH):
     ///      - **finalized** → use Lido's exact claimable ETH (`getClaimableEther`). Finalization can
     ///        lock in *less* than `amountOfStETH` after a negative rebase, so using `amountOfStETH`
@@ -104,8 +98,7 @@ contract LidoWithdrawalQueueBalanceAdapter is SingleAssetBalanceAdapterBase {
             return 0;
         }
 
-        uint256 count = WITHDRAWAL_QUEUE.balanceOf(account);
-        if (count == 0 || count > MAX_REQUESTS_PROBED) {
+        if (WITHDRAWAL_QUEUE.balanceOf(account) == 0) {
             return 0;
         }
 
@@ -169,7 +162,7 @@ contract LidoWithdrawalQueueBalanceAdapter is SingleAssetBalanceAdapterBase {
     ///      legs sum to `_ethOwed`'s total. The request id rides in the typed `positionInstanceId` (ephemeral), NOT in
     ///      `positionId`, so multiple requests share the static positionId and are distinguished by their
     ///      `positionInstanceId` (and for NAV by summing). Dropped entirely if the underlying asset is not registered in
-    ///      NAVCalculator. Bounded by `MAX_REQUESTS_PROBED` (over the cap → no positions).
+    ///      NAVCalculator. No adapter-level request cap — the full set is emitted (see `_ethOwed`).
     function getAdapterPositions(address account, address assetFilter)
         external
         view
@@ -184,9 +177,8 @@ contract LidoWithdrawalQueueBalanceAdapter is SingleAssetBalanceAdapterBase {
             return new INAVCalculator.PositionBalance[](0);
         }
 
-        // Bound work before materialising the unbounded id list (see `_ethOwed`).
-        uint256 count = WITHDRAWAL_QUEUE.balanceOf(account);
-        if (count == 0 || count > MAX_REQUESTS_PROBED) {
+        // O(1) short-circuit for the common zero case before materialising the id list (see `_ethOwed`).
+        if (WITHDRAWAL_QUEUE.balanceOf(account) == 0) {
             return new INAVCalculator.PositionBalance[](0);
         }
 

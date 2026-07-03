@@ -1,20 +1,22 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.0;
 
-import {NotAContract} from "src/errors.sol";
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.sol";
 import {
     StaderWithdrawalQueueBalanceAdapter
 } from "src/balances/BalanceAdapters/StaderWithdrawalQueueBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
+import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-// forge-lint: disable-next-line(unaliased-plain-import)
-import "src/errors.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
+import {InvalidArguments, NotAContract} from "src/errors.sol";
 
-/// @notice Minimal mock of Stader's UserWithdrawalManager.
-/// @dev Mirrors the two storage getters the adapter relies on: `requestIdsByUserAddress(addr, idx)`
-///      and `userWithdrawRequests(id)`. Out-of-bounds indexing reverts to mimic Solidity's auto-getter.
+/// @notice Minimal mock of Stader's UserWithdrawalManager for the plain (on-chain-enumerating) adapter.
+/// @dev Models the two reads the adapter uses: `getRequestIdsByUser(owner)` (the live, claim-pruned id array) and the
+///      `userWithdrawRequests(id)` public mapping getter. `addRequest` records a request AND appends its id to the
+///      owner's enumeration, mirroring Stader's `requestWithdraw`.
 contract MockUserWithdrawalManager {
     struct Info {
         address owner;
@@ -24,54 +26,92 @@ contract MockUserWithdrawalManager {
         uint256 requestBlock;
     }
 
-    mapping(address => uint256[]) private _userIds;
     mapping(uint256 => Info) public userWithdrawRequests;
+    mapping(address => uint256[]) private _ids;
 
-    /// @dev Set by tests to inject a non-OOB panic from `requestIdsByUserAddress`.
-    bool public injectArithmeticPanic;
+    /// @notice The StaderConfig the adapter derives the StakePoolManager from (auto-getter matches `staderConfig()`).
+    address public staderConfig;
 
-    /// @dev Set by tests to inject a non-empty plain revert (i.e. not the legacy-OOB sentinel).
-    bool public injectStringRevert;
-
-    function pushRequest(address user, uint256 requestId, Info memory info) external {
-        _userIds[user].push(requestId);
-        userWithdrawRequests[requestId] = info;
+    function setStaderConfig(address config) external {
+        staderConfig = config;
     }
 
-    function clearOwner(uint256 requestId) external {
-        userWithdrawRequests[requestId].owner = address(0);
+    function getRequestIdsByUser(address owner) external view returns (uint256[] memory) {
+        return _ids[owner];
     }
 
-    function setInjectArithmeticPanic(bool v) external {
-        injectArithmeticPanic = v;
+    /// @dev Record a request owned by `owner` and append it to `owner`'s enumeration (as `requestWithdraw` would).
+    function addRequest(address owner, uint256 id, uint256 ethExpected, uint256 ethFinalized) external {
+        userWithdrawRequests[id] = Info(owner, 1e18, ethExpected, ethFinalized, 0);
+        _ids[owner].push(id);
     }
 
-    function setInjectStringRevert(bool v) external {
-        injectStringRevert = v;
+    /// @dev Append `id` to `arrayOwner`'s enumeration but record the request under a DIFFERENT on-chain owner — models
+    ///      an inconsistency the adapter must defend against by re-checking `owner == account` per request.
+    function addForeignRequest(address arrayOwner, uint256 id, address infoOwner, uint256 ethExpected) external {
+        userWithdrawRequests[id] = Info(infoOwner, 1e18, ethExpected, 0, 0);
+        _ids[arrayOwner].push(id);
     }
 
-    function requestIdsByUserAddress(address user, uint256 index) external view returns (uint256) {
-        if (injectArithmeticPanic) {
-            // Panic(0x12) — division by zero. Anything other than 0x32 (OOB) should propagate.
-            uint256 zero;
-            return uint256(1) / zero;
+    /// @dev Append `count` pending requests to `owner`'s enumeration (to exercise the read cap).
+    function bloat(address owner, uint256 count, uint256 ethExpectedEach) external {
+        uint256 next = _ids[owner].length + 1;
+        for (uint256 i; i < count; i++) {
+            uint256 id = next + i;
+            userWithdrawRequests[id] = Info(owner, 1e18, ethExpectedEach, 0, 0);
+            _ids[owner].push(id);
         }
-        if (injectStringRevert) {
-            // Plain revert with non-empty data — must propagate (not be treated as OOB sentinel).
-            revert("boom");
-        }
-        return _userIds[user][index]; // intentionally reverts on out-of-bounds (Panic 0x32)
     }
 }
 
-/// @title StaderWithdrawalQueueBalanceAdapter unit tests
+/// @notice Mock StaderStakePoolManager — `previewWithdraw` returns a settable value (the live ETHx→ETH re-conversion).
+///         Default `type(uint256).max` so the pending cap `min(ethExpected, preview)` never bites (picks ethExpected),
+///         keeping the non-cap tests unaffected; a test lowers it to exercise the cap.
+contract MockStaderStakePoolManager {
+    uint256 public previewReturn = type(uint256).max;
+    bool public shouldRevert;
+
+    function setPreviewReturn(uint256 v) external {
+        previewReturn = v;
+    }
+
+    function setShouldRevert(bool v) external {
+        shouldRevert = v;
+    }
+
+    function previewWithdraw(uint256) external view returns (uint256) {
+        require(!shouldRevert, "preview revert");
+        return previewReturn;
+    }
+}
+
+/// @notice Mock StaderConfig — only the getter the adapter derives the StakePoolManager from.
+contract MockStaderConfig {
+    address public stakePoolManager;
+
+    constructor(address spm) {
+        stakePoolManager = spm;
+    }
+
+    function getStakePoolManager() external view returns (address) {
+        return stakePoolManager;
+    }
+}
+
+/// @title StaderWithdrawalQueueBalanceAdapter unit tests (plain, on-chain enumeration via getRequestIdsByUser)
 contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
     StaderWithdrawalQueueBalanceAdapter public adapter;
     MockUserWithdrawalManager public manager;
+    MockStaderStakePoolManager public spm;
+
+    address holder = makeAddr("holder");
+    address other = makeAddr("other");
 
     function setUp() public override {
         super.setUp();
         manager = new MockUserWithdrawalManager();
+        spm = new MockStaderStakePoolManager();
+        manager.setStaderConfig(address(new MockStaderConfig(address(spm))));
         adapter = new StaderWithdrawalQueueBalanceAdapter(address(manager), address(weth), address(balances));
     }
 
@@ -82,350 +122,152 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         new StaderWithdrawalQueueBalanceAdapter(address(0), address(weth), address(balances));
     }
 
+    function test_constructor_revertsWhenManagerNotContract() public {
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "UserWithdrawalManager"));
+        new StaderWithdrawalQueueBalanceAdapter(makeAddr("eoa"), address(weth), address(balances));
+    }
+
     function test_constructor_revertsOnZeroUnderlying() public {
         vm.expectRevert(InvalidArguments.selector);
         new StaderWithdrawalQueueBalanceAdapter(address(manager), address(0), address(balances));
     }
 
-    function test_constructor_revertsWhenManagerNotContract() public {
-        address eoa = makeAddr("eoa");
-        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "UserWithdrawalManager"));
-        new StaderWithdrawalQueueBalanceAdapter(eoa, address(weth), address(balances));
-    }
-
-    function test_constructor_revertsWhenNAVNotContract() public {
-        address eoa = makeAddr("eoa");
+    function test_constructor_revertsWhenNavNotContract() public {
         vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "NAVCalculator"));
-        new StaderWithdrawalQueueBalanceAdapter(address(manager), address(weth), eoa);
+        new StaderWithdrawalQueueBalanceAdapter(address(manager), address(weth), makeAddr("eoa"));
     }
 
-    // ---- Interface ----
+    function test_immutables() public view {
+        assertEq(address(adapter.USER_WITHDRAWAL_MANAGER()), address(manager));
+        assertEq(adapter.UNDERLYING_TOKEN(), address(weth));
+    }
+
+    // ---- Balances ----
+
+    function test_noRequests_reportsZero() public view {
+        (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(holder, address(weth));
+        assertEq(amount, 0);
+        assertEq(isDebt, false);
+        assertEq(adapter.getAdapterPositions(holder, address(0)).length, 0);
+    }
+
+    function test_zeroAccount_reportsZero() public view {
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(address(0), address(weth));
+        assertEq(amount, 0);
+        assertEq(adapter.getAdapterPositions(address(0), address(0)).length, 0);
+    }
+
+    function test_pendingRequest_valuedAtEthExpected_locked() public {
+        manager.addRequest(holder, 8196, 5 ether, 0); // pending: ethFinalized == 0
+
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(holder, address(weth));
+        assertEq(amount, 5 ether);
+
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
+        assertEq(p.length, 1);
+        assertEq(p[0].amount, 5 ether);
+        assertEq(p[0].isDebt, false);
+        assertEq(uint256(p[0].positionKind), uint256(PositionKind.Supplied));
+        assertEq(p[0].isLocked, true, "pending => locked");
+        assertEq(p[0].balanceAdapter, address(adapter));
+        assertEq(p[0].protocolId, ProtocolIds.STADER);
+        assertEq(p[0].protocolSubId, ProtocolIds.STADER_WITHDRAWAL);
+        assertEq(p[0].positionId, abi.encode(address(manager)));
+        assertEq(p[0].positionInstanceId, bytes32(uint256(8196)));
+    }
+
+    /// @notice A pending request is capped at the LIVE re-conversion when the ETHx/ETH rate has dropped below the
+    ///         request-time estimate: owed = min(ethExpected, previewWithdraw(ethXAmount)). When the live value is
+    ///         higher, the (lower) request-time estimate stands — never an over-report.
+    function test_pendingRequest_cappedByLiveRate() public {
+        manager.addRequest(holder, 8196, 5 ether, 0); // pending, ethExpected 5e18 (mock ethXAmount 1e18)
+
+        spm.setPreviewReturn(3 ether); // live re-conversion dropped below the request-time estimate
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(holder, address(weth));
+        assertEq(amount, 3 ether, "pending capped at the live value on a rate drop");
+
+        spm.setPreviewReturn(9 ether); // live value above the estimate → estimate retained
+        (amount,) = adapter.getAdapterBalanceForAsset(holder, address(weth));
+        assertEq(amount, 5 ether, "request-time estimate retained when the live value is higher");
+    }
+
+    /// @notice If the live re-conversion reverts, the pending value fails open to the request-time estimate.
+    function test_pendingRequest_liveRevert_failsOpenToEstimate() public {
+        manager.addRequest(holder, 8196, 5 ether, 0);
+        spm.setShouldRevert(true);
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(holder, address(weth));
+        assertEq(amount, 5 ether, "falls back to ethExpected when previewWithdraw reverts");
+    }
+
+    function test_finalizedRequest_valuedAtEthFinalized_notLocked() public {
+        manager.addRequest(holder, 8197, 5 ether, 3 ether); // finalized: exact ethFinalized takes precedence
+
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(holder, address(weth));
+        assertEq(amount, 3 ether, "finalized uses ethFinalized, not ethExpected");
+
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
+        assertEq(p.length, 1);
+        assertEq(p[0].amount, 3 ether);
+        assertEq(p[0].isLocked, false, "finalized => claimable");
+    }
+
+    function test_multipleRequests_summedAndOnePerLeg() public {
+        manager.addRequest(holder, 1, 5 ether, 0); // pending
+        manager.addRequest(holder, 2, 0, 3 ether); // finalized
+
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(holder, address(weth));
+        assertEq(amount, 8 ether);
+
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(holder, address(0));
+        assertEq(p.length, 2);
+    }
+
+    function test_wrongAsset_reportsZero() public {
+        manager.addRequest(holder, 1, 5 ether, 0);
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(holder, address(usdc));
+        assertEq(amount, 0);
+    }
+
+    function test_assetFilterMismatch_noPositions() public {
+        manager.addRequest(holder, 1, 5 ether, 0);
+        assertEq(adapter.getAdapterPositions(holder, address(usdc)).length, 0);
+    }
+
+    /// @notice Defensive: a request in the account's enumeration whose on-chain owner is someone else contributes 0.
+    function test_foreignOwnedRequest_contributesZero() public {
+        manager.addForeignRequest(holder, 9, other, 5 ether);
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(holder, address(weth));
+        assertEq(amount, 0);
+        assertEq(adapter.getAdapterPositions(holder, address(0)).length, 0);
+    }
+
+    /// @notice There is no adapter-level cap: a large live-request list is read in full (every request contributes its
+    ///         real, claimable value). A griefed queue makes the read expensive but never zeroes a real balance — see the
+    ///         contract NatSpec / docs/operations/stader-withdrawal-queue-griefing.md.
+    function test_largeList_readInFull() public {
+        manager.bloat(holder, 600, 1 ether); // well beyond the old 500 cap and toward Stader's 1000 ceiling
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(holder, address(weth));
+        assertEq(amount, 600 ether, "every request is summed, not skipped");
+        assertEq(adapter.getAdapterPositions(holder, address(0)).length, 600, "one leg per request");
+    }
+
+    // ---- IPositionDescribable / ERC165 ----
+
+    function test_protocolName() public view {
+        assertEq(adapter.protocolName(), "Stader");
+    }
+
+    function test_positionLabels() public view {
+        string[] memory labels = adapter.positionLabels("");
+        assertEq(labels.length, 2);
+        assertEq(labels[0], "Withdrawal Queue");
+        assertEq(labels[1], "ETHx");
+    }
 
     function test_supportsInterface() public view {
         assertTrue(adapter.supportsInterface(type(IBalanceAdapter).interfaceId));
+        assertTrue(adapter.supportsInterface(type(IPositionDescribable).interfaceId));
         assertTrue(adapter.supportsInterface(type(IERC165).interfaceId));
-        assertFalse(adapter.supportsInterface(0xdeadbeef));
-    }
-
-    function test_underlyingAssetsSupported() public view {
-        address[] memory assets = adapter.underlyingAssetsSupported();
-        assertEq(assets.length, 1);
-        assertEq(assets[0], address(weth));
-    }
-
-    // ---- getAdapterBalanceForAsset ----
-
-    function test_getAdapterBalanceForAsset_zeroAsset() public view {
-        (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(alice, address(0));
-        assertEq(amount, 0);
-        assertFalse(isDebt);
-    }
-
-    function test_getAdapterBalanceForAsset_unsupportedAsset() public view {
-        (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(alice, address(usdc));
-        assertEq(amount, 0);
-        assertFalse(isDebt);
-    }
-
-    function test_getAdapterBalanceForAsset_zeroAccount() public view {
-        (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(address(0), address(weth));
-        assertEq(amount, 0);
-        assertFalse(isDebt);
-    }
-
-    function test_getAdapterBalanceForAsset_singleOpenRequestUsesEthExpected() public {
-        manager.pushRequest(
-            alice,
-            1,
-            MockUserWithdrawalManager.Info({
-                owner: alice, ethXAmount: 1e18, ethExpected: 1.05e18, ethFinalized: 0, requestBlock: 0
-            })
-        );
-
-        (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(alice, address(weth));
-        assertEq(amount, 1.05e18);
-        assertFalse(isDebt);
-    }
-
-    function test_getAdapterBalanceForAsset_finalizedRequestPrefersEthFinalized() public {
-        manager.pushRequest(
-            alice,
-            1,
-            MockUserWithdrawalManager.Info({
-                owner: alice, ethXAmount: 1e18, ethExpected: 1.05e18, ethFinalized: 1.04e18, requestBlock: 0
-            })
-        );
-
-        (uint256 amount,) = adapter.getAdapterBalanceForAsset(alice, address(weth));
-        assertEq(amount, 1.04e18, "Should use ethFinalized once set");
-    }
-
-    function test_getAdapterBalanceForAsset_multipleRequestsSummed() public {
-        manager.pushRequest(
-            alice,
-            1,
-            MockUserWithdrawalManager.Info({
-                owner: alice, ethXAmount: 1e18, ethExpected: 1.05e18, ethFinalized: 0, requestBlock: 0
-            })
-        );
-        manager.pushRequest(
-            alice,
-            2,
-            MockUserWithdrawalManager.Info({
-                owner: alice, ethXAmount: 2e18, ethExpected: 2.1e18, ethFinalized: 2.09e18, requestBlock: 0
-            })
-        );
-
-        (uint256 amount,) = adapter.getAdapterBalanceForAsset(alice, address(weth));
-        assertEq(amount, 1.05e18 + 2.09e18);
-    }
-
-    function test_getAdapterBalanceForAsset_skipsClaimedEntries() public {
-        manager.pushRequest(
-            alice,
-            1,
-            MockUserWithdrawalManager.Info({
-                owner: alice, ethXAmount: 1e18, ethExpected: 1e18, ethFinalized: 1e18, requestBlock: 0
-            })
-        );
-        manager.pushRequest(
-            alice,
-            2,
-            MockUserWithdrawalManager.Info({
-                owner: alice, ethXAmount: 2e18, ethExpected: 2e18, ethFinalized: 2e18, requestBlock: 0
-            })
-        );
-        manager.clearOwner(1); // simulate claim
-
-        (uint256 amount,) = adapter.getAdapterBalanceForAsset(alice, address(weth));
-        assertEq(amount, 2e18, "Claimed request must be excluded");
-    }
-
-    // ---- getAdapterBalances ----
-
-    function test_getAdapterBalances_zeroAccount() public view {
-        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) =
-            adapter.getAdapterBalances(address(0));
-        assertEq(assets.length, 0);
-        assertEq(amounts.length, 0);
-        assertEq(isDebt.length, 0);
-    }
-
-    function test_getAdapterBalances_emptyForAccountWithNoRequests() public view {
-        (address[] memory assets,,) = adapter.getAdapterBalances(alice);
-        assertEq(assets.length, 0);
-    }
-
-    function test_getAdapterBalances_emitsSinglePosition() public {
-        manager.pushRequest(
-            alice,
-            1,
-            MockUserWithdrawalManager.Info({
-                owner: alice, ethXAmount: 1e18, ethExpected: 1e18, ethFinalized: 0, requestBlock: 0
-            })
-        );
-        (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt) = adapter.getAdapterBalances(alice);
-        assertEq(assets.length, 1);
-        assertEq(assets[0], address(weth));
-        assertEq(amounts[0], 1e18);
-        assertFalse(isDebt[0]);
-    }
-
-    // ---- getAdapterPositions ----
-
-    function test_getAdapterPositions_emptyWhenAssetUnregistered() public {
-        // Build a fresh adapter pointing at an asset that was never registered with the harness.
-        // The constructor only requires non-zero, not contract-shaped, for `underlyingToken_`, so a
-        // bare EOA-style address is enough to demonstrate the asset-registry filtering behaviour.
-        address unregisteredAsset = makeAddr("unregisteredAsset");
-        StaderWithdrawalQueueBalanceAdapter freshAdapter =
-            new StaderWithdrawalQueueBalanceAdapter(address(manager), unregisteredAsset, address(balances));
-
-        manager.pushRequest(
-            alice,
-            1,
-            MockUserWithdrawalManager.Info({
-                owner: alice, ethXAmount: 1e18, ethExpected: 1e18, ethFinalized: 0, requestBlock: 0
-            })
-        );
-
-        INAVCalculator.PositionBalance[] memory positions = freshAdapter.getAdapterPositions(alice, address(0));
-        assertEq(positions.length, 0, "Unregistered underlying should not produce positions");
-    }
-
-    function test_getAdapterPositions_filtersByAsset() public {
-        manager.pushRequest(
-            alice,
-            1,
-            MockUserWithdrawalManager.Info({
-                owner: alice, ethXAmount: 1e18, ethExpected: 1e18, ethFinalized: 0, requestBlock: 0
-            })
-        );
-
-        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(usdc));
-        assertEq(positions.length, 0, "Filter mismatch should produce empty");
-
-        positions = adapter.getAdapterPositions(alice, address(weth));
-        // A single not-finalized request (ethFinalized == 0) → one locked leg only.
-        assertEq(positions.length, 1);
-        assertEq(positions[0].balanceAsset.asset, address(weth));
-        assertEq(positions[0].balanceAdapter, address(adapter));
-        assertEq(positions[0].amount, 1e18);
-        assertFalse(positions[0].isDebt);
-        assertTrue(positions[0].isLocked, "not-finalized request -> locked leg");
-        assertEq(positions[0].positionId, abi.encode(address(manager)), "static positionId = withdrawal manager");
-        // Static breadcrumb is positionId-derived; the request id rides in positionInstanceId.
-        string[] memory lbl = adapter.positionLabels(positions[0].positionId);
-        assertEq(lbl.length, 2);
-        assertEq(lbl[0], "Withdrawal Queue");
-        assertEq(lbl[1], "ETHx");
-        assertEq(positions[0].positionInstanceId, bytes32(uint256(1)));
-    }
-
-    function test_getAdapterPositions_perRequestLegsAndLabels() public {
-        // Two requests of the SAME state (both pending/locked) must now emit TWO separate legs — one per request —
-        // each carrying its own request id in positionInstanceId, all sharing the static positionId.
-        manager.pushRequest(
-            alice,
-            7,
-            MockUserWithdrawalManager.Info({
-                owner: alice, ethXAmount: 1e18, ethExpected: 2e18, ethFinalized: 0, requestBlock: 0
-            })
-        );
-        manager.pushRequest(
-            alice,
-            42,
-            MockUserWithdrawalManager.Info({
-                owner: alice, ethXAmount: 1e18, ethExpected: 3e18, ethFinalized: 0, requestBlock: 0
-            })
-        );
-
-        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(weth));
-        assertEq(positions.length, 2, "one leg per request, even at the same isLocked state");
-
-        bytes memory expectedId = abi.encode(address(manager));
-        bool saw7;
-        bool saw42;
-        uint256 sum;
-        for (uint256 i = 0; i < positions.length; i++) {
-            assertEq(positions[i].positionId, expectedId, "all legs share the static positionId");
-            assertTrue(positions[i].isLocked, "both pending -> locked");
-            sum += positions[i].amount;
-            if (positions[i].positionInstanceId == bytes32(uint256(7))) {
-                saw7 = true;
-                assertEq(positions[i].amount, 2e18);
-            }
-            if (positions[i].positionInstanceId == bytes32(uint256(42))) {
-                saw42 = true;
-                assertEq(positions[i].amount, 3e18);
-            }
-        }
-        assertTrue(saw7 && saw42, "each request id surfaced as its own positionInstanceId");
-
-        // NAV-total invariance: per-request legs still sum to the aggregate balance method.
-        (uint256 agg,) = adapter.getAdapterBalanceForAsset(alice, address(weth));
-        assertEq(sum, agg, "sum of per-request legs == aggregate balance");
-    }
-
-    function test_getAdapterPositions_claimableOnlyLeg() public {
-        // A single finalized request (ethFinalized > 0) → one claimable leg (isLocked = false).
-        manager.pushRequest(
-            alice,
-            1,
-            MockUserWithdrawalManager.Info({
-                owner: alice, ethXAmount: 1e18, ethExpected: 2e18, ethFinalized: 1.95e18, requestBlock: 0
-            })
-        );
-        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(weth));
-        assertEq(positions.length, 1);
-        assertEq(positions[0].amount, 1.95e18, "claimable leg uses ethFinalized");
-        assertFalse(positions[0].isLocked, "finalized request -> claimable leg");
-        assertEq(positions[0].positionId, abi.encode(address(manager)));
-        string[] memory lbl = adapter.positionLabels(positions[0].positionId);
-        assertEq(lbl.length, 2);
-        assertEq(lbl[0], "Withdrawal Queue");
-        assertEq(lbl[1], "ETHx");
-        assertEq(positions[0].positionInstanceId, bytes32(uint256(1)));
-    }
-
-    function test_getAdapterPositions_mixedClaimableAndLocked() public {
-        // One finalized (claimable) + one pending (locked) request → two legs sharing the static positionId.
-        manager.pushRequest(
-            alice,
-            1,
-            MockUserWithdrawalManager.Info({
-                owner: alice, ethXAmount: 1e18, ethExpected: 2e18, ethFinalized: 1.95e18, requestBlock: 0
-            })
-        );
-        manager.pushRequest(
-            alice,
-            2,
-            MockUserWithdrawalManager.Info({
-                owner: alice, ethXAmount: 1e18, ethExpected: 1.1e18, ethFinalized: 0, requestBlock: 0
-            })
-        );
-
-        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(weth));
-        assertEq(positions.length, 2, "claimable + locked legs");
-
-        bytes memory expectedId = abi.encode(address(manager));
-        uint256 claimable;
-        uint256 locked;
-        bool sawClaimable;
-        bool sawLocked;
-        for (uint256 i = 0; i < positions.length; i++) {
-            assertEq(positions[i].balanceAsset.asset, address(weth));
-            assertEq(positions[i].balanceAdapter, address(adapter));
-            assertFalse(positions[i].isDebt);
-            assertEq(positions[i].positionId, expectedId, "both legs share the static positionId");
-            string[] memory lbl = adapter.positionLabels(positions[i].positionId);
-            assertEq(lbl.length, 2);
-            assertEq(lbl[0], "Withdrawal Queue");
-            assertEq(lbl[1], "ETHx");
-            if (positions[i].isLocked) {
-                locked += positions[i].amount;
-                sawLocked = true;
-                assertEq(positions[i].positionInstanceId, bytes32(uint256(2)), "locked leg carries its own request id");
-            } else {
-                claimable += positions[i].amount;
-                sawClaimable = true;
-                assertEq(
-                    positions[i].positionInstanceId, bytes32(uint256(1)), "claimable leg carries its own request id"
-                );
-            }
-        }
-        assertTrue(sawClaimable && sawLocked, "exactly one claimable + one locked leg present");
-        assertEq(claimable, 1.95e18, "claimable leg = ethFinalized");
-        assertEq(locked, 1.1e18, "locked leg = ethExpected");
-
-        // NAV-total invariance.
-        (uint256 agg,) = adapter.getAdapterBalanceForAsset(alice, address(weth));
-        assertEq(claimable + locked, agg, "sum of legs == old aggregate");
-    }
-
-    function test_getAdapterPositions_zeroBalanceProducesEmpty() public view {
-        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(0));
-        assertEq(positions.length, 0);
-    }
-
-    // ---- Panic propagation ----
-
-    function test_getAdapterBalanceForAsset_propagatesNonOOBPanic() public {
-        // OOB panic ends enumeration silently. Any other panic must surface as UnexpectedPanic
-        // so NAVCalculator's outer try/catch sees the failure rather than the adapter silently
-        // returning 0 and undercounting NAV.
-        manager.setInjectArithmeticPanic(true);
-        vm.expectRevert(
-            abi.encodeWithSelector(StaderWithdrawalQueueBalanceAdapter.UnexpectedPanic.selector, uint256(0x12))
-        );
-        adapter.getAdapterBalanceForAsset(alice, address(weth));
-    }
-
-    function test_getAdapterBalanceForAsset_propagatesNonEmptyRevert() public {
-        // Empty bytes revert is the legacy-Solidity OOB sentinel and must end enumeration; any
-        // revert with data must propagate.
-        manager.setInjectStringRevert(true);
-        vm.expectRevert(bytes("boom"));
-        adapter.getAdapterBalanceForAsset(alice, address(weth));
+        assertFalse(adapter.supportsInterface(0xffffffff));
     }
 }

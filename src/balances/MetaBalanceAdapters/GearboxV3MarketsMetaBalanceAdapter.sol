@@ -15,7 +15,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         on NAVCalculator (`addMetaInstances`/`removeMetaInstances`). Identity is encoded as `abi.encode(address(market))`.
 ///         See ADR 0010.
 /// @dev Reports one Supply leg per market (convertToAssets(balanceOf)) in the pool's underlying. Does not include
-///      Merkl rewards (those are covered separately by MerklRewardsAssistedBalanceAdapter).
+///      Merkl rewards (those are covered separately by the Merkl rewards adapter).
 /// @dev **Instance set is a governed allowlist — not auto-enumerated.** Gearbox V3 exposes an on-chain
 ///      `ContractsRegister` (mainnet `0xA50d4E7D8946a7c90652339CDBd262c375d54D99`, `getPools()`) listing the DAO's
 ///      pools, and this adapter could read it to avoid governance seeding instances. We deliberately do NOT: the

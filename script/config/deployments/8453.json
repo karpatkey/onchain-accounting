@@ -10,8 +10,7 @@
     "MorphoMarketsMeta": "0x92f9C53E620250a30023921FD6c406cfAFcF0ACC",
     "BalancerV3PoolsMeta": "0xA13D70Bbf822e35a28eea8630484739767331038",
     "BalancerV3GaugesMeta": "0xb83a41c655f0cE39366bf7Ce3FC186E30A1a22c5",
-    "FluidFTokensMeta": "0x282F02eF700D9112F18b26518C6aB8CD25976A92",
-    "MerklRewardsAssisted": "0x9342c17c7fc7FE5BE167a0342745BE6f3e6Efef8"
+    "FluidFTokensMeta": "0x282F02eF700D9112F18b26518C6aB8CD25976A92"
   },
   "NAVCalculatorProxy": "0x42aC265991163Af2b0B9E59a222d31d201E39f91",
   "customPriceFeeds": {

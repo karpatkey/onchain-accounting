@@ -36,14 +36,6 @@ contract KelpWithdrawalQueueBalanceAdapter is BalanceAdapterBase {
     // Constants
     //
 
-    /// @notice Hard cap on the number of open requests summed per (asset, account).
-    /// @dev Bounds gas so a pathological account with many open requests can't make NAV reads run
-    ///      out of gas (an out-of-gas revert is NOT caught by NAVCalculator's try/catch, so it would
-    ///      DoS the whole NAV call). Mirrors `StaderWithdrawalQueue` and the queue-family note in
-    ///      `docs/roadmap/balance-adapter-coverage.md`. In practice an account never has more than a
-    ///      handful of pending requests per asset.
-    uint256 public constant MAX_REQUESTS_PROBED = 256;
-
     bytes32 private constant PROTOCOL_BRAND = ProtocolIds.KELP;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.KELP;
     bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.KELP_WITHDRAWAL;
@@ -84,7 +76,11 @@ contract KelpWithdrawalQueueBalanceAdapter is BalanceAdapterBase {
     ///      number of open requests is `end - begin`. `getUserWithdrawalRequest(asset, account, i)`
     ///      resolves to the deque's `.at(i)` for `i ∈ [0, end-begin)` — claimed requests are popped
     ///      off the front, so this only ever counts live claims. No out-of-bounds probing is needed.
-    ///      The scan is capped at `MAX_REQUESTS_PROBED` to bound gas (see that constant's NatSpec).
+    ///      **No adapter-level cap**: the full open-request set is summed. Kelp requests are keyed to the
+    ///      unstaking `msg.sender` (no arbitrary-owner param), so a third party cannot inflate another
+    ///      account's queue — a large count is self-inflicted, and reading it fully is always the honest
+    ///      answer (a cap would silently truncate a real balance). See the Stader sibling's
+    ///      `docs/operations/stader-withdrawal-queue-griefing.md` for the fail-open-NAV reasoning.
     function _owedForAsset(address asset, address account) internal view returns (uint256 total) {
         if (account == address(0)) {
             return 0;
@@ -92,9 +88,6 @@ contract KelpWithdrawalQueueBalanceAdapter is BalanceAdapterBase {
 
         (uint128 begin, uint128 end) = WITHDRAWAL_MANAGER.userAssociatedNonces(asset, account);
         uint256 count = end - begin;
-        if (count > MAX_REQUESTS_PROBED) {
-            count = MAX_REQUESTS_PROBED;
-        }
         for (uint256 i = 0; i < count; i++) {
             (, uint256 expectedAssetAmount,,) = WITHDRAWAL_MANAGER.getUserWithdrawalRequest(asset, account, i);
             total += expectedAssetAmount;
@@ -245,17 +238,14 @@ contract KelpWithdrawalQueueBalanceAdapter is BalanceAdapterBase {
 
         uint256 nAssets = assets.length;
 
-        // Size the scratch array to the sum of per-asset open-request counts (each capped at MAX_REQUESTS_PROBED), an
-        // upper bound on the number of legs (zero-amount requests drop below it). Cache each capped count so the
-        // emission loop below does NOT re-read `userAssociatedNonces` per asset.
+        // Size the scratch array to the sum of per-asset open-request counts, an upper bound on the number of legs
+        // (zero-amount requests drop below it). Cache each count so the emission loop below does NOT re-read
+        // `userAssociatedNonces` per asset. No cap — the full set is emitted (see `_owedForAsset`).
         uint256 cap;
         uint256[] memory counts = new uint256[](nAssets);
         for (uint256 a = 0; a < nAssets; a++) {
             (uint128 begin, uint128 end) = WITHDRAWAL_MANAGER.userAssociatedNonces(assets[a], account);
             uint256 c = end - begin;
-            if (c > MAX_REQUESTS_PROBED) {
-                c = MAX_REQUESTS_PROBED;
-            }
             counts[a] = c;
             cap += c;
         }
@@ -276,7 +266,7 @@ contract KelpWithdrawalQueueBalanceAdapter is BalanceAdapterBase {
                 continue;
             }
             // Append this asset's per-request legs (extracted to keep this loop under the stack limit).
-            // `counts[a]` (capped request count) is reused from the sizing pre-pass — no second nonce-range read.
+            // `counts[a]` (open-request count) is reused from the sizing pre-pass — no second nonce-range read.
             n = _appendAssetLegs(account, asset, underlying, counts[a], delayBlocks, positionId, temp, n);
         }
 
@@ -288,7 +278,7 @@ contract KelpWithdrawalQueueBalanceAdapter is BalanceAdapterBase {
 
     /// @dev Appends one `Supplied` leg per open request of `(asset, account)` into `temp` (starting at `n`), returning
     ///      the new count. Holds the inner per-request loop of `buildPositionsSelf`; extracted so the outer per-asset
-    ///      scope stays within the via_ir stack limit. `c` is the capped open-request count from the sizing pre-pass (reused
+    ///      scope stays within the via_ir stack limit. `c` is the open-request count from the sizing pre-pass (reused
     ///      here rather than re-reading `userAssociatedNonces`); zero-amount requests are skipped.
     function _appendAssetLegs(
         address account,

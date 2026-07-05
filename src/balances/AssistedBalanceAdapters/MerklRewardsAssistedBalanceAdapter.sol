@@ -6,6 +6,7 @@ import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
+import {IListFedBalanceAdapter} from "src/balances/IListFedBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
@@ -35,7 +36,12 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      its "under-report only" guarantee rests on proof-verification + stale-root→0 instead. `clearAllocation` is
 ///      **stale-gated** (removable only once an entry contributes 0 to NAV), so no caller can suppress a live entry.
 ///      Trust model + mutability rationale: see `docs/decisions/0007-merkl-trust-minimized-cache.md`.
-contract MerklRewardsAssistedBalanceAdapter is IBalanceAdapter, IPositionDescribable {
+///
+///      **Family: {IListFedBalanceAdapter} (list-fed), NOT {IAssistedBalanceAdapter} (coordinate cache).** The feeder
+///      submits an account's **whole allocation list** (replace), on-behalf-of, from a plain keeper EOA — there is no
+///      `delegatecall` assistant contract. Integrity is the per-write merkle-proof check, not `msg.sender`-keying or
+///      live-ownership re-verification; the "under-report only" guarantee rests on proof-verification + stale-root→0.
+contract MerklRewardsAssistedBalanceAdapter is IListFedBalanceAdapter, IPositionDescribable {
     //
     // Type Definitions
     //
@@ -136,6 +142,7 @@ contract MerklRewardsAssistedBalanceAdapter is IBalanceAdapter, IPositionDescrib
         uint256 campaignCount
     );
     event AllocationCleared(address indexed user, address indexed token);
+    event AccountCleared(address indexed user);
 
     //
     // Errors
@@ -232,6 +239,21 @@ contract MerklRewardsAssistedBalanceAdapter is IBalanceAdapter, IPositionDescrib
         emit AllocationCleared(user, token);
     }
 
+    /// @inheritdoc IListFedBalanceAdapter
+    /// @dev Stale-gated **bulk** GC: reverts `AllocationStillLive` on the first of `account`'s tokens that still
+    ///      contributes to NAV, so a live set can never be suppressed — it clears only when the whole set is dead
+    ///      (every token already reads 0: stale root or fully claimed). Reverts `NothingToClear` if nothing is cached.
+    function clearAccount(address account) external {
+        if (account == address(0)) revert InvalidArguments();
+        address[] memory toks = _userTokens[account];
+        if (toks.length == 0) revert NothingToClear();
+        for (uint256 i; i < toks.length; ++i) {
+            if (_unclaimed(account, toks[i]) != 0) revert AllocationStillLive(account, toks[i]);
+        }
+        _clearUser(account);
+        emit AccountCleared(account);
+    }
+
     /// @dev Replace `user`'s entire cached set with `allocs`: clear, then verify each leaf against the live Distributor
     ///      root and store (fail-loud). Clears first and each write is atomic, so a bad entry reverts the whole call
     ///      and leaves the prior set intact.
@@ -261,11 +283,12 @@ contract MerklRewardsAssistedBalanceAdapter is IBalanceAdapter, IPositionDescrib
     }
 
     /// @inheritdoc IERC165
-    /// @dev Advertises {IBalanceAdapter} + {IPositionDescribable} + {IERC165}. Externally-fed and mutable (a
-    ///      proof-verified cache), but NOT a coordinate-cache {IAssistedBalanceAdapter} member, so it does not
-    ///      advertise that marker.
+    /// @dev Advertises {IListFedBalanceAdapter} (its family marker) + {IBalanceAdapter} + {IPositionDescribable} +
+    ///      {IERC165}. It is list-fed, NOT a coordinate-cache {IAssistedBalanceAdapter} member, so that marker is not
+    ///      advertised.
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IPositionDescribable).interfaceId
+        return interfaceId == type(IListFedBalanceAdapter).interfaceId
+            || interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IPositionDescribable).interfaceId
             || interfaceId == type(IERC165).interfaceId;
     }
 

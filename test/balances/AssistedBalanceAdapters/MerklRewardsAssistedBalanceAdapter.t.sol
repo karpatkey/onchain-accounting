@@ -9,6 +9,7 @@ import {
 } from "src/balances/AssistedBalanceAdapters/MerklRewardsAssistedBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
+import {IListFedBalanceAdapter} from "src/balances/IListFedBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
@@ -197,6 +198,7 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_supportsInterface() public view {
         assertTrue(adapter.supportsInterface(type(IBalanceAdapter).interfaceId));
+        assertTrue(adapter.supportsInterface(type(IListFedBalanceAdapter).interfaceId));
         assertTrue(adapter.supportsInterface(type(IPositionDescribable).interfaceId));
         assertTrue(adapter.supportsInterface(type(IERC165).interfaceId));
         // No AccessControl anymore — permissionless.
@@ -657,6 +659,88 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(after_.length, 2);
         assertEq(after_[0], address(arb));
         assertEq(after_[1], address(morpho));
+    }
+
+    // ============================================
+    // clearAccount — stale-gated bulk GC
+    // ============================================
+
+    /// @dev Seed alice with {ARB, OP} in one replace submit against a shared 2-leaf tree root.
+    function _seedTwoTokens(address user, uint256 arbAmt, uint256 opAmt) internal returns (bytes32 root) {
+        bytes32[2] memory leaves;
+        leaves[0] = _leaf(user, address(arb), arbAmt);
+        leaves[1] = _leaf(user, address(op), opAmt);
+        bytes32[] memory p0;
+        bytes32[] memory p1;
+        (root, p0) = _buildTree2(leaves, 0);
+        (, p1) = _buildTree2(leaves, 1);
+        distributor.setRoot(root);
+        address[] memory tokens = new address[](2);
+        uint256[] memory amounts = new uint256[](2);
+        bytes32[][] memory proofs = new bytes32[][](2);
+        tokens[0] = address(arb);
+        amounts[0] = arbAmt;
+        proofs[0] = p0;
+        tokens[1] = address(op);
+        amounts[1] = opAmt;
+        proofs[1] = p1;
+        _submitMany(user, tokens, amounts, proofs);
+    }
+
+    /// @notice An account with ≥2 tokens, at least one still live (fresh root, unclaimed > 0), cannot be bulk-cleared —
+    ///         reverts AllocationStillLive on the first live token. This is the stale-gate that prevents a third party
+    ///         from suppressing a live reward set.
+    function test_clearAccount_revertsWhenAnyLive() public {
+        _seedTwoTokens(alice, 100 ether, 50 ether);
+        // Make OP dead (fully claimed) but leave ARB live → the first live token trips the gate.
+        distributor.setClaimed(alice, address(op), uint208(50 ether), uint48(block.timestamp), bytes32(0));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(MerklRewardsAssistedBalanceAdapter.AllocationStillLive.selector, alice, address(arb))
+        );
+        adapter.clearAccount(alice);
+
+        // Nothing removed — the set is intact.
+        assertEq(adapter.userTokens(alice).length, 2);
+    }
+
+    /// @notice When every token is dead (mix of stale-root and fully-claimed), clearAccount wipes the whole set, emits
+    ///         AccountCleared, and afterward userTokens/getAdapterBalances/getAdapterPositions are empty.
+    function test_clearAccount_clearsWhenAllDead() public {
+        _seedTwoTokens(alice, 100 ether, 50 ether);
+        // Kill OP by fully claiming it; kill ARB by rotating the root (both entries now read 0).
+        distributor.setClaimed(alice, address(op), uint208(50 ether), uint48(block.timestamp), bytes32(0));
+        distributor.setRoot(keccak256("rotated root"));
+
+        vm.expectEmit(true, false, false, false, address(adapter));
+        emit MerklRewardsAssistedBalanceAdapter.AccountCleared(alice);
+        adapter.clearAccount(alice);
+
+        assertEq(adapter.userTokens(alice).length, 0);
+
+        (uint256 arbAmt,,) = adapter.allocations(alice, address(arb));
+        assertEq(arbAmt, 0);
+        (uint256 opAmt,,) = adapter.allocations(alice, address(op));
+        assertEq(opAmt, 0);
+
+        (address[] memory assets, uint256[] memory amounts,) = adapter.getAdapterBalances(alice);
+        assertEq(assets.length, 0);
+        assertEq(amounts.length, 0);
+
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(0));
+        assertEq(positions.length, 0);
+    }
+
+    /// @notice Bulk-clearing a never-cached account reverts NothingToClear.
+    function test_clearAccount_revertsNothingToClear() public {
+        vm.expectRevert(MerklRewardsAssistedBalanceAdapter.NothingToClear.selector);
+        adapter.clearAccount(alice);
+    }
+
+    /// @notice address(0) reverts InvalidArguments.
+    function test_clearAccount_revertsOnZeroAccount() public {
+        vm.expectRevert(InvalidArguments.selector);
+        adapter.clearAccount(address(0));
     }
 
     // ============================================

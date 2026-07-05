@@ -27,14 +27,17 @@ contributes to NAV (cached root == live root AND unclaimed > 0), and `NothingToC
 deletes entries that are stale (root rotated) or fully claimed. A live entry can only be *replaced* via `submitProofs`,
 never suppressed — so the old L-02 vector (an `ASSISTANT_ROLE` holder zeroing a valid allocation) is structurally gone.
 
-**Not a coordinate-cache family member.** Merkl does **not** implement the `IAssistedBalanceAdapter` marker
-([ADR 0018](0018-assistant-fed-assisted-balance-adapters.md)): that family is `msg.sender`-keyed and caches
-*coordinates, never amounts*, valuing each read from live on-chain reads + per-read ownership re-verification. Merkl is
-categorically different — it submits **on-behalf-of** (explicit `user`) and caches a **proof-verified amount** (the
-allocation is off-chain and not derivable on-chain). Its "under-report only" guarantee therefore rests on
-**proof-verification + stale-root→0** (return 0 whenever the cached root ≠ the live root), not on live ownership
-re-verification. It remains a standalone `IBalanceAdapter` + `IPositionDescribable` adapter (the documented mutable
-exception), now permissionless. The fully-on-chain alternative was researched and ruled out: Merkl commits only a root
+**A new "list-fed" family (`IListFedBalanceAdapter`), NOT the coordinate-cache `IAssistedBalanceAdapter`.** Merkl does
+**not** implement the `IAssistedBalanceAdapter` marker ([ADR 0018](0018-assistant-fed-assisted-balance-adapters.md)):
+that family is `msg.sender`-keyed and caches *coordinates, never amounts*, valuing each read from live on-chain reads +
+per-read ownership re-verification, fed by a `delegatecall` assistant. Merkl is categorically different, so it gets its
+own marker **`IListFedBalanceAdapter`** (`src/balances/IListFedBalanceAdapter.sol`): externally-fed by a **permissionless
+keeper EOA** (no assistant contract) that submits an account's **whole element list** (replace), **on-behalf-of** (explicit
+`account`), and caches a **proof-verified amount** (the allocation is off-chain and not derivable on-chain). Its
+"under-report only" guarantee rests on **proof-verification + stale-root→0** (return 0 whenever the cached root ≠ the
+live root), not on `msg.sender`-keying or live ownership re-verification. The family's one universal mutator is a
+stale-gated `clearAccount(address)` (reverts while any element is live). Merkl is the first list-fed member; it is a
+`IListFedBalanceAdapter` + `IPositionDescribable` adapter (the documented mutable exception), permissionless. The fully-on-chain alternative was researched and ruled out: Merkl commits only a root
 + IPFS pointer on-chain and computes allocations off-chain, so no `view` (and no on-chain recomputation) can produce an
 unclaimed amount without externally-supplied leaf data — the proof-fed cache is the trust-minimized optimum.
 

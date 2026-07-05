@@ -1,6 +1,42 @@
-# 0007 — Merkl rewards adapter: role-gated, proof-verified, trust-minimized cache
+# 0007 — Merkl rewards adapter: proof-verified, trust-minimized cache
 
-**Status:** accepted
+**Status:** accepted — **amended 2026-07 (permissionless refactor; see the amendment below).** The role-gated v1
+described in the body was removed in PR #141 (with the legacy `AssistantFedBalanceAdapter` base); the adapter is
+re-added in the permissionless shape this ADR itself anticipated (Alternatives #1). Read the amendment first; the
+body below is retained as the original context/rationale, with the role-gating superseded.
+
+## Amendment (2026-07) — permissionless, submit-on-behalf-of
+
+**What changed.** `submitProofs(user, Allocation[])` / `submitProofsBatch` are now **permissionless** (no
+`ASSISTANT_ROLE`, no `DEFAULT_ADMIN_ROLE`, no AccessControl, no `AssistantFedBalanceAdapter` base). Submission still
+takes an **explicit `user`** (submit-on-behalf-of — the intended feeder is a keeper EOA / cron job that periodically
+submits a tracked set of accounts), and every write is still proof-verified against the live `Distributor.getMerkleRoot()`.
+The constructor drops `admin_`/`assistant_` and is now `(distributor_, navCalculator_)`.
+
+**Why this is safe (the griefing objection in Alternatives #1 no longer holds).** Alternatives #1 rejected
+permissionless submission for v1 over "spam / storage griefing — any attacker can populate `(user, token)` entries for
+arbitrary users." Proof-verification defuses this: a submission for `user` only lands if its proof validates against
+Merkl's real root for that user's leaf, so a caller can only ever cache a user's **real, Merkl-attested** allocation —
+bounded to that user's *actual* reward footprint. Worst case a griefer pays gas to report a real balance (helpful, not
+harmful); they cannot fabricate, inflate, or populate fake entries. So the completeness dependency on a *trusted*
+assistant is removed — anyone (a public keeper, or the account itself) can refresh — while the "cannot over-report"
+Iron Law is preserved by the same proof check.
+
+**`clearAllocation` is now stale-gated (fixes finding L-02).** It reverts `AllocationStillLive` if the entry still
+contributes to NAV (cached root == live root AND unclaimed > 0), and `NothingToClear` if nothing is cached; it only
+deletes entries that are stale (root rotated) or fully claimed. A live entry can only be *replaced* via `submitProofs`,
+never suppressed — so the old L-02 vector (an `ASSISTANT_ROLE` holder zeroing a valid allocation) is structurally gone.
+
+**Not a coordinate-cache family member.** Merkl does **not** implement the `IAssistedBalanceAdapter` marker
+([ADR 0018](0018-assistant-fed-assisted-balance-adapters.md)): that family is `msg.sender`-keyed and caches
+*coordinates, never amounts*, valuing each read from live on-chain reads + per-read ownership re-verification. Merkl is
+categorically different — it submits **on-behalf-of** (explicit `user`) and caches a **proof-verified amount** (the
+allocation is off-chain and not derivable on-chain). Its "under-report only" guarantee therefore rests on
+**proof-verification + stale-root→0** (return 0 whenever the cached root ≠ the live root), not on live ownership
+re-verification. It remains a standalone `IBalanceAdapter` + `IPositionDescribable` adapter (the documented mutable
+exception), now permissionless. The fully-on-chain alternative was researched and ruled out: Merkl commits only a root
++ IPFS pointer on-chain and computes allocations off-chain, so no `view` (and no on-chain recomputation) can produce an
+unclaimed amount without externally-supplied leaf data — the proof-fed cache is the trust-minimized optimum.
 
 ## Context
 

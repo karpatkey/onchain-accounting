@@ -2,7 +2,7 @@
 
 The `MerklRewardsAssistedBalanceAdapter` adapter (`src/balances/AssistedBalanceAdapters/MerklRewardsAssistedBalanceAdapter.sol`) reports a portfolio's *unclaimed* Merkl rewards by reading an on-chain cache of `(user, token, cumulativeAmount)` tuples. The cache is populated by an off-chain bot that fetches merkle proofs from the Merkl API and submits them to the adapter, where they're verified against the live `Distributor.getMerkleRoot()` before being stored. The adapter cannot fabricate amounts; the bot cannot fabricate amounts; only Merkl's published merkle tree determines what the adapter reports. See [`docs/decisions/0007-merkl-trust-minimized-cache.md`](../decisions/0007-merkl-trust-minimized-cache.md) for the design rationale and trust model.
 
-> **Access control:** this adapter is in the assisted balance-adapter family — submissions are gated by `ASSISTANT_ROLE` (granted/rotated by `DEFAULT_ADMIN_ROLE`); see [ADR 0015](../decisions/0015-assisted-balance-adapter-family.md). Where this guide says "owner"/"owner key" below, read it as the `ASSISTANT_ROLE` holder.
+> **Access control: none — permissionless.** `submitProofs` / `submitProofsBatch` / `clearAllocation` take no roles; any address can call them, and every write is verified against the live `Distributor.getMerkleRoot()` — so **proof-verification, not a role, is the integrity guarantee** (no caller can fabricate amounts). The submitter is therefore just a **funded keeper EOA** (this bot): it needs gas and nothing else — no Safe module, no role grant, no ownership wiring. See ADR 0007's 2026-07 permissionless amendment. Where this guide says "owner"/"owner key" below, read it as the keeper EOA.
 
 This document specifies what the bot must do, how often, with what inputs and what failure modes. It does **not** specify the language, framework, or deployment topology — those are operator choices. The bot lives outside this repo; this file is the contract between the on-chain adapter and whatever ops process keeps it fed.
 
@@ -13,7 +13,7 @@ This document specifies what the bot must do, how often, with what inputs and wh
 Exactly two things, every cycle:
 
 1. **For each (account, chain) pair the operator wants tracked**, fetch the current set of `(token, cumulativeAmount, proof, breakdowns)` allocations from Merkl's API.
-2. **Submit each account's complete allocation set to the deployed `MerklRewardsAssistedBalanceAdapter` on that chain** via `submitProofs` (or the multi-account `submitProofsBatch`), signed by a key holding `ASSISTANT_ROLE`. Submission is **replace** semantics: each `submitProofs(user, allocs)` call drops the user's entire prior cached token set and stores the supplied list, so the bot submits the user's full current allocation list every cycle — not a delta.
+2. **Submit each account's complete allocation set to the deployed `MerklRewardsAssistedBalanceAdapter` on that chain** via `submitProofs` (or the multi-account `submitProofsBatch`), signed by the keeper EOA (no on-chain role required). Submission is **replace** semantics: each `submitProofs(user, allocs)` call drops the user's entire prior cached token set and stores the supplied list, so the bot submits the user's full current allocation list every cycle — not a delta.
 
 That's the whole job. Garbage collection (`clearAllocation`) and ownership transfer are infrequent operator actions, not part of the steady-state loop.
 
@@ -26,7 +26,7 @@ The bot needs three pieces of operator-provided configuration:
 | **Account list** | Operator config | One or more EVM addresses to track. Typically the OIV's per-chain accounts. |
 | **Chain list** | Operator config | Subset of {1, 10, 100, 8453, 42161}. Merkl supports more chains; only those the OIV deploys to matter. |
 | **Adapter address per chain** | `script/config/deployments/<id>.json` → `balanceAdapters.MerklRewardsAssisted` | Read at startup; refresh on redeploy. |
-| **Assistant key** | Operator secret store | The key holding `ASSISTANT_ROLE` on each `MerklRewardsAssistedBalanceAdapter`. By default this is `chainConfig.admin` (the OIV Safe). The bot must be able to submit transactions as this owner — typically via a Safe Transaction Service / module / API client. Direct EOA ownership is not recommended for production. |
+| **Keeper EOA** | Operator secret store | The EOA that signs `submitProofs`. **No on-chain role** — the adapter is permissionless, so any funded EOA works; keep it topped up with gas on each chain. A plain hot EOA is acceptable here precisely because the key has no privilege beyond paying gas to submit proof-verified data: it cannot fabricate amounts, move funds, or suppress live entries (`clearAllocation` is stale-gated). |
 
 The Distributor address and proof-verification rules are pinned in the adapter; the bot does not need to know about them.
 
@@ -99,16 +99,7 @@ Operationally:
 
 ## Submission model
 
-The owner of every deployed `MerklRewardsAssistedBalanceAdapter` is `chainConfig.admin` — the OIV Safe. The bot must produce signed transactions on behalf of the Safe. Two reasonable shapes:
-
-| Model | How it works | When to pick it |
-|---|---|---|
-| **Safe module** | Deploy a small Safe module that whitelists `submitProofs` / `submitProofsBatch` selectors on the adapter. The bot signs with a hot key authorized by the module. | Production. Hot key is constrained to "submit Merkl proofs" only — cannot move funds, cannot transfer ownership, cannot call any other adapter. Limits blast radius if the bot key is compromised. |
-| **Safe Transaction Service queue** | Bot proposes transactions; signers approve and execute manually or via automation. | Pre-production / low-volume. No hot key, but cadence depends on signer availability. |
-
-Direct EOA ownership (no Safe) is **not recommended** because the owner key would have to live wherever the bot runs.
-
-The adapter does not care which model is used — `onlyRole(ASSISTANT_ROLE)` is the only constraint. Whatever shape the bot uses must end with the submitter holding `ASSISTANT_ROLE`.
+The adapter is **permissionless**: `submitProofs(user, allocs)` / `submitProofsBatch` are callable by anyone, so the bot simply signs and sends from a funded keeper EOA — no Safe module, no role grant, no ownership wiring. A plain hot EOA is acceptable because proof-verification bounds what any caller can do: it can only cache a user's *real*, Merkl-attested allocation — it cannot fabricate or inflate amounts, and `clearAllocation` is stale-gated so it cannot suppress a live entry. Keep the EOA funded with gas on each chain and rotate it with ordinary hot-key hygiene; there are no on-chain permissions to manage.
 
 ## Failure modes and what to do
 
@@ -116,9 +107,9 @@ The adapter does not care which model is used — `onlyRole(ASSISTANT_ROLE)` is 
 |---|---|---|
 | `submitProofs` reverts with `InvalidProof` | API returned a proof for a root that hasn't reached this chain yet, or returned a proof for `lastTree` after the dispute window closed | Re-fetch from API and retry once. If still failing, log and skip — the next cycle will recover. |
 | `submitProofs` reverts with `UninitializedRoot` | Distributor's `tree.merkleRoot` is 0 (e.g., on a chain where Merkl is freshly deployed) | Disable the bot for that chain until Merkl publishes a root. |
-| `submitProofs` reverts with `AmountRegression` | The list contains a duplicate token whose cumulative decreases within the same submission. Should not happen under Merkl's monotonicity invariant; suggests an API bug or campaign restructuring. | Page an operator. Do not auto-clear the cache. The assistant can call `clearAllocation` manually after investigating. |
+| `submitProofs` reverts with `AmountRegression` | The list contains a duplicate token whose cumulative decreases within the same submission. Should not happen under Merkl's monotonicity invariant; suggests an API bug or campaign restructuring. | Page an operator. Re-fetch and resubmit via `submitProofs` (it clears-first, so it can legitimately move a value); `clearAllocation` won't help — it's stale-gated and only removes dead entries. |
 | `submitProofs` reverts with `CampaignSumMismatch` | The per-campaign `breakdowns[]` shares for a token don't sum to that token's `cumulativeAmount` | Re-fetch and recompute the breakdown; submit an empty `campaigns` list (one untagged position) if the API's breakdown can't be reconciled. |
-| `submitProofs` reverts with `AccessControlUnauthorizedAccount` | Bot's signer does not hold `ASSISTANT_ROLE` | Verify the Safe module wiring / owner address. Likely a deploy or ownership-transfer issue, not a routine failure. |
+| `clearAllocation` reverts `AllocationStillLive` | Tried to GC a `(user, token)` that still contributes to NAV (cached root matches live root AND unclaimed > 0) | Expected/by-design — a live entry can't be cleared, only *replaced* via `submitProofs`. Only GC entries that already read 0 (stale root or fully claimed). `NothingToClear` similarly means nothing was cached. |
 | Cache reads as 0 even though API shows non-zero `amount` | Cached `root` does not match current `Distributor.getMerkleRoot()`. Bot has not yet run since the last root rotation. | Wait for next bot cycle. If persistent, the bot is stopped — investigate. |
 | Adapter not in NAV | Either `enabled: false` in chain config or `addBalanceAdapters` wasn't called | Check `NAVCalculator.isAdapterRegistered(adapter)`; if false, register via Safe. |
 

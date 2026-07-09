@@ -152,7 +152,7 @@ Most liquid-staking feeds follow the same shape: read the base asset's USD price
 
 **Base/USD comes from the NAV, not an embedded Chainlink oracle** ([ADR 0019](../../docs/decisions/0019-nav-sourced-base-price.md)). Sourcing the base term from the same selector the NAV prices the base asset's own position legs with makes it **cancel cleanly** when NAV is quoted in the base — fixing the mixed-feed error where an LST used Chainlink ETH/USD while WETH used API3. **Circularity invariant:** `baseAsset` must be priced by *direct* feeds (Chainlink/API3/Redstone), never by a NAV-sourced custom feed.
 
-A concrete feed extends `BaseCustomPriceFeed`, passes `(underlying, nav, baseAsset)` to the constructor, and implements **only** `_rate()` — the protocol's exchange rate as 18-decimal base-token units per 1 underlying (e.g. ETH per rETH). The base computes `price = rate · base8 / 1e18` (`Math.Rounding.Floor`, `base8` = the NAV-selected base/USD normalized to 8 dp) and marks the price stale when the NAV reports the base stale (all-base-feeds-stale or sequencer-down) or `_rate()` returns 0.
+A concrete feed extends `BaseCustomPriceFeed`, passes `(underlying, nav, baseAsset)` to the constructor, and implements **only** `_rate()` — the protocol's exchange rate as 18-decimal base-token units per 1 underlying (e.g. ETH per rETH). The base computes `price = rate · base8 / 1e18` (`Math.Rounding.Floor`, `base8` = the NAV-selected base/USD normalized to 8 dp) and marks the price stale when the NAV reports the base **feed** stale (all-base-feeds-stale) or `_rate()` returns 0. L2 **sequencer-down alone does not** mark it stale: `NavBaseUsdLib` un-folds `pd.sequencerDown` so custom-priced positions keep their last price during an outage — matching how `computeNav` values direct positions (the top-level `nav.sequencerDown` flag is the sequencer signal). See [ADR 0019](../../docs/decisions/0019-nav-sourced-base-price.md).
 
 Six feeds have been migrated to this base and collapse to ~10–25 LOC each: `rETH_Price`, `cbETH_Price`, `ETHx_Price`, `rsETH_Price`, `ezETH_Price`, and `osToken_Price`. Feeds whose rate is itself a Chainlink feed use the generic `CrossRateCustomPriceFeed` instead; feeds with no single Chainlink base (e.g. `ETHPlus_Price`), a derived two-feed rate (e.g. `eETH_Price`), or a non-standard `latestRoundData` shape (e.g. `wstETH_Price`'s two-Chainlink-leg `min(updatedAt)`) stay bespoke and implement the interface directly. The `_L2_` variants are not (yet) migrated.
 
@@ -186,7 +186,7 @@ Encoding the check inside each adapter's `getLatestPrice()` is the only approach
 
 Single-Chainlink-feed adapters (e.g. `rETH_Price`, `sDAI_Price`) benefit from the same pattern: the on-chain exchange rate (DSR chi, rETH exchange rate) has no heartbeat of its own — it updates from protocol interactions. The single Chainlink feed is the only staleness source, and checking it in `getLatestPrice()` is natural.
 
-`wstETH_Price` is a **two-feed** adapter: it combines `stEthPerToken` (no heartbeat) with **both** the stETH/ETH and ETH/USD Chainlink feeds, so it does the OR check above internally (same as `CrossRateCustomPriceFeed`, used for stETH). Its `latestRoundData()` reports the **most-stale** of the two legs (lowest `updatedAt`), which for stETH/ETH is a ~daily cadence.
+`wstETH_Price` is a **two-feed** adapter: it combines `stEthPerToken` (no heartbeat) with the stETH/ETH Chainlink **rate** feed and the **NAV-sourced ETH/USD** base ([ADR 0019](../../docs/decisions/0019-nav-sourced-base-price.md)), so it does the OR check above internally (same as `CrossRateCustomPriceFeed`, used for stETH). Its `latestRoundData()` reports the **most-stale** of the two legs (lowest `updatedAt`), which for stETH/ETH is a ~daily cadence.
 
 **Register a multi-feed Custom adapter with the slowest underlying leg's heartbeat.** Per the multi-feed model above, `Prices.sol` applies the single registered `chainlinkHeartbeat` to the adapter's `latestRoundData().updatedAt` as a *secondary* gate (after the primary `getLatestPrice().stale` gate). Since `latestRoundData()` surfaces the **slowest** leg's `updatedAt`, the registered heartbeat must be at least that leg's heartbeat — otherwise a tight scalar (e.g. 3600) falsely marks the asset stale whenever the slow leg hasn't ticked within the window (the exact failure a single threshold cannot avoid; see the false-positive/false-negative note above). For wstETH/stETH the slowest leg is stETH/ETH (86400), so they register `heartbeat = 86400`: the secondary gate then exactly mirrors the adapter's own stETH/ETH check (never false-trips), while the primary `getLatestPrice().stale` gate still independently covers the faster ETH/USD (3600) leg. Registering `type(uint256).max` is an equivalent alternative that disables the secondary gate entirely and delegates staleness fully to the adapter; the finite slowest-leg value is preferred here because it keeps a real NAV-level backstop and is consistent with the other Custom entries. (Note: on the legacy live NAV, whose `ICustomPriceFeed` has no `latestRoundData()`, the heartbeat param is ignored for Custom feeds and staleness is taken solely from `getLatestPrice()`.)
 
@@ -250,13 +250,13 @@ All in `src/prices/protocols/`. Pattern is one file per asset; L2-specific varia
 
 | Feed | Asset | Underlying inputs |
 |---|---|---|
-| `sDAI_Price` | sDAI | DAI/USD Chainlink × DSR `pot.chi()` (RAY-scaled) |
-| `sUSDS_Price` | sUSDS | USDS/USD Chainlink × Sky savings rate |
-| `sUSDe_Price` | sUSDe | USDe/USD Chainlink × Ethena vault share rate |
-| `sGHO_Price` | sGHO | GHO/USD Chainlink × Aave sGHO vault share rate (`convertToAssets`) |
-| `sXDAI_Price` | sXDAI | xDAI/USD Chainlink × Gnosis savings rate (Gnosis Chain only) |
-| `syrupUSDC_Price`, `syrupUSDC_L2_Price` | syrupUSDC | USDC/USD Chainlink × Maple syrup rate |
-| `RWIV_Price` | RWIV | USDC/USD Chainlink × Nexus RWI Vault share rate (`convertToAssets`) |
+| `sDAI_Price` | sDAI | DAI/USD (via NAV) × DSR `pot.chi()` (RAY-scaled) |
+| `sUSDS_Price` | sUSDS | USDS/USD (via NAV) × Sky savings rate |
+| `sUSDe_Price` | sUSDe | USDe/USD (via NAV) × Ethena vault share rate |
+| `sGHO_Price` | sGHO | GHO/USD (via NAV) × Aave sGHO vault share rate (`convertToAssets`) |
+| `sXDAI_Price` | sXDAI | xDAI/USD (via NAV) × Gnosis savings rate (Gnosis Chain only) |
+| `syrupUSDC_Price`, `syrupUSDC_L2_Price` | syrupUSDC | USDC/USD (via NAV) × Maple syrup rate |
+| `RWIV_Price` | RWIV | USDC/USD (via NAV) × Nexus RWI Vault share rate (`convertToAssets`) |
 
 ### Liquid (re)staking tokens
 
@@ -295,7 +295,7 @@ Detailed walkthrough lives at [`docs/howto/add-price-feed.md`](../../docs/howto/
 
 ### 8.1 Contract layout
 
-**If your feed is just `rate × ETH/USD` (a single Chainlink base feed times an 18-decimal on-chain rate), extend `BaseCustomPriceFeed` instead** — pass `(underlying, baseOracle, baseHeartbeat)` to its constructor and implement only `_rate()`. The five interface methods, immutables, validation, and staleness/normalize math come for free (see §5.0; e.g. `rETH_Price`). The full checklist below applies to bespoke feeds that don't fit that shape (multiple Chainlink feeds, derived rates, no Chainlink base, or a non-standard `latestRoundData`).
+**If your feed is just `rate × base/USD` (the NAV-sourced base times an 18-decimal on-chain rate), extend `BaseCustomPriceFeed` instead** — pass `(underlying, nav, baseAsset)` to its constructor and implement only `_rate()`. The five interface methods, immutables, validation, and staleness/normalize math come for free (see §5.0; e.g. `rETH_Price`). The full checklist below applies to bespoke feeds that don't fit that shape (multiple Chainlink feeds, derived rates, no Chainlink base, or a non-standard `latestRoundData`).
 
 1. Create `src/prices/protocols/<Asset>_CustomPriceFeed.sol` (suffix `_L2_Price` for L2-specific variants).
 2. Implement `ICustomPriceFeed` and `IERC165`.

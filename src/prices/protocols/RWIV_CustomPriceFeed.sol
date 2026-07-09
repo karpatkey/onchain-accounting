@@ -5,16 +5,14 @@ import {ERC4626VaultRatePriceFeed} from "src/prices/ERC4626VaultRatePriceFeed.so
 
 /// @title RWIV Custom Price Oracle
 /// @notice Returns the USD price of RWIV as `(USDC/USD) × (USDC per RWIV share)`, the vault's live ERC-4626
-///         exchange rate times Chainlink's USDC/USD quote.
+///         exchange rate times the NAV's USDC/USD price.
 /// @dev Thin {ERC4626VaultRatePriceFeed} subclass — the rate/staleness math and `ICustomPriceFeed` surface live in
-///      the base; this only pins the RWIV vault, the USDC/USD feed, and its heartbeat.
+///      the base; this only pins the RWIV vault, the NAV, and the base asset (USDC).
 /// @author KPK
 /* solhint-disable contract-name-camelcase */
 contract RWIV_CustomPriceFeed is ERC4626VaultRatePriceFeed {
     /// @param rwiv_ Address of the RWIV vault contract.
-    /// @param usdcToUsdChainlinkAddress_ Address of the USDC to USD Chainlink oracle.
-    /// @param usdcToUsdChainlinkHeartbeat_ Seconds after which the USDC/USD price is considered stale if not updated.
-    constructor(address rwiv_, address usdcToUsdChainlinkAddress_, uint256 usdcToUsdChainlinkHeartbeat_)
-        ERC4626VaultRatePriceFeed(rwiv_, usdcToUsdChainlinkAddress_, usdcToUsdChainlinkHeartbeat_)
-    {}
+    /// @param nav_ The NAVCalculator proxy to read the base asset's USD price from.
+    /// @param baseAsset_ The base asset (USDC) whose NAV-selected USD price scales the vault rate.
+    constructor(address rwiv_, address nav_, address baseAsset_) ERC4626VaultRatePriceFeed(rwiv_, nav_, baseAsset_) {}
 }

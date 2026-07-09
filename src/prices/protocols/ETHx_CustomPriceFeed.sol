@@ -7,10 +7,10 @@ import {OracleArgumentChecks} from "src/utils/OracleArgumentChecks.sol";
 import "src/errors.sol";
 
 /// @title ETHx Custom Price Oracle
-/// @notice USD price of Stader's ETHx = `StaderStakePoolsManager.getExchangeRate()` (ETH/ETHx, 18 dec) × Chainlink
-///         ETH/USD.
-/// @dev Shared skeleton (staleness, decimals, latestRoundData, the `rate × ETH/USD / 1e18` math) lives in
-///      BaseCustomPriceFeed; this feed supplies only the Stader exchange rate via `_rate()`.
+/// @notice USD price of Stader's ETHx = `StaderStakePoolsManager.getExchangeRate()` (ETH/ETHx, 18 dec) × the NAV's
+///         ETH/USD price.
+/// @dev Shared skeleton (base/USD via the NAV, staleness, decimals, latestRoundData, the `rate × base/USD / 1e18`
+///      math) lives in BaseCustomPriceFeed; this feed supplies only the Stader exchange rate via `_rate()`.
 /// @author KPK
 /* solhint-disable contract-name-camelcase */
 contract ETHx_CustomPriceFeed is BaseCustomPriceFeed {
@@ -19,14 +19,11 @@ contract ETHx_CustomPriceFeed is BaseCustomPriceFeed {
 
     /// @param ethx_ The address of the ETHx token.
     /// @param stakePoolsManager_ The address of the StaderStakePoolsManager (exposes getExchangeRate()).
-    /// @param ethToUsdChainlinkOracle_ The address of the ETH to USD Chainlink oracle.
-    /// @param ethToUsdChainlinkHeartbeat_ The time in seconds after which the price is considered stale if not updated.
-    constructor(
-        address ethx_,
-        address stakePoolsManager_,
-        address ethToUsdChainlinkOracle_,
-        uint256 ethToUsdChainlinkHeartbeat_
-    ) BaseCustomPriceFeed(ethx_, ethToUsdChainlinkOracle_, ethToUsdChainlinkHeartbeat_) {
+    /// @param nav_ The NAVCalculator proxy to read the base asset's USD price from.
+    /// @param baseAsset_ The base asset (e.g. WETH) whose NAV-selected USD price scales the rate.
+    constructor(address ethx_, address stakePoolsManager_, address nav_, address baseAsset_)
+        BaseCustomPriceFeed(ethx_, nav_, baseAsset_)
+    {
         OracleArgumentChecks.assertNonZeroAddress(stakePoolsManager_);
         if (stakePoolsManager_.code.length == 0) revert InvalidArguments();
         STAKE_POOLS_MANAGER = IStaderStakePoolsManager(stakePoolsManager_);

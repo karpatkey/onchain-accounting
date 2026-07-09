@@ -207,7 +207,25 @@ contract Mock_NAVCalculator is INAVCalculator {
         d.price = price;
         d.decimals = decimals;
         d.stale = false;
+        d.updatedAt = block.timestamp;
         _priceData[asset] = d;
+    }
+
+    /// @notice Set an asset's price data with an explicit stale flag (updatedAt defaults to block.timestamp).
+    ///         Used by the custom-price-feed unit tests to register a base asset (e.g. WETH) with an ETH/USD price
+    ///         and to exercise the "base stale" branch (stale=true).
+    function setAssetPrice(address asset, int256 price, uint8 decimals, bool stale) external {
+        PriceFeedData memory d;
+        d.price = price;
+        d.decimals = decimals;
+        d.stale = stale;
+        d.updatedAt = block.timestamp;
+        _priceData[asset] = d;
+    }
+
+    /// @notice Flip the stale flag on an already-registered asset's price data (keeps price/decimals/updatedAt).
+    function setAssetStale(address asset, bool stale) external {
+        _priceData[asset].stale = stale;
     }
 
     /// @notice Make getPriceData(asset) REVERT, emulating the real NAVCalculator's PriceFeedNotSet for a registered

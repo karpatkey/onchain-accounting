@@ -5,10 +5,10 @@ import {BaseCustomPriceFeed} from "src/prices/BaseCustomPriceFeed.sol";
 import {OracleArgumentChecks} from "src/utils/OracleArgumentChecks.sol";
 
 /// @title rsETH Custom Price Oracle
-/// @notice USD price of Kelp DAO's rsETH = `RsETHRateProvider.getLatestRate()` (ETH per rsETH, 18 dec) × Chainlink
-///         ETH/USD.
-/// @dev Shared skeleton (staleness, decimals, latestRoundData, the `rate × ETH/USD / 1e18` math) lives in
-///      BaseCustomPriceFeed; this feed supplies only the rsETH rate via `_rate()`.
+/// @notice USD price of Kelp DAO's rsETH = `RsETHRateProvider.getLatestRate()` (ETH per rsETH, 18 dec) × the NAV's
+///         ETH/USD price.
+/// @dev Shared skeleton (base/USD via the NAV, staleness, decimals, latestRoundData, the `rate × base/USD / 1e18`
+///      math) lives in BaseCustomPriceFeed; this feed supplies only the rsETH rate via `_rate()`.
 /// @author KPK
 /* solhint-disable contract-name-camelcase */
 contract rsETH_CustomPriceFeed is BaseCustomPriceFeed {
@@ -17,14 +17,11 @@ contract rsETH_CustomPriceFeed is BaseCustomPriceFeed {
 
     /// @param rsEth_ The address of the rsETH token.
     /// @param rateProvider_ The address of the Kelp DAO Multi-Chain Rate Provider.
-    /// @param ethToUsdChainlinkOracle_ The address of the ETH to USD Chainlink oracle.
-    /// @param ethToUsdChainlinkHeartbeat_ The time in seconds after which the price is considered stale if not updated.
-    constructor(
-        address rsEth_,
-        address rateProvider_,
-        address ethToUsdChainlinkOracle_,
-        uint256 ethToUsdChainlinkHeartbeat_
-    ) BaseCustomPriceFeed(rsEth_, ethToUsdChainlinkOracle_, ethToUsdChainlinkHeartbeat_) {
+    /// @param nav_ The NAVCalculator proxy to read the base asset's USD price from.
+    /// @param baseAsset_ The base asset (e.g. WETH) whose NAV-selected USD price scales the rate.
+    constructor(address rsEth_, address rateProvider_, address nav_, address baseAsset_)
+        BaseCustomPriceFeed(rsEth_, nav_, baseAsset_)
+    {
         RATE_PROVIDER = IRsETHRateProvider(OracleArgumentChecks.assertNonZeroAddress(rateProvider_));
     }
 

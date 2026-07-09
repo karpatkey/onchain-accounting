@@ -12,19 +12,17 @@
     "constructor": {
       "wstEth": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
       "stEthToEthChainlinkOracle": "0x86392dC19c0b719886221c78AB11eb8Cf5c52812",
-      "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
       "stEthToEthChainlinkHeartbeat": "86400",
-      "ethToUsdChainlinkHeartbeat": "3600"
+      "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }
   },
   "stETH": {
     "enabled": true,
     "constructor": {
       "underlyingAsset": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
-      "xToUsdFeed": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
       "yToXFeed": "0x86392dC19c0b719886221c78AB11eb8Cf5c52812",
-      "xToUsdHeartbeat": "3600",
-      "yToXHeartbeat": "86400"
+      "yToXHeartbeat": "86400",
+      "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }
   },
   "lsETH": {
@@ -32,18 +30,16 @@
     "$comment": "Liquid Collective lsETH. CrossRate: lsETH/USD = ETH/USD x lsETH/ETH. yToXFeed is Chainlink 'LsETH / ETH Exchange Rate' (0xE858728e), the same feed Morpho's lsETH market oracle uses.",
     "constructor": {
       "underlyingAsset": "0x8c1BEd5b9a0928467c9B1341Da1D7BD5e10b6549",
-      "xToUsdFeed": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
       "yToXFeed": "0xE858728eB31a25C4AcCcE17d01B68dCFC3A0ED2C",
-      "xToUsdHeartbeat": "3600",
-      "yToXHeartbeat": "86400"
+      "yToXHeartbeat": "86400",
+      "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }
   },
   "rETH": {
     "enabled": true,
     "constructor": {
       "rEth": "0xae78736Cd615f374D3085123A210448E74Fc6393",
-      "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
-      "ethToUsdChainlinkHeartbeat": "3600"
+      "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }
   },
   "osETH": {
@@ -51,8 +47,7 @@
     "constructor": {
       "osToken": "0xf1C9acDc66974dFB6dEcB12aA385b9cD01190E38",
       "osTokenVaultController": "0x2A261e60FB14586B474C208b1B7AC6D0f5000306",
-      "underlyingToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
-      "underlyingToUsdChainlinkHeartbeat": "3600"
+      "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }
   },
   "weETH": {
@@ -60,9 +55,8 @@
     "constructor": {
       "weEth": "0xCd5fE23C85820F7B72D0926FC9b05b43E359b7ee",
       "weEthToEthChainlinkOracle": "0x5c9C449BbC9a6075A2c061dF312a35fd1E05fF22",
-      "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
       "weEthToEthChainlinkHeartbeat": "86400",
-      "ethToUsdChainlinkHeartbeat": "3600"
+      "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }
   },
   "eETH": {
@@ -71,9 +65,8 @@
       "eEth": "0x35fA164735182de50811E8e2E824cFb9B6118ac2",
       "weEth": "0xCd5fE23C85820F7B72D0926FC9b05b43E359b7ee",
       "weEthToEthChainlinkOracle": "0x5c9C449BbC9a6075A2c061dF312a35fd1E05fF22",
-      "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
       "weEthToEthChainlinkHeartbeat": "86400",
-      "ethToUsdChainlinkHeartbeat": "3600"
+      "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }
   },
   "ezETH": {
@@ -81,8 +74,7 @@
     "constructor": {
       "ezEth": "0xbf5495Efe5DB9ce00f80364C8B423567e58d2110",
       "restakeManager": "0x74a09653A083691711cF8215a6ab074BB4e99ef5",
-      "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
-      "ethToUsdChainlinkHeartbeat": "3600"
+      "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }
   },
   "rsETH": {
@@ -90,8 +82,7 @@
     "constructor": {
       "rsEth": "0xA1290d69c65A6Fe4DF752f95823fae25cB99e5A7",
       "rateProvider": "0x0788906B19bA8f8d0e8a7015f0714DF3179D9aB6",
-      "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
-      "ethToUsdChainlinkHeartbeat": "3600"
+      "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }
   },
   "ETHx": {
@@ -99,32 +90,28 @@
     "constructor": {
       "ethx": "0xA35b1B31Ce002FBF2058D22F30f95D405200A15b",
       "stakePoolsManager": "0xcf5EA1b38380f6aF39068375516Daf40Ed70D299",
-      "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
-      "ethToUsdChainlinkHeartbeat": "3600"
+      "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }
   },
   "sUSDe": {
     "enabled": true,
     "constructor": {
       "sUsde": "0x9D39A5DE30e57443BfF2A8307A4256c8797A3497",
-      "usdeToUsdChainlinkAddress": "0xa569d910839Ae8865Da8F8e70FfFb0cBA869F961",
-      "usdeToUsdChainlinkHeartbeat": "82800"
+      "baseAsset": "0x4c9EDD5852cd905f086C759E8383e09bff1E68B3"
     }
   },
   "sUSDS": {
     "enabled": true,
     "constructor": {
       "sUsds": "0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD",
-      "usdsToUsdChainlinkAddress": "0xfF30586cD0F29eD462364C7e81375FC0C71219b1",
-      "usdsToUsdChainlinkHeartbeat": "82800"
+      "baseAsset": "0xdC035D45d973E3EC169d2276DDab16f1e407384F"
     }
   },
   "syrupUSDC": {
     "enabled": true,
     "constructor": {
       "syrupUsdc": "0x80ac24aA929eaF5013f6436cdA2a7ba190f5Cc0b",
-      "usdcToUsdChainlinkAddress": "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6",
-      "usdcToUsdChainlinkHeartbeat": "82800"
+      "baseAsset": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
     }
   },
   "RWIV": {
@@ -132,8 +119,7 @@
     "$comment": "Nexus Mutual RWI Vault (RWIV) — ERC-4626 share, USDC underlying. Priced USDC/USD x convertToAssets(10^decimals)/10^decimals (same pattern as syrupUSDC). Makes RWIV a registered priced asset so the UniV3 USDC/RWIV pool LP (held by the Nexus Safe) can be valued by UniswapV3PoolsMeta (pool 0x764D50759FF278b7CfB2E0e8464B742E9aB40C97 must be in that adapter's instance list).",
     "constructor": {
       "rwiv": "0xCafEaa466736ac01e0AC9CA72644BeF348694731",
-      "usdcToUsdChainlinkAddress": "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6",
-      "usdcToUsdChainlinkHeartbeat": "82800"
+      "baseAsset": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
     }
   },
   "sGHO": {
@@ -141,8 +127,7 @@
     "$comment": "Aave sGHO savings vault — ERC-4626 share, GHO underlying. Priced GHO/USD (Chainlink) x convertToAssets(10^decimals)/10^decimals (same pattern as RWIV/syrupUSDC). Makes sGHO a registered priced asset, so registerAsset auto-adds it to ERC20DefaultBalanceAdapter and the wallet adapter reports the direct sGHO holding at sGHO/USD — no balance adapter needed.",
     "constructor": {
       "sgho": "0xE1753F2e00940cC31213dd92013cF019DFE4ca1d",
-      "ghoToUsdChainlinkAddress": "0x3f12643D3f6f874d39C2a4c9f2Cd6f2DbAC877FC",
-      "ghoToUsdChainlinkHeartbeat": "86400"
+      "baseAsset": "0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f"
     }
   },
   "OETH": {
@@ -150,10 +135,9 @@
     "$comment": "CrossRate: OETH/USD = ETH/USD x OETH/ETH (Chainlink). underlyingAsset=OETH (Y), xToUsdFeed=ETH/USD (X), yToXFeed=OETH/ETH.",
     "constructor": {
       "underlyingAsset": "0x856c4Efb76C1D1AE02e20CEB03A2A6a08b0b8dC3",
-      "xToUsdFeed": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
       "yToXFeed": "0x703118C4CbccCBF2AB31913e0f8075fbbb15f563",
-      "xToUsdHeartbeat": "3600",
-      "yToXHeartbeat": "86400"
+      "yToXHeartbeat": "86400",
+      "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }
   },
   "LDO": {
@@ -162,9 +146,8 @@
     "constructor": {
       "ldo": "0x5A98FcBEA516Cf06857215779Fd812CA3beF1B32",
       "ldoToEthChainlinkAddress": "0x4e844125952D32AcdF339BE976c98E22F6F318dB",
-      "ethToUsdChainlinkAddress": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
       "ldoToEthChainlinkHeartbeat": "86400",
-      "ethToUsdChainlinkHeartbeat": "3600"
+      "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }
   },
   "ankrETH": {
@@ -172,8 +155,7 @@
     "$comment": "ankrETH/USD = (ETH/USD) * 1e18 / ankrETH.ratio() (ratio is ankrETH-per-ETH).",
     "constructor": {
       "ankrEth": "0xE95A203B1a91a908F9B9CE46459d101078c2c3cb",
-      "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
-      "ethToUsdChainlinkHeartbeat": "3600"
+      "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }
   },
   "NXM": {
@@ -182,8 +164,7 @@
     "constructor": {
       "token": "0xd7c49CEE7E9188cCa6AD8FF264C1DA2e69D4Cf3B",
       "ramm": "0xcafea54f03E1Cc036653444e581A10a43B2487CD",
-      "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
-      "ethToUsdChainlinkHeartbeat": "3600"
+      "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }
   },
   "wNXM": {
@@ -192,8 +173,7 @@
     "constructor": {
       "token": "0x0d438F3b5175Bebc262bF23753C1E53d03432bDE",
       "ramm": "0xcafea54f03E1Cc036653444e581A10a43B2487CD",
-      "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
-      "ethToUsdChainlinkHeartbeat": "3600"
+      "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }
   },
   "ezETHCrossRate": {
@@ -201,10 +181,9 @@
     "$comment": "ezETH redundancy feed (ezETH_CrossRateCustomPriceFeed). CrossRate: ezETH/USD = ETH/USD x ezETH/ETH. yToXFeed is the Redstone Classic Push ezETH/ETH market feed (verified 99.87% vs Renzo RestakeManager rate). Independent of the primary ezETH feed (Renzo on-chain rate); added as priceFeeds[1] for freshest-wins redundancy.",
     "constructor": {
       "underlyingAsset": "0xbf5495Efe5DB9ce00f80364C8B423567e58d2110",
-      "xToUsdFeed": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
       "yToXFeed": "0xF4a3e183F59D2599ee3DF213ff78b1B3b1923696",
-      "xToUsdHeartbeat": "3600",
-      "yToXHeartbeat": "86400"
+      "yToXHeartbeat": "86400",
+      "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }
   },
   "ETHxCrossRate": {
@@ -212,10 +191,9 @@
     "$comment": "ETHx redundancy feed (ETHx_CrossRateCustomPriceFeed). CrossRate: ETHx/USD = ETH/USD x ETHx/ETH. yToXFeed is the Redstone Classic Push ETHx/ETH market feed (verified 99.81% vs Stader getExchangeRate). Independent of the primary ETHx feed (Stader on-chain rate); added as priceFeeds[1] for freshest-wins redundancy.",
     "constructor": {
       "underlyingAsset": "0xA35b1B31Ce002FBF2058D22F30f95D405200A15b",
-      "xToUsdFeed": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
       "yToXFeed": "0xc799194cAa24E2874Efa89b4Bf5c92a530B047FF",
-      "xToUsdHeartbeat": "3600",
-      "yToXHeartbeat": "86400"
+      "yToXHeartbeat": "86400",
+      "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }
   },
   "osETHCrossRate": {
@@ -223,10 +201,9 @@
     "$comment": "osETH redundancy feed (osETH_CrossRateCustomPriceFeed). CrossRate: osETH/USD = ETH/USD x osETH/ETH. yToXFeed is the Redstone Classic Push osETH/ETH market feed (verified 99.34% vs StakeWise osTokenVaultController rate). Independent of the primary osETH feed (StakeWise on-chain rate); added as priceFeeds[1] for freshest-wins redundancy.",
     "constructor": {
       "underlyingAsset": "0xf1C9acDc66974dFB6dEcB12aA385b9cD01190E38",
-      "xToUsdFeed": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
       "yToXFeed": "0x66ac817f997Efd114EDFcccdce99F3268557B32C",
-      "xToUsdHeartbeat": "3600",
-      "yToXHeartbeat": "86400"
+      "yToXHeartbeat": "86400",
+      "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }
   }
 }

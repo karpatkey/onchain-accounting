@@ -4,16 +4,14 @@
     "constructor": {
       "osToken": "0xF490c80aAE5f2616d3e3BDa2483E30C4CB21d1A0",
       "osTokenVaultController": "0x60B2053d7f2a0bBa70fe6CDd88FB47b579B9179a",
-      "underlyingToUsdChainlinkOracle": "0x22441d81416430A54336aB28765abd31a792Ad37",
-      "underlyingToUsdChainlinkHeartbeat": "86400"
+      "baseAsset": "0x9C58BAcC331c9aa871AFD802DB6379a98e80CEdb"
     }
   },
   "sXDAI": {
     "enabled": true,
     "constructor": {
       "sXdai": "0xaf204776c7245bF4147c2612BF6e5972Ee483701",
-      "xDaiToUsdChainlinkOracle": "0x678df3415fc31947dA4324eC63212874be5a82f8",
-      "xDaiToUsdChainlinkHeartbeat": "86400"
+      "baseAsset": "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d"
     }
   },
   "wstETH_L2": {
@@ -21,9 +19,8 @@
     "constructor": {
       "wstEth": "0x6C76971f98945AE98dD7d4DFcA8711ebea946eA6",
       "wstEthToEthChainlink": "0x0064AC007fF665CF8D0D3Af5E0AD1c26a3f853eA",
-      "ethToUsdChainlinkOracle": "0xa767f745331D267c7751297D982b050c93985627",
       "wstEthToEthHeartbeat": "86400",
-      "ethToUsdChainlinkHeartbeat": "86400"
+      "baseAsset": "0x6A023CCd1ff6F2045C3309768eAd9E68F978f6e1"
     }
   }
 }

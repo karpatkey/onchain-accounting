@@ -3,35 +3,74 @@ pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
 import {NXM_CustomPriceFeed} from "src/prices/protocols/NXM_CustomPriceFeed.sol";
+import {Mock_ERC20} from "test/mocks/tokens.sol";
+import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
+
+/// @notice Minimal Nexus Mutual RAMM mock exposing a settable internal ETH-per-NXM price.
+contract Mock_Ramm {
+    uint256 public price;
+
+    constructor(uint256 price_) {
+        price = price_;
+    }
+
+    function getInternalPrice() external view returns (uint256) {
+        return price;
+    }
+}
 
 /// @title NXM_CustomPriceFeed unit tests (no fork)
+/// @dev Base/USD (ETH/USD) now comes from the NAV via a Mock_NAVCalculator; the constructor takes
+///      `(nxm, ramm, nav, baseAsset)` and fails fast if the RAMM's internal price is 0. Arithmetic is exercised
+///      in the fork test against real Nexus state.
 contract NXM_CustomPriceFeedTest is Test {
-    address nxm;
-    address ramm;
-    address ethToUsdChainlink;
-    uint256 heartbeat;
+    Mock_ERC20 nxm;
+    Mock_ERC20 weth;
+    Mock_NAVCalculator nav;
+    Mock_Ramm ramm;
 
     function setUp() public {
-        nxm = address(0xd7c49CEE7E9188cCa6AD8FF264C1DA2e69D4Cf3B);
-        ramm = address(0xcafea54f03E1Cc036653444e581A10a43B2487CD);
-        ethToUsdChainlink = address(0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419);
-        heartbeat = 3600;
+        nxm = new Mock_ERC20("NXM", 18);
+        weth = new Mock_ERC20("WETH", 18);
+        nav = new Mock_NAVCalculator();
+        nav.setAssetPrice(address(weth), 3000e8, 8); // ETH/USD = $3000
+        ramm = new Mock_Ramm(0.03e18); // ~0.03 ETH per NXM
+    }
+
+    function test_constructor_valid() public {
+        NXM_CustomPriceFeed oracle = new NXM_CustomPriceFeed(address(nxm), address(ramm), address(nav), address(weth));
+        assertEq(oracle.decimals(), 8, "decimals == NAV_DECIMALS");
+        assertEq(oracle.underlyingAssetSupported(), address(nxm));
     }
 
     function test_invalidConstructorArgs() public {
+        // zero NXM
         vm.expectRevert();
-        new NXM_CustomPriceFeed(address(0), ramm, ethToUsdChainlink, heartbeat);
+        new NXM_CustomPriceFeed(address(0), address(ramm), address(nav), address(weth));
 
+        // zero RAMM
         vm.expectRevert();
-        new NXM_CustomPriceFeed(nxm, address(0), ethToUsdChainlink, heartbeat);
+        new NXM_CustomPriceFeed(address(nxm), address(0), address(nav), address(weth));
 
+        // RAMM not a live Nexus RAMM (getInternalPrice reverts)
         vm.expectRevert();
-        new NXM_CustomPriceFeed(nxm, ramm, address(0), heartbeat);
+        new NXM_CustomPriceFeed(address(nxm), address(nav), address(nav), address(weth));
 
+        // RAMM internal price is 0
+        Mock_Ramm zeroRamm = new Mock_Ramm(0);
         vm.expectRevert();
-        new NXM_CustomPriceFeed(nxm, ramm, ethToUsdChainlink, 0);
+        new NXM_CustomPriceFeed(address(nxm), address(zeroRamm), address(nav), address(weth));
 
+        // zero nav (not a contract)
         vm.expectRevert();
-        new NXM_CustomPriceFeed(nxm, ramm, nxm, heartbeat);
+        new NXM_CustomPriceFeed(address(nxm), address(ramm), address(0), address(weth));
+
+        // zero base asset
+        vm.expectRevert();
+        new NXM_CustomPriceFeed(address(nxm), address(ramm), address(nav), address(0));
+
+        // base asset not an ERC20 (nav has no totalSupply)
+        vm.expectRevert();
+        new NXM_CustomPriceFeed(address(nxm), address(ramm), address(nav), address(nav));
     }
 }

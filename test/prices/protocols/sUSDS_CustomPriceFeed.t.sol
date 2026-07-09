@@ -3,30 +3,45 @@ pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
 import {sUSDS_CustomPriceFeed} from "src/prices/protocols/sUSDS_CustomPriceFeed.sol";
+import {Mock_ERC20} from "test/mocks/tokens.sol";
+import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 
 /// @title sUSDS_CustomPriceFeed unit tests (no fork)
+/// @dev Base/USD (USDS/USD) now comes from the NAV via a Mock_NAVCalculator; the constructor takes
+///      `(sUsds, nav, baseAsset)`. Vault-rate math is exercised in the fork test.
 contract sUSDS_CustomPriceFeedTest is Test {
-    address sUsdsAddress;
-    address usdsToUsdChainlink;
-    uint256 heartbeat;
+    Mock_ERC20 sUsds;
+    Mock_ERC20 usds;
+    Mock_NAVCalculator nav;
 
     function setUp() public {
-        sUsdsAddress = address(0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD);
-        usdsToUsdChainlink = address(0xfF30586cD0F29eD462364C7e81375FC0C71219b1);
-        heartbeat = 82_800;
+        sUsds = new Mock_ERC20("sUSDS", 18);
+        usds = new Mock_ERC20("USDS", 18);
+        nav = new Mock_NAVCalculator();
+        nav.setAssetPrice(address(usds), 1e8, 8); // USDS/USD = $1
+    }
+
+    function test_constructor_valid() public {
+        sUSDS_CustomPriceFeed oracle = new sUSDS_CustomPriceFeed(address(sUsds), address(nav), address(usds));
+        assertEq(oracle.decimals(), 8, "decimals == NAV_DECIMALS");
+        assertEq(oracle.underlyingAssetSupported(), address(sUsds));
     }
 
     function test_invalidConstructorArgs() public {
+        // zero vault
         vm.expectRevert();
-        new sUSDS_CustomPriceFeed(address(0), usdsToUsdChainlink, heartbeat);
+        new sUSDS_CustomPriceFeed(address(0), address(nav), address(usds));
 
+        // zero nav (not a contract)
         vm.expectRevert();
-        new sUSDS_CustomPriceFeed(sUsdsAddress, address(0), heartbeat);
+        new sUSDS_CustomPriceFeed(address(sUsds), address(0), address(usds));
 
+        // zero base asset
         vm.expectRevert();
-        new sUSDS_CustomPriceFeed(sUsdsAddress, usdsToUsdChainlink, 0);
+        new sUSDS_CustomPriceFeed(address(sUsds), address(nav), address(0));
 
+        // base asset not an ERC20 (nav has no totalSupply)
         vm.expectRevert();
-        new sUSDS_CustomPriceFeed(sUsdsAddress, sUsdsAddress, heartbeat);
+        new sUSDS_CustomPriceFeed(address(sUsds), address(nav), address(nav));
     }
 }

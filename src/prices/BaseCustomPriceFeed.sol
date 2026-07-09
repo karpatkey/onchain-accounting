@@ -20,7 +20,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 /// @dev Sourcing base/USD from the NAV (rather than a hardcoded Chainlink oracle) makes the base term identical to the
 ///      one the NAV prices the base asset's own legs with — so it cancels cleanly when NAV is quoted in the base.
 ///      See {NavBaseUsdLib} (incl. the circularity invariant) and `docs/decisions`. Math: `price = rate · base8 / 1e18`
-///      (Floor); stale when the NAV reports the base stale (all-feeds-stale/sequencer-down) or `_rate()` is 0.
+///      (Floor); stale when the NAV reports the base feed stale (all-feeds-stale; NOT L2 sequencer-down alone) or `_rate()` is 0.
 abstract contract BaseCustomPriceFeed is ICustomPriceFeed {
     using Math for uint256;
 
@@ -67,8 +67,8 @@ abstract contract BaseCustomPriceFeed is ICustomPriceFeed {
             uint80 answeredInRound
         )
     {
-        // Base/USD from the NAV's selector (normalized to NAV_DECIMALS = 8); its staleness folds in
-        // all-base-feeds-stale + sequencer-down. roundId/startedAt/answeredInRound have no meaning for a NAV read.
+        // Base/USD from the NAV's selector (normalized to NAV_DECIMALS = 8); it marks the base stale on
+        // all-base-feeds-stale only (L2 sequencer-down alone does NOT — NavBaseUsdLib un-folds pd.sequencerDown; ADR 0019). roundId/startedAt/answeredInRound have no meaning for a NAV read.
         uint256 base8;
         (base8, stale, updatedAt) = NavBaseUsdLib.baseUsd(NAV, BASE_ASSET);
         if (stale) return (0, true, 0, 0, updatedAt, 0);

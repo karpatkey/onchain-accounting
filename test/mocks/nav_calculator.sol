@@ -228,6 +228,14 @@ contract Mock_NAVCalculator is INAVCalculator {
         _priceData[asset].stale = stale;
     }
 
+    /// @notice Emulate the NAV's L2 sequencer fold: set `sequencerDown` and, when down, OR it into `stale` exactly as
+    ///         `PriceFeedLib.buildPriceData` does (`stale = feedStale || sequencerDown`). Lets tests exercise the
+    ///         "sequencer down but base feed fresh" branch of {NavBaseUsdLib}.
+    function setSequencerDown(address asset, bool down) external {
+        _priceData[asset].sequencerDown = down;
+        if (down) _priceData[asset].stale = true;
+    }
+
     /// @notice Make getPriceData(asset) REVERT, emulating the real NAVCalculator's PriceFeedNotSet for a registered
     ///         asset whose feeds were all removed (exercises consumers' try/catch around getPriceData).
     function setPriceReverts(address asset, bool reverts_) external {

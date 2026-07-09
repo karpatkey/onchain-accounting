@@ -77,4 +77,19 @@ contract ERC4626VaultRatePriceFeedTest is Test {
         assertTrue(stale, "stale when base stale");
         assertEq(price, 0, "price 0 when base stale");
     }
+
+    /// @dev L2 sequencer-down alone must NOT zero the feed (F1): the base's `pd.stale` is folded true by the sequencer,
+    ///      but `pd.sequencerDown` un-folds it so the last base price is still used — matching how computeNav prices
+    ///      direct positions during an outage. Otherwise custom positions would crater to $0 while direct ones stay live.
+    function test_sequencerDown_doesNotZero() public {
+        Mock_ERC20 usdc = new Mock_ERC20("USDC", 6);
+        nav.setAssetPrice(address(usdc), 1e8, 8);
+        Mock_ERC4626 vault = new Mock_ERC4626("v", 18, address(usdc), 1.05e6);
+        _ExposedERC4626Feed feed = new _ExposedERC4626Feed(address(vault), address(nav), address(usdc));
+
+        nav.setSequencerDown(address(usdc), true); // folds pd.stale=true, pd.sequencerDown=true
+        (uint256 price, bool stale) = feed.getLatestPrice();
+        assertFalse(stale, "sequencer-down alone must not mark the feed stale");
+        assertEq(price, 1.05e8, "last base price still used during a sequencer outage");
+    }
 }

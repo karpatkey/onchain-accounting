@@ -22,17 +22,27 @@ library NavBaseUsdLib {
     /// @param nav        The NAVCalculator (proxy) to read from.
     /// @param baseAsset  The registered base asset whose USD price is wanted (e.g. WETH).
     /// @return price8    Base/USD normalized to `NAV_DECIMALS`; 0 when `stale`.
-    /// @return stale     True if the NAV reports the base stale/sequencer-down, the price is non-positive, or the read
-    ///                   reverts (e.g. base not registered). Fail-to-stale — never reverts the calling feed.
+    /// @return stale     True if the NAV reports the base feed stale, the price is non-positive, or the read reverts
+    ///                   (e.g. base not registered). Fail-to-stale — never reverts the calling feed. Note: L2
+    ///                   sequencer-down alone does NOT mark the base stale here (see the sequencer note below).
     /// @return updatedAt The selected base feed's `updatedAt` (for the caller's `latestRoundData` freshness); 0 on a
     ///                   revert or a rate-only base.
+    /// @dev **L2 sequencer:** `getPriceData` folds sequencer-down into `pd.stale` (`stale || sequencerDown`), but
+    ///      `NAVCalculator.computeNav` prices every *direct* position at its last value and ignores the sequencer at
+    ///      the per-position level — surfacing it only via the top-level `nav.sequencerDown` flag. If custom feeds
+    ///      zeroed on sequencer-down, custom-priced positions would crater to $0 during an L2 outage while direct ones
+    ///      stayed live — an internally inconsistent, understated NAV. So we un-fold the raw `pd.sequencerDown` and
+    ///      zero only on genuine base-feed staleness, matching the direct-feed path; the `nav.sequencerDown` flag
+    ///      remains the single sequencer signal for consumers.
     function baseUsd(INAVCalculator nav, address baseAsset)
         internal
         view
         returns (uint256 price8, bool stale, uint256 updatedAt)
     {
         try nav.getPriceData(baseAsset) returns (INAVCalculator.PriceFeedData memory pd) {
-            if (pd.stale || pd.price <= 0) return (0, true, pd.updatedAt);
+            // Zero on genuine feed staleness or a non-positive price, but NOT on sequencer-down alone.
+            bool baseStale = pd.stale && !pd.sequencerDown;
+            if (baseStale || pd.price <= 0) return (0, true, pd.updatedAt);
             uint256 raw = uint256(pd.price);
             if (pd.decimals == NAV_DECIMALS) {
                 price8 = raw;

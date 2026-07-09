@@ -54,6 +54,9 @@ contract wstETH_CustomPriceFeed is ICustomPriceFeed {
     /// @notice The heartbeat interval for the stETH/ETH Chainlink oracle.
     uint256 public immutable STETH_TO_ETH_CHAINLINK_HEARTBEAT;
 
+    /// @notice `10 ** STETH_TO_ETH_CHAINLINK_ORACLE.decimals()`, captured once to avoid a per-read external STATICCALL.
+    uint256 private immutable _rateUnit;
+
     /// @notice Number of decimals the returned price is represented with — `NAV_DECIMALS` (8).
     uint8 private immutable _decimals;
 
@@ -80,6 +83,7 @@ contract wstETH_CustomPriceFeed is ICustomPriceFeed {
         NAV = INAVCalculator(nav_);
         BASE_ASSET = OracleArgumentChecks.assertERC20Address(baseAsset_);
         _decimals = NAV_DECIMALS;
+        _rateUnit = 10 ** uint256(AggregatorV3Interface(stEthToEthChainlinkOracle_).decimals());
     }
 
     //
@@ -122,9 +126,7 @@ contract wstETH_CustomPriceFeed is ICustomPriceFeed {
         if (stEthPerToken == 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
 
         // stEthPerToken (18) * stETH/ETH (18) / 1e18 = ETH per wstETH (the wstETH/ETH price, 18 decimals)
-        uint256 ethPerWstEth = stEthPerToken.mulDiv(
-            uint256(stEthToEthRate), 10 ** STETH_TO_ETH_CHAINLINK_ORACLE.decimals(), Math.Rounding.Floor
-        );
+        uint256 ethPerWstEth = stEthPerToken.mulDiv(uint256(stEthToEthRate), _rateUnit, Math.Rounding.Floor);
         // (ETH per wstETH, 18) * ETH/USD (8) / 1e18 = USD price (8 decimals)
         price = ethPerWstEth.mulDiv(base8, 1e18, Math.Rounding.Floor);
     }

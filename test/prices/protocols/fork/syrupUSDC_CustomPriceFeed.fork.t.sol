@@ -33,6 +33,12 @@ contract syrupUSDC_CustomPriceFeedForkTest is TestEnvConfigurator {
         (uint256 price, bool stale) = oracle.getLatestPrice();
         assertEq(price, expected, "price == convertToAssets(unit) * NAV(base/USD) / unit");
         assertEq(stale, false);
+
+        // Independent sanity band (does NOT mirror the impl formula): syrupUSDC is an appreciating USDC-denominated
+        // vault, so one share is worth ~$1 and never far from it. Catches any gross decimals mis-scale (e.g. a
+        // share-vs-asset decimals-offset bug would land orders of magnitude outside this band).
+        assertGe(price, 1e8, "share worth >= $1 (8 dec)");
+        assertLe(price, 2e8, "share worth <= $2 (8 dec) - guards against a 10**N mis-scale");
     }
 
     function test_decimals() public view {

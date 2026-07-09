@@ -49,6 +49,10 @@ abstract contract TwoFeedChainlinkPriceFeed is ICustomPriceFeed {
     /// @notice Heartbeat (seconds) after which the rate feed is considered stale.
     uint256 public immutable RATE_HEARTBEAT;
 
+    /// @notice `10 ** RATE_FEED.decimals()`, captured once — the rate feed's decimals are immutable, so this avoids
+    ///         an external STATICCALL to `decimals()` on every price read.
+    uint256 private immutable _rateUnit;
+
     /// @notice Decimals of the returned price — `NAV_DECIMALS` (8).
     uint8 private immutable _decimals;
 
@@ -65,6 +69,7 @@ abstract contract TwoFeedChainlinkPriceFeed is ICustomPriceFeed {
         NAV = INAVCalculator(nav_);
         BASE_ASSET = OracleArgumentChecks.assertERC20Address(baseAsset_);
         _decimals = NAV_DECIMALS;
+        _rateUnit = 10 ** uint256(AggregatorV3Interface(rateFeed_).decimals());
     }
 
     /// @notice Reads the rate feed + the NAV base/USD, applies staleness, and composes `rate · base8 / 10**rateDecimals`.
@@ -99,7 +104,7 @@ abstract contract TwoFeedChainlinkPriceFeed is ICustomPriceFeed {
         }
 
         // asset/USD = (asset/base) * (base/USD) / 10^rateDecimals
-        price = uint256(rate).mulDiv(base8, 10 ** RATE_FEED.decimals(), Math.Rounding.Floor);
+        price = uint256(rate).mulDiv(base8, _rateUnit, Math.Rounding.Floor);
     }
 
     /// @inheritdoc ICustomPriceFeed

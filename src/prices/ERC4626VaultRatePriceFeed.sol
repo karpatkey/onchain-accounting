@@ -10,6 +10,7 @@ import {OracleArgumentChecks} from "src/utils/OracleArgumentChecks.sol";
 import {NAV_DECIMALS} from "src/constants.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 /// @title ERC4626VaultRatePriceFeed
 /// @author KPK
@@ -18,10 +19,11 @@ import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 ///         for the vault's underlying asset (`getPriceData(BASE_ASSET)`, e.g. USDe/USD, GHO/USD). Concrete feeds
 ///         (sUSDe, sUSDS, sXDAI, syrupUSDC, RWIV, sGHO) supply only the three constructor arguments (vault, NAV,
 ///         base asset); all of them keep their own named contract.
-/// @dev The price is `base8 · convertToAssets(10**vaultDecimals) / 10**vaultDecimals` (Math.Rounding.Floor),
-///      i.e. `(asset/USD) · (assets per share)`, returned in `NAV_DECIMALS` (8). `convertToAssets` is linear in
-///      shares, so dividing by the same `10**vaultDecimals` passed in yields the per-share rate at the asset's
-///      decimals; the rate decimals then cancel to leave the base/USD decimals. Stale when the NAV reports the base
+/// @dev The price is `base8 · convertToAssets(10**shareDecimals) / 10**assetDecimals` (Math.Rounding.Floor),
+///      i.e. `(asset/USD) · (assets per share)`, returned in `NAV_DECIMALS` (8). `convertToAssets(10**shareDecimals)`
+///      returns the assets for one whole share denominated in the **underlying asset's** decimals, so the divisor is
+///      `10**assetDecimals` (NOT `10**shareDecimals` — those differ when the vault uses a decimals offset, e.g.
+///      18-decimal shares over 6-decimal USDC); the asset decimals then cancel to leave the base/USD decimals. Stale when the NAV reports the base
 ///      stale (all-feeds-stale/sequencer-down). Sourcing base/USD from the NAV (rather than a hardcoded Chainlink
 ///      oracle) makes the base term identical to the one the NAV prices the base asset's own legs with — so it
 ///      cancels cleanly when NAV is quoted in the base (see {NavBaseUsdLib}, incl. the circularity invariant). The
@@ -44,8 +46,12 @@ abstract contract ERC4626VaultRatePriceFeed is ICustomPriceFeed {
     /// @notice Decimals of the returned price — `NAV_DECIMALS` (8).
     uint8 private immutable _decimals;
 
-    /// @notice Decimals of the vault share token (used for the `convertToAssets` scaling unit).
-    uint8 private immutable _vaultDecimals;
+    /// @notice `10 ** shareDecimals` — one whole share, the amount passed to `convertToAssets`.
+    uint256 private immutable _shareUnit;
+
+    /// @notice `10 ** assetDecimals` — the underlying-asset scaling unit `convertToAssets` output is denominated in.
+    ///         The correct divisor; equals `_shareUnit` only when the vault has no decimals offset.
+    uint256 private immutable _assetUnit;
 
     /// @param vault_     The ERC-4626 vault share token (must be ERC20-like).
     /// @param nav_       The NAVCalculator proxy to read base/USD from.
@@ -56,7 +62,8 @@ abstract contract ERC4626VaultRatePriceFeed is ICustomPriceFeed {
         NAV = INAVCalculator(nav_);
         BASE_ASSET = OracleArgumentChecks.assertERC20Address(baseAsset_);
         _decimals = NAV_DECIMALS;
-        _vaultDecimals = IERC4626(vault_).decimals();
+        _shareUnit = 10 ** uint256(IERC4626(vault_).decimals());
+        _assetUnit = 10 ** uint256(IERC20Metadata(IERC4626(vault_).asset()).decimals());
     }
 
     /// @notice Reads the NAV base/USD, applies staleness, and scales it by the vault's live per-share rate.
@@ -77,9 +84,10 @@ abstract contract ERC4626VaultRatePriceFeed is ICustomPriceFeed {
         uint256 base8;
         (base8, stale, updatedAt) = NavBaseUsdLib.baseUsd(NAV, BASE_ASSET);
         if (stale) return (0, true, 0, 0, updatedAt, 0);
-        uint256 unit = 10 ** uint256(_vaultDecimals);
-        uint256 assetsPerShare = IERC4626(VAULT).convertToAssets(unit);
-        price = assetsPerShare.mulDiv(base8, unit, Math.Rounding.Floor);
+        // convertToAssets(1 whole share) is denominated in the underlying asset's decimals, so divide by _assetUnit
+        // (10**assetDecimals), not _shareUnit — the two differ when the vault uses a decimals offset.
+        uint256 assetsPerShare = IERC4626(VAULT).convertToAssets(_shareUnit);
+        price = assetsPerShare.mulDiv(base8, _assetUnit, Math.Rounding.Floor);
     }
 
     /// @inheritdoc ICustomPriceFeed

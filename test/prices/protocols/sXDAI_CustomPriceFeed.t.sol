@@ -3,20 +3,20 @@ pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
 import {sXDAI_CustomPriceFeed} from "src/prices/protocols/sXDAI_CustomPriceFeed.sol";
-import {Mock_ERC20} from "test/mocks/tokens.sol";
+import {Mock_ERC20, Mock_ERC4626} from "test/mocks/tokens.sol";
 import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 
 /// @title sXDAI_CustomPriceFeed unit tests (no fork)
 /// @dev Base/USD (xDAI/USD) now comes from the NAV via a Mock_NAVCalculator; the constructor takes
 ///      `(sDai, nav, baseAsset)`. Vault-rate math is exercised in the fork test.
 contract sXDAI_CustomPriceFeedTest is Test {
-    Mock_ERC20 savingsXDai;
+    Mock_ERC4626 savingsXDai;
     Mock_ERC20 xdai;
     Mock_NAVCalculator nav;
 
     function setUp() public {
-        savingsXDai = new Mock_ERC20("sDAI", 18);
         xdai = new Mock_ERC20("WXDAI", 18);
+        savingsXDai = new Mock_ERC4626("sDAI", 18, address(xdai), 1e18);
         nav = new Mock_NAVCalculator();
         nav.setAssetPrice(address(xdai), 1e8, 8); // xDAI/USD = $1
     }

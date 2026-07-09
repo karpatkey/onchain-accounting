@@ -3,20 +3,20 @@ pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
 import {sUSDS_CustomPriceFeed} from "src/prices/protocols/sUSDS_CustomPriceFeed.sol";
-import {Mock_ERC20} from "test/mocks/tokens.sol";
+import {Mock_ERC20, Mock_ERC4626} from "test/mocks/tokens.sol";
 import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 
 /// @title sUSDS_CustomPriceFeed unit tests (no fork)
 /// @dev Base/USD (USDS/USD) now comes from the NAV via a Mock_NAVCalculator; the constructor takes
 ///      `(sUsds, nav, baseAsset)`. Vault-rate math is exercised in the fork test.
 contract sUSDS_CustomPriceFeedTest is Test {
-    Mock_ERC20 sUsds;
+    Mock_ERC4626 sUsds;
     Mock_ERC20 usds;
     Mock_NAVCalculator nav;
 
     function setUp() public {
-        sUsds = new Mock_ERC20("sUSDS", 18);
         usds = new Mock_ERC20("USDS", 18);
+        sUsds = new Mock_ERC4626("sUSDS", 18, address(usds), 1e18);
         nav = new Mock_NAVCalculator();
         nav.setAssetPrice(address(usds), 1e8, 8); // USDS/USD = $1
     }

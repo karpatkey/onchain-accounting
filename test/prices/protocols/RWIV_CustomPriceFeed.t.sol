@@ -3,20 +3,20 @@ pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
 import {RWIV_CustomPriceFeed} from "src/prices/protocols/RWIV_CustomPriceFeed.sol";
-import {Mock_ERC20} from "test/mocks/tokens.sol";
+import {Mock_ERC20, Mock_ERC4626} from "test/mocks/tokens.sol";
 import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 
 /// @title RWIV_CustomPriceFeed unit tests (no fork)
 /// @dev Base/USD (USDC/USD) now comes from the NAV via a Mock_NAVCalculator; the constructor takes
 ///      `(rwiv, nav, baseAsset)`. Vault-rate math is exercised in the fork test.
 contract RWIV_CustomPriceFeedTest is Test {
-    Mock_ERC20 rwiv;
+    Mock_ERC4626 rwiv;
     Mock_ERC20 usdc;
     Mock_NAVCalculator nav;
 
     function setUp() public {
-        rwiv = new Mock_ERC20("RWIV", 6);
         usdc = new Mock_ERC20("USDC", 6);
+        rwiv = new Mock_ERC4626("RWIV", 6, address(usdc), 1e6);
         nav = new Mock_NAVCalculator();
         nav.setAssetPrice(address(usdc), 1e8, 8); // USDC/USD = $1
     }

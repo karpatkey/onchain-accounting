@@ -62,9 +62,10 @@ contract SwapCustomPriceFeeds is BaseDeployScript {
         // Pass A: register every new Custom feed BEFORE removing any old one.
         for (uint256 i = 0; i < plans.length; i++) {
             for (uint256 k = 0; k < plans[i].addFeeds.length; k++) {
-                NAVCalculator(navProxy).addPriceFeed(
-                    plans[i].asset, plans[i].addFeeds[k], IPrices.PriceType.Custom, plans[i].addHeartbeats[k]
-                );
+                NAVCalculator(navProxy)
+                    .addPriceFeed(
+                        plans[i].asset, plans[i].addFeeds[k], IPrices.PriceType.Custom, plans[i].addHeartbeats[k]
+                    );
                 console2.log("  + added", plans[i].symbol, plans[i].addFeeds[k]);
             }
         }

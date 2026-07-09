@@ -228,12 +228,12 @@ contract Mock_NAVCalculator is INAVCalculator {
         _priceData[asset].stale = stale;
     }
 
-    /// @notice Emulate the NAV's L2 sequencer fold: set `sequencerDown` and, when down, OR it into `stale` exactly as
-    ///         `PriceFeedLib.buildPriceData` does (`stale = feedStale || sequencerDown`). Lets tests exercise the
-    ///         "sequencer down but base feed fresh" branch of {NavBaseUsdLib}.
+    /// @notice Emulate the NAV's L2 sequencer state. Only sets the raw `sequencerDown` flag; the `stale` fold
+    ///         (`stale = feedStale || sequencerDown`, per `PriceFeedLib.buildPriceData`) is applied at read time in
+    ///         `getPriceData`, so toggling this back to `false` cleanly emulates a sequencer RECOVERY on an otherwise
+    ///         -fresh feed (the stored feed-stale intent is preserved, not clobbered).
     function setSequencerDown(address asset, bool down) external {
         _priceData[asset].sequencerDown = down;
-        if (down) _priceData[asset].stale = true;
     }
 
     /// @notice Make getPriceData(asset) REVERT, emulating the real NAVCalculator's PriceFeedNotSet for a registered
@@ -242,9 +242,11 @@ contract Mock_NAVCalculator is INAVCalculator {
         _priceReverts[asset] = reverts_;
     }
 
-    function getPriceData(address asset) external view override returns (PriceFeedData memory) {
+    function getPriceData(address asset) external view override returns (PriceFeedData memory pd) {
         if (_priceReverts[asset]) revert PriceFeedNotSet(asset);
-        return _priceData[asset];
+        pd = _priceData[asset];
+        // Mirror PriceFeedLib.buildPriceData: the returned stale folds in sequencer-down over the stored feed-stale.
+        pd.stale = pd.stale || pd.sequencerDown;
     }
 
     function getAccountPositionsForAsset(address, address, address) external pure override returns (Position[] memory) {

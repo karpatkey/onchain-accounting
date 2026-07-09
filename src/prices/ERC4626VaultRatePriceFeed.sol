@@ -33,6 +33,10 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 abstract contract ERC4626VaultRatePriceFeed is ICustomPriceFeed {
     using Math for uint256;
 
+    /// @notice Thrown when the configured `baseAsset_` is not the vault's own `asset()` underlying — the base/USD
+    ///         price is read for `baseAsset_`, so a mismatch would price shares against the wrong asset's USD value.
+    error BaseAssetMismatch(address vaultAsset, address baseAsset);
+
     /// @notice The ERC-4626 vault share token this feed prices (returned by `underlyingAssetSupported`).
     address public immutable VAULT;
 
@@ -61,9 +65,13 @@ abstract contract ERC4626VaultRatePriceFeed is ICustomPriceFeed {
         AddressCheckLib.requireContract(nav_, "NAVCalculator");
         NAV = INAVCalculator(nav_);
         BASE_ASSET = OracleArgumentChecks.assertERC20Address(baseAsset_);
+        // The base/USD price is read for BASE_ASSET, so it MUST be the vault's own underlying — otherwise shares
+        // would be priced against the wrong asset's USD value (e.g. a USDC vault priced with ETH/USD).
+        address underlying = IERC4626(vault_).asset();
+        if (baseAsset_ != underlying) revert BaseAssetMismatch(underlying, baseAsset_);
         _decimals = NAV_DECIMALS;
         _shareUnit = 10 ** uint256(IERC4626(vault_).decimals());
-        _assetUnit = 10 ** uint256(IERC20Metadata(IERC4626(vault_).asset()).decimals());
+        _assetUnit = 10 ** uint256(IERC20Metadata(underlying).decimals());
     }
 
     /// @notice Reads the NAV base/USD, applies staleness, and scales it by the vault's live per-share rate.

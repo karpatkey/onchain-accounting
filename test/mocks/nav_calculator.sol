@@ -245,7 +245,12 @@ contract Mock_NAVCalculator is INAVCalculator {
     function getPriceData(address asset) external view override returns (PriceFeedData memory pd) {
         if (_priceReverts[asset]) revert PriceFeedNotSet(asset);
         pd = _priceData[asset];
-        // Mirror PriceFeedLib.buildPriceData: the returned stale folds in sequencer-down over the stored feed-stale.
+        // Faithfully mirror PriceFeedLib: a stale FEED selection returns price 0 (`_selectFeedCore` only sets
+        // stale=true via the all-feeds-stale branch, which returns price 0). Sequencer-down alone does NOT zero the
+        // price — `buildPriceData` only ORs it into `stale`. So zero the price from the STORED feed-stale first, then
+        // fold sequencer-down into the returned flag. This keeps the mock from producing the (stale=true, price>0)
+        // state the real engine can never emit — which `NavBaseUsdLib`'s `pd.price <= 0` guard relies on.
+        if (pd.stale) pd.price = 0;
         pd.stale = pd.stale || pd.sequencerDown;
     }
 

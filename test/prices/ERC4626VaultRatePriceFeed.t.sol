@@ -111,20 +111,22 @@ contract ERC4626VaultRatePriceFeedTest is Test {
         assertEq(price, 1.05e8, "price restored after recovery");
     }
 
-    /// @dev Sequencer-down while the base feed is ALSO genuinely stale: NavBaseUsdLib still returns the last price
-    ///      (sequencer-down masks the fold), matching how direct positions are valued during an outage. In production
-    ///      the feed's own (old) updatedAt is then heartbeat-gated by the NAV selector; here in isolation we assert the
-    ///      library's documented behavior — it does not itself zero on a sequencer-down + stale-feed combination.
-    function test_sequencerDown_withStaleFeed_stillUsesLastPrice() public {
+    /// @dev Sequencer-down while the base feed is ALSO genuinely stale: the feed IS stale. A genuinely-stale base is
+    ///      NOT rescued by the sequencer-unfold. This holds because of a cross-file invariant in `PriceFeedLib`: a
+    ///      stale FEED selection always returns `price == 0` (sequencer-down alone never zeroes the price). So even
+    ///      though `pd.stale && !pd.sequencerDown` is false here, `NavBaseUsdLib`'s `pd.price <= 0` guard fires. Only a
+    ///      FRESH base during an outage keeps its last price (see `test_sequencerDown_doesNotZero`). The mock mirrors
+    ///      the `stale => price 0` invariant so this asserts real engine behavior, not an unreachable mock state.
+    function test_sequencerDown_withStaleFeed_isStale() public {
         Mock_ERC20 usdc = new Mock_ERC20("USDC", 6);
         nav.setAssetPrice(address(usdc), 1e8, 8);
         Mock_ERC4626 vault = new Mock_ERC4626("v", 18, address(usdc), 1.05e6);
         _ExposedERC4626Feed feed = new _ExposedERC4626Feed(address(vault), address(nav), address(usdc));
 
-        nav.setAssetStale(address(usdc), true); // feed genuinely stale
+        nav.setAssetStale(address(usdc), true); // feed genuinely stale -> price reads 0 (as in PriceFeedLib)
         nav.setSequencerDown(address(usdc), true); // AND sequencer down
         (uint256 price, bool stale) = feed.getLatestPrice();
-        assertFalse(stale, "sequencer-down masks the fold; library does not zero on the combination");
-        assertEq(price, 1.05e8, "last base price used (selector heartbeat-gates on updatedAt in production)");
+        assertTrue(stale, "genuinely-stale base is stale even during a sequencer outage");
+        assertEq(price, 0, "price 0 when the base feed is genuinely stale");
     }
 }

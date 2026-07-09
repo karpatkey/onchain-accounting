@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
+import {SafeTxBuilder} from "../utils/SafeTxBuilder.sol";
 import {ConfigReader} from "../utils/ConfigReader.sol";
 import {NAVCalculator} from "../../src/nav/NAVCalculator.sol";
 import {INAVCalculator} from "../../src/nav/INAVCalculator.sol";
@@ -20,6 +21,12 @@ import {console2} from "forge-std/console2.sol";
 ///      An asset whose new Custom feed does not resolve (not deployed) is SKIPPED WHOLESALE (no add, no remove), so a
 ///      missing deploy can never strand an asset on direct feeds only. Idempotent, MANAGER-gated. Requires --rpc-url.
 ///      Simulate first by running WITHOUT --broadcast (executes the plan against live state locally and reveals reverts).
+/// @dev Two execution paths, both from the same ordered batch (all adds, then all removes):
+///        - **EOA broadcast** (with `--broadcast`) — works while the deployer EOA still holds `MANAGER` (pre-handoff).
+///        - **Safe multiSend** — a `safe-transactions/<chainId>-swap-custom-price-feeds.json` file is always written
+///          for execution by the security-council Safe once the NAV is handed off (`07_TransferAdminToSecurityCouncil`
+///          revokes the EOA's MANAGER). Executed as one atomic multiSend, the add-then-remove ordering also removes any
+///          half-migration risk (no asset is ever left with both the old and new Custom feed, or with none).
 contract SwapCustomPriceFeeds is BaseDeployScript {
     struct Plan {
         address asset;
@@ -58,28 +65,92 @@ contract SwapCustomPriceFeeds is BaseDeployScript {
             return;
         }
 
-        vm.startBroadcast();
-        // Pass A: register every new Custom feed BEFORE removing any old one.
+        // One ordered batch: ALL adds first, then ALL removes — so no asset is ever left without a valid feed. Used
+        // for BOTH the Safe multiSend file and the EOA broadcast below.
+        SafeTxBuilder.Transaction[] memory batch = new SafeTxBuilder.Transaction[](totalAdds + totalRemoves);
+        uint256 j;
         for (uint256 i = 0; i < plans.length; i++) {
             for (uint256 k = 0; k < plans[i].addFeeds.length; k++) {
-                NAVCalculator(navProxy)
-                    .addPriceFeed(
-                        plans[i].asset, plans[i].addFeeds[k], IPrices.PriceType.Custom, plans[i].addHeartbeats[k]
-                    );
-                console2.log("  + added", plans[i].symbol, plans[i].addFeeds[k]);
+                batch[j++] = SafeTxBuilder.call(
+                    navProxy,
+                    0,
+                    abi.encodeCall(
+                        NAVCalculator.addPriceFeed,
+                        (plans[i].asset, plans[i].addFeeds[k], IPrices.PriceType.Custom, plans[i].addHeartbeats[k])
+                    )
+                );
+                console2.log("  + add", plans[i].symbol, plans[i].addFeeds[k]);
             }
         }
-        // Pass B: now that replacements are live, remove the superseded Custom feeds.
         for (uint256 i = 0; i < plans.length; i++) {
             for (uint256 k = 0; k < plans[i].removeFeeds.length; k++) {
-                NAVCalculator(navProxy).removePriceFeed(plans[i].asset, plans[i].removeFeeds[k]);
-                console2.log("  - removed", plans[i].symbol, plans[i].removeFeeds[k]);
+                batch[j++] = SafeTxBuilder.call(
+                    navProxy,
+                    0,
+                    abi.encodeCall(NAVCalculator.removePriceFeed, (plans[i].asset, plans[i].removeFeeds[k]))
+                );
+                console2.log("  - remove", plans[i].symbol, plans[i].removeFeeds[k]);
             }
         }
-        vm.stopBroadcast();
+
+        // Always write the Safe multiSend (for post-handoff execution by the security-council Safe).
+        string memory filename = string(abi.encodePacked(vm.toString(currentChainId), "-swap-custom-price-feeds.json"));
+        writeSafeTx(
+            filename,
+            "Swap custom price feeds to NAV-sourced versions (ADR 0019)",
+            string(
+                abi.encodePacked(
+                    "Add ",
+                    vm.toString(totalAdds),
+                    " new Custom feed(s) then remove ",
+                    vm.toString(totalRemoves),
+                    " old"
+                )
+            ),
+            batch
+        );
+        console2.log(string(abi.encodePacked("Safe tx written to safe-transactions/", filename)));
+
+        // Broadcast from the deployer EOA while it still holds MANAGER (pre-handoff). Post-handoff, execute the Safe
+        // file above instead. Runs even without --broadcast as a live simulation (use --sender <MANAGER>).
+        _broadcastManagerMultiSend(batch);
 
         console2.log("[OK] Swapped custom feeds:", totalAdds, "added,");
         console2.log("     removed:", totalRemoves);
+    }
+
+    /// @notice Broadcasts each batch tx from the deployer EOA (MANAGER-gated), in order (all adds, then all removes).
+    ///         Reverts with the first failing call's decoded reason. Mirrors `RegisterAssets`.
+    function _broadcastManagerMultiSend(SafeTxBuilder.Transaction[] memory batch) internal {
+        vm.startBroadcast();
+        for (uint256 i = 0; i < batch.length; i++) {
+            (bool success, bytes memory data) = batch[i].to.call(batch[i].data);
+            if (!success) {
+                require(
+                    false, string(abi.encodePacked("swap failed at index ", vm.toString(i), ": ", _revertMsg(data)))
+                );
+            }
+        }
+        vm.stopBroadcast();
+        console2.log("[OK] Broadcast", batch.length, "tx(s) from the deployer EOA.");
+    }
+
+    /// @notice Decodes an `Error(string)` revert payload; returns "unknown" for custom errors / empty data.
+    function _revertMsg(bytes memory data) internal pure returns (string memory) {
+        if (data.length >= 68 && data[0] == 0x08 && data[1] == 0xc3 && data[2] == 0x79 && data[3] == 0xa0) {
+            uint256 len;
+            assembly {
+                len := mload(add(add(data, 32), 36))
+            }
+            if (data.length >= 68 + 32 + len) {
+                bytes memory msgBytes = new bytes(len);
+                for (uint256 i = 0; i < len; i++) {
+                    msgBytes[i] = data[i + 68 + 32];
+                }
+                return string(msgBytes);
+            }
+        }
+        return "unknown";
     }
 
     /// @notice Builds the add/remove plan for one asset, or an empty plan to skip it.

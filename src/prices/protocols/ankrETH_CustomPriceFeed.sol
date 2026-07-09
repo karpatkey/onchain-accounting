@@ -66,8 +66,8 @@ contract ankrETH_CustomPriceFeed is ICustomPriceFeed {
             uint80 answeredInRound
         )
     {
-        // Base/USD (ETH/USD) from the NAV's selector (normalized to NAV_DECIMALS = 8); its staleness folds in
-        // all-base-feeds-stale + sequencer-down. roundId/startedAt/answeredInRound have no meaning for a NAV read.
+        // Base/USD (ETH/USD) from the NAV's selector (normalized to NAV_DECIMALS = 8); it marks the base stale on
+        // all-base-feeds-stale only (L2 sequencer-down alone does NOT — NavBaseUsdLib un-folds pd.sequencerDown; ADR 0019). roundId/startedAt/answeredInRound have no meaning for a NAV read.
         uint256 base8;
         (base8, stale, updatedAt) = NavBaseUsdLib.baseUsd(NAV, BASE_ASSET);
         if (stale) return (0, true, 0, 0, updatedAt, 0);

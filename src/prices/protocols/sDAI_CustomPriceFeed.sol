@@ -16,7 +16,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 ///      - `DAI/USD` (base/USD) comes from the NAV's own selector (`getPriceData(BASE_ASSET)`, 8 decimals).
 ///      - `sDAI/DAI` is Maker’s DSR Pot `chi` (27-decimals, RAY) read via `RATE_PROVIDER`.
 ///      The function multiplies these two values and divides by `10**RATIO_DECIMALS` (1e27) so the result has
-///      `NAV_DECIMALS` (8). Freshness folds in the NAV's base staleness (all-feeds-stale/sequencer-down); if the
+///      `NAV_DECIMALS` (8). Freshness follows the NAV's base feed staleness (all-feeds-stale; NOT L2 sequencer-down alone); if the
 ///      NAV reports the base stale or `chi` is 0, the function returns `(0, true)` to signal staleness.
 /// @author KPK
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
@@ -83,8 +83,8 @@ contract sDAI_CustomPriceFeed is ICustomPriceFeed {
             uint80 answeredInRound
         )
     {
-        // Base/USD (DAI/USD) from the NAV's selector (normalized to NAV_DECIMALS = 8); its staleness folds in
-        // all-base-feeds-stale + sequencer-down. roundId/startedAt/answeredInRound have no meaning for a NAV read.
+        // Base/USD (DAI/USD) from the NAV's selector (normalized to NAV_DECIMALS = 8); it marks the base stale on
+        // all-base-feeds-stale only (L2 sequencer-down alone does NOT — NavBaseUsdLib un-folds pd.sequencerDown; ADR 0019). roundId/startedAt/answeredInRound have no meaning for a NAV read.
         uint256 base8;
         (base8, stale, updatedAt) = NavBaseUsdLib.baseUsd(NAV, BASE_ASSET);
         if (stale) return (0, true, 0, 0, updatedAt, 0);

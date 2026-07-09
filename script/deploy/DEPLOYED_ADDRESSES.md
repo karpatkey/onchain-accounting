@@ -32,11 +32,11 @@ Deployed via the canonical CREATE2 deployer (`0x4e59b44847b379578588920cA78FbF26
 
 | Chain | Chain ID | Scope | Custom price feeds | Balance adapters (excl. ERC20Default) |
 | --- | --- | --- | --- | --- |
-| Ethereum | 1 | full | 24 | 27 |
-| Optimism | 10 | full | 0 | 3 |
-| Arbitrum | 42161 | full | 5 | 8 |
-| Base | 8453 | full | 3 | 7 |
-| Gnosis | 100 | full | 3 | 4 |
+| Ethereum | 1 | full | 24 | 26 |
+| Optimism | 10 | full | 0 | 2 |
+| Arbitrum | 42161 | full | 5 | 7 |
+| Base | 8453 | full | 3 | 6 |
+| Gnosis | 100 | full | 3 | 3 |
 | BSC | 56 | impl + proxy | — | — |
 | Polygon | 137 | impl + proxy | — | — |
 | Berachain | 80094 | impl + proxy | — | — |
@@ -63,7 +63,7 @@ The 19 impl+proxy chains run the canonical layer only; custom price feeds and ba
 
 ## Balance adapters (per chain, plain CREATE)
 
-> Assisted adapters (Merkl, ether.fi, StakeWise exit) report `$0` until their off-chain submitter populates the per-account cache.
+> Assisted adapters (ether.fi, StakeWise exit) report `$0` until their off-chain submitter populates the per-account cache.
 
 ### Ethereum (1)
 
@@ -86,15 +86,14 @@ The 19 impl+proxy chains run the canonical layer only; custom price feeds and ba
 | ConvexCurveLPStakingMeta | `0x823FCF30B4a76A75DE402af08c0C9D04bBfBe95F` |
 | FluidFTokensMeta | `0xaCBE56d6d844fC62d3bF2cd0FAa911853916D434` |
 | FluidVaultsMeta | `0xEb7eDaE4bdEb9170F722B312a8D64104E1F0aD45` |
-| StaderWithdrawalQueue | `0x98c1C89b34aed91191c447C96fe947782FDF866c` |
-| KelpWithdrawalQueue | `0x9CB4DBD309b89cf6BB457AB507e85F56FbbC5C61` |
-| LidoWithdrawalQueue | `0xe1C20772f74304cf278AaBe844231A3bD9c35f6E` |
+| StaderWithdrawalQueue | `0xe43BdCeb764971b1CEd97dA8612815DaEF23E423` |
+| KelpWithdrawalQueue | `0x56c246DA9dAACE268D8B4583aF20d2E9957be8c1` |
+| LidoWithdrawalQueue | `0x6147A0220C790e6B5294fFE9AD6B27bc1AA2F674` |
 | EthenaCooldown | `0xc9dBccbFb847Dcf41189F77AEd9e60E292789EC8` |
 | StakeWiseV3VaultsMeta | `0x1598188996DBB5E3d42Db7f1FaF706Cb6cbdE0B8` |
-| MerklRewardsAssisted | `0x0b8c4954ceb7B4795D479801D829Fc1f5F2E7Da7` |
-| EtherFiWithdrawalQueueAssisted | `0xa290B8b24e7ed169fB16F9A35d86a5ED01d173D2` |
-| NexusMutualStakingPoolsAssisted | `0x8D0237436A4Be679Bf059DCC177e09EA1f6C3094` |
-| StakeWiseV3ExitQueueAssisted | `0xa7aCE959c28686c22E239c2Eb8AC79cf7B6FF7e1` |
+| EtherFiWithdrawalQueueAssisted | `0xb0a8A75618925e0A53EE820529Ad1A2F6a18bF12` |
+| NexusMutualStakingPoolsAssisted | `0xB73b3a6B65B1465D305870F7933aF8CC140d3C0B` |
+| StakeWiseV3ExitQueueAssisted | `0xb9A7A8ac57383969703f67f61d48fa7142640815` |
 | UniswapV3PoolsMeta | `0x1eb0Ce47a196D7BE9ba3F2B7ED78299751c80287` |
 
 ### Optimism (10)
@@ -103,7 +102,6 @@ The 19 impl+proxy chains run the canonical layer only; custom price feeds and ba
 | --- | --- |
 | AaveV3InstancesMeta | `0x3C8469a05676eC07e70274223396fc7c4A4D9ede` |
 | CompoundV3CometsMeta | `0x907fB3fC09E3891ab78447ab3C4FF659d87c4a78` |
-| MerklRewardsAssisted | `0x12133cA6532cda38510Ae3a6242e36011aD18efB` |
 
 ### Arbitrum (42161)
 
@@ -116,7 +114,6 @@ The 19 impl+proxy chains run the canonical layer only; custom price feeds and ba
 | BalancerV3PoolsMeta | `0xe0Bd18970d051310871a1bE19E9457692573a55C` |
 | BalancerV3GaugesMeta | `0x89352Ad9Fa6f35d127c0Fc26300A2Cb55e50E625` |
 | FluidFTokensMeta | `0xBD9C499907f69dD2d5C90D7FFD55f9748B59A04a` |
-| MerklRewardsAssisted | `0xdC1a1d15163aaad6B8f3094ee03b25AF915781f6` |
 
 ### Base (8453)
 
@@ -128,7 +125,6 @@ The 19 impl+proxy chains run the canonical layer only; custom price feeds and ba
 | BalancerV3PoolsMeta | `0xA13D70Bbf822e35a28eea8630484739767331038` |
 | BalancerV3GaugesMeta | `0xb83a41c655f0cE39366bf7Ce3FC186E30A1a22c5` |
 | FluidFTokensMeta | `0x282F02eF700D9112F18b26518C6aB8CD25976A92` |
-| MerklRewardsAssisted | `0x9342c17c7fc7FE5BE167a0342745BE6f3e6Efef8` |
 
 ### Gnosis (100)
 
@@ -136,8 +132,7 @@ The 19 impl+proxy chains run the canonical layer only; custom price feeds and ba
 | --- | --- |
 | AaveV3InstancesMeta | `0x17f949AfC509E4976C16Cc7e0E5f76390663976F` |
 | StakeWiseV3VaultsMeta | `0x8F52EcC9D084CAa0c335373bB54Ee5Dae8BC10E8` |
-| MerklRewardsAssisted | `0x9B9d51C2aFCB0e0080509C98CEDd349b54790258` |
-| StakeWiseV3ExitQueueAssisted | `0x1BFe0952d4176640b817540cEf9571595962dA42` |
+| StakeWiseV3ExitQueueAssisted | `0xE333a72EB00A937b6BE4e77dD10141C64C06DEE8` |
 
 ---
 

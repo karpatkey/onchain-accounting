@@ -412,7 +412,7 @@ def _leg_kind(pos: dict) -> str:
     src/utils/PositionKind.sol — 0=Wallet, 1=Supplied, 2=Borrowed, 3=Collateral, 4=Staking,
     5=Rewards, 6=Fees — rendered here to the shorter labels "Wallet"/"Supply"/"Borrow"/
     "Collateral"/"Staking"/"Rewards"/"Fees" (so the enum's Supplied/Borrowed surface as
-    Supply/Borrow, matching the legacy strings below). An unmapped ordinal yields "Unknown(<n>)".
+    Supply/Borrow, consistent with the isDebt-based fallback). An unmapped ordinal yields "Unknown(<n>)".
     """
     # New format: positionKind uint8
     if "positionKind" in pos:

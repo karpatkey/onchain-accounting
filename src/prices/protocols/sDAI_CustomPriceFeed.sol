@@ -3,18 +3,21 @@ pragma solidity ^0.8;
 
 import {ICustomPriceFeed} from "src/prices/ICustomPriceFeed.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
-import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
+import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {NavBaseUsdLib} from "src/prices/NavBaseUsdLib.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {OracleArgumentChecks} from "src/utils/OracleArgumentChecks.sol";
+import {NAV_DECIMALS} from "src/constants.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @title sDAI Custom Price Oracle
-/// @notice Returns the USD price of sDAI by combining Chainlink’s DAI/USD feed with Maker’s DSR “chi” ratio.
+/// @notice Returns the USD price of sDAI by combining the NAV’s DAI/USD price with Maker’s DSR “chi” ratio.
 /// @dev The price is computed as `price = (DAI/USD) * (sDAI/DAI)`, where:
-///      - `DAI/USD` comes from `DAI_TO_USD_CHAINLINK_ORACLE` and uses `_decimals` decimals.
+///      - `DAI/USD` (base/USD) comes from the NAV's own selector (`getPriceData(BASE_ASSET)`, 8 decimals).
 ///      - `sDAI/DAI` is Maker’s DSR Pot `chi` (27-decimals, RAY) read via `RATE_PROVIDER`.
-///      The function multiplies these two values and divides by `10**RATIO_DECIMALS` (1e27) so the result has `_decimals`.
-///      Freshness is enforced only on the Chainlink feed using `DAI_TO_USD_CHAINLINK_HEARTBEAT`; if the feed is stale
-///      or any input is non-positive, the function returns `(0, true)` to signal staleness.
+///      The function multiplies these two values and divides by `10**RATIO_DECIMALS` (1e27) so the result has
+///      `NAV_DECIMALS` (8). Freshness follows the NAV's base feed staleness (all-feeds-stale; NOT L2 sequencer-down alone); if the
+///      NAV reports the base stale or `chi` is 0, the function returns `(0, true)` to signal staleness.
 /// @author KPK
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
 contract sDAI_CustomPriceFeed is ICustomPriceFeed {
@@ -24,9 +27,12 @@ contract sDAI_CustomPriceFeed is ICustomPriceFeed {
     // State
     //
 
-    /// @notice Chainlink oracle for DAI to USD
-    /// solhint-disable-next-line var-name-mixedcase
-    AggregatorV3Interface public immutable DAI_TO_USD_CHAINLINK_ORACLE;
+    /// @notice NAVCalculator (proxy) the base/USD (DAI/USD) price is read from via its selector.
+    INAVCalculator public immutable NAV;
+
+    /// @notice The base asset whose USD price is read from the NAV (e.g. DAI). Must be priced by DIRECT feeds on the
+    ///         NAV — never by a NAV-sourced custom feed (see {NavBaseUsdLib} circularity invariant).
+    address public immutable BASE_ASSET;
 
     /// @notice rate provider for (sDAI / DAI)
     PotLike public immutable RATE_PROVIDER;
@@ -37,11 +43,7 @@ contract sDAI_CustomPriceFeed is ICustomPriceFeed {
     /// @notice Number of decimals for sDAI / DAI ratio
     uint8 public constant RATIO_DECIMALS = 27;
 
-    /// @notice The heartbeat interval for the Chainlink oracle.
-    /// solhint-disable-next-line var-name-mixedcase
-    uint256 public immutable DAI_TO_USD_CHAINLINK_HEARTBEAT;
-
-    /// @notice Number of decimals the returned price is represented with.
+    /// @notice Number of decimals the returned price is represented with — `NAV_DECIMALS` (8).
     uint8 private immutable _decimals;
 
     //
@@ -50,24 +52,18 @@ contract sDAI_CustomPriceFeed is ICustomPriceFeed {
 
     /// @param sDai_ The address of the sDAI token
     /// @param dsrManager_ The address of the DSR Manager contract
-    /// @param daiToUsdChainlinkOracle_ The address of the DAI to USD Chainlink oracle.
-    /// @param daiToUsdChainlinkHeartbeat_ The time in seconds after which the price is considered stale if not
-    /// updated
-    constructor(
-        address sDai_,
-        address dsrManager_,
-        address daiToUsdChainlinkOracle_,
-        uint256 daiToUsdChainlinkHeartbeat_
-    ) {
+    /// @param nav_ The NAVCalculator proxy to read the base asset's USD price from.
+    /// @param baseAsset_ The base asset (DAI) whose NAV-selected USD price scales the rate.
+    constructor(address sDai_, address dsrManager_, address nav_, address baseAsset_) {
         S_DAI = OracleArgumentChecks.assertERC20Address(sDai_);
 
-        DAI_TO_USD_CHAINLINK_ORACLE = OracleArgumentChecks.assertChainlinkOracle(daiToUsdChainlinkOracle_);
-
-        DAI_TO_USD_CHAINLINK_HEARTBEAT = OracleArgumentChecks.assertNotZeroNumber(daiToUsdChainlinkHeartbeat_);
+        AddressCheckLib.requireContract(nav_, "NAVCalculator");
+        NAV = INAVCalculator(nav_);
+        BASE_ASSET = OracleArgumentChecks.assertERC20Address(baseAsset_);
 
         DsrManager dsrManager = DsrManager(OracleArgumentChecks.assertNonZeroAddress(dsrManager_));
 
-        _decimals = DAI_TO_USD_CHAINLINK_ORACLE.decimals();
+        _decimals = NAV_DECIMALS;
         RATE_PROVIDER = dsrManager.pot();
     }
 
@@ -87,16 +83,14 @@ contract sDAI_CustomPriceFeed is ICustomPriceFeed {
             uint80 answeredInRound
         )
     {
-        int256 daiToUsdPrice;
-        (roundId, daiToUsdPrice, startedAt, updatedAt, answeredInRound) = DAI_TO_USD_CHAINLINK_ORACLE.latestRoundData();
-        if (daiToUsdPrice <= 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
-        uint256 effectiveUpdatedAt = updatedAt > block.timestamp ? block.timestamp : updatedAt;
-        if (block.timestamp - effectiveUpdatedAt >= DAI_TO_USD_CHAINLINK_HEARTBEAT) {
-            return (0, true, roundId, startedAt, updatedAt, answeredInRound);
-        }
+        // Base/USD (DAI/USD) from the NAV's selector (normalized to NAV_DECIMALS = 8); it marks the base stale on
+        // all-base-feeds-stale only (L2 sequencer-down alone does NOT — NavBaseUsdLib un-folds pd.sequencerDown; ADR 0019). roundId/startedAt/answeredInRound have no meaning for a NAV read.
+        uint256 base8;
+        (base8, stale, updatedAt) = NavBaseUsdLib.baseUsd(NAV, BASE_ASSET);
+        if (stale) return (0, true, 0, 0, updatedAt, 0);
         uint256 chi = RATE_PROVIDER.chi();
-        if (chi == 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
-        price = uint256(daiToUsdPrice).mulDiv(chi, 10 ** uint256(RATIO_DECIMALS), Math.Rounding.Floor);
+        if (chi == 0) return (0, true, 0, 0, updatedAt, 0);
+        price = base8.mulDiv(chi, 10 ** uint256(RATIO_DECIMALS), Math.Rounding.Floor);
     }
 
     /// @inheritdoc ICustomPriceFeed

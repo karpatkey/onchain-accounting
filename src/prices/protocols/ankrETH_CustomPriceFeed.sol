@@ -3,24 +3,28 @@ pragma solidity ^0.8.0;
 
 import {ICustomPriceFeed} from "src/prices/ICustomPriceFeed.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
+import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {NavBaseUsdLib} from "src/prices/NavBaseUsdLib.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {OracleArgumentChecks} from "src/utils/OracleArgumentChecks.sol";
+import {NAV_DECIMALS} from "src/constants.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @title ankrETH Custom Price Oracle
-/// @notice Returns the USD price of ankrETH by combining ankrETH's ratio with Chainlink's ETH/USD feed.
+/// @notice Returns the USD price of ankrETH by combining ankrETH's ratio with the NAV's ETH/USD price.
 /// @dev ankrETH is a reward-bearing token whose ETH value grows over time. The `ratio()` returns the amount
 ///      of ankrETH per 1 ETH (18 decimals, decreasing over time), so ETH per ankrETH = 1e18 / ratio.
 ///      The price is computed as `price = (ETH/USD) * 1e18 / ratio`, where:
 ///      - `ratio` comes from the ankrETH contract's `ratio()` function (18 decimals, ankrETH-per-ETH)
-///      - `ETH/USD` comes from Chainlink oracle (8 decimals)
-///      Result is scaled to 8 decimals: `price = ETH/USD * 1e18 / ratio`.
+///      - `ETH/USD` (base/USD) comes from the NAV's own selector (`getPriceData(BASE_ASSET)`, 8 decimals)
+///      Result is scaled to `NAV_DECIMALS` (8): `price = ETH/USD * 1e18 / ratio`.
 /// @dev Intentionally NOT a {BaseCustomPriceFeed} subclass: `ratio()` is ankrETH-PER-ETH, so the rate enters as a
 ///      DENOMINATOR (`* 1e18 / ratio`) with the division kept last for precision. BaseCustomPriceFeed assumes the
 ///      rate is a direct 18-decimal multiplier (`rate * base / 1e18`); expressing this feed that way would require a
 ///      pre-inverted `_rate() = 1e36 / ratio`, whose intermediate floor would shift the result by up to 1 unit. So
 ///      this feed keeps its own division-last `_compute`. (The direct-multiplier rate feeds — NXM, ezETH_L2 — do
-///      use BaseCustomPriceFeed.)
+///      use BaseCustomPriceFeed.) Base/USD sourced from the NAV cancels cleanly when NAV is quoted in the base (see
+///      {NavBaseUsdLib}, incl. the circularity invariant).
 /// @author KPK
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
 contract ankrETH_CustomPriceFeed is ICustomPriceFeed {
@@ -29,23 +33,25 @@ contract ankrETH_CustomPriceFeed is ICustomPriceFeed {
     /// @notice ankrETH token address.
     address public immutable ANKR_ETH;
 
-    /// @notice Chainlink oracle for ETH to USD.
-    AggregatorV3Interface public immutable ETH_TO_USD_CHAINLINK_ORACLE;
+    /// @notice NAVCalculator (proxy) the base/USD (ETH/USD) price is read from via its selector.
+    INAVCalculator public immutable NAV;
 
-    /// @notice The heartbeat interval for the ETH/USD Chainlink oracle.
-    uint256 public immutable ETH_TO_USD_CHAINLINK_HEARTBEAT;
+    /// @notice The base asset whose USD price is read from the NAV (e.g. WETH). Must be priced by DIRECT feeds on the
+    ///         NAV — never by a NAV-sourced custom feed (see {NavBaseUsdLib} circularity invariant).
+    address public immutable BASE_ASSET;
 
-    /// @notice Number of decimals the returned price is represented with.
+    /// @notice Number of decimals the returned price is represented with — `NAV_DECIMALS` (8).
     uint8 private immutable _decimals;
 
     /// @param ankrEth_ The address of the ankrETH token.
-    /// @param ethToUsdChainlinkOracle_ The address of the ETH to USD Chainlink oracle.
-    /// @param ethToUsdChainlinkHeartbeat_ The time in seconds after which the price is considered stale if not updated.
-    constructor(address ankrEth_, address ethToUsdChainlinkOracle_, uint256 ethToUsdChainlinkHeartbeat_) {
+    /// @param nav_ The NAVCalculator proxy to read the base asset's USD price from.
+    /// @param baseAsset_ The base asset (e.g. WETH) whose NAV-selected USD price scales the rate.
+    constructor(address ankrEth_, address nav_, address baseAsset_) {
         ANKR_ETH = OracleArgumentChecks.assertERC20Address(ankrEth_);
-        ETH_TO_USD_CHAINLINK_ORACLE = OracleArgumentChecks.assertChainlinkOracle(ethToUsdChainlinkOracle_);
-        ETH_TO_USD_CHAINLINK_HEARTBEAT = OracleArgumentChecks.assertNotZeroNumber(ethToUsdChainlinkHeartbeat_);
-        _decimals = ETH_TO_USD_CHAINLINK_ORACLE.decimals();
+        AddressCheckLib.requireContract(nav_, "NAVCalculator");
+        NAV = INAVCalculator(nav_);
+        BASE_ASSET = OracleArgumentChecks.assertERC20Address(baseAsset_);
+        _decimals = NAV_DECIMALS;
     }
 
     function _compute()
@@ -60,18 +66,16 @@ contract ankrETH_CustomPriceFeed is ICustomPriceFeed {
             uint80 answeredInRound
         )
     {
-        int256 ethToUsdPrice;
-        (roundId, ethToUsdPrice, startedAt, updatedAt, answeredInRound) = ETH_TO_USD_CHAINLINK_ORACLE.latestRoundData();
-        if (ethToUsdPrice <= 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
-        uint256 effectiveUpdatedAt = updatedAt > block.timestamp ? block.timestamp : updatedAt;
-        if (block.timestamp - effectiveUpdatedAt >= ETH_TO_USD_CHAINLINK_HEARTBEAT) {
-            return (0, true, roundId, startedAt, updatedAt, answeredInRound);
-        }
+        // Base/USD (ETH/USD) from the NAV's selector (normalized to NAV_DECIMALS = 8); it marks the base stale on
+        // all-base-feeds-stale only (L2 sequencer-down alone does NOT — NavBaseUsdLib un-folds pd.sequencerDown; ADR 0019). roundId/startedAt/answeredInRound have no meaning for a NAV read.
+        uint256 base8;
+        (base8, stale, updatedAt) = NavBaseUsdLib.baseUsd(NAV, BASE_ASSET);
+        if (stale) return (0, true, 0, 0, updatedAt, 0);
         // ratio() is ankrETH-per-ETH (18 decimals). ETH-per-ankrETH = 1e18 / ratio.
         uint256 ratio = IankrETH(ANKR_ETH).ratio();
-        if (ratio == 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
+        if (ratio == 0) return (0, true, 0, 0, updatedAt, 0);
         // price = (ETH/USD) * 1e18 / ratio → 8 decimals (ETH/USD) since the 1e18 numerator cancels ratio's scale
-        price = uint256(ethToUsdPrice).mulDiv(1e18, ratio, Math.Rounding.Floor);
+        price = base8.mulDiv(1e18, ratio, Math.Rounding.Floor);
     }
 
     /// @inheritdoc ICustomPriceFeed

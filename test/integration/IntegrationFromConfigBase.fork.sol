@@ -267,111 +267,82 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     function _deploySdai() internal returns (address) {
         address sDai = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "sDAI", "sDai"));
         address dsrManager = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "sDAI", "dsrManager"));
-        address daiUsd =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "sDAI", "daiToUsdChainlinkOracle"));
-        uint256 daiUsdHb =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "sDAI", "daiToUsdChainlinkHeartbeat"));
-        return address(new sDAI_CustomPriceFeed(sDai, dsrManager, daiUsd, daiUsdHb));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "sDAI", "baseAsset"));
+        return address(new sDAI_CustomPriceFeed(sDai, dsrManager, address(nav), baseAsset));
     }
 
     function _deployLdo() internal returns (address) {
         address ldo = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "LDO", "ldo"));
         address ldoEth =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "LDO", "ldoToEthChainlinkAddress"));
-        address ethUsd =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "LDO", "ethToUsdChainlinkAddress"));
         uint256 ldoEthHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "LDO", "ldoToEthChainlinkHeartbeat"));
-        uint256 ethUsdHb =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "LDO", "ethToUsdChainlinkHeartbeat"));
-        return address(new LDO_CustomPriceFeed(ldo, ldoEth, ethUsd, ldoEthHb, ethUsdHb));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "LDO", "baseAsset"));
+        return address(new LDO_CustomPriceFeed(ldo, ldoEth, ldoEthHb, address(nav), baseAsset));
     }
 
     function _deploySusds() internal returns (address) {
         address sUsds = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "sUSDS", "sUsds"));
-        address usdsUsd =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "sUSDS", "usdsToUsdChainlinkAddress"));
-        uint256 usdsUsdHb =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "sUSDS", "usdsToUsdChainlinkHeartbeat"));
-        return address(new sUSDS_CustomPriceFeed(sUsds, usdsUsd, usdsUsdHb));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "sUSDS", "baseAsset"));
+        return address(new sUSDS_CustomPriceFeed(sUsds, address(nav), baseAsset));
     }
 
     function _deploySUsde() internal returns (address) {
         address sUsde = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "sUSDe", "sUsde"));
-        address usdeUsd =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "sUSDe", "usdeToUsdChainlinkAddress"));
-        uint256 usdeUsdHb =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "sUSDe", "usdeToUsdChainlinkHeartbeat"));
-        return address(new sUSDe_CustomPriceFeed(sUsde, usdeUsd, usdeUsdHb));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "sUSDe", "baseAsset"));
+        return address(new sUSDe_CustomPriceFeed(sUsde, address(nav), baseAsset));
     }
 
     function _deploySgho() internal returns (address) {
         address sgho = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "sGHO", "sgho"));
-        address ghoUsd =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "sGHO", "ghoToUsdChainlinkAddress"));
-        uint256 ghoUsdHb =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "sGHO", "ghoToUsdChainlinkHeartbeat"));
-        return address(new sGHO_CustomPriceFeed(sgho, ghoUsd, ghoUsdHb));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "sGHO", "baseAsset"));
+        return address(new sGHO_CustomPriceFeed(sgho, address(nav), baseAsset));
     }
 
     function _deploySyrupUsdc() internal returns (address) {
         address syrup = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "syrupUSDC", "syrupUsdc"));
-        address usdcUsd =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "syrupUSDC", "usdcToUsdChainlinkAddress"));
-        uint256 usdcUsdHb =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "syrupUSDC", "usdcToUsdChainlinkHeartbeat"));
-        return address(new syrupUSDC_CustomPriceFeed(syrup, usdcUsd, usdcUsdHb));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "syrupUSDC", "baseAsset"));
+        return address(new syrupUSDC_CustomPriceFeed(syrup, address(nav), baseAsset));
     }
 
     function _deployWstEth() internal returns (address) {
         address wstEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "wstETH", "wstEth"));
         address stEthToEth =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "wstETH", "stEthToEthChainlinkOracle"));
-        address ethUsd =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "wstETH", "ethToUsdChainlinkOracle"));
         uint256 stEthToEthHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "wstETH", "stEthToEthChainlinkHeartbeat"));
-        uint256 ethUsdHb =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "wstETH", "ethToUsdChainlinkHeartbeat"));
-        return address(new wstETH_CustomPriceFeed(wstEth, stEthToEth, ethUsd, stEthToEthHb, ethUsdHb));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "wstETH", "baseAsset"));
+        return address(new wstETH_CustomPriceFeed(wstEth, stEthToEth, stEthToEthHb, address(nav), baseAsset));
     }
 
     function _deployStEth() internal returns (address) {
         // stETH/USD = (stETH/ETH) x (ETH/USD), via the dedicated stETH_CustomPriceFeed (a CrossRate subclass).
         address underlying = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "underlyingAsset"));
-        address xToUsd = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "xToUsdFeed"));
         address yToX = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "yToXFeed"));
-        uint256 xToUsdHb = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "xToUsdHeartbeat"));
         uint256 yToXHb = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "yToXHeartbeat"));
-        return address(new stETH_CustomPriceFeed(underlying, yToX, xToUsd, yToXHb, xToUsdHb));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "baseAsset"));
+        return address(new stETH_CustomPriceFeed(underlying, yToX, yToXHb, address(nav), baseAsset));
     }
 
     function _deployREth() internal returns (address) {
         address rEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "rETH", "rEth"));
-        address ethUsd =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "rETH", "ethToUsdChainlinkOracle"));
-        uint256 ethUsdHb =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "rETH", "ethToUsdChainlinkHeartbeat"));
-        return address(new rETH_CustomPriceFeed(rEth, ethUsd, ethUsdHb));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "rETH", "baseAsset"));
+        return address(new rETH_CustomPriceFeed(rEth, address(nav), baseAsset));
     }
 
     function _deployOeth() internal returns (address) {
         // OETH/USD = (OETH/ETH) x (ETH/USD), via the dedicated OETH_CustomPriceFeed (a CrossRate subclass).
         address underlying = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "OETH", "underlyingAsset"));
-        address xToUsd = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "OETH", "xToUsdFeed"));
         address yToX = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "OETH", "yToXFeed"));
-        uint256 xToUsdHb = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "OETH", "xToUsdHeartbeat"));
         uint256 yToXHb = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "OETH", "yToXHeartbeat"));
-        return address(new OETH_CustomPriceFeed(underlying, yToX, xToUsd, yToXHb, xToUsdHb));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "OETH", "baseAsset"));
+        return address(new OETH_CustomPriceFeed(underlying, yToX, yToXHb, address(nav), baseAsset));
     }
 
     function _deployAnkrEth() internal returns (address) {
         address ankrEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "ankrETH", "ankrEth"));
-        address ethUsd =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "ankrETH", "ethToUsdChainlinkOracle"));
-        uint256 ethUsdHb =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "ankrETH", "ethToUsdChainlinkHeartbeat"));
-        return address(new ankrETH_CustomPriceFeed(ankrEth, ethUsd, ethUsdHb));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "ankrETH", "baseAsset"));
+        return address(new ankrETH_CustomPriceFeed(ankrEth, address(nav), baseAsset));
     }
 
     function _deployNxm() internal returns (address) {
@@ -386,10 +357,8 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     function _deployNxmLike(string memory name) internal returns (address) {
         address token = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, name, "token"));
         address ramm = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, name, "ramm"));
-        address ethUsd = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, name, "ethToUsdChainlinkOracle"));
-        uint256 ethUsdHb =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, name, "ethToUsdChainlinkHeartbeat"));
-        return address(new NXM_CustomPriceFeed(token, ramm, ethUsd, ethUsdHb));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, name, "baseAsset"));
+        return address(new NXM_CustomPriceFeed(token, ramm, address(nav), baseAsset));
     }
 
     function _deployOsEth() internal returns (address) {
@@ -404,43 +373,31 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         address osToken = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, name, "osToken"));
         address controller =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, name, "osTokenVaultController"));
-        address underlyingUsd =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, name, "underlyingToUsdChainlinkOracle"));
-        uint256 hb =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, name, "underlyingToUsdChainlinkHeartbeat"));
-        return address(new osToken_CustomPriceFeed(osToken, controller, underlyingUsd, hb));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, name, "baseAsset"));
+        return address(new osToken_CustomPriceFeed(osToken, controller, address(nav), baseAsset));
     }
 
     function _deployCbEth() internal returns (address) {
         address cbEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "cbETH", "cbEth"));
-        address ethUsd =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "cbETH", "ethToUsdChainlinkOracle"));
-        uint256 ethUsdHb =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "cbETH", "ethToUsdChainlinkHeartbeat"));
-        return address(new cbETH_CustomPriceFeed(cbEth, ethUsd, ethUsdHb));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "cbETH", "baseAsset"));
+        return address(new cbETH_CustomPriceFeed(cbEth, address(nav), baseAsset));
     }
 
     function _deployWeEth() internal returns (address) {
         address weEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "weETH", "weEth"));
         address weEthEth =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "weETH", "weEthToEthChainlinkOracle"));
-        address ethUsd =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "weETH", "ethToUsdChainlinkOracle"));
         uint256 weEthEthHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "weETH", "weEthToEthChainlinkHeartbeat"));
-        uint256 ethUsdHb =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "weETH", "ethToUsdChainlinkHeartbeat"));
-        return address(new weETH_CustomPriceFeed(weEth, weEthEth, ethUsd, weEthEthHb, ethUsdHb));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "weETH", "baseAsset"));
+        return address(new weETH_CustomPriceFeed(weEth, weEthEth, weEthEthHb, address(nav), baseAsset));
     }
 
     function _deployRsEth() internal returns (address) {
         address rsEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "rsETH", "rsEth"));
         address rateProvider = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "rsETH", "rateProvider"));
-        address ethUsd =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "rsETH", "ethToUsdChainlinkOracle"));
-        uint256 ethUsdHb =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "rsETH", "ethToUsdChainlinkHeartbeat"));
-        return address(new rsETH_CustomPriceFeed(rsEth, rateProvider, ethUsd, ethUsdHb));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "rsETH", "baseAsset"));
+        return address(new rsETH_CustomPriceFeed(rsEth, rateProvider, address(nav), baseAsset));
     }
 
     function _deployEEth() internal returns (address) {
@@ -448,119 +405,89 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         address weEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "eETH", "weEth"));
         address weEthEth =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "eETH", "weEthToEthChainlinkOracle"));
-        address ethUsd =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "eETH", "ethToUsdChainlinkOracle"));
         uint256 weEthEthHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "eETH", "weEthToEthChainlinkHeartbeat"));
-        uint256 ethUsdHb =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "eETH", "ethToUsdChainlinkHeartbeat"));
-        return address(new eETH_CustomPriceFeed(eEth, weEth, weEthEth, ethUsd, weEthEthHb, ethUsdHb));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "eETH", "baseAsset"));
+        return address(new eETH_CustomPriceFeed(eEth, weEth, weEthEth, weEthEthHb, address(nav), baseAsset));
     }
 
     function _deployEzEth() internal returns (address) {
         address ezEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "ezETH", "ezEth"));
         address restakeManager =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "ezETH", "restakeManager"));
-        address ethUsd =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "ezETH", "ethToUsdChainlinkOracle"));
-        uint256 ethUsdHb =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "ezETH", "ethToUsdChainlinkHeartbeat"));
-        return address(new ezETH_CustomPriceFeed(ezEth, restakeManager, ethUsd, ethUsdHb));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "ezETH", "baseAsset"));
+        return address(new ezETH_CustomPriceFeed(ezEth, restakeManager, address(nav), baseAsset));
     }
 
     function _deploySxdai() internal returns (address) {
         address sXdai = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "sXDAI", "sXdai"));
-        address xDaiUsd =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "sXDAI", "xDaiToUsdChainlinkOracle"));
-        uint256 xDaiUsdHb =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "sXDAI", "xDaiToUsdChainlinkHeartbeat"));
-        return address(new sXDAI_CustomPriceFeed(sXdai, xDaiUsd, xDaiUsdHb));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "sXDAI", "baseAsset"));
+        return address(new sXDAI_CustomPriceFeed(sXdai, address(nav), baseAsset));
     }
 
     function _deployWstEthL2() internal returns (address) {
         address wstEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "wstETH_L2", "wstEth"));
         address wstEthEth =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "wstETH_L2", "wstEthToEthChainlink"));
-        address ethUsd =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "wstETH_L2", "ethToUsdChainlinkOracle"));
         uint256 wstEthEthHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "wstETH_L2", "wstEthToEthHeartbeat"));
-        uint256 ethUsdHb =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "wstETH_L2", "ethToUsdChainlinkHeartbeat"));
-        return address(new wstETH_L2_CustomPriceFeed(wstEth, wstEthEth, ethUsd, wstEthEthHb, ethUsdHb));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "wstETH_L2", "baseAsset"));
+        return address(new wstETH_L2_CustomPriceFeed(wstEth, wstEthEth, wstEthEthHb, address(nav), baseAsset));
     }
 
     function _deployWeEthL2() internal returns (address) {
         address weEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "weETH_L2", "weEth"));
         address weEthEth =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "weETH_L2", "weEthToEethChainlink"));
-        address ethUsd =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "weETH_L2", "ethToUsdChainlinkOracle"));
         uint256 weEthEthHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "weETH_L2", "weEthToEethHeartbeat"));
-        uint256 ethUsdHb =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "weETH_L2", "ethToUsdChainlinkHeartbeat"));
-        return address(new weETH_L2_CustomPriceFeed(weEth, weEthEth, ethUsd, weEthEthHb, ethUsdHb));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "weETH_L2", "baseAsset"));
+        return address(new weETH_L2_CustomPriceFeed(weEth, weEthEth, weEthEthHb, address(nav), baseAsset));
     }
 
     function _deployCbEthL2() internal returns (address) {
         address cbEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "cbETH_L2", "cbEth"));
         address cbEthEth =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "cbETH_L2", "cbEthToEthChainlink"));
-        address ethUsd =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "cbETH_L2", "ethToUsdChainlinkOracle"));
         uint256 cbEthEthHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "cbETH_L2", "cbEthToEthHeartbeat"));
-        uint256 ethUsdHb =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "cbETH_L2", "ethToUsdChainlinkHeartbeat"));
-        return address(new cbETH_L2_CustomPriceFeed(cbEth, cbEthEth, ethUsd, cbEthEthHb, ethUsdHb));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "cbETH_L2", "baseAsset"));
+        return address(new cbETH_L2_CustomPriceFeed(cbEth, cbEthEth, cbEthEthHb, address(nav), baseAsset));
     }
 
     function _deployRsEthL2() internal returns (address) {
         address rsEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "rsETH_L2", "rsEth"));
         address rsEthEth =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "rsETH_L2", "rsEthToEthChainlink"));
-        address ethUsd =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "rsETH_L2", "ethToUsdChainlinkOracle"));
         uint256 rsEthEthHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "rsETH_L2", "rsEthToEthHeartbeat"));
-        uint256 ethUsdHb =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "rsETH_L2", "ethToUsdChainlinkHeartbeat"));
-        return address(new rsETH_L2_CustomPriceFeed(rsEth, rsEthEth, ethUsd, rsEthEthHb, ethUsdHb));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "rsETH_L2", "baseAsset"));
+        return address(new rsETH_L2_CustomPriceFeed(rsEth, rsEthEth, rsEthEthHb, address(nav), baseAsset));
     }
 
     function _deployEzEthL2() internal returns (address) {
         address ezEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "ezETH_L2", "ezEth"));
         address xRenzo = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "ezETH_L2", "xRenzoDeposit"));
-        address ethUsd =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "ezETH_L2", "ethToUsdChainlinkOracle"));
-        uint256 ethUsdHb =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "ezETH_L2", "ethToUsdChainlinkHeartbeat"));
-        return address(new ezETH_L2_CustomPriceFeed(ezEth, xRenzo, ethUsd, ethUsdHb));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "ezETH_L2", "baseAsset"));
+        return address(new ezETH_L2_CustomPriceFeed(ezEth, xRenzo, address(nav), baseAsset));
     }
 
     function _deploySyrupUsdcL2() internal returns (address) {
         address syrup = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "syrupUSDC_L2", "syrupUsdc"));
         address syrupChainlink =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "syrupUSDC_L2", "syrupUsdcToUsdcChainlink"));
-        address usdcUsd =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "syrupUSDC_L2", "usdcToUsdChainlinkOracle"));
         uint256 syrupHb =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "syrupUSDC_L2", "syrupUsdcToUsdcHeartbeat"));
-        uint256 usdcUsdHb =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "syrupUSDC_L2", "usdcToUsdChainlinkHeartbeat"));
-        return address(new syrupUSDC_L2_CustomPriceFeed(syrup, syrupChainlink, usdcUsd, syrupHb, usdcUsdHb));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "syrupUSDC_L2", "baseAsset"));
+        return address(new syrupUSDC_L2_CustomPriceFeed(syrup, syrupChainlink, syrupHb, address(nav), baseAsset));
     }
 
     function _deployEthx() internal returns (address) {
         address ethx = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "ETHx", "ethx"));
         address stakePoolsManager =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "ETHx", "stakePoolsManager"));
-        address ethUsd =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "ETHx", "ethToUsdChainlinkOracle"));
-        uint256 ethUsdHb =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "ETHx", "ethToUsdChainlinkHeartbeat"));
-        return address(new ETHx_CustomPriceFeed(ethx, stakePoolsManager, ethUsd, ethUsdHb));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "ETHx", "baseAsset"));
+        return address(new ETHx_CustomPriceFeed(ethx, stakePoolsManager, address(nav), baseAsset));
     }
 
     // -----------------------------------------------------------------------

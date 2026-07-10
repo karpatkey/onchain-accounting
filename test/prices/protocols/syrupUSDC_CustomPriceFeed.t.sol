@@ -3,30 +3,46 @@ pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
 import {syrupUSDC_CustomPriceFeed} from "src/prices/protocols/syrupUSDC_CustomPriceFeed.sol";
+import {Mock_ERC20, Mock_ERC4626} from "test/mocks/tokens.sol";
+import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 
 /// @title syrupUSDC_CustomPriceFeed unit tests (no fork)
+/// @dev Base/USD (USDC/USD) now comes from the NAV via a Mock_NAVCalculator; the constructor takes
+///      `(syrupUsdc, nav, baseAsset)`. Vault-rate math is exercised in the fork test.
 contract syrupUSDC_CustomPriceFeedTest is Test {
-    address syrupUsdcAddress;
-    address usdcToUsdChainlink;
-    uint256 heartbeat;
+    Mock_ERC4626 syrupUsdc;
+    Mock_ERC20 usdc;
+    Mock_NAVCalculator nav;
 
     function setUp() public {
-        syrupUsdcAddress = address(0x80ac24aA929eaF5013f6436cdA2a7ba190f5Cc0b);
-        usdcToUsdChainlink = address(0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6);
-        heartbeat = 82_800;
+        usdc = new Mock_ERC20("USDC", 6);
+        syrupUsdc = new Mock_ERC4626("syrupUSDC", 6, address(usdc), 1e6);
+        nav = new Mock_NAVCalculator();
+        nav.setAssetPrice(address(usdc), 1e8, 8); // USDC/USD = $1
+    }
+
+    function test_constructor_valid() public {
+        syrupUSDC_CustomPriceFeed oracle =
+            new syrupUSDC_CustomPriceFeed(address(syrupUsdc), address(nav), address(usdc));
+        assertEq(oracle.decimals(), 8, "decimals == NAV_DECIMALS");
+        assertEq(oracle.underlyingAssetSupported(), address(syrupUsdc));
     }
 
     function test_invalidConstructorArgs() public {
+        // zero vault
         vm.expectRevert();
-        new syrupUSDC_CustomPriceFeed(address(0), usdcToUsdChainlink, heartbeat);
+        new syrupUSDC_CustomPriceFeed(address(0), address(nav), address(usdc));
 
+        // zero nav (not a contract)
         vm.expectRevert();
-        new syrupUSDC_CustomPriceFeed(syrupUsdcAddress, address(0), heartbeat);
+        new syrupUSDC_CustomPriceFeed(address(syrupUsdc), address(0), address(usdc));
 
+        // zero base asset
         vm.expectRevert();
-        new syrupUSDC_CustomPriceFeed(syrupUsdcAddress, usdcToUsdChainlink, 0);
+        new syrupUSDC_CustomPriceFeed(address(syrupUsdc), address(nav), address(0));
 
+        // base asset not an ERC20 (nav has no totalSupply)
         vm.expectRevert();
-        new syrupUSDC_CustomPriceFeed(syrupUsdcAddress, syrupUsdcAddress, heartbeat);
+        new syrupUSDC_CustomPriceFeed(address(syrupUsdc), address(nav), address(nav));
     }
 }

@@ -105,7 +105,9 @@ Copy the closest match and rename. Don't deviate from the structure unless you n
 
 File: `src/prices/protocols/<Asset>_CustomPriceFeed.sol` (suffix `_L2_CustomPriceFeed` for L2-specific variants, e.g. `wstETH_L2_CustomPriceFeed.sol`).
 
-For the common "single Chainlink base feed × 18-decimal on-chain rate" case (rETH, cbETH, ezETH, rsETH, ETHx, osToken), extend `src/prices/BaseCustomPriceFeed.sol` and implement only `_rate()` — the staleness gate, decimals, `latestRoundData`, and the `rate × base / 1e18` math live in the base. Feeds with no Chainlink base (ETHPlus), a two-feed derived rate (eETH, wstETH), or a Chainlink-feed rate (use `CrossRate_CustomPriceFeed`) stay bespoke and follow the self-contained skeleton below.
+For the common "18-decimal on-chain rate × NAV-sourced base/USD" case (rETH, cbETH, ezETH, rsETH, ETHx, osToken), extend `src/prices/BaseCustomPriceFeed.sol` and implement only `_rate()` — the base/USD read (via `NavBaseUsdLib`), staleness gate, decimals, `latestRoundData`, and the `rate × base8 / 1e18` math live in the base. Feeds with an `asset/base` Chainlink **rate** leg (weETH, cbETH_L2, and the generic cross-rate — use `TwoFeedChainlinkPriceFeed` / `CrossRateCustomPriceFeed`), an ERC-4626 vault rate (use `ERC4626VaultRatePriceFeed`), a two-feed derived rate (eETH, wstETH), or a basket (ETHPlus) stay bespoke and follow the self-contained skeleton below. **In every case the `base/USD` term comes from the NAV** (`NavBaseUsdLib.baseUsd(nav, baseAsset)`), never an embedded Chainlink oracle — see [ADR 0019](../decisions/0019-nav-sourced-base-price.md).
+
+> **ERC-4626 manipulation-resistance check (before wiring a vault to `ERC4626VaultRatePriceFeed`):** the base reads live `convertToAssets()` on every read with no TWAP or bounds check, so it inherits the vault's share-price manipulation surface. Confirm the candidate vault's `totalAssets()` is **not naively `balanceOf(vault)`-based** — a raw balance-of vault can be donation/inflation-spiked within a single block, letting an attacker over-value shares (and therefore over-report NAV). The vaults wired today (sUSDe, sGHO, sUSDS, sXDAI, syrupUSDC, RWIV) use time-accrued exchange rates, not balance-of accounting; a new vault that does not must not use this base without a manipulation-resistant wrapper.
 
 Skeleton (bespoke yield-bearing pattern, à la `sDAI_CustomPriceFeed.sol`; adjust for LST/LRT or cross-rate):
 
@@ -114,32 +116,37 @@ Skeleton (bespoke yield-bearing pattern, à la `sDAI_CustomPriceFeed.sol`; adjus
 pragma solidity ^0.8;
 
 import {ICustomPriceFeed} from "src/prices/ICustomPriceFeed.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
-import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {NavBaseUsdLib} from "src/prices/NavBaseUsdLib.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {OracleArgumentChecks} from "src/utils/OracleArgumentChecks.sol";
+import {NAV_DECIMALS} from "src/constants.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @title <Asset> Custom Price Oracle
-/// @notice Returns the USD price of <Asset> as `<rate> * <underlying>/USD`.
+/// @notice Returns the USD price of <Asset> as `<rate> * base/USD`, base/USD read from the NAV (ADR 0019).
 /// @author kpk
 contract MyAsset_CustomPriceFeed is ICustomPriceFeed {
-    AggregatorV3Interface public immutable USD_CHAINLINK_ORACLE;
-    address public immutable RATE_PROVIDER;
+    using Math for uint256;
+
     address public immutable MY_ASSET;
-    uint256 public immutable USD_CHAINLINK_HEARTBEAT;
+    address public immutable RATE_PROVIDER;
+    /// @notice NAVCalculator (proxy) the base/USD price is read from via its selector.
+    INAVCalculator public immutable NAV;
+    /// @notice Base asset (e.g. WETH) whose NAV-selected USD price scales the rate. MUST be priced by DIRECT feeds,
+    ///         never by a NAV-sourced custom feed (NavBaseUsdLib circularity invariant).
+    address public immutable BASE_ASSET;
     uint8 public constant RATIO_DECIMALS = 18; // adjust per protocol's rate precision
     uint8 private immutable _decimals;
 
-    constructor(
-        address myAsset_,
-        address rateProvider_,
-        address usdChainlinkOracle_,
-        uint256 usdChainlinkHeartbeat_
-    ) {
+    constructor(address myAsset_, address rateProvider_, address nav_, address baseAsset_) {
         MY_ASSET = OracleArgumentChecks.assertERC20Address(myAsset_);
         RATE_PROVIDER = OracleArgumentChecks.assertNonZeroAddress(rateProvider_);
-        USD_CHAINLINK_ORACLE = OracleArgumentChecks.assertChainlinkOracle(usdChainlinkOracle_);
-        USD_CHAINLINK_HEARTBEAT = OracleArgumentChecks.assertNotZeroNumber(usdChainlinkHeartbeat_);
-        _decimals = USD_CHAINLINK_ORACLE.decimals();
+        AddressCheckLib.requireContract(nav_, "NAVCalculator");
+        NAV = INAVCalculator(nav_);
+        BASE_ASSET = OracleArgumentChecks.assertERC20Address(baseAsset_);
+        _decimals = NAV_DECIMALS;
     }
 
     function _compute()
@@ -147,18 +154,17 @@ contract MyAsset_CustomPriceFeed is ICustomPriceFeed {
         view
         returns (uint256 price, bool stale, uint80 roundId, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
     {
-        int256 usdPrice;
-        (roundId, usdPrice, startedAt, updatedAt, answeredInRound) = USD_CHAINLINK_ORACLE.latestRoundData();
-        if (usdPrice <= 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
-        uint256 effectiveUpdatedAt = updatedAt > block.timestamp ? block.timestamp : updatedAt;
-        if (block.timestamp - effectiveUpdatedAt >= USD_CHAINLINK_HEARTBEAT) {
-            return (0, true, roundId, startedAt, updatedAt, answeredInRound);
-        }
+        // Base/USD from the NAV's selector (normalized to NAV_DECIMALS = 8). Stale on genuine base-feed staleness,
+        // NOT on L2 sequencer-down alone (NavBaseUsdLib un-folds pd.sequencerDown — ADR 0019). roundId/startedAt/
+        // answeredInRound have no meaning for a NAV read.
+        uint256 base8;
+        (base8, stale, updatedAt) = NavBaseUsdLib.baseUsd(NAV, BASE_ASSET);
+        if (stale) return (0, true, 0, 0, updatedAt, 0);
 
-        uint256 rate = _readRate(); // protocol-specific
-        if (rate == 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
+        uint256 rate = _readRate(); // protocol-specific, 18-decimal base-token per 1 underlying
+        if (rate == 0) return (0, true, 0, 0, updatedAt, 0);
 
-        price = uint256(usdPrice) * rate / (10 ** RATIO_DECIMALS);
+        price = rate.mulDiv(base8, 10 ** RATIO_DECIMALS, Math.Rounding.Floor);
     }
 
     function getLatestPrice() external view returns (uint256 price, bool stale) {
@@ -193,11 +199,11 @@ contract MyAsset_CustomPriceFeed is ICustomPriceFeed {
 Conventions:
 
 - **Pin every input as `immutable`** in the constructor. No setters.
-- **Use `OracleArgumentChecks`** for argument validation. Don't roll your own zero-checks.
+- **Use `OracleArgumentChecks` / `AddressCheckLib`** for argument validation. Don't roll your own zero-checks.
 - **Return `(0, true)` on any failure path**, never revert. Stale prices propagate into NAV via `NAV.stalePriceAssets`.
-- **Implement `latestRoundData()`** as well as `getLatestPrice()`. `ICustomPriceFeed` requires both; `Prices.sol` reads price/staleness from `getLatestPrice()`, while `latestRoundData()` exists for callers inspecting underlying-oracle freshness (return the worst-case `updatedAt`, or `(0, 0, 0, 0, 0)` for feeds with no trackable oracle). Computing both from one private `_compute()` helper, as above, keeps them consistent.
-- **`decimals()`** returns the Chainlink feed's decimals (typically 8 for USD pairs). The custom feed's output must match this.
-- **Heartbeat applies to the Chainlink leg only**; the rate provider is on-chain and trusted. If the rate goes negative or zero, treat as stale.
+- **Implement `latestRoundData()`** as well as `getLatestPrice()`. `ICustomPriceFeed` requires both; `Prices.sol` reads price/staleness from `getLatestPrice()`, while `latestRoundData()` exists for callers inspecting freshness (return the worst-case `updatedAt`, or `(0, 0, 0, 0, 0)` for feeds with no trackable timestamp). Computing both from one private `_compute()` helper, as above, keeps them consistent.
+- **`decimals()`** returns `NAV_DECIMALS` (8) — `NavBaseUsdLib` normalizes the base/USD to 8 dp, so the feed's output is always 8 dp.
+- **Base/USD comes from the NAV** (`NavBaseUsdLib.baseUsd(NAV, BASE_ASSET)`), never an embedded Chainlink oracle ([ADR 0019](../decisions/0019-nav-sourced-base-price.md)). Its staleness (all-base-feeds-stale) is inherited for free; L2 **sequencer-down alone does not** zero the feed. `BASE_ASSET` MUST be a direct-feed asset (circularity invariant). Any `asset/base` Chainlink **rate** leg you read yourself (e.g. weETH/eETH) keeps its own heartbeat check; if the rate goes negative or zero, treat as stale.
 - **One asset per contract.** Even if two assets share the same recipe, deploy two contracts.
 
 ### B.3 Tests
@@ -206,18 +212,18 @@ Conventions:
 
 File: `test/prices/protocols/<Asset>_CustomPriceFeed.t.sol`.
 
-Cover, with mocked Chainlink + mocked rate provider:
+Cover, with a **mock NAV** (`Mock_NAVCalculator` — `setAssetPrice`/`setAssetStale`/`setSequencerDown`) as the base/USD source + a mocked rate provider:
 
 - **Happy path**: known inputs → expected output (compute by hand).
-- **Negative Chainlink price** (`int256(-1)`) → returns `(0, true)`.
-- **Stale heartbeat** (`updatedAt + heartbeat + 1`) → `(0, true)` — return zero price when stale.
+- **Base stale** (`nav.setAssetStale(baseAsset, true)`) → returns `(0, true)`.
+- **L2 sequencer-down alone** (`nav.setSequencerDown(baseAsset, true)`) → still returns the last price, **not** stale (base feed fresh) — the F1 behavior.
 - **Zero or negative rate** → `(0, true)`.
-- **Constructor zero-address guards** for every immutable.
-- **Constructor zero-heartbeat guard**.
-- **`decimals()`** returns the Chainlink feed's decimals.
+- **Constructor zero-address guards** for every immutable (incl. `nav_` not-a-contract and `baseAsset_` not-an-ERC20).
+- **`decimals()`** returns `NAV_DECIMALS` (8).
 - **`underlyingAssetSupported()`** returns the asset address.
-- **`latestRoundData()`** returns the underlying oracle's round data (and `answer == 0` when stale).
+- **`latestRoundData()`** returns the round data (and `answer == 0` when stale).
 - **`supportsInterface`** returns true for `ICustomPriceFeed` and `IERC165`.
+- **(If you read an `asset/base` Chainlink rate leg yourself)** negative / stale rate feed → `(0, true)`.
 
 #### B.3.2 Fork test
 
@@ -241,12 +247,13 @@ Two files. First, the custom-feed deploy config — `script/config/contracts-dep
     "constructor": {
       "myAsset": "0x...",
       "rateProvider": "0x...",
-      "usdChainlinkOracle": "0x...",
-      "usdChainlinkHeartbeat": "3600"
+      "baseAsset": "0x..."
     }
   }
 }
 ```
+
+The `constructor` section carries the protocol-specific args + `baseAsset` (the base whose USD price scales the rate — WETH for ETH-based feeds, the stablecoin for vault feeds). It does **not** carry the NAV address or a base-oracle heartbeat: `03_DeployPriceFeeds` resolves the NAV proxy from `deployments/<chainId>.json` (`NAVCalculatorProxy`) and passes it in, and the base/USD staleness comes from the NAV. A feed with its own `asset/base` Chainlink **rate** leg additionally carries that leg's oracle + heartbeat (e.g. `weEthToEthChainlinkOracle` / `weEthToEthChainlinkHeartbeat`).
 
 Second, the asset entry — `script/config/nav-config/assets-and-price-feeds/<chainId>.json`, with a `Custom` feed that references the custom feed by name:
 

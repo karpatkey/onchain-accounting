@@ -15,14 +15,10 @@ import {CrossRateCustomPriceFeed} from "src/prices/protocols/CrossRateCustomPric
 contract osETH_CrossRateCustomPriceFeed is CrossRateCustomPriceFeed {
     /// @param osEth_ The osETH token address.
     /// @param osEthToEthFeed_ The osETH/ETH feed (rate; Redstone Classic Push proxy, Chainlink ABI).
-    /// @param ethToUsdFeed_ The ETH/USD Chainlink feed.
     /// @param osEthToEthHeartbeat_ Staleness threshold (seconds) for the osETH/ETH feed.
-    /// @param ethToUsdHeartbeat_ Staleness threshold (seconds) for the ETH/USD feed.
-    constructor(
-        address osEth_,
-        address osEthToEthFeed_,
-        address ethToUsdFeed_,
-        uint256 osEthToEthHeartbeat_,
-        uint256 ethToUsdHeartbeat_
-    ) CrossRateCustomPriceFeed(osEth_, osEthToEthFeed_, ethToUsdFeed_, osEthToEthHeartbeat_, ethToUsdHeartbeat_) {}
+    /// @param nav_ The NAVCalculator proxy to read the base asset's USD price from.
+    /// @param baseAsset_ The base asset (e.g. WETH) whose NAV-selected USD price scales the rate.
+    constructor(address osEth_, address osEthToEthFeed_, uint256 osEthToEthHeartbeat_, address nav_, address baseAsset_)
+        CrossRateCustomPriceFeed(osEth_, osEthToEthFeed_, osEthToEthHeartbeat_, nav_, baseAsset_)
+    {}
 }

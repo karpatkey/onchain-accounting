@@ -3,47 +3,49 @@ pragma solidity ^0.8;
 
 import {ICustomPriceFeed} from "src/prices/ICustomPriceFeed.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
+import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {NavBaseUsdLib} from "src/prices/NavBaseUsdLib.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {OracleArgumentChecks} from "src/utils/OracleArgumentChecks.sol";
+import {NAV_DECIMALS} from "src/constants.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @title BaseCustomPriceFeed
 /// @author KPK
-/// @notice Shared skeleton for the "exchange-rate × Chainlink-base" custom price feeds: it reads a base Chainlink
-///         feed (typically ETH/USD, 8 decimals), applies the standard staleness gate, multiplies by a
-///         protocol-supplied 18-decimal exchange rate, and returns the result in the base feed's decimals.
-///         Concrete feeds implement only `_rate()` — the protocol's exchange rate as 18-decimal base-token
-///         units per 1 `UNDERLYING` (e.g. ETH per rETH), i.e. the same orientation the multiply expects.
-/// @dev The 5 `ICustomPriceFeed` thunks, the immutables, the constructor validation, and the
-///      read/staleness/normalize math live here once, instead of being copy-pasted into each rate-based feed. The math is
-///      identical to the former per-feed `_compute()`: `price = rate · baseAnswer / 1e18` (Math.Rounding.Floor),
-///      stale when the base answer is non-positive, the base feed is past its heartbeat, or `_rate()` is 0.
-///      Staleness uses `effectiveUpdatedAt = min(updatedAt, block.timestamp)` to avoid upstream-clock bias.
-///      Feeds whose rate is itself a Chainlink feed should use the generic `CrossRateCustomPriceFeed` instead;
-///      feeds with no Chainlink base (e.g. ETHPlus) or a derived two-feed rate (e.g. eETH) stay bespoke.
+/// @notice Shared skeleton for the "exchange-rate × base/USD" custom price feeds: it reads the base asset's USD price
+///         from the **NAV** (`getPriceData(BASE_ASSET)` — the NAV's own selector, typically ETH/USD), applies the
+///         staleness gate, multiplies by a protocol-supplied 18-decimal exchange rate, and returns the result in
+///         `NAV_DECIMALS` (8). Concrete feeds implement only `_rate()` — the protocol's exchange rate as 18-decimal
+///         base-token units per 1 `UNDERLYING` (e.g. ETH per rETH), the orientation the multiply expects.
+/// @dev Sourcing base/USD from the NAV (rather than a hardcoded Chainlink oracle) makes the base term identical to the
+///      one the NAV prices the base asset's own legs with — so it cancels cleanly when NAV is quoted in the base.
+///      See {NavBaseUsdLib} (incl. the circularity invariant) and `docs/decisions`. Math: `price = rate · base8 / 1e18`
+///      (Floor); stale when the NAV reports the base feed stale (all-feeds-stale; NOT L2 sequencer-down alone) or `_rate()` is 0.
 abstract contract BaseCustomPriceFeed is ICustomPriceFeed {
     using Math for uint256;
 
     /// @notice The token this feed prices (returned by `underlyingAssetSupported`).
     address public immutable UNDERLYING;
 
-    /// @notice Base Chainlink oracle (typically ETH/USD).
-    AggregatorV3Interface public immutable BASE_ORACLE;
+    /// @notice NAVCalculator (proxy) the base/USD price is read from via its selector.
+    INAVCalculator public immutable NAV;
 
-    /// @notice Heartbeat (seconds) after which the base feed is considered stale.
-    uint256 public immutable BASE_HEARTBEAT;
+    /// @notice The base asset whose USD price is read from the NAV (e.g. WETH). Must be priced by DIRECT feeds on the
+    ///         NAV — never by a NAV-sourced custom feed (see {NavBaseUsdLib} circularity invariant).
+    address public immutable BASE_ASSET;
 
-    /// @notice Decimals of the returned price (inherited from the base Chainlink feed).
+    /// @notice Decimals of the returned price — `NAV_DECIMALS` (8).
     uint8 private immutable _decimals;
 
-    /// @param underlying_   The token being priced (must be ERC20-like).
-    /// @param baseOracle_    The base Chainlink oracle (e.g. ETH/USD).
-    /// @param baseHeartbeat_ Staleness threshold (seconds) for the base feed.
-    constructor(address underlying_, address baseOracle_, uint256 baseHeartbeat_) {
+    /// @param underlying_ The token being priced (must be ERC20-like).
+    /// @param nav_        The NAVCalculator proxy to read base/USD from.
+    /// @param baseAsset_  The base asset (e.g. WETH) whose NAV-selected USD price scales the rate.
+    constructor(address underlying_, address nav_, address baseAsset_) {
         UNDERLYING = OracleArgumentChecks.assertERC20Address(underlying_);
-        BASE_ORACLE = OracleArgumentChecks.assertChainlinkOracle(baseOracle_);
-        BASE_HEARTBEAT = OracleArgumentChecks.assertNotZeroNumber(baseHeartbeat_);
-        _decimals = BASE_ORACLE.decimals();
+        AddressCheckLib.requireContract(nav_, "NAVCalculator");
+        NAV = INAVCalculator(nav_);
+        BASE_ASSET = OracleArgumentChecks.assertERC20Address(baseAsset_);
+        _decimals = NAV_DECIMALS;
     }
 
     /// @notice The protocol's exchange rate, expressed as 18-decimal base-token units per 1 `UNDERLYING`
@@ -65,17 +67,15 @@ abstract contract BaseCustomPriceFeed is ICustomPriceFeed {
             uint80 answeredInRound
         )
     {
-        int256 baseAnswer;
-        (roundId, baseAnswer, startedAt, updatedAt, answeredInRound) = BASE_ORACLE.latestRoundData();
-        if (baseAnswer <= 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
-        uint256 effectiveUpdatedAt = updatedAt > block.timestamp ? block.timestamp : updatedAt;
-        if (block.timestamp - effectiveUpdatedAt >= BASE_HEARTBEAT) {
-            return (0, true, roundId, startedAt, updatedAt, answeredInRound);
-        }
+        // Base/USD from the NAV's selector (normalized to NAV_DECIMALS = 8); it marks the base stale on
+        // all-base-feeds-stale only (L2 sequencer-down alone does NOT — NavBaseUsdLib un-folds pd.sequencerDown; ADR 0019). roundId/startedAt/answeredInRound have no meaning for a NAV read.
+        uint256 base8;
+        (base8, stale, updatedAt) = NavBaseUsdLib.baseUsd(NAV, BASE_ASSET);
+        if (stale) return (0, true, 0, 0, updatedAt, 0);
         uint256 rate = _rate();
-        if (rate == 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
-        // rate is 18 decimals; result is in the base feed's own decimals (8 for the usual ETH/USD feed).
-        price = rate.mulDiv(uint256(baseAnswer), 1e18, Math.Rounding.Floor);
+        if (rate == 0) return (0, true, 0, 0, updatedAt, 0);
+        // rate is 18 decimals, base8 is 8 decimals → result in NAV_DECIMALS (8).
+        price = rate.mulDiv(base8, 1e18, Math.Rounding.Floor);
     }
 
     /// @inheritdoc ICustomPriceFeed

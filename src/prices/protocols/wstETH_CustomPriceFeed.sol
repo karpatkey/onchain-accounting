@@ -4,24 +4,28 @@ pragma solidity ^0.8.0;
 import {ICustomPriceFeed} from "src/prices/ICustomPriceFeed.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
+import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {NavBaseUsdLib} from "src/prices/NavBaseUsdLib.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {OracleArgumentChecks} from "src/utils/OracleArgumentChecks.sol";
+import {NAV_DECIMALS} from "src/constants.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
 /// @title wstETH Custom Price Oracle
 /// @notice Returns the USD price of wstETH by combining wstETH's on-chain stEthPerToken rate with Chainlink's
-///         stETH/ETH and ETH/USD feeds.
+///         stETH/ETH feed and the NAV's ETH/USD price.
 /// @dev The price is computed as `price = stEthPerToken * (stETH/ETH) * (ETH/USD)`, where:
 ///      - `stEthPerToken` (stETH per 1 wstETH) comes from the wstETH contract (18 decimals)
 ///      - `stETH/ETH` (ETH per 1 stETH) comes from a Chainlink oracle (18 decimals)
-///      - `ETH/USD` comes from a Chainlink oracle (8 decimals)
+///      - `ETH/USD` (base/USD) comes from the NAV's own selector (`getPriceData(BASE_ASSET)`, 8 decimals)
 ///      Intermediate `stEthPerToken * (stETH/ETH) / 1e18` yields ETH per wstETH (i.e. the wstETH/ETH price,
 ///      18 decimals — the stETH/ETH feed returns ETH per stETH); multiplying by ETH/USD and scaling by 1e18
 ///      yields the USD price (8 decimals).
 ///      Using the real stETH/ETH rate (rather than assuming stETH == ETH 1:1) keeps the price accurate and lets
-///      ETH/USD cancel cleanly when NAV is quoted in ETH — the same pattern the L2 variant uses with a wstETH/ETH
-///      feed.
+///      ETH/USD cancel cleanly when NAV is quoted in ETH — the base/USD term now coming from the NAV makes that
+///      cancellation exact (see {NavBaseUsdLib}, incl. the circularity invariant).
 /// @author KPK
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
 contract wstETH_CustomPriceFeed is ICustomPriceFeed {
@@ -40,16 +44,20 @@ contract wstETH_CustomPriceFeed is ICustomPriceFeed {
     /// @notice Chainlink oracle for stETH to ETH (ETH per 1 stETH).
     AggregatorV3Interface public immutable STETH_TO_ETH_CHAINLINK_ORACLE;
 
-    /// @notice Chainlink oracle for ETH to USD.
-    AggregatorV3Interface public immutable ETH_TO_USD_CHAINLINK_ORACLE;
+    /// @notice NAVCalculator (proxy) the base/USD (ETH/USD) price is read from via its selector.
+    INAVCalculator public immutable NAV;
+
+    /// @notice The base asset whose USD price is read from the NAV (e.g. WETH). Must be priced by DIRECT feeds on the
+    ///         NAV — never by a NAV-sourced custom feed (see {NavBaseUsdLib} circularity invariant).
+    address public immutable BASE_ASSET;
 
     /// @notice The heartbeat interval for the stETH/ETH Chainlink oracle.
     uint256 public immutable STETH_TO_ETH_CHAINLINK_HEARTBEAT;
 
-    /// @notice The heartbeat interval for the ETH/USD Chainlink oracle.
-    uint256 public immutable ETH_TO_USD_CHAINLINK_HEARTBEAT;
+    /// @notice `10 ** STETH_TO_ETH_CHAINLINK_ORACLE.decimals()`, captured once to avoid a per-read external STATICCALL.
+    uint256 private immutable _rateUnit;
 
-    /// @notice Number of decimals the returned price is represented with.
+    /// @notice Number of decimals the returned price is represented with — `NAV_DECIMALS` (8).
     uint8 private immutable _decimals;
 
     //
@@ -58,22 +66,24 @@ contract wstETH_CustomPriceFeed is ICustomPriceFeed {
 
     /// @param wstEth_ The address of the wstETH token.
     /// @param stEthToEthChainlinkOracle_ The address of the stETH to ETH Chainlink oracle.
-    /// @param ethToUsdChainlinkOracle_ The address of the ETH to USD Chainlink oracle.
     /// @param stEthToEthHeartbeat_ The time in seconds after which the stETH/ETH price is considered stale.
-    /// @param ethToUsdChainlinkHeartbeat_ The time in seconds after which the ETH/USD price is considered stale.
+    /// @param nav_ The NAVCalculator proxy to read the base asset's USD price from.
+    /// @param baseAsset_ The base asset (e.g. WETH) whose NAV-selected USD price scales the rate.
     constructor(
         address wstEth_,
         address stEthToEthChainlinkOracle_,
-        address ethToUsdChainlinkOracle_,
         uint256 stEthToEthHeartbeat_,
-        uint256 ethToUsdChainlinkHeartbeat_
+        address nav_,
+        address baseAsset_
     ) {
         WSTETH = OracleArgumentChecks.assertERC20Address(wstEth_);
         STETH_TO_ETH_CHAINLINK_ORACLE = OracleArgumentChecks.assertChainlinkOracle(stEthToEthChainlinkOracle_);
-        ETH_TO_USD_CHAINLINK_ORACLE = OracleArgumentChecks.assertChainlinkOracle(ethToUsdChainlinkOracle_);
         STETH_TO_ETH_CHAINLINK_HEARTBEAT = OracleArgumentChecks.assertNotZeroNumber(stEthToEthHeartbeat_);
-        ETH_TO_USD_CHAINLINK_HEARTBEAT = OracleArgumentChecks.assertNotZeroNumber(ethToUsdChainlinkHeartbeat_);
-        _decimals = ETH_TO_USD_CHAINLINK_ORACLE.decimals();
+        AddressCheckLib.requireContract(nav_, "NAVCalculator");
+        NAV = INAVCalculator(nav_);
+        BASE_ASSET = OracleArgumentChecks.assertERC20Address(baseAsset_);
+        _decimals = NAV_DECIMALS;
+        _rateUnit = 10 ** uint256(AggregatorV3Interface(stEthToEthChainlinkOracle_).decimals());
     }
 
     //
@@ -92,29 +102,23 @@ contract wstETH_CustomPriceFeed is ICustomPriceFeed {
             uint80 answeredInRound
         )
     {
-        // Read both Chainlink legs in full. Per ICustomPriceFeed, latestRoundData must expose the most-stale
-        // input tuple (lowest updatedAt) so callers see worst-case freshness across both feeds.
-        (uint80 rEth, int256 ethToUsdPrice, uint256 sEth, uint256 uEth, uint80 arEth) =
-            ETH_TO_USD_CHAINLINK_ORACLE.latestRoundData();
-        (uint80 rSt, int256 stEthToEthRate, uint256 sSt, uint256 uSt, uint80 arSt) =
+        // stETH/ETH rate leg (Chainlink), plus the base/USD (ETH/USD) term from the NAV's selector. The returned
+        // updatedAt is the more conservative min(rateLegUpdatedAt, baseUpdatedAt) so callers see worst-case freshness.
+        int256 stEthToEthRate;
+        uint256 rateUpdatedAt;
+        (roundId, stEthToEthRate, startedAt, rateUpdatedAt, answeredInRound) =
             STETH_TO_ETH_CHAINLINK_ORACLE.latestRoundData();
 
-        if (uEth <= uSt) {
-            (roundId, startedAt, updatedAt, answeredInRound) = (rEth, sEth, uEth, arEth);
-        } else {
-            (roundId, startedAt, updatedAt, answeredInRound) = (rSt, sSt, uSt, arSt);
-        }
+        (uint256 base8, bool baseStale, uint256 baseUpdatedAt) = NavBaseUsdLib.baseUsd(NAV, BASE_ASSET);
 
-        if (ethToUsdPrice <= 0 || stEthToEthRate <= 0) {
+        updatedAt = rateUpdatedAt <= baseUpdatedAt ? rateUpdatedAt : baseUpdatedAt;
+
+        if (baseStale || stEthToEthRate <= 0) {
             return (0, true, roundId, startedAt, updatedAt, answeredInRound);
         }
 
-        uint256 effectiveEthUpdatedAt = uEth > block.timestamp ? block.timestamp : uEth;
-        uint256 effectiveStEthUpdatedAt = uSt > block.timestamp ? block.timestamp : uSt;
-        if (
-            block.timestamp - effectiveEthUpdatedAt >= ETH_TO_USD_CHAINLINK_HEARTBEAT
-                || block.timestamp - effectiveStEthUpdatedAt >= STETH_TO_ETH_CHAINLINK_HEARTBEAT
-        ) {
+        uint256 effectiveStEthUpdatedAt = rateUpdatedAt > block.timestamp ? block.timestamp : rateUpdatedAt;
+        if (block.timestamp - effectiveStEthUpdatedAt >= STETH_TO_ETH_CHAINLINK_HEARTBEAT) {
             return (0, true, roundId, startedAt, updatedAt, answeredInRound);
         }
 
@@ -122,11 +126,9 @@ contract wstETH_CustomPriceFeed is ICustomPriceFeed {
         if (stEthPerToken == 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
 
         // stEthPerToken (18) * stETH/ETH (18) / 1e18 = ETH per wstETH (the wstETH/ETH price, 18 decimals)
-        uint256 ethPerWstEth = stEthPerToken.mulDiv(
-            uint256(stEthToEthRate), 10 ** STETH_TO_ETH_CHAINLINK_ORACLE.decimals(), Math.Rounding.Floor
-        );
+        uint256 ethPerWstEth = stEthPerToken.mulDiv(uint256(stEthToEthRate), _rateUnit, Math.Rounding.Floor);
         // (ETH per wstETH, 18) * ETH/USD (8) / 1e18 = USD price (8 decimals)
-        price = ethPerWstEth.mulDiv(uint256(ethToUsdPrice), 1e18, Math.Rounding.Floor);
+        price = ethPerWstEth.mulDiv(base8, 1e18, Math.Rounding.Floor);
     }
 
     /// @inheritdoc ICustomPriceFeed

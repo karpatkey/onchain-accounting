@@ -207,7 +207,33 @@ contract Mock_NAVCalculator is INAVCalculator {
         d.price = price;
         d.decimals = decimals;
         d.stale = false;
+        d.updatedAt = block.timestamp;
         _priceData[asset] = d;
+    }
+
+    /// @notice Set an asset's price data with an explicit stale flag (updatedAt defaults to block.timestamp).
+    ///         Used by the custom-price-feed unit tests to register a base asset (e.g. WETH) with an ETH/USD price
+    ///         and to exercise the "base stale" branch (stale=true).
+    function setAssetPrice(address asset, int256 price, uint8 decimals, bool stale) external {
+        PriceFeedData memory d;
+        d.price = price;
+        d.decimals = decimals;
+        d.stale = stale;
+        d.updatedAt = block.timestamp;
+        _priceData[asset] = d;
+    }
+
+    /// @notice Flip the stale flag on an already-registered asset's price data (keeps price/decimals/updatedAt).
+    function setAssetStale(address asset, bool stale) external {
+        _priceData[asset].stale = stale;
+    }
+
+    /// @notice Emulate the NAV's L2 sequencer state. Only sets the raw `sequencerDown` flag; the `stale` fold
+    ///         (`stale = feedStale || sequencerDown`, per `PriceFeedLib.buildPriceData`) is applied at read time in
+    ///         `getPriceData`, so toggling this back to `false` cleanly emulates a sequencer RECOVERY on an otherwise
+    ///         -fresh feed (the stored feed-stale intent is preserved, not clobbered).
+    function setSequencerDown(address asset, bool down) external {
+        _priceData[asset].sequencerDown = down;
     }
 
     /// @notice Make getPriceData(asset) REVERT, emulating the real NAVCalculator's PriceFeedNotSet for a registered
@@ -216,9 +242,16 @@ contract Mock_NAVCalculator is INAVCalculator {
         _priceReverts[asset] = reverts_;
     }
 
-    function getPriceData(address asset) external view override returns (PriceFeedData memory) {
+    function getPriceData(address asset) external view override returns (PriceFeedData memory pd) {
         if (_priceReverts[asset]) revert PriceFeedNotSet(asset);
-        return _priceData[asset];
+        pd = _priceData[asset];
+        // Faithfully mirror PriceFeedLib: a stale FEED selection returns price 0 (`_selectFeedCore` only sets
+        // stale=true via the all-feeds-stale branch, which returns price 0). Sequencer-down alone does NOT zero the
+        // price — `buildPriceData` only ORs it into `stale`. So zero the price from the STORED feed-stale first, then
+        // fold sequencer-down into the returned flag. This keeps the mock from producing the (stale=true, price>0)
+        // state the real engine can never emit — which `NavBaseUsdLib`'s `pd.price <= 0` guard relies on.
+        if (pd.stale) pd.price = 0;
+        pd.stale = pd.stale || pd.sequencerDown;
     }
 
     function getAccountPositionsForAsset(address, address, address) external pure override returns (Position[] memory) {

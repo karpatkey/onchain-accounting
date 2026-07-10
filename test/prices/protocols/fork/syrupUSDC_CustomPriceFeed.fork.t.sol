@@ -3,45 +3,49 @@ pragma solidity ^0.8.0;
 
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {syrupUSDC_CustomPriceFeed} from "src/prices/protocols/syrupUSDC_CustomPriceFeed.sol";
+import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
 contract syrupUSDC_CustomPriceFeedForkTest is TestEnvConfigurator {
-    syrupUSDC_CustomPriceFeed syrupUsdcPriceOracle;
+    syrupUSDC_CustomPriceFeed oracle;
 
     address constant SYRUP_USDC = 0x80ac24aA929eaF5013f6436cdA2a7ba190f5Cc0b;
-    address constant USDC_TO_USD_CHAINLINK = 0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6;
-    uint256 constant HEARTBEAT = 82_800;
-    uint256 constant FORK_BLOCK = 24_485_547;
+    address constant NAV = 0x42aC265991163Af2b0B9E59a222d31d201E39f91;
+    address constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
+    uint256 constant FORK_BLOCK = 25_491_000;
 
     function setUp() public {
         uint256 fork = createForkWithCadence(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
 
-        syrupUsdcPriceOracle = new syrupUSDC_CustomPriceFeed(SYRUP_USDC, USDC_TO_USD_CHAINLINK, HEARTBEAT);
+        oracle = new syrupUSDC_CustomPriceFeed(SYRUP_USDC, NAV, USDC);
     }
 
+    /// @dev In-EVM ground truth: convertToAssets(unit) * NAV(base/USD, 8 dec) / unit.
     function test_getLatestPrice() public view {
-        (uint256 price, bool stale) = syrupUsdcPriceOracle.getLatestPrice();
-        // convertToAssets(1e6) * USDC/USD / 1e6
-        // = 1152151 * 99994000 / 1e6 = 115208187
-        assertEq(price, 115_208_187, "Price should match calculated value");
-        assertEq(stale, false);
-    }
+        INAVCalculator.PriceFeedData memory pd = INAVCalculator(NAV).getPriceData(USDC);
+        uint256 base8 = uint256(pd.price);
+        uint256 unit = 10 ** IERC4626(SYRUP_USDC).decimals();
+        uint256 assetsPerShare = IERC4626(SYRUP_USDC).convertToAssets(unit);
+        uint256 expected = (assetsPerShare * base8) / unit;
 
-    function test_getLatestPriceStale() public {
-        vm.warp(block.timestamp + HEARTBEAT + 1);
-        (uint256 price, bool stale) = syrupUsdcPriceOracle.getLatestPrice();
-        assertEq(price, 0, "Stale price returns 0 (I-1)");
-        assertEq(stale, true, "Price should be marked as stale");
+        (uint256 price, bool stale) = oracle.getLatestPrice();
+        assertEq(price, expected, "price == convertToAssets(unit) * NAV(base/USD) / unit");
+        assertEq(stale, false);
+
+        // Independent sanity band (does NOT mirror the impl formula): syrupUSDC is an appreciating USDC-denominated
+        // vault, so one share is worth ~$1 and never far from it. Catches any gross decimals mis-scale (e.g. a
+        // share-vs-asset decimals-offset bug would land orders of magnitude outside this band).
+        assertGe(price, 1e8, "share worth >= $1 (8 dec)");
+        assertLe(price, 2e8, "share worth <= $2 (8 dec) - guards against a 10**N mis-scale");
     }
 
     function test_decimals() public view {
-        assertEq(syrupUsdcPriceOracle.decimals(), 8, "Decimals should match USDC/USD oracle");
+        assertEq(oracle.decimals(), 8, "Decimals should match NAV base/USD (8)");
     }
 
     function test_underlyingAssetSupported() public view {
-        assertEq(
-            syrupUsdcPriceOracle.underlyingAssetSupported(), SYRUP_USDC, "Underlying asset should match syrupUSDC token"
-        );
+        assertEq(oracle.underlyingAssetSupported(), SYRUP_USDC, "Underlying asset should match the vault share token");
     }
 }

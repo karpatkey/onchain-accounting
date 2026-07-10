@@ -3,41 +3,57 @@ pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
 import {ETHx_CustomPriceFeed} from "src/prices/protocols/ETHx_CustomPriceFeed.sol";
+import {Mock_ERC20} from "test/mocks/tokens.sol";
+import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 
 /// @title ETHx_CustomPriceFeed unit tests (no fork)
-/// @dev Constructor-only sanity checks; arithmetic is exercised in the fork test against real Stader/Chainlink state.
+/// @dev Base/USD (ETH/USD) now comes from the NAV via a Mock_NAVCalculator; the constructor takes
+///      `(ethx, stakePoolsManager, nav, baseAsset)`. Arithmetic is exercised in the fork test against real
+///      Stader state. The stakePoolsManager only needs to be a contract at construction (any deployed address).
 contract ETHx_CustomPriceFeedTest is Test {
-    address ethx;
-    address stakePoolsManager;
-    address ethToUsdChainlink;
-    uint256 heartbeat;
+    Mock_ERC20 ethx;
+    Mock_ERC20 weth;
+    Mock_NAVCalculator nav;
+    address stakePoolsManager; // just needs code at construction time
 
     function setUp() public {
-        ethx = address(0xA35b1B31Ce002FBF2058D22F30f95D405200A15b);
-        stakePoolsManager = address(0xcf5EA1b38380f6aF39068375516Daf40Ed70D299);
-        ethToUsdChainlink = address(0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419);
-        heartbeat = 3600;
+        ethx = new Mock_ERC20("ETHx", 18);
+        weth = new Mock_ERC20("WETH", 18);
+        nav = new Mock_NAVCalculator();
+        nav.setAssetPrice(address(weth), 3000e8, 8); // ETH/USD = $3000
+        stakePoolsManager = address(nav); // a deployed contract (code.length > 0)
+    }
+
+    function test_constructor_valid() public {
+        ETHx_CustomPriceFeed oracle =
+            new ETHx_CustomPriceFeed(address(ethx), stakePoolsManager, address(nav), address(weth));
+        assertEq(oracle.decimals(), 8, "decimals == NAV_DECIMALS");
+        assertEq(oracle.underlyingAssetSupported(), address(ethx));
     }
 
     function test_invalidConstructorArgs() public {
-        // ETHx zero
+        // zero ETHx
         vm.expectRevert();
-        new ETHx_CustomPriceFeed(address(0), stakePoolsManager, ethToUsdChainlink, heartbeat);
+        new ETHx_CustomPriceFeed(address(0), stakePoolsManager, address(nav), address(weth));
 
-        // StakePoolsManager zero
+        // zero stakePoolsManager
         vm.expectRevert();
-        new ETHx_CustomPriceFeed(ethx, address(0), ethToUsdChainlink, heartbeat);
+        new ETHx_CustomPriceFeed(address(ethx), address(0), address(nav), address(weth));
 
-        // ETH/USD oracle zero
+        // stakePoolsManager not a contract
         vm.expectRevert();
-        new ETHx_CustomPriceFeed(ethx, stakePoolsManager, address(0), heartbeat);
+        new ETHx_CustomPriceFeed(address(ethx), address(0xdead), address(nav), address(weth));
 
-        // Heartbeat zero
+        // zero nav (not a contract)
         vm.expectRevert();
-        new ETHx_CustomPriceFeed(ethx, stakePoolsManager, ethToUsdChainlink, 0);
+        new ETHx_CustomPriceFeed(address(ethx), stakePoolsManager, address(0), address(weth));
 
-        // ETH/USD oracle pointing at the ETHx token (not a Chainlink aggregator)
+        // zero base asset
         vm.expectRevert();
-        new ETHx_CustomPriceFeed(ethx, stakePoolsManager, ethx, heartbeat);
+        new ETHx_CustomPriceFeed(address(ethx), stakePoolsManager, address(nav), address(0));
+
+        // base asset not an ERC20 (nav has no totalSupply)
+        vm.expectRevert();
+        new ETHx_CustomPriceFeed(address(ethx), stakePoolsManager, address(nav), address(nav));
     }
 }

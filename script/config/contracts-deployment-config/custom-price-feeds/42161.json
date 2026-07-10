@@ -4,9 +4,8 @@
     "constructor": {
       "wstEth": "0x5979D7b546E38E414F7E9822514be443A4800529",
       "wstEthToEthChainlink": "0xb523AE262D20A936BC152e6023996e46FDC2A95D",
-      "ethToUsdChainlinkOracle": "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612",
       "wstEthToEthHeartbeat": "86400",
-      "ethToUsdChainlinkHeartbeat": "86400"
+      "baseAsset": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"
     }
   },
   "weETH_L2": {
@@ -14,9 +13,8 @@
     "constructor": {
       "weEth": "0x35751007a407ca6FEFfE80b3cB397736D2cf4dbe",
       "weEthToEethChainlink": "0x20bAe7e1De9c596f5F7615aeaa1342Ba99294e12",
-      "ethToUsdChainlinkOracle": "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612",
       "weEthToEethHeartbeat": "86400",
-      "ethToUsdChainlinkHeartbeat": "86400"
+      "baseAsset": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"
     }
   },
   "rsETH_L2": {
@@ -24,9 +22,8 @@
     "constructor": {
       "rsEth": "0x4186BFC76E2E237523CBC30FD220FE055156b41F",
       "rsEthToEthChainlink": "0x3A917e6B5732dFCc4A45257e3930979fAE6a3737",
-      "ethToUsdChainlinkOracle": "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612",
       "rsEthToEthHeartbeat": "86400",
-      "ethToUsdChainlinkHeartbeat": "86400"
+      "baseAsset": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"
     }
   },
   "ezETH_L2": {
@@ -34,8 +31,7 @@
     "constructor": {
       "ezEth": "0x2416092f143378750bb29b79eD961ab195CcEea5",
       "xRenzoDeposit": "0x2EfA125B4fcD5B082a4233BA55b53FeB2Fb4Ff33",
-      "ethToUsdChainlinkOracle": "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612",
-      "ethToUsdChainlinkHeartbeat": "86400"
+      "baseAsset": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"
     }
   },
   "syrupUSDC_L2": {
@@ -43,9 +39,8 @@
     "constructor": {
       "syrupUsdc": "0x41CA7586cC1311807B4605fBB748a3B8862b42b5",
       "syrupUsdcToUsdcChainlink": "0xF8722c901675C4F2F7824E256B8A6477b2c105FB",
-      "usdcToUsdChainlinkOracle": "0x50834F3163758fcC1Df9973b6e91f0F0F0434aD3",
       "syrupUsdcToUsdcHeartbeat": "86400",
-      "usdcToUsdChainlinkHeartbeat": "86400"
+      "baseAsset": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
     }
   }
 }

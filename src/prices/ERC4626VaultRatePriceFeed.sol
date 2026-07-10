@@ -3,56 +3,78 @@ pragma solidity ^0.8;
 
 import {ICustomPriceFeed} from "src/prices/ICustomPriceFeed.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
+import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {NavBaseUsdLib} from "src/prices/NavBaseUsdLib.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {OracleArgumentChecks} from "src/utils/OracleArgumentChecks.sol";
+import {NAV_DECIMALS} from "src/constants.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 /// @title ERC4626VaultRatePriceFeed
 /// @author KPK
-/// @notice Shared skeleton for the "ERC-4626 vault share × Chainlink asset/USD" custom price feeds — a vault share
-///         token whose USD price is the vault's live exchange rate (`convertToAssets`) times a Chainlink quote for
-///         the vault's underlying asset. Concrete feeds (sUSDe, sUSDS, sXDAI, syrupUSDC, RWIV, sGHO) supply only the
-///         three constructor arguments (vault, asset/USD oracle, heartbeat); all of them keep their own named contract.
-/// @dev The price is `assetUsd · convertToAssets(10**vaultDecimals) / 10**vaultDecimals` (Math.Rounding.Floor),
-///      i.e. `(asset/USD) · (assets per share)`, returned in the asset/USD feed's own decimals. `convertToAssets`
-///      is linear in shares, so dividing by the same `10**vaultDecimals` passed in yields the per-share rate at the
-///      asset's decimals; the feed/rate decimals then cancel to leave the feed's decimals. Staleness mirrors the
-///      former per-feed `_compute`: stale when the Chainlink answer is non-positive or the feed is past its
-///      heartbeat, using `effectiveUpdatedAt = min(updatedAt, block.timestamp)` to avoid upstream-clock bias. The
+/// @notice Shared skeleton for the "ERC-4626 vault share × NAV base/USD" custom price feeds — a vault share token
+///         whose USD price is the vault's live exchange rate (`convertToAssets`) times the **NAV's own base/USD price**
+///         for the vault's underlying asset (`getPriceData(BASE_ASSET)`, e.g. USDe/USD, GHO/USD). Concrete feeds
+///         (sUSDe, sUSDS, sXDAI, syrupUSDC, RWIV, sGHO) supply only the three constructor arguments (vault, NAV,
+///         base asset); all of them keep their own named contract.
+/// @dev The price is `base8 · convertToAssets(10**shareDecimals) / 10**assetDecimals` (Math.Rounding.Floor),
+///      i.e. `(asset/USD) · (assets per share)`, returned in `NAV_DECIMALS` (8). `convertToAssets(10**shareDecimals)`
+///      returns the assets for one whole share denominated in the **underlying asset's** decimals, so the divisor is
+///      `10**assetDecimals` (NOT `10**shareDecimals` — those differ when the vault uses a decimals offset, e.g.
+///      18-decimal shares over 6-decimal USDC); the asset decimals then cancel to leave the base/USD decimals. Stale when the NAV reports the base feed
+///      stale (all-feeds-stale; NOT L2 sequencer-down alone). Sourcing base/USD from the NAV (rather than a hardcoded Chainlink
+///      oracle) makes the base term identical to the one the NAV prices the base asset's own legs with — so it
+///      cancels cleanly when NAV is quoted in the base (see {NavBaseUsdLib}, incl. the circularity invariant). The
 ///      5 `ICustomPriceFeed` thunks, the immutables, and the constructor validation live here once instead of being
 ///      copy-pasted into each vault feed. Feeds whose rate is a non-ERC4626 source (e.g. sDAI's DSR `chi`) stay
-///      bespoke; feeds with an 18-decimal rate against an ETH base use {BaseCustomPriceFeed} instead.
+///      bespoke; feeds with an 18-decimal rate against a NAV base use {BaseCustomPriceFeed} instead.
 abstract contract ERC4626VaultRatePriceFeed is ICustomPriceFeed {
     using Math for uint256;
+
+    /// @notice Thrown when the configured `baseAsset_` is not the vault's own `asset()` underlying — the base/USD
+    ///         price is read for `baseAsset_`, so a mismatch would price shares against the wrong asset's USD value.
+    error BaseAssetMismatch(address vaultAsset, address baseAsset);
 
     /// @notice The ERC-4626 vault share token this feed prices (returned by `underlyingAssetSupported`).
     address public immutable VAULT;
 
-    /// @notice Chainlink oracle for the vault's underlying asset vs USD (e.g. USDe/USD, GHO/USD).
-    AggregatorV3Interface public immutable ASSET_USD_ORACLE;
+    /// @notice NAVCalculator (proxy) the base/USD price is read from via its selector.
+    INAVCalculator public immutable NAV;
 
-    /// @notice Heartbeat (seconds) after which the asset/USD feed is considered stale.
-    uint256 public immutable ASSET_USD_HEARTBEAT;
+    /// @notice The base asset (the vault's underlying) whose USD price is read from the NAV (e.g. USDe, GHO). Must be
+    ///         priced by DIRECT feeds on the NAV — never by a NAV-sourced custom feed (see {NavBaseUsdLib} invariant).
+    address public immutable BASE_ASSET;
 
-    /// @notice Decimals of the returned price (inherited from the asset/USD Chainlink feed).
+    /// @notice Decimals of the returned price — `NAV_DECIMALS` (8).
     uint8 private immutable _decimals;
 
-    /// @notice Decimals of the vault share token (used for the `convertToAssets` scaling unit).
-    uint8 private immutable _vaultDecimals;
+    /// @notice `10 ** shareDecimals` — one whole share, the amount passed to `convertToAssets`.
+    uint256 private immutable _shareUnit;
 
-    /// @param vault_         The ERC-4626 vault share token (must be ERC20-like).
-    /// @param assetUsdOracle_ The Chainlink asset/USD oracle for the vault's underlying.
-    /// @param heartbeat_     Staleness threshold (seconds) for the asset/USD feed.
-    constructor(address vault_, address assetUsdOracle_, uint256 heartbeat_) {
+    /// @notice `10 ** assetDecimals` — the underlying-asset scaling unit `convertToAssets` output is denominated in.
+    ///         The correct divisor; equals `_shareUnit` only when the vault has no decimals offset.
+    uint256 private immutable _assetUnit;
+
+    /// @param vault_     The ERC-4626 vault share token (must be ERC20-like).
+    /// @param nav_       The NAVCalculator proxy to read base/USD from.
+    /// @param baseAsset_ The base asset (the vault's underlying, e.g. USDe) whose NAV-selected USD price scales the rate.
+    constructor(address vault_, address nav_, address baseAsset_) {
         VAULT = OracleArgumentChecks.assertERC20Address(vault_);
-        ASSET_USD_ORACLE = OracleArgumentChecks.assertChainlinkOracle(assetUsdOracle_);
-        ASSET_USD_HEARTBEAT = OracleArgumentChecks.assertNotZeroNumber(heartbeat_);
-        _decimals = ASSET_USD_ORACLE.decimals();
-        _vaultDecimals = IERC4626(vault_).decimals();
+        AddressCheckLib.requireContract(nav_, "NAVCalculator");
+        NAV = INAVCalculator(nav_);
+        BASE_ASSET = OracleArgumentChecks.assertERC20Address(baseAsset_);
+        // The base/USD price is read for BASE_ASSET, so it MUST be the vault's own underlying — otherwise shares
+        // would be priced against the wrong asset's USD value (e.g. a USDC vault priced with ETH/USD).
+        address underlying = IERC4626(vault_).asset();
+        if (baseAsset_ != underlying) revert BaseAssetMismatch(underlying, baseAsset_);
+        _decimals = NAV_DECIMALS;
+        _shareUnit = 10 ** uint256(IERC4626(vault_).decimals());
+        _assetUnit = 10 ** uint256(IERC20Metadata(underlying).decimals());
     }
 
-    /// @notice Reads the asset/USD feed, applies staleness, and scales it by the vault's live per-share rate.
+    /// @notice Reads the NAV base/USD, applies staleness, and scales it by the vault's live per-share rate.
     function _compute()
         internal
         view
@@ -65,16 +87,15 @@ abstract contract ERC4626VaultRatePriceFeed is ICustomPriceFeed {
             uint80 answeredInRound
         )
     {
-        int256 assetUsd;
-        (roundId, assetUsd, startedAt, updatedAt, answeredInRound) = ASSET_USD_ORACLE.latestRoundData();
-        if (assetUsd <= 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
-        uint256 effectiveUpdatedAt = updatedAt > block.timestamp ? block.timestamp : updatedAt;
-        if (block.timestamp - effectiveUpdatedAt >= ASSET_USD_HEARTBEAT) {
-            return (0, true, roundId, startedAt, updatedAt, answeredInRound);
-        }
-        uint256 unit = 10 ** uint256(_vaultDecimals);
-        uint256 assetsPerShare = IERC4626(VAULT).convertToAssets(unit);
-        price = assetsPerShare.mulDiv(uint256(assetUsd), unit, Math.Rounding.Floor);
+        // Base/USD from the NAV's selector (normalized to NAV_DECIMALS = 8); it marks the base stale on
+        // all-base-feeds-stale only (L2 sequencer-down alone does NOT — NavBaseUsdLib un-folds pd.sequencerDown; ADR 0019). roundId/startedAt/answeredInRound have no meaning for a NAV read.
+        uint256 base8;
+        (base8, stale, updatedAt) = NavBaseUsdLib.baseUsd(NAV, BASE_ASSET);
+        if (stale) return (0, true, 0, 0, updatedAt, 0);
+        // convertToAssets(1 whole share) is denominated in the underlying asset's decimals, so divide by _assetUnit
+        // (10**assetDecimals), not _shareUnit — the two differ when the vault uses a decimals offset.
+        uint256 assetsPerShare = IERC4626(VAULT).convertToAssets(_shareUnit);
+        price = assetsPerShare.mulDiv(base8, _assetUnit, Math.Rounding.Floor);
     }
 
     /// @inheritdoc ICustomPriceFeed

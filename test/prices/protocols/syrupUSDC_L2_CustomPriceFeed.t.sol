@@ -3,47 +3,65 @@ pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
 import {syrupUSDC_L2_CustomPriceFeed} from "src/prices/protocols/syrupUSDC_L2_CustomPriceFeed.sol";
+import {Mock_ERC20} from "test/mocks/tokens.sol";
+import {Mock_PriceOracleChainlink} from "test/mocks/price_oracles.sol";
+import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 
 /// @title syrupUSDC_L2_CustomPriceFeed unit tests (no fork)
+/// @dev Base/USD (USDC/USD) now comes from the NAV via a Mock_NAVCalculator; the constructor takes
+///      `(syrupUsdc, syrupUsdcToUsdcFeed, heartbeat, nav, baseAsset)`. Price math is exercised in the fork test.
 contract syrupUSDC_L2_CustomPriceFeedTest is Test {
-    address syrupUsdcAddress;
-    address syrupUsdcToUsdcChainlink;
-    address usdcToUsdChainlink;
-    uint256 syrupUsdcToUsdcHeartbeat;
-    uint256 usdcToUsdHeartbeat;
+    Mock_ERC20 syrupUsdc;
+    Mock_PriceOracleChainlink syrupToUsdc;
+    Mock_ERC20 usdc;
+    Mock_NAVCalculator nav;
+    uint256 constant HEARTBEAT = 86_400;
 
     function setUp() public {
-        syrupUsdcAddress = address(0x41CA7586cC1311807B4605fBB748a3B8862b42b5);
-        syrupUsdcToUsdcChainlink = address(0xF8722c901675C4F2F7824E256B8A6477b2c105FB);
-        usdcToUsdChainlink = address(0x50834F3163758fcC1Df9973b6e91f0F0F0434aD3);
-        syrupUsdcToUsdcHeartbeat = 86_400;
-        usdcToUsdHeartbeat = 86_400;
+        syrupUsdc = new Mock_ERC20("syrupUSDC", 6);
+        syrupToUsdc = new Mock_PriceOracleChainlink("syrupUSDC/USDC", 1.05e8, 8);
+        usdc = new Mock_ERC20("USDC", 6);
+        nav = new Mock_NAVCalculator();
+        nav.setAssetPrice(address(usdc), 1e8, 8); // USDC/USD = $1
+    }
+
+    function test_constructor_valid() public {
+        syrupUSDC_L2_CustomPriceFeed oracle = new syrupUSDC_L2_CustomPriceFeed(
+            address(syrupUsdc), address(syrupToUsdc), HEARTBEAT, address(nav), address(usdc)
+        );
+        assertEq(oracle.decimals(), 8, "decimals == NAV_DECIMALS");
+        assertEq(oracle.underlyingAssetSupported(), address(syrupUsdc));
     }
 
     function test_invalidConstructorArgs() public {
+        // zero underlying
         vm.expectRevert();
-        new syrupUSDC_L2_CustomPriceFeed(
-            address(0), syrupUsdcToUsdcChainlink, usdcToUsdChainlink, syrupUsdcToUsdcHeartbeat, usdcToUsdHeartbeat
-        );
+        new syrupUSDC_L2_CustomPriceFeed(address(0), address(syrupToUsdc), HEARTBEAT, address(nav), address(usdc));
 
+        // zero rate feed
         vm.expectRevert();
-        new syrupUSDC_L2_CustomPriceFeed(
-            syrupUsdcAddress, address(0), usdcToUsdChainlink, syrupUsdcToUsdcHeartbeat, usdcToUsdHeartbeat
-        );
+        new syrupUSDC_L2_CustomPriceFeed(address(syrupUsdc), address(0), HEARTBEAT, address(nav), address(usdc));
 
+        // rate feed not a Chainlink aggregator
         vm.expectRevert();
-        new syrupUSDC_L2_CustomPriceFeed(
-            syrupUsdcAddress, syrupUsdcToUsdcChainlink, address(0), syrupUsdcToUsdcHeartbeat, usdcToUsdHeartbeat
-        );
+        new syrupUSDC_L2_CustomPriceFeed(address(syrupUsdc), address(syrupUsdc), HEARTBEAT, address(nav), address(usdc));
 
+        // zero rate heartbeat
         vm.expectRevert();
-        new syrupUSDC_L2_CustomPriceFeed(
-            syrupUsdcAddress, syrupUsdcToUsdcChainlink, usdcToUsdChainlink, 0, usdcToUsdHeartbeat
-        );
+        new syrupUSDC_L2_CustomPriceFeed(address(syrupUsdc), address(syrupToUsdc), 0, address(nav), address(usdc));
 
+        // zero nav (not a contract)
+        vm.expectRevert();
+        new syrupUSDC_L2_CustomPriceFeed(address(syrupUsdc), address(syrupToUsdc), HEARTBEAT, address(0), address(usdc));
+
+        // zero base asset
+        vm.expectRevert();
+        new syrupUSDC_L2_CustomPriceFeed(address(syrupUsdc), address(syrupToUsdc), HEARTBEAT, address(nav), address(0));
+
+        // base asset not an ERC20 (nav has no totalSupply)
         vm.expectRevert();
         new syrupUSDC_L2_CustomPriceFeed(
-            syrupUsdcAddress, syrupUsdcToUsdcChainlink, usdcToUsdChainlink, syrupUsdcToUsdcHeartbeat, 0
+            address(syrupUsdc), address(syrupToUsdc), HEARTBEAT, address(nav), address(nav)
         );
     }
 }

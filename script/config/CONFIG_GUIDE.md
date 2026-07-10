@@ -55,9 +55,8 @@ Deployable custom price feed adapters (e.g. sDAI, wstETH), keyed by feed name, e
     "constructor": {
       "wstEth": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
       "stEthToEthChainlinkOracle": "0x86392dC19c0b719886221c78AB11eb8Cf5c52812",
-      "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
       "stEthToEthChainlinkHeartbeat": "86400",
-      "ethToUsdChainlinkHeartbeat": "3600"
+      "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }
   }
 }

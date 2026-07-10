@@ -132,7 +132,7 @@ last reset. For verification work, refork at the start of each session to minimi
 
 ## Per-chain NAV addresses
 
-In production, NAV is at the same address (`0x0793…EB19`) on every chain via CREATE2. On dev
+In production, NAV is at the same address (`0x42aC…9f91`) on every chain via CREATE2. On dev
 forks we use plain `CREATE`, and the deployer EOA's nonce on each forked chain inherits from the
 live chain (different per chain), so the resulting proxy address differs per chain.
 

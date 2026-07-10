@@ -237,17 +237,19 @@ PositionBalance({
 #### `KelpWithdrawalQueue` — rsETH exit queue
 
 ```solidity
-// Static positionId = abi.encode(withdrawalManager). Up to two legs (claimable + locked)
-// that SHARE this positionId and are told apart by isLocked; the payout asset is in balanceAsset.
+// Static positionId = abi.encode(withdrawalManager), shared by all of the account's requests.
+// One leg PER open request per asset (told apart by isLocked); the payout asset is in balanceAsset,
+// and the request's userNonce rides in positionInstanceId.
 PositionBalance({
-    balanceAsset:  Asset({ asset: 0xae7a…2Ca0, symbol: "stETH", decimals: 18 }),
-    balanceAdapter: 0x<KelpWithdrawalQueueAdapter>,
-    amount:        2e18,                   // 2 stETH still pending (locked leg)
-    isDebt:        false,
-    protocolSubId: keccak256("kelp-withdrawal"),
-    positionId:    abi.encode(0x<LRTWithdrawalManager>),  // Kelp LRTWithdrawalManager (static anchor)
-    positionKind:  PositionKind.Supplied,
-    isLocked:      true                    // pending; a claimable (isLocked=false) leg would share this positionId
+    balanceAsset:       Asset({ asset: 0xae7a…2Ca0, symbol: "stETH", decimals: 18 }),
+    balanceAdapter:     0x<KelpWithdrawalQueueAdapter>,
+    amount:             2e18,                   // 2 stETH still pending (this request)
+    isDebt:             false,
+    protocolSubId:      keccak256("kelp-withdrawal"),
+    positionId:         abi.encode(0x<LRTWithdrawalManager>),  // Kelp LRTWithdrawalManager (static anchor)
+    positionKind:       PositionKind.Supplied,
+    isLocked:           true,                   // pending; a claimable (isLocked=false) request is its own leg
+    positionInstanceId: bytes32(uint256(42))    // ephemeral userNonce (per-request only)
 })
 ```
 
@@ -271,6 +273,8 @@ PositionBalance({
 
 #### `MerklRewardsAssisted` — unclaimed Merkl allocation
 
+> Note: no Merkl adapter is deployed on `main` today — the former `MerklRewardsAssistedBalanceAdapter` was removed and a re-add is pending. The schema below is retained for the returning adapter.
+
 ```solidity
 // One leg per reward token; proof-cached balance (may lag until next proof update).
 PositionBalance({
@@ -287,17 +291,18 @@ PositionBalance({
 #### `StaderWithdrawalQueue` — ETHx → ETH queue
 
 ```solidity
-// Static positionId = abi.encode(userWithdrawalManager). Up to two legs (claimable + locked)
-// that share this positionId; denominated in WETH.
+// Static positionId = abi.encode(userWithdrawalManager), shared by all of the account's requests.
+// One leg PER open request (told apart by isLocked); denominated in WETH, request id in positionInstanceId.
 PositionBalance({
-    balanceAsset:  Asset({ asset: 0xC02a…6Cc2, symbol: "WETH", decimals: 18 }),
-    balanceAdapter: 0x<StaderWithdrawalQueueAdapter>,
-    amount:        5e17,                   // 0.5 WETH still pending (locked leg)
-    isDebt:        false,
-    protocolSubId: keccak256("stader-withdrawal"),
-    positionId:    abi.encode(0x<StaderUserWithdrawalManager>),  // Stader UserWithdrawalManager (static anchor)
-    positionKind:  PositionKind.Supplied,
-    isLocked:      true                    // not finalized; a claimable (false) leg would share this positionId
+    balanceAsset:       Asset({ asset: 0xC02a…6Cc2, symbol: "WETH", decimals: 18 }),
+    balanceAdapter:     0x<StaderWithdrawalQueueAdapter>,
+    amount:             5e17,                   // 0.5 WETH still pending (this request)
+    isDebt:             false,
+    protocolSubId:      keccak256("stader-withdrawal"),
+    positionId:         abi.encode(0x<StaderUserWithdrawalManager>),  // Stader UserWithdrawalManager (static anchor)
+    positionKind:       PositionKind.Supplied,
+    isLocked:           true,                   // not finalized; a finalized request is its own leg with isLocked=false
+    positionInstanceId: bytes32(uint256(7001))  // ephemeral Stader request id (per-request only)
 })
 ```
 
@@ -678,7 +683,7 @@ ERC721 request id in the typed `positionInstanceId`.
 
 #### `MerklRewardsAssisted` — unclaimed rewards
 
-Scenario: 250 CRV unclaimed in Merkl distributor.
+Scenario: 250 CRV unclaimed in Merkl distributor. (Schema shown for the pending re-add — no Merkl adapter is live on `main` today.)
 
 | asset | amount | value (USD) | positionKind | protocolName | labels |
 |-------|--------|-------------|--------------|--------------|---------------|
@@ -934,7 +939,7 @@ schemas are in the next section and in the per-adapter table above.)
 | `stakewise-v3-vaults` | `STAKEWISE_V3_VAULTS` | `StakeWiseV3VaultsMetaBalanceAdapter` — StakeWise V3 vault stake + osToken debt |
 | `nexus-mutual-staking-pools` | `NEXUS_MUTUAL_STAKING_POOLS` | `NexusMutualStakingPoolsAssistedBalanceAdapter` — Nexus Mutual StakingNFT stake + rewards |
 | `cap` | `CAP` | `CapBalanceAdapter` — Cap cUSD (held) and stcUSD (staked) |
-| `merkl` | `MERKL` | `MerklRewardsAssistedBalanceAdapter` — unclaimed (claimable) Merkl reward tokens |
+| `merkl` | `MERKL` | Reserved Merkl-rewards slug — no live adapter on `main` (the former `MerklRewardsAssistedBalanceAdapter` was removed; re-add pending). Would emit unclaimed (claimable) Merkl reward tokens |
 | `lido-withdrawal` | `LIDO_WITHDRAWAL` | `LidoWithdrawalQueueBalanceAdapter` — ETH owed from the Lido stETH withdrawal queue |
 | `stader-withdrawal` | `STADER_WITHDRAWAL` | `StaderWithdrawalQueueBalanceAdapter` — ETH owed from the Stader ETHx withdrawal queue |
 | `kelp-withdrawal` | `KELP_WITHDRAWAL` | `KelpWithdrawalQueueBalanceAdapter` — assets owed from the Kelp rsETH exit queue |
@@ -1038,8 +1043,7 @@ bytes32 key = keccak256(abi.encode(
     protocolSubId,
     positionId,
     balanceAsset.asset,
-    positionKind,
-    isLocked
+    positionKind
 ));
 ```
 
@@ -1050,8 +1054,8 @@ import { keccak256, AbiCoder } from "ethers";
 
 const abi = AbiCoder.defaultAbiCoder();
 const key = keccak256(abi.encode(
-    ["uint256", "bytes32", "bytes", "address", "uint8", "bool"],
-    [chainId, position.protocolSubId, position.positionId, position.balanceAsset.asset, position.positionKind, position.isLocked]
+    ["uint256", "bytes32", "bytes", "address", "uint8"],
+    [chainId, position.protocolSubId, position.positionId, position.balanceAsset.asset, position.positionKind]
 ));
 ```
 
@@ -1085,7 +1089,9 @@ collapse those legs and under-count. Consumers needing per-item granularity read
 
 ## Adapter reference — positionId decode and legs
 
-The table below and the TypeScript examples cover every adapter in the codebase. All
+The summary table below and the TypeScript examples cover the primary balance adapters; the
+exhaustive per-adapter matrix (including the withdrawal / cooldown and assisted adapters) is the
+*Complete per-adapter schema* section further down. All
 decodes use `AbiCoder.defaultAbiCoder()` from ethers.js. Protocol ID constants come from
 `ProtocolIds.sol` (`keccak256(toUtf8Bytes("<slug>"))`).
 
@@ -1116,11 +1122,10 @@ decodes use `AbiCoder.defaultAbiCoder()` from ethers.js. Protocol ID constants c
 | `UniswapV3PoolsMeta` / `PancakeSwapV3PoolsMeta` | `uniswap-v3` / `pancakeswap-v3` | `Supplied`, `Fees` |
 | `UniswapV2PoolsMeta` / `PancakeSwapV2PoolsMeta` | `uniswap-v2` / `pancakeswap-v2` | `Supplied` |
 | `Cap` | `cap` | `Supplied` (cUSD), `Staking` (stcUSD) |
-| `MerklRewardsAssisted` | `merkl` | `Rewards` |
 | `NexusMutualStakingPoolsAssistedBalanceAdapter` | `nexus-mutual-staking-pools` | `Staking`, `Rewards` |
 | `LidoWithdrawalQueue` | `lido-withdrawal` | `Supplied` (one leg per request; `isLocked` = pending; request id in `positionInstanceId`) |
-| `StaderWithdrawalQueue` | `stader-withdrawal` | `Supplied` (claimable + locked legs via `isLocked`) |
-| `KelpWithdrawalQueue` | `kelp-withdrawal` | `Supplied` (claimable + locked legs via `isLocked`, per asset) |
+| `StaderWithdrawalQueue` | `stader-withdrawal` | `Supplied` (one leg per request; `isLocked` = pending; request id in `positionInstanceId`) |
+| `KelpWithdrawalQueue` | `kelp-withdrawal` | `Supplied` (one leg per request per asset; `isLocked` = pending; `userNonce` in `positionInstanceId`) |
 
 ---
 
@@ -1503,18 +1508,19 @@ address widened → `abi.encode(address instance)`); overrides are flagged.
 | `CurvePoolsMetaBalanceAdapter` | `curve-pools` | `"Curve"` | `["AMM Liquidity Pool", "<coins>"]` (derived) | `abi.encode(address pool)` | Supplied | `["Curve","AMM Liquidity Pool","USDC/USDT/DAI"]` |
 | `CurveGaugesMetaBalanceAdapter` | `curve-gauges` | `"Curve"` | `["Staking Gauge", "<coins>"]` (derived) | `abi.encode(address gauge)` | Staking / Rewards | `["Curve","Staking Gauge","USDC/USDT/DAI"]` |
 | `UniswapV2PoolsMetaBalanceAdapter` | `uniswap-v2` | `"Uniswap V2"` | `["AMM Liquidity Pool", "<sym0>/<sym1>"]` (derived) | `abi.encode(address pair)` | Supplied | `["Uniswap V2","AMM Liquidity Pool","WETH/USDC"]` |
+| `UniswapV3PoolsMetaBalanceAdapter` | `uniswap-v3` | `"Uniswap V3"` | `["AMM Liquidity Pool", "<sym0>/<sym1> <fee>%"]` (derived) | `abi.encode(address pool)` | Supplied / Fees | `["Uniswap V3","AMM Liquidity Pool","USDC/WETH 0.05%"]` |
 | `PancakeSwapV2PoolsMetaBalanceAdapter` | `pancakeswap-v2` | `"PancakeSwap V2"` | `["AMM Liquidity Pool", "<sym0>/<sym1>"]` (derived, inherited) | `abi.encode(address pair)` | Supplied | `["PancakeSwap V2","AMM Liquidity Pool","WBNB/BUSD"]` |
+| `PancakeSwapV3PoolsMetaBalanceAdapter` | `pancakeswap-v3` | `"PancakeSwap V3"` | `["AMM Liquidity Pool", "<sym0>/<sym1> <fee>%"]` (derived, inherited) | `abi.encode(address pool)` | Supplied / Fees | `["PancakeSwap V3","AMM Liquidity Pool","CAKE/WBNB 0.25%"]` |
 
 #### Assisted adapters (`src/balances/AssistedBalanceAdapters/`)
 
 | Adapter | `protocolSubId` | `protocolName()` | `positionLabels()` → (source) | `positionId` schema | `PositionKind` legs | Example breadcrumb |
 |---|---|---|---|---|---|---|
-| `MerklRewardsAssistedBalanceAdapter` | `merkl` | `"Merkl"` (const) | `["Claimable Rewards"]` (const) | `abi.encode(address DISTRIBUTOR)` | Rewards | `["Merkl","Claimable Rewards"]` |
 | `EtherFiWithdrawalQueueAssistedBalanceAdapter` | `etherfi-withdrawal` | `"ether.fi"` (const) | `["Withdrawal Queue", "eETH"]` (const) | `abi.encode(address withdrawRequestNFT)` | Supplied — one leg **per request** (cached NFT tokenId in `positionInstanceId`; each `isLocked` = pending), shared positionId | `["ether.fi","Withdrawal Queue","eETH"]` |
 | `StakeWiseV3ExitQueueAssistedBalanceAdapter` | `stakewise-v3-exit` | `"StakeWise V3"` (const) | `["Exit Queue", <receiptSymbol>]` (derived) | `abi.encode(address vault)` (per vault) | Supplied — **per request (ticket)** with the `positionTicket` in `positionInstanceId`, up to two legs (claimable + still-queued) sharing the per-vault positionId | `["StakeWise V3","Exit Queue","osETH"]` |
 | `NexusMutualStakingPoolsAssistedBalanceAdapter` | `nexus-mutual-staking-pools` | `"Nexus Mutual"` (const) | `["Staking Pools", "Pool #<id>"]` (derived) | `abi.encode(address stakingPool)` | Staking / Rewards | `["Nexus Mutual","Staking Pools","Pool #5"]` |
-| `UniswapV3PoolsMetaBalanceAdapter` | `uniswap-v3` | `"Uniswap V3"` (gov) | `["AMM Liquidity Pool", "<sym0>/<sym1> <fee>%"]` (derived) | `abi.encode(address pool)` | Supplied / Fees | `["Uniswap V3","AMM Liquidity Pool","USDC/WETH 0.05%"]` |
-| `PancakeSwapV3PoolsMetaBalanceAdapter` | `pancakeswap-v3` | `"PancakeSwap V3"` (gov) | `["AMM Liquidity Pool", "<sym0>/<sym1> <fee>%"]` (derived, inherited) | `abi.encode(address pool)` | Supplied / Fees | `["PancakeSwap V3","AMM Liquidity Pool","CAKE/WBNB 0.25%"]` |
+
+(`MerklRewardsAssistedBalanceAdapter` was removed from `main` and is not listed here; the `merkl` slug is reserved for its pending re-add — see the note in the `protocolSubId` table above.)
 
 #### What each `positionId` value is
 

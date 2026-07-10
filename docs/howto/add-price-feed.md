@@ -85,7 +85,7 @@ You need a custom feed if **any** of these are true:
 
 - The asset is a yield-bearing wrapper of another asset (e.g., sDAI, sUSDe, sUSDS) and the price is `(rate × underlying/USD)`.
 - The asset is a (re)staking receipt token whose rate is exposed on-chain (cbETH, wstETH, weETH, rETH, rsETH, ezETH).
-- There is no Chainlink USD feed for the asset, but you can derive the price from two existing feeds (use `CrossRate_CustomPriceFeed`).
+- There is no Chainlink USD feed for the asset, but you can derive the price from two existing feeds (use `CrossRateCustomPriceFeed`).
 
 If a Chainlink USD feed exists and is canonical, use Chainlink directly. Don't roll a custom feed for no reason.
 
@@ -96,7 +96,7 @@ If a Chainlink USD feed exists and is canonical, use Chainlink directly. Don't r
 | `(rate × USD)` from a single Chainlink feed | `src/prices/protocols/sDAI_CustomPriceFeed.sol` (DAI/USD × DSR `chi`) | Yield-bearing wrappers with an on-chain `chi`/`rate` field |
 | LST/LRT receipt token with `getExchangeRate`-style method (extends `BaseCustomPriceFeed`, implement only `_rate()`) | `src/prices/protocols/rETH_CustomPriceFeed.sol`, `cbETH_CustomPriceFeed.sol` | Liquid staking tokens whose redeem rate is exposed on-chain as an 18-decimal rate |
 | L2 mirror of an L1 rate | `src/prices/protocols/wstETH_L2_CustomPriceFeed.sol`, `cbETH_L2_CustomPriceFeed.sol` | Same asset, but the canonical rate lives on L1; reads a Chainlink-secured rate feed on L2 instead |
-| Two Chainlink feeds composed | `src/prices/protocols/CrossRate_CustomPriceFeed.sol` | A/B × B/C when there's no direct A/USD feed |
+| Two Chainlink feeds composed | `src/prices/protocols/CrossRateCustomPriceFeed.sol` | A/B × B/C when there's no direct A/USD feed |
 | Basket / aggregator | `src/prices/protocols/ETHPlus_CustomPriceFeed.sol` | Reserve-style RTokens or other basket-derived prices |
 
 Copy the closest match and rename. Don't deviate from the structure unless you need to — every feed in `src/prices/protocols/` follows the same shape.

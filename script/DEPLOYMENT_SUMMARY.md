@@ -123,7 +123,7 @@ Follow these steps **one by one**. Do not skip steps; later steps depend on earl
 
 In the **project root**, create or edit `.env` (copy from `.env.sample` if needed). Set:
 
-- **`ALCHEMY_API_KEY`** — Used for RPC on all chains (chain config has `"rpc": "$ALCHEMY"`; scripts use `--rpc-url "https://{network}.g.alchemy.com/v2/$ALCHEMY_API_KEY"`).
+- **`ALCHEMY_API_KEY`** — Used for RPC on the Alchemy-served chains (their chain config has `"rpc": "$ALCHEMY"`; scripts use `--rpc-url "https://{network}.g.alchemy.com/v2/$ALCHEMY_API_KEY"`). Two chains are **not** on Alchemy — Hemi (43111) and 0G (16661) — and instead resolve `"$QUICKNODE_HEMI"` / `"$QUICKNODE_0G"` from `.env` (see `_alchemyNetworkForChainId` in `script/utils/ConfigReader.sol`).
 - **`DEPLOYER_NAME`** — Foundry keystore account name for the deployer EOA. Import once with `cast wallet import $DEPLOYER_NAME --interactive`; key stored at `~/.foundry/keystores/$DEPLOYER_NAME`. Pass as `--account $DEPLOYER_NAME` to `forge script`.
 - **Explorer API key** for verification. `verify-all.sh` uses a single `ETHERSCAN_API_KEY` for all chains (Etherscan V2). The per-explorer keys below are only needed if you run `forge verify-contract` manually against a non-Etherscan explorer:
   - Mainnet: `ETHERSCAN_API_KEY`
@@ -360,7 +360,14 @@ script/verify/verify-all.sh
 - `LidoWithdrawalQueueBalanceAdapter` - Lido stETH withdrawal queue (`WithdrawalQueueERC721`; sums open requests, reported as native ETH — the asset paid on claim)
 - `UniswapV2PoolsMetaBalanceAdapter`, `UniswapV3PoolsMetaBalanceAdapter` - Uni V2 pairs / V3 pools (V3 NFTs enumerated on-chain)
 - `PancakeSwapV2PoolsMetaBalanceAdapter`, `PancakeSwapV3PoolsMetaBalanceAdapter` - PancakeSwap variants
-- `MerklRewardsAssistedBalanceAdapter` - Merkl unclaimed rewards (proof-verified mutable cache, ADR 0007)
+
+### Assisted Balance Adapters (externally-fed; ADR 0015/0018)
+
+Permissionless assistant-fed adapters that cache position *coordinates only* (never amounts), value live on-chain, and re-verify ownership per read (under-report only). Each is paired with a delegatecall `…Assistant`.
+
+- `NexusMutualStakingPoolsAssistedBalanceAdapter` - Nexus Mutual staking-pool NFT positions (per-account `tokenId` cache)
+- `EtherFiWithdrawalQueueAssistedBalanceAdapter` - ether.fi withdrawal-queue requests
+- `StakeWiseV3ExitQueueAssistedBalanceAdapter` - StakeWise V3 exit-queue tickets
 
 ### Bridge Adapters
 - CCIP (Chainlink)
@@ -451,7 +458,7 @@ Note: Proxy deploy + init is done via EOA in `02_DeployProxies.s.sol` (no Safe T
    - Optional for NAVCalculator: set `chainlinkSequencerFeed` (L2 sequencer feed; can be zero on L1) and `nativeTokenSymbol` (e.g. `"ETH"`, `"xDAI"`).
 
 2. **Env**  
-   - `.env` with `ALCHEMY_API_KEY` (used for RPC on all chains), `DEPLOYER_NAME`, and explorer API key(s) for verification.  
+   - `.env` with `ALCHEMY_API_KEY` (RPC for the Alchemy-served chains; Hemi/0G use `QUICKNODE_HEMI`/`QUICKNODE_0G` instead), `DEPLOYER_NAME`, and explorer API key(s) for verification.  
    - `DEPLOYER_NAME` is the Foundry keystore account name (import once with `cast wallet import $DEPLOYER_NAME --interactive`); used for implementations (01) and **02_DeployProxies** (proxies + init via EOA).
 
 3. **Order of operations**  

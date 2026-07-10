@@ -3,7 +3,7 @@
 A list of polish and accuracy items deferred during PR #35. What's already shipped in PR #35:
 
 - **Tier-1 layout** (`3d1ae91`): top-of-report drift dashboard, empty-chain skips, untracked-by-design footer per chain.
-- **Round-2 polish** (`b34898c`): explicit DeBank/NAV column-grouping prefixes; Stage 2 matcher fix that was creating phantom `—` rows on Morpho-shaped protocols (`len(group) >= 2` guard).
+- **Round-2 polish** (`b34898c`): explicit DeBank/NAV column-grouping prefixes; Stage 2 matcher fix for a bug that was creating phantom `—` rows on Morpho-shaped protocols (`len(group) >= 2` guard).
 - **Round-3 matcher** (`ab764a1`): Stage 3 force-pair for `WALLET_AGGREGATING_DEBANK_IDS` (Cap protocol row now pairs with NAV adapter regardless of symbol mismatch); Cap-aggregated wallet rows annotated `↑ aggregated (see protocol row)` instead of misleading dashes; `morphoblue` displayed as `morpho` in the DeBank ID column (CLAUDE.md naming convention).
 
 This doc captures what's left.

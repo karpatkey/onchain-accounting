@@ -4,7 +4,7 @@
 `EthenaCooldownBalanceAdapter` (`src/balances/BalanceAdapters/EthenaCooldownBalanceAdapter.sol`). Reports the USDe owed to an account that is in the sUSDe unstaking cooldown.
 
 ### Inheritance + per-chain scope (Phase 0)
-- Implements `IBalanceAdapter` + `IPositionDescribable` directly (a simple, single-instance adapter — like the Stader/Lido/Kelp withdrawal-queue adapters). No base class, no overrides → the only verification surface is this contract's own logic.
+- Extends `SingleAssetBalanceAdapterBase` (`src/balances/SingleAssetBalanceAdapterBase.sol`, itself extending `BalanceAdapterBase`) and implements `IPositionDescribable` — a simple, single-instance adapter sharing the single-underlying base with the Lido/Stader withdrawal-queue adapters. The base pins `UNDERLYING_TOKEN` and supplies the no-position getter triad (`underlyingAssetsSupported` / `getAdapterBalanceForAsset` / `getAdapterBalances`) off one `_owedAmount(account)` hook; this contract's own verification surface is the `_owedAmount` override, the `getAdapterPositions` path, and the describe hooks.
 - **Mainnet (1) only.** Ethena's `StakedUSDeV2` (sUSDe `0x9D39…3497`) is mainnet; the USD/ETH Alpha Safes hold sUSDe on mainnet. No per-chain ABI shims.
 
 ### Math branches

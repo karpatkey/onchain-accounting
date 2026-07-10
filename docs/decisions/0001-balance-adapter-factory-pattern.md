@@ -40,7 +40,7 @@ Introduce a per-protocol **factory pattern** + a **central registry**:
 
 **Negative / things to watch:**
 
-- Adapters and factories must follow the strict pattern (constructor signature, `PROTOCOL_KEY` at construction, ERC165 conformance). Deviation breaks address determinism or registry tracking. The single mutable-adapter exception (the Merkl rewards adapter — see ADR 0007; the Aave V3 Safety Module was the original exception under ADR 0002, but ADR 0005 superseded that and made it fully immutable) was added explicitly and required documentation.
+- Adapters and factories must follow the strict pattern (constructor signature, `PROTOCOL_KEY` at construction, ERC165 conformance). Deviation breaks address determinism or registry tracking. The documented mutable-adapter exception (today the **assisted balance-adapter family** — see ADR 0015 and ADR 0018; the proof-verified Merkl rewards adapter of ADR 0007 was an earlier exception but has since been removed from the codebase, and the Aave V3 Safety Module was the original exception under ADR 0002, but ADR 0005 superseded that and made it fully immutable) was added explicitly and required documentation.
 - The registry is the single owner of MANAGER on NAVCalculator. If the registry is compromised, NAV adapter list is at risk. Mitigation: registry is `Ownable` and the Safe is the only authorized factory-setter / external-registrar.
 - CREATE2 with the canonical deployer requires that deployer to exist on the target chain. Standard EVM chains have it; verify before deploying to anything exotic.
 - One factory per protocol means N factory contracts to maintain. Acceptable cost for the structural benefits; partially offset by the shared base class doing all the heavy lifting.

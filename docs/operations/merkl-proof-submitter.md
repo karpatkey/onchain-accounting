@@ -1,5 +1,7 @@
 # Merkl proof-submitter bot — operator's guide
 
+> **Status (2026-07):** the `MerklRewardsAssistedBalanceAdapter` was **removed from `src/`** pending a rewrite (see [CLAUDE.md](../../CLAUDE.md) and [`src/balances/AssistedBalanceAdapters/README.md`](../../src/balances/AssistedBalanceAdapters/README.md)). This runbook is retained for that adapter and applies once it is re-added and deployed. When re-added it will follow the **permissionless assistant-fed** model ([ADR 0018](../decisions/0018-assistant-fed-assisted-balance-adapters.md)) — the `ASSISTANT_ROLE` framing below is historical.
+
 The `MerklRewardsAssistedBalanceAdapter` adapter (`src/balances/AssistedBalanceAdapters/MerklRewardsAssistedBalanceAdapter.sol`) reports a portfolio's *unclaimed* Merkl rewards by reading an on-chain cache of `(user, token, cumulativeAmount)` tuples. The cache is populated by an off-chain bot that fetches merkle proofs from the Merkl API and submits them to the adapter, where they're verified against the live `Distributor.getMerkleRoot()` before being stored. The adapter cannot fabricate amounts; the bot cannot fabricate amounts; only Merkl's published merkle tree determines what the adapter reports. See [`docs/decisions/0007-merkl-trust-minimized-cache.md`](../decisions/0007-merkl-trust-minimized-cache.md) for the design rationale and trust model.
 
 > **Access control:** this adapter is in the assisted balance-adapter family — submissions are gated by `ASSISTANT_ROLE` (granted/rotated by `DEFAULT_ADMIN_ROLE`); see [ADR 0015](../decisions/0015-assisted-balance-adapter-family.md). Where this guide says "owner"/"owner key" below, read it as the `ASSISTANT_ROLE` holder.
@@ -19,7 +21,7 @@ That's the whole job. Garbage collection (`clearAllocation`) and ownership trans
 
 ## Inputs
 
-The bot needs three pieces of operator-provided configuration:
+The bot needs four pieces of operator-provided configuration:
 
 | Input | Source | Notes |
 |---|---|---|
@@ -145,7 +147,7 @@ The invariant that makes this work: pre-claim, the reward sits at the Distributo
 
 Even the **root-rotation edge case** preserves this. If the user partially claims under root N, the bot then re-submits a proof under root N+1 with a higher cumulative, and `claimed[user][token].amount` still reflects the partial claim under N, the math is:
 
-```
+```text
 NAV(Merkl) + NAV(wallet)
   = (cum_{N+1} - claimed_partial) + claimed_partial
   = cum_{N+1}

@@ -6,7 +6,7 @@
 
 ### Inheritance + per-chain scope (Phase 0)
 
-- **Inheritance:** none — implements `IBalanceAdapter` + `IPositionDescribable` directly. No base contract, no overrides.
+- **Inheritance:** extends `BalanceAdapterBase` (the shared plain-adapter base, which declares the `IBalanceAdapter` + `IPositionDescribable` surface and implements the common `supportsInterface`). The adapter adds the balance/position reads and the `IPositionDescribable` display hooks; it does not override the base's `supportsInterface`.
 - **Per-chain scope:** Kelp's `LRTWithdrawalManager` is **mainnet-only**. So mainnet (chainId 1) is the only chain that enables `KelpWithdrawalQueue` — see `script/config/nav-config/balance-adapters/1.json` and `script/config/contracts-deployment-config/balance-adapters/1.json`. A single mainnet fork test suffices.
 - **Multi-asset (the distinguishing feature):** when a user unstakes rsETH, the rsETH is burned and a per-`(asset, user)` request is recorded denominated in the LST the user chose to receive. Kelp's payout assets are **discovered at runtime** from `lrtConfig().getSupportedAssetList()` — at the fork block: **stETH** (`0xae7a…`), **ETHx** (`0xA35b…`), **native ETH** (`0xEeee…`, ERC-7528 sentinel). The adapter emits **one `Supplied` leg per open request** — each carrying its own `isLocked` (`false` for claimable, `true` for pending) and its `userNonce` in `positionInstanceId`, all sharing the static `positionId = abi.encode(address(WITHDRAWAL_MANAGER))` (the payout asset is in `balanceAsset.asset`) — for every supported asset that is also registered in NAV (ADR 0016).
 - **Registration gating (asymmetric, same as sGHO / Aave Umbrella / Lido / Stader):** `getAdapterPositions` drops any asset not registered on NAVCalculator (registered-asset intersection). On the dev NAV, stETH and native ETH are registered; **ETHx is not** (it uses a custom feed the dev `deploy.sh` skips), so an ETHx request is dropped from positions — but `getAdapterBalanceForAsset` / `getAdapterBalances` still return its raw owed value (they don't consult the registry).
@@ -22,7 +22,7 @@ carried in `balanceAsset.asset`) and distinguished by the request's `userNonce` 
 
 ```text
 (begin, end) = WITHDRAWAL_MANAGER.userAssociatedNonces(asset, account)   # OZ DoubleEndedQueue cursors
-count  = min(end - begin, MAX_REQUESTS_PROBED)                           # claimed requests are popped off the front
+count  = end - begin                                                     # no cap; claimed requests are popped off the front
 cursor = WITHDRAWAL_MANAGER.nextLockedNonce(asset)
 delay  = WITHDRAWAL_MANAGER.withdrawalDelayBlocks()
 pid    = abi.encode(WITHDRAWAL_MANAGER)   # static; payout asset is in balanceAsset.asset
@@ -39,13 +39,13 @@ The previous app hook treated a request as claimable on the nonce cursor alone, 
 block-delay gate — a false-positive class matching a Sherlock-audited finding; the two-gate
 predicate above corrects it (ADR 0016).
 
-`userAssociatedNonces` is the public getter of an OZ `DoubleEndedQueue.Uint256Deque`; the open-request count is `end - begin`, and `getUserWithdrawalRequest(.., i)` resolves to the deque's `.at(i)` — claimed requests are popped off the front, so this only ever counts live claims (no out-of-bounds probing, unlike Stader). The cap bounds gas.
+`userAssociatedNonces` is the public getter of an OZ `DoubleEndedQueue.Uint256Deque`; the open-request count is `end - begin`, and `getUserWithdrawalRequest(.., i)` resolves to the deque's `.at(i)` — claimed requests are popped off the front, so this only ever counts live claims (no out-of-bounds probing). There is no adapter-level cap — the full open-request set is summed, since a large count is self-inflicted (Kelp requests are keyed to the unstaking `msg.sender`, so a third party cannot inflate another account's queue) and truncating would silently under-report a real balance.
 
 ## 2. Existing fork test coverage
 
 `test/balances/BalanceAdapters/fork/KelpWithdrawalQueueBalanceAdapter.fork.t.sol` already had `KelpWithdrawalQueueBalanceAdapterForkTest` covering the Slack-incident holder `0x99b9F5…` (one open **stETH** request, 160.44 stETH) @ block `25_094_940`, plus the position **vanishing after claim** @ `25_150_000`, and empty / unknown-holder / unsupported-asset / asset-filter-mismatch / interface / immutables.
 
-The unit test (`test/balances/BalanceAdapters/KelpWithdrawalQueueBalanceAdapter.t.sol`) covers the mock-only edges: constructor reverts, single/multi-request summing, the **256 cap**, the **claimed-front skip** (deque pop), **multi-asset** balances + positions, the **registered-vs-unregistered drop**, and the asset filter.
+The unit test (`test/balances/BalanceAdapters/KelpWithdrawalQueueBalanceAdapter.t.sol`) covers the mock-only edges: constructor reverts, single/multi-request summing, the **no-cap full summing** of a large request list, the **claimed-front skip** (deque pop), **multi-asset** balances + positions, the **registered-vs-unregistered drop**, and the asset filter.
 
 All kept as regression nets.
 
@@ -61,7 +61,7 @@ Plus this evidence pack and a **per-request-id drill-down** in the dev dashboard
 
 ## 4. Adapter formula recap
 
-See §1. One `Supplied` leg per open request, for every supported + NAV-registered asset; each leg's `amount = expectedAssetAmount` for that request, and the per-asset legs sum to `Σ expectedAssetAmount` over the account's live requests for that asset (capped at 256).
+See §1. One `Supplied` leg per open request, for every supported + NAV-registered asset; each leg's `amount = expectedAssetAmount` for that request, and the per-asset legs sum to `Σ expectedAssetAmount` over the account's live requests for that asset (no cap — the full open-request set is summed).
 
 ## 5. Cherry-picked accounts
 
@@ -119,7 +119,7 @@ Live reads of Kelp's own LRTWithdrawalManager (no closed-form re-derivation):
 | stETH | `userAssociatedNonces(stETH, holder) == (1, 3)`; `adapter == Σ getUserWithdrawalRequest(stETH, holder, i).expectedAssetAmount` for `i ∈ {0,1}`. |
 | native ETH | `adapter == getUserWithdrawalRequest(ETH, holder, 0).expectedAssetAmount`. |
 
-Multi-asset emission, summing, the claimed-front skip (deque pop), the 256 cap, and the registered-vs-unregistered drop are also exercised with mocks in `test/balances/BalanceAdapters/KelpWithdrawalQueueBalanceAdapter.t.sol`. The tests assert `protocolId == keccak256("kelp")` and `protocolSubId == keccak256("kelp-withdrawal")`, `positionId == abi.encode(address(WITHDRAWAL_MANAGER))` (payout asset in `balanceAsset.asset`), `PositionKind.Supplied`, the per-request `isLocked` flag (the two-gate claimable/locked predicate) with the `userNonce` in `positionInstanceId`, and `balanceAdapter == address(this)`.
+Multi-asset emission, summing, the claimed-front skip (deque pop), the no-cap full summing, and the registered-vs-unregistered drop are also exercised with mocks in `test/balances/BalanceAdapters/KelpWithdrawalQueueBalanceAdapter.t.sol`. The tests assert `protocolId == keccak256("kelp")` and `protocolSubId == keccak256("kelp-withdrawal")`, `positionId == abi.encode(address(WITHDRAWAL_MANAGER))` (payout asset in `balanceAsset.asset`), `PositionKind.Supplied`, the per-request `isLocked` flag (the two-gate claimable/locked predicate) with the `userNonce` in `positionInstanceId`, and `balanceAdapter == address(this)`.
 
 ## 9. Wiring the live dev-anvil dashboard
 
@@ -148,7 +148,7 @@ The position renders under **Kelp DAO** (the adapter's `protocolName()`) as **Su
 | Multiple open requests within an asset (legs sum to the aggregate) | ✅ (stETH, two requests, real fork) |
 | Native-ETH payout (sentinel-registered) | ✅ (real fork) |
 | Asset filter narrows to one asset's legs | ✅ (native-ETH filter → one leg) |
-| Claimed-front skip (deque pop); 256 cap; registered-vs-unregistered drop | ✅ (unit test, mocks) |
+| Claimed-front skip (deque pop); no-cap full summing; registered-vs-unregistered drop | ✅ (unit test, mocks) |
 | Position vanishes after claim | ✅ (original fork suite) |
 | Identity: `protocolId == kelp`, `protocolSubId == kelp-withdrawal`, `positionId == abi.encode(address(WITHDRAWAL_MANAGER))` (payout asset in `balanceAsset.asset`), `Supplied`, per-request `isLocked` flag with `userNonce` in `positionInstanceId` | ✅ |
 | Mainnet-only scope | ✅ |

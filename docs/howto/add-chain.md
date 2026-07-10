@@ -114,12 +114,12 @@ For any bridge adapters this chain should support (CCIP, CCTP, Across, Stargate,
 
 ## 4. Run the deploy scripts in order
 
-Without `PERSIST_DEPLOYMENTS=1`, the scripts dry-run their config side effects: deployed addresses are only logged, not written to `script/config/deployments/<chainId>.json`. Set `PERSIST_DEPLOYMENTS=1` on each command below once you're ready to record the real addresses.
+`PERSIST_DEPLOYMENTS=1` gates the impl/proxy/library address writes in `01`/`02` (via `saveDeployedAddress`, including the `ERC20Default` write in `02`): without it those are only logged, not written to `script/config/deployments/<chainId>.json`. The per-feed/per-adapter writes in `03`/`04`/`05` (via `writeAdapterAddress`) are **not** gated — they write on every run. Set `PERSIST_DEPLOYMENTS=1` on each command below once you're ready to record the real impl/proxy addresses.
 
 ```bash
 export CHAIN_ID=<newChainId>
 export DEPLOYER_NAME=...
-export PERSIST_DEPLOYMENTS=1   # write deployed addresses to deployments/<chainId>.json (omit for a dry run)
+export PERSIST_DEPLOYMENTS=1   # persist impl/proxy addresses from 01/02 to deployments/<chainId>.json (omit for a dry run)
 
 # 01 — implementations (deterministic; same address on every chain after this completes)
 forge script script/deploy/01_DeployImplementations.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
@@ -151,7 +151,7 @@ DEPLOYER_EOA=0xYourDeployerEOA \
 forge script script/deploy/07_TransferAdminToSecurityCouncil.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
 ```
 
-Each script reads from `script/config/chains/<chainId>.json` plus the relevant per-concern, per-chain file — `03` reads `contracts-deployment-config/custom-price-feeds/<chainId>.json`, `04` reads `contracts-deployment-config/balance-adapters/<chainId>.json` + `contracts-deployment-config/meta-balance-adapters/<chainId>.json`, `05` reads `contracts-deployment-config/bridge-adapters/<chainId>.json`, `RegisterAssets` reads `nav-config/assets-and-price-feeds/<chainId>.json`, and `06` reads `nav-config/balance-adapters/<chainId>.json` + `nav-config/meta-balance-adapters/<chainId>.json` — and (when `PERSIST_DEPLOYMENTS=1`) writes deployed addresses to `script/config/deployments/<chainId>.json`. Re-running is safe: already-deployed addresses are skipped.
+Each script reads from `script/config/chains/<chainId>.json` plus the relevant per-concern, per-chain file — `03` reads `contracts-deployment-config/custom-price-feeds/<chainId>.json`, `04` reads `contracts-deployment-config/balance-adapters/<chainId>.json` + `contracts-deployment-config/meta-balance-adapters/<chainId>.json`, `05` reads `contracts-deployment-config/bridge-adapters/<chainId>.json`, `RegisterAssets` reads `nav-config/assets-and-price-feeds/<chainId>.json`, and `06` reads `nav-config/balance-adapters/<chainId>.json` + `nav-config/meta-balance-adapters/<chainId>.json` — and writes deployed addresses to `script/config/deployments/<chainId>.json` (the `03`/`04`/`05` per-feed/per-adapter writes happen on every run; the `01`/`02` impl/proxy writes require `PERSIST_DEPLOYMENTS=1`). Re-running is safe: already-deployed addresses are skipped.
 
 For chains where some scripts are no-ops (e.g., a chain with no bridge adapters), the relevant deploys produce no actions and exit cleanly.
 

@@ -1,6 +1,6 @@
 # 0011 — NAVCalculator size headroom + shared adapter/feed abstractions
 
-Status: accepted (introduced with PR A — the ERC20DefaultBalanceAdapter externalization; PRs B/C are follow-ups, now partially landed — `BaseCustomPriceFeed`, `StaticCallLib`, and `ArrayLib` have shipped, the `BalanceAdapter` base has not)
+Status: accepted (introduced with PR A — the ERC20DefaultBalanceAdapter externalization; PRs B/C are follow-ups, now partially landed — `BaseCustomPriceFeed`, `StaticCallLib`, `ArrayLib`, and the `BalanceAdapterBase`/`SingleAssetBalanceAdapterBase` leaf bases have shipped; the wider `_getAssetInfo`/StaticCallLib de-duplication has not)
 
 ## Context
 
@@ -58,18 +58,22 @@ Most of the ~27 custom price feeds share an identical skeleton: the 5 `ICustomPr
 thunks, the immutables, the constructor with `OracleArgumentChecks`, and the Chainlink
 read + staleness preamble. Only the rate source and the multiply-and-normalize differ
 (usually 1–3 lines). Introduce an `abstract BaseCustomPriceFeed` carrying the shared surface
-with an abstract `_rate()` hook; concrete feeds collapse to ~30–40 LOC (6 have migrated so
-far — `cbETH`, `rETH`, `ETHx`, `rsETH`, `ezETH`, `osToken`). The generic
-`CrossRate_CustomPriceFeed` already subsumes the pure two-Chainlink-feed L2 variants. Bespoke
+with an abstract `_rate()` hook; concrete feeds collapse to ~30–40 LOC (8 have migrated so
+far — `cbETH`, `rETH`, `ETHx`, `rsETH`, `ezETH`, `ezETH_L2`, `osToken`, `NXM`). The generic
+`CrossRateCustomPriceFeed` already subsumes the pure two-Chainlink-feed L2 variants. Bespoke
 outliers stay as-is: `ETHPlus_CustomPriceFeed` (no Chainlink leg), `eETH_CustomPriceFeed` (derived two-feed),
-`NXM_CustomPriceFeed` (RAMM + liveness assert), `ankrETH_CustomPriceFeed` (rate inversion).
+`ankrETH_CustomPriceFeed` (rate inversion).
 
-### PR C — `BalanceAdapter` base + `StaticCallLib` + `ArrayLib` helpers (maintainability; follow-up)
+### PR C — `BalanceAdapterBase` base + `StaticCallLib` + `ArrayLib` helpers (maintainability; partially shipped)
 
-- An `abstract BalanceAdapter` base for the standalone leaf adapters (the ~9 plain
-  contracts in `src/balances/BalanceAdapters/`) mirroring the
-  existing `MetaBalanceAdapter` base — shared `supportsInterface`, one canonical
-  `_getAssetInfo`, and the empty `getAdapterBalances*` stubs.
+- An `abstract BalanceAdapterBase` for the standalone leaf adapters (the 9 plain
+  contracts in `src/balances/BalanceAdapters/`, all of which now extend it) mirroring the
+  existing `MetaBalanceAdapter` base. It carries the one piece every plain adapter repeated
+  verbatim — the shared `supportsInterface` advertising `IBalanceAdapter` + `IPositionDescribable`
+  + `IERC165`. A thin `SingleAssetBalanceAdapterBase` subbase adds the single-underlying getter
+  triad (`underlyingAssetsSupported` / `getAdapterBalanceForAsset` / `getAdapterBalances`) off one
+  `_owedAmount` hook, used by the Lido/Stader/Ethena withdrawal-queue adapters. `_getAssetInfo`
+  was **not** hoisted into the base — it remains a per-adapter copy (Cap, ERC20Default, …).
 - A `StaticCallLib` carrying the `safeUint` / `safeAddr` staticcall-and-decode helpers
   duplicated (and already drifting) across the Convex (`ConvexCurveLPStakingMetaBalanceAdapter`)
   and `UniswapV2PairLib` call sites. (The Aura adapter, which shared the same copy, has since

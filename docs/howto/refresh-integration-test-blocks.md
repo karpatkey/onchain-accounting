@@ -237,7 +237,7 @@ The bump script regenerates the JSON; the tests just consume it.
 
 ## Per-adapter detail and coverage-gap report (Sections 3 and 4)
 
-`comparison-report.md` has six sections; beyond the account-level drift summary (Section 1) and protocol-level pairing (Section 2), the two most useful for triage are the per-adapter detail (Section 3) and coverage-gap detection (Section 4). (Sections 5 and 6 cover the untracked-by-design footer and stale-price/sequencer flags.)
+`comparison-report.md` has five sections; beyond the account-level drift summary (Section 1) and protocol-level pairing (Section 2), the two most useful for triage are the per-adapter detail (Section 3) and coverage-gap detection (Section 4). (Section 5 is the untracked-by-design footer.)
 
 ### Section 3 — Per-adapter granular detail
 

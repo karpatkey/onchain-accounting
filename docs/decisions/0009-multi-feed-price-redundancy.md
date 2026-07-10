@@ -23,7 +23,9 @@ for each cfg in _priceOracles[asset]:
     if rawPrice <= 0 or internal stale: skip
     effectiveTime = min(updatedAt, block.timestamp)   // clock-skew normalisation
     if block.timestamp - effectiveTime >= cfg.chainlinkHeartbeat: skip  // staleness gate (>= so boundary is stale)
-    if effectiveTime > bestTime: update winner
+    // tiering: a real-timestamp feed always outranks a rate-only (Custom updatedAt==0) one;
+    // within the same class the largest effectiveTime wins
+    if this feed outranks the current winner: update winner
 
 if no winner: return (0, firstFeed.decimals, true)
 else:         return (winner.price, winner.decimals, false)

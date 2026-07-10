@@ -44,7 +44,7 @@ Every `PositionBalance` now carries typed identity fields instead of free-form s
 | Field | Type | What to put |
 |---|---|---|
 | `protocolBrand` | `bytes32` | The broadest, version-stripped brand roll-up (e.g. `ProtocolIds.AAVE`, `ProtocolIds.BALANCER`). Display/grouping only — NOT part of the stable identity key. For unversioned protocols the brand equals the ecosystem id (reuse the same constant). |
-| `protocolId` | `bytes32` | The ecosystem/version roll-up (e.g. `ProtocolIds.AAVE_V3`). Grouping layer. For single-product ecosystems, reuse the same constant as `protocolSubId` (e.g. `CAP`, `MERKL`, `CONVEX`). |
+| `protocolId` | `bytes32` | The ecosystem/version roll-up (e.g. `ProtocolIds.AAVE_V3`). Grouping layer. For single-product ecosystems, reuse the same constant as `protocolSubId` (e.g. `CAP`, `MERKL`, `UNISWAP_V3`). |
 | `protocolSubId` | `bytes32` | The per-product slug (e.g. `ProtocolIds.AAVE_V3_LENDING`, `ProtocolIds.SPARK_LEND`) — the protocol component of the **stable reconciliation key**. Each is `keccak256` of a lowercase kebab-case slug. Add a new constant if needed (see §1.2). |
 | `positionId` | `bytes` | `abi.encode(keyAddress)` or `abi.encode(a, b)` computed at query time, of the **static, timeless** key (never a per-request id). The `protocolSubId` selects the decode schema — see the schema comments at the top of `ProtocolIds.sol`. |
 | `positionKind` | `PositionKind` | Enum from `src/utils/PositionKind.sol`: `Wallet`, `Supplied`, `Borrowed`, `Collateral`, `Staking`, `Rewards`, or `Fees`. |
@@ -75,6 +75,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
@@ -91,8 +92,8 @@ contract MyProtocolBalanceAdapter is IBalanceAdapter, IPositionDescribable {
 
     constructor(address protocolContract_, address navCalculator_) {
         if (protocolContract_ == address(0) || navCalculator_ == address(0)) revert InvalidArguments();
-        require(protocolContract_.code.length > 0, "Protocol contract must be a contract");
-        require(navCalculator_.code.length > 0, "NAVCalculator must be a contract");
+        AddressCheckLib.requireContract(protocolContract_, "Protocol contract");
+        AddressCheckLib.requireContract(navCalculator_, "NAVCalculator");
 
         PROTOCOL_CONTRACT = protocolContract_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
@@ -370,6 +371,8 @@ script/test/refresh-integration-snapshot.sh
 ```
 
 This regenerates the expected `navUsd8dp` values, optionally cross-checks against DeBank, and updates `accounts.json` in place. Don't edit the per-chain `NAV.<Chain>.integration.fork.t.sol` files directly. Full walkthrough: [`./refresh-integration-test-blocks.md`](./refresh-integration-test-blocks.md).
+
+---
 
 ## 7. Open the PR
 

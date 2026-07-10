@@ -70,6 +70,8 @@ Numbered ADRs. Read when you want the *why* behind a design choice.
 | [`0015-assisted-balance-adapter-family.md`](decisions/0015-assisted-balance-adapter-family.md) | Assisted balance-adapter family — shared interface + AccessControl base. |
 | [`0016-islocked-position-status.md`](decisions/0016-islocked-position-status.md) | `isLocked` position status (claimable vs locked) via a static positionId + two-leg split. |
 | [`0017-lp-valuation-instantaneous-amounts.md`](decisions/0017-lp-valuation-instantaneous-amounts.md) | LP-position valuation: report instantaneous underlying amounts; pool-liquidity manipulation out of scope under an async NAV consumer. |
+| [`0018-assistant-fed-assisted-balance-adapters.md`](decisions/0018-assistant-fed-assisted-balance-adapters.md) | Permissionless assistant-fed assisted family — `msg.sender`-keyed cache mutators, delegatecall assistant feeder (supersedes the AccessControl model in 0015). |
+| [`0019-nav-sourced-base-price.md`](decisions/0019-nav-sourced-base-price.md) | Custom price feeds source their base/USD from the NAV (one price source per base asset). |
 | [`decisions/README.md`](decisions/README.md) | ADR index + template. |
 
 ---
@@ -81,6 +83,7 @@ Numbered ADRs. Read when you want the *why* behind a design choice.
 | [`operations/merkl-proof-submitter.md`](operations/merkl-proof-submitter.md) | Periodic operator loop that fetches Merkl proofs and pushes them to the `MerklRewardsAssistedBalanceAdapter` cache so unclaimed rewards stay valued in NAV. |
 | [`operations/etherfi-withdrawals-submitter.md`](operations/etherfi-withdrawals-submitter.md) | Operator bot that discovers an account's ether.fi `WithdrawRequestNFT` tokenIds and submits them to the `EtherFiWithdrawalQueueAssistedBalanceAdapter` id cache (ids only — the adapter values them live). |
 | [`operations/stakewise-exit-submitter.md`](operations/stakewise-exit-submitter.md) | Operator bot that discovers an account's StakeWise V3 exit-queue positions (`(vault, positionTicket, timestamp)`) and submits them to the `StakeWiseV3ExitQueueAssistedBalanceAdapter` cache (coordinates only — the adapter values them live). |
+| [`operations/stader-withdrawal-queue-griefing.md`](operations/stader-withdrawal-queue-griefing.md) | Operator's note on the `StaderWithdrawalQueueBalanceAdapter` griefing/gas surface — anyone can plant self-funded, victim-claimable withdrawal requests up to Stader's per-account cap; why the absence of an adapter-level cap is acceptable. |
 
 ---
 

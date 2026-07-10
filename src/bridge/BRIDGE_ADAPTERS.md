@@ -107,7 +107,7 @@ The checksum is an **integrity + replay** key, not an authenticator (all inputs 
 
 ### 5.1 Roles and access
 
-- **DEFAULT_ADMIN_ROLE:** Authorize/revoke accounts and adapters, register/unregister assets are MANAGER (see below), pause, `emergencyWithdraw` (recipient-restricted to an authorized account, while paused), authorize UUPS upgrades.
+- **DEFAULT_ADMIN_ROLE:** Authorize/revoke accounts and adapters, pause/unpause, `emergencyWithdraw` (recipient-restricted to an authorized account, while paused), and authorize UUPS upgrades. (Asset register/unregister is MANAGER, not admin — see below.)
 - **MANAGER:** `cancelInvoice`, `markInvoiceCompleted`, `registerAsset`/`unregisterAsset`. **MANAGER cannot call `releaseByInvoiceId`** — release is adapter-only.
 
 ### 5.2 Core flows

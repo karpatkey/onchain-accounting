@@ -63,7 +63,7 @@ The 19 impl+proxy chains run the canonical layer only; custom price feeds and ba
 
 ## Balance adapters (per chain, plain CREATE)
 
-> Assisted adapters (ether.fi, StakeWise exit) report `$0` until their off-chain submitter populates the per-account cache.
+> Assisted adapters (ether.fi, Nexus Mutual, StakeWise exit) report `$0` until the owner Safe delegatecalls the matching assistant (see [Assisted-adapter assistants](#assisted-adapter-assistants-per-chain-plain-create)) to populate the per-account coordinate cache.
 
 ### Ethereum (1)
 
@@ -133,6 +133,26 @@ The 19 impl+proxy chains run the canonical layer only; custom price feeds and ba
 | AaveV3InstancesMeta | `0x17f949AfC509E4976C16Cc7e0E5f76390663976F` |
 | StakeWiseV3VaultsMeta | `0x8F52EcC9D084CAa0c335373bB54Ee5Dae8BC10E8` |
 | StakeWiseV3ExitQueueAssisted | `0xE333a72EB00A937b6BE4e77dD10141C64C06DEE8` |
+
+---
+
+## Assisted-adapter assistants (per chain, plain CREATE)
+
+> Stateless delegatecall helpers — one per assisted adapter — that the owner Safe `delegatecall`s to feed the adapter's per-account coordinate cache (a direct call reverts `NotDelegateCall`). Deployed by `04_DeployBalanceAdapters` alongside their adapters.
+
+### Ethereum (1)
+
+| Assistant | Address |
+| --- | --- |
+| EtherFiWithdrawalQueueAssistant | `0xd45cB5B6791156f657D682b3c70689980f4fe8D5` |
+| NexusMutualStakingPoolsAssistant | `0x8a887C7Fa17dbba626497024833778354785c580` |
+| StakeWiseV3ExitQueueAssistant | `0x13845Fc9DFfDf1AFb8B1Cf22eA298C01C8d7F71B` |
+
+### Gnosis (100)
+
+| Assistant | Address |
+| --- | --- |
+| StakeWiseV3ExitQueueAssistant | `0xEb43828383320802dc78dCC1DEFB1f39051c6607` |
 
 ---
 

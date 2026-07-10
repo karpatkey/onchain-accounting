@@ -1,6 +1,6 @@
 # Position-identity matrix — every leg every balance adapter can emit
 
-Verified against `src/balances/` emission code on 2026-06-29 (includes the Nexus, Ethena cooldown, ether.fi and StakeWise V3 exit-queue adapters and the Gearbox V3 credit-accounts adapter; Aura and the ERC-4626 wrap adapter removed; reflects the 3-level `protocolBrand`/`protocolId`/`protocolSubId` taxonomy and the typed `positionInstanceId` field that replaced inline labels). Companion to [`docs/howto/position-identity-schema.md`](../howto/position-identity-schema.md), which defines the schema; this file enumerates the **actual value space** each adapter populates.
+Verified against `src/balances/` emission code on 2026-07-10 (includes the Nexus, Ethena cooldown, ether.fi and StakeWise V3 exit-queue adapters and the Gearbox V3 credit-accounts adapter; Aura, the ERC-4626 wrap adapter, and the Merkl rewards adapter removed; reflects the 3-level `protocolBrand`/`protocolId`/`protocolSubId` taxonomy and the typed `positionInstanceId` field that replaced inline labels). Companion to [`docs/howto/position-identity-schema.md`](../howto/position-identity-schema.md), which defines the schema; this file enumerates the **actual value space** each adapter populates.
 
 ## How a position is identified
 
@@ -78,7 +78,6 @@ Identity is the tuple `(chainId, protocolSubId, positionId, balanceAsset.asset, 
 | EthenaCooldownBalanceAdapter | `ethena-cooldown` | `abi.encode(address sUSDe)` (static, single leg) | USDe cooling — `isLocked=true` until cooldown elapsed, then `false` | `Supplied` | false | USDe |
 | NexusMutualStakingPoolsAssisted | `nexus-mutual-staking-pools` | `abi.encode(address stakingPool)` (NFT id in `positionInstanceId`) | active + expired staked NXM (per StakingNFT) | `Staking` | false | NXM |
 | | | | claimable rewards (per StakingNFT) | `Rewards` | false | NXM |
-| MerklRewardsAssisted | `merkl` | `abi.encode(address distributor)` | unclaimed rewards (one leg per reward token, distinguished by `balanceAsset`; split further per campaign via `positionInstanceId = keccak256(campaignId, subCampaignId)`) | `Rewards` | false | reward token |
 
 ## PositionKind usage census
 
@@ -88,11 +87,11 @@ split legs of the withdrawal-queue / cooldown adapters, which each emit a `Suppl
 | `PositionKind` | Emission sites | Emitting adapters |
 |---|---|---|
 | `Wallet` | 1 | ERC20DefaultBalanceAdapter |
-| `Supplied` | 23 | lending supply, vaults, Cap cUSD, unstaked LP, withdrawal/exit queues (claimable + locked legs), Ethena cooldown, Euler vaults |
+| `Supplied` | 22 | lending supply, vaults, Cap cUSD, unstaked LP, withdrawal/exit queues (claimable + locked legs), Ethena cooldown, Euler vaults |
 | `Borrowed` | 8 | Aave V3, Spark, Compound V3, Morpho Markets, Fluid Vaults, StakeWise V3, Euler vaults, Gearbox credit accounts |
 | `Collateral` | 7 | Aave V3, Spark, Compound V3, Morpho Markets, Fluid Vaults, Euler vaults, Gearbox credit accounts |
 | `Staking` | 11 | Safety Module (locked + unlocked stake), Umbrella (locked + unlocked stake), StakeWise V3, Cap stcUSD, Nexus staked NXM, Balancer gauges ×2, Curve gauge, Convex |
-| `Rewards` | 12 | SM, Umbrella, Nexus staked NXM, Compound V3, Balancer gauges ×2, Curve gauge, Convex, Merkl |
+| `Rewards` | 11 | SM, Umbrella, Nexus staked NXM, Compound V3, Balancer gauges ×2, Curve gauge, Convex |
 | `Fees` | 2 | Uniswap V3 (PancakeSwap V3 inherits) |
 
 ## Other observable invariants

@@ -73,7 +73,7 @@ forge script script/deploy/01_DeployImplementations.s.sol \
 
 **4a. Deploy implementations (once)** — already done in Step 3.
 
-**4b. Deploy proxies and initialize (per chain)** — run once per chain. This deploys placeholder + NAV + Bridge proxies and initializes them in one EOA transaction (deterministic addresses across chains):
+**4b. Deploy proxies and initialize (per chain)** — run once per chain. This deploys a placeholder impl + NAV + Bridge proxies and initializes them in one EOA transaction (deterministic addresses across chains):
 
 ```bash
 # Mainnet
@@ -97,7 +97,8 @@ Repeat Step 4b on each chain (run `02_DeployProxies.s.sol` with that chain's RPC
 Edit chain config and scripts to enable needed adapters, then:
 
 ```bash
-# Price feeds
+# Price feeds (deploys the custom feed contracts only — asset/feed
+# registration on NAVCalculator is a separate step: script/manage/RegisterAssets.s.sol)
 forge script script/deploy/03_DeployPriceFeeds.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
   --account $DEPLOYER_NAME \
@@ -125,7 +126,7 @@ forge script script/deploy/06_Configure.s.sol \
 
 ## Step 8: Transfer admin to the security council (run LAST)
 
-Grants DEFAULT_ADMIN_ROLE + MANAGER to `addresses.securityCouncil` on both proxies and renounces the deployer's roles:
+Grants DEFAULT_ADMIN_ROLE + MANAGER to `addresses.securityCouncil` on both proxies (and each deployed bridge adapter) and renounces the deployer's roles:
 
 ```bash
 DEPLOYER_EOA=0xYourDeployerEOA \

@@ -122,12 +122,11 @@ An asset wires in a deployed feed by name via a `"type":"Custom","feed":"<feedNa
 {
   "sDAI": {
     "enabled": true,
-    "$comment": "sDAI (Savings DAI) price adapter — derives sDAI/USD from the DSR rate + DAI/USD.",
+    "$comment": "sDAI (Savings DAI) price adapter — derives sDAI/USD from the DSR rate + the base asset (DAI) priced via the NAV.",
     "constructor": {
       "sDai": "0x83F20F44975D03b1b09e64809B757c47f942BEeA",
       "dsrManager": "0x373238337Bfe1146fb49989fc222523f83081dDb",
-      "daiToUsdChainlinkOracle": "0xAed0c38402a5d19df6E4c03F4E2DceD6e29c1ee9",
-      "daiToUsdChainlinkHeartbeat": "3600"
+      "baseAsset": "0x6B175474E89094C44Da98b954EedeAC495271d0F"
     }
   },
   "wstETH": {
@@ -135,17 +134,17 @@ An asset wires in a deployed feed by name via a `"type":"Custom","feed":"<feedNa
     "constructor": {
       "wstEth": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
       "stEthToEthChainlinkOracle": "0x86392dC19c0b719886221c78AB11eb8Cf5c52812",
-      "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
       "stEthToEthChainlinkHeartbeat": "86400",
-      "ethToUsdChainlinkHeartbeat": "3600"
+      "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }
   }
 }
 ```
 
 Each key under `constructor` must be an actual argument of the feed adapter's Solidity constructor — the
-deploy script reads them **by name** (`03_DeployPriceFeeds.s.sol` calls `readPriceFeedParam(name, "<arg>")`
-for each one), so the names must match exactly and an unrecognized key is silently ignored. There is **no**
+deploy script reads them **by name** (`03_DeployPriceFeeds.s.sol` calls
+`ConfigReader.readPriceFeedParam(vm, chainId, name, "<arg>")` for each one), so the names must match exactly
+and an unrecognized key is silently ignored. There is **no**
 `description` argument; for a human-readable note use the entry-level `$comment` field (ignored by the
 reader), not a fake `constructor` key.
 
@@ -169,12 +168,19 @@ A meta-adapter is a single deployed contract; its **instance set is NOT here** �
 
 ```json
 {
-  "ERC20Default": {
+  "SparkLend": {
     "enabled": true,
-    "constructor": {}
+    "constructor": {
+      "dataProvider": "0xFc21d6d146E6086B8359705C8b28512a983db0cb",
+      "protocol": "Spark",
+      "positionDetail": "{\"protocol\":\"Spark\",\"product\":\"Lending\",\"name\":\"SparkLend\"",
+      "positionId": "0xC13e21B648A5Ee794902342038FF3aDAB66BE987"
+    }
   }
 }
 ```
+
+> The built-in `ERC20DefaultBalanceAdapter` is deployed inside `NAVCalculator.initialize()` (step `02`) and wired via `includeAssetInDefaultAdapter` / `excludeAssetFromDefaultAdapter`, **not** through these config files — don't list it here.
 
 ### Template — `meta-balance-adapters/{chainId}.json` (meta)
 
@@ -218,7 +224,8 @@ As of [ADR 0012](../../docs/decisions/0012-bridge-provable-release-rearchitectur
       "router": "0x...",
       "feeToken": "0x...",
       "version": "1.0.0"
-    }
+    },
+    "remoteChains": [10, 42161, 8453]
   },
   "CCTP": {
     "enabled": true,
@@ -229,7 +236,8 @@ As of [ADR 0012](../../docs/decisions/0012-bridge-provable-release-rearchitectur
       "messageTransmitter": "0x0a992d191DEeC32aFe36203Ad87D7d289a738F81",
       "version": "1.0.0",
       "cctpDomain": 0
-    }
+    },
+    "remoteChains": [10, 42161, 8453]
   }
 }
 ```
@@ -308,7 +316,7 @@ There is **no `callbackSelector` field** as of [ADR 0012](../../docs/decisions/0
 
 ```json
 {
-  "ERC20Default": { "enabled": true },
+  "AaveV3SafetyModule": { "enabled": true },
   "SparkLend": { "enabled": true }
 }
 ```
@@ -344,13 +352,14 @@ There is **no `callbackSelector` field** as of [ADR 0012](../../docs/decisions/0
 
 ## deployments/{chainId}.json
 
-**The single source of truth for deployed addresses.** Written by deploy scripts; the only place addresses are persisted (note the filename is `{chainId}.json`, not `{chainId}-addresses.json`). Top-level proxy/impl keys plus maps for `customPriceFeeds`, `balanceAdapters`, and `bridgeAdapters`.
+**The single source of truth for deployed addresses.** Written by deploy scripts; the only place addresses are persisted (note the filename is `{chainId}.json`, not `{chainId}-addresses.json`). Top-level library and proxy/impl address keys plus maps for `customPriceFeeds`, `balanceAdapters`, and `bridgeAdapters`. There is no `chainId` key inside — the filename *is* the chain.
 
 ### Template
 
 ```json
 {
-  "chainId": 1,
+  "PriceFeedLib": "0x...",
+  "NavRegistryLib": "0x...",
   "NAVCalculatorImplementation": "0x...",
   "NAVCalculatorProxy": "0x...",
   "BridgeEscrowImplementation": "0x...",
@@ -634,7 +643,7 @@ Source-sender authentication is wired by `06_Configure.s.sol` from each adapter'
 
 See `src/bridge/BRIDGE_ADAPTERS.md` §7 for the full per-protocol detail.
 
-**CCTP domain mapping:** The CCTP adapter maps chain IDs to Circle's CCTP domain IDs (used for `depositForBurn` and receive path). Each chain that has CCTP can include `cctpDomain` in the CCTP entry's `initialize` block (`CCTP.initialize`) for reference — that entry now lives in `contracts-deployment-config/bridge-adapters/{chainId}.json`, not the chain config. The on-chain mapping is set via `CctpBridgeAdapter.setDomainMapping(chainId, domain)` (admin); deploy scripts do not call this — configure it after deployment (e.g. manage script or Safe tx). Official domain IDs (see [Circle CCTP contract addresses](https://developers.circle.com/cctp/references/contract-addresses)): Ethereum = 0, OP Mainnet = 2, Arbitrum = 3, Base = 6.
+**CCTP domain mapping:** The CCTP adapter maps chain IDs to Circle's CCTP domain IDs (used for `depositForBurn` and receive path). Each chain that has CCTP can include `cctpDomain` in the CCTP entry's `initialize` block (`CCTP.initialize`) for reference — that entry now lives in `contracts-deployment-config/bridge-adapters/{chainId}.json`, not the chain config, and is ignored by the reader (`initialize` takes no `cctpDomain` arg). The default EVM chain↔domain mappings are pinned in the adapter at `initialize` time (via `_setChainDomain` — Ethereum 0, OP Mainnet 2, Arbitrum 3, Base 6, and more), so no post-deploy step is needed for those chains; `CctpBridgeAdapter.setDomainMapping(chainId, domain)` (admin) only adds or overrides mappings beyond that preconfigured set. Official domain IDs (see [Circle CCTP contract addresses](https://developers.circle.com/cctp/references/contract-addresses)): Ethereum = 0, OP Mainnet = 2, Arbitrum = 3, Base = 6.
 
 The script `script/manage/AuthorizeBridgeAdapters.s.sol` authorizes each enabled adapter with `authorizeAdapter(adapter)` only (no callback variant). Trusted source senders are configured separately via `BridgeAdapter.setTrustedRemoteAdapter` (admin), not by the authorization script.
 

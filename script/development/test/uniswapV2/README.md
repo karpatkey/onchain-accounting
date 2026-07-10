@@ -14,7 +14,7 @@
 
 ### Inheritance + per-chain scope
 
-- **Inheritance:** direct `IBalanceOracleAdapter` implementer. `PancakeSwapV2BalanceOracle is UniswapV2BalanceOracle` — a constructor-only subclass with **zero overrides** (verified in `src/balances/MetaBalanceAdapters/pancakeswap/PancakeSwapV2PoolsMetaBalanceAdapter.sol`). The PCS V2 adapter's math, dilution formula, asset-filter behaviour, and pro-rata derivation are byte-for-byte the same code path the V2 fork test in this PR exercises. PancakeSwap V2 is therefore considered **verified by inheritance** as part of this PR — no separate verification PR is needed for PCS V2. Existing `test/balances/protocols/PancakeSwapV2.t.sol` and `test/balances/protocols/fork/PancakeSwapV2.BSC.fork.t.sol` provide the PCS-instance regression coverage on top of the inherited semantics.
+- **Inheritance:** direct `IBalanceAdapter` implementer. `PancakeSwapV2BalanceOracle is UniswapV2BalanceOracle` — a constructor-only subclass with **zero overrides** (the removed per-pool `src/balances/protocols/pancakeswap/PancakeSwapV2.sol` — see the note at the top of this file; its meta-era successor `PancakeSwapV2PoolsMetaBalanceAdapter` is no longer override-free). The PCS V2 adapter's math, dilution formula, asset-filter behaviour, and pro-rata derivation are byte-for-byte the same code path the V2 fork test in this PR exercises. PancakeSwap V2 is therefore considered **verified by inheritance** as part of this PR — no separate verification PR is needed for PCS V2. Existing `test/balances/protocols/PancakeSwapV2.t.sol` and `test/balances/protocols/fork/PancakeSwapV2.BSC.fork.t.sol` provide the PCS-instance regression coverage on top of the inherited semantics.
 - **Per-chain scope:** Uniswap V2 is deployed on Ethereum and a handful of L2s, but only Ethereum has V2 instances configured in `script/config/chains/1.json`. The adapter has **zero per-chain code branches** — pair ABI/bytecode is identical on every chain. Single-chain (mainnet) fork tests are sufficient.
 - **Math branches:** dilution-inactive (`feeTo == 0`, exercised by the existing mock-based test in §2) and dilution-active with `kLast > 0` and `rootK > rootKLast` (the dominant production branch — exercised by the multi-pool holder in §5; the fork test explicitly asserts `kLast > 0` for every pool). The `kLast == 0` sub-branch (factory just turned `feeTo` on, no swaps yet) is **not** covered by either case: catching a pool in the brief window between `feeTo` being set and the next swap would require either a mocked pair state or a synthetic test. Documented here so the next adapter-touching PR has a clear gap to close if it cares about that branch.
 
@@ -131,7 +131,7 @@ Uniswap V2 is single-leg per pair (`Supplied` from the LP token's pro-rata share
 
 Each amount is `(holderLP * reserveX) / (totalSupply + pendingProtocolMint)` from §4, using the per-pair state in §5.
 
-### 7b. Per-asset summary (what `getOracleBalanceForAsset` returns)
+### 7b. Per-asset summary (what `getAdapterBalanceForAsset` returns)
 
 This is what the strict-equality test asserts. For Uniswap V2, single-leg → 7a and 7b are identical row-for-row. The redundant `isDebt` column is shown for structural consistency with multi-leg / debt-carrying adapters (V2 LPs never carry debt).
 
@@ -155,7 +155,7 @@ This is what the strict-equality test asserts. For Uniswap V2, single-leg → 7a
 The expected amounts in §7 are derived **independently** of the adapter contract by re-running the V2 dilution math in arbitrary precision against the on-chain state at the pinned block:
 
 - `compute-expected.py` reads `totalSupply`, reserves, `kLast`, and `holderLP` per pair, then computes `pendingProtocolMint` and the dilution-adjusted `amount0` / `amount1` as Python integers (no rounding loss vs Solidity's `uint256` math).
-- The strict-equality test asserts the adapter's `getOracleBalanceForAsset(holder, token)` returns exactly these Python-derived values per pair, per token.
+- The strict-equality test asserts the adapter's `getAdapterBalanceForAsset(holder, token)` returns exactly these Python-derived values per pair, per token.
 
 Bit-exact equivalence with the protocol settlement path: `pair.burn(holder)` simulated at the pinned block would transfer exactly the §7 amounts when `feeTo != 0`. The Python derivation is the ground truth; the adapter matches it; the protocol matches both.
 
@@ -181,12 +181,12 @@ Deployed adapter addresses went to `script/development/state/1-uniV2-adapters.js
 |---|---|
 | Pre-flight: holder is `factory.feeTo` | ✅ |
 | Pre-flight: dilution branch active in every pair | ✅ |
-| Strict equality: `getOracleBalanceForAsset(token0)` per pair | ✅ |
-| Strict equality: `getOracleBalanceForAsset(token1)` per pair | ✅ |
-| Strict equality: `getOracleBalances()` aggregate per pair | ✅ |
-| Strict equality: `getOraclePositions()` per pair | ✅ |
+| Strict equality: `getAdapterBalanceForAsset(token0)` per pair | ✅ |
+| Strict equality: `getAdapterBalanceForAsset(token1)` per pair | ✅ |
+| Strict equality: `getAdapterBalances()` aggregate per pair | ✅ |
+| Strict equality: `getAdapterPositions()` per pair | ✅ |
 
-**6 / 6 tests pass with zero drift.** Adapter output equals the dilution-adjusted expected amounts to the unit across all 6 pairs and across both tokens — `getOracleBalanceForAsset` / `getOracleBalances` / `getOraclePositions` surfaces all agree.
+**6 / 6 tests pass with zero drift.** Adapter output equals the dilution-adjusted expected amounts to the unit across all 6 pairs and across both tokens — `getAdapterBalanceForAsset` / `getAdapterBalances` / `getAdapterPositions` surfaces all agree.
 
 Run via:
 

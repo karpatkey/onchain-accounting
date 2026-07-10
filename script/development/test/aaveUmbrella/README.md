@@ -6,7 +6,7 @@
 
 ### Inheritance + per-chain scope (Phase 0)
 
-- **Inheritance:** none — `AaveUmbrellaBalanceAdapter` implements `IBalanceAdapter` + `IPositionDescribable` directly (it is *not* a meta-adapter; the live set is discovered, not governed via `addMetaInstances`/`removeMetaInstances`).
+- **Inheritance:** `AaveUmbrellaBalanceAdapter` extends `BalanceAdapterBase` (the plain-adapter base that declares the `IBalanceAdapter` + `IPositionDescribable` surface and supplies the shared `supportsInterface`) — it is *not* a meta-adapter; the live set is discovered, not governed via `addMetaInstances`/`removeMetaInstances`.
 - **Dynamic discovery:** `RewardsController.getAllAssets()` enumerates every stake token. Aave governance can add a stake token (or reconfigure its reward token) and the adapter picks it up automatically, provided the bare reserve it resolves to is registered on NAVCalculator. Unregistered reserves are silently skipped (same convention as the Aave lending adapters).
 - **Per-chain scope:** Umbrella is deployed **only on Ethereum mainnet**. `script/config/contracts-deployment-config/balance-adapters/1.json` is the only balance-adapter config with an `AaveUmbrella` entry (RewardsController `0x4655Ce3D625a63d30bA704087E52B4C31E38188B`). No per-chain code branches → a single mainnet fork test is sufficient.
 - **Today's stake-token set** (`getAllAssets()` at the fork block):

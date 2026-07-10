@@ -4,7 +4,7 @@
 `EtherFiWithdrawalQueueAssistedBalanceAdapter` (`src/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueueAssistedBalanceAdapter.sol`). Reports the in-flight ETH owed to an account in ether.fi's withdrawal queue (eETH/weETH burned on `requestWithdraw`, ETH claimable from a `WithdrawRequestNFT`).
 
 ### Inheritance + per-chain scope (Phase 0)
-- Extends `AssistedBalanceAdapter` (OZ `AccessControl`) and implements `IPositionDescribable` — a documented mutable-cache adapter in the **assisted balance-adapter family** ([ADR 0015](../../../../docs/decisions/0015-assisted-balance-adapter-family.md)), per **ADR 0014**. `DEFAULT_ADMIN_ROLE` administers roles; `ASSISTANT_ROLE` gates the submit/clear mutators (not `Ownable`). The mutability is a per-account `tokenId` cache only; identity + all addresses are immutable.
+- Extends `AssistedCoordCache` and implements `IPositionDescribable` — a documented mutable-cache adapter in the **assisted balance-adapter family** ([ADR 0015](../../../../docs/decisions/0015-assisted-balance-adapter-family.md)), now **permissionless assistant-fed** ([ADR 0018](../../../../docs/decisions/0018-assistant-fed-assisted-balance-adapters.md), superseding the off-chain-agent `ASSISTANT_ROLE` base of ADR 0014). No roles and no `Ownable`: the `submit`/`remove` mutators are `msg.sender`-keyed, so a caller only touches its own set (the canonical feeder is `EtherFiWithdrawalQueueAssistant`, which the owner Safe delegatecalls so the adapter sees `msg.sender = Safe = owner`). The mutability is a per-account `tokenId` cache only; identity + all addresses are immutable.
 - **Mainnet (1) only.** ether.fi's `WithdrawRequestNFT` (`0x7d57…4E2c`) + `LiquidityPool` (`0x3088…F216`) are mainnet; ENS / ETH-Alpha / Nexus hold eETH there.
 
 ### Math branches (`_owedForToken`)
@@ -17,10 +17,10 @@
 `test/balances/AssistedBalanceAdapters/fork/EtherFiWithdrawalQueue.fork.t.sol` (4 tests, `FOUNDRY_PROFILE=slow`, FORK_BLOCK 25,387,000):
 - `test_realHolder_pendingValuation` — submit real id #80154 → adapter **== independent live read AND** pinned `253077459762665832` wei (delta 0).
 - `test_getAdapterPositions_identity` — identity fields on the real holder.
-- `test_unsubmitted_reportsZero`, `test_submit_revertsOnIdNotOwnedByAccount` — negative cases vs the real contracts (the submit is fail-loud: it **reverts** `NotTokenOwner` on an id not owned by the account).
+- `test_unsubmitted_reportsZero`, `test_submit_revertsOnIdNotOwnedByAccount` — negative cases vs the real contracts (the submit is fail-loud: it **reverts** `CoordinateNotOwned` on an id not owned by the account).
 
 ## 3. Unit test coverage
-`test/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueue.t.sol` (30 tests, mock-only): constructor guards (×4), `ASSISTANT_ROLE` gating + role-grant + submit/dedup/clear + non-owned revert + cache-full revert, valuation (finalized, pending min/fee, fee-clamp, aggregation), ownership re-verify (transferred/burned/non-owned drop), `isValid` drop, per-request legs (locked, mixed claimable/locked, two same-state legs summing to the aggregate, non-owned cached id discarded), unregistered-underlying branch, asset-filter mismatch, zero-owed, pending-path `try/catch` reverts (getRequest / amountForShare → drop, never revert), identity, ERC165, `underlyingAssetsSupported`.
+`test/balances/AssistedBalanceAdapters/EtherFiWithdrawalQueue.t.sol` (46 tests, mock-only): constructor guards (×7: zero NFT/LP/underlying/NAV, non-contract NFT/LP/NAV), permissionless `submit`/`remove` (dedup, non-owned revert `CoordinateNotOwned`, cache-full revert `CoordinateCacheFull`, remove of a claimed/transferred-away id, `CoordinateStillLive` on a live-owned id, `CoordinateNotCached` on an untracked id, `CoordSubmitted`/`CoordCleared`/`clearAccount` events), valuation (finalized, pending min/fee, fee-clamp, aggregation), ownership re-verify (transferred/burned/non-owned drop), `isValid` drop, per-request legs (locked, mixed claimable/locked, non-owned cached id discarded, zero-owed leg skipped), unregistered-underlying branch, asset-filter mismatch, zero-owed, pending-path `try/catch` reverts (getRequest / amountForShare / isFinalized / isValid / getClaimableAmount → drop, never revert), identity, ERC165, `underlyingAssetsSupported`.
 
 ## 4. Adapter formula recap
 ```text
@@ -35,7 +35,7 @@ for each cached tokenId with ownerOf(id)==account && isValid(id):
       positionId: pid, positionKind: Supplied,
       isLocked: !isFinalized(id), positionInstanceId: bytes32(id) }
 ```
-One native-ETH `Supplied` leg is emitted **per owned cached request** (not aggregated into claimable/locked sums); each leg's `isLocked` reflects that request's own state and its `tokenId` rides in the typed `positionInstanceId` (never in `positionId`). Native ETH (`0xEeee…EEeE`) is a registered NAV asset, so NAVCalculator prices each leg. **The cache stores ids only — never amounts** — so the assistant can only under-report, never over-report (ADR 0014).
+One native-ETH `Supplied` leg is emitted **per owned cached request** (not aggregated into claimable/locked sums); each leg's `isLocked` reflects that request's own state and its `tokenId` rides in the typed `positionInstanceId` (never in `positionId`). Native ETH (`0xEeee…EEeE`) is a registered NAV asset, so NAVCalculator prices each leg. **The cache stores ids only — never amounts** — so the assistant can only under-report, never over-report (ADR 0015).
 
 ## 5. Cherry-picked accounts
 Real holder **`0xcFFab3dFdCa60d838512c41a772e799b71dF1Af4`** owns `WithdrawRequestNFT` **#80154** (pending, isValid, fee 0, ~0.2531 ETH) at FORK_BLOCK — discovered via the `Transfer`-event scan (the same scan the agent runs). No seeding needed: unlike Ethena cooldowns, real ether.fi requests persist for days. KPK Safes (ENS / ETH-Alpha / Nexus) hold eETH and use the queue on exit.
@@ -70,4 +70,4 @@ bash script/development/app/sync-app-env.sh 1
 The Safe then shows an "ether.fi" group with a ~0.2531 ETH withdrawal-queue leg.
 
 ## 10. Test verdict
-- Unit: **30/30 pass**. Fork: **4/4 pass** (strict delta 0 vs live read). `forge build`/`fmt` clean. Pin: balance-adapter (no prices-lib change) — CI's `LibraryPinConsistency` is the source of truth.
+- Unit: **46/46 pass**. Fork: **4/4 pass** (strict delta 0 vs live read). `forge build`/`fmt` clean. Pin: balance-adapter (no prices-lib change) — CI's `LibraryPinConsistency` is the source of truth.

@@ -39,14 +39,6 @@ contract AaveV3SafetyModuleBalanceAdapterForkTest is BalanceAdapterTestBase {
 
     AaveV3SafetyModuleBalanceAdapter public adapter;
 
-    // Leftover local helper for building expected positionDetail JSON; unused by the current tests (the adapter
-    // takes no positionDetail-prefix arg — its constructor takes only the NAVCalculator address).
-    string private constant _PD_PREFIX = "{\"p\":\"t\"";
-
-    function _detail(string memory typeLabel) private pure returns (string memory) {
-        return string.concat(_PD_PREFIX, ",\"type\":\"", typeLabel, "\"}");
-    }
-
     // Real Mainnet holders, one per stake token. STK_AAVE_HOLDER also holds stkABPTv2 — kept distinct for clarity.
     address public constant STK_AAVE_HOLDER = 0x000000000004444c5dc75cB358380D2e3dE08A90;
     address public constant STK_ABPT_HOLDER = 0xD9a776A672E4Df85bbbE97d390Ff9674B382d2ea;

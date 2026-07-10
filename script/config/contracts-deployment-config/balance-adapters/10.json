@@ -4,7 +4,6 @@
     "constructor": {
       "dataProvider": "0x7F23D86Ee20D869112572136221e173428DD740B",
       "protocol": "Aave V3",
-      "positionDetail": "{\"protocol\":\"Aave V3\",\"product\":\"Lending\",\"name\":\"Optimism Market\"",
       "positionId": "0x794a61358D6845594F94dc1DB02A252b5b4814aD"
     }
   },
@@ -15,7 +14,6 @@
       "comet": "0x2e44e174f7D53F0212823acC11C01A11d58c5bCB",
       "rewardToken": "0x7e7d4467112689329f7E06571eD0E8CbAd4910eE",
       "protocol": "Compound v3",
-      "positionDetail": "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"USDC\"",
       "positionId": "0x2e44e174f7D53F0212823acC11C01A11d58c5bCB"
     }
   },
@@ -26,7 +24,6 @@
       "comet": "0x995E394b8B2437aC8Ce61Ee0bC610D617962B214",
       "rewardToken": "0x7e7d4467112689329f7E06571eD0E8CbAd4910eE",
       "protocol": "Compound v3",
-      "positionDetail": "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"USDT\"",
       "positionId": "0x995E394b8B2437aC8Ce61Ee0bC610D617962B214"
     }
   },
@@ -37,7 +34,6 @@
       "comet": "0xE36A30D249f7761327fd973001A32010b521b6Fd",
       "rewardToken": "0x7e7d4467112689329f7E06571eD0E8CbAd4910eE",
       "protocol": "Compound v3",
-      "positionDetail": "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"WETH\"",
       "positionId": "0xE36A30D249f7761327fd973001A32010b521b6Fd"
     }
   }

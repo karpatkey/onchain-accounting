@@ -40,10 +40,6 @@ contract NAVCalculatorInvariantTest is SuperTest {
             address[] memory assets = new address[](1);
             assets[0] = asset;
             adapter.setUnderlyingAssetsSupported(assets);
-            adapter.setPositionMetadata(
-                string(abi.encodePacked("Protocol ", vm.toString(i))),
-                string(abi.encodePacked("Position ", vm.toString(i)))
-            );
             adapters[i] = adapter;
 
             vm.startPrank(navCalculatorManager);

@@ -977,7 +977,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
 
     /// @notice Calls getAccountPositions for every enabled account on _chainId and returns
     ///         a JSON object string keyed by account address.
-    function _buildPositionDetailsJson() internal view returns (string memory out) {
+    function _buildAccountPositionsJson() internal view returns (string memory out) {
         string memory json = _readAccountsJson();
         out = "{";
         bool first = true;
@@ -1171,7 +1171,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
                 ',"forkBlock":',
                 vm.toString(_forkBlock),
                 ',"accounts":',
-                _buildPositionDetailsJson(),
+                _buildAccountPositionsJson(),
                 "}"
             )
         );

@@ -98,10 +98,6 @@ contract NAVCalculatorTest is SuperTest {
         }
 
         // Set position metadata
-        mockBalanceAdapter.setPositionMetadata(
-            bytes(protocol).length > 0 ? protocol : "Mock Protocol",
-            bytes(position).length > 0 ? position : "Mock Position"
-        );
     }
 
     /// @notice Convenience overload for single asset
@@ -122,7 +118,7 @@ contract NAVCalculatorTest is SuperTest {
         for (uint256 i = 0; i < positions.length; i++) {
             if (positions[i].balanceAsset.asset == asset) {
                 // Check if this matches the balance adapter index by checking metadata
-                // We'll need to match by protocol/positionDetail or use a different approach
+                // Match by protocolId or another discriminator if a test needs a specific adapter.
                 // For now, return first match - tests should be more specific
                 return (positions[i], true);
             }
@@ -1218,7 +1214,6 @@ contract NAVCalculatorTest is SuperTest {
         address[] memory assets = new address[](1);
         assets[0] = address(usdc);
         stakingBalanceAdapter.setUnderlyingAssetsSupported(assets);
-        stakingBalanceAdapter.setPositionMetadata("Staking", "Staked USDC");
         vm.startPrank(navCalculatorManager);
         nav.addBalanceAdapters(aa(address(stakingBalanceAdapter)));
         vm.stopPrank();
@@ -1252,7 +1247,6 @@ contract NAVCalculatorTest is SuperTest {
         address[] memory assets = new address[](1);
         assets[0] = address(usdc);
         stakingBalanceAdapter.setUnderlyingAssetsSupported(assets);
-        stakingBalanceAdapter.setPositionMetadata("Debt", "Borrowed USDC");
         vm.startPrank(navCalculatorManager);
         nav.addBalanceAdapters(aa(address(stakingBalanceAdapter)));
 

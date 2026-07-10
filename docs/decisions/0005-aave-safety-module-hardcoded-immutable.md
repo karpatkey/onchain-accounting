@@ -14,7 +14,7 @@ Reviewing that decision before implementation landed: the framework convention i
 
 ## Decision
 
-Make `AaveV3SafetyModuleBalanceAdapter` fully **immutable** and **write-function-free**. The four legacy SM stake-token addresses and their staked / reward tokens are pinned as compile-time `address public constant` declarations, and a `pure` `_records()` function assembles them — together with a per-record `positionDetail` string — into a fixed `StakeTokenRecord[4]` table. The constructor takes only `(navCalculator)` — no admin, no Ownable, no `addStakeToken` / `removeStakeToken`, no init list.
+Make `AaveV3SafetyModuleBalanceAdapter` fully **immutable** and **write-function-free**. The four legacy SM stake-token addresses and their staked / reward tokens are pinned as compile-time `address public constant` declarations, and a `pure` `_records()` function assembles them into a fixed `StakeTokenRecord[4]` table. The constructor takes only `(navCalculator)` — no admin, no Ownable, no `addStakeToken` / `removeStakeToken`, no init list.
 
 Concretely:
 
@@ -63,6 +63,6 @@ When refreshing fork blocks (via the bump workflow described in `docs/howto/refr
 
 - Adapter: `src/balances/BalanceAdapters/AaveV3SafetyModuleBalanceAdapter.sol`
 - Tests: `test/balances/BalanceAdapters/AaveV3SafetyModuleBalanceAdapter.t.sol` (unit), `test/balances/BalanceAdapters/fork/AaveV3SafetyModuleBalanceAdapter.fork.t.sol` (fork)
-- Deploy schema: `script/config/contracts-deployment-config/balance-adapters/1.json` `AaveV3SafetyModule` (deploy intent) and `script/config/nav-config/balance-adapters/1.json` `AaveV3SafetyModule` (NAV-registration intent). `04`'s `_deployAaveV3SafetyModule` reads only the `enabled` flag and passes `navCalculator` to the constructor; the stake-token set is hardcoded in the adapter. (The deploy-config entry still carries a vestigial `constructor` block — `protocol`/`positionDetail`/`positionId` — which this adapter's deploy path ignores; the nav-config entry is `enabled`-only.)
+- Deploy schema: `script/config/contracts-deployment-config/balance-adapters/1.json` `AaveV3SafetyModule` (deploy intent) and `script/config/nav-config/balance-adapters/1.json` `AaveV3SafetyModule` (NAV-registration intent). `04`'s `_deployAaveV3SafetyModule` reads only the `enabled` flag and passes `navCalculator` to the constructor; the stake-token set is hardcoded in the adapter. (The deploy-config entry still carries a vestigial `constructor` block — `protocol`/`positionId` — which this adapter's deploy path ignores; the nav-config entry is `enabled`-only.)
 - Migration: replaced `0x191d6b8EdD19167e90419347d586081E2B01D8dD` on Mainnet via `nav.removeBalanceAdapters(legacy)` + `nav.addBalanceAdapters(new)` (two Safe transactions) — same pattern used for every adapter pre-#16.
 - Superseded: ADR [0002](0002-aave-safety-module-multi-token.md) (the admin-managed-list design)

@@ -17,7 +17,11 @@ export type OnchainPosition = {
   stale: boolean
   // Display fields synthesised from the typed-identity API + the adapter's IPositionDescribable layer.
   protocol: string
-  positionDetail: string
+  // PositionKind → the leg-type discriminator (Supply/Borrow/Collateral/Staking/Rewards/Fees); null for Wallet.
+  type: string | null
+  // The instance's display label — the adapter's positionLabels() leaf (e.g. "WBTC/WETH 0.3%", "NFT #22279");
+  // null for Wallet legs and when the adapter exposes no name().
+  poolLabel: string | null
   // The on-chain position identity (abi.encode(...) per protocol). Legs of one logical position (e.g. a
   // StakeWise vault's Staking + Borrow legs) share it, so the dashboard can group matched legs by vault.
   positionId: string
@@ -65,8 +69,8 @@ const describableAbi = [
   },
 ] as const
 
-// PositionKind enum (src/utils/PositionKind.sol) → the `type` discriminator the dashboard expects in
-// positionDetail (legacy PositionType values). Wallet legs render flat (no type sub-header).
+// PositionKind enum (src/utils/PositionKind.sol) → the leg-type label the dashboard renders on each row.
+// Wallet legs (kind 0) render flat with no type sub-header.
 const KIND_TO_TYPE: Record<number, string | null> = {
   0: null, // Wallet
   1: 'Supply', // Supplied
@@ -165,16 +169,13 @@ export function useAccountPositions(account: `0x${string}` | undefined): { chain
       const protocol = nameByKey.get(`${chain.id}:${p.balanceOracle.toLowerCase()}`) ?? `${p.protocolId.slice(0, 10)}…`
       const posLabel = labelByDescribeKey.get(describeKey(chain.id, p.balanceOracle, p.positionId))
       const type = KIND_TO_TYPE[p.positionKind] ?? null
-      // positionDetail JSON is parsed by extractType (type → Supply/Fees split) + extractPoolLabel (name → row label).
-      const detail: Record<string, string> = {}
-      if (type) detail.type = type
       // Wallet rows (kind 0) group under one oracle sub-header; their positionLabels() leaf is just the token
-      // symbol, so using it as `name` would render a misleading header (first token's symbol over a mixed-token
-      // wallet group). The symbol is already shown per row — omit name for Wallet; keep it for protocol
+      // symbol, so using it as the label would render a misleading header (first token's symbol over a mixed-token
+      // wallet group). The symbol is already shown per row — omit the label for Wallet; keep it for protocol
       // positions where it's a real label (e.g. "NFT #22279"). When positionLabels() is empty (e.g. StakeWise
-      // V3 Gnosis vaults don't implement name()), `name` stays unset — the per-vault layout groups by positionId
-      // and renders the full vault address from it, so no synthetic label is needed here.
-      if (posLabel && p.positionKind !== 0) detail.name = posLabel
+      // V3 Gnosis vaults don't implement name()), `poolLabel` stays null — the per-vault layout groups by
+      // positionId and renders the full vault address from it, so no synthetic label is needed here.
+      const poolLabel = posLabel && p.positionKind !== 0 ? posLabel : null
       return {
         underlyingAsset: p.underlyingAsset,
         balanceOracle: p.balanceOracle,
@@ -186,7 +187,8 @@ export function useAccountPositions(account: `0x${string}` | undefined): { chain
         priceDecimals: p.priceDecimals,
         stale: p.stale,
         protocol,
-        positionDetail: Object.keys(detail).length > 0 ? JSON.stringify(detail) : '',
+        type,
+        poolLabel,
         positionId: p.positionId,
         protocolId: p.protocolId,
         isLocked: p.isLocked,

@@ -171,15 +171,14 @@ A meta-adapter is a single deployed contract; its **instance set is NOT here** �
   "SparkLend": {
     "enabled": true,
     "constructor": {
-      "dataProvider": "0xFc21d6d146E6086B8359705C8b28512a983db0cb",
-      "protocol": "Spark",
-      "positionDetail": "{\"protocol\":\"Spark\",\"product\":\"Lending\",\"name\":\"SparkLend\"",
-      "positionId": "0xC13e21B648A5Ee794902342038FF3aDAB66BE987"
+      "dataProvider": "0xFc21d6d146E6086B8359705C8b28512a983db0cb"
     }
   }
 }
 ```
 
+> Only the constructor args `04_DeployBalanceAdapters.s.sol` reads are required per adapter (for `SparkLend`, just `dataProvider`); real configs may also carry informational fields (e.g. `protocol`, used for display / comparison-report rendering) that the deploy does not consume.
+>
 > The built-in `ERC20DefaultBalanceAdapter` is deployed inside `NAVCalculator.initialize()` (step `02`) and wired via `includeAssetInDefaultAdapter` / `excludeAssetFromDefaultAdapter`, **not** through these config files — don't list it here.
 
 ### Template — `meta-balance-adapters/{chainId}.json` (meta)

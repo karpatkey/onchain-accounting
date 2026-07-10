@@ -100,13 +100,9 @@ contract AaveV3SafetyModuleBalanceAdapter is BalanceAdapterBase {
     /// @dev The full hardcoded list of Safety Module stake tokens. Used by every balance/position function.
     ///      The function is `pure` (no storage reads) — the data is baked into bytecode.
     function _records() internal pure returns (StakeTokenRecord[4] memory recs) {
-        recs[0] =
-            StakeTokenRecord({stakeToken: STK_AAVE, stakedToken: AAVE, rewardToken: AAVE});
-        recs[1] =
-            StakeTokenRecord({stakeToken: STK_ABPT, stakedToken: ABPT, rewardToken: AAVE});
-        recs[2] = StakeTokenRecord({
-            stakeToken: STK_ABPT_V2, stakedToken: ABPT_V2, rewardToken: AAVE
-        });
+        recs[0] = StakeTokenRecord({stakeToken: STK_AAVE, stakedToken: AAVE, rewardToken: AAVE});
+        recs[1] = StakeTokenRecord({stakeToken: STK_ABPT, stakedToken: ABPT, rewardToken: AAVE});
+        recs[2] = StakeTokenRecord({stakeToken: STK_ABPT_V2, stakedToken: ABPT_V2, rewardToken: AAVE});
         recs[3] = StakeTokenRecord({stakeToken: STK_GHO, stakedToken: GHO, rewardToken: AAVE});
     }
 

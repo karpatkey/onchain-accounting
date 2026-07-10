@@ -594,7 +594,6 @@ contract DeployBalanceAdapters is BaseDeployScript {
         //     "constructor": {
         //       "rewardsController": "0x4655Ce3D625a63d30bA704087E52B4C31E38188B",
         //       "protocol": "Aave Umbrella",
-        //       "positionDetail": "{\"protocol\":\"Aave V3\",\"product\":\"Umbrella\"",
         //       "positionId": "0x..."
         //     }
         //   }

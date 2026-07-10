@@ -171,7 +171,6 @@ contract BalancesTest is Test {
         address[] memory underlyingAssets = new address[](1);
         underlyingAssets[0] = address(usdc);
         customAdapter.setUnderlyingAssetsSupported(underlyingAssets);
-        customAdapter.setPositionMetadata("Mock Protocol", "Mock Position");
         vm.stopPrank();
     }
 

@@ -4,7 +4,6 @@
     "constructor": {
       "dataProvider": "0xd82a47fdebB5bf5329b09441C3DaB4b5df2153Ad",
       "protocol": "Aave V3",
-      "positionDetail": "{\"protocol\":\"Aave V3\",\"product\":\"Lending\",\"name\":\"Base Market\"",
       "positionId": "0xA238Dd80C259a72e81d7e4664a9801593F98d1c5"
     }
   },
@@ -13,8 +12,7 @@
     "constructor": {
       "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
       "marketId": "0x1c21c59df9db44bf6f645d854ee710a8ca17b479451447e9f56758aee10a2fad",
-      "protocol": "Morpho",
-      "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"cbETH/USDC\""
+      "protocol": "Morpho"
     }
   },
   "MorphoMarket_cbBTC_USDC": {
@@ -22,8 +20,7 @@
     "constructor": {
       "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
       "marketId": "0x9103c3b4e834476c9a62ea009ba2c884ee42e94e6e314a26f04d312434191836",
-      "protocol": "Morpho",
-      "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"cbBTC/USDC\""
+      "protocol": "Morpho"
     }
   },
   "MorphoMarket_wstETH_WETH": {
@@ -31,8 +28,7 @@
     "constructor": {
       "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
       "marketId": "0x3a4048c64ba1b375330d376b1ce40e4047d03b47ab4d48af484edec9fec801ba",
-      "protocol": "Morpho",
-      "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"wstETH/WETH\""
+      "protocol": "Morpho"
     }
   },
   "MorphoMarket_weETH_WETH": {
@@ -40,8 +36,7 @@
     "constructor": {
       "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
       "marketId": "0xfd0895ba253889c243bf59bc4b96fd1e06d68631241383947b04d1c293a0cfea",
-      "protocol": "Morpho",
-      "positionDetail": "{\"protocol\":\"Morpho\",\"product\":\"Market\",\"name\":\"weETH/WETH\""
+      "protocol": "Morpho"
     }
   },
   "BalancerV3_GHO_USDC": {
@@ -51,7 +46,6 @@
       "gauge": "0x70DB188E5953f67a4B16979a2ceA26248b315401",
       "balancerMinter": "0x0c5538098EBe88175078972F514C9e101D325D4F",
       "protocol": "Balancer V3",
-      "positionDetail": "{\"protocol\":\"Balancer V3\",\"product\":\"LP\",\"name\":\"Aave GHO/USDC\"",
       "positionId": "0x7AB124EC4029316c2A42F713828ddf2a192B36db"
     }
   },
@@ -60,7 +54,6 @@
     "constructor": {
       "fToken": "0xf42f5795D9ac7e9D757dB633D693cD548Cfd9169",
       "protocol": "Fluid",
-      "positionDetail": "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"name\":\"fUSDC\"",
       "positionId": "0xf42f5795D9ac7e9D757dB633D693cD548Cfd9169"
     }
   },
@@ -69,7 +62,6 @@
     "constructor": {
       "fToken": "0x9272D6153133175175Bc276512B2336BE3931CE9",
       "protocol": "Fluid",
-      "positionDetail": "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"name\":\"fWETH\"",
       "positionId": "0x9272D6153133175175Bc276512B2336BE3931CE9"
     }
   },
@@ -78,7 +70,6 @@
     "constructor": {
       "fToken": "0x896E39f0E9af61ECA9dD2938E14543506ef2c2b5",
       "protocol": "Fluid",
-      "positionDetail": "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"name\":\"fwstETH\"",
       "positionId": "0x896E39f0E9af61ECA9dD2938E14543506ef2c2b5"
     }
   },
@@ -87,7 +78,6 @@
     "constructor": {
       "fToken": "0x8DdbfFA3CFda2355a23d6B11105AC624BDbE3631",
       "protocol": "Fluid",
-      "positionDetail": "{\"protocol\":\"Fluid\",\"product\":\"Lending\",\"name\":\"fGHO\"",
       "positionId": "0x8DdbfFA3CFda2355a23d6B11105AC624BDbE3631"
     }
   },
@@ -98,7 +88,6 @@
       "comet": "0x784efeB622244d2348d4F2522f8860B96fbEcE89",
       "rewardToken": "0x9e1028F5F1D5eDE59748FFceE5532509976840E0",
       "protocol": "Compound v3",
-      "positionDetail": "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"AERO\"",
       "positionId": "0x784efeB622244d2348d4F2522f8860B96fbEcE89"
     }
   },
@@ -109,7 +98,6 @@
       "comet": "0x9c4ec768c28520B50860ea7a15bd7213a9fF58bf",
       "rewardToken": "0x9e1028F5F1D5eDE59748FFceE5532509976840E0",
       "protocol": "Compound v3",
-      "positionDetail": "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"USDbC\"",
       "positionId": "0x9c4ec768c28520B50860ea7a15bd7213a9fF58bf"
     }
   },
@@ -120,7 +108,6 @@
       "comet": "0xb125E6687d4313864e53df431d5425969c15Eb2F",
       "rewardToken": "0x9e1028F5F1D5eDE59748FFceE5532509976840E0",
       "protocol": "Compound v3",
-      "positionDetail": "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"USDC\"",
       "positionId": "0xb125E6687d4313864e53df431d5425969c15Eb2F"
     }
   },
@@ -131,7 +118,6 @@
       "comet": "0x2c776041CCFe903071AF44aa147368a9c8EEA518",
       "rewardToken": "0x9e1028F5F1D5eDE59748FFceE5532509976840E0",
       "protocol": "Compound v3",
-      "positionDetail": "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"USDS\"",
       "positionId": "0x2c776041CCFe903071AF44aa147368a9c8EEA518"
     }
   },
@@ -142,7 +128,6 @@
       "comet": "0x46e6b214b524310239732D51387075E0e70970bf",
       "rewardToken": "0x9e1028F5F1D5eDE59748FFceE5532509976840E0",
       "protocol": "Compound v3",
-      "positionDetail": "{\"protocol\":\"Compound V3\",\"product\":\"Lending\",\"name\":\"WETH\"",
       "positionId": "0x46e6b214b524310239732D51387075E0e70970bf"
     }
   },
@@ -152,7 +137,6 @@
       "pool": "0xfe5291Ac7Ac2b81a40c0ba6980308212037828aF",
       "positionManager": "0x46A15B0b27311cedF172AB29E4f4766fbE7F4364",
       "protocol": "PancakeSwap V3",
-      "positionDetail": "{\"protocol\":\"PancakeSwap V3\",\"product\":\"LP\",\"name\":\"WETH/COW 0.25%\"",
       "positionId": "0xfe5291Ac7Ac2b81a40c0ba6980308212037828aF"
     }
   }

@@ -68,10 +68,6 @@ contract BalanceAdapterHandler is Test {
         address[] memory assets = new address[](1);
         assets[0] = address(token);
         adapter.setUnderlyingAssetsSupported(assets);
-        adapter.setPositionMetadata(
-            string(abi.encodePacked("Protocol ", vm.toString(customAdapters.length))),
-            string(abi.encodePacked("Position ", vm.toString(customAdapters.length)))
-        );
 
         // Add adapter
         balances.addBalanceAdapterDirect(address(0), address(adapter), IBalances.AdapterType.Custom);

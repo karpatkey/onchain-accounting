@@ -125,7 +125,7 @@ contract RefreshIntegrationSnapshot is Script, IntegrationFromConfigBase {
             ',"forkBlock":',
             vm.toString(_forkBlock),
             ',"accounts":',
-            _buildPositionDetailsJson(),
+            _buildAccountPositionsJson(),
             "}"
         );
         vm.writeFile(outPath, payload);

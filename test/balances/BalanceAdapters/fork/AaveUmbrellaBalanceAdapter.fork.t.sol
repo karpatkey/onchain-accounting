@@ -59,13 +59,6 @@ contract AaveUmbrellaBalanceAdapterForkTest is BalanceAdapterTestBase {
 
     AaveUmbrellaBalanceAdapter public adapter;
 
-    // Expected positionDetail JSON prefix (protocol + product) for an Umbrella position.
-    string private constant _PD_PREFIX = "{\"protocol\":\"Aave V3\",\"product\":\"Umbrella\"";
-
-    function _detail(string memory typeLabel) private pure returns (string memory) {
-        return string.concat(_PD_PREFIX, ",\"type\":\"", typeLabel, "\"}");
-    }
-
     // Real Mainnet holders, one per stake token (today's set). The WETH holder is also the legacy
     // SM stkAAVE / stkABPTv2 holder used in test/balances/BalanceAdapters/fork/AaveV3SafetyModuleBalanceAdapter.fork.t.sol.
     address public constant STK_WA_USDC_HOLDER = 0xd0002c648CCa8DeE2f2b8D70D542Ccde8ad6EC03;

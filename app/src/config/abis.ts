@@ -201,12 +201,13 @@ export const adapterInfoAbi = [
     inputs: [],
     outputs: [{ name: '', type: 'address[]' }],
   },
-  // On-chain display labels for a positionId (IPositionDescribable). Called with EMPTY bytes (0x) it
-  // returns the adapter's product label(s): on a plain adapter e.g. ["Safety Module"] or a
-  // ["Category", "Product"] pair; on a meta-adapter it returns [] (the labels live per-instance).
-  // Called with a raw 32-byte instance coordinate (from getMetaInstances) it returns the instance's
+  // On-chain display labels for a positionId (IPositionDescribable). We probe each adapter with EMPTY
+  // bytes (0x): plain adapters that derive labels independently of the arg return their product label(s)
+  // — e.g. ["Safety Module"] or a ["Category", "Product"] pair; meta-adapters (and any adapter that
+  // decodes a real positionId) return [] for 0x, since their labels live per-instance. Called with a raw
+  // 32-byte instance coordinate (from getMetaInstances) a meta-adapter returns the instance's
   // ["Category", "Instance Name"] pair (e.g. ["Market", "Aave Ethereum Market"], ["AMM Liquidity Pool",
-  // "WETH/rETH"]). Fail-open: some adapters revert / return [] for coordinates they don't recognise.
+  // "WETH/rETH"]). Fail-open: some adapters revert / return [] for inputs they don't recognise.
   {
     name: 'positionLabels',
     type: 'function',

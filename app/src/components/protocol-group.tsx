@@ -730,7 +730,7 @@ export function ProtocolGroup({ group, totalPortfolioNav, withdrawalsByKey }: Pr
             <a
               href={protocolUrl}
               target="_blank"
-              rel="noreferrer"
+              rel="noopener noreferrer"
               className="font-semibold text-sm capitalize text-neutral-950 hover:underline"
             >
               {protocol === 'wallet' ? 'Wallet' : protocol}

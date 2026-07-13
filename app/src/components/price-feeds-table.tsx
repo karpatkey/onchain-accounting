@@ -357,7 +357,7 @@ export function PriceFeedsTable({ data, dense = false, filterStatus = 'all', sea
                       <a
                         href={explorerAddressUrl(chainId, node.asset.asset)}
                         target="_blank"
-                        rel="noreferrer"
+                        rel="noopener noreferrer"
                         onClick={(e) => e.stopPropagation()}
                         className="link-icon text-neutral-700 hover:text-neutral-950 inline-flex items-center transition-colors"
                       >

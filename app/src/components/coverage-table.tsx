@@ -374,7 +374,15 @@ function filterProtocol(p: ProtocolCoverage, q: string): ProtocolCoverage | null
       pr.assets.some((a) => a.symbol.toLowerCase().includes(q)),
   )
   if (products.length === 0) return null
-  return { ...p, products }
+  // Recompute the header counts from the narrowed set (mirrors the aggregation in use-coverage.ts) so the
+  // "N products · M markets" summary reflects what's actually shown rather than the unfiltered totals.
+  const uniqueAssets = new Set<string>()
+  let instanceCount = 0
+  for (const pr of products) {
+    for (const a of pr.assets) uniqueAssets.add(a.address.toLowerCase())
+    instanceCount += pr.instances.length
+  }
+  return { ...p, products, productCount: products.length, instanceCount, assetCount: uniqueAssets.size }
 }
 
 // --- component ---------------------------------------------------------------

@@ -188,18 +188,20 @@ function FeedChildRow({
   chainId,
   sequencerDown,
   td,
+  isLast,
 }: {
   feed: FeedNode
   chainId: number
   sequencerDown: boolean
   td: string
+  isLast: boolean
 }) {
   return (
     <Tr className="bg-neutral-50/60 hover:bg-neutral-100 transition-colors">
       {/* Feed type — indented under the asset, with a tree connector */}
       <Td className={td}>
         <div className="flex items-center gap-2 pl-6">
-          <span className="text-neutral-400 select-none">└</span>
+          <span className="text-neutral-400 select-none">{isLast ? '└' : '├'}</span>
           <Badge variant="generic" className="text-xs">
             {PRICE_TYPES[feed.priceType] ?? 'Unknown'}
           </Badge>
@@ -401,6 +403,7 @@ export function PriceFeedsTable({ data, dense = false, filterStatus = 'all', sea
                       chainId={chainId}
                       sequencerDown={sequencerDown}
                       td={td}
+                      isLast={fi === node.feeds.length - 1}
                     />
                   ))}
                 {!isCollapsed && node.feeds.length === 0 && (

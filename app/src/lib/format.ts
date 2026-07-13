@@ -21,8 +21,9 @@ export function formatUsd(value: bigint, decimals = 8): string {
 }
 
 /// Compact USD for space-constrained UI (e.g. the fixed-width chains sidebar): $73.80M / $786.17K / $372.85.
-/// Width stays bounded regardless of magnitude, so a whale NAV can't overflow the row. Full-precision values
-/// belong in the header + positions table (formatUsd).
+/// Compact K/M/B/T notation keeps the width bounded for any realistic NAV, so it can't overflow the row (the
+/// non-finite fallback below is a defensive path for astronomically large / overflowed values only).
+/// Full-precision values belong in the header + positions table (formatUsd).
 export function formatUsdCompact(value: bigint, decimals = 8): string {
   const abs = value < 0n ? -value : value
   const num = Number(formatUnits(abs, decimals))

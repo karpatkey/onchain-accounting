@@ -313,7 +313,7 @@ function PositionRow({
           </div>
         </td>
         <td className="py-2.5 px-4 text-sm text-right tabular-nums text-neutral-700">
-          {formatAmount(pos.amount, pos.underlyingAsset.decimals, pos.underlyingAsset.symbol)}
+          {formatAmount(pos.amount, pos.underlyingAsset.decimals, '')}
         </td>
         <td className="py-2.5 px-4 text-sm text-right tabular-nums text-neutral-700">
           {formatPrice(pos.price, pos.priceDecimals)}
@@ -373,7 +373,7 @@ function PositionRow({
               </div>
             </td>
             <td className="py-2 px-4 text-xs text-right tabular-nums text-neutral-700">
-              {formatAmount(req.ethOwed, pos.underlyingAsset.decimals, pos.underlyingAsset.symbol)}
+              {formatAmount(req.ethOwed, pos.underlyingAsset.decimals, '')}
             </td>
             <td className="py-2 px-4 text-xs text-right tabular-nums text-neutral-700">
               {formatPrice(pos.price, pos.priceDecimals)}
@@ -752,10 +752,32 @@ export function ProtocolGroup({ group, totalPortfolioNav, withdrawalsByKey }: Pr
         </div>
       </div>
 
-      {/* Positions table — no repeated column headers. CDP-style protocols (a positionId with both a supply and
-          a borrow leg) render grouped by vault so the matched legs sit together; everything else keeps the
-          protocol-wide Supply / Borrow split. */}
-      <table className="w-full">
+      {/* Positions table. A subtle column-header row (thead) labels Amount / Price / USD Value / % — kept inside
+          the table (not the flex card header) so the labels always align with the auto-sized numeric columns.
+          CDP-style protocols (a positionId with both a supply and a borrow leg) render grouped by vault so the
+          matched legs sit together; everything else keeps the protocol-wide Supply / Borrow split. */}
+      {/* table-fixed + shared column widths so the numeric columns align IDENTICALLY across every protocol card
+          (an auto layout sizes each card's columns to its own content, which drifts card-to-card). */}
+      <table className="w-full table-fixed">
+        <thead>
+          <tr className="border-b border-neutral-200">
+            <th className="w-[22%] py-2 px-4 text-left text-[10px] font-semibold uppercase tracking-wide text-neutral-500">
+              Asset
+            </th>
+            <th className="w-[22%] py-2 px-4 text-right text-[10px] font-semibold uppercase tracking-wide text-neutral-500">
+              Amount
+            </th>
+            <th className="w-[16%] py-2 px-4 text-right text-[10px] font-semibold uppercase tracking-wide text-neutral-500">
+              Price
+            </th>
+            <th className="w-[28%] py-2 px-4 text-right text-[10px] font-semibold uppercase tracking-wide text-neutral-500">
+              USD Value
+            </th>
+            <th className="w-[12%] py-2 px-4 text-right text-[10px] font-semibold uppercase tracking-wide text-neutral-500">
+              %
+            </th>
+          </tr>
+        </thead>
         <tbody>
           {hasMatchedVaultLegs(supply, borrow) || hasLendingMarketLegs([...supply, ...borrow]) ? (
             <VaultSections positions={[...supply, ...borrow]} chainId={chainId} withdrawalsByKey={withdrawalsByKey} />

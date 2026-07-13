@@ -131,7 +131,7 @@ const VERSION_TAIL = /\s+(v\d+|dao|mutual|finance|protocol|labs)$/i
 
 /// Normalise a protocol name to a stable brand key: lowercase, strip trailing version/qualifier
 /// tokens ("v3", "dao", "mutual", …), then remove all whitespace. Robust and dependency-free.
-/// e.g. "Aave V3" → "aave", "Aave Umbrella" → "aaveumbrella", "Balancer V3" → "balancer".
+/// e.g. "Aave V3" → "aave", "Aave Umbrella" → "aave" (aave* sub-brands fold in), "Balancer V3" → "balancer".
 export function brandKeyOf(protocolName: string): string {
   let name = protocolName.trim()
   // Strip repeated trailing qualifier tokens (handles "Kelp DAO" → "Kelp", "Nexus Mutual" → "Nexus").

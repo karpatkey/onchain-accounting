@@ -331,6 +331,10 @@ export function PriceFeedsTable({ data, dense = false, filterStatus = 'all', sea
             const addr = node.asset.asset.toLowerCase()
             const isCollapsed = collapsed.has(addr)
             const winnerFeed = node.feeds.find((f) => f.isWinner)
+            // Prefer the winner's own latestRoundData() read; if that per-feed read reverted, fall back to
+            // the updatedAt from getPriceData (the same source as the winner price) so the parent row stays
+            // consistent with the displayed price instead of collapsing to "—".
+            const winnerUpdatedAt = winnerFeed?.available ? winnerFeed.updatedAt : node.winner.updatedAt
             return (
               <Fragment key={addr}>
                 {/* Asset parent row — clickable + keyboard-operable (Enter/Space) to expand/collapse. */}
@@ -374,9 +378,9 @@ export function PriceFeedsTable({ data, dense = false, filterStatus = 'all', sea
                   <Td className={td} />
                   <Td className={td} />
                   <Td className={`text-right tabular-nums ${td}`}>
-                    {winnerFeed && winnerFeed.available ? (
-                      winnerFeed.updatedAt > 0n ? (
-                        formatAge(winnerFeed.updatedAt)
+                    {winnerFeed ? (
+                      winnerUpdatedAt > 0n ? (
+                        formatAge(winnerUpdatedAt)
                       ) : (
                         <span className="text-neutral-700">Live</span>
                       )

@@ -44,6 +44,7 @@ export type AssetFeedNode = {
     price: bigint
     priceType: number
     decimals: number
+    updatedAt: bigint
     stale: boolean
   }
   healthyFeedCount: number
@@ -236,6 +237,7 @@ export function useChainPriceFeeds(chainIdx: number): ChainPriceFeeds {
         price: winner?.price ?? 0n,
         priceType: winner ? Number(winner.priceType) : 0,
         decimals: winner ? Number(winner.decimals) : 8,
+        updatedAt: winner?.updatedAt ?? 0n,
         stale: winner?.stale ?? false,
       },
       healthyFeedCount: winner ? Number(winner.healthyFeedCount) : 0,

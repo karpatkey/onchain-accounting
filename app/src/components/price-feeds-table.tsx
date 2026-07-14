@@ -1,6 +1,7 @@
 'use client'
 
 import { Fragment, useState } from 'react'
+import { zeroAddress } from 'viem'
 import {
   Table,
   THead,
@@ -378,14 +379,15 @@ export function PriceFeedsTable({ data, dense = false, filterStatus = 'all', sea
                   <Td className={td} />
                   <Td className={td} />
                   <Td className={`text-right tabular-nums ${td}`}>
-                    {winnerFeed ? (
-                      winnerUpdatedAt > 0n ? (
-                        formatAge(winnerUpdatedAt)
-                      ) : (
-                        <span className="text-neutral-700">Live</span>
-                      )
-                    ) : (
+                    {node.winner.priceFeed === zeroAddress ? (
+                      // No winner (getPriceData had none / failed) — nothing to date.
                       <span className="text-neutral-700">—</span>
+                    ) : winnerUpdatedAt > 0n ? (
+                      // Driven by node.winner (getPriceData), same source as the price cell, so a failed
+                      // getPriceFeeds/per-feed read can't collapse this to "—" while the price still shows.
+                      formatAge(winnerUpdatedAt)
+                    ) : (
+                      <span className="text-neutral-700">Live</span>
                     )}
                   </Td>
                   <Td className={`text-center ${td}`}>

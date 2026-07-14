@@ -87,9 +87,10 @@ contract Mock_PriceOracleChainlink is AggregatorV3Interface {
         virtual
         returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
     {
-        // casting to 'int256' is safe because price is a positive value representing a price
+        // Non-zero, complete round (roundId == answeredInRound) so the selector's round-completeness guard passes —
+        // a real Chainlink feed never reports roundId 0. casting to 'int256' is safe (price is a positive value).
         // forge-lint: disable-next-line(unsafe-typecast)
-        return (0, int256(price), 0, _updatedAt, 0);
+        return (1, int256(price), 0, _updatedAt, 1);
     }
 
     function setUpdatedAt(uint256 updatedAt_) external {

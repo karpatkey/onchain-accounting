@@ -16,6 +16,17 @@ import "src/errors.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/constants.sol";
 
+/// @notice Minimal view on a Chainlink aggregator proxy (EACAggregatorProxy) to reach its current aggregator.
+interface IAggregatorProxy {
+    function aggregator() external view returns (address);
+}
+
+/// @notice Minimal view on the underlying Chainlink aggregator to read its circuit-breaker bounds.
+interface IAccessControlledAggregator {
+    function minAnswer() external view returns (int192);
+    function maxAnswer() external view returns (int192);
+}
+
 /// @title PriceFeedLib
 /// @notice External library hosting NAVCalculator's price-feed management AND its read/compute engine (NAV,
 ///         positions, health, value), extracted to keep NAVCalculator under the 24 576-byte EIP-170 limit.
@@ -118,15 +129,25 @@ library PriceFeedLib {
             } else {
                 int256 answer;
                 uint256 lrdUpdatedAt;
+                uint80 roundId;
+                uint80 answeredInRound;
                 try AggregatorV3Interface(cfg.priceFeed).latestRoundData() returns (
-                    uint80, int256 a, uint256, uint256 u, uint80
+                    uint80 rid, int256 a, uint256, uint256 u, uint80 air
                 ) {
+                    roundId = rid;
                     answer = a;
                     lrdUpdatedAt = u;
+                    answeredInRound = air;
                 } catch {
                     continue;
                 }
                 if (answer <= 0) continue;
+                // Round completeness: reject a zeroed or carried-over (stale) round.
+                if (roundId == 0 || answeredInRound < roundId) continue;
+                // Circuit-breaker: reject an answer pinned at the aggregator's min/maxAnswer bound (the crash-clamp
+                // vector — a feed returns the bound, not the true price, during an extreme move). Checked on the
+                // native answer before any API3 scaling; no-ops for feeds that don't expose bounds (API3/Redstone).
+                if (!_aggregatorBoundsOk(cfg.priceFeed, answer)) continue;
                 rawPrice = answer;
                 if (cfg.priceType == IPrices.PriceType.API3) {
                     rawPrice = rawPrice / 1e10; // 18-dec → 8-dec
@@ -135,7 +156,10 @@ library PriceFeedLib {
                 updatedAt = lrdUpdatedAt;
             }
 
-            uint256 effectiveTime = updatedAt > block.timestamp ? block.timestamp : updatedAt;
+            // Reject a future push timestamp (anomalous / clock-skewed feed), matching registration-time validation.
+            // The rate-only sentinel sets updatedAt = block.timestamp - 1, so this only rejects genuine future stamps.
+            if (updatedAt > block.timestamp) continue;
+            uint256 effectiveTime = updatedAt;
 
             if (block.timestamp - effectiveTime >= cfg.chainlinkHeartbeat) continue;
 
@@ -161,6 +185,36 @@ library PriceFeedLib {
         }
 
         return (bestPrice, bestDecimals, false, winnerIdx, healthyFeedCount);
+    }
+
+    /// @notice Returns false iff `answer` is pinned at the Chainlink aggregator's `minAnswer`/`maxAnswer`
+    ///         circuit-breaker bound — i.e. the feed is clamping rather than reporting the true price during an
+    ///         extreme move (the Venus/LUNA-style crash-clamp vector).
+    /// @dev Fail-open by design: any feed that does not expose `aggregator()` / `minAnswer()` / `maxAnswer()`
+    ///      (API3 and Redstone proxies, or aggregators that omit the bounds) returns true (no gating). Only genuine
+    ///      Chainlink aggregators that publish bounds are gated. All reads are wrapped so a revert never bubbles.
+    /// @param feed The registered feed address (a Chainlink aggregator proxy).
+    /// @param answer The raw (native-decimals) answer from `latestRoundData`.
+    /// @return ok True when the answer is strictly inside (minAnswer, maxAnswer), or when bounds are unavailable.
+    function _aggregatorBoundsOk(address feed, int256 answer) private view returns (bool ok) {
+        try IAggregatorProxy(feed).aggregator() returns (address agg) {
+            if (agg == address(0)) return true;
+            int192 mn;
+            try IAccessControlledAggregator(agg).minAnswer() returns (int192 m) {
+                mn = m;
+            } catch {
+                return true; // no bounds exposed → no gating
+            }
+            try IAccessControlledAggregator(agg).maxAnswer() returns (int192 mx) {
+                // A well-formed aggregator has mn < mx; if not, treat bounds as unusable (no gating).
+                if (mn >= mx) return true;
+                return answer > int256(mn) && answer < int256(mx);
+            } catch {
+                return true;
+            }
+        } catch {
+            return true; // not a Chainlink proxy (API3/Redstone) → no gating
+        }
     }
 
     // -------------------------------------------------------------------------

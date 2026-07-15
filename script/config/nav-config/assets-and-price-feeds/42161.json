@@ -6,11 +6,6 @@
         "type": "Chainlink",
         "address": "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612",
         "heartbeat": 86400
-      },
-      {
-        "type": "API3",
-        "address": "0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473",
-        "heartbeat": 86400
       }
     ]
   },
@@ -21,11 +16,6 @@
         "type": "Chainlink",
         "address": "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612",
         "heartbeat": 86400
-      },
-      {
-        "type": "API3",
-        "address": "0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473",
-        "heartbeat": 86400
       }
     ]
   },
@@ -35,12 +25,6 @@
       {
         "type": "Custom",
         "feed": "wstETH_L2",
-        "heartbeat": 86400
-      },
-      {
-        "$comment": "Independent 2nd feed (ADR 0009 redundancy): RedStone Classic Push wstETH/USD on Arbitrum (direct /USD, distinct from the wstETH_L2 cross-rate), 8 decimals.",
-        "type": "Redstone",
-        "address": "0x4C89968338b75551243C99B452c84a01888282fD",
         "heartbeat": 86400
       }
     ]
@@ -87,11 +71,6 @@
         "type": "Chainlink",
         "address": "0x50834F3163758fcC1Df9973b6e91f0F0F0434aD3",
         "heartbeat": 86400
-      },
-      {
-        "type": "API3",
-        "address": "0xD3C586Eec1C6C3eC41D276a23944dea080eDCf7f",
-        "heartbeat": 86400
       }
     ]
   },
@@ -101,11 +80,6 @@
       {
         "type": "Chainlink",
         "address": "0x3f3f5dF88dC9F13eac63DF89EC16ef6e7E25DdE7",
-        "heartbeat": 86400
-      },
-      {
-        "type": "API3",
-        "address": "0x4eadC6ee74b7Ceb09A4ad90a33eA2915fbefcf76",
         "heartbeat": 86400
       }
     ]
@@ -137,11 +111,6 @@
         "type": "Chainlink",
         "address": "0xe7C53FFd03Eb6ceF7d208bC4C13446c76d1E5884",
         "heartbeat": 3600
-      },
-      {
-        "type": "API3",
-        "address": "0xeBD595af56BeC336aA0F5233E82965c692B9599d",
-        "heartbeat": 86400
       }
     ]
   }

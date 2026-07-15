@@ -6,11 +6,6 @@
         "type": "Chainlink",
         "address": "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70",
         "heartbeat": 1200
-      },
-      {
-        "type": "API3",
-        "address": "0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473",
-        "heartbeat": 86400
       }
     ]
   },
@@ -21,11 +16,6 @@
         "type": "Chainlink",
         "address": "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70",
         "heartbeat": 1200
-      },
-      {
-        "type": "API3",
-        "address": "0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473",
-        "heartbeat": 86400
       }
     ]
   },
@@ -35,12 +25,6 @@
       {
         "type": "Custom",
         "feed": "wstETH_L2",
-        "heartbeat": 86400
-      },
-      {
-        "$comment": "Independent 2nd feed (ADR 0009 redundancy): RedStone Classic Push wstETH/USD on Base (direct /USD, distinct from the wstETH_L2 cross-rate), 8 decimals.",
-        "type": "Redstone",
-        "address": "0xddE3b77040cee3387C0cA661d1b619C3acA203b0",
         "heartbeat": 86400
       }
     ]
@@ -62,12 +46,6 @@
         "type": "Custom",
         "feed": "cbETH_L2",
         "heartbeat": 86400
-      },
-      {
-        "$comment": "Independent 2nd feed (ADR 0009 redundancy): Chainlink CBETH/USD on Base (direct /USD, distinct from the cbETH_L2 cross-rate), 8 decimals.",
-        "type": "Chainlink",
-        "address": "0xd7818272B9e248357d13057AAb0B417aF31E817d",
-        "heartbeat": 1200
       }
     ]
   },
@@ -87,11 +65,6 @@
       {
         "type": "Chainlink",
         "address": "0x7e860098F58bBFC8648a4311b374B1D669a2bc6B",
-        "heartbeat": 86400
-      },
-      {
-        "type": "API3",
-        "address": "0xD3C586Eec1C6C3eC41D276a23944dea080eDCf7f",
         "heartbeat": 86400
       }
     ]
@@ -123,18 +96,6 @@
       {
         "type": "Chainlink",
         "address": "0x07DA0E54543a844a80ABE69c8A12F22B3aA59f9D",
-        "heartbeat": 86400
-      },
-      {
-        "$comment": "Independent 2nd feed (ADR 0009 redundancy): RedStone Classic Push cbBTC/USD on Base, 8 decimals.",
-        "type": "Redstone",
-        "address": "0x8B4736f5eaD8ed579Ecf65a13F9c1E8B44dEdF20",
-        "heartbeat": 86400
-      },
-      {
-        "$comment": "Independent 3rd feed (ADR 0009 redundancy): API3 cbBTC/USD dAPI via Api3ReaderProxyV1 (18-dec proxy, scaled to 8-dec at read; PriceFeedLib validates sourceDec==18).",
-        "type": "API3",
-        "address": "0xa4183Cbf2eE868dDFccd325531C4f53F737FFF68",
         "heartbeat": 86400
       }
     ]

@@ -30,6 +30,31 @@ interface IPrices {
         uint256 chainlinkHeartbeat;
     }
 
+    /// @notice Per-asset growth-cap config for a yield-bearing Custom feed (ADR 0021). It bounds the exchange
+    ///         rate's growth from a governance-set snapshot; the (immutable) CAPO feed reads this via
+    ///         {getRateCap} and applies `min(rawRate, cap)` (plus any market floor it was built with). This state
+    ///         lives on the NAV — not the feed — so feeds carry no admin surface and stay immutable.
+    /// @param maxAprBps Max plausible annual growth of the rate, in basis points (0 ⇒ growth cap disabled).
+    /// @param snapshotRate The rate (18-dec, base-per-underlying) captured at `snapshotTimestamp`; 0 ⇒ un-armed
+    ///        (cap inactive until MANAGER takes the first snapshot post-deploy).
+    /// @param snapshotTimestamp Unix time the snapshot was taken; the cap grows from here.
+    struct RateCap {
+        uint256 maxAprBps;
+        uint256 snapshotRate;
+        uint64 snapshotTimestamp;
+    }
+
+    /// @notice Emitted when MANAGER sets an asset's max-APR growth cap.
+    event RateCapAprSet(address indexed asset, uint256 maxAprBps);
+
+    /// @notice Emitted when MANAGER (re-)snapshots an asset's rate baseline (the cap ratchets from here).
+    event RateCapSnapshotUpdated(address indexed asset, uint256 snapshotRate, uint64 snapshotTimestamp);
+
+    /// @notice Returns the growth-cap config for an asset (all-zero when none is set).
+    /// @param asset The asset the CAPO feed prices.
+    /// @return cap The {RateCap} config.
+    function getRateCap(address asset) external view returns (RateCap memory cap);
+
     /// @notice Emitted when a price feed is added for a token.
     /// @param underlyingAsset The address of the token.
     /// @param priceFeed The address of the price feed.

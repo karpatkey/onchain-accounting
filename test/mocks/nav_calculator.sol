@@ -287,6 +287,14 @@ contract Mock_NAVCalculator is INAVCalculator {
         revert("Not implemented in mock");
     }
 
+    function setRateCapApr(address, uint256) external pure override {
+        revert("Not implemented in mock");
+    }
+
+    function snapshotRateCap(address) external pure override {
+        revert("Not implemented in mock");
+    }
+
     function unregisterAsset(address) external pure override {
         revert("Not implemented in mock");
     }

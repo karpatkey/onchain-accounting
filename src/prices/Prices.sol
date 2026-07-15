@@ -31,9 +31,14 @@ abstract contract Prices is IPrices, Initializable {
     /// @notice Price feed configurations per asset (multiple feeds supported for redundancy)
     mapping(address asset => PriceFeedConfig[] feeds) internal _priceOracles;
 
-    /// @dev Reserved storage gap for future Prices expansions (50 slots).
+    /// @notice Per-asset growth-cap config for yield-bearing CAPO feeds (ADR 0021). Read by the immutable feed via
+    ///         {getRateCap}; mutated only through the MANAGER-gated setters on NAVCalculator. Keeping it here (not on
+    ///         the feed) is what lets the feeds stay immutable.
+    mapping(address asset => RateCap cap) internal _rateCaps;
+
+    /// @dev Reserved storage gap for future Prices expansions (49 slots; one consumed by `_rateCaps`).
     // solhint-disable-next-line var-name-mixedcase
-    uint256[50] private __pricesGap;
+    uint256[49] private __pricesGap;
 
     /// @notice Initializer for UUPS proxy
     /// @param chainlinkL2SequencerUptimeFeed_ The address of the Chainlink feed for the L2 sequencer
@@ -66,6 +71,24 @@ abstract contract Prices is IPrices, Initializable {
     function getPriceFeedAt(address asset, uint256 index) external view returns (PriceFeedConfig memory) {
         if (index >= _priceOracles[asset].length) revert PriceFeedIndexOutOfBounds(asset, index);
         return _priceOracles[asset][index];
+    }
+
+    /// @inheritdoc IPrices
+    function getRateCap(address asset) external view returns (RateCap memory) {
+        return _rateCaps[asset];
+    }
+
+    /// @notice Sets an asset's max-APR growth cap (bps/yr). MANAGER-gated at the NAVCalculator level.
+    function _setRateCapApr(address asset, uint256 maxAprBps) internal {
+        _rateCaps[asset].maxAprBps = maxAprBps;
+        emit RateCapAprSet(asset, maxAprBps);
+    }
+
+    /// @notice (Re-)snapshots an asset's rate baseline; the growth cap ratchets forward from here. MANAGER-gated.
+    function _setRateCapSnapshot(address asset, uint256 snapshotRate) internal {
+        _rateCaps[asset].snapshotRate = snapshotRate;
+        _rateCaps[asset].snapshotTimestamp = uint64(block.timestamp);
+        emit RateCapSnapshotUpdated(asset, snapshotRate, uint64(block.timestamp));
     }
 
     /// @notice Returns the latest price for a given token without checking the L2 sequencer uptime.

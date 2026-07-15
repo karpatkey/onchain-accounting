@@ -273,6 +273,18 @@ interface INAVCalculator is IBalances {
     /// @param priceFeed Feed address to remove.
     function removePriceFeed(address asset, address priceFeed) external;
 
+    /// @notice Sets the max-APR growth cap (bps/yr) a yield-bearing asset's CAPO feed applies to its exchange rate
+    ///         (ADR 0021). MANAGER-gated. 0 disables the growth cap (the market floor, if any, still applies).
+    /// @param asset Registered asset priced by a CAPO feed.
+    /// @param maxAprBps Max plausible annual rate growth in basis points.
+    function setRateCapApr(address asset, uint256 maxAprBps) external;
+
+    /// @notice (Re-)snapshots the asset's current exchange rate as the growth-cap baseline; the cap ratchets forward
+    ///         from this point (ADR 0021). Reads the uncapped `rawRate()` from the asset's registered CAPO feed.
+    ///         MANAGER-gated. Must be called once post-deploy to arm the cap.
+    /// @param asset Registered asset priced by a CAPO feed.
+    function snapshotRateCap(address asset) external;
+
     /// @notice Removes one or more balance adapters from the global registry in a single call.
     /// @dev Reverts with InvalidArguments if the list is empty. The batch is all-or-nothing — if any adapter is
     ///      not registered (or is the default ERC20 adapter) the whole call reverts.

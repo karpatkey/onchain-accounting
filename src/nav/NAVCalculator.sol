@@ -7,6 +7,7 @@ import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/acce
 import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import {IPrices, Prices} from "src/prices/Prices.sol";
 import {PriceFeedLib} from "src/prices/PriceFeedLib.sol";
+import {ICappedRateFeed} from "src/prices/ICappedRateFeed.sol";
 import {Balances} from "src/balances/Balances.sol";
 import {ERC20DefaultBalanceAdapter} from "src/balances/BalanceAdapters/ERC20DefaultBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
@@ -153,6 +154,26 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         _requireManager();
         _requireAssetExists(asset);
         _removePriceFeed(asset, priceFeed);
+    }
+
+    /// @inheritdoc INAVCalculator
+    function setRateCapApr(address asset, uint256 maxAprBps) external {
+        _requireManager();
+        _requireAssetExists(asset);
+        _setRateCapApr(asset, maxAprBps);
+    }
+
+    /// @inheritdoc INAVCalculator
+    function snapshotRateCap(address asset) external {
+        _requireManager();
+        _requireAssetExists(asset);
+        // Snapshot the uncapped rate from the asset's registered CAPO feed (post Phase 2 each yield-bearing asset
+        // has exactly one feed). Reverts if the feed does not implement ICappedRateFeed — i.e. only meaningful for
+        // CAPO-priced assets, which is the intended use.
+        IPrices.PriceFeedConfig[] storage feeds = _priceOracles[asset];
+        if (feeds.length == 0) revert PriceFeedNotSet(asset);
+        uint256 rate = ICappedRateFeed(feeds[0].priceFeed).rawRate();
+        _setRateCapSnapshot(asset, rate);
     }
 
     /// @inheritdoc INAVCalculator

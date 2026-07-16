@@ -161,6 +161,35 @@ contract Mock_NAVCalculator is INAVCalculator {
         revert("Not implemented in mock");
     }
 
+    function addMonitorFeed(address, address, IPrices.PriceType, uint256) external pure override {
+        revert("Not implemented in mock");
+    }
+
+    function setDivergenceTolerance(address, uint32) external pure override {
+        revert("Not implemented in mock");
+    }
+
+    function setPegTolerance(address, uint32) external pure override {
+        revert("Not implemented in mock");
+    }
+
+    function removeMonitorFeedAt(address, uint256) external pure override {
+        revert("Not implemented in mock");
+    }
+
+    function removeMonitorFeed(address, address) external pure override {
+        revert("Not implemented in mock");
+    }
+
+    function getPriceDivergence(address)
+        external
+        pure
+        override
+        returns (int256, int256, uint256, bool, uint256, bool)
+    {
+        revert("Not implemented in mock");
+    }
+
     function addBalanceAdapters(address[] calldata) external pure override {
         revert("Not implemented in mock");
     }
@@ -181,7 +210,7 @@ contract Mock_NAVCalculator is INAVCalculator {
         revert("Not implemented in mock");
     }
 
-    function healthCheck() external pure override returns (bool, address[] memory) {
+    function healthCheck() external pure override returns (bool, address[] memory, address[] memory) {
         revert("Not implemented in mock");
     }
 

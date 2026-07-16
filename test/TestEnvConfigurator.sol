@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
+import {LibraryPins} from "script/utils/LibraryPins.sol";
 
 /// @title TestEnvConfigurator
 /// @notice An abstract test base contract dedicated to importing and managing environment variables
@@ -94,6 +95,23 @@ abstract contract TestEnvConfigurator is Test {
     function createSelectForkWithCadence(string memory url, uint256 blockNumber) internal returns (uint256 forkId) {
         _incrementForkCounter();
         forkId = vm.createSelectFork(url, blockNumber);
+    }
+
+    /// @notice ERC1967 implementation-slot for UUPS proxies (`keccak256("eip1967.proxy.implementation") - 1`).
+    bytes32 internal constant ERC1967_IMPL_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
+
+    /// @notice On the currently-selected fork, upgrades a live NAVCalculator proxy to THIS build's implementation by
+    ///         etching the freshly-compiled external libraries at their pinned CREATE2 addresses and the new
+    ///         NAVCalculator runtime at the proxy's current implementation address.
+    /// @dev Lets custom-feed fork tests read base/USD from the REAL live NAV while it returns the current (this-PR)
+    ///      `PriceFeedData` shape — the deployed proxy still runs the pre-upgrade implementation, whose struct
+    ///      predates the divergence fields. Storage layout is preserved (new state lives in the reserved Prices gap),
+    ///      so the live feed configuration is read unchanged. Mirrors the library-etch the integration harness uses.
+    function _useNewNavImpl(address proxy) internal {
+        vm.etch(LibraryPins.PRICE_FEED_LIB, vm.deployCode("PriceFeedLib.sol:PriceFeedLib").code);
+        vm.etch(LibraryPins.NAV_REGISTRY_LIB, vm.deployCode("NAVRegistryLib.sol:NAVRegistryLib").code);
+        address impl = address(uint160(uint256(vm.load(proxy, ERC1967_IMPL_SLOT))));
+        vm.etch(impl, vm.deployCode("NAVCalculator.sol:NAVCalculator").code);
     }
 
     /// @notice Increments the fork creation counter to help with cadence tracking

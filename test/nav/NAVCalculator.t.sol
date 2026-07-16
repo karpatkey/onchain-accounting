@@ -1776,13 +1776,18 @@ contract NAVCalculatorTest is SuperTest {
     function test_getAccountNav_healthCheckConsistency() public {
         usdc.mint(safe, 10 ** usdc.decimals());
 
-        (bool sequencerDown, address[] memory stalePriceAssets) = nav.healthCheck();
+        (bool sequencerDown, address[] memory stalePriceAssets, address[] memory irregularPriceAssets) =
+            nav.healthCheck();
         INAVCalculator.NAV memory r = nav.getAccountNav(safe, address(0));
 
         assertEq(r.sequencerDown, sequencerDown);
         assertEq(r.stalePriceAssets.length, stalePriceAssets.length);
         for (uint256 i = 0; i < r.stalePriceAssets.length; i++) {
             assertEq(r.stalePriceAssets[i].asset, stalePriceAssets[i]);
+        }
+        assertEq(r.irregularPriceAssets.length, irregularPriceAssets.length);
+        for (uint256 i = 0; i < r.irregularPriceAssets.length; i++) {
+            assertEq(r.irregularPriceAssets[i].asset, irregularPriceAssets[i]);
         }
     }
 

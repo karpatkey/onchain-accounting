@@ -20,6 +20,7 @@ contract wstETH_L2_CustomPriceFeedForkTest_Arbitrum is TestEnvConfigurator {
         uint256 fork = createForkWithCadence(getAlchemyUrl("arb-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
+        _useNewNavImpl(NAV);
 
         oracle = new wstETH_L2_CustomPriceFeed(ASSET, RATE_FEED, RATE_HEARTBEAT, NAV, BASE);
     }
@@ -67,6 +68,7 @@ contract wstETH_L2_CustomPriceFeedForkTest_Base is TestEnvConfigurator {
         uint256 fork = createForkWithCadence(getAlchemyUrl("base-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
+        _useNewNavImpl(NAV);
 
         oracle = new wstETH_L2_CustomPriceFeed(ASSET, RATE_FEED, RATE_HEARTBEAT, NAV, BASE);
     }
@@ -114,6 +116,7 @@ contract wstETH_L2_CustomPriceFeedForkTest_Optimism is TestEnvConfigurator {
         uint256 fork = createForkWithCadence(getAlchemyUrl("opt-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
+        _useNewNavImpl(NAV);
 
         oracle = new wstETH_L2_CustomPriceFeed(ASSET, RATE_FEED, RATE_HEARTBEAT, NAV, BASE);
     }
@@ -161,6 +164,7 @@ contract wstETH_L2_CustomPriceFeedForkTest_Gnosis is TestEnvConfigurator {
         uint256 fork = createForkWithCadence(getAlchemyUrl("gnosis-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
+        _useNewNavImpl(NAV);
 
         oracle = new wstETH_L2_CustomPriceFeed(ASSET, RATE_FEED, RATE_HEARTBEAT, NAV, BASE);
     }

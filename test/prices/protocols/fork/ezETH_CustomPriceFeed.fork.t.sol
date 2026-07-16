@@ -23,6 +23,7 @@ contract ezETH_CustomPriceFeedForkTest is TestEnvConfigurator {
         uint256 fork = createForkWithCadence(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
+        _useNewNavImpl(NAV);
 
         oracle = new ezETH_CustomPriceFeed(EZETH, RESTAKE_MANAGER, NAV, WETH);
     }

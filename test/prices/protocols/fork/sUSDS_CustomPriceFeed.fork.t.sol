@@ -18,6 +18,7 @@ contract sUSDS_CustomPriceFeedTest is TestEnvConfigurator {
         uint256 fork = createForkWithCadence(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
+        _useNewNavImpl(NAV);
 
         oracle = new sUSDS_CustomPriceFeed(S_USDS, NAV, USDS);
     }

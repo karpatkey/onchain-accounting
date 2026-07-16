@@ -18,6 +18,7 @@ contract syrupUSDC_CustomPriceFeedForkTest is TestEnvConfigurator {
         uint256 fork = createForkWithCadence(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
+        _useNewNavImpl(NAV);
 
         oracle = new syrupUSDC_CustomPriceFeed(SYRUP_USDC, NAV, USDC);
     }

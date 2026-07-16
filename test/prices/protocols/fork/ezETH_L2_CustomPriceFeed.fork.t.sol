@@ -22,6 +22,7 @@ contract ezETH_L2_CustomPriceFeedForkTest_Arbitrum is TestEnvConfigurator {
         uint256 fork = createForkWithCadence(getAlchemyUrl("arb-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
+        _useNewNavImpl(NAV);
 
         oracle = new ezETH_L2_CustomPriceFeed(EZETH, X_RENZO_DEPOSIT, NAV, WETH);
     }

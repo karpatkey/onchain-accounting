@@ -20,6 +20,7 @@ contract rsETH_L2_CustomPriceFeedForkTest_Arbitrum is TestEnvConfigurator {
         uint256 fork = createForkWithCadence(getAlchemyUrl("arb-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
+        _useNewNavImpl(NAV);
 
         oracle = new rsETH_L2_CustomPriceFeed(ASSET, RATE_FEED, RATE_HEARTBEAT, NAV, BASE);
     }

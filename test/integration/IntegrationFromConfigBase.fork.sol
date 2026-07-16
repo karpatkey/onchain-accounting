@@ -307,12 +307,8 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
 
     function _deployWstEth() internal returns (address) {
         address wstEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "wstETH", "wstEth"));
-        address stEthToEth =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "wstETH", "stEthToEthChainlinkOracle"));
-        uint256 stEthToEthHb =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "wstETH", "stEthToEthChainlinkHeartbeat"));
         address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "wstETH", "baseAsset"));
-        return address(new wstETH_CustomPriceFeed(wstEth, stEthToEth, stEthToEthHb, address(nav), baseAsset));
+        return address(new wstETH_CustomPriceFeed(wstEth, address(nav), baseAsset));
     }
 
     function _deployStEth() internal returns (address) {
@@ -385,12 +381,8 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
 
     function _deployWeEth() internal returns (address) {
         address weEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "weETH", "weEth"));
-        address weEthEth =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "weETH", "weEthToEthChainlinkOracle"));
-        uint256 weEthEthHb =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "weETH", "weEthToEthChainlinkHeartbeat"));
         address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "weETH", "baseAsset"));
-        return address(new weETH_CustomPriceFeed(weEth, weEthEth, weEthEthHb, address(nav), baseAsset));
+        return address(new weETH_CustomPriceFeed(weEth, address(nav), baseAsset));
     }
 
     function _deployRsEth() internal returns (address) {
@@ -402,13 +394,8 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
 
     function _deployEEth() internal returns (address) {
         address eEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "eETH", "eEth"));
-        address weEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "eETH", "weEth"));
-        address weEthEth =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "eETH", "weEthToEthChainlinkOracle"));
-        uint256 weEthEthHb =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "eETH", "weEthToEthChainlinkHeartbeat"));
         address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "eETH", "baseAsset"));
-        return address(new eETH_CustomPriceFeed(eEth, weEth, weEthEth, weEthEthHb, address(nav), baseAsset));
+        return address(new eETH_CustomPriceFeed(eEth, address(nav), baseAsset));
     }
 
     function _deployEzEth() internal returns (address) {
@@ -823,6 +810,46 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
                     console2.log("[asset/addFeed]", symbol, "FAILED");
                     console2.logBytes(err);
                 }
+            }
+        }
+
+        if (registered) _wireDivergence(symbol, asset);
+    }
+
+    /// @notice Wires an asset's divergence/peg tolerances and monitor feeds (mirrors production RegisterAssets).
+    ///         setDivergenceTolerance MUST precede addMonitorFeed. Custom monitors resolve to the in-test ephemeral
+    ///         deployment; other types use the static config address.
+    function _wireDivergence(string memory symbol, address asset) internal {
+        uint256 divTol = ConfigReader.readAssetDivergenceToleranceBps(vm, _chainId, symbol);
+        uint256 pegTol = ConfigReader.readAssetPegToleranceBps(vm, _chainId, symbol);
+        uint256 monCount = ConfigReader.assetMonitorFeedCount(vm, _chainId, symbol);
+
+        if (monCount > 0 && divTol > 0) {
+            try nav.setDivergenceTolerance(asset, uint32(divTol)) {} catch {}
+        }
+        if (pegTol > 0) {
+            try nav.setPegTolerance(asset, uint32(pegTol)) {} catch {}
+        }
+
+        for (uint256 i = 0; i < monCount; i++) {
+            (IPrices.PriceType pt, bool validType) = ConfigReader.readAssetMonitorFeedPriceType(vm, _chainId, symbol, i);
+            if (!validType) continue;
+
+            address adapter;
+            if (pt == IPrices.PriceType.Custom) {
+                adapter = _ephemeralPriceFeeds[ConfigReader.readAssetMonitorFeedName(vm, _chainId, symbol, i)];
+            } else {
+                string memory fa = ConfigReader.readAssetMonitorFeedAddress(vm, _chainId, symbol, i);
+                if (bytes(fa).length > 0) adapter = vm.parseAddress(fa);
+            }
+            if (adapter == address(0)) continue;
+
+            uint256 hb = vm.parseUint(ConfigReader.readAssetMonitorFeedHeartbeat(vm, _chainId, symbol, i));
+            try nav.addMonitorFeed(asset, adapter, pt, hb) {
+                console2.log("[asset/addMonitor]", symbol, adapter);
+            } catch (bytes memory err) {
+                console2.log("[asset/addMonitor]", symbol, "FAILED");
+                console2.logBytes(err);
             }
         }
     }

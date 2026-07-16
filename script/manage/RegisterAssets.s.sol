@@ -124,10 +124,23 @@ contract RegisterAssets is BaseDeployScript {
             return acts;
         }
 
-        // Wire feeds in config order. The k-th *resolvable* configured feed corresponds to the k-th on-chain feed
-        // (feeds are appended, never reordered), so for a registered asset the first `onChainFeeds` resolvable feeds
-        // are already present and skipped; only trailing (new) feeds are added — which lets ADR-0009 redundancy feeds
-        // be topped up on an already-live asset instead of being silently dropped.
+        // Pricing feeds and monitor/tolerance actions are each built in their own frame, then concatenated — this
+        // keeps _planAsset under the via_ir stack limit.
+        bytes[] memory feedActs = _planFeedActs(symbol, asset, registered, onChainFeeds, feedCount);
+        bytes[] memory monActs = _planMonitorActs(symbol, asset, registered, navProxy);
+        acts = _concat(feedActs, monActs);
+    }
+
+    /// @notice Plans an asset's pricing-feed actions (registerAsset for the primary; addPriceFeed for trailing new
+    ///         feeds). The first `onChainFeeds` resolvable feeds are already present (feeds are appended, never
+    ///         reordered) and skipped.
+    function _planFeedActs(
+        string memory symbol,
+        address asset,
+        bool registered,
+        uint256 onChainFeeds,
+        uint256 feedCount
+    ) private view returns (bytes[] memory acts) {
         bytes[] memory tmp = new bytes[](feedCount);
         uint256 n;
         uint256 resolvableIdx;
@@ -150,6 +163,68 @@ contract RegisterAssets is BaseDeployScript {
                 tmp[n++] = abi.encodeCall(NAVCalculator.addPriceFeed, (asset, feed, pt, hb));
             }
             resolvableIdx++;
+        }
+        acts = new bytes[](n);
+        for (uint256 i = 0; i < n; i++) {
+            acts[i] = tmp[i];
+        }
+    }
+
+    /// @notice Concatenates two calldata-action arrays.
+    function _concat(bytes[] memory a, bytes[] memory b) private pure returns (bytes[] memory out) {
+        out = new bytes[](a.length + b.length);
+        uint256 w;
+        for (uint256 i = 0; i < a.length; i++) {
+            out[w++] = a[i];
+        }
+        for (uint256 i = 0; i < b.length; i++) {
+            out[w++] = b[i];
+        }
+    }
+
+    /// @notice Plans an asset's divergence/peg tolerance setters + monitor-feed additions. setDivergenceTolerance
+    ///         precedes any addMonitorFeed (required before a monitor can be added); both run after registerAsset in
+    ///         the same batch. Idempotent: skips the first `onChainMonitors` resolvable monitors already present.
+    function _planMonitorActs(string memory symbol, address asset, bool registered, address navProxy)
+        private
+        view
+        returns (bytes[] memory acts)
+    {
+        uint256 monCount = ConfigReader.assetMonitorFeedCount(vm, currentChainId, symbol);
+        uint256 divTolBps = ConfigReader.readAssetDivergenceToleranceBps(vm, currentChainId, symbol);
+        uint256 pegTolBps = ConfigReader.readAssetPegToleranceBps(vm, currentChainId, symbol);
+
+        uint256 onChainMonitors;
+        if (registered) {
+            (bool okm, bytes memory md) =
+                navProxy.staticcall(abi.encodeWithSelector(IPrices.getMonitorFeedCount.selector, asset));
+            if (okm && md.length == 32) onChainMonitors = abi.decode(md, (uint256));
+        }
+
+        bytes[] memory tmp = new bytes[](monCount + 2);
+        uint256 n;
+        if (monCount > 0 && divTolBps > 0) {
+            tmp[n++] = abi.encodeCall(NAVCalculator.setDivergenceTolerance, (asset, uint32(divTolBps)));
+        }
+        if (pegTolBps > 0) {
+            tmp[n++] = abi.encodeCall(NAVCalculator.setPegTolerance, (asset, uint32(pegTolBps)));
+        }
+
+        uint256 resolvableMon;
+        for (uint256 i = 0; i < monCount; i++) {
+            (IPrices.PriceType pt, bool validType) =
+                ConfigReader.readAssetMonitorFeedPriceType(vm, currentChainId, symbol, i);
+            if (!validType) continue;
+            string memory maddr = ConfigReader.readAssetMonitorFeedAddress(vm, currentChainId, symbol, i);
+            if (bytes(maddr).length == 0) continue; // unresolved (e.g. Custom monitor not deployed yet)
+            address feed = vm.parseAddress(maddr);
+            if (feed == address(0)) continue;
+
+            if (resolvableMon >= onChainMonitors) {
+                uint256 hb = vm.parseUint(ConfigReader.readAssetMonitorFeedHeartbeat(vm, currentChainId, symbol, i));
+                tmp[n++] = abi.encodeCall(NAVCalculator.addMonitorFeed, (asset, feed, pt, hb));
+            }
+            resolvableMon++;
         }
 
         acts = new bytes[](n);

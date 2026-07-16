@@ -21,6 +21,7 @@
   },
   "USDC": {
     "address": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+    "pegToleranceBps": 100,
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -31,6 +32,7 @@
   },
   "USDT": {
     "address": "0x55d398326f99059fF775485246999027B3197955",
+    "pegToleranceBps": 100,
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -63,6 +65,6 @@
   "COW": {
     "address": "0x5BfdAa3f7C28B9994B56135403bF1aCEA02595b0",
     "priceFeeds": [],
-    "note": "No Chainlink feed for COW on BSC. NAVCalculator filters per-asset against the registry, so leaving COW unregistered does NOT exclude an ETH/COW LP from NAV \u2014 only the COW *leg* drops, while the ETH leg is still priced. The PCS V2 ETH/COW adapter is therefore disabled in chains/56.json until COW is priced (e.g. via a custom feed or a TWAP-based feed); enabling it without registering COW would silently understate the LP's NAV by roughly half."
+    "note": "No Chainlink feed for COW on BSC. NAVCalculator filters per-asset against the registry, so leaving COW unregistered does NOT exclude an ETH/COW LP from NAV — only the COW *leg* drops, while the ETH leg is still priced. The PCS V2 ETH/COW adapter is therefore disabled in chains/56.json until COW is priced (e.g. via a custom feed or a TWAP-based feed); enabling it without registering COW would silently understate the LP's NAV by roughly half."
   }
 }

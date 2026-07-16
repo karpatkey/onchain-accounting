@@ -1,12 +1,15 @@
 {
   "ETH": {
     "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+    "divergenceToleranceBps": 250,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0x13e3Ee699D1909E989722E753853AE30b17e08c5",
         "heartbeat": 1200
-      },
+      }
+    ],
+    "monitorFeeds": [
       {
         "type": "API3",
         "address": "0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473",
@@ -16,12 +19,15 @@
   },
   "WETH": {
     "address": "0x4200000000000000000000000000000000000006",
+    "divergenceToleranceBps": 250,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0x13e3Ee699D1909E989722E753853AE30b17e08c5",
         "heartbeat": 1200
-      },
+      }
+    ],
+    "monitorFeeds": [
       {
         "type": "API3",
         "address": "0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473",
@@ -41,6 +47,7 @@
   },
   "USDC": {
     "address": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
+    "pegToleranceBps": 100,
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -51,6 +58,7 @@
   },
   "USDT": {
     "address": "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58",
+    "pegToleranceBps": 100,
     "priceFeeds": [
       {
         "type": "Chainlink",

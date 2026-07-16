@@ -22,6 +22,7 @@ contract NXM_CustomPriceFeedForkTest is TestEnvConfigurator {
         uint256 fork = createForkWithCadence(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
+        _useNewNavImpl(NAV);
 
         nxmPriceOracle = new NXM_CustomPriceFeed(NXM, RAMM, NAV, WETH);
     }

@@ -20,6 +20,7 @@ contract CrossRateCustomPriceFeedForkTest is TestEnvConfigurator {
         uint256 fork = createForkWithCadence(getAlchemyUrl("gnosis-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
+        _useNewNavImpl(NAV);
 
         oracle = new CrossRateCustomPriceFeed(ASSET, RATE_FEED, RATE_HEARTBEAT, NAV, BASE);
     }

@@ -22,6 +22,7 @@ contract ETHx_CustomPriceFeedForkTest is TestEnvConfigurator {
         uint256 fork = createForkWithCadence(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
+        _useNewNavImpl(NAV);
 
         ethxPriceOracle = new ETHx_CustomPriceFeed(ETHX, STAKE_POOLS_MANAGER, NAV, WETH);
     }

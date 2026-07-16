@@ -72,43 +72,50 @@ There is no `deployed` field here — deployed addresses are written to `deploym
 
 ## nav-config/assets-and-price-feeds/<chainId>.json — Assets to register on NAV
 
-Lists every asset of interest, keyed by symbol (e.g. `"WETH"`, `"wstETH"`), with its token `address` and an ordered `priceFeeds[]` list. The **list of symbols to process** is derived from this file's keys via `ConfigReader.getAssetSymbols(vm, chainId)` — no hardcoded list; add a symbol by adding its object to this JSON. The **first** feed in `priceFeeds[]` is used by `registerAsset`; any remaining feeds are added via `addPriceFeed` (ADR 0009 redundancy).
+Lists every asset of interest, keyed by symbol (e.g. `"WETH"`, `"wstETH"`), with its token `address`, a **single-primary** `priceFeeds[]`, and (optionally) a `monitorFeeds[]` list plus divergence/peg tolerances. The **list of symbols to process** is derived from this file's keys via `ConfigReader.getAssetSymbols(vm, chainId)` — no hardcoded list; add a symbol by adding its object to this JSON.
+
+The NAV **prices each asset off its single primary feed** (`priceFeeds[0]`, registered via `registerAsset`) — there is no pricing fallback. Any additional feeds go in `monitorFeeds[]`: they NEVER price the NAV, they are read only to detect divergence. When the primary diverges from the mean of the healthy monitor prices by more than `divergenceToleranceBps`, or (when `pegToleranceBps` is set) the primary deviates from $1 by more than that, NAVCalculator flags the asset `irregular` (a signal, not a revert). See the divergence design in `PriceFeedLib` / `INAVCalculator.PriceFeedData`.
 
 Example structure (top-level keys are symbols — no chainId wrapper):
 
 ```json
 {
-  "WETH": {
-    "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
-    "priceFeeds": [
-      {
-        "type": "Chainlink",
-        "address": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
-        "heartbeat": 3600
-      }
-    ]
-  },
   "wstETH": {
     "address": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
+    "divergenceToleranceBps": 250,
     "priceFeeds": [
-      {
-        "type": "Custom",
-        "feed": "wstETH",
-        "heartbeat": 86400
-      }
+      { "type": "Custom", "feed": "wstETH", "heartbeat": 86400 }
+    ],
+    "monitorFeeds": [
+      { "type": "Redstone", "address": "0xe4aE88743c3834d0c492eAbC47384c84BcADC6a6", "heartbeat": 86400 }
+    ]
+  },
+  "USDC": {
+    "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    "pegToleranceBps": 100,
+    "divergenceToleranceBps": 250,
+    "priceFeeds": [
+      { "type": "Chainlink", "address": "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6", "heartbeat": 82800 }
+    ],
+    "monitorFeeds": [
+      { "type": "API3", "address": "0xD3C586Eec1C6C3eC41D276a23944dea080eDCf7f", "heartbeat": 86400 }
     ]
   }
 }
 ```
 
 - **address**: Token contract address.
-- **priceFeeds**: Ordered array of feed entries. The first registers the asset (`registerAsset`); the rest are added via `addPriceFeed`. An asset with no oracle uses an empty `priceFeeds: []`. Each entry has:
-  - **type**: `"Chainlink"` (direct Chainlink feed), `"Custom"` (custom price feed adapter), `"Redstone"` (Redstone Classic push feed), or `"API3"` (`Api3ReaderProxyV1` push feed).
-  - **address**: Feed contract address (Chainlink aggregator, Redstone/API3 proxy). Used by all types **except** `Custom`.
-  - **feed**: For `Custom` only — the name of a `contracts-deployment-config/custom-price-feeds/<chainId>.json` entry; its on-chain address is resolved post-deploy from `deployments/<chainId>.json .customPriceFeeds.<name>`.
-  - **heartbeat**: Staleness heartbeat in seconds (e.g. 3600, 86400). Optional; defaults to 3600 in code.
+- **priceFeeds**: The **single** primary feed (array with exactly one entry), used by `registerAsset` to price the asset. An asset with no oracle uses an empty `priceFeeds: []`. Entry fields (`type` / `address` / `feed` / `heartbeat`) are as below.
+- **monitorFeeds**: Optional ordered array of divergence-only feeds (same entry fields). Registered via `addMonitorFeed`; every entry must report 8 decimals (USD-comparable to the primary). Requires `divergenceToleranceBps` to be set. These are the former ADR-0009 redundancy feeds — they no longer price the NAV, they only feed the divergence check.
+- **divergenceToleranceBps**: Basis-point threshold for primary-vs-monitor-mean divergence. Required when `monitorFeeds` is non-empty (must be in `(0, 10000]`). Typical: 250.
+- **pegToleranceBps**: Basis-point threshold for the absolute $1 peg guard. Set only on USD-$1 stablecoins; omit (or 0) to disable. Typical: 100. Independent of monitors.
+- Feed entry fields:
+  - **type**: `"Chainlink"`, `"Custom"`, `"Redstone"`, or `"API3"`.
+  - **address**: Feed contract address. Used by all types **except** `Custom`.
+  - **feed**: For `Custom` only — the name of a `contracts-deployment-config/custom-price-feeds/<chainId>.json` entry; resolved post-deploy from `deployments/<chainId>.json .customPriceFeeds.<name>`.
+  - **heartbeat**: Staleness heartbeat in seconds. Optional; defaults to 3600 in code.
 
-Iterate assets via `ConfigReader.getAssetSymbols(vm, chainId)`, then read each feed with `assetFeedCount` + `readAssetFeedType` / `readAssetFeedAddress` / `readAssetFeedHeartbeat` / `readAssetFeedName`.
+Iterate assets via `ConfigReader.getAssetSymbols(vm, chainId)`, then read the primary with `assetFeedCount` + `readAssetFeedType`/`readAssetFeedAddress`/`readAssetFeedHeartbeat`/`readAssetFeedName`, the monitors with `assetMonitorFeedCount` + `readAssetMonitorFeed*`, and tolerances with `readAssetDivergenceToleranceBps` / `readAssetPegToleranceBps`.
 
 **Registering assets:** Use `script/manage/RegisterAssets.s.sol` to report which tokens are already registered, which are skipped (no oracle or missing address), and which should be registered. It writes a Safe transaction batch to `safe-transactions/{chainId}-register-assets.json`. Run with `--rpc-url` so already-registered assets are excluded from the batch.
 

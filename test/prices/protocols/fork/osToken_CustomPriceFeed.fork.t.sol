@@ -27,6 +27,7 @@ contract osETH_CustomPriceFeedForkTest is TestEnvConfigurator {
         uint256 fork = createForkWithCadence(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
+        _useNewNavImpl(NAV);
         oracle = new osToken_CustomPriceFeed(OSETH, CONTROLLER, NAV, WETH);
     }
 
@@ -62,6 +63,7 @@ contract osGNO_CustomPriceFeedForkTest is TestEnvConfigurator {
         uint256 fork = createForkWithCadence(getAlchemyUrl("gnosis-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
+        _useNewNavImpl(NAV);
         oracle = new osToken_CustomPriceFeed(OSGNO, CONTROLLER, NAV, GNO);
     }
 

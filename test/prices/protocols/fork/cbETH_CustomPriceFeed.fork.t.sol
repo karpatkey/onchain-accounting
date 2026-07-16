@@ -22,6 +22,7 @@ contract cbETH_CustomPriceFeedForkTest is TestEnvConfigurator {
         uint256 fork = createForkWithCadence(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
+        _useNewNavImpl(NAV);
 
         cbEthPriceOracle = new cbETH_CustomPriceFeed(CBETH, NAV, WETH);
     }

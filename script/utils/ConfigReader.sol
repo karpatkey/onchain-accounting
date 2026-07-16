@@ -492,7 +492,11 @@ library ConfigReader {
         view
         returns (IPrices.PriceType pt, bool valid)
     {
-        string memory t = readAssetFeedType(vm, chainId, symbol, i);
+        return _priceTypeFromString(readAssetFeedType(vm, chainId, symbol, i));
+    }
+
+    /// @notice Shared `type` string → PriceType mapping. `valid` is false for an empty/unrecognized type.
+    function _priceTypeFromString(string memory t) private pure returns (IPrices.PriceType pt, bool valid) {
         if (_equals(t, "Chainlink")) return (IPrices.PriceType.Chainlink, true);
         if (_equals(t, "Custom")) return (IPrices.PriceType.Custom, true);
         if (_equals(t, "Redstone")) return (IPrices.PriceType.Redstone, true);
@@ -585,6 +589,120 @@ library ConfigReader {
         returns (string memory)
     {
         return string(abi.encodePacked(".", symbol, ".priceFeeds[", vm.toString(i), "].", field));
+    }
+
+    // -------------------------------------------------------------------------
+    // Monitor feeds + divergence/peg tolerances (assets-and-price-feeds)
+    // -------------------------------------------------------------------------
+
+    /// @notice Number of monitor (divergence-only) feeds configured for an asset (length of its `monitorFeeds[]`).
+    function assetMonitorFeedCount(Vm vm, uint256 chainId, string memory symbol) internal view returns (uint256 n) {
+        string memory json = _readOrEmpty(vm, _navAssetsPath(vm, chainId));
+        while (vm.keyExists(json, _monitorPath(vm, symbol, n, "type"))) {
+            ++n;
+        }
+    }
+
+    /// @notice Reads monitor feed `i`'s type string ("" if absent).
+    function readAssetMonitorFeedType(Vm vm, uint256 chainId, string memory symbol, uint256 i)
+        internal
+        view
+        returns (string memory)
+    {
+        string memory json = _readOrEmpty(vm, _navAssetsPath(vm, chainId));
+        string memory p = _monitorPath(vm, symbol, i, "type");
+        return vm.keyExists(json, p) ? json.readString(p) : "";
+    }
+
+    /// @notice Maps monitor feed `i`'s type to the on-chain PriceType enum (shares the priceFeeds mapping table).
+    function readAssetMonitorFeedPriceType(Vm vm, uint256 chainId, string memory symbol, uint256 i)
+        internal
+        view
+        returns (IPrices.PriceType pt, bool valid)
+    {
+        return _priceTypeFromString(readAssetMonitorFeedType(vm, chainId, symbol, i));
+    }
+
+    /// @notice Reads monitor feed `i`'s heartbeat (seconds, as string; default "3600"). Accepts number or quoted.
+    function readAssetMonitorFeedHeartbeat(Vm vm, uint256 chainId, string memory symbol, uint256 i)
+        internal
+        view
+        returns (string memory)
+    {
+        string memory json = _readOrEmpty(vm, _navAssetsPath(vm, chainId));
+        string memory p = _monitorPath(vm, symbol, i, "heartbeat");
+        if (!vm.keyExists(json, p)) return "3600";
+        try vm.parseJsonUint(json, p) returns (uint256 v) {
+            return vm.toString(v);
+        } catch {
+            return json.readString(p);
+        }
+    }
+
+    /// @notice Resolves monitor feed `i`'s on-chain address (static `address`, or a `Custom` feed resolved from
+    ///         `deployments/<id>.json .customPriceFeeds.<feed>`). "" if unresolved.
+    function readAssetMonitorFeedAddress(Vm vm, uint256 chainId, string memory symbol, uint256 i)
+        internal
+        view
+        returns (string memory)
+    {
+        string memory json = _readOrEmpty(vm, _navAssetsPath(vm, chainId));
+        string memory addrPath = _monitorPath(vm, symbol, i, "address");
+        if (vm.keyExists(json, addrPath)) return json.readString(addrPath);
+        string memory feedPath = _monitorPath(vm, symbol, i, "feed");
+        if (vm.keyExists(json, feedPath)) {
+            address dep = readDeployedAdapterAddress(vm, chainId, "customPriceFeeds", json.readString(feedPath));
+            if (dep != address(0)) return vm.toString(dep);
+        }
+        return "";
+    }
+
+    /// @notice Reads monitor feed `i`'s Custom-feed name (the `feed` field). "" if absent (static `address` form).
+    function readAssetMonitorFeedName(Vm vm, uint256 chainId, string memory symbol, uint256 i)
+        internal
+        view
+        returns (string memory)
+    {
+        string memory json = _readOrEmpty(vm, _navAssetsPath(vm, chainId));
+        string memory p = _monitorPath(vm, symbol, i, "feed");
+        return vm.keyExists(json, p) ? json.readString(p) : "";
+    }
+
+    /// @notice Reads an asset's `divergenceToleranceBps` (0 if absent).
+    function readAssetDivergenceToleranceBps(Vm vm, uint256 chainId, string memory symbol)
+        internal
+        view
+        returns (uint256)
+    {
+        return _readUintOrZero(vm, chainId, symbol, "divergenceToleranceBps");
+    }
+
+    /// @notice Reads an asset's `pegToleranceBps` (0 if absent → peg guard disabled).
+    function readAssetPegToleranceBps(Vm vm, uint256 chainId, string memory symbol) internal view returns (uint256) {
+        return _readUintOrZero(vm, chainId, symbol, "pegToleranceBps");
+    }
+
+    function _readUintOrZero(Vm vm, uint256 chainId, string memory symbol, string memory field)
+        private
+        view
+        returns (uint256)
+    {
+        string memory json = _readOrEmpty(vm, _navAssetsPath(vm, chainId));
+        string memory p = string(abi.encodePacked(".", symbol, ".", field));
+        if (!vm.keyExists(json, p)) return 0;
+        try vm.parseJsonUint(json, p) returns (uint256 v) {
+            return v;
+        } catch {
+            return vm.parseUint(json.readString(p));
+        }
+    }
+
+    function _monitorPath(Vm vm, string memory symbol, uint256 i, string memory field)
+        private
+        view
+        returns (string memory)
+    {
+        return string(abi.encodePacked(".", symbol, ".monitorFeeds[", vm.toString(i), "].", field));
     }
 
     // -------------------------------------------------------------------------

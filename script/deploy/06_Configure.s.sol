@@ -53,6 +53,7 @@ contract Configure is BaseDeployScript {
             _configureBalanceAdapters(navProxy);
         }
         if (bridgeProxy != address(0)) {
+            _ensureManager(bridgeProxy); // registerAsset is MANAGER-gated; covers the legacy-02 path that grants only admin
             _authorizeBridgeAdapters(bridgeProxy);
             _authorizeBridgeAccounts(bridgeProxy);
             _registerBridgeAssets(bridgeProxy);
@@ -62,13 +63,15 @@ contract Configure is BaseDeployScript {
         console2.log("\n=== Configuration complete ===");
     }
 
-    /// @notice Idempotently ensures `chainConfig.manager` holds MANAGER (covers the legacy 02 path that doesn't grant
-    ///         it; the atomic path already did). Requires the caller to hold DEFAULT_ADMIN_ROLE.
-    function _ensureManager(address navProxy) internal {
+    /// @notice Idempotently ensures `chainConfig.manager` holds MANAGER on `proxy` (covers the legacy 02 path that
+    ///         doesn't grant it; the atomic path already did). Used for both the NAV and BridgeEscrow proxies — the
+    ///         MANAGER-gated calls that follow (NAV meta-instance reconcile; BridgeEscrow `registerAsset`) need it.
+    ///         Requires the caller to hold DEFAULT_ADMIN_ROLE.
+    function _ensureManager(address proxy) internal {
         address manager = chainConfig.manager;
         if (manager == address(0)) return;
-        if (!IAccessControl(navProxy).hasRole(MANAGER, manager)) {
-            IAccessControl(navProxy).grantRole(MANAGER, manager);
+        if (!IAccessControl(proxy).hasRole(MANAGER, manager)) {
+            IAccessControl(proxy).grantRole(MANAGER, manager);
             console2.log("[OK] Granted MANAGER to:", manager);
         }
     }

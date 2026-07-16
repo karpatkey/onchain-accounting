@@ -387,7 +387,7 @@ Example — bytes32-keyed meta-adapter (`MorphoMarketsMeta`), in `nav-config/met
 
 ## Adding a New Chain
 
-Add a per-chain `{newChainId}.json` file in **each** of the eight concern folders (plus the deployments state file):
+Add a per-chain `{newChainId}.json` file in **each** of the nine concern folders (plus the deployments state file):
 
 1. Create `script/config/chains/{newChainId}.json` — copy an existing chain config as a template; it carries only metadata and `addresses`.
 2. Create `script/config/contracts-deployment-config/custom-price-feeds/{newChainId}.json` with the chain's custom price feeds to deploy (`enabled` + `constructor`).

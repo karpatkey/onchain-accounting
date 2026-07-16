@@ -19,10 +19,12 @@ import {MockBridgeAdapter} from "../mocks/MockBridgeAdapter.sol";
 ///         escrow (as `02_DeployProxies.s.sol` leaves it: no accounts, no assets) into a working deposit path.
 /// @dev The existing per-adapter fork tests deploy an escrow that is already seeded with an authorized account +
 ///      registered assets in `setUp`, so they never exercise the empty→config-applied transition. This test closes
-///      that gap: it deploys an empty escrow, applies config through the SAME `ConfigReader` readers + escrow calls
-///      that `06` uses, then drives a `depositAndBridge` (through a no-op `MockBridgeAdapter`) to prove the escrow-side
-///      preconditions (`authorizeAccount` + `registerAsset`) are satisfied end-to-end. It does not reproduce the
-///      cross-chain transport — that is what the per-protocol fork tests cover against the real protocol contracts.
+///      that gap: it deploys an empty escrow, then applies config through the SAME `ConfigReader` readers + escrow
+///      calls (`authorizeAccount`/`registerAsset`) that `06_Configure` makes, and drives a `depositAndBridge` (through
+///      a no-op `MockBridgeAdapter`) to prove the escrow-side preconditions are satisfied end-to-end. It does NOT
+///      re-run `06`'s script harness or its role bootstrapping (it grants MANAGER to `admin` itself, mirroring the
+///      `_ensureManager` step `06` performs), and it does NOT reproduce the cross-chain transport — that is covered by
+///      the per-protocol fork tests against the real protocol contracts.
 contract BridgeEscrowConfigRehearsalForkTest is BridgeTestBase {
     using ConfigReader for *;
 

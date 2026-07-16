@@ -14,8 +14,11 @@ import {console2} from "forge-std/console2.sol";
 /// @dev EOA flow (no Safe): the caller must hold DEFAULT_ADMIN_ROLE + MANAGER on the proxies (granted by the atomic
 ///      deployer in 02 when chainConfig.admin == chainConfig.manager == the deployer EOA). For each enabled+deployed
 ///      balance adapter it calls `addBalanceAdapters` (idempotent) and, for meta-adapters (ADR 0010), `addMetaInstances`/`removeMetaInstances`
-///      with the configured instance set; for each enabled+deployed bridge adapter it authorizes it on BridgeEscrow.
-///      Idempotent: skips adapters already registered and adapters already authorized, so it can be re-run safely.
+///      with the configured instance set; for each enabled+deployed bridge adapter it authorizes it on BridgeEscrow,
+///      then authorizes the configured bridge accounts (`authorizeAccount`) and registers the configured bridge assets
+///      (`registerAsset`) from `contracts-deployment-config/bridge-escrow/<chainId>.json`.
+///      Idempotent: skips adapters already registered, adapters/accounts already authorized, and assets already
+///      registered to the same address, so it can be re-run safely.
 ///      Run with: forge script script/deploy/06_Configure.s.sol --rpc-url $RPC_URL --account $DEPLOYER_NAME --broadcast
 contract Configure is BaseDeployScript {
     function run() public override {
@@ -51,6 +54,8 @@ contract Configure is BaseDeployScript {
         }
         if (bridgeProxy != address(0)) {
             _authorizeBridgeAdapters(bridgeProxy);
+            _authorizeBridgeAccounts(bridgeProxy);
+            _registerBridgeAssets(bridgeProxy);
         }
         vm.stopBroadcast();
 
@@ -210,6 +215,68 @@ contract Configure is BaseDeployScript {
             _wireTrustedRemoteAdapters(adapterNames[i], deployed);
         }
         console2.log("--- Bridge adapters authorized:", authorized);
+    }
+
+    /// @notice Authorizes each account in `contracts-deployment-config/bridge-escrow/<chainId>.json` `.accounts` on
+    ///         BridgeEscrow (`authorizeAccount`, DEFAULT_ADMIN_ROLE), idempotent via `isAuthorizedAccount`.
+    /// @dev An account must be authorized to call `depositAndBridge` (source) AND to receive a release (destination),
+    ///      so it must be authorized on BOTH ends of every lane it uses, at the same address on each chain. The numbered
+    ///      flow otherwise never authorizes any account (02 initializes the escrow with an empty account set), so
+    ///      without this step `depositAndBridge` reverts `NotAuthorized`. `authorizeAccount` is not on `IBridgeEscrow`,
+    ///      so it is dispatched via low-level call (same pattern as `authorizeAdapter`). Runs before 07, while the
+    ///      deployer still holds DEFAULT_ADMIN_ROLE.
+    function _authorizeBridgeAccounts(address bridgeProxy) internal {
+        address[] memory accounts = ConfigReader.readBridgeEscrowAccounts(vm, currentChainId);
+        uint256 authorized;
+        for (uint256 i = 0; i < accounts.length; i++) {
+            address account = accounts[i];
+            if (account == address(0)) continue;
+            if (IBridgeEscrow(bridgeProxy).isAuthorizedAccount(account)) {
+                console2.log("[SKIP] Bridge account already authorized:", account);
+                continue;
+            }
+            (bool ok, bytes memory data) =
+                bridgeProxy.call(abi.encodeWithSignature("authorizeAccount(address)", account));
+            if (!ok) {
+                revert(string(abi.encodePacked("authorize bridge account failed: ", _decodeRevert(data))));
+            }
+            console2.log("[OK] Authorized bridge account:", account);
+            authorized++;
+        }
+        console2.log("--- Bridge accounts authorized:", authorized);
+    }
+
+    /// @notice Registers each logical bridge asset in `contracts-deployment-config/bridge-escrow/<chainId>.json`
+    ///         `.assets` (symbol -> local token address) on BridgeEscrow (`registerAsset`, MANAGER_ROLE), idempotent.
+    /// @dev The symbol is part of the cross-chain invoice identity, so both ends of a lane must register the SAME
+    ///      logical symbol mapped to each chain's local token address. The numbered flow otherwise never registers a
+    ///      bridge asset (only the standalone manage/RegisterBridgeEscrow.s.sol does, hardcoded to USDC), so without
+    ///      this step `depositAndBridge`'s symbol lookup fails. `registerAsset` is not on `IBridgeEscrow`, so it is
+    ///      dispatched via low-level call. Skips a symbol already mapped to the same address; a repoint to a different
+    ///      address is left to the manage layer (it reverts on-chain if the symbol has active invoices).
+    function _registerBridgeAssets(address bridgeProxy) internal {
+        string[] memory symbols = ConfigReader.readBridgeEscrowAssetSymbols(vm, currentChainId);
+        uint256 registered;
+        for (uint256 i = 0; i < symbols.length; i++) {
+            string memory symbol = symbols[i];
+            address asset = ConfigReader.readBridgeEscrowAssetAddress(vm, currentChainId, symbol);
+            if (asset == address(0)) {
+                console2.log("[WARN] Bridge asset address missing/placeholder; skipping symbol:", symbol);
+                continue;
+            }
+            if (IBridgeEscrow(bridgeProxy).assetRegistry(symbol) == asset) {
+                console2.log("[SKIP] Bridge asset already registered:", symbol, asset);
+                continue;
+            }
+            (bool ok, bytes memory data) =
+                bridgeProxy.call(abi.encodeWithSignature("registerAsset(string,address)", symbol, asset));
+            if (!ok) {
+                revert(string(abi.encodePacked("register bridge asset failed for ", symbol, ": ", _decodeRevert(data))));
+            }
+            console2.log("[OK] Registered bridge asset:", symbol, asset);
+            registered++;
+        }
+        console2.log("--- Bridge assets registered:", registered);
     }
 
     /// @notice Sets `setTrustedRemoteAdapter(sourceKey, remote)` on `adapter` for each configured remote chain

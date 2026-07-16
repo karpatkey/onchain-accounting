@@ -89,6 +89,7 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
         _setChainSelector(10, 3734403246176062136); // OP Mainnet
         _setChainSelector(42161, 4949039107694359620); // Arbitrum One
         _setChainSelector(8453, 15971525489660198786); // Base
+        _setChainSelector(100, 465200170687744372); // Gnosis Chain (CCIP live since 2024-06-17)
         _setChainSelector(137, 4051577828743386545); // Polygon PoS
     }
 

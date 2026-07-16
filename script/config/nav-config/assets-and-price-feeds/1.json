@@ -1,7 +1,7 @@
 {
   "ETH": {
     "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
-    "divergenceToleranceBps": 250,
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -19,7 +19,7 @@
   },
   "WETH": {
     "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
-    "divergenceToleranceBps": 250,
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -180,7 +180,7 @@
   "USDC": {
     "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
     "pegToleranceBps": 100,
-    "divergenceToleranceBps": 250,
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -208,7 +208,7 @@
   },
   "BAL": {
     "address": "0xba100000625a3754423978a60c9317c58a424e3D",
-    "divergenceToleranceBps": 250,
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -301,7 +301,7 @@
   "USDT": {
     "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
     "pegToleranceBps": 100,
-    "divergenceToleranceBps": 250,
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -342,7 +342,7 @@
   "USDe": {
     "address": "0x4c9EDD5852cd905f086C759E8383e09bff1E68B3",
     "pegToleranceBps": 100,
-    "divergenceToleranceBps": 250,
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -470,7 +470,7 @@
   },
   "EIGEN": {
     "address": "0xec53bF9167f50cDEB3Ae105f56099aaaB9061F83",
-    "divergenceToleranceBps": 250,
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -488,7 +488,7 @@
   },
   "COMP": {
     "address": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
-    "divergenceToleranceBps": 250,
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -506,7 +506,7 @@
   },
   "WBTC": {
     "address": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
-    "divergenceToleranceBps": 250,
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -575,7 +575,7 @@
   },
   "cbBTC": {
     "address": "0xcbB7C0000aB88B473b1F5aFd9ef808440eED33Bf",
-    "divergenceToleranceBps": 250,
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",

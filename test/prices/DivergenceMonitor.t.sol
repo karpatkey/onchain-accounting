@@ -132,20 +132,48 @@ contract DivergenceMonitorTest is SuperTest {
     }
 
     function test_getPriceDivergence_view() public {
-        _attachWethMonitor(340_000_000_000, 250);
+        _attachWethMonitor(340_000_000_000, 250); // monitor $3400 > primary $3240.57
         (
             int256 primaryPrice,
-            int256 monitorMean,
+            int256 monitorMedian,
             uint256 divergenceBps,
             bool irregular,
             uint256 monitorFeedCount,
-            bool primaryStale
+            bool primaryStale,
+            bool primaryAboveMonitors
         ) = nav.getPriceDivergence(address(weth));
         assertEq(primaryPrice, 324_057_000_000);
-        assertEq(monitorMean, 340_000_000_000);
+        assertEq(monitorMedian, 340_000_000_000); // single monitor -> median is that monitor
         assertGt(divergenceBps, 250);
         assertTrue(irregular);
         assertEq(monitorFeedCount, 1);
         assertFalse(primaryStale);
+        assertFalse(primaryAboveMonitors, "primary ($3240) is below the monitor ($3400)");
+    }
+
+    /// @dev Two monitors straddling the primary: their mean (and median) equals the primary, so a mean-based check
+    ///      sees ~0 divergence and misses it. The worst-case check flags because each monitor is 400 bps away.
+    function test_worstCase_catchesStraddle() public {
+        vm.startPrank(navCalculatorManager);
+        nav.setDivergenceTolerance(address(weth), 250);
+        // primary = 324_057_000_000; ±4% = ±12_962_280_000 → mean == primary exactly.
+        Mock_CustomPriceFeed hi = new Mock_CustomPriceFeed("hi", address(weth), 337_019_280_000, 8);
+        Mock_CustomPriceFeed lo = new Mock_CustomPriceFeed("lo", address(weth), 311_094_720_000, 8);
+        nav.addMonitorFeed(address(weth), address(hi), IPrices.PriceType.Custom, type(uint256).max);
+        nav.addMonitorFeed(address(weth), address(lo), IPrices.PriceType.Custom, type(uint256).max);
+        vm.stopPrank();
+
+        (, int256 monitorMedian, uint256 divergenceBps, bool irregular, uint256 count,,) =
+            nav.getPriceDivergence(address(weth));
+        assertEq(count, 2);
+        assertEq(monitorMedian, 324_057_000_000, "median of the straddle == primary (a mean check would clear)");
+        assertApproxEqAbs(divergenceBps, 400, 1, "worst-case single-monitor deviation");
+        assertTrue(irregular, "worst-case must flag the straddle a mean/median check would miss");
+    }
+
+    function test_direction_primaryAboveMonitors() public {
+        _attachWethMonitor(310_000_000_000, 250); // monitor $3100 < primary $3240.57
+        (,,,,,, bool primaryAboveMonitors) = nav.getPriceDivergence(address(weth));
+        assertTrue(primaryAboveMonitors, "primary ($3240) is above the monitor ($3100)");
     }
 }

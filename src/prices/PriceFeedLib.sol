@@ -173,12 +173,15 @@ library PriceFeedLib {
     /// @notice Computes the divergence between an asset's primary price and its monitor feeds.
     /// @dev External wrapper over `_selectFeedCore` (primary) + `_monitorDivergence` (monitors). Read-only.
     /// @return primaryPrice The primary feed's price normalized to NAV_DECIMALS (0 if the primary is stale).
-    /// @return monitorMean Mean of the healthy monitor prices, NAV_DECIMALS (0 if no healthy monitors).
-    /// @return divergenceBps |primaryPrice - monitorMean| * 1e4 / primaryPrice (0 if no monitors / primary stale).
+    /// @return monitorMedian Median of the healthy monitor prices, NAV_DECIMALS (0 if no healthy monitors).
+    /// @return divergenceBps Worst-case |primary - monitor| * 1e4 / primary over the healthy monitors — the value
+    ///         the `irregular` flag is thresholded on (0 if no monitors / primary stale).
     /// @return irregular True if divergenceBps exceeds the divergence tolerance, or (stablecoins) the primary
     ///         deviates from $1 beyond the peg tolerance.
     /// @return monitorFeedCount Number of healthy monitor feeds that contributed.
     /// @return primaryStale True if the primary feed is stale.
+    /// @return primaryAboveMonitors True if the primary is above the monitor median (a premium); false if
+    ///         below/equal (for claim assets, below = the depeg direction). Meaningful only when monitorFeedCount > 0.
     function computeDivergence(
         mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
         mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
@@ -189,62 +192,102 @@ library PriceFeedLib {
         view
         returns (
             int256 primaryPrice,
-            int256 monitorMean,
+            int256 monitorMedian,
             uint256 divergenceBps,
             bool irregular,
             uint256 monitorFeedCount,
-            bool primaryStale
+            bool primaryStale,
+            bool primaryAboveMonitors
         )
     {
         (int256 price, uint8 decimals, bool stale,,) = _selectFeedCore(priceOracles, asset);
         primaryStale = stale;
         primaryPrice = stale ? int256(0) : _scaleTo8(price, decimals);
-        (monitorMean, divergenceBps, irregular, monitorFeedCount) =
+        (monitorMedian, divergenceBps, irregular, monitorFeedCount, primaryAboveMonitors) =
             _monitorDivergence(monitorFeeds, assetPricing, asset, primaryPrice, primaryStale);
     }
 
     /// @notice Core divergence computation given an already-selected (8-dec) primary price.
-    /// @dev Reads every monitor feed for `asset`, skips stale/reverting ones (same per-feed gate as selection),
-    ///      averages the survivors, and flags `irregular` on either inter-feed divergence (all types) or absolute
-    ///      peg deviation (stablecoins only). Never reverts.
+    /// @dev Reads every monitor feed for `asset`, skips stale/reverting ones (same per-feed gate as selection), and
+    ///      flags `irregular` on inter-feed divergence (all types) or absolute peg deviation (stablecoins only).
+    ///      The inter-feed flag is driven by the WORST single-monitor deviation (max), not an average — so a real
+    ///      split can't be masked by two monitors straddling the primary. `monitorMedian` (central tendency) and
+    ///      `primaryAboveMonitors` (sign vs the median) are exposed for the consumer, not used by the flag itself.
+    ///      Never reverts.
+    /// @return monitorMedian Median of the healthy monitor prices (NAV_DECIMALS); 0 if none.
+    /// @return divergenceBps Worst-case |primary - monitor| / primary over the healthy monitors, in bps.
+    /// @return irregular True if divergenceBps exceeds the divergence tolerance, or the peg guard fired.
+    /// @return healthyMonitorCount Number of healthy monitors that contributed.
+    /// @return primaryAboveMonitors True if the primary is above the monitor median (premium); false if below/equal
+    ///         (for claim assets, below = the depeg direction). Meaningful only when healthyMonitorCount > 0.
     function _monitorDivergence(
         mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
         mapping(address => IPrices.AssetPricing) storage assetPricing,
         address asset,
         int256 primaryPrice8,
         bool primaryStale
-    ) private view returns (int256 monitorMean, uint256 divergenceBps, bool irregular, uint256 healthyMonitorCount) {
+    )
+        private
+        view
+        returns (
+            int256 monitorMedian,
+            uint256 divergenceBps,
+            bool irregular,
+            uint256 healthyMonitorCount,
+            bool primaryAboveMonitors
+        )
+    {
         IPrices.PriceFeedConfig[] storage monitors = monitorFeeds[asset];
         uint256 len = monitors.length;
-        int256 sum;
+        int256[] memory prices = new int256[](len);
+        uint256 n;
         for (uint256 i; i < len; ++i) {
             (int256 mp, bool ok) = _readFeedPrice(monitors[i]);
             if (!ok) continue;
-            sum += mp;
-            ++healthyMonitorCount;
+            prices[n++] = mp;
         }
-        if (healthyMonitorCount > 0) {
-            monitorMean = sum / int256(healthyMonitorCount);
-        }
+        healthyMonitorCount = n;
 
         IPrices.AssetPricing storage ap = assetPricing[asset];
 
-        // Inter-feed divergence (all asset types): primary vs mean of healthy monitors.
-        if (!primaryStale && primaryPrice8 > 0 && healthyMonitorCount > 0 && ap.divergenceToleranceBps > 0) {
-            int256 diff = primaryPrice8 - monitorMean;
-            if (diff < 0) diff = -diff;
-            divergenceBps = uint256(diff) * 10_000 / uint256(primaryPrice8);
-            if (divergenceBps > ap.divergenceToleranceBps) irregular = true;
+        // Inter-feed divergence (all asset types): primary vs the WORST single monitor; median + sign exposed.
+        if (n > 0 && !primaryStale && primaryPrice8 > 0) {
+            _sortInPlace(prices, n);
+            monitorMedian = (n % 2 == 1) ? prices[n / 2] : (prices[n / 2 - 1] + prices[n / 2]) / 2;
+            primaryAboveMonitors = primaryPrice8 > monitorMedian;
+
+            uint256 worst;
+            for (uint256 i; i < n; ++i) {
+                int256 d = primaryPrice8 - prices[i];
+                if (d < 0) d = -d;
+                uint256 bps = uint256(d) * 10_000 / uint256(primaryPrice8);
+                if (bps > worst) worst = bps;
+            }
+            divergenceBps = worst;
+            if (ap.divergenceToleranceBps > 0 && worst > ap.divergenceToleranceBps) irregular = true;
         }
 
         // Absolute peg guard: primary vs $1 (= 10**NAV_DECIMALS). Enabled per-asset by a non-zero peg tolerance
-        // (set only on assets whose fundamental value is $1, i.e. stablecoins).
+        // (set only on assets whose fundamental value is $1, i.e. stablecoins). Independent of monitors.
         if (ap.pegToleranceBps > 0 && !primaryStale && primaryPrice8 > 0) {
             int256 one = int256(10 ** uint256(NAV_DECIMALS));
             int256 pegDiff = primaryPrice8 - one;
             if (pegDiff < 0) pegDiff = -pegDiff;
             uint256 pegBps = uint256(pegDiff) * 10_000 / uint256(one);
             if (pegBps > ap.pegToleranceBps) irregular = true;
+        }
+    }
+
+    /// @notice In-place insertion sort of the first `n` elements of `a` (n is a monitor count — a handful).
+    function _sortInPlace(int256[] memory a, uint256 n) private pure {
+        for (uint256 i = 1; i < n; ++i) {
+            int256 key = a[i];
+            uint256 j = i;
+            while (j > 0 && a[j - 1] > key) {
+                a[j] = a[j - 1];
+                --j;
+            }
+            a[j] = key;
         }
     }
 
@@ -398,7 +441,7 @@ library PriceFeedLib {
         if (_hasDivergenceChecks(monitorFeeds, assetPricing, asset)) {
             bool primaryStale = stale || sequencerDown;
             int256 primary8 = primaryStale ? int256(0) : _scaleTo8(price, decimals);
-            (, uint256 divergenceBps, bool irregular, uint256 monitorFeedCount) =
+            (, uint256 divergenceBps, bool irregular, uint256 monitorFeedCount,) =
                 _monitorDivergence(monitorFeeds, assetPricing, asset, primary8, primaryStale);
             priceFeedData.irregular = irregular;
             priceFeedData.divergenceBps = divergenceBps;
@@ -673,7 +716,8 @@ library PriceFeedLib {
             if (_hasDivergenceChecks(monitorFeeds, assetPricing, assetAddr)) {
                 bool primaryStale = stale || sequencerDown;
                 int256 primary8 = primaryStale ? int256(0) : _scaleTo8(price, decimals);
-                (,, bool irregular,) = _monitorDivergence(monitorFeeds, assetPricing, assetAddr, primary8, primaryStale);
+                (,, bool irregular,,) =
+                    _monitorDivergence(monitorFeeds, assetPricing, assetAddr, primary8, primaryStale);
                 if (irregular) irregularAssetsTemp[irregularCount++] = assetAddr;
             }
         }
@@ -868,7 +912,7 @@ library PriceFeedLib {
             bool irregular = false;
             if (_hasDivergenceChecks(monitorFeeds, assetPricing, asset)) {
                 int256 primary8 = stale ? int256(0) : _scaleTo8(price, decimals);
-                (,, irregular,) = _monitorDivergence(monitorFeeds, assetPricing, asset, primary8, stale);
+                (,, irregular,,) = _monitorDivergence(monitorFeeds, assetPricing, asset, primary8, stale);
             }
             priceFeeds[i] =
                 PriceFeedCache({asset: asset, price: price, decimals: decimals, stale: stale, irregular: irregular});

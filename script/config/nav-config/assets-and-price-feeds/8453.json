@@ -1,7 +1,7 @@
 {
   "ETH": {
     "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
-    "divergenceToleranceBps": 250,
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -19,7 +19,7 @@
   },
   "WETH": {
     "address": "0x4200000000000000000000000000000000000006",
-    "divergenceToleranceBps": 250,
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -96,7 +96,7 @@
   "USDC": {
     "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
     "pegToleranceBps": 100,
-    "divergenceToleranceBps": 250,
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -135,7 +135,7 @@
   },
   "cbBTC": {
     "address": "0xcbB7C0000aB88B473b1F5aFd9ef808440eED33Bf",
-    "divergenceToleranceBps": 250,
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",

@@ -32,7 +32,7 @@
   },
   "WETH": {
     "address": "0x6A023CCd1ff6F2045C3309768eAd9E68F978f6e1",
-    "divergenceToleranceBps": 250,
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -61,7 +61,7 @@
   "USDCe": {
     "address": "0x2a22f9c3b484c3629090FeED35F17Ff8F88f76F0",
     "pegToleranceBps": 100,
-    "divergenceToleranceBps": 250,
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -101,7 +101,7 @@
   },
   "GNO": {
     "address": "0x9C58BAcC331c9aa871AFD802DB6379a98e80CEdb",
-    "divergenceToleranceBps": 250,
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",

@@ -185,7 +185,7 @@ contract Mock_NAVCalculator is INAVCalculator {
         external
         pure
         override
-        returns (int256, int256, uint256, bool, uint256, bool)
+        returns (int256, int256, uint256, bool, uint256, bool, bool)
     {
         revert("Not implemented in mock");
     }

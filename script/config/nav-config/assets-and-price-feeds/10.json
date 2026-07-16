@@ -1,7 +1,7 @@
 {
   "ETH": {
     "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
-    "divergenceToleranceBps": 250,
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -19,7 +19,7 @@
   },
   "WETH": {
     "address": "0x4200000000000000000000000000000000000006",
-    "divergenceToleranceBps": 250,
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",

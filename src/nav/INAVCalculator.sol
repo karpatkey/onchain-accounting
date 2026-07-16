@@ -465,22 +465,27 @@ interface INAVCalculator is IBalances {
     /// @notice Returns the divergence between an asset's primary price and its monitor feeds.
     /// @param underlyingAsset Registered asset address.
     /// @return primaryPrice The primary feed's price, normalized to NAV_DECIMALS (0 if the primary is stale).
-    /// @return monitorMean The mean of the healthy monitor prices, NAV_DECIMALS (0 if no healthy monitors).
-    /// @return divergenceBps Basis-point gap between primaryPrice and monitorMean (0 if no monitors / primary stale).
+    /// @return monitorMedian The median of the healthy monitor prices, NAV_DECIMALS (0 if no healthy monitors).
+    /// @return divergenceBps Worst-case basis-point gap between the primary and any single healthy monitor — the
+    ///         value `irregular` is thresholded on (0 if no monitors / primary stale).
     /// @return irregular True if divergenceBps exceeds the divergence tolerance, or (stablecoins) the primary
     ///         deviates from $1 beyond the peg tolerance.
     /// @return monitorFeedCount Number of healthy monitor feeds that contributed.
     /// @return primaryStale True if the primary feed is stale (divergence undefined).
+    /// @return primaryAboveMonitors True if the primary sits above the monitor median (a premium); false if
+    ///         below/equal — for a claim asset, below is the depeg direction. Meaningful only when
+    ///         monitorFeedCount > 0.
     function getPriceDivergence(address underlyingAsset)
         external
         view
         returns (
             int256 primaryPrice,
-            int256 monitorMean,
+            int256 monitorMedian,
             uint256 divergenceBps,
             bool irregular,
             uint256 monitorFeedCount,
-            bool primaryStale
+            bool primaryStale,
+            bool primaryAboveMonitors
         );
 
     /// @notice Returns health status: sequencer down flag and lists of stale-price and irregular-price assets.

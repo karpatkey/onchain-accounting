@@ -530,11 +530,12 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         view
         returns (
             int256 primaryPrice,
-            int256 monitorMean,
+            int256 monitorMedian,
             uint256 divergenceBps,
             bool irregular,
             uint256 monitorFeedCount,
-            bool primaryStale
+            bool primaryStale,
+            bool primaryAboveMonitors
         )
     {
         _requireAssetExists(underlyingAsset);

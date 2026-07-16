@@ -241,7 +241,13 @@ contract Configure is BaseDeployScript {
             (bool ok, bytes memory data) =
                 bridgeProxy.call(abi.encodeWithSignature("authorizeAccount(address)", account));
             if (!ok) {
-                revert(string(abi.encodePacked("authorize bridge account failed: ", _decodeRevert(data))));
+                revert(
+                    string(
+                        abi.encodePacked(
+                            "authorize bridge account failed for ", vm.toString(account), ": ", _decodeRevert(data)
+                        )
+                    )
+                );
             }
             console2.log("[OK] Authorized bridge account:", account);
             authorized++;
@@ -255,8 +261,12 @@ contract Configure is BaseDeployScript {
     ///      logical symbol mapped to each chain's local token address. The numbered flow otherwise never registers a
     ///      bridge asset (only the standalone manage/RegisterBridgeEscrow.s.sol does, hardcoded to USDC), so without
     ///      this step `depositAndBridge`'s symbol lookup fails. `registerAsset` is not on `IBridgeEscrow`, so it is
-    ///      dispatched via low-level call. Skips a symbol already mapped to the same address; a repoint to a different
-    ///      address is left to the manage layer (it reverts on-chain if the symbol has active invoices).
+    ///      dispatched via low-level call. Skips a symbol already mapped to the same address; a symbol already mapped
+    ///      to a DIFFERENT address is re-registered here (BridgeEscrow.registerAsset repoints it, reverting on-chain
+    ///      only if that symbol has active BRIDGING invoices). Native-asset registration (BridgeEscrow's `address(0)`
+    ///      sentinel) is intentionally NOT supported via this config path: the config layer treats an all-zero address
+    ///      as an unset placeholder (`ConfigReader._isPlaceholder`), so a `0x0` asset value is skipped, not registered
+    ///      as native — consistent with the repo-wide 0x0-is-placeholder convention.
     function _registerBridgeAssets(address bridgeProxy) internal {
         string[] memory symbols = ConfigReader.readBridgeEscrowAssetSymbols(vm, currentChainId);
         uint256 registered;
@@ -264,7 +274,11 @@ contract Configure is BaseDeployScript {
             string memory symbol = symbols[i];
             address asset = ConfigReader.readBridgeEscrowAssetAddress(vm, currentChainId, symbol);
             if (asset == address(0)) {
-                console2.log("[WARN] Bridge asset address missing/placeholder; skipping symbol:", symbol);
+                // Unset/placeholder (or an all-zero value, which the config layer treats as unset). Native assets are
+                // not registerable via config by convention — see the function docstring.
+                console2.log(
+                    "[WARN] Bridge asset has no configured address (unset/placeholder); skipping symbol:", symbol
+                );
                 continue;
             }
             if (IBridgeEscrow(bridgeProxy).assetRegistry(symbol) == asset) {

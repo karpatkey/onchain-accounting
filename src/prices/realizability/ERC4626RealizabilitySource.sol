@@ -16,16 +16,13 @@ interface IERC4626Preview {
 ///      scalar for those. `instantEtaSeconds` is normally 0; a small non-zero value can model a settlement lag.
 /// @author KPK
 contract ERC4626RealizabilitySource is RealizabilityBaseline {
-    /// @notice The ERC4626 vault (== UNDERLYING for a share token).
-    address public immutable VAULT;
-
     /// @notice Expected redemption time when withdrawals are enabled (0 ≈ instant).
     uint256 public immutable INSTANT_ETA_SECONDS;
 
-    /// @param vault The ERC4626 vault / share token (also the underlying asset this source is pinned to).
+    /// @param vault The ERC4626 vault / share token (also the underlying asset this source is pinned to — read it
+    ///        back via `UNDERLYING`).
     /// @param instantEtaSeconds Expected redemption seconds when enabled (usually 0).
     constructor(address vault, uint256 instantEtaSeconds) RealizabilityBaseline(vault) {
-        VAULT = vault;
         INSTANT_ETA_SECONDS = instantEtaSeconds;
     }
 
@@ -36,9 +33,17 @@ contract ERC4626RealizabilitySource is RealizabilityBaseline {
         override
         returns (bool withdrawalsEnabled, uint256 expectedRedemptionSeconds, bool healthy)
     {
-        // Redemption is realizable when a preview succeeds (vault not paused) and there are assets to redeem into.
-        try IERC4626Preview(VAULT).previewRedeem(1e18) returns (uint256 assets) {
-            withdrawalsEnabled = assets > 0 && IERC4626Preview(VAULT).totalAssets() > 0;
+        // Redemption is realizable when a preview succeeds (vault not paused) AND the vault holds assets. Both reads
+        // are wrapped so either revert yields withdrawalsEnabled=false (the totalAssets() call must be caught too,
+        // hence the nested try — not a bare call in the previewRedeem success body).
+        try IERC4626Preview(UNDERLYING).previewRedeem(1e18) returns (uint256 assets) {
+            if (assets > 0) {
+                try IERC4626Preview(UNDERLYING).totalAssets() returns (uint256 ta) {
+                    withdrawalsEnabled = ta > 0;
+                } catch {
+                    withdrawalsEnabled = false;
+                }
+            }
         } catch {
             withdrawalsEnabled = false;
         }

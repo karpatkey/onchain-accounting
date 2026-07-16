@@ -16,20 +16,16 @@ interface IrETHCollateral {
 ///      applies (a constructor baseline, since the exact refill time is not on-chain).
 /// @author KPK
 contract RocketPoolRealizabilitySource is RealizabilityBaseline {
-    /// @notice The rETH token (also the asset this source is pinned to).
-    address public immutable RETH;
-
     /// @notice Minimum instant-burn collateral (wei) for redemption to count as instant.
     uint256 public immutable MIN_COLLATERAL;
 
     /// @notice Baseline ETA when instant-burn collateral is insufficient (deposit-pool wait).
     uint256 public immutable WAIT_ETA_SECONDS;
 
-    /// @param rEth The rETH token this source is pinned to.
+    /// @param rEth The rETH token this source is pinned to (read it back via `UNDERLYING`).
     /// @param minCollateral Minimum instant-burn collateral for redemption to be considered instant.
     /// @param waitEtaSeconds Baseline ETA when collateral is below `minCollateral`.
     constructor(address rEth, uint256 minCollateral, uint256 waitEtaSeconds) RealizabilityBaseline(rEth) {
-        RETH = rEth;
         MIN_COLLATERAL = minCollateral;
         WAIT_ETA_SECONDS = waitEtaSeconds;
     }
@@ -43,6 +39,7 @@ contract RocketPoolRealizabilitySource is RealizabilityBaseline {
     {
         withdrawalsEnabled = true;
         healthy = true;
-        expectedRedemptionSeconds = IrETHCollateral(RETH).getTotalCollateral() >= MIN_COLLATERAL ? 0 : WAIT_ETA_SECONDS;
+        expectedRedemptionSeconds =
+            IrETHCollateral(UNDERLYING).getTotalCollateral() >= MIN_COLLATERAL ? 0 : WAIT_ETA_SECONDS;
     }
 }

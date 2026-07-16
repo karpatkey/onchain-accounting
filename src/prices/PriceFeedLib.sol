@@ -415,10 +415,15 @@ library PriceFeedLib {
             try IRealizabilitySource(c.source).realizability() returns (bool en, uint256 eta, bool h) {
                 (withdrawalsEnabled, expectedRedemptionSeconds, healthy, configured) = (en, eta, h, true);
             } catch {
-                // Source reverted → fall back to the MANAGER scalar if present.
                 if (c.scalarSet) {
+                    // Source reverted → fall back to the MANAGER scalar.
                     (withdrawalsEnabled, expectedRedemptionSeconds, healthy, configured) =
                         (c.scalarWithdrawalsEnabled, c.scalarEtaSeconds, c.scalarHealthy, true);
+                } else {
+                    // Fail CLOSED: a *configured* source that reverts (e.g. a protocol pause/incident that also
+                    // breaks its status view) is treated as unrealizable — the redemption status is unknown, and
+                    // this is a safety/halt signal (unlike the fail-open price signals, which drop to `stale`).
+                    (withdrawalsEnabled, expectedRedemptionSeconds, healthy, configured) = (false, 0, false, true);
                 }
             }
         } else if (c.scalarSet) {

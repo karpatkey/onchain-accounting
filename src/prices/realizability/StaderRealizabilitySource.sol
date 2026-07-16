@@ -55,9 +55,11 @@ contract StaderRealizabilitySource is RealizabilityBaseline {
         uint256 head = IStaderUserWithdrawalManager(WITHDRAWAL_MANAGER).nextRequestId();
         uint256 finalize = IStaderUserWithdrawalManager(WITHDRAWAL_MANAGER).nextRequestIdToFinalize();
         // A coherent queue has finalize <= head; withdrawals are enabled while the manager is reachable/coherent.
+        // Guard the subtraction so an incoherent queue (finalize > head) reports disabled instead of underflow-
+        // reverting — the revert would otherwise be swallowed fail-open and never surface as `withdrawalsEnabled=false`.
         withdrawalsEnabled = finalize <= head;
         healthy = true;
-        uint256 pending = head - finalize;
+        uint256 pending = withdrawalsEnabled ? head - finalize : 0;
         expectedRedemptionSeconds = pending > CONGESTION_THRESHOLD ? CONGESTED_ETA_SECONDS : NORMAL_ETA_SECONDS;
     }
 }

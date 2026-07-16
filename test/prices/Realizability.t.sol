@@ -9,6 +9,7 @@ import {IRealizabilitySource} from "src/prices/IRealizabilitySource.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ERC4626RealizabilitySource} from "src/prices/realizability/ERC4626RealizabilitySource.sol";
 import {LidoRealizabilitySource} from "src/prices/realizability/LidoRealizabilitySource.sol";
+import {StaderRealizabilitySource} from "src/prices/realizability/StaderRealizabilitySource.sol";
 
 /// @dev Settable realizability source pinned to an asset (for framework/signal tests).
 contract MockRealizabilitySource is IRealizabilitySource {
@@ -88,6 +89,17 @@ contract MockLidoQueue {
     }
 }
 
+/// @dev Minimal Stader UserWithdrawalManager stub.
+contract MockStaderManager {
+    uint256 public nextRequestId;
+    uint256 public nextRequestIdToFinalize;
+
+    function set(uint256 head, uint256 finalize) external {
+        nextRequestId = head;
+        nextRequestIdToFinalize = finalize;
+    }
+}
+
 /// @title Realizability signal tests
 /// @notice Framework (source vs scalar vs unconfigured), the unrealizable flag logic, full signal parity
 ///         (getRealizability / getPriceData / NAV / Position / healthCheck / latestPrice), and two concrete sources.
@@ -152,6 +164,15 @@ contract RealizabilityTest is SuperTest {
         (,,,, bool unrealizable, bool configured) = nav.getRealizability(address(weth));
         assertTrue(configured, "reverting source falls back to scalar");
         assertTrue(unrealizable);
+    }
+
+    function test_sourceReverts_noScalar_failsClosed() public {
+        _wire(7 days); // source only, no scalar
+        src.setRevert(true);
+        (bool en,,,, bool unrealizable, bool configured) = nav.getRealizability(address(weth));
+        assertTrue(configured, "a reverting configured source is not treated as unconfigured");
+        assertFalse(en);
+        assertTrue(unrealizable, "source revert with no scalar must fail CLOSED (unrealizable)");
     }
 
     function test_scalarOnly() public {
@@ -230,6 +251,26 @@ contract RealizabilityTest is SuperTest {
         vault.set(1e18, 0); // no assets -> not realizable
         (en,,) = s.realizability();
         assertFalse(en);
+    }
+
+    function test_staderSource_queueStates() public {
+        MockStaderManager m = new MockStaderManager();
+        StaderRealizabilitySource s =
+            new StaderRealizabilitySource(address(weth), address(m), 2 days, 10 days, 1000);
+
+        m.set(100, 90); // coherent, shallow queue (pending 10)
+        (bool en, uint256 eta, bool h) = s.realizability();
+        assertTrue(en);
+        assertEq(eta, 2 days);
+        assertTrue(h);
+
+        m.set(5000, 90); // coherent, congested (pending 4910 > 1000)
+        (, eta,) = s.realizability();
+        assertEq(eta, 10 days);
+
+        m.set(50, 100); // incoherent (finalize > head) → disabled, must NOT underflow-revert
+        (en,,) = s.realizability();
+        assertFalse(en, "incoherent queue -> withdrawals disabled");
     }
 
     function test_lidoSource_bunkerAndPause() public {

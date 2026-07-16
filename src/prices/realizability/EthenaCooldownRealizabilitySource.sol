@@ -16,13 +16,9 @@ interface IStakedUSDeCooldown {
 ///      cooldown length vs the per-asset limit.
 /// @author KPK
 contract EthenaCooldownRealizabilitySource is RealizabilityBaseline {
-    /// @notice The StakedUSDeV2 contract exposing `cooldownDuration()`.
-    address public immutable STAKED_USDE;
-
-    /// @param stakedUSDe The StakedUSDeV2 (sUSDe) contract — also the asset this source is pinned to.
-    constructor(address stakedUSDe) RealizabilityBaseline(stakedUSDe) {
-        STAKED_USDE = stakedUSDe;
-    }
+    /// @param stakedUSDe The StakedUSDeV2 (sUSDe) contract — also the asset this source is pinned to (read it back
+    ///        via `UNDERLYING`).
+    constructor(address stakedUSDe) RealizabilityBaseline(stakedUSDe) {}
 
     /// @notice Current redemption status for the pinned asset (see IRealizabilitySource).
     function realizability()
@@ -33,6 +29,6 @@ contract EthenaCooldownRealizabilitySource is RealizabilityBaseline {
     {
         withdrawalsEnabled = true;
         healthy = true;
-        expectedRedemptionSeconds = uint256(IStakedUSDeCooldown(STAKED_USDE).cooldownDuration());
+        expectedRedemptionSeconds = uint256(IStakedUSDeCooldown(UNDERLYING).cooldownDuration());
     }
 }

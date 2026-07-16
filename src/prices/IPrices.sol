@@ -25,6 +25,25 @@ interface IPrices {
         uint32 pegToleranceBps;
     }
 
+    /// @notice Per-asset redemption-realizability config (see {IRealizabilitySource}). Packs into one slot
+    /// (20 + 4 + 1 + 1 + 4 + 1 = 31 bytes). Resolution prefers `source` (an on-chain reader), falling back to the
+    /// MANAGER-set scalar, then to unconfigured (no signal).
+    /// @param source Optional pluggable IRealizabilitySource (address(0) = none → use the scalar).
+    /// @param limitSeconds Max expected redemption time before the asset is flagged `unrealizable`. 0 disables the
+    /// ETA threshold (only `withdrawalsEnabled`/`healthy` then gate the flag).
+    /// @param scalarSet Whether the MANAGER scalar below is populated (used when `source` is unset or reverts).
+    /// @param scalarWithdrawalsEnabled Scalar: whether redemptions are currently enabled.
+    /// @param scalarEtaSeconds Scalar: expected redemption time in seconds.
+    /// @param scalarHealthy Scalar: protocol-health flag.
+    struct RealizabilityConfig {
+        address source;
+        uint32 limitSeconds;
+        bool scalarSet;
+        bool scalarWithdrawalsEnabled;
+        uint32 scalarEtaSeconds;
+        bool scalarHealthy;
+    }
+
     /// @notice Struct representing a price feed configuration.
     /// @param priceFeed The address of the price feed contract (e.g. Chainlink aggregator or custom price feed).
     /// @param decimals The number of decimal places the price feed uses.
@@ -118,6 +137,23 @@ interface IPrices {
     /// @param pegToleranceBps The new peg tolerance in basis points.
     event PegToleranceSet(address indexed underlyingAsset, uint32 pegToleranceBps);
 
+    /// @notice Emitted when an asset's realizability source is set (address(0) clears it).
+    event RealizabilitySourceSet(address indexed underlyingAsset, address indexed source);
+
+    /// @notice Emitted when an asset's realizability scalar (MANAGER-fed status) is set.
+    event RealizabilityScalarSet(
+        address indexed underlyingAsset, bool withdrawalsEnabled, uint32 etaSeconds, bool healthy
+    );
+
+    /// @notice Emitted when an asset's realizability scalar is cleared.
+    event RealizabilityScalarCleared(address indexed underlyingAsset);
+
+    /// @notice Emitted when an asset's realizability limit (max expected redemption seconds) is set.
+    event RealizabilityLimitSet(address indexed underlyingAsset, uint32 limitSeconds);
+
+    /// @notice Emitted when all realizability config is cleared for a token (asset unregistration).
+    event RealizabilityUnset(address indexed underlyingAsset);
+
     //
     // Errors
     //
@@ -163,6 +199,10 @@ interface IPrices {
     /// @notice Error when a tolerance value is out of range (basis points must be in (0, 10000]).
     error InvalidTolerance(uint32 toleranceBps);
 
+    /// @notice Error when a realizability source is zero, does not implement IRealizabilitySource, or is pinned to a
+    /// different asset than the one it is being registered for.
+    error InvalidRealizabilitySource(address asset, address source);
+
     /// @notice Returns the latest price for a given token while checking if the price is stale.
     /// @dev Reverts PriceFeedNotSet if the asset has no registered feeds. When at least one feed is registered
     /// but all are stale, returns price 0 with stale = true rather than reverting.
@@ -173,10 +213,12 @@ interface IPrices {
     /// @return irregular True if the primary price diverged from its monitor feeds beyond the divergence tolerance,
     /// or (stablecoins) from the $1 peg beyond the peg tolerance. A pricing-quality signal, not a validity flag;
     /// `price` is still populated. Always false when `stale` (divergence is undefined for an unusable price).
+    /// @return unrealizable True if the asset's redemption is not realizable within its configured limit (withdrawals
+    /// disabled, protocol unhealthy, or expected redemption time over the limit). Independent of price/staleness.
     function latestPrice(address underlyingAsset)
         external
         view
-        returns (int256 price, uint8 decimals, bool stale, bool irregular);
+        returns (int256 price, uint8 decimals, bool stale, bool irregular, bool unrealizable);
 
     /// @notice Checks the L2 sequencer uptime feed, returning True when it is signaling staleness (the sequencer
     /// is down or still within the grace period). If 'chainlinkL2SequencerUptimeFeed' is the zero address (e.g. on
@@ -224,4 +266,9 @@ interface IPrices {
     /// @param asset The address of the asset.
     /// @return pricing The AssetPricing struct (zero-valued if never set: type Spot, tolerances 0).
     function getAssetPricing(address asset) external view returns (AssetPricing memory pricing);
+
+    /// @notice Returns the raw per-asset realizability config (source + limit + MANAGER scalar).
+    /// @param asset The address of the asset.
+    /// @return config The RealizabilityConfig (zero-valued if never set → asset is treated as unconfigured).
+    function getRealizabilityConfig(address asset) external view returns (RealizabilityConfig memory config);
 }

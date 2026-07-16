@@ -68,7 +68,7 @@ contract DivergenceMonitorTest is SuperTest {
         }
         assertTrue(found, "NAV.irregularPriceAssets must contain weth");
 
-        (,, address[] memory irregular) = nav.healthCheck();
+        (,, address[] memory irregular,) = nav.healthCheck();
         bool foundHc;
         for (uint256 i = 0; i < irregular.length; i++) {
             if (irregular[i] == address(weth)) foundHc = true;
@@ -120,11 +120,11 @@ contract DivergenceMonitorTest is SuperTest {
 
     function test_latestPrice_surfacesIrregular() public {
         // No monitor yet -> latestPrice reports not-irregular.
-        (,,, bool before) = nav.latestPrice(address(weth));
+        (,,, bool before,) = nav.latestPrice(address(weth));
         assertFalse(before);
 
         _attachWethMonitor(340_000_000_000, 250); // ~492 bps out of band
-        (int256 price, uint8 decimals, bool stale, bool irregular) = nav.latestPrice(address(weth));
+        (int256 price, uint8 decimals, bool stale, bool irregular,) = nav.latestPrice(address(weth));
         assertEq(price, 324_057_000_000, "price still the primary");
         assertEq(decimals, 8);
         assertFalse(stale);

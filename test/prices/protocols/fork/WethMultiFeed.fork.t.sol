@@ -73,7 +73,7 @@ contract WethMultiFeedForkTest is NAVCalculatorForkHarness {
     // ─── Healthy reads at fork block ───────────────────────────────────────────
 
     function test_latestPrice_notStale() public view {
-        (int256 price, uint8 decimals, bool stale,) = nav.latestPrice(WETH);
+        (int256 price, uint8 decimals, bool stale,,) = nav.latestPrice(WETH);
 
         assertFalse(stale);
         assertEq(decimals, 8);
@@ -129,7 +129,7 @@ contract WethMultiFeedForkTest is NAVCalculatorForkHarness {
     function test_redundancy_API3OutlastsChainlink() public {
         vm.warp(block.timestamp + CHAINLINK_HEARTBEAT + 1);
 
-        (int256 price,, bool stale,) = nav.latestPrice(WETH);
+        (int256 price,, bool stale,,) = nav.latestPrice(WETH);
         INAVCalculator.PriceFeedData memory d = nav.getPriceData(WETH);
 
         assertFalse(stale, "API3 must keep the read healthy after Chainlink heartbeat expires");
@@ -145,7 +145,7 @@ contract WethMultiFeedForkTest is NAVCalculatorForkHarness {
     function test_allFeedsStale_after86400Warp() public {
         vm.warp(block.timestamp + API3_HEARTBEAT + 1);
 
-        (int256 price,, bool stale,) = nav.latestPrice(WETH);
+        (int256 price,, bool stale,,) = nav.latestPrice(WETH);
 
         assertTrue(stale, "expected all-stale after 24h warp");
         assertEq(price, 0, "price must be 0 when all feeds are stale");

@@ -41,10 +41,14 @@ abstract contract Prices is IPrices, Initializable {
     /// @notice Per-asset pricing metadata: asset type + divergence/peg tolerances (see IPrices.AssetPricing).
     mapping(address asset => AssetPricing pricing) internal _assetPricing;
 
-    /// @dev Reserved storage gap for future Prices expansions. Started at 50; 2 consumed by `_monitorFeeds` and
-    /// `_assetPricing`.
+    /// @notice Per-asset redemption-realizability config (see IPrices.RealizabilityConfig): an optional pluggable
+    /// source + a MANAGER-set scalar fallback + the per-asset expected-redemption-time limit.
+    mapping(address asset => RealizabilityConfig config) internal _realizability;
+
+    /// @dev Reserved storage gap for future Prices expansions. Started at 50; 3 consumed by `_monitorFeeds`,
+    /// `_assetPricing`, and `_realizability`.
     // solhint-disable-next-line var-name-mixedcase
-    uint256[48] private __pricesGap;
+    uint256[47] private __pricesGap;
 
     /// @notice Initializer for UUPS proxy
     /// @param chainlinkL2SequencerUptimeFeed_ The address of the Chainlink feed for the L2 sequencer
@@ -61,7 +65,7 @@ abstract contract Prices is IPrices, Initializable {
     function latestPrice(address token)
         external
         view
-        returns (int256 price, uint8 decimals, bool stale, bool irregular)
+        returns (int256 price, uint8 decimals, bool stale, bool irregular, bool unrealizable)
     {
         (price, decimals, stale,,) = _selectFeed(token);
         stale = checkL2SequencerUptime() || stale;
@@ -69,6 +73,8 @@ abstract contract Prices is IPrices, Initializable {
         // primary is stale/sequencer-down — divergence is undefined for an unusable price.
         (,,, irregular,,,) = _priceOracles.computeDivergence(_monitorFeeds, _assetPricing, token);
         if (stale) irregular = false;
+        // Realizability signal (parity with NAV.unrealizablePriceAssets). Independent of price/staleness.
+        (,,,, unrealizable,) = PriceFeedLib.computeRealizability(_realizability, token);
     }
 
     /// @inheritdoc IPrices
@@ -100,6 +106,11 @@ abstract contract Prices is IPrices, Initializable {
     /// @inheritdoc IPrices
     function getAssetPricing(address asset) external view returns (AssetPricing memory) {
         return _assetPricing[asset];
+    }
+
+    /// @inheritdoc IPrices
+    function getRealizabilityConfig(address asset) external view returns (RealizabilityConfig memory) {
+        return _realizability[asset];
     }
 
     /// @notice Returns the latest price for a given token without checking the L2 sequencer uptime.
@@ -207,5 +218,51 @@ abstract contract Prices is IPrices, Initializable {
     /// @notice Returns the number of monitor feeds registered for an asset.
     function _monitorFeedCount(address asset) internal view returns (uint256) {
         return _monitorFeeds[asset].length;
+    }
+
+    // -------------------------------------------------------------------------
+    // Realizability config (redemption-status signal)
+    // -------------------------------------------------------------------------
+
+    /// @notice Sets (or clears, with source == address(0)) the pluggable realizability source for an asset.
+    /// @dev A non-zero source must implement IRealizabilitySource and be pinned to `asset` (validated in the lib).
+    function _setRealizabilitySource(address asset, address source) internal {
+        if (source != address(0)) PriceFeedLib.validateRealizabilitySource(asset, source);
+        _realizability[asset].source = source;
+        emit RealizabilitySourceSet(asset, source);
+    }
+
+    /// @notice Sets the MANAGER-fed realizability scalar (used when no source is set, or the source reverts).
+    function _setRealizabilityScalar(address asset, bool withdrawalsEnabled, uint32 etaSeconds, bool healthy)
+        internal
+    {
+        RealizabilityConfig storage c = _realizability[asset];
+        c.scalarSet = true;
+        c.scalarWithdrawalsEnabled = withdrawalsEnabled;
+        c.scalarEtaSeconds = etaSeconds;
+        c.scalarHealthy = healthy;
+        emit RealizabilityScalarSet(asset, withdrawalsEnabled, etaSeconds, healthy);
+    }
+
+    /// @notice Clears the MANAGER-fed realizability scalar for an asset.
+    function _clearRealizabilityScalar(address asset) internal {
+        RealizabilityConfig storage c = _realizability[asset];
+        c.scalarSet = false;
+        c.scalarWithdrawalsEnabled = false;
+        c.scalarEtaSeconds = 0;
+        c.scalarHealthy = false;
+        emit RealizabilityScalarCleared(asset);
+    }
+
+    /// @notice Sets the per-asset expected-redemption-time limit (seconds). 0 disables the ETA threshold.
+    function _setRealizabilityLimit(address asset, uint32 limitSeconds) internal {
+        _realizability[asset].limitSeconds = limitSeconds;
+        emit RealizabilityLimitSet(asset, limitSeconds);
+    }
+
+    /// @notice Clears all realizability config for an asset (called on full asset unregistration).
+    function _removeRealizability(address asset) internal {
+        delete _realizability[asset];
+        emit RealizabilityUnset(asset);
     }
 }

@@ -210,7 +210,37 @@ contract Mock_NAVCalculator is INAVCalculator {
         revert("Not implemented in mock");
     }
 
-    function healthCheck() external pure override returns (bool, address[] memory, address[] memory) {
+    function healthCheck()
+        external
+        pure
+        override
+        returns (bool, address[] memory, address[] memory, address[] memory)
+    {
+        revert("Not implemented in mock");
+    }
+
+    function getRealizability(address)
+        external
+        pure
+        override
+        returns (bool, uint256, bool, uint256, bool, bool)
+    {
+        revert("Not implemented in mock");
+    }
+
+    function setRealizabilitySource(address, address) external pure override {
+        revert("Not implemented in mock");
+    }
+
+    function setRealizabilityScalar(address, bool, uint32, bool) external pure override {
+        revert("Not implemented in mock");
+    }
+
+    function clearRealizabilityScalar(address) external pure override {
+        revert("Not implemented in mock");
+    }
+
+    function setRealizabilityLimit(address, uint32) external pure override {
         revert("Not implemented in mock");
     }
 

@@ -356,7 +356,7 @@ contract NAVCalculatorPrecisionTest is SuperTest {
         INAVCalculator.NAV memory navDai = nav.getAccountNav(safe, address(dai));
 
         // Get prices for conversion
-        (int256 daiPrice, uint8 daiPriceDecimals,,) = nav.latestPrice(address(dai));
+        (int256 daiPrice, uint8 daiPriceDecimals,,,) = nav.latestPrice(address(dai));
 
         // Convert DAI NAV back to USD
         // navDai.value is in DAI with 18 decimals

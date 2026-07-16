@@ -153,6 +153,36 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     }
 
     /// @inheritdoc INAVCalculator
+    function setRealizabilitySource(address asset, address source) external {
+        _requireManager();
+        _requireAssetExists(asset);
+        _setRealizabilitySource(asset, source);
+    }
+
+    /// @inheritdoc INAVCalculator
+    function setRealizabilityScalar(address asset, bool withdrawalsEnabled, uint32 etaSeconds, bool healthy)
+        external
+    {
+        _requireManager();
+        _requireAssetExists(asset);
+        _setRealizabilityScalar(asset, withdrawalsEnabled, etaSeconds, healthy);
+    }
+
+    /// @inheritdoc INAVCalculator
+    function clearRealizabilityScalar(address asset) external {
+        _requireManager();
+        _requireAssetExists(asset);
+        _clearRealizabilityScalar(asset);
+    }
+
+    /// @inheritdoc INAVCalculator
+    function setRealizabilityLimit(address asset, uint32 limitSeconds) external {
+        _requireManager();
+        _requireAssetExists(asset);
+        _setRealizabilityLimit(asset, limitSeconds);
+    }
+
+    /// @inheritdoc INAVCalculator
     function addBalanceAdapters(address[] calldata adapters) external {
         _requireManager();
         _addBalanceAdapters(adapters);
@@ -241,6 +271,9 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         // Clear monitor feeds + pricing metadata (idempotent; also clears _assetPricing).
         _removeAllMonitorFeeds(underlyingAsset);
 
+        // Clear realizability config (source + scalar + limit).
+        _removeRealizability(underlyingAsset);
+
         // Remove from default adapter's inclusion list (idempotent if not present)
         ERC20DefaultBalanceAdapter(erc20DefaultBalanceAdapter).removeSupportedAsset(underlyingAsset);
 
@@ -294,6 +327,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             _priceOracles,
             _monitorFeeds,
             _assetPricing,
+            _realizability,
             _assetIndex,
             _registeredAssets,
             getAllAdapters(),
@@ -361,6 +395,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             _priceOracles,
             _monitorFeeds,
             _assetPricing,
+            _realizability,
             _assetIndex,
             _registeredAssets,
             getAllAdapters(),
@@ -384,6 +419,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             _priceOracles,
             _monitorFeeds,
             _assetPricing,
+            _realizability,
             _assetIndex,
             _registeredAssets,
             getAllAdapters(),
@@ -520,7 +556,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         // delegated to PriceFeedLib to keep NAVCalculator under EIP-170; sequencer status depends on this contract's
         // config so it is computed here and passed in.
         return PriceFeedLib.buildPriceData(
-            _priceOracles, _monitorFeeds, _assetPricing, underlyingAsset, _isSequencerDown()
+            _priceOracles, _monitorFeeds, _assetPricing, _realizability, underlyingAsset, _isSequencerDown()
         );
     }
 
@@ -544,14 +580,38 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     }
 
     /// @inheritdoc INAVCalculator
+    function getRealizability(address underlyingAsset)
+        external
+        view
+        returns (
+            bool withdrawalsEnabled,
+            uint256 expectedRedemptionSeconds,
+            bool healthy,
+            uint256 limitSeconds,
+            bool unrealizable,
+            bool configured
+        )
+    {
+        _requireAssetExists(underlyingAsset);
+        return PriceFeedLib.computeRealizability(_realizability, underlyingAsset);
+    }
+
+    /// @inheritdoc INAVCalculator
     function healthCheck()
         external
         view
-        returns (bool sequencerDown, address[] memory stalePriceAssets, address[] memory irregularPriceAssets)
+        returns (
+            bool sequencerDown,
+            address[] memory stalePriceAssets,
+            address[] memory irregularPriceAssets,
+            address[] memory unrealizablePriceAssets
+        )
     {
-        // Sequencer status depends on this contract's config; the per-asset staleness + divergence scan is delegated
-        // to PriceFeedLib to keep NAVCalculator under EIP-170.
-        return PriceFeedLib.healthCheck(_priceOracles, _monitorFeeds, _assetPricing, _registeredAssets, _isSequencerDown());
+        // Sequencer status depends on this contract's config; the per-asset staleness + divergence + realizability
+        // scan is delegated to PriceFeedLib to keep NAVCalculator under EIP-170.
+        return PriceFeedLib.healthCheck(
+            _priceOracles, _monitorFeeds, _assetPricing, _realizability, _registeredAssets, _isSequencerDown()
+        );
     }
 
     /// @inheritdoc INAVCalculator

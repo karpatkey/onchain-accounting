@@ -74,7 +74,7 @@ contract WbtcMultiFeedForkTest is NAVCalculatorForkHarness {
     // ─── Healthy reads at fork block ───────────────────────────────────────────
 
     function test_latestPrice_notStale() public view {
-        (int256 price, uint8 decimals, bool stale,) = nav.latestPrice(WBTC);
+        (int256 price, uint8 decimals, bool stale,,) = nav.latestPrice(WBTC);
 
         assertFalse(stale);
         assertEq(decimals, 8);
@@ -127,7 +127,7 @@ contract WbtcMultiFeedForkTest is NAVCalculatorForkHarness {
     function test_redundancy_redstoneOutlastsChainlink() public {
         vm.warp(block.timestamp + CHAINLINK_HEARTBEAT + 1);
 
-        (int256 price,, bool stale,) = nav.latestPrice(WBTC);
+        (int256 price,, bool stale,,) = nav.latestPrice(WBTC);
         INAVCalculator.PriceFeedData memory d = nav.getPriceData(WBTC);
 
         assertFalse(stale, "Redstone must keep the read healthy after Chainlink heartbeat expires");
@@ -143,7 +143,7 @@ contract WbtcMultiFeedForkTest is NAVCalculatorForkHarness {
     function test_allFeedsStale_after24hWarp() public {
         vm.warp(block.timestamp + REDSTONE_HEARTBEAT + 1);
 
-        (int256 price,, bool stale,) = nav.latestPrice(WBTC);
+        (int256 price,, bool stale,,) = nav.latestPrice(WBTC);
 
         assertTrue(stale, "expected all-stale after 24h warp");
         assertEq(price, 0, "price must be 0 when all feeds are stale");

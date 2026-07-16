@@ -7,6 +7,7 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 import {IPrices} from "./IPrices.sol";
 import {ICustomPriceFeed} from "./ICustomPriceFeed.sol";
+import {IRealizabilitySource} from "./IRealizabilitySource.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
@@ -45,6 +46,9 @@ library PriceFeedLib {
         // True if the primary price diverged from the asset's monitor feeds beyond tolerance (or, for stablecoins,
         // from the $1 peg). Pricing-quality signal only; `price` is still the primary and is used for valuation.
         bool irregular;
+        // True if the asset's redemption is not realizable within its configured limit (withdrawals disabled,
+        // protocol unhealthy, or expected redemption time over the limit). Independent of price/staleness.
+        bool unrealizable;
     }
 
     /// @notice Quote-asset info (struct + price data); address(0) = USD.
@@ -360,6 +364,86 @@ library PriceFeedLib {
     }
 
     // -------------------------------------------------------------------------
+    // Realizability (redemption-status signal)
+    // -------------------------------------------------------------------------
+
+    /// @notice Validates a realizability source at registration: must implement IRealizabilitySource (ERC165) and be
+    ///         pinned to `asset`. Reverts InvalidRealizabilitySource otherwise.
+    function validateRealizabilitySource(address asset, address source) external view {
+        if (
+            source == address(0) || !source.supportsInterface(type(IRealizabilitySource).interfaceId)
+                || IRealizabilitySource(source).underlyingAssetSupported() != asset
+        ) {
+            revert IPrices.InvalidRealizabilitySource(asset, source);
+        }
+    }
+
+    /// @notice Resolves an asset's realizability: prefers the pluggable source (fail-open to the MANAGER scalar on
+    ///         revert), else the scalar, else unconfigured. External wrapper for the `getRealizability` view.
+    function computeRealizability(mapping(address => IPrices.RealizabilityConfig) storage realizability, address asset)
+        external
+        view
+        returns (
+            bool withdrawalsEnabled,
+            uint256 expectedRedemptionSeconds,
+            bool healthy,
+            uint256 limitSeconds,
+            bool unrealizable,
+            bool configured
+        )
+    {
+        return _computeRealizability(realizability, asset);
+    }
+
+    /// @notice Core realizability resolution (shared by the view and the NAV compute paths). Never reverts.
+    function _computeRealizability(mapping(address => IPrices.RealizabilityConfig) storage realizability, address asset)
+        private
+        view
+        returns (
+            bool withdrawalsEnabled,
+            uint256 expectedRedemptionSeconds,
+            bool healthy,
+            uint256 limitSeconds,
+            bool unrealizable,
+            bool configured
+        )
+    {
+        IPrices.RealizabilityConfig storage c = realizability[asset];
+        limitSeconds = c.limitSeconds;
+
+        if (c.source != address(0)) {
+            try IRealizabilitySource(c.source).realizability() returns (bool en, uint256 eta, bool h) {
+                (withdrawalsEnabled, expectedRedemptionSeconds, healthy, configured) = (en, eta, h, true);
+            } catch {
+                // Source reverted → fall back to the MANAGER scalar if present.
+                if (c.scalarSet) {
+                    (withdrawalsEnabled, expectedRedemptionSeconds, healthy, configured) =
+                        (c.scalarWithdrawalsEnabled, c.scalarEtaSeconds, c.scalarHealthy, true);
+                }
+            }
+        } else if (c.scalarSet) {
+            (withdrawalsEnabled, expectedRedemptionSeconds, healthy, configured) =
+                (c.scalarWithdrawalsEnabled, c.scalarEtaSeconds, c.scalarHealthy, true);
+        }
+
+        if (configured) {
+            unrealizable =
+                !withdrawalsEnabled || !healthy || (limitSeconds > 0 && expectedRedemptionSeconds > limitSeconds);
+        }
+    }
+
+    /// @notice True if an asset has any realizability config (source or scalar) — otherwise the resolution is skipped
+    ///         entirely and `unrealizable` is false (mirrors {_hasDivergenceChecks}).
+    function _hasRealizability(mapping(address => IPrices.RealizabilityConfig) storage realizability, address asset)
+        private
+        view
+        returns (bool)
+    {
+        IPrices.RealizabilityConfig storage c = realizability[asset];
+        return c.source != address(0) || c.scalarSet;
+    }
+
+    // -------------------------------------------------------------------------
     // L2 sequencer uptime
     // -------------------------------------------------------------------------
 
@@ -405,6 +489,7 @@ library PriceFeedLib {
         mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
         mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
         mapping(address => IPrices.AssetPricing) storage assetPricing,
+        mapping(address => IPrices.RealizabilityConfig) storage realizability,
         address asset,
         bool sequencerDown
     ) external view returns (INAVCalculator.PriceFeedData memory priceFeedData) {
@@ -447,6 +532,10 @@ library PriceFeedLib {
             priceFeedData.divergenceBps = divergenceBps;
             priceFeedData.monitorFeedCount = monitorFeedCount;
         }
+
+        // Realizability signal (independent of price/staleness): whether the position can be redeemed within its
+        // configured limit. Skipped (stays false) when the asset has no realizability config.
+        priceFeedData.unrealizable = _resolveUnrealizable(realizability, asset);
     }
 
     // -------------------------------------------------------------------------
@@ -467,6 +556,7 @@ library PriceFeedLib {
         mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
         mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
         mapping(address => IPrices.AssetPricing) storage assetPricing,
+        mapping(address => IPrices.RealizabilityConfig) storage realizability,
         mapping(address => uint256) storage assetIndex,
         INAVCalculator.Asset[] storage registeredAssets,
         address[] memory allAdapters,
@@ -486,6 +576,7 @@ library PriceFeedLib {
         if (assetCount == 0) {
             nav.stalePriceAssets = new INAVCalculator.Asset[](0);
             nav.irregularPriceAssets = new INAVCalculator.Asset[](0);
+            nav.unrealizablePriceAssets = new INAVCalculator.Asset[](0);
             return nav; // value 0, sequencerDown false (no assets registered)
         }
 
@@ -496,14 +587,16 @@ library PriceFeedLib {
         if (allPositions.length == 0) {
             nav.stalePriceAssets = new INAVCalculator.Asset[](0);
             nav.irregularPriceAssets = new INAVCalculator.Asset[](0);
+            nav.unrealizablePriceAssets = new INAVCalculator.Asset[](0);
             return nav; // value 0
         }
 
         address[] memory assetsWithPositions = _extractUniqueAssets(allPositions);
         PriceFeedCache[] memory priceFeeds =
-            _buildPriceFeedCache(priceOracles, monitorFeeds, assetPricing, assetsWithPositions);
+            _buildPriceFeedCache(priceOracles, monitorFeeds, assetPricing, realizability, assetsWithPositions);
         nav.stalePriceAssets = _buildStaleAssets(assetIndex, registeredAssets, priceFeeds);
         nav.irregularPriceAssets = _buildIrregularAssets(assetIndex, registeredAssets, priceFeeds);
+        nav.unrealizablePriceAssets = _buildUnrealizableAssets(assetIndex, registeredAssets, priceFeeds);
 
         int256 totalValue = 0;
         uint256 positionsLength = allPositions.length;
@@ -533,6 +626,7 @@ library PriceFeedLib {
         mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
         mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
         mapping(address => IPrices.AssetPricing) storage assetPricing,
+        mapping(address => IPrices.RealizabilityConfig) storage realizability,
         mapping(address => uint256) storage assetIndex,
         INAVCalculator.Asset[] storage registeredAssets,
         address[] memory allAdapters,
@@ -559,7 +653,7 @@ library PriceFeedLib {
         }
 
         PriceFeedCache[] memory priceFeeds =
-            _buildPriceFeedCache(priceOracles, monitorFeeds, assetPricing, assetsWithPositions);
+            _buildPriceFeedCache(priceOracles, monitorFeeds, assetPricing, realizability, assetsWithPositions);
         QuoteAssetInfo memory quoteInfo =
             _getQuoteAssetInfo(priceOracles, assetIndex, registeredAssets, quoteAsset, nativeTokenSymbol);
 
@@ -595,6 +689,7 @@ library PriceFeedLib {
         mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
         mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
         mapping(address => IPrices.AssetPricing) storage assetPricing,
+        mapping(address => IPrices.RealizabilityConfig) storage realizability,
         mapping(address => uint256) storage assetIndex,
         INAVCalculator.Asset[] storage registeredAssets,
         address[] memory allAdapters,
@@ -614,6 +709,7 @@ library PriceFeedLib {
         if (assetCount == 0) {
             nav.stalePriceAssets = new INAVCalculator.Asset[](0);
             nav.irregularPriceAssets = new INAVCalculator.Asset[](0);
+            nav.unrealizablePriceAssets = new INAVCalculator.Asset[](0);
             positions = new INAVCalculator.Position[](0);
             return (nav, positions); // value 0, sequencerDown false (no assets registered)
         }
@@ -625,15 +721,17 @@ library PriceFeedLib {
         if (allPositions.length == 0) {
             nav.stalePriceAssets = new INAVCalculator.Asset[](0);
             nav.irregularPriceAssets = new INAVCalculator.Asset[](0);
+            nav.unrealizablePriceAssets = new INAVCalculator.Asset[](0);
             positions = new INAVCalculator.Position[](0);
             return (nav, positions); // value 0
         }
 
         address[] memory assetsWithPositions = _extractUniqueAssets(allPositions);
         PriceFeedCache[] memory priceFeeds =
-            _buildPriceFeedCache(priceOracles, monitorFeeds, assetPricing, assetsWithPositions);
+            _buildPriceFeedCache(priceOracles, monitorFeeds, assetPricing, realizability, assetsWithPositions);
         nav.stalePriceAssets = _buildStaleAssets(assetIndex, registeredAssets, priceFeeds);
         nav.irregularPriceAssets = _buildIrregularAssets(assetIndex, registeredAssets, priceFeeds);
+        nav.unrealizablePriceAssets = _buildUnrealizableAssets(assetIndex, registeredAssets, priceFeeds);
 
         uint256 length = allPositions.length;
         positions = new INAVCalculator.Position[](length);
@@ -694,18 +792,30 @@ library PriceFeedLib {
         mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
         mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
         mapping(address => IPrices.AssetPricing) storage assetPricing,
+        mapping(address => IPrices.RealizabilityConfig) storage realizability,
         INAVCalculator.Asset[] storage registeredAssets,
         bool sequencerDown
-    ) external view returns (bool, address[] memory stalePriceAssets, address[] memory irregularPriceAssets) {
+    )
+        external
+        view
+        returns (
+            bool,
+            address[] memory stalePriceAssets,
+            address[] memory irregularPriceAssets,
+            address[] memory unrealizablePriceAssets
+        )
+    {
         uint256 totalAssets = registeredAssets.length;
         if (totalAssets == 0) {
-            return (sequencerDown, new address[](0), new address[](0));
+            return (sequencerDown, new address[](0), new address[](0), new address[](0));
         }
 
         address[] memory staleAssetsTemp = new address[](totalAssets);
         address[] memory irregularAssetsTemp = new address[](totalAssets);
+        address[] memory unrealizableAssetsTemp = new address[](totalAssets);
         uint256 staleCount = 0;
         uint256 irregularCount = 0;
+        uint256 unrealizableCount = 0;
         for (uint256 i = 0; i < totalAssets; i++) {
             address assetAddr = registeredAssets[i].asset;
             // _selectFeedCore reverts PriceFeedNotSet(assetAddr) when the asset has no feeds (same selector as the
@@ -720,10 +830,13 @@ library PriceFeedLib {
                     _monitorDivergence(monitorFeeds, assetPricing, assetAddr, primary8, primaryStale);
                 if (irregular) irregularAssetsTemp[irregularCount++] = assetAddr;
             }
+
+            if (_resolveUnrealizable(realizability, assetAddr)) unrealizableAssetsTemp[unrealizableCount++] = assetAddr;
         }
         stalePriceAssets = ArrayLib.copySliceAddress(staleAssetsTemp, staleCount);
         irregularPriceAssets = ArrayLib.copySliceAddress(irregularAssetsTemp, irregularCount);
-        return (sequencerDown, stalePriceAssets, irregularPriceAssets);
+        unrealizablePriceAssets = ArrayLib.copySliceAddress(unrealizableAssetsTemp, unrealizableCount);
+        return (sequencerDown, stalePriceAssets, irregularPriceAssets, unrealizablePriceAssets);
     }
 
     /// @notice Values explicit (asset, amount) pairs in a quote currency. Mirrors NAVCalculator.calculateValue.
@@ -885,12 +998,14 @@ library PriceFeedLib {
         mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
         mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
         mapping(address => IPrices.AssetPricing) storage assetPricing,
+        mapping(address => IPrices.RealizabilityConfig) storage realizability,
         address[] memory assets
     ) private view returns (PriceFeedCache[] memory priceFeeds) {
         uint256 length = assets.length;
         priceFeeds = new PriceFeedCache[](length);
         for (uint256 i = 0; i < length; i++) {
             address asset = assets[i];
+            bool unrealizable = _resolveUnrealizable(realizability, asset);
             // [8]/S1 — A feedless asset that still has a live position must NOT revert the whole NAV/positions
             // read. `_selectFeedCore` reverts PriceFeedNotSet when len == 0; here in the value-aggregation path we
             // instead treat it exactly like the all-feeds-stale case: price 0, stale = true. The asset is then
@@ -901,8 +1016,14 @@ library PriceFeedLib {
                 // decimals = NAV_DECIMALS (not 0): _priceConversion reverts InvalidAssetDecimals when
                 // assetDecimals + priceDecimals < NAV_DECIMALS, so a 0 here would re-introduce a DoS for
                 // low-decimal assets (e.g. USDC). NAV_DECIMALS guarantees the guard passes; price 0 → value 0.
-                priceFeeds[i] =
-                    PriceFeedCache({asset: asset, price: 0, decimals: NAV_DECIMALS, stale: true, irregular: false});
+                priceFeeds[i] = PriceFeedCache({
+                    asset: asset,
+                    price: 0,
+                    decimals: NAV_DECIMALS,
+                    stale: true,
+                    irregular: false,
+                    unrealizable: unrealizable
+                });
                 continue;
             }
             (int256 price, uint8 decimals, bool stale,,) = _selectFeedCore(priceOracles, asset);
@@ -914,8 +1035,25 @@ library PriceFeedLib {
                 int256 primary8 = stale ? int256(0) : _scaleTo8(price, decimals);
                 (,, irregular,,) = _monitorDivergence(monitorFeeds, assetPricing, asset, primary8, stale);
             }
-            priceFeeds[i] =
-                PriceFeedCache({asset: asset, price: price, decimals: decimals, stale: stale, irregular: irregular});
+            priceFeeds[i] = PriceFeedCache({
+                asset: asset,
+                price: price,
+                decimals: decimals,
+                stale: stale,
+                irregular: irregular,
+                unrealizable: unrealizable
+            });
+        }
+    }
+
+    /// @notice Resolves the `unrealizable` flag for the cache/enrich paths — skips the work (and the source
+    ///         external call) entirely when the asset has no realizability config.
+    function _resolveUnrealizable(
+        mapping(address => IPrices.RealizabilityConfig) storage realizability,
+        address asset
+    ) private view returns (bool unrealizable) {
+        if (_hasRealizability(realizability, asset)) {
+            (,,,, unrealizable,) = _computeRealizability(realizability, asset);
         }
     }
 
@@ -973,6 +1111,28 @@ library PriceFeedLib {
         irregularAssets = new INAVCalculator.Asset[](irregularLength);
         for (uint256 i = 0; i < irregularLength; i++) {
             irregularAssets[i] = _getRegisteredAsset(assetIndex, registeredAssets, irregularAddrs[i]);
+        }
+    }
+
+    /// @notice Builds the unrealizable Asset[] from the cache (peer to {_buildIrregularAssets}). The `unrealizable`
+    ///         flag was computed once per asset in {_buildPriceFeedCache} from the realizability resolution.
+    function _buildUnrealizableAssets(
+        mapping(address => uint256) storage assetIndex,
+        INAVCalculator.Asset[] storage registeredAssets,
+        PriceFeedCache[] memory priceFeeds
+    ) private view returns (INAVCalculator.Asset[] memory unrealizableAssets) {
+        uint256 feedsLength = priceFeeds.length;
+        address[] memory temp = new address[](feedsLength);
+        uint256 count = 0;
+        for (uint256 i = 0; i < feedsLength; i++) {
+            if (priceFeeds[i].unrealizable) temp[count++] = priceFeeds[i].asset;
+        }
+        address[] memory addrs = ArrayLib.copySliceAddress(temp, count);
+
+        uint256 len = addrs.length;
+        unrealizableAssets = new INAVCalculator.Asset[](len);
+        for (uint256 i = 0; i < len; i++) {
+            unrealizableAssets[i] = _getRegisteredAsset(assetIndex, registeredAssets, addrs[i]);
         }
     }
 
@@ -1059,6 +1219,7 @@ library PriceFeedLib {
         position.priceDecimals = priceFeed.decimals;
         position.stale = priceFeed.stale;
         position.irregular = priceFeed.irregular;
+        position.unrealizable = priceFeed.unrealizable;
         position.quoteAssetStale = quoteAssetStale;
     }
 

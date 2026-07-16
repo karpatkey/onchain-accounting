@@ -117,6 +117,9 @@ interface INAVCalculator is IBalances {
         // for stablecoins, from the $1 peg). A pricing-quality signal, NOT a validity/staleness flag: `price` and
         // `value` are still populated from the primary. Consumers (e.g. the sub/redeem processor) decide how to react.
         bool irregular;
+        // True if the asset's redemption is not realizable within its configured limit (withdrawals disabled,
+        // protocol unhealthy, or expected redemption time over the limit). Redemption signal, independent of price.
+        bool unrealizable;
         // True if the quote asset's own price feed was stale. When true, `value` is in USD (8dp) even though
         // `quoteAsset` is non-zero — the quote conversion was skipped. Mirrors NAV.quoteAssetStale ([9]/S2).
         bool quoteAssetStale;
@@ -160,6 +163,9 @@ interface INAVCalculator is IBalances {
     /// @param irregularPriceAssets Assets whose primary price diverged from their monitor feeds beyond tolerance
     ///        (or, for stablecoins, from the $1 peg) at query time. A pricing-quality signal, not a staleness flag —
     ///        `value` is still computed from the primary prices. Consumers decide how to react.
+    /// @param unrealizablePriceAssets Assets whose redemption is not realizable within the configured limit
+    ///        (withdrawals disabled, protocol unhealthy, or expected redemption time over the limit) — a redemption
+    ///        signal independent of price. `value` is still computed from the (healthy) rate.
     /// @param sequencerDown True if the L2 sequencer was down or in grace period (L2 only).
     /// @param quoteAssetStale True if the quote asset's own price feed was stale. When true the value field
     ///        is in USD (fallback) even though quoteAsset is non-zero — callers must check this flag before
@@ -171,6 +177,7 @@ interface INAVCalculator is IBalances {
         uint64 timestamp;
         Asset[] stalePriceAssets;
         Asset[] irregularPriceAssets;
+        Asset[] unrealizablePriceAssets;
         bool sequencerDown;
         bool quoteAssetStale;
     }
@@ -189,11 +196,13 @@ interface INAVCalculator is IBalances {
     /// @param healthyFeedCount Number of registered feeds that passed all staleness gates on this read.
     ///        A value below the total registered feed count signals partial redundancy collapse and
     ///        should trigger off-chain alerting.
-    /// @param irregular True if the primary price diverged from the mean of the healthy monitor feeds beyond the
-    ///        configured divergence tolerance, or (stablecoins) from the $1 peg beyond the peg tolerance.
-    /// @param divergenceBps Basis-point gap between the primary price and the mean of the healthy monitor prices
-    ///        (0 when there are no healthy monitors or the primary is stale).
+    /// @param irregular True if the primary price diverged from any healthy monitor beyond the configured divergence
+    ///        tolerance (worst-case), or (stablecoins) from the $1 peg beyond the peg tolerance.
+    /// @param divergenceBps Worst-case basis-point gap between the primary and any healthy monitor (0 when there are
+    ///        no healthy monitors or the primary is stale).
     /// @param monitorFeedCount Number of healthy monitor feeds that contributed to the divergence computation.
+    /// @param unrealizable True if the asset's redemption is not realizable within its configured limit (withdrawals
+    ///        disabled, protocol unhealthy, or expected redemption time over the limit). Independent of price.
     struct PriceFeedData {
         address priceFeed;
         IPrices.PriceType priceType;
@@ -207,6 +216,7 @@ interface INAVCalculator is IBalances {
         bool irregular;
         uint256 divergenceBps;
         uint256 monitorFeedCount;
+        bool unrealizable;
     }
 
     //
@@ -282,6 +292,19 @@ interface INAVCalculator is IBalances {
     /// @param asset Registered asset address.
     /// @param pegToleranceBps Max deviation of the primary price from $1 before the asset is flagged irregular.
     function setPegTolerance(address asset, uint32 pegToleranceBps) external;
+
+    /// @notice Sets (or clears, with source == address(0)) an asset's pluggable realizability source. A non-zero
+    ///         source must implement IRealizabilitySource and be pinned to `asset`.
+    function setRealizabilitySource(address asset, address source) external;
+
+    /// @notice Sets the MANAGER-fed realizability scalar for an asset (used when no source is set / it reverts).
+    function setRealizabilityScalar(address asset, bool withdrawalsEnabled, uint32 etaSeconds, bool healthy) external;
+
+    /// @notice Clears the MANAGER-fed realizability scalar for an asset.
+    function clearRealizabilityScalar(address asset) external;
+
+    /// @notice Sets the per-asset expected-redemption-time limit in seconds (0 disables the ETA threshold).
+    function setRealizabilityLimit(address asset, uint32 limitSeconds) external;
 
     /// @notice Registers one or more **non-meta** balance adapters in the global registry in a single call.
     /// @dev Reverts with InvalidArguments if the list is empty or contains a zero address, DuplicateBalanceAdapter
@@ -488,14 +511,40 @@ interface INAVCalculator is IBalances {
             bool primaryAboveMonitors
         );
 
-    /// @notice Returns health status: sequencer down flag and lists of stale-price and irregular-price assets.
+    /// @notice Returns health status: sequencer flag and lists of stale-, irregular-, and unrealizable-price assets.
     /// @return sequencerDown True if L2 sequencer is down or in grace period (false on L1).
     /// @return stalePriceAssets Addresses of assets with stale prices.
     /// @return irregularPriceAssets Addresses of assets flagged irregular (primary diverged from monitors / peg).
+    /// @return unrealizablePriceAssets Addresses of assets flagged unrealizable (redemption over limit / disabled).
     function healthCheck()
         external
         view
-        returns (bool sequencerDown, address[] memory stalePriceAssets, address[] memory irregularPriceAssets);
+        returns (
+            bool sequencerDown,
+            address[] memory stalePriceAssets,
+            address[] memory irregularPriceAssets,
+            address[] memory unrealizablePriceAssets
+        );
+
+    /// @notice Returns the resolved redemption realizability for an asset (source, else MANAGER scalar, else none).
+    /// @param underlyingAsset Registered asset address.
+    /// @return withdrawalsEnabled Whether redemptions are currently enabled.
+    /// @return expectedRedemptionSeconds Coarse estimate of time-to-redeem (0 ≈ instant).
+    /// @return healthy Protocol-health flag.
+    /// @return limitSeconds The per-asset limit that gates `unrealizable` (0 = ETA threshold disabled).
+    /// @return unrealizable True if !withdrawalsEnabled || !healthy || (limitSeconds>0 && eta>limitSeconds).
+    /// @return configured False if the asset has no realizability source or scalar (then `unrealizable` is false).
+    function getRealizability(address underlyingAsset)
+        external
+        view
+        returns (
+            bool withdrawalsEnabled,
+            uint256 expectedRedemptionSeconds,
+            bool healthy,
+            uint256 limitSeconds,
+            bool unrealizable,
+            bool configured
+        );
 
     /// @notice Returns whether the account has any non-zero balance across adapters and registered assets.
     /// @param account Account address.

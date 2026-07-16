@@ -1356,7 +1356,7 @@ contract NAVCalculatorTest is SuperTest {
 
         // Verify latestPrice still works correctly without sequencer check
         usdc.mint(safe, 10 ** usdc.decimals());
-        (int256 price, uint8 decimals, bool priceStale) = nav.latestPrice(address(usdc));
+        (int256 price, uint8 decimals, bool priceStale,) = nav.latestPrice(address(usdc));
         assertEq(price, 1e8);
         assertEq(decimals, 8);
         assertFalse(priceStale);
@@ -1464,7 +1464,7 @@ contract NAVCalculatorTest is SuperTest {
         // Convert ETH value back to USD using the rate
         // ethValue is in ETH with 18 decimals, we need to convert back
         // Get ETH price
-        (int256 ethPrice, uint8 ethPriceDecimals,) = nav.latestPrice(nav.NATIVE_ADDRESS());
+        (int256 ethPrice, uint8 ethPriceDecimals,,) = nav.latestPrice(nav.NATIVE_ADDRESS());
         // Convert: ethValue * ethPrice / 10^(18 + ethPriceDecimals - 8)
         int256 convertedBack = (ethValue * int256(ethPrice)) / int256(10 ** (18 + ethPriceDecimals - 8));
 
@@ -1727,7 +1727,7 @@ contract NAVCalculatorTest is SuperTest {
         INAVCalculator.Position[] memory usdPositions = nav.getAccountPositions(safe, address(0));
         INAVCalculator.Position memory usdPos = usdPositions[0];
         assertEq(usdPos.balanceAsset.asset, address(usdc));
-        (int256 priceInUsd, uint8 usdPriceDecimals,) = nav.latestPrice(address(usdc));
+        (int256 priceInUsd, uint8 usdPriceDecimals,,) = nav.latestPrice(address(usdc));
         assertEq(usdPos.price, priceInUsd);
         assertEq(usdPos.priceDecimals, usdPriceDecimals);
 
@@ -1747,7 +1747,7 @@ contract NAVCalculatorTest is SuperTest {
 
         INAVCalculator.Position[] memory ethPositions = nav.getAccountPositions(safe, nav.NATIVE_ADDRESS());
         INAVCalculator.Position memory ethPos = ethPositions[0];
-        (int256 priceInEth, uint8 ethPriceDecimals,) = nav.latestPrice(nav.NATIVE_ADDRESS());
+        (int256 priceInEth, uint8 ethPriceDecimals,,) = nav.latestPrice(nav.NATIVE_ADDRESS());
         assertGe(priceInEth, 0, "price non-negative");
         assertLe(ethPriceDecimals, 255, "decimals valid");
 

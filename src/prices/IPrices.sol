@@ -170,7 +170,13 @@ interface IPrices {
     /// @return price The latest price of the token (int256; positive for all valid prices, 0 when stale).
     /// @return decimals The amount of decimal places the price is represented with.
     /// @return stale True if all registered feeds are stale, the L2 sequencer is down, or within grace period.
-    function latestPrice(address underlyingAsset) external view returns (int256 price, uint8 decimals, bool stale);
+    /// @return irregular True if the primary price diverged from its monitor feeds beyond the divergence tolerance,
+    /// or (stablecoins) from the $1 peg beyond the peg tolerance. A pricing-quality signal, not a validity flag;
+    /// `price` is still populated. Always false when `stale` (divergence is undefined for an unusable price).
+    function latestPrice(address underlyingAsset)
+        external
+        view
+        returns (int256 price, uint8 decimals, bool stale, bool irregular);
 
     /// @notice Checks the L2 sequencer uptime feed, returning True when it is signaling staleness (the sequencer
     /// is down or still within the grace period). If 'chainlinkL2SequencerUptimeFeed' is the zero address (e.g. on

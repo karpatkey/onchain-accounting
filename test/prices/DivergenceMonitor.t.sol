@@ -118,6 +118,19 @@ contract DivergenceMonitorTest is SuperTest {
         assertFalse(pd.irregular, "no monitors -> not irregular");
     }
 
+    function test_latestPrice_surfacesIrregular() public {
+        // No monitor yet -> latestPrice reports not-irregular.
+        (,,, bool before) = nav.latestPrice(address(weth));
+        assertFalse(before);
+
+        _attachWethMonitor(340_000_000_000, 250); // ~492 bps out of band
+        (int256 price, uint8 decimals, bool stale, bool irregular) = nav.latestPrice(address(weth));
+        assertEq(price, 324_057_000_000, "price still the primary");
+        assertEq(decimals, 8);
+        assertFalse(stale);
+        assertTrue(irregular, "latestPrice must surface irregular (parity with getPriceData)");
+    }
+
     function test_getPriceDivergence_view() public {
         _attachWethMonitor(340_000_000_000, 250);
         (

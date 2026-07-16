@@ -58,9 +58,17 @@ abstract contract Prices is IPrices, Initializable {
     }
 
     /// @inheritdoc IPrices
-    function latestPrice(address token) external view returns (int256 price, uint8 decimals, bool stale) {
+    function latestPrice(address token)
+        external
+        view
+        returns (int256 price, uint8 decimals, bool stale, bool irregular)
+    {
         (price, decimals, stale,,) = _selectFeed(token);
         stale = checkL2SequencerUptime() || stale;
+        // Divergence-vs-monitors signal (parity with getPriceData / NAV.irregularPriceAssets). Suppressed when the
+        // primary is stale/sequencer-down — divergence is undefined for an unusable price.
+        (,,, irregular,,) = _priceOracles.computeDivergence(_monitorFeeds, _assetPricing, token);
+        if (stale) irregular = false;
     }
 
     /// @inheritdoc IPrices

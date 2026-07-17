@@ -59,8 +59,13 @@ contract BridgeEscrowConfigRehearsalForkTest is BridgeTestBase {
         escrow.grantRole(MANAGER, admin);
     }
 
-    /// @notice Applies the bridge-escrow config for `cfgChainId` to `escrow` exactly as `06_Configure` does:
-    ///         `authorizeAccount` for every `.accounts` entry, `registerAsset` for every `.assets` entry.
+    /// @notice Applies the bridge-escrow config for `cfgChainId` to `escrow` using the same `ConfigReader` reads and
+    ///         the same escrow mutators (`authorizeAccount` per `.accounts` entry, `registerAsset` per `.assets` entry)
+    ///         that `06_Configure` drives. This is a deliberately straight single-pass apply — it does NOT replicate
+    ///         `06`'s idempotency/placeholder guards (skip `address(0)`, skip already-authorized accounts, skip a
+    ///         symbol already mapped to the same address). Those guards exist in `06` for re-runnability; here the
+    ///         escrow is freshly deployed and the config is applied exactly once, so they are unnecessary. The fixtures
+    ///         used by the tests carry only real addresses and a single account, so no skip path is exercised.
     function _applyBridgeEscrowConfig(BridgeEscrow escrow, uint256 cfgChainId) internal {
         address[] memory accounts = ConfigReader.readBridgeEscrowAccounts(vm, cfgChainId);
         string[] memory symbols = ConfigReader.readBridgeEscrowAssetSymbols(vm, cfgChainId);

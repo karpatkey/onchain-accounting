@@ -391,6 +391,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             account,
             assetFilter,
             quoteAsset,
+            _isSequencerDown(),
             _nativeTokenSymbol
         );
     }
@@ -541,7 +542,9 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     {
         _requireAssetExists(underlyingAsset);
         _requirePriceFeedExists(underlyingAsset);
-        return PriceFeedLib.computeDivergence(_priceOracles, _monitorFeeds, _assetPricing, underlyingAsset);
+        return PriceFeedLib.computeDivergence(
+            _priceOracles, _monitorFeeds, _assetPricing, underlyingAsset, _isSequencerDown()
+        );
     }
 
     /// @inheritdoc INAVCalculator

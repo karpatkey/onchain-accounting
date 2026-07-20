@@ -35,10 +35,10 @@ abstract contract Prices is IPrices, Initializable {
     mapping(address asset => PriceFeedConfig[] feeds) internal _priceOracles;
 
     /// @notice Monitor (divergence-only) feed configurations per asset. NEVER used to price the NAV; read only to
-    /// detect divergence between the primary price and the mean of the healthy monitor prices.
+    /// detect divergence between the primary price and the healthy monitor prices.
     mapping(address asset => PriceFeedConfig[] feeds) internal _monitorFeeds;
 
-    /// @notice Per-asset pricing metadata: asset type + divergence/peg tolerances (see IPrices.AssetPricing).
+    /// @notice Per-asset pricing metadata: divergence/peg tolerances (see IPrices.AssetPricing).
     mapping(address asset => AssetPricing pricing) internal _assetPricing;
 
     /// @dev Reserved storage gap for future Prices expansions. Started at 50; 2 consumed by `_monitorFeeds` and
@@ -63,11 +63,12 @@ abstract contract Prices is IPrices, Initializable {
         view
         returns (int256 price, uint8 decimals, bool stale, bool irregular)
     {
+        bool sequencerDown = checkL2SequencerUptime();
         (price, decimals, stale,,) = _selectFeed(token);
-        stale = checkL2SequencerUptime() || stale;
+        stale = sequencerDown || stale;
         // Divergence-vs-monitors signal (parity with getPriceData / NAV.irregularPriceAssets). Suppressed when the
         // primary is stale/sequencer-down — divergence is undefined for an unusable price.
-        (,,, irregular,,,) = _priceOracles.computeDivergence(_monitorFeeds, _assetPricing, token);
+        (,,, irregular,,,) = _priceOracles.computeDivergence(_monitorFeeds, _assetPricing, token, sequencerDown);
         if (stale) irregular = false;
     }
 

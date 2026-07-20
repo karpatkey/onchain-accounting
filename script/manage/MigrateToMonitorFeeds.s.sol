@@ -120,10 +120,18 @@ contract MigrateToMonitorFeeds is BaseDeployScript {
 
         (p.addMonitors, p.addMonitorTypes, p.addMonitorHbs) = _monitorsToAdd(symbol, asset, navProxy);
 
+        uint256 monCount = ConfigReader.assetMonitorFeedCount(vm, currentChainId, symbol);
         uint256 divTol = ConfigReader.readAssetDivergenceToleranceBps(vm, currentChainId, symbol);
         uint256 pegTol = ConfigReader.readAssetPegToleranceBps(vm, currentChainId, symbol);
+        // addMonitorFeed reverts DivergenceToleranceRequired unless a non-zero divergence tolerance is set first
+        // (see PriceFeedLib.addMonitorFeed). Fail fast rather than plan Pass A calls guaranteed to revert on-chain
+        // (which would abort the whole migration batch).
+        require(
+            monCount == 0 || divTol > 0,
+            string.concat("MigrateToMonitorFeeds: ", symbol, " has monitorFeeds but divergenceToleranceBps is 0")
+        );
         // Set divergence tolerance whenever the target has monitors (required before addMonitorFeed); idempotent.
-        if (divTol > 0 && ConfigReader.assetMonitorFeedCount(vm, currentChainId, symbol) > 0) {
+        if (divTol > 0 && monCount > 0) {
             p.setDivTol = true;
             p.divTolBps = uint32(divTol);
         }

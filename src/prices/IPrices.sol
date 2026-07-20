@@ -15,8 +15,8 @@ interface IPrices {
 
     /// @notice Per-asset pricing metadata governing divergence detection between the primary feed and its
     /// monitor feeds. Packs into a single storage slot (uint32 + uint32 = 8 bytes).
-    /// @param divergenceToleranceBps Max allowed basis-point gap between the primary price and the mean of the
-    /// healthy monitor prices before the asset is flagged `irregular`. Must be non-zero when monitors exist.
+    /// @param divergenceToleranceBps Max allowed basis-point gap between the primary price and the worst-case
+    /// (furthest) healthy monitor price before the asset is flagged `irregular`. Must be non-zero when monitors exist.
     /// @param pegToleranceBps Absolute peg-deviation guard: max allowed basis-point deviation of the primary price
     /// from $1 before the asset is flagged `irregular`. Non-zero enables the guard (set it only on assets whose
     /// fundamental value is $1, i.e. stablecoins); zero disables it.
@@ -220,8 +220,8 @@ interface IPrices {
     /// @return count Number of monitor feeds.
     function getMonitorFeedCount(address asset) external view returns (uint256 count);
 
-    /// @notice Returns the per-asset pricing metadata (type + divergence/peg tolerances).
+    /// @notice Returns the per-asset pricing metadata (divergence/peg tolerances).
     /// @param asset The address of the asset.
-    /// @return pricing The AssetPricing struct (zero-valued if never set: type Spot, tolerances 0).
+    /// @return pricing The AssetPricing struct (zero-valued if never set: tolerances 0).
     function getAssetPricing(address asset) external view returns (AssetPricing memory pricing);
 }

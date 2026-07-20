@@ -194,6 +194,13 @@ contract RegisterAssets is BaseDeployScript {
         uint256 divTolBps = ConfigReader.readAssetDivergenceToleranceBps(vm, currentChainId, symbol);
         uint256 pegTolBps = ConfigReader.readAssetPegToleranceBps(vm, currentChainId, symbol);
 
+        // addMonitorFeed reverts DivergenceToleranceRequired unless a non-zero divergence tolerance is set first
+        // (see PriceFeedLib.addMonitorFeed). Fail fast here rather than emit a Safe batch guaranteed to revert.
+        require(
+            monCount == 0 || divTolBps > 0,
+            string.concat("RegisterAssets: ", symbol, " has monitorFeeds but divergenceToleranceBps is 0")
+        );
+
         uint256 onChainMonitors;
         if (registered) {
             (bool okm, bytes memory md) =

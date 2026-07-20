@@ -179,14 +179,18 @@ library PriceFeedLib {
     /// @return irregular True if divergenceBps exceeds the divergence tolerance, or (stablecoins) the primary
     ///         deviates from $1 beyond the peg tolerance.
     /// @return monitorFeedCount Number of healthy monitor feeds that contributed.
-    /// @return primaryStale True if the primary feed is stale.
+    /// @return primaryStale True if the primary feed is stale or the L2 sequencer is down.
     /// @return primaryAboveMonitors True if the primary is above the monitor median (a premium); false if
     ///         below/equal (for claim assets, below = the depeg direction). Meaningful only when monitorFeedCount > 0.
+    /// @param sequencerDown Whether the L2 sequencer is currently down/in grace (false on L1); folded into
+    ///        `primaryStale` so divergence is suppressed on an unusable price — parity with buildPriceData /
+    ///        healthCheck.
     function computeDivergence(
         mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
         mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
         mapping(address => IPrices.AssetPricing) storage assetPricing,
-        address asset
+        address asset,
+        bool sequencerDown
     )
         external
         view
@@ -201,8 +205,10 @@ library PriceFeedLib {
         )
     {
         (int256 price, uint8 decimals, bool stale,,) = _selectFeedCore(priceOracles, asset);
-        primaryStale = stale;
-        primaryPrice = stale ? int256(0) : _scaleTo8(price, decimals);
+        // Treat the primary as stale during L2 sequencer downtime (parity with buildPriceData / healthCheck): the
+        // price is unusable, so report primaryPrice=0, primaryStale=true and suppress the divergence/irregular flags.
+        primaryStale = stale || sequencerDown;
+        primaryPrice = primaryStale ? int256(0) : _scaleTo8(price, decimals);
         (monitorMedian, divergenceBps, irregular, monitorFeedCount, primaryAboveMonitors) =
             _monitorDivergence(monitorFeeds, assetPricing, asset, primaryPrice, primaryStale);
     }
@@ -501,7 +507,7 @@ library PriceFeedLib {
 
         address[] memory assetsWithPositions = _extractUniqueAssets(allPositions);
         PriceFeedCache[] memory priceFeeds =
-            _buildPriceFeedCache(priceOracles, monitorFeeds, assetPricing, assetsWithPositions);
+            _buildPriceFeedCache(priceOracles, monitorFeeds, assetPricing, assetsWithPositions, sequencerDown);
         nav.stalePriceAssets = _buildStaleAssets(assetIndex, registeredAssets, priceFeeds);
         nav.irregularPriceAssets = _buildIrregularAssets(assetIndex, registeredAssets, priceFeeds);
 
@@ -540,6 +546,7 @@ library PriceFeedLib {
         address account,
         address assetFilter,
         address quoteAsset,
+        bool sequencerDown,
         string memory nativeTokenSymbol
     ) external view returns (INAVCalculator.Position[] memory positions) {
         uint256 assetCount = registeredAssets.length;
@@ -559,7 +566,7 @@ library PriceFeedLib {
         }
 
         PriceFeedCache[] memory priceFeeds =
-            _buildPriceFeedCache(priceOracles, monitorFeeds, assetPricing, assetsWithPositions);
+            _buildPriceFeedCache(priceOracles, monitorFeeds, assetPricing, assetsWithPositions, sequencerDown);
         QuoteAssetInfo memory quoteInfo =
             _getQuoteAssetInfo(priceOracles, assetIndex, registeredAssets, quoteAsset, nativeTokenSymbol);
 
@@ -631,7 +638,7 @@ library PriceFeedLib {
 
         address[] memory assetsWithPositions = _extractUniqueAssets(allPositions);
         PriceFeedCache[] memory priceFeeds =
-            _buildPriceFeedCache(priceOracles, monitorFeeds, assetPricing, assetsWithPositions);
+            _buildPriceFeedCache(priceOracles, monitorFeeds, assetPricing, assetsWithPositions, sequencerDown);
         nav.stalePriceAssets = _buildStaleAssets(assetIndex, registeredAssets, priceFeeds);
         nav.irregularPriceAssets = _buildIrregularAssets(assetIndex, registeredAssets, priceFeeds);
 
@@ -885,7 +892,8 @@ library PriceFeedLib {
         mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
         mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
         mapping(address => IPrices.AssetPricing) storage assetPricing,
-        address[] memory assets
+        address[] memory assets,
+        bool sequencerDown
     ) private view returns (PriceFeedCache[] memory priceFeeds) {
         uint256 length = assets.length;
         priceFeeds = new PriceFeedCache[](length);
@@ -909,10 +917,13 @@ library PriceFeedLib {
             // Only run the divergence check (and the price normalization it needs) when the asset actually has
             // monitors or a peg tolerance — otherwise `irregular` is definitionally false, and skipping avoids
             // `_scaleTo8` overflowing on a pathological high-decimals feed before the value path's own guard fires.
+            // Fold the NAV-level `sequencerDown` into staleness so `NAV.irregularPriceAssets` / `Position.irregular`
+            // stay consistent with getPriceData / healthCheck on L2 during sequencer downtime.
             bool irregular = false;
             if (_hasDivergenceChecks(monitorFeeds, assetPricing, asset)) {
-                int256 primary8 = stale ? int256(0) : _scaleTo8(price, decimals);
-                (,, irregular,,) = _monitorDivergence(monitorFeeds, assetPricing, asset, primary8, stale);
+                bool primaryStale = stale || sequencerDown;
+                int256 primary8 = primaryStale ? int256(0) : _scaleTo8(price, decimals);
+                (,, irregular,,) = _monitorDivergence(monitorFeeds, assetPricing, asset, primary8, primaryStale);
             }
             priceFeeds[i] =
                 PriceFeedCache({asset: asset, price: price, decimals: decimals, stale: stale, irregular: irregular});

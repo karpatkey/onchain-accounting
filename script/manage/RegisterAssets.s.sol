@@ -194,16 +194,29 @@ contract RegisterAssets is BaseDeployScript {
         uint256 divTolBps = ConfigReader.readAssetDivergenceToleranceBps(vm, currentChainId, symbol);
         uint256 pegTolBps = ConfigReader.readAssetPegToleranceBps(vm, currentChainId, symbol);
 
-        // set{Divergence,Peg}Tolerance revert InvalidTolerance for values > 10_000 (Prices._set*Tolerance). Fail
-        // fast rather than emit a Safe batch guaranteed to revert. (Only checked for tolerances we actually emit:
-        // setDivergenceTolerance is emitted when monCount > 0 && divTolBps > 0; setPegTolerance when pegTolBps > 0.)
-        if (monCount > 0 && divTolBps > 10_000) {
-            revert(string.concat("RegisterAssets: ", symbol, " divergenceToleranceBps > 10000"));
-        }
-        if (pegTolBps > 10_000) {
-            revert(string.concat("RegisterAssets: ", symbol, " pegToleranceBps > 10000"));
-        }
+        // The heavy build loop runs in its own frame (_buildMonitorActs) and the fail-fast guard in this thin one,
+        // so neither trips the via_ir stack limit.
+        bool addsMonitor;
+        (acts, addsMonitor) = _buildMonitorActs(symbol, asset, registered, navProxy, monCount, divTolBps, pegTolBps);
 
+        // Fail fast on a config that would make this batch revert on-chain (tolerance ranges + monitor-without-
+        // tolerance). `addsMonitor` — not the raw config monitor count — is the true signal: already-present
+        // (idempotency-skipped) and unresolvable monitors emit no addMonitorFeed, so a re-run must not abort.
+        _requireTolerancesPlannable(navProxy, asset, symbol, monCount, divTolBps, pegTolBps, addsMonitor);
+    }
+
+    /// @notice Builds the setDivergenceTolerance/setPegTolerance/addMonitorFeed calldata for an asset (no
+    ///         validation — the caller does the fail-fast). Returns the acts plus whether any addMonitorFeed was
+    ///         actually emitted (resolvable + not already on-chain). Own frame to stay under the via_ir stack limit.
+    function _buildMonitorActs(
+        string memory symbol,
+        address asset,
+        bool registered,
+        address navProxy,
+        uint256 monCount,
+        uint256 divTolBps,
+        uint256 pegTolBps
+    ) private view returns (bytes[] memory acts, bool addsMonitor) {
         uint256 onChainMonitors;
         if (registered) {
             (bool okm, bytes memory md) =
@@ -221,7 +234,6 @@ contract RegisterAssets is BaseDeployScript {
         }
 
         uint256 resolvableMon;
-        bool addsMonitor;
         for (uint256 i = 0; i < monCount; i++) {
             (IPrices.PriceType pt, bool validType) =
                 ConfigReader.readAssetMonitorFeedPriceType(vm, currentChainId, symbol, i);
@@ -238,14 +250,6 @@ contract RegisterAssets is BaseDeployScript {
             }
             resolvableMon++;
         }
-
-        // addMonitorFeed reverts DivergenceToleranceRequired unless a non-zero divergence tolerance is set first;
-        // we only emit setDivergenceTolerance when divTolBps > 0. Guard only when a monitor is actually added —
-        // already-present (idempotency-skipped) and unresolvable monitors emit none, so a re-run must not abort.
-        require(
-            !addsMonitor || divTolBps > 0,
-            string.concat("RegisterAssets: ", symbol, " adds monitorFeeds but divergenceToleranceBps is 0")
-        );
 
         acts = new bytes[](n);
         for (uint256 i = 0; i < n; i++) {

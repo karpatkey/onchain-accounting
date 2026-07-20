@@ -70,7 +70,7 @@ abstract contract Prices is IPrices, Initializable {
         // the asset actually has a divergence check configured AND the primary is usable — divergence is undefined
         // for a stale/sequencer-down price, and computeDivergence re-runs feed selection + reads every monitor, so
         // skipping it here avoids doubling the oracle calls on this hot view in the common (no-monitor) case.
-        if (!stale && (_monitorFeeds[token].length > 0 || _assetPricing[token].pegToleranceBps > 0)) {
+        if (!stale && PriceFeedLib._hasDivergenceChecks(_monitorFeeds, _assetPricing, token)) {
             (,,, irregular,,,) = _priceOracles.computeDivergence(_monitorFeeds, _assetPricing, token, sequencerDown);
         }
     }

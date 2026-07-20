@@ -123,23 +123,11 @@ contract MigrateToMonitorFeeds is BaseDeployScript {
         uint256 monCount = ConfigReader.assetMonitorFeedCount(vm, currentChainId, symbol);
         uint256 divTol = ConfigReader.readAssetDivergenceToleranceBps(vm, currentChainId, symbol);
         uint256 pegTol = ConfigReader.readAssetPegToleranceBps(vm, currentChainId, symbol);
-        // Never plan a Pass A guaranteed to revert on-chain (which would abort the whole migration batch):
-        //  - addMonitorFeed reverts DivergenceToleranceRequired unless a non-zero divergence tolerance is set
-        //    first (we only set it when divTol > 0). Guard only when a monitor is actually added — `_monitorsToAdd`
-        //    already drops monitors present on-chain or unresolvable, so an idempotent re-run adds none and must
-        //    not abort.
-        //  - set{Divergence,Peg}Tolerance revert InvalidTolerance for values > 10_000.
-        if (p.addMonitors.length > 0 && divTol == 0) {
-            revert(
-                string.concat("MigrateToMonitorFeeds: ", symbol, " adds monitorFeeds but divergenceToleranceBps is 0")
-            );
-        }
-        if (monCount > 0 && divTol > 10_000) {
-            revert(string.concat("MigrateToMonitorFeeds: ", symbol, " divergenceToleranceBps > 10000"));
-        }
-        if (pegTol > 10_000) {
-            revert(string.concat("MigrateToMonitorFeeds: ", symbol, " pegToleranceBps > 10000"));
-        }
+        // Fail fast on a config that would make Pass A revert on-chain (which would abort the whole migration
+        // batch). `p.addMonitors.length > 0` is the true "a monitor is actually added" signal — `_monitorsToAdd`
+        // already drops monitors present on-chain or unresolvable, so an idempotent re-run adds none and must not
+        // abort.
+        _requireTolerancesPlannable(navProxy, asset, symbol, monCount, divTol, pegTol, p.addMonitors.length > 0);
         // Set divergence tolerance whenever the target has monitors (required before addMonitorFeed); idempotent.
         if (divTol > 0 && monCount > 0) {
             p.setDivTol = true;
@@ -343,7 +331,9 @@ contract MigrateToMonitorFeeds is BaseDeployScript {
                 len := mload(add(add(data, 32), 36))
             }
             // Error(string) layout: [0,4) selector · [4,36) offset · [36,68) length · [68,…) string bytes.
-            if (data.length >= 68 + len) {
+            // Compare without `68 + len` so a garbage length word can't overflow-panic inside the error decoder
+            // (data.length >= 68 is guaranteed by the outer guard).
+            if (len <= data.length - 68) {
                 bytes memory msgBytes = new bytes(len);
                 for (uint256 i = 0; i < len; i++) {
                     msgBytes[i] = data[i + 68];

@@ -304,7 +304,7 @@ library PriceFeedLib {
         mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
         mapping(address => IPrices.AssetPricing) storage assetPricing,
         address asset
-    ) private view returns (bool) {
+    ) internal view returns (bool) {
         return monitorFeeds[asset].length > 0 || assetPricing[asset].pegToleranceBps > 0;
     }
 

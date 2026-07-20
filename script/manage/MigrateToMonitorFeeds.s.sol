@@ -342,10 +342,11 @@ contract MigrateToMonitorFeeds is BaseDeployScript {
             assembly {
                 len := mload(add(add(data, 32), 36))
             }
-            if (data.length >= 68 + 32 + len) {
+            // Error(string) layout: [0,4) selector · [4,36) offset · [36,68) length · [68,…) string bytes.
+            if (data.length >= 68 + len) {
                 bytes memory msgBytes = new bytes(len);
                 for (uint256 i = 0; i < len; i++) {
-                    msgBytes[i] = data[i + 68 + 32];
+                    msgBytes[i] = data[i + 68];
                 }
                 return string(msgBytes);
             }

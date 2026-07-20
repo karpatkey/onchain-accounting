@@ -189,10 +189,10 @@ interface INAVCalculator is IBalances {
     /// @param healthyFeedCount Number of registered feeds that passed all staleness gates on this read.
     ///        A value below the total registered feed count signals partial redundancy collapse and
     ///        should trigger off-chain alerting.
-    /// @param irregular True if the primary price diverged from the mean of the healthy monitor feeds beyond the
-    ///        configured divergence tolerance, or (stablecoins) from the $1 peg beyond the peg tolerance.
-    /// @param divergenceBps Basis-point gap between the primary price and the mean of the healthy monitor prices
-    ///        (0 when there are no healthy monitors or the primary is stale).
+    /// @param irregular True if the primary price diverged from the worst-case (furthest) healthy monitor feed
+    ///        beyond the configured divergence tolerance, or (stablecoins) from the $1 peg beyond the peg tolerance.
+    /// @param divergenceBps Worst-case basis-point gap between the primary price and any single healthy monitor
+    ///        price (0 when there are no healthy monitors or the primary is stale).
     /// @param monitorFeedCount Number of healthy monitor feeds that contributed to the divergence computation.
     struct PriceFeedData {
         address priceFeed;
@@ -262,7 +262,7 @@ interface INAVCalculator is IBalances {
         external;
 
     /// @notice Adds a monitor (divergence-only) feed for an asset. Monitor feeds NEVER price the NAV; they are read
-    ///         only to detect divergence between the primary price and the mean of the healthy monitor prices.
+    ///         only to detect divergence between the primary price and the worst-case (furthest) healthy monitor price.
     /// @dev Requires the asset's divergence tolerance to be set first (>0), else reverts DivergenceToleranceRequired.
     ///      Monitor feeds must report NAV_DECIMALS decimals (else MonitorFeedDecimalsMismatch). Reverts
     ///      MonitorFeedAlreadyRegistered on a duplicate.
@@ -275,7 +275,7 @@ interface INAVCalculator is IBalances {
 
     /// @notice Sets the asset's divergence tolerance in basis points (must be in (0, 10000]).
     /// @param asset Registered asset address.
-    /// @param divergenceToleranceBps Max primary-vs-monitor-mean gap before the asset is flagged irregular.
+    /// @param divergenceToleranceBps Max worst-case primary-vs-any-single-monitor gap before the asset is flagged irregular.
     function setDivergenceTolerance(address asset, uint32 divergenceToleranceBps) external;
 
     /// @notice Sets the asset's stablecoin peg tolerance in basis points (in [0, 10000]; 0 disables the peg guard).

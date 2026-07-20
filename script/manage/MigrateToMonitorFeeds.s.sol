@@ -123,13 +123,23 @@ contract MigrateToMonitorFeeds is BaseDeployScript {
         uint256 monCount = ConfigReader.assetMonitorFeedCount(vm, currentChainId, symbol);
         uint256 divTol = ConfigReader.readAssetDivergenceToleranceBps(vm, currentChainId, symbol);
         uint256 pegTol = ConfigReader.readAssetPegToleranceBps(vm, currentChainId, symbol);
-        // addMonitorFeed reverts DivergenceToleranceRequired unless a non-zero divergence tolerance is set first
-        // (see PriceFeedLib.addMonitorFeed). Fail fast rather than plan Pass A calls guaranteed to revert on-chain
-        // (which would abort the whole migration batch).
-        require(
-            monCount == 0 || divTol > 0,
-            string.concat("MigrateToMonitorFeeds: ", symbol, " has monitorFeeds but divergenceToleranceBps is 0")
-        );
+        // Never plan a Pass A guaranteed to revert on-chain (which would abort the whole migration batch):
+        //  - addMonitorFeed reverts DivergenceToleranceRequired unless a non-zero divergence tolerance is set
+        //    first (we only set it when divTol > 0). Guard only when a monitor is actually added — `_monitorsToAdd`
+        //    already drops monitors present on-chain or unresolvable, so an idempotent re-run adds none and must
+        //    not abort.
+        //  - set{Divergence,Peg}Tolerance revert InvalidTolerance for values > 10_000.
+        if (p.addMonitors.length > 0 && divTol == 0) {
+            revert(
+                string.concat("MigrateToMonitorFeeds: ", symbol, " adds monitorFeeds but divergenceToleranceBps is 0")
+            );
+        }
+        if (monCount > 0 && divTol > 10_000) {
+            revert(string.concat("MigrateToMonitorFeeds: ", symbol, " divergenceToleranceBps > 10000"));
+        }
+        if (pegTol > 10_000) {
+            revert(string.concat("MigrateToMonitorFeeds: ", symbol, " pegToleranceBps > 10000"));
+        }
         // Set divergence tolerance whenever the target has monitors (required before addMonitorFeed); idempotent.
         if (divTol > 0 && monCount > 0) {
             p.setDivTol = true;

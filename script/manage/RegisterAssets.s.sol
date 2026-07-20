@@ -194,12 +194,15 @@ contract RegisterAssets is BaseDeployScript {
         uint256 divTolBps = ConfigReader.readAssetDivergenceToleranceBps(vm, currentChainId, symbol);
         uint256 pegTolBps = ConfigReader.readAssetPegToleranceBps(vm, currentChainId, symbol);
 
-        // addMonitorFeed reverts DivergenceToleranceRequired unless a non-zero divergence tolerance is set first
-        // (see PriceFeedLib.addMonitorFeed). Fail fast here rather than emit a Safe batch guaranteed to revert.
-        require(
-            monCount == 0 || divTolBps > 0,
-            string.concat("RegisterAssets: ", symbol, " has monitorFeeds but divergenceToleranceBps is 0")
-        );
+        // set{Divergence,Peg}Tolerance revert InvalidTolerance for values > 10_000 (Prices._set*Tolerance). Fail
+        // fast rather than emit a Safe batch guaranteed to revert. (Only checked for tolerances we actually emit:
+        // setDivergenceTolerance is emitted when monCount > 0 && divTolBps > 0; setPegTolerance when pegTolBps > 0.)
+        if (monCount > 0 && divTolBps > 10_000) {
+            revert(string.concat("RegisterAssets: ", symbol, " divergenceToleranceBps > 10000"));
+        }
+        if (pegTolBps > 10_000) {
+            revert(string.concat("RegisterAssets: ", symbol, " pegToleranceBps > 10000"));
+        }
 
         uint256 onChainMonitors;
         if (registered) {
@@ -218,6 +221,7 @@ contract RegisterAssets is BaseDeployScript {
         }
 
         uint256 resolvableMon;
+        bool addsMonitor;
         for (uint256 i = 0; i < monCount; i++) {
             (IPrices.PriceType pt, bool validType) =
                 ConfigReader.readAssetMonitorFeedPriceType(vm, currentChainId, symbol, i);
@@ -230,9 +234,18 @@ contract RegisterAssets is BaseDeployScript {
             if (resolvableMon >= onChainMonitors) {
                 uint256 hb = vm.parseUint(ConfigReader.readAssetMonitorFeedHeartbeat(vm, currentChainId, symbol, i));
                 tmp[n++] = abi.encodeCall(NAVCalculator.addMonitorFeed, (asset, feed, pt, hb));
+                addsMonitor = true;
             }
             resolvableMon++;
         }
+
+        // addMonitorFeed reverts DivergenceToleranceRequired unless a non-zero divergence tolerance is set first;
+        // we only emit setDivergenceTolerance when divTolBps > 0. Guard only when a monitor is actually added —
+        // already-present (idempotency-skipped) and unresolvable monitors emit none, so a re-run must not abort.
+        require(
+            !addsMonitor || divTolBps > 0,
+            string.concat("RegisterAssets: ", symbol, " adds monitorFeeds but divergenceToleranceBps is 0")
+        );
 
         acts = new bytes[](n);
         for (uint256 i = 0; i < n; i++) {

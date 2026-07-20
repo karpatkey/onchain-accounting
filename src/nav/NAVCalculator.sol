@@ -519,9 +519,10 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         // Heavy assembly (feed selection + config read + AggregatorV3 updatedAt fetch + divergence vs monitors) is
         // delegated to PriceFeedLib to keep NAVCalculator under EIP-170; sequencer status depends on this contract's
         // config so it is computed here and passed in.
-        return PriceFeedLib.buildPriceData(
-            _priceOracles, _monitorFeeds, _assetPricing, underlyingAsset, _isSequencerDown()
-        );
+        return
+            PriceFeedLib.buildPriceData(
+                _priceOracles, _monitorFeeds, _assetPricing, underlyingAsset, _isSequencerDown()
+            );
     }
 
     /// @inheritdoc INAVCalculator
@@ -551,7 +552,8 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     {
         // Sequencer status depends on this contract's config; the per-asset staleness + divergence scan is delegated
         // to PriceFeedLib to keep NAVCalculator under EIP-170.
-        return PriceFeedLib.healthCheck(_priceOracles, _monitorFeeds, _assetPricing, _registeredAssets, _isSequencerDown());
+        return
+            PriceFeedLib.healthCheck(_priceOracles, _monitorFeeds, _assetPricing, _registeredAssets, _isSequencerDown());
     }
 
     /// @inheritdoc INAVCalculator

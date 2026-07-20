@@ -153,7 +153,9 @@ contract MigrateToMonitorFeeds is BaseDeployScript {
         view
         returns (address feed, IPrices.PriceType pt, uint256 hb, bool ok)
     {
-        if (ConfigReader.assetFeedCount(vm, currentChainId, symbol) == 0) return (address(0), IPrices.PriceType.Chainlink, 0, false);
+        if (ConfigReader.assetFeedCount(vm, currentChainId, symbol) == 0) {
+            return (address(0), IPrices.PriceType.Chainlink, 0, false);
+        }
         bool validType;
         (pt, validType) = ConfigReader.readAssetFeedPriceType(vm, currentChainId, symbol, 0);
         if (!validType) return (address(0), IPrices.PriceType.Chainlink, 0, false);
@@ -196,7 +198,8 @@ contract MigrateToMonitorFeeds is BaseDeployScript {
         uint256[] memory th = new uint256[](monCount);
         uint256 n;
         for (uint256 i = 0; i < monCount; i++) {
-            (IPrices.PriceType pt, bool validType) = ConfigReader.readAssetMonitorFeedPriceType(vm, currentChainId, symbol, i);
+            (IPrices.PriceType pt, bool validType) =
+                ConfigReader.readAssetMonitorFeedPriceType(vm, currentChainId, symbol, i);
             if (!validType) continue;
             string memory maddr = ConfigReader.readAssetMonitorFeedAddress(vm, currentChainId, symbol, i);
             if (bytes(maddr).length == 0) continue; // unresolved
@@ -241,20 +244,31 @@ contract MigrateToMonitorFeeds is BaseDeployScript {
             if (p.asset == address(0)) continue;
             if (p.addPrimary != address(0)) {
                 batch[j++] = SafeTxBuilder.call(
-                    navProxy, 0, abi.encodeCall(NAVCalculator.addPriceFeed, (p.asset, p.addPrimary, p.addPrimaryType, p.addPrimaryHb))
+                    navProxy,
+                    0,
+                    abi.encodeCall(
+                        NAVCalculator.addPriceFeed, (p.asset, p.addPrimary, p.addPrimaryType, p.addPrimaryHb)
+                    )
                 );
             }
             if (p.setDivTol) {
-                batch[j++] =
-                    SafeTxBuilder.call(navProxy, 0, abi.encodeCall(NAVCalculator.setDivergenceTolerance, (p.asset, p.divTolBps)));
+                batch[j++] = SafeTxBuilder.call(
+                    navProxy, 0, abi.encodeCall(NAVCalculator.setDivergenceTolerance, (p.asset, p.divTolBps))
+                );
             }
             if (p.setPegTol) {
-                batch[j++] =
-                    SafeTxBuilder.call(navProxy, 0, abi.encodeCall(NAVCalculator.setPegTolerance, (p.asset, p.pegTolBps)));
+                batch[j++] = SafeTxBuilder.call(
+                    navProxy, 0, abi.encodeCall(NAVCalculator.setPegTolerance, (p.asset, p.pegTolBps))
+                );
             }
             for (uint256 k = 0; k < p.addMonitors.length; k++) {
                 batch[j++] = SafeTxBuilder.call(
-                    navProxy, 0, abi.encodeCall(NAVCalculator.addMonitorFeed, (p.asset, p.addMonitors[k], p.addMonitorTypes[k], p.addMonitorHbs[k]))
+                    navProxy,
+                    0,
+                    abi.encodeCall(
+                        NAVCalculator.addMonitorFeed,
+                        (p.asset, p.addMonitors[k], p.addMonitorTypes[k], p.addMonitorHbs[k])
+                    )
                 );
             }
         }

@@ -1,6 +1,6 @@
 {
   "Superchain": {
-    "enabled": true,
+    "enabled": false,
     "initialize": {
       "admin": "0x00008bB2Ff12ca49eD157B21a0D955c63C9ab31F",
       "bridgeEscrow": "0x1ECAEa1C69c5A0b12139d44E6b7345D71FE68A19",

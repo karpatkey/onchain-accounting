@@ -71,22 +71,16 @@ contract SuperchainBridgeAdapterForkTest is BridgeTestBase {
                 l1AdapterImpl,
                 abi.encodeCall(
                     SuperchainBridgeAdapter.initialize,
-                    (
-                        admin,
-                        address(l1BridgeEscrow),
-                        L1_STANDARD_BRIDGE,
-                        address(0), // L2 bridge not needed on L1
-                        L1_CROSS_DOMAIN_MESSENGER,
-                        address(0), // L2 messenger not needed on L1
-                        OPTIMISM_PORTAL,
-                        "1.0.0"
-                    )
+                    (admin, address(l1BridgeEscrow), address(0), L1_CROSS_DOMAIN_MESSENGER, address(0), "1.0.0")
                 )
             ));
         l1Adapter = SuperchainBridgeAdapter(l1AdapterProxy);
 
         vm.startPrank(admin);
         l1Adapter.grantRole(MANAGER, manager);
+        // Seed the per-L2 bridge + portal for Optimism (the L2 this fork exercises).
+        l1Adapter.setL1BridgeForL2(OPTIMISM_CHAIN_ID, L1_STANDARD_BRIDGE);
+        l1Adapter.setOptimismPortalForL2(OPTIMISM_CHAIN_ID, OPTIMISM_PORTAL);
         vm.stopPrank();
 
         _authorizeAdapterForEscrow(address(l1Adapter), l1BridgeEscrow);
@@ -128,16 +122,7 @@ contract SuperchainBridgeAdapterForkTest is BridgeTestBase {
                 l2AdapterImpl,
                 abi.encodeCall(
                     SuperchainBridgeAdapter.initialize,
-                    (
-                        admin,
-                        address(l2BridgeEscrow),
-                        address(0), // L1 bridge not needed on L2
-                        L2_STANDARD_BRIDGE,
-                        address(0), // L1 messenger not needed on L2
-                        L2_CROSS_DOMAIN_MESSENGER,
-                        address(0), // Portal not needed on L2
-                        "1.0.0"
-                    )
+                    (admin, address(l2BridgeEscrow), L2_STANDARD_BRIDGE, address(0), L2_CROSS_DOMAIN_MESSENGER, "1.0.0")
                 )
             ));
         l2Adapter = SuperchainBridgeAdapter(l2AdapterProxy);

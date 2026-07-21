@@ -83,9 +83,9 @@ interface ISuperchainBridgeAdapter is IBridgeAdapter {
     // State Variables (Public)
     //
 
-    /// @notice L1 Standard Bridge contract address
-    /// @return The L1 Standard Bridge contract instance
-    function l1Bridge() external view returns (IL1StandardBridge);
+    /// @notice L1 Standard Bridge for a destination L2 chain id (L1 side)
+    /// @return The L1 Standard Bridge contract instance for that L2
+    function l1BridgeForL2(uint256 l2ChainId) external view returns (IL1StandardBridge);
 
     /// @notice L2 Standard Bridge contract address
     /// @return The L2 Standard Bridge contract instance
@@ -99,9 +99,9 @@ interface ISuperchainBridgeAdapter is IBridgeAdapter {
     /// @return The Cross-Domain Messenger contract address
     function l2Messenger() external view returns (address);
 
-    /// @notice Optimism Portal contract address
-    /// @return The Optimism Portal contract instance
-    function optimismPortal() external view returns (IOptimismPortal);
+    /// @notice Optimism Portal for a source L2 chain id (L1 side)
+    /// @return The Optimism Portal contract instance for that L2
+    function optimismPortalForL2(uint256 l2ChainId) external view returns (IOptimismPortal);
 
     /// @notice The chain ID where this adapter is deployed
     /// @return The chain ID
@@ -129,27 +129,25 @@ interface ISuperchainBridgeAdapter is IBridgeAdapter {
     /// @notice Initializes the Superchain Bridge Adapter
     /// @param admin_ The admin address
     /// @param bridgeEscrow_ The BridgeEscrow contract address
-    /// @param l1Bridge_ The L1 Standard Bridge contract address
-    /// @param l2Bridge_ The L2 Standard Bridge contract address
-    /// @param l1Messenger_ The L1 Cross-Domain Messenger contract address
-    /// @param l2Messenger_ The L2 Cross-Domain Messenger contract address
-    /// @param optimismPortal_ The Optimism Portal contract address
+    /// @param l2Bridge_ The L2 Standard Bridge contract address (L2 side only)
+    /// @param l1Messenger_ The L1 Cross-Domain Messenger contract address (L1 side only)
+    /// @param l2Messenger_ The L2 Cross-Domain Messenger contract address (L2 side only)
     /// @param version_ The adapter version
+    /// @dev L1 per-L2 bridges/portals are seeded after init via setL1BridgeForL2 / setOptimismPortalForL2.
     function initialize(
         address admin_,
         address bridgeEscrow_,
-        address l1Bridge_,
         address l2Bridge_,
         address l1Messenger_,
         address l2Messenger_,
-        address optimismPortal_,
         string memory version_
     ) external;
 
-    /// @notice Sets the L1 Standard Bridge contract address
-    /// @param l1Bridge_ The L1 Standard Bridge contract address
+    /// @notice Sets the L1 Standard Bridge for a destination L2 chain id
+    /// @param l2ChainId The destination L2 chain id
+    /// @param l1Bridge_ The L1 Standard Bridge contract address for that L2
     /// @dev Only callable by admin role; only valid on the L1 deployment (reverts InvalidChainId on an L2)
-    function setL1Bridge(address l1Bridge_) external;
+    function setL1BridgeForL2(uint256 l2ChainId, address l1Bridge_) external;
 
     /// @notice Sets the L2 Standard Bridge contract address
     /// @param l2Bridge_ The L2 Standard Bridge contract address
@@ -166,10 +164,18 @@ interface ISuperchainBridgeAdapter is IBridgeAdapter {
     /// @dev Only callable by admin role; only valid on an L2 deployment (reverts InvalidChainId on L1)
     function setL2Messenger(address l2Messenger_) external;
 
-    /// @notice Sets the Optimism Portal contract address
-    /// @param optimismPortal_ The Optimism Portal contract address
+    /// @notice Sets the Optimism Portal for a source L2 chain id
+    /// @param l2ChainId The source L2 chain id
+    /// @param optimismPortal_ The Optimism Portal contract address for that L2
     /// @dev Only callable by admin role; only valid on the L1 deployment (reverts InvalidChainId on an L2)
-    function setOptimismPortal(address optimismPortal_) external;
+    function setOptimismPortalForL2(uint256 l2ChainId, address optimismPortal_) external;
+
+    /// @notice Sets the L2 token for a (destination L2 chain id, L1 token)
+    /// @param l2ChainId The destination L2 chain id
+    /// @param l1Token The L1 token address
+    /// @param l2Token The corresponding L2 token address (unset falls back to the same address)
+    /// @dev Only callable by admin role; only valid on the L1 deployment.
+    function setL2TokenForL2(uint256 l2ChainId, address l1Token, address l2Token) external;
 
     //
     // View Functions
@@ -193,11 +199,11 @@ interface ISuperchainBridgeAdapter is IBridgeAdapter {
     /// @notice Checks if a withdrawal has been proven
     /// @param withdrawalHash The withdrawal transaction hash
     /// @return True if proven, false otherwise
-    function isWithdrawalProven(bytes32 withdrawalHash) external view returns (bool);
+    function isWithdrawalProven(uint256 l2ChainId, bytes32 withdrawalHash) external view returns (bool);
 
     /// @notice Reports whether a withdrawal has been proven (a prerequisite for finalization)
     /// @dev Does not check the challenge period; the Optimism Portal enforces that at finalize time
     /// @param withdrawalHash The withdrawal transaction hash
     /// @return True if the withdrawal has been proven, false otherwise
-    function canFinalizeWithdrawal(bytes32 withdrawalHash) external view returns (bool);
+    function canFinalizeWithdrawal(uint256 l2ChainId, bytes32 withdrawalHash) external view returns (bool);
 }

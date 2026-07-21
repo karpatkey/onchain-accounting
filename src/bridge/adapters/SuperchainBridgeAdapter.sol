@@ -40,8 +40,10 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     // State Variables
     //
 
-    /// @notice L1 Standard Bridge contract address
-    IL1StandardBridge public l1Bridge;
+    /// @notice L1 Standard Bridge per destination L2 chain id (L1 side only).
+    /// @dev OP and Base have distinct L1 standard bridges, so one same-address L1 adapter keys the bridge by
+    ///      the destination L2 chain id. Used on L1 → L2 deposits, selected by `data.destinationChainId`.
+    mapping(uint256 => IL1StandardBridge) public l1BridgeForL2;
 
     /// @notice L2 Standard Bridge contract address
     IL2StandardBridge public l2Bridge;
@@ -52,8 +54,10 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     /// @notice L2 Cross-Domain Messenger contract address
     address public l2Messenger;
 
-    /// @notice Optimism Portal contract address
-    IOptimismPortal public optimismPortal;
+    /// @notice Optimism Portal per source L2 chain id (L1 side only).
+    /// @dev OP and Base have distinct L1 OptimismPortals; the L1 adapter keys the portal by the source L2
+    ///      chain id. Used on L2 → L1 withdrawal prove/finalize, selected by `data.sourceChainId`.
+    mapping(uint256 => IOptimismPortal) public optimismPortalForL2;
 
     /// @notice The chain ID where this adapter is deployed
     uint256 public chainId;
@@ -71,9 +75,10 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     /// @dev Used to track which withdrawal hash was used for each invoice
     mapping(bytes32 => bytes32) public invoiceToWithdrawalHash;
 
-    /// @notice Mapping from L1 token address to L2 token address
-    /// @dev Used for ERC20 token deposits (L1 → L2)
-    mapping(address => address) public l1ToL2Token;
+    /// @notice L1 token -> L2 token per destination L2 chain id (L1 side only).
+    /// @dev Used for ERC20 deposits (L1 → L2). Unmapped (zero) falls back to the same address (standard
+    ///      bridge tokens). Keyed per L2 because the same L1 token maps to different L2 token addresses.
+    mapping(uint256 => mapping(address => address)) public l1ToL2TokenForL2;
 
     /// @notice Default L2 gas limit for deposits
     uint32 public defaultL2GasLimit = 200000;
@@ -85,29 +90,25 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     constructor(address expectedInitializer_) BridgeAdapter(expectedInitializer_) {}
 
     /// @inheritdoc ISuperchainBridgeAdapter
+    /// @dev The L1 per-L2 bridges/portals are seeded post-init via setL1BridgeForL2 / setOptimismPortalForL2
+    ///      (one call per destination/source L2), since a single value cannot key a map by L2 chain id.
     function initialize(
         address admin_,
         address bridgeEscrow_,
-        address l1Bridge_,
         address l2Bridge_,
         address l1Messenger_,
         address l2Messenger_,
-        address optimismPortal_,
         string memory version_
     ) external {
         // Initialize parent BridgeAdapter (single source of truth for admin, bridgeEscrow, provider name, version)
         super._initializeBridgeAdapter(admin_, bridgeEscrow_, "Superchain", version_);
         chainId = block.chainid;
 
-        // On L1 (mainnet), only initialize L1 contracts
+        // On L1 (mainnet), the per-L2 bridges/portals are set via setters after init; only the messenger is
+        // stored here (retained for parity; unused on the L1 execution path).
         if (chainId == 1) {
-            if (l1Bridge_ == address(0)) revert InvalidL1Bridge();
             if (l1Messenger_ == address(0)) revert InvalidCrossDomainMessenger();
-            if (optimismPortal_ == address(0)) revert InvalidOptimismPortal();
-
-            l1Bridge = IL1StandardBridge(l1Bridge_);
             l1Messenger = l1Messenger_;
-            optimismPortal = IOptimismPortal(optimismPortal_);
         } else {
             // On L2, only initialize L2 contracts
             if (l2Bridge_ == address(0)) revert InvalidL2Bridge();
@@ -123,10 +124,10 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     //
 
     /// @inheritdoc ISuperchainBridgeAdapter
-    function setL1Bridge(address l1Bridge_) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setL1BridgeForL2(uint256 l2ChainId, address l1Bridge_) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (chainId != 1) revert InvalidChainId();
         if (l1Bridge_ == address(0)) revert InvalidL1Bridge();
-        l1Bridge = IL1StandardBridge(l1Bridge_);
+        l1BridgeForL2[l2ChainId] = IL1StandardBridge(l1Bridge_);
     }
 
     /// @inheritdoc ISuperchainBridgeAdapter
@@ -151,10 +152,10 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     }
 
     /// @inheritdoc ISuperchainBridgeAdapter
-    function setOptimismPortal(address optimismPortal_) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setOptimismPortalForL2(uint256 l2ChainId, address optimismPortal_) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (chainId != 1) revert InvalidChainId();
         if (optimismPortal_ == address(0)) revert InvalidOptimismPortal();
-        optimismPortal = IOptimismPortal(optimismPortal_);
+        optimismPortalForL2[l2ChainId] = IOptimismPortal(optimismPortal_);
     }
 
     /// @notice Sets the default L2 gas limit for deposits
@@ -171,12 +172,16 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         defaultL1GasLimit = gasLimit;
     }
 
-    /// @notice Sets the L2 token address for a given L1 token address
+    /// @notice Sets the L2 token address for a given (destination L2 chain id, L1 token).
+    /// @param l2ChainId The destination L2 chain id
     /// @param l1Token The L1 token address
     /// @param l2Token The corresponding L2 token address
-    /// @dev Only callable by admin role
-    function setL1ToL2Token(address l1Token, address l2Token) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        l1ToL2Token[l1Token] = l2Token;
+    /// @dev Only callable by admin role. Unset falls back to the same address (standard bridge tokens).
+    function setL2TokenForL2(uint256 l2ChainId, address l1Token, address l2Token)
+        external
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        l1ToL2TokenForL2[l2ChainId][l1Token] = l2Token;
     }
 
     //
@@ -195,7 +200,7 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
 
         // If we're on L1 (mainnet), it's an L1 → L2 deposit; otherwise an L2 → L1 withdrawal.
         if (chainId == 1) {
-            if (address(l1Bridge) == address(0)) revert InvalidL1Bridge();
+            if (address(l1BridgeForL2[data.destinationChainId]) == address(0)) revert InvalidL1Bridge();
             _depositToL2(data, asset, isEth, messagePayload);
         } else {
             if (address(l2Bridge) == address(0)) revert InvalidL2Bridge();
@@ -214,21 +219,24 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     ) internal {
         address receiver = address(this);
 
+        // Select the L1 standard bridge for the destination L2 (OP vs Base have distinct bridges).
+        IL1StandardBridge bridge = l1BridgeForL2[data.destinationChainId];
+
         if (isEth) {
-            l1Bridge.depositETHTo{value: data.amount}(receiver, defaultL2GasLimit, messagePayload);
+            bridge.depositETHTo{value: data.amount}(receiver, defaultL2GasLimit, messagePayload);
         } else {
             // Pull ERC20 tokens from escrow (escrow approved us in depositAndBridge)
             IERC20(asset).safeTransferFrom(bridgeEscrow, address(this), data.amount);
 
-            // Resolve the L2 token; default to the same address (standard bridge tokens) when unmapped.
-            address l2Token = l1ToL2Token[asset];
+            // Resolve the L2 token for this destination L2; default to the same address when unmapped.
+            address l2Token = l1ToL2TokenForL2[data.destinationChainId][asset];
             if (l2Token == address(0)) {
                 l2Token = asset;
             }
 
             // Approve L1 bridge to spend tokens and deposit to L2
-            IERC20(asset).forceApprove(address(l1Bridge), data.amount);
-            l1Bridge.depositERC20To(asset, l2Token, receiver, data.amount, defaultL2GasLimit, messagePayload);
+            IERC20(asset).forceApprove(address(bridge), data.amount);
+            bridge.depositERC20To(asset, l2Token, receiver, data.amount, defaultL2GasLimit, messagePayload);
         }
 
         // Store messagePayload for later retrieval
@@ -316,7 +324,8 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
             // L2 → L1 withdrawal: finalize via the portal (proof-gated).
             if (protocolData.length == 0) revert InvalidWithdrawalFinalization();
             address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(InvoiceDataLib.bytes6ToStr(data.assetSymbol));
-            _finalizeWithdrawal(protocolData, data.amount, _isNativeToken(asset));
+            // Finalize through the portal for the SOURCE L2 (the same L2 whose portal proved it).
+            _finalizeWithdrawal(protocolData, data.amount, _isNativeToken(asset), uint256(data.sourceChainId));
         }
         // On L2 the tokens were delivered to this adapter by the canonical bridge; the base verifies the
         // adapter balance covers `amount` in `_fundAndRelease` and reverts otherwise.
@@ -361,7 +370,7 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     ///      bindings don't apply — provenance still comes from the proven withdrawal hash + portal Merkle
     ///      proof, and the base `_fundAndRelease` reverts unless the adapter actually received `amount`.
     ///      The withdrawal must already be proven; the portal enforces the challenge period.
-    function _finalizeWithdrawal(bytes calldata protocolData, uint256 amount, bool isEth) internal {
+    function _finalizeWithdrawal(bytes calldata protocolData, uint256 amount, bool isEth, uint256 l2ChainId) internal {
         Types.WithdrawalTransaction memory withdrawalTx = abi.decode(protocolData, (Types.WithdrawalTransaction));
 
         if (isEth) {
@@ -370,15 +379,19 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
             if (withdrawalTx.value != amount) revert InvalidWithdrawalFinalization();
         }
 
+        // Select the OptimismPortal for the source L2 (the same L2 whose portal the withdrawal was proven on).
+        IOptimismPortal portal = optimismPortalForL2[l2ChainId];
+        if (address(portal) == address(0)) revert InvalidOptimismPortal();
+
         bytes32 withdrawalHash = _hashWithdrawal(withdrawalTx);
 
         // Verify withdrawal has been proven (provenance: real OP withdrawal hash, portal Merkle proof).
-        if (!optimismPortal.provenWithdrawals(withdrawalHash)) {
+        if (!portal.provenWithdrawals(withdrawalHash)) {
             revert WithdrawalNotProven();
         }
 
         // Finalize the withdrawal (portal checks the challenge period; delivers value to the target adapter).
-        optimismPortal.finalizeWithdrawalTransaction(withdrawalTx);
+        portal.finalizeWithdrawalTransaction(withdrawalTx);
     }
 
     /// @notice Proves a withdrawal transaction and correlates it to its invoice.
@@ -391,15 +404,21 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     /// @dev MANAGER-driven on L1 after the withdrawal is initiated on L2. Computes the REAL OP withdrawal
     ///      hash and records the invoice correlation so completion can be tracked.
     function proveWithdrawal(
+        uint256 l2ChainId,
         Types.WithdrawalTransaction memory withdrawalTx,
         uint256 l2OutputIndex,
         Types.OutputRootProof memory outputRootProof,
         bytes[] calldata withdrawalProof,
         bytes32 invoiceId
     ) external onlyRole(MANAGER_ROLE) {
+        // Prove against the portal for the source L2; finalize must later use the SAME l2ChainId
+        // (the invoice's sourceChainId flows through both, so they match).
+        IOptimismPortal portal = optimismPortalForL2[l2ChainId];
+        if (address(portal) == address(0)) revert InvalidOptimismPortal();
+
         bytes32 withdrawalHash = _hashWithdrawal(withdrawalTx);
 
-        optimismPortal.proveWithdrawalTransaction(withdrawalTx, l2OutputIndex, outputRootProof, withdrawalProof);
+        portal.proveWithdrawalTransaction(withdrawalTx, l2OutputIndex, outputRootProof, withdrawalProof);
 
         // Correlate invoice ↔ real withdrawal hash.
         if (invoiceId != bytes32(0)) {
@@ -429,14 +448,18 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     }
 
     /// @inheritdoc ISuperchainBridgeAdapter
-    function isWithdrawalProven(bytes32 withdrawalHash) external view returns (bool) {
-        return optimismPortal.provenWithdrawals(withdrawalHash);
+    function isWithdrawalProven(uint256 l2ChainId, bytes32 withdrawalHash) external view returns (bool) {
+        IOptimismPortal portal = optimismPortalForL2[l2ChainId];
+        if (address(portal) == address(0)) return false;
+        return portal.provenWithdrawals(withdrawalHash);
     }
 
     /// @inheritdoc ISuperchainBridgeAdapter
-    function canFinalizeWithdrawal(bytes32 withdrawalHash) external view returns (bool) {
+    function canFinalizeWithdrawal(uint256 l2ChainId, bytes32 withdrawalHash) external view returns (bool) {
         // The portal enforces the actual challenge period at finalize; this just reports proven-ness.
-        return optimismPortal.provenWithdrawals(withdrawalHash);
+        IOptimismPortal portal = optimismPortalForL2[l2ChainId];
+        if (address(portal) == address(0)) return false;
+        return portal.provenWithdrawals(withdrawalHash);
     }
 
     /// @notice Computes the canonical OP Stack withdrawal hash for a withdrawal transaction.

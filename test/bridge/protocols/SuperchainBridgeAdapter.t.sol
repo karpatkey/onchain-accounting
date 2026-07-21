@@ -55,22 +55,15 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
                 l1AdapterImpl,
                 abi.encodeCall(
                     SuperchainBridgeAdapter.initialize,
-                    (
-                        admin,
-                        address(bridgeEscrow),
-                        address(l1Bridge),
-                        address(0),
-                        address(1),
-                        address(0),
-                        address(optimismPortal),
-                        "1.0.0"
-                    )
+                    (admin, address(bridgeEscrow), address(0), address(1), address(0), "1.0.0")
                 )
             ));
         l1Adapter = SuperchainBridgeAdapter(l1AdapterProxy);
         vm.startPrank(admin);
         l1Adapter.grantRole(MANAGER, manager);
-        l1Adapter.setL1ToL2Token(address(usdc), address(usdc));
+        l1Adapter.setL1BridgeForL2(L2_CHAIN_ID, address(l1Bridge));
+        l1Adapter.setOptimismPortalForL2(L2_CHAIN_ID, address(optimismPortal));
+        l1Adapter.setL2TokenForL2(L2_CHAIN_ID, address(usdc), address(usdc));
         vm.stopPrank();
         _authorizeAdapter(address(l1Adapter));
     }
@@ -83,16 +76,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
                 l2AdapterImpl,
                 abi.encodeCall(
                     SuperchainBridgeAdapter.initialize,
-                    (
-                        admin,
-                        address(destEscrow),
-                        address(0),
-                        address(l2Bridge),
-                        address(0),
-                        l2Messenger_,
-                        address(0),
-                        "1.0.0"
-                    )
+                    (admin, address(destEscrow), address(l2Bridge), address(0), l2Messenger_, "1.0.0")
                 )
             ));
         SuperchainBridgeAdapter destAdapter = SuperchainBridgeAdapter(l2AdapterProxy);
@@ -148,6 +132,33 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
             InvoiceDataLib.encode(invoiceData).length,
             "payload stored"
         );
+    }
+
+    /// @notice Option C: one L1 adapter routes a deposit through the L1 bridge of the *destination* L2.
+    function test_bridge_l1ToL2_routesToPerL2Bridge() public {
+        vm.chainId(SOURCE_CHAIN_ID);
+        uint64 baseL2 = 8453;
+        MockL1StandardBridge baseBridge = new MockL1StandardBridge();
+        vm.prank(admin);
+        l1Adapter.setL1BridgeForL2(baseL2, address(baseBridge));
+
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        _approveToken(address(usdc), address(bridgeEscrow), amount);
+        vm.prank(account);
+        bridgeEscrow.depositAndBridge(baseL2, USDC_SYMBOL, amount, address(l1Adapter));
+
+        assertEq(usdc.balanceOf(address(baseBridge)), amount, "deposit routed to the destination L2's bridge");
+        assertEq(usdc.balanceOf(address(l1Bridge)), 0, "the other L2's bridge is untouched");
+    }
+
+    /// @notice A deposit to an L2 with no configured L1 bridge reverts (no silent misroute).
+    function test_bridge_l1ToL2_revertsForUnconfiguredDestChain() public {
+        vm.chainId(SOURCE_CHAIN_ID);
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        _approveToken(address(usdc), address(bridgeEscrow), amount);
+        vm.prank(account);
+        vm.expectRevert(); // InvalidL1Bridge — no bridge configured for chain 999
+        bridgeEscrow.depositAndBridge(999, USDC_SYMBOL, amount, address(l1Adapter));
     }
 
     function test_bridge_revertsIfNotCalledByBridgeEscrow() public {
@@ -252,16 +263,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
                 l2AdapterImpl,
                 abi.encodeCall(
                     SuperchainBridgeAdapter.initialize,
-                    (
-                        admin,
-                        address(destEscrow),
-                        address(0),
-                        address(l2Bridge),
-                        address(0),
-                        address(l2Messenger),
-                        address(0),
-                        "1.0.0"
-                    )
+                    (admin, address(destEscrow), address(l2Bridge), address(0), address(l2Messenger), "1.0.0")
                 )
             ));
         SuperchainBridgeAdapter destAdapter = SuperchainBridgeAdapter(l2AdapterProxy);
@@ -312,21 +314,13 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
                 l1AdapterImpl,
                 abi.encodeCall(
                     SuperchainBridgeAdapter.initialize,
-                    (
-                        admin,
-                        address(l1Escrow),
-                        address(l1Bridge),
-                        address(0),
-                        address(1),
-                        address(0),
-                        address(optimismPortal),
-                        "1.0.0"
-                    )
+                    (admin, address(l1Escrow), address(0), address(1), address(0), "1.0.0")
                 )
             ));
         SuperchainBridgeAdapter l1Ad = SuperchainBridgeAdapter(l1AdapterProxy);
         vm.startPrank(admin);
         l1Ad.grantRole(MANAGER, manager);
+        l1Ad.setOptimismPortalForL2(L2_CHAIN_ID, address(optimismPortal));
         l1Escrow.authorizeAdapter(address(l1Ad));
         vm.stopPrank();
         return l1Ad;
@@ -356,6 +350,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         // Manager proves the withdrawal and correlates it to the invoice.
         vm.prank(manager);
         l1Ad.proveWithdrawal(
+            L2_CHAIN_ID,
             wtx,
             0,
             Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0)),
@@ -363,7 +358,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
             invoiceData.invoiceId
         );
 
-        assertTrue(l1Ad.isWithdrawalProven(realHash), "withdrawal proven under real hash");
+        assertTrue(l1Ad.isWithdrawalProven(L2_CHAIN_ID, realHash), "withdrawal proven under real hash");
         assertEq(l1Ad.getInvoiceIdByWithdrawalHash(realHash), invoiceData.invoiceId, "invoice correlated");
 
         uint256 portfolioBefore = account.balance;
@@ -420,6 +415,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         // Prove it so the only failing check is the target binding.
         vm.prank(manager);
         l1Ad.proveWithdrawal(
+            L2_CHAIN_ID,
             wtx,
             0,
             Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0)),
@@ -483,19 +479,19 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
 
     // ============ Configuration Tests ============
 
-    function test_setL1Bridge_updatesBridge() public {
+    function test_setL1BridgeForL2_updatesBridge() public {
         vm.chainId(SOURCE_CHAIN_ID);
         MockL1StandardBridge newBridge = new MockL1StandardBridge();
         vm.prank(admin);
-        l1Adapter.setL1Bridge(address(newBridge));
-        assertEq(address(l1Adapter.l1Bridge()), address(newBridge));
+        l1Adapter.setL1BridgeForL2(L2_CHAIN_ID, address(newBridge));
+        assertEq(address(l1Adapter.l1BridgeForL2(L2_CHAIN_ID)), address(newBridge));
     }
 
-    function test_setL1Bridge_revertsIfNotAdmin() public {
+    function test_setL1BridgeForL2_revertsIfNotAdmin() public {
         vm.chainId(SOURCE_CHAIN_ID);
         vm.prank(unauthorized);
         vm.expectRevert();
-        l1Adapter.setL1Bridge(address(1));
+        l1Adapter.setL1BridgeForL2(L2_CHAIN_ID, address(1));
     }
 
     function test_setDefaultL2GasLimit_updatesGasLimit() public {

@@ -231,10 +231,10 @@ contract DeployBridgeAdapters is BaseDeployScript {
         if (!_isEnabled("Superchain")) return;
         string memory l2BridgeStr =
             ConfigReader.readAdapterParam(vm, currentChainId, "bridgeAdapters", "Superchain", "l2Bridge");
-        // Superchain config carries l1Bridge on L1 and l2Bridge on L2; require at least one bridge endpoint.
-        string memory l1BridgeStr =
-            ConfigReader.readAdapterParam(vm, currentChainId, "bridgeAdapters", "Superchain", "l1Bridge");
-        if (bytes(l2BridgeStr).length == 0 && bytes(l1BridgeStr).length == 0) return;
+        // L2 side carries l2Bridge; L1 side carries the per-L2 arrays (l2ChainIds/l1Bridges/optimismPortals).
+        uint256[] memory l2ChainIds =
+            ConfigReader.readAdapterUintArray(vm, currentChainId, "bridgeAdapters", "Superchain", "l2ChainIds");
+        if (bytes(l2BridgeStr).length == 0 && l2ChainIds.length == 0) return;
 
         (address adapter, bool fresh) = _create2Deploy(
             "SuperchainBridgeAdapter",
@@ -244,22 +244,29 @@ contract DeployBridgeAdapters is BaseDeployScript {
         if (fresh || SuperchainBridgeAdapter(payable(adapter)).bridgeEscrow() == address(0)) {
             address admin_ = _parseAddr("Superchain", "admin", chainConfig.admin);
             address bridgeEscrow_ = _parseAddr("Superchain", "bridgeEscrow", bridgeProxy);
-            address l1Bridge_ = _parseAddr("Superchain", "l1Bridge", address(0));
             address l2Bridge_ = _parseAddr("Superchain", "l2Bridge", address(0));
             address l1Messenger_ = _parseAddr("Superchain", "l1Messenger", address(0));
             address l2Messenger_ = _parseAddr("Superchain", "l2Messenger", address(0));
-            address optimismPortal_ = _parseAddr("Superchain", "optimismPortal", address(0));
             SuperchainBridgeAdapter(payable(adapter))
-                .initialize(
-                    admin_,
-                    bridgeEscrow_,
-                    l1Bridge_,
-                    l2Bridge_,
-                    l1Messenger_,
-                    l2Messenger_,
-                    optimismPortal_,
-                    _adapterVersion("Superchain")
+                .initialize(admin_, bridgeEscrow_, l2Bridge_, l1Messenger_, l2Messenger_, _adapterVersion("Superchain"));
+
+            // On L1, seed the per-L2 standard bridges + portals from parallel config arrays.
+            if (currentChainId == 1 && l2ChainIds.length > 0) {
+                address[] memory l1Bridges = ConfigReader.readAdapterAddressArray(
+                    vm, currentChainId, "bridgeAdapters", "Superchain", "l1Bridges"
                 );
+                address[] memory portals = ConfigReader.readAdapterAddressArray(
+                    vm, currentChainId, "bridgeAdapters", "Superchain", "optimismPortals"
+                );
+                require(
+                    l1Bridges.length == l2ChainIds.length && portals.length == l2ChainIds.length,
+                    "Superchain: l2ChainIds/l1Bridges/optimismPortals length mismatch"
+                );
+                for (uint256 i = 0; i < l2ChainIds.length; i++) {
+                    SuperchainBridgeAdapter(payable(adapter)).setL1BridgeForL2(l2ChainIds[i], l1Bridges[i]);
+                    SuperchainBridgeAdapter(payable(adapter)).setOptimismPortalForL2(l2ChainIds[i], portals[i]);
+                }
+            }
         }
         ConfigReader.writeAdapterAddress(vm, currentChainId, "bridgeAdapters", "Superchain", adapter);
     }

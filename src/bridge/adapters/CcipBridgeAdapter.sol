@@ -180,14 +180,13 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
         // The destination CCIP Router calls ccipReceive on it; it authenticates and funds the release.
         bytes memory receiver = abi.encode(address(this));
 
-        // extraArgs: use the per-lane configured value, or a safe default. Empty extraArgs is rejected by
-        // CCIP routers on lanes that require EVMExtraArgsV2, so default to V2 with out-of-order execution
-        // allowed and a gas limit that covers the destination ccipReceive -> release.
+        // extraArgs: use the per-lane configured value, or a non-empty default. Some CCIP lanes reject
+        // empty extraArgs, so default to EVMExtraArgsV1 with a gas limit covering the destination
+        // ccipReceive -> release. V1 is accepted on all lanes; lanes that *enforce* out-of-order execution
+        // require EVMExtraArgsV2{allowOutOfOrderExecution: true} and must set it per-lane via setChainExtraArgs.
         bytes memory extraArgsToUse = chainExtraArgs[destinationChainSelector];
         if (extraArgsToUse.length == 0) {
-            extraArgsToUse = Client._argsToBytes(
-                Client.EVMExtraArgsV2({gasLimit: DEFAULT_CCIP_GAS_LIMIT, allowOutOfOrderExecution: true})
-            );
+            extraArgsToUse = Client._argsToBytes(Client.EVMExtraArgsV1({gasLimit: DEFAULT_CCIP_GAS_LIMIT}));
         }
 
         // Build CCIP message

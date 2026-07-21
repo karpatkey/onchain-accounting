@@ -14,6 +14,11 @@
         "type": "API3",
         "address": "0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473",
         "heartbeat": 86400
+      },
+      {
+        "type": "Redstone",
+        "address": "0x67F6838e58859d612E4ddF04dA396d6DABB66Dc4",
+        "heartbeat": 86400
       }
     ]
   },
@@ -32,6 +37,11 @@
         "type": "API3",
         "address": "0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473",
         "heartbeat": 86400
+      },
+      {
+        "type": "Redstone",
+        "address": "0x67F6838e58859d612E4ddF04dA396d6DABB66Dc4",
+        "heartbeat": 86400
       }
     ]
   },
@@ -49,6 +59,11 @@
       {
         "type": "Redstone",
         "address": "0xe4aE88743c3834d0c492eAbC47384c84BcADC6a6",
+        "heartbeat": 86400
+      },
+      {
+        "type": "Chainlink",
+        "address": "0x164b276057258d81941e97B0a900D4C7B358bCe0",
         "heartbeat": 86400
       }
     ]
@@ -144,6 +159,11 @@
         "type": "Custom",
         "feed": "ETHxCrossRate",
         "heartbeat": 86400
+      },
+      {
+        "type": "Redstone",
+        "address": "0xFaBEb1474C2Ab34838081BFdDcE4132f640E7D2d",
+        "heartbeat": 86400
       }
     ],
     "note": "Pricefeed left blank until 03_DeployPriceFeeds runs and writes the deployed ETHx_CustomPriceFeed address back to chains/1.json.priceFeeds.ETHx.deployed; copy that into pricefeed before running RegisterAssets."
@@ -192,6 +212,11 @@
       {
         "type": "API3",
         "address": "0xD3C586Eec1C6C3eC41D276a23944dea080eDCf7f",
+        "heartbeat": 86400
+      },
+      {
+        "type": "Redstone",
+        "address": "0xeeF31c7d9F2E82e8A497b140cc60cc082Be4b94e",
         "heartbeat": 86400
       }
     ]
@@ -290,10 +315,18 @@
   "USDS": {
     "address": "0xdC035D45d973E3EC169d2276DDab16f1e407384F",
     "pegToleranceBps": 100,
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0xfF30586cD0F29eD462364C7e81375FC0C71219b1",
+        "heartbeat": 86400
+      }
+    ],
+    "monitorFeeds": [
+      {
+        "type": "API3",
+        "address": "0x6C3C2A615Ea3c592487b3e06ecAF01D9a3181f47",
         "heartbeat": 86400
       }
     ]
@@ -372,6 +405,11 @@
       {
         "type": "Chainlink",
         "address": "0xFF3BC18cCBd5999CE63E788A1c250a88626aD099",
+        "heartbeat": 86400
+      },
+      {
+        "type": "Redstone",
+        "address": "0xb99D174ED06c83588Af997c8859F93E83dD4733f",
         "heartbeat": 86400
       }
     ]
@@ -483,6 +521,11 @@
         "type": "Redstone",
         "address": "0x2ee5Ce6556599E16c226579BA14F94926d8Cb86d",
         "heartbeat": 86400
+      },
+      {
+        "type": "API3",
+        "address": "0xAe017164B7dBC3C5A1DCcAdC43B82d308251521c",
+        "heartbeat": 86400
       }
     ]
   },
@@ -518,6 +561,11 @@
       {
         "type": "Redstone",
         "address": "0xAB7f623fb2F6fea6601D4350FA0E2290663C28Fc",
+        "heartbeat": 86400
+      },
+      {
+        "type": "API3",
+        "address": "0xCAc4d304032a46C8D0947396B7cBb07986826A36",
         "heartbeat": 86400
       }
     ]
@@ -588,6 +636,11 @@
         "$comment": "Independent 2nd feed (ADR 0009 redundancy): RedStone Classic Push cbBTC/USD, 8 decimals.",
         "type": "Redstone",
         "address": "0xE13e2BBaB029BFb324f49048CED0E95Ea30AE049",
+        "heartbeat": 86400
+      },
+      {
+        "type": "API3",
+        "address": "0xCAc4d304032a46C8D0947396B7cBb07986826A36",
         "heartbeat": 86400
       }
     ],

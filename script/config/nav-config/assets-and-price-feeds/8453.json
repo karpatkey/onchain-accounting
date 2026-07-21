@@ -14,6 +14,11 @@
         "type": "API3",
         "address": "0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473",
         "heartbeat": 86400
+      },
+      {
+        "type": "Redstone",
+        "address": "0xe8D9FbC10e00ecc9f0694617075fDAF657a76FB2",
+        "heartbeat": 86400
       }
     ]
   },
@@ -31,6 +36,11 @@
       {
         "type": "API3",
         "address": "0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473",
+        "heartbeat": 86400
+      },
+      {
+        "type": "Redstone",
+        "address": "0xe8D9FbC10e00ecc9f0694617075fDAF657a76FB2",
         "heartbeat": 86400
       }
     ]
@@ -108,6 +118,11 @@
       {
         "type": "API3",
         "address": "0xD3C586Eec1C6C3eC41D276a23944dea080eDCf7f",
+        "heartbeat": 86400
+      },
+      {
+        "type": "Redstone",
+        "address": "0xDd87FD0FD6F68AcB6897d05fCf31F3AB1165a49F",
         "heartbeat": 86400
       }
     ]

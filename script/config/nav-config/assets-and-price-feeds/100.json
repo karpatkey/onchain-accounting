@@ -1,10 +1,18 @@
 {
   "xDAI": {
     "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0x678df3415fc31947dA4324eC63212874be5a82f8",
+        "heartbeat": 86400
+      }
+    ],
+    "monitorFeeds": [
+      {
+        "type": "API3",
+        "address": "0x85b6dD270538325A9E0140bd6052Da4ecc18A85c",
         "heartbeat": 86400
       }
     ]
@@ -22,10 +30,18 @@
   },
   "WXDAI": {
     "address": "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d",
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0x678df3415fc31947dA4324eC63212874be5a82f8",
+        "heartbeat": 86400
+      }
+    ],
+    "monitorFeeds": [
+      {
+        "type": "API3",
+        "address": "0x85b6dD270538325A9E0140bd6052Da4ecc18A85c",
         "heartbeat": 86400
       }
     ]

@@ -1,31 +1,55 @@
 {
   "BNB": {
     "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0x0567F2323251f0Aab15c8dFb1967E4e8A7D42aeE",
         "heartbeat": 3600
       }
+    ],
+    "monitorFeeds": [
+      {
+        "type": "Redstone",
+        "address": "0x29d2fEC890B037B2d34f061F9a50f76F85ddBcAE",
+        "heartbeat": 86400
+      }
     ]
   },
   "WBNB": {
     "address": "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0x0567F2323251f0Aab15c8dFb1967E4e8A7D42aeE",
         "heartbeat": 3600
+      }
+    ],
+    "monitorFeeds": [
+      {
+        "type": "Redstone",
+        "address": "0x29d2fEC890B037B2d34f061F9a50f76F85ddBcAE",
+        "heartbeat": 86400
       }
     ]
   },
   "USDC": {
     "address": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
     "pegToleranceBps": 100,
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0x51597f405303C4377E36123cBc172b13269EA163",
+        "heartbeat": 86400
+      }
+    ],
+    "monitorFeeds": [
+      {
+        "type": "Redstone",
+        "address": "0xeA2511205b959548459A01e358E0A30424dc0B70",
         "heartbeat": 86400
       }
     ]
@@ -33,16 +57,25 @@
   "USDT": {
     "address": "0x55d398326f99059fF775485246999027B3197955",
     "pegToleranceBps": 100,
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0xB97Ad0E74fa7d920791E90258A6E2085088b4320",
         "heartbeat": 86400
       }
+    ],
+    "monitorFeeds": [
+      {
+        "type": "Redstone",
+        "address": "0xf57bA29437C130e155Ca4b65128630777638F05D",
+        "heartbeat": 86400
+      }
     ]
   },
   "ETH": {
     "address": "0x2170Ed0880ac9A755fd29B2688956BD959F933F8",
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -50,14 +83,29 @@
         "heartbeat": 86400
       }
     ],
-    "note": "Binance-Peg Ethereum Token (the BSC representation of ETH)."
+    "note": "Binance-Peg Ethereum Token (the BSC representation of ETH).",
+    "monitorFeeds": [
+      {
+        "type": "Redstone",
+        "address": "0x9cF19D284862A66378c304ACAcB0E857EBc3F856",
+        "heartbeat": 86400
+      }
+    ]
   },
   "CAKE": {
     "address": "0x0e09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82",
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0xB6064eD41d4f67e353768aA239cA86f4F73665a1",
+        "heartbeat": 86400
+      }
+    ],
+    "monitorFeeds": [
+      {
+        "type": "Redstone",
+        "address": "0x1102D8C7A6021e45cCddEC4912dc998Bc5ebD8e5",
         "heartbeat": 86400
       }
     ]

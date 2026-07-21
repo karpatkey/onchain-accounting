@@ -28,6 +28,10 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
     // State Variables
     //
 
+    /// @notice Default destination gas limit used when no per-lane extraArgs are configured
+    /// @dev Covers ccipReceive -> _fundAndRelease (token transfer + escrow release) with headroom.
+    uint256 private constant DEFAULT_CCIP_GAS_LIMIT = 500_000;
+
     /// @notice CCIP Router contract address
     IRouterClient public router;
 
@@ -176,10 +180,14 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
         // The destination CCIP Router calls ccipReceive on it; it authenticates and funds the release.
         bytes memory receiver = abi.encode(address(this));
 
-        // Get extraArgs for this chain (use configured or empty for default)
+        // extraArgs: use the per-lane configured value, or a safe default. Empty extraArgs is rejected by
+        // CCIP routers on lanes that require EVMExtraArgsV2, so default to V2 with out-of-order execution
+        // allowed and a gas limit that covers the destination ccipReceive -> release.
         bytes memory extraArgsToUse = chainExtraArgs[destinationChainSelector];
         if (extraArgsToUse.length == 0) {
-            extraArgsToUse = bytes("");
+            extraArgsToUse = Client._argsToBytes(
+                Client.EVMExtraArgsV2({gasLimit: DEFAULT_CCIP_GAS_LIMIT, allowOutOfOrderExecution: true})
+            );
         }
 
         // Build CCIP message

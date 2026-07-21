@@ -49,6 +49,12 @@ contract BridgeEscrow is
     /// @notice ERC-7528 convention for ETH address representation (used in some L2s)
     address public constant NATIVE_ADDRESS_ERC7528 = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
 
+    /// @notice Tolerance absorbing cross-chain clock skew when validating a source-stamped invoice
+    ///         timestamp against the destination block time. A genuine deposit's source timestamp can
+    ///         read slightly ahead of the destination clock on fast lanes; integrity/replay are enforced
+    ///         by the checksum + completedInvoices, so this bound is only a sanity check.
+    uint64 public constant TIMESTAMP_SKEW_TOLERANCE = 1 hours;
+
     //
     // State Variables
     //
@@ -212,9 +218,14 @@ contract BridgeEscrow is
 
         InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
 
-        // Validate timestamp is not in the future (uint64 cannot wrap for centuries).
+        // Validate the source-stamped timestamp is not implausibly in the future. A skew tolerance
+        // absorbs cross-chain clock differences on fast lanes, where a genuine deposit's source
+        // timestamp can read a few seconds ahead of the destination block time (which otherwise reverts
+        // a legitimate completion). Replay/integrity are enforced by the checksum + completedInvoices.
         uint64 currentTimestamp = uint64(block.timestamp);
-        if (data.timestamp > currentTimestamp) revert InvalidTimestamp(data.timestamp, currentTimestamp);
+        if (data.timestamp > currentTimestamp + TIMESTAMP_SKEW_TOLERANCE) {
+            revert InvalidTimestamp(data.timestamp, currentTimestamp);
+        }
 
         // Validate checksum (integrity + replay key; provenance is enforced by the adapter).
         bytes24 expectedChecksum =

@@ -200,10 +200,6 @@
           "address": "0x58D97B57BB95320F9a05dC918Aef65434969c2B2",
           "note": "No Chainlink MORPHO/USD feed on mainnet.",
           "API3": { "address": "0x79F8622D4E4773Fab6f5d4C98779D97baA1e906e", "dapiName": "MORPHO/USD", "decimals": 18, "heartbeat": 86400, "deployed": true }
-        },
-        "GEAR": {
-          "address": "0xBa3335588D9403515223F109EdC4eB7269a9Ab5D",
-          "note": "No oracle available from any provider at time of this update."
         }
       }
     },

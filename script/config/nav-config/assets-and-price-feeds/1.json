@@ -239,11 +239,6 @@
       }
     ]
   },
-  "GEAR": {
-    "address": "0xBa3335588D9403515223F109EdC4eB7269a9Ab5D",
-    "priceFeeds": [],
-    "note": "No oracle available"
-  },
   "stETH": {
     "address": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
     "divergenceToleranceBps": 250,

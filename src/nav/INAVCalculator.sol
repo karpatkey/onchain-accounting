@@ -130,6 +130,9 @@ interface INAVCalculator is IBalances {
         // `value` are still populated from the primary. Consumers (e.g. the sub/redeem processor) decide how to react.
         // APPENDED (not inserted mid-struct) so an in-place UUPS upgrade doesn't shift existing fields' ABI offsets.
         bool irregular;
+        // True if the quote (unit-of-account) asset's own primary diverged from its monitors — the divergence
+        // counterpart to `quoteAssetStale`. Always false for a USD quote.
+        bool quoteAssetIrregular;
     }
 
     /// @notice Position enriched with human-readable display labels.
@@ -175,6 +178,9 @@ interface INAVCalculator is IBalances {
         bool quoteAssetStale;
         // APPENDED (not inserted mid-struct) so an in-place UUPS upgrade doesn't shift existing fields' ABI offsets.
         Asset[] irregularPriceAssets;
+        // True if the quote (unit-of-account) asset's own primary diverged from its monitors beyond tolerance —
+        // the divergence counterpart to `quoteAssetStale`. Always false for a USD quote (no quote feed).
+        bool quoteAssetIrregular;
     }
 
     /// @notice Price data for the freshest non-stale feed selected for an asset.
@@ -463,6 +469,16 @@ interface INAVCalculator is IBalances {
     /// @return priceFeedData PriceFeedData struct (feed, type, price, decimals, heartbeat, updatedAt, stale,
     ///         sequencerDown, healthyFeedCount, irregular, divergenceBps, monitorFeedCount).
     function getPriceData(address underlyingAsset) external view returns (PriceFeedData memory priceFeedData);
+
+    /// @notice Same as {getPriceData} but WITHOUT the monitor-divergence computation (irregular/divergenceBps/
+    ///         monitorFeedCount stay 0/false). For hot callers that only need price/staleness (e.g. custom feeds
+    ///         reading the NAV-sourced base/USD term) so a base asset's monitor reads + sort aren't repaid per call.
+    /// @param underlyingAsset Registered asset address.
+    /// @return priceFeedData PriceFeedData struct with the divergence fields left at their defaults.
+    function getPriceDataNoDivergence(address underlyingAsset)
+        external
+        view
+        returns (PriceFeedData memory priceFeedData);
 
     /// @notice Returns the divergence between an asset's primary price and its monitor feeds.
     /// @param underlyingAsset Registered asset address.

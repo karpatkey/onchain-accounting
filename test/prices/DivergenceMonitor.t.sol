@@ -210,4 +210,48 @@ contract DivergenceMonitorTest is SuperTest {
         assertEq(pd.monitorFeedCount, 1, "stale monitor must be excluded from the healthy count");
         assertTrue(pd.irregular, "the healthy monitor is still out of band");
     }
+
+    /// @dev A STALE PRIMARY suppresses the divergence check entirely: with no usable primary price there is nothing to
+    ///      compare the monitors against, so `irregular` stays false and `monitorFeedCount`/`divergenceBps` stay 0
+    ///      (rather than flagging on a comparison against a zeroed primary). Regression for the `!primaryStale`
+    ///      guard in `_monitorDivergence`.
+    function test_stalePrimary_suppressesIrregular() public {
+        // Swap weth's primary to a stale feed (it becomes the only pricing feed, so selection returns stale/price 0).
+        Mock_CustomPriceFeedStaled stalePrimary =
+            new Mock_CustomPriceFeedStaled("weth-stale-primary", address(weth), 324_057_000_000, 8);
+        Mock_CustomPriceFeed monitor = new Mock_CustomPriceFeed("weth-mon", address(weth), 340_000_000_000, 8);
+        vm.startPrank(navCalculatorManager);
+        nav.addPriceFeed(address(weth), address(stalePrimary), IPrices.PriceType.Custom, type(uint256).max);
+        nav.removePriceFeed(address(weth), address(wethAdapter));
+        nav.setDivergenceTolerance(address(weth), 250);
+        // Out of band ($3400 vs $3240.57 ~492 bps) — would flag irregular against a healthy primary.
+        nav.addMonitorFeed(address(weth), address(monitor), IPrices.PriceType.Custom, type(uint256).max);
+        vm.stopPrank();
+
+        INAVCalculator.PriceFeedData memory pd = nav.getPriceData(address(weth));
+        assertTrue(pd.stale, "primary is stale");
+        assertFalse(pd.irregular, "divergence must be suppressed when the primary is stale");
+        assertEq(pd.monitorFeedCount, 0, "no monitor contributes against a stale primary");
+        assertEq(pd.divergenceBps, 0);
+    }
+
+    /// @dev SEQUENCER DOWN suppresses the divergence check: `buildPriceData` folds `sequencerDown` into the primary's
+    ///      stale flag, so `irregularForSelected` treats the primary as unusable and the check is skipped. Prevents a
+    ///      spurious `irregular` during an L2 outage (when the primary is frozen at its last value but the monitors
+    ///      may have moved). Regression for the `feedStale || sequencerDown` fold.
+    function test_sequencerDown_suppressesIrregular() public {
+        _attachWethMonitor(340_000_000_000, 250); // ~492 bps out of band
+        // Sanity: with the sequencer up, the out-of-band monitor flags irregular.
+        assertTrue(nav.getPriceData(address(weth)).irregular, "control: irregular while sequencer is up");
+
+        // Sequencer goes down (admin-gated feed swap, mirrors test_getPriceData_sequencerDown).
+        vm.prank(admin);
+        nav.setChainlinkL2SequencerUptimeFeed(address(sequencerUptimeFeedDown));
+
+        INAVCalculator.PriceFeedData memory pd = nav.getPriceData(address(weth));
+        assertTrue(pd.sequencerDown, "sequencer must be reported down");
+        assertFalse(pd.irregular, "divergence must be suppressed while the sequencer is down");
+        assertEq(pd.monitorFeedCount, 0, "no monitor contributes while the primary is sequencer-stale");
+        assertEq(pd.divergenceBps, 0);
+    }
 }

@@ -283,6 +283,17 @@ contract Mock_NAVCalculator is INAVCalculator {
         pd.stale = pd.stale || pd.sequencerDown;
     }
 
+    function getPriceDataNoDivergence(address asset) external view override returns (PriceFeedData memory pd) {
+        if (_priceReverts[asset]) revert PriceFeedNotSet(asset);
+        pd = _priceData[asset];
+        if (pd.stale) pd.price = 0;
+        pd.stale = pd.stale || pd.sequencerDown;
+        // No-divergence variant: leave the divergence signal at defaults (mirrors buildPriceData(..., false)).
+        pd.irregular = false;
+        pd.divergenceBps = 0;
+        pd.monitorFeedCount = 0;
+    }
+
     function getAccountPositionsForAsset(address, address, address) external pure override returns (Position[] memory) {
         revert("Not implemented in mock");
     }

@@ -214,6 +214,26 @@ library PriceFeedLib {
             _monitorDivergence(monitorFeeds, assetPricing, asset, primaryPrice, primaryStale);
     }
 
+    /// @notice `irregular` flag for a primary that the caller has ALREADY selected (raw `price` in the feed's own
+    ///         `decimals`). Lets a hot view that already ran feed selection (Prices.latestPrice) obtain the
+    ///         divergence signal WITHOUT a second `_selectFeedCore` pass + re-read of the primary feed. Returns false
+    ///         (no monitor reads) when the asset has no divergence checks. `sequencerDown` folds into staleness so
+    ///         divergence is suppressed on an unusable price — parity with buildPriceData / computeDivergence.
+    function irregularForSelected(
+        mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
+        mapping(address => IPrices.AssetPricing) storage assetPricing,
+        address asset,
+        int256 price,
+        uint8 decimals,
+        bool feedStale,
+        bool sequencerDown
+    ) internal view returns (bool irregular) {
+        if (!_hasDivergenceChecks(monitorFeeds, assetPricing, asset)) return false;
+        bool primaryStale = feedStale || sequencerDown;
+        int256 primary8 = primaryStale ? int256(0) : _scaleTo8(price, decimals);
+        (,, irregular,,) = _monitorDivergence(monitorFeeds, assetPricing, asset, primary8, primaryStale);
+    }
+
     /// @notice Core divergence computation given an already-selected (8-dec) primary price.
     /// @dev Reads every monitor feed for `asset`, skips stale/reverting ones (same per-feed gate as selection), and
     ///      flags `irregular` on inter-feed divergence (all types) or absolute peg deviation (stablecoins only).
@@ -429,7 +449,8 @@ library PriceFeedLib {
         mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
         mapping(address => IPrices.AssetPricing) storage assetPricing,
         address asset,
-        bool sequencerDown
+        bool sequencerDown,
+        bool withDivergence
     ) external view returns (INAVCalculator.PriceFeedData memory priceFeedData) {
         (int256 price, uint8 decimals, bool stale, uint256 winnerIdx, uint256 healthyFeedCount) =
             _selectFeedCore(priceOracles, asset);
@@ -460,8 +481,10 @@ library PriceFeedLib {
 
         // Divergence signal vs the asset's monitor feeds. Primary is treated as stale when the feed is stale or
         // the sequencer is down (either way the primary price is untrustworthy, so divergence is undefined). Skipped
-        // (fields stay 0/false) when the asset has no monitors and no peg tolerance.
-        if (_hasDivergenceChecks(monitorFeeds, assetPricing, asset)) {
+        // (fields stay 0/false) when `withDivergence` is false (callers that only need the price — e.g. the
+        // NAV-sourced base/USD term for custom feeds — avoid the monitor reads + sort) or the asset has no monitors
+        // and no peg tolerance.
+        if (withDivergence && _hasDivergenceChecks(monitorFeeds, assetPricing, asset)) {
             bool primaryStale = stale || sequencerDown;
             int256 primary8 = primaryStale ? int256(0) : _scaleTo8(price, decimals);
             (, uint256 divergenceBps, bool irregular, uint256 monitorFeedCount,) =
@@ -504,6 +527,11 @@ library PriceFeedLib {
             _getQuoteAssetInfo(priceOracles, assetIndex, registeredAssets, quoteAsset, nativeTokenSymbol);
         nav.quoteAsset = quoteInfo.assetStruct;
         nav.quoteAssetStale = quoteInfo.stale;
+        nav.quoteAssetIrregular = quoteAsset == address(0)
+            ? false
+            : irregularForSelected(
+                monitorFeeds, assetPricing, quoteAsset, quoteInfo.price, quoteInfo.priceDecimals, quoteInfo.stale, sequencerDown
+            );
 
         uint256 assetCount = registeredAssets.length;
         if (assetCount == 0) {
@@ -586,6 +614,11 @@ library PriceFeedLib {
             _buildPriceFeedCache(priceOracles, monitorFeeds, assetPricing, assetsWithPositions, sequencerDown);
         QuoteAssetInfo memory quoteInfo =
             _getQuoteAssetInfo(priceOracles, assetIndex, registeredAssets, quoteAsset, nativeTokenSymbol);
+        bool quoteAssetIrregular = quoteAsset == address(0)
+            ? false
+            : irregularForSelected(
+                monitorFeeds, assetPricing, quoteAsset, quoteInfo.price, quoteInfo.priceDecimals, quoteInfo.stale, sequencerDown
+            );
 
         uint256 length = positionBalances.length;
         positions = new INAVCalculator.Position[](length);
@@ -605,6 +638,7 @@ library PriceFeedLib {
                 registered.decimals,
                 registered.symbol
             );
+            positions[i].quoteAssetIrregular = quoteAssetIrregular;
         }
     }
 
@@ -633,6 +667,12 @@ library PriceFeedLib {
             _getQuoteAssetInfo(priceOracles, assetIndex, registeredAssets, quoteAsset, nativeTokenSymbol);
         nav.quoteAsset = quoteInfo.assetStruct;
         nav.quoteAssetStale = quoteInfo.stale;
+        bool quoteAssetIrregular = quoteAsset == address(0)
+            ? false
+            : irregularForSelected(
+                monitorFeeds, assetPricing, quoteAsset, quoteInfo.price, quoteInfo.priceDecimals, quoteInfo.stale, sequencerDown
+            );
+        nav.quoteAssetIrregular = quoteAssetIrregular;
 
         uint256 assetCount = registeredAssets.length;
         if (assetCount == 0) {
@@ -678,6 +718,7 @@ library PriceFeedLib {
                 registered.decimals,
                 registered.symbol
             );
+            positions[i].quoteAssetIrregular = quoteAssetIrregular;
             totalValue += positions[i].value;
         }
         nav.value = totalValue;
@@ -1136,6 +1177,36 @@ library PriceFeedLib {
     }
 
     /// @notice Adds a price feed for an asset. Reverts on duplicates or decimal mismatch.
+    /// @notice Resolves a feed's on-chain decimals by type — shared by addFeed/addMonitorFeed. API3 dAPIs must be
+    ///         18-dec at source (the read path scales them to 8); Custom/Chainlink/Redstone report their own.
+    function _resolveFeedDecimals(address priceFeed, IPrices.PriceType priceType) private view returns (uint8 dec) {
+        if (priceType == IPrices.PriceType.Custom) {
+            dec = ICustomPriceFeed(priceFeed).decimals();
+        } else if (priceType == IPrices.PriceType.API3) {
+            if (AggregatorV3Interface(priceFeed).decimals() != 18) revert IPrices.InvalidPriceOracle();
+            dec = 8;
+        } else {
+            dec = AggregatorV3Interface(priceFeed).decimals();
+        }
+    }
+
+    /// @notice Swap-and-pop the feed at `index` from `arr` — shared array mutation for price- and monitor-feed
+    ///         removals (which differ only in the events they emit, so the caller emits). Returns the removed feed,
+    ///         the feed moved into the hole (address(0) if none), the index it moved FROM, and whether a move happened.
+    function _swapPopFeed(IPrices.PriceFeedConfig[] storage arr, uint256 index)
+        private
+        returns (address removedFeed, address movedFeed, uint256 movedFrom, bool didMove)
+    {
+        movedFrom = arr.length - 1;
+        removedFeed = arr[index].priceFeed;
+        if (index != movedFrom) {
+            movedFeed = arr[movedFrom].priceFeed;
+            arr[index] = arr[movedFrom];
+            didMove = true;
+        }
+        arr.pop();
+    }
+
     function addFeed(
         mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
         address asset,
@@ -1153,16 +1224,7 @@ library PriceFeedLib {
             if (configs[i].priceFeed == priceFeed) revert IPrices.PriceFeedAlreadyRegistered(asset, priceFeed);
         }
 
-        uint8 dec;
-        if (priceType == IPrices.PriceType.Custom) {
-            dec = ICustomPriceFeed(priceFeed).decimals();
-        } else if (priceType == IPrices.PriceType.API3) {
-            uint8 sourceDec = AggregatorV3Interface(priceFeed).decimals();
-            if (sourceDec != 18) revert IPrices.InvalidPriceOracle();
-            dec = 8;
-        } else {
-            dec = AggregatorV3Interface(priceFeed).decimals();
-        }
+        uint8 dec = _resolveFeedDecimals(priceFeed, priceType);
 
         if (len > 0 && configs[0].decimals != dec) {
             revert IPrices.PriceFeedDecimalsMismatch(asset, configs[0].decimals, dec);
@@ -1184,20 +1246,12 @@ library PriceFeedLib {
         uint256 index
     ) external {
         IPrices.PriceFeedConfig[] storage configs = priceOracles[asset];
-        uint256 len = configs.length;
 
-        if (index >= len) revert IPrices.PriceFeedIndexOutOfBounds(asset, index);
-        if (len == 1) revert IPrices.CannotRemoveLastFeed(asset);
+        if (index >= configs.length) revert IPrices.PriceFeedIndexOutOfBounds(asset, index);
+        if (configs.length == 1) revert IPrices.CannotRemoveLastFeed(asset);
 
-        address removedFeed = configs[index].priceFeed;
-
-        if (index != len - 1) {
-            address movedFeed = configs[len - 1].priceFeed;
-            configs[index] = configs[len - 1];
-            emit IPrices.PriceFeedIndexChanged(asset, movedFeed, len - 1, index);
-        }
-        configs.pop();
-
+        (address removedFeed, address movedFeed, uint256 movedFrom, bool didMove) = _swapPopFeed(configs, index);
+        if (didMove) emit IPrices.PriceFeedIndexChanged(asset, movedFeed, movedFrom, index);
         emit IPrices.PriceFeedRemoved(asset, removedFeed, index);
     }
 
@@ -1212,14 +1266,9 @@ library PriceFeedLib {
 
         for (uint256 i; i < len; ++i) {
             if (configs[i].priceFeed == priceFeed) {
-                // inline removeFeedAt to avoid a second delegatecall
                 if (len == 1) revert IPrices.CannotRemoveLastFeed(asset);
-                if (i != len - 1) {
-                    address movedFeed = configs[len - 1].priceFeed;
-                    configs[i] = configs[len - 1];
-                    emit IPrices.PriceFeedIndexChanged(asset, movedFeed, len - 1, i);
-                }
-                configs.pop();
+                (, address movedFeed, uint256 movedFrom, bool didMove) = _swapPopFeed(configs, i);
+                if (didMove) emit IPrices.PriceFeedIndexChanged(asset, movedFeed, movedFrom, i);
                 emit IPrices.PriceFeedRemoved(asset, priceFeed, i);
                 return;
             }
@@ -1247,16 +1296,7 @@ library PriceFeedLib {
         if (heartbeat == 0) revert IPrices.InvalidPriceOracle();
         if (assetPricing[asset].divergenceToleranceBps == 0) revert IPrices.DivergenceToleranceRequired(asset);
 
-        uint8 dec;
-        if (priceType == IPrices.PriceType.Custom) {
-            dec = ICustomPriceFeed(priceFeed).decimals();
-        } else if (priceType == IPrices.PriceType.API3) {
-            uint8 sourceDec = AggregatorV3Interface(priceFeed).decimals();
-            if (sourceDec != 18) revert IPrices.InvalidPriceOracle();
-            dec = 8;
-        } else {
-            dec = AggregatorV3Interface(priceFeed).decimals();
-        }
+        uint8 dec = _resolveFeedDecimals(priceFeed, priceType);
         // Monitors must be USD-comparable to the primary (always NAV_DECIMALS).
         if (dec != NAV_DECIMALS) revert IPrices.MonitorFeedDecimalsMismatch(asset, NAV_DECIMALS, dec);
 
@@ -1283,19 +1323,11 @@ library PriceFeedLib {
         uint256 index
     ) external {
         IPrices.PriceFeedConfig[] storage monitors = monitorFeeds[asset];
-        uint256 len = monitors.length;
 
-        if (index >= len) revert IPrices.PriceFeedIndexOutOfBounds(asset, index);
+        if (index >= monitors.length) revert IPrices.PriceFeedIndexOutOfBounds(asset, index);
 
-        address removedFeed = monitors[index].priceFeed;
-
-        if (index != len - 1) {
-            address movedFeed = monitors[len - 1].priceFeed;
-            monitors[index] = monitors[len - 1];
-            emit IPrices.MonitorFeedIndexChanged(asset, movedFeed, len - 1, index);
-        }
-        monitors.pop();
-
+        (address removedFeed, address movedFeed, uint256 movedFrom, bool didMove) = _swapPopFeed(monitors, index);
+        if (didMove) emit IPrices.MonitorFeedIndexChanged(asset, movedFeed, movedFrom, index);
         emit IPrices.MonitorFeedRemoved(asset, removedFeed, index);
     }
 
@@ -1310,12 +1342,8 @@ library PriceFeedLib {
 
         for (uint256 i; i < len; ++i) {
             if (monitors[i].priceFeed == priceFeed) {
-                if (i != len - 1) {
-                    address movedFeed = monitors[len - 1].priceFeed;
-                    monitors[i] = monitors[len - 1];
-                    emit IPrices.MonitorFeedIndexChanged(asset, movedFeed, len - 1, i);
-                }
-                monitors.pop();
+                (, address movedFeed, uint256 movedFrom, bool didMove) = _swapPopFeed(monitors, i);
+                if (didMove) emit IPrices.MonitorFeedIndexChanged(asset, movedFeed, movedFrom, i);
                 emit IPrices.MonitorFeedRemoved(asset, priceFeed, i);
                 return;
             }

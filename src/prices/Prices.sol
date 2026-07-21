@@ -64,15 +64,15 @@ abstract contract Prices is IPrices, Initializable {
         returns (int256 price, uint8 decimals, bool stale, bool irregular)
     {
         bool sequencerDown = checkL2SequencerUptime();
-        (price, decimals, stale,,) = _selectFeed(token);
-        stale = sequencerDown || stale;
-        // Divergence-vs-monitors signal (parity with getPriceData / NAV.irregularPriceAssets). Only computed when
-        // the asset actually has a divergence check configured AND the primary is usable — divergence is undefined
-        // for a stale/sequencer-down price, and computeDivergence re-runs feed selection + reads every monitor, so
-        // skipping it here avoids doubling the oracle calls on this hot view in the common (no-monitor) case.
-        if (!stale && PriceFeedLib._hasDivergenceChecks(_monitorFeeds, _assetPricing, token)) {
-            (,,, irregular,,,) = _priceOracles.computeDivergence(_monitorFeeds, _assetPricing, token, sequencerDown);
-        }
+        bool feedStale;
+        (price, decimals, feedStale,,) = _selectFeed(token);
+        stale = sequencerDown || feedStale;
+        // Divergence-vs-monitors signal (parity with getPriceData / NAV.irregularPriceAssets), computed from the
+        // primary we JUST selected — irregularForSelected reuses (price, decimals) instead of re-running feed
+        // selection, so this hot view reads the primary feed once, not twice. It internally skips the monitor
+        // reads when the asset has no divergence check, and suppresses the flag when stale/sequencer-down.
+        irregular =
+            PriceFeedLib.irregularForSelected(_monitorFeeds, _assetPricing, token, price, decimals, feedStale, sequencerDown);
     }
 
     /// @inheritdoc IPrices

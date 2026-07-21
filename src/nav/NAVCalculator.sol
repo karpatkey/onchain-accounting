@@ -520,10 +520,26 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         // Heavy assembly (feed selection + config read + AggregatorV3 updatedAt fetch + divergence vs monitors) is
         // delegated to PriceFeedLib to keep NAVCalculator under EIP-170; sequencer status depends on this contract's
         // config so it is computed here and passed in.
-        return
-            PriceFeedLib.buildPriceData(
-                _priceOracles, _monitorFeeds, _assetPricing, underlyingAsset, _isSequencerDown()
-            );
+        return PriceFeedLib.buildPriceData(
+            _priceOracles, _monitorFeeds, _assetPricing, underlyingAsset, _isSequencerDown(), true
+        );
+    }
+
+    /// @inheritdoc INAVCalculator
+    /// @dev Identical to {getPriceData} but SKIPS the monitor-divergence computation (irregular/divergenceBps/
+    ///      monitorFeedCount stay 0/false). For hot callers that only need the price/staleness — notably custom
+    ///      feeds reading the NAV-sourced base/USD term (NavBaseUsdLib) once per position — so a base asset's
+    ///      monitor reads + sort aren't paid on every derived-asset read.
+    function getPriceDataNoDivergence(address underlyingAsset)
+        external
+        view
+        returns (INAVCalculator.PriceFeedData memory priceFeedData)
+    {
+        _requireAssetExists(underlyingAsset);
+        _requirePriceFeedExists(underlyingAsset);
+        return PriceFeedLib.buildPriceData(
+            _priceOracles, _monitorFeeds, _assetPricing, underlyingAsset, _isSequencerDown(), false
+        );
     }
 
     /// @inheritdoc INAVCalculator

@@ -113,10 +113,6 @@ interface INAVCalculator is IBalances {
         int256 price;
         uint8 priceDecimals;
         bool stale;
-        // True if the asset's primary price diverged from its monitor feeds beyond the configured tolerance (or,
-        // for stablecoins, from the $1 peg). A pricing-quality signal, NOT a validity/staleness flag: `price` and
-        // `value` are still populated from the primary. Consumers (e.g. the sub/redeem processor) decide how to react.
-        bool irregular;
         // True if the quote asset's own price feed was stale. When true, `value` is in USD (8dp) even though
         // `quoteAsset` is non-zero — the quote conversion was skipped. Mirrors NAV.quoteAssetStale ([9]/S2).
         bool quoteAssetStale;
@@ -129,6 +125,11 @@ interface INAVCalculator is IBalances {
         // Ephemeral per-item coordinate copied from PositionBalance (NFT id / request id / ticket as bytes32).
         // bytes32(0) when none. Display/granularity only — excluded from the stable identity key. See PositionBalance.
         bytes32 positionInstanceId;
+        // True if the asset's primary price diverged from its monitor feeds beyond the configured tolerance (or,
+        // for stablecoins, from the $1 peg). A pricing-quality signal, NOT a validity/staleness flag: `price` and
+        // `value` are still populated from the primary. Consumers (e.g. the sub/redeem processor) decide how to react.
+        // APPENDED (not inserted mid-struct) so an in-place UUPS upgrade doesn't shift existing fields' ABI offsets.
+        bool irregular;
     }
 
     /// @notice Position enriched with human-readable display labels.
@@ -170,9 +171,10 @@ interface INAVCalculator is IBalances {
         Asset quoteAsset;
         uint64 timestamp;
         Asset[] stalePriceAssets;
-        Asset[] irregularPriceAssets;
         bool sequencerDown;
         bool quoteAssetStale;
+        // APPENDED (not inserted mid-struct) so an in-place UUPS upgrade doesn't shift existing fields' ABI offsets.
+        Asset[] irregularPriceAssets;
     }
 
     /// @notice Price data for the freshest non-stale feed selected for an asset.

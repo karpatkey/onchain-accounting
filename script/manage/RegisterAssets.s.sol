@@ -217,11 +217,14 @@ contract RegisterAssets is BaseDeployScript {
         uint256 divTolBps,
         uint256 pegTolBps
     ) private view returns (bytes[] memory acts, bool addsMonitor) {
-        uint256 onChainMonitors;
+        // Read the on-chain monitor SET (not just its count): addMonitorFeed reverts MonitorFeedAlreadyRegistered on
+        // a duplicate, and removeMonitorFeed is swap-and-pop (reorders), so a positional "skip first N" check would
+        // re-add a still-present feed after any out-of-band removal and abort the whole batch. Membership is robust.
+        IPrices.PriceFeedConfig[] memory onChain;
         if (registered) {
             (bool okm, bytes memory md) =
-                navProxy.staticcall(abi.encodeWithSelector(IPrices.getMonitorFeedCount.selector, asset));
-            if (okm && md.length == 32) onChainMonitors = abi.decode(md, (uint256));
+                navProxy.staticcall(abi.encodeWithSelector(IPrices.getMonitorFeeds.selector, asset));
+            if (okm && md.length >= 64) onChain = abi.decode(md, (IPrices.PriceFeedConfig[]));
         }
 
         bytes[] memory tmp = new bytes[](monCount + 2);
@@ -233,7 +236,6 @@ contract RegisterAssets is BaseDeployScript {
             tmp[n++] = abi.encodeCall(NAVCalculator.setPegTolerance, (asset, uint32(pegTolBps)));
         }
 
-        uint256 resolvableMon;
         for (uint256 i = 0; i < monCount; i++) {
             (IPrices.PriceType pt, bool validType) =
                 ConfigReader.readAssetMonitorFeedPriceType(vm, currentChainId, symbol, i);
@@ -241,20 +243,25 @@ contract RegisterAssets is BaseDeployScript {
             string memory maddr = ConfigReader.readAssetMonitorFeedAddress(vm, currentChainId, symbol, i);
             if (bytes(maddr).length == 0) continue; // unresolved (e.g. Custom monitor not deployed yet)
             address feed = vm.parseAddress(maddr);
-            if (feed == address(0)) continue;
+            if (feed == address(0) || _containsFeed(onChain, feed)) continue; // skip already-registered monitors
 
-            if (resolvableMon >= onChainMonitors) {
-                uint256 hb = vm.parseUint(ConfigReader.readAssetMonitorFeedHeartbeat(vm, currentChainId, symbol, i));
-                tmp[n++] = abi.encodeCall(NAVCalculator.addMonitorFeed, (asset, feed, pt, hb));
-                addsMonitor = true;
-            }
-            resolvableMon++;
+            uint256 hb = vm.parseUint(ConfigReader.readAssetMonitorFeedHeartbeat(vm, currentChainId, symbol, i));
+            tmp[n++] = abi.encodeCall(NAVCalculator.addMonitorFeed, (asset, feed, pt, hb));
+            addsMonitor = true;
         }
 
         acts = new bytes[](n);
         for (uint256 i = 0; i < n; i++) {
             acts[i] = tmp[i];
         }
+    }
+
+    /// @notice True if `feed` is already present in the on-chain feed config array.
+    function _containsFeed(IPrices.PriceFeedConfig[] memory feeds, address feed) private pure returns (bool) {
+        for (uint256 i = 0; i < feeds.length; i++) {
+            if (feeds[i].priceFeed == feed) return true;
+        }
+        return false;
     }
 
     /// @dev Maps a feed `type` string to the on-chain PriceType enum. validType=false → skip the feed.

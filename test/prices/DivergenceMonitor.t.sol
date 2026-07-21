@@ -5,7 +5,7 @@ pragma solidity ^0.8.0;
 import "test/SuperTest.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {Mock_CustomPriceFeed} from "test/mocks/price_oracles.sol";
+import {Mock_CustomPriceFeed, Mock_CustomPriceFeedStaled} from "test/mocks/price_oracles.sol";
 
 /// @title Divergence-monitor unit tests
 /// @notice Exercises the primary-vs-monitor divergence signal on NAVCalculator: `getPriceData(...).irregular`,
@@ -175,5 +175,39 @@ contract DivergenceMonitorTest is SuperTest {
         _attachWethMonitor(310_000_000_000, 250); // monitor $3100 < primary $3240.57
         (,,,,,, bool primaryAboveMonitors) = nav.getPriceDivergence(address(weth));
         assertTrue(primaryAboveMonitors, "primary ($3240) is above the monitor ($3100)");
+    }
+
+    /// @dev Regression (overflow hardening): a monitor reporting an extreme price near int256.max must NOT overflow
+    ///      the worst-case bps math (uint256(d) * 10_000) and revert the NAV read — it uses Math.mulDiv now. The
+    ///      monitor is wildly out of band, so the asset flags irregular; the primary price is untouched.
+    function test_extremeMonitorPrice_noOverflowRevert() public {
+        _attachWethMonitor(uint256(type(int256).max), 250);
+        INAVCalculator.PriceFeedData memory pd = nav.getPriceData(address(weth)); // must not revert
+        assertEq(pd.monitorFeedCount, 1);
+        assertTrue(pd.irregular, "extreme monitor is out of band");
+        assertEq(pd.price, 324_057_000_000, "primary price unchanged (divergence is a signal, not a re-price)");
+        assertFalse(pd.stale);
+    }
+
+    /// @dev Regression (peg-guard overflow): an extreme primary price must NOT overflow the peg bps math and revert.
+    function test_extremePegPrice_noOverflowRevert() public {
+        vm.prank(navCalculatorManager);
+        nav.setPegTolerance(address(usdc), 100);
+        usdcAdapter.setPrice(uint256(type(int256).max)); // absurd $ far beyond the $1 peg
+        INAVCalculator.PriceFeedData memory pd = nav.getPriceData(address(usdc)); // must not revert
+        assertTrue(pd.irregular, "extreme peg deviation must flag irregular");
+    }
+
+    /// @dev A stale monitor is skipped: it neither contributes to monitorFeedCount nor to the divergence check.
+    function test_staleMonitor_excluded() public {
+        _attachWethMonitor(340_000_000_000, 250); // tolerance + 1 healthy, out-of-band monitor
+        Mock_CustomPriceFeedStaled staleMon =
+            new Mock_CustomPriceFeedStaled("stale-mon", address(weth), 999_000_000_000, 8);
+        vm.prank(navCalculatorManager);
+        nav.addMonitorFeed(address(weth), address(staleMon), IPrices.PriceType.Custom, type(uint256).max);
+
+        INAVCalculator.PriceFeedData memory pd = nav.getPriceData(address(weth));
+        assertEq(pd.monitorFeedCount, 1, "stale monitor must be excluded from the healthy count");
+        assertTrue(pd.irregular, "the healthy monitor is still out of band");
     }
 }

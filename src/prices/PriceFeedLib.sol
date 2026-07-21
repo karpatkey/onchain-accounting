@@ -4,6 +4,7 @@ pragma solidity ^0.8;
 import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import {ERC165Checker} from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {IPrices} from "./IPrices.sol";
 import {ICustomPriceFeed} from "./ICustomPriceFeed.sol";
@@ -252,21 +253,26 @@ library PriceFeedLib {
             if (!ok) continue;
             prices[n++] = mp;
         }
-        healthyMonitorCount = n;
 
         IPrices.AssetPricing storage ap = assetPricing[asset];
 
         // Inter-feed divergence (all asset types): primary vs the WORST single monitor; median + sign exposed.
+        // `healthyMonitorCount` (surfaced as `monitorFeedCount`) is set ONLY inside this guard, so it counts monitors
+        // that actually CONTRIBUTED to the divergence check — it stays 0 when the check was suppressed (stale /
+        // sequencer-down / unusable primary), rather than reporting count>0 alongside divergenceBps=0.
         if (n > 0 && !primaryStale && primaryPrice8 > 0) {
+            healthyMonitorCount = n;
             _sortInPlace(prices, n);
-            monitorMedian = (n % 2 == 1) ? prices[n / 2] : (prices[n / 2 - 1] + prices[n / 2]) / 2;
+            // Midpoint via the sorted difference (prices ascending) so the two-element sum can't overflow int256.
+            monitorMedian = (n % 2 == 1) ? prices[n / 2] : prices[n / 2 - 1] + (prices[n / 2] - prices[n / 2 - 1]) / 2;
             primaryAboveMonitors = primaryPrice8 > monitorMedian;
 
             uint256 worst;
             for (uint256 i; i < n; ++i) {
                 int256 d = primaryPrice8 - prices[i];
                 if (d < 0) d = -d;
-                uint256 bps = uint256(d) * 10_000 / uint256(primaryPrice8);
+                // mulDiv (512-bit intermediate) so an extreme monitor price can't overflow uint256 and revert the read.
+                uint256 bps = Math.mulDiv(uint256(d), 10_000, uint256(primaryPrice8));
                 if (bps > worst) worst = bps;
             }
             divergenceBps = worst;
@@ -279,7 +285,7 @@ library PriceFeedLib {
             int256 one = int256(10 ** uint256(NAV_DECIMALS));
             int256 pegDiff = primaryPrice8 - one;
             if (pegDiff < 0) pegDiff = -pegDiff;
-            uint256 pegBps = uint256(pegDiff) * 10_000 / uint256(one);
+            uint256 pegBps = Math.mulDiv(uint256(pegDiff), 10_000, uint256(one));
             if (pegBps > ap.pegToleranceBps) irregular = true;
         }
     }
@@ -358,11 +364,22 @@ library PriceFeedLib {
         return (_scaleTo8(rawPrice, cfg.decimals), true);
     }
 
-    /// @notice Scales a price from `decimals` to NAV_DECIMALS.
+    /// @notice Scales a price from `decimals` to NAV_DECIMALS. NEVER reverts: a pathological `decimals` (or a price
+    ///         so large the scale-up would overflow) yields 0 — an unusable price that downstream treats as
+    ///         no-divergence — rather than an arithmetic panic, preserving the read paths' never-revert invariant.
+    ///         (Unlike monitor feeds, primary feeds are not decimals-capped at registration, so a misconfigured
+    ///         primary could otherwise reach here with an out-of-range exponent.)
     function _scaleTo8(int256 price, uint8 decimals) private pure returns (int256) {
         if (decimals == NAV_DECIMALS) return price;
-        if (decimals > NAV_DECIMALS) return price / int256(10 ** (uint256(decimals) - NAV_DECIMALS));
-        return price * int256(10 ** (uint256(NAV_DECIMALS) - uint256(decimals)));
+        if (decimals > NAV_DECIMALS) {
+            uint256 exp = uint256(decimals) - NAV_DECIMALS;
+            // 10 ** exp overflows uint256 (exp >= 78) or the int256 cast (exp == 77) beyond this bound → unusable.
+            if (exp > MAX_DECIMAL_EXPONENT_INT256) return 0;
+            return price / int256(10 ** exp);
+        }
+        int256 factor = int256(10 ** (uint256(NAV_DECIMALS) - uint256(decimals))); // exp <= 8 → factor <= 1e8
+        if (price > type(int256).max / factor || price < type(int256).min / factor) return 0; // would overflow
+        return price * factor;
     }
 
     // -------------------------------------------------------------------------

@@ -160,7 +160,8 @@ interface IPrices {
     /// @notice Error when adding a monitor feed before the asset's divergence tolerance has been set (>0).
     error DivergenceToleranceRequired(address asset);
 
-    /// @notice Error when a tolerance value is out of range (basis points must be in (0, 10000]).
+    /// @notice Error when a tolerance value is out of range. Divergence tolerance must be in (0, 10000];
+    ///         peg tolerance must be in [0, 10000] (0 is allowed and disables the peg guard).
     error InvalidTolerance(uint32 toleranceBps);
 
     /// @notice Returns the latest price for a given token while checking if the price is stale.

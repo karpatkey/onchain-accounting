@@ -30,6 +30,13 @@ interface IGnosisBridgeAdapter is IBridgeAdapter {
     /// @param transactionHash The AMB transaction hash - indexed
     event GnosisBridgeCompleted(bytes32 indexed invoiceId, uint64 sourceChainId, bytes32 indexed transactionHash);
 
+    /// @notice Emitted when the trusted source Omnibridge mediator for a source chain is set.
+    event TrustedMediatorSet(uint64 indexed srcChainId, address mediator);
+
+    /// @notice Emitted when an inbound transfer was authenticated but its release did not complete in the
+    ///         same callback; a MANAGER completeBridge can finish it against the recorded provenance.
+    event GnosisBridgeAuthenticatedPendingRelease(bytes32 indexed invoiceId, uint64 sourceChainId);
+
     //
     // Errors
     //
@@ -116,6 +123,11 @@ interface IGnosisBridgeAdapter is IBridgeAdapter {
     /// @param amb_ The AMB contract address
     /// @dev Only callable by admin role
     function setAmb(address amb_) external;
+
+    /// @notice Sets the trusted source Omnibridge mediator for a source chain id (admin only).
+    /// @dev This is the address `amb.messageSender()` reports for inbound transfers from `srcChainId` — the
+    ///      source Omnibridge mediator, not the sibling adapter.
+    function setTrustedMediator(uint64 srcChainId, address mediator) external;
 
     //
     // View Functions

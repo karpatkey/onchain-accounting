@@ -212,6 +212,12 @@ contract Configure is BaseDeployScript {
             }
 
             _wireTrustedRemoteAdapters(adapterNames[i], deployed);
+
+            // Gnosis authenticates inbound transfers against the SOURCE Omnibridge mediator (what
+            // amb.messageSender() reports), not the sibling adapter — wire it separately.
+            if (keccak256(bytes(adapterNames[i])) == keccak256(bytes("Gnosis"))) {
+                _wireGnosisTrustedMediators(deployed);
+            }
         }
         console2.log("--- Bridge adapters authorized:", authorized);
     }
@@ -334,6 +340,41 @@ contract Configure is BaseDeployScript {
                 );
             }
             console2.log("[OK] trustedRemoteAdapter set:", adapterName, remoteChainId);
+        }
+    }
+
+    /// @notice Wires the Gnosis adapter's `trustedMediator[srcChainId]` to each source chain's Omnibridge
+    ///         mediator (the remote chain's Gnosis `omnibridge` config value), which is the address
+    ///         `amb.messageSender()` reports for inbound transfers from that chain.
+    function _wireGnosisTrustedMediators(address adapter) internal {
+        uint256[] memory remoteChains =
+            ConfigReader.readAdapterUintArray(vm, currentChainId, "bridgeAdapters", "Gnosis", "remoteChains");
+        for (uint256 i = 0; i < remoteChains.length; i++) {
+            uint256 remoteChainId = remoteChains[i];
+            if (remoteChainId == 0 || remoteChainId == currentChainId) continue;
+            string memory mediatorStr =
+                ConfigReader.readAdapterParam(vm, remoteChainId, "bridgeAdapters", "Gnosis", "omnibridge");
+            if (bytes(mediatorStr).length == 0) {
+                console2.log("[WARN] No source Omnibridge mediator configured for Gnosis remote chain:", remoteChainId);
+                continue;
+            }
+            address mediator = vm.parseAddress(mediatorStr);
+            (bool ok, bytes memory data) = adapter.call(
+                abi.encodeWithSignature("setTrustedMediator(uint64,address)", uint64(remoteChainId), mediator)
+            );
+            if (!ok) {
+                revert(
+                    string(
+                        abi.encodePacked(
+                            "setTrustedMediator failed for Gnosis sourceKey ",
+                            vm.toString(remoteChainId),
+                            ": ",
+                            _decodeRevert(data)
+                        )
+                    )
+                );
+            }
+            console2.log("[OK] trustedMediator set (Gnosis) mediator:", mediator);
         }
     }
 

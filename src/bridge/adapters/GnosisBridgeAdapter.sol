@@ -45,6 +45,17 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
     /// @dev Used to track which transaction hash was used for each invoice
     mapping(bytes32 => bytes32) public invoiceToTransactionHash;
 
+    /// @notice Trusted source Omnibridge mediator per source chain id.
+    /// @dev The value `amb.messageSender()` reports for an inbound Omnibridge transfer is the SOURCE
+    ///      Omnibridge mediator (the contract that called `amb.requireToPassMessage` on the source), NOT the
+    ///      sibling adapter. So source authentication compares against this mediator, not `trustedRemoteAdapter`.
+    mapping(uint64 => address) public trustedMediator;
+
+    /// @notice Invoices whose inbound Omnibridge transfer was authenticated at delivery (in `onTokenTransfer`).
+    /// @dev The MANAGER fallback (`_completeBridge`) cannot re-read `amb.messageSender()` (it is only set while
+    ///      the AMB is executing a message), so it completes only invoices recorded here at genuine delivery.
+    mapping(bytes32 => bool) public authenticatedInvoice;
+
     //
     // Initialization
     //
@@ -84,6 +95,13 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
     function setAmb(address amb_) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (amb_ == address(0)) revert InvalidAMB();
         amb = IAMB(amb_);
+    }
+
+    /// @inheritdoc IGnosisBridgeAdapter
+    function setTrustedMediator(uint64 srcChainId, address mediator) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (mediator == address(0)) revert InvalidBridgeData();
+        trustedMediator[srcChainId] = mediator;
+        emit TrustedMediatorSet(srcChainId, mediator);
     }
 
     //
@@ -152,8 +170,9 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
         if (messagePayload.length == 0) revert InvalidCompletionData();
         InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
 
-        // Authenticate the AMB-reported source (trusted remote adapter + source chain).
-        _authenticateSource(uint64(data.sourceChainId));
+        // The AMB cannot be re-read out of message context, so authenticate against provenance recorded at
+        // genuine delivery in onTokenTransfer. Only an invoice that was authenticated there can be completed.
+        if (!authenticatedInvoice[data.invoiceId]) revert InvalidBridgeData();
 
         // Verify the adapter actually holds the invoiced tokens (delivered by Omnibridge).
         address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(InvoiceDataLib.bytes6ToStr(data.assetSymbol));
@@ -198,22 +217,41 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
         _recordTransactionHash(invoiceData.invoiceId);
         messagePayloads[invoiceData.invoiceId] = data;
 
-        _fundAndRelease(data, asset, invoiceData.amount);
-
-        emit GnosisBridgeCompleted(
-            invoiceData.invoiceId, uint64(invoiceData.sourceChainId), invoiceToTransactionHash[invoiceData.invoiceId]
-        );
+        // Record provenance BEFORE attempting the release, and attempt it WITHOUT reverting the inbound
+        // callback. The Omnibridge mediator swallows a receiver revert, so reverting here would silently
+        // strand the delivered tokens with no record. On failure the tokens + this record persist so the
+        // MANAGER fallback (completeBridge) can finish the release later.
+        authenticatedInvoice[invoiceData.invoiceId] = true;
+        try this.releaseAuthenticated(data, asset, invoiceData.amount) {
+            emit GnosisBridgeCompleted(
+                invoiceData.invoiceId,
+                uint64(invoiceData.sourceChainId),
+                invoiceToTransactionHash[invoiceData.invoiceId]
+            );
+        } catch {
+            emit GnosisBridgeAuthenticatedPendingRelease(invoiceData.invoiceId, uint64(invoiceData.sourceChainId));
+        }
         return true;
     }
 
-    /// @dev Authenticates that the inbound AMB message originated from the trusted sibling adapter on the
-    ///      expected source chain. Reverts unless a trusted remote adapter is configured for `srcChainId`,
-    ///      `amb.messageSender()` equals that remote adapter, and `amb.messageSourceChainId()` equals `srcChainId`.
+    /// @dev Authenticates that the inbound AMB message originated from the trusted source Omnibridge mediator on
+    ///      the expected source chain. Reverts unless a trusted mediator is configured for `srcChainId`,
+    ///      `amb.messageSender()` equals that mediator, and `amb.messageSourceChainId()` equals `srcChainId`.
+    ///      Only valid while the AMB is executing the inbound message (i.e. inside `onTokenTransfer`), since
+    ///      `amb.messageSender()` is unset otherwise — the MANAGER fallback uses `authenticatedInvoice` instead.
     function _authenticateSource(uint64 srcChainId) internal view {
-        bytes32 expectedRemote = trustedRemoteAdapter[srcChainId];
-        if (expectedRemote == bytes32(0)) revert InvalidBridgeData();
-        if (_toBytes32(amb.messageSender()) != expectedRemote) revert InvalidBridgeData();
+        address expectedMediator = trustedMediator[srcChainId];
+        if (expectedMediator == address(0)) revert InvalidBridgeData();
+        if (amb.messageSender() != expectedMediator) revert InvalidBridgeData();
         if (amb.messageSourceChainId() != bytes32(uint256(srcChainId))) revert InvalidBridgeData();
+    }
+
+    /// @notice Self-only external wrapper so `onTokenTransfer` can attempt the release in a try/catch without
+    ///         reverting the whole inbound callback (which would discard the recorded provenance and strand the
+    ///         tokens with no path to complete). Reverts unless called by this contract.
+    function releaseAuthenticated(bytes calldata messagePayload, address asset, uint256 amount) external {
+        if (msg.sender != address(this)) revert NotAuthorized();
+        _fundAndRelease(messagePayload, asset, amount);
     }
 
     /// @dev Records the AMB transaction hash for an invoice (best-effort; tolerates AMB getter reverts).

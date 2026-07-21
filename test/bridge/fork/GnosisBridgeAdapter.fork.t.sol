@@ -36,6 +36,10 @@ contract GnosisBridgeAdapterForkTest is BridgeTestBase {
 
     // Ethereum mainnet (foreign) Omnibridge mediator + AMB. Source: docs.gnosischain.com (Omnibridge key contracts).
     address public constant OMNIBRIDGE_MAINNET = 0x88ad09518695c6c3712AC10a214bE5109a655671;
+
+    /// @notice Gnosis Chain (home) Omnibridge mediator — the source mediator the AMB reports as
+    ///         messageSender() for a Gnosis(100) -> Ethereum inbound transfer.
+    address public constant GNOSIS_HOME_MEDIATOR = 0xf6A78083ca3e2a662D6dd1703c939c8aCE2e268d;
     address public constant AMB_MAINNET = 0x4C36d2919e407f0Cc2Ee3c993ccF8ac26d9CE64e;
 
     function setUp() public override {
@@ -127,7 +131,10 @@ contract GnosisBridgeAdapterForkTest is BridgeTestBase {
 
         vm.startPrank(admin);
         destAdapter.grantRole(MANAGER, manager);
-        destAdapter.setTrustedRemoteAdapter(srcChainId, _siblingIdentity(remoteSibling));
+        // Gnosis authenticates against the SOURCE Omnibridge mediator (what amb.messageSender() reports),
+        // not the sibling adapter. remoteSibling is unused (retained for signature compatibility).
+        remoteSibling;
+        destAdapter.setTrustedMediator(srcChainId, GNOSIS_HOME_MEDIATOR);
         destEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
     }
@@ -150,9 +157,6 @@ contract GnosisBridgeAdapterForkTest is BridgeTestBase {
 
         // The trusted source sibling is the CREATE2 same-address adapter.
         (BridgeEscrow destEscrow, GnosisBridgeAdapter destAdapter) = _deployDestination(srcChainId, address(0));
-        // Re-point the trusted remote to the dest adapter's own identity (CREATE2 sibling).
-        vm.prank(admin);
-        destAdapter.setTrustedRemoteAdapter(srcChainId, _siblingIdentity(address(destAdapter)));
 
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(srcChainId, MAINNET_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
@@ -161,8 +165,8 @@ contract GnosisBridgeAdapterForkTest is BridgeTestBase {
         // Omnibridge delivers the tokens to the adapter (the recipient) before the callback.
         _fundAccountWithToken(MAINNET_USDC, address(destAdapter), amount);
 
-        // AMB reports the relay as coming from the trusted sibling on the source chain.
-        _mockAmbProvenance(address(destAdapter), srcChainId);
+        // AMB reports the relay as coming from the trusted SOURCE Omnibridge mediator.
+        _mockAmbProvenance(GNOSIS_HOME_MEDIATOR, srcChainId);
 
         bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
         uint256 portfolioBefore = usdc.balanceOf(account);

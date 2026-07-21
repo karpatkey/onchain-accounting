@@ -20,6 +20,8 @@ contract MockSpokePoolV3 {
         uint256 inputAmount;
         uint256 outputAmount;
         uint256 destinationChainId;
+        address exclusiveRelayer;
+        uint32 exclusivityDeadline;
         bytes message;
     }
 
@@ -50,10 +52,10 @@ contract MockSpokePoolV3 {
         uint256 inputAmount,
         uint256 outputAmount,
         uint256 destinationChainId,
-        address, /* exclusiveRelayer */
+        address exclusiveRelayer,
         uint32, /* quoteTimestamp */
         uint32, /* fillDeadline */
-        uint32, /* exclusivityDeadline */
+        uint32 exclusivityDeadline,
         bytes calldata message
     ) external payable {
         depositId++;
@@ -73,6 +75,8 @@ contract MockSpokePoolV3 {
             inputAmount: inputAmount,
             outputAmount: outputAmount,
             destinationChainId: destinationChainId,
+            exclusiveRelayer: exclusiveRelayer,
+            exclusivityDeadline: exclusivityDeadline,
             message: message
         });
 
@@ -99,6 +103,8 @@ contract MockSpokePoolV3 {
             inputAmount: 0,
             outputAmount: 0,
             destinationChainId: 0,
+            exclusiveRelayer: address(0),
+            exclusivityDeadline: 0,
             message: message
         });
         return depositId;

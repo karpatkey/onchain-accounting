@@ -118,8 +118,34 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
 
         // Verify a V3 deposit was created with this adapter as the destination recipient
         assertEq(spokePool.depositId(), 1, "one V3 deposit created");
-        (, address recipient,,,,,,) = spokePool.deposits(1);
+        (, address recipient,,,,,,,,) = spokePool.deposits(1);
         assertEq(recipient, address(adapter), "recipient must be the sibling adapter, not the escrow");
+    }
+
+    function test_bridge_forwardsExclusiveRelayerWhenSet() public {
+        address relayer = makeAddr("kpkRelayer");
+        uint32 period = 1800;
+        vm.prank(admin);
+        adapter.setExclusiveRelayer(relayer, period);
+
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        _approveToken(address(usdc), address(bridgeEscrow), amount);
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
+        vm.prank(account);
+        require(usdc.transfer(address(bridgeEscrow), amount), "transfer failed");
+        vm.prank(address(bridgeEscrow));
+        usdc.approve(address(adapter), amount);
+        vm.prank(address(bridgeEscrow));
+        adapter.bridge(InvoiceDataLib.encode(invoiceData));
+
+        // The configured exclusive relayer + a non-zero exclusivity deadline are forwarded to depositV3;
+        // outputAmount stays == inputAmount so the funded pass-through still receives the full amount.
+        (,,,, uint256 inputAmount, uint256 outputAmount,, address exclRelayer, uint32 exclDeadline,) =
+            spokePool.deposits(1);
+        assertEq(exclRelayer, relayer, "exclusive relayer must be forwarded");
+        assertGt(exclDeadline, 0, "exclusivity deadline must be set when a relayer is configured");
+        assertEq(outputAmount, inputAmount, "outputAmount must equal inputAmount (funded pass-through)");
     }
 
     function test_bridge_initiatesNativeTokenDeposit() public {

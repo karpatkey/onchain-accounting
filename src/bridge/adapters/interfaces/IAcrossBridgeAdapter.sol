@@ -28,6 +28,9 @@ interface IAcrossBridgeAdapter is IBridgeAdapter, IAcrossV3Receiver {
     /// @param depositId The Across deposit ID - indexed
     event AcrossBridgeCompleted(bytes32 indexed invoiceId, uint256 sourceChainId, uint32 indexed depositId);
 
+    /// @notice Emitted when the exclusive relayer / exclusivity window is set.
+    event ExclusiveRelayerSet(address indexed exclusiveRelayer, uint32 exclusivityPeriod);
+
     //
     // Errors
     //
@@ -105,6 +108,9 @@ interface IAcrossBridgeAdapter is IBridgeAdapter, IAcrossV3Receiver {
     /// @param relayerFeePct_ The relayer fee percentage (in 1e18, e.g., 0.01e18 = 1%)
     /// @dev Only callable by admin role
     function setDefaultRelayerFeePct(int64 relayerFeePct_) external;
+
+    /// @notice Sets the exclusive relayer and exclusivity window (seconds) for deposits (admin only).
+    function setExclusiveRelayer(address exclusiveRelayer_, uint32 exclusivityPeriod_) external;
 
     //
     // View Functions

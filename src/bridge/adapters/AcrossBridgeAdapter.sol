@@ -31,11 +31,22 @@ contract AcrossBridgeAdapter is BridgeAdapter, IAcrossBridgeAdapter {
     ISpokePool public spokePool;
 
     /// @notice Default relayer/LP fee percentage (in 1e18, e.g., 0.01e18 = 1%)
-    /// @dev Retained as config metadata. The invoice tracks the exact bridged amount end to end, so the V3
-    ///      outputAmount is set equal to the inputAmount (the bridged amount must arrive intact for the funded
-    ///      pass-through release). Relayer compensation is handled by the SpokePool fee model, not by shaving
-    ///      the invoice amount.
+    /// @dev Retained as config metadata only. The invoice tracks the exact bridged amount end to end and the
+    ///      escrow's funded pass-through pulls exactly that amount on the destination, so the V3 outputAmount
+    ///      MUST equal the inputAmount — we cannot shave a relayer margin out of it. A zero-margin deposit is
+    ///      not filled by the open relayer network; the fill is instead guaranteed by a designated
+    ///      `exclusiveRelayer` (see below). This field does NOT shape outputAmount.
     int64 public defaultRelayerFeePct;
+
+    /// @notice Optional relayer with exclusive rights to fill this adapter's deposits (0 = open to all).
+    /// @dev Because outputAmount == inputAmount (zero open-market margin), no rational open-market relayer
+    ///      fills these deposits. Designating an exclusive relayer (operated/arranged by the fund) that fills
+    ///      at zero margin makes the lane work. When unset, deposits are open but may never be filled — they
+    ///      then expire at fillDeadline and Across refunds inputAmount to this adapter (recoverable by MANAGER).
+    address public exclusiveRelayer;
+
+    /// @notice Seconds after deposit during which `exclusiveRelayer` has exclusive fill rights (0 = none).
+    uint32 public exclusivityPeriod;
 
     /// @notice Mapping from deposit ID to invoice ID
     /// @dev Used to correlate Across deposits with invoice IDs
@@ -89,6 +100,18 @@ contract AcrossBridgeAdapter is BridgeAdapter, IAcrossBridgeAdapter {
         defaultRelayerFeePct = relayerFeePct_;
     }
 
+    /// @notice Sets the exclusive relayer and its exclusivity window for deposits (admin only).
+    /// @param exclusiveRelayer_ The relayer with exclusive fill rights (address(0) = open to all relayers).
+    /// @param exclusivityPeriod_ Seconds after deposit during which only `exclusiveRelayer_` may fill.
+    function setExclusiveRelayer(address exclusiveRelayer_, uint32 exclusivityPeriod_)
+        external
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        exclusiveRelayer = exclusiveRelayer_;
+        exclusivityPeriod = exclusivityPeriod_;
+        emit ExclusiveRelayerSet(exclusiveRelayer_, exclusivityPeriod_);
+    }
+
     //
     // BridgeAdapter Implementation
     //
@@ -131,6 +154,10 @@ contract AcrossBridgeAdapter is BridgeAdapter, IAcrossBridgeAdapter {
         address inputToken = isNative ? address(0) : asset;
         uint32 nowTs = uint32(block.timestamp);
 
+        // Optional exclusive relayer: with outputAmount == inputAmount there is no open-market margin, so a
+        // designated relayer is how the deposit gets filled. When unset, deposit is open (and may expire).
+        uint32 exclusivityDeadline = exclusiveRelayer == address(0) ? 0 : nowTs + exclusivityPeriod;
+
         spokePool.depositV3{value: isNative ? inputAmount : 0}(
             address(this), // depositor
             recipient, // recipient (sibling adapter on destination)
@@ -139,10 +166,10 @@ contract AcrossBridgeAdapter is BridgeAdapter, IAcrossBridgeAdapter {
             inputAmount, // inputAmount
             outputAmount, // outputAmount (== inputAmount; amount tracked intact)
             uint256(data.destinationChainId), // destinationChainId
-            address(0), // exclusiveRelayer (none)
+            exclusiveRelayer, // exclusiveRelayer (address(0) = open to all)
             nowTs, // quoteTimestamp
             nowTs + spokePool.fillDeadlineBuffer(), // fillDeadline: max the SpokePool accepts (reverts beyond it)
-            0, // exclusivityDeadline (none)
+            exclusivityDeadline, // exclusivityDeadline (0 = no exclusivity)
             messagePayload // message (carries the invoice payload)
         );
 

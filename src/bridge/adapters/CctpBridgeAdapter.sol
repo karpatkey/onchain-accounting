@@ -270,7 +270,8 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
             sourceDomain := shr(224, mload(add(base, 4)))
             // nonce: bytes 12-44 (bytes32, Circle-assigned)
             nonce := mload(add(base, 12))
-            // header recipient: bytes 76-108 (bytes32) — the transmitter-level mint recipient
+            // header recipient: bytes 76-108 (bytes32) — the destination TokenMessenger (the on-chain
+            // handler MessageTransmitter dispatches to), NOT the mint recipient
             headerRecipient := mload(add(base, 76))
             // body burnToken: bytes 152-184 (bytes32, left-padded address)
             bodyBurnTokenWord := mload(add(base, 152))

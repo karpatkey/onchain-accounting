@@ -11,11 +11,6 @@
     ],
     "monitorFeeds": [
       {
-        "type": "API3",
-        "address": "0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473",
-        "heartbeat": 86400
-      },
-      {
         "type": "Redstone",
         "address": "0x197225B3B017eb9b72Ac356D6B3c267d0c04c57c",
         "heartbeat": 86400
@@ -33,11 +28,6 @@
       }
     ],
     "monitorFeeds": [
-      {
-        "type": "API3",
-        "address": "0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473",
-        "heartbeat": 86400
-      },
       {
         "type": "Redstone",
         "address": "0x197225B3B017eb9b72Ac356D6B3c267d0c04c57c",
@@ -66,30 +56,54 @@
   },
   "weETH": {
     "address": "0x35751007a407ca6FEFfE80b3cB397736D2cf4dbe",
+    "divergenceToleranceBps": 250,
     "priceFeeds": [
       {
         "type": "Custom",
         "feed": "weETH_L2",
         "heartbeat": 86400
       }
+    ],
+    "monitorFeeds": [
+      {
+        "type": "Custom",
+        "feed": "weETHCrossRate",
+        "heartbeat": 86400
+      }
     ]
   },
   "ezETH": {
     "address": "0x2416092f143378750bb29b79eD961ab195CcEea5",
+    "divergenceToleranceBps": 250,
     "priceFeeds": [
       {
         "type": "Custom",
         "feed": "ezETH_L2",
         "heartbeat": 86400
       }
+    ],
+    "monitorFeeds": [
+      {
+        "type": "Custom",
+        "feed": "ezETHCrossRate",
+        "heartbeat": 86400
+      }
     ]
   },
   "rsETH": {
     "address": "0x4186BFC76E2E237523CBC30FD220FE055156b41F",
+    "divergenceToleranceBps": 250,
     "priceFeeds": [
       {
         "type": "Custom",
         "feed": "rsETH_L2",
+        "heartbeat": 86400
+      }
+    ],
+    "monitorFeeds": [
+      {
+        "type": "Custom",
+        "feed": "rsETHCrossRate",
         "heartbeat": 86400
       }
     ]
@@ -112,11 +126,6 @@
     ],
     "monitorFeeds": [
       {
-        "type": "API3",
-        "address": "0xD3C586Eec1C6C3eC41D276a23944dea080eDCf7f",
-        "heartbeat": 86400
-      },
-      {
         "type": "Redstone",
         "address": "0x4BAD96DD1C7D541270a0C92e1D4e5f12EEEA7a57",
         "heartbeat": 86400
@@ -135,11 +144,6 @@
       }
     ],
     "monitorFeeds": [
-      {
-        "type": "API3",
-        "address": "0x4eadC6ee74b7Ceb09A4ad90a33eA2915fbefcf76",
-        "heartbeat": 86400
-      },
       {
         "type": "Redstone",
         "address": "0x3fd49f2146FE0e10c4AE7E3fE04b3d5126385Ac4",
@@ -170,19 +174,11 @@
   },
   "COMP": {
     "address": "0x354A6dA3fcde098F8389cad84b0182725c6C91dE",
-    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0xe7C53FFd03Eb6ceF7d208bC4C13446c76d1E5884",
         "heartbeat": 3600
-      }
-    ],
-    "monitorFeeds": [
-      {
-        "type": "API3",
-        "address": "0xeBD595af56BeC336aA0F5233E82965c692B9599d",
-        "heartbeat": 86400
       }
     ]
   }

@@ -1,54 +1,30 @@
 {
   "POL": {
     "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
-    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0xAB594600376Ec9fD91F8e885dADF0CE036862dE0",
-        "heartbeat": 86400
-      }
-    ],
-    "monitorFeeds": [
-      {
-        "type": "API3",
-        "address": "0x58C78C5EBE21E80FdCA9F44f469Ba83Ca69a9F30",
         "heartbeat": 86400
       }
     ]
   },
   "WPOL": {
     "address": "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
-    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0xAB594600376Ec9fD91F8e885dADF0CE036862dE0",
         "heartbeat": 86400
       }
-    ],
-    "monitorFeeds": [
-      {
-        "type": "API3",
-        "address": "0x58C78C5EBE21E80FdCA9F44f469Ba83Ca69a9F30",
-        "heartbeat": 86400
-      }
     ]
   },
   "WETH": {
     "address": "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619",
-    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0xF9680D99D6C9589e2a93a78A04A279e509205945",
-        "heartbeat": 86400
-      }
-    ],
-    "monitorFeeds": [
-      {
-        "type": "API3",
-        "address": "0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473",
         "heartbeat": 86400
       }
     ]
@@ -56,18 +32,10 @@
   "USDC": {
     "address": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
     "pegToleranceBps": 100,
-    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0xfE4A8cc5b5B2366C1B58Bea3858e81843581b2F7",
-        "heartbeat": 86400
-      }
-    ],
-    "monitorFeeds": [
-      {
-        "type": "API3",
-        "address": "0xD3C586Eec1C6C3eC41D276a23944dea080eDCf7f",
         "heartbeat": 86400
       }
     ]

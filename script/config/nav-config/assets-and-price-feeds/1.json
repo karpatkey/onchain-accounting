@@ -11,11 +11,6 @@
     ],
     "monitorFeeds": [
       {
-        "type": "API3",
-        "address": "0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473",
-        "heartbeat": 86400
-      },
-      {
         "type": "Redstone",
         "address": "0x67F6838e58859d612E4ddF04dA396d6DABB66Dc4",
         "heartbeat": 86400
@@ -33,11 +28,6 @@
       }
     ],
     "monitorFeeds": [
-      {
-        "type": "API3",
-        "address": "0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473",
-        "heartbeat": 86400
-      },
       {
         "type": "Redstone",
         "address": "0x67F6838e58859d612E4ddF04dA396d6DABB66Dc4",
@@ -98,11 +88,19 @@
   },
   "rETH": {
     "address": "0xae78736Cd615f374D3085123A210448E74Fc6393",
+    "divergenceToleranceBps": 250,
     "priceFeeds": [
       {
         "type": "Custom",
         "feed": "rETH",
         "heartbeat": 3600
+      }
+    ],
+    "monitorFeeds": [
+      {
+        "type": "Custom",
+        "feed": "rETHCrossRate",
+        "heartbeat": 86400
       }
     ]
   },
@@ -189,13 +187,8 @@
   },
   "MORPHO": {
     "address": "0x58D97B57BB95320F9a05dC918Aef65434969c2B2",
-    "priceFeeds": [
-      {
-        "type": "API3",
-        "address": "0x79F8622D4E4773Fab6f5d4C98779D97baA1e906e",
-        "heartbeat": 86400
-      }
-    ]
+    "$comment": "UNPRICED: mainnet MORPHO's only feed was API3, which is no longer used in config (contracts still support API3). No Chainlink/RedStone MORPHO/USD exists on mainnet. Empty priceFeeds => not registered/priced; a MORPHO leg drops from NAV until a non-API3 feed is available. Live removal of the on-chain API3 primary requires a manual removePriceFeed.",
+    "priceFeeds": []
   },
   "USDC": {
     "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
@@ -209,11 +202,6 @@
       }
     ],
     "monitorFeeds": [
-      {
-        "type": "API3",
-        "address": "0xD3C586Eec1C6C3eC41D276a23944dea080eDCf7f",
-        "heartbeat": 86400
-      },
       {
         "type": "Redstone",
         "address": "0xeeF31c7d9F2E82e8A497b140cc60cc082Be4b94e",
@@ -233,18 +221,10 @@
   },
   "BAL": {
     "address": "0xba100000625a3754423978a60c9317c58a424e3D",
-    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0xdF2917806E30300537aEB49A7663062F4d1F2b5F",
-        "heartbeat": 86400
-      }
-    ],
-    "monitorFeeds": [
-      {
-        "type": "API3",
-        "address": "0x778673296f409853De85917009046529b3Eef0a7",
         "heartbeat": 86400
       }
     ]
@@ -315,18 +295,10 @@
   "USDS": {
     "address": "0xdC035D45d973E3EC169d2276DDab16f1e407384F",
     "pegToleranceBps": 100,
-    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0xfF30586cD0F29eD462364C7e81375FC0C71219b1",
-        "heartbeat": 86400
-      }
-    ],
-    "monitorFeeds": [
-      {
-        "type": "API3",
-        "address": "0x6C3C2A615Ea3c592487b3e06ecAF01D9a3181f47",
         "heartbeat": 86400
       }
     ]
@@ -521,29 +493,16 @@
         "type": "Redstone",
         "address": "0x2ee5Ce6556599E16c226579BA14F94926d8Cb86d",
         "heartbeat": 86400
-      },
-      {
-        "type": "API3",
-        "address": "0xAe017164B7dBC3C5A1DCcAdC43B82d308251521c",
-        "heartbeat": 86400
       }
     ]
   },
   "COMP": {
     "address": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
-    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0xdbd020CAeF83eFd542f4De03e3cF0C28A4428bd5",
         "heartbeat": 3600
-      }
-    ],
-    "monitorFeeds": [
-      {
-        "type": "API3",
-        "address": "0xeBD595af56BeC336aA0F5233E82965c692B9599d",
-        "heartbeat": 86400
       }
     ]
   },
@@ -561,11 +520,6 @@
       {
         "type": "Redstone",
         "address": "0xAB7f623fb2F6fea6601D4350FA0E2290663C28Fc",
-        "heartbeat": 86400
-      },
-      {
-        "type": "API3",
-        "address": "0xCAc4d304032a46C8D0947396B7cBb07986826A36",
         "heartbeat": 86400
       }
     ]
@@ -636,11 +590,6 @@
         "$comment": "Independent 2nd feed (ADR 0009 redundancy): RedStone Classic Push cbBTC/USD, 8 decimals.",
         "type": "Redstone",
         "address": "0xE13e2BBaB029BFb324f49048CED0E95Ea30AE049",
-        "heartbeat": 86400
-      },
-      {
-        "type": "API3",
-        "address": "0xCAc4d304032a46C8D0947396B7cBb07986826A36",
         "heartbeat": 86400
       }
     ],

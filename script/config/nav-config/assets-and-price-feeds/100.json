@@ -1,18 +1,10 @@
 {
   "xDAI": {
     "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
-    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0x678df3415fc31947dA4324eC63212874be5a82f8",
-        "heartbeat": 86400
-      }
-    ],
-    "monitorFeeds": [
-      {
-        "type": "API3",
-        "address": "0x85b6dD270538325A9E0140bd6052Da4ecc18A85c",
         "heartbeat": 86400
       }
     ]
@@ -30,36 +22,20 @@
   },
   "WXDAI": {
     "address": "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d",
-    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0x678df3415fc31947dA4324eC63212874be5a82f8",
         "heartbeat": 86400
       }
-    ],
-    "monitorFeeds": [
-      {
-        "type": "API3",
-        "address": "0x85b6dD270538325A9E0140bd6052Da4ecc18A85c",
-        "heartbeat": 86400
-      }
     ]
   },
   "WETH": {
     "address": "0x6A023CCd1ff6F2045C3309768eAd9E68F978f6e1",
-    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0xa767f745331D267c7751297D982b050c93985627",
-        "heartbeat": 86400
-      }
-    ],
-    "monitorFeeds": [
-      {
-        "type": "API3",
-        "address": "0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473",
         "heartbeat": 86400
       }
     ]
@@ -77,18 +53,10 @@
   "USDCe": {
     "address": "0x2a22f9c3b484c3629090FeED35F17Ff8F88f76F0",
     "pegToleranceBps": 100,
-    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0x26C31ac71010aF62E6B486D1132E266D6298857D",
-        "heartbeat": 86400
-      }
-    ],
-    "monitorFeeds": [
-      {
-        "type": "API3",
-        "address": "0xD3C586Eec1C6C3eC41D276a23944dea080eDCf7f",
         "heartbeat": 86400
       }
     ],
@@ -117,19 +85,10 @@
   },
   "GNO": {
     "address": "0x9C58BAcC331c9aa871AFD802DB6379a98e80CEdb",
-    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0x22441d81416430A54336aB28765abd31a792Ad37",
-        "heartbeat": 86400
-      }
-    ],
-    "monitorFeeds": [
-      {
-        "$comment": "Independent 2nd feed (ADR 0009 redundancy): API3 GNO/USD dAPI via Api3ReaderProxyV1 (18-dec proxy, scaled to 8-dec at read; PriceFeedLib validates sourceDec==18).",
-        "type": "API3",
-        "address": "0x1D296b93a9679AEE6e6C307AAC537cCf0b2cC77c",
         "heartbeat": 86400
       }
     ]

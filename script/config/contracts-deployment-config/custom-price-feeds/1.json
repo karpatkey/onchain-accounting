@@ -198,5 +198,15 @@
       "yToXHeartbeat": "86400",
       "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }
+  },
+  "rETHCrossRate": {
+    "$comment": "rETH redundancy monitor (CrossRate): rETH/USD = ETH/USD x rETH/ETH. yToXFeed is the Chainlink rETH/ETH MARKET feed (dex_state_price), independent of the primary rETH_CustomPriceFeed (Rocket Pool getExchangeRate). Divergence-only monitor.",
+    "enabled": true,
+    "constructor": {
+      "underlyingAsset": "0xae78736Cd615f374D3085123A210448E74Fc6393",
+      "yToXFeed": "0x536218f9E9Eb48863970252233c8F271f554C2d0",
+      "yToXHeartbeat": "86400",
+      "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+    }
   }
 }

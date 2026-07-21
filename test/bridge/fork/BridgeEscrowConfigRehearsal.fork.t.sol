@@ -126,7 +126,7 @@ contract BridgeEscrowConfigRehearsalForkTest is BridgeTestBase {
 
         // A no-op adapter is enough to prove the escrow-side deposit preconditions pass (real transport is covered by
         // the per-protocol fork tests). Deploy + authorize it, then bridge.
-        address mockImpl = address(new MockBridgeAdapter());
+        address mockImpl = address(new MockBridgeAdapter(address(0)));
         address mockAdapter = UnsafeUpgrades.deployUUPSProxy(
             mockImpl, abi.encodeCall(MockBridgeAdapter.initialize, (admin, address(escrow), "Mock", "1.0.0"))
         );

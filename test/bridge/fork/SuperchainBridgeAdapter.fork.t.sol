@@ -66,7 +66,7 @@ contract SuperchainBridgeAdapterForkTest is BridgeTestBase {
         vm.stopPrank();
 
         // Deploy L1 adapter
-        address l1AdapterImpl = address(new SuperchainBridgeAdapter());
+        address l1AdapterImpl = address(new SuperchainBridgeAdapter(address(0)));
         address payable l1AdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
                 l1AdapterImpl,
                 abi.encodeCall(
@@ -123,7 +123,7 @@ contract SuperchainBridgeAdapterForkTest is BridgeTestBase {
         vm.stopPrank();
 
         // Deploy L2 adapter
-        address l2AdapterImpl = address(new SuperchainBridgeAdapter());
+        address l2AdapterImpl = address(new SuperchainBridgeAdapter(address(0)));
         address payable l2AdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
                 l2AdapterImpl,
                 abi.encodeCall(

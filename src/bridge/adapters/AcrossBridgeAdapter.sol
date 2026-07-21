@@ -49,6 +49,9 @@ contract AcrossBridgeAdapter is BridgeAdapter, IAcrossBridgeAdapter {
     /// @dev Used to retrieve payloads on destination chain
     mapping(bytes32 => bytes) public messagePayloads;
 
+    /// @param expectedInitializer_ Address permitted to call initialize (address(0) allows anyone).
+    constructor(address expectedInitializer_) BridgeAdapter(expectedInitializer_) {}
+
     /// @inheritdoc IAcrossBridgeAdapter
     function initialize(
         address admin_,

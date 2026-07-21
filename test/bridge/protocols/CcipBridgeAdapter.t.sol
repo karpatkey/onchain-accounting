@@ -38,7 +38,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
         link.mint(address(this), 1000 ether);
 
         // Deploy CCIP adapter
-        address adapterImpl = address(new CcipBridgeAdapter());
+        address adapterImpl = address(new CcipBridgeAdapter(address(0)));
         address adapterProxy = UnsafeUpgrades.deployUUPSProxy(
             adapterImpl,
             abi.encodeCall(
@@ -208,7 +208,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
             _setupDestinationChainForCompletion(invoiceData, address(usdc));
 
         // Set up adapter on destination chain
-        address destAdapterImpl = address(new CcipBridgeAdapter());
+        address destAdapterImpl = address(new CcipBridgeAdapter(address(0)));
         address destAdapterProxy = UnsafeUpgrades.deployUUPSProxy(
             destAdapterImpl,
             abi.encodeCall(
@@ -261,7 +261,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
         (BridgeEscrow destBridgeEscrow,) = _setupDestinationChainForCompletion(invoiceData, address(usdc));
 
         // Set up adapter on destination chain
-        address destAdapterImpl = address(new CcipBridgeAdapter());
+        address destAdapterImpl = address(new CcipBridgeAdapter(address(0)));
         address destAdapterProxy = UnsafeUpgrades.deployUUPSProxy(
             destAdapterImpl,
             abi.encodeCall(
@@ -308,7 +308,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
             _setupDestinationChainForCompletion(invoiceData, address(usdc));
 
         // Set up adapter on destination chain
-        address destAdapterImpl = address(new CcipBridgeAdapter());
+        address destAdapterImpl = address(new CcipBridgeAdapter(address(0)));
         address destAdapterProxy = UnsafeUpgrades.deployUUPSProxy(
             destAdapterImpl,
             abi.encodeCall(
@@ -357,7 +357,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
         MockCcipRouter destRouter = new MockCcipRouter();
         Mock_ERC20 destLink = new Mock_ERC20("LINK", 18);
 
-        address destAdapterImpl = address(new CcipBridgeAdapter());
+        address destAdapterImpl = address(new CcipBridgeAdapter(address(0)));
         address destAdapterProxy = UnsafeUpgrades.deployUUPSProxy(
             destAdapterImpl,
             abi.encodeCall(
@@ -407,7 +407,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
         MockCcipRouter destRouter = new MockCcipRouter();
         Mock_ERC20 destLink = new Mock_ERC20("LINK", 18);
         address destAdapterProxy = UnsafeUpgrades.deployUUPSProxy(
-            address(new CcipBridgeAdapter()),
+            address(new CcipBridgeAdapter(address(0))),
             abi.encodeCall(
                 CcipBridgeAdapter.initialize,
                 (admin, address(destEscrow), address(destRouter), address(destLink), "1.0.0")
@@ -568,7 +568,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
         MockCcipRouter destRouter = new MockCcipRouter();
         Mock_ERC20 destLink = new Mock_ERC20("LINK", 18);
         address destAdapterProxy = UnsafeUpgrades.deployUUPSProxy(
-            address(new CcipBridgeAdapter()),
+            address(new CcipBridgeAdapter(address(0))),
             abi.encodeCall(
                 CcipBridgeAdapter.initialize,
                 (admin, address(destEscrow), address(destRouter), address(destLink), "1.0.0")

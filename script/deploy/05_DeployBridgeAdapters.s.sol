@@ -91,6 +91,21 @@ contract DeployBridgeAdapters is BaseDeployScript {
         freshlyDeployed = true;
     }
 
+    /// @notice The address permitted to call each adapter's initialize, baked into the adapter's creationCode
+    ///         so the deploy->initialize window cannot be front-run (see BridgeAdapter.expectedInitializer). It
+    ///         MUST equal the EOA that broadcasts initialize (the deployer = chainConfig.admin in the EOA flow)
+    ///         AND be byte-identical on every chain, or the CREATE2 same-address guarantee breaks.
+    function _expectedInitializer() internal view returns (address) {
+        require(chainConfig.admin != address(0), "expectedInitializer (admin) not configured");
+        return chainConfig.admin;
+    }
+
+    /// @notice Appends the expectedInitializer constructor arg to an adapter's creationCode (mirrors the
+    ///         BridgeAdapter constructor). Identical across chains so the deterministic address is preserved.
+    function _adapterInitCode(bytes memory creationCode) internal view returns (bytes memory) {
+        return abi.encodePacked(creationCode, abi.encode(_expectedInitializer()));
+    }
+
     function _parseAddr(string memory adapterName, string memory paramName, address fallback_)
         internal
         view
@@ -117,9 +132,9 @@ contract DeployBridgeAdapters is BaseDeployScript {
         (address adapter, bool fresh) = _create2Deploy(
             "CcipBridgeAdapter",
             _salt("CcipBridgeAdapter", DeploySalts.CCIP_ADAPTER),
-            type(CcipBridgeAdapter).creationCode
+            _adapterInitCode(type(CcipBridgeAdapter).creationCode)
         );
-        if (fresh) {
+        if (fresh || CcipBridgeAdapter(adapter).bridgeEscrow() == address(0)) {
             address router = vm.parseAddress(routerStr);
             string memory feeTokenStr =
                 ConfigReader.readAdapterParam(vm, currentChainId, "bridgeAdapters", "CCIP", "feeToken");
@@ -139,9 +154,9 @@ contract DeployBridgeAdapters is BaseDeployScript {
         (address adapter, bool fresh) = _create2Deploy(
             "AcrossBridgeAdapter",
             _salt("AcrossBridgeAdapter", DeploySalts.ACROSS_ADAPTER),
-            type(AcrossBridgeAdapter).creationCode
+            _adapterInitCode(type(AcrossBridgeAdapter).creationCode)
         );
-        if (fresh) {
+        if (fresh || AcrossBridgeAdapter(payable(adapter)).bridgeEscrow() == address(0)) {
             address spokePool = vm.parseAddress(spokePoolStr);
             string memory feePctStr =
                 ConfigReader.readAdapterParam(vm, currentChainId, "bridgeAdapters", "Across", "defaultRelayerFeePct");
@@ -162,9 +177,9 @@ contract DeployBridgeAdapters is BaseDeployScript {
         (address adapter, bool fresh) = _create2Deploy(
             "StargateBridgeAdapter",
             _salt("StargateBridgeAdapter", DeploySalts.STARGATE_ADAPTER),
-            type(StargateBridgeAdapter).creationCode
+            _adapterInitCode(type(StargateBridgeAdapter).creationCode)
         );
-        if (fresh) {
+        if (fresh || StargateBridgeAdapter(payable(adapter)).bridgeEscrow() == address(0)) {
             address endpoint = vm.parseAddress(endpointStr);
             StargateBridgeAdapter(payable(adapter))
                 .initialize(chainConfig.admin, bridgeProxy, endpoint, _adapterVersion("Stargate"));
@@ -181,9 +196,9 @@ contract DeployBridgeAdapters is BaseDeployScript {
         (address adapter, bool fresh) = _create2Deploy(
             "GnosisBridgeAdapter",
             _salt("GnosisBridgeAdapter", DeploySalts.GNOSIS_ADAPTER),
-            type(GnosisBridgeAdapter).creationCode
+            _adapterInitCode(type(GnosisBridgeAdapter).creationCode)
         );
-        if (fresh) {
+        if (fresh || GnosisBridgeAdapter(payable(adapter)).bridgeEscrow() == address(0)) {
             address omnibridge = vm.parseAddress(omnibridgeStr);
             address amb = _parseAddr("Gnosis", "amb", address(0));
             GnosisBridgeAdapter(payable(adapter))
@@ -201,9 +216,9 @@ contract DeployBridgeAdapters is BaseDeployScript {
         (address adapter, bool fresh) = _create2Deploy(
             "CctpBridgeAdapter",
             _salt("CctpBridgeAdapter", DeploySalts.CCTP_ADAPTER),
-            type(CctpBridgeAdapter).creationCode
+            _adapterInitCode(type(CctpBridgeAdapter).creationCode)
         );
-        if (fresh) {
+        if (fresh || CctpBridgeAdapter(adapter).bridgeEscrow() == address(0)) {
             address tokenMessenger = vm.parseAddress(tokenMessengerStr);
             address messageTransmitter = _parseAddr("CCTP", "messageTransmitter", address(0));
             CctpBridgeAdapter(adapter)
@@ -224,9 +239,9 @@ contract DeployBridgeAdapters is BaseDeployScript {
         (address adapter, bool fresh) = _create2Deploy(
             "SuperchainBridgeAdapter",
             _salt("SuperchainBridgeAdapter", DeploySalts.SUPERCHAIN_ADAPTER),
-            type(SuperchainBridgeAdapter).creationCode
+            _adapterInitCode(type(SuperchainBridgeAdapter).creationCode)
         );
-        if (fresh) {
+        if (fresh || SuperchainBridgeAdapter(payable(adapter)).bridgeEscrow() == address(0)) {
             address admin_ = _parseAddr("Superchain", "admin", chainConfig.admin);
             address bridgeEscrow_ = _parseAddr("Superchain", "bridgeEscrow", bridgeProxy);
             address l1Bridge_ = _parseAddr("Superchain", "l1Bridge", address(0));

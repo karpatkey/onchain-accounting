@@ -44,7 +44,7 @@ contract CcipBridgeAdapterForkTest is BridgeTestBase {
 
     function _setupCcipAdapter() internal {
         // Deploy CCIP adapter
-        address adapterImpl = address(new CcipBridgeAdapter());
+        address adapterImpl = address(new CcipBridgeAdapter(address(0)));
         address adapterProxy = UnsafeUpgrades.deployUUPSProxy(
             adapterImpl,
             abi.encodeCall(
@@ -119,7 +119,7 @@ contract CcipBridgeAdapterForkTest is BridgeTestBase {
         destEscrow = _deployDestinationEscrow(MAINNET_CHAIN_ID);
 
         address destAdapterProxy = UnsafeUpgrades.deployUUPSProxy(
-            address(new CcipBridgeAdapter()),
+            address(new CcipBridgeAdapter(address(0))),
             abi.encodeCall(
                 CcipBridgeAdapter.initialize, (admin, address(destEscrow), CCIP_ROUTER_MAINNET, address(0), "1.0.0")
             )

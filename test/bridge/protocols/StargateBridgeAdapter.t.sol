@@ -38,7 +38,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         usdcPool = new MockStargatePoolV2(address(usdc));
 
         // Deploy Stargate adapter
-        address adapterImpl = address(new StargateBridgeAdapter());
+        address adapterImpl = address(new StargateBridgeAdapter(address(0)));
         address payable adapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
                 adapterImpl,
                 abi.encodeCall(
@@ -346,7 +346,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         destPool = new MockStargatePoolV2(address(usdc));
 
         address payable destAdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
-                address(new StargateBridgeAdapter()),
+                address(new StargateBridgeAdapter(address(0))),
                 abi.encodeCall(
                     StargateBridgeAdapter.initialize, (admin, address(destEscrow), address(destEndpoint), "1.0.0")
                 )

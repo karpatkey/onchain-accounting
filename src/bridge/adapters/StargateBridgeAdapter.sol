@@ -69,6 +69,9 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
         eidToChainId[eid] = chainId;
     }
 
+    /// @param expectedInitializer_ Address permitted to call initialize (address(0) allows anyone).
+    constructor(address expectedInitializer_) BridgeAdapter(expectedInitializer_) {}
+
     /// @inheritdoc IStargateBridgeAdapter
     function initialize(address admin_, address bridgeEscrow_, address endpoint_, string memory version_) external {
         // Initialize parent BridgeAdapter (single source of truth for admin, bridgeEscrow, provider name, version)

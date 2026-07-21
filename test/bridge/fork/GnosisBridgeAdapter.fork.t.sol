@@ -46,7 +46,7 @@ contract GnosisBridgeAdapterForkTest is BridgeTestBase {
     }
 
     function _setupGnosisAdapter() internal {
-        address adapterImpl = address(new GnosisBridgeAdapter());
+        address adapterImpl = address(new GnosisBridgeAdapter(address(0)));
         address payable adapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
                 adapterImpl,
                 abi.encodeCall(
@@ -117,7 +117,7 @@ contract GnosisBridgeAdapterForkTest is BridgeTestBase {
         destEscrow = _deployDestinationEscrow(MAINNET_CHAIN_ID);
 
         address payable destAdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
-                address(new GnosisBridgeAdapter()),
+                address(new GnosisBridgeAdapter(address(0))),
                 abi.encodeCall(
                     GnosisBridgeAdapter.initialize,
                     (admin, address(destEscrow), OMNIBRIDGE_MAINNET, AMB_MAINNET, "1.0.0")

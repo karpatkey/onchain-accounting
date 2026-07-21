@@ -72,6 +72,9 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
         domainConfigured[chainId] = true;
     }
 
+    /// @param expectedInitializer_ Address permitted to call initialize (address(0) allows anyone).
+    constructor(address expectedInitializer_) BridgeAdapter(expectedInitializer_) {}
+
     /// @inheritdoc ICctpBridgeAdapter
     function initialize(
         address admin_,

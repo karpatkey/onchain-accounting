@@ -39,7 +39,7 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
         spokePool = new MockSpokePoolV3();
 
         // Deploy Across adapter
-        address adapterImpl = address(new AcrossBridgeAdapter());
+        address adapterImpl = address(new AcrossBridgeAdapter(address(0)));
         address payable adapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
                 adapterImpl,
                 abi.encodeCall(
@@ -70,7 +70,7 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
         internal
         returns (AcrossBridgeAdapter destAdapter)
     {
-        address destAdapterImpl = address(new AcrossBridgeAdapter());
+        address destAdapterImpl = address(new AcrossBridgeAdapter(address(0)));
         address payable destAdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
                 destAdapterImpl,
                 abi.encodeCall(

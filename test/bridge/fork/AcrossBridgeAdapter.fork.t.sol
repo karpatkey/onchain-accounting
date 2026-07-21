@@ -43,7 +43,7 @@ contract AcrossBridgeAdapterForkTest is BridgeTestBase {
     }
 
     function _setupAcrossAdapter() internal {
-        address adapterImpl = address(new AcrossBridgeAdapter());
+        address adapterImpl = address(new AcrossBridgeAdapter(address(0)));
         address payable adapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
                 adapterImpl,
                 abi.encodeCall(
@@ -117,7 +117,7 @@ contract AcrossBridgeAdapterForkTest is BridgeTestBase {
         destEscrow = _deployDestinationEscrow(MAINNET_CHAIN_ID);
 
         address payable destAdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
-                address(new AcrossBridgeAdapter()),
+                address(new AcrossBridgeAdapter(address(0))),
                 abi.encodeCall(
                     AcrossBridgeAdapter.initialize,
                     (admin, address(destEscrow), SPOKE_POOL_MAINNET, DEFAULT_RELAYER_FEE_PCT, "1.0.0")

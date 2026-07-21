@@ -41,7 +41,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         tokenMessenger = new MockProvenanceTokenMessenger();
 
         // Deploy CCTP adapter
-        address adapterImpl = address(new CctpBridgeAdapter());
+        address adapterImpl = address(new CctpBridgeAdapter(address(0)));
         address adapterProxy = UnsafeUpgrades.deployUUPSProxy(
             adapterImpl,
             abi.encodeCall(
@@ -139,7 +139,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         MockProvenanceTokenMessenger srcTokenMessenger = new MockProvenanceTokenMessenger();
 
         address srcAdapterProxy = UnsafeUpgrades.deployUUPSProxy(
-            address(new CctpBridgeAdapter()),
+            address(new CctpBridgeAdapter(address(0))),
             abi.encodeCall(
                 CctpBridgeAdapter.initialize,
                 (admin, address(srcEscrow), address(srcTokenMessenger), address(srcTransmitter), "1.0.0")
@@ -476,7 +476,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         MockProvenanceTokenMessenger destTokenMessenger = new MockProvenanceTokenMessenger();
 
         address destAdapterProxy = UnsafeUpgrades.deployUUPSProxy(
-            address(new CctpBridgeAdapter()),
+            address(new CctpBridgeAdapter(address(0))),
             abi.encodeCall(
                 CctpBridgeAdapter.initialize,
                 (admin, address(destBridgeEscrow), address(destTokenMessenger), address(destTransmitter), "1.0.0")

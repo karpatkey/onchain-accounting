@@ -73,7 +73,7 @@ contract BridgeEscrowCallbacksTest is BridgeEscrowTestBase {
     }
 
     function _deploySecondMockAdapter() internal returns (MockBridgeAdapter) {
-        address impl = address(new MockBridgeAdapter());
+        address impl = address(new MockBridgeAdapter(address(0)));
         address payable proxy = payable(address(
                 UnsafeUpgrades.deployUUPSProxy(
                     impl, abi.encodeCall(MockBridgeAdapter.initialize, (admin, address(bridgeEscrow), "Mock2", "1.0.0"))

@@ -46,7 +46,7 @@ contract StargateBridgeAdapterForkTest is BridgeTestBase {
 
     function _setupStargateAdapter() internal {
         // Deploy Stargate V2 adapter
-        address adapterImpl = address(new StargateBridgeAdapter());
+        address adapterImpl = address(new StargateBridgeAdapter(address(0)));
         address adapterProxy = UnsafeUpgrades.deployUUPSProxy(
             adapterImpl,
             abi.encodeCall(
@@ -117,7 +117,7 @@ contract StargateBridgeAdapterForkTest is BridgeTestBase {
         destEscrow = _deployDestinationEscrow(MAINNET_CHAIN_ID);
 
         address payable destAdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
-                address(new StargateBridgeAdapter()),
+                address(new StargateBridgeAdapter(address(0))),
                 abi.encodeCall(
                     StargateBridgeAdapter.initialize, (admin, address(destEscrow), LZ_ENDPOINT_MAINNET, "1.0.0")
                 )

@@ -42,7 +42,7 @@ contract CctpBridgeAdapterForkTest is BridgeTestBase {
 
     function _setupCctpAdapter() internal {
         // Deploy CCTP adapter with V2 contracts (depositForBurn with maxFee/minFinalityThreshold)
-        address adapterImpl = address(new CctpBridgeAdapter());
+        address adapterImpl = address(new CctpBridgeAdapter(address(0)));
         address adapterProxy = UnsafeUpgrades.deployUUPSProxy(
             adapterImpl,
             abi.encodeCall(

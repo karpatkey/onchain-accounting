@@ -50,7 +50,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
 
     function _setupL1Adapter() internal {
         vm.chainId(SOURCE_CHAIN_ID);
-        address l1AdapterImpl = address(new SuperchainBridgeAdapter());
+        address l1AdapterImpl = address(new SuperchainBridgeAdapter(address(0)));
         address payable l1AdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
                 l1AdapterImpl,
                 abi.encodeCall(
@@ -78,7 +78,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
     /// @notice Deploys an L2 adapter bound to `destEscrow` with `l2Messenger_` as its messenger, and trusts
     ///         the L1 sibling adapter for the source chain (deposit-completion provenance).
     function _setupL2Adapter(BridgeEscrow destEscrow, address l2Messenger_) internal returns (SuperchainBridgeAdapter) {
-        address l2AdapterImpl = address(new SuperchainBridgeAdapter());
+        address l2AdapterImpl = address(new SuperchainBridgeAdapter(address(0)));
         address payable l2AdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
                 l2AdapterImpl,
                 abi.encodeCall(
@@ -247,7 +247,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         MockCrossDomainMessenger l2Messenger = new MockCrossDomainMessenger();
 
         // Build an L2 adapter WITHOUT setting trustedRemoteAdapter.
-        address l2AdapterImpl = address(new SuperchainBridgeAdapter());
+        address l2AdapterImpl = address(new SuperchainBridgeAdapter(address(0)));
         address payable l2AdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
                 l2AdapterImpl,
                 abi.encodeCall(
@@ -307,7 +307,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
 
     /// @notice Builds an L1 adapter + escrow, and a withdrawal tx whose target is that adapter.
     function _deployL1WithdrawalAdapter(BridgeEscrow l1Escrow) internal returns (SuperchainBridgeAdapter) {
-        address l1AdapterImpl = address(new SuperchainBridgeAdapter());
+        address l1AdapterImpl = address(new SuperchainBridgeAdapter(address(0)));
         address payable l1AdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
                 l1AdapterImpl,
                 abi.encodeCall(

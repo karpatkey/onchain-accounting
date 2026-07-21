@@ -61,7 +61,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
         internal
         returns (GnosisBridgeAdapter)
     {
-        address adapterImpl = address(new GnosisBridgeAdapter());
+        address adapterImpl = address(new GnosisBridgeAdapter(address(0)));
         address payable adapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
                 adapterImpl,
                 abi.encodeCall(GnosisBridgeAdapter.initialize, (admin, escrow_, omnibridge_, amb_, "1.0.0"))

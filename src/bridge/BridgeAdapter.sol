@@ -55,8 +55,22 @@ abstract contract BridgeAdapter is AccessControl, ReentrancyGuard, IBridgeAdapte
 
     bool private _initialized;
 
+    /// @notice The only address permitted to call initialize, or address(0) to allow anyone.
+    /// @dev Set at CREATE2 time (baked into the adapter's creationCode identically on every chain, so the
+    ///      deterministic address is preserved). The adapter address is precomputable and initialize grants
+    ///      DEFAULT_ADMIN_ROLE, so an unrestricted initializer can be front-run: a bot deploys the identical
+    ///      bytecode at the deterministic address and initializes it first. Pinning the initializer closes
+    ///      that window — a bot cannot initialize even after pre-deploying. A zero value disables the guard
+    ///      (used in tests); production bakes the deployer EOA.
+    address public immutable expectedInitializer;
+
     /// @notice Emitted when a trusted remote adapter is set/updated for a source key
     event TrustedRemoteAdapterSet(uint64 indexed sourceKey, bytes32 remoteAdapter);
+
+    /// @param expectedInitializer_ The address permitted to call initialize (address(0) allows anyone).
+    constructor(address expectedInitializer_) {
+        expectedInitializer = expectedInitializer_;
+    }
 
     /// @notice One-time initializer for the BridgeAdapter (internal; only for use by derived adapters)
     /// @dev Derived adapters expose their own initialize() and call this via super._initializeBridgeAdapter().
@@ -66,6 +80,9 @@ abstract contract BridgeAdapter is AccessControl, ReentrancyGuard, IBridgeAdapte
         string memory providerName_,
         string memory version_
     ) internal {
+        if (expectedInitializer != address(0) && msg.sender != expectedInitializer) {
+            revert NotAuthorized();
+        }
         if (_initialized) revert AlreadyInitialized();
         if (admin_ == address(0) || bridgeEscrow_ == address(0)) revert InvalidArguments();
         _initialized = true;

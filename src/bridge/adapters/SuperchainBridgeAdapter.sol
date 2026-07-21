@@ -81,6 +81,9 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     /// @notice Default L1 gas limit for withdrawals
     uint32 public defaultL1GasLimit = 200000;
 
+    /// @param expectedInitializer_ Address permitted to call initialize (address(0) allows anyone).
+    constructor(address expectedInitializer_) BridgeAdapter(expectedInitializer_) {}
+
     /// @inheritdoc ISuperchainBridgeAdapter
     function initialize(
         address admin_,

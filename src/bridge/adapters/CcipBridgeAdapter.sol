@@ -67,6 +67,9 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
         selectorToChainId[chainSelector] = chainId;
     }
 
+    /// @param expectedInitializer_ Address permitted to call initialize (address(0) allows anyone).
+    constructor(address expectedInitializer_) BridgeAdapter(expectedInitializer_) {}
+
     /// @inheritdoc ICcipBridgeAdapter
     function initialize(
         address admin_,

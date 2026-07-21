@@ -17,14 +17,20 @@ import {SuperchainBridgeAdapter} from "src/bridge/adapters/SuperchainBridgeAdapt
 /// @dev 05_DeployBridgeAdapters deploys each adapter via the canonical CREATE2 deployer using
 ///      `generateSalt(name, DeploySalts.<X>_ADAPTER)` and the adapter's raw `type(X).creationCode`. The deterministic
 ///      address is `keccak256(0xff ++ deployer ++ salt ++ keccak256(creationCode))[12:]` — it depends ONLY on the
-///      deployer, the salt, and the creation bytecode. None of those carry per-chain data BECAUSE the adapters take
-///      their args via `initialize(...)` rather than the constructor (so `creationCode` has no appended args). This
-///      test asserts those preconditions hold, so a future change that (a) adds a constructor arg, (b) collides two
-///      salts, or (c) desyncs the salt derivation will fail here instead of silently breaking the same-address
-///      guarantee at deploy time. It is intentionally chain-agnostic (no fork / no RPC).
+///      deployer, the salt, and the creation bytecode. Adapters take their per-chain config via `initialize(...)`;
+///      the constructor takes a single `expectedInitializer` arg that 05 appends to `creationCode` with a value
+///      (the deployer EOA) that is byte-identical on every chain, so `creationCode` still carries no per-chain data.
+///      This test asserts those preconditions hold, so a future change that (a) adds a per-chain constructor arg,
+///      (b) collides two salts, or (c) desyncs the salt derivation will fail here instead of silently breaking the
+///      same-address guarantee at deploy time. It is intentionally chain-agnostic (no fork / no RPC).
 contract BridgeAdapterCreate2SameAddressTest is Test {
     /// @notice Canonical CREATE2 deployer (same on every chain) — must match 05_DeployBridgeAdapters.
     address internal constant CANONICAL_CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
+
+    /// @notice The `expectedInitializer` constructor arg 05 appends to each adapter's creationCode. Its exact
+    ///         value is irrelevant to the same-address property (it is byte-identical on every chain, so the
+    ///         creationCode stays chain-independent); it must only match what 05 bakes.
+    address internal constant PINNED_INITIALIZER = 0xd8A2FEc270d6D68B9fA5DBFe5CbEDDE7CefCd7D4;
 
     /// @notice The seven target chains the same-address guarantee must hold across (ADR 0012 D7 / DeploySalts).
     function _targetChainIds() internal pure returns (uint256[7] memory) {
@@ -37,14 +43,28 @@ contract BridgeAdapterCreate2SameAddressTest is Test {
         bytes creationCode;
     }
 
+    /// @dev creationCode mirrors 05 exactly: raw type(X).creationCode with the single `expectedInitializer`
+    ///      constructor arg appended (abi.encode). The arg is identical on every chain, so the address stays
+    ///      chain-independent.
+    function _initCode(bytes memory creationCode) internal pure returns (bytes memory) {
+        return abi.encodePacked(creationCode, abi.encode(PINNED_INITIALIZER));
+    }
+
     function _specs() internal pure returns (Spec[6] memory specs) {
-        specs[0] = Spec("CcipBridgeAdapter", DeploySalts.CCIP_ADAPTER, type(CcipBridgeAdapter).creationCode);
-        specs[1] = Spec("AcrossBridgeAdapter", DeploySalts.ACROSS_ADAPTER, type(AcrossBridgeAdapter).creationCode);
-        specs[2] = Spec("StargateBridgeAdapter", DeploySalts.STARGATE_ADAPTER, type(StargateBridgeAdapter).creationCode);
-        specs[3] = Spec("GnosisBridgeAdapter", DeploySalts.GNOSIS_ADAPTER, type(GnosisBridgeAdapter).creationCode);
-        specs[4] = Spec("CctpBridgeAdapter", DeploySalts.CCTP_ADAPTER, type(CctpBridgeAdapter).creationCode);
-        specs[5] =
-            Spec("SuperchainBridgeAdapter", DeploySalts.SUPERCHAIN_ADAPTER, type(SuperchainBridgeAdapter).creationCode);
+        specs[0] = Spec("CcipBridgeAdapter", DeploySalts.CCIP_ADAPTER, _initCode(type(CcipBridgeAdapter).creationCode));
+        specs[1] =
+            Spec("AcrossBridgeAdapter", DeploySalts.ACROSS_ADAPTER, _initCode(type(AcrossBridgeAdapter).creationCode));
+        specs[2] = Spec(
+            "StargateBridgeAdapter", DeploySalts.STARGATE_ADAPTER, _initCode(type(StargateBridgeAdapter).creationCode)
+        );
+        specs[3] =
+            Spec("GnosisBridgeAdapter", DeploySalts.GNOSIS_ADAPTER, _initCode(type(GnosisBridgeAdapter).creationCode));
+        specs[4] = Spec("CctpBridgeAdapter", DeploySalts.CCTP_ADAPTER, _initCode(type(CctpBridgeAdapter).creationCode));
+        specs[5] = Spec(
+            "SuperchainBridgeAdapter",
+            DeploySalts.SUPERCHAIN_ADAPTER,
+            _initCode(type(SuperchainBridgeAdapter).creationCode)
+        );
     }
 
     /// @dev Mirrors `BaseDeployScript.computeCreate2Address` (Arachnid 0xff format) exactly.
@@ -92,17 +112,22 @@ contract BridgeAdapterCreate2SameAddressTest is Test {
         }
     }
 
-    /// @notice The adapters have arg-less constructors, so `type(X).creationCode` is the complete init code with no
-    ///         per-chain args appended — the precondition for the same-address guarantee. If any adapter gained a
-    ///         constructor parameter, `new X()` would fail to compile and this test would break, flagging that 05's
-    ///         `type(X).creationCode` deploy (and thus D7) is no longer valid.
-    function test_adapterConstructors_areArgless() public {
-        assertTrue(address(new CcipBridgeAdapter()).code.length > 0, "Ccip ctor not argless");
-        assertTrue(address(new AcrossBridgeAdapter()).code.length > 0, "Across ctor not argless");
-        assertTrue(address(new StargateBridgeAdapter()).code.length > 0, "Stargate ctor not argless");
-        assertTrue(address(new GnosisBridgeAdapter()).code.length > 0, "Gnosis ctor not argless");
-        assertTrue(address(new CctpBridgeAdapter()).code.length > 0, "Cctp ctor not argless");
-        assertTrue(address(new SuperchainBridgeAdapter()).code.length > 0, "Superchain ctor not argless");
+    /// @notice The adapters take exactly one constructor arg — the `expectedInitializer` — which 05 appends to
+    ///         `creationCode` with a chain-identical value, so the same-address guarantee holds. If any adapter
+    ///         gained an additional (or a per-chain) constructor parameter, `new X(address)` would fail to compile
+    ///         (or `_specs` would need per-chain data) and this test would break, flagging that 05's creationCode
+    ///         composition (and thus D7) is no longer valid.
+    function test_adapterConstructors_takeSingleInitializerArg() public {
+        assertTrue(address(new CcipBridgeAdapter(PINNED_INITIALIZER)).code.length > 0, "Ccip ctor arity changed");
+        assertTrue(address(new AcrossBridgeAdapter(PINNED_INITIALIZER)).code.length > 0, "Across ctor arity changed");
+        assertTrue(
+            address(new StargateBridgeAdapter(PINNED_INITIALIZER)).code.length > 0, "Stargate ctor arity changed"
+        );
+        assertTrue(address(new GnosisBridgeAdapter(PINNED_INITIALIZER)).code.length > 0, "Gnosis ctor arity changed");
+        assertTrue(address(new CctpBridgeAdapter(PINNED_INITIALIZER)).code.length > 0, "Cctp ctor arity changed");
+        assertTrue(
+            address(new SuperchainBridgeAdapter(PINNED_INITIALIZER)).code.length > 0, "Superchain ctor arity changed"
+        );
     }
 
     /// @notice The `trustedRemoteAdapter` value 06_Configure wires for a same-address sibling is

@@ -185,11 +185,6 @@
     ],
     "note": "Priced via osToken_CustomPriceFeed (priceFeeds.osETH.1): convertToAssets(1e18) [osETH/ETH] * ETH/USD. Held osETH is reported by ERC20DefaultBalanceAdapter (wallet balance). The pricefeed address is filled by 03_DeployPriceFeeds. Separate from the StakeWiseV3Vault osToken-debt leg (denominated in ETH)."
   },
-  "MORPHO": {
-    "address": "0x58D97B57BB95320F9a05dC918Aef65434969c2B2",
-    "$comment": "UNPRICED: mainnet MORPHO's only feed was API3, which is no longer used in config (contracts still support API3). No Chainlink/RedStone MORPHO/USD exists on mainnet. Empty priceFeeds => not registered/priced; a MORPHO leg drops from NAV until a non-API3 feed is available. Live removal of the on-chain API3 primary requires a manual removePriceFeed.",
-    "priceFeeds": []
-  },
   "USDC": {
     "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
     "pegToleranceBps": 100,

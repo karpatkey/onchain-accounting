@@ -63,7 +63,7 @@ contract Poc_BridgeEscrowFallbackSpoof is Test {
         vm.stopPrank();
 
         // Deploy Stargate adapter and register lzReceive callback
-        address adapterImpl = address(new StargateBridgeAdapter());
+        address adapterImpl = address(new StargateBridgeAdapter(address(0)));
         address adapterProxy = UnsafeUpgrades.deployUUPSProxy(
             adapterImpl,
             abi.encodeCall(StargateBridgeAdapter.initialize, (admin, address(destEscrow), address(0xBEEF), "1.0.0"))

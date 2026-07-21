@@ -478,6 +478,24 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
         adapter.setChainSelectorMapping(42161, 4949039107694359620);
     }
 
+    /// @notice `initialize` preconfigures the CCIP chain-selector mapping. This asserts the FULL preconfigured set
+    ///         (so an accidental removal/change of any entry is caught), incl. Gnosis (chain 100) — CCIP is live on
+    ///         Gnosis mainnet (2024-06-17), so the Gnosis lane works out of the box with no post-deploy admin call.
+    ///         Selectors from Chainlink's `chain-selectors` registry.
+    function test_preconfiguredChainSelectors() public view {
+        // The five chains we operate on.
+        assertEq(adapter.getSelectorForChain(1), 5009297550715157269, "Ethereum selector");
+        assertEq(adapter.getSelectorForChain(10), 3734403246176062136, "Optimism selector");
+        assertEq(adapter.getSelectorForChain(100), 465200170687744372, "Gnosis selector (must be preconfigured)");
+        assertEq(adapter.getSelectorForChain(42161), 4949039107694359620, "Arbitrum selector");
+        assertEq(adapter.getSelectorForChain(8453), 15971525489660198786, "Base selector");
+        // The two extra chains `initialize` also preconfigures (not operated on today, but part of the pinned set).
+        assertEq(adapter.getSelectorForChain(43114), 6433500567565415381, "Avalanche selector");
+        assertEq(adapter.getSelectorForChain(137), 4051577828743386545, "Polygon selector");
+        // Reverse mapping for Gnosis resolves too (inbound-message auth path).
+        assertEq(adapter.getChainForSelector(465200170687744372), 100, "Gnosis reverse selector");
+    }
+
     function test_setRouter_updatesRouter() public {
         MockCcipRouter newRouter = new MockCcipRouter();
 

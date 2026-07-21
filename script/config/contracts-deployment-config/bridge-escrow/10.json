@@ -1,0 +1,8 @@
+{
+  "$comment": "BridgeEscrow post-deploy config for Optimism (10). See 1.json for field semantics. USDC = native Circle USDC (CCTP-eligible).",
+  "accounts": [],
+  "assets": {
+    "USDC": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
+    "WETH": "0x4200000000000000000000000000000000000006"
+  }
+}

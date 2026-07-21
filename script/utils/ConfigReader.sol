@@ -14,6 +14,7 @@ import {IPrices} from "../../src/prices/IPrices.sol";
 ///      - `contracts-deployment-config/balance-adapters/<id>.json`    — PLAIN adapters to DEPLOY: `.<name>.{enabled,constructor}`.
 ///      - `contracts-deployment-config/meta-balance-adapters/<id>.json` — META adapters to DEPLOY: `.<name>.{enabled,constructor}`.
 ///      - `contracts-deployment-config/bridge-adapters/<id>.json`     — bridge adapters: `.<name>.{enabled,initialize,remoteChains}`.
+///      - `contracts-deployment-config/bridge-escrow/<id>.json`       — BridgeEscrow post-deploy config: `.accounts[]` (authorizeAccount) + `.assets.<symbol>` (registerAsset).
 ///      - `nav-config/assets-and-price-feeds/<id>.json`               — assets to REGISTER: `.<SYMBOL>.{address,priceFeeds[]}`.
 ///      - `nav-config/balance-adapters/<id>.json`                     — PLAIN adapters to ADD on NAV: `.<name>.{enabled}`.
 ///      - `nav-config/meta-balance-adapters/<id>.json`                — META adapters to ADD: `.<name>.{enabled,instances|instancesRaw}`.
@@ -110,6 +111,17 @@ library ConfigReader {
             abi.encodePacked(
                 vm.projectRoot(),
                 "/script/config/contracts-deployment-config/bridge-adapters/",
+                vm.toString(chainId),
+                ".json"
+            )
+        );
+    }
+
+    function _deployBridgeEscrowPath(Vm vm, uint256 chainId) private view returns (string memory) {
+        return string(
+            abi.encodePacked(
+                vm.projectRoot(),
+                "/script/config/contracts-deployment-config/bridge-escrow/",
                 vm.toString(chainId),
                 ".json"
             )
@@ -506,6 +518,36 @@ library ConfigReader {
         string memory jsonPath = string(abi.encodePacked(".", symbol, ".address"));
         if (vm.keyExists(json, jsonPath)) return json.readString(jsonPath);
         return "";
+    }
+
+    // -------------------------------------------------------------------------
+    // BridgeEscrow post-deploy config (contracts-deployment-config/bridge-escrow/<id>.json)
+    // `.accounts` = addresses to authorize (authorizeAccount); `.assets` = logical bridge symbol -> local
+    // token address (registerAsset). Both empty/absent → the reader returns an empty result (no-op step).
+    // -------------------------------------------------------------------------
+
+    /// @notice Addresses to authorize on BridgeEscrow (`.accounts`). Empty if the file or key is absent.
+    function readBridgeEscrowAccounts(Vm vm, uint256 chainId) internal view returns (address[] memory) {
+        string memory json = _readOrEmpty(vm, _deployBridgeEscrowPath(vm, chainId));
+        if (vm.keyExists(json, ".accounts")) return vm.parseJsonAddressArray(json, ".accounts");
+        return new address[](0);
+    }
+
+    /// @notice Logical bridge-asset symbols to register (the keys of `.assets`, excluding `$`-metadata). Empty if absent.
+    function readBridgeEscrowAssetSymbols(Vm vm, uint256 chainId) internal view returns (string[] memory) {
+        string memory json = _readOrEmpty(vm, _deployBridgeEscrowPath(vm, chainId));
+        if (!vm.keyExists(json, ".assets")) return new string[](0);
+        return _filterDollar(vm.parseJsonKeys(json, ".assets"));
+    }
+
+    /// @notice Local token address for a logical bridge symbol (`.assets.<symbol>`). Zero if absent/placeholder.
+    function readBridgeEscrowAssetAddress(Vm vm, uint256 chainId, string memory symbol)
+        internal
+        view
+        returns (address)
+    {
+        string memory json = _readOrEmpty(vm, _deployBridgeEscrowPath(vm, chainId));
+        return _readAddrOrZero(vm, json, string(abi.encodePacked(".assets.", symbol)));
     }
 
     /// @notice Number of price feeds configured for an asset (length of its `priceFeeds[]`).

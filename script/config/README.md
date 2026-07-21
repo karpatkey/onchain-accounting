@@ -9,6 +9,7 @@ This guide explains all configuration files needed for multi-chain deployments o
 3. [contracts-deployment-config/custom-price-feeds/{chainId}.json](#contracts-deployment-configcustom-price-feedschainidjson)
 4. [contracts-deployment-config/balance-adapters & meta-balance-adapters/{chainId}.json](#contracts-deployment-configbalance-adapters--meta-balance-adapterschainidjson)
    - [contracts-deployment-config/bridge-adapters/{chainId}.json](#contracts-deployment-configbridge-adapterschainidjson)
+   - [contracts-deployment-config/bridge-escrow/{chainId}.json](#contracts-deployment-configbridge-escrowchainidjson)
 5. [nav-config/assets-and-price-feeds/{chainId}.json](#nav-configassets-and-price-feedschainidjson)
 6. [nav-config/balance-adapters & meta-balance-adapters/{chainId}.json](#nav-configbalance-adapters--meta-balance-adapterschainidjson)
 7. [deployments/{chainId}.json](#deploymentschainidjson)
@@ -41,7 +42,8 @@ script/config/
 │   ├── custom-price-feeds/<chainId>.json          # Custom price feeds to deploy: { "<feedName>": { enabled, constructor } }
 │   ├── balance-adapters/<chainId>.json            # PLAIN adapters to deploy: { "<AdapterName>": { enabled, constructor } }
 │   ├── meta-balance-adapters/<chainId>.json       # META adapters to deploy: { "<AdapterName>": { enabled, constructor } }
-│   └── bridge-adapters/<chainId>.json             # Bridge adapters to deploy: { "<AdapterName>": { enabled, initialize } } — read by 05
+│   ├── bridge-adapters/<chainId>.json             # Bridge adapters to deploy: { "<AdapterName>": { enabled, initialize } } — read by 05
+│   └── bridge-escrow/<chainId>.json               # BridgeEscrow post-deploy config: { accounts[], assets{SYMBOL:addr} } — read by 06
 ├── nav-config/
 │   ├── assets-and-price-feeds/<chainId>.json      # Assets to register: { "<SYMBOL>": { address, priceFeeds[] } }
 │   ├── balance-adapters/<chainId>.json            # PLAIN adapters to add on NAV: { "<AdapterName>": { enabled } }
@@ -250,6 +252,31 @@ As of [ADR 0012](../../docs/decisions/0012-bridge-provable-release-rearchitectur
 | `remoteChains` | uint[] | Standard chain ids this adapter bridges to/from. `06_Configure.s.sol` reads it to wire `setTrustedRemoteAdapter` per remote chain (provenance allowlist). |
 
 There is **no `callbackSelector` field** as of [ADR 0012](../../docs/decisions/0012-bridge-provable-release-rearchitecture.md): the escrow no longer dispatches callbacks. Each adapter is the direct protocol receiver and authenticates inbound messages; trusted source senders are wired by `06_Configure.s.sol` from the `remoteChains` array above (keyed by the remote's standard chain id). (See "Bridge adapters: provenance" below.)
+
+---
+
+## contracts-deployment-config/bridge-escrow/{chainId}.json
+
+**BridgeEscrow post-deploy configuration** — which accounts may bridge and which assets are registered. Read by `06_Configure.s.sol`. This is **required for a functioning deposit path**: `02_DeployProxies.s.sol` initializes the escrow with an empty account set and no registered assets, so without this step `depositAndBridge` reverts (`NotAuthorized`, and the symbol lookup fails). `06` applies it **before** `07`, while the deployer still holds `DEFAULT_ADMIN_ROLE` (accounts) and `MANAGER_ROLE` (assets). Idempotent: skips accounts already authorized and assets already mapped to the same address.
+
+### Template
+
+```json
+{
+  "accounts": [],
+  "assets": {
+    "USDC": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    "WETH": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+  }
+}
+```
+
+### Field descriptions
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `accounts` | address[] | Addresses authorized on the escrow via `authorizeAccount` (DEFAULT_ADMIN_ROLE). An account must be authorized on BOTH ends of every lane it uses (source to call `depositAndBridge`, destination to receive the release), at the same address on each chain. Filled per deployment — the deployer EOA for a smoke test, the fund Safes for production. |
+| `assets` | object | Logical **bridge symbol → local token address**, registered via `registerAsset` (MANAGER_ROLE). The symbol is part of the cross-chain invoice identity, so **both ends of a lane must register the same logical symbol** mapped to each chain's local token. Keys are logical symbols (≤ 6 chars), not necessarily the token's on-chain symbol — e.g. use a consistent `"USDC"` across chains even where the local token is `USDC.e`. Top-level keys are symbols — no chainId wrapper; `$`-prefixed keys are ignored. |
 
 ---
 

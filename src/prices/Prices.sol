@@ -71,8 +71,9 @@ abstract contract Prices is IPrices, Initializable {
         // primary we JUST selected — irregularForSelected reuses (price, decimals) instead of re-running feed
         // selection, so this hot view reads the primary feed once, not twice. It internally skips the monitor
         // reads when the asset has no divergence check, and suppresses the flag when stale/sequencer-down.
-        irregular =
-            PriceFeedLib.irregularForSelected(_monitorFeeds, _assetPricing, token, price, decimals, feedStale, sequencerDown);
+        irregular = PriceFeedLib.irregularForSelected(
+            _monitorFeeds, _assetPricing, token, price, decimals, feedStale, sequencerDown
+        );
     }
 
     /// @inheritdoc IPrices

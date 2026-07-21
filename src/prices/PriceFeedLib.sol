@@ -530,7 +530,13 @@ library PriceFeedLib {
         nav.quoteAssetIrregular = quoteAsset == address(0)
             ? false
             : irregularForSelected(
-                monitorFeeds, assetPricing, quoteAsset, quoteInfo.price, quoteInfo.priceDecimals, quoteInfo.stale, sequencerDown
+                monitorFeeds,
+                assetPricing,
+                quoteAsset,
+                quoteInfo.price,
+                quoteInfo.priceDecimals,
+                quoteInfo.stale,
+                sequencerDown
             );
 
         uint256 assetCount = registeredAssets.length;
@@ -617,7 +623,13 @@ library PriceFeedLib {
         bool quoteAssetIrregular = quoteAsset == address(0)
             ? false
             : irregularForSelected(
-                monitorFeeds, assetPricing, quoteAsset, quoteInfo.price, quoteInfo.priceDecimals, quoteInfo.stale, sequencerDown
+                monitorFeeds,
+                assetPricing,
+                quoteAsset,
+                quoteInfo.price,
+                quoteInfo.priceDecimals,
+                quoteInfo.stale,
+                sequencerDown
             );
 
         uint256 length = positionBalances.length;
@@ -670,7 +682,13 @@ library PriceFeedLib {
         bool quoteAssetIrregular = quoteAsset == address(0)
             ? false
             : irregularForSelected(
-                monitorFeeds, assetPricing, quoteAsset, quoteInfo.price, quoteInfo.priceDecimals, quoteInfo.stale, sequencerDown
+                monitorFeeds,
+                assetPricing,
+                quoteAsset,
+                quoteInfo.price,
+                quoteInfo.priceDecimals,
+                quoteInfo.stale,
+                sequencerDown
             );
         nav.quoteAssetIrregular = quoteAssetIrregular;
 

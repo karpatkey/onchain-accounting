@@ -245,7 +245,14 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         // CCTP message mints a different amount than the invoice — must revert.
         bytes32 nonce = bytes32(uint256(5));
         bytes memory cctpMessage = CctpProvenanceMessage.build(
-            SOURCE_DOMAIN, DEST_DOMAIN, nonce, address(usdc), address(destAdapter), address(destAdapter), amount + 1
+            SOURCE_DOMAIN,
+            DEST_DOMAIN,
+            nonce,
+            address(usdc),
+            address(destAdapter.tokenMessenger()),
+            address(destAdapter),
+            address(destAdapter),
+            amount + 1
         );
         bytes memory protocolData = abi.encode(cctpMessage, "mock_attestation");
 
@@ -265,12 +272,49 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         // Mint recipient is the escrow (NOT the adapter) — provenance check must reject it.
         bytes32 nonce = bytes32(uint256(9));
         bytes memory cctpMessage = CctpProvenanceMessage.build(
-            SOURCE_DOMAIN, DEST_DOMAIN, nonce, address(usdc), address(destBridgeEscrow), address(destAdapter), amount
+            SOURCE_DOMAIN,
+            DEST_DOMAIN,
+            nonce,
+            address(usdc),
+            address(destAdapter.tokenMessenger()),
+            address(destBridgeEscrow),
+            address(destAdapter),
+            amount
         );
         bytes memory protocolData = abi.encode(cctpMessage, "mock_attestation");
 
         vm.prank(manager);
         vm.expectRevert(ICctpBridgeAdapter.InvalidMintRecipient.selector);
+        destAdapter.completeBridge(messagePayload, protocolData);
+    }
+
+    function test_completeBridge_revertsOnWrongHeaderRecipient() public {
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
+
+        (, CctpBridgeAdapter destAdapter) = _setupDestinationChainForCctpTest();
+        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
+
+        // Header recipient (bytes 76-108) is the adapter, NOT the TokenMessenger — the value a buggy
+        // check would expect. Body mintRecipient is the correct adapter, so this isolates the header
+        // check: a real Circle message always carries the TokenMessenger here, so a non-TokenMessenger
+        // header must revert InvalidMessage.
+        bytes32 nonce = bytes32(uint256(21));
+        bytes memory cctpMessage = CctpProvenanceMessage.build(
+            SOURCE_DOMAIN,
+            DEST_DOMAIN,
+            nonce,
+            address(usdc),
+            address(destAdapter), // wrong header recipient (not the TokenMessenger)
+            address(destAdapter),
+            address(destAdapter),
+            amount
+        );
+        bytes memory protocolData = abi.encode(cctpMessage, "mock_attestation");
+
+        vm.prank(manager);
+        vm.expectRevert(ICctpBridgeAdapter.InvalidMessage.selector);
         destAdapter.completeBridge(messagePayload, protocolData);
     }
 
@@ -285,7 +329,14 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         // burnToken is DAI, not the invoice asset (USDC) — must revert.
         bytes32 nonce = bytes32(uint256(11));
         bytes memory cctpMessage = CctpProvenanceMessage.build(
-            SOURCE_DOMAIN, DEST_DOMAIN, nonce, address(dai), address(destAdapter), address(destAdapter), amount
+            SOURCE_DOMAIN,
+            DEST_DOMAIN,
+            nonce,
+            address(dai),
+            address(destAdapter.tokenMessenger()),
+            address(destAdapter),
+            address(destAdapter),
+            amount
         );
         bytes memory protocolData = abi.encode(cctpMessage, "mock_attestation");
 
@@ -306,7 +357,14 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         // sourceChainId (1). Must revert.
         bytes32 nonce = bytes32(uint256(13));
         bytes memory cctpMessage = CctpProvenanceMessage.build(
-            DEST_DOMAIN, DEST_DOMAIN, nonce, address(usdc), address(destAdapter), address(destAdapter), amount
+            DEST_DOMAIN,
+            DEST_DOMAIN,
+            nonce,
+            address(usdc),
+            address(destAdapter.tokenMessenger()),
+            address(destAdapter),
+            address(destAdapter),
+            amount
         );
         bytes memory protocolData = abi.encode(cctpMessage, "mock_attestation");
 
@@ -440,7 +498,14 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         returns (bytes memory)
     {
         bytes memory cctpMessage = CctpProvenanceMessage.build(
-            SOURCE_DOMAIN, DEST_DOMAIN, nonce, address(usdc), destAdapter, destAdapter, amount
+            SOURCE_DOMAIN,
+            DEST_DOMAIN,
+            nonce,
+            address(usdc),
+            address(CctpBridgeAdapter(destAdapter).tokenMessenger()),
+            destAdapter,
+            destAdapter,
+            amount
         );
         return abi.encode(cctpMessage, "mock_attestation");
     }

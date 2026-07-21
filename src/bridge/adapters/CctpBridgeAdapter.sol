@@ -282,9 +282,18 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
 
         bytes32 selfAsBytes32 = bytes32(uint256(uint160(address(this))));
 
-        // Recipient of the mint (both header- and body-level) must be THIS adapter.
-        if (headerRecipient != selfAsBytes32 || bodyMintRecipient != selfAsBytes32) {
+        // The minted USDC recipient is the CCTP V2 *body* mintRecipient (bytes 184-216) and must be
+        // THIS adapter. The *header* recipient (bytes 76-108) is NOT the mint recipient: in a V2 token
+        // burn message it is the destination TokenMessenger — the on-chain handler that
+        // MessageTransmitter.receiveMessage dispatches to before it mints — so it must equal the
+        // configured TokenMessenger, never the adapter. (Checking the header against the adapter, as a
+        // prior version did, reverts every real Circle message because the header always carries the
+        // TokenMessenger.)
+        if (bodyMintRecipient != selfAsBytes32) {
             revert InvalidMintRecipient();
+        }
+        if (headerRecipient != bytes32(uint256(uint160(address(tokenMessenger()))))) {
+            revert InvalidMessage();
         }
 
         // burnToken must equal the invoice's destination asset.

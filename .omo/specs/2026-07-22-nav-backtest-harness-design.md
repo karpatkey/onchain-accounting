@@ -28,10 +28,11 @@ Also: CI `forge build` takes ~15 min because compilation artifacts are never cac
 
 ## Part 1 — CI build cache (standalone first step)
 
-1. Add an `actions/cache` step for the project `cache/` + `out/` dirs in the Build job of `.github/workflows/foundry.yml`, keyed on `foundry.toml` hash + `FOUNDRY_VERSION` + source tree hash, with restore-key prefix fallback so PRs restore the most recent main build and recompile only the dirty subgraph. Expected: ~15 min → ~1–3 min for typical PRs.
-2. Enable `dynamic_test_linking = true` in `foundry.toml` (foundry ≥1.1) so test-only edits don't recompile `src/`.
-3. Keep `build_info = true` (required by openzeppelin-foundry-upgrades validation) — do not trim outputs in v1.
-4. CREATE2 library pins are a function of pinned solc/forge version, not cache warmth — caching is safe for pin stability.
+1. **Migrate CI to Blacksmith runners.** Replace `runs-on: ubuntu-latest` with Blacksmith tags in all jobs of `.github/workflows/foundry.yml` and `.github/workflows/refresh-integration-snapshot.yml`. Build job gets a larger tier (e.g. `blacksmith-8vcpu-ubuntu-2404` — via_ir solc parallelizes across compilation units); other jobs `blacksmith-4vcpu-ubuntu-2404` (or 2vcpu for lint). Prereq: install the Blacksmith GitHub App on this repo (and on every repo using `blacksmith-*` labels, to avoid cross-repo runner poaching/queueing). Existing `actions/cache`-based caching (incl. foundry-toolchain's RPC cache) transparently redirects to Blacksmith's colocated cache — no key changes needed; 25 GB/repo/week vs GitHub's 10 GB total.
+2. **Persist build artifacts with a Blacksmith sticky disk.** Mount `useblacksmith/stickydisk` (key `${{ github.repository }}-forge-build`) at the project `cache/` + `out/` paths in the Build job so forge's incremental compilation works across runs — no tar/upload of the multi-GB via_ir artifact dir (superior to plain `actions/cache` for this). Expected: ~15 min cold compile → ~1–3 min for typical PRs.
+3. Enable `dynamic_test_linking = true` in `foundry.toml` (foundry ≥1.1) so test-only edits don't recompile `src/`.
+4. Keep `build_info = true` (required by openzeppelin-foundry-upgrades validation) — do not trim outputs in v1.
+5. CREATE2 library pins are a function of pinned solc/forge version, not cache warmth — caching/sticky disks are safe for pin stability.
 
 ## Part 2 — backtest harness
 

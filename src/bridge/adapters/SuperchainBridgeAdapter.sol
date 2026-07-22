@@ -395,6 +395,10 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     }
 
     /// @notice Proves a withdrawal transaction and correlates it to its invoice.
+    /// @param l2ChainId The source L2 chain id selecting the OptimismPortal. MUST equal the invoice's
+    ///        `sourceChainId` — completion (`_finalizeWithdrawal`) selects the portal from the invoice's
+    ///        `sourceChainId`, so proving against a different L2's portal here would make finalize revert
+    ///        `WithdrawalNotProven` (no fund loss, but the withdrawal cannot be completed until re-proven).
     /// @param withdrawalTx The withdrawal transaction to prove (its `target` is this adapter for ETH
     ///        withdrawals, or the L1 bridge/messenger for ERC20 — see `_finalizeWithdrawal`).
     /// @param l2OutputIndex The L2 output index

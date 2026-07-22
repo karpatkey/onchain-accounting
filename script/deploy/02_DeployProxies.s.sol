@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
 import {ConfigReader} from "../utils/ConfigReader.sol";
 import {AtomicProxyDeployer} from "./AtomicProxyDeployer.sol";
+import {AtomicBridgeProxyDeployer} from "./AtomicBridgeProxyDeployer.sol";
 import {DeploySalts} from "./DeploySalts.sol";
 import {UUPSProxy} from "../../src/proxy/UUPSProxy.sol";
 import {UUPSPlaceholder} from "../../src/utils/UUPSPlaceholder.sol";
@@ -87,10 +88,28 @@ contract DeployProxies is BaseDeployScript {
         );
 
         bool useLegacy = bytes(vm.envOr("USE_LEGACY_DEPLOY", string(""))).length > 0;
+        bool bridgeOnly = vm.envOr("BRIDGE_ONLY_ATOMIC", false);
 
         vm.startBroadcast();
 
-        if (useLegacy) {
+        if (bridgeOnly) {
+            // Bridge-only atomic path (front-run-safe; ADR 0020). Deploy + upgradeToAndCall(initialize) +
+            // role handoff for the BridgeEscrow proxy in ONE tx, touching NOTHING on the NAV side — so it is
+            // safe on chains where NAV is already live (AtomicProxyDeployer would revert re-initializing NAV).
+            // Accounts / assets / adapters are wired afterwards by 06.
+            console2.log("[ATOMIC-BRIDGE] Deploying ONLY the BridgeEscrow proxy (NAV untouched)");
+            address[] memory bridgeAccounts = new address[](0);
+            address[] memory bridgeInitAdapters = new address[](0);
+            // forge-lint: disable-next-line(unsafe-typecast)
+            new AtomicBridgeProxyDeployer(
+                bridgeImpl,
+                uint64(currentChainId),
+                bridgeAccounts,
+                bridgeInitAdapters,
+                chainConfig.admin,
+                chainConfig.manager
+            );
+        } else if (useLegacy) {
             // Legacy multi-tx path (each step can be front-run).
             if (placeholder.code.length == 0) {
                 (bool ok,) = CANONICAL_CREATE2_DEPLOYER.call(abi.encodePacked(saltPlaceholder, placeholderBytecode));
@@ -241,24 +260,33 @@ contract DeployProxies is BaseDeployScript {
         vm.stopBroadcast();
 
         // Verify deployments
-        require(navProxy.code.length > 0, "NAV proxy deployment failed - no code at address");
         require(bridgeProxy.code.length > 0, "Bridge proxy deployment failed - no code at address");
-        console2.log("[OK] Both proxies verified with code");
+        if (!bridgeOnly) {
+            require(navProxy.code.length > 0, "NAV proxy deployment failed - no code at address");
+            console2.log("[OK] Both proxies verified with code");
 
-        // Index ERC20Default adapter (created in NAVCalculator.initialize()) and write to config
-        address defaultAdapter = NAVCalculator(navProxy).erc20DefaultBalanceAdapter();
-        console2.log("  ERC20Default adapter (from NAV init):", defaultAdapter);
-        if (defaultAdapter != address(0)) {
-            if (shouldBroadcast) {
-                ConfigReader.writeAdapterAddress(vm, currentChainId, "balanceAdapters", "ERC20Default", defaultAdapter);
-                console2.log("  balanceAdapters.ERC20Default.deployed written to config");
-            } else {
-                console2.log("  (Set PERSIST_DEPLOYMENTS=1 to write balanceAdapters.ERC20Default.deployed to config)");
+            // Index ERC20Default adapter (created in NAVCalculator.initialize()) and write to config
+            address defaultAdapter = NAVCalculator(navProxy).erc20DefaultBalanceAdapter();
+            console2.log("  ERC20Default adapter (from NAV init):", defaultAdapter);
+            if (defaultAdapter != address(0)) {
+                if (shouldBroadcast) {
+                    ConfigReader.writeAdapterAddress(
+                        vm, currentChainId, "balanceAdapters", "ERC20Default", defaultAdapter
+                    );
+                    console2.log("  balanceAdapters.ERC20Default.deployed written to config");
+                } else {
+                    console2.log(
+                        "  (Set PERSIST_DEPLOYMENTS=1 to write balanceAdapters.ERC20Default.deployed to config)"
+                    );
+                }
             }
+
+            saveDeployedAddress("NAVCalculatorProxy", navProxy);
+        } else {
+            console2.log("[OK] BridgeEscrow proxy verified with code (NAV untouched)");
         }
 
         // Save deployed addresses
-        saveDeployedAddress("NAVCalculatorProxy", navProxy);
         saveDeployedAddress("BridgeEscrowProxy", bridgeProxy);
 
         console2.log("\n=== Deployment Complete ===");

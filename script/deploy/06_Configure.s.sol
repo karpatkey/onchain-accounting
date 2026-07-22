@@ -354,10 +354,19 @@ contract Configure is BaseDeployScript {
             if (remoteChainId == 0 || remoteChainId == currentChainId) continue;
             string memory mediatorStr =
                 ConfigReader.readAdapterParam(vm, remoteChainId, "bridgeAdapters", "Gnosis", "omnibridge");
-            if (bytes(mediatorStr).length == 0) {
-                console2.log("[WARN] No source Omnibridge mediator configured for Gnosis remote chain:", remoteChainId);
-                continue;
-            }
+            // Fail fast: a Gnosis remote lane with no source mediator would leave trustedMediator unset, so a
+            // genuine inbound transfer from that chain reverts in onTokenTransfer (Omnibridge swallows it →
+            // stranded tokens). A misconfigured lane must not ship silently.
+            require(
+                bytes(mediatorStr).length != 0,
+                string(
+                    abi.encodePacked(
+                        "06: Gnosis remoteChain ",
+                        vm.toString(remoteChainId),
+                        " has no omnibridge (source mediator) configured"
+                    )
+                )
+            );
             address mediator = vm.parseAddress(mediatorStr);
             (bool ok, bytes memory data) = adapter.call(
                 abi.encodeWithSignature("setTrustedMediator(uint64,address)", uint64(remoteChainId), mediator)

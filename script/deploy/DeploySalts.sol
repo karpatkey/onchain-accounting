@@ -32,8 +32,11 @@ library DeploySalts {
     /// @notice NAVCalculator UUPS proxy salt. Used by 02_DeployProxies, 02_2_DeployNAVProxy, and both atomic deployers.
     uint256 internal constant NAV_PROXY = 6;
 
-    /// @notice BridgeEscrow UUPS proxy salt. Used by the full path (02_DeployProxies + AtomicProxyDeployer).
-    uint256 internal constant BRIDGE_PROXY = 3;
+    /// @notice BridgeEscrow UUPS proxy salt. Used by 02_DeployProxies + AtomicProxyDeployer +
+    ///         AtomicBridgeProxyDeployer. Bumped 3->4 for the clean redeploy: salt 3 resolves to the abandoned,
+    ///         front-run/buggy escrow (already initialized → not re-usable), so a fresh salt yields a brand-new
+    ///         deterministic address. Bump again (5, 6, …) for any subsequent clean-redeploy attempt.
+    uint256 internal constant BRIDGE_PROXY = 4;
 
     /// @notice NAVCalculator implementation salt. Used by 01_DeployImplementations and 01_2_DeployNAVImplementation.
     uint256 internal constant NAV_IMPL = 3;

@@ -48,6 +48,17 @@ contract DeployBridgeAdapters is BaseDeployScript {
         // Every adapter is enable-gated in config; deploy each enabled one deterministically. The set is identical
         // across chains, so the per-chain branching of the old flow is gone — config `enabled` is the only gate.
         vm.startBroadcast();
+
+        // Each adapter's initialize is pinned to expectedInitializer (= chainConfig.admin, baked into the
+        // creationCode by _adapterInitCode). If the broadcasting key is not that exact address, every
+        // initialize() would revert NotAuthorized mid-deploy — fail fast here with a clear message. (The
+        // baked value must also be byte-identical across chains or the CREATE2 same-address guarantee breaks.)
+        (, address broadcaster,) = vm.readCallers();
+        require(
+            broadcaster == _expectedInitializer(),
+            "05: broadcaster must equal chainConfig.admin (the pinned expectedInitializer)"
+        );
+
         _deployCcipIfConfigured(bridgeProxy);
         _deployAcrossIfConfigured(bridgeProxy);
         _deployStargateIfConfigured(bridgeProxy);

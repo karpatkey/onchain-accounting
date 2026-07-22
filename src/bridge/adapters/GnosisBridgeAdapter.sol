@@ -54,6 +54,8 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
     /// @notice Invoices whose inbound Omnibridge transfer was authenticated at delivery (in `onTokenTransfer`).
     /// @dev The MANAGER fallback (`_completeBridge`) cannot re-read `amb.messageSender()` (it is only set while
     ///      the AMB is executing a message), so it completes only invoices recorded here at genuine delivery.
+    ///      This flag is set once and never cleared; double-release is prevented not here but by the escrow's
+    ///      `completedInvoices` replay guard in `releaseByInvoiceId` (a second completion reverts there).
     mapping(bytes32 => bool) public authenticatedInvoice;
 
     //

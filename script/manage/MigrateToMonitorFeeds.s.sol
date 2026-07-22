@@ -326,25 +326,4 @@ contract MigrateToMonitorFeeds is BaseDeployScript {
         vm.stopBroadcast();
         console2.log("[OK] Broadcast", batch.length, "tx(s) from the deployer EOA.");
     }
-
-    /// @notice Decodes an `Error(string)` revert payload; returns "unknown" for custom errors / empty data.
-    function _revertMsg(bytes memory data) internal pure returns (string memory) {
-        if (data.length >= 68 && data[0] == 0x08 && data[1] == 0xc3 && data[2] == 0x79 && data[3] == 0xa0) {
-            uint256 len;
-            assembly {
-                len := mload(add(add(data, 32), 36))
-            }
-            // Error(string) layout: [0,4) selector · [4,36) offset · [36,68) length · [68,…) string bytes.
-            // Compare without `68 + len` so a garbage length word can't overflow-panic inside the error decoder
-            // (data.length >= 68 is guaranteed by the outer guard).
-            if (len <= data.length - 68) {
-                bytes memory msgBytes = new bytes(len);
-                for (uint256 i = 0; i < len; i++) {
-                    msgBytes[i] = data[i + 68];
-                }
-                return string(msgBytes);
-            }
-        }
-        return "unknown";
-    }
 }

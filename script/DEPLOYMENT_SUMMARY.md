@@ -6,7 +6,7 @@
 >
 > **Chains (24):**
 > - **Full** (feeds + adapters): Ethereum (1), Optimism (10), Arbitrum (42161), Base (8453), Gnosis (100).
-> - **Implementation + proxy:** BSC (56), Polygon (137), Berachain (80094), HyperEVM (999), Ink (57073), Linea (59144), opBNB (204), Sonic (146), Unichain (130), Scroll (534352), X Layer (196), Celo (42220), Avalanche (43114), Mantle (5000), World Chain (480), Monad (143), Plasma (9745), Hemi (43111), 0G (16661).
+> - **Implementation + proxy:** BSC (56), Polygon (137), Berachain (80094), Ink (57073), Linea (59144), opBNB (204), Sonic (146), Unichain (130), Scroll (534352), X Layer (196), Celo (42220), Avalanche (43114), Mantle (5000), World Chain (480), Monad (143), Plasma (9745), Hemi (43111), 0G (16661).
 > - Polygon zkEVM is intentionally **excluded** (the network is being sunset).
 
 ## ✅ What Has Been Implemented
@@ -392,7 +392,7 @@ script/config/deployments/
 ├── 8453.json       # Base
 ├── 100.json        # Gnosis
 # Implementation + proxy:
-├── 56.json   137.json   80094.json  999.json    57073.json
+├── 56.json   137.json   80094.json  57073.json
 ├── 59144.json 204.json  146.json    130.json    534352.json
 ├── 196.json   42220.json 43114.json 5000.json   480.json
 └── 143.json   9745.json  43111.json 16661.json

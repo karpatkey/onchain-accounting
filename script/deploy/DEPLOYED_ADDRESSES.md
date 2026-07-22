@@ -40,7 +40,6 @@ Deployed via the canonical CREATE2 deployer (`0x4e59b44847b379578588920cA78FbF26
 | BSC | 56 | impl + proxy | — | — |
 | Polygon | 137 | impl + proxy | — | — |
 | Berachain | 80094 | impl + proxy | — | — |
-| HyperEVM | 999 | impl + proxy | — | — |
 | Ink | 57073 | impl + proxy | — | — |
 | Linea | 59144 | impl + proxy | — | — |
 | opBNB | 204 | impl + proxy | — | — |
@@ -57,7 +56,7 @@ Deployed via the canonical CREATE2 deployer (`0x4e59b44847b379578588920cA78FbF26
 | Hemi | 43111 | impl + proxy | — | — |
 | 0G | 16661 | impl + proxy | — | — |
 
-The 19 impl+proxy chains run the canonical layer only; custom price feeds and balance adapters are registered as assets land on each. HyperEVM required its big-blocks mode for the implementation deploy.
+The 18 impl+proxy chains run the canonical layer only; custom price feeds and balance adapters are registered as assets land on each.
 
 ---
 

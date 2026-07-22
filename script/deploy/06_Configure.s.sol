@@ -27,10 +27,20 @@ contract Configure is BaseDeployScript {
 
         console2.log("\n=== Post-Deployment Configuration (EOA broadcast) ===");
 
-        address navProxy = readDeployedAddress("NAVCalculatorProxy");
+        // Bridge-only mode (clean bridge redeploy on a live-NAV chain): configure ONLY the BridgeEscrow. The NAV
+        // proxy is already live and admin/manager on it are held by the security council — NOT the deploy EOA — so
+        // any NAV role grant (`_ensureManager`) or meta-instance reconcile would revert. Skip the NAV branch entirely.
+        // Pairs with 01's BRIDGE_ONLY_IMPL and 02's BRIDGE_ONLY_ATOMIC.
+        bool bridgeOnly = vm.envOr("BRIDGE_ONLY_CONFIG", false);
+
+        address navProxy = bridgeOnly ? address(0) : readDeployedAddress("NAVCalculatorProxy");
         address bridgeProxy = readDeployedAddress("BridgeEscrowProxy");
 
-        if (navProxy == address(0)) {
+        if (bridgeOnly) {
+            console2.log("[BRIDGE-ONLY] Configuring ONLY the BridgeEscrow (NAV untouched)");
+        }
+
+        if (navProxy == address(0) && !bridgeOnly) {
             console2.log("WARNING: NAVCalculator not deployed, skipping NAV configuration");
         }
         if (bridgeProxy == address(0)) {
@@ -378,7 +388,7 @@ contract Configure is BaseDeployScript {
                             "setTrustedMediator failed for Gnosis sourceKey ",
                             vm.toString(remoteChainId),
                             ": ",
-                            _decodeRevert(data)
+                            _revertMsg(data)
                         )
                     )
                 );

@@ -165,8 +165,18 @@ library ConfigReader {
         config.chainlinkSequencerFeed = json.readAddress(".chainlinkSequencerFeed");
         config.nativeTokenSymbol = json.readString(".nativeTokenSymbol");
         config.securityCouncil = json.readAddress(".addresses.securityCouncil");
-        config.admin = json.readAddress(".addresses.admin");
-        config.manager = json.readAddress(".addresses.manager");
+        // The deploy-phase `admin`/`manager` (the deployer EOA; the security council becomes end-state admin via 07)
+        // may be overridden at runtime via DEPLOY_ADMIN / DEPLOY_MANAGER. This lets a deploy be broadcast from a
+        // different EOA (e.g. a fresh key for a clean bridge redeploy) WITHOUT rewriting the committed chain config —
+        // and keeps the adapter `expectedInitializer` (== chainConfig.admin) aligned with the broadcasting key. When
+        // the env vars are unset, the committed JSON values are used unchanged (no behavior change for normal runs).
+        config.admin = _resolveRoleOverride(vm, "DEPLOY_ADMIN", json.readAddress(".addresses.admin"));
+        config.manager = _resolveRoleOverride(vm, "DEPLOY_MANAGER", json.readAddress(".addresses.manager"));
+    }
+
+    /// @dev Returns the address in env var `envName` if set to a valid address, otherwise `fallbackAddr`.
+    function _resolveRoleOverride(Vm vm, string memory envName, address fallbackAddr) private view returns (address) {
+        return vm.envOr(envName, fallbackAddr);
     }
 
     // -------------------------------------------------------------------------

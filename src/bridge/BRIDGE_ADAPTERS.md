@@ -176,9 +176,9 @@ On the source chain every adapter sets the protocol's destination recipient to i
 | **CCIP** | `ccipReceive(Any2EVMMessage)` | `== router` | `selectorToChainId[sourceChainSelector]` + `message.sender == trustedRemoteAdapter` |
 | **Across (V3)** | `handleV3AcrossMessage(tokenSent, amount, relayer, message)` | `== spokePool` | `tokenSent`/`amount` bound to the invoice; `trustedRemoteAdapter` per source chain |
 | **Stargate (V2)** | `lzCompose(from, guid, message, …)` | `== endpoint` | `srcEid` + `composeFrom == trustedRemoteAdapter` |
-| **Gnosis** | `onTokenTransfer(from, value, data)` (ERC677) | `== omnibridge` | `amb.messageSender() == trustedRemoteAdapter` + `amb.messageSourceChainId()` |
-| **CCTP** | manager `completeBridge`; `messageTransmitter.receiveMessage` | n/a (Circle attestation) | CCTP message body (burnToken/amount/mintRecipient/sourceDomain) bound to invoice; nonce dedup |
-| **Superchain** | L1→L2 via `L2CrossDomainMessenger`; L2→L1 via `OptimismPortal` | `== l2Messenger` (+ `xDomainMessageSender == trustedRemoteAdapter`); withdrawals proof-gated | messenger xDomain sender; portal Merkle proof + real OP withdrawal hash |
+| **Gnosis** | `onTokenTransfer(from, value, data)` (ERC677) | `== omnibridge` | `amb.messageSender() == trustedMediator[srcChainId]` (the SOURCE Omnibridge mediator, NOT the sibling adapter) + `amb.messageSourceChainId()`. The auto path records `authenticatedInvoice`; the MANAGER fallback completes only recorded invoices (see [ADR 0020](../../docs/decisions/0020-bridge-adapter-provenance-and-deploy-hardening.md)) |
+| **CCTP** | manager `completeBridge`; `messageTransmitter.receiveMessage` | n/a (Circle attestation) | body mintRecipient (bytes 184-216) == adapter; header recipient (bytes 76-108) == configured TokenMessenger (NOT the adapter); burnToken/amount/sourceDomain bound to invoice; nonce dedup |
+| **Superchain** | L1→L2 via `L2CrossDomainMessenger`; L2→L1 via `OptimismPortal` (both **per destination/source L2 chain id** — one L1 adapter serves OP+Base, ADR 0020) | `== l2Messenger` (+ `xDomainMessageSender == trustedRemoteAdapter`); withdrawals proof-gated | messenger xDomain sender; portal Merkle proof + real OP withdrawal hash. `proveWithdrawal`/finalize/view take an `l2ChainId` selecting `optimismPortalForL2` |
 
 In all cases the protocol delivers the tokens to the adapter, the adapter authenticates, and `_fundAndRelease` hands the escrow the exact amount and releases to the account. The checksum + `completedInvoices` replay guard remain as defense-in-depth.
 
@@ -191,9 +191,11 @@ In all cases the protocol delivers the tokens to the adapter, the adapter authen
 | AcrossBridgeAdapter | Across V3 | adapter (self) | `handleV3AcrossMessage` | spokePool + token/amount binding |
 | CcipBridgeAdapter | CCIP | adapter (self) | `ccipReceive` | router + selector + source sender |
 | StargateBridgeAdapter | Stargate V2 | adapter (self) | `lzCompose` | endpoint + srcEid + composeFrom |
-| GnosisBridgeAdapter | Gnosis Omnibridge | adapter (self) | `onTokenTransfer` (ERC677) | omnibridge + AMB sender/source chain |
-| CctpBridgeAdapter | CCTP (Circle) | adapter (self) | — (manager) | Circle attestation + message-body binding + nonce dedup |
-| SuperchainBridgeAdapter | Optimism L1/L2 | adapter (self) | `completeDeposit` (L1→L2) | xDomainMessageSender; portal proof + real OP hash (L2→L1) |
+| GnosisBridgeAdapter | Gnosis Omnibridge | adapter (self) | `onTokenTransfer` (ERC677) | omnibridge + AMB source **mediator** (`trustedMediator`) + source chain; record-gated MANAGER fallback |
+| CctpBridgeAdapter | CCTP (Circle) | adapter (self) | — (manager) | Circle attestation; body mintRecipient == adapter + header == TokenMessenger; nonce dedup |
+| SuperchainBridgeAdapter | Optimism/Base L1↔L2 | adapter (self) | `completeDeposit` (L1→L2) | xDomainMessageSender; per-L2 `optimismPortalForL2` proof + real OP hash (L2→L1) |
+
+All adapters take a single `expectedInitializer` constructor arg (baked into `creationCode` by `05`, identical per chain so the CREATE2 address is preserved) that pins who may call `initialize` — closing the deploy→initialize front-run window (ADR 0020).
 
 Each adapter's `trustedRemoteAdapter` must be configured per source chain so inbound messages are authenticated.
 

@@ -118,9 +118,7 @@ const chain = args.chain ?? "1";
 const windowName = args.window ?? "w1-30d";
 const modeRaw = args.mode ?? "report";
 
-if (!isMode(modeRaw)) {
-  fail(`bad --mode: ${modeRaw} (expected report|snapshot|assert)`, 2);
-}
+if (!isMode(modeRaw)) fail(`bad --mode: ${modeRaw} (expected report|snapshot|assert)`, 2);
 const mode: Mode = modeRaw;
 
 // Parse blocks file at boundary
@@ -194,9 +192,7 @@ for (const line of out.split("\n")) {
   results[account] = byMetric;
 }
 
-if (Object.keys(results).length === 0) {
-  fail("no BACKTEST lines in forge output", 2);
-}
+if (Object.keys(results).length === 0) fail("no BACKTEST lines in forge output", 2);
 
 // Completeness check
 let missing = false;

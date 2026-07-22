@@ -59,7 +59,7 @@ Notes:
 
 ## 3. Create the per-concern config files
 
-The repo no longer keeps a single `assets.json` or `balance-adapters.json` keyed by chainId. Each concern is split into its own folder, and within each folder there's one file **per chain** (`<newChainId>.json`) whose **top-level keys are the entries** — the filename is the chain, so there is no chainId wrapper inside the JSON. Adding a chain means creating a file in each of the seven folders below (plus the `chains/<id>.json` and `deployments/<id>.json` already covered):
+The repo no longer keeps a single `assets.json` or `balance-adapters.json` keyed by chainId. Each concern is split into its own folder, and within each folder there's one file **per chain** (`<newChainId>.json`) whose **top-level keys are the entries** — the filename is the chain, so there is no chainId wrapper inside the JSON. Adding a chain means creating a file in each of the eight folders below (plus the `chains/<id>.json` and `deployments/<id>.json` already covered):
 
 | File | Contents | Read by |
 |---|---|---|
@@ -67,6 +67,7 @@ The repo no longer keeps a single `assets.json` or `balance-adapters.json` keyed
 | `script/config/contracts-deployment-config/balance-adapters/<newChainId>.json` | `{ "<AdapterName>": { "enabled", "constructor": {…} } }` — **plain** adapters to **deploy** (no instances here) | `04_DeployBalanceAdapters.s.sol` |
 | `script/config/contracts-deployment-config/meta-balance-adapters/<newChainId>.json` | `{ "<AdapterName>": { "enabled", "constructor": {…} } }` — **meta** adapters to **deploy** (no instances here) | `04_DeployBalanceAdapters.s.sol` |
 | `script/config/contracts-deployment-config/bridge-adapters/<newChainId>.json` | `{ "<AdapterName>": { "enabled", "initialize": {…} } }` — bridge adapters to **deploy** | `05_DeployBridgeAdapters.s.sol` |
+| `script/config/contracts-deployment-config/bridge-escrow/<newChainId>.json` | `{ "accounts": [ … ], "assets": { "<SYMBOL>": "0x…" } }` — accounts to authorize + assets to register on `BridgeEscrow` | `06_Configure.s.sol` → `authorizeAccount` + `registerAsset` |
 | `script/config/nav-config/assets-and-price-feeds/<newChainId>.json` | `{ "<SYMBOL>": { "address", "priceFeeds": [ … ] } }` — assets to **register** | `RegisterAssets.s.sol` |
 | `script/config/nav-config/balance-adapters/<newChainId>.json` | `{ "<AdapterName>": { "enabled" } }` — **plain** adapters to add on NAV | `06_Configure.s.sol` → `addBalanceAdapters` |
 | `script/config/nav-config/meta-balance-adapters/<newChainId>.json` | `{ "<AdapterName>": { "enabled", "instances": […] \| "instancesRaw": […] } }` — **meta** adapters to add on NAV | `06_Configure.s.sol` → `addMetaBalanceAdapter` + add/removeMetaInstances |
@@ -107,6 +108,20 @@ For any bridge adapters this chain should support (CCIP, CCTP, Across, Stargate,
     "enabled": true,
     "initialize": { "admin": "0x...", "bridgeEscrow": "0x...", "version": "1.0.0" }
   }
+}
+```
+
+### 3.4 Bridge escrow accounts + assets
+
+Create `script/config/contracts-deployment-config/bridge-escrow/<newChainId>.json`. This is what makes the escrow usable: `06_Configure.s.sol` reads it and calls `authorizeAccount` for every `.accounts` entry and `registerAsset` for every `.assets` entry. Without it the escrow ships with no authorized accounts and no registered assets, so `depositAndBridge` reverts (`NotAuthorized`, then the symbol lookup fails) even though the adapters are wired. Both calls run before `07`, while the deployer still holds `DEFAULT_ADMIN_ROLE` (accounts) and `MANAGER_ROLE` (assets).
+
+- `accounts` — addresses allowed to call `depositAndBridge` / receive releases. An account must be authorized on **both** ends of every lane it uses, at the same address on each chain. Leave `[]` and fill per deployment (the deployer EOA for a smoke test, the fund Safes for production).
+- `assets` — **logical bridge symbol → local token address**. The symbol is part of the cross-chain invoice identity, so both ends of a lane must register the **same** logical symbol mapped to each chain's local token (keys are logical, ≤ 6 chars — e.g. keep `"USDC"` consistent across chains even where the local token is `USDC.e`).
+
+```json
+{
+  "accounts": [],
+  "assets": { "USDC": "0x...", "WETH": "0x..." }
 }
 ```
 
@@ -151,7 +166,7 @@ DEPLOYER_EOA=0xYourDeployerEOA \
 forge script script/deploy/07_TransferAdminToSecurityCouncil.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
 ```
 
-Each script reads from `script/config/chains/<chainId>.json` plus the relevant per-concern, per-chain file — `03` reads `contracts-deployment-config/custom-price-feeds/<chainId>.json`, `04` reads `contracts-deployment-config/balance-adapters/<chainId>.json` + `contracts-deployment-config/meta-balance-adapters/<chainId>.json`, `05` reads `contracts-deployment-config/bridge-adapters/<chainId>.json`, `RegisterAssets` reads `nav-config/assets-and-price-feeds/<chainId>.json`, and `06` reads `nav-config/balance-adapters/<chainId>.json` + `nav-config/meta-balance-adapters/<chainId>.json` — and writes deployed addresses to `script/config/deployments/<chainId>.json` (the `03`/`04`/`05` per-feed/per-adapter writes happen on every run; the `01`/`02` impl/proxy writes require `PERSIST_DEPLOYMENTS=1`). Re-running is safe: already-deployed addresses are skipped.
+Each script reads from `script/config/chains/<chainId>.json` plus the relevant per-concern, per-chain file — `03` reads `contracts-deployment-config/custom-price-feeds/<chainId>.json`, `04` reads `contracts-deployment-config/balance-adapters/<chainId>.json` + `contracts-deployment-config/meta-balance-adapters/<chainId>.json`, `05` reads `contracts-deployment-config/bridge-adapters/<chainId>.json`, `RegisterAssets` reads `nav-config/assets-and-price-feeds/<chainId>.json`, and `06` reads `nav-config/balance-adapters/<chainId>.json` + `nav-config/meta-balance-adapters/<chainId>.json` + `contracts-deployment-config/bridge-escrow/<chainId>.json` (accounts + assets) — and writes deployed addresses to `script/config/deployments/<chainId>.json` (the `03`/`04`/`05` per-feed/per-adapter writes happen on every run; the `01`/`02` impl/proxy writes require `PERSIST_DEPLOYMENTS=1`). Re-running is safe: already-deployed addresses are skipped.
 
 For chains where some scripts are no-ops (e.g., a chain with no bridge adapters), the relevant deploys produce no actions and exit cleanly.
 
@@ -190,6 +205,7 @@ PR checklist:
 - [ ] `script/config/contracts-deployment-config/balance-adapters/<newChainId>.json` populated (plain adapters to deploy: `enabled` + `constructor`)
 - [ ] `script/config/contracts-deployment-config/meta-balance-adapters/<newChainId>.json` populated (meta adapters to deploy: `enabled` + `constructor`)
 - [ ] `script/config/contracts-deployment-config/bridge-adapters/<newChainId>.json` populated (bridge adapters to deploy: `enabled` + `initialize`)
+- [ ] `script/config/contracts-deployment-config/bridge-escrow/<newChainId>.json` populated (bridge accounts to authorize + assets to register; `accounts` may be `[]` and filled per deployment)
 - [ ] `script/config/nav-config/assets-and-price-feeds/<newChainId>.json` populated (assets with `priceFeeds`)
 - [ ] `script/config/nav-config/balance-adapters/<newChainId>.json` populated (plain adapters to register)
 - [ ] `script/config/nav-config/meta-balance-adapters/<newChainId>.json` populated (meta adapters + `instances`/`instancesRaw`)

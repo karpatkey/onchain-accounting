@@ -1,0 +1,8 @@
+{
+  "$comment": "BridgeEscrow post-deploy config for Ethereum (1). `accounts` = addresses authorized to call depositAndBridge / receive releases (authorizeAccount, DEFAULT_ADMIN_ROLE); left empty here and filled per deployment — the deployer EOA for the smoke test, the fund Safes for production. `assets` = LOGICAL bridge symbol -> local token address (registerAsset, MANAGER_ROLE). The symbol is part of the cross-chain invoice identity, so BOTH ends of a lane must register the SAME logical symbol mapped to each chain's local token. USDC here is native Circle USDC (CCTP-eligible).",
+  "accounts": [],
+  "assets": {
+    "USDC": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    "WETH": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+  }
+}

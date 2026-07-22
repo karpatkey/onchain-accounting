@@ -1,0 +1,8 @@
+{
+  "$comment": "BridgeEscrow post-deploy config for Arbitrum (42161). See 1.json for field semantics. USDC = native Circle USDC (CCTP-eligible).",
+  "accounts": [],
+  "assets": {
+    "USDC": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+    "WETH": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"
+  }
+}

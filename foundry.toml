@@ -79,9 +79,14 @@ ignored_warnings_from = ["lib"]
 libraries = []
 
 # Fast local dev / unit-test profile. Inherits [profile.default] and disables
-# every axis that slows compilation or ties bytecode to a specific pin: via_ir,
+# every axis that slows compilation or ties bytecode to a specific pin:
 # optimizer, build_info, ast, extra_output, and the pinned `libraries` array.
 # PriceFeedLib / NAVRegistryLib are auto-deployed + auto-linked by forge instead.
+#
+# via_ir=true (with optimizer=false) is REQUIRED: legacy codegen hits
+# "Stack too deep" at src/prices/PriceFeedLib.sol:491. via_ir without the
+# optimizer skips the expensive Yul optimization pipeline but uses the
+# IR-based codegen that avoids the stack limit.
 #
 # IMPORTANT: this profile is NOT bytecode-compatible with [profile.default].
 # Library CREATE2 addresses, optimizer output, and via_ir codegen all differ, so
@@ -90,7 +95,7 @@ libraries = []
 # iteration and unit tests. CI keeps the default profile. Unoptimized NAVCalculator
 # exceeds EIP-170's 24576-byte limit, so bump code_size_limit to give it headroom.
 [profile.lite]
-via_ir = false  # tested: no stack-too-deep; build blocked by pre-existing solc 2527 errors (unrelated to via_ir)
+via_ir = true   # required: legacy codegen hits stack-too-deep in PriceFeedLib
 optimizer = false
 build_info = false
 ast = false

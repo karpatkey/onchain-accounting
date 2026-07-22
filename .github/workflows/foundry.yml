@@ -30,6 +30,17 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Mount forge compilation cache
+        uses: useblacksmith/stickydisk@v1
+        with:
+          key: ${{ github.repository }}-forge-cache
+          path: ./cache
+
+      - name: Mount forge build output
+        uses: useblacksmith/stickydisk@v1
+        with:
+          key: ${{ github.repository }}-forge-out
+          path: ./out
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: ${{ env.FOUNDRY_VERSION }}

@@ -34,7 +34,7 @@
 **Interfaces:**
 - Produces: CI jobs running on Blacksmith runners; existing `foundry-toolchain` `cache: true` RPC caching transparently redirects to Blacksmith's colocated cache (no key changes).
 
-- [ ] **Step 1: Swap runs-on labels in foundry.yml**
+- [x] **Step 1: Swap runs-on labels in foundry.yml**
 
 Replace each `runs-on: ubuntu-latest` with the tier for that job:
 
@@ -48,16 +48,16 @@ Replace each `runs-on: ubuntu-latest` with the tier for that job:
 
 Rationale: via_ir solc parallelizes across compilation units → 8vcpu for build; fork/integration are RPC-bound with `--threads 1` → 4vcpu; fmt check → 2vcpu.
 
-- [ ] **Step 2: Swap runs-on in refresh-integration-snapshot.yml**
+- [x] **Step 2: Swap runs-on in refresh-integration-snapshot.yml**
 
 Line 35: `runs-on: ubuntu-latest` → `runs-on: blacksmith-4vcpu-ubuntu-2404`.
 
-- [ ] **Step 3: Validate workflow syntax**
+- [x] **Step 3: Validate workflow syntax**
 
 Run: `actionlint .github/workflows/foundry.yml .github/workflows/refresh-integration-snapshot.yml` (if actionlint is unavailable: `python3 -c "import yaml,sys; [yaml.safe_load(open(f)) for f in sys.argv[1:]]" .github/workflows/foundry.yml .github/workflows/refresh-integration-snapshot.yml`)
 Expected: no errors.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add .github/workflows/foundry.yml .github/workflows/refresh-integration-snapshot.yml
@@ -80,7 +80,7 @@ Expected: all jobs picked up by Blacksmith runners (job logs show `blacksmith-*`
 - Consumes: Blacksmith runners from Task 1 (sticky disks only work on Blacksmith).
 - Produces: persistent `cache/` + `out/` across Build-job runs → forge incremental compilation on CI.
 
-- [ ] **Step 1: Add stickydisk mounts to the Build job**
+- [x] **Step 1: Add stickydisk mounts to the Build job**
 
 In the `build` job of `.github/workflows/foundry.yml`, insert immediately **after** the `actions/checkout` step and **before** `foundry-rs/foundry-toolchain` (checkout would wipe the workdir if mounted paths lived inside files checkout touches — `cache/` and `out/` are gitignored, but mounting after checkout is the documented-safe order):
 
@@ -100,12 +100,12 @@ In the `build` job of `.github/workflows/foundry.yml`, insert immediately **afte
 
 Leave the existing `Upload build artifacts` step unchanged — downstream jobs in the same run still consume `out/` + `cache/` via artifacts.
 
-- [ ] **Step 2: Validate workflow syntax**
+- [x] **Step 2: Validate workflow syntax**
 
 Run: same validation command as Task 1 Step 3.
 Expected: no errors.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add .github/workflows/foundry.yml
@@ -127,7 +127,7 @@ Expected: second run's Build step log shows forge compiling only changed files (
 **Interfaces:**
 - Produces: test-only edits no longer recompile `src/` locally or on CI.
 
-- [ ] **Step 1: Add the flag**
+- [x] **Step 1: Add the flag**
 
 In `[profile.default]` add:
 
@@ -137,12 +137,12 @@ In `[profile.default]` add:
 dynamic_test_linking = true
 ```
 
-- [ ] **Step 2: Verify pins are unaffected and build works**
+- [x] **Step 2: Verify pins are unaffected and build works**
 
 Run: `forge build && forge test --no-match-path "*fork*" --match-path "test/LibraryPinConsistency.t.sol" -vv`
 Expected: build succeeds; `LibraryPinConsistency` passes (proves library bytecode/pins unchanged).
 
-- [ ] **Step 3: Verify incremental behavior**
+- [x] **Step 3: Verify incremental behavior**
 
 Foundry hashes content, so `touch` alone won't trigger a rebuild — make a real edit and revert it:
 
@@ -154,7 +154,7 @@ git checkout -- test/Constants.t.sol
 
 Expected: the build output shows a small "Compiling N files" count (only the edited test's compilation unit, not 509).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add foundry.toml
@@ -186,18 +186,18 @@ git commit -m "build: enable dynamic_test_linking for faster test-only rebuilds"
 
 Point count = `floor((toBlock - fromBlock) / blockStep) + 1`, plus `toBlock` appended if not on the grid (~721 for the values above). Consumed by Task 5 (forge test) and Task 6 (TS driver).
 
-- [ ] **Step 1: Pick and write the pinned window**
+- [x] **Step 1: Pick and write the pinned window**
 
 Anchor `toBlock` to the existing integration pin so the newest point is already RPC-cached: `toBlock` = `.chains."1".forkBlock` from `test/integration/accounts.json` (currently 25426915 — read the live value, don't hardcode from this plan). `fromBlock = toBlock - 216000` (≈30 days at 12s), `blockStep = 300` (≈hourly).
 
 Write the JSON above to `test/integration/backtest-blocks.json` with those values.
 
-- [ ] **Step 2: Validate the arithmetic**
+- [x] **Step 2: Validate the arithmetic**
 
 Run: `jq '.windows."w1-30d".chains."1" | ((.toBlock - .fromBlock) / .blockStep | floor) + 1' test/integration/backtest-blocks.json`
 Expected: `721`.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add test/integration/backtest-blocks.json

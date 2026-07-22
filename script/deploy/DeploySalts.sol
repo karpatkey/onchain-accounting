@@ -30,7 +30,7 @@ library DeploySalts {
     uint256 internal constant PLACEHOLDER_IMPL = 3;
 
     /// @notice NAVCalculator UUPS proxy salt. Used by 02_DeployProxies, 02_2_DeployNAVProxy, and both atomic deployers.
-    uint256 internal constant NAV_PROXY = 5;
+    uint256 internal constant NAV_PROXY = 6;
 
     /// @notice BridgeEscrow UUPS proxy salt. Used by the full path (02_DeployProxies + AtomicProxyDeployer).
     uint256 internal constant BRIDGE_PROXY = 3;

@@ -298,23 +298,6 @@ contract RegisterAssets is BaseDeployScript {
         console2.log("[OK] Broadcast", batch.length, "tx(s); all feeds wired.");
     }
 
-    function _revertMsg(bytes memory data) internal pure returns (string memory) {
-        if (data.length >= 68 && data[0] == 0x08 && data[1] == 0xc3 && data[2] == 0x79 && data[3] == 0xa0) {
-            uint256 len;
-            assembly {
-                len := mload(add(add(data, 32), 36))
-            }
-            if (data.length >= 68 + 32 + len) {
-                bytes memory msgBytes = new bytes(len);
-                for (uint256 i = 0; i < len; i++) {
-                    msgBytes[i] = data[i + 68 + 32];
-                }
-                return string(msgBytes);
-            }
-        }
-        return "unknown";
-    }
-
     function _hasNoCode(address asset) private view returns (bool) {
         if (asset == NATIVE_SENTINEL) return false;
         return asset.code.length == 0;

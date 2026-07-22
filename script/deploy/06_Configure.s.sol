@@ -99,7 +99,7 @@ contract Configure is BaseDeployScript {
             one[0] = deployed;
             (bool ok, bytes memory data) = navProxy.call(abi.encodeWithSignature("addBalanceAdapters(address[])", one));
             if (!ok) {
-                revert(string(abi.encodePacked("addBalanceAdapters failed for ", plain[i], ": ", _decodeRevert(data))));
+                revert(string(abi.encodePacked("addBalanceAdapters failed for ", plain[i], ": ", _revertMsg(data))));
             }
             console2.log("[OK] Added balance adapter:", plain[i], deployed);
             added++;
@@ -119,9 +119,7 @@ contract Configure is BaseDeployScript {
                 );
                 if (!ok) {
                     revert(
-                        string(
-                            abi.encodePacked("addMetaBalanceAdapter failed for ", meta[i], ": ", _decodeRevert(data))
-                        )
+                        string(abi.encodePacked("addMetaBalanceAdapter failed for ", meta[i], ": ", _revertMsg(data)))
                     );
                 }
                 console2.log("[OK] Added meta balance adapter:", meta[i], deployed);
@@ -142,16 +140,14 @@ contract Configure is BaseDeployScript {
                 (bool ok, bytes memory data) =
                     navProxy.call(abi.encodeWithSignature("removeMetaInstances(address,bytes32[])", deployed, toRemove));
                 if (!ok) {
-                    revert(
-                        string(abi.encodePacked("removeMetaInstances failed for ", meta[i], ": ", _decodeRevert(data)))
-                    );
+                    revert(string(abi.encodePacked("removeMetaInstances failed for ", meta[i], ": ", _revertMsg(data))));
                 }
             }
             if (toAdd.length > 0) {
                 (bool ok, bytes memory data) =
                     navProxy.call(abi.encodeWithSignature("addMetaInstances(address,bytes32[])", deployed, toAdd));
                 if (!ok) {
-                    revert(string(abi.encodePacked("addMetaInstances failed for ", meta[i], ": ", _decodeRevert(data))));
+                    revert(string(abi.encodePacked("addMetaInstances failed for ", meta[i], ": ", _revertMsg(data))));
                 }
             }
             if (toAdd.length > 0 || toRemove.length > 0) {
@@ -206,7 +202,7 @@ contract Configure is BaseDeployScript {
                     revert(
                         string(
                             abi.encodePacked(
-                                "authorize bridge adapter failed for ", adapterNames[i], ": ", _decodeRevert(data)
+                                "authorize bridge adapter failed for ", adapterNames[i], ": ", _revertMsg(data)
                             )
                         )
                     );
@@ -244,7 +240,7 @@ contract Configure is BaseDeployScript {
                 revert(
                     string(
                         abi.encodePacked(
-                            "authorize bridge account failed for ", vm.toString(account), ": ", _decodeRevert(data)
+                            "authorize bridge account failed for ", vm.toString(account), ": ", _revertMsg(data)
                         )
                     )
                 );
@@ -288,7 +284,7 @@ contract Configure is BaseDeployScript {
             (bool ok, bytes memory data) =
                 bridgeProxy.call(abi.encodeWithSignature("registerAsset(string,address)", symbol, asset));
             if (!ok) {
-                revert(string(abi.encodePacked("register bridge asset failed for ", symbol, ": ", _decodeRevert(data))));
+                revert(string(abi.encodePacked("register bridge asset failed for ", symbol, ": ", _revertMsg(data))));
             }
             console2.log("[OK] Registered bridge asset:", symbol, asset);
             registered++;
@@ -332,7 +328,7 @@ contract Configure is BaseDeployScript {
                             " sourceKey ",
                             vm.toString(remoteChainId),
                             ": ",
-                            _decodeRevert(data)
+                            _revertMsg(data)
                         )
                     )
                 );
@@ -387,23 +383,5 @@ contract Configure is BaseDeployScript {
         returns (address)
     {
         return ConfigReader.readDeployedAdapterAddress(vm, currentChainId, adapterType, adapterName);
-    }
-
-    /// @notice Decodes a standard Error(string) revert payload for readable failure messages.
-    function _decodeRevert(bytes memory data) internal pure returns (string memory) {
-        if (data.length >= 68 && data[0] == 0x08 && data[1] == 0xc3 && data[2] == 0x79 && data[3] == 0xa0) {
-            uint256 len;
-            assembly {
-                len := mload(add(add(data, 32), 36))
-            }
-            if (data.length >= 68 + 32 + len) {
-                bytes memory msgBytes = new bytes(len);
-                for (uint256 i = 0; i < len; i++) {
-                    msgBytes[i] = data[i + 68 + 32];
-                }
-                return string(msgBytes);
-            }
-        }
-        return data.length > 0 ? "custom error (non-string revert)" : "unknown";
     }
 }

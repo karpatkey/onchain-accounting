@@ -56,5 +56,9 @@ library DeploySalts {
     uint256 internal constant STARGATE_ADAPTER = 1;
     uint256 internal constant GNOSIS_ADAPTER = 1;
     uint256 internal constant CCTP_ADAPTER = 1;
-    uint256 internal constant SUPERCHAIN_ADAPTER = 1;
+    // Bumped 1->2: the salt-1 Superchain adapter was deployed (Base) via a script bug that initialized it with a
+    // stale admin + the abandoned escrow, and initialize is one-shot, so it can't be corrected in place. The fix
+    // (05 now takes admin/escrow from the deploy context) plus this fresh salt re-derive a correct adapter at a new
+    // same-address on every chain. Only Base had the bad one deployed; nothing was wired to it (06 had aborted).
+    uint256 internal constant SUPERCHAIN_ADAPTER = 2;
 }

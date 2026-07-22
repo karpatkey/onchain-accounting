@@ -253,8 +253,12 @@ contract DeployBridgeAdapters is BaseDeployScript {
             _adapterInitCode(type(SuperchainBridgeAdapter).creationCode)
         );
         if (fresh || SuperchainBridgeAdapter(payable(adapter)).bridgeEscrow() == address(0)) {
-            address admin_ = _parseAddr("Superchain", "admin", chainConfig.admin);
-            address bridgeEscrow_ = _parseAddr("Superchain", "bridgeEscrow", bridgeProxy);
+            // Admin + escrow always come from the deploy context (like every other adapter here), NEVER from the
+            // adapter config: the config `admin`/`bridgeEscrow` fields are deploy-populated placeholders and may
+            // carry stale values from a prior deploy, which would grant admin to / point the escrow at the wrong
+            // address. Only the true protocol addresses (l2Bridge / messengers) are read from config.
+            address admin_ = chainConfig.admin;
+            address bridgeEscrow_ = bridgeProxy;
             address l2Bridge_ = _parseAddr("Superchain", "l2Bridge", address(0));
             address l1Messenger_ = _parseAddr("Superchain", "l1Messenger", address(0));
             address l2Messenger_ = _parseAddr("Superchain", "l2Messenger", address(0));

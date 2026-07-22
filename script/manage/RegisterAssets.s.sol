@@ -282,7 +282,11 @@ contract RegisterAssets is BaseDeployScript {
     function _broadcastManagerMultiSend(SafeTxBuilder.Transaction[] memory batch) internal {
         vm.startBroadcast();
         for (uint256 i = 0; i < batch.length; i++) {
-            (bool success, bytes memory data) = batch[i].to.call(batch[i].data);
+            // Honor the Transaction struct: forward value, and refuse a delegatecall — an EOA broadcast
+            // executes a plain CALL and cannot faithfully simulate a Safe DELEGATECALL, so fail loud
+            // rather than silently mis-execute. (This path currently only builds 0-value CALLs.)
+            require(batch[i].operation == 0, "EOA broadcast is CALL-only (delegatecall not simulable)");
+            (bool success, bytes memory data) = batch[i].to.call{value: batch[i].value}(batch[i].data);
             if (!success) {
                 require(
                     false,

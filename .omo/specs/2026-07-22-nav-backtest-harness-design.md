@@ -21,7 +21,7 @@ Also: CI `forge build` takes ~15 min because compilation artifacts are never cac
 ## Decisions (user-confirmed)
 
 - Goal: all three — stability backtest + NAV time-series data + regression snapshots.
-- Scope v1: **mainnet only**, accounts from `accounts.json`, one **fixed 30-day window** picked once and pinned (absolute from/to timestamps, hourly cadence → 721 points inclusive). Windows are **named** and multiple windows are supported in the fixture; extending the range or adding windows later is a generator run + snapshot, not a code change. All parameters env/flag-overridable.
+- Scope v1: **mainnet only**, accounts from `accounts.json`, one **fixed ~30-day window** picked once and pinned, defined **in blocks**: `{fromBlock, toBlock, blockStep}` (mainnet ~12s blocks ⇒ hourly ≈ step 300; 30 days ≈ 216,000 blocks → ~721 points). No timestamp→block mapping anywhere. Windows are **named** and multiple windows coexist; extending the range or adding windows later is a JSON edit + snapshot, not a code change. All parameters env/flag-overridable.
 - Execution: **on-demand only** (no cron, not per-PR).
 - CI build-speed fix: **included, as a first standalone step/PR**.
 - Work happens on a new branch (`feat/nav-backtest-harness`).
@@ -38,14 +38,15 @@ Also: CI `forge build` takes ~15 min because compilation artifacts are never cac
 
 ### Components
 
-1. **Block-list generator** — script step (in the driver, bash + `cast`/`curl`): given a **named window with absolute `--from`/`--to` timestamps** (not relative-to-now), map every hour → block numbers via `cast find-block`. Writes `test/integration/backtest-blocks.json` (`windows.<name>.chains.<chainId> → {from, to, cadenceHours, points: [{timestamp, block}]}`). Committed, so the window is pinned and re-runs are deterministic; adding/extending windows is a generator run, not a code change.
+1. **Window definition** — block-based, no timestamp→block mapping: a named window is `{fromBlock, toBlock, blockStep, metrics?}` (e.g. mainnet ~12s blocks ⇒ hourly ≈ 300, 30 days ≈ 216,000 blocks). `test/integration/backtest-blocks.json` stores `windows.<name>.chains.<chainId> → {fromBlock, toBlock, blockStep}` plus an optional per-window `metrics` array (default `["nav"]`) — pure arithmetic + config, zero RPC. The sweep visits `fromBlock, fromBlock+step, …, toBlock` (toBlock always included as the final point). Committed, so the window is pinned and deterministic; adding/extending windows or metrics is a JSON edit.
 2. **Forge backtest test** — `test/integration/NavBacktest.fork.t.sol`, reusing `IntegrationFromConfigBase`:
    - Read env: `BACKTEST_CHAIN` (default 1), `BACKTEST_BLOCKS_FILE` (unset ⇒ 2-point smoke sweep), `BACKTEST_WINDOW` (window name, default `w1-30d`). Accounts are always the chain-enabled accounts from `accounts.json` (single source of truth — no account env override in v1). Modes live in the driver script, not the forge test.
-   - Create fork at the **oldest** block, deploy the full stack from local source once, `vm.makePersistent` the deployed contracts (+ `NAVRegistryLib`), then loop `vm.rollFork(block_i)` ascending, calling `getAccountNav(account, quote)` per account per block.
+   - Compute the block list from `{fromBlock, toBlock, blockStep}` in-test. Create fork at **fromBlock**, deploy the full stack from local source once, `vm.makePersistent` the deployed contracts, then loop `vm.rollFork(block_i)` ascending, evaluating each configured **metric** per account per block.
+   - **Metric registry:** metrics are named view probes `(account) → string` implemented in the test; v1 ships only `"nav"` (`getAccountNav(account, QUOTE_USD).value`). Which metrics run is selected by the window's `metrics` config, not code — snapshotting a new function later = implement one probe + list its name in JSON. Unknown metric names revert setUp (fail fast).
    - Per-point failures never abort the sweep: wrap the read in try/catch, record `ERROR:<reason>` — that IS the stability-backtest signal.
-   - Emit machine-readable lines (`BACKTEST|chainId|block|timestamp|account|navOrError`) applied by the driver via jq, same pattern as the existing SNAPSHOT flow.
-3. **Fixture** — `test/integration/nav-timeseries.json`: `windows.<name>.chains.<chainId> → {generatedAtCommit, accounts.<address>: [ {block, timestamp, nav|error} ]}`. Window/cadence metadata lives in `backtest-blocks.json` under the same window name (single definition). Multiple named windows coexist; assert mode checks the window it's given.
-4. **Driver script** — `script/test/run-nav-backtest.sh --window <name> --mode report|snapshot|assert`: runs forge with `FOUNDRY_PROFILE=slow`, applies output to the fixture (snapshot) or diffs against it (assert), prints a report (points + reverting count per account, largest hour-over-hour jump).
+   - Emit machine-readable lines (`BACKTEST|chainId|block|timestamp|account|metric|valueOrError`) where `timestamp` is the fork's `block.timestamp` at that point (free, human-readable time without any timestamp→block mapping); applied by the driver, same pattern as the existing SNAPSHOT flow.
+3. **Fixture** — `test/integration/nav-timeseries.json`: `windows.<name>.chains.<chainId> → {generatedAtCommit, accounts.<address>.<metric>: [ {block, timestamp, value|error} ]}`. Adding a metric extends the fixture without invalidating existing series; assert compares metric-by-metric. Window/step/metrics metadata lives in `backtest-blocks.json` under the same window name (single definition). Multiple named windows coexist; assert mode checks the window it's given.
+4. **Driver script** — single-file Bun TypeScript, `script/test/nav-backtest.ts` (`bun script/test/nav-backtest.ts --window <name> --mode report|snapshot|assert`): runs forge with `FOUNDRY_PROFILE=slow`, parses BACKTEST lines with typed schemas (no jq), applies output to the fixture (snapshot) or deep-diffs against it (assert), prints a report (points + reverting count per account×metric, largest step-over-step jump). Bun is the only new toolchain dependency; the script is dependency-free (no package.json) and only needed for on-demand runs.
 
 ### Modes
 
@@ -55,7 +56,7 @@ Also: CI `forge build` takes ~15 min because compilation artifacts are never cac
 
 ### Oracle-change workflow (the "test changes without deploying" goal)
 
-Forge fork deploys are local-only — nothing is ever broadcast. So testing a modified `Prices.sol` / custom feed against history is: edit source → `run-nav-backtest.sh --mode report` → diff against the committed fixture (or against a baseline run from `main`). First sweep pays RPC once; every subsequent sweep over the same blocks is served from the local RPC cache, so iterating on oracle code is fast and free.
+Forge fork deploys are local-only — nothing is ever broadcast. So testing a modified `Prices.sol` / custom feed against history is: edit source → `bun script/test/nav-backtest.ts --mode report` → diff against the committed fixture (or against a baseline run from `main`). First sweep pays RPC once; every subsequent sweep over the same blocks is served from the local RPC cache, so iterating on oracle code is fast and free.
 
 ### Error handling
 

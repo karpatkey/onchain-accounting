@@ -27,9 +27,13 @@ contract BridgeAdapterCreate2SameAddressTest is Test {
     /// @notice Canonical CREATE2 deployer (same on every chain) — must match 05_DeployBridgeAdapters.
     address internal constant CANONICAL_CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
-    /// @notice The `expectedInitializer` constructor arg 05 appends to each adapter's creationCode. Its exact
-    ///         value is irrelevant to the same-address property (it is byte-identical on every chain, so the
-    ///         creationCode stays chain-independent); it must only match what 05 bakes.
+    /// @notice A fixed placeholder for the `expectedInitializer` constructor arg that 05 appends to each
+    ///         adapter's creationCode. Its SPECIFIC value is irrelevant to what this test proves: same-address
+    ///         holds because the arg is byte-identical across the loop (so creationCode is chain-independent),
+    ///         and distinctness holds for any value. The test asserts those two invariants — NOT that the
+    ///         address equals a specific on-chain deploy. At deploy time 05 bakes `chainConfig.admin` (the
+    ///         deployer EOA, which varies per deployment), so this constant need only be a fixed, non-zero
+    ///         address used identically across the loop — it does not need to equal what 05 bakes.
     address internal constant PINNED_INITIALIZER = 0xd8A2FEc270d6D68B9fA5DBFe5CbEDDE7CefCd7D4;
 
     /// @notice The seven target chains the same-address guarantee must hold across (ADR 0012 D7 / DeploySalts).

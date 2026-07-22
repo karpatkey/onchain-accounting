@@ -61,5 +61,14 @@
   },
   "NexusMutualStakingPoolsAssistant": "0x8a887C7Fa17dbba626497024833778354785c580",
   "EtherFiWithdrawalQueueAssistant": "0xd45cB5B6791156f657D682b3c70689980f4fe8D5",
-  "StakeWiseV3ExitQueueAssistant": "0x13845Fc9DFfDf1AFb8B1Cf22eA298C01C8d7F71B"
+  "StakeWiseV3ExitQueueAssistant": "0x13845Fc9DFfDf1AFb8B1Cf22eA298C01C8d7F71B",
+  "BridgeEscrowProxy": "0x4B0fbca357cdE8FABc3f6c7fD7718B9F61b54c6f",
+  "bridgeAdapters": {
+    "CCIP": "0x51088cCDA8E3Caf9e14CC8bb9475a0FF9f65338f",
+    "Across": "0x6FDa302B3ccDf249E5Eda37e3F80B512bf1dC5d2",
+    "Stargate": "0x2016E3040fba19033d78dfdB9B67Fd6230f4960a",
+    "Gnosis": "0x7CDc6919Ca2b2e94bE0B9BA4E2e534660eBeA251",
+    "CCTP": "0x663A63ACEEbF5d744f21c71f1bc409C99cF128AA",
+    "Superchain": "0xe849B2629d3a1d9f564004E7BCcD6a91e05C7eec"
+  }
 }

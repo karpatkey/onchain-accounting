@@ -20,6 +20,7 @@ contract stETH_CrossRatePriceForkTest is TestEnvConfigurator {
         uint256 fork = createForkWithCadence(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
+        _useNewNavImpl(NAV);
 
         oracle = new stETH_CustomPriceFeed(ASSET, RATE_FEED, RATE_HEARTBEAT, NAV, BASE);
     }

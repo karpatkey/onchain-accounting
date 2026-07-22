@@ -1,30 +1,36 @@
 {
   "ETH": {
     "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0x13e3Ee699D1909E989722E753853AE30b17e08c5",
         "heartbeat": 1200
-      },
+      }
+    ],
+    "monitorFeeds": [
       {
-        "type": "API3",
-        "address": "0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473",
+        "type": "Redstone",
+        "address": "0x3fd49f2146FE0e10c4AE7E3fE04b3d5126385Ac4",
         "heartbeat": 86400
       }
     ]
   },
   "WETH": {
     "address": "0x4200000000000000000000000000000000000006",
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0x13e3Ee699D1909E989722E753853AE30b17e08c5",
         "heartbeat": 1200
-      },
+      }
+    ],
+    "monitorFeeds": [
       {
-        "type": "API3",
-        "address": "0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473",
+        "type": "Redstone",
+        "address": "0x3fd49f2146FE0e10c4AE7E3fE04b3d5126385Ac4",
         "heartbeat": 86400
       }
     ]
@@ -41,20 +47,38 @@
   },
   "USDC": {
     "address": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
+    "divergenceToleranceBps": 50,
+    "pegToleranceBps": 100,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0x16a9FA2FDa030272Ce99B29CF780dFA30361E0f3",
         "heartbeat": 86400
       }
+    ],
+    "monitorFeeds": [
+      {
+        "type": "Redstone",
+        "address": "0x3587a73AA02519335A8a6053a97657BECe0bC2Cc",
+        "heartbeat": 86400
+      }
     ]
   },
   "USDT": {
     "address": "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58",
+    "divergenceToleranceBps": 50,
+    "pegToleranceBps": 100,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0xECef79E109e997bCA29c1c0897ec9d7b03647F5E",
+        "heartbeat": 86400
+      }
+    ],
+    "monitorFeeds": [
+      {
+        "type": "Redstone",
+        "address": "0x4BAD96DD1C7D541270a0C92e1D4e5f12EEEA7a57",
         "heartbeat": 86400
       }
     ]

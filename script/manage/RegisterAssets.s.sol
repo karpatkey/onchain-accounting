@@ -124,10 +124,23 @@ contract RegisterAssets is BaseDeployScript {
             return acts;
         }
 
-        // Wire feeds in config order. The k-th *resolvable* configured feed corresponds to the k-th on-chain feed
-        // (feeds are appended, never reordered), so for a registered asset the first `onChainFeeds` resolvable feeds
-        // are already present and skipped; only trailing (new) feeds are added — which lets ADR-0009 redundancy feeds
-        // be topped up on an already-live asset instead of being silently dropped.
+        // Pricing feeds and monitor/tolerance actions are each built in their own frame, then concatenated — this
+        // keeps _planAsset under the via_ir stack limit.
+        bytes[] memory feedActs = _planFeedActs(symbol, asset, registered, onChainFeeds, feedCount);
+        bytes[] memory monActs = _planMonitorActs(symbol, asset, registered, navProxy);
+        acts = _concat(feedActs, monActs);
+    }
+
+    /// @notice Plans an asset's pricing-feed actions (registerAsset for the primary; addPriceFeed for trailing new
+    ///         feeds). The first `onChainFeeds` resolvable feeds are already present (feeds are appended, never
+    ///         reordered) and skipped.
+    function _planFeedActs(
+        string memory symbol,
+        address asset,
+        bool registered,
+        uint256 onChainFeeds,
+        uint256 feedCount
+    ) private view returns (bytes[] memory acts) {
         bytes[] memory tmp = new bytes[](feedCount);
         uint256 n;
         uint256 resolvableIdx;
@@ -151,11 +164,104 @@ contract RegisterAssets is BaseDeployScript {
             }
             resolvableIdx++;
         }
+        acts = new bytes[](n);
+        for (uint256 i = 0; i < n; i++) {
+            acts[i] = tmp[i];
+        }
+    }
+
+    /// @notice Concatenates two calldata-action arrays.
+    function _concat(bytes[] memory a, bytes[] memory b) private pure returns (bytes[] memory out) {
+        out = new bytes[](a.length + b.length);
+        uint256 w;
+        for (uint256 i = 0; i < a.length; i++) {
+            out[w++] = a[i];
+        }
+        for (uint256 i = 0; i < b.length; i++) {
+            out[w++] = b[i];
+        }
+    }
+
+    /// @notice Plans an asset's divergence/peg tolerance setters + monitor-feed additions. setDivergenceTolerance
+    ///         precedes any addMonitorFeed (required before a monitor can be added); both run after registerAsset in
+    ///         the same batch. Idempotent: skips the first `onChainMonitors` resolvable monitors already present.
+    function _planMonitorActs(string memory symbol, address asset, bool registered, address navProxy)
+        private
+        view
+        returns (bytes[] memory acts)
+    {
+        uint256 monCount = ConfigReader.assetMonitorFeedCount(vm, currentChainId, symbol);
+        uint256 divTolBps = ConfigReader.readAssetDivergenceToleranceBps(vm, currentChainId, symbol);
+        uint256 pegTolBps = ConfigReader.readAssetPegToleranceBps(vm, currentChainId, symbol);
+
+        // The heavy build loop runs in its own frame (_buildMonitorActs) and the fail-fast guard in this thin one,
+        // so neither trips the via_ir stack limit.
+        bool addsMonitor;
+        (acts, addsMonitor) = _buildMonitorActs(symbol, asset, registered, navProxy, monCount, divTolBps, pegTolBps);
+
+        // Fail fast on a config that would make this batch revert on-chain (tolerance ranges + monitor-without-
+        // tolerance). `addsMonitor` — not the raw config monitor count — is the true signal: already-present
+        // (idempotency-skipped) and unresolvable monitors emit no addMonitorFeed, so a re-run must not abort.
+        _requireTolerancesPlannable(navProxy, asset, symbol, monCount, divTolBps, pegTolBps, addsMonitor);
+    }
+
+    /// @notice Builds the setDivergenceTolerance/setPegTolerance/addMonitorFeed calldata for an asset (no
+    ///         validation — the caller does the fail-fast). Returns the acts plus whether any addMonitorFeed was
+    ///         actually emitted (resolvable + not already on-chain). Own frame to stay under the via_ir stack limit.
+    function _buildMonitorActs(
+        string memory symbol,
+        address asset,
+        bool registered,
+        address navProxy,
+        uint256 monCount,
+        uint256 divTolBps,
+        uint256 pegTolBps
+    ) private view returns (bytes[] memory acts, bool addsMonitor) {
+        // Read the on-chain monitor SET (not just its count): addMonitorFeed reverts MonitorFeedAlreadyRegistered on
+        // a duplicate, and removeMonitorFeed is swap-and-pop (reorders), so a positional "skip first N" check would
+        // re-add a still-present feed after any out-of-band removal and abort the whole batch. Membership is robust.
+        IPrices.PriceFeedConfig[] memory onChain;
+        if (registered) {
+            (bool okm, bytes memory md) =
+                navProxy.staticcall(abi.encodeWithSelector(IPrices.getMonitorFeeds.selector, asset));
+            if (okm && md.length >= 64) onChain = abi.decode(md, (IPrices.PriceFeedConfig[]));
+        }
+
+        bytes[] memory tmp = new bytes[](monCount + 2);
+        uint256 n;
+        if (monCount > 0 && divTolBps > 0) {
+            tmp[n++] = abi.encodeCall(NAVCalculator.setDivergenceTolerance, (asset, uint32(divTolBps)));
+        }
+        if (pegTolBps > 0) {
+            tmp[n++] = abi.encodeCall(NAVCalculator.setPegTolerance, (asset, uint32(pegTolBps)));
+        }
+
+        for (uint256 i = 0; i < monCount; i++) {
+            (IPrices.PriceType pt, bool validType) =
+                ConfigReader.readAssetMonitorFeedPriceType(vm, currentChainId, symbol, i);
+            if (!validType) continue;
+            string memory maddr = ConfigReader.readAssetMonitorFeedAddress(vm, currentChainId, symbol, i);
+            if (bytes(maddr).length == 0) continue; // unresolved (e.g. Custom monitor not deployed yet)
+            address feed = vm.parseAddress(maddr);
+            if (feed == address(0) || _containsFeed(onChain, feed)) continue; // skip already-registered monitors
+
+            uint256 hb = vm.parseUint(ConfigReader.readAssetMonitorFeedHeartbeat(vm, currentChainId, symbol, i));
+            tmp[n++] = abi.encodeCall(NAVCalculator.addMonitorFeed, (asset, feed, pt, hb));
+            addsMonitor = true;
+        }
 
         acts = new bytes[](n);
         for (uint256 i = 0; i < n; i++) {
             acts[i] = tmp[i];
         }
+    }
+
+    /// @notice True if `feed` is already present in the on-chain feed config array.
+    function _containsFeed(IPrices.PriceFeedConfig[] memory feeds, address feed) private pure returns (bool) {
+        for (uint256 i = 0; i < feeds.length; i++) {
+            if (feeds[i].priceFeed == feed) return true;
+        }
+        return false;
     }
 
     /// @dev Maps a feed `type` string to the on-chain PriceType enum. validType=false → skip the feed.
@@ -176,7 +282,11 @@ contract RegisterAssets is BaseDeployScript {
     function _broadcastManagerMultiSend(SafeTxBuilder.Transaction[] memory batch) internal {
         vm.startBroadcast();
         for (uint256 i = 0; i < batch.length; i++) {
-            (bool success, bytes memory data) = batch[i].to.call(batch[i].data);
+            // Honor the Transaction struct: forward value, and refuse a delegatecall — an EOA broadcast
+            // executes a plain CALL and cannot faithfully simulate a Safe DELEGATECALL, so fail loud
+            // rather than silently mis-execute. (This path currently only builds 0-value CALLs.)
+            require(batch[i].operation == 0, "EOA broadcast is CALL-only (delegatecall not simulable)");
+            (bool success, bytes memory data) = batch[i].to.call{value: batch[i].value}(batch[i].data);
             if (!success) {
                 require(
                     false,

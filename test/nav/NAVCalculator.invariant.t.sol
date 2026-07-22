@@ -55,8 +55,8 @@ contract NAVCalculatorInvariantTest is SuperTest {
         internal
         view
     {
-        (int256 price1, uint8 decimals1, bool stale1) = nav.latestPrice(asset);
-        (int256 price2, uint8 decimals2, bool stale2) = nav.latestPrice(asset);
+        (int256 price1, uint8 decimals1, bool stale1,) = nav.latestPrice(asset);
+        (int256 price2, uint8 decimals2, bool stale2,) = nav.latestPrice(asset);
 
         assertEq(price1, price2, "Price should be consistent within same block");
         assertEq(decimals1, decimals2, "Decimals should be consistent");
@@ -123,7 +123,7 @@ contract NAVCalculatorInvariantTest is SuperTest {
 
         // Convert expected balance from asset decimals to USD (8 decimals)
         // For USDC: price is 1e8 (1 USD), so conversion is: balance * 10^(8 - 6) = balance * 100
-        (int256 usdcPrice, uint8 priceDecimals,) = nav.latestPrice(address(usdc));
+        (int256 usdcPrice, uint8 priceDecimals,,) = nav.latestPrice(address(usdc));
         uint8 assetDecimals = usdc.decimals();
         uint256 denominator = assetDecimals + priceDecimals - 8; // NAV_DECIMALS = 8
         int256 totalExpectedUsdValue = (totalExpectedBalance * int256(usdcPrice)) / SafeCast.toInt256(10 ** denominator);
@@ -161,7 +161,7 @@ contract NAVCalculatorInvariantTest is SuperTest {
         }
 
         // Convert expected balance from asset decimals to USD (8 decimals)
-        (int256 usdcPrice, uint8 priceDecimals,) = nav.latestPrice(address(usdc));
+        (int256 usdcPrice, uint8 priceDecimals,,) = nav.latestPrice(address(usdc));
         uint8 assetDecimals = usdc.decimals();
         uint256 denominator = assetDecimals + priceDecimals - 8; // NAV_DECIMALS = 8
         int256 expectedUsdValue = (expectedTotal * int256(usdcPrice)) / SafeCast.toInt256(10 ** denominator);
@@ -198,9 +198,9 @@ contract NAVCalculatorInvariantTest is SuperTest {
         vm.warp(block.timestamp + 2);
 
         // Query multiple times - staleness should be consistent
-        (int256 price1,, bool stale1) = nav.latestPrice(address(usdc));
-        (int256 price2,, bool stale2) = nav.latestPrice(address(usdc));
-        (int256 price3,, bool stale3) = nav.latestPrice(address(usdc));
+        (int256 price1,, bool stale1,) = nav.latestPrice(address(usdc));
+        (int256 price2,, bool stale2,) = nav.latestPrice(address(usdc));
+        (int256 price3,, bool stale3,) = nav.latestPrice(address(usdc));
 
         assertEq(stale1, stale2, "Staleness should be consistent");
         assertEq(stale2, stale3, "Staleness should be consistent");
@@ -352,8 +352,8 @@ contract NAVCalculatorInvariantTest is SuperTest {
         INAVCalculator.NAV memory navWeth = nav.getAccountNav(safe, address(weth));
 
         // Get prices for conversion
-        (int256 daiPrice, uint8 daiPriceDecimals,) = nav.latestPrice(address(dai));
-        (int256 wethPrice, uint8 wethPriceDecimals,) = nav.latestPrice(address(weth));
+        (int256 daiPrice, uint8 daiPriceDecimals,,) = nav.latestPrice(address(dai));
+        (int256 wethPrice, uint8 wethPriceDecimals,,) = nav.latestPrice(address(weth));
 
         // Convert DAI NAV back to USD
         // navDai.value is in DAI with dai.decimals()

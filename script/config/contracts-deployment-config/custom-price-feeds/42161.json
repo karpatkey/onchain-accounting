@@ -42,5 +42,35 @@
       "syrupUsdcToUsdcHeartbeat": "86400",
       "baseAsset": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
     }
+  },
+  "weETHCrossRate": {
+    "$comment": "weETH redundancy monitor (CrossRate): weETH/USD = ETH/USD x weETH/ETH. yToXFeed is the Chainlink weETH/ETH MARKET feed, independent of the fundamental weETH_L2 primary.",
+    "enabled": true,
+    "constructor": {
+      "underlyingAsset": "0x35751007a407ca6FEFfE80b3cB397736D2cf4dbe",
+      "yToXFeed": "0xE141425bc1594b8039De6390db1cDaf4397EA22b",
+      "yToXHeartbeat": "86400",
+      "baseAsset": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"
+    }
+  },
+  "ezETHCrossRate": {
+    "$comment": "ezETH redundancy monitor (CrossRate): ezETH/USD = ETH/USD x ezETH/ETH. yToXFeed is the Chainlink ezETH/ETH MARKET feed, independent of the fundamental ezETH_L2 primary.",
+    "enabled": true,
+    "constructor": {
+      "underlyingAsset": "0x2416092f143378750bb29b79eD961ab195CcEea5",
+      "yToXFeed": "0x11E1836bFF2ce9d6A5bec9cA79dc998210f3886d",
+      "yToXHeartbeat": "86400",
+      "baseAsset": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"
+    }
+  },
+  "rsETHCrossRate": {
+    "$comment": "rsETH redundancy monitor (CrossRate): rsETH/USD = ETH/USD x rsETH/ETH. yToXFeed is the Chainlink rsETH/ETH MARKET feed, independent of the fundamental rsETH_L2 primary.",
+    "enabled": true,
+    "constructor": {
+      "underlyingAsset": "0x4186BFC76E2E237523CBC30FD220FE055156b41F",
+      "yToXFeed": "0xb0EA543f9F8d4B818550365d13F66Da747e1476A",
+      "yToXHeartbeat": "86400",
+      "baseAsset": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"
+    }
   }
 }

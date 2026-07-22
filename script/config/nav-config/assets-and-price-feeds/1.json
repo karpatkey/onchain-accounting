@@ -1,45 +1,59 @@
 {
   "ETH": {
     "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
         "heartbeat": 3600
-      },
+      }
+    ],
+    "monitorFeeds": [
       {
-        "type": "API3",
-        "address": "0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473",
+        "type": "Redstone",
+        "address": "0x67F6838e58859d612E4ddF04dA396d6DABB66Dc4",
         "heartbeat": 86400
       }
     ]
   },
   "WETH": {
     "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
         "heartbeat": 3600
-      },
+      }
+    ],
+    "monitorFeeds": [
       {
-        "type": "API3",
-        "address": "0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473",
+        "type": "Redstone",
+        "address": "0x67F6838e58859d612E4ddF04dA396d6DABB66Dc4",
         "heartbeat": 86400
       }
     ]
   },
   "wstETH": {
     "address": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
+    "divergenceToleranceBps": 250,
     "priceFeeds": [
       {
         "type": "Custom",
         "feed": "wstETH",
         "heartbeat": 86400
-      },
+      }
+    ],
+    "monitorFeeds": [
       {
         "type": "Redstone",
         "address": "0xe4aE88743c3834d0c492eAbC47384c84BcADC6a6",
+        "heartbeat": 86400
+      },
+      {
+        "type": "Chainlink",
+        "address": "0x164b276057258d81941e97B0a900D4C7B358bCe0",
         "heartbeat": 86400
       }
     ]
@@ -56,12 +70,15 @@
   },
   "weETH": {
     "address": "0xCd5fE23C85820F7B72D0926FC9b05b43E359b7ee",
+    "divergenceToleranceBps": 250,
     "priceFeeds": [
       {
         "type": "Custom",
         "feed": "weETH",
         "heartbeat": 86400
-      },
+      }
+    ],
+    "monitorFeeds": [
       {
         "type": "Redstone",
         "address": "0xdDb6F90fFb4d3257dd666b69178e5B3c5Bf41136",
@@ -71,11 +88,19 @@
   },
   "rETH": {
     "address": "0xae78736Cd615f374D3085123A210448E74Fc6393",
+    "divergenceToleranceBps": 250,
     "priceFeeds": [
       {
         "type": "Custom",
         "feed": "rETH",
         "heartbeat": 3600
+      }
+    ],
+    "monitorFeeds": [
+      {
+        "type": "Custom",
+        "feed": "rETHCrossRate",
+        "heartbeat": 86400
       }
     ]
   },
@@ -91,12 +116,15 @@
   },
   "ezETH": {
     "address": "0xbf5495Efe5DB9ce00f80364C8B423567e58d2110",
+    "divergenceToleranceBps": 250,
     "priceFeeds": [
       {
         "type": "Custom",
         "feed": "ezETH",
         "heartbeat": 3600
-      },
+      }
+    ],
+    "monitorFeeds": [
       {
         "type": "Custom",
         "feed": "ezETHCrossRate",
@@ -116,15 +144,23 @@
   },
   "ETHx": {
     "address": "0xA35b1B31Ce002FBF2058D22F30f95D405200A15b",
+    "divergenceToleranceBps": 250,
     "priceFeeds": [
       {
         "type": "Custom",
         "feed": "ETHx",
         "heartbeat": 3600
-      },
+      }
+    ],
+    "monitorFeeds": [
       {
         "type": "Custom",
         "feed": "ETHxCrossRate",
+        "heartbeat": 86400
+      },
+      {
+        "type": "Redstone",
+        "address": "0xFaBEb1474C2Ab34838081BFdDcE4132f640E7D2d",
         "heartbeat": 86400
       }
     ],
@@ -132,12 +168,15 @@
   },
   "osETH": {
     "address": "0xf1C9acDc66974dFB6dEcB12aA385b9cD01190E38",
+    "divergenceToleranceBps": 250,
     "priceFeeds": [
       {
         "type": "Custom",
         "feed": "osETH",
         "heartbeat": 3600
-      },
+      }
+    ],
+    "monitorFeeds": [
       {
         "type": "Custom",
         "feed": "osETHCrossRate",
@@ -146,27 +185,21 @@
     ],
     "note": "Priced via osToken_CustomPriceFeed (priceFeeds.osETH.1): convertToAssets(1e18) [osETH/ETH] * ETH/USD. Held osETH is reported by ERC20DefaultBalanceAdapter (wallet balance). The pricefeed address is filled by 03_DeployPriceFeeds. Separate from the StakeWiseV3Vault osToken-debt leg (denominated in ETH)."
   },
-  "MORPHO": {
-    "address": "0x58D97B57BB95320F9a05dC918Aef65434969c2B2",
-    "priceFeeds": [
-      {
-        "type": "API3",
-        "address": "0x79F8622D4E4773Fab6f5d4C98779D97baA1e906e",
-        "heartbeat": 86400
-      }
-    ]
-  },
   "USDC": {
     "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    "pegToleranceBps": 100,
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6",
         "heartbeat": 82800
-      },
+      }
+    ],
+    "monitorFeeds": [
       {
-        "type": "API3",
-        "address": "0xD3C586Eec1C6C3eC41D276a23944dea080eDCf7f",
+        "type": "Redstone",
+        "address": "0xeeF31c7d9F2E82e8A497b140cc60cc082Be4b94e",
         "heartbeat": 86400
       }
     ]
@@ -188,11 +221,6 @@
         "type": "Chainlink",
         "address": "0xdF2917806E30300537aEB49A7663062F4d1F2b5F",
         "heartbeat": 86400
-      },
-      {
-        "type": "API3",
-        "address": "0x778673296f409853De85917009046529b3Eef0a7",
-        "heartbeat": 86400
       }
     ]
   },
@@ -206,19 +234,17 @@
       }
     ]
   },
-  "GEAR": {
-    "address": "0xBa3335588D9403515223F109EdC4eB7269a9Ab5D",
-    "priceFeeds": [],
-    "note": "No oracle available"
-  },
   "stETH": {
     "address": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
+    "divergenceToleranceBps": 250,
     "priceFeeds": [
       {
         "type": "Custom",
         "feed": "stETH",
         "heartbeat": 86400
-      },
+      }
+    ],
+    "monitorFeeds": [
       {
         "type": "Chainlink",
         "address": "0xCfE54B5cD566aB89272946F602D76Ea879CAb4a8",
@@ -258,6 +284,7 @@
   },
   "USDS": {
     "address": "0xdC035D45d973E3EC169d2276DDab16f1e407384F",
+    "pegToleranceBps": 100,
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -268,12 +295,16 @@
   },
   "USDT": {
     "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+    "pegToleranceBps": 100,
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0x3E7d1eAB13ad0104d2750B8863b489D65364e32D",
         "heartbeat": 86400
-      },
+      }
+    ],
+    "monitorFeeds": [
       {
         "type": "Redstone",
         "address": "0x02E1F8d15762047b7a87BA0E5d94B9a0c5b54Ed2",
@@ -283,6 +314,7 @@
   },
   "DAI": {
     "address": "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+    "pegToleranceBps": 100,
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -293,6 +325,7 @@
   },
   "GHO": {
     "address": "0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f",
+    "pegToleranceBps": 100,
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -303,12 +336,16 @@
   },
   "USDe": {
     "address": "0x4c9EDD5852cd905f086C759E8383e09bff1E68B3",
+    "pegToleranceBps": 100,
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0xa569d910839Ae8865Da8F8e70FfFb0cBA869F961",
         "heartbeat": 82800
-      },
+      }
+    ],
+    "monitorFeeds": [
       {
         "type": "Redstone",
         "address": "0xbC5FBcf58CeAEa19D523aBc76515b9AEFb5cfd58",
@@ -318,21 +355,30 @@
   },
   "sUSDe": {
     "address": "0x9D39A5DE30e57443BfF2A8307A4256c8797A3497",
+    "divergenceToleranceBps": 250,
     "priceFeeds": [
       {
         "type": "Custom",
         "feed": "sUSDe",
         "heartbeat": 82800
-      },
+      }
+    ],
+    "monitorFeeds": [
       {
         "type": "Chainlink",
         "address": "0xFF3BC18cCBd5999CE63E788A1c250a88626aD099",
+        "heartbeat": 86400
+      },
+      {
+        "type": "Redstone",
+        "address": "0xb99D174ED06c83588Af997c8859F93E83dD4733f",
         "heartbeat": 86400
       }
     ]
   },
   "RLUSD": {
     "address": "0x8292Bb45bf1Ee4d140127049757C2E0fF06317eD",
+    "pegToleranceBps": 100,
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -343,6 +389,7 @@
   },
   "crvUSD": {
     "address": "0xf939E0A03FB07F59A73314E73794Be0E57ac1b4E",
+    "pegToleranceBps": 100,
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -423,12 +470,15 @@
   },
   "EIGEN": {
     "address": "0xec53bF9167f50cDEB3Ae105f56099aaaB9061F83",
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0xf2917e602C2dCa458937fad715bb1E465305A4A1",
         "heartbeat": 86400
-      },
+      }
+    ],
+    "monitorFeeds": [
       {
         "type": "Redstone",
         "address": "0x2ee5Ce6556599E16c226579BA14F94926d8Cb86d",
@@ -443,22 +493,20 @@
         "type": "Chainlink",
         "address": "0xdbd020CAeF83eFd542f4De03e3cF0C28A4428bd5",
         "heartbeat": 3600
-      },
-      {
-        "type": "API3",
-        "address": "0xeBD595af56BeC336aA0F5233E82965c692B9599d",
-        "heartbeat": 86400
       }
     ]
   },
   "WBTC": {
     "address": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c",
         "heartbeat": 3600
-      },
+      }
+    ],
+    "monitorFeeds": [
       {
         "type": "Redstone",
         "address": "0xAB7f623fb2F6fea6601D4350FA0E2290663C28Fc",
@@ -507,7 +555,6 @@
     ]
   },
   "wNXM": {
-    "$comment": "wNXM (wrapped NXM) priced at NXM book value via RAMM (1:1 unwrappable by a Nexus member). Held by the KPK DAO Safe.",
     "address": "0x0d438F3b5175Bebc262bF23753C1E53d03432bDE",
     "priceFeeds": [
       {
@@ -515,33 +562,27 @@
         "feed": "wNXM",
         "heartbeat": 3600
       }
-    ]
+    ],
+    "$comment": "wNXM (wrapped NXM) priced at NXM book value via RAMM (1:1 unwrappable by a Nexus member). Held by the KPK DAO Safe."
   },
   "cbBTC": {
-    "$comment": "Coinbase Wrapped BTC. Registered so its Morpho collateral leg (MorphoMarket_cbBTC_USDC) is valued — was previously unregistered, dropping the collateral leg from NAV. Chainlink cbBTC/USD, 8 decimals.",
     "address": "0xcbB7C0000aB88B473b1F5aFd9ef808440eED33Bf",
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0x2665701293fCbEB223D11A08D826563EDcCE423A",
         "heartbeat": 86400
-      },
+      }
+    ],
+    "monitorFeeds": [
       {
         "$comment": "Independent 2nd feed (ADR 0009 redundancy): RedStone Classic Push cbBTC/USD, 8 decimals.",
         "type": "Redstone",
         "address": "0xE13e2BBaB029BFb324f49048CED0E95Ea30AE049",
         "heartbeat": 86400
       }
-    ]
-  },
-  "GNO": {
-    "address": "0x6810e776880C02933D47DB1b9fc05908e5386b96",
-    "priceFeeds": [],
-    "note": "No oracle available on mainnet. Documented-deferral entry (like GEAR) so the gap is recorded rather than silent. NAVCalculator filters per-asset against the registry, so leaving GNO unpriced drops only its leg; a priced LP pairing it still values the other side."
-  },
-  "COW": {
-    "address": "0xDEF1CA1fb7FBcDC777520aa7f396b4E015F497aB",
-    "priceFeeds": [],
-    "note": "Deferred — no reliable mainnet oracle for COW. Documented-deferral entry. COW-containing UniV3/PancakeSwap pools are intentionally disabled in chains/1.json.balanceAdapters since the COW leg can't be valued; revisit if a custom/TWAP feed is added."
+    ],
+    "$comment": "Coinbase Wrapped BTC. Registered so its Morpho collateral leg (MorphoMarket_cbBTC_USDC) is valued — was previously unregistered, dropping the collateral leg from NAV. Chainlink cbBTC/USD, 8 decimals."
   }
 }

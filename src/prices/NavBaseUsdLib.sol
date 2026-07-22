@@ -39,7 +39,7 @@ library NavBaseUsdLib {
         view
         returns (uint256 price8, bool stale, uint256 updatedAt)
     {
-        try nav.getPriceData(baseAsset) returns (INAVCalculator.PriceFeedData memory pd) {
+        try nav.getPriceDataNoDivergence(baseAsset) returns (INAVCalculator.PriceFeedData memory pd) {
             // Zero on genuine feed staleness or a non-positive price, but NOT on sequencer-down alone.
             bool baseStale = pd.stale && !pd.sequencerDown;
             if (baseStale || pd.price <= 0) return (0, true, pd.updatedAt);

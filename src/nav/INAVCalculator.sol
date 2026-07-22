@@ -125,6 +125,14 @@ interface INAVCalculator is IBalances {
         // Ephemeral per-item coordinate copied from PositionBalance (NFT id / request id / ticket as bytes32).
         // bytes32(0) when none. Display/granularity only — excluded from the stable identity key. See PositionBalance.
         bytes32 positionInstanceId;
+        // True if the asset's primary price diverged from its monitor feeds beyond the configured tolerance (or,
+        // for stablecoins, from the $1 peg). A pricing-quality signal, NOT a validity/staleness flag: `price` and
+        // `value` are still populated from the primary. Consumers (e.g. the sub/redeem processor) decide how to react.
+        // APPENDED (not inserted mid-struct) so an in-place UUPS upgrade doesn't shift existing fields' ABI offsets.
+        bool irregular;
+        // True if the quote (unit-of-account) asset's own primary diverged from its monitors — the divergence
+        // counterpart to `quoteAssetStale`. Always false for a USD quote.
+        bool quoteAssetIrregular;
     }
 
     /// @notice Position enriched with human-readable display labels.
@@ -153,6 +161,9 @@ interface INAVCalculator is IBalances {
     /// @param quoteAsset Quote currency; address(0) denotes USD.
     /// @param timestamp Block timestamp of the reading.
     /// @param stalePriceAssets Assets whose prices were stale at query time.
+    /// @param irregularPriceAssets Assets whose primary price diverged from their monitor feeds beyond tolerance
+    ///        (or, for stablecoins, from the $1 peg) at query time. A pricing-quality signal, not a staleness flag —
+    ///        `value` is still computed from the primary prices. Consumers decide how to react.
     /// @param sequencerDown True if the L2 sequencer was down or in grace period (L2 only).
     /// @param quoteAssetStale True if the quote asset's own price feed was stale. When true the value field
     ///        is in USD (fallback) even though quoteAsset is non-zero — callers must check this flag before
@@ -165,6 +176,11 @@ interface INAVCalculator is IBalances {
         Asset[] stalePriceAssets;
         bool sequencerDown;
         bool quoteAssetStale;
+        // APPENDED (not inserted mid-struct) so an in-place UUPS upgrade doesn't shift existing fields' ABI offsets.
+        Asset[] irregularPriceAssets;
+        // True if the quote (unit-of-account) asset's own primary diverged from its monitors beyond tolerance —
+        // the divergence counterpart to `quoteAssetStale`. Always false for a USD quote (no quote feed).
+        bool quoteAssetIrregular;
     }
 
     /// @notice Price data for the freshest non-stale feed selected for an asset.
@@ -181,6 +197,11 @@ interface INAVCalculator is IBalances {
     /// @param healthyFeedCount Number of registered feeds that passed all staleness gates on this read.
     ///        A value below the total registered feed count signals partial redundancy collapse and
     ///        should trigger off-chain alerting.
+    /// @param irregular True if the primary price diverged from the worst-case (furthest) healthy monitor feed
+    ///        beyond the configured divergence tolerance, or (stablecoins) from the $1 peg beyond the peg tolerance.
+    /// @param divergenceBps Worst-case basis-point gap between the primary price and any single healthy monitor
+    ///        price (0 when there are no healthy monitors or the primary is stale).
+    /// @param monitorFeedCount Number of healthy monitor feeds that contributed to the divergence computation.
     struct PriceFeedData {
         address priceFeed;
         IPrices.PriceType priceType;
@@ -191,6 +212,9 @@ interface INAVCalculator is IBalances {
         bool stale;
         bool sequencerDown;
         uint256 healthyFeedCount;
+        bool irregular;
+        uint256 divergenceBps;
+        uint256 monitorFeedCount;
     }
 
     //
@@ -245,6 +269,28 @@ interface INAVCalculator is IBalances {
     function addPriceFeed(address asset, address priceFeed, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
         external;
 
+    /// @notice Adds a monitor (divergence-only) feed for an asset. Monitor feeds NEVER price the NAV; they are read
+    ///         only to detect divergence between the primary price and the worst-case (furthest) healthy monitor price.
+    /// @dev Requires the asset's divergence tolerance to be set first (>0), else reverts DivergenceToleranceRequired.
+    ///      Monitor feeds must report NAV_DECIMALS decimals (else MonitorFeedDecimalsMismatch). Reverts
+    ///      MonitorFeedAlreadyRegistered on a duplicate.
+    /// @param asset Registered asset address.
+    /// @param priceFeed Monitor feed address (cannot be zero).
+    /// @param priceType Chainlink, Custom, Redstone, or API3.
+    /// @param chainlinkHeartbeat Staleness window in seconds (must be non-zero).
+    function addMonitorFeed(address asset, address priceFeed, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
+        external;
+
+    /// @notice Sets the asset's divergence tolerance in basis points (must be in (0, 10000]).
+    /// @param asset Registered asset address.
+    /// @param divergenceToleranceBps Max worst-case primary-vs-any-single-monitor gap before the asset is flagged irregular.
+    function setDivergenceTolerance(address asset, uint32 divergenceToleranceBps) external;
+
+    /// @notice Sets the asset's stablecoin peg tolerance in basis points (in [0, 10000]; 0 disables the peg guard).
+    /// @param asset Registered asset address.
+    /// @param pegToleranceBps Max deviation of the primary price from $1 before the asset is flagged irregular.
+    function setPegTolerance(address asset, uint32 pegToleranceBps) external;
+
     /// @notice Registers one or more **non-meta** balance adapters in the global registry in a single call.
     /// @dev Reverts with InvalidArguments if the list is empty or contains a zero address, DuplicateBalanceAdapter
     ///      if any adapter is already registered, InvalidBalanceAdapter if any adapter does not implement
@@ -272,6 +318,16 @@ interface INAVCalculator is IBalances {
     /// @param asset Registered asset address.
     /// @param priceFeed Feed address to remove.
     function removePriceFeed(address asset, address priceFeed) external;
+
+    /// @notice Removes the monitor feed at the given index. Monitor feeds are optional, so the last one may be removed.
+    /// @param asset Registered asset address.
+    /// @param index Index into the asset's monitor feed array.
+    function removeMonitorFeedAt(address asset, uint256 index) external;
+
+    /// @notice Removes the monitor feed with the given address. Reverts MonitorFeedNotFound if absent.
+    /// @param asset Registered asset address.
+    /// @param priceFeed Monitor feed address to remove.
+    function removeMonitorFeed(address asset, address priceFeed) external;
 
     /// @notice Removes one or more balance adapters from the global registry in a single call.
     /// @dev Reverts with InvalidArguments if the list is empty. The batch is all-or-nothing — if any adapter is
@@ -408,15 +464,56 @@ interface INAVCalculator is IBalances {
     /// @return USD decimals.
     function usdDecimals() external view returns (uint8);
 
-    /// @notice Returns detailed price feed data for an asset.
+    /// @notice Returns detailed price feed data for an asset (primary feed + divergence signal vs its monitors).
     /// @param underlyingAsset Registered asset address.
-    /// @return priceFeedData PriceFeedData struct (feed, type, price, decimals, heartbeat, updatedAt, stale, sequencerDown, healthyFeedCount).
+    /// @return priceFeedData PriceFeedData struct (feed, type, price, decimals, heartbeat, updatedAt, stale,
+    ///         sequencerDown, healthyFeedCount, irregular, divergenceBps, monitorFeedCount).
     function getPriceData(address underlyingAsset) external view returns (PriceFeedData memory priceFeedData);
 
-    /// @notice Returns health status: sequencer down flag and list of assets with stale prices.
+    /// @notice Same as {getPriceData} but WITHOUT the monitor-divergence computation (irregular/divergenceBps/
+    ///         monitorFeedCount stay 0/false). For hot callers that only need price/staleness (e.g. custom feeds
+    ///         reading the NAV-sourced base/USD term) so a base asset's monitor reads + sort aren't repaid per call.
+    /// @param underlyingAsset Registered asset address.
+    /// @return priceFeedData PriceFeedData struct with the divergence fields left at their defaults.
+    function getPriceDataNoDivergence(address underlyingAsset)
+        external
+        view
+        returns (PriceFeedData memory priceFeedData);
+
+    /// @notice Returns the divergence between an asset's primary price and its monitor feeds.
+    /// @param underlyingAsset Registered asset address.
+    /// @return primaryPrice The primary feed's price, normalized to NAV_DECIMALS (0 if the primary is stale).
+    /// @return monitorMedian The median of the healthy monitor prices, NAV_DECIMALS (0 if no healthy monitors).
+    /// @return divergenceBps Worst-case basis-point gap between the primary and any single healthy monitor — the
+    ///         value `irregular` is thresholded on (0 if no monitors / primary stale).
+    /// @return irregular True if divergenceBps exceeds the divergence tolerance, or (stablecoins) the primary
+    ///         deviates from $1 beyond the peg tolerance.
+    /// @return monitorFeedCount Number of healthy monitor feeds that contributed.
+    /// @return primaryStale True if the primary feed is stale (divergence undefined).
+    /// @return primaryAboveMonitors True if the primary sits above the monitor median (a premium); false if
+    ///         below/equal — for a claim asset, below is the depeg direction. Meaningful only when
+    ///         monitorFeedCount > 0.
+    function getPriceDivergence(address underlyingAsset)
+        external
+        view
+        returns (
+            int256 primaryPrice,
+            int256 monitorMedian,
+            uint256 divergenceBps,
+            bool irregular,
+            uint256 monitorFeedCount,
+            bool primaryStale,
+            bool primaryAboveMonitors
+        );
+
+    /// @notice Returns health status: sequencer down flag and lists of stale-price and irregular-price assets.
     /// @return sequencerDown True if L2 sequencer is down or in grace period (false on L1).
     /// @return stalePriceAssets Addresses of assets with stale prices.
-    function healthCheck() external view returns (bool sequencerDown, address[] memory stalePriceAssets);
+    /// @return irregularPriceAssets Addresses of assets flagged irregular (primary diverged from monitors / peg).
+    function healthCheck()
+        external
+        view
+        returns (bool sequencerDown, address[] memory stalePriceAssets, address[] memory irregularPriceAssets);
 
     /// @notice Returns whether the account has any non-zero balance across adapters and registered assets.
     /// @param account Account address.

@@ -18,6 +18,7 @@ contract sXDAI_CustomPriceFeedTest is TestEnvConfigurator {
         uint256 fork = createForkWithCadence(getAlchemyUrl("gnosis-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
+        _useNewNavImpl(NAV);
 
         oracle = new sXDAI_CustomPriceFeed(S_XDAI, NAV, WXDAI);
     }

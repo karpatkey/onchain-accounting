@@ -25,5 +25,15 @@
       "cbEthToEthHeartbeat": "86400",
       "baseAsset": "0x4200000000000000000000000000000000000006"
     }
+  },
+  "weETHCrossRate": {
+    "$comment": "weETH redundancy monitor (CrossRate): weETH/USD = ETH/USD x weETH/ETH. yToXFeed is the Chainlink weETH/ETH MARKET feed, independent of the fundamental weETH_L2 primary.",
+    "enabled": true,
+    "constructor": {
+      "underlyingAsset": "0x04C0599Ae5A44757c0af6F9eC3b93da8976c150A",
+      "yToXFeed": "0xFC1415403EbB0c693f9a7844b92aD2Ff24775C65",
+      "yToXHeartbeat": "86400",
+      "baseAsset": "0x4200000000000000000000000000000000000006"
+    }
   }
 }

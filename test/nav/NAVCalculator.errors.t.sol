@@ -330,7 +330,7 @@ contract NAVCalculatorErrorTest is SuperTest {
         INAVCalculator.NAV memory navResult = nav.getAccountNav(safe, address(0));
         assertTrue(navResult.timestamp >= 0, "nav returned");
 
-        (,, bool stale) = nav.latestPrice(address(token));
+        (,, bool stale,) = nav.latestPrice(address(token));
         assertTrue(stale, "Zero price should be marked as stale");
     }
 

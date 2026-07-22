@@ -127,6 +127,32 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     }
 
     /// @inheritdoc INAVCalculator
+    function addMonitorFeed(address asset, address priceFeed, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
+        external
+    {
+        _requireManager();
+        if (priceFeed == address(0)) {
+            revert InvalidArguments();
+        }
+        _requireAssetExists(asset);
+        _addMonitorFeed(asset, priceFeed, chainlinkHeartbeat, priceType);
+    }
+
+    /// @inheritdoc INAVCalculator
+    function setDivergenceTolerance(address asset, uint32 divergenceToleranceBps) external {
+        _requireManager();
+        _requireAssetExists(asset);
+        _setDivergenceTolerance(asset, divergenceToleranceBps);
+    }
+
+    /// @inheritdoc INAVCalculator
+    function setPegTolerance(address asset, uint32 pegToleranceBps) external {
+        _requireManager();
+        _requireAssetExists(asset);
+        _setPegTolerance(asset, pegToleranceBps);
+    }
+
+    /// @inheritdoc INAVCalculator
     function addBalanceAdapters(address[] calldata adapters) external {
         _requireManager();
         _addBalanceAdapters(adapters);
@@ -153,6 +179,20 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         _requireManager();
         _requireAssetExists(asset);
         _removePriceFeed(asset, priceFeed);
+    }
+
+    /// @inheritdoc INAVCalculator
+    function removeMonitorFeedAt(address asset, uint256 index) external {
+        _requireManager();
+        _requireAssetExists(asset);
+        _removeMonitorFeedAt(asset, index);
+    }
+
+    /// @inheritdoc INAVCalculator
+    function removeMonitorFeed(address asset, address priceFeed) external {
+        _requireManager();
+        _requireAssetExists(asset);
+        _removeMonitorFeed(asset, priceFeed);
     }
 
     /// @inheritdoc INAVCalculator
@@ -197,6 +237,9 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         if (_priceFeedCount(underlyingAsset) > 0) {
             _removeAllPriceFeeds(underlyingAsset);
         }
+
+        // Clear monitor feeds + pricing metadata (idempotent; also clears _assetPricing).
+        _removeAllMonitorFeeds(underlyingAsset);
 
         // Remove from default adapter's inclusion list (idempotent if not present)
         ERC20DefaultBalanceAdapter(erc20DefaultBalanceAdapter).removeSupportedAsset(underlyingAsset);
@@ -249,6 +292,8 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         // contract's config, so it is computed here and passed in.
         return PriceFeedLib.computeNav(
             _priceOracles,
+            _monitorFeeds,
+            _assetPricing,
             _assetIndex,
             _registeredAssets,
             getAllAdapters(),
@@ -314,6 +359,8 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         INAVCalculator.Position[] memory positions;
         (verboseNav.nav, positions) = PriceFeedLib.computeNavAndPositions(
             _priceOracles,
+            _monitorFeeds,
+            _assetPricing,
             _assetIndex,
             _registeredAssets,
             getAllAdapters(),
@@ -335,6 +382,8 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     {
         return PriceFeedLib.computeAccountPositions(
             _priceOracles,
+            _monitorFeeds,
+            _assetPricing,
             _assetIndex,
             _registeredAssets,
             getAllAdapters(),
@@ -342,6 +391,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             account,
             assetFilter,
             quoteAsset,
+            _isSequencerDown(),
             _nativeTokenSymbol
         );
     }
@@ -467,17 +517,62 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         _requireAssetExists(underlyingAsset);
         _requirePriceFeedExists(underlyingAsset);
 
-        // Heavy assembly (feed selection + config read + AggregatorV3 updatedAt fetch) is delegated to
-        // PriceFeedLib to keep NAVCalculator under EIP-170; sequencer status depends on this contract's config so
-        // it is computed here and passed in.
-        return PriceFeedLib.buildPriceData(_priceOracles, underlyingAsset, _isSequencerDown());
+        // Heavy assembly (feed selection + config read + AggregatorV3 updatedAt fetch + divergence vs monitors) is
+        // delegated to PriceFeedLib to keep NAVCalculator under EIP-170; sequencer status depends on this contract's
+        // config so it is computed here and passed in.
+        return PriceFeedLib.buildPriceData(
+            _priceOracles, _monitorFeeds, _assetPricing, underlyingAsset, _isSequencerDown(), true
+        );
     }
 
     /// @inheritdoc INAVCalculator
-    function healthCheck() external view returns (bool sequencerDown, address[] memory stalePriceAssets) {
-        // Sequencer status depends on this contract's config; the per-asset staleness scan is delegated to
-        // PriceFeedLib to keep NAVCalculator under EIP-170.
-        return PriceFeedLib.healthCheck(_priceOracles, _registeredAssets, _isSequencerDown());
+    /// @dev Identical to {getPriceData} but SKIPS the monitor-divergence computation (irregular/divergenceBps/
+    ///      monitorFeedCount stay 0/false). For hot callers that only need the price/staleness — notably custom
+    ///      feeds reading the NAV-sourced base/USD term (NavBaseUsdLib) once per position — so a base asset's
+    ///      monitor reads + sort aren't paid on every derived-asset read.
+    function getPriceDataNoDivergence(address underlyingAsset)
+        external
+        view
+        returns (INAVCalculator.PriceFeedData memory priceFeedData)
+    {
+        _requireAssetExists(underlyingAsset);
+        _requirePriceFeedExists(underlyingAsset);
+        return PriceFeedLib.buildPriceData(
+            _priceOracles, _monitorFeeds, _assetPricing, underlyingAsset, _isSequencerDown(), false
+        );
+    }
+
+    /// @inheritdoc INAVCalculator
+    function getPriceDivergence(address underlyingAsset)
+        external
+        view
+        returns (
+            int256 primaryPrice,
+            int256 monitorMedian,
+            uint256 divergenceBps,
+            bool irregular,
+            uint256 monitorFeedCount,
+            bool primaryStale,
+            bool primaryAboveMonitors
+        )
+    {
+        _requireAssetExists(underlyingAsset);
+        _requirePriceFeedExists(underlyingAsset);
+        return PriceFeedLib.computeDivergence(
+            _priceOracles, _monitorFeeds, _assetPricing, underlyingAsset, _isSequencerDown()
+        );
+    }
+
+    /// @inheritdoc INAVCalculator
+    function healthCheck()
+        external
+        view
+        returns (bool sequencerDown, address[] memory stalePriceAssets, address[] memory irregularPriceAssets)
+    {
+        // Sequencer status depends on this contract's config; the per-asset staleness + divergence scan is delegated
+        // to PriceFeedLib to keep NAVCalculator under EIP-170.
+        return
+            PriceFeedLib.healthCheck(_priceOracles, _monitorFeeds, _assetPricing, _registeredAssets, _isSequencerDown());
     }
 
     /// @inheritdoc INAVCalculator

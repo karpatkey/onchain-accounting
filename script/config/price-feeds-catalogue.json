@@ -200,10 +200,6 @@
           "address": "0x58D97B57BB95320F9a05dC918Aef65434969c2B2",
           "note": "No Chainlink MORPHO/USD feed on mainnet.",
           "API3": { "address": "0x79F8622D4E4773Fab6f5d4C98779D97baA1e906e", "dapiName": "MORPHO/USD", "decimals": 18, "heartbeat": 86400, "deployed": true }
-        },
-        "GEAR": {
-          "address": "0xBa3335588D9403515223F109EdC4eB7269a9Ab5D",
-          "note": "No oracle available from any provider at time of this update."
         }
       }
     },
@@ -429,10 +425,6 @@
           "address": "0x0e09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82",
           "Chainlink": { "address": "0xB6064eD41d4f67e353768aA239cA86f4F73665a1", "pair": "CAKE/USD", "decimals": 8, "heartbeat": 86400 },
           "API3": { "address": "0x021A9d52DF63b2bBeeF7EC6d600dE56160Ad28dF", "dapiName": "CAKE/USD", "decimals": 18, "heartbeat": 86400, "deployed": false }
-        },
-        "COW": {
-          "address": "0x5BfdAa3f7C28B9994B56135403bF1aCEA02595b0",
-          "note": "No Chainlink, Redstone, or API3 feed for COW on BNB Chain at time of this update."
         }
       }
     },

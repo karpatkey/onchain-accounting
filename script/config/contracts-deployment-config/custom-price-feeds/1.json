@@ -11,8 +11,6 @@
     "enabled": true,
     "constructor": {
       "wstEth": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
-      "stEthToEthChainlinkOracle": "0x86392dC19c0b719886221c78AB11eb8Cf5c52812",
-      "stEthToEthChainlinkHeartbeat": "86400",
       "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }
   },
@@ -54,8 +52,6 @@
     "enabled": true,
     "constructor": {
       "weEth": "0xCd5fE23C85820F7B72D0926FC9b05b43E359b7ee",
-      "weEthToEthChainlinkOracle": "0x5c9C449BbC9a6075A2c061dF312a35fd1E05fF22",
-      "weEthToEthChainlinkHeartbeat": "86400",
       "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }
   },
@@ -63,9 +59,6 @@
     "enabled": true,
     "constructor": {
       "eEth": "0x35fA164735182de50811E8e2E824cFb9B6118ac2",
-      "weEth": "0xCd5fE23C85820F7B72D0926FC9b05b43E359b7ee",
-      "weEthToEthChainlinkOracle": "0x5c9C449BbC9a6075A2c061dF312a35fd1E05fF22",
-      "weEthToEthChainlinkHeartbeat": "86400",
       "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }
   },
@@ -202,6 +195,16 @@
     "constructor": {
       "underlyingAsset": "0xf1C9acDc66974dFB6dEcB12aA385b9cD01190E38",
       "yToXFeed": "0x66ac817f997Efd114EDFcccdce99F3268557B32C",
+      "yToXHeartbeat": "86400",
+      "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+    }
+  },
+  "rETHCrossRate": {
+    "$comment": "rETH redundancy monitor (CrossRate): rETH/USD = ETH/USD x rETH/ETH. yToXFeed is the Chainlink rETH/ETH MARKET feed (dex_state_price), independent of the primary rETH_CustomPriceFeed (Rocket Pool getExchangeRate). Divergence-only monitor.",
+    "enabled": true,
+    "constructor": {
+      "underlyingAsset": "0xae78736Cd615f374D3085123A210448E74Fc6393",
+      "yToXFeed": "0x536218f9E9Eb48863970252233c8F271f554C2d0",
       "yToXHeartbeat": "86400",
       "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }

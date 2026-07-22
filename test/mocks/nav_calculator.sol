@@ -161,6 +161,35 @@ contract Mock_NAVCalculator is INAVCalculator {
         revert("Not implemented in mock");
     }
 
+    function addMonitorFeed(address, address, IPrices.PriceType, uint256) external pure override {
+        revert("Not implemented in mock");
+    }
+
+    function setDivergenceTolerance(address, uint32) external pure override {
+        revert("Not implemented in mock");
+    }
+
+    function setPegTolerance(address, uint32) external pure override {
+        revert("Not implemented in mock");
+    }
+
+    function removeMonitorFeedAt(address, uint256) external pure override {
+        revert("Not implemented in mock");
+    }
+
+    function removeMonitorFeed(address, address) external pure override {
+        revert("Not implemented in mock");
+    }
+
+    function getPriceDivergence(address)
+        external
+        pure
+        override
+        returns (int256, int256, uint256, bool, uint256, bool, bool)
+    {
+        revert("Not implemented in mock");
+    }
+
     function addBalanceAdapters(address[] calldata) external pure override {
         revert("Not implemented in mock");
     }
@@ -181,7 +210,7 @@ contract Mock_NAVCalculator is INAVCalculator {
         revert("Not implemented in mock");
     }
 
-    function healthCheck() external pure override returns (bool, address[] memory) {
+    function healthCheck() external pure override returns (bool, address[] memory, address[] memory) {
         revert("Not implemented in mock");
     }
 
@@ -252,6 +281,17 @@ contract Mock_NAVCalculator is INAVCalculator {
         // state the real engine can never emit — which `NavBaseUsdLib`'s `pd.price <= 0` guard relies on.
         if (pd.stale) pd.price = 0;
         pd.stale = pd.stale || pd.sequencerDown;
+    }
+
+    function getPriceDataNoDivergence(address asset) external view override returns (PriceFeedData memory pd) {
+        if (_priceReverts[asset]) revert PriceFeedNotSet(asset);
+        pd = _priceData[asset];
+        if (pd.stale) pd.price = 0;
+        pd.stale = pd.stale || pd.sequencerDown;
+        // No-divergence variant: leave the divergence signal at defaults (mirrors buildPriceData(..., false)).
+        pd.irregular = false;
+        pd.divergenceBps = 0;
+        pd.monitorFeedCount = 0;
     }
 
     function getAccountPositionsForAsset(address, address, address) external pure override returns (Position[] memory) {

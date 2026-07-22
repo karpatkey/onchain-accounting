@@ -5,6 +5,7 @@ import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
 import {ConfigReader} from "./ConfigReader.sol";
 import {SafeTxBuilder} from "./SafeTxBuilder.sol";
+import {IPrices} from "../../src/prices/IPrices.sol";
 
 /// @title BaseDeployScript
 /// @notice Base contract for all deployment scripts with common utilities
@@ -136,5 +137,54 @@ abstract contract BaseDeployScript is Script {
     /// @return True if deployed, false otherwise
     function isDeployed(string memory contractName) internal view returns (bool) {
         return readDeployedAddress(contractName) != address(0);
+    }
+
+    /// @notice Fails fast when the planned tolerance/monitor config would produce an on-chain call guaranteed to
+    ///         revert, so a bad config surfaces at planning time instead of aborting the whole Safe/EOA batch at
+    ///         execution. Shared by RegisterAssets and MigrateToMonitorFeeds (single source of truth for the
+    ///         on-chain guards in Prices._set*Tolerance and PriceFeedLib.addMonitorFeed).
+    /// @dev The divergence-tolerance requirement mirrors the on-chain guard exactly: addMonitorFeed reverts
+    ///      DivergenceToleranceRequired unless a non-zero tolerance exists at execution time — set earlier in this
+    ///      batch (config `divTol > 0`) OR already on-chain from a prior run. So we only block when a monitor is
+    ///      actually being added AND config divTol is 0 AND no on-chain tolerance exists (avoids false-positives on
+    ///      idempotent re-runs / out-of-band tolerance management).
+    /// @param symbol Asset symbol, used verbatim in revert messages (the concat happens here, not at the call site,
+    ///        so the caller passes an already-live local and stays under the via_ir stack limit).
+    /// @param monCount Number of monitor feeds the config declares for the asset.
+    /// @param divTol Config divergence tolerance (bps).
+    /// @param pegTol Config peg tolerance (bps).
+    /// @param monitorsBeingAdded True if this run will actually emit at least one addMonitorFeed for the asset.
+    function _requireTolerancesPlannable(
+        address navProxy,
+        address asset,
+        string memory symbol,
+        uint256 monCount,
+        uint256 divTol,
+        uint256 pegTol,
+        bool monitorsBeingAdded
+    ) internal view {
+        if (monitorsBeingAdded && divTol == 0) {
+            require(
+                _onChainDivergenceToleranceBps(navProxy, asset) > 0,
+                string.concat(symbol, ": adds monitorFeeds but no divergence tolerance (config or on-chain)")
+            );
+        }
+        // set{Divergence,Peg}Tolerance revert InvalidTolerance for values > 10_000. setDivergenceTolerance is only
+        // emitted when monCount > 0 && divTol > 0; setPegTolerance whenever pegTol > 0.
+        if (monCount > 0 && divTol > 10_000) {
+            revert(string.concat(symbol, ": divergenceToleranceBps > 10000"));
+        }
+        if (pegTol > 10_000) {
+            revert(string.concat(symbol, ": pegToleranceBps > 10000"));
+        }
+    }
+
+    /// @notice Reads the asset's on-chain divergence tolerance (bps); 0 if unset, not registered, or the call fails.
+    function _onChainDivergenceToleranceBps(address navProxy, address asset) private view returns (uint256) {
+        (bool ok, bytes memory data) =
+            navProxy.staticcall(abi.encodeWithSelector(IPrices.getAssetPricing.selector, asset));
+        if (!ok || data.length < 64) return 0;
+        IPrices.AssetPricing memory pricing = abi.decode(data, (IPrices.AssetPricing));
+        return pricing.divergenceToleranceBps;
     }
 }

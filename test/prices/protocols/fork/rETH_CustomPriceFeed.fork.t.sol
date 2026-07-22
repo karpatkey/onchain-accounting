@@ -21,6 +21,7 @@ contract rETH_CustomPriceFeedForkTest is TestEnvConfigurator {
         uint256 fork = createForkWithCadence(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
+        _useNewNavImpl(NAV);
 
         rEthPriceOracle = new rETH_CustomPriceFeed(RETH, NAV, WETH);
     }

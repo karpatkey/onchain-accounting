@@ -26,6 +26,7 @@ contract sDAI_CustomPriceFeedTest is TestEnvConfigurator {
         uint256 fork = createForkWithCadence(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
+        _useNewNavImpl(NAV);
 
         sDaiPriceOracle = new sDAI_CustomPriceFeed(SDAI, DSR_MANAGER, NAV, DAI);
     }

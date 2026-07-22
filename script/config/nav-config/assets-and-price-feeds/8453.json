@@ -1,42 +1,51 @@
 {
   "ETH": {
     "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70",
         "heartbeat": 1200
-      },
+      }
+    ],
+    "monitorFeeds": [
       {
-        "type": "API3",
-        "address": "0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473",
+        "type": "Redstone",
+        "address": "0xe8D9FbC10e00ecc9f0694617075fDAF657a76FB2",
         "heartbeat": 86400
       }
     ]
   },
   "WETH": {
     "address": "0x4200000000000000000000000000000000000006",
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70",
         "heartbeat": 1200
-      },
+      }
+    ],
+    "monitorFeeds": [
       {
-        "type": "API3",
-        "address": "0x5b0cf2b36a65a6BB085D501B971e4c102B9Cd473",
+        "type": "Redstone",
+        "address": "0xe8D9FbC10e00ecc9f0694617075fDAF657a76FB2",
         "heartbeat": 86400
       }
     ]
   },
   "wstETH": {
     "address": "0xc1CBa3fCea344f92D9239c08C0568f6F2F0ee452",
+    "divergenceToleranceBps": 250,
     "priceFeeds": [
       {
         "type": "Custom",
         "feed": "wstETH_L2",
         "heartbeat": 86400
-      },
+      }
+    ],
+    "monitorFeeds": [
       {
         "$comment": "Independent 2nd feed (ADR 0009 redundancy): RedStone Classic Push wstETH/USD on Base (direct /USD, distinct from the wstETH_L2 cross-rate), 8 decimals.",
         "type": "Redstone",
@@ -47,22 +56,33 @@
   },
   "weETH": {
     "address": "0x04C0599Ae5A44757c0af6F9eC3b93da8976c150A",
+    "divergenceToleranceBps": 250,
     "priceFeeds": [
       {
         "type": "Custom",
         "feed": "weETH_L2",
         "heartbeat": 86400
       }
+    ],
+    "monitorFeeds": [
+      {
+        "type": "Custom",
+        "feed": "weETHCrossRate",
+        "heartbeat": 86400
+      }
     ]
   },
   "cbETH": {
     "address": "0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22",
+    "divergenceToleranceBps": 250,
     "priceFeeds": [
       {
         "type": "Custom",
         "feed": "cbETH_L2",
         "heartbeat": 86400
-      },
+      }
+    ],
+    "monitorFeeds": [
       {
         "$comment": "Independent 2nd feed (ADR 0009 redundancy): Chainlink CBETH/USD on Base (direct /USD, distinct from the cbETH_L2 cross-rate), 8 decimals.",
         "type": "Chainlink",
@@ -83,21 +103,26 @@
   },
   "USDC": {
     "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    "pegToleranceBps": 100,
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0x7e860098F58bBFC8648a4311b374B1D669a2bc6B",
         "heartbeat": 86400
-      },
+      }
+    ],
+    "monitorFeeds": [
       {
-        "type": "API3",
-        "address": "0xD3C586Eec1C6C3eC41D276a23944dea080eDCf7f",
+        "type": "Redstone",
+        "address": "0xDd87FD0FD6F68AcB6897d05fCf31F3AB1165a49F",
         "heartbeat": 86400
       }
     ]
   },
   "GHO": {
     "address": "0x6Bb7a212910682DCFdbd5BCBb3e28FB4E8da10Ee",
+    "pegToleranceBps": 100,
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -117,26 +142,23 @@
     ]
   },
   "cbBTC": {
-    "$comment": "Coinbase Wrapped BTC. Registered so its Morpho collateral leg (MorphoMarket_cbBTC_USDC on Base) is valued. Chainlink cbBTC/USD on Base, 8 decimals.",
     "address": "0xcbB7C0000aB88B473b1F5aFd9ef808440eED33Bf",
+    "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
         "type": "Chainlink",
         "address": "0x07DA0E54543a844a80ABE69c8A12F22B3aA59f9D",
         "heartbeat": 86400
-      },
+      }
+    ],
+    "monitorFeeds": [
       {
         "$comment": "Independent 2nd feed (ADR 0009 redundancy): RedStone Classic Push cbBTC/USD on Base, 8 decimals.",
         "type": "Redstone",
         "address": "0x8B4736f5eaD8ed579Ecf65a13F9c1E8B44dEdF20",
         "heartbeat": 86400
-      },
-      {
-        "$comment": "Independent 3rd feed (ADR 0009 redundancy): API3 cbBTC/USD dAPI via Api3ReaderProxyV1 (18-dec proxy, scaled to 8-dec at read; PriceFeedLib validates sourceDec==18).",
-        "type": "API3",
-        "address": "0xa4183Cbf2eE868dDFccd325531C4f53F737FFF68",
-        "heartbeat": 86400
       }
-    ]
+    ],
+    "$comment": "Coinbase Wrapped BTC. Registered so its Morpho collateral leg (MorphoMarket_cbBTC_USDC on Base) is valued. Chainlink cbBTC/USD on Base, 8 decimals."
   }
 }

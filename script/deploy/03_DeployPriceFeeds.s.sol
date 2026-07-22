@@ -41,6 +41,7 @@ import {OETH_CustomPriceFeed} from "../../src/prices/protocols/OETH_CustomPriceF
 import {ezETH_CrossRateCustomPriceFeed} from "../../src/prices/protocols/ezETH_CrossRateCustomPriceFeed.sol";
 import {ETHx_CrossRateCustomPriceFeed} from "../../src/prices/protocols/ETHx_CrossRateCustomPriceFeed.sol";
 import {osETH_CrossRateCustomPriceFeed} from "../../src/prices/protocols/osETH_CrossRateCustomPriceFeed.sol";
+import {CrossRateCustomPriceFeed} from "../../src/prices/protocols/CrossRateCustomPriceFeed.sol";
 import {ankrETH_CustomPriceFeed} from "../../src/prices/protocols/ankrETH_CustomPriceFeed.sol";
 import {NXM_CustomPriceFeed} from "../../src/prices/protocols/NXM_CustomPriceFeed.sol";
 
@@ -200,6 +201,10 @@ contract DeployPriceFeeds is BaseDeployScript {
         }
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "osETHCrossRate")) {
             _deployOsEthCrossRate();
+        }
+        // rETH cross-rate MONITOR (rETH/USD = ETH/USD x rETH/ETH market feed); independent of the fundamental primary.
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "rETHCrossRate")) {
+            _deployCrossRateMonitor("rETHCrossRate");
         }
 
         // Deploy OETH CrossRate Price Oracle (OETH/USD = ETH/USD x OETH/ETH)
@@ -377,15 +382,10 @@ contract DeployPriceFeeds is BaseDeployScript {
         }
 
         address wstEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "wstETH", "wstEth"));
-        address stEthToEthOracle =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "wstETH", "stEthToEthChainlinkOracle"));
-        uint256 stEthToEthHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "wstETH", "stEthToEthChainlinkHeartbeat"));
         address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "wstETH", "baseAsset"));
         address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
-        wstETH_CustomPriceFeed wstEthAdapter =
-            new wstETH_CustomPriceFeed(wstEth, stEthToEthOracle, stEthToEthHeartbeat, nav, baseAsset);
+        wstETH_CustomPriceFeed wstEthAdapter = new wstETH_CustomPriceFeed(wstEth, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "wstETH", address(wstEthAdapter));
         console2.log("wstETH_CustomPriceFeed deployed at:", address(wstEthAdapter));
     }
@@ -546,15 +546,10 @@ contract DeployPriceFeeds is BaseDeployScript {
         }
 
         address weEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "weETH", "weEth"));
-        address weEthToEthOracle =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "weETH", "weEthToEthChainlinkOracle"));
-        uint256 weEthToEthHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "weETH", "weEthToEthChainlinkHeartbeat"));
         address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "weETH", "baseAsset"));
         address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
-        weETH_CustomPriceFeed weEthAdapter =
-            new weETH_CustomPriceFeed(weEth, weEthToEthOracle, weEthToEthHeartbeat, nav, baseAsset);
+        weETH_CustomPriceFeed weEthAdapter = new weETH_CustomPriceFeed(weEth, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "weETH", address(weEthAdapter));
         console2.log("weETH_CustomPriceFeed deployed at:", address(weEthAdapter));
     }
@@ -585,16 +580,10 @@ contract DeployPriceFeeds is BaseDeployScript {
         }
 
         address eEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "eETH", "eEth"));
-        address weEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "eETH", "weEth"));
-        address weEthToEthOracle =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "eETH", "weEthToEthChainlinkOracle"));
-        uint256 weEthToEthHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "eETH", "weEthToEthChainlinkHeartbeat"));
         address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "eETH", "baseAsset"));
         address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
-        eETH_CustomPriceFeed eEthAdapter =
-            new eETH_CustomPriceFeed(eEth, weEth, weEthToEthOracle, weEthToEthHeartbeat, nav, baseAsset);
+        eETH_CustomPriceFeed eEthAdapter = new eETH_CustomPriceFeed(eEth, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "eETH", address(eEthAdapter));
         console2.log("eETH_CustomPriceFeed deployed at:", address(eEthAdapter));
     }
@@ -619,6 +608,29 @@ contract DeployPriceFeeds is BaseDeployScript {
 
     // CrossRate redundancy feeds: Y/USD = (X/USD) * (Y/X), X = ETH. The Y/ETH leg is a Redstone market feed,
     // independent of the asset's primary on-chain-rate feed. Registered as priceFeeds[1] (freshest-wins).
+
+    /// @notice Deploys a generic CrossRate divergence-MONITOR feed (Y/USD = (Y/ETH market) x (ETH/USD)) from its
+    ///         config entry `{underlyingAsset, yToXFeed, yToXHeartbeat, baseAsset}`. Used for LSTs whose fundamental
+    ///         primary has no direct USD market feed to diverge from — the yToXFeed is an INDEPENDENT market Y/ETH
+    ///         feed. Wired as a Custom monitorFeed; never prices the NAV.
+    function _deployCrossRateMonitor(string memory name) internal {
+        address deployed = _readAdapterDeployed("priceFeeds", name);
+        if (deployed != address(0)) {
+            console2.log("CrossRate monitor already deployed:", name, deployed);
+            return;
+        }
+        address underlying =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "underlyingAsset"));
+        address yToXFeed = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "yToXFeed"));
+        uint256 yToXHeartbeat = vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "yToXHeartbeat"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
+
+        CrossRateCustomPriceFeed adapter =
+            new CrossRateCustomPriceFeed(underlying, yToXFeed, yToXHeartbeat, nav, baseAsset);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", name, address(adapter));
+        console2.log("CrossRateCustomPriceFeed deployed:", name, address(adapter));
+    }
 
     function _deployEzEthCrossRate() internal {
         address deployed = _readAdapterDeployed("priceFeeds", "ezETHCrossRate");
@@ -732,6 +744,16 @@ contract DeployPriceFeeds is BaseDeployScript {
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "syrupUSDC_L2")) {
             _deploySyrupUsdcL2();
         }
+        // CrossRate MONITORS (X/USD = ETH/USD x X/ETH market feed): independent of each L2 asset's fundamental primary.
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "weETHCrossRate")) {
+            _deployCrossRateMonitor("weETHCrossRate");
+        }
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "ezETHCrossRate")) {
+            _deployCrossRateMonitor("ezETHCrossRate");
+        }
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "rsETHCrossRate")) {
+            _deployCrossRateMonitor("rsETHCrossRate");
+        }
 
         vm.stopBroadcast();
     }
@@ -759,6 +781,10 @@ contract DeployPriceFeeds is BaseDeployScript {
         }
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "cbETH_L2")) {
             _deployCbEthL2();
+        }
+        // weETH cross-rate MONITOR (weETH/USD = ETH/USD x weETH/ETH market feed); independent of the fundamental primary.
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "weETHCrossRate")) {
+            _deployCrossRateMonitor("weETHCrossRate");
         }
 
         vm.stopBroadcast();

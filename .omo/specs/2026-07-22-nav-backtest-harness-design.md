@@ -21,7 +21,7 @@ Also: CI `forge build` takes ~15 min because compilation artifacts are never cac
 ## Decisions (user-confirmed)
 
 - Goal: all three — stability backtest + NAV time-series data + regression snapshots.
-- Scope v1: **mainnet only**, accounts from `accounts.json`, **7-day window, hourly cadence** (168 points), all overridable via env vars.
+- Scope v1: **mainnet only**, accounts from `accounts.json`, one **fixed 30-day window** picked once and pinned (absolute from/to timestamps, hourly cadence → 721 points inclusive). Windows are **named** and multiple windows are supported in the fixture; extending the range or adding windows later is a generator run + snapshot, not a code change. All parameters env/flag-overridable.
 - Execution: **on-demand only** (no cron, not per-PR).
 - CI build-speed fix: **included, as a first standalone step/PR**.
 - Work happens on a new branch (`feat/nav-backtest-harness`).
@@ -38,14 +38,14 @@ Also: CI `forge build` takes ~15 min because compilation artifacts are never cac
 
 ### Components
 
-1. **Block-list generator** — script step (in the driver, bash + `cast`/`curl`): map "every hour over the window" → block numbers via binary search on `eth_getBlockByNumber` timestamps. Writes `test/integration/backtest-blocks.json` (chainId → `[ {timestamp, block} ]`). Cached/committed so re-runs are deterministic.
+1. **Block-list generator** — script step (in the driver, bash + `cast`/`curl`): given a **named window with absolute `--from`/`--to` timestamps** (not relative-to-now), map every hour → block numbers via `cast find-block`. Writes `test/integration/backtest-blocks.json` (`windows.<name>.chains.<chainId> → {from, to, cadenceHours, points: [{timestamp, block}]}`). Committed, so the window is pinned and re-runs are deterministic; adding/extending windows is a generator run, not a code change.
 2. **Forge backtest test** — `test/integration/NavBacktest.fork.t.sol`, reusing `IntegrationFromConfigBase`:
-   - Read env: `BACKTEST_CHAIN` (default 1), `BACKTEST_BLOCKS_FILE`, `BACKTEST_ACCOUNTS` (default: enabled accounts from `accounts.json`), `BACKTEST_MODE` (`snapshot` | `assert` | `report`).
+   - Read env: `BACKTEST_CHAIN` (default 1), `BACKTEST_BLOCKS_FILE` (unset ⇒ 2-point smoke sweep), `BACKTEST_WINDOW` (window name, default `w1-30d`). Accounts are always the chain-enabled accounts from `accounts.json` (single source of truth — no account env override in v1). Modes live in the driver script, not the forge test.
    - Create fork at the **oldest** block, deploy the full stack from local source once, `vm.makePersistent` the deployed contracts (+ `NAVRegistryLib`), then loop `vm.rollFork(block_i)` ascending, calling `getAccountNav(account, quote)` per account per block.
-   - Per-point failures never abort the sweep: wrap the read in try/catch, record `REVERT:<reason>` — that IS the stability-backtest signal.
+   - Per-point failures never abort the sweep: wrap the read in try/catch, record `ERROR:<reason>` — that IS the stability-backtest signal.
    - Emit machine-readable lines (`BACKTEST|chainId|block|timestamp|account|navOrError`) applied by the driver via jq, same pattern as the existing SNAPSHOT flow.
-3. **Fixture** — `test/integration/nav-timeseries.json`: chainId → account → `[ {block, timestamp, nav|error} ]`, plus metadata (window, cadence, generation commit).
-4. **Driver script** — `script/test/run-nav-backtest.sh`: generates/refreshes block list, runs forge with `FOUNDRY_PROFILE=slow`, applies output to the fixture (snapshot mode) or diffs against it (assert mode), prints a human-readable report (min/max/points, reverting blocks, largest hour-over-hour jumps).
+3. **Fixture** — `test/integration/nav-timeseries.json`: `windows.<name>.chains.<chainId> → {generatedAtCommit, accounts.<address>: [ {block, timestamp, nav|error} ]}`. Window/cadence metadata lives in `backtest-blocks.json` under the same window name (single definition). Multiple named windows coexist; assert mode checks the window it's given.
+4. **Driver script** — `script/test/run-nav-backtest.sh --window <name> --mode report|snapshot|assert`: runs forge with `FOUNDRY_PROFILE=slow`, applies output to the fixture (snapshot) or diffs against it (assert), prints a report (points + reverting count per account, largest hour-over-hour jump).
 
 ### Modes
 
@@ -59,13 +59,13 @@ Forge fork deploys are local-only — nothing is ever broadcast. So testing a mo
 
 ### Error handling
 
-- Merkl rewards at historical blocks where the fixture root doesn't match read as 0 (existing documented behavior) — noted in the report, not an error.
+- The Merkl rewards adapter was removed from the repo (pending rewrite, per CLAUDE.md) — no Merkl-specific handling needed; if it returns, its historical-root-mismatch-reads-0 behavior becomes a documented caveat.
 - Adapters/pools/feeds that didn't exist at older blocks within the window: the try/catch per point records them; the report flags any account whose NAV reverts at the oldest blocks.
 - RPC failures: forge retries; the driver exits non-zero if any point is missing (distinct from an on-chain revert, which is recorded data).
 
 ### Testing the harness itself
 
-- A tiny smoke configuration (2 blocks, 1 account) runs as part of the normal fork-test suite so the harness can't rot; the full 168-point sweep stays on-demand.
+- A tiny smoke configuration (2 blocks, all enabled accounts — same account-loading path as the full sweep) runs as part of the normal fork-test suite so the harness can't rot; the full 721-point pinned-window sweep stays on-demand.
 
 ## Alternatives considered
 

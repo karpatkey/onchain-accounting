@@ -28,6 +28,14 @@ function fail(msg: string, code: 1 | 2): never { console.error(msg); process.exi
 function isRecord(v: unknown): v is Record<string, unknown> { return typeof v === "object" && v !== null && !Array.isArray(v); }
 function isStringArray(v: unknown): v is string[] { return Array.isArray(v) && v.every((x) => typeof x === "string"); }
 function isFiniteNonNeg(v: unknown): v is number { return typeof v === "number" && Number.isFinite(v) && v >= 0 && Number.isSafeInteger(v); }
+function isPoint(v: unknown): v is Point {
+  if (!isRecord(v)) return false;
+  const { block, timestamp, value, error } = v;
+  if (!isFiniteNonNeg(block) || !isFiniteNonNeg(timestamp)) return false;
+  const hv = typeof value === "string", he = typeof error === "string";
+  return hv !== he;
+}
+function isPointArray(v: unknown): v is Point[] { return Array.isArray(v) && v.every(isPoint); }
 
 // ── Boundary parsers (no `as`, no `any`, no non-null) ──
 
@@ -68,7 +76,17 @@ function parseFixture(raw: unknown): Fixture {
       const gac = entry.generatedAtCommit;
       if (typeof gac !== "string") fail(`fixture window ${name}/${cid}: generatedAtCommit must be a string`, 2);
       if (!isRecord(entry.accounts)) fail(`fixture window ${name}/${cid}: accounts must be an object`, 2);
-      chains[cid] = { generatedAtCommit: gac, accounts: entry.accounts as Series };
+      const accounts: Series = {};
+      for (const [account, metricsRaw] of Object.entries(entry.accounts)) {
+        if (!isRecord(metricsRaw)) fail(`fixture ${name}/${cid}/${account}: must be an object`, 2);
+        const metrics: Record<string, Point[]> = {};
+        for (const [metric, pointsRaw] of Object.entries(metricsRaw)) {
+          if (!isPointArray(pointsRaw)) fail(`fixture ${name}/${cid}/${account}/${metric}: must be a Point[]`, 2);
+          metrics[metric] = pointsRaw;
+        }
+        accounts[account] = metrics;
+      }
+      chains[cid] = { generatedAtCommit: gac, accounts };
     }
     windows[name] = { chains };
   }

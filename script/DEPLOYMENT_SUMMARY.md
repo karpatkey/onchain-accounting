@@ -71,7 +71,7 @@ This deployment system uses an **EOA deployer** (`--broadcast`) with **CREATE2 d
 | `contracts-deployment-config/custom-price-feeds/{chainId}.json` | Custom price-oracle adapters to deploy (`enabled` + `constructor` args) |
 | `contracts-deployment-config/balance-adapters/{chainId}.json` & `contracts-deployment-config/meta-balance-adapters/{chainId}.json` | Plain / meta balance adapters to deploy (`enabled` + `constructor`) |
 | `nav-config/balance-adapters/{chainId}.json` & `nav-config/meta-balance-adapters/{chainId}.json` | Adapters to register on NAVCalculator (plain vs. meta; meta entries carry `instances` / `instancesRaw`) |
-| `script/config/deployments/{chainId}.json` | **Deployed-address state** — the *only* place deployed addresses are written. Populated by the deploy scripts as contracts land; now filled across all 23 deployed chains. Broadcast logs are no longer committed. |
+| `script/config/deployments/{chainId}.json` | **Deployed-address state** — the *only* place deployed addresses are written. Populated by the deploy scripts as contracts land; now filled across all 24 deployed chains. Broadcast logs are no longer committed. |
 | (No separate `dev-input.json`, `assets.json`, or `balance-adapters.json`) | All user input lives in `chains/{chainId}.json` (role `addresses`) plus the per-concern `contracts-deployment-config/` (with the `enabled` adapter flags) and `nav-config/` files above |
 
 ## Deployment Workflow
@@ -319,7 +319,7 @@ script/verify/verify-all.sh
 - Storage gaps for future expansion
 
 ### ✅ Multi-Chain Support
-- Deployed on **23 chains** (see the Chains list at the top); fully configured on Ethereum, Optimism, Arbitrum, Base, Gnosis, BSC, Polygon
+- Deployed on **24 chains** (see the Chains list at the top); fully configured on Ethereum, Optimism, Arbitrum, Base, Gnosis, BSC, Polygon
 - Chain-specific adapter deployments
 - Easy to add new chains
 
@@ -481,7 +481,7 @@ Note: Proxy deploy + init is done via EOA in `02_DeployProxies.s.sol` (no Safe T
 ## What Is Missing or Easy to Miss
 
 - **Config file names**: The repo uses **per-chain JSONs** at `script/config/chains/{chainId}.json`, not a single `chain-config.json` or `dev-input.json`.
-- **Chain coverage**: `script/config/chains/` has a `{chainId}.json` for each of the 23 deployed chains (see the Chains list at the top), plus configs for networks intentionally left undeployed (e.g. `1101.json` for Polygon zkEVM, which is excluded) — presence of a config does not imply a deployment. To add another chain, create `{chainId}.json` (reuse the structure from an existing file) and add its Alchemy slug to `_alchemyNetworkForChainId` in `script/utils/ConfigReader.sol` — see `docs/howto/add-chain.md`.
+- **Chain coverage**: `script/config/chains/` has a `{chainId}.json` for each of the 24 deployed chains (see the Chains list at the top), plus configs for networks intentionally left undeployed (e.g. `1101.json` for Polygon zkEVM, which is excluded) — presence of a config does not imply a deployment. To add another chain, create `{chainId}.json` (reuse the structure from an existing file) and add its Alchemy slug to `_alchemyNetworkForChainId` in `script/utils/ConfigReader.sol` — see `docs/howto/add-chain.md`.
 - **Safe TX output path**: Generated Safe transaction files are written to **`safe-transactions/`** at the **project root** (see `SafeTxBuilder.sol`).
 - **02 is EOA-only**: Proxy deploy and init are done in **02_DeployProxies.s.sol** via EOA (no separate Safe TX for init). Use atomic deploy (default) or `USE_LEGACY_DEPLOY=1` for legacy multi-tx.
 - **Docs**: Detailed config reference is `script/config/README.md` and `script/config/CONFIG_GUIDE.md`. Deployment script details: `script/deploy/README.md`.

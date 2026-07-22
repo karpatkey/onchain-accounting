@@ -171,10 +171,10 @@
   },
   "ezETHCrossRate": {
     "enabled": true,
-    "$comment": "ezETH redundancy feed (ezETH_CrossRateCustomPriceFeed). CrossRate: ezETH/USD = ETH/USD x ezETH/ETH. yToXFeed is the Redstone Classic Push ezETH/ETH market feed (verified 99.87% vs Renzo RestakeManager rate). Independent of the primary ezETH feed (Renzo on-chain rate); added as priceFeeds[1] for freshest-wins redundancy.",
+    "$comment": "ezETH divergence monitor (ezETH_CrossRateCustomPriceFeed). CrossRate: ezETH/USD = ETH/USD x ezETH/ETH. yToXFeed migrated 2026-07-22 to the RedStone multi-feed ezETH_FUNDAMENTAL feed (0x701e83Bd…) after the old Classic-Push ezETH/ETH market feed (0xF4a3e183…) was sunset by RedStone (per Slack C03BP6L2A9W / Nicolas). Still independent of the primary (Renzo RestakeManager on-chain rate) — RedStone's rate vs Renzo's, plus the NAV ETH/USD leg. Feed is 8-dec, ~12h update cadence; heartbeat kept at 24h for margin.",
     "constructor": {
       "underlyingAsset": "0xbf5495Efe5DB9ce00f80364C8B423567e58d2110",
-      "yToXFeed": "0xF4a3e183F59D2599ee3DF213ff78b1B3b1923696",
+      "yToXFeed": "0x701e83Bd1B84D02c10587f0De9Dfad5A22419DF7",
       "yToXHeartbeat": "86400",
       "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }

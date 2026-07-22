@@ -24,14 +24,14 @@ import {ConfigReader} from "script/utils/ConfigReader.sol";
 contract LibraryPinConsistencyTest is Test {
     address internal constant CANONICAL_CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
-    function test_priceFeedLib_pinMatchesCurrentBytecode() public pure {
+    function test_priceFeedLib_pinMatchesCurrentBytecode() public view {
         bytes32 salt = ConfigReader.computeSalt("PriceFeedLib", 1);
         address computed =
             vm.computeCreate2Address(salt, keccak256(type(PriceFeedLib).creationCode), CANONICAL_CREATE2_DEPLOYER);
         assertEq(computed, LibraryPins.PRICE_FEED_LIB, "PriceFeedLib pin drift: regenerate LibraryPins + foundry.toml");
     }
 
-    function test_navRegistryLib_pinMatchesCurrentBytecode() public pure {
+    function test_navRegistryLib_pinMatchesCurrentBytecode() public view {
         bytes32 salt = ConfigReader.computeSalt("NavRegistryLib", 1);
         address computed =
             vm.computeCreate2Address(salt, keccak256(type(NAVRegistryLib).creationCode), CANONICAL_CREATE2_DEPLOYER);
@@ -45,7 +45,7 @@ contract LibraryPinConsistencyTest is Test {
     ///         catches a foundry.toml pin edit that drifts from LibraryPins — which the per-library CREATE2
     ///         checks cannot, since they compare the computed address only against LibraryPins — and confirms
     ///         NAVCalculator is actually wired to the pinned libraries.
-    function test_navCalculator_creationCodeLinkedAgainstPins() public pure {
+    function test_navCalculator_creationCodeLinkedAgainstPins() public view {
         bytes memory code = type(NAVCalculator).creationCode;
         assertTrue(
             LibraryPins.contains(code, LibraryPins.PRICE_FEED_LIB),

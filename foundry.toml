@@ -19,6 +19,10 @@ optimizer = true
 optimizer_runs = 200
 via_ir = true
 
+# Test-only edits don't recompile src/ (foundry >=1.1). Tests are linked
+# dynamically; src bytecode (and therefore CREATE2 library pins) is unaffected.
+dynamic_test_linking = true
+
 # Pin the compiler, EVM target AND strip the appended source-metadata hash so the external-library
 # bytecode — and therefore the deterministic CREATE2 addresses the `libraries` array below pins — are
 # stable and reproducible. Three independent axes shift that bytecode if left unpinned:

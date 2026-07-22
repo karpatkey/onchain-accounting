@@ -2,11 +2,11 @@
 
 > **⚠️ Deployment is now EOA-only.** A single **deployer EOA** runs every step (`forge script … --broadcast`); no Safe executes any deploy/config transaction. The deployer holds `DEFAULT_ADMIN_ROLE` + `MANAGER` through deploy/config, and the final step `07_TransferAdminToSecurityCouncil.s.sol` hands those roles to the **security-council Safe** (`addresses.securityCouncil`) and renounces the deployer's. The council Safe is the end-state admin and drives post-deploy **upgrades** via `script/upgrade/*` (which still emit Safe-TX batches). **`script/deploy/README.md` is the authoritative, up-to-date procedure** — the Safe-TX-bundle steps described in some sections below are historical and superseded for deployment/configuration (`SafeTxBuilder` is retained only for the council's governance/upgrade scripts).
 
-> **Status — deployed across 24 chains.** The Onchain Accounting System (NAV) is live: **5 chains fully configured** (custom price feeds + balance adapters) and **19 with the NAV implementation + proxy** only. Deployed addresses live in `script/config/deployments/{chainId}.json` (the only place addresses live; broadcast logs are not committed) and are mirrored in [`script/deploy/DEPLOYED_ADDRESSES.md`](deploy/DEPLOYED_ADDRESSES.md). The `PriceFeedLib` / `NAVRegistryLib` library pins are build config (not per-chain deployed addresses).
+> **Status — deployed across 24 chains.** The Onchain Accounting System (NAV) is live: **7 chains fully configured** (custom price feeds + balance adapters) and **17 with the NAV implementation + proxy** only. Deployed addresses live in `script/config/deployments/{chainId}.json` (the only place addresses live; broadcast logs are not committed) and are mirrored in [`script/deploy/DEPLOYED_ADDRESSES.md`](deploy/DEPLOYED_ADDRESSES.md). The `PriceFeedLib` / `NAVRegistryLib` library pins are build config (not per-chain deployed addresses).
 >
 > **Chains (24):**
-> - **Full** (feeds + adapters): Ethereum (1), Optimism (10), Arbitrum (42161), Base (8453), Gnosis (100).
-> - **Implementation + proxy:** BSC (56), Polygon (137), Berachain (80094), Ink (57073), Linea (59144), opBNB (204), Sonic (146), Unichain (130), Scroll (534352), X Layer (196), Celo (42220), Avalanche (43114), Mantle (5000), World Chain (480), Monad (143), Plasma (9745), Hemi (43111), 0G (16661).
+> - **Full** (feeds + adapters): Ethereum (1), Optimism (10), Arbitrum (42161), Base (8453), Gnosis (100), BSC (56), Polygon (137).
+> - **Implementation + proxy:** Berachain (80094), Ink (57073), Linea (59144), opBNB (204), Sonic (146), Unichain (130), Scroll (534352), X Layer (196), Celo (42220), Avalanche (43114), Mantle (5000), World Chain (480), Monad (143), Plasma (9745), Hemi (43111), 0G (16661), HyperEVM (999).
 > - Polygon zkEVM is intentionally **excluded** (the network is being sunset).
 
 ## ✅ What Has Been Implemented
@@ -17,7 +17,7 @@ This deployment system uses an **EOA deployer** (`--broadcast`) with **CREATE2 d
 
 #### 1. **Create2Deployer** (`src/deployment/Create2Deployer.sol`)
 - Stateless CREATE2 deployment contract for Safe delegatecall (when Safe delegatecalls it, `address(this)` = Safe, so Safe becomes the deployer)
-- **Not used by the current EOA-only flow** — the impl/library/proxy layer (`01`/`02`) is deployed via the canonical CREATE2 deployer (`0x4e59...`) broadcast from the deployer EOA, while adapters (`03`–`05`) use plain `new ...` (CREATE). This contract is referenced only by tests and retained for Safe-delegatecall scenarios.
+- **Not used by the current EOA-only flow** — the impl/library/proxy layer (`01`/`02`) is deployed via the canonical CREATE2 deployer (`0x4e59...`) broadcast from the deployer EOA, while price-feed and balance adapters (`03`/`04`) use plain `new ...` (CREATE) and bridge adapters (`05`) use the canonical CREATE2 deployer for same-address determinism. This contract is referenced only by tests and retained for Safe-delegatecall scenarios.
 
 #### 2. **Utility Contracts** (`script/utils/`)
 - **BaseDeployScript.sol** - Base contract with common deployment utilities
@@ -71,7 +71,7 @@ This deployment system uses an **EOA deployer** (`--broadcast`) with **CREATE2 d
 | `contracts-deployment-config/custom-price-feeds/{chainId}.json` | Custom price-oracle adapters to deploy (`enabled` + `constructor` args) |
 | `contracts-deployment-config/balance-adapters/{chainId}.json` & `contracts-deployment-config/meta-balance-adapters/{chainId}.json` | Plain / meta balance adapters to deploy (`enabled` + `constructor`) |
 | `nav-config/balance-adapters/{chainId}.json` & `nav-config/meta-balance-adapters/{chainId}.json` | Adapters to register on NAVCalculator (plain vs. meta; meta entries carry `instances` / `instancesRaw`) |
-| `script/config/deployments/{chainId}.json` | **Deployed-address state** — the *only* place deployed addresses are written. Populated by the deploy scripts as contracts land; now filled across all 24 deployed chains. Broadcast logs are no longer committed. |
+| `script/config/deployments/{chainId}.json` | **Deployed-address state** — the *only* place deployed addresses are written. Populated by the deploy scripts as contracts land; now filled across all 23 deployed chains. Broadcast logs are no longer committed. |
 | (No separate `dev-input.json`, `assets.json`, or `balance-adapters.json`) | All user input lives in `chains/{chainId}.json` (role `addresses`) plus the per-concern `contracts-deployment-config/` (with the `enabled` adapter flags) and `nav-config/` files above |
 
 ## Deployment Workflow
@@ -319,7 +319,7 @@ script/verify/verify-all.sh
 - Storage gaps for future expansion
 
 ### ✅ Multi-Chain Support
-- Deployed on **24 chains** (see the Chains list at the top); fully configured on Ethereum, Optimism, Arbitrum, Base, Gnosis
+- Deployed on **23 chains** (see the Chains list at the top); fully configured on Ethereum, Optimism, Arbitrum, Base, Gnosis, BSC, Polygon
 - Chain-specific adapter deployments
 - Easy to add new chains
 
@@ -358,6 +358,7 @@ script/verify/verify-all.sh
 - `StaderWithdrawalQueueBalanceAdapter` - Stader pending unstake requests
 - `KelpWithdrawalQueueBalanceAdapter` - Kelp DAO rsETH exit queue (multi-asset; payout assets discovered via `lrtConfig().getSupportedAssetList()`)
 - `LidoWithdrawalQueueBalanceAdapter` - Lido stETH withdrawal queue (`WithdrawalQueueERC721`; sums open requests, reported as native ETH — the asset paid on claim)
+- `EthenaCooldownBalanceAdapter` - USDe owed to an account during the sUSDe unstaking cooldown (reads the per-account `UserCooldown` slot on `StakedUSDeV2`; mainnet only)
 - `UniswapV2PoolsMetaBalanceAdapter`, `UniswapV3PoolsMetaBalanceAdapter` - Uni V2 pairs / V3 pools (V3 NFTs enumerated on-chain)
 - `PancakeSwapV2PoolsMetaBalanceAdapter`, `PancakeSwapV3PoolsMetaBalanceAdapter` - PancakeSwap variants
 
@@ -381,7 +382,7 @@ Permissionless assistant-fed adapters that cache position *coordinates only* (ne
 
 ### Deployment Records (`script/config/deployments/`)
 
-The per-chain `script/config/deployments/{chainId}.json` file is the **single source of truth for deployed addresses** — broadcast logs are no longer committed. There is one file per deployed chain (24 total): the 5 fully-configured chains carry feeds + adapters, the other 19 carry the canonical layer only. (An empty `1101.json` stub is also present for Polygon zkEVM, which is intentionally excluded — a file's presence does not imply a deployment.)
+The per-chain `script/config/deployments/{chainId}.json` file is the **single source of truth for deployed addresses** — broadcast logs are no longer committed. There is one file per deployed chain (24 total): the 7 fully-configured chains carry feeds + adapters, the other 17 carry the canonical layer only. (An empty `1101.json` stub is also present for Polygon zkEVM, which is intentionally excluded — a file's presence does not imply a deployment.)
 
 ```
 script/config/deployments/
@@ -391,11 +392,14 @@ script/config/deployments/
 ├── 42161.json      # Arbitrum
 ├── 8453.json       # Base
 ├── 100.json        # Gnosis
+├── 56.json         # BSC
+├── 137.json        # Polygon
 # Implementation + proxy:
-├── 56.json   137.json   80094.json  57073.json
-├── 59144.json 204.json  146.json    130.json    534352.json
-├── 196.json   42220.json 43114.json 5000.json   480.json
-└── 143.json   9745.json  43111.json 16661.json
+├── 80094.json 57073.json 59144.json  204.json
+├── 146.json   130.json   534352.json 196.json
+├── 42220.json 43114.json 5000.json   480.json
+├── 143.json   9745.json  43111.json  16661.json
+└── 999.json        # HyperEVM (deployed via Hyperliquid big blocks)
 ```
 
 ### Safe Transactions (`safe-transactions/`)
@@ -477,7 +481,7 @@ Note: Proxy deploy + init is done via EOA in `02_DeployProxies.s.sol` (no Safe T
 ## What Is Missing or Easy to Miss
 
 - **Config file names**: The repo uses **per-chain JSONs** at `script/config/chains/{chainId}.json`, not a single `chain-config.json` or `dev-input.json`.
-- **Chain coverage**: `script/config/chains/` has a `{chainId}.json` for each of the 24 deployed chains (see the Chains list at the top), plus configs for networks intentionally left undeployed (e.g. `1101.json` for Polygon zkEVM, which is excluded) — presence of a config does not imply a deployment. To add another chain, create `{chainId}.json` (reuse the structure from an existing file) and add its Alchemy slug to `_alchemyNetworkForChainId` in `script/utils/ConfigReader.sol` — see `docs/howto/add-chain.md`.
+- **Chain coverage**: `script/config/chains/` has a `{chainId}.json` for each of the 23 deployed chains (see the Chains list at the top), plus configs for networks intentionally left undeployed (e.g. `1101.json` for Polygon zkEVM, which is excluded) — presence of a config does not imply a deployment. To add another chain, create `{chainId}.json` (reuse the structure from an existing file) and add its Alchemy slug to `_alchemyNetworkForChainId` in `script/utils/ConfigReader.sol` — see `docs/howto/add-chain.md`.
 - **Safe TX output path**: Generated Safe transaction files are written to **`safe-transactions/`** at the **project root** (see `SafeTxBuilder.sol`).
 - **02 is EOA-only**: Proxy deploy and init are done in **02_DeployProxies.s.sol** via EOA (no separate Safe TX for init). Use atomic deploy (default) or `USE_LEGACY_DEPLOY=1` for legacy multi-tx.
 - **Docs**: Detailed config reference is `script/config/README.md` and `script/config/CONFIG_GUIDE.md`. Deployment script details: `script/deploy/README.md`.

@@ -208,10 +208,8 @@ library PriceFeedLib {
         (int256 price, uint8 decimals, bool stale,,) = _selectFeedCore(priceOracles, asset);
         // Treat the primary as stale during L2 sequencer downtime (parity with buildPriceData / healthCheck): the
         // price is unusable, so report primaryPrice=0, primaryStale=true and suppress the divergence/irregular flags.
-        primaryStale = stale || sequencerDown;
-        primaryPrice = primaryStale ? int256(0) : _scaleTo8(price, decimals);
-        (monitorMedian, divergenceBps, irregular, monitorFeedCount, primaryAboveMonitors) =
-            _monitorDivergence(monitorFeeds, assetPricing, asset, primaryPrice, primaryStale);
+        (primaryPrice, primaryStale, monitorMedian, divergenceBps, irregular, monitorFeedCount, primaryAboveMonitors) =
+            _divergenceFor(monitorFeeds, assetPricing, asset, price, decimals, stale, sequencerDown);
     }
 
     /// @notice `irregular` flag for a primary that the caller has ALREADY selected (raw `price` in the feed's own
@@ -229,9 +227,39 @@ library PriceFeedLib {
         bool sequencerDown
     ) internal view returns (bool irregular) {
         if (!_hasDivergenceChecks(monitorFeeds, assetPricing, asset)) return false;
-        bool primaryStale = feedStale || sequencerDown;
-        int256 primary8 = primaryStale ? int256(0) : _scaleTo8(price, decimals);
-        (,, irregular,,) = _monitorDivergence(monitorFeeds, assetPricing, asset, primary8, primaryStale);
+        (,,,, irregular,,) =
+            _divergenceFor(monitorFeeds, assetPricing, asset, price, decimals, feedStale, sequencerDown);
+    }
+
+    /// @notice Shared divergence prologue used by every read path (getPriceData / latestPrice /
+    ///         NAV.irregularPriceAssets / healthCheck / Position.irregular). Folds sequencer-down into staleness,
+    ///         scales the primary to 8-dec (0 when stale), then runs `_monitorDivergence`. Centralizing it keeps the
+    ///         normalization + staleness folding identical across all call sites (the parity the comments demand).
+    function _divergenceFor(
+        mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
+        mapping(address => IPrices.AssetPricing) storage assetPricing,
+        address asset,
+        int256 price,
+        uint8 decimals,
+        bool stale,
+        bool sequencerDown
+    )
+        private
+        view
+        returns (
+            int256 primaryPrice8,
+            bool primaryStale,
+            int256 monitorMedian,
+            uint256 divergenceBps,
+            bool irregular,
+            uint256 monitorFeedCount,
+            bool primaryAboveMonitors
+        )
+    {
+        primaryStale = stale || sequencerDown;
+        primaryPrice8 = primaryStale ? int256(0) : _scaleTo8(price, decimals);
+        (monitorMedian, divergenceBps, irregular, monitorFeedCount, primaryAboveMonitors) =
+            _monitorDivergence(monitorFeeds, assetPricing, asset, primaryPrice8, primaryStale);
     }
 
     /// @notice Core divergence computation given an already-selected (8-dec) primary price.
@@ -485,10 +513,8 @@ library PriceFeedLib {
         // NAV-sourced base/USD term for custom feeds — avoid the monitor reads + sort) or the asset has no monitors
         // and no peg tolerance.
         if (withDivergence && _hasDivergenceChecks(monitorFeeds, assetPricing, asset)) {
-            bool primaryStale = stale || sequencerDown;
-            int256 primary8 = primaryStale ? int256(0) : _scaleTo8(price, decimals);
-            (, uint256 divergenceBps, bool irregular, uint256 monitorFeedCount,) =
-                _monitorDivergence(monitorFeeds, assetPricing, asset, primary8, primaryStale);
+            (,,, uint256 divergenceBps, bool irregular, uint256 monitorFeedCount,) =
+                _divergenceFor(monitorFeeds, assetPricing, asset, price, decimals, stale, sequencerDown);
             priceFeedData.irregular = irregular;
             priceFeedData.divergenceBps = divergenceBps;
             priceFeedData.monitorFeedCount = monitorFeedCount;
@@ -797,10 +823,8 @@ library PriceFeedLib {
             if (stale) staleAssetsTemp[staleCount++] = assetAddr;
 
             if (_hasDivergenceChecks(monitorFeeds, assetPricing, assetAddr)) {
-                bool primaryStale = stale || sequencerDown;
-                int256 primary8 = primaryStale ? int256(0) : _scaleTo8(price, decimals);
-                (,, bool irregular,,) =
-                    _monitorDivergence(monitorFeeds, assetPricing, assetAddr, primary8, primaryStale);
+                (,,,, bool irregular,,) =
+                    _divergenceFor(monitorFeeds, assetPricing, assetAddr, price, decimals, stale, sequencerDown);
                 if (irregular) irregularAssetsTemp[irregularCount++] = assetAddr;
             }
         }
@@ -997,9 +1021,8 @@ library PriceFeedLib {
             // stay consistent with getPriceData / healthCheck on L2 during sequencer downtime.
             bool irregular = false;
             if (_hasDivergenceChecks(monitorFeeds, assetPricing, asset)) {
-                bool primaryStale = stale || sequencerDown;
-                int256 primary8 = primaryStale ? int256(0) : _scaleTo8(price, decimals);
-                (,, irregular,,) = _monitorDivergence(monitorFeeds, assetPricing, asset, primary8, primaryStale);
+                (,,,, irregular,,) =
+                    _divergenceFor(monitorFeeds, assetPricing, asset, price, decimals, stale, sequencerDown);
             }
             priceFeeds[i] =
                 PriceFeedCache({asset: asset, price: price, decimals: decimals, stale: stale, irregular: irregular});

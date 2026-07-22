@@ -26,7 +26,7 @@ contract BridgeDeployedStateForkTest is TestEnvConfigurator {
     address internal constant ESCROW = 0x4B0fbca357cdE8FABc3f6c7fD7718B9F61b54c6f;
     address internal constant ADMIN = 0xd8A2FEc270d6D68B9fA5DBFe5CbEDDE7CefCd7D4;
     address internal constant CCIP = 0x3816d64F346Bb257eF6cEf4A5046f2cE43705ade;
-    address internal constant ACROSS = 0xacbbf9a0b5AC7A668b2220E40A876ab369fFa4bA;
+    address internal constant ACROSS = 0x6FDa302B3ccDf249E5Eda37e3F80B512bf1dC5d2; // salt-2 (output-token fix)
     address internal constant STARGATE = 0x2016E3040fba19033d78dfdB9B67Fd6230f4960a;
     address internal constant GNOSIS = 0x7CDc6919Ca2b2e94bE0B9BA4E2e534660eBeA251;
     address internal constant CCTP = 0x663A63ACEEbF5d744f21c71f1bc409C99cF128AA;

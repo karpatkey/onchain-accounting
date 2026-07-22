@@ -6,11 +6,5 @@
     "unused-exports": "error",
     "unused-types": "error",
     "unused-enum-members": "error"
-  },
-  "health": {
-    "maxCyclomatic": 20,
-    "maxCognitive": 15,
-    "maxCrap": 30.0,
-    "maxUnitSize": 60
   }
 }

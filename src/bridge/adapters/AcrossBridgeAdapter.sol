@@ -60,6 +60,11 @@ contract AcrossBridgeAdapter is BridgeAdapter, IAcrossBridgeAdapter {
     /// @dev Used to retrieve payloads on destination chain
     mapping(bytes32 => bytes) public messagePayloads;
 
+    /// @notice Per-route output token: the destination-chain equivalent of a source asset, keyed by
+    ///         (destinationChainId => srcAsset). Across V3's SpokePool rejects `outputToken == address(0)`, so
+    ///         `_bridge` must supply the real destination token; this map is populated per lane by the admin.
+    mapping(uint256 => mapping(address => address)) public outputTokenFor;
+
     /// @param expectedInitializer_ Address permitted to call initialize (address(0) allows anyone).
     constructor(address expectedInitializer_) BridgeAdapter(expectedInitializer_) {}
 
@@ -112,6 +117,15 @@ contract AcrossBridgeAdapter is BridgeAdapter, IAcrossBridgeAdapter {
         emit ExclusiveRelayerSet(exclusiveRelayer_, exclusivityPeriod_);
     }
 
+    /// @inheritdoc IAcrossBridgeAdapter
+    function setOutputToken(uint256 destChainId, address srcAsset, address outputToken_)
+        external
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        outputTokenFor[destChainId][srcAsset] = outputToken_;
+        emit OutputTokenSet(destChainId, srcAsset, outputToken_);
+    }
+
     //
     // BridgeAdapter Implementation
     //
@@ -150,8 +164,18 @@ contract AcrossBridgeAdapter is BridgeAdapter, IAcrossBridgeAdapter {
         }
 
         // Across V3 deposit. originToken on the SpokePool side: address(0) for native, asset otherwise.
-        // outputToken address(0) lets Across deliver the canonical equivalent token on the destination chain.
         address inputToken = isNative ? address(0) : asset;
+
+        // outputToken is the destination-chain equivalent of `asset`. Across V3's SpokePool rejects a zero output
+        // token for ERC20 deposits, so each ERC20 lane must be configured via setOutputToken(destChainId, asset,
+        // dstToken) before bridging. Native deposits (not used by the production config, which registers WETH as
+        // an ERC20) keep the zero sentinel — Across resolves the native equivalent itself.
+        address outputToken;
+        if (!isNative) {
+            outputToken = outputTokenFor[uint256(data.destinationChainId)][asset];
+            if (outputToken == address(0)) revert OutputTokenNotSet(uint256(data.destinationChainId), asset);
+        }
+
         uint32 nowTs = uint32(block.timestamp);
 
         // Optional exclusive relayer: with outputAmount == inputAmount there is no open-market margin, so a
@@ -162,7 +186,7 @@ contract AcrossBridgeAdapter is BridgeAdapter, IAcrossBridgeAdapter {
             address(this), // depositor
             recipient, // recipient (sibling adapter on destination)
             inputToken, // inputToken
-            address(0), // outputToken (canonical equivalent on destination)
+            outputToken, // outputToken (destination-chain equivalent; Across V3 rejects address(0))
             inputAmount, // inputAmount
             outputAmount, // outputAmount (== inputAmount; amount tracked intact)
             uint256(data.destinationChainId), // destinationChainId

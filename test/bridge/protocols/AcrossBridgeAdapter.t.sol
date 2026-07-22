@@ -57,6 +57,12 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
         // Authorize adapter in BridgeEscrow
         _authorizeAdapter(address(adapter));
 
+        // Across V3 requires a non-zero destination output token per ERC20 lane. The mock SpokePool does not
+        // validate it, so any non-zero value lets the ERC20 `_bridge` tests proceed; production dest tokens are
+        // wired by 06 at deploy time. (Native-asset tests use address(0)/EEE, which skip the output-token lookup.)
+        vm.prank(admin);
+        adapter.setOutputToken(DEST_CHAIN_ID, address(usdc), address(usdc));
+
         // Setup labels
         vm.label(address(adapter), "AcrossBridgeAdapter");
         vm.label(address(spokePool), "MockSpokePoolV3");
@@ -473,6 +479,43 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
         vm.prank(unauthorized);
         vm.expectRevert(); // Should revert because caller is not admin
         adapter.setSpokePool(address(0));
+    }
+
+    function test_setOutputToken_setsAndReadsBack() public {
+        address dstToken = makeAddr("optimismUSDC");
+        vm.prank(admin);
+        adapter.setOutputToken(DEST_CHAIN_ID, address(usdc), dstToken);
+        assertEq(adapter.outputTokenFor(DEST_CHAIN_ID, address(usdc)), dstToken, "output token should be set");
+    }
+
+    function test_setOutputToken_revertsIfNotAdmin() public {
+        vm.prank(unauthorized);
+        vm.expectRevert(); // not DEFAULT_ADMIN_ROLE
+        adapter.setOutputToken(DEST_CHAIN_ID, address(usdc), makeAddr("x"));
+    }
+
+    function test_bridge_revertsWhenOutputTokenUnset() public {
+        // Clear the setUp-configured route → the ERC20 _bridge must revert OutputTokenNotSet.
+        vm.prank(admin);
+        adapter.setOutputToken(DEST_CHAIN_ID, address(usdc), address(0));
+
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
+        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
+
+        vm.prank(account);
+        require(usdc.transfer(address(bridgeEscrow), amount), "transfer failed");
+        vm.prank(address(bridgeEscrow));
+        usdc.approve(address(adapter), amount);
+
+        vm.prank(address(bridgeEscrow));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAcrossBridgeAdapter.OutputTokenNotSet.selector, uint256(DEST_CHAIN_ID), address(usdc)
+            )
+        );
+        adapter.bridge(messagePayload);
     }
 
     function test_setDefaultRelayerFeePct_updatesFee() public {

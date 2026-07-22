@@ -20,6 +20,9 @@
       "endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
       "version": "1.0.0"
     },
+    "pools": {
+      "USDCe": "0xB1EeAD6959cb5bB9B20417d6689922523B2B86C3"
+    },
     "remoteChains": [
       1,
       10,
@@ -30,12 +33,13 @@
     ]
   },
   "CCIP": {
-    "enabled": true,
+    "$comment": "Disabled on Gnosis: CCIP has no token pool for the registered assets (USDCe/WETH) on this chain, so the router reverts UnsupportedToken. Bridge Gnosis via the native Gnosis omnibridge (and Stargate where a pool exists).",
+    "enabled": false,
     "initialize": {
       "admin": "",
       "bridgeEscrow": "",
       "router": "0x4aAD6071085df840abD9Baf1697d5D5992bDadce",
-      "feeToken": "0xE2e73A1c69ecF83F464EFCE6A5be353a37cA09b2",
+      "feeToken": "0x0000000000000000000000000000000000000000",
       "version": "1.0.0"
     },
     "remoteChains": [

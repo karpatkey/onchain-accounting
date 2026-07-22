@@ -5,13 +5,12 @@
       "admin": "",
       "bridgeEscrow": "",
       "router": "0x80226fc0Ee2b096224EeAc085Bb9a8cba1146f7D",
-      "feeToken": "0x514910771AF9Ca656af840dff83E8264EcF986CA",
+      "feeToken": "0x0000000000000000000000000000000000000000",
       "version": "1.0.0"
     },
     "remoteChains": [
       10,
       56,
-      100,
       137,
       42161,
       8453
@@ -41,6 +40,9 @@
       "bridgeEscrow": "",
       "endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
       "version": "1.0.0"
+    },
+    "pools": {
+      "USDC": "0xc026395860Db2d07ee33e05fE50ed7bD583189C7"
     },
     "remoteChains": [
       10,

@@ -59,6 +59,11 @@ contract AcrossBridgeAdapterForkTest is BridgeTestBase {
 
         _authorizeAdapter(address(adapter));
 
+        // Across V3's SpokePool rejects a zero output token; wire the Optimism-USDC output token for the ETH->OP
+        // USDC lane this suite exercises (mirrors what 06 does on deploy via setOutputToken).
+        vm.prank(admin);
+        adapter.setOutputToken(OPTIMISM_CHAIN_ID, MAINNET_USDC, OPTIMISM_USDC);
+
         usdc = IERC20(MAINNET_USDC);
         vm.label(address(adapter), "AcrossBridgeAdapter");
         vm.label(SPOKE_POOL_MAINNET, "Across_SpokePool_Mainnet");

@@ -31,6 +31,12 @@ interface IAcrossBridgeAdapter is IBridgeAdapter, IAcrossV3Receiver {
     /// @notice Emitted when the exclusive relayer / exclusivity window is set.
     event ExclusiveRelayerSet(address indexed exclusiveRelayer, uint32 exclusivityPeriod);
 
+    /// @notice Emitted when a per-route Across output token is set.
+    /// @param destChainId The destination chain id the mapping applies to
+    /// @param srcAsset The source-chain asset being bridged
+    /// @param outputToken The token Across delivers on the destination chain (the dest chain's equivalent asset)
+    event OutputTokenSet(uint256 indexed destChainId, address indexed srcAsset, address outputToken);
+
     //
     // Errors
     //
@@ -50,6 +56,13 @@ interface IAcrossBridgeAdapter is IBridgeAdapter, IAcrossV3Receiver {
 
     /// @notice Thrown when bridge data is invalid (token/amount mismatch, or untrusted source)
     error InvalidBridgeData();
+
+    /// @notice Thrown when no output token is configured for a (destChainId, srcAsset) route.
+    /// @dev Across V3's SpokePool rejects `outputToken == address(0)`, so a deposit cannot proceed until the
+    ///      destination-chain equivalent token has been set via {setOutputToken}.
+    /// @param destChainId The destination chain id
+    /// @param srcAsset The source-chain asset being bridged
+    error OutputTokenNotSet(uint256 destChainId, address srcAsset);
 
     //
     // State Variables (Public)
@@ -81,6 +94,14 @@ interface IAcrossBridgeAdapter is IBridgeAdapter, IAcrossV3Receiver {
     /// @return The message payload, or empty bytes if not found
     function messagePayloads(bytes32 invoiceId) external view returns (bytes memory);
 
+    /// @notice The Across output token to deliver on `destChainId` when bridging `srcAsset` from this chain.
+    /// @dev The destination-chain equivalent of `srcAsset`. Across V3 requires a non-zero output token, so this
+    ///      must be set per lane before bridging (see {setOutputToken}).
+    /// @param destChainId The destination chain id
+    /// @param srcAsset The source-chain asset being bridged
+    /// @return The destination-chain output token (zero if unset)
+    function outputTokenFor(uint256 destChainId, address srcAsset) external view returns (address);
+
     //
     // Configuration Functions
     //
@@ -111,6 +132,14 @@ interface IAcrossBridgeAdapter is IBridgeAdapter, IAcrossV3Receiver {
 
     /// @notice Sets the exclusive relayer and exclusivity window (seconds) for deposits (admin only).
     function setExclusiveRelayer(address exclusiveRelayer_, uint32 exclusivityPeriod_) external;
+
+    /// @notice Sets the destination-chain output token for a bridging route (admin only).
+    /// @dev Across V3 rejects `outputToken == address(0)`; a deposit for (`destChainId`, `srcAsset`) reverts with
+    ///      {OutputTokenNotSet} until this is configured to the destination chain's equivalent token.
+    /// @param destChainId The destination chain id
+    /// @param srcAsset The source-chain asset being bridged
+    /// @param outputToken The destination-chain token Across should deliver
+    function setOutputToken(uint256 destChainId, address srcAsset, address outputToken) external;
 
     //
     // View Functions

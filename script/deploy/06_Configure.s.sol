@@ -228,6 +228,19 @@ contract Configure is BaseDeployScript {
             if (keccak256(bytes(adapterNames[i])) == keccak256(bytes("Gnosis"))) {
                 _wireGnosisTrustedMediators(deployed);
             }
+            // CCIP pays messaging fees in `feeToken`; reconcile the deployed adapter to the config value
+            // (address(0) == native gas token) — CCIP with native fees needs no LINK.
+            else if (keccak256(bytes(adapterNames[i])) == keccak256(bytes("CCIP"))) {
+                _reconcileCcipFeeToken(deployed);
+            }
+            // Stargate resolves a V2 pool per asset; `_bridge` reverts InvalidPool() until the pool is set.
+            else if (keccak256(bytes(adapterNames[i])) == keccak256(bytes("Stargate"))) {
+                _wireStargatePools(deployed);
+            }
+            // Across V3 requires a non-zero destination output token per lane; set it per (remoteChain, asset).
+            else if (keccak256(bytes(adapterNames[i])) == keccak256(bytes("Across"))) {
+                _wireAcrossOutputTokens(deployed);
+            }
         }
         console2.log("--- Bridge adapters authorized:", authorized);
     }
@@ -395,6 +408,100 @@ contract Configure is BaseDeployScript {
             }
             console2.log("[OK] trustedMediator set (Gnosis) mediator:", mediator);
         }
+    }
+
+    /// @notice Reconciles a CCIP adapter's `feeToken` to the config value (address(0) == native gas token).
+    /// @dev CCIP pays messaging fees in `feeToken`. Deploying with LINK requires the adapter to hold LINK; native
+    ///      fees are paid from the adapter's own gas-token balance. If the deployed adapter's feeToken diverges from
+    ///      config, call `setFeeToken` (DEFAULT_ADMIN_ROLE, low-level like the other config calls). Idempotent.
+    function _reconcileCcipFeeToken(address adapter) internal {
+        string memory s = ConfigReader.readAdapterParam(vm, currentChainId, "bridgeAdapters", "CCIP", "feeToken");
+        address want = bytes(s).length == 42 ? vm.parseAddress(s) : address(0);
+        (bool okr, bytes memory ret) = adapter.staticcall(abi.encodeWithSignature("feeToken()"));
+        address have = (okr && ret.length == 32) ? abi.decode(ret, (address)) : address(0);
+        if (have == want) {
+            console2.log("[SKIP] CCIP feeToken already set:", want);
+            return;
+        }
+        (bool ok, bytes memory data) = adapter.call(abi.encodeWithSignature("setFeeToken(address)", want));
+        if (!ok) revert(string(abi.encodePacked("setFeeToken failed for CCIP: ", _decodeRevert(data))));
+        console2.log("[OK] CCIP feeToken set (address(0) == native):", want);
+    }
+
+    /// @notice Sets the Stargate V2 pool for each registered escrow symbol that has a configured pool.
+    /// @dev The Stargate adapter's `_bridge` reverts `InvalidPool()` unless `stargatePool[asset]` is set. Pools live
+    ///      in the adapter config under `Stargate.pools.<symbol>`; the local asset is the escrow-registered token for
+    ///      that symbol. `setStargatePool` (DEFAULT_ADMIN_ROLE) validates `IStargate(pool).token() == asset`. Idempotent.
+    function _wireStargatePools(address adapter) internal {
+        string[] memory symbols = ConfigReader.readBridgeEscrowAssetSymbols(vm, currentChainId);
+        uint256 wired;
+        for (uint256 i = 0; i < symbols.length; i++) {
+            address pool = ConfigReader.readAdapterMappingAddress(
+                vm, currentChainId, "bridgeAdapters", "Stargate", "pools", symbols[i]
+            );
+            if (pool == address(0)) continue;
+            address asset = ConfigReader.readBridgeEscrowAssetAddress(vm, currentChainId, symbols[i]);
+            if (asset == address(0)) continue;
+            (bool okr, bytes memory ret) = adapter.staticcall(abi.encodeWithSignature("stargatePool(address)", asset));
+            address have = (okr && ret.length == 32) ? abi.decode(ret, (address)) : address(0);
+            if (have == pool) {
+                console2.log("[SKIP] Stargate pool already set:", symbols[i], pool);
+                continue;
+            }
+            (bool ok, bytes memory data) =
+                adapter.call(abi.encodeWithSignature("setStargatePool(address,address)", asset, pool));
+            if (!ok) {
+                revert(string(abi.encodePacked("setStargatePool failed for ", symbols[i], ": ", _decodeRevert(data))));
+            }
+            console2.log("[OK] Stargate pool set:", symbols[i], pool);
+            wired++;
+        }
+        console2.log("--- Stargate pools wired:", wired);
+    }
+
+    /// @notice Sets the Across V3 destination output token for each (remoteChain, registered-symbol) route.
+    /// @dev Across V3's SpokePool rejects `outputToken == address(0)`; the adapter looks up the destination-chain
+    ///      equivalent token per lane. For each Across `remoteChains` entry and each escrow symbol, the destination
+    ///      token is that symbol's registered address on the DESTINATION chain's bridge-escrow config (read via an
+    ///      arbitrary-chainId `readBridgeEscrowAssetAddress`, same cross-chain-read pattern as the Gnosis mediators).
+    ///      Skips a route whose local or destination token is unset (e.g. a configured-but-undeployed remote). Idempotent.
+    function _wireAcrossOutputTokens(address adapter) internal {
+        uint256[] memory remoteChains =
+            ConfigReader.readAdapterUintArray(vm, currentChainId, "bridgeAdapters", "Across", "remoteChains");
+        string[] memory symbols = ConfigReader.readBridgeEscrowAssetSymbols(vm, currentChainId);
+        uint256 wired;
+        for (uint256 r = 0; r < remoteChains.length; r++) {
+            uint256 dest = remoteChains[r];
+            if (dest == 0 || dest == currentChainId) continue;
+            for (uint256 s = 0; s < symbols.length; s++) {
+                address localAsset = ConfigReader.readBridgeEscrowAssetAddress(vm, currentChainId, symbols[s]);
+                address destToken = ConfigReader.readBridgeEscrowAssetAddress(vm, dest, symbols[s]);
+                if (localAsset == address(0) || destToken == address(0)) continue;
+                (bool okr, bytes memory ret) =
+                    adapter.staticcall(abi.encodeWithSignature("outputTokenFor(uint256,address)", dest, localAsset));
+                address have = (okr && ret.length == 32) ? abi.decode(ret, (address)) : address(0);
+                if (have == destToken) continue;
+                (bool ok, bytes memory data) = adapter.call(
+                    abi.encodeWithSignature("setOutputToken(uint256,address,address)", dest, localAsset, destToken)
+                );
+                if (!ok) {
+                    revert(
+                        string(
+                            abi.encodePacked(
+                                "setOutputToken failed (Across) dest ",
+                                vm.toString(dest),
+                                " ",
+                                symbols[s],
+                                ": ",
+                                _decodeRevert(data)
+                            )
+                        )
+                    );
+                }
+                wired++;
+            }
+        }
+        console2.log("--- Across output tokens wired:", wired);
     }
 
     /// @notice Bridge adapter name list — kept in sync with `05_DeployBridgeAdapters.s.sol`.

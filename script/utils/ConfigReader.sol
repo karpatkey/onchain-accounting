@@ -399,6 +399,21 @@ library ConfigReader {
         return "";
     }
 
+    /// @notice Reads an address from a nested `<adapterName>.<mapName>.<key>` object (e.g. the Stargate adapter's
+    ///         `pools.<symbol>`). Zero if absent or a placeholder.
+    function readAdapterMappingAddress(
+        Vm vm,
+        uint256 chainId,
+        string memory adapterType,
+        string memory adapterName,
+        string memory mapName,
+        string memory key
+    ) internal view returns (address) {
+        (string memory json, string memory prefix) = _resolveAdapterFile(vm, chainId, adapterType, adapterName);
+        string memory p = string(abi.encodePacked(prefix, ".", adapterName, ".", mapName, ".", key));
+        return _readAddrOrZero(vm, json, p);
+    }
+
     /// @notice Reads an address-array adapter param (e.g. a meta-adapter's `instances`). Empty if absent.
     function readAdapterAddressArray(
         Vm vm,

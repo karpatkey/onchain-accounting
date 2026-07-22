@@ -52,7 +52,11 @@ library DeploySalts {
     // identical across the 7 target chains (1, 10, 100, 137, 42161, 56, 8453). Bumping a version (e.g. to dodge a
     // front-run of the deterministic address) re-derives that adapter's address on every chain at once.
     uint256 internal constant CCIP_ADAPTER = 1;
-    uint256 internal constant ACROSS_ADAPTER = 1;
+    // Bumped 1->2: the salt-1 Across adapter hardcoded `outputToken = address(0)` in its V3 deposit, which the
+    // current Across SpokePool rejects (InvalidOutputToken). The fix adds a per-route output-token map + setter to
+    // the adapter (changing its logic, though args still arrive via initialize), so a fresh salt re-derives a
+    // correct adapter at a new same-address on every chain. Old salt-1 Across adapters are abandoned.
+    uint256 internal constant ACROSS_ADAPTER = 2;
     uint256 internal constant STARGATE_ADAPTER = 1;
     uint256 internal constant GNOSIS_ADAPTER = 1;
     uint256 internal constant CCTP_ADAPTER = 1;

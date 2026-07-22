@@ -12,85 +12,89 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const BLOCKS_JSON = `${ROOT}/test/integration/backtest-blocks.json`;
 const FIXTURE = `${ROOT}/test/integration/nav-timeseries.json`;
 
-// ── Types (parse-don't-validate: boundaries produce these) ──
+// ── Types ──
 
-interface WindowDef {
-  fromBlock: number;
-  toBlock: number;
-  blockStep: number;
-  metrics?: string[];
-}
-
-interface BlocksFile {
-  windows: Record<string, { chains: Record<string, WindowDef> }>;
-}
-
-interface Point {
-  block: number;
-  timestamp: number;
-  value?: string;
-  error?: string;
-}
-
-type Series = Record<string, Record<string, Point[]>>; // account -> metric -> points
-
-interface FixtureWindowEntry {
-  generatedAtCommit: string;
-  accounts: Series;
-}
-
-interface Fixture {
-  $comment: string;
-  windows: Record<string, { chains: Record<string, FixtureWindowEntry> }>;
-}
-
+interface WindowDef { fromBlock: number; toBlock: number; blockStep: number; metrics: string[] }
+interface BlocksFile { windows: Record<string, { chains: Record<string, WindowDef> }> }
+interface Point { block: number; timestamp: number; value?: string; error?: string }
+type Series = Record<string, Record<string, Point[]>>;
+interface FixtureWindowEntry { generatedAtCommit: string; accounts: Series }
+interface Fixture { $comment: string; windows: Record<string, { chains: Record<string, FixtureWindowEntry> }> }
 type Mode = "report" | "snapshot" | "assert";
 
 // ── Helpers ──
 
-function fail(msg: string, code: 1 | 2): never {
-  console.error(msg);
-  process.exit(code);
+function fail(msg: string, code: 1 | 2): never { console.error(msg); process.exit(code); }
+function isRecord(v: unknown): v is Record<string, unknown> { return typeof v === "object" && v !== null && !Array.isArray(v); }
+function isStringArray(v: unknown): v is string[] { return Array.isArray(v) && v.every((x) => typeof x === "string"); }
+function isFiniteNonNeg(v: unknown): v is number { return typeof v === "number" && Number.isFinite(v) && v >= 0 && Number.isSafeInteger(v); }
+
+// ── Boundary parsers (no `as`, no `any`, no non-null) ──
+
+function parseWindowDef(raw: unknown): WindowDef {
+  if (!isRecord(raw)) fail("window def must be an object", 2);
+  const { fromBlock, toBlock, blockStep } = raw;
+  if (!isFiniteNonNeg(fromBlock)) fail("fromBlock must be a finite non-negative integer", 2);
+  if (!isFiniteNonNeg(toBlock)) fail("toBlock must be a finite non-negative integer", 2);
+  if (!isFiniteNonNeg(blockStep) || blockStep === 0) fail("blockStep must be a positive integer", 2);
+  if (toBlock <= fromBlock) fail("toBlock must be > fromBlock", 2);
+  const mr = raw.metrics;
+  const metrics: string[] = mr !== undefined
+    ? (isStringArray(mr) && mr.length > 0 ? mr : fail("metrics must be a non-empty string array", 2))
+    : ["nav"];
+  return { fromBlock, toBlock, blockStep, metrics };
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function sortKeys(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(sortKeys);
+function parseBlocksFile(raw: unknown): BlocksFile {
+  if (!isRecord(raw) || !isRecord(raw.windows)) fail(`invalid structure in ${BLOCKS_JSON}`, 2);
+  const windows: BlocksFile["windows"] = {};
+  for (const [name, wc] of Object.entries(raw.windows)) {
+    if (!isRecord(wc) || !isRecord(wc.chains)) fail(`window ${name}: chains must be an object`, 2);
+    const chains: Record<string, WindowDef> = {};
+    for (const [cid, def] of Object.entries(wc.chains)) chains[cid] = parseWindowDef(def);
+    windows[name] = { chains };
   }
-  if (isRecord(value)) {
-    const sorted: Record<string, unknown> = {};
-    const keys = Object.keys(value).sort((a, b) => a.localeCompare(b));
-    for (const k of keys) {
-      sorted[k] = sortKeys(value[k]);
+  return { windows };
+}
+
+function parseFixture(raw: unknown): Fixture {
+  if (!isRecord(raw) || !isRecord(raw.windows)) fail(`invalid fixture structure in ${FIXTURE}`, 2);
+  const windows: Fixture["windows"] = {};
+  for (const [name, wc] of Object.entries(raw.windows)) {
+    if (!isRecord(wc) || !isRecord(wc.chains)) fail(`fixture window ${name}: chains must be an object`, 2);
+    const chains: Record<string, FixtureWindowEntry> = {};
+    for (const [cid, entry] of Object.entries(wc.chains)) {
+      if (!isRecord(entry)) fail(`fixture window ${name}/${cid}: must be an object`, 2);
+      const gac = entry.generatedAtCommit;
+      if (typeof gac !== "string") fail(`fixture window ${name}/${cid}: generatedAtCommit must be a string`, 2);
+      if (!isRecord(entry.accounts)) fail(`fixture window ${name}/${cid}: accounts must be an object`, 2);
+      chains[cid] = { generatedAtCommit: gac, accounts: entry.accounts as Series };
     }
-    return sorted;
+    windows[name] = { chains };
   }
-  return value;
+  return { $comment: typeof raw.$comment === "string" ? raw.$comment : "", windows };
+}
+
+function sortKeys(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(sortKeys);
+  if (isRecord(v)) {
+    const s: Record<string, unknown> = {};
+    for (const k of Object.keys(v).sort((a, b) => a.localeCompare(b))) s[k] = sortKeys(v[k]);
+    return s;
+  }
+  return v;
 }
 
 function diffSeries(pinned: Series, current: Series): void {
   let shown = 0;
-  const accounts = new Set([...Object.keys(pinned), ...Object.keys(current)]);
-  for (const account of accounts) {
-    const pinnedMetrics = pinned[account] ?? {};
-    const currentMetrics = current[account] ?? {};
-    const metrics = new Set([...Object.keys(pinnedMetrics), ...Object.keys(currentMetrics)]);
-    for (const metric of metrics) {
-      const p = pinnedMetrics[metric] ?? [];
-      const c = currentMetrics[metric] ?? [];
-      const maxLen = Math.max(p.length, c.length);
-      for (let i = 0; i < maxLen && shown < 30; i++) {
-        const pi = i < p.length ? p[i] : undefined;
-        const ci = i < c.length ? c[i] : undefined;
+  for (const account of new Set([...Object.keys(pinned), ...Object.keys(current)])) {
+    const pm = pinned[account] ?? {}, cm = current[account] ?? {};
+    for (const metric of new Set([...Object.keys(pm), ...Object.keys(cm)])) {
+      const p = pm[metric] ?? [], c = cm[metric] ?? [];
+      for (let i = 0; i < Math.max(p.length, c.length) && shown < 30; i++) {
+        const pi = i < p.length ? p[i] : undefined, ci = i < c.length ? c[i] : undefined;
         if (JSON.stringify(pi) !== JSON.stringify(ci)) {
-          const block = ci?.block ?? pi?.block ?? 0;
-          console.error(
-            `  ${account}/${metric} block ${block}: pinned=${JSON.stringify(pi)} got=${JSON.stringify(ci)}`,
-          );
+          console.error(`  ${account}/${metric} block ${ci?.block ?? pi?.block ?? 0}: pinned=${JSON.stringify(pi)} got=${JSON.stringify(ci)}`);
           shown++;
         }
       }
@@ -98,109 +102,74 @@ function diffSeries(pinned: Series, current: Series): void {
   }
 }
 
-// ── Mode type guard ──
+// ── Concurrent subprocess drain ──
 
-function isMode(value: string): value is Mode {
-  return value === "report" || value === "snapshot" || value === "assert";
+async function drainProc(proc: { stdout: ReadableStream<Uint8Array>; stderr: ReadableStream<Uint8Array>; exited: Promise<number> }) {
+  const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+  return { out, err, exitCode: await proc.exited };
 }
+
+async function gitShortHash(): Promise<string> {
+  const p = Bun.spawn(["git", "rev-parse", "--short", "HEAD"], { cwd: ROOT, stdout: "pipe", stderr: "pipe" });
+  const { out, err, exitCode } = await drainProc(p);
+  if (exitCode !== 0) fail(`git rev-parse failed (exit ${exitCode}): ${err}`, 2);
+  const h = out.trim();
+  if (h.length === 0) fail("git rev-parse returned empty hash", 2);
+  return h;
+}
+
+// ── Mode guard ──
+
+function isMode(v: string): v is Mode { return v === "report" || v === "snapshot" || v === "assert"; }
 
 // ── Main ──
 
 const { values: args } = parseArgs({
-  options: {
-    chain: { type: "string", default: "1" },
-    window: { type: "string", default: "w1-30d" },
-    mode: { type: "string", default: "report" },
-  },
+  options: { chain: { type: "string", default: "1" }, window: { type: "string", default: "w1-30d" }, mode: { type: "string", default: "report" } },
 });
-
-const chain = args.chain ?? "1";
-const windowName = args.window ?? "w1-30d";
-const modeRaw = args.mode ?? "report";
-
+const chain = args.chain ?? "1", windowName = args.window ?? "w1-30d", modeRaw = args.mode ?? "report";
 if (!isMode(modeRaw)) fail(`bad --mode: ${modeRaw} (expected report|snapshot|assert)`, 2);
 const mode: Mode = modeRaw;
 
-// Parse blocks file at boundary
 let blocksFileRaw: unknown;
-try {
-  blocksFileRaw = await Bun.file(BLOCKS_JSON).json();
-} catch {
-  fail(`missing/invalid ${BLOCKS_JSON}`, 2);
-}
-if (!isRecord(blocksFileRaw) || !isRecord(blocksFileRaw.windows)) {
-  fail(`invalid structure in ${BLOCKS_JSON}`, 2);
-}
-const blocksFile = blocksFileRaw as unknown as BlocksFile;
-
+try { blocksFileRaw = await Bun.file(BLOCKS_JSON).json(); } catch { fail(`missing/invalid ${BLOCKS_JSON}`, 2); }
+const blocksFile = parseBlocksFile(blocksFileRaw);
 const win = blocksFile.windows[windowName]?.chains[chain];
-if (!win) {
-  fail(`no window ${windowName} / chain ${chain} in ${BLOCKS_JSON}`, 2);
-}
+if (!win) fail(`no window ${windowName} / chain ${chain} in ${BLOCKS_JSON}`, 2);
 
-const expectedBlocks =
-  Math.floor((win.toBlock - win.fromBlock) / win.blockStep) + 1 +
-  ((win.toBlock - win.fromBlock) % win.blockStep === 0 ? 0 : 1);
-const metrics = win.metrics ?? ["nav"];
+const expectedBlocks = Math.floor((win.toBlock - win.fromBlock) / win.blockStep) + 1
+  + ((win.toBlock - win.fromBlock) % win.blockStep === 0 ? 0 : 1);
+const metrics = win.metrics;
+console.error(`Running sweep (window ${windowName}, chain ${chain}, ${expectedBlocks} blocks, metrics: ${metrics.join(",")})...`);
 
-console.error(
-  `Running sweep (window ${windowName}, chain ${chain}, ${expectedBlocks} blocks, metrics: ${metrics.join(",")})...`,
-);
-
-// Run forge test
-const proc = Bun.spawn(
+const forgeProc = Bun.spawn(
   ["forge", "test", "--match-contract", "NavBacktest", "--match-test", "test_backtestSweep", "-vv"],
-  {
-    cwd: ROOT,
-    env: {
-      ...process.env,
-      BACKTEST_CHAIN: chain,
-      BACKTEST_BLOCKS_FILE: "test/integration/backtest-blocks.json",
-      BACKTEST_WINDOW: windowName,
-      FOUNDRY_PROFILE: "slow",
-    },
-    stdout: "pipe",
-    stderr: "pipe",
-  },
+  { cwd: ROOT, env: { ...process.env, BACKTEST_CHAIN: chain, BACKTEST_BLOCKS_FILE: "test/integration/backtest-blocks.json", BACKTEST_WINDOW: windowName, FOUNDRY_PROFILE: "slow" }, stdout: "pipe", stderr: "pipe" },
 );
+const { out, err, exitCode } = await drainProc(forgeProc);
+if (exitCode !== 0) fail(`forge test failed (exit ${exitCode}):\n${(out + err).split("\n").slice(-50).join("\n")}`, 2);
 
-const out = await new Response(proc.stdout).text();
-const err = await new Response(proc.stderr).text();
-const exitCode = await proc.exited;
-
-if (exitCode !== 0) {
-  const tail = (out + err).split("\n").slice(-50).join("\n");
-  fail(`forge test failed (exit ${exitCode}):\n${tail}`, 2);
-}
-
-// Parse BACKTEST lines at boundary
+// Parse BACKTEST lines
 const results: Series = {};
-const backtestRe = /^BACKTEST\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|(.*)$/;
+const re = /^BACKTEST\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|(.*)$/;
 for (const line of out.split("\n")) {
-  const m = line.trim().match(backtestRe);
+  const m = line.trim().match(re);
   if (!m || m[1] !== chain) continue;
-  const [, , blockStr, tsStr, account, metric, val] = m;
-  const block = Number(blockStr);
-  const timestamp = Number(tsStr);
-  const point: Point = val.startsWith("ERROR:")
-    ? { block, timestamp, error: val }
-    : { block, timestamp, value: val };
-  const byMetric = results[account] ?? {};
-  const points = byMetric[metric] ?? [];
-  points.push(point);
-  byMetric[metric] = points;
-  results[account] = byMetric;
+  const [, , bs, ts, account, metric, val] = m;
+  const block = Number(bs), timestamp = Number(ts);
+  const point: Point = val.startsWith("ERROR:") ? { block, timestamp, error: val } : { block, timestamp, value: val };
+  const bm = results[account] ?? {};
+  (bm[metric] ??= []).push(point);
+  results[account] = bm;
 }
-
 if (Object.keys(results).length === 0) fail("no BACKTEST lines in forge output", 2);
 
 // Completeness check
 let missing = false;
-for (const [account, byMetric] of Object.entries(results)) {
+for (const [account, bm] of Object.entries(results)) {
   for (const metric of metrics) {
-    const n = byMetric[metric]?.length ?? 0;
-    if (n !== expectedBlocks) {
-      console.error(`MISSING POINTS: ${account}/${metric} has ${n}/${expectedBlocks}`);
+    if ((bm[metric]?.length ?? 0) !== expectedBlocks) {
+      console.error(`MISSING POINTS: ${account}/${metric} has ${bm[metric]?.length ?? 0}/${expectedBlocks}`);
       missing = true;
     }
   }
@@ -208,83 +177,47 @@ for (const [account, byMetric] of Object.entries(results)) {
 
 // Report
 console.log(`== Backtest report (window ${windowName}, chain ${chain}) ==`);
-for (const [account, byMetric] of Object.entries(results)) {
-  for (const [metric, points] of Object.entries(byMetric)) {
+for (const [account, bm] of Object.entries(results)) {
+  for (const [metric, points] of Object.entries(bm)) {
     const errors = points.filter((p) => p.error !== undefined).length;
     console.log(`${account}/${metric}: ${points.length} points, ${errors} reverting`);
     const vals = points.filter((p) => p.value !== undefined);
     let worst: { block: number; pct: number } | undefined;
     for (let i = 1; i < vals.length; i++) {
-      const prev = Number(vals[i - 1].value);
-      const curr = Number(vals[i].value);
-      const pct = ((curr - prev) / (prev === 0 ? 1 : prev)) * 100;
-      if (worst === undefined || Math.abs(pct) > Math.abs(worst.pct)) {
-        worst = { block: vals[i].block, pct };
-      }
+      const ps = vals[i - 1].value, cs = vals[i].value;
+      if (ps === undefined || cs === undefined) continue;
+      const prev = BigInt(ps), curr = BigInt(cs);
+      const pct = prev === 0n ? (curr === 0n ? 0 : Number.MAX_VALUE) : Number((curr - prev) * 10000n / prev) / 100;
+      if (worst === undefined || Math.abs(pct) > Math.abs(worst.pct)) worst = { block: vals[i].block, pct };
     }
-    if (worst !== undefined) {
-      console.log(`  max step jump ${worst.pct.toFixed(1)}% at block ${worst.block}`);
-    }
+    if (worst !== undefined) console.log(`  max step jump ${worst.pct.toFixed(1)}% at block ${worst.block}`);
   }
 }
 
 // Mode dispatch
 switch (mode) {
-  case "report": {
-    // nothing more to do
+  case "report":
     break;
-  }
   case "snapshot": {
+    if (missing) fail("snapshot aborted: sweep has missing points", 1);
     let fixture: Fixture;
-    try {
-      const raw = await Bun.file(FIXTURE).json();
-      fixture = raw as unknown as Fixture;
-    } catch {
-      fixture = {
-        $comment:
-          "Backtest fixture. Regenerate: bun script/test/nav-backtest.ts --mode snapshot",
-        windows: {},
-      };
-    }
-    const commitOut = await new Response(
-      Bun.spawn(["git", "rev-parse", "--short", "HEAD"], { cwd: ROOT }).stdout,
-    ).text();
-    const commit = commitOut.trim();
-    const windowEntry: FixtureWindowEntry = {
-      generatedAtCommit: commit,
-      accounts: results,
-    };
-    const chains = fixture.windows[windowName]?.chains ?? {};
-    chains[chain] = windowEntry;
-    fixture.windows[windowName] = { chains };
+    try { fixture = parseFixture(await Bun.file(FIXTURE).json()); } catch { fixture = { $comment: "Backtest fixture. Regenerate: bun script/test/nav-backtest.ts --mode snapshot", windows: {} }; }
+    const commit = await gitShortHash();
+    const we: FixtureWindowEntry = { generatedAtCommit: commit, accounts: results };
+    const ec = fixture.windows[windowName]?.chains ?? {};
+    ec[chain] = we;
+    fixture.windows[windowName] = { chains: ec };
     await Bun.write(FIXTURE, JSON.stringify(fixture, null, 2) + "\n");
     console.log(`Wrote ${FIXTURE} (window ${windowName}, chain ${chain})`);
     break;
   }
   case "assert": {
     let fixtureRaw: unknown;
-    try {
-      fixtureRaw = await Bun.file(FIXTURE).json();
-    } catch {
-      fail(
-        `no fixture at ${FIXTURE} — run --mode snapshot first`,
-        2,
-      );
-    }
-    if (!isRecord(fixtureRaw) || !isRecord(fixtureRaw.windows)) {
-      fail(`invalid fixture structure in ${FIXTURE}`, 2);
-    }
-    const fixture = fixtureRaw as unknown as Fixture;
+    try { fixtureRaw = await Bun.file(FIXTURE).json(); } catch { fail(`no fixture at ${FIXTURE} — run --mode snapshot first`, 2); }
+    const fixture = parseFixture(fixtureRaw);
     const pinned = fixture.windows[windowName]?.chains[chain]?.accounts;
-    if (!pinned) {
-      fail(
-        `no fixture entry for window ${windowName} / chain ${chain} — run --mode snapshot first`,
-        2,
-      );
-    }
-    const a = JSON.stringify(sortKeys(pinned));
-    const b = JSON.stringify(sortKeys(results));
-    if (a === b) {
+    if (!pinned) fail(`no fixture entry for window ${windowName} / chain ${chain} — run --mode snapshot first`, 2);
+    if (JSON.stringify(sortKeys(pinned)) === JSON.stringify(sortKeys(results))) {
       console.log("ASSERT OK: sweep matches fixture exactly");
     } else {
       console.error("ASSERT FAIL: sweep differs from fixture");

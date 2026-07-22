@@ -1,0 +1,10 @@
+{
+  "$comment": "Named pinned block windows for the NAV backtest (test/integration/NavBacktest.fork.t.sol via script/test/nav-backtest.ts). Sweep visits fromBlock, fromBlock+blockStep, ..., toBlock (toBlock always included). metrics = named probes in NavBacktest (v1: nav). Mainnet ~12s blocks: hourly ~ step 300, 30 days ~ 216000 blocks. Add windows as new names; never rewrite an existing window.",
+  "windows": {
+    "w1-30d": {
+      "chains": {
+        "1": { "fromBlock": 25210915, "toBlock": 25426915, "blockStep": 300, "metrics": ["nav"] }
+      }
+    }
+  }
+}

@@ -372,6 +372,43 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         assertEq(address(l1Ad).balance, 0, "adapter forwarded all ETH");
     }
 
+    /// @notice proveWithdrawal reverts when the supplied l2ChainId disagrees with the invoice's encoded source
+    ///         chain id — the operator guard that stops proving on the wrong L2 portal (which would strand finalize).
+    function test_proveWithdrawal_revertsOnChainIdMismatch() public {
+        vm.chainId(SOURCE_CHAIN_ID);
+        uint256 amount = 1 ether;
+
+        BridgeEscrow l1Escrow = bridgeEscrow;
+        vm.prank(admin);
+        l1Escrow.registerAsset(WETH_SYMBOL, address(0));
+        SuperchainBridgeAdapter l1Ad = _deployL1WithdrawalAdapter(l1Escrow);
+
+        // Invoice encodes sourceChainId = L2_CHAIN_ID.
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(L2_CHAIN_ID, SOURCE_CHAIN_ID, account, WETH_SYMBOL_BYTES6, amount);
+
+        Types.WithdrawalTransaction memory wtx = Types.WithdrawalTransaction({
+            nonce: 1, sender: address(l2Bridge), target: address(l1Ad), value: amount, gasLimit: 200000, data: ""
+        });
+
+        // Prove against a DIFFERENT L2 chain id than the invoice encodes → revert before touching the portal.
+        uint256 wrongL2 = uint256(L2_CHAIN_ID) + 1;
+        vm.prank(manager);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ISuperchainBridgeAdapter.WithdrawalChainIdMismatch.selector, wrongL2, uint256(L2_CHAIN_ID)
+            )
+        );
+        l1Ad.proveWithdrawal(
+            wrongL2,
+            wtx,
+            0,
+            Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0)),
+            new bytes[](0),
+            invoiceData.invoiceId
+        );
+    }
+
     function test_completeBridge_l2ToL1_revertsIfNotProven() public {
         vm.chainId(SOURCE_CHAIN_ID);
         uint256 amount = 1 ether;

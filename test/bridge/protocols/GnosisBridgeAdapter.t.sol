@@ -400,6 +400,35 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
         destOmnibridge.deliverTokens(address(usdc), address(destAdapter), short, messagePayload);
     }
 
+    /// @notice onTokenBridged reverts if the mediator delivers a DIFFERENT token than the invoice asset, even when
+    ///         the adapter already holds a stale balance of the real invoice asset (defense-in-depth: the balance
+    ///         check alone would otherwise pass and false-release the invoice asset).
+    function test_onTokenBridged_revertsWhenDeliveredTokenMismatch() public {
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
+        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
+
+        vm.chainId(uint256(GNOSIS_CHAIN_ID));
+        MockProvenanceOmnibridge destOmnibridge = new MockProvenanceOmnibridge();
+        MockProvenanceAMB destAmb = new MockProvenanceAMB();
+        (, GnosisBridgeAdapter destAdapter) = _setupDestination(destOmnibridge, destAmb);
+
+        // Stale balance of the real invoice asset: the balance check alone would pass.
+        usdc.mint(address(destAdapter), amount);
+
+        // The mediator delivers a DIFFERENT token — must revert on the delivered-token guard.
+        Mock_ERC20 wrongToken = new Mock_ERC20("WRONG", uint8(usdc.decimals()));
+        wrongToken.mint(address(destOmnibridge), amount);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IGnosisBridgeAdapter.InvalidDeliveredToken.selector, address(usdc), address(wrongToken)
+            )
+        );
+        destOmnibridge.deliverTokens(address(wrongToken), address(destAdapter), amount, messagePayload);
+    }
+
     // ============ Configuration Tests ============
 
     function test_setOmnibridge_updatesOmnibridge() public {

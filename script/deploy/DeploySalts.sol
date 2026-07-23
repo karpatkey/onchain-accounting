@@ -67,7 +67,11 @@ library DeploySalts {
     // (IERC20Receiver) — which the adapter lacked, so inbound transfers delivered the token but never completed
     // (mock masked it by calling onTokenTransfer). The fix adds `onTokenBridged` (keeps onTokenTransfer too), so a
     // fresh salt re-derives a correct adapter at a new same-address on every chain. Old salt-1 Gnosis abandoned.
-    uint256 internal constant GNOSIS_ADAPTER = 2;
+    // Bumped 2->3: salt-2 `_handleInboundDelivery` verified only the invoice-asset balance, never that the token the
+    // mediator actually delivered equals the invoice asset — a delivery of a different token could false-release on a
+    // stale asset balance. Salt-3 threads the delivered token through `onTokenBridged` and reverts on a mismatch
+    // (onTokenTransfer passes address(0) to skip). Fresh salt re-derives a correct same-address adapter on ETH+GC.
+    uint256 internal constant GNOSIS_ADAPTER = 3;
     // Bumped 1->2: the salt-1 CCTP adapter compared the message's burnToken (the SOURCE-chain token, e.g.
     // Base USDC) against the DESTINATION asset (e.g. Arbitrum USDC) and reverted BurnTokenMismatch on every
     // real cross-chain transfer (fork/unit mocks masked it by using one token address for both sides). The
@@ -79,5 +83,9 @@ library DeploySalts {
     // stale admin + the abandoned escrow, and initialize is one-shot, so it can't be corrected in place. The fix
     // (05 now takes admin/escrow from the deploy context) plus this fresh salt re-derive a correct adapter at a new
     // same-address on every chain. Only Base had the bad one deployed; nothing was wired to it (06 had aborted).
-    uint256 internal constant SUPERCHAIN_ADAPTER = 2;
+    // Bumped 2->3: salt-2 `proveWithdrawal` accepted any `l2ChainId` even when an `invoiceId` was supplied, so an
+    // operator could prove on the wrong L2's portal and strand the withdrawal (finalize selects the portal from the
+    // invoice's sourceChainId). Salt-3 enforces `l2ChainId == invoiceId's encoded sourceChainId` (reverts
+    // WithdrawalChainIdMismatch). Fresh salt re-derives a correct same-address adapter on ETH+OP+Base.
+    uint256 internal constant SUPERCHAIN_ADAPTER = 3;
 }

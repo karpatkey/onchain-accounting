@@ -59,6 +59,11 @@ interface IGnosisBridgeAdapter is IBridgeAdapter {
     /// @notice Thrown when bridge data is invalid
     error InvalidBridgeData();
 
+    /// @notice Thrown when the token the mediator delivered does not match the invoice's registered asset
+    /// @param expected The invoice's registered asset on this chain
+    /// @param delivered The token address the mediator reported delivering
+    error InvalidDeliveredToken(address expected, address delivered);
+
     /// @notice Thrown when attempting to bridge to an unsupported chain
     /// @param chainId The unsupported chain ID
     error UnsupportedChain(uint64 chainId);

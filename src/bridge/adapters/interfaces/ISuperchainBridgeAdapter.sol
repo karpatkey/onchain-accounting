@@ -76,6 +76,11 @@ interface ISuperchainBridgeAdapter is IBridgeAdapter {
     /// @notice Thrown when withdrawal has not been proven yet
     error WithdrawalNotProven();
 
+    /// @notice Thrown when `proveWithdrawal`'s `l2ChainId` does not match the invoice's encoded source chain id
+    /// @param provided The `l2ChainId` passed to `proveWithdrawal`
+    /// @param encoded The source chain id encoded in the invoice id (top 3 bytes)
+    error WithdrawalChainIdMismatch(uint256 provided, uint256 encoded);
+
     /// @notice Thrown when withdrawal challenge period has not elapsed
     error WithdrawalChallengePeriodNotElapsed();
 

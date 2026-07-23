@@ -192,18 +192,10 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
     ///      destination after `relayTokensAndCall` delivers `value` of `token` to this adapter (the mediator's
     ///      `IERC20Receiver.onTokenBridged`, NOT the ERC677 `onTokenTransfer`). Authenticates the mediator
     ///      (`msg.sender`), the AMB source + chain, verifies the delivered token+amount, then funds+releases.
-    function onTokenBridged(
-        address,
-        /* token */
-        uint256 value,
-        bytes calldata data
-    )
-        external
-        nonReentrant
-    {
+    function onTokenBridged(address token, uint256 value, bytes calldata data) external nonReentrant {
         if (msg.sender != address(omnibridge)) revert NotAuthorized();
         if (data.length == 0) revert InvalidCompletionData();
-        _handleInboundDelivery(value, data);
+        _handleInboundDelivery(token, value, data);
     }
 
     /// @inheritdoc IGnosisBridgeAdapter
@@ -221,7 +213,9 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
     {
         if (msg.sender != address(omnibridge)) revert NotAuthorized();
         if (data.length == 0) revert InvalidCompletionData();
-        _handleInboundDelivery(value, data);
+        // ERC677 `onTokenTransfer` carries no delivered-token address, so pass the sentinel `address(0)` to skip
+        // the delivered-token check (the shared handler still verifies the invoice asset balance + amount).
+        _handleInboundDelivery(address(0), value, data);
         return true;
     }
 
@@ -230,7 +224,7 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
     ///      pass-through release WITHOUT reverting the mediator callback — the OmniBridge swallows a receiver
     ///      revert, which would strand the delivered tokens with no record; recording first lets the MANAGER
     ///      fallback (`completeBridge`) finish a recorded-but-unreleased invoice later.
-    function _handleInboundDelivery(uint256 value, bytes calldata data) internal {
+    function _handleInboundDelivery(address deliveredToken, uint256 value, bytes calldata data) internal {
         InvoiceDataLib.InvoiceData memory invoiceData = InvoiceDataLib.decode(data);
 
         // Authenticate the AMB-reported source (trusted source mediator + source chain).
@@ -239,6 +233,12 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
         // Verify the delivered token + amount match the invoice. Omnibridge delivers the token to this adapter
         // before calling back; `value` is the delivered amount and the adapter must hold at least the invoiced amount.
         address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(InvoiceDataLib.bytes6ToStr(invoiceData.assetSymbol));
+        // Guard against a mediator delivery of a DIFFERENT token slipping through on a stale `asset` balance: the
+        // `onTokenBridged` path reports the delivered token and it must equal the invoice asset. `onTokenTransfer`
+        // passes the `address(0)` sentinel (it carries no token address) and falls back to the balance check only.
+        if (deliveredToken != address(0) && deliveredToken != asset) {
+            revert InvalidDeliveredToken(asset, deliveredToken);
+        }
         if (value < invoiceData.amount) revert InvalidBridgeData();
         uint256 balance = IERC20(asset).balanceOf(address(this));
         if (balance < invoiceData.amount) revert InsufficientBalance(asset, invoiceData.amount, balance);

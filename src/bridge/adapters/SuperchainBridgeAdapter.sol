@@ -399,6 +399,7 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     ///        `sourceChainId` — completion (`_finalizeWithdrawal`) selects the portal from the invoice's
     ///        `sourceChainId`, so proving against a different L2's portal here would make finalize revert
     ///        `WithdrawalNotProven` (no fund loss, but the withdrawal cannot be completed until re-proven).
+    ///        When `invoiceId` is supplied this is enforced on-chain (reverts `WithdrawalChainIdMismatch`).
     /// @param withdrawalTx The withdrawal transaction to prove (its `target` is this adapter for ETH
     ///        withdrawals, or the L1 bridge/messenger for ERC20 — see `_finalizeWithdrawal`).
     /// @param l2OutputIndex The L2 output index
@@ -415,6 +416,15 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         bytes[] calldata withdrawalProof,
         bytes32 invoiceId
     ) external onlyRole(MANAGER_ROLE) {
+        // Enforce the operator-supplied l2ChainId matches the invoice's encoded source chain id (top 3 bytes of
+        // the invoice id — see BridgeEscrow._generateInvoiceId). Finalize selects the portal from the invoice's
+        // sourceChainId, so proving against a different L2's portal would strand the withdrawal (WithdrawalNotProven
+        // until re-proven). Fail fast on the operator mistake instead of proving on the wrong portal.
+        if (invoiceId != bytes32(0)) {
+            uint256 encodedSrc = uint256(invoiceId) >> 232;
+            if (encodedSrc != l2ChainId) revert WithdrawalChainIdMismatch(l2ChainId, encodedSrc);
+        }
+
         // Prove against the portal for the source L2; finalize must later use the SAME l2ChainId
         // (the invoice's sourceChainId flows through both, so they match).
         IOptimismPortal portal = optimismPortalForL2[l2ChainId];

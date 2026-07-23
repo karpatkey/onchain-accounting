@@ -36,7 +36,9 @@ contract NavBacktest is IntegrationFromConfigBase {
 
         // Fail fast on unknown metric names before paying for the fork.
         for (uint256 m = 0; m < _metrics.length; m++) {
-            require(_isKnownMetric(keccak256(bytes(_metrics[m]))), string.concat("backtest: unknown metric ", _metrics[m]));
+            require(
+                _isKnownMetric(keccak256(bytes(_metrics[m]))), string.concat("backtest: unknown metric ", _metrics[m])
+            );
         }
 
         _forkBlock = _blocks[0]; // oldest point: deploy here, roll forward
@@ -91,11 +93,16 @@ contract NavBacktest is IntegrationFromConfigBase {
         console2.log(
             string.concat(
                 "BACKTEST|",
-                vm.toString(_chainId), "|",
-                vm.toString(blockNum), "|",
-                vm.toString(block.timestamp), "|", // fork's timestamp at this point — free, no ts->block mapping
-                vm.toString(account), "|",
-                metric, "|",
+                vm.toString(_chainId),
+                "|",
+                vm.toString(blockNum),
+                "|",
+                vm.toString(block.timestamp),
+                "|", // fork's timestamp at this point — free, no ts->block mapping
+                vm.toString(account),
+                "|",
+                metric,
+                "|",
                 result
             )
         );
@@ -166,7 +173,9 @@ contract NavBacktest is IntegrationFromConfigBase {
                     _backtestAccounts.push(vm.parseAddress(addrStr));
                 }
             }
-            unchecked { ++i; }
+            unchecked {
+                ++i;
+            }
         }
 
         // When a window configures an account allowlist, filter to only those
@@ -181,10 +190,7 @@ contract NavBacktest is IntegrationFromConfigBase {
                     count++;
                 }
             }
-            require(
-                count == _configuredAccounts.length,
-                "backtest: configured account missing or disabled"
-            );
+            require(count == _configuredAccounts.length, "backtest: configured account missing or disabled");
             // Compact in-place.
             assembly { mstore(filtered, count) }
             _backtestAccounts = filtered;

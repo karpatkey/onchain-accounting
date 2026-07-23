@@ -114,7 +114,7 @@ In all modes, a non-zero forge exit (test failure, RPC error) is fatal: the driv
 |---|---|
 | `script/test/nav-backtest.ts` | Bun driver. Parses CLI, runs the Solidity test, parses `BACKTEST\|…` lines, dispatches by mode. Single file, zero npm dependencies. |
 | `test/integration/NavBacktest.fork.t.sol` | Foundry test. Loads the window, deploys NAV from source at `fromBlock`, `vm.rollFork`s forward, emits `BACKTEST\|…` lines. Reverts caught and recorded. |
-| `test/integration/backtest-blocks.json` | Window definitions. `windows.<name>.chains.<chainId>` = `{ fromBlock, toBlock, blockStep, metrics, accounts? }`. One window today: `w1-1d`. |
+| `test/integration/backtest-blocks.json` | Window definitions. `windows.<name>.chains.<chainId>` = `{ fromBlock, toBlock, blockStep, metrics, accounts }`. One window today: `w1-1d`. |
 | `test/integration/nav-timeseries.json` | Fixture. `windows.<name>.chains.<chainId>` = `{ generatedAtCommit, accounts: { <addr>: { <metric>: Point[] } } }`. One entry today: `w1-1d` / chain `1` (50 points = 25 points/account × 2 accounts, 8,469 bytes). |
 | `test/integration/IntegrationFromConfigBase.fork.sol` | Inherited base: chain config loader, `createSelectForkWithCadence(getAlchemyUrl(network), forkBlock)`. |
 | `test/TestEnvConfigurator.sol` | `getAlchemyUrl` builds the URL from `ALCHEMY_API_KEY` as `https://<network>.g.alchemy.com/v2/<key>`, with chain-specific env var overrides. |
@@ -153,10 +153,10 @@ The full fixture path is `test/integration/nav-timeseries.json`; the example abo
 
 ### Adding a new window
 
-Edit `test/integration/backtest-blocks.json`. Pick a name (kebab-case, prefixed with the chain: `w1-1d`, `w42161-7d`, …). Under `windows.<name>.chains.<chainId>` set `fromBlock`, `toBlock`, `blockStep`, `metrics`, and (optionally) `accounts`. Constraints enforced by the driver:
+Edit `test/integration/backtest-blocks.json`. Pick a name (kebab-case, prefixed with the chain: `w1-1d`, `w42161-7d`, …). Under `windows.<name>.chains.<chainId>` set `fromBlock`, `toBlock`, `blockStep`, `metrics`, and `accounts`. Constraints enforced by the driver:
 
-- `toBlock > fromBlock`, `blockStep > 0`, `metrics` is a non-empty string array if present, `accounts` (if present) is a non-empty array of unique lowercase hex addresses.
-- If `accounts` is omitted, the harness uses every account in `accounts.json` that has the current chain in its `enabledChains`. If `accounts` is set, every configured address must be chain-enabled (the Solidity test reverts with `backtest: configured account missing or disabled` otherwise).
+- `toBlock > fromBlock`, `blockStep > 0`, `metrics` is a non-empty string array if present, and `accounts` is a non-empty array of unique hex addresses.
+- Every configured address must be chain-enabled in `accounts.json`; the Solidity test reverts with `backtest: configured account missing or disabled` otherwise. Direct Forge smoke mode remains the only all-enabled-account path.
 
 Then snapshot:
 
@@ -194,4 +194,3 @@ bunx fallow@3.8.0 dead-code --format compact
 ```
 
 `fallow` is the project-wide dead-code scan. It will flag any unused export in the driver; the script has no exports, so a clean run is expected.
-

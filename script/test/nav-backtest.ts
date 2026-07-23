@@ -14,7 +14,7 @@ const FIXTURE = `${ROOT}/test/integration/nav-timeseries.json`;
 
 // ── Types ──
 
-interface WindowDef { fromBlock: number; toBlock: number; blockStep: number; metrics: string[]; accounts?: string[] }
+interface WindowDef { fromBlock: number; toBlock: number; blockStep: number; metrics: string[]; accounts: string[] }
 interface BlocksFile { windows: Record<string, { chains: Record<string, WindowDef> }> }
 interface Point { block: number; timestamp: number; value?: string; error?: string }
 type Series = Record<string, Record<string, Point[]>>;
@@ -52,18 +52,14 @@ function parseWindowDef(raw: unknown): WindowDef {
   const metrics: string[] = mr !== undefined
     ? (isStringArray(mr) && mr.length > 0 ? mr : fail("metrics must be a non-empty string array", 2))
     : ["nav"];
-  const ar = raw.accounts;
-  let accounts: string[] | undefined;
-  if (ar !== undefined) {
-    if (!isStringArray(ar) || ar.length === 0) fail("accounts must be a non-empty string array", 2);
-    const seen = new Set<string>();
-    for (const a of ar) {
-      if (!isHexAddress(a)) fail(`invalid account address: ${a}`, 2);
-      const lo = a.toLowerCase();
-      if (seen.has(lo)) fail(`duplicate account: ${a}`, 2);
-      seen.add(lo);
-    }
-    accounts = ar;
+  const accounts = raw.accounts;
+  if (!isStringArray(accounts) || accounts.length === 0) fail("accounts must be a non-empty string array", 2);
+  const seen = new Set<string>();
+  for (const account of accounts) {
+    if (!isHexAddress(account)) fail(`invalid account address: ${account}`, 2);
+    const normalized = account.toLowerCase();
+    if (seen.has(normalized)) fail(`duplicate account: ${account}`, 2);
+    seen.add(normalized);
   }
   return { fromBlock, toBlock, blockStep, metrics, accounts };
 }
@@ -201,13 +197,11 @@ if (Object.keys(results).length === 0) fail("no BACKTEST lines in forge output",
 // Completeness check
 let missing = false;
 const resultAddrs = new Set(Object.keys(results).map((a) => a.toLowerCase()));
-if (win.accounts !== undefined) {
-  for (const a of win.accounts) {
-    if (!resultAddrs.has(a.toLowerCase())) { console.error(`MISSING ACCOUNT: ${a}`); missing = true; }
-  }
-  for (const a of resultAddrs) {
-    if (!win.accounts.some((c) => c.toLowerCase() === a)) { console.error(`EXTRA ACCOUNT: ${a}`); missing = true; }
-  }
+for (const account of win.accounts) {
+  if (!resultAddrs.has(account.toLowerCase())) { console.error(`MISSING ACCOUNT: ${account}`); missing = true; }
+}
+for (const account of resultAddrs) {
+  if (!win.accounts.some((configured) => configured.toLowerCase() === account)) { console.error(`EXTRA ACCOUNT: ${account}`); missing = true; }
 }
 for (const [account, bm] of Object.entries(results)) {
   for (const metric of metrics) {

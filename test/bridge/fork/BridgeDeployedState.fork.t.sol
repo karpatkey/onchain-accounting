@@ -41,12 +41,28 @@ contract BridgeDeployedStateForkTest is TestEnvConfigurator {
     function runLane(address adapter, string calldata symbol, uint64 dest, bool feePrefund) external {
         BridgeEscrow escrow = BridgeEscrow(payable(ESCROW));
 
-        address token = escrow.assetRegistry(symbol);
-        require(token != address(0), string.concat("asset not registered: ", symbol));
-
         // Authorize a throwaway account (live admin holds DEFAULT_ADMIN on the fork).
         vm.prank(ADMIN);
         escrow.authorizeAccount(acct);
+
+        // Native ETH path (symbol "ETH", asset address(0)): the Superchain adapter moves native ETH — NOT native
+        // USDC / WETH9 (not OptimismMintable). Register ETH in-fork (admin holds MANAGER) so we can exercise the
+        // Superchain lane with a protocol-SUPPORTED asset, then deposit with msg.value. Free — fork only.
+        if (keccak256(bytes(symbol)) == keccak256("ETH")) {
+            vm.prank(ADMIN);
+            escrow.registerAsset("ETH", address(0)); // idempotent (re-register to same address is a no-op)
+            uint256 ethAmt = 5e14; // 0.0005 ETH
+            vm.deal(acct, ethAmt + 1 ether);
+            if (feePrefund) vm.deal(adapter, 1 ether);
+            vm.prank(acct);
+            bytes32 nh = escrow.depositAndBridge{value: ethAmt}(dest, symbol, ethAmt, adapter);
+            require(nh != bytes32(0), "no invoice hash");
+            require(escrow.getInvoice(nh).status == IBridgeEscrow.InvoiceStatus.BRIDGING, "invoice not BRIDGING");
+            return;
+        }
+
+        address token = escrow.assetRegistry(symbol);
+        require(token != address(0), string.concat("asset not registered: ", symbol));
 
         // WETH is 18-decimals (use 0.01); USDC/USDCe are 6-decimals (use 100).
         uint256 amount = keccak256(bytes(symbol)) == keccak256("WETH") ? 1e16 : 100e6;
@@ -97,7 +113,7 @@ contract BridgeDeployedStateForkTest is TestEnvConfigurator {
         _lane("ETH Stargate->OP", STARGATE, "USDC", 10, true);
         _lane("ETH CCTP->OP", CCTP, "USDC", 10, false);
         _lane("ETH Gnosis->GC", GNOSIS, "WETH", 100, false);
-        _lane("ETH Superchain->OP", SUPERCHAIN, "USDC", 10, false);
+        _lane("ETH Superchain->OP (native ETH)", SUPERCHAIN, "ETH", 10, false);
         _finish();
     }
 
@@ -107,7 +123,7 @@ contract BridgeDeployedStateForkTest is TestEnvConfigurator {
         _lane("OP Across->ETH", ACROSS, "USDC", 1, false);
         _lane("OP Stargate->ETH", STARGATE, "USDC", 1, true);
         _lane("OP CCTP->ETH", CCTP, "USDC", 1, false);
-        _lane("OP Superchain->ETH", SUPERCHAIN, "USDC", 1, false);
+        _lane("OP Superchain->ETH (native ETH, L2->L1 initiate)", SUPERCHAIN, "ETH", 1, false);
         _finish();
     }
 
@@ -134,7 +150,7 @@ contract BridgeDeployedStateForkTest is TestEnvConfigurator {
         _lane("BASE Across->ETH", ACROSS, "USDC", 1, false);
         _lane("BASE Stargate->ETH", STARGATE, "USDC", 1, true);
         _lane("BASE CCTP->ETH", CCTP, "USDC", 1, false);
-        _lane("BASE Superchain->ETH", SUPERCHAIN, "USDC", 1, false);
+        _lane("BASE Superchain->ETH (native ETH, L2->L1 initiate)", SUPERCHAIN, "ETH", 1, false);
         _finish();
     }
 }

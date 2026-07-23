@@ -28,9 +28,9 @@ contract BridgeDeployedStateForkTest is TestEnvConfigurator {
     address internal constant CCIP = 0x51088cCDA8E3Caf9e14CC8bb9475a0FF9f65338f; // salt-2 (receive() fix)
     address internal constant ACROSS = 0x6FDa302B3ccDf249E5Eda37e3F80B512bf1dC5d2; // salt-2 (output-token fix)
     address internal constant STARGATE = 0x2016E3040fba19033d78dfdB9B67Fd6230f4960a;
-    address internal constant GNOSIS = 0x7aa1763f58A87B121540101400593Bedf833533b; // salt-2 (onTokenBridged fix)
+    address internal constant GNOSIS = 0xC0974552fAf6522f61a9DC7532f6703745F53d86; // salt-3 (delivered-token guard)
     address internal constant CCTP = 0xCfA923f5f0a8A3c17F8793CF8C1207293D781b5c; // salt-2 (burnToken fix)
-    address internal constant SUPERCHAIN = 0xe849B2629d3a1d9f564004E7BCcD6a91e05C7eec;
+    address internal constant SUPERCHAIN = 0x30C47706eF3602cDDdD4fad9B708368C5baA1708; // salt-3 (prove chainId guard)
 
     address internal acct = makeAddr("deployedStateAcct");
 

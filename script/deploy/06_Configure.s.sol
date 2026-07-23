@@ -434,7 +434,7 @@ contract Configure is BaseDeployScript {
             return;
         }
         (bool ok, bytes memory data) = adapter.call(abi.encodeWithSignature("setFeeToken(address)", want));
-        if (!ok) revert(string(abi.encodePacked("setFeeToken failed for CCIP: ", _decodeRevert(data))));
+        if (!ok) revert(string(abi.encodePacked("setFeeToken failed for CCIP: ", _revertMsg(data))));
         console2.log("[OK] CCIP feeToken set (address(0) == native):", want);
     }
 
@@ -461,7 +461,7 @@ contract Configure is BaseDeployScript {
             (bool ok, bytes memory data) =
                 adapter.call(abi.encodeWithSignature("setStargatePool(address,address)", asset, pool));
             if (!ok) {
-                revert(string(abi.encodePacked("setStargatePool failed for ", symbols[i], ": ", _decodeRevert(data))));
+                revert(string(abi.encodePacked("setStargatePool failed for ", symbols[i], ": ", _revertMsg(data))));
             }
             console2.log("[OK] Stargate pool set:", symbols[i], pool);
             wired++;
@@ -513,7 +513,7 @@ contract Configure is BaseDeployScript {
                 revert(
                     string(
                         abi.encodePacked(
-                            "setComposeOptions failed for chain ", vm.toString(dest), ": ", _decodeRevert(data)
+                            "setComposeOptions failed for chain ", vm.toString(dest), ": ", _revertMsg(data)
                         )
                     )
                 );
@@ -558,7 +558,7 @@ contract Configure is BaseDeployScript {
                                 " ",
                                 symbols[s],
                                 ": ",
-                                _decodeRevert(data)
+                                _revertMsg(data)
                             )
                         )
                     );

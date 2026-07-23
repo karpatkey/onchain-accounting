@@ -176,11 +176,13 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     /// @param l2ChainId The destination L2 chain id
     /// @param l1Token The L1 token address
     /// @param l2Token The corresponding L2 token address
-    /// @dev Only callable by admin role. Unset falls back to the same address (standard bridge tokens).
+    /// @dev Only callable by admin role. L1-only (the map is read only in the L1→L2 deposit path), so it enforces
+    ///      `chainId == 1` like `setL1BridgeForL2`/`setOptimismPortalForL2`. Unset falls back to the same address.
     function setL2TokenForL2(uint256 l2ChainId, address l1Token, address l2Token)
         external
         onlyRole(DEFAULT_ADMIN_ROLE)
     {
+        if (chainId != 1) revert InvalidChainId();
         l1ToL2TokenForL2[l2ChainId][l1Token] = l2Token;
     }
 

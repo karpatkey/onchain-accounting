@@ -87,5 +87,9 @@ library DeploySalts {
     // operator could prove on the wrong L2's portal and strand the withdrawal (finalize selects the portal from the
     // invoice's sourceChainId). Salt-3 enforces `l2ChainId == invoiceId's encoded sourceChainId` (reverts
     // WithdrawalChainIdMismatch). Fresh salt re-derives a correct same-address adapter on ETH+OP+Base.
-    uint256 internal constant SUPERCHAIN_ADAPTER = 3;
+    // Bumped 3->4: consistency hardening (Copilot) — `setL2TokenForL2` now enforces `chainId == 1` like its sibling
+    // L1-only setters. NOTE: the salt-3 adapter deployed for the canary campaign was NOT re-deployed for this (the
+    // function is unused by any canary and the deployment is superseded by the post-merge full redeploy from main);
+    // salt-4 is what that full redeploy should deploy.
+    uint256 internal constant SUPERCHAIN_ADAPTER = 4;
 }

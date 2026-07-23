@@ -18,7 +18,6 @@
   "StakeWiseV3ExitQueueAssistant": "0xEb43828383320802dc78dCC1DEFB1f39051c6607",
   "BridgeEscrowProxy": "0x4B0fbca357cdE8FABc3f6c7fD7718B9F61b54c6f",
   "bridgeAdapters": {
-    "CCIP": "0x3816d64F346Bb257eF6cEf4A5046f2cE43705ade",
     "Stargate": "0x2016E3040fba19033d78dfdB9B67Fd6230f4960a",
     "Gnosis": "0xC0974552fAf6522f61a9DC7532f6703745F53d86"
   }

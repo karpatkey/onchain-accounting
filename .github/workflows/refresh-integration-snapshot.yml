@@ -20,14 +20,6 @@ env:
   FOUNDRY_PROFILE: slow
   # Pinned Foundry version (keeps forge/via_ir bytecode + library pins reproducible — see foundry.toml).
   FOUNDRY_VERSION: v1.7.1
-  ALCHEMY_API_KEY: ${{ secrets.ALCHEMY_API_KEY }}
-  MAINNET_URL: ${{ vars.KNODE_URL }}/ethereum?key=${{ secrets.KNODE_API_KEY }}
-  ARBITRUM_URL: ${{ vars.KNODE_URL }}/arbitrum?key=${{ secrets.KNODE_API_KEY }}
-  BASE_URL: ${{ vars.KNODE_URL }}/base?key=${{ secrets.KNODE_API_KEY }}
-  OP_URL: ${{ vars.KNODE_URL }}/optimism?key=${{ secrets.KNODE_API_KEY }}
-  GNOSIS_URL: ${{ vars.KNODE_URL }}/gnosis?key=${{ secrets.KNODE_API_KEY }}
-  # Debank is opt-in. The workflow_dispatch input or the secret being absent both turn it off.
-  DEBANK_API_KEY: ${{ (github.event_name == 'schedule' || inputs.include_debank) && secrets.DEBANK_API_KEY || '' }}
 
 jobs:
   refresh:
@@ -51,6 +43,15 @@ jobs:
         # still run on tolerance violations, but a hard failure (e.g., RPC down) should fail
         # the job. Capture the exit code and decide.
         id: refresh
+        env:
+          ALCHEMY_API_KEY: ${{ secrets.ALCHEMY_API_KEY }}
+          MAINNET_URL: ${{ vars.KNODE_URL }}/ethereum?key=${{ secrets.KNODE_API_KEY }}
+          ARBITRUM_URL: ${{ vars.KNODE_URL }}/arbitrum?key=${{ secrets.KNODE_API_KEY }}
+          BASE_URL: ${{ vars.KNODE_URL }}/base?key=${{ secrets.KNODE_API_KEY }}
+          OP_URL: ${{ vars.KNODE_URL }}/optimism?key=${{ secrets.KNODE_API_KEY }}
+          GNOSIS_URL: ${{ vars.KNODE_URL }}/gnosis?key=${{ secrets.KNODE_API_KEY }}
+          # Debank is opt-in. The workflow_dispatch input or the secret being absent both turn it off.
+          DEBANK_API_KEY: ${{ (github.event_name == 'schedule' || inputs.include_debank) && secrets.DEBANK_API_KEY || '' }}
         run: |
           set +e
           script/test/refresh-integration-snapshot.sh

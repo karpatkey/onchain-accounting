@@ -13,7 +13,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 ///         never fatal — a reverting block IS the stability-backtest signal.
 ///
 ///         Env: BACKTEST_CHAIN (default 1), BACKTEST_BLOCKS_FILE + BACKTEST_WINDOW
-///         (default w1-30d; BLOCKS_FILE unset/empty => 2-point smoke sweep near the
+///         (default w1-1d; BLOCKS_FILE unset/empty => 2-point smoke sweep near the
 ///         accounts.json forkBlock, so CI exercises the harness cheaply).
 contract NavBacktest is IntegrationFromConfigBase {
     using stdJson for string;
@@ -119,7 +119,7 @@ contract NavBacktest is IntegrationFromConfigBase {
             return;
         }
         string memory json = vm.readFile(blocksFile);
-        string memory window = vm.envOr("BACKTEST_WINDOW", string("w1-30d"));
+        string memory window = vm.envOr("BACKTEST_WINDOW", string("w1-1d"));
         string memory base = string.concat(".windows.", window, ".chains.", vm.toString(_chainId));
         require(vm.keyExists(json, base), "backtest: no window/chain in blocks file");
 

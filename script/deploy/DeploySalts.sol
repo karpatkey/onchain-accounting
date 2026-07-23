@@ -51,7 +51,11 @@ library DeploySalts {
     // `mintRecipient`/`destinationCaller` + Superchain `receiver` assumptions rely on, so these salts MUST stay
     // identical across the 7 target chains (1, 10, 100, 137, 42161, 56, 8453). Bumping a version (e.g. to dodge a
     // front-run of the deterministic address) re-derives that adapter's address on every chain at once.
-    uint256 internal constant CCIP_ADAPTER = 1;
+    // Bumped 1->2: the salt-1 CcipBridgeAdapter had no payable `receive()`, so with `feeToken == address(0)`
+    // (native, per the fee-token switch) it could not be funded to pay the native CCIP fee and every deposit
+    // reverted (fork tests masked it by funding via vm.deal, which bypasses receive()). Adding `receive()` +
+    // this fresh salt re-derive a correct adapter at a new same-address on every chain. Old salt-1 abandoned.
+    uint256 internal constant CCIP_ADAPTER = 2;
     // Bumped 1->2: the salt-1 Across adapter hardcoded `outputToken = address(0)` in its V3 deposit, which the
     // current Across SpokePool rejects (InvalidOutputToken). The fix adds a per-route output-token map + setter to
     // the adapter (changing its logic, though args still arrive via initialize), so a fresh salt re-derives a

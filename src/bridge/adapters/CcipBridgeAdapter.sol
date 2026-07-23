@@ -319,4 +319,10 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
         return interfaceId == type(IAny2EVMMessageReceiver).interfaceId || interfaceId == type(IERC165).interfaceId
             || super.supportsInterface(interfaceId);
     }
+
+    /// @notice Accepts native token so the adapter can be pre-funded to pay CCIP fees when `feeToken == address(0)`
+    ///         (native). `_bridge` calls `router.ccipSend{value: fee}` from this balance; without a payable
+    ///         receiver the adapter could not hold native and the native-fee path would be unfundable. Recover any
+    ///         surplus via `recoverStuckAssets` (MANAGER).
+    receive() external payable {}
 }

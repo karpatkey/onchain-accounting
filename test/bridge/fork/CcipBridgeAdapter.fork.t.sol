@@ -58,7 +58,7 @@ contract CcipBridgeAdapterForkTest is BridgeTestBase {
                 )
             )
         );
-        adapter = CcipBridgeAdapter(adapterProxy);
+        adapter = CcipBridgeAdapter(payable(adapterProxy));
 
         // Configure adapter roles
         vm.startPrank(admin);
@@ -124,7 +124,7 @@ contract CcipBridgeAdapterForkTest is BridgeTestBase {
                 CcipBridgeAdapter.initialize, (admin, address(destEscrow), CCIP_ROUTER_MAINNET, address(0), "1.0.0")
             )
         );
-        destAdapter = CcipBridgeAdapter(destAdapterProxy);
+        destAdapter = CcipBridgeAdapter(payable(destAdapterProxy));
 
         vm.startPrank(admin);
         destAdapter.grantRole(MANAGER, manager);

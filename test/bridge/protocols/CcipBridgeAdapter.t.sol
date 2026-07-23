@@ -45,7 +45,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
                 CcipBridgeAdapter.initialize, (admin, address(bridgeEscrow), address(router), address(link), "1.0.0")
             )
         );
-        adapter = CcipBridgeAdapter(adapterProxy);
+        adapter = CcipBridgeAdapter(payable(adapterProxy));
 
         // Configure adapter (chain selectors for 1 and 10 are pre-configured in initialize)
         vm.startPrank(admin);
@@ -216,7 +216,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
                 (admin, address(destBridgeEscrow), address(router), address(link), "1.0.0")
             )
         );
-        CcipBridgeAdapter destAdapter = CcipBridgeAdapter(destAdapterProxy);
+        CcipBridgeAdapter destAdapter = CcipBridgeAdapter(payable(destAdapterProxy));
 
         vm.startPrank(admin);
         // SOURCE_CHAIN_ID and DEST_CHAIN_ID selectors are pre-configured in initialize
@@ -269,7 +269,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
                 (admin, address(destBridgeEscrow), address(router), address(link), "1.0.0")
             )
         );
-        CcipBridgeAdapter destAdapter = CcipBridgeAdapter(destAdapterProxy);
+        CcipBridgeAdapter destAdapter = CcipBridgeAdapter(payable(destAdapterProxy));
 
         vm.startPrank(admin);
         destAdapter.grantRole(MANAGER, manager);
@@ -316,7 +316,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
                 (admin, address(destBridgeEscrow), address(router), address(link), "1.0.0")
             )
         );
-        CcipBridgeAdapter destAdapter = CcipBridgeAdapter(destAdapterProxy);
+        CcipBridgeAdapter destAdapter = CcipBridgeAdapter(payable(destAdapterProxy));
 
         vm.startPrank(admin);
         destBridgeEscrow.authorizeAdapter(address(destAdapter));
@@ -365,7 +365,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
                 (admin, address(destBridgeEscrow), address(destRouter), address(destLink), "1.0.0")
             )
         );
-        CcipBridgeAdapter destAdapter = CcipBridgeAdapter(destAdapterProxy);
+        CcipBridgeAdapter destAdapter = CcipBridgeAdapter(payable(destAdapterProxy));
 
         vm.startPrank(admin);
         // SOURCE_CHAIN_ID and DEST_CHAIN_ID selectors are pre-configured in initialize
@@ -413,7 +413,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
                 (admin, address(destEscrow), address(destRouter), address(destLink), "1.0.0")
             )
         );
-        CcipBridgeAdapter destAdapter = CcipBridgeAdapter(destAdapterProxy);
+        CcipBridgeAdapter destAdapter = CcipBridgeAdapter(payable(destAdapterProxy));
         vm.startPrank(admin);
         // SOURCE_CHAIN_ID and DEST_CHAIN_ID selectors are pre-configured in initialize
         // Trust the sibling source adapter (CREATE2 same-address): provenance source-sender allowlist.
@@ -529,6 +529,18 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
         adapter.setFeeToken(address(0));
     }
 
+    /// @notice The adapter must accept native via a REAL transfer (not vm.deal), so the native-fee path
+    ///         (feeToken == address(0) → ccipSend{value: fee}) can be pre-funded operationally. A plain `send`
+    ///         exercises `receive()` — the funding route `vm.deal` bypasses. Guards the gap the mainnet canary found.
+    function test_receive_acceptsNativeViaRealTransfer() public {
+        address funder = makeAddr("feeFunder");
+        vm.deal(funder, 1 ether);
+        vm.prank(funder);
+        (bool ok,) = payable(address(adapter)).call{value: 0.01 ether}("");
+        assertTrue(ok, "adapter must accept native (receive) to fund the native CCIP fee");
+        assertEq(address(adapter).balance, 0.01 ether, "adapter should hold the native fee balance");
+    }
+
     function test_setChainExtraArgs_updatesExtraArgs() public {
         uint64 selector = DEST_CHAIN_SELECTOR;
         bytes memory extraArgs = abi.encode(uint256(100000)); // Gas limit
@@ -574,7 +586,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
                 (admin, address(destEscrow), address(destRouter), address(destLink), "1.0.0")
             )
         );
-        CcipBridgeAdapter destAdapter = CcipBridgeAdapter(destAdapterProxy);
+        CcipBridgeAdapter destAdapter = CcipBridgeAdapter(payable(destAdapterProxy));
         vm.startPrank(admin);
         // SOURCE_CHAIN_ID and DEST_CHAIN_ID selectors are pre-configured in initialize
         // Trust the sibling source adapter (CREATE2 same-address): provenance source-sender allowlist.

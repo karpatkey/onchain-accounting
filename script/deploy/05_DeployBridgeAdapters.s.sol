@@ -145,12 +145,12 @@ contract DeployBridgeAdapters is BaseDeployScript {
             _salt("CcipBridgeAdapter", DeploySalts.CCIP_ADAPTER),
             _adapterInitCode(type(CcipBridgeAdapter).creationCode)
         );
-        if (fresh || CcipBridgeAdapter(adapter).bridgeEscrow() == address(0)) {
+        if (fresh || CcipBridgeAdapter(payable(adapter)).bridgeEscrow() == address(0)) {
             address router = vm.parseAddress(routerStr);
             string memory feeTokenStr =
                 ConfigReader.readAdapterParam(vm, currentChainId, "bridgeAdapters", "CCIP", "feeToken");
             address feeToken = bytes(feeTokenStr).length > 0 ? vm.parseAddress(feeTokenStr) : address(0);
-            CcipBridgeAdapter(adapter)
+            CcipBridgeAdapter(payable(adapter))
                 .initialize(chainConfig.admin, bridgeProxy, router, feeToken, _adapterVersion("CCIP"));
         }
         ConfigReader.writeAdapterAddress(vm, currentChainId, "bridgeAdapters", "CCIP", adapter);

@@ -5,7 +5,7 @@ Canonical deployed-address reference for the Onchain Accounting System (NAV). Th
 Deployed across **24 chains**: 7 fully configured (custom price feeds + balance adapters) + 17 with the NAV implementation + proxy only.
 
 - **Roles (current):** the deployer EOA `0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72` holds `DEFAULT_ADMIN_ROLE` + `MANAGER` on every chain. Handoff to the karpatkey security-council Safe `0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537` (via `07_TransferAdminToSecurityCouncil`) is **deferred** until the operational handover — step 07 has not been run.
-- **Bridge:** deployed-but-dormant — only the `BridgeEscrow` implementation is deployed (no proxy, adapters, or wiring).
+- **Bridge:** a **canary-validation deployment** is live on the 5 core chains (Ethereum, Optimism, Gnosis, Arbitrum, Base) — the `BridgeEscrow` proxy + all 6 adapters, wired and exercised end-to-end with real cent-sized transfers. Its addresses are in `script/config/deployments/<chainId>.json` (`.BridgeEscrowProxy`, `.bridgeAdapters.*`) — **deliberately not hardcoded here**, because they are **transient**: the post-merge full redeploy from `main` (which may realign the CREATE2 salts in `DeploySalts.sol`) will supersede them. The `BridgeEscrow` implementation in the canonical layer below is address-stable across that.
 - **Polygon zkEVM is intentionally excluded** — the network is being sunset by Polygon, so the system is not deployed there.
 
 ---
@@ -22,7 +22,7 @@ Deployed via the canonical CREATE2 deployer (`0x4e59b44847b379578588920cA78FbF26
 | NAVRegistryLib | `0x549f6fB0EC34E18A82A320b79C968a9Ca6e7b96b` |
 | ERC20Default balance adapter | `0x41967559D0a20Ad102F6e27b7723b1963390aD75` (created inside `NAVCalculator.initialize`; identical everywhere) |
 | UUPSPlaceholder | `0x85Ee38b0385D042918a59C01dB319b6eDdF7A8Cf` (temporary impl during atomic proxy deploy) |
-| BridgeEscrow implementation | `0xe2237d9776041514b1AC66856407Ed344b480De0` (dormant) |
+| BridgeEscrow implementation | `0xe2237d9776041514b1AC66856407Ed344b480De0` (the proxy + adapters — a transient canary-validation deployment — are per-chain; see the Bridge note above) |
 
 > **Deployments-JSON keys** (for `jq` lookups in `script/config/deployments/<chainId>.json`): `NAVCalculatorProxy`, `NAVCalculatorImplementation`, `PriceFeedLib`, `NavRegistryLib` (mixed case — deliberate, to keep the library's CREATE2 salt stable), `BridgeEscrowImplementation`; the default adapter is at `.balanceAdapters.ERC20Default`.
 

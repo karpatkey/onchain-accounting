@@ -20,6 +20,6 @@
   "bridgeAdapters": {
     "CCIP": "0x3816d64F346Bb257eF6cEf4A5046f2cE43705ade",
     "Stargate": "0x2016E3040fba19033d78dfdB9B67Fd6230f4960a",
-    "Gnosis": "0x7aa1763f58A87B121540101400593Bedf833533b"
+    "Gnosis": "0xC0974552fAf6522f61a9DC7532f6703745F53d86"
   }
 }

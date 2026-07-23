@@ -123,14 +123,15 @@ contract MockProvenanceOmnibridge is IOmnibridge {
     }
 
     /// @notice Simulates Omnibridge delivery on the destination chain: transfer tokens to the recipient adapter,
-    ///         then invoke its onTokenTransfer callback (mediator -> adapter), forwarding the call's return/revert.
-    /// @dev This mock must hold `amount` of `token` before calling (mint to it in the test).
+    ///         then invoke its `onTokenBridged` callback (the real multi-token mediator `IERC20Receiver` callback
+    ///         for `relayTokensAndCall`), forwarding the call's return/revert.
+    /// @dev This mock must hold `amount` of `token` before calling (mint to it in the test). Uses `onTokenBridged`
+    ///      (not the ERC677 `onTokenTransfer`) to match the genuine OmniBridge delivery path.
     function deliverTokens(address token, address recipientAdapter, uint256 amount, bytes calldata data) external {
         IERC20(token).safeTransfer(recipientAdapter, amount);
-        // onTokenTransfer(address from, uint256 value, bytes data)
-        (bool success, bytes memory ret) = recipientAdapter.call(
-            abi.encodeWithSignature("onTokenTransfer(address,uint256,bytes)", address(this), amount, data)
-        );
+        // onTokenBridged(address token, uint256 value, bytes data)
+        (bool success, bytes memory ret) =
+            recipientAdapter.call(abi.encodeWithSignature("onTokenBridged(address,uint256,bytes)", token, amount, data));
         if (!success) {
             assembly ("memory-safe") {
                 revert(add(ret, 0x20), mload(ret))

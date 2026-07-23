@@ -14,7 +14,7 @@ import "src/errors.sol";
 /// @title GnosisBridgeAdapter
 /// @notice Bridge adapter for Gnosis Omnibridge (Ethereum <-> Gnosis Chain).
 /// @dev The destination recipient is the sibling adapter (this contract, same address across chains via CREATE2).
-///      The Omnibridge mediator delivers the bridged tokens to the adapter and then calls `onTokenTransfer`
+///      The Omnibridge mediator delivers the bridged tokens to the adapter and then calls `onTokenBridged`
 ///      directly on it. The adapter authenticates the mediator (`msg.sender == omnibridge`) and the AMB-reported
 ///      source (`amb.messageSender()` == the trusted source Omnibridge mediator `trustedMediator[srcChainId]` — NOT
 ///      the sibling adapter, `amb.messageSourceChainId()` == the expected source chain), verifies that the
@@ -188,10 +188,27 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
     }
 
     /// @inheritdoc IGnosisBridgeAdapter
-    /// @dev Auto completion path. Called by the genuine Omnibridge mediator on the destination chain after it has
-    ///      delivered `value` of `token` to this adapter. Authenticates the mediator (`msg.sender`), the AMB-reported
-    ///      source sender and source chain, verifies the delivered token+amount match the invoice, then funds the
-    ///      escrow and releases (funded pass-through).
+    /// @dev Auto completion path — the callback the genuine OmniBridge multi-token mediator invokes on the
+    ///      destination after `relayTokensAndCall` delivers `value` of `token` to this adapter (the mediator's
+    ///      `IERC20Receiver.onTokenBridged`, NOT the ERC677 `onTokenTransfer`). Authenticates the mediator
+    ///      (`msg.sender`), the AMB source + chain, verifies the delivered token+amount, then funds+releases.
+    function onTokenBridged(
+        address,
+        /* token */
+        uint256 value,
+        bytes calldata data
+    )
+        external
+        nonReentrant
+    {
+        if (msg.sender != address(omnibridge)) revert NotAuthorized();
+        if (data.length == 0) revert InvalidCompletionData();
+        _handleInboundDelivery(value, data);
+    }
+
+    /// @inheritdoc IGnosisBridgeAdapter
+    /// @dev ERC677 delivery callback, kept for any mediator/token that uses the `onTokenTransfer` convention
+    ///      instead of `onTokenBridged`. Same authentication + shared handler; harmless if never invoked.
     function onTokenTransfer(
         address,
         /* from */
@@ -204,10 +221,19 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
     {
         if (msg.sender != address(omnibridge)) revert NotAuthorized();
         if (data.length == 0) revert InvalidCompletionData();
+        _handleInboundDelivery(value, data);
+        return true;
+    }
 
+    /// @dev Shared inbound-delivery handler for both mediator callbacks. Authenticates the AMB-reported source,
+    ///      verifies the delivered token+amount against the invoice, records provenance, then attempts the funded
+    ///      pass-through release WITHOUT reverting the mediator callback — the OmniBridge swallows a receiver
+    ///      revert, which would strand the delivered tokens with no record; recording first lets the MANAGER
+    ///      fallback (`completeBridge`) finish a recorded-but-unreleased invoice later.
+    function _handleInboundDelivery(uint256 value, bytes calldata data) internal {
         InvoiceDataLib.InvoiceData memory invoiceData = InvoiceDataLib.decode(data);
 
-        // Authenticate the AMB-reported source (trusted remote adapter + source chain).
+        // Authenticate the AMB-reported source (trusted source mediator + source chain).
         _authenticateSource(uint64(invoiceData.sourceChainId));
 
         // Verify the delivered token + amount match the invoice. Omnibridge delivers the token to this adapter
@@ -220,10 +246,6 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
         _recordTransactionHash(invoiceData.invoiceId);
         messagePayloads[invoiceData.invoiceId] = data;
 
-        // Record provenance BEFORE attempting the release, and attempt it WITHOUT reverting the inbound
-        // callback. The Omnibridge mediator swallows a receiver revert, so reverting here would silently
-        // strand the delivered tokens with no record. On failure the tokens + this record persist so the
-        // MANAGER fallback (completeBridge) can finish the release later.
         authenticatedInvoice[invoiceData.invoiceId] = true;
         try this.releaseAuthenticated(data, asset, invoiceData.amount) {
             emit GnosisBridgeCompleted(
@@ -234,7 +256,6 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
         } catch {
             emit GnosisBridgeAuthenticatedPendingRelease(invoiceData.invoiceId, uint64(invoiceData.sourceChainId));
         }
-        return true;
     }
 
     /// @dev Authenticates that the inbound AMB message originated from the trusted source Omnibridge mediator on

@@ -62,7 +62,12 @@ library DeploySalts {
     // correct adapter at a new same-address on every chain. Old salt-1 Across adapters are abandoned.
     uint256 internal constant ACROSS_ADAPTER = 2;
     uint256 internal constant STARGATE_ADAPTER = 1;
-    uint256 internal constant GNOSIS_ADAPTER = 1;
+    // Bumped 1->2: the salt-1 Gnosis adapter implemented only the ERC677 `onTokenTransfer` receiver callback, but
+    // the real OmniBridge multi-token mediator delivers `relayTokensAndCall` transfers via `onTokenBridged`
+    // (IERC20Receiver) — which the adapter lacked, so inbound transfers delivered the token but never completed
+    // (mock masked it by calling onTokenTransfer). The fix adds `onTokenBridged` (keeps onTokenTransfer too), so a
+    // fresh salt re-derives a correct adapter at a new same-address on every chain. Old salt-1 Gnosis abandoned.
+    uint256 internal constant GNOSIS_ADAPTER = 2;
     // Bumped 1->2: the salt-1 CCTP adapter compared the message's burnToken (the SOURCE-chain token, e.g.
     // Base USDC) against the DESTINATION asset (e.g. Arbitrum USDC) and reverted BurnTokenMismatch on every
     // real cross-chain transfer (fork/unit mocks masked it by using one token address for both sides). The

@@ -160,16 +160,23 @@ interface IGnosisBridgeAdapter is IBridgeAdapter {
     // Receiver Functions
     //
 
-    /// @notice Receives tokens from the Omnibridge mediator via ERC677 onTokenTransfer
+    /// @notice Primary receiver callback: the OmniBridge multi-token mediator's `IERC20Receiver.onTokenBridged`,
+    ///         invoked on the destination after `relayTokensAndCall` delivers the bridged tokens to this adapter.
+    /// @param token The bridged token delivered to the adapter
+    /// @param value The amount of tokens delivered
+    /// @param data The message payload (invoiceId + amount + nonce + meta)
+    /// @dev Auto completion path. Authenticates the mediator (`msg.sender == omnibridge`) and the AMB-reported
+    ///      source (`amb.messageSender()` == the trusted source Omnibridge mediator `trustedMediator[srcChainId]`,
+    ///      `amb.messageSourceChainId()` == the expected source chain), verifies the delivered token+amount match
+    ///      the invoice, then funds the escrow and releases. Calling it from any other address reverts.
+    function onTokenBridged(address token, uint256 value, bytes calldata data) external;
+
+    /// @notice ERC677 `onTokenTransfer` receiver callback — kept alongside `onTokenBridged` for any mediator/token
+    ///         that uses the ERC677 convention. Same authentication + release path.
     /// @param from The sender on the mediator side
     /// @param value The amount of tokens delivered to the adapter
     /// @param data The message payload (contains invoiceId + amount + nonce + meta)
     /// @return success Whether the transfer was successful
-    /// @dev Auto completion path: the genuine Omnibridge mediator delivers the bridged tokens to this adapter
-    ///      and then calls this. The adapter authenticates the mediator (`msg.sender == omnibridge`) and the
-    ///      AMB-reported source (`amb.messageSender()` == the trusted remote adapter, `amb.messageSourceChainId()`
-    ///      == the expected source chain), verifies the delivered token+amount match the invoice, then funds the
-    ///      escrow and releases. Calling it from any other address reverts.
     function onTokenTransfer(address from, uint256 value, bytes calldata data) external returns (bool);
 
     /// @notice Accepts native value sent to the adapter

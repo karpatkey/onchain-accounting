@@ -16,8 +16,9 @@ import "src/errors.sol";
 /// @dev The destination recipient is the sibling adapter (this contract, same address across chains via CREATE2).
 ///      The Omnibridge mediator delivers the bridged tokens to the adapter and then calls `onTokenTransfer`
 ///      directly on it. The adapter authenticates the mediator (`msg.sender == omnibridge`) and the AMB-reported
-///      source (`amb.messageSender()` == the trusted remote adapter, `amb.messageSourceChainId()` == the expected
-///      source chain), verifies that the delivered token+amount match the invoice, then funds the escrow and
+///      source (`amb.messageSender()` == the trusted source Omnibridge mediator `trustedMediator[srcChainId]` — NOT
+///      the sibling adapter, `amb.messageSourceChainId()` == the expected source chain), verifies that the
+///      delivered token+amount match the invoice, then funds the escrow and
 ///      releases (funded pass-through, ADR 0012). There is no escrow fallback dispatcher.
 /// @author KPK
 contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {

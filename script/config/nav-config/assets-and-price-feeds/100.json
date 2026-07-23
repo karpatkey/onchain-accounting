@@ -105,5 +105,17 @@
       }
     ],
     "$comment": "EURe (Monerium, 1:1 EUR-backed) priced via Chainlink EUR/USD. API3 EUR/USD on gnosis to be added as a second feed (ADR 0009) once the Api3ReaderProxyV1 address is obtained."
+  },
+  "USDT": {
+    "address": "0x4ECaBa5870353805a9F068101A40E0f32ed605C6",
+    "pegToleranceBps": 100,
+    "priceFeeds": [
+      {
+        "type": "Chainlink",
+        "address": "0x68811D7DF835B1c33e6EEae8E7C141eF48d48cc7",
+        "heartbeat": 86400
+      }
+    ],
+    "note": "Bridged Tether USDT (6 decimals) priced via Chainlink USDT/USD; peg-guarded at 100bps like the other Gnosis stablecoins. No monitor feed (none of the Gnosis stablecoins use one)."
   }
 }

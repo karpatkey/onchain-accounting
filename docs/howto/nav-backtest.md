@@ -17,7 +17,7 @@ A single command runs the sweep, parses the per-block output, and either prints 
 
 The driver collects those lines into a `Series` (chain → window → accounts → metrics → points), runs completeness checks (every account produced all expected points, no missing/extra accounts), prints a per-(account × metric) report with the worst step-to-step percentage jump, then dispatches by mode.
 
-A point's `value` is the metric's stringified output. For the `nav` metric it is the raw `uint256` value as returned by `NAVCalculator.getAccountNav`, the same kind of value the live integration test asserts on, in wei/8-decimals (USD at NAV's internal quote precision). There is no scaling or sign flipping; you compare strings.
+A point's `value` is the metric's stringified output. For the `nav` metric it is the raw `uint256` value as returned by `NAVCalculator.getAccountNav` in NAV's 8-decimal USD fixed-point precision (the same kind of value the live integration test asserts on). There is no scaling or sign flipping; you compare strings.
 
 ---
 
@@ -115,7 +115,7 @@ In all modes, a non-zero forge exit (test failure, RPC error) is fatal: the driv
 | `script/test/nav-backtest.ts` | Bun driver. Parses CLI, runs the Solidity test, parses `BACKTEST\|…` lines, dispatches by mode. Single file, zero npm dependencies. |
 | `test/integration/NavBacktest.fork.t.sol` | Foundry test. Loads the window, deploys NAV from source at `fromBlock`, `vm.rollFork`s forward, emits `BACKTEST\|…` lines. Reverts caught and recorded. |
 | `test/integration/backtest-blocks.json` | Window definitions. `windows.<name>.chains.<chainId>` = `{ fromBlock, toBlock, blockStep, metrics, accounts? }`. One window today: `w1-1d`. |
-| `test/integration/nav-timeseries.json` | Fixture. `windows.<name>.chains.<chainId>` = `{ generatedAtCommit, accounts: { <addr>: { <metric>: Point[] } } }`. One entry today: `w1-1d` / chain `1` (50 points = 25 blocks × 2 accounts). |
+| `test/integration/nav-timeseries.json` | Fixture. `windows.<name>.chains.<chainId>` = `{ generatedAtCommit, accounts: { <addr>: { <metric>: Point[] } } }`. One entry today: `w1-1d` / chain `1` (50 points = 25 points/account × 2 accounts, 8,469 bytes). |
 | `test/integration/IntegrationFromConfigBase.fork.sol` | Inherited base: chain config loader, `createSelectForkWithCadence(getAlchemyUrl(network), forkBlock)`. |
 | `test/TestEnvConfigurator.sol` | `getAlchemyUrl` builds the URL from `ALCHEMY_API_KEY` as `https://<network>.g.alchemy.com/v2/<key>`, with chain-specific env var overrides. |
 
@@ -141,10 +141,10 @@ The full fixture path is `test/integration/nav-timeseries.json`; the example abo
 
 ## Caveats and performance
 
-- **Cold per-block RPC.** Each block in the window is a fresh fork, so the sweep re-fetches block state on every step. There is no shared cache between `vm.rollFork` calls within a single test run. The `FOUNDRY_PROFILE=slow` profile (set automatically by the driver) throttles RPC via `createSelectForkWithCadence` to keep you under Alchemy's rate limit, but cold cache still dominates wall time. Expect the full `w1-1d` window to take a few minutes on a warm cache, considerably longer cold.
+- **`rollFork` advances the same active fork; remote reads at the new block are cold.** `vm.rollFork(block)` re-targets the currently selected fork to a different block; the same persistent state is the active fork across the sweep. Foundry (this repo is pinned to forge 1.7.1) internally allocates a fresh per-block remote cache on each roll, so the local deploy of the NAV stack is merged in once at `fromBlock` and reused, but every historical contract read at the new block (balances, prices, slot pre-images) is fetched fresh from the RPC. There is no shared block-keyed remote cache between steps. The `FOUNDRY_PROFILE=slow` profile pins `threads = 1` (per-block sequential evaluation, no intra-sweep parallelism) and the driver uses `createSelectForkWithCadence` only for the initial fork selection; per-roll RPC throttling is up to Alchemy's rate limiter and the slot of the run, not the test harness. Cold historical reads dominate wall time. Expect the full `w1-1d` window to take a few minutes on a warm local state, considerably longer cold.
 - **Canonical / slow mode is the only mode.** There is no "fast" / mocked / pre-recorded sweep. The whole point of the harness is to read live mainnet state at each pinned block. If you want a near-instant sanity check, use the lite smoke mode (below).
-- **Lite smoke is a no-op for the canonical window.** When `BACKTEST_BLOCKS_FILE` is unset (or empty), `NavBacktest` runs a **2-point smoke sweep** at the chain's `accounts.json` forkBlock and `forkBlock - 300`. It evaluates every chain-enabled account (no per-window allowlist), so on mainnet it covers 2 accounts × 1 metric × 2 points. The point is cheap CI coverage of the harness plumbing; it gives no speedup over a small canonical window and produces no fixture data. Run it directly with `forge test --match-contract NavBacktest` (no env vars); the driver always sets `BACKTEST_BLOCKS_FILE` and uses the canonical window.
-- **Fixture size scales with `accounts × metrics × ((toBlock - fromBlock) / blockStep + 1)`.** The shipped `w1-1d` window is 25 blocks × 2 accounts × 1 metric = 50 points and serializes to ~25 KB. A 30-day window at the same step (~7200 blocks) for the same two accounts would be ~14 000 points and ~7 MB. Keep the step coarse for long windows; the metric is meant to spot drift, not to be a tick-level feed.
+- **Lite smoke is a no-op for the canonical window.** When `BACKTEST_BLOCKS_FILE` is unset (or empty), `NavBacktest` runs a **2-point smoke sweep** at the chain's `accounts.json` forkBlock and `forkBlock - 300`. It evaluates every chain-enabled account (no per-window allowlist); on mainnet that is 9 accounts × 1 metric × 2 points = 18 emitted rows. The point is cheap CI coverage of the harness plumbing; it gives no speedup over a small canonical window and produces no fixture data. Run it directly with `forge test --match-contract NavBacktest` (no env vars); the driver always sets `BACKTEST_BLOCKS_FILE` and uses the canonical window.
+- **Fixture size scales with `accounts × metrics × ((toBlock - fromBlock) / blockStep + 1)`.** The shipped `w1-1d` window is 25 points/account × 2 accounts = 50 points total (8,469 bytes on disk). Keep the step coarse for long windows; the metric is meant to spot drift, not to be a tick-level feed.
 - **Stale oracle responses look like real data.** A `Chainlink` feed that went down mid-window will return whatever it last reported (or revert depending on the heartbeat config); the harness records the value as-is and does not flag staleness. Cross-check any unexpected flatline against the live integration test or Debank before snapshotting.
 
 ---
@@ -153,7 +153,7 @@ The full fixture path is `test/integration/nav-timeseries.json`; the example abo
 
 ### Adding a new window
 
-Edit `test/integration/backtest-blocks.json`. Pick a name (kebab-case, prefixed with the chain: `w1-1d`, `w1-30d`, `w42161-7d`, …). Under `windows.<name>.chains.<chainId>` set `fromBlock`, `toBlock`, `blockStep`, `metrics`, and (optionally) `accounts`. Constraints enforced by the driver:
+Edit `test/integration/backtest-blocks.json`. Pick a name (kebab-case, prefixed with the chain: `w1-1d`, `w42161-7d`, …). Under `windows.<name>.chains.<chainId>` set `fromBlock`, `toBlock`, `blockStep`, `metrics`, and (optionally) `accounts`. Constraints enforced by the driver:
 
 - `toBlock > fromBlock`, `blockStep > 0`, `metrics` is a non-empty string array if present, `accounts` (if present) is a non-empty array of unique lowercase hex addresses.
 - If `accounts` is omitted, the harness uses every account in `accounts.json` that has the current chain in its `enabledChains`. If `accounts` is set, every configured address must be chain-enabled (the Solidity test reverts with `backtest: configured account missing or disabled` otherwise).

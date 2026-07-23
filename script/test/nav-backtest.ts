@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // NAV historical backtest driver (single-file, no dependencies — run with bun).
-// Usage: bun script/test/nav-backtest.ts [--chain 1] [--window w1-30d] [--mode report|snapshot|assert]
+// Usage: bun script/test/nav-backtest.ts [--chain 1] [--window w1-1d] [--mode report|snapshot|assert]
 //   report   (default) run sweep, print summary, do not touch the fixture
 //   snapshot run sweep and (over)write the window's entry in test/integration/nav-timeseries.json
 //   assert   run sweep and deep-diff against the fixture's window entry; exit 1 on any difference
@@ -14,7 +14,7 @@ const FIXTURE = `${ROOT}/test/integration/nav-timeseries.json`;
 
 // ── Types ──
 
-interface WindowDef { fromBlock: number; toBlock: number; blockStep: number; metrics: string[] }
+interface WindowDef { fromBlock: number; toBlock: number; blockStep: number; metrics: string[]; accounts?: string[] }
 interface BlocksFile { windows: Record<string, { chains: Record<string, WindowDef> }> }
 interface Point { block: number; timestamp: number; value?: string; error?: string }
 type Series = Record<string, Record<string, Point[]>>;
@@ -36,6 +36,8 @@ function isPoint(v: unknown): v is Point {
   return hv !== he;
 }
 function isPointArray(v: unknown): v is Point[] { return Array.isArray(v) && v.every(isPoint); }
+const HEX40 = /^0x[0-9a-fA-F]{40}$/;
+function isHexAddress(v: unknown): v is string { return typeof v === "string" && HEX40.test(v); }
 
 // ── Boundary parsers (no `as`, no `any`, no non-null) ──
 
@@ -50,7 +52,20 @@ function parseWindowDef(raw: unknown): WindowDef {
   const metrics: string[] = mr !== undefined
     ? (isStringArray(mr) && mr.length > 0 ? mr : fail("metrics must be a non-empty string array", 2))
     : ["nav"];
-  return { fromBlock, toBlock, blockStep, metrics };
+  const ar = raw.accounts;
+  let accounts: string[] | undefined;
+  if (ar !== undefined) {
+    if (!isStringArray(ar) || ar.length === 0) fail("accounts must be a non-empty string array", 2);
+    const seen = new Set<string>();
+    for (const a of ar) {
+      if (!isHexAddress(a)) fail(`invalid account address: ${a}`, 2);
+      const lo = a.toLowerCase();
+      if (seen.has(lo)) fail(`duplicate account: ${a}`, 2);
+      seen.add(lo);
+    }
+    accounts = ar;
+  }
+  return { fromBlock, toBlock, blockStep, metrics, accounts };
 }
 
 function parseBlocksFile(raw: unknown): BlocksFile {
@@ -143,9 +158,9 @@ function isMode(v: string): v is Mode { return v === "report" || v === "snapshot
 // ── Main ──
 
 const { values: args } = parseArgs({
-  options: { chain: { type: "string", default: "1" }, window: { type: "string", default: "w1-30d" }, mode: { type: "string", default: "report" } },
+  options: { chain: { type: "string", default: "1" }, window: { type: "string", default: "w1-1d" }, mode: { type: "string", default: "report" } },
 });
-const chain = args.chain ?? "1", windowName = args.window ?? "w1-30d", modeRaw = args.mode ?? "report";
+const chain = args.chain ?? "1", windowName = args.window ?? "w1-1d", modeRaw = args.mode ?? "report";
 if (!isMode(modeRaw)) fail(`bad --mode: ${modeRaw} (expected report|snapshot|assert)`, 2);
 const mode: Mode = modeRaw;
 
@@ -185,6 +200,15 @@ if (Object.keys(results).length === 0) fail("no BACKTEST lines in forge output",
 
 // Completeness check
 let missing = false;
+const resultAddrs = new Set(Object.keys(results).map((a) => a.toLowerCase()));
+if (win.accounts !== undefined) {
+  for (const a of win.accounts) {
+    if (!resultAddrs.has(a.toLowerCase())) { console.error(`MISSING ACCOUNT: ${a}`); missing = true; }
+  }
+  for (const a of resultAddrs) {
+    if (!win.accounts.some((c) => c.toLowerCase() === a)) { console.error(`EXTRA ACCOUNT: ${a}`); missing = true; }
+  }
+}
 for (const [account, bm] of Object.entries(results)) {
   for (const metric of metrics) {
     if ((bm[metric]?.length ?? 0) !== expectedBlocks) {

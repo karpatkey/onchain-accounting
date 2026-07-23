@@ -40,10 +40,13 @@ protocol message (or a careful audit of the real protocol's message shape) expos
 - **Gnosis:** add a per-source-chain `trustedMediator` mapping (set by `setTrustedMediator`, wired by `06`
   from the remote chain's Omnibridge config); `_authenticateSource` compares `amb.messageSender()` against
   the mediator. Because the auto-path (`onTokenTransfer`) is the only context where `amb.messageSender()` is
-  meaningful, it **records** `authenticatedInvoice[invoiceId]` at genuine delivery and then attempts the
-  release inside a `try/catch` (so a transient release failure leaves the tokens + provenance recoverable
-  rather than reverting and discarding both). The MANAGER fallback (`_completeBridge`) can then complete
-  **only** invoices whose provenance was recorded — it cannot re-read the AMB after the fact.
+  meaningful, it **records** provenance at genuine delivery — keyed by the **per-operation invoice hash**
+  (`authenticatedInvoice[bytes32(uint192(checksum24))]`, matching the escrow), NOT the reusable lane
+  `invoiceId` — and then attempts the release inside a `try/catch` (so a transient release failure leaves the
+  tokens + provenance recoverable rather than reverting and discarding both). The MANAGER fallback
+  (`_completeBridge`) can then complete **only** the exact transfer whose provenance was recorded (keying by the
+  hash prevents a same-lane sibling from completing on another transfer's authentication) — it cannot re-read
+  the AMB after the fact.
 
 **2. Superchain multi-L2 via per-L2-chainId keyed maps (Option C).** The L1 adapter keys its L1 config by L2
 chain id: `l1BridgeForL2`, `optimismPortalForL2`, `l1ToL2TokenForL2`. The deposit leg selects by

@@ -194,7 +194,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
         usdc.mint(address(destOmnibridge), amount);
         destOmnibridge.deliverTokens(address(usdc), address(destAdapter), amount, messagePayload);
 
-        assertTrue(destAdapter.authenticatedInvoice(invoiceData.invoiceId), "invoice authenticated at delivery");
+        assertTrue(destAdapter.authenticatedInvoice(invoiceHash), "invoice authenticated at delivery");
         assertFalse(destEscrow.isInvoiceCompleted(invoiceHash), "invoice not completed while release deferred");
         assertEq(usdc.balanceOf(address(destAdapter)), amount, "adapter holds the delivered tokens");
 
@@ -209,6 +209,37 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
         assertEq(usdc.balanceOf(account) - initialPortfolioBalance, amount, "account receives tokens");
         assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter zero after funding release");
         assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice completed via fallback");
+    }
+
+    /// @notice `authenticatedInvoice` is keyed by the per-operation invoice HASH, not the reusable lane
+    ///         `invoiceId`. Authenticating one transfer must NOT let the MANAGER fallback complete a different
+    ///         same-lane transfer (same src/dst/account/asset → same invoiceId, different nonce → different hash).
+    function test_managerFallback_perHash_notPerLane() public {
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        // Two transfers on the SAME lane (share invoiceId), different nonce → different invoiceHash.
+        InvoiceDataLib.InvoiceData memory invA =
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount, 0);
+        InvoiceDataLib.InvoiceData memory invB =
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount, 1);
+        assertEq(invA.invoiceId, invB.invoiceId, "same lane => same invoiceId");
+        assertTrue(invA.checksum24 != invB.checksum24, "different nonce => different hash");
+
+        vm.chainId(uint256(GNOSIS_CHAIN_ID));
+        MockProvenanceOmnibridge destOmnibridge = new MockProvenanceOmnibridge();
+        MockProvenanceAMB destAmb = new MockProvenanceAMB();
+        (, GnosisBridgeAdapter destAdapter) = _setupDestination(destOmnibridge, destAmb);
+
+        // Deliver + authenticate ONLY transfer A.
+        usdc.mint(address(destOmnibridge), amount);
+        destOmnibridge.deliverTokens(address(usdc), address(destAdapter), amount, InvoiceDataLib.encode(invA));
+        assertTrue(destAdapter.authenticatedInvoice(bytes32(uint256(uint192(invA.checksum24)))), "A authenticated");
+        assertFalse(destAdapter.authenticatedInvoice(bytes32(uint256(uint192(invB.checksum24)))), "B NOT authenticated");
+
+        // MANAGER fallback for B (same lane, unauthenticated hash) must revert — even with funds present.
+        usdc.mint(address(destAdapter), amount);
+        vm.prank(manager);
+        vm.expectRevert(abi.encodeWithSelector(IGnosisBridgeAdapter.InvalidBridgeData.selector));
+        destAdapter.completeBridge(InvoiceDataLib.encode(invB), "");
     }
 
     function test_managerFallback_revertsWithoutPriorAuthentication() public {

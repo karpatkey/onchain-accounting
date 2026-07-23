@@ -71,7 +71,12 @@ library DeploySalts {
     // mediator actually delivered equals the invoice asset — a delivery of a different token could false-release on a
     // stale asset balance. Salt-3 threads the delivered token through `onTokenBridged` and reverts on a mismatch
     // (onTokenTransfer passes address(0) to skip). Fresh salt re-derives a correct same-address adapter on ETH+GC.
-    uint256 internal constant GNOSIS_ADAPTER = 3;
+    // Bumped 3->4: precision hardening (Copilot/claude-review) — `authenticatedInvoice` is now keyed by the
+    // per-operation invoice hash (not the reusable lane `invoiceId`), so the MANAGER fallback completes only the
+    // exact authenticated transfer. NOTE: NOT re-deployed — the salt-3 canary adapter is superseded by the
+    // post-merge full redeploy from main (which should deploy salt-4); the change is non-exploitable (escrow
+    // completedInvoices + funded pass-through already prevent misuse) so the live salt-3 adapter is unaffected.
+    uint256 internal constant GNOSIS_ADAPTER = 4;
     // Bumped 1->2: the salt-1 CCTP adapter compared the message's burnToken (the SOURCE-chain token, e.g.
     // Base USDC) against the DESTINATION asset (e.g. Arbitrum USDC) and reverted BurnTokenMismatch on every
     // real cross-chain transfer (fork/unit mocks masked it by using one token address for both sides). The

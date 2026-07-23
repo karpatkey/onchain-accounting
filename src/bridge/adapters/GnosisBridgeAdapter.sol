@@ -52,10 +52,13 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
     ///      sibling adapter. So source authentication compares against this mediator, not `trustedRemoteAdapter`.
     mapping(uint64 => address) public trustedMediator;
 
-    /// @notice Invoices whose inbound Omnibridge transfer was authenticated at delivery (in `onTokenTransfer`).
+    /// @notice Inbound Omnibridge transfers authenticated at delivery, keyed by the **per-operation invoice hash**
+    ///         (`bytes32(uint192(checksum24))`, matching the escrow) — NOT the reusable lane `invoiceId`.
     /// @dev The MANAGER fallback (`_completeBridge`) cannot re-read `amb.messageSender()` (it is only set while
-    ///      the AMB is executing a message), so it completes only invoices recorded here at genuine delivery.
-    ///      This flag is set once and never cleared; double-release is prevented not here but by the escrow's
+    ///      the AMB is executing a message), so it completes only the exact transfer recorded here at genuine
+    ///      delivery — keying by the invoice hash (not `invoiceId`, which is shared by every transfer on the same
+    ///      route) prevents a same-lane sibling from being completed on another transfer's authentication. The
+    ///      flag is set once and never cleared; double-release is additionally prevented by the escrow's
     ///      `completedInvoices` replay guard in `releaseByInvoiceId` (a second completion reverts there).
     mapping(bytes32 => bool) public authenticatedInvoice;
 
@@ -174,8 +177,10 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
         InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
 
         // The AMB cannot be re-read out of message context, so authenticate against provenance recorded at
-        // genuine delivery in onTokenTransfer. Only an invoice that was authenticated there can be completed.
-        if (!authenticatedInvoice[data.invoiceId]) revert InvalidBridgeData();
+        // genuine delivery. Keyed by the per-operation invoice hash (`bytes32(uint192(checksum24))`, matching the
+        // escrow) — NOT the reusable lane `invoiceId` — so the fallback completes only the exact transfer that was
+        // authenticated at delivery, not any same-lane sibling.
+        if (!authenticatedInvoice[bytes32(uint256(uint192(data.checksum24)))]) revert InvalidBridgeData();
 
         // Verify the adapter actually holds the invoiced tokens (delivered by Omnibridge).
         address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(InvoiceDataLib.bytes6ToStr(data.assetSymbol));
@@ -246,7 +251,8 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
         _recordTransactionHash(invoiceData.invoiceId);
         messagePayloads[invoiceData.invoiceId] = data;
 
-        authenticatedInvoice[invoiceData.invoiceId] = true;
+        // Record provenance keyed by the per-operation invoice hash (not the reusable lane `invoiceId`).
+        authenticatedInvoice[bytes32(uint256(uint192(invoiceData.checksum24)))] = true;
         try this.releaseAuthenticated(data, asset, invoiceData.amount) {
             emit GnosisBridgeCompleted(
                 invoiceData.invoiceId,

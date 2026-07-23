@@ -21,6 +21,13 @@ import {console2} from "forge-std/console2.sol";
 ///      registered to the same address, so it can be re-run safely.
 ///      Run with: forge script script/deploy/06_Configure.s.sol --rpc-url $RPC_URL --account $DEPLOYER_NAME --broadcast
 contract Configure is BaseDeployScript {
+    /// @dev lzCompose executor gas budget baked into each Stargate destination's `composeOptions`. The destination
+    ///      `lzCompose` decodes the invoice, reads the asset registry, checks the delivered balance and does one
+    ///      funded pass-through release (an ERC20 transfer into the escrow + transfer out to the account); ~250k gas
+    ///      observed on mainnet, so 500k carries a safe margin. Tunable post-deploy via the adapter's
+    ///      `setComposeOptions(dstEid, options)` (DEFAULT_ADMIN_ROLE) without a redeploy.
+    uint128 internal constant STARGATE_COMPOSE_GAS_LIMIT = 500_000;
+
     function run() public override {
         setUp();
         validateAddresses();
@@ -233,9 +240,12 @@ contract Configure is BaseDeployScript {
             else if (keccak256(bytes(adapterNames[i])) == keccak256(bytes("CCIP"))) {
                 _reconcileCcipFeeToken(deployed);
             }
-            // Stargate resolves a V2 pool per asset; `_bridge` reverts InvalidPool() until the pool is set.
+            // Stargate resolves a V2 pool per asset; `_bridge` reverts InvalidPool() until the pool is set. It also
+            // needs an lzCompose executor gas option per destination eid, or the destination's `lzCompose`
+            // auto-release never fires (tokens deliver but the invoice is never completed).
             else if (keccak256(bytes(adapterNames[i])) == keccak256(bytes("Stargate"))) {
                 _wireStargatePools(deployed);
+                _wireStargateComposeOptions(deployed);
             }
             // Across V3 requires a non-zero destination output token per lane; set it per (remoteChain, asset).
             else if (keccak256(bytes(adapterNames[i])) == keccak256(bytes("Across"))) {
@@ -457,6 +467,61 @@ contract Configure is BaseDeployScript {
             wired++;
         }
         console2.log("--- Stargate pools wired:", wired);
+    }
+
+    /// @notice Builds a LayerZero V2 TYPE_3 executor-options blob carrying a single lzCompose gas budget.
+    /// @dev OptionsBuilder layout for `addExecutorLzComposeOption(index=0, gas, value=0)`:
+    ///      `0x0003` (TYPE_3) | `0x01` (WORKER_ID = EXECUTOR) | `uint16` size (=19: 1 optionType + 2 index + 16 gas) |
+    ///      `0x03` (OPTION_TYPE_LZCOMPOSE) | `uint16` compose index (=0) | `uint128` gas. Matches the bytes the
+    ///      LayerZero SDK emits, so the destination executor is paid to run `lzCompose` after Stargate delivers.
+    function _composeOption(uint128 gas) internal pure returns (bytes memory) {
+        return abi.encodePacked(uint16(3), uint8(1), uint16(19), uint8(3), uint16(0), gas);
+    }
+
+    /// @notice Sets the Stargate lzCompose executor gas option for each configured remote lane.
+    /// @dev Stargate `_bridge` passes `composeOptions[dstEid]` as the send's `extraOptions`. If it is empty, the
+    ///      OFT still delivers the tokens to the destination sibling adapter (covered by the pool's enforced
+    ///      lzReceive options) but the executor is never funded to run `lzCompose`, so the funded pass-through
+    ///      release never auto-fires and the delivered tokens sit in the adapter until a manual completion. For
+    ///      each Stargate `remoteChains` entry we resolve the destination eid from the adapter's own preconfigured
+    ///      table (`getEidForChain`) and set a compose option carrying `STARGATE_COMPOSE_GAS_LIMIT`. Skips a lane
+    ///      whose eid is unknown, and lanes already carrying the same option. Idempotent.
+    function _wireStargateComposeOptions(address adapter) internal {
+        uint256[] memory remoteChains =
+            ConfigReader.readAdapterUintArray(vm, currentChainId, "bridgeAdapters", "Stargate", "remoteChains");
+        bytes memory options = _composeOption(STARGATE_COMPOSE_GAS_LIMIT);
+        uint256 wired;
+        for (uint256 r = 0; r < remoteChains.length; r++) {
+            uint256 dest = remoteChains[r];
+            if (dest == 0 || dest == currentChainId) continue;
+            (bool oke, bytes memory eret) =
+                adapter.staticcall(abi.encodeWithSignature("getEidForChain(uint64)", uint64(dest)));
+            uint32 dstEid = (oke && eret.length == 32) ? abi.decode(eret, (uint32)) : 0;
+            if (dstEid == 0) {
+                console2.log("[SKIP] Stargate composeOptions: no eid for chain:", dest);
+                continue;
+            }
+            (bool okr, bytes memory ret) = adapter.staticcall(abi.encodeWithSignature("composeOptions(uint32)", dstEid));
+            bytes memory have = okr ? abi.decode(ret, (bytes)) : bytes("");
+            if (keccak256(have) == keccak256(options)) {
+                console2.log("[SKIP] Stargate composeOptions already set for chain:", dest);
+                continue;
+            }
+            (bool ok, bytes memory data) =
+                adapter.call(abi.encodeWithSignature("setComposeOptions(uint32,bytes)", dstEid, options));
+            if (!ok) {
+                revert(
+                    string(
+                        abi.encodePacked(
+                            "setComposeOptions failed for chain ", vm.toString(dest), ": ", _decodeRevert(data)
+                        )
+                    )
+                );
+            }
+            console2.log("[OK] Stargate composeOptions set for chain:", dest);
+            wired++;
+        }
+        console2.log("--- Stargate composeOptions wired:", wired);
     }
 
     /// @notice Sets the Across V3 destination output token for each (remoteChain, registered-symbol) route.

@@ -96,6 +96,33 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         assertEq(stored.length, messagePayload.length, "messagePayload stored");
     }
 
+    /// @notice Regression: a send carrying a composeMsg MUST forward the configured lzCompose executor gas option
+    ///         as `extraOptions`, or the destination's `lzCompose` auto-release never fires (tokens deliver but the
+    ///         invoice is never completed — the mainnet Stargate finding). Empty composeOptions => empty extraOptions.
+    function test_bridge_forwardsComposeOptionsAsExtraOptions() public {
+        bytes memory opts = hex"00030100130300000000000000000000000000000007a120"; // 500k-gas lzCompose option
+        vm.prank(admin);
+        adapter.setComposeOptions(DEST_EID, opts);
+
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
+        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
+
+        vm.prank(account);
+        // forge-lint: disable-next-line(erc20-unchecked-transfer)
+        usdc.transfer(address(bridgeEscrow), amount);
+        vm.prank(address(bridgeEscrow));
+        usdc.approve(address(adapter), amount);
+        vm.deal(address(adapter), 0.1 ether);
+
+        vm.prank(address(bridgeEscrow));
+        adapter.bridge(messagePayload);
+
+        (,,,, bytes memory extraOptions,,) = usdcPool.lastSendParam();
+        assertEq(extraOptions, opts, "extraOptions carries the configured lzCompose option");
+    }
+
     function test_bridge_revertsForUnsupportedDestChain() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         // destinationChainId 999 has no eid mapping

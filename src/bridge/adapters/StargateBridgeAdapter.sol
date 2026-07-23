@@ -51,7 +51,10 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
     /// @notice Mapping from LayerZero endpoint ID (eid) to standard chain ID
     mapping(uint32 => uint64) public eidToChainId;
 
-    /// @notice Executor options (extraOptions) per destination eid (lzCompose gas budget); empty allowed
+    /// @notice Executor options (extraOptions) per destination eid. MUST carry an lzCompose gas option for each
+    ///         live lane: `_bridge` passes this as the send's `extraOptions`, and if it is empty the OFT still
+    ///         delivers the tokens but the executor is never funded to run `lzCompose`, so the destination's funded
+    ///         pass-through release never auto-fires. Set per lane by `06_Configure` (tunable via setComposeOptions).
     mapping(uint32 => bytes) public composeOptions;
 
     /// @notice Mapping to store message payloads by invoice ID

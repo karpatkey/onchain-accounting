@@ -23,6 +23,7 @@ contract NavBacktest is IntegrationFromConfigBase {
     uint256[] internal _blocks;
     string[] internal _metrics;
     address[] internal _backtestAccounts;
+    address[] internal _configuredAccounts;
 
     function setUp() public {
         _chainId = vm.envOr("BACKTEST_CHAIN", uint256(1));
@@ -139,6 +140,18 @@ contract NavBacktest is IntegrationFromConfigBase {
                 _metrics.push(configured[m]);
             }
         }
+
+        // Optional per-window account allowlist. When present, only these
+        // addresses are evaluated; all other chain-enabled accounts are skipped.
+        // Smoke mode (no blocks file) always evaluates every chain-enabled account.
+        string memory accountsKey = string.concat(base, ".accounts");
+        if (vm.keyExists(json, accountsKey)) {
+            string[] memory configured = json.readStringArray(accountsKey);
+            require(configured.length > 0, "backtest: empty accounts array");
+            for (uint256 a = 0; a < configured.length; a++) {
+                _configuredAccounts.push(vm.parseAddress(configured[a]));
+            }
+        }
     }
 
     function _loadAccounts(string memory accountsJson) internal {
@@ -155,6 +168,34 @@ contract NavBacktest is IntegrationFromConfigBase {
             }
             unchecked { ++i; }
         }
+
+        // When a window configures an account allowlist, filter to only those
+        // addresses. Every configured address must appear in the final set
+        // (duplicate, unknown, and chain-disabled entries are caught here).
+        if (_configuredAccounts.length > 0) {
+            address[] memory filtered = new address[](_backtestAccounts.length);
+            uint256 count;
+            for (uint256 a = 0; a < _backtestAccounts.length; a++) {
+                if (_isConfiguredAccount(_backtestAccounts[a])) {
+                    filtered[count] = _backtestAccounts[a];
+                    count++;
+                }
+            }
+            require(
+                count == _configuredAccounts.length,
+                "backtest: configured account missing or disabled"
+            );
+            // Compact in-place.
+            assembly { mstore(filtered, count) }
+            _backtestAccounts = filtered;
+        }
         require(_backtestAccounts.length > 0, "backtest: no enabled accounts for chain");
+    }
+
+    function _isConfiguredAccount(address account) internal view returns (bool) {
+        for (uint256 i = 0; i < _configuredAccounts.length; i++) {
+            if (_configuredAccounts[i] == account) return true;
+        }
+        return false;
     }
 }

@@ -21,7 +21,7 @@ Also: CI `forge build` takes ~15 min because compilation artifacts are never cac
 ## Decisions (user-confirmed)
 
 - Goal: all three — stability backtest + NAV time-series data + regression snapshots.
-- Scope v1: **mainnet only**, accounts from `accounts.json`, one **fixed ~30-day window** picked once and pinned, defined **in blocks**: `{fromBlock, toBlock, blockStep}` (mainnet ~12s blocks ⇒ hourly ≈ step 300; 30 days ≈ 216,000 blocks → ~721 points). No timestamp→block mapping anywhere. Windows are **named** and multiple windows coexist; extending the range or adding windows later is a JSON edit + snapshot, not a code change. All parameters env/flag-overridable.
+- Scope v1: **mainnet only**, one fixed **24-hour window** named `w1-1d`, ending at the integration pin and defined in blocks: `{fromBlock, toBlock, blockStep, metrics, accounts}`. Mainnet ~12s blocks ⇒ hourly step 300; 24 hours = 7,200 blocks → 25 inclusive points. The explicit account allowlist contains the first two mainnet-enabled accounts from `accounts.json`; the harness validates that each remains present and enabled there. No timestamp→block mapping.
 - Execution: **on-demand only** (no cron, not per-PR).
 - CI build-speed fix: **included, as a first standalone step/PR**.
 - Work happens on a new branch (`feat/nav-backtest-harness`).
@@ -38,9 +38,9 @@ Also: CI `forge build` takes ~15 min because compilation artifacts are never cac
 
 ### Components
 
-1. **Window definition** — block-based, no timestamp→block mapping: a named window is `{fromBlock, toBlock, blockStep, metrics?}` (e.g. mainnet ~12s blocks ⇒ hourly ≈ 300, 30 days ≈ 216,000 blocks). `test/integration/backtest-blocks.json` stores `windows.<name>.chains.<chainId> → {fromBlock, toBlock, blockStep}` plus an optional per-window `metrics` array (default `["nav"]`) — pure arithmetic + config, zero RPC. The sweep visits `fromBlock, fromBlock+step, …, toBlock` (toBlock always included as the final point). Committed, so the window is pinned and deterministic; adding/extending windows or metrics is a JSON edit.
+1. **Window definition** — block-based, no timestamp→block mapping: a named window is `{fromBlock, toBlock, blockStep, metrics?, accounts}`. `accounts` is a required explicit address allowlist validated against chain-enabled entries in `accounts.json`; the inherited 2-point smoke path has no window config and still exercises every enabled account. `w1-1d` spans blocks `25419715..25426915`, step 300, 25 inclusive points, metrics `["nav"]`, first two mainnet accounts.
 2. **Forge backtest test** — `test/integration/NavBacktest.fork.t.sol`, reusing `IntegrationFromConfigBase`:
-   - Read env: `BACKTEST_CHAIN` (default 1), `BACKTEST_BLOCKS_FILE` (unset ⇒ 2-point smoke sweep), `BACKTEST_WINDOW` (window name, default `w1-30d`). Accounts are always the chain-enabled accounts from `accounts.json` (single source of truth — no account env override in v1). Modes live in the driver script, not the forge test.
+   - Read env: `BACKTEST_CHAIN` (default 1), `BACKTEST_BLOCKS_FILE` (unset ⇒ 2-point all-account smoke sweep), `BACKTEST_WINDOW` (window name, default `w1-1d`). Named windows require an explicit account subset, and every selected address must exist and be enabled for the chain in `accounts.json`.
    - Compute the block list from `{fromBlock, toBlock, blockStep}` in-test. Create fork at **fromBlock**, deploy the full stack from local source once, `vm.makePersistent` the deployed contracts, then loop `vm.rollFork(block_i)` ascending, evaluating each configured **metric** per account per block.
    - **Metric registry:** metrics are named view probes `(account) → string` implemented in the test; v1 ships only `"nav"` (`getAccountNav(account, QUOTE_USD).value`). Which metrics run is selected by the window's `metrics` config, not code — snapshotting a new function later = implement one probe + list its name in JSON. Unknown metric names revert setUp (fail fast).
    - Per-point failures never abort the sweep: wrap the read in try/catch, record `ERROR:<reason>` — that IS the stability-backtest signal.
@@ -66,7 +66,7 @@ Forge fork deploys are local-only — nothing is ever broadcast. So testing a mo
 
 ### Testing the harness itself
 
-- A tiny smoke configuration (2 blocks, all enabled accounts — same account-loading path as the full sweep) runs as part of the normal fork-test suite so the harness can't rot; the full 721-point pinned-window sweep stays on-demand.
+- A tiny smoke configuration (2 blocks, all enabled accounts) runs as part of the normal fork-test suite so the harness cannot rot; the pinned 25-point/two-account window stays on-demand.
 
 ## Alternatives considered
 

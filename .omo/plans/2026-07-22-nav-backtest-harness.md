@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Migrate CI to Blacksmith runners with a persistent forge build cache, then build an on-demand historical backtest harness (configurable metric sweeps — v1: `getAccountNav` — over a named, pinned ~30-day block window, with snapshot/assert/report modes) so oracle/adapter changes can be tested against a fixed slice of chain history without any on-chain deployment.
+**Goal:** Migrate CI to Blacksmith runners with a persistent forge build cache, then build an on-demand historical backtest harness over a named, pinned 24-hour window: 25 hourly points for two explicit mainnet accounts.
 
-**Architecture:** Part 1 swaps `runs-on` labels to Blacksmith tags and mounts a sticky disk over forge's `cache/` + `out/` so incremental compilation survives across CI runs. Part 2 reuses the existing `IntegrationFromConfigBase` fork harness: deploy the full NAV stack from local source once at `fromBlock` of a **named pinned block window** (`{fromBlock, toBlock, blockStep, metrics}` — blocks, not timestamps; no timestamp→block mapping), `vm.makePersistent` the stack, then `vm.rollFork` forward point-by-point evaluating each configured **metric** (named view probes in the test; v1 ships `"nav"`) and emitting `BACKTEST|...` lines. A single-file Bun TypeScript driver turns those into a committed per-window/per-metric JSON fixture (snapshot), a regression check (assert), or a report. Multiple windows/metrics coexist; adding one is a JSON edit (+ a probe function for a new metric), not a harness change.
+**Architecture:** Part 1 persists CI compilation artifacts. Part 2 deploys the local NAV stack once, makes it persistent, then rolls a named block window whose config is `{fromBlock,toBlock,blockStep,metrics,accounts}`. `accounts` is validated against chain-enabled entries in `accounts.json`. The Bun driver snapshots, asserts, or reports emitted `BACKTEST|...` rows.
 
 **Tech Stack:** GitHub Actions + Blacksmith, Foundry (forge, `slow` profile), Bun (single-file TypeScript driver, no package.json), Solidity ^0.8.
 
@@ -18,7 +18,7 @@
 - New Solidity files use `pragma solidity ^0.8;`.
 - NAV casing: type-level names use `NAV`/`Backtest...`; mixedCase identifiers use `Nav` (e.g. `getAccountNav`).
 - Fork tests run under `FOUNDRY_PROFILE=slow` (threads=1, 16 GiB gas/memory limits — the integration harness needs it).
-- Backtest defaults (user-approved): chain 1 (mainnet), accounts from `test/integration/accounts.json`, one **fixed pinned block window** named `w1-30d` (`{fromBlock, toBlock, blockStep}` ≈ 30 days hourly → ~721 points), metrics config default `["nav"]`, on-demand only (no cron, no per-PR full sweep). More windows/metrics later = JSON edit.
+- Backtest defaults (user-approved revision): chain 1, window `w1-1d`, blocks `25419715..25426915`, step 300, 25 inclusive hourly points, metric `nav`, and an explicit allowlist containing the first two mainnet-enabled accounts. On-demand only.
 - The driver requires `bun` locally (`curl -fsSL https://bun.sh/install | bash`); it is NOT needed for `forge build`/`forge test` or any CI job in v1.
 - The Blacksmith GitHub App must be installed on this repo before CI runs on `blacksmith-*` labels (manual prerequisite; jobs queue otherwise).
 - `forge build` and `forge test` (unit) must pass before every push.
@@ -169,39 +169,48 @@ git commit -m "build: enable dynamic_test_linking for faster test-only rebuilds"
 - Create: `test/integration/backtest-blocks.json`
 
 **Interfaces:**
-- Produces: `test/integration/backtest-blocks.json`. Windows are defined **in blocks** — `{fromBlock, toBlock, blockStep, metrics}` — no timestamps, no RPC, no generator script. `metrics` selects which named probes the sweep evaluates (Task 5 registry; v1: `"nav"`). Schema:
+- Produces: `test/integration/backtest-blocks.json`. Windows are defined in blocks as `{fromBlock,toBlock,blockStep,metrics,accounts}`. `accounts` is an explicit stable allowlist validated against `accounts.json`.
 
 ```json
 {
-  "$comment": "Named pinned block windows for the NAV backtest (test/integration/NavBacktest.fork.t.sol via script/test/nav-backtest.ts). Sweep visits fromBlock, fromBlock+blockStep, ..., toBlock (toBlock always included). metrics = named probes in NavBacktest (v1: nav). Mainnet ~12s blocks: hourly ~ step 300, 30 days ~ 216000 blocks. Add windows as new names; never rewrite an existing window.",
+  "$comment": "Named pinned block windows. accounts must be enabled for the chain in accounts.json.",
   "windows": {
-    "w1-30d": {
+    "w1-1d": {
       "chains": {
-        "1": { "fromBlock": 25210915, "toBlock": 25426915, "blockStep": 300, "metrics": ["nav"] }
+        "1": {
+          "fromBlock": 25419715,
+          "toBlock": 25426915,
+          "blockStep": 300,
+          "metrics": ["nav"],
+          "accounts": [
+            "0xa57F127099421cEffEd866C1d969f8B0F4fCdbc6",
+            "0x99b9F5F24205Cb88E33b1CC72008f644Fc23768b"
+          ]
+        }
       }
     }
   }
 }
 ```
 
-Point count = `floor((toBlock - fromBlock) / blockStep) + 1`, plus `toBlock` appended if not on the grid (~721 for the values above). Consumed by Task 5 (forge test) and Task 6 (TS driver).
+Point count = 25. Total rows = 25 blocks × 2 accounts × 1 metric = 50.
 
-- [x] **Step 1: Pick and write the pinned window**
+- [x] **Step 1: Replace diagnostic config with the pinned window**
 
-Anchor `toBlock` to the existing integration pin so the newest point is already RPC-cached: `toBlock` = `.chains."1".forkBlock` from `test/integration/accounts.json` (currently 25426915 — read the live value, don't hardcode from this plan). `fromBlock = toBlock - 216000` (≈30 days at 12s), `blockStep = 300` (≈hourly).
+Anchor `toBlock` to `.chains."1".forkBlock` (`25426915`). Set `fromBlock = toBlock - 7200`, `blockStep = 300`, and list the first two mainnet-enabled account addresses.
 
 Write the JSON above to `test/integration/backtest-blocks.json` with those values.
 
 - [x] **Step 2: Validate the arithmetic**
 
-Run: `jq '.windows."w1-30d".chains."1" | ((.toBlock - .fromBlock) / .blockStep | floor) + 1' test/integration/backtest-blocks.json`
-Expected: `721`.
+Run: `jq '.windows."w1-1d".chains."1" | [((.toBlock - .fromBlock) / .blockStep | floor) + 1, (.accounts | length)]' test/integration/backtest-blocks.json`
+Expected: `[25,2]`.
 
-- [x] **Step 3: Commit**
+- [x] **Step 3: Commit revised window**
 
 ```bash
 git add test/integration/backtest-blocks.json
-git commit -m "feat(backtest): pinned w1-30d mainnet block window (block-based, no RPC)"
+git commit -m "feat(backtest): pin one-day two-account window"
 ```
 
 ---
@@ -215,9 +224,9 @@ git commit -m "feat(backtest): pinned w1-30d mainnet block window (block-based, 
 **Interfaces:**
 - Consumes: `IntegrationFromConfigBase._setupAndDeploy()`, `_readUsdNav(address) returns (INAVCalculator.NAV memory)`, `_deployedBalanceAdapters` (address[]), `_forkBlock`, `fork` (uint256 fork id), `QUOTE_USD`; `test/integration/backtest-blocks.json` from Task 4; `LibraryPins.PRICE_FEED_LIB` / `LibraryPins.NAV_REGISTRY_LIB`.
 - Produces: stdout lines `BACKTEST|<chainId>|<block>|<timestamp>|<account>|<metric>|<value or ERROR:reason>` (timestamp = fork's `block.timestamp` at that point) consumed by Task 6's driver; internal helper `_makeStackPersistent()` on the base; new base array `address[] internal _deployedPriceFeedAddresses`; a **metric registry** in NavBacktest (`_evalMetric(bytes32 metricHash, address account) returns (string memory)` — v1 implements `"nav"`).
-- Env contract: `BACKTEST_CHAIN` (uint, default 1), `BACKTEST_BLOCKS_FILE` (string; when unset/empty a 2-point smoke sweep runs instead), `BACKTEST_WINDOW` (string, default `w1-30d`; window name inside the blocks file).
+- Env contract: `BACKTEST_CHAIN` (uint, default 1), `BACKTEST_BLOCKS_FILE` (string; when unset/empty a 2-point smoke sweep runs instead), `BACKTEST_WINDOW` (string, default `w1-1d`; window name inside the blocks file).
 
-- [ ] **Step 1: Track price-feed addresses in the base**
+- [x] **Step 1: Track price-feed addresses in the base**
 
 In `IntegrationFromConfigBase.fork.sol`, next to `_deployedBalanceAdapters` (~line 134) add:
 
@@ -234,7 +243,7 @@ In `_tryDeployPriceFeed` (line 258), after `_ephemeralPriceFeeds[name] = addr;` 
         _deployedPriceFeedAddresses.push(addr);
 ```
 
-- [ ] **Step 2: Add `_makeStackPersistent()` to the base**
+- [x] **Step 2: Add `_makeStackPersistent()` to the base**
 
 At the end of the "NAV reading" section of `IntegrationFromConfigBase.fork.sol`:
 
@@ -259,9 +268,9 @@ At the end of the "NAV reading" section of `IntegrationFromConfigBase.fork.sol`:
 
 Notes: `Upgrades.getImplementationAddress` (openzeppelin-foundry-upgrades, imported in the base at line 6) reads the EIP-1967 slot — persisting the implementation keeps the proxy functional across `rollFork`. `erc20DefaultBalanceAdapter` is the public address var on `Balances` (src/balances/Balances.sol:56) for the adapter deployed inside `initialize`, which is NOT in `_deployedBalanceAdapters` — it must be persisted explicitly or wallet-token positions would read empty code after rolls.
 
-Also mark `test_emitSnapshots()` in the base as `virtual` (it is a plain `public` test function today) — Step 3's contract overrides it as a no-op so a NavBacktest run can never clobber the committed `nav-positions-<chainId>.json` fixtures.
+`test_emitSnapshots()` is already `virtual` from the completed base-harness work; keep the no-op override so NavBacktest cannot clobber `nav-positions-<chainId>.json`.
 
-- [ ] **Step 3: Write NavBacktest.fork.t.sol**
+- [x] **Step 3: Write NavBacktest.fork.t.sol**
 
 ```solidity
 // SPDX-License-Identifier: BUSL-1.1
@@ -279,7 +288,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 ///         never fatal — a reverting block IS the stability-backtest signal.
 ///
 ///         Env: BACKTEST_CHAIN (default 1), BACKTEST_BLOCKS_FILE + BACKTEST_WINDOW
-///         (default w1-30d; BLOCKS_FILE unset/empty => 2-point smoke sweep near the
+///         (default w1-1d; BLOCKS_FILE unset/empty => 2-point smoke sweep near the
 ///         accounts.json forkBlock, so CI exercises the harness cheaply).
 contract NavBacktest is IntegrationFromConfigBase {
     using stdJson for string;
@@ -289,6 +298,7 @@ contract NavBacktest is IntegrationFromConfigBase {
     uint256[] internal _blocks;
     string[] internal _metrics;
     address[] internal _backtestAccounts;
+    address[] internal _configuredAccounts;
 
     function setUp() public {
         _chainId = vm.envOr("BACKTEST_CHAIN", uint256(1));
@@ -384,7 +394,7 @@ contract NavBacktest is IntegrationFromConfigBase {
             return;
         }
         string memory json = vm.readFile(blocksFile);
-        string memory window = vm.envOr("BACKTEST_WINDOW", string("w1-30d"));
+        string memory window = vm.envOr("BACKTEST_WINDOW", string("w1-1d"));
         string memory base = string.concat(".windows.", window, ".chains.", vm.toString(_chainId));
         require(vm.keyExists(json, base), "backtest: no window/chain in blocks file");
 
@@ -405,6 +415,13 @@ contract NavBacktest is IntegrationFromConfigBase {
                 _metrics.push(configured[m]);
             }
         }
+        if (vm.keyExists(json, string.concat(base, ".accounts"))) {
+            address[] memory configuredAccounts = json.readAddressArray(string.concat(base, ".accounts"));
+            require(configuredAccounts.length > 0, "backtest: empty accounts array");
+            for (uint256 a = 0; a < configuredAccounts.length; a++) {
+                _configuredAccounts.push(configuredAccounts[a]);
+            }
+        }
     }
 
     function _loadAccounts(string memory accountsJson) internal {
@@ -415,31 +432,71 @@ contract NavBacktest is IntegrationFromConfigBase {
             string memory addrStr = accountsJson.readString(string.concat(base, ".address"));
             if (bytes(addrStr).length > 0) {
                 uint256[] memory enabled = accountsJson.readUintArray(string.concat(base, ".enabledChains"));
-                if (_contains(enabled, _chainId)) {
-                    _backtestAccounts.push(vm.parseAddress(addrStr));
+                address account = vm.parseAddress(addrStr);
+                if (_contains(enabled, _chainId) && _isConfiguredAccount(account)) {
+                    _backtestAccounts.push(account);
                 }
             }
             unchecked { ++i; }
         }
         require(_backtestAccounts.length > 0, "backtest: no enabled accounts for chain");
+        require(
+            _configuredAccounts.length == 0 || _backtestAccounts.length == _configuredAccounts.length,
+            "backtest: configured account missing or disabled"
+        );
+    }
+
+    function _isConfiguredAccount(address account) internal view returns (bool) {
+        if (_configuredAccounts.length == 0) return true;
+        for (uint256 i = 0; i < _configuredAccounts.length; i++) {
+            if (_configuredAccounts[i] == account) return true;
+        }
+        return false;
     }
 }
 ```
 
-Note: `_contains(uint256[] memory, uint256)` already exists on the base at line 1129 (`internal pure`) — use it directly.
+Note: `_contains(uint256[] memory, uint256)` already exists on the base (`internal pure`) — use it directly.
 
-- [ ] **Step 4: Run the smoke sweep (2 points) to verify it fails/passes correctly**
+- [x] **Step 4: Run the smoke sweep (2 points) to verify it fails/passes correctly**
 
 First verify the test compiles and the harness deploys:
 
 Run: `FOUNDRY_PROFILE=slow forge test --match-contract NavBacktest --match-test test_backtestSweep -vv 2>&1 | grep -E "BACKTEST\||\[PASS\]|\[FAIL\]"`
 Expected: `[PASS] test_backtestSweep()` and `2 × N_accounts` BACKTEST lines (2 blocks × every mainnet-enabled account × the default `nav` metric), each with 7 pipe-delimited fields ending in a numeric NAV or `ERROR:...`, and a real (nonzero) fork timestamp in field 4. The two NAV values per account at adjacent blocks should be near-identical.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add test/integration/IntegrationFromConfigBase.fork.sol test/integration/NavBacktest.fork.t.sol
 git commit -m "feat(backtest): NavBacktest rollFork sweep with configurable metric registry"
+```
+
+- [x] **Step 6: Revise named windows to explicit account subsets**
+
+RED proof against product code before this revision: after Task 4 writes `w1-1d`, run `bun script/test/nav-backtest.ts --window w1-1d --mode report`. Expected: 9 accounts instead of configured 2, proving current harness ignores allowlist.
+
+Implement `_configuredAccounts`, `_isConfiguredAccount`, account loading, and default `w1-1d` exactly in the Step 3 code above.
+
+For each malformed probe, write a temporary copy of `backtest-blocks.json`, run Forge with `BACKTEST_BLOCKS_FILE=<temp>` and `BACKTEST_WINDOW=w1-1d`, then restore/remove it:
+- `"accounts": []` → `backtest: empty accounts array`.
+- duplicate first address → `backtest: configured account missing or disabled`.
+- unknown address → `backtest: configured account missing or disabled`.
+- account enabled only on another chain → `backtest: configured account missing or disabled`.
+
+GREEN verification:
+```bash
+set -a; source .env; set +a
+test -n "$ALCHEMY_API_KEY"
+FOUNDRY_PROFILE=slow forge test --match-contract NavBacktest --match-test test_backtestSweep -vv
+bun script/test/nav-backtest.ts --window w1-1d --mode report
+```
+Expected: smoke mode emits 18 rows; named mode emits exactly 50 rows for the two configured accounts.
+
+Commit:
+```bash
+git add test/integration/NavBacktest.fork.t.sol
+git commit -m "feat(backtest): select accounts per pinned window"
 ```
 
 ---
@@ -458,14 +515,14 @@ git commit -m "feat(backtest): NavBacktest rollFork sweep with configurable metr
 {
   "$comment": "Backtest fixture. Regenerate: bun script/test/nav-backtest.ts --mode snapshot",
   "windows": {
-    "w1-30d": {
+    "w1-1d": {
       "chains": {
         "1": {
           "generatedAtCommit": "abc1234",
           "accounts": {
-            "0xabc...": {
-              "nav": [ { "block": 25210915, "timestamp": 1750550400, "value": "21896078268" },
-                        { "block": 25211215, "timestamp": 1750554000, "error": "ERROR:..." } ]
+            "0xa57F...": {
+              "nav": [ { "block": 25419715, "timestamp": 1782692807, "value": "21896078268" },
+                        { "block": 25420015, "timestamp": 1782696407, "error": "ERROR:..." } ]
             }
           }
         }
@@ -477,12 +534,12 @@ git commit -m "feat(backtest): NavBacktest rollFork sweep with configurable metr
 
 Exit codes: 0 = success (assert: fixture matches; report/snapshot: sweep completed with no missing points); 1 = assert mismatch or missing points; 2 = usage/forge error.
 
-- [ ] **Step 1: Write the driver**
+- [x] **Step 1: Write the driver**
 
 ```typescript
 #!/usr/bin/env bun
 // NAV historical backtest driver (single-file, no dependencies — run with bun).
-// Usage: bun script/test/nav-backtest.ts [--chain 1] [--window w1-30d] [--mode report|snapshot|assert]
+// Usage: bun script/test/nav-backtest.ts [--chain 1] [--window w1-1d] [--mode report|snapshot|assert]
 //   report   (default) run sweep, print summary, do not touch the fixture
 //   snapshot run sweep and (over)write the window's entry in test/integration/nav-timeseries.json
 //   assert   run sweep and deep-diff against the fixture's window entry; exit 1 on any difference
@@ -493,7 +550,7 @@ const ROOT = resolve(dirname(Bun.main), "../..");
 const BLOCKS_JSON = `${ROOT}/test/integration/backtest-blocks.json`;
 const FIXTURE = `${ROOT}/test/integration/nav-timeseries.json`;
 
-type WindowDef = { fromBlock: number; toBlock: number; blockStep: number; metrics?: string[] };
+type WindowDef = { fromBlock: number; toBlock: number; blockStep: number; metrics?: string[]; accounts: string[] };
 type BlocksFile = { windows: Record<string, { chains: Record<string, WindowDef> }> };
 type Point = { block: number; timestamp: number; value?: string; error?: string };
 type Series = Record<string, Record<string, Point[]>>; // account -> metric -> points
@@ -510,7 +567,7 @@ function fail(msg: string, code: 1 | 2): never {
 const { values: args } = parseArgs({
   options: {
     chain: { type: "string", default: "1" },
-    window: { type: "string", default: "w1-30d" },
+    window: { type: "string", default: "w1-1d" },
     mode: { type: "string", default: "report" },
   },
 });
@@ -524,6 +581,7 @@ if (!win) fail(`no window ${windowName} / chain ${chain} in ${BLOCKS_JSON}`, 2);
 const expectedBlocks = Math.floor((win.toBlock - win.fromBlock) / win.blockStep) + 1
   + ((win.toBlock - win.fromBlock) % win.blockStep === 0 ? 0 : 1);
 const metrics = win.metrics ?? ["nav"];
+const expectedAccounts = win.accounts ?? [];
 console.error(`Running sweep (window ${windowName}, chain ${chain}, ${expectedBlocks} blocks, metrics: ${metrics.join(",")})...`);
 
 const proc = Bun.spawn(
@@ -567,6 +625,19 @@ for (const [account, byMetric] of Object.entries(results)) {
       console.error(`MISSING POINTS: ${account}/${metric} has ${n}/${expectedBlocks}`);
       missing = true;
     }
+  }
+}
+if (expectedAccounts.length > 0) {
+  const actual = new Set(Object.keys(results).map((account) => account.toLowerCase()));
+  for (const account of expectedAccounts) {
+    if (!actual.has(account.toLowerCase())) {
+      console.error(`MISSING ACCOUNT: ${account}`);
+      missing = true;
+    }
+  }
+  if (actual.size !== expectedAccounts.length) {
+    console.error(`ACCOUNT COUNT: got ${actual.size}, expected ${expectedAccounts.length}`);
+    missing = true;
   }
 }
 
@@ -637,7 +708,7 @@ function diffSeries(pinned: Series, current: Series): void {
 }
 ```
 
-- [ ] **Step 2: Smoke-test the pipeline with a tiny window**
+- [x] **Step 2: Smoke-test the pipeline with a tiny window**
 
 Add a temporary 3-point smoke window (pure JSON edit — anchor to the integration pin): with `PIN` = `.chains."1".forkBlock` from `accounts.json`, add under `.windows.smoke.chains."1"`: `{ "fromBlock": PIN - 600, "toBlock": PIN, "blockStep": 300, "metrics": ["nav"] }`. Then:
 
@@ -649,17 +720,40 @@ bun script/test/nav-backtest.ts --window smoke --mode assert
 
 Expected: report prints per-account×metric point/revert counts and max step jump; snapshot writes the `smoke` window into `test/integration/nav-timeseries.json`; assert prints `ASSERT OK` and exits 0. Then corrupt one value in the fixture, rerun assert, expect `ASSERT FAIL` + per-point diff + exit 1. Finally remove the `smoke` window from both JSONs.
 
-- [ ] **Step 3: Generate the real pinned w1-30d fixture and commit**
+- [x] **Step 3: Revise driver defaults and account completeness**
 
-(Uses the `w1-30d` window committed in Task 4.)
+RED proof against product code before this revision: with Task 4's `w1-1d` file, run `bun script/test/nav-backtest.ts --mode report`. Expected: stale product default selects `w1-30d`, so command fails before Forge.
 
+Update `WindowDef` to require `accounts`, validate each entry as a unique EVM address, change the default window to `w1-1d`, and compare normalized emitted account addresses with the configured allowlist. Missing or extra accounts set `missing = true` and exit 1; missing, malformed, or duplicate configured addresses exit 2 before Forge starts. Keep the single file at or below 250 pure LOC and preserve Biome/Fallow gates.
+
+Run:
 ```bash
-bun script/test/nav-backtest.ts --window w1-30d --mode snapshot
-git add script/test/nav-backtest.ts test/integration/nav-timeseries.json
-git commit -m "feat(backtest): Bun TS driver with report/snapshot/assert modes + w1-30d mainnet fixture"
+bunx @biomejs/biome@2.2.4 lint script/test/nav-backtest.ts
+bunx fallow@3.8.0 dead-code --format compact
+awk '!/^[[:space:]]*$/ && !/^[[:space:]]*\/\//' script/test/nav-backtest.ts | wc -l
+bun script/test/nav-backtest.ts --window w1-1d --mode report
+```
+Expected: lint gates exit 0, pure LOC ≤250, and report contains exactly two accounts with 25 points each.
+
+Commit:
+```bash
+git add script/test/nav-backtest.ts
+git commit -m "feat(backtest): validate configured account subsets"
 ```
 
-Note: the first full sweep is the expensive one (~721 blocks × all adapters' RPC reads — budget hours, run overnight or on a beefy connection). Every rerun over the same blocks is served from `~/.foundry/cache/rpc` — free.
+- [x] **Step 4: Generate the real pinned w1-1d fixture and commit**
+
+(Uses the 25-point/two-account `w1-1d` window committed in Task 4.)
+
+```bash
+set -a; source .env; set +a
+test -n "$ALCHEMY_API_KEY"
+bun script/test/nav-backtest.ts --window w1-1d --mode snapshot
+git add test/integration/nav-timeseries.json
+git commit -m "feat(backtest): add w1-1d two-account NAV fixture"
+```
+
+Expected fixture: exactly 2 accounts × 25 NAV points = 50 rows. `IntegrationFromConfigBase` resolves the chain's `alchemyNetwork` through `TestEnvConfigurator.getAlchemyUrl(ALCHEMY_API_KEY)`. Keep `FOUNDRY_PROFILE=slow`.
 
 ---
 
@@ -672,32 +766,32 @@ Note: the first full sweep is the expensive one (~721 blocks × all adapters' RP
 **Interfaces:**
 - Consumes: everything above; no code interfaces.
 
-- [ ] **Step 1: Write the how-to**
+- [x] **Step 1: Write the how-to**
 
 `docs/howto/nav-backtest.md` must cover, in this order (write real prose, not stubs):
 1. What it is: on-demand historical metric sweep (v1 metric: NAV) — deploy the local-source NAV stack once at a pinned window's `fromBlock` on a fork, `vm.rollFork` every `blockStep`, evaluate each configured metric per account; nothing is ever broadcast on-chain.
 2. Prerequisites: `bun` (`curl -fsSL https://bun.sh/install | bash`) — only for the driver, not for forge builds/tests.
-3. Quickstart: the exact commands from Task 6 Step 2 (smoke window) and Step 3 (`bun script/test/nav-backtest.ts --window w1-30d --mode snapshot`) with expected runtimes (first run RPC-bound; reruns cached).
-4. The oracle-change workflow: edit a feed/adapter → `bun script/test/nav-backtest.ts --window w1-30d --mode report` → diff against the committed fixture (or a baseline run from `main`); explain that this is how you test oracle changes against the pinned window without deploying.
+3. Quickstart: the exact commands from Task 6 Step 2 and Step 3 (`bun script/test/nav-backtest.ts --window w1-1d --mode snapshot`).
+4. The oracle-change workflow: edit a feed/adapter → `bun script/test/nav-backtest.ts --window w1-1d --mode report` → diff against the committed fixture.
 5. Modes table (report / snapshot / assert) with exit codes.
 6. File map: `backtest-blocks.json` (windows + metrics config), `NavBacktest.fork.t.sol` (sweep + metric registry), `script/test/nav-backtest.ts` (driver), `nav-timeseries.json` (fixture).
 7. Caveats: adapters/pools/feeds that didn't exist at the oldest blocks revert per-point and are recorded as `error`, not fatal; smoke mode (2 points) runs inside the normal integration suite so the harness can't rot; the full sweep is on-demand only. (If a Merkl rewards adapter returns to the repo, add its root-mismatch-reads-0 caveat here.)
-8. Windows & metrics: windows are named, pinned block ranges (`{fromBlock, toBlock, blockStep, metrics}`); `w1-30d` is the default. Adding a window = JSON edit + `--mode snapshot`; never rewrite an existing window name. Adding a metric = one probe branch in NavBacktest's `_evalMetric`/`_isKnownMetric` + listing the name in the window's `metrics` array.
+8. Windows, accounts & metrics: windows are named pinned ranges (`{fromBlock,toBlock,blockStep,metrics,accounts}`); `w1-1d` is default. Selected accounts must remain enabled in `accounts.json`.
 9. Extending to other chains: add the chain under the window in `backtest-blocks.json` + `--chain <id>` on the driver + rerun snapshot.
 
-- [ ] **Step 2: Verify the how-to content**
+- [x] **Step 2: Verify the how-to content**
 
 Run:
 
 ```bash
-for s in "nav-backtest.ts" "--mode report" "--mode snapshot" "--mode assert" "w1-30d" "nav-timeseries.json" "backtest-blocks.json" "rollFork" "blockStep" "metrics" "bun"; do
+for s in "nav-backtest.ts" "--mode report" "--mode snapshot" "--mode assert" "w1-1d" "nav-timeseries.json" "backtest-blocks.json" "rollFork" "blockStep" "metrics" "accounts" "bun"; do
   grep -q -- "$s" docs/howto/nav-backtest.md || echo "MISSING: $s"
 done
 ```
 
 Expected: no `MISSING:` lines.
 
-- [ ] **Step 3: Add the CLAUDE.md index row**
+- [x] **Step 3: Add the CLAUDE.md index row**
 
 In the "Read this first by intent" table add:
 
@@ -708,7 +802,7 @@ In the "Read this first by intent" table add:
 Verify: `grep -q "nav-backtest.md" CLAUDE.md && echo OK`
 Expected: `OK`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add docs/howto/nav-backtest.md CLAUDE.md
@@ -721,12 +815,12 @@ git commit -m "docs: NAV backtest how-to + index entry"
 
 **Files:** none (verification only)
 
-- [ ] **Step 1: Full local gates**
+- [x] **Step 1: Full local gates**
 
 Run: `forge build && forge test --no-match-path "*fork*"`
 Expected: both pass.
 
-- [ ] **Step 2: Integration suite still green (includes the NavBacktest smoke sweep)**
+- [x] **Step 2: Integration suite still green (includes the NavBacktest smoke sweep)**
 
 Run: `FOUNDRY_PROFILE=slow forge test --match-path "test/integration/*" --threads 1 -vv 2>&1 | grep -E "\[PASS\]|\[FAIL\]|Suite"`
 Expected: all `[PASS]`, including `NavBacktest::test_backtestSweep` in smoke mode.

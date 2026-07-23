@@ -318,7 +318,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         destAdapter.completeBridge(messagePayload, protocolData);
     }
 
-    function test_completeBridge_revertsOnBurnTokenMismatch() public {
+    function test_completeBridge_revertsWhenDestinationAssetNotMinted() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
@@ -326,13 +326,18 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         (, CctpBridgeAdapter destAdapter) = _setupDestinationChainForCctpTest();
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
-        // burnToken is DAI, not the invoice asset (USDC) — must revert.
+        // The source burnToken legitimately differs from the destination asset, so it is NOT compared.
+        // The guard is that the DESTINATION asset (usdc) must actually be minted in the invoice amount.
+        // Force the transmitter to mint DAI instead of USDC: the adapter's usdc balance does not rise, so
+        // the balance-delta check reverts BurnTokenMismatch.
+        MockProvenanceMessageTransmitter(address(destAdapter.messageTransmitter())).setMintTokenOverride(address(dai));
+
         bytes32 nonce = bytes32(uint256(11));
         bytes memory cctpMessage = CctpProvenanceMessage.build(
             SOURCE_DOMAIN,
             DEST_DOMAIN,
             nonce,
-            address(dai),
+            address(dai), // source burnToken (not compared)
             address(destAdapter.tokenMessenger()),
             address(destAdapter),
             address(destAdapter),
@@ -492,6 +497,11 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
     }
 
     /// @notice Build protocolData (CCTP message + attestation) for a completion that mints to the adapter.
+    /// @dev The message's `burnToken` is the SOURCE-chain token (here `dai`, standing in for e.g. Base USDC),
+    ///      which legitimately DIFFERS from the destination asset (`usdc`, e.g. Arbitrum USDC). The mock
+    ///      transmitter still mints the destination `usdc` to the adapter — modelling Circle's TokenMinter.
+    ///      Using a distinct source token here is deliberate: a prior adapter compared `burnToken` to the
+    ///      destination asset and reverted every real cross-chain transfer.
     function _prepareCctpProtocolData(bytes32 nonce, uint256 amount, address destAdapter)
         internal
         view
@@ -501,7 +511,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
             SOURCE_DOMAIN,
             DEST_DOMAIN,
             nonce,
-            address(usdc),
+            address(dai), // source burnToken != destination asset (usdc)
             address(CctpBridgeAdapter(destAdapter).tokenMessenger()),
             destAdapter,
             destAdapter,

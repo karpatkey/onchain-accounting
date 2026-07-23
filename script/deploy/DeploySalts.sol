@@ -63,7 +63,13 @@ library DeploySalts {
     uint256 internal constant ACROSS_ADAPTER = 2;
     uint256 internal constant STARGATE_ADAPTER = 1;
     uint256 internal constant GNOSIS_ADAPTER = 1;
-    uint256 internal constant CCTP_ADAPTER = 1;
+    // Bumped 1->2: the salt-1 CCTP adapter compared the message's burnToken (the SOURCE-chain token, e.g.
+    // Base USDC) against the DESTINATION asset (e.g. Arbitrum USDC) and reverted BurnTokenMismatch on every
+    // real cross-chain transfer (fork/unit mocks masked it by using one token address for both sides). The
+    // fix drops that inverted check and instead asserts the destination asset's balance rose by the invoice
+    // amount across receiveMessage, so a fresh salt re-derives a correct adapter at a new same-address on
+    // every chain. Old salt-1 CCTP adapters are abandoned.
+    uint256 internal constant CCTP_ADAPTER = 2;
     // Bumped 1->2: the salt-1 Superchain adapter was deployed (Base) via a script bug that initialized it with a
     // stale admin + the abandoned escrow, and initialize is one-shot, so it can't be corrected in place. The fix
     // (05 now takes admin/escrow from the deploy context) plus this fresh salt re-derive a correct adapter at a new

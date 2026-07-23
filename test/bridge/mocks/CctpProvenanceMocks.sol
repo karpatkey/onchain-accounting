@@ -97,6 +97,10 @@ contract MockProvenanceMessageTransmitter is IMessageTransmitter {
     uint32 private immutable _LOCAL_DOMAIN;
     uint32 public constant VERSION = 0;
     IERC20 public usdc;
+    /// @dev Test hook: when set, receiveMessage mints THIS token instead of `usdc`, modelling Circle's
+    ///      TokenMinter minting a token that is NOT the invoice's destination asset (so the adapter's
+    ///      destination-asset balance-delta guard must revert). Zero = mint the real destination `usdc`.
+    address public mintTokenOverride;
     mapping(bytes32 => bool) public receivedMessages;
 
     event MessageReceived(bytes32 messageHash, uint32 sourceDomain, bytes32 nonce);
@@ -104,6 +108,11 @@ contract MockProvenanceMessageTransmitter is IMessageTransmitter {
     constructor(uint32 domain, address usdc_) {
         _LOCAL_DOMAIN = domain;
         usdc = IERC20(usdc_);
+    }
+
+    /// @notice Test hook: force receiveMessage to mint `token` instead of the destination `usdc`.
+    function setMintTokenOverride(address token) external {
+        mintTokenOverride = token;
     }
 
     /// @inheritdoc IMessageTransmitter
@@ -132,8 +141,11 @@ contract MockProvenanceMessageTransmitter is IMessageTransmitter {
         address recipient = address(uint160(uint256(bytes32(message[184:216]))));
         uint256 amount = uint256(bytes32(message[216:248]));
 
-        // Mint USDC to the body mintRecipient (the adapter, in the provenance model).
-        IMintableERC20(address(usdc)).mint(recipient, amount);
+        // Mint to the body mintRecipient (the adapter, in the provenance model). Real CCTP mints the
+        // canonical local token for the (sourceDomain, burnToken) pair; the override models a token that
+        // is NOT the invoice's destination asset, which the adapter's balance-delta guard must reject.
+        address tokenToMint = mintTokenOverride == address(0) ? address(usdc) : mintTokenOverride;
+        IMintableERC20(tokenToMint).mint(recipient, amount);
 
         emit MessageReceived(messageHash, sourceDomain, nonce);
         return true;

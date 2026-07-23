@@ -37,6 +37,8 @@ Onchain accounting infrastructure for portfolio NAV: **balances** (per-protocol 
 | Understand why a design is the way it is | `docs/decisions/` (numbered ADRs) |
 | Get a quick local environment going | `QUICKSTART.md` |
 | Understand the whole repo at a glance | `README.md` (this file is a *deeper* index — README is the elevator pitch) |
+| Run or refresh a NAV historical backtest window | `docs/howto/nav-backtest.md` (driver `script/test/nav-backtest.ts`, Solidity `test/integration/NavBacktest.fork.t.sol`, window config `test/integration/backtest-blocks.json`, fixture `test/integration/nav-timeseries.json`) |
+
 
 ## Conventions you must respect
 

@@ -155,9 +155,10 @@ abstract contract TwoFeedChainlinkPriceFeed is ICustomPriceFeed {
     ///         against `block.timestamp`; a future timestamp counts as age 0). A leg with a zero heartbeat is treated
     ///         as non-governing (the other leg wins). Compared via cross-multiplication to avoid division.
     /// @dev Overflow-safe: a base leg may be registered with a `type(uint256).max` heartbeat (the documented
-    ///      "disable the staleness gate" sentinel, see PRICE_ADAPTERS.md), so `age * heartbeat` can exceed uint256.
-    ///      `Math.tryMul` detects that; an overflow means that leg's heartbeat is astronomically large, so its
-    ///      `age/heartbeat` ratio is ≈ 0 and the OTHER leg governs. Without this a direct external caller of
+    ///      "disable the staleness gate" sentinel, see PRICE_ADAPTERS.md). The ratio compare cross-multiplies
+    ///      (`ageA*hB` vs `ageB*hA`), so a cross-product can exceed uint256. `Math.tryMul` detects that; an overflow
+    ///      means that leg's heartbeat is astronomically large, so its `age/heartbeat` ratio is ≈ 0 and the OTHER leg
+    ///      governs (`!okA` ⇒ `hB` huge ⇒ leg A wins; `!okB` ⇒ `hA` huge ⇒ leg B wins). Without this a direct caller of
     ///      `governingFeedFreshness()` would revert (the `buildPriceData` path already swallows reverts, but callers
     ///      reading the feed straight should not).
     function _governingLeg(uint256 tA, uint256 hA, uint256 tB, uint256 hB)

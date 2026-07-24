@@ -78,17 +78,21 @@ contract DeployProxies is BaseDeployScript {
 
         address navImpl = readDeployedAddress("NAVCalculatorImplementation");
         address bridgeImpl = readDeployedAddress("BridgeEscrowImplementation");
+
+        bool useLegacy = bytes(vm.envOr("USE_LEGACY_DEPLOY", string(""))).length > 0;
+        bool bridgeOnly = vm.envOr("BRIDGE_ONLY_ATOMIC", false);
+
+        // The NAV impl is only consumed when this run deploys the NAV proxy. A bridge-only atomic redeploy
+        // (BRIDGE_ONLY_ATOMIC) never touches NAV, so don't hard-require it there — otherwise a bridge-only run
+        // on a chain whose NAV impl address isn't in the deployments config would revert unnecessarily.
         require(
-            navImpl != address(0),
+            bridgeOnly || navImpl != address(0),
             "NAVCalculator implementation address not configured. Run 01_DeployImplementations.s.sol first."
         );
         require(
             bridgeImpl != address(0),
             "BridgeEscrow implementation address not configured. Run 01_DeployImplementations.s.sol first."
         );
-
-        bool useLegacy = bytes(vm.envOr("USE_LEGACY_DEPLOY", string(""))).length > 0;
-        bool bridgeOnly = vm.envOr("BRIDGE_ONLY_ATOMIC", false);
 
         vm.startBroadcast();
 

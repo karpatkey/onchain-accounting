@@ -129,7 +129,10 @@ contract BridgeDeployedStateForkTest is TestEnvConfigurator {
 
     function test_deployedState_gnosis() public {
         _fork("gnosis-mainnet");
-        // CCIP is disabled on Gnosis (no CCIP token pool for USDCe/WETH → router UnsupportedToken).
+        // CCIP is disabled on Gnosis (no CCIP token pool for the registered assets → router UnsupportedToken).
+        // NOTE: this gate tracks the CURRENT live deployment, which registered the Gnosis USD symbol as "USDCe".
+        // The bridge-escrow config has since been corrected to the logical symbol "USDC" (mapped to the same USDC.e
+        // token 0x2a22f9c3 that Stargate delivers) — update this lane's symbol to "USDC" at the post-merge redeploy.
         _lane("GC Stargate->ETH", STARGATE, "USDCe", 1, true);
         _lane("GC Gnosis->ETH", GNOSIS, "WETH", 1, false);
         _finish();

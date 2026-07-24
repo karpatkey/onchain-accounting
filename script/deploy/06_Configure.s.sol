@@ -62,6 +62,10 @@ contract Configure is BaseDeployScript {
         }
         if (bridgeProxy != address(0)) {
             require(bridgeProxy.code.length > 0, "No code at BridgeEscrow proxy. Provide --rpc-url.");
+            // Fail fast (before any broadcast) on an over-declared bridge route: an asset the source adapter
+            // carries whose logical symbol is not registered on the destination escrow config would produce an
+            // invoice that can never complete (funds strand on the destination adapter). See _validateBridgeRoutes.
+            _validateBridgeRoutes();
         }
 
         vm.startBroadcast();
@@ -91,6 +95,93 @@ contract Configure is BaseDeployScript {
             IAccessControl(proxy).grantRole(MANAGER, manager);
             console2.log("[OK] Granted MANAGER to:", manager);
         }
+    }
+
+    /// @notice Idempotently grants MANAGER on a bridge ADAPTER to `chainConfig.manager`. The adapter's `initialize`
+    ///         grants only DEFAULT_ADMIN; the MANAGER-gated completion/recovery paths (CCTP + Superchain-L1->L2
+    ///         `completeBridge`, Superchain-L2->L1 finalize, `recoverStuckAssets`) need MANAGER held. `07` grants the
+    ///         security council adapter MANAGER for the post-handoff steady state, but that leaves the PRE-handoff
+    ///         window (a canary / validation run before `07`) unable to exercise those completions — the deploy EOA
+    ///         (== `chainConfig.manager` in the EOA flow) holds DEFAULT_ADMIN but not adapter MANAGER. This grant
+    ///         closes that window; `07` then revokes the deployer + grants the council, so the two compose cleanly.
+    ///         Requires the caller to hold DEFAULT_ADMIN on the adapter, which `05` set via `expectedInitializer`.
+    function _ensureAdapterManager(string memory adapterName, address adapter) internal {
+        address manager = chainConfig.manager;
+        if (manager == address(0)) return;
+        if (!IAccessControl(adapter).hasRole(MANAGER, manager)) {
+            IAccessControl(adapter).grantRole(MANAGER, manager);
+            console2.log("[OK] Granted MANAGER on adapter:", adapterName, manager);
+        }
+    }
+
+    /// @notice Deploy-time route-consistency preflight. The cross-chain invoice carries the SOURCE chain's logical
+    ///         asset symbol unchanged; the destination escrow resolves that SAME symbol to its own local token. So a
+    ///         route is completable only if the destination registers the symbol. This checks every asset the source
+    ///         adapter is configured to carry (Stargate: a `pools` entry for the symbol; CCTP: USDC) against every
+    ///         `remoteChains` destination and reverts (naming adapter/dst/symbol) if that destination's
+    ///         `bridge-escrow/<dst>.json` does not register the symbol — the config over-declaration that otherwise
+    ///         strands funds on arrival. Pure config read (all chains' JSONs exist at deploy time). Destinations with
+    ///         no bridge-escrow config yet (not a live bridge target) are skipped. Adapters without an explicit
+    ///         per-asset routing map in config (CCIP/Across/Gnosis/Superchain) are not asserted here — CCIP/Gnosis
+    ///         availability is vendor-token-specific (see the bridge-escrow/bridge-adapters `$comment`s), Across
+    ///         derives + skips per lane, and Superchain carries native ETH.
+    function _validateBridgeRoutes() internal view {
+        string[] memory symbols = ConfigReader.readBridgeEscrowAssetSymbols(vm, currentChainId);
+        string[] memory adapters = _bridgeAdapterNames();
+        for (uint256 a = 0; a < adapters.length; a++) {
+            string memory name = adapters[a];
+            if (!ConfigReader.isAdapterEnabled(vm, currentChainId, "bridgeAdapters", name)) continue;
+            bool isStargate = keccak256(bytes(name)) == keccak256(bytes("Stargate"));
+            bool isCctp = keccak256(bytes(name)) == keccak256(bytes("CCTP"));
+            if (!isStargate && !isCctp) continue;
+
+            uint256[] memory remoteChains =
+                ConfigReader.readAdapterUintArray(vm, currentChainId, "bridgeAdapters", name, "remoteChains");
+            for (uint256 s = 0; s < symbols.length; s++) {
+                // Does this adapter actually carry this asset from the source?
+                bool carried = isCctp
+                    ? keccak256(bytes(symbols[s])) == keccak256(bytes("USDC"))
+                    : ConfigReader.readAdapterMappingAddress(
+                            vm, currentChainId, "bridgeAdapters", "Stargate", "pools", symbols[s]
+                        ) != address(0);
+                if (!carried) continue;
+
+                for (uint256 r = 0; r < remoteChains.length; r++) {
+                    uint256 dst = remoteChains[r];
+                    if (dst == 0 || dst == currentChainId) continue;
+                    // Skip destinations that aren't configured as a bridge target yet (empty escrow config).
+                    string[] memory destSymbols = ConfigReader.readBridgeEscrowAssetSymbols(vm, dst);
+                    if (destSymbols.length == 0) continue;
+                    bool found;
+                    for (uint256 d = 0; d < destSymbols.length; d++) {
+                        if (keccak256(bytes(destSymbols[d])) == keccak256(bytes(symbols[s]))) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        revert(
+                            string(
+                                abi.encodePacked(
+                                    "route validation failed: adapter ",
+                                    name,
+                                    " ",
+                                    vm.toString(currentChainId),
+                                    "->",
+                                    vm.toString(dst),
+                                    " asset '",
+                                    symbols[s],
+                                    "' not registered on destination bridge-escrow/",
+                                    vm.toString(dst),
+                                    ".json"
+                                )
+                            )
+                        );
+                    }
+                }
+            }
+        }
+        console2.log("[OK] Bridge route validation passed (Stargate pools + CCTP USDC vs destination symbols)");
     }
 
     /// @notice Registers balance adapters on NAVCalculator (idempotent), driven by the explicit NAV-config files:
@@ -229,6 +320,7 @@ contract Configure is BaseDeployScript {
             }
 
             _wireTrustedRemoteAdapters(adapterNames[i], deployed);
+            _ensureAdapterManager(adapterNames[i], deployed);
 
             // Gnosis authenticates inbound transfers against the SOURCE Omnibridge mediator (what
             // amb.messageSender() reports), not the sibling adapter — wire it separately.

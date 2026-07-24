@@ -1,5 +1,6 @@
 {
   "Gnosis": {
+    "$comment": "WETH-only for Gnosis. The Gnosis omnibridge delivers the LEGACY 'USD//C on xDai' token (0xDDAfbb50) for USDC, NOT the USDC.e (0x2a22f9c3) the escrow registers, so a USD transfer via this adapter would strand on arrival. Route USD<->Gnosis via Stargate (delivers USDC.e). WETH (0x6A02…) is unambiguous. No on-chain per-asset guard exists here; this is enforced operationally + by the deploy-time route validator + docs.",
     "enabled": true,
     "initialize": {
       "admin": "",
@@ -21,7 +22,7 @@
       "version": "1.0.0"
     },
     "pools": {
-      "USDCe": "0xB1EeAD6959cb5bB9B20417d6689922523B2B86C3"
+      "USDC": "0xB1EeAD6959cb5bB9B20417d6689922523B2B86C3"
     },
     "remoteChains": [
       1,
@@ -33,7 +34,7 @@
     ]
   },
   "CCIP": {
-    "$comment": "Disabled on Gnosis: CCIP has no token pool for the registered assets (USDCe/WETH) on this chain, so the router reverts UnsupportedToken. Bridge Gnosis via the native Gnosis omnibridge (and Stargate where a pool exists).",
+    "$comment": "Disabled on Gnosis: CCIP has no token pool for the registered assets (USDC/WETH) on this chain, so the router reverts UnsupportedToken. Bridge Gnosis via Stargate for USD (delivers USDC.e) and the native omnibridge for WETH.",
     "enabled": false,
     "initialize": {
       "admin": "",

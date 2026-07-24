@@ -237,6 +237,9 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
     /// @inheritdoc IGnosisBridgeAdapter
     /// @dev ERC677 delivery callback, kept for any mediator/token that uses the `onTokenTransfer` convention
     ///      instead of `onTokenBridged`. Same authentication + shared handler; harmless if never invoked.
+    ///      NOTE: this path carries no delivered-token address (passes the `address(0)` sentinel), so it does NOT
+    ///      support the USDC.e transmuter-swap route — the genuine multi-token OmniBridge mediator delivers via
+    ///      `onTokenBridged` (IERC20Receiver), which is the path that carries the legacy token for the swap.
     function onTokenTransfer(
         address,
         /* from */

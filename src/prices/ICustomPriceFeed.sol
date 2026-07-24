@@ -48,6 +48,10 @@ interface ICustomPriceFeed is IERC165 {
     /// @dev For a feed backed by two or more Chainlink oracles: return the `(updatedAt, heartbeat)` of whichever leg
     ///      has the largest `age/heartbeat` ratio — the input most at risk of being stale.
     /// @dev For feeds with no trackable Chainlink dependency: return `(0, 0)`.
+    /// @dev ADVISORY — this pair does NOT on its own determine staleness. It reflects only the governing leg's push
+    ///      freshness; it can read "fresh" (`age < heartbeat`) while the feed is stale (e.g. the rate answer is
+    ///      non-positive, the L2 sequencer is down, or the feed's configured gate is tighter than this leg's
+    ///      heartbeat). Consumers must gate on the NAV's `stale`/`sequencerDown`, not on this pair alone.
     /// @return updatedAt The governing leg's `latestRoundData` update timestamp (0 if it has no push timestamp).
     /// @return heartbeat The governing leg's staleness window in seconds (0 if not representable).
     function governingFeedFreshness() external view returns (uint256 updatedAt, uint256 heartbeat);

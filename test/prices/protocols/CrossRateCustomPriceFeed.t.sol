@@ -114,4 +114,29 @@ contract CrossRateCustomPriceFeedTest is Test {
         assertEq(updatedAt, 995_000, "stale base leg surfaced");
         assertEq(heartbeat, BASE_HEARTBEAT);
     }
+
+    function test_governingFeedFreshness_hugeBaseHeartbeat_noOverflow() public {
+        // A base leg registered with the type(uint256).max "disable-gate" sentinel heartbeat must NOT overflow
+        // `age * heartbeat`; its ratio is ~0, so the rate leg governs and the call does not revert.
+        CrossRateCustomPriceFeed oracle = _feed();
+        vm.warp(1_000_000);
+        yToXFeed.setUpdatedAt(950_000); // rate age 50_000
+        nav.setAssetFreshness(address(baseAsset), 999_000, type(uint256).max); // base age 1000, sentinel heartbeat
+        (uint256 updatedAt, uint256 heartbeat) = oracle.governingFeedFreshness();
+        assertEq(updatedAt, 950_000, "rate leg governs (base ratio ~0)");
+        assertEq(heartbeat, HEARTBEAT);
+    }
+
+    function test_governingFeedFreshness_hugeRateHeartbeat_noOverflow() public {
+        // Symmetric: rate leg with the sentinel heartbeat → base leg governs, no revert.
+        CrossRateCustomPriceFeed oracle = new CrossRateCustomPriceFeed(
+            address(underlyingAsset), address(yToXFeed), type(uint256).max, address(nav), address(baseAsset)
+        );
+        vm.warp(1_000_000);
+        yToXFeed.setUpdatedAt(999_000); // rate age 1000, sentinel heartbeat
+        nav.setAssetFreshness(address(baseAsset), 950_000, BASE_HEARTBEAT); // base age 50_000
+        (uint256 updatedAt, uint256 heartbeat) = oracle.governingFeedFreshness();
+        assertEq(updatedAt, 950_000, "base leg governs (rate ratio ~0)");
+        assertEq(heartbeat, BASE_HEARTBEAT);
+    }
 }

@@ -204,7 +204,8 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
         // Decode the invoice we expect this CCTP transfer to settle.
         InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
 
-        // Resolve the destination asset (the burnToken minted here must equal it).
+        // Resolve the destination asset. Its balance delta across receiveMessage binds the mint — the message's
+        // burnToken is a SOURCE-chain token and is intentionally NOT compared to this asset (V2 provenance model).
         address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(InvoiceDataLib.bytes6ToStr(data.assetSymbol));
         if (_isNativeToken(asset)) revert InvalidArguments();
 

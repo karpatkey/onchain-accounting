@@ -2,7 +2,7 @@
 pragma solidity ^0.8;
 
 import {IBridgeAdapter} from "../../IBridgeAdapter.sol";
-import {IOmnibridge, IAMB} from "./IGnosisInterfaces.sol";
+import {IOmnibridge, IAMB, IUSDCTransmuter} from "./IGnosisInterfaces.sol";
 
 /// @title IGnosisBridgeAdapter Interface
 /// @notice Interface for Gnosis Bridge Adapter
@@ -32,6 +32,9 @@ interface IGnosisBridgeAdapter is IBridgeAdapter {
 
     /// @notice Emitted when the trusted source Omnibridge mediator for a source chain is set.
     event TrustedMediatorSet(uint64 indexed srcChainId, address mediator);
+
+    /// @notice Emitted when the USDC transmuter address is set (or cleared to address(0)).
+    event UsdcTransmuterSet(address indexed usdcTransmuter);
 
     /// @notice Emitted when an inbound transfer was authenticated but its release did not complete in the
     ///         same callback; a MANAGER completeBridge can finish it against the recorded provenance.
@@ -86,6 +89,9 @@ interface IGnosisBridgeAdapter is IBridgeAdapter {
     /// @return The AMB contract instance
     function amb() external view returns (IAMB);
 
+    /// @notice The Gnosis USDCTransmuter (USDC.e<->legacy 1:1 swap), or address(0) where none applies (Ethereum side).
+    function usdcTransmuter() external view returns (IUSDCTransmuter);
+
     /// @notice Gets the stored message payload for an invoice
     /// @param invoiceId The invoice ID (32 bytes)
     /// @return The message payload, or empty bytes if not found
@@ -128,6 +134,10 @@ interface IGnosisBridgeAdapter is IBridgeAdapter {
     /// @param amb_ The AMB contract address
     /// @dev Only callable by admin role
     function setAmb(address amb_) external;
+
+    /// @notice Sets (or clears with address(0)) the Gnosis USDCTransmuter used to swap the OmniBridge's legacy USDC
+    ///         to/from the escrow-registered USDC.e. DEFAULT_ADMIN_ROLE. Only affects USDC routes on the Gnosis side.
+    function setUsdcTransmuter(address usdcTransmuter_) external;
 
     /// @notice Sets the trusted source Omnibridge mediator for a source chain id (admin only).
     /// @dev This is the address `amb.messageSender()` reports for inbound transfers from `srcChainId` — the

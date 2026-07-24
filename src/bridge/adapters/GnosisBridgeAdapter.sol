@@ -6,7 +6,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {BridgeAdapter} from "../BridgeAdapter.sol";
 import {IBridgeEscrow} from "../IBridgeEscrow.sol";
 import {InvoiceDataLib} from "../InvoiceDataLib.sol";
-import {IOmnibridge, IAMB} from "./interfaces/IGnosisInterfaces.sol";
+import {IOmnibridge, IAMB, IUSDCTransmuter} from "./interfaces/IGnosisInterfaces.sol";
 import {IGnosisBridgeAdapter} from "./interfaces/IGnosisBridgeAdapter.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
@@ -33,6 +33,14 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
 
     /// @notice AMB contract address (for message provenance verification)
     IAMB public amb;
+
+    /// @notice The Gnosis USDCTransmuter, or address(0) if this adapter's chain has none (e.g. the Ethereum side).
+    /// @dev When set (Gnosis side), the adapter converts 1:1 between the legacy OmniBridge USDC the general
+    ///      OmniBridge delivers (`USDC_ON_XDAI`) and the USDC.e (`USDC_E`) the escrow registers: inbound legacy is
+    ///      swapped to USDC.e before release (`deposit`), outbound USDC.e is swapped to legacy before bridging
+    ///      (`withdraw`). address(0) disables the swap (the Ethereum side bridges native USDC directly). Only USDC
+    ///      routes are affected; WETH and any other asset always bridge directly with no swap.
+    IUSDCTransmuter public usdcTransmuter;
 
     /// @notice Mapping to store message payloads by invoice ID
     /// @dev Used to retrieve payloads on destination chain
@@ -104,6 +112,14 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
     }
 
     /// @inheritdoc IGnosisBridgeAdapter
+    function setUsdcTransmuter(address usdcTransmuter_) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        // address(0) is intentionally allowed: it disables the USDC.e swap on chains with no transmuter
+        // (the Ethereum-side adapter), where USDC bridges natively via the OmniBridge.
+        usdcTransmuter = IUSDCTransmuter(usdcTransmuter_);
+        emit UsdcTransmuterSet(usdcTransmuter_);
+    }
+
+    /// @inheritdoc IGnosisBridgeAdapter
     function setTrustedMediator(uint64 srcChainId, address mediator) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (mediator == address(0)) revert InvalidBridgeData();
         trustedMediator[srcChainId] = mediator;
@@ -145,11 +161,23 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
         // Pull ERC20 tokens from escrow (escrow approved us in depositAndBridge)
         IERC20(asset).safeTransferFrom(bridgeEscrow, address(this), data.amount);
 
-        // Approve Omnibridge to spend tokens
-        IERC20(asset).forceApprove(address(omnibridge), data.amount);
+        // The OmniBridge only bridges the legacy USDC representation (USDC_ON_XDAI). If this chain holds the
+        // escrow-registered USDC.e (USDC_E), swap it 1:1 to legacy via the transmuter first, then bridge legacy.
+        // No-op for WETH and for the Ethereum side (no transmuter → bridges its asset directly). A `withdraw`
+        // revert (transmuter disabled / reserve short) reverts this whole deposit — funds stay in escrow (fail-safe).
+        address bridgeToken = asset;
+        IUSDCTransmuter tm = usdcTransmuter;
+        if (address(tm) != address(0) && asset == tm.USDC_E()) {
+            IERC20(asset).forceApprove(address(tm), data.amount);
+            tm.withdraw(data.amount); // burns USDC.e, sends `data.amount` legacy USDC_ON_XDAI to this adapter (1:1)
+            bridgeToken = tm.USDC_ON_XDAI();
+        }
+
+        // Approve Omnibridge to spend the (possibly swapped) bridge token
+        IERC20(bridgeToken).forceApprove(address(omnibridge), data.amount);
 
         // Relay tokens to the sibling adapter, carrying the invoice payload as the call data.
-        omnibridge.relayTokensAndCall(asset, receiver, data.amount, messagePayload);
+        omnibridge.relayTokensAndCall(bridgeToken, receiver, data.amount, messagePayload);
 
         // Store messagePayload for later retrieval
         messagePayloads[data.invoiceId] = messagePayload;
@@ -182,8 +210,11 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
         // authenticated at delivery, not any same-lane sibling.
         if (!authenticatedInvoice[bytes32(uint256(uint192(data.checksum24)))]) revert InvalidBridgeData();
 
-        // Verify the adapter actually holds the invoiced tokens (delivered by Omnibridge).
+        // Verify the adapter actually holds the invoiced tokens (delivered by Omnibridge). If the auto path
+        // recorded the invoice but its USDC.e swap did not complete (transmuter disabled/reserve-short at delivery),
+        // the adapter still holds the delivered legacy USDC — swap it to USDC.e now, then verify the balance.
         address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(InvoiceDataLib.bytes6ToStr(data.assetSymbol));
+        _swapLegacyToUsdcE(asset, data.amount);
         uint256 balance = IERC20(asset).balanceOf(address(this));
         if (balance < data.amount) revert InsufficientBalance(asset, data.amount, balance);
 
@@ -238,15 +269,27 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
         // Verify the delivered token + amount match the invoice. Omnibridge delivers the token to this adapter
         // before calling back; `value` is the delivered amount and the adapter must hold at least the invoiced amount.
         address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(InvoiceDataLib.bytes6ToStr(invoiceData.assetSymbol));
+
+        // USDC.e swap route: the general OmniBridge delivers the legacy USDC_ON_XDAI, but the escrow registers
+        // USDC.e (USDC_E). When a transmuter is configured and the delivered token is exactly the legacy USDC for a
+        // USDC.e invoice, accept it — `releaseAuthenticated` swaps it 1:1 to USDC.e before releasing. This is the
+        // ONLY accepted token substitution; every other delivered-token mismatch still reverts.
+        IUSDCTransmuter tm = usdcTransmuter;
+        bool swap = address(tm) != address(0) && deliveredToken != address(0) && deliveredToken == tm.USDC_ON_XDAI()
+            && asset == tm.USDC_E();
+
         // Guard against a mediator delivery of a DIFFERENT token slipping through on a stale `asset` balance: the
-        // `onTokenBridged` path reports the delivered token and it must equal the invoice asset. `onTokenTransfer`
-        // passes the `address(0)` sentinel (it carries no token address) and falls back to the balance check only.
-        if (deliveredToken != address(0) && deliveredToken != asset) {
+        // `onTokenBridged` path reports the delivered token and it must equal the invoice asset (or be the accepted
+        // legacy->USDC.e swap route). `onTokenTransfer` passes `address(0)` (no token) and uses the balance check only.
+        if (deliveredToken != address(0) && deliveredToken != asset && !swap) {
             revert InvalidDeliveredToken(asset, deliveredToken);
         }
         if (value < invoiceData.amount) revert InvalidBridgeData();
-        uint256 balance = IERC20(asset).balanceOf(address(this));
-        if (balance < invoiceData.amount) revert InsufficientBalance(asset, invoiceData.amount, balance);
+        // The adapter must already hold at least the invoiced amount of the token it received: the swap route holds
+        // the delivered legacy USDC (converted to USDC.e at release); every other route holds the invoice asset.
+        address heldToken = swap ? deliveredToken : asset;
+        uint256 balance = IERC20(heldToken).balanceOf(address(this));
+        if (balance < invoiceData.amount) revert InsufficientBalance(heldToken, invoiceData.amount, balance);
 
         _recordTransactionHash(invoiceData.invoiceId);
         messagePayloads[invoiceData.invoiceId] = data;
@@ -281,7 +324,26 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
     ///         tokens with no path to complete). Reverts unless called by this contract.
     function releaseAuthenticated(bytes calldata messagePayload, address asset, uint256 amount) external {
         if (msg.sender != address(this)) revert NotAuthorized();
+        _swapLegacyToUsdcE(asset, amount);
         _fundAndRelease(messagePayload, asset, amount);
+    }
+
+    /// @dev Converts delivered legacy USDC (`USDC_ON_XDAI`) to the escrow-registered USDC.e (`USDC_E`) 1:1 via the
+    ///      transmuter, covering any shortfall between the adapter's current USDC.e balance and `amount`. No-op
+    ///      unless a transmuter is configured (Gnosis side) AND `asset` is USDC.e AND the adapter is short USDC.e
+    ///      (i.e. it holds the authenticated legacy OmniBridge delivery instead). The OmniBridge credited legacy
+    ///      1:1 with the invoice, so the adapter holds >= the shortfall in legacy; `deposit` mints the USDC.e here.
+    ///      A revert (transmuter disabled/paused/blacklisted) propagates to the caller's try/catch, leaving the
+    ///      legacy delivery + the recorded invoice intact for the MANAGER fallback or `recoverStuckAssets`.
+    function _swapLegacyToUsdcE(address asset, uint256 amount) internal {
+        IUSDCTransmuter tm = usdcTransmuter;
+        if (address(tm) == address(0) || asset != tm.USDC_E()) return;
+        uint256 have = IERC20(asset).balanceOf(address(this));
+        if (have >= amount) return;
+        uint256 shortfall = amount - have;
+        address legacy = tm.USDC_ON_XDAI();
+        IERC20(legacy).forceApprove(address(tm), shortfall);
+        tm.deposit(shortfall);
     }
 
     /// @dev Records the AMB transaction hash for an invoice (best-effort; tolerates AMB getter reverts).

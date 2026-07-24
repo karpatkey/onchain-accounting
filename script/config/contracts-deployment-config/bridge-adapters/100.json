@@ -1,12 +1,13 @@
 {
   "Gnosis": {
-    "$comment": "WETH-only for Gnosis. The Gnosis omnibridge delivers the LEGACY 'USD//C on xDai' token (0xDDAfbb50) for USDC, NOT the USDC.e (0x2a22f9c3) the escrow registers, so a USD transfer via this adapter would strand on arrival. Route USD<->Gnosis via Stargate (delivers USDC.e). WETH (0x6A02…) is unambiguous. No on-chain per-asset guard exists here; this is enforced operationally + by the deploy-time route validator + docs.",
+    "$comment": "USD + WETH for Gnosis. WETH bridges natively (canonical GC WETH 0x6A02…). USDC uses the USDCTransmuter (0x0392a2f5…) so the adapter lands the escrow-registered USDC.e (0x2a22f9c3): the OmniBridge delivers the legacy 'USD//C on xDai' (0xDDAfbb50), and the adapter swaps it 1:1 to USDC.e inbound (transmuter deposit) / USDC.e->legacy outbound (transmuter withdraw). Requires the salt-5 GnosisBridgeAdapter (transmuter-swap); `usdcTransmuter` is set ONLY on this chain (Gnosis) — the Ethereum-side adapter leaves it address(0) and bridges native USDC. Stargate remains available for USD<->Gnosis too; the operator chooses per transfer.",
     "enabled": true,
     "initialize": {
       "admin": "",
       "bridgeEscrow": "",
       "omnibridge": "0xf6A78083ca3e2a662D6dd1703c939c8aCE2e268d",
       "amb": "0x75Df5AF045d91108662D8080fD1FEFAd6aA0bb59",
+      "usdcTransmuter": "0x0392a2f5ac47388945d8c84212469f545fae52b2",
       "version": "1.0.0"
     },
     "remoteChains": [

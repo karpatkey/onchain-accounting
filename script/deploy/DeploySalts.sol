@@ -76,7 +76,12 @@ library DeploySalts {
     // exact authenticated transfer. NOTE: NOT re-deployed — the salt-3 canary adapter is superseded by the
     // post-merge full redeploy from main (which should deploy salt-4); the change is non-exploitable (escrow
     // completedInvoices + funded pass-through already prevent misuse) so the live salt-3 adapter is unaffected.
-    uint256 internal constant GNOSIS_ADAPTER = 4;
+    // Bumped 4->5: USDC.e support — the adapter now swaps the OmniBridge's legacy USDC (USDC_ON_XDAI) 1:1 to/from
+    // the escrow-registered USDC.e (USDC_E) via the immutable USDCTransmuter (inbound `deposit`, outbound
+    // `withdraw`), so ETH<->Gnosis USDC lands the USDC.e the fund uses (WETH unaffected). New bytecode + a new
+    // `usdcTransmuter` immutable-config path → a fresh same-address adapter on ETH+GC. Deployed by the consolidated
+    // redeploy from main (which realigns all salts).
+    uint256 internal constant GNOSIS_ADAPTER = 5;
     // Bumped 1->2: the salt-1 CCTP adapter compared the message's burnToken (the SOURCE-chain token, e.g.
     // Base USDC) against the DESTINATION asset (e.g. Arbitrum USDC) and reverted BurnTokenMismatch on every
     // real cross-chain transfer (fork/unit mocks masked it by using one token address for both sides). The

@@ -215,6 +215,17 @@ contract DeployBridgeAdapters is BaseDeployScript {
             GnosisBridgeAdapter(payable(adapter))
                 .initialize(chainConfig.admin, bridgeProxy, omnibridge, amb, _adapterVersion("Gnosis"));
         }
+        // Optional: wire the USDC transmuter (Gnosis side only — the config carries it on chain 100, not on
+        // Ethereum). Absent/empty → leave unset (address(0)), so the Ethereum-side adapter bridges USDC natively.
+        // Idempotent: only set when the deployed value differs from config, so re-runs are no-ops.
+        string memory transmuterStr =
+            ConfigReader.readAdapterParam(vm, currentChainId, "bridgeAdapters", "Gnosis", "usdcTransmuter");
+        if (bytes(transmuterStr).length != 0) {
+            address transmuter = vm.parseAddress(transmuterStr);
+            if (address(GnosisBridgeAdapter(payable(adapter)).usdcTransmuter()) != transmuter) {
+                GnosisBridgeAdapter(payable(adapter)).setUsdcTransmuter(transmuter);
+            }
+        }
         ConfigReader.writeAdapterAddress(vm, currentChainId, "bridgeAdapters", "Gnosis", adapter);
     }
 

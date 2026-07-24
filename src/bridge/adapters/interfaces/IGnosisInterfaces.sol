@@ -66,7 +66,7 @@ interface IOmnibridge {
 ///         1:1 (no fee) between the legacy OmniBridge "USD//C on xDai" (USDC_ON_XDAI, 0xDDAfbb50…) and Circle's
 ///         Bridged USDC.e (USDC_E, 0x2a22f9c3…). The GnosisBridgeAdapter uses it so the fee-free canonical
 ///         OmniBridge USDC route lands the USDC.e the escrow registers.
-/// @dev Verified against the Gnosisscan-verified source + on-chain. Both swaps are 1:1, send output to msg.sender,
+/// @dev Verified against the GnosisScan-verified source + on-chain. Both swaps are 1:1, send output to msg.sender,
 ///      and pull input via transferFrom (caller must approve first). `deposit` mints USDC.e (never liquidity-gated);
 ///      `withdraw` pays legacy from a held reserve (reverts "withdrawal amount exceeded!" if under-reserved). Both
 ///      revert if `isEnabled()` is false. The contract is immutable (not a proxy).

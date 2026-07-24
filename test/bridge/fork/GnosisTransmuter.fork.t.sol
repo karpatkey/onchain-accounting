@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
-import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IUSDCTransmuter} from "src/bridge/adapters/interfaces/IGnosisInterfaces.sol";
+import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 
 /// @title GnosisTransmuterForkTest
 /// @notice Validates the REAL Gnosis USDCTransmuter against IUSDCTransmuter, so the mock used in the
 ///         GnosisBridgeAdapter unit tests faithfully mirrors on-chain behaviour: both swap directions are 1:1
 ///         with no fee, and the token identities are exactly the legacy `USD//C on xDai` and Circle's USDC.e.
-/// @dev Fork test (test/**/fork). Run with FOUNDRY_PROFILE=slow. Skips gracefully if ALCHEMY_API_KEY is unset.
-contract GnosisTransmuterForkTest is Test {
+/// @dev Fork test (test/**/fork). Run with FOUNDRY_PROFILE=slow. Uses the shared TestEnvConfigurator fork
+///      helpers (GNOSIS_URL chain override, else ALCHEMY_API_KEY, throttled cadence); skips gracefully when
+///      neither RPC source is configured.
+contract GnosisTransmuterForkTest is TestEnvConfigurator {
     IUSDCTransmuter internal constant TRANSMUTER = IUSDCTransmuter(0x0392A2F5Ac47388945D8c84212469F545fAE52B2);
     address internal constant LEGACY = 0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83; // USD//C on xDai
     address internal constant USDCE = 0x2a22f9c3b484c3629090FeED35F17Ff8F88f76F0; // Bridged USDC.e (Gnosis)
@@ -19,9 +21,12 @@ contract GnosisTransmuterForkTest is Test {
     bool internal forked;
 
     function setUp() public {
-        string memory key = vm.envOr("ALCHEMY_API_KEY", string(""));
-        if (bytes(key).length == 0) return;
-        vm.createSelectFork(string.concat("https://gnosis-mainnet.g.alchemy.com/v2/", key), FORK_BLOCK);
+        // Skip gracefully when no Gnosis RPC is configured (matches getAlchemyUrl's two sources); CI always has one.
+        if (
+            bytes(vm.envOr("GNOSIS_URL", string(""))).length == 0
+                && bytes(vm.envOr("ALCHEMY_API_KEY", string(""))).length == 0
+        ) return;
+        createSelectForkWithCadence(getAlchemyUrl("gnosis-mainnet"), FORK_BLOCK);
         forked = true;
     }
 

@@ -74,6 +74,31 @@ contract ETHPlus_CustomPriceFeedForkTest is TestEnvConfigurator {
         assertEq(oracle.RESERVE_PROTOCOL_HEARTBEAT(), HEARTBEAT);
     }
 
+    /// @dev SOUND basket: governingFeedFreshness reports (min-lastSave, RESERVE_PROTOCOL_HEARTBEAT), and its
+    ///      updatedAt must equal latestRoundData().updatedAt (both = the same _minBasketLastSave scan) — the
+    ///      compute-once equivalence the fix relies on.
+    function test_governingFeedFreshness_sound_matchesLatestRoundData() public view {
+        (,,, uint256 lrdUpdatedAt,) = oracle.latestRoundData();
+        (uint256 gUpdatedAt, uint256 gHeartbeat) = oracle.governingFeedFreshness();
+        assertGt(gUpdatedAt, 0, "SOUND basket has a real min-lastSave");
+        assertEq(gUpdatedAt, lrdUpdatedAt, "governing updatedAt == latestRoundData().updatedAt when SOUND");
+        assertEq(gHeartbeat, HEARTBEAT, "governing heartbeat == RESERVE_PROTOCOL_HEARTBEAT");
+    }
+
+    /// @dev Non-SOUND (IFFY) basket: governingFeedFreshness returns updatedAt 0 (heartbeat still reported),
+    ///      matching latestRoundData()/_compute()'s non-SOUND behavior — no divergence introduced by computing
+    ///      only the freshness leg.
+    function test_governingFeedFreshness_iffy_returnsZeroUpdatedAt() public {
+        vm.mockCall(
+            _basketHandlerAddress(), abi.encodeWithSelector(IBasketHandler.status.selector), abi.encode(CollateralStatus.IFFY)
+        );
+        (uint256 gUpdatedAt, uint256 gHeartbeat) = oracle.governingFeedFreshness();
+        assertEq(gUpdatedAt, 0, "non-SOUND basket -> updatedAt 0");
+        assertEq(gHeartbeat, HEARTBEAT, "heartbeat still reported when non-SOUND");
+        (,,, uint256 lrdUpdatedAt,) = oracle.latestRoundData();
+        assertEq(gUpdatedAt, lrdUpdatedAt, "governing updatedAt matches latestRoundData() when IFFY");
+    }
+
     function _basketHandlerAddress() internal view returns (address) {
         (bool ok, bytes memory data) = ETHPLUS.staticcall(abi.encodeWithSignature("main()"));
         require(ok, "main() call failed");

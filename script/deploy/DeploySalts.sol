@@ -83,7 +83,10 @@ library DeploySalts {
     // fix drops that inverted check and instead asserts the destination asset's balance rose by the invoice
     // amount across receiveMessage, so a fresh salt re-derives a correct adapter at a new same-address on
     // every chain. Old salt-1 CCTP adapters are abandoned.
-    uint256 internal constant CCTP_ADAPTER = 2;
+    // Bumped 2->3: `_completeBridge` balance-delta assertion rewritten from `after - before < amount` to
+    // `after < before + amount` (Copilot/claude-review) so a non-increase reverts `BurnTokenMismatch` instead of a
+    // generic underflow panic — bytecode change, so a fresh salt re-derives a correct same-address adapter.
+    uint256 internal constant CCTP_ADAPTER = 3;
     // Bumped 1->2: the salt-1 Superchain adapter was deployed (Base) via a script bug that initialized it with a
     // stale admin + the abandoned escrow, and initialize is one-shot, so it can't be corrected in place. The fix
     // (05 now takes admin/escrow from the deploy context) plus this fresh salt re-derive a correct adapter at a new

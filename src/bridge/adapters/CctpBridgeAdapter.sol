@@ -233,7 +233,10 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
         if (!success) {
             revert MessageReceiveFailed();
         }
-        if (IERC20(asset).balanceOf(address(this)) - assetBalBefore < data.amount) {
+        // Assert the destination asset rose by at least the invoice amount. Written as `after < before + amount`
+        // (not `after - before < amount`) so a balance that somehow did NOT increase reverts with the intended
+        // `BurnTokenMismatch`, not a generic underflow panic.
+        if (IERC20(asset).balanceOf(address(this)) < assetBalBefore + data.amount) {
             revert BurnTokenMismatch();
         }
 

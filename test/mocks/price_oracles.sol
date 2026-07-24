@@ -11,6 +11,7 @@ contract Mock_CustomPriceFeed is ICustomPriceFeed {
     uint256 price;
     uint8 internal _decimals;
     uint256 internal _updatedAt;
+    uint256 internal _heartbeat = 3600; // governing-leg heartbeat reported by governingFeedFreshness
 
     constructor(string memory name_, address addressSupported_, uint256 price_, uint8 decimals_) {
         name = name_;
@@ -22,6 +23,10 @@ contract Mock_CustomPriceFeed is ICustomPriceFeed {
 
     function setPrice(uint256 _price) external {
         price = _price;
+    }
+
+    function setHeartbeat(uint256 heartbeat_) external {
+        _heartbeat = heartbeat_;
     }
 
     function getLatestPrice() external view virtual returns (uint256, bool) {
@@ -38,6 +43,10 @@ contract Mock_CustomPriceFeed is ICustomPriceFeed {
 
     function latestRoundData() external view virtual override returns (uint80, int256, uint256, uint256, uint80) {
         return (0, int256(price), 0, _updatedAt, 0);
+    }
+
+    function governingFeedFreshness() external view virtual override returns (uint256, uint256) {
+        return (_updatedAt, _heartbeat);
     }
 
     function supportsInterface(bytes4 interfaceId) public pure override returns (bool) {

@@ -57,4 +57,26 @@ library NavBaseUsdLib {
             return (0, true, 0);
         }
     }
+
+    /// @notice The base leg's freshness for governing-leg reporting: the base asset's NAV-selected feed `updatedAt`
+    ///         plus its configured heartbeat. Used by custom feeds' {ICustomPriceFeed-governingFeedFreshness} — the
+    ///         base/USD leg is a genuine Chainlink dependency, so its `(updatedAt, heartbeat)` is a real matched pair.
+    /// @dev Returns the base feed's values even when the base is stale (so a consumer can SEE the staleness); returns
+    ///      `(0, 0)` only when the NAV read reverts (e.g. base not registered). The circularity invariant applies (the
+    ///      base is priced by direct feeds), so `pd.chainlinkHeartbeat` is a direct feed's window, never a custom feed's.
+    /// @param nav        The NAVCalculator (proxy) to read from.
+    /// @param baseAsset  The registered base asset whose leg freshness is wanted (e.g. WETH).
+    /// @return updatedAt The base feed's `latestRoundData` update timestamp (0 on revert or a rate-only base).
+    /// @return heartbeat The base feed's configured staleness window in seconds (0 on revert).
+    function baseFreshness(INAVCalculator nav, address baseAsset)
+        internal
+        view
+        returns (uint256 updatedAt, uint256 heartbeat)
+    {
+        try nav.getPriceDataNoDivergence(baseAsset) returns (INAVCalculator.PriceFeedData memory pd) {
+            return (pd.updatedAt, pd.chainlinkHeartbeat);
+        } catch {
+            return (0, 0);
+        }
+    }
 }

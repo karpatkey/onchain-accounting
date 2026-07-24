@@ -136,6 +136,38 @@ abstract contract TwoFeedChainlinkPriceFeed is ICustomPriceFeed {
         answer = stale ? int256(0) : int256(price);
     }
 
+    /// @inheritdoc ICustomPriceFeed
+    /// @dev Two Chainlink legs: the rate feed (`RATE_HEARTBEAT`) and the NAV's base/USD leg (its own configured
+    ///      heartbeat). Report whichever has the larger `age/heartbeat` ratio — the input closest to its own
+    ///      staleness limit. If the rate feed is unreadable, fall back to the base leg.
+    function governingFeedFreshness() external view virtual override returns (uint256 updatedAt, uint256 heartbeat) {
+        (uint256 baseUpdatedAt, uint256 baseHeartbeat) = NavBaseUsdLib.baseFreshness(NAV, BASE_ASSET);
+        uint256 rateUpdatedAt;
+        try RATE_FEED.latestRoundData() returns (uint80, int256, uint256, uint256 u, uint80) {
+            rateUpdatedAt = u;
+        } catch {
+            return (baseUpdatedAt, baseHeartbeat); // rate leg unreadable → report the base leg
+        }
+        return _governingLeg(rateUpdatedAt, RATE_HEARTBEAT, baseUpdatedAt, baseHeartbeat);
+    }
+
+    /// @notice Returns the `(updatedAt, heartbeat)` of the leg with the greater `age/heartbeat` ratio (age measured
+    ///         against `block.timestamp`; a future timestamp counts as age 0). A leg with a zero heartbeat is treated
+    ///         as non-governing (the other leg wins). Compared via cross-multiplication to avoid division.
+    function _governingLeg(uint256 tA, uint256 hA, uint256 tB, uint256 hB)
+        private
+        view
+        returns (uint256 updatedAt, uint256 heartbeat)
+    {
+        if (hA == 0) return (tB, hB);
+        if (hB == 0) return (tA, hA);
+        uint256 nowTs = block.timestamp;
+        uint256 ageA = tA >= nowTs ? 0 : nowTs - tA;
+        uint256 ageB = tB >= nowTs ? 0 : nowTs - tB;
+        // ageA/hA >= ageB/hB  <=>  ageA*hB >= ageB*hA  (hA, hB > 0). Ages ~1e9, heartbeats ~1e5 → no overflow.
+        return (ageA * hB >= ageB * hA) ? (tA, hA) : (tB, hB);
+    }
+
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure virtual override returns (bool) {
         return interfaceId == type(ICustomPriceFeed).interfaceId || interfaceId == type(IERC165).interfaceId;

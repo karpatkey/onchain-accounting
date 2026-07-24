@@ -38,4 +38,17 @@ interface ICustomPriceFeed is IERC165 {
         external
         view
         returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound);
+
+    /// @notice The freshness of the underlying Chainlink leg that GOVERNS this feed's staleness — the leg with the
+    ///         greatest age-to-heartbeat ratio (i.e. closest to, or furthest past, its own staleness deadline).
+    /// @dev Read path (`NAVCalculator.getPriceData`) reports this `(updatedAt, heartbeat)` pair for a Custom feed so
+    ///      the two values are a REAL, MATCHED pair from one actual oracle — unlike `latestRoundData().updatedAt`
+    ///      (which returns the worst-case/min timestamp for feed *selection* and carries no companion heartbeat).
+    /// @dev For a feed backed by a single Chainlink oracle: return that oracle's `(updatedAt, heartbeat)`.
+    /// @dev For a feed backed by two or more Chainlink oracles: return the `(updatedAt, heartbeat)` of whichever leg
+    ///      has the largest `age/heartbeat` ratio — the input most at risk of being stale.
+    /// @dev For feeds with no trackable Chainlink dependency: return `(0, 0)`.
+    /// @return updatedAt The governing leg's `latestRoundData` update timestamp (0 if it has no push timestamp).
+    /// @return heartbeat The governing leg's staleness window in seconds (0 if not representable).
+    function governingFeedFreshness() external view returns (uint256 updatedAt, uint256 heartbeat);
 }

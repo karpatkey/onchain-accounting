@@ -127,6 +127,13 @@ abstract contract ERC4626VaultRatePriceFeed is ICustomPriceFeed {
         answer = stale ? int256(0) : int256(price);
     }
 
+    /// @inheritdoc ICustomPriceFeed
+    /// @dev One Chainlink leg — the NAV's base/USD feed (the ERC-4626 share rate is an on-chain value, not an
+    ///      oracle). So the governing leg is always the base leg.
+    function governingFeedFreshness() external view virtual override returns (uint256 updatedAt, uint256 heartbeat) {
+        return NavBaseUsdLib.baseFreshness(NAV, BASE_ASSET);
+    }
+
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure virtual override returns (bool) {
         return interfaceId == type(ICustomPriceFeed).interfaceId || interfaceId == type(IERC165).interfaceId;

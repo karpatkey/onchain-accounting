@@ -71,4 +71,47 @@ contract CrossRateCustomPriceFeedTest is Test {
         vm.expectRevert();
         new CrossRateCustomPriceFeed(address(underlyingAsset), address(yToXFeed), HEARTBEAT, address(nav), address(nav));
     }
+
+    // --- governingFeedFreshness: the leg with the greater age/heartbeat ratio wins ---
+
+    uint256 constant BASE_HEARTBEAT = 3600; // base (X/USD) leg heartbeat; RATE (Y/X) leg uses HEARTBEAT = 86_400
+
+    function _feed() internal returns (CrossRateCustomPriceFeed) {
+        return new CrossRateCustomPriceFeed(
+            address(underlyingAsset), address(yToXFeed), HEARTBEAT, address(nav), address(baseAsset)
+        );
+    }
+
+    function test_governingFeedFreshness_rateLegGoverns() public {
+        CrossRateCustomPriceFeed oracle = _feed();
+        vm.warp(1_000_000);
+        // rate age 40_000 / 86_400 = 0.46  >  base age 100 / 3600 = 0.028  → rate leg governs
+        yToXFeed.setUpdatedAt(960_000);
+        nav.setAssetFreshness(address(baseAsset), 999_900, BASE_HEARTBEAT);
+        (uint256 updatedAt, uint256 heartbeat) = oracle.governingFeedFreshness();
+        assertEq(updatedAt, 960_000, "rate leg updatedAt");
+        assertEq(heartbeat, HEARTBEAT, "rate leg heartbeat");
+    }
+
+    function test_governingFeedFreshness_baseLegGoverns() public {
+        CrossRateCustomPriceFeed oracle = _feed();
+        vm.warp(1_000_000);
+        // base age 3000 / 3600 = 0.83  >  rate age 100 / 86_400 = 0.001  → base leg governs
+        yToXFeed.setUpdatedAt(999_900);
+        nav.setAssetFreshness(address(baseAsset), 997_000, BASE_HEARTBEAT);
+        (uint256 updatedAt, uint256 heartbeat) = oracle.governingFeedFreshness();
+        assertEq(updatedAt, 997_000, "base leg updatedAt");
+        assertEq(heartbeat, BASE_HEARTBEAT, "base leg heartbeat");
+    }
+
+    function test_governingFeedFreshness_reportsStaleLeg() public {
+        CrossRateCustomPriceFeed oracle = _feed();
+        vm.warp(1_000_000);
+        // base leg is past its own heartbeat (age 5000 > 3600) and dominates the ratio → reported even though stale
+        yToXFeed.setUpdatedAt(999_990);
+        nav.setAssetFreshness(address(baseAsset), 995_000, BASE_HEARTBEAT);
+        (uint256 updatedAt, uint256 heartbeat) = oracle.governingFeedFreshness();
+        assertEq(updatedAt, 995_000, "stale base leg surfaced");
+        assertEq(heartbeat, BASE_HEARTBEAT);
+    }
 }

@@ -96,6 +96,15 @@ contract ETHPlus_CustomPriceFeed is ICustomPriceFeed {
         return (0, stale ? int256(0) : int256(price), 0, upd, 0);
     }
 
+    /// @inheritdoc ICustomPriceFeed
+    /// @dev The Reserve basket collapses its many collateral oracles into one aggregate pair: `updatedAt` is the
+    ///      min `lastSave()` across the active basket (the worst-case Chainlink refresh), gated against the single
+    ///      `RESERVE_PROTOCOL_HEARTBEAT`. That is already the governing pair, so report it directly.
+    function governingFeedFreshness() external view override returns (uint256 updatedAt, uint256 heartbeat) {
+        (,, updatedAt) = _compute();
+        heartbeat = RESERVE_PROTOCOL_HEARTBEAT;
+    }
+
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
         return interfaceId == type(ICustomPriceFeed).interfaceId || interfaceId == type(IERC165).interfaceId;

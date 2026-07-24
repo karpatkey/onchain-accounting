@@ -190,8 +190,13 @@ interface INAVCalculator is IBalances {
     /// @param priceType Feed type (Chainlink, Custom, Redstone, or API3).
     /// @param price Current price (e.g. USD per unit); 0 when stale.
     /// @param decimals Decimals of the selected feed's output.
-    /// @param chainlinkHeartbeat Staleness window of the selected feed in seconds.
-    /// @param updatedAt Last update timestamp from latestRoundData (AggregatorV3-shaped feeds only; 0 for Custom).
+    /// @param chainlinkHeartbeat Staleness window (seconds) of the reported feed. For Chainlink/Redstone/API3 this is
+    ///        the selected feed's configured heartbeat. For Custom feeds it is the GOVERNING leg's heartbeat — the
+    ///        underlying Chainlink leg closest to its own staleness limit — paired with `updatedAt` below (0 if the
+    ///        feed has no trackable Chainlink leg or the read reverts). See ICustomPriceFeed.governingFeedFreshness.
+    /// @param updatedAt Last-update timestamp of the reported feed. For Chainlink/Redstone/API3 this is the selected
+    ///        feed's `latestRoundData().updatedAt`. For Custom feeds it is the GOVERNING leg's `updatedAt` — a real,
+    ///        matched pair with `chainlinkHeartbeat` above. 0 when the feed has no push timestamp or the read reverts.
     /// @param stale True if all feeds are stale or the L2 sequencer is down.
     /// @param sequencerDown True if L2 sequencer is down (L2 only).
     /// @param healthyFeedCount Number of registered feeds that passed all staleness gates on this read.

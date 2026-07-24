@@ -11,7 +11,11 @@ import "src/bridge/InvoiceDataLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/constants.sol";
 import {BridgeScenarioHelper} from "test/bridge/BridgeScenarioHelper.sol";
-import {MockProvenanceOmnibridge, MockProvenanceAMB} from "test/bridge/mocks/GnosisProvenanceMocks.sol";
+import {
+    MockProvenanceOmnibridge,
+    MockProvenanceAMB,
+    MockUSDCTransmuter
+} from "test/bridge/mocks/GnosisProvenanceMocks.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "test/mocks/tokens.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
@@ -555,5 +559,122 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
 
         // bridge() pulled the tokens out; do not mint more.
         assertFalse(adapter.areTokensAvailable(invoiceData.invoiceId, address(usdc)), "Tokens should not be available");
+    }
+
+    // ============ USDC Transmuter Swap (fee-free OmniBridge USDC<->USDC.e) ============
+
+    /// @dev Fresh legacy + USDC.e mocks + a transmuter over them (mirrors the Gnosis USDCTransmuter 1:1 swap).
+    function _deployTransmuterTokens() internal returns (Mock_ERC20 legacy, Mock_ERC20 usdce, MockUSDCTransmuter tm) {
+        legacy = new Mock_ERC20("USDC", 6); // legacy "USD//C on xDai"
+        usdce = new Mock_ERC20("USDC.e", 6); // Circle Bridged USDC.e
+        tm = new MockUSDCTransmuter(address(legacy), address(usdce));
+    }
+
+    /// @notice Forward (ETH->GC): OmniBridge delivers legacy USDC; the adapter swaps it 1:1 to the registered
+    ///         USDC.e via the transmuter and releases USDC.e to the account.
+    function test_transmuter_forwardSwap_deliversUsdcE() public {
+        uint256 amount = 1000e6;
+        (Mock_ERC20 legacy, Mock_ERC20 usdce, MockUSDCTransmuter tm) = _deployTransmuterTokens();
+
+        vm.chainId(uint256(GNOSIS_CHAIN_ID));
+        MockProvenanceOmnibridge destOmnibridge = new MockProvenanceOmnibridge();
+        MockProvenanceAMB destAmb = new MockProvenanceAMB();
+        (BridgeEscrow destEscrow, GnosisBridgeAdapter destAdapter) = _setupDestination(destOmnibridge, destAmb);
+
+        // GC registers USDC.e under the logical "USDC" symbol; wire the transmuter on the adapter.
+        vm.startPrank(admin);
+        destEscrow.registerAsset(USDC_SYMBOL, address(usdce));
+        destAdapter.setUsdcTransmuter(address(tm));
+        vm.stopPrank();
+
+        InvoiceDataLib.InvoiceData memory inv =
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
+        bytes memory payload = InvoiceDataLib.encode(inv);
+        bytes32 invoiceHash = bytes32(uint256(uint192(inv.checksum24)));
+
+        // OmniBridge delivers the LEGACY token to the adapter and fires onTokenBridged.
+        legacy.mint(address(destOmnibridge), amount);
+        uint256 acctBefore = usdce.balanceOf(account);
+        destOmnibridge.deliverTokens(address(legacy), address(destAdapter), amount, payload);
+
+        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice completed via legacy->USDC.e swap");
+        assertEq(usdce.balanceOf(account) - acctBefore, amount, "account receives USDC.e");
+        assertEq(legacy.balanceOf(address(destAdapter)), 0, "no legacy dust on adapter");
+        assertEq(usdce.balanceOf(address(destAdapter)), 0, "no USDC.e dust on adapter");
+    }
+
+    /// @notice Reverse (GC->ETH): the adapter swaps the registered USDC.e to legacy 1:1 via the transmuter, then
+    ///         bridges the legacy token over the OmniBridge.
+    function test_transmuter_reverseSwap_bridgesLegacy() public {
+        uint256 amount = 1000e6;
+        (Mock_ERC20 legacy, Mock_ERC20 usdce, MockUSDCTransmuter tm) = _deployTransmuterTokens();
+
+        vm.chainId(uint256(GNOSIS_CHAIN_ID)); // source = Gnosis, destination = Ethereum (1)
+
+        // Re-point the source escrow's "USDC" to USDC.e, wire the transmuter, and seed its legacy reserve.
+        vm.startPrank(admin);
+        bridgeEscrow.registerAsset(USDC_SYMBOL, address(usdce));
+        adapter.setUsdcTransmuter(address(tm));
+        vm.stopPrank();
+        legacy.mint(address(tm), amount); // withdraw pays legacy from the transmuter's reserve
+
+        InvoiceDataLib.InvoiceData memory inv =
+            _createInvoiceData(GNOSIS_CHAIN_ID, SOURCE_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
+        bytes memory payload = InvoiceDataLib.encode(inv);
+
+        // Escrow holds USDC.e and approves the adapter (as depositAndBridge would).
+        usdce.mint(address(bridgeEscrow), amount);
+        vm.prank(address(bridgeEscrow));
+        usdce.approve(address(adapter), amount);
+
+        vm.prank(address(bridgeEscrow));
+        adapter.bridge(payload);
+
+        // The adapter swapped USDC.e->legacy and bridged the LEGACY token to the sibling adapter.
+        assertEq(omnibridge.lastRelayToken(), address(legacy), "bridged the legacy USDC token");
+        assertEq(omnibridge.lastRelayReceiver(), address(adapter), "receiver is the sibling adapter");
+        assertEq(legacy.balanceOf(address(omnibridge)), amount, "omnibridge received the legacy amount");
+        assertEq(usdce.balanceOf(address(adapter)), 0, "adapter swapped out all USDC.e");
+    }
+
+    /// @notice Fail-safe: if the transmuter is disabled at delivery, the auto swap reverts but the invoice is
+    ///         recorded (authenticated) and the legacy delivery stays on the adapter; the MANAGER fallback
+    ///         completes it (swapping) once the transmuter is re-enabled.
+    function test_transmuter_forwardSwap_failsafe_managerFallbackCompletes() public {
+        uint256 amount = 1000e6;
+        (Mock_ERC20 legacy, Mock_ERC20 usdce, MockUSDCTransmuter tm) = _deployTransmuterTokens();
+
+        vm.chainId(uint256(GNOSIS_CHAIN_ID));
+        MockProvenanceOmnibridge destOmnibridge = new MockProvenanceOmnibridge();
+        MockProvenanceAMB destAmb = new MockProvenanceAMB();
+        (BridgeEscrow destEscrow, GnosisBridgeAdapter destAdapter) = _setupDestination(destOmnibridge, destAmb);
+
+        vm.startPrank(admin);
+        destEscrow.registerAsset(USDC_SYMBOL, address(usdce));
+        destAdapter.setUsdcTransmuter(address(tm));
+        vm.stopPrank();
+
+        InvoiceDataLib.InvoiceData memory inv =
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
+        bytes memory payload = InvoiceDataLib.encode(inv);
+        bytes32 invoiceHash = bytes32(uint256(uint192(inv.checksum24)));
+
+        // Transmuter disabled at delivery: onTokenBridged records provenance; swap+release revert and are caught.
+        tm.setEnabled(false);
+        legacy.mint(address(destOmnibridge), amount);
+        destOmnibridge.deliverTokens(address(legacy), address(destAdapter), amount, payload);
+
+        assertTrue(destAdapter.authenticatedInvoice(invoiceHash), "invoice authenticated despite deferred swap");
+        assertFalse(destEscrow.isInvoiceCompleted(invoiceHash), "not completed while transmuter disabled");
+        assertEq(legacy.balanceOf(address(destAdapter)), amount, "legacy delivery held on adapter");
+
+        // Re-enable + complete via the MANAGER fallback (which swaps then releases).
+        tm.setEnabled(true);
+        uint256 acctBefore = usdce.balanceOf(account);
+        vm.prank(manager);
+        destAdapter.completeBridge(payload, "");
+
+        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "completed by MANAGER fallback after re-enable");
+        assertEq(usdce.balanceOf(account) - acctBefore, amount, "account receives USDC.e via fallback swap");
     }
 }

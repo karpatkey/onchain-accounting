@@ -4,6 +4,7 @@ pragma solidity ^0.8;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IOmnibridge, IAMB} from "src/bridge/adapters/interfaces/IGnosisInterfaces.sol";
+import {Mock_ERC20} from "test/mocks/tokens.sol";
 
 /// @title GnosisProvenanceMocks
 /// @notice Provenance-model mocks for the Gnosis Omnibridge adapter (ADR 0012).
@@ -137,5 +138,45 @@ contract MockProvenanceOmnibridge is IOmnibridge {
                 revert(add(ret, 0x20), mload(ret))
             }
         }
+    }
+}
+
+/// @notice Mock of the Gnosis USDCTransmuter (1:1, no fee) matching IUSDCTransmuter. `deposit` pulls legacy
+///         (USDC_ON_XDAI) via transferFrom and mints USDC.e (USDC_E) to the caller; `withdraw` pulls+burns USDC.e
+///         and pays legacy from a seeded reserve (reverts if under-reserved). `setEnabled(false)` simulates the
+///         real contract's one-way disable. Mirrors the verified on-chain semantics closely enough to exercise the
+///         adapter's swap paths + fail-safes.
+contract MockUSDCTransmuter {
+    using SafeERC20 for IERC20;
+
+    address public immutable USDC_ON_XDAI;
+    address public immutable USDC_E;
+    bool public isEnabled = true;
+
+    constructor(address legacy_, address usdce_) {
+        USDC_ON_XDAI = legacy_;
+        USDC_E = usdce_;
+    }
+
+    /// @notice Test hook: simulate the owner's one-way disable (or re-enable, for test convenience).
+    function setEnabled(bool enabled_) external {
+        isEnabled = enabled_;
+    }
+
+    /// @notice legacy -> USDC.e (mints). Caller must approve legacy first.
+    function deposit(uint256 amount) external {
+        require(isEnabled, "contract is not active!");
+        require(amount > 0, "invalid deposit amount!");
+        IERC20(USDC_ON_XDAI).safeTransferFrom(msg.sender, address(this), amount);
+        Mock_ERC20(USDC_E).mint(msg.sender, amount);
+    }
+
+    /// @notice USDC.e -> legacy (from reserve). Caller must approve USDC.e first. Reverts if reserve < amount.
+    function withdraw(uint256 amount) external {
+        require(isEnabled, "contract is not active!");
+        require(IERC20(USDC_ON_XDAI).balanceOf(address(this)) >= amount, "withdrawal amount exceeded!");
+        IERC20(USDC_E).safeTransferFrom(msg.sender, address(this), amount);
+        Mock_ERC20(USDC_E).burn(address(this), amount);
+        IERC20(USDC_ON_XDAI).safeTransfer(msg.sender, amount);
     }
 }

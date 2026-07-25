@@ -106,6 +106,12 @@ contract ankrETH_CustomPriceFeed is ICustomPriceFeed {
         answer = stale ? int256(0) : int256(price);
     }
 
+    /// @inheritdoc ICustomPriceFeed
+    /// @dev One Chainlink leg — the NAV's ETH/USD base feed (the ankrETH `ratio()` is an on-chain value, not an oracle).
+    function governingFeedFreshness() external view override returns (uint256 updatedAt, uint256 heartbeat) {
+        return NavBaseUsdLib.baseFreshness(NAV, BASE_ASSET);
+    }
+
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
         return interfaceId == type(ICustomPriceFeed).interfaceId || interfaceId == type(IERC165).interfaceId;

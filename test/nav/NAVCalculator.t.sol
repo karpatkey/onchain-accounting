@@ -628,7 +628,10 @@ contract NAVCalculatorTest is SuperTest {
         INAVCalculator.PriceFeedData memory priceFeed = nav.getPriceData(address(usdc));
 
         assertEq(uint8(priceFeed.priceType), uint8(IPrices.PriceType.Custom));
-        assertEq(priceFeed.updatedAt, 0); // Custom adapter should have 0 updatedAt
+        // Custom feeds report their GOVERNING leg's (updatedAt, heartbeat) pair via governingFeedFreshness().
+        // The mock reports (block.timestamp, 3600); this OVERRIDES the registered config heartbeat.
+        assertEq(priceFeed.updatedAt, block.timestamp);
+        assertEq(priceFeed.chainlinkHeartbeat, 3600);
     }
 
     function test_getPriceData_stalePrice() public {

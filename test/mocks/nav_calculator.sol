@@ -257,6 +257,14 @@ contract Mock_NAVCalculator is INAVCalculator {
         _priceData[asset].stale = stale;
     }
 
+    /// @notice Set an asset's leg freshness (updatedAt + configured heartbeat) explicitly. Used by custom-feed unit
+    ///         tests to exercise `ICustomPriceFeed.governingFeedFreshness` via `NavBaseUsdLib.baseFreshness`, which
+    ///         reads `getPriceDataNoDivergence(baseAsset).{updatedAt, chainlinkHeartbeat}`.
+    function setAssetFreshness(address asset, uint256 updatedAt, uint256 heartbeat) external {
+        _priceData[asset].updatedAt = updatedAt;
+        _priceData[asset].chainlinkHeartbeat = heartbeat;
+    }
+
     /// @notice Emulate the NAV's L2 sequencer state. Only sets the raw `sequencerDown` flag; the `stale` fold
     ///         (`stale = feedStale || sequencerDown`, per `PriceFeedLib.buildPriceData`) is applied at read time in
     ///         `getPriceData`, so toggling this back to `false` cleanly emulates a sequencer RECOVERY on an otherwise

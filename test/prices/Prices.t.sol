@@ -20,6 +20,10 @@ contract Mock_CustomPriceFeedZeroUpdatedAt is Mock_CustomPriceFeed {
     function latestRoundData() external pure override returns (uint80, int256, uint256, uint256, uint80) {
         return (0, 0, 0, 0, 0); // updatedAt = 0 → sentinel: treated as block.timestamp-1
     }
+
+    function governingFeedFreshness() external pure override returns (uint256, uint256) {
+        return (0, 0); // no trackable oracle → no governing pair
+    }
 }
 
 contract PricesHarness is Prices {

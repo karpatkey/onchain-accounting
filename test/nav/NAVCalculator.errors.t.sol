@@ -80,6 +80,10 @@ contract Mock_RevertingPriceOracle is ICustomPriceFeed {
         return (0, 0, 0, 0, 0);
     }
 
+    function governingFeedFreshness() external pure override returns (uint256, uint256) {
+        revert("Price oracle revert");
+    }
+
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
         return interfaceId == type(ICustomPriceFeed).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
@@ -103,6 +107,10 @@ contract Mock_MalformedPriceOracle is ICustomPriceFeed {
 
     function latestRoundData() external pure override returns (uint80, int256, uint256, uint256, uint80) {
         return (0, 0, 0, 0, 0);
+    }
+
+    function governingFeedFreshness() external pure override returns (uint256, uint256) {
+        return (0, 0);
     }
 
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {

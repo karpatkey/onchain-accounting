@@ -496,8 +496,22 @@ library PriceFeedLib {
         priceFeedData.stale = stale || sequencerDown;
         priceFeedData.healthyFeedCount = healthyFeedCount;
 
-        // Fetch updatedAt for AggregatorV3-shaped feeds (Chainlink, Redstone, API3).
-        if (config.priceType != IPrices.PriceType.Custom) {
+        // Report the freshness pair (updatedAt, chainlinkHeartbeat) of the selected feed.
+        if (config.priceType == IPrices.PriceType.Custom) {
+            // Custom feeds are composites whose staleness is per-underlying-leg, so a single (updatedAt, heartbeat)
+            // can't be read off latestRoundData (which returns the worst-case/min timestamp with no companion
+            // heartbeat). Instead report the "governing leg" — the underlying Chainlink leg closest to its own
+            // staleness limit — so the pair is a real, matched pair from one oracle (a single-leg custom feed reports
+            // that leg). This OVERRIDES the config heartbeat set above. See ICustomPriceFeed.governingFeedFreshness.
+            try ICustomPriceFeed(config.priceFeed).governingFeedFreshness() returns (
+                uint256 govUpdatedAt, uint256 govHeartbeat
+            ) {
+                priceFeedData.updatedAt = govUpdatedAt;
+                priceFeedData.chainlinkHeartbeat = govHeartbeat;
+            } catch {} // updatedAt stays 0 / heartbeat stays the registered config value if the feed reverts
+        } else {
+            // AggregatorV3-shaped feeds (Chainlink, Redstone, API3): report the selected feed's own updatedAt against
+            // its configured heartbeat (already set above). A revert leaves updatedAt at 0.
             try AggregatorV3Interface(config.priceFeed).latestRoundData() returns (
                 uint80, int256, uint256, uint256 roundUpdatedAt, uint80
             ) {

@@ -15,11 +15,12 @@ import {SuperchainBridgeAdapter} from "src/bridge/adapters/SuperchainBridgeAdapt
 /// @notice Locks the ADR 0012 D7 "same address on every chain" guarantee that `trustedRemoteAdapter` (D2), the CCTP
 ///         `mintRecipient`/`destinationCaller`, and the Superchain `receiver` all rely on.
 /// @dev 05_DeployBridgeAdapters deploys each adapter via the canonical CREATE2 deployer using
-///      `generateSalt(name, DeploySalts.<X>_ADAPTER)` and the adapter's raw `type(X).creationCode`. The deterministic
-///      address is `keccak256(0xff ++ deployer ++ salt ++ keccak256(creationCode))[12:]` — it depends ONLY on the
-///      deployer, the salt, and the creation bytecode. Adapters take their per-chain config via `initialize(...)`;
-///      the constructor takes a single `expectedInitializer` arg that 05 appends to `creationCode` with a value
-///      (the deployer EOA) that is byte-identical on every chain, so `creationCode` still carries no per-chain data.
+///      `generateSalt(name, DeploySalts.<X>_ADAPTER)` and the adapter's init code — `type(X).creationCode` with the
+///      single `expectedInitializer` constructor arg appended. The deterministic address is
+///      `keccak256(0xff ++ deployer ++ salt ++ keccak256(initCode))[12:]` — it depends ONLY on the deployer, the salt,
+///      and that init code. Adapters take their per-chain config via `initialize(...)`; the appended
+///      `expectedInitializer` arg is set to a value (the deployer EOA) that is byte-identical on every chain, so the
+///      init code still carries no per-chain data.
 ///      This test asserts those preconditions hold, so a future change that (a) adds a per-chain constructor arg,
 ///      (b) collides two salts, or (c) desyncs the salt derivation will fail here instead of silently breaking the
 ///      same-address guarantee at deploy time. It is intentionally chain-agnostic (no fork / no RPC).

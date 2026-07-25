@@ -17,8 +17,8 @@ Deployed via the canonical CREATE2 deployer (`0x4e59b44847b379578588920cA78FbF26
 | Contract | Address |
 | --- | --- |
 | **NAVCalculator proxy** | `0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d` — the address every consumer should call |
-| NAVCalculator implementation | `0x1D3F6905FfAf2A776bD4D7Cfb821c4AAC75F06F6` |
-| PriceFeedLib | `0x4041cC1C7Ffd69531B660acB7Bb9Fd1faa8d2e2B` |
+| NAVCalculator implementation | `0x07bd077cFB40bBDa8A67d0D33ce41b974aB0F8a8` (ADR 0020; supersedes `0x1D3F6905FfAf2A776bD4D7Cfb821c4AAC75F06F6`) |
+| PriceFeedLib | `0x450421a334DE63F75e1d47399d9713f755aaEfF2` (ADR 0020; supersedes `0x4041cC1C7Ffd69531B660acB7Bb9Fd1faa8d2e2B`) |
 | NAVRegistryLib | `0x549f6fB0EC34E18A82A320b79C968a9Ca6e7b96b` |
 | ERC20Default balance adapter | `0x41967559D0a20Ad102F6e27b7723b1963390aD75` (created inside `NAVCalculator.initialize`; identical everywhere) |
 | UUPSPlaceholder | `0x85Ee38b0385D042918a59C01dB319b6eDdF7A8Cf` (temporary impl during atomic proxy deploy) |

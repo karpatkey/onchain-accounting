@@ -11,18 +11,30 @@ import subprocess
 import time
 import urllib.parse
 
-SP = os.path.dirname(os.path.abspath(__file__))
-ENV = "/home/sgzerbo/github-projects/kpk-agents/.env"
+from _paths import SP
+
+# Credentials: real environment first, then an optional dotenv pointed at by TENDERLY_ENV_FILE.
+# (Values in those files may carry a leading space — `TENDERLY_ACCOUNT_ID= karpatkey` — hence strip.)
+ENV_FILE = os.environ.get("TENDERLY_ENV_FILE", "")
 
 
 def env(k):
-    for line in open(ENV):
-        if line.startswith(k + "="):
-            return line.split("=", 1)[1].strip()
+    if os.environ.get(k):
+        return os.environ[k].strip()
+    if ENV_FILE and os.path.exists(ENV_FILE):
+        with open(ENV_FILE) as f:
+            for line in f:
+                if line.startswith(k + "="):
+                    return line.split("=", 1)[1].strip()
     return ""
 
 
 ACC, PROJ, TOK = env("TENDERLY_ACCOUNT_ID"), env("TENDERLY_PROJECT"), env("TENDERLY_API_TOKEN")
+if not (ACC and PROJ and TOK):
+    raise SystemExit(
+        "Tenderly credentials missing — export TENDERLY_ACCOUNT_ID / TENDERLY_PROJECT / "
+        "TENDERLY_API_TOKEN, or point TENDERLY_ENV_FILE at a dotenv containing them."
+    )
 COMPILER = "v0.8.34+commit.80d5c536"
 
 targets = json.load(open(f"{SP}/targets.json"))

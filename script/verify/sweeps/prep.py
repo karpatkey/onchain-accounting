@@ -9,16 +9,18 @@ import os
 import subprocess
 import sys
 
-SP = os.path.dirname(os.path.abspath(__file__))
-REPO = "/home/sgzerbo/github-projects/onchain-accounting-pr-151"
-SOLC = os.path.expanduser("~/.svm/0.8.34/solc-0.8.34")
+from _paths import REPO, SP, forge_env, require_inputs, solc_bin
+
 os.chdir(REPO)
+require_inputs("targets.json", "paths.json")
+SOLC = solc_bin()
 
 targets = json.load(open(f"{SP}/targets.json"))
 paths = json.load(open(f"{SP}/paths.json"))
 os.makedirs(f"{SP}/std", exist_ok=True)
 
-env = dict(os.environ, ETHERSCAN_API_KEY="dummy", PATH=os.path.expanduser("~/.foundry/bin") + ":" + os.environ["PATH"])
+# ETHERSCAN_API_KEY must be set to *something* or --show-standard-json-input writes an empty file.
+env = forge_env(ETHERSCAN_API_KEY="dummy")
 names = sorted({t["name"] for t in targets})
 report = {}
 

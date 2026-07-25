@@ -11,7 +11,9 @@ import os
 import subprocess
 import time
 
-SP = os.path.dirname(os.path.abspath(__file__))
+from _paths import SP, require_inputs
+
+require_inputs("targets.json", "paths.json")
 UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36"
 COMPILER = "v0.8.34+commit.80d5c536"
 

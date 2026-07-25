@@ -11,7 +11,9 @@ import time
 import urllib.parse
 import urllib.request
 
-SP = os.path.dirname(os.path.abspath(__file__))
+from _paths import SP, require_inputs
+
+require_inputs("targets.json", "paths.json")
 KEY = sys.argv[1]
 COMPILER = "v0.8.34+commit.80d5c536"
 OFF_V2 = {196, 16661, 43111, 57073, 534352}

@@ -7,18 +7,41 @@ implementation on 24 chains, plus the 39 re-deployed custom price feeds on chain
 They live here rather than in a scratch directory because the previous rollout's equivalents were
 lost with their tmpdir, and the next migration had to reconstruct them from a session transcript.
 
+## Inputs (generated, not committed)
+
+Every runner reads two files from this directory, produced by `make_targets.py`:
+
+| File | Contents | Derived from |
+| --- | --- | --- |
+| `targets.json` | `[{chain, addr, name, kind, args?}]` — every (chain, address) to verify | `script/config/deployments/<chainId>.json` for the canonical layer; `broadcast/03_DeployPriceFeeds.s.sol/<chainId>/run-latest.json` for the feeds + their constructor args |
+| `paths.json` | `{ContractName: "src/…/File.sol"}` | grep of `src/` for each declaration |
+
+They are regenerated rather than committed because both derive from repo state, and the broadcast
+logs they read are themselves untracked. **Run `make_targets.py` on the machine that performed the
+deploy** — without those broadcast logs the feed instances are omitted (the script reports what it
+skipped rather than failing silently). Any runner started without these inputs exits with a pointer
+back to the generator instead of a bare traceback.
+
 ## Order
 
 ```bash
+python3 make_targets.py    # FIRST: writes targets.json + paths.json (see Inputs above)
 python3 prep.py            # std-JSON per contract type + ABI-encoded ctor args per instance
 python3 mkstd_lib.py       # full-deploy-scope std-JSON for PriceFeedLib (see "The library" below)
-python3 sourcify_sweep.py  # FIRST: keyless, exact-match, propagates to Etherscan + Routescan
+python3 sourcify_sweep.py  # keyless, exact-match, propagates to Etherscan + Routescan
 python3 etherscan_sweep.py "$ETHERSCAN_API_KEY"   # impl + feeds
 python3 etherscan_lib.py   "$ETHERSCAN_API_KEY"   # PriceFeedLib, raw HTTP, full-scope payload
-python3 blockscout_sweep.py ; python3 oklink_sweep.py ; python3 routescan_sweep.py
-python3 tenderly_sweep.py  # always PUBLIC; creds from kpk-agents/.env
+python3 blockscout_sweep.py ; python3 blockscout_lib_v2.py
+python3 oklink_sweep.py ; python3 routescan_sweep.py
+TENDERLY_ENV_FILE=/path/to/.env python3 tenderly_sweep.py   # always PUBLIC
 python3 matrix.py "$ETHERSCAN_API_KEY"            # independent READ-based confirmation
 ```
+
+Paths and toolchain resolve from the checkout (`_paths.py`), with env overrides when you need them:
+`NAV_REPO_ROOT`, `SOLC_BIN` (defaults to the svm build for `foundry.toml`'s pin, else `solc` on
+PATH), `FOUNDRY_BIN`. Tenderly credentials are read from the environment
+(`TENDERLY_ACCOUNT_ID` / `TENDERLY_PROJECT` / `TENDERLY_API_TOKEN`), falling back to a dotenv at
+`TENDERLY_ENV_FILE`.
 
 Every script is idempotent and resumable — each keeps a `<backend>_results.json` next to itself and
 skips what is already verified, so a killed run just gets re-invoked.

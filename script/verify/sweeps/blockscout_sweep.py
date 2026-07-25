@@ -10,11 +10,12 @@ import subprocess
 import time
 import urllib.request
 
-SP = os.path.dirname(os.path.abspath(__file__))
-REPO = "/home/sgzerbo/github-projects/onchain-accounting-pr-151"
+from _paths import REPO, SP, forge_env, require_inputs
+
 os.chdir(REPO)
-env = dict(os.environ, PATH=os.path.expanduser("~/.foundry/bin") + ":" + os.environ["PATH"],
-           ETHERSCAN_API_KEY="")
+require_inputs("targets.json", "paths.json")
+# Blank ETHERSCAN_API_KEY: with one set, forge ignores --verifier blockscout and hits Etherscan.
+env = forge_env(ETHERSCAN_API_KEY="")
 
 INSTANCES = {
     1: "https://eth.blockscout.com",

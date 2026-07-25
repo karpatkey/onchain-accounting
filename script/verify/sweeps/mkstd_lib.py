@@ -12,15 +12,14 @@ import re
 import subprocess
 import sys
 
-SP = os.path.dirname(os.path.abspath(__file__))
-REPO = "/home/sgzerbo/github-projects/onchain-accounting-pr-151"
-SOLC = os.path.expanduser("~/.svm/0.8.34/solc-0.8.34")
+from _paths import REPO, SP, forge_env, solc_bin
+
 os.chdir(REPO)
+SOLC = solc_bin()
 
 remaps = []
 for line in subprocess.run(["forge", "remappings"], capture_output=True, text=True,
-                           env=dict(os.environ, PATH=os.path.expanduser("~/.foundry/bin") + ":" + os.environ["PATH"])
-                           ).stdout.splitlines():
+                           env=forge_env()).stdout.splitlines():
     if "=" in line:
         a, b = line.split("=", 1)
         remaps.append((a.strip(), b.strip()))

@@ -12,7 +12,9 @@ import sys
 import urllib.parse
 import urllib.request
 
-SP = os.path.dirname(os.path.abspath(__file__))
+from _paths import SP, require_inputs
+
+require_inputs("targets.json", "paths.json")
 KEY = sys.argv[1]
 UA = {"User-Agent": "Mozilla/5.0"}
 OFF_V2 = {196, 16661, 43111, 57073, 534352}

@@ -10,7 +10,9 @@ import time
 import urllib.error
 import urllib.request
 
-SP = os.path.dirname(os.path.abspath(__file__))
+from _paths import SP, require_inputs
+
+require_inputs("targets.json", "paths.json")
 BASE = "https://sourcify.dev/server"
 SOLC = "0.8.34+commit.80d5c536"   # bare, no 'v' prefix for Sourcify
 

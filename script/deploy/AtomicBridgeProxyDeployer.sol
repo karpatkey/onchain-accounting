@@ -39,6 +39,10 @@ contract AtomicBridgeProxyDeployer {
         address adminToGrant,
         address managerToGrant
     ) {
+        // The final step renounces this contract's own DEFAULT_ADMIN_ROLE, so a zero admin here would leave the
+        // escrow proxy with no admin (irrecoverable). This contract exists to hand off admin atomically — require it.
+        require(adminToGrant != address(0), "AtomicBridgeProxyDeployer: zero admin");
+
         bytes32 saltPlaceholder = keccak256(abi.encodePacked("ProxyPlaceholderImpl", DeploySalts.PLACEHOLDER_IMPL));
         bytes memory placeholderBytecode = type(UUPSPlaceholder).creationCode;
         address placeholder = _computeCreate2(CANONICAL_CREATE2_DEPLOYER, saltPlaceholder, placeholderBytecode);
@@ -64,10 +68,8 @@ contract AtomicBridgeProxyDeployer {
             abi.encodeCall(BridgeEscrow.initialize, (address(this), chainId_, initialAccounts, initialAdapters));
         UUPSUpgradeable(bridgeProxy).upgradeToAndCall(bridgeImpl, initData);
 
-        // 4. Grant DEFAULT_ADMIN_ROLE to the intended admin.
-        if (adminToGrant != address(0)) {
-            IAccessControl(bridgeProxy).grantRole(DEFAULT_ADMIN_ROLE, adminToGrant);
-        }
+        // 4. Grant DEFAULT_ADMIN_ROLE to the intended admin (guaranteed non-zero by the constructor guard).
+        IAccessControl(bridgeProxy).grantRole(DEFAULT_ADMIN_ROLE, adminToGrant);
 
         // 5. Grant MANAGER while this contract still holds DEFAULT_ADMIN_ROLE.
         if (managerToGrant != address(0)) {

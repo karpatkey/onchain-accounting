@@ -47,6 +47,19 @@ protocol message (or a careful audit of the real protocol's message shape) expos
   (`_completeBridge`) can then complete **only** the exact transfer whose provenance was recorded (keying by the
   hash prevents a same-lane sibling from completing on another transfer's authentication) — it cannot re-read
   the AMB after the fact.
+- **Gnosis USDC-via-omnibridge (transmuter swap).** The general Gnosis omnibridge delivers the *legacy*
+  "USD//C on xDai" (`0xDDAfbb50`), not the Circle **USDC.e** (`0x2a22f9c3`) the escrow registers, so a USDC
+  omnibridge transfer would fail the delivered-token check and strand (observed in the dress rehearsal). The
+  adapter takes an optional `usdcTransmuter` (`setUsdcTransmuter`, DEFAULT_ADMIN; `address(0)` = disabled, so
+  the Ethereum-side adapter is unaffected and bridges native USDC directly) and reads the transmuter's immutable
+  `USDC_ON_XDAI()` / `USDC_E()` (nothing hardcoded). Inbound (ETH→GC): accept the authenticated legacy delivery
+  for a `USDC_E` invoice and `deposit` legacy→USDC.e before release (the delivered-token guard is widened to
+  accept **only** that route). Outbound (GC→ETH): `withdraw` USDC.e→legacy before `relayTokensAndCall`. The MANAGER
+  fallback performs the same swap. **Fail-safe ordering:** `authenticatedInvoice` is recorded **before** the swap,
+  and swap+release run inside the existing `try/catch`, so a transmuter failure (disabled / reserve-short /
+  blacklist) leaves a recorded, MANAGER-recoverable invoice — never a loss; an outbound `withdraw` revert simply
+  reverts the source `depositAndBridge` (funds never leave escrow). This makes ETH↔GC USDC available over **both**
+  Stargate and the omnibridge (both land the registered USDC.e); the operator picks per transfer.
 
 **2. Superchain multi-L2 via per-L2-chainId keyed maps (Option C).** The L1 adapter keys its L1 config by L2
 chain id: `l1BridgeForL2`, `optimismPortalForL2`, `l1ToL2TokenForL2`. The deposit leg selects by

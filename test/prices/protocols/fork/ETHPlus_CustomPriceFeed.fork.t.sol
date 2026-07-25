@@ -90,7 +90,9 @@ contract ETHPlus_CustomPriceFeedForkTest is TestEnvConfigurator {
     ///      only the freshness leg.
     function test_governingFeedFreshness_iffy_returnsZeroUpdatedAt() public {
         vm.mockCall(
-            _basketHandlerAddress(), abi.encodeWithSelector(IBasketHandler.status.selector), abi.encode(CollateralStatus.IFFY)
+            _basketHandlerAddress(),
+            abi.encodeWithSelector(IBasketHandler.status.selector),
+            abi.encode(CollateralStatus.IFFY)
         );
         (uint256 gUpdatedAt, uint256 gHeartbeat) = oracle.governingFeedFreshness();
         assertEq(gUpdatedAt, 0, "non-SOUND basket -> updatedAt 0");

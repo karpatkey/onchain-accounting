@@ -249,3 +249,20 @@ A route `(srcChain → dstChain, asset, adapter)` is only *completable* when all
   - **Omnibridge (Gnosis adapter)** delivers the legacy `0xDDAfbb50`, then swaps it **1:1** to/from `USDC.e` through the immutable **USDCTransmuter (`0x0392A2F5…`)** — inbound `deposit` (legacy→USDC.e), outbound `withdraw` (USDC.e→legacy) — so it also lands the registered `USDC.e`. Wired only on Gnosis via the `usdcTransmuter` config (`setUsdcTransmuter`, DEFAULT_ADMIN; unset/`address(0)` on the Ethereum side, which bridges native USDC directly). WETH is a single token across all bridges, so WETH↔Gnosis is unambiguous and needs no swap.
 
 **Roles note (deploy window):** `07` grants the security council adapter MANAGER for steady state, but a canary/validation run *before* `07` needs the deploy EOA to hold adapter MANAGER to exercise CCTP/Superchain `completeBridge`. `06._ensureAdapterManager` grants that during `06`; `07` later revokes the deployer and grants the council.
+
+### 10.2 Completion keeper — some lanes are not hands-off
+
+A cross-chain transfer is only finished when the assets are released to the account on the destination. For some adapters/directions the destination release happens **automatically** (the vendor's own relayer/executor delivers and the adapter's auto-receiver fires); for others it requires an **off-chain action on the destination chain**. The escrow/adapters cannot perform those destination actions from the source side, so production needs a **completion keeper** — an off-chain agent (a bot, or a service like Gelato / OpenZeppelin Defender / Chainlink Automation) that watches the escrow's outbound `BRIDGING` invoices and performs the destination completion for each keeper-required path. (Empirically verified on the 2026-07 rehearsal canaries.)
+
+| Adapter / direction | Destination completion | Hands-off? |
+|---|---|---|
+| CCIP (both) | `ccipReceive` — the CCIP DON delivers + calls it | ✅ auto |
+| Stargate (both) | `lzCompose` — the LayerZero executor runs it (needs `composeOptions` wired) | ✅ auto |
+| Superchain **L1→L2** | the L2 `CrossDomainMessenger` auto-relays the deposit | ✅ auto |
+| Gnosis **ETH→GC** | the AMB auto-affirms on Gnosis (cheap gas) | ✅ auto |
+| **CCTP** (both) | fetch Circle's attestation for the burn, then MANAGER `completeBridge` (`messageTransmitter.receiveMessage`) | 🔧 **keeper** |
+| **Superchain L2→L1** | `proveWithdrawal`, then `finalizeWithdrawal` after the ~7-day challenge window | 🔧 **keeper** |
+| **Gnosis GC→ETH** | `executeSignatures(msg, sigs)` on the ETH foreign AMB (`0x4C36d291…`) — the OmniBridge "CLAIM"; home→foreign is not auto-executed because it costs Ethereum L1 gas. The claim also fires `onTokenBridged`, so the adapter releases in the same tx. | 🔧 **keeper** |
+| **Across** (both) | a relayer must `fillV3Relay` on the destination; our funded pass-through is **zero-margin** (`outputAmount == inputAmount`), so third-party relayers have no incentive — a **designated relayer** must fill | 🔧 **keeper** |
+
+The keeper is stateless with respect to the escrow (it only submits the vendor's own completion call) and needs the destination-chain gas token plus, for Across, the output-token liquidity to front the fill (repaid by Across). One agent can cover all four paths. This is the same operational gap as escrow settlement (`markInvoiceCompleted`) — neither is shipped in this repo; both are the operator's responsibility.

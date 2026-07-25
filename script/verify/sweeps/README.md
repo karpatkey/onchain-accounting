@@ -60,6 +60,11 @@ failure.
 Etherscan matters most here regardless, since it is what clears the "contract contains unverified
 libraries" banner on the implementation across every `…scan` UI.
 
+**The scope is irreducible — don't try to shrink the payload.** Measured: `src/**` alone (241 files,
+2.08 MB reduced) compiles to *different* bytecode; only `src/** + script/**` (283 files, 2.60 MB)
+matches. So any backend whose transport ceiling sits below ~2.6 MB cannot take this library at all
+(0G's nginx answers `413 Request Entity Too Large`; Tenderly answers `upstream request timeout`).
+
 ## Gotchas these runners encode
 
 - `--show-standard-json-input` writes an empty file unless `ETHERSCAN_API_KEY` is set (any value).
@@ -81,3 +86,27 @@ libraries" banner on the implementation across every `…scan` UI.
   retry rather than treating it as a payload failure.
 - There is **no Blockscout API key** anywhere in the org's repos, and none is needed: a Pro key only
   raises rate limits, verification itself is keyless.
+- **0G (16661) is verifiable after all.** `chainscan.0g.ai` is a Confluxscan fork: `/api` and
+  `/api/v2/...` serve SPA HTML (easy to misread as "no API"), but **`/open/api?module=contract&…`**
+  is a full keyless Etherscan-compatible API — `verifysourcecode` → `checkverifystatus` →
+  `Pass - Verified`. The NAV implementation is verified there through it. Only the library fails,
+  on the 413 above.
+- Chain explorers are listed in `script/config/chains/<chainId>.json`; check there before concluding
+  a chain has no verification endpoint.
+
+## Final coverage (2026-07-25) — 84 of 87 instances
+
+All 63 implementation + feed instances are verified on every backend that supports their chain
+(Sourcify 63/63, Etherscan 58/58 on-V2, Blockscout 48/48, Routescan 30/30, OKLink 51, Tenderly 59) —
+zero failures, most on three or four independent explorers.
+
+`PriceFeedLib` is verified on 21 of 24 chains (19 via Etherscan V2, plus ink and scroll via
+Blockscout). The three that cannot carry it:
+
+| Chain | Why |
+| --- | --- |
+| 196 X Layer | off Etherscan V2; OKLink is the only backend and `Fail`s it, Tenderly times out |
+| 16661 0G | `/open/api` works for normal contracts, but nginx `413`s the 2.6 MB payload |
+| 43111 hemi | Blockscout accepts the job and never completes it (same shape as Sourcify's OOM) |
+
+On all three the NAV implementation — the contract consumers actually read — is verified.

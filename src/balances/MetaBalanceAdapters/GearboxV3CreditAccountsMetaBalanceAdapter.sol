@@ -69,11 +69,8 @@ contract GearboxV3CreditAccountsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @dev Necessary but NOT sufficient on its own; see {MAX_RETURN_BYTES} for the caller-side bound.
     uint256 private constant LABEL_READ_GAS = 100_000;
 
-    /// @param protocolName_ Human-readable protocol name (e.g. "Gearbox").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(string memory protocolName_, address navCalculator_)
-        MetaBalanceAdapter(protocolName_, navCalculator_)
-    {}
+    constructor(address navCalculator_) MetaBalanceAdapter(navCalculator_) {}
 
     /// @inheritdoc MetaBalanceAdapter
     /// @dev `instance` is the credit account address. Returns an empty array (never reverts) when: the credit

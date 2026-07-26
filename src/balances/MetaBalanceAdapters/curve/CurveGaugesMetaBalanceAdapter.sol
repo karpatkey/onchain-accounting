@@ -61,11 +61,8 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
     /// @param minter_        Curve Minter (0xd061D61a4d941c39E5453435B6345Dc261C2fcE0 on mainnet,
     ///                       address(0) on L2 to disable CRV tracking).
     /// @param crvToken_      CRV token address (0xD533...034cd52 on mainnet, address(0) to skip).
-    /// @param protocolName_  Human-readable name (e.g. "Curve").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(address minter_, address crvToken_, string memory protocolName_, address navCalculator_)
-        MetaBalanceAdapter(protocolName_, navCalculator_)
-    {
+    constructor(address minter_, address crvToken_, address navCalculator_) MetaBalanceAdapter(navCalculator_) {
         CURVE_MINTER = minter_;
         CRV_TOKEN = crvToken_;
     }

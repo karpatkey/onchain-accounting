@@ -50,7 +50,7 @@ contract UniswapV2PoolsMetaBalanceAdapterTest is Test {
         pairB.setTotalSupply(200e18);
         pairB.setBalance(alice, 10e18); // 5% share -> 100 USDC, 1 WETH
 
-        meta = new UniswapV2PoolsMetaBalanceAdapter("Uniswap V2", address(nav));
+        meta = new UniswapV2PoolsMetaBalanceAdapter(address(nav));
     }
 
     function _instances() internal view returns (bytes32[] memory ins) {

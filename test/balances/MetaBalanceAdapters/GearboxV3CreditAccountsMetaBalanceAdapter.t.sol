@@ -146,7 +146,7 @@ contract GearboxV3CreditAccountsMetaBalanceAdapterTest is Test {
 
         ca = new MockCreditAccount(address(cm));
 
-        adapter = new GearboxV3CreditAccountsMetaBalanceAdapter("Gearbox", address(nav));
+        adapter = new GearboxV3CreditAccountsMetaBalanceAdapter(address(nav));
     }
 
     function _instances() internal view returns (bytes32[] memory ins) {

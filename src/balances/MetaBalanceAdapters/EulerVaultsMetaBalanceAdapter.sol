@@ -78,11 +78,8 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     ///      degrade classification, while still bounding the work a malformed/hostile `getCollaterals` can impose.
     uint256 private constant MAX_COLLATERALS = 32;
 
-    /// @param protocolName_ Human-readable protocol name (e.g. "Euler").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(string memory protocolName_, address navCalculator_)
-        MetaBalanceAdapter(protocolName_, navCalculator_)
-    {}
+    constructor(address navCalculator_) MetaBalanceAdapter(navCalculator_) {}
 
     /// @inheritdoc MetaBalanceAdapter
     /// @dev Returns an empty array (rather than reverting) when the vault asset is unregistered or the account has

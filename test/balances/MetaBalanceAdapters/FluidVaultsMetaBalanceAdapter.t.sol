@@ -58,7 +58,7 @@ contract FluidVaultsMetaBalanceAdapterTest is Test {
         resolver.pushNft(alice, 1, address(vaultA), 5e18, 1000e6, false);
         resolver.pushNft(alice, 2, address(vaultB), 2e18, 1e18, false);
 
-        meta = new FluidVaultsMetaBalanceAdapter(address(resolver), "Fluid", address(nav));
+        meta = new FluidVaultsMetaBalanceAdapter(address(resolver), address(nav));
     }
 
     function _instances() internal view returns (bytes32[] memory ins) {
@@ -108,7 +108,7 @@ contract FluidVaultsMetaBalanceAdapterTest is Test {
         MockFluidVaultResolver r2 = new MockFluidVaultResolver();
         r2.setVaultType(address(vaultA), 10000);
         r2.pushNft(alice, 9, address(vaultA), 5e18, 1000e6, true);
-        FluidVaultsMetaBalanceAdapter m2 = new FluidVaultsMetaBalanceAdapter(address(r2), "Fluid", address(nav));
+        FluidVaultsMetaBalanceAdapter m2 = new FluidVaultsMetaBalanceAdapter(address(r2), address(nav));
         bytes32[] memory one = new bytes32[](1);
         one[0] = bytes32(uint256(uint160(address(vaultA))));
         assertEq(m2.getAdapterPositionsForInstances(alice, one, address(0)).length, 0);

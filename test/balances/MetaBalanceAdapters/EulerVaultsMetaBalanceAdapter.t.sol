@@ -319,7 +319,7 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
         vaultA = new MockEVault("KPK RWA USDC", address(usdc), 1e18);
         vaultB = new MockEVault("KPK ETH Yield Term", address(weth), 1.001e18);
 
-        adapter = new EulerVaultsMetaBalanceAdapter("Euler", address(nav));
+        adapter = new EulerVaultsMetaBalanceAdapter(address(nav));
     }
 
     function _instances() internal view returns (bytes32[] memory ins) {

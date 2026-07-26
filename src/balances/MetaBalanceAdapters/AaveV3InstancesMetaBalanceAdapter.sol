@@ -68,11 +68,8 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
     /// @dev Necessary but NOT sufficient on its own; see {MAX_RETURN_BYTES} for the caller-side bound.
     uint256 private constant LABEL_READ_GAS = 100_000;
 
-    /// @param protocolName_ Human-readable protocol name (e.g. "Aave V3").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(string memory protocolName_, address navCalculator_)
-        MetaBalanceAdapter(protocolName_, navCalculator_)
-    {}
+    constructor(address navCalculator_) MetaBalanceAdapter(navCalculator_) {}
 
     /// @inheritdoc MetaBalanceAdapter
     /// @dev `instance` is the instance's ProtocolDataProvider. Emits up to two rows per registered reserve:

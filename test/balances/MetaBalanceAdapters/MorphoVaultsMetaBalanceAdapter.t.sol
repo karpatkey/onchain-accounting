@@ -72,7 +72,7 @@ contract MorphoVaultsMetaBalanceAdapterTest is Test {
         vaultA = new MockMetaVault("Steakhouse USDC", address(usdc), 1e18);
         vaultB = new MockMetaVault("kpk ETH Prime", address(weth), 2e18);
 
-        adapter = new MorphoVaultsMetaBalanceAdapter("Morpho", address(nav));
+        adapter = new MorphoVaultsMetaBalanceAdapter(address(nav));
     }
 
     function _instances() internal view returns (bytes32[] memory ins) {

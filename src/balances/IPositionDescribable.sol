@@ -21,7 +21,7 @@ interface IPositionDescribable {
     ///      `ProtocolIds` protocol id MUST return the same name. Pull it from `src/utils/ProtocolNames.sol` rather
     ///      than writing a literal — new and changed adapters should reference the constant; the pre-existing
     ///      literals are being migrated adapter by adapter and are meanwhile pinned to their constants by
-    ///      `test/ProtocolNameConsistency.t.sol`, which asserts the invariant either way.
+    ///      `test/ProtocolNameConsistency.t.sol`. Meta-adapters need no literal at all (see below).
     ///
     ///      Why the distinction is load-bearing rather than cosmetic: consumers group *configured adapters* by this
     ///      string. The typed `protocolBrand`/`protocolId`/`protocolSubId` would group them correctly, but they are
@@ -30,10 +30,10 @@ interface IPositionDescribable {
     ///      identity it has. An adapter that returns its product name here splits itself out into a phantom sibling
     ///      protocol (`AaveUmbrellaBalanceAdapter` returned "Aave Umbrella" and did exactly that).
     ///
-    ///      Per-instance adapters return a compile-time constant. Meta-adapters return a constant too (the protocol
-    ///      name is the same regardless of which instance is being described), but supplied as a constructor
-    ///      argument — so for those the value is fixed at DEPLOY time and is not visible in `src/` at all. The
-    ///      deploy layer resolves it from the same constants via `script/utils/ProtocolNameResolver.sol`.
+    ///      Per-instance adapters return a compile-time constant. Meta-adapters **derive** it —
+    ///      `MetaBalanceAdapter.protocolName()` is `ProtocolNames.forProtocolId(_protocolId())` — so for the whole
+    ///      meta family the invariant holds by construction: the name is a pure function of the typed identity the
+    ///      adapter already declares, with no constructor argument or config value that could disagree with it.
     function protocolName() external view returns (string memory);
 
     /// @notice Ordered, arbitrary-depth display hierarchy for a single position, BELOW the protocol level.

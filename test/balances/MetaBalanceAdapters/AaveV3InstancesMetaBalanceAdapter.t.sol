@@ -157,7 +157,7 @@ contract AaveV3InstancesMetaUnitTest is BalanceAdapterTestBase {
         list[0] = address(usdc);
         list[1] = address(weth);
         pool.setReservesList(list);
-        adapter = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(balances));
+        adapter = new AaveV3InstancesMetaBalanceAdapter(address(balances));
     }
 
     function _ids() internal view returns (bytes32[] memory a) {

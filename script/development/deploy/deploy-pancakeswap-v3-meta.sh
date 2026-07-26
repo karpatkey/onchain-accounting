@@ -22,7 +22,6 @@ CHAINS_CFG="$DEV_DIR/config/chains.json"
 # Canonical PancakeSwap V3 NonfungiblePositionManager (CREATE2 — same address on every chain that
 # has PancakeSwap V3: Ethereum, BSC, Base, Arbitrum, ...). Override via DEV_NPM if a chain diverges.
 NPM=${DEV_NPM:-0x46A15B0b27311cedF172AB29E4f4766fbE7F4364}
-PROTOCOL_NAME=${DEV_PROTOCOL_NAME:-"PancakeSwap V3"}
 
 # Anvil prefunded account #0 (holds MANAGER after 01_DeployNAV).
 DEV_PRIVATE_KEY="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
@@ -44,7 +43,6 @@ echo "    account: ${ACCOUNT:-<none>}  tokenIds: ${TOKEN_IDS:-<none>}"
 out=$(
   DEV_NAV_PROXY="$NAV" \
   DEV_NPM="$NPM" \
-  DEV_PROTOCOL_NAME="$PROTOCOL_NAME" \
   DEV_ACCOUNT="$ACCOUNT" \
   DEV_TOKEN_IDS="$TOKEN_IDS" \
   FOUNDRY_PROFILE=dev \

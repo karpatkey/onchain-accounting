@@ -3,7 +3,6 @@
     "enabled": false,
     "constructor": {
       "dataProvider": "0x7B4EB56E7CD4b454BA8ff71E4518426369a138a3",
-      "protocol": "Aave V3",
       "positionId": "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2"
     }
   },
@@ -11,7 +10,6 @@
     "enabled": false,
     "constructor": {
       "dataProvider": "0xB85B2bFEbeC4F5f401dbf92ac147A3076391fCD5",
-      "protocol": "Aave V3",
       "positionId": "0x4e033931ad43597d96D6bcc25c280717730B58B1"
     }
   },
@@ -19,14 +17,12 @@
     "enabled": true,
     "constructor": {
       "dataProvider": "0xFc21d6d146E6086B8359705C8b28512a983db0cb",
-      "protocol": "Spark",
       "positionId": "0xC13e21B648A5Ee794902342038FF3aDAB66BE987"
     }
   },
   "AaveV3SafetyModule": {
     "enabled": true,
     "constructor": {
-      "protocol": "Aave V3",
       "positionId": "0x4da27a545c0c5B758a6BA100e3a049001de870f5"
     }
   },
@@ -34,7 +30,6 @@
     "enabled": true,
     "constructor": {
       "rewardsController": "0x4655Ce3D625a63d30bA704087E52B4C31E38188B",
-      "protocol": "Aave V3",
       "positionId": "0x4655Ce3D625a63d30bA704087E52B4C31E38188B"
     }
   },
@@ -44,7 +39,6 @@
       "cUsd": "0xcCcc62962d17b8914c62D74FfB843d73B2a3cccC",
       "stcUsd": "0x88887bE419578051FF9F4eb6C858A951921D8888",
       "usdc": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-      "protocol": "Cap",
       "positionId": "0x88887bE419578051FF9F4eb6C858A951921D8888"
     }
   },
@@ -52,7 +46,6 @@
     "enabled": false,
     "constructor": {
       "vault": "0xd564F765F9aD3E7d2d6cA782100795a885e8e7C8",
-      "protocol": "Morpho",
       "positionId": "0xd564F765F9aD3E7d2d6cA782100795a885e8e7C8"
     }
   },
@@ -60,7 +53,6 @@
     "enabled": false,
     "constructor": {
       "vault": "0xBb50A5341368751024ddf33385BA8cf61fE65FF9",
-      "protocol": "Morpho",
       "positionId": "0xBb50A5341368751024ddf33385BA8cf61fE65FF9"
     }
   },
@@ -68,7 +60,6 @@
     "enabled": false,
     "constructor": {
       "vault": "0xe108fbc04852B5df72f9E44d7C29F47e7A993aDd",
-      "protocol": "Morpho",
       "positionId": "0xe108fbc04852B5df72f9E44d7C29F47e7A993aDd"
     }
   },
@@ -76,7 +67,6 @@
     "enabled": false,
     "constructor": {
       "vault": "0x4Ef53d2cAa51C447fdFEEedee8F07FD1962C9ee6",
-      "protocol": "Morpho",
       "positionId": "0x4Ef53d2cAa51C447fdFEEedee8F07FD1962C9ee6"
     }
   },
@@ -85,7 +75,6 @@
     "$comment": "kpk EURC vault (MetaMorpho ERC4626). Superseded by MorphoVaultsMeta (ADR 0010); vault still queried via instances.",
     "constructor": {
       "vault": "0xa877d5BB0274dCcBA8556154a30E1cA4021a275f",
-      "protocol": "Morpho",
       "positionId": "0xa877d5BB0274dCcBA8556154a30E1cA4021a275f"
     }
   },
@@ -93,103 +82,90 @@
     "enabled": false,
     "constructor": {
       "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
-      "marketId": "0xb323495f7e4148be5643a4ea4a8221eef163e4bccfdedc2a6f4696baacbc86cc",
-      "protocol": "Morpho"
+      "marketId": "0xb323495f7e4148be5643a4ea4a8221eef163e4bccfdedc2a6f4696baacbc86cc"
     }
   },
   "MorphoMarket_cbBTC_USDC": {
     "enabled": false,
     "constructor": {
       "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
-      "marketId": "0x64d65c9a2d91c36d56fbc42d69e979335320169b3df63bf92789e2c8883fcc64",
-      "protocol": "Morpho"
+      "marketId": "0x64d65c9a2d91c36d56fbc42d69e979335320169b3df63bf92789e2c8883fcc64"
     }
   },
   "MorphoMarket_wstUSR_USDC": {
     "enabled": false,
     "constructor": {
       "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
-      "marketId": "0xd9e34b1eed46d123ac1b69b224de1881dbc88798bc7b70f504920f62f58f28cc",
-      "protocol": "Morpho"
+      "marketId": "0xd9e34b1eed46d123ac1b69b224de1881dbc88798bc7b70f504920f62f58f28cc"
     }
   },
   "MorphoMarket_ETHPlus_USDC": {
     "enabled": false,
     "constructor": {
       "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
-      "marketId": "0xdb8938f97571aeab0deb0c34cf7e6278cff969538f49eebe6f4fc75a9a111293",
-      "protocol": "Morpho"
+      "marketId": "0xdb8938f97571aeab0deb0c34cf7e6278cff969538f49eebe6f4fc75a9a111293"
     }
   },
   "MorphoMarket_WBTC_USDC": {
     "enabled": false,
     "constructor": {
       "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
-      "marketId": "0x3a85e619751152991742810df6ec69ce473daef99e28a64ab2340d7b7ccfee49",
-      "protocol": "Morpho"
+      "marketId": "0x3a85e619751152991742810df6ec69ce473daef99e28a64ab2340d7b7ccfee49"
     }
   },
   "MorphoMarket_RLP_USDC": {
     "enabled": false,
     "constructor": {
       "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
-      "marketId": "0xe1b65304edd8ceaea9b629df4c3c926a37d1216e27900505c04f14b2ed279f33",
-      "protocol": "Morpho"
+      "marketId": "0xe1b65304edd8ceaea9b629df4c3c926a37d1216e27900505c04f14b2ed279f33"
     }
   },
   "MorphoMarket_syrupUSDC_USDC": {
     "enabled": false,
     "constructor": {
       "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
-      "marketId": "0x729badf297ee9f2f6b3f717b96fd355fc6ec00422284ce1968e76647b258cf44",
-      "protocol": "Morpho"
+      "marketId": "0x729badf297ee9f2f6b3f717b96fd355fc6ec00422284ce1968e76647b258cf44"
     }
   },
   "MorphoMarket_sUSDS_USDT": {
     "enabled": false,
     "constructor": {
       "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
-      "marketId": "0x3274643db77a064abd3bc851de77556a4ad2e2f502f4f0c80845fa8f909ecf0b",
-      "protocol": "Morpho"
+      "marketId": "0x3274643db77a064abd3bc851de77556a4ad2e2f502f4f0c80845fa8f909ecf0b"
     }
   },
   "MorphoMarket_ETHPlus_WETH": {
     "enabled": false,
     "constructor": {
       "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
-      "marketId": "0x5f8a138ba332398a9116910f4d5e5dcd9b207024c5290ce5bc87bc2dbd8e4a86",
-      "protocol": "Morpho"
+      "marketId": "0x5f8a138ba332398a9116910f4d5e5dcd9b207024c5290ce5bc87bc2dbd8e4a86"
     }
   },
   "MorphoMarket_wstETH_WETH": {
     "enabled": false,
     "constructor": {
       "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
-      "marketId": "0xb8fc70e82bc5bb53e773626fcc6a23f7eefa036918d7ef216ecfb1950a94a85e",
-      "protocol": "Morpho"
+      "marketId": "0xb8fc70e82bc5bb53e773626fcc6a23f7eefa036918d7ef216ecfb1950a94a85e"
     }
   },
   "MorphoMarket_weETH_WETH": {
     "enabled": false,
     "constructor": {
       "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
-      "marketId": "0x37e7484d642d90f14451f1910ba4b7b8e4c3ccdd0ec28f8b2bdb35479e472ba7",
-      "protocol": "Morpho"
+      "marketId": "0x37e7484d642d90f14451f1910ba4b7b8e4c3ccdd0ec28f8b2bdb35479e472ba7"
     }
   },
   "MorphoMarket_rsETH_WETH": {
     "enabled": false,
     "constructor": {
       "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb",
-      "marketId": "0xba761af4134efb0855adfba638945f454f0a704af11fc93439e20c7c5ebab942",
-      "protocol": "Morpho"
+      "marketId": "0xba761af4134efb0855adfba638945f454f0a704af11fc93439e20c7c5ebab942"
     }
   },
   "GearboxMarket_kpkWETH": {
     "enabled": false,
     "constructor": {
       "market": "0x9396DCbf78fc526bb003665337C5E73b699571EF",
-      "protocol": "Gearbox",
       "positionId": "0x9396DCbf78fc526bb003665337C5E73b699571EF"
     }
   },
@@ -197,7 +173,6 @@
     "enabled": false,
     "constructor": {
       "market": "0xA9d17f6D3285208280a1Fd9B94479c62e0AABa64",
-      "protocol": "Gearbox",
       "positionId": "0xA9d17f6D3285208280a1Fd9B94479c62e0AABa64"
     }
   },
@@ -207,7 +182,6 @@
       "pool": "0x1ea5870f7C037930CE1d5d8d9317c670e89e13E3",
       "gauge": "0x62A66eB9aBf7a788F48D0ce7C0C065df9e09dA19",
       "balancerMinter": "0x239e55F427D44C3cc793f49bFB507ebe76638a2b",
-      "protocol": "Balancer V3",
       "positionId": "0x1ea5870f7C037930CE1d5d8d9317c670e89e13E3"
     }
   },
@@ -217,7 +191,6 @@
       "pool": "0x85B2b559bC2D21104C4DEFdd6EFcA8A20343361D",
       "gauge": "0x9fdD52eFEb601E4Bc78b89C6490505B8aC637E9f",
       "balancerMinter": "0x239e55F427D44C3cc793f49bFB507ebe76638a2b",
-      "protocol": "Balancer V3",
       "positionId": "0x85B2b559bC2D21104C4DEFdd6EFcA8A20343361D"
     }
   },
@@ -225,7 +198,6 @@
     "enabled": false,
     "constructor": {
       "gauge": "0x053df3e4D0CeD9a3Bf0494F97E83CE1f13BdC0E2",
-      "protocol": "Curve",
       "positionId": "0x053df3e4D0CeD9a3Bf0494F97E83CE1f13BdC0E2"
     }
   },
@@ -233,7 +205,6 @@
     "enabled": false,
     "constructor": {
       "gauge": "0x95f00391cB5EebCd190EB58728B4CE23DbFa6ac1",
-      "protocol": "Curve",
       "positionId": "0x95f00391cB5EebCd190EB58728B4CE23DbFa6ac1"
     }
   },
@@ -241,7 +212,6 @@
     "enabled": false,
     "constructor": {
       "gauge": "0x4e6bB6B7447B7B2Aa268C16AB87F4Bb48BF57939",
-      "protocol": "Curve",
       "positionId": "0x4e6bB6B7447B7B2Aa268C16AB87F4Bb48BF57939"
     }
   },
@@ -249,7 +219,6 @@
     "enabled": false,
     "constructor": {
       "gauge": "0xFc3212Bd9Ad9A28Da6B2bd50a2918969C126894F",
-      "protocol": "Curve",
       "positionId": "0xFc3212Bd9Ad9A28Da6B2bd50a2918969C126894F"
     }
   },
@@ -258,7 +227,6 @@
     "constructor": {
       "rewarder": "0x5411CC583f0b51104fA523eEF9FC77A29DF80F58",
       "lpToken": "0xDB74dfDD3BB46bE8Ce6C33dC9D82777BCFc3dEd5",
-      "protocol": "Convex",
       "positionId": "0x5411CC583f0b51104fA523eEF9FC77A29DF80F58"
     }
   },
@@ -267,7 +235,6 @@
     "constructor": {
       "rewarder": "0x44D8FaB7CD8b7877D5F79974c2F501aF6E65AbBA",
       "lpToken": "0x4DEcE678ceceb27446b35C672dC7d61F30bAD69E",
-      "protocol": "Convex",
       "positionId": "0x44D8FaB7CD8b7877D5F79974c2F501aF6E65AbBA"
     }
   },
@@ -276,7 +243,6 @@
     "constructor": {
       "rewarder": "0xD1DdB0a0815fD28932fBb194C84003683AF8a824",
       "lpToken": "0x390f3595bCa2Df7d23783dFd126427CCeb997BF4",
-      "protocol": "Convex",
       "positionId": "0xD1DdB0a0815fD28932fBb194C84003683AF8a824"
     }
   },
@@ -285,7 +251,6 @@
     "constructor": {
       "rewarder": "0x5A71E7e04F8725fD42a216949E7099ebd08A42E3",
       "lpToken": "0xD001aE433f254283FeCE51d4ACcE8c53263aa186",
-      "protocol": "Convex",
       "positionId": "0x5A71E7e04F8725fD42a216949E7099ebd08A42E3"
     }
   },
@@ -293,7 +258,6 @@
     "enabled": false,
     "constructor": {
       "fToken": "0x9Fb7b4477576Fe5B32be4C1843aFB1e55F251B33",
-      "protocol": "Fluid",
       "positionId": "0x9Fb7b4477576Fe5B32be4C1843aFB1e55F251B33"
     }
   },
@@ -301,7 +265,6 @@
     "enabled": false,
     "constructor": {
       "fToken": "0x5C20B550819128074FD538Edf79791733ccEdd18",
-      "protocol": "Fluid",
       "positionId": "0x5C20B550819128074FD538Edf79791733ccEdd18"
     }
   },
@@ -309,7 +272,6 @@
     "enabled": false,
     "constructor": {
       "fToken": "0x90551c1795392094FE6D29B758EcCD233cFAa260",
-      "protocol": "Fluid",
       "positionId": "0x90551c1795392094FE6D29B758EcCD233cFAa260"
     }
   },
@@ -317,7 +279,6 @@
     "enabled": false,
     "constructor": {
       "fToken": "0x2411802D8BEA09be0aF8fD8D08314a63e706b29C",
-      "protocol": "Fluid",
       "positionId": "0x2411802D8BEA09be0aF8fD8D08314a63e706b29C"
     }
   },
@@ -325,7 +286,6 @@
     "enabled": false,
     "constructor": {
       "fToken": "0x6A29A46E21C730DcA1d8b23d637c101cec605C5B",
-      "protocol": "Fluid",
       "positionId": "0x6A29A46E21C730DcA1d8b23d637c101cec605C5B"
     }
   },
@@ -333,7 +293,6 @@
     "enabled": false,
     "constructor": {
       "fToken": "0x2BBE31d63E6813E3AC858C04dae43FB2a72B0D11",
-      "protocol": "Fluid",
       "positionId": "0x2BBE31d63E6813E3AC858C04dae43FB2a72B0D11"
     }
   },
@@ -342,7 +301,6 @@
     "constructor": {
       "vault": "0x51197586F6A9e2571868b6ffaef308f3bdfEd3aE",
       "vaultResolver": "0xA5C3E16523eeeDDcC34706b0E6bE88b4c6EA95cC",
-      "protocol": "Fluid",
       "positionId": "0x51197586F6A9e2571868b6ffaef308f3bdfEd3aE"
     }
   },
@@ -351,7 +309,6 @@
     "constructor": {
       "vault": "0x40D9b8417E6E1DcD358f04E3328bCEd061018A82",
       "vaultResolver": "0xA5C3E16523eeeDDcC34706b0E6bE88b4c6EA95cC",
-      "protocol": "Fluid",
       "positionId": "0x40D9b8417E6E1DcD358f04E3328bCEd061018A82"
     }
   },
@@ -360,7 +317,6 @@
     "constructor": {
       "vault": "0x4045720a33193b4Fe66c94DFbc8D37B0b4D9B469",
       "vaultResolver": "0xA5C3E16523eeeDDcC34706b0E6bE88b4c6EA95cC",
-      "protocol": "Fluid",
       "positionId": "0x4045720a33193b4Fe66c94DFbc8D37B0b4D9B469"
     }
   },
@@ -370,7 +326,6 @@
       "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
       "comet": "0xc3d688B66703497DAA19211EEdff47f25384cdc3",
       "rewardToken": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
-      "protocol": "Compound V3",
       "positionId": "0xc3d688B66703497DAA19211EEdff47f25384cdc3"
     }
   },
@@ -380,7 +335,6 @@
       "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
       "comet": "0x5D409e56D886231aDAf00c8775665AD0f9897b56",
       "rewardToken": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
-      "protocol": "Compound V3",
       "positionId": "0x5D409e56D886231aDAf00c8775665AD0f9897b56"
     }
   },
@@ -390,7 +344,6 @@
       "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
       "comet": "0x3Afdc9BCA9213A35503b077a6072F3D0d5AB0840",
       "rewardToken": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
-      "protocol": "Compound V3",
       "positionId": "0x3Afdc9BCA9213A35503b077a6072F3D0d5AB0840"
     }
   },
@@ -400,7 +353,6 @@
       "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
       "comet": "0xe85Dc543813B8c2CFEaAc371517b925a166a9293",
       "rewardToken": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
-      "protocol": "Compound V3",
       "positionId": "0xe85Dc543813B8c2CFEaAc371517b925a166a9293"
     }
   },
@@ -410,7 +362,6 @@
       "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
       "comet": "0xA17581A9E3356d9A858b789D68B4d866e593aE94",
       "rewardToken": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
-      "protocol": "Compound V3",
       "positionId": "0xA17581A9E3356d9A858b789D68B4d866e593aE94"
     }
   },
@@ -420,7 +371,6 @@
       "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
       "comet": "0x3D0bb1ccaB520A66e607822fC55BC921738fAFE3",
       "rewardToken": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
-      "protocol": "Compound V3",
       "positionId": "0x3D0bb1ccaB520A66e607822fC55BC921738fAFE3"
     }
   },
@@ -429,7 +379,6 @@
     "constructor": {
       "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
       "vault": "0xAC0F906E433d58FA868F936E8A43230473652885",
-      "protocol": "StakeWise V3",
       "positionId": "0xAC0F906E433d58FA868F936E8A43230473652885"
     }
   },
@@ -438,7 +387,6 @@
     "constructor": {
       "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
       "vault": "0x15639e82d2072fa510e5d2b5f0db361c823bcad3",
-      "protocol": "StakeWise V3",
       "positionId": "0x15639e82d2072fa510e5d2b5f0db361c823bcad3"
     }
   },
@@ -447,7 +395,6 @@
     "constructor": {
       "userWithdrawalManager": "0x9F0491B32DBce587c50c4C43AB303b06478193A7",
       "underlyingToken": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
-      "protocol": "Stader",
       "positionId": "0x9F0491B32DBce587c50c4C43AB303b06478193A7"
     }
   },
@@ -456,7 +403,6 @@
     "constructor": {
       "stakedUSDe": "0x9D39A5DE30e57443BfF2A8307A4256c8797A3497",
       "underlyingToken": "0x4c9EDD5852cd905f086C759E8383e09bff1E68B3",
-      "protocol": "Ethena",
       "positionId": "0x9D39A5DE30e57443BfF2A8307A4256c8797A3497"
     }
   },
@@ -464,7 +410,6 @@
     "enabled": true,
     "constructor": {
       "withdrawalManager": "0x62De59c08eB5dAE4b7E6F7a8cAd3006d6965ec16",
-      "protocol": "Kelp DAO",
       "positionId": "0x62De59c08eB5dAE4b7E6F7a8cAd3006d6965ec16"
     }
   },
@@ -473,7 +418,6 @@
     "constructor": {
       "withdrawalQueue": "0x889edC2eDab5f40e902b864aD4d7AdE8E412F9B1",
       "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
-      "protocol": "Lido",
       "positionId": "0x889edC2eDab5f40e902b864aD4d7AdE8E412F9B1"
     }
   },
@@ -484,7 +428,6 @@
       "withdrawRequestNft": "0x7d5706f6ef3F89B3951E23e557CDFBC3239D4E2c",
       "liquidityPool": "0x308861A430be4cce5502d0A12724771Fc6DaF216",
       "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
-      "protocol": "ether.fi",
       "positionId": "0x7d5706f6ef3F89B3951E23e557CDFBC3239D4E2c",
       "eeth": "0x35fA164735182de50811E8e2E824cFb9B6118ac2"
     }
@@ -496,20 +439,18 @@
       "stakingNft": "0xcafea508a477D94c502c253A58239fb8F948e97f",
       "stakingViewer": "0xcafea5c7d25a192ba70ECA0E2dB62F835c1cF81F",
       "underlyingToken": "0xd7c49CEE7E9188cCa6AD8FF264C1DA2e69D4Cf3B",
-      "protocol": "Nexus Mutual",
       "positionId": "abi.encode(address stakingPool)",
       "tokenController": "0x5407381b6c251cFd498ccD4A1d877739CB7960B8"
     }
   },
   "StakeWiseV3ExitQueueAssisted": {
     "enabled": true,
-    "$comment": "StakeWise V3 exit-queue cache adapter (agent-fed; ADR 0014, sibling of EtherFiWithdrawalQueueAssisted). Mutable cache of (vault, positionTicket, timestamp) tuples — never amounts — admin+assistant = chainConfig.admin at deploy (assisted-family AccessControl; ASSISTANT_ROLE submits, DEFAULT_ADMIN_ROLE administers; ADR 0015); the kpk-agents submitter (holding ASSISTANT_ROLE) feeds tuples discovered from ExitQueueEntered events. Native-ETH denominated (mainnet StakeWise vaults settle in ETH); values from live reads (calculateExitedAssets.exitedAssets + convertToAssets(leftShares)) with calculateExitedAssets(receiver=account) as the on-chain ownership check. Reports 0 until the agent submits tuples. 04 reads vaultsRegistry/underlyingToken/receiptSymbol; protocol/positionId are identity metadata (hardcoded in the contract). receiptSymbol names StakeWise's LST (osETH on mainnet) for the position label '<receiptSymbol> Exit Queue', matching the sibling queues.",
+    "$comment": "StakeWise V3 exit-queue cache adapter (agent-fed; ADR 0014, sibling of EtherFiWithdrawalQueueAssisted). Mutable cache of (vault, positionTicket, timestamp) tuples \u2014 never amounts \u2014 admin+assistant = chainConfig.admin at deploy (assisted-family AccessControl; ASSISTANT_ROLE submits, DEFAULT_ADMIN_ROLE administers; ADR 0015); the kpk-agents submitter (holding ASSISTANT_ROLE) feeds tuples discovered from ExitQueueEntered events. Native-ETH denominated (mainnet StakeWise vaults settle in ETH); values from live reads (calculateExitedAssets.exitedAssets + convertToAssets(leftShares)) with calculateExitedAssets(receiver=account) as the on-chain ownership check. Reports 0 until the agent submits tuples. 04 reads vaultsRegistry/underlyingToken/receiptSymbol; protocol/positionId are identity metadata (hardcoded in the contract). receiptSymbol names StakeWise's LST (osETH on mainnet) for the position label '<receiptSymbol> Exit Queue', matching the sibling queues.",
     "constructor": {
       "vaultsRegistry": "0x3a0008a588772446f6e656133C2D5029CC4FC20E",
       "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
       "receiptSymbol": "osETH",
       "exitClaimDelay": "86400",
-      "protocol": "StakeWise V3",
       "positionId": "0x3a0008a588772446f6e656133C2D5029CC4FC20E"
     }
   },
@@ -518,7 +459,6 @@
     "constructor": {
       "pool": "0xCBCdF9626bC03E24f779434178A73a0B4bad62eD",
       "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
-      "protocol": "Uniswap V3",
       "positionId": "0xCBCdF9626bC03E24f779434178A73a0B4bad62eD"
     }
   },
@@ -527,7 +467,6 @@
     "constructor": {
       "pool": "0xFbB81382CCe6b9cE58F8645353F70d9DB1bB69af",
       "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
-      "protocol": "Uniswap V3",
       "positionId": "0xFbB81382CCe6b9cE58F8645353F70d9DB1bB69af"
     }
   },
@@ -536,7 +475,6 @@
     "constructor": {
       "pool": "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640",
       "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
-      "protocol": "Uniswap V3",
       "positionId": "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640"
     }
   },
@@ -545,7 +483,6 @@
     "constructor": {
       "pool": "0x4e68Ccd3E89f51C3074ca5072bbAC773960dFa36",
       "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
-      "protocol": "Uniswap V3",
       "positionId": "0x4e68Ccd3E89f51C3074ca5072bbAC773960dFa36"
     }
   },

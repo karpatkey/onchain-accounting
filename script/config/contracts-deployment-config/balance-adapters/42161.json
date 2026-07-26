@@ -3,7 +3,6 @@
     "enabled": false,
     "constructor": {
       "dataProvider": "0x14496b405D62c24F91f04Cda1c69Dc526D56fDE5",
-      "protocol": "Aave V3",
       "positionId": "0x794a61358D6845594F94dc1DB02A252b5b4814aD"
     }
   },
@@ -11,7 +10,6 @@
     "enabled": false,
     "constructor": {
       "vault": "0x2C609d9CfC9dda2dB5C128B2a665D921ec53579d",
-      "protocol": "Morpho",
       "positionId": "0x2C609d9CfC9dda2dB5C128B2a665D921ec53579d"
     }
   },
@@ -19,16 +17,14 @@
     "enabled": false,
     "constructor": {
       "morpho": "0x6c247b1F6182318877311737BaC0844bAa518F5e",
-      "marketId": "0x77fe2f7c2dd6f4da6bc5f445b06052ff8df55cb70cfce9afc16ec3c69a5fd3a3",
-      "protocol": "Morpho"
+      "marketId": "0x77fe2f7c2dd6f4da6bc5f445b06052ff8df55cb70cfce9afc16ec3c69a5fd3a3"
     }
   },
   "MorphoMarket_syrupUSDC_USDC": {
     "enabled": false,
     "constructor": {
       "morpho": "0x6c247b1F6182318877311737BaC0844bAa518F5e",
-      "marketId": "0xf86f3edd6f16cd8211f4d206866dc4ecd41be6211063ac11f8508e1b7112ef40",
-      "protocol": "Morpho"
+      "marketId": "0xf86f3edd6f16cd8211f4d206866dc4ecd41be6211063ac11f8508e1b7112ef40"
     }
   },
   "BalancerV3_GHO_USDC_USDT": {
@@ -37,7 +33,6 @@
       "pool": "0x19B001e6Bc2d89154c18e2216eec5C8c6047b6d8",
       "gauge": "0x915475b32983b7EB1235c1b6752149b454f81ad8",
       "balancerMinter": "0xc3ccacE87f6d3A81724075ADcb5ddd85a8A1bB68",
-      "protocol": "Balancer V3",
       "positionId": "0x19B001e6Bc2d89154c18e2216eec5C8c6047b6d8"
     }
   },
@@ -45,7 +40,6 @@
     "enabled": false,
     "constructor": {
       "fToken": "0x1A996cb54bb95462040408C06122D45D6Cdb6096",
-      "protocol": "Fluid",
       "positionId": "0x1A996cb54bb95462040408C06122D45D6Cdb6096"
     }
   },
@@ -53,7 +47,6 @@
     "enabled": false,
     "constructor": {
       "fToken": "0x4A03F37e7d3fC243e3f99341d36f4b829BEe5E03",
-      "protocol": "Fluid",
       "positionId": "0x4A03F37e7d3fC243e3f99341d36f4b829BEe5E03"
     }
   },
@@ -61,7 +54,6 @@
     "enabled": false,
     "constructor": {
       "fToken": "0x45Df0656F8aDf017590009d2f1898eeca4F0a205",
-      "protocol": "Fluid",
       "positionId": "0x45Df0656F8aDf017590009d2f1898eeca4F0a205"
     }
   },
@@ -69,7 +61,6 @@
     "enabled": false,
     "constructor": {
       "fToken": "0x66C25Cd75EBdAA7E04816F643d8E46cecd3183c9",
-      "protocol": "Fluid",
       "positionId": "0x66C25Cd75EBdAA7E04816F643d8E46cecd3183c9"
     }
   },
@@ -77,7 +68,6 @@
     "enabled": false,
     "constructor": {
       "fToken": "0x037dFf1C12805707d7c29F163E0F09fC9102657A",
-      "protocol": "Fluid",
       "positionId": "0x037dFf1C12805707d7c29F163E0F09fC9102657A"
     }
   },
@@ -87,7 +77,6 @@
       "compoundRewards": "0x88730d254A2f7e6AC8388c3198aFd694bA9f7fae",
       "comet": "0xA5EDBDD9646f8dFF606d7448e414884C7d905dCA",
       "rewardToken": "0x354A6dA3fcde098F8389cad84b0182725c6C91dE",
-      "protocol": "Compound V3",
       "positionId": "0xA5EDBDD9646f8dFF606d7448e414884C7d905dCA"
     }
   },
@@ -97,7 +86,6 @@
       "compoundRewards": "0x88730d254A2f7e6AC8388c3198aFd694bA9f7fae",
       "comet": "0x9c4ec768c28520B50860ea7a15bd7213a9fF58bf",
       "rewardToken": "0x354A6dA3fcde098F8389cad84b0182725c6C91dE",
-      "protocol": "Compound V3",
       "positionId": "0x9c4ec768c28520B50860ea7a15bd7213a9fF58bf"
     }
   },
@@ -107,7 +95,6 @@
       "compoundRewards": "0x88730d254A2f7e6AC8388c3198aFd694bA9f7fae",
       "comet": "0xd98Be00b5D27fc98112BdE293e487f8D4cA57d07",
       "rewardToken": "0x354A6dA3fcde098F8389cad84b0182725c6C91dE",
-      "protocol": "Compound V3",
       "positionId": "0xd98Be00b5D27fc98112BdE293e487f8D4cA57d07"
     }
   },
@@ -117,7 +104,6 @@
       "compoundRewards": "0x88730d254A2f7e6AC8388c3198aFd694bA9f7fae",
       "comet": "0x6f7D514bbD4aFf3BcD1140B7344b32f063dEe486",
       "rewardToken": "0x354A6dA3fcde098F8389cad84b0182725c6C91dE",
-      "protocol": "Compound V3",
       "positionId": "0x6f7D514bbD4aFf3BcD1140B7344b32f063dEe486"
     }
   }

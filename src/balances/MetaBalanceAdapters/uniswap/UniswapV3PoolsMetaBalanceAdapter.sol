@@ -76,11 +76,8 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     address public immutable POSITION_MANAGER;
 
     /// @param positionManager_ The NonfungiblePositionManager address (per-chain canonical NPM). Must be a contract.
-    /// @param protocolName_    Human-readable protocol name (e.g. "Uniswap V3").
     /// @param navCalculator_   The NAVCalculator contract for asset-registry access. Must be a contract.
-    constructor(address positionManager_, string memory protocolName_, address navCalculator_)
-        MetaBalanceAdapter(protocolName_, navCalculator_)
-    {
+    constructor(address positionManager_, address navCalculator_) MetaBalanceAdapter(navCalculator_) {
         AddressCheckLib.requireContract(positionManager_, "PositionManager");
         POSITION_MANAGER = positionManager_;
     }

@@ -26,11 +26,8 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
     IMorpho public immutable MORPHO;
 
     /// @param morpho_ The Morpho contract address.
-    /// @param protocolName_ Human-readable protocol name (e.g. "Morpho").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(address morpho_, string memory protocolName_, address navCalculator_)
-        MetaBalanceAdapter(protocolName_, navCalculator_)
-    {
+    constructor(address morpho_, address navCalculator_) MetaBalanceAdapter(navCalculator_) {
         AddressCheckLib.requireContract(morpho_, "Morpho");
         MORPHO = IMorpho(morpho_);
     }

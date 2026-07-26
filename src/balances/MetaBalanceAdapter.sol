@@ -8,6 +8,7 @@ import {IPositionDescribable} from "./IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {LabelLib} from "./LabelLib.sol";
+import {ProtocolNames} from "src/utils/ProtocolNames.sol";
 import {RegisteredAssetLib} from "./RegisteredAssetLib.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {InvalidArgumentsWithContext} from "src/errors.sol";
@@ -27,9 +28,6 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     // State
     //
 
-    /// @notice Human-readable protocol name for IPositionDescribable (e.g. "Morpho"). Set once at construction.
-    string internal _protocolName;
-
     /// @notice NAVCalculator reference, used for the registered-asset registry.
     INAVCalculator public immutable NAV_CALCULATOR;
 
@@ -37,11 +35,11 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     // Constructor
     //
 
-    /// @param protocolName_ Human-readable protocol name for verbose reads (e.g. "Morpho").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(string memory protocolName_, address navCalculator_) {
+    /// @dev No `protocolName_`: the display name is derived from `_protocolId()` (see `protocolName()`), so there is
+    ///      no deployment-time string to supply, mis-spell, or let drift between two adapters of one protocol.
+    constructor(address navCalculator_) {
         AddressCheckLib.requireContract(navCalculator_, "NAVCalculator");
-        _protocolName = protocolName_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
@@ -60,8 +58,12 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     //
 
     /// @inheritdoc IPositionDescribable
-    function protocolName() external view virtual override returns (string memory) {
-        return _protocolName;
+    /// @dev Derived from the adapter's own `_protocolId()`, so "same protocolId ⇒ same protocolName" holds **by
+    ///      construction** for every meta adapter: the name is a pure function of the typed identity the adapter
+    ///      already declares, not a separate constructor argument that could disagree with it. This is what a
+    ///      display name being a *product* name (the Aave Umbrella bug) is now structurally unable to be.
+    function protocolName() external pure virtual override returns (string memory) {
+        return ProtocolNames.forProtocolId(_protocolId());
     }
 
     /// @inheritdoc IPositionDescribable

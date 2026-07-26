@@ -67,7 +67,7 @@ contract PancakeSwapV3PoolsMetaBalanceAdapterTest is Test {
             })
         );
 
-        meta = new PancakeSwapV3PoolsMetaBalanceAdapter(address(npm), "PancakeSwap V3", address(nav));
+        meta = new PancakeSwapV3PoolsMetaBalanceAdapter(address(npm), address(nav));
     }
 
     function _instance() internal view returns (bytes32[] memory ins) {
@@ -87,8 +87,7 @@ contract PancakeSwapV3PoolsMetaBalanceAdapterTest is Test {
     /// @notice The base's `_slot0` (uint8 feeProtocol) reverts on the same wide field — proving the override is load-
     ///         bearing, not cosmetic. A Uniswap adapter pointed at a PancakeSwap pool drops the instance.
     function test_baseSlot0_revertsOnWideFeeProtocol() public {
-        UniswapV3PoolsMetaBalanceAdapter uni =
-            new UniswapV3PoolsMetaBalanceAdapter(address(npm), "Uniswap V3", address(nav));
+        UniswapV3PoolsMetaBalanceAdapter uni = new UniswapV3PoolsMetaBalanceAdapter(address(npm), address(nav));
         // Framework isolates the reverting instance → empty result (rather than bubbling the ABI-decode revert).
         INAVCalculator.PositionBalance[] memory p = uni.getAdapterPositionsForInstances(alice, _instance(), address(0));
         assertEq(p.length, 0, "uint8 decode of a uint32 feeProtocol reverts; instance isolated to empty");

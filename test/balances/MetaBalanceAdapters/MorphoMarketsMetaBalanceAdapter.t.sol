@@ -34,7 +34,7 @@ contract MorphoMarketsMetaUnitTest is BalanceAdapterTestBase {
         mockMorpho = new MockMorpho(params);
         mockMorpho.setMarket(TOTAL_SUPPLY_ASSETS, TOTAL_SUPPLY_SHARES, TOTAL_BORROW_ASSETS, TOTAL_BORROW_SHARES);
 
-        adapter = new MorphoMarketsMetaBalanceAdapter(address(mockMorpho), "Morpho", address(balances));
+        adapter = new MorphoMarketsMetaBalanceAdapter(address(mockMorpho), address(balances));
     }
 
     function _ids() internal view returns (bytes32[] memory a) {

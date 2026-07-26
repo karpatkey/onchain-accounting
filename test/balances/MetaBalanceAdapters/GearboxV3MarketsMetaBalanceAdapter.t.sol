@@ -73,7 +73,7 @@ contract GearboxV3MarketsMetaBalanceAdapterTest is Test {
         marketA.setBalance(alice, 10e18); // 11 WETH
         marketB.setBalance(alice, 4e18); // 4 wstETH
 
-        meta = new GearboxV3MarketsMetaBalanceAdapter("Gearbox", address(nav));
+        meta = new GearboxV3MarketsMetaBalanceAdapter(address(nav));
     }
 
     function _instances() internal view returns (bytes32[] memory ins) {

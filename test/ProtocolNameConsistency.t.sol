@@ -2,10 +2,9 @@
 pragma solidity ^0.8;
 
 import {Test} from "forge-std/Test.sol";
-import {Vm} from "forge-std/Vm.sol";
 
-import {ProtocolNameResolver} from "script/utils/ProtocolNameResolver.sol";
 import {ProtocolNames} from "src/utils/ProtocolNames.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 import {AaveUmbrellaBalanceAdapter} from "src/balances/BalanceAdapters/AaveUmbrellaBalanceAdapter.sol";
 import {AaveV3SafetyModuleBalanceAdapter} from "src/balances/BalanceAdapters/AaveV3SafetyModuleBalanceAdapter.sol";
@@ -105,16 +104,18 @@ contract StaderWithdrawalManagerStub {
 ///           checked rule rather than an aspiration: a literal that drifts from its constant fails here even for
 ///           single-member protocols, which no group comparison would catch.
 ///
-///        2. **Constructor-argument names** (21 meta adapters) — `MetaBalanceAdapter` takes `protocolName_` in its
-///           constructor, so the name exists nowhere in `src/`; it is a deployment-time value. Neither a source
-///           sweep nor a unit test that constructs an adapter with a string of its own choosing can audit it. It is
-///           audited at the layer that actually supplies it: `ProtocolNameResolver`, which both
-///           `04_DeployBalanceAdapters` and the `IntegrationFromConfigBase` harness use.
+///        2. **Meta adapters** (21) — `MetaBalanceAdapter.protocolName()` returns
+///           `ProtocolNames.forProtocolId(_protocolId())`, so the name is a pure function of the typed identity the
+///           adapter already declares. Sibling agreement is true **by construction**: two adapters sharing a
+///           protocol id evaluate the same expression over the same input, so there is nothing left to assert. What
+///           remains assertable is that every protocol id the family declares HAS a name, and that an unknown id
+///           reverts rather than returning "".
 ///
-///      Note on what is *not* asserted here: comparing `protocolNameFor(keyA)` to `protocolNameFor(keyB)` for two
-///      keys that share a prefix is a tautology — both are the same `return` statement, so the assertion holds for
-///      any value of the constants. Sibling agreement is therefore asserted against the deployed adapters and the
-///      constants, and the resolver is checked for *mapping* (`isMapped`) and for *config agreement* instead.
+///      Note on what deliberately is NOT asserted: an earlier revision compared `protocolNameFor(keyA)` to
+///      `protocolNameFor(keyB)` for two config keys sharing a resolver prefix. Both were the same `return`
+///      statement, so those assertions held for any value of the constants — a tautology. Deriving the name from
+///      `_protocolId()` removed the resolver, and with it the class of test that could look meaningful while
+///      asserting nothing.
 contract ProtocolNameConsistencyTest is Test {
     string internal constant PLAIN_DIR = "script/config/contracts-deployment-config/balance-adapters";
     string internal constant META_DIR = "script/config/contracts-deployment-config/meta-balance-adapters";
@@ -195,9 +196,7 @@ contract ProtocolNameConsistencyTest is Test {
     function test_aaveV3Group_reportsOneProtocolName() public {
         string memory umbrella = new AaveUmbrellaBalanceAdapter(stub, address(nav)).protocolName();
         string memory safetyModule = new AaveV3SafetyModuleBalanceAdapter(address(nav)).protocolName();
-        string memory instances = new AaveV3InstancesMetaBalanceAdapter(
-                ProtocolNameResolver.protocolNameFor("AaveV3InstancesMeta"), address(nav)
-            ).protocolName();
+        string memory instances = new AaveV3InstancesMetaBalanceAdapter(address(nav)).protocolName();
 
         assertEq(umbrella, safetyModule, "Umbrella and Safety Module share aave-v3 but disagree");
         assertEq(umbrella, instances, "Umbrella and lending instances share aave-v3 but disagree");
@@ -217,93 +216,58 @@ contract ProtocolNameConsistencyTest is Test {
     function test_stakeWiseV3Group_reportsOneProtocolName() public {
         string memory exitQueue =
             new StakeWiseV3ExitQueueAssistedBalanceAdapter(stub, stub, "osETH", address(nav), 1 days).protocolName();
-        string memory vaults = new StakeWiseV3VaultsMetaBalanceAdapter(
-                stub, stub, ProtocolNameResolver.protocolNameFor("StakeWiseV3VaultsMeta"), address(nav)
-            ).protocolName();
+        string memory vaults = new StakeWiseV3VaultsMetaBalanceAdapter(stub, stub, address(nav)).protocolName();
 
         assertEq(exitQueue, vaults, "exit queue and vaults share stakewise-v3 but disagree");
         assertEq(exitQueue, ProtocolNames.STAKEWISE_V3, "stakewise-v3 group must report the canonical name");
     }
 
     // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
-    // Half 2 — constructor-argument names, audited at the deploy layer
+    // Half 2 — meta adapters: the name is DERIVED, so the invariant is structural
     // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-    /// @notice Every meta-adapter key in every chain's deploy config must resolve. These are the keys
-    ///         `04_DeployBalanceAdapters` (and the integration harness) feed straight into a `protocolName_`
-    ///         constructor argument, so an unmapped one would deploy an immutable, permanently nameless adapter.
-    /// @dev Enumerates the config files on disk rather than a hardcoded chain list — a new chain's config is
-    ///      audited the moment it is added, without anyone remembering to extend an array. Only the meta folder is
-    ///      required to resolve: plain adapters hardcode their name and never reach the resolver.
-    function test_everyMetaAdapterKeyResolves() public view {
-        string[] memory files = _configFiles(META_DIR);
-        assertGt(files.length, 0, "no meta-adapter configs found - path wrong?");
-        for (uint256 f = 0; f < files.length; f++) {
-            string memory json = vm.readFile(files[f]);
-            string[] memory keys = _adapterKeys(json);
-            for (uint256 i = 0; i < keys.length; i++) {
-                assertTrue(
-                    ProtocolNameResolver.isMapped(keys[i]),
-                    string.concat(files[f], ": meta adapter key has no ProtocolNames mapping: ", keys[i])
-                );
-            }
+    /// @notice Every protocol id a meta adapter can declare must have a display name.
+    /// @dev `MetaBalanceAdapter.protocolName()` is `ProtocolNames.forProtocolId(_protocolId())`, so sibling
+    ///      agreement no longer needs asserting — two adapters sharing a protocol id return the same string because
+    ///      it is the same expression over the same input. What CAN still go wrong is a protocol id with no entry
+    ///      in the table, which would revert on a verbose read (fail-open to an empty name, never a NAV revert).
+    ///      This pins every id the meta family actually declares.
+    function test_everyMetaProtocolIdHasAName() public pure {
+        bytes32[16] memory ids = [
+            ProtocolIds.AAVE_V3,
+            ProtocolIds.MORPHO,
+            ProtocolIds.EULER,
+            ProtocolIds.COMPOUND_V3,
+            ProtocolIds.FLUID,
+            ProtocolIds.GEARBOX_V3,
+            ProtocolIds.BALANCER_V2,
+            ProtocolIds.BALANCER_V3,
+            ProtocolIds.CURVE,
+            ProtocolIds.CONVEX,
+            ProtocolIds.UNISWAP_V2,
+            ProtocolIds.UNISWAP_V3,
+            ProtocolIds.PANCAKESWAP_V2,
+            ProtocolIds.PANCAKESWAP_V3,
+            ProtocolIds.STAKEWISE_V3,
+            ProtocolIds.SPARK
+        ];
+        for (uint256 i = 0; i < ids.length; i++) {
+            assertGt(bytes(ProtocolNames.forProtocolId(ids[i])).length, 0, "protocol id has no display name");
         }
     }
 
-    /// @notice The `protocol` strings left in the deploy configs are documentary now that the display name is
-    ///         resolved from `ProtocolNames`. This sweep keeps them truthful — and it is what catches per-chain
-    ///         drift, the failure mode a source review cannot see (the same adapter given a different name on a
-    ///         different chain). It surfaced "Compound v3" vs "Compound V3" and "Fluid Lending" vs "Fluid".
-    /// @dev Keys the resolver does not map are skipped rather than failed: plain adapters may carry a `protocol`
-    ///      key for documentation while hardcoding their name, and a future plain adapter must not be forced to
-    ///      invent a resolver entry no code path reads.
-    function test_deployConfigs_agreeWithResolver() public view {
-        string[] memory dirs = new string[](2);
-        dirs[0] = PLAIN_DIR;
-        dirs[1] = META_DIR;
-
-        uint256 checked;
-        for (uint256 d = 0; d < dirs.length; d++) {
-            string[] memory files = _configFiles(dirs[d]);
-            for (uint256 f = 0; f < files.length; f++) {
-                string memory json = vm.readFile(files[f]);
-                string[] memory keys = _adapterKeys(json);
-                for (uint256 i = 0; i < keys.length; i++) {
-                    if (!ProtocolNameResolver.isMapped(keys[i])) continue;
-                    string memory configured = _readProtocol(json, keys[i]);
-                    if (bytes(configured).length == 0) continue;
-                    assertEq(
-                        configured,
-                        ProtocolNameResolver.protocolNameFor(keys[i]),
-                        string.concat(files[f], ": config protocol name for ", keys[i], " disagrees with ProtocolNames")
-                    );
-                    checked++;
-                }
-            }
-        }
-        assertGt(checked, 0, "swept no config protocol names - enumeration broken?");
-    }
-
-    /// @notice An unmapped key must revert, not fall through to "". `MetaBalanceAdapter` does not validate
-    ///         `protocolName_`, and adapters are immutable, so a silent "" would ship a permanently nameless
-    ///         adapter that only a redeploy plus re-registration could fix.
-    function test_resolver_revertsOnUnmappedKey() public {
-        vm.expectRevert(abi.encodeWithSelector(ProtocolNameResolver.UnmappedProtocolName.selector, "PendleMarketsMeta"));
-        this.resolve("PendleMarketsMeta");
-        assertFalse(ProtocolNameResolver.isMapped("PendleMarketsMeta"), "isMapped must agree with the revert");
+    /// @notice An unknown protocol id must revert rather than return "". A meta adapter is immutable, so a silent
+    ///         "" would be permanent; and because `protocolName()` is only reached through NAVCalculator's
+    ///         fail-open staticcall, reverting degrades to an empty display name rather than breaking a NAV read.
+    function test_unknownProtocolIdReverts() public {
+        bytes32 unknown = keccak256("pendle-v2");
+        vm.expectRevert(abi.encodeWithSelector(ProtocolNames.UnknownProtocolId.selector, unknown));
+        this.nameFor(unknown);
     }
 
     /// @dev External wrapper so `vm.expectRevert` can catch a revert from an `internal pure` library function.
-    function resolve(string calldata key) external pure returns (string memory) {
-        return ProtocolNameResolver.protocolNameFor(key);
-    }
-
-    /// @notice A version-agnostic prefix must not hand a future major version its predecessor's name — that is the
-    ///         only path in the table that yields a WRONG name rather than a revert.
-    function test_resolver_unknownVersionRevertsRatherThanInheriting() public view {
-        assertFalse(ProtocolNameResolver.isMapped("StakeWiseV4VaultsMeta"), "StakeWiseV4 must not inherit V3's name");
-        assertFalse(ProtocolNameResolver.isMapped("AaveV4InstancesMeta"), "AaveV4 must not inherit V3's name");
-        assertFalse(ProtocolNameResolver.isMapped("BalancerV4PoolsMeta"), "BalancerV4 must not inherit V3's name");
+    function nameFor(bytes32 protocolId) external pure returns (string memory) {
+        return ProtocolNames.forProtocolId(protocolId);
     }
 
     /// @notice Distinct protocols must not collide on one display name — otherwise a consumer grouping by name
@@ -350,56 +314,4 @@ contract ProtocolNameConsistencyTest is Test {
     // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
     // Helpers
     // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-    /// @dev Every `<chainId>.json` under a deploy-config directory, discovered on disk.
-    function _configFiles(string memory dir) internal view returns (string[] memory out) {
-        string memory root = string.concat(vm.projectRoot(), "/", dir);
-        Vm.DirEntry[] memory entries = vm.readDir(root);
-        out = new string[](entries.length);
-        uint256 n;
-        for (uint256 i = 0; i < entries.length; i++) {
-            if (entries[i].isDir) continue;
-            if (!_endsWith(entries[i].path, ".json")) continue;
-            out[n++] = entries[i].path;
-        }
-        assembly {
-            mstore(out, n)
-        }
-    }
-
-    /// @dev Top-level adapter keys, excluding `$`-prefixed metadata (`$comment`, …). Mirrors
-    ///      `ConfigReader._namesIn`, which filters them for the same reason: `$comment` is an established
-    ///      convention in this config tree and must not be mistaken for an adapter.
-    function _adapterKeys(string memory json) internal pure returns (string[] memory out) {
-        string[] memory all = vm.parseJsonKeys(json, "$");
-        out = new string[](all.length);
-        uint256 n;
-        for (uint256 i = 0; i < all.length; i++) {
-            bytes memory k = bytes(all[i]);
-            if (k.length == 0 || k[0] == "$") continue;
-            out[n++] = all[i];
-        }
-        assembly {
-            mstore(out, n)
-        }
-    }
-
-    /// @dev Reads `.<key>.protocol`, falling back to `.<key>.constructor.protocol` — both spellings are in use.
-    function _readProtocol(string memory json, string memory key) internal view returns (string memory) {
-        string memory direct = string.concat(".", key, ".protocol");
-        if (vm.keyExistsJson(json, direct)) return vm.parseJsonString(json, direct);
-        string memory nested = string.concat(".", key, ".constructor.protocol");
-        if (vm.keyExistsJson(json, nested)) return vm.parseJsonString(json, nested);
-        return "";
-    }
-
-    function _endsWith(string memory value, string memory suffix) internal pure returns (bool) {
-        bytes memory v = bytes(value);
-        bytes memory s = bytes(suffix);
-        if (v.length < s.length) return false;
-        for (uint256 i = 0; i < s.length; i++) {
-            if (v[v.length - s.length + i] != s[i]) return false;
-        }
-        return true;
-    }
 }

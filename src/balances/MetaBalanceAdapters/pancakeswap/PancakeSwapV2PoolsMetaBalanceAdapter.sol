@@ -21,11 +21,8 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      consumer). See docs/decisions/0017-lp-valuation-instantaneous-amounts.md; revisit if NAV is ever consumed
 ///      synchronously on-chain.
 contract PancakeSwapV2PoolsMetaBalanceAdapter is UniswapV2PoolsMetaBalanceAdapter {
-    /// @param protocolName_ Human-readable protocol name (e.g. "PancakeSwap V2").
     /// @param navCalculator_ NAVCalculator contract address.
-    constructor(string memory protocolName_, address navCalculator_)
-        UniswapV2PoolsMetaBalanceAdapter(protocolName_, navCalculator_)
-    {}
+    constructor(address navCalculator_) UniswapV2PoolsMetaBalanceAdapter(navCalculator_) {}
 
     /// @inheritdoc UniswapV2PoolsMetaBalanceAdapter
     /// @dev Reports the `pancakeswap-v2` slug (vs the inherited `uniswap-v2`) so the typed reconciliation key

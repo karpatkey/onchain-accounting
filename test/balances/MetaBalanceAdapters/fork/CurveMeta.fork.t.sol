@@ -89,8 +89,8 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
         assets[7] = RLUSD;
         balances = _deployBalancesForAdapter(assets);
 
-        poolsMeta = new CurvePoolsMetaBalanceAdapter("Curve", address(balances));
-        gaugesMeta = new CurveGaugesMetaBalanceAdapter(CURVE_MINTER, CRV, "Curve", address(balances));
+        poolsMeta = new CurvePoolsMetaBalanceAdapter(address(balances));
+        gaugesMeta = new CurveGaugesMetaBalanceAdapter(CURVE_MINTER, CRV, address(balances));
     }
 
     // ─── CurvePoolsMeta fork tests ────────────────────────────────────────────

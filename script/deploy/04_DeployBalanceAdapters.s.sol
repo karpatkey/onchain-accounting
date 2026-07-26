@@ -3,7 +3,6 @@ pragma solidity ^0.8.28;
 
 import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
 import {ConfigReader} from "../utils/ConfigReader.sol";
-import {ProtocolNameResolver} from "../utils/ProtocolNameResolver.sol";
 import {console2} from "forge-std/console2.sol";
 
 // Import balance adapters
@@ -460,11 +459,10 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(0);
     }
 
-    /// @notice Deploys the Aave V3 instances meta-adapter. Constructor takes (protocol, navCalculator); the set of
+    /// @notice Deploys the Aave V3 instances meta-adapter. Constructor takes (navCalculator); the set of
     ///         instance DataProviders to query is configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06 (ADR 0010).
     function _deployAaveV3InstancesMeta(string memory adapterName, address navCalculator) internal returns (address) {
-        string memory protocol = ProtocolNameResolver.protocolNameFor(adapterName);
-        AaveV3InstancesMetaBalanceAdapter adapter = new AaveV3InstancesMetaBalanceAdapter(protocol, navCalculator);
+        AaveV3InstancesMetaBalanceAdapter adapter = new AaveV3InstancesMetaBalanceAdapter(navCalculator);
         return address(adapter);
     }
 
@@ -478,10 +476,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address rewardToken = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "rewardToken")
         );
-        string memory protocol = ProtocolNameResolver.protocolNameFor(adapterName);
 
         CompoundV3CometsMetaBalanceAdapter adapter =
-            new CompoundV3CometsMetaBalanceAdapter(compoundRewards, rewardToken, protocol, navCalculator);
+            new CompoundV3CometsMetaBalanceAdapter(compoundRewards, rewardToken, navCalculator);
         return address(adapter);
     }
 
@@ -494,40 +491,33 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(adapter);
     }
 
-    /// @notice Deploys the Morpho Markets meta-adapter. Constructor takes (morpho, protocol, navCalculator); the
+    /// @notice Deploys the Morpho Markets meta-adapter. Constructor takes (morpho, navCalculator); the
     ///         set of markets to query is configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06_Configure (ADR 0010).
     function _deployMorphoMarketsMeta(string memory adapterName, address navCalculator) internal returns (address) {
         address morpho = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "morpho")
         );
-        string memory protocol = ProtocolNameResolver.protocolNameFor(adapterName);
 
-        MorphoMarketsMetaBalanceAdapter adapter = new MorphoMarketsMetaBalanceAdapter(morpho, protocol, navCalculator);
+        MorphoMarketsMetaBalanceAdapter adapter = new MorphoMarketsMetaBalanceAdapter(morpho, navCalculator);
         return address(adapter);
     }
 
-    /// @notice Deploys the Morpho Vaults meta-adapter. Constructor takes only (protocol, navCalculator); the set of
+    /// @notice Deploys the Morpho Vaults meta-adapter. Constructor takes only (navCalculator); the set of
     ///         vaults to query is configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06_Configure (ADR 0010).
     function _deployMorphoVaultsMeta(string memory adapterName, address navCalculator) internal returns (address) {
-        string memory protocol = ProtocolNameResolver.protocolNameFor(adapterName);
-
-        MorphoVaultsMetaBalanceAdapter adapter = new MorphoVaultsMetaBalanceAdapter(protocol, navCalculator);
+        MorphoVaultsMetaBalanceAdapter adapter = new MorphoVaultsMetaBalanceAdapter(navCalculator);
         return address(adapter);
     }
 
     function _deployEulerVaultsMeta(string memory adapterName, address navCalculator) internal returns (address) {
-        string memory protocol = ProtocolNameResolver.protocolNameFor(adapterName);
-
-        EulerVaultsMetaBalanceAdapter adapter = new EulerVaultsMetaBalanceAdapter(protocol, navCalculator);
+        EulerVaultsMetaBalanceAdapter adapter = new EulerVaultsMetaBalanceAdapter(navCalculator);
         return address(adapter);
     }
 
-    /// @notice Deploys the Gearbox markets meta-adapter. Constructor takes (protocol, navCalculator); the market
+    /// @notice Deploys the Gearbox markets meta-adapter. Constructor takes (navCalculator); the market
     ///         set is configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06 (ADR 0010).
     function _deployGearboxV3MarketsMeta(string memory adapterName, address navCalculator) internal returns (address) {
-        string memory protocol = ProtocolNameResolver.protocolNameFor(adapterName);
-
-        GearboxV3MarketsMetaBalanceAdapter adapter = new GearboxV3MarketsMetaBalanceAdapter(protocol, navCalculator);
+        GearboxV3MarketsMetaBalanceAdapter adapter = new GearboxV3MarketsMetaBalanceAdapter(navCalculator);
         return address(adapter);
     }
 
@@ -544,8 +534,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
     }
 
     function _deployCurvePoolsMeta(string memory adapterName, address navCalculator) internal returns (address) {
-        string memory protocol = ProtocolNameResolver.protocolNameFor(adapterName);
-        return address(new CurvePoolsMetaBalanceAdapter(protocol, navCalculator));
+        return address(new CurvePoolsMetaBalanceAdapter(navCalculator));
     }
 
     function _deployCurveGaugesMeta(string memory adapterName, address navCalculator) internal returns (address) {
@@ -555,8 +544,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address crvToken = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "crvToken")
         );
-        string memory protocol = ProtocolNameResolver.protocolNameFor(adapterName);
-        return address(new CurveGaugesMetaBalanceAdapter(minter, crvToken, protocol, navCalculator));
+        return address(new CurveGaugesMetaBalanceAdapter(minter, crvToken, navCalculator));
     }
 
     function _deployConvexCurveLPStakingMeta(string memory adapterName, address navCalculator)
@@ -569,8 +557,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address cvxToken = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "cvxToken")
         );
-        string memory protocol = ProtocolNameResolver.protocolNameFor(adapterName);
-        return address(new ConvexCurveLPStakingMetaBalanceAdapter(booster, cvxToken, protocol, navCalculator));
+        return address(new ConvexCurveLPStakingMetaBalanceAdapter(booster, cvxToken, navCalculator));
     }
 
     function _deployAaveV3SafetyModule(string memory adapterName, address navCalculator) internal returns (address) {
@@ -601,37 +588,32 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(adapter);
     }
 
-    /// @notice Deploys the Balancer pools meta-adapter. Constructor takes (protocol, navCalculator); the set of
+    /// @notice Deploys the Balancer pools meta-adapter. Constructor takes (navCalculator); the set of
     ///         pools to query is configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06_Configure (ADR 0010).
     function _deployBalancerV3PoolsMeta(string memory adapterName, address navCalculator) internal returns (address) {
-        string memory protocol = ProtocolNameResolver.protocolNameFor(adapterName);
-
-        BalancerV3PoolsMetaBalanceAdapter adapter = new BalancerV3PoolsMetaBalanceAdapter(protocol, navCalculator);
+        BalancerV3PoolsMetaBalanceAdapter adapter = new BalancerV3PoolsMetaBalanceAdapter(navCalculator);
         return address(adapter);
     }
 
-    /// @notice Deploys the Balancer gauges meta-adapter. Constructor takes (balancerMinter, protocol, navCalculator);
+    /// @notice Deploys the Balancer gauges meta-adapter. Constructor takes (balancerMinter, navCalculator);
     ///         the set of gauges to query is configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06_Configure (ADR 0010).
     function _deployBalancerV3GaugesMeta(string memory adapterName, address navCalculator) internal returns (address) {
         address balancerMinter = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "balancerMinter")
         );
-        string memory protocol = ProtocolNameResolver.protocolNameFor(adapterName);
 
         BalancerV3GaugesMetaBalanceAdapter adapter =
-            new BalancerV3GaugesMetaBalanceAdapter(balancerMinter, protocol, navCalculator);
+            new BalancerV3GaugesMetaBalanceAdapter(balancerMinter, navCalculator);
         return address(adapter);
     }
 
-    /// @notice Deploys the Balancer V2 pools meta-adapter. Constructor takes (vault, protocol, navCalculator); the
+    /// @notice Deploys the Balancer V2 pools meta-adapter. Constructor takes (vault, navCalculator); the
     ///         poolId set is configured on NAVCalculator via addMetaInstances/removeMetaInstances (metaInstancesRaw) in 06 (ADR 0010).
     function _deployBalancerV2PoolsMeta(string memory adapterName, address navCalculator) internal returns (address) {
         address vault =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vault"));
-        string memory protocol = ProtocolNameResolver.protocolNameFor(adapterName);
 
-        BalancerV2PoolsMetaBalanceAdapter adapter =
-            new BalancerV2PoolsMetaBalanceAdapter(vault, protocol, navCalculator);
+        BalancerV2PoolsMetaBalanceAdapter adapter = new BalancerV2PoolsMetaBalanceAdapter(vault, navCalculator);
         return address(adapter);
     }
 
@@ -643,15 +625,14 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address balancerMinter = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "balancerMinter")
         );
-        string memory protocol = ProtocolNameResolver.protocolNameFor(adapterName);
 
         BalancerV2GaugesMetaBalanceAdapter adapter =
-            new BalancerV2GaugesMetaBalanceAdapter(vault, balancerMinter, protocol, navCalculator);
+            new BalancerV2GaugesMetaBalanceAdapter(vault, balancerMinter, navCalculator);
         return address(adapter);
     }
 
     /// @notice Deploys the StakeWise V3 vaults meta-adapter. Constructor takes (underlyingToken,
-    ///         osTokenVaultController, protocol, navCalculator); the vault set is configured on NAVCalculator via
+    ///         osTokenVaultController, navCalculator); the vault set is configured on NAVCalculator via
     ///         addMetaInstances/removeMetaInstances in 06 (ADR 0010).
     function _deployStakeWiseV3VaultsMeta(string memory adapterName, address navCalculator) internal returns (address) {
         address underlyingToken = vm.parseAddress(
@@ -660,30 +641,26 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address osTokenVaultController = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "osTokenVaultController")
         );
-        string memory protocol = ProtocolNameResolver.protocolNameFor(adapterName);
 
         StakeWiseV3VaultsMetaBalanceAdapter adapter =
-            new StakeWiseV3VaultsMetaBalanceAdapter(underlyingToken, osTokenVaultController, protocol, navCalculator);
+            new StakeWiseV3VaultsMetaBalanceAdapter(underlyingToken, osTokenVaultController, navCalculator);
         return address(adapter);
     }
 
-    /// @notice Deploys the Fluid fTokens meta-adapter. Constructor takes (protocol, navCalculator); the fToken
+    /// @notice Deploys the Fluid fTokens meta-adapter. Constructor takes (navCalculator); the fToken
     ///         set is configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06 (ADR 0010).
     function _deployFluidFTokensMeta(string memory adapterName, address navCalculator) internal returns (address) {
-        string memory protocol = ProtocolNameResolver.protocolNameFor(adapterName);
-        FluidFTokensMetaBalanceAdapter adapter = new FluidFTokensMetaBalanceAdapter(protocol, navCalculator);
+        FluidFTokensMetaBalanceAdapter adapter = new FluidFTokensMetaBalanceAdapter(navCalculator);
         return address(adapter);
     }
 
-    /// @notice Deploys the Fluid vaults meta-adapter. Constructor takes (vaultResolver, protocol, navCalculator);
+    /// @notice Deploys the Fluid vaults meta-adapter. Constructor takes (vaultResolver, navCalculator);
     ///         the vault set is configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06 (ADR 0010).
     function _deployFluidVaultsMeta(string memory adapterName, address navCalculator) internal returns (address) {
         address vaultResolver = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vaultResolver")
         );
-        string memory protocol = ProtocolNameResolver.protocolNameFor(adapterName);
-        FluidVaultsMetaBalanceAdapter adapter =
-            new FluidVaultsMetaBalanceAdapter(vaultResolver, protocol, navCalculator);
+        FluidVaultsMetaBalanceAdapter adapter = new FluidVaultsMetaBalanceAdapter(vaultResolver, navCalculator);
         return address(adapter);
     }
 
@@ -814,16 +791,14 @@ contract DeployBalanceAdapters is BaseDeployScript {
     }
 
     /// @notice Deploys the Uniswap V3 pools meta-adapter (ADR 0010; on-chain NFT enumeration via the NPM's
-    ///         ERC721Enumerable surface). Constructor takes (positionManager, protocol, navCalculator); the active
+    ///         ERC721Enumerable surface). Constructor takes (positionManager, navCalculator); the active
     ///         pool set lives on NAVCalculator (nav-config instances). Reverts the interim assisted adapter.
     function _deployUniswapV3PoolsMeta(string memory adapterName, address navCalculator) internal returns (address) {
         address positionManager = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionManager")
         );
-        string memory protocol = ProtocolNameResolver.protocolNameFor(adapterName);
 
-        UniswapV3PoolsMetaBalanceAdapter adapter =
-            new UniswapV3PoolsMetaBalanceAdapter(positionManager, protocol, navCalculator);
+        UniswapV3PoolsMetaBalanceAdapter adapter = new UniswapV3PoolsMetaBalanceAdapter(positionManager, navCalculator);
         return address(adapter);
     }
 
@@ -837,23 +812,20 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address positionManager = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionManager")
         );
-        string memory protocol = ProtocolNameResolver.protocolNameFor(adapterName);
 
         PancakeSwapV3PoolsMetaBalanceAdapter adapter =
-            new PancakeSwapV3PoolsMetaBalanceAdapter(positionManager, protocol, navCalculator);
+            new PancakeSwapV3PoolsMetaBalanceAdapter(positionManager, navCalculator);
         return address(adapter);
     }
 
     /// @notice Deploys the Uniswap V2 pools meta-adapter. Serves PancakeSwap V2 too (same contract via the
     ///         PancakeSwapV2PoolsMeta thin subclass when keyed "PancakeSwapV2PoolsMeta"). Constructor takes
-    ///         (protocol, navCalculator); the pair set is configured on NAVCalculator (ADR 0010).
+    ///         (navCalculator); the pair set is configured on NAVCalculator (ADR 0010).
     function _deployUniswapV2PoolsMeta(string memory adapterName, address navCalculator) internal returns (address) {
-        string memory protocol = ProtocolNameResolver.protocolNameFor(adapterName);
-
         if (_equals(adapterName, "PancakeSwapV2PoolsMeta")) {
-            return address(new PancakeSwapV2PoolsMetaBalanceAdapter(protocol, navCalculator));
+            return address(new PancakeSwapV2PoolsMetaBalanceAdapter(navCalculator));
         }
-        return address(new UniswapV2PoolsMetaBalanceAdapter(protocol, navCalculator));
+        return address(new UniswapV2PoolsMetaBalanceAdapter(navCalculator));
     }
 
     /// @notice Helper to read deployed adapter address

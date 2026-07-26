@@ -610,10 +610,11 @@ meta-adapters derive it on-chain from live state and per-instance adapters retur
 > account's positions — never sees the typed taxonomy (`protocolBrand`/`protocolId`/`protocolSubId` are
 > `private constant` and only ride on returned `PositionBalance` structs), so the display name is the only
 > protocol identity it has; an adapter returning its product name splits itself out into a phantom sibling
-> protocol. Canonical strings live in `src/utils/ProtocolNames.sol`, the deploy layer resolves meta-adapter
-> constructor arguments from them via `script/utils/ProtocolNameResolver.sol`, and
-> `test/ProtocolNameConsistency.t.sol` asserts the invariant. Clients must still never use these strings for
-> identity, indexing, or reconciliation — that is what `protocolSubId` / `positionId` are for.
+> protocol. Canonical strings live in `src/utils/ProtocolNames.sol`. Meta-adapters **derive** the name from their
+> own protocol id (`ProtocolNames.forProtocolId(_protocolId())`), so for that family the invariant is structural
+> rather than asserted; the hardcoded plain/assisted adapters are pinned to the same table by
+> `test/ProtocolNameConsistency.t.sol`. Clients must still never use these strings for identity, indexing, or
+> reconciliation — that is what `protocolSubId` / `positionId` are for.
 
 Assumed prices: USDC/DAI/GHO/USDS/crvUSD = $1 · WETH/ETH = $2 500 · wstETH = $2 900 ·
 stETH = $2 480 · AAVE = $200 · CRV = $0.50 · CVX = $3 · BAL = $3 · COMP = $50

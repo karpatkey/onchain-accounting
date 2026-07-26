@@ -113,8 +113,10 @@ contract MyProtocolBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     /// @inheritdoc IPositionDescribable
     /// @dev Names the PROTOCOL, never the product. Return the `ProtocolNames` constant for your protocol id —
     ///      adapters sharing a `ProtocolIds` protocol id MUST return the same string, and the product goes in
-    ///      `positionLabels()` below. Add a constant to `src/utils/ProtocolNames.sol` if the protocol is new.
-    ///      `test/ProtocolNameConsistency.t.sol` pins every hardcoded adapter to its constant.
+    ///      `positionLabels()` below. Add a constant to `src/utils/ProtocolNames.sol` (and a branch to
+    ///      `forProtocolId`) if the protocol is new. `test/ProtocolNameConsistency.t.sol` pins every hardcoded
+    ///      adapter to its constant. NOTE: meta-adapters do NOT declare this at all — `MetaBalanceAdapter`
+    ///      derives it from `_protocolId()`, so omit it entirely when extending `MetaBalanceAdapter`.
     function protocolName() external pure returns (string memory) {
         return ProtocolNames.MY_PROTOCOL;
     }

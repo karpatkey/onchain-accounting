@@ -54,7 +54,7 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
         pool = new MockCurvePool(coins);
         gauge = new MockCurveGauge(address(pool));
 
-        meta = new CurveGaugesMetaBalanceAdapter(address(minter), address(crv), "Curve", address(nav));
+        meta = new CurveGaugesMetaBalanceAdapter(address(minter), address(crv), address(nav));
     }
 
     function _instance(address g) internal pure returns (bytes32[] memory ins) {
@@ -155,8 +155,7 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
 
     function test_noMinter_noCrvReported() public {
         // Deploy meta with no minter (L2 / RewardsOnlyGauge)
-        CurveGaugesMetaBalanceAdapter l2Meta =
-            new CurveGaugesMetaBalanceAdapter(address(0), address(crv), "Curve", address(nav));
+        CurveGaugesMetaBalanceAdapter l2Meta = new CurveGaugesMetaBalanceAdapter(address(0), address(crv), address(nav));
 
         gauge.setStaked(alice, 100e18);
         gauge.setIntegrateFraction(alice, 9_999e18); // large, but minter is 0

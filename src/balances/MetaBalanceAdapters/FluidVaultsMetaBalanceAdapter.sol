@@ -28,15 +28,12 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     address public immutable VAULT_RESOLVER;
 
     /// @param vaultResolver_ The Fluid VaultResolver address.
-    /// @param protocolName_ Human-readable protocol name (e.g. "Fluid").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
     /// @dev Also asserts the resolver actually implements `getVaultType`. Token resolution is gated on it, so a
     ///      resolver version without it would make every vault read as non-T1 and silently zero the whole
     ///      adapter on that chain — a failure that would otherwise surface only as "no positions". Probed with
     ///      `address(0)`, which a conforming resolver answers with 0 rather than reverting.
-    constructor(address vaultResolver_, string memory protocolName_, address navCalculator_)
-        MetaBalanceAdapter(protocolName_, navCalculator_)
-    {
+    constructor(address vaultResolver_, address navCalculator_) MetaBalanceAdapter(navCalculator_) {
         AddressCheckLib.requireContract(vaultResolver_, "VaultResolver");
         if (!FluidVaultLib.supportsVaultType(vaultResolver_)) revert ResolverMissingVaultType(vaultResolver_);
         VAULT_RESOLVER = vaultResolver_;

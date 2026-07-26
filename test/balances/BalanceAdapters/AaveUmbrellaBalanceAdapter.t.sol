@@ -96,6 +96,18 @@ contract AaveUmbrellaBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(oracle.getAdapterPositions(address(0), address(0)).length, 0);
     }
 
+    // ─── IPositionDescribable ─────────────────────────────────────────────────
+
+    /// @dev Configuration-view probe. A registry consumer describing what the calculator is configured for has no
+    ///      positionId to pass, so it can only call `positionLabels("")`. This adapter has exactly ONE position
+    ///      shape, so the probe must answer with that shape's constant breadcrumb. Deriving the leaf from
+    ///      `positionId` instead would silently return [] and drop the adapter off that view — this is the guard.
+    function test_positionLabels_emptyProbe_returnsTheConstantShape() public view {
+        string[] memory labels = oracle.positionLabels("");
+        assertEq(labels.length, 1);
+        assertEq(labels[0], "Umbrella Module");
+    }
+
     // ─── ERC165 ───────────────────────────────────────────────────────────────
 
     function test_supportsInterface() public view {

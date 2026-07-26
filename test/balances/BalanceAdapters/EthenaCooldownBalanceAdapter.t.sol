@@ -103,6 +103,17 @@ contract EthenaCooldownBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(labels[1], "sUSDe");
     }
 
+    /// @dev Configuration-view probe: a consumer describing configuration has no positionId, so it can only call
+    ///      `positionLabels("")`. Single-shape adapter -> the probe must answer with the same constant breadcrumb
+    ///      a real positionId yields. Making the leaf positionId-derived would silently return [] and drop this
+    ///      adapter off that view.
+    function test_positionLabels_emptyProbe_returnsTheConstantShape() public view {
+        string[] memory labels = adapter.positionLabels("");
+        assertEq(labels.length, 2);
+        assertEq(labels[0], "Unstaking Cooldown");
+        assertEq(labels[1], "sUSDe");
+    }
+
     // ---- getAdapterBalanceForAsset ----
 
     function test_getAdapterBalanceForAsset_zeroAsset() public view {

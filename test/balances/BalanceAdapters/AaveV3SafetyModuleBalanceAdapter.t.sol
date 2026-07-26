@@ -278,4 +278,15 @@ contract AaveV3SafetyModuleBalanceAdapterTest is BalanceAdapterTestBase {
         assertTrue(positions[0].isLocked, "past the unstake window -> re-locked");
         assertEq(positions[0].amount, 1000e18, "active stake + expired cooldown both locked");
     }
+
+    // ---- IPositionDescribable ----
+
+    /// @dev Configuration-view probe: a consumer describing configuration has no positionId, so it can only call
+    ///      `positionLabels("")`. Single-shape adapter -> the probe must answer with the constant breadcrumb.
+    ///      Making the leaf positionId-derived would silently return [] and drop this adapter off that view.
+    function test_positionLabels_emptyProbe_returnsTheConstantShape() public view {
+        string[] memory labels = adapter.positionLabels("");
+        assertEq(labels.length, 1);
+        assertEq(labels[0], "Safety Module");
+    }
 }

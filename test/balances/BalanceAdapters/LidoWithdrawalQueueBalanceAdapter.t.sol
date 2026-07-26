@@ -368,4 +368,17 @@ contract LidoWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory positions = freshAdapter.getAdapterPositions(alice, address(0));
         assertEq(positions.length, 0, "Unregistered underlying should not produce positions");
     }
+
+    // ---- IPositionDescribable ----
+
+    /// @dev Configuration-view probe: a consumer describing configuration has no positionId, so it can only call
+    ///      `positionLabels("")`. Single-shape adapter -> the probe must answer with the constant breadcrumb (the
+    ///      per-request id is `positionInstanceId`, not a label). Swapping the hardcoded "stETH" leaf for one
+    ///      decoded from `positionId` would silently return [] and drop this adapter off that view.
+    function test_positionLabels_emptyProbe_returnsTheConstantShape() public view {
+        string[] memory labels = adapter.positionLabels("");
+        assertEq(labels.length, 2);
+        assertEq(labels[0], "Withdrawal Queue");
+        assertEq(labels[1], "stETH");
+    }
 }

@@ -429,4 +429,17 @@ contract KelpWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         (uint256 agg,) = adapter.getAdapterBalanceForAsset(alice, address(steth));
         assertEq(sum, agg, "sum of per-request legs == aggregate balance");
     }
+
+    // ---- IPositionDescribable ----
+
+    /// @dev Configuration-view probe: a consumer describing configuration has no positionId, so it can only call
+    ///      `positionLabels("")`. Single-shape adapter -> the probe must answer with the constant breadcrumb (the
+    ///      per-request id is `positionInstanceId`, not a label). Making the leaf positionId-derived would silently
+    ///      return [] and drop this adapter off that view.
+    function test_positionLabels_emptyProbe_returnsTheConstantShape() public view {
+        string[] memory labels = adapter.positionLabels("");
+        assertEq(labels.length, 2);
+        assertEq(labels[0], "Withdrawal Queue");
+        assertEq(labels[1], "rsETH");
+    }
 }

@@ -244,4 +244,16 @@ contract CapBalanceAdapterTest is Test {
         assertEq(labels1[0], "Savings");
         assertEq(labels1[1], "stcUSD");
     }
+
+    /// @dev Configuration-view probe. Unlike the single-shape adapters, Cap has TWO position shapes (cUSD and
+    ///      stcUSD) and derives the breadcrumb from the positionId, so `positionLabels("")` must return [] rather
+    ///      than guessing one of them. That empty answer is correct, not a defect: the shapes are still reachable
+    ///      against real positions (asserted above), and a consumer distinguishes "per-position labels" from
+    ///      "adapter is broken" via the typed ERC165 markers. It is the reason a configuration view cannot list
+    ///      Cap's two shapes today — see the enumeration discussion in BALANCE_ADAPTERS.md.
+    function test_positionLabels_emptyProbe_returnsEmptyForAMultiShapeAdapter() public view {
+        assertEq(adapter.positionLabels("").length, 0);
+        // Sub-32-byte junk is treated the same way — no partial decode, no revert.
+        assertEq(adapter.positionLabels(hex"0102030405060708090a0b0c").length, 0);
+    }
 }

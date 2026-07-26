@@ -259,4 +259,21 @@ contract ERC20DefaultBalanceAdapterTest is Test {
         assertTrue(adapter.isSupportedByDefault(NATIVE_ADDRESS));
         assertFalse(adapter.isSupportedByDefault(address(0x1234)));
     }
+
+    /// @dev Configuration-view probe. The wallet adapter's leaf IS the token symbol, so it is legitimately
+    ///      positionId-derived and `positionLabels("")` must return [] — there is no single shape to name. That
+    ///      is not a gap: a wallet position's shape set is the registered-asset list, which a configuration view
+    ///      already renders, and the adapter is identified as the wallet singleton by `AdapterType.Default`.
+    function test_positionLabels_emptyProbe_returnsEmptyForThePerTokenLeaf() public view {
+        assertEq(adapter.positionLabels("").length, 0);
+
+        // Against a real positionId the leaf resolves, so [] above is "per-position", not "broken".
+        string[] memory labels = adapter.positionLabels(abi.encode(address(usdc)));
+        assertEq(labels.length, 1);
+        assertEq(labels[0], "USDC");
+
+        string[] memory native = adapter.positionLabels(abi.encode(NATIVE_ADDRESS));
+        assertEq(native.length, 1);
+        assertEq(native[0], "native");
+    }
 }

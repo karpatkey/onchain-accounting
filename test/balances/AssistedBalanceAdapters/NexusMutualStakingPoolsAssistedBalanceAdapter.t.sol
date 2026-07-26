@@ -429,4 +429,19 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterTest is BalanceAdapterTest
         assertEq(a.length, 1);
         assertEq(a[0], address(nxm));
     }
+
+    /// @dev Configuration-view probe. Nexus derives its breadcrumb from the staking-pool address in the
+    ///      positionId, and its pool set is discovered per account from the cached NFT ids, so
+    ///      `positionLabels("")` must return [] — there is no configuration-level shape to name. That empty
+    ///      answer is correct, not a defect: the labels resolve against real positionIds (asserted above), and a
+    ///      consumer tells "account-derived shapes" apart from "broken adapter" via the `IAssistedBalanceAdapter`
+    ///      ERC165 marker, whose whole contract is "positions not derivable from on-chain state alone".
+    function test_positionLabels_emptyProbe_returnsEmptyForAccountDerivedShapes() public view {
+        assertEq(adapter.positionLabels("").length, 0);
+        assertEq(adapter.positionLabels(hex"0102030405060708090a0b0c").length, 0);
+        assertTrue(
+            adapter.supportsInterface(type(IAssistedBalanceAdapter).interfaceId),
+            "the marker is what makes the empty probe self-explaining"
+        );
+    }
 }

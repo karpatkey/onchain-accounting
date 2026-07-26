@@ -614,6 +614,18 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
     }
 
     /// @dev Static breadcrumb is `["Exit Queue", "osETH"]`; the ticket rides in the typed `positionInstanceId`.
+    /// @dev Configuration-view probe: a consumer describing configuration has no positionId, so it can only call
+    ///      `positionLabels("")`. This adapter has one position shape (the exit queue, leafed by the pinned
+    ///      `receiptSymbol`), so the probe must answer with that constant breadcrumb — the per-ticket coordinate
+    ///      is `positionInstanceId`, not a label. Deriving the leaf from the vault in `positionId` instead would
+    ///      silently return [] and drop this adapter off that view.
+    function test_positionLabels_emptyProbe_returnsTheConstantShape() public view {
+        string[] memory labels = adapter.positionLabels("");
+        assertEq(labels.length, 2);
+        assertEq(labels[0], "Exit Queue");
+        assertEq(labels[1], "osETH");
+    }
+
     function _assertTicketLeg(INAVCalculator.PositionBalance memory leg) internal view {
         string[] memory labels = adapter.positionLabels(leg.positionId);
         assertEq(labels.length, 2);

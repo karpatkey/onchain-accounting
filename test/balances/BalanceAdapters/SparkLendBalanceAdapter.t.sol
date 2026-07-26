@@ -272,4 +272,18 @@ contract SparkLendBalanceAdapterTest is BalanceAdapterTestBase {
         dp2.setUserReserve(address(unregistered), alice, 0, 0, 0, false);
         assertEq(a2.getAdapterPositions(alice, address(0)).length, 1, "stale bit with zero debt must not suppress");
     }
+
+    // ============================================
+    // IPositionDescribable
+    // ============================================
+
+    /// @dev Configuration-view probe: a consumer describing configuration has no positionId, so it can only call
+    ///      `positionLabels("")`. Single-shape adapter -> the probe must answer with the constant breadcrumb.
+    ///      Making the leaf positionId-derived would silently return [] and drop this adapter off that view.
+    function test_positionLabels_emptyProbe_returnsTheConstantShape() public view {
+        string[] memory labels = adapter.positionLabels("");
+        assertEq(labels.length, 2);
+        assertEq(labels[0], "Market");
+        assertEq(labels[1], "SparkLend");
+    }
 }

@@ -135,10 +135,10 @@ contract GearboxV3CreditAccountsMetaBalanceAdapter is MetaBalanceAdapter {
         return n;
     }
 
-    /// @dev Appends the single `Borrowed` leg (the total owed in the pool's underlying) if `debt > 0` and the
-    ///      underlying is registered (and matches `assetFilter`, if set). Extracted to relieve stack.
     /// @notice True iff a non-zero debt on `cm` can actually be emitted as a leg: its `underlying()` is readable
     ///         and that asset is registered on the NAV.
+    /// @dev Deliberately ignores `assetFilter`, unlike {_appendBorrow}: a filtered view showing collateral
+    ///      while hiding an unreportable debt over-reports just as an unfiltered one would.
     function _debtReportable(address cm) private view returns (bool) {
         address underlying;
         try ICreditManagerV3(cm).underlying() returns (address u) {
@@ -150,6 +150,8 @@ contract GearboxV3CreditAccountsMetaBalanceAdapter is MetaBalanceAdapter {
         return found;
     }
 
+    /// @dev Appends the single `Borrowed` leg (the total owed in the pool's underlying) if `debt > 0` and the
+    ///      underlying is registered (and matches `assetFilter`, if set). Extracted to relieve stack.
     function _appendBorrow(
         address ca,
         address cm,

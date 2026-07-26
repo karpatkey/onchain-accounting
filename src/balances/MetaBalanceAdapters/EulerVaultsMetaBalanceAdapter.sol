@@ -8,8 +8,10 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @notice Minimal Euler V2 vault accessors beyond ERC4626. `debtOf` exists only on core eVaults (EVK); `EVC()` is
-///         exposed by both core eVaults and EulerEarn vaults. Both are read under try/catch so a vault lacking them
-///         (or a non-Euler ERC4626) degrades gracefully.
+///         exposed by both core eVaults and EulerEarn vaults. A vault lacking either (or a non-Euler ERC4626)
+///         degrades gracefully: `debtOf` is read under try/catch (a revert means "no debt leg"), and `EVC()` via the
+///         bounded fail-open staticcall in {EulerVaultsMetaBalanceAdapter._safeEvc} — try/catch is NOT sufficient
+///         there, see {EulerVaultsMetaBalanceAdapter._supplyKind}.
 interface IEulerEVault {
     /// @return The account's current debt in the vault's underlying asset (interest-accrued), 0 if none.
     function debtOf(address account) external view returns (uint256);
@@ -39,7 +41,8 @@ interface IEVC {
 ///      matching the multi-leg convention used by the lending adapters (Aave/Spark supply vs borrow on one reserve).
 ///      A supply the account has enabled as EVC collateral is reported as `Collateral`; an unencumbered supply
 ///      (EulerEarn earn deposits, or core-eVault supply not enabled as collateral) is `Supplied` — determined via an
-///      EVC `getCollaterals` lookup (under try/catch, so non-Euler/EulerEarn vaults degrade to `Supplied`).
+///      EVC `getCollaterals` lookup that is genuinely fail-open (see {_supplyKind}): every failure mode, including
+///      the ones `try`/`catch` cannot intercept, degrades to `Supplied` rather than reverting the instance.
 /// @dev **Instance set is a governed allowlist — not auto-enumerated.** Euler V2 exposes an on-chain
 ///      `GenericFactory` (mainnet `0x29a56a1b8214D9Cf7c5561811750D5cBDb45CC8e`, `getProxyListLength()` /
 ///      `getProxyListSlice()`) enumerating every deployed vault, and this adapter could read it to avoid governance
@@ -53,6 +56,20 @@ interface IEVC {
 ///      factory off-chain to *propose* instances; governance approves each into the allowlist. See
 ///      BALANCE_ADAPTERS.md §6.1.
 contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
+    /// @dev Gas stipend for each of the two EVC probe reads in {_supplyKind}. A raw staticcall assigning
+    ///      `(bool, bytes memory)` always `returndatacopy`s the response — including a revert payload, which a
+    ///      parameterless `catch {}` does not — so an *uncapped* version of these reads would be strictly worse
+    ///      against a hostile address than the `try`/`catch` they replace: a `revert(0, 3_000_000)` costs ~35M gas
+    ///      to copy, enough to out-of-gas the whole account read. The cap bounds both the callee's execution and,
+    ///      transitively, how much returndata it can afford to expand into. 150k leaves ample headroom for a real
+    ///      proxied `EVC()` (a single SLOAD) and a real `getCollaterals` (an EVC set read, ≤10 cold SLOADs).
+    uint256 private constant EVC_PROBE_GAS = 150_000;
+
+    /// @dev Upper bound on the collateral-list length {_supplyKind} will scan. The EVC caps an account's collateral
+    ///      set at 10 elements (`SET_MAX_ELEMENTS`); this sits above that so a protocol-side bump does not silently
+    ///      degrade classification, while still bounding the work a malformed/hostile `getCollaterals` can impose.
+    uint256 private constant MAX_COLLATERALS = 32;
+
     /// @param protocolName_ Human-readable protocol name (e.g. "Euler").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
     constructor(string memory protocolName_, address navCalculator_)
@@ -116,21 +133,90 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @dev Classifies a supply leg: `Collateral` if the account has enabled this vault as EVC collateral, else
-    ///      `Supplied`. Read under try/catch so a non-Euler ERC4626 lacking `EVC()`/`getCollaterals` degrades to
     ///      `Supplied`. EulerEarn aggregators do expose `EVC()`, but their shares can never be enabled as
-    ///      collateral, so `getCollaterals` never lists them and they too resolve to `Supplied`. EVC caps the
-    ///      collateral list at a small length, so the membership scan is bounded.
+    ///      collateral, so `getCollaterals` never lists them and they resolve to `Supplied`; a non-Euler ERC4626
+    ///      lacking `EVC()` entirely likewise resolves to `Supplied`.
+    ///
+    ///      **Genuinely fail-open — every failure mode degrades to `Supplied`, none can revert.** This is safe by
+    ///      construction: `PositionKind` is classification only. The `amount` is computed before this is called and
+    ///      is untouched by it, and `isDebt` — not the kind — carries the sign that NAV prices. So the worst this
+    ///      helper can do is under-classify a `Collateral` supply as `Supplied`; it can never change a reported
+    ///      balance, drop a leg, or over-report. `Supplied` is already the intended default for every vault whose
+    ///      collateral status cannot be established.
+    ///
+    ///      That property is the entire point of this rewrite, because the previous `try`/`catch` form did NOT hold
+    ///      it. Solidity routes neither of these into `catch`, so both propagated out of `_instancePositions`, where
+    ///      the base fan-out's per-instance `catch` dropped the ENTIRE instance — supply leg AND debt leg — turning
+    ///      a display-classification failure into a silently zeroed real balance (and, on a core eVault, a
+    ///      *suppressed debt*, which over-reports NAV):
+    ///        1. **Return-data decode failure.** A call that SUCCEEDS but returns something undecodable as the
+    ///           declared type reverts in the CALLING frame, past `catch`. Reproduced on solc 0.8.34 for `EVC()`
+    ///           returning empty returndata (an ERC-1967 proxy whose implementation slot points at a code-less
+    ///           address — the `delegatecall` succeeds and returns nothing) and returning a dirty-high-bits
+    ///           `bytes32`, and for `getCollaterals` returning a bad offset or an absurd length.
+    ///        2. **No-code address.** A high-level call to an address with no code reverts via Solidity's
+    ///           `extcodesize` precheck BEFORE the call, which `catch` also does not catch. Neither address was
+    ///           guarded.
+    ///
+    ///      Both addresses are now `code.length`-guarded, both reads are bounded by {EVC_PROBE_GAS}, and the ABI
+    ///      head is validated before decoding rather than trusting the declared return type. Note `vaultAddr` is
+    ///      MANAGER-governed and its guard is defensive only — `_instancePositions` already reverts on a code-less
+    ///      vault at `asset()`, long before this is reached. The live exposure is `evc`, which is read FROM the
+    ///      vault, and the collateral list, which is read from that `evc`: both are outside the governed set and
+    ///      can be upgraded or swapped after an instance is registered.
     function _supplyKind(address account, address vaultAddr) private view returns (PositionKind) {
-        try IEulerEVault(vaultAddr).EVC() returns (address evc) {
-            if (evc != address(0)) {
-                try IEVC(evc).getCollaterals(account) returns (address[] memory collaterals) {
-                    for (uint256 j = 0; j < collaterals.length; j++) {
-                        if (collaterals[j] == vaultAddr) return PositionKind.Collateral;
-                    }
-                } catch {}
+        address evc = _safeEvc(vaultAddr);
+        if (evc == address(0)) return PositionKind.Supplied;
+        return _isEnabledCollateral(evc, account, vaultAddr) ? PositionKind.Collateral : PositionKind.Supplied;
+    }
+
+    /// @dev Fail-open `EVC()` read. Returns `address(0)` — the "cannot classify" sentinel {_supplyKind}
+    ///      short-circuits on — for a code-less vault, a reverting/out-of-stipend call, fewer than 32 bytes of
+    ///      returndata, or a word with dirty high bits (a `bytes32`-shaped return, not an address).
+    function _safeEvc(address vaultAddr) private view returns (address) {
+        if (vaultAddr.code.length == 0) return address(0);
+        (bool ok, bytes memory data) = vaultAddr.staticcall{gas: EVC_PROBE_GAS}(abi.encodeCall(IEulerEVault.EVC, ()));
+        if (!ok || data.length < 32) return address(0);
+
+        uint256 word;
+        assembly ("memory-safe") {
+            word := mload(add(data, 0x20))
+        }
+        if (word >> 160 != 0) return address(0);
+        return address(uint160(word));
+    }
+
+    /// @dev Fail-open `getCollaterals` membership test. Returns false — degrading the leg to `Supplied` — for a
+    ///      code-less EVC, a reverting/out-of-stipend call, or returndata that is not a canonical `address[]`.
+    ///      A canonical `address[]` return is `[offset = 0x20][length][element…]`, so this requires two full words,
+    ///      an offset of exactly `0x20`, a length within {MAX_COLLATERALS}, and a payload that actually fits inside
+    ///      the returndata. Elements are compared as full words, so an entry with dirty high bits simply never
+    ///      matches — strictly under-classifying, consistent with the fail-open contract.
+    function _isEnabledCollateral(address evc, address account, address vaultAddr) private view returns (bool) {
+        if (evc.code.length == 0) return false;
+        (bool ok, bytes memory data) =
+            evc.staticcall{gas: EVC_PROBE_GAS}(abi.encodeCall(IEVC.getCollaterals, (account)));
+        if (!ok || data.length < 64) return false;
+
+        uint256 offset;
+        uint256 len;
+        assembly ("memory-safe") {
+            offset := mload(add(data, 0x20))
+            len := mload(add(data, 0x40))
+        }
+        if (offset != 0x20 || len > MAX_COLLATERALS || len > (data.length - 64) / 32) return false;
+
+        uint256 target = uint256(uint160(vaultAddr));
+        for (uint256 j = 0; j < len; j++) {
+            uint256 word;
+            // `data` points at its own length prefix, so returndata word 0 (the offset) is at `data + 0x20` and
+            // word 1 (the array length) at `data + 0x40` — elements therefore start at `data + 0x60`.
+            assembly ("memory-safe") {
+                word := mload(add(data, add(0x60, mul(j, 0x20))))
             }
-        } catch {}
-        return PositionKind.Supplied;
+            if (word == target) return true;
+        }
+        return false;
     }
 
     /// @inheritdoc MetaBalanceAdapter

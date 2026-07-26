@@ -7,6 +7,8 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {FluidVaultLib} from "src/balances/MetaBalanceAdapters/FluidVaultLib.sol";
+import {LabelLib} from "src/balances/LabelLib.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 /// @title Fluid Vaults Meta Balance Adapter
 /// @author KPK
@@ -19,16 +21,24 @@ import {FluidVaultLib} from "src/balances/MetaBalanceAdapters/FluidVaultLib.sol"
 ///      T1 vaults only — Smart vaults (T2/T3/T4) have a different `constantsView` layout and must not be
 ///      configured.
 contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
+    /// @notice Thrown when the pinned resolver does not implement `getVaultType`, which token resolution needs.
+    error ResolverMissingVaultType(address resolver);
+
     /// @notice The Fluid VaultResolver (chain-level constant; used for NFT enumeration + per-NFT position reads).
     address public immutable VAULT_RESOLVER;
 
     /// @param vaultResolver_ The Fluid VaultResolver address.
     /// @param protocolName_ Human-readable protocol name (e.g. "Fluid").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
+    /// @dev Also asserts the resolver actually implements `getVaultType`. Token resolution is gated on it, so a
+    ///      resolver version without it would make every vault read as non-T1 and silently zero the whole
+    ///      adapter on that chain — a failure that would otherwise surface only as "no positions". Probed with
+    ///      `address(0)`, which a conforming resolver answers with 0 rather than reverting.
     constructor(address vaultResolver_, string memory protocolName_, address navCalculator_)
         MetaBalanceAdapter(protocolName_, navCalculator_)
     {
         AddressCheckLib.requireContract(vaultResolver_, "VaultResolver");
+        if (!FluidVaultLib.supportsVaultType(vaultResolver_)) revert ResolverMissingVaultType(vaultResolver_);
         VAULT_RESOLVER = vaultResolver_;
     }
 
@@ -42,7 +52,18 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
         returns (INAVCalculator.PositionBalance[] memory)
     {
         address vault = _toAddress(instance);
-        (address collToken, address debtToken) = FluidVaultLib.tokens(vault);
+        (address collToken, address debtToken) = FluidVaultLib.tokens(vault, VAULT_RESOLVER);
+        // Gated (non-T1) vault, or a vault missing a token side: no complete pair means the legs cannot be
+        // reported correctly, so skip `aggregate`'s scan of every Fluid NFT the account holds. `||`, not `&&`
+        // — a half-zero pair would otherwise emit an unoffset Collateral leg while the Borrowed leg was
+        // dropped by `_eligible(address(0))`.
+        // NOTE: this closes only the address(0) form. The same unoffset-collateral shape still arises when the
+        // debt token is simply not a REGISTERED asset — `_eligible` drops that leg while the collateral leg is
+        // still emitted (see `test_unregisteredAsset_skipped`). That is a codebase-wide convention, not
+        // specific to Fluid (cf. MorphoMarketsMetaBalanceAdapter), and is tracked separately.
+        if (collToken == address(0) || debtToken == address(0)) {
+            return new INAVCalculator.PositionBalance[](0);
+        }
         (uint256 collateral, uint256 debt) = FluidVaultLib.aggregate(vault, VAULT_RESOLVER, account);
 
         bytes memory pid = _instancePositionId(instance);
@@ -70,7 +91,12 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
 
     /// @inheritdoc MetaBalanceAdapter
     function _instanceAssets(bytes32 instance) internal view override returns (address[] memory assets) {
-        (address collToken, address debtToken) = FluidVaultLib.tokens(_toAddress(instance));
+        (address collToken, address debtToken) = FluidVaultLib.tokens(_toAddress(instance), VAULT_RESOLVER);
+        // Gated (non-T1) vault, or a vault missing a token side: report no underlying assets rather than
+        // publishing address(0) as one. `||` for the same reason as in `_instancePositions`.
+        if (collToken == address(0) || debtToken == address(0)) {
+            return new address[](0);
+        }
         if (collToken == debtToken) {
             assets = new address[](1);
             assets[0] = collToken;
@@ -82,10 +108,48 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev Returns `["Vault", <leaf>]` where the leaf is the vault's ERC20 name ("" if unreadable). Returns an
-    ///      empty array for a short positionId.
+    /// @dev Returns `["Vault", "<collateral>/<debt> #<vaultId>"]` — e.g. `["Vault", "wstETH/USDC #4"]`. A Fluid
+    ///      vault is NOT an ERC20 (`name()`/`symbol()` revert), so the pair is the only human-readable property
+    ///      available, but the pair alone does NOT identify a vault: Fluid runs several isolated T1 vaults over
+    ///      the same pair (mainnet: 101 T1 vaults, 91 distinct pairs — every configured vault has a live
+    ///      same-pair twin), so Fluid's own per-vault id is appended. Leaf is "" (collapsing to `["Vault"]`) for
+    ///      a non-T1 or unreadable vault. Returns an empty array for a short positionId.
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
-        return _addressLabels(pid, "Vault", false);
+        if (pid.length < 32) return new string[](0);
+        address vault = abi.decode(pid, (address));
+        // External self-call so a revert anywhere in the type-check/constantsView/symbol chain fails open to the
+        // category-only label — a faulty label must never revert the (verbose-only) labels read.
+        try this.vaultPairSymbols(vault) returns (string memory leaf) {
+            return _labels("Vault", leaf);
+        } catch {
+            return _labels("Vault", "");
+        }
+    }
+
+    /// @notice External wrapper (enables `try/catch` isolation in `positionLabels`): the vault's label leaf,
+    ///         `"<collateral>/<debt> #<vaultId>"` — e.g. `"wstETH/USDC #4"`.
+    /// @dev Symbols prefer the NAV's registered-asset record, which already resolves `NATIVE_ADDRESS` to the
+    ///      chain's native symbol — several Fluid T1 vaults use the ERC-7528 native sentinel as one side, and it
+    ///      has no `symbol()` to call. Falls back to a direct ERC20 read for a token that is not registered.
+    ///      The trailing id is required for uniqueness: several T1 vaults share one collateral/debt pair.
+    /// @param vault The T1 vault address.
+    /// @return The label leaf, or "" if the vault is not a readable T1 vault.
+    function vaultPairSymbols(address vault) external view returns (string memory) {
+        (address collToken, address debtToken, uint256 vaultId) = FluidVaultLib.vaultInfo(vault, VAULT_RESOLVER);
+        if (collToken == address(0) || debtToken == address(0)) return "";
+        return string.concat(_assetSymbol(collToken), "/", _assetSymbol(debtToken), " #", Strings.toString(vaultId));
+    }
+
+    /// @notice Symbol for `token`: the NAV registry's (native-aware), else a direct ERC20 `symbol()`, else "?".
+    /// @dev Deliberately not `MetaBalanceAdapter._joinTokenSymbols`, which reads `symbol()` directly and so
+    ///      cannot resolve the ERC-7528 native sentinel — several Fluid T1 vaults use it as one side and it has
+    ///      no `symbol()` to call. The registry-first lookup also means a *registered* token's symbol never
+    ///      involves an external call into that token. Falls back to "?" to match `_joinTokenSymbols` and the
+    ///      Morpho markets adapter, so an unreadable side renders "?/USDC" rather than "/USDC".
+    function _assetSymbol(address token) internal view returns (string memory) {
+        (INAVCalculator.Asset memory info, bool found) = _getAssetInfo(token);
+        if (found && bytes(info.symbol).length > 0) return info.symbol;
+        return LabelLib.symbol(token, "?");
     }
 
     /// @inheritdoc MetaBalanceAdapter

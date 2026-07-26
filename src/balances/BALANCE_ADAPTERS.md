@@ -254,9 +254,11 @@ Mechanics:
 | Adapter family | Where the name comes from | How it is kept canonical |
 |---|---|---|
 | Plain / assisted (hardcoded) | String literal in the adapter → baked into bytecode | Return a `src/utils/ProtocolNames.sol` constant, not a literal. `string internal constant` inlines identically, so this is bytecode-neutral for adapters already returning the right string. |
-| Meta (`MetaBalanceAdapter`) | `protocolName_` constructor argument → a **deployment-time** value that appears nowhere in `src/` | `04_DeployBalanceAdapters` resolves it from those same constants via `script/utils/ProtocolNameResolver.sol`, keyed on the adapter's config name — not from a per-call-site JSON literal. |
+| Meta (`MetaBalanceAdapter`) | `protocolName_` constructor argument → a **deployment-time** value that appears nowhere in `src/` | Both paths that construct meta adapters — `04_DeployBalanceAdapters` and the `IntegrationFromConfigBase` fork harness — resolve it from those same constants via `script/utils/ProtocolNameResolver.sol`, keyed on the adapter's config name, not from a per-call-site JSON literal. An unmapped key **reverts** (`UnmappedProtocolName`) rather than deploying a permanently nameless immutable adapter. |
 
-`test/ProtocolNameConsistency.t.sol` asserts both halves: that adapters sharing a protocolId report one name, that the resolver hands siblings the same string, that every configured adapter key resolves, and that the (now documentary) `protocol` keys left in `contracts-deployment-config/**` still agree with the constants. The `protocol` key in those JSON files no longer feeds any constructor.
+`test/ProtocolNameConsistency.t.sol` asserts both halves: every hardcoded adapter is deployed and pinned to its constant (so single-member protocols are covered too, not just shared-protocolId groups), adapters sharing a protocolId report one name, every meta-adapter key in every chain config resolves, an unmapped key reverts, an unknown major version reverts rather than inheriting its predecessor's name, and the (now documentary) `protocol` keys left in `contracts-deployment-config/**` still agree with the constants. The config files are enumerated from disk, so a newly added chain is audited without editing the test.
+
+Migration status: `AaveUmbrellaBalanceAdapter` is the first adapter to reference `ProtocolNames` directly. The other 11 hardcoded adapters still hold string literals; all of them currently match their constant, and the test above pins that, so converting them is a zero-risk cleanup rather than a correctness fix — deliberately left to the PRs that own those adapters.
 
 > **Deployed-vs-source note (2026-07-26).** The Umbrella fix changes a `pure` function, so the currently deployed mainnet adapter (`0x94910a2E35b8749529Dc9555Ed1599cd77E045bF`) still returns `"Aave Umbrella"` on chain until it is redeployed and re-registered. It is deployed on Ethereum only. The redeploy is deliberately folded into the batch redeploy that follows the in-flight adapter PRs, rather than run standalone for a display string; downstream consumers should keep any Umbrella→Aave V3 alias until then.
 
@@ -453,7 +455,8 @@ contract MyProtocolBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     }
 
     // IPositionDescribable — protocolName() plus positionLabels() (display only; derived lazily from positionId)
-    function protocolName() external pure returns (string memory) { return "My Protocol"; }
+    // Names the PROTOCOL, not the product (see 6.2). Product goes in positionLabels().
+    function protocolName() external pure returns (string memory) { return ProtocolNames.MY_PROTOCOL; }
 
     function positionLabels(bytes calldata) external pure returns (string[] memory out) {
         out = new string[](1);

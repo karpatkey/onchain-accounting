@@ -9,6 +9,11 @@ import {stdJson} from "forge-std/StdJson.sol";
 
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {ConfigReader} from "script/utils/ConfigReader.sol";
+// Meta adapters' `protocolName_` comes from the SAME resolver `04_DeployBalanceAdapters` uses. This harness mirrors
+// the deploy script, so sourcing the display name from the chain JSON here while `04` resolves it from
+// `ProtocolNames` would give the two paths different sources of truth for one constructor argument — and the
+// divergence would surface only as a blank/stale `protocolName` in the nav-positions snapshot.
+import {ProtocolNameResolver} from "script/utils/ProtocolNameResolver.sol";
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
@@ -596,30 +601,30 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "compoundRewards"));
         address rewardToken =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "rewardToken"));
-        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory protocol = ProtocolNameResolver.protocolNameFor(name);
         return address(new CompoundV3CometsMetaBalanceAdapter(compoundRewards, rewardToken, protocol, navAddr));
     }
 
     function _deployMorphoVaultsMeta(string memory name, address navAddr) internal returns (address) {
-        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory protocol = ProtocolNameResolver.protocolNameFor(name);
         return address(new MorphoVaultsMetaBalanceAdapter(protocol, navAddr));
     }
 
     function _deployBalancerV3PoolsMeta(string memory name, address navAddr) internal returns (address) {
-        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory protocol = ProtocolNameResolver.protocolNameFor(name);
         return address(new BalancerV3PoolsMetaBalanceAdapter(protocol, navAddr));
     }
 
     function _deployBalancerV3GaugesMeta(string memory name, address navAddr) internal returns (address) {
         address balancerMinter =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "balancerMinter"));
-        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory protocol = ProtocolNameResolver.protocolNameFor(name);
         return address(new BalancerV3GaugesMetaBalanceAdapter(balancerMinter, protocol, navAddr));
     }
 
     function _deployBalancerV2PoolsMeta(string memory name, address navAddr) internal returns (address) {
         address vault = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "vault"));
-        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory protocol = ProtocolNameResolver.protocolNameFor(name);
         return address(new BalancerV2PoolsMetaBalanceAdapter(vault, protocol, navAddr));
     }
 
@@ -627,23 +632,23 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         address vault = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "vault"));
         address balancerMinter =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "balancerMinter"));
-        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory protocol = ProtocolNameResolver.protocolNameFor(name);
         return address(new BalancerV2GaugesMetaBalanceAdapter(vault, balancerMinter, protocol, navAddr));
     }
 
     function _deployMorphoMarketsMeta(string memory name, address navAddr) internal returns (address) {
         address morpho = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "morpho"));
-        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory protocol = ProtocolNameResolver.protocolNameFor(name);
         return address(new MorphoMarketsMetaBalanceAdapter(morpho, protocol, navAddr));
     }
 
     function _deployAaveV3InstancesMeta(string memory name, address navAddr) internal returns (address) {
-        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory protocol = ProtocolNameResolver.protocolNameFor(name);
         return address(new AaveV3InstancesMetaBalanceAdapter(protocol, navAddr));
     }
 
     function _deployGearboxV3MarketsMeta(string memory name, address navAddr) internal returns (address) {
-        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory protocol = ProtocolNameResolver.protocolNameFor(name);
         return address(new GearboxV3MarketsMetaBalanceAdapter(protocol, navAddr));
     }
 
@@ -656,7 +661,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     }
 
     function _deployCurvePoolsMeta(string memory name, address navAddr) internal returns (address) {
-        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory protocol = ProtocolNameResolver.protocolNameFor(name);
         return address(new CurvePoolsMetaBalanceAdapter(protocol, navAddr));
     }
 
@@ -664,7 +669,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         address minter = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "minter"));
         address crvToken =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "crvToken"));
-        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory protocol = ProtocolNameResolver.protocolNameFor(name);
         return address(new CurveGaugesMetaBalanceAdapter(minter, crvToken, protocol, navAddr));
     }
 
@@ -673,7 +678,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "booster"));
         address cvxToken =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "cvxToken"));
-        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory protocol = ProtocolNameResolver.protocolNameFor(name);
         return address(new ConvexCurveLPStakingMetaBalanceAdapter(booster, cvxToken, protocol, navAddr));
     }
 
@@ -688,14 +693,14 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     }
 
     function _deployFluidFTokensMeta(string memory name, address navAddr) internal returns (address) {
-        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory protocol = ProtocolNameResolver.protocolNameFor(name);
         return address(new FluidFTokensMetaBalanceAdapter(protocol, navAddr));
     }
 
     function _deployFluidVaultsMeta(string memory name, address navAddr) internal returns (address) {
         address vaultResolver =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "vaultResolver"));
-        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory protocol = ProtocolNameResolver.protocolNameFor(name);
         return address(new FluidVaultsMetaBalanceAdapter(vaultResolver, protocol, navAddr));
     }
 
@@ -720,7 +725,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         address osTokenVaultController = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "osTokenVaultController")
         );
-        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory protocol = ProtocolNameResolver.protocolNameFor(name);
         return
             address(new StakeWiseV3VaultsMetaBalanceAdapter(underlyingToken, osTokenVaultController, protocol, navAddr));
     }
@@ -728,7 +733,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     function _deployUniswapV3PoolsMeta(string memory name, address navAddr) internal returns (address) {
         address positionManager =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionManager"));
-        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory protocol = ProtocolNameResolver.protocolNameFor(name);
         // Meta-adapter: pool set configured via _configureMetaInstances (nav-config instances). NFTs are
         // enumerated on-chain, so no assistant/tokenId seeding is needed.
         return address(new UniswapV3PoolsMetaBalanceAdapter(positionManager, protocol, navAddr));
@@ -737,12 +742,12 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     function _deployPancakeSwapV3PoolsMeta(string memory name, address navAddr) internal returns (address) {
         address positionManager =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "positionManager"));
-        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory protocol = ProtocolNameResolver.protocolNameFor(name);
         return address(new PancakeSwapV3PoolsMetaBalanceAdapter(positionManager, protocol, navAddr));
     }
 
     function _deployUniswapV2PoolsMeta(string memory name, address navAddr) internal returns (address) {
-        string memory protocol = ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "protocol");
+        string memory protocol = ProtocolNameResolver.protocolNameFor(name);
         if (_equals(name, "PancakeSwapV2PoolsMeta")) {
             return address(new PancakeSwapV2PoolsMetaBalanceAdapter(protocol, navAddr));
         }

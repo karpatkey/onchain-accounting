@@ -584,11 +584,14 @@ contract DeployBalanceAdapters is BaseDeployScript {
         //   "AaveUmbrella": {
         //     "enabled": true,
         //     "constructor": {
-        //       "rewardsController": "0x4655Ce3D625a63d30bA704087E52B4C31E38188B"
+        //       "rewardsController": "0x4655Ce3D625a63d30bA704087E52B4C31E38188B",
+        //       "protocol": "Aave V3"
         //     }
         //   }
-        // No `protocol` key: this adapter hardcodes its display name (ProtocolNames.AAVE_V3 — Umbrella is a
-        // product of Aave V3, not a protocol of its own; the product rides in positionLabels()).
+        // The `protocol` key is documentary only and NOT read here: this adapter hardcodes its display name
+        // (ProtocolNames.AAVE_V3 — Umbrella is a product of Aave V3, not a protocol of its own; the product rides
+        // in positionLabels()). It is kept in the config, and pinned by test/ProtocolNameConsistency.t.sol, so the
+        // config stays a truthful record of what the adapter reports.
         // The Umbrella stake-token set is discovered at runtime from the RewardsController address
         // above via `getAllAssets()`. See ADR 0007 for the dynamic-discovery rationale.
         address rewardsController = vm.parseAddress(

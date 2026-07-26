@@ -74,6 +74,7 @@ import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
+import {ProtocolNames} from "src/utils/ProtocolNames.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
@@ -110,8 +111,12 @@ contract MyProtocolBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     // ─── IPositionDescribable ─────────────────────────────────────────────────
 
     /// @inheritdoc IPositionDescribable
+    /// @dev Names the PROTOCOL, never the product. Return the `ProtocolNames` constant for your protocol id —
+    ///      adapters sharing a `ProtocolIds` protocol id MUST return the same string, and the product goes in
+    ///      `positionLabels()` below. Add a constant to `src/utils/ProtocolNames.sol` if the protocol is new.
+    ///      `test/ProtocolNameConsistency.t.sol` pins every hardcoded adapter to its constant.
     function protocolName() external pure returns (string memory) {
-        return "My Protocol";
+        return ProtocolNames.MY_PROTOCOL;
     }
 
     // ─── IBalanceAdapter ────────────────────────────────────────────────

@@ -19,7 +19,9 @@ interface IPositionDescribable {
     ///      string here; what distinguishes them is `positionLabels()` (`["Umbrella Module"]`, `["Safety Module"]`,
     ///      `["Market", "wstETH/USDC"]`) and the typed `protocolSubId`. Equivalently: every adapter sharing a
     ///      `ProtocolIds` protocol id MUST return the same name. Pull it from `src/utils/ProtocolNames.sol` rather
-    ///      than writing a literal; `test/ProtocolNameConsistency.t.sol` asserts the invariant.
+    ///      than writing a literal — new and changed adapters should reference the constant; the pre-existing
+    ///      literals are being migrated adapter by adapter and are meanwhile pinned to their constants by
+    ///      `test/ProtocolNameConsistency.t.sol`, which asserts the invariant either way.
     ///
     ///      Why the distinction is load-bearing rather than cosmetic: consumers group *configured adapters* by this
     ///      string. The typed `protocolBrand`/`protocolId`/`protocolSubId` would group them correctly, but they are

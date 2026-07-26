@@ -20,6 +20,10 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         The Borrow leg sums variable and stable debt: Aave/Spark deprecated NEW stable borrows, but
 ///         legacy stable debt can persist, so it is included to avoid understating debt (see `_reserveData`).
 contract SparkLendBalanceAdapter is BalanceAdapterBase {
+    /// @notice Aave's `ReserveConfiguration.MAX_RESERVES_COUNT` — the user-configuration bitmap packs 2 bits
+    ///         per reserve into one word, so it addresses ids 0..127.
+    uint256 private constant MAX_RESERVES = 128;
+
     IProtocolDataProvider public immutable DATA_PROVIDER;
     /// @notice Spark Pool address — used as the `positionId` (one position per instance; the reserve is not
     ///         encoded — reserves are distinguished by `balanceAsset` + `positionKind`).
@@ -121,6 +125,13 @@ contract SparkLendBalanceAdapter is BalanceAdapterBase {
             regAddrs[i] = reg[i].asset;
         }
 
+        // A borrow this adapter cannot report must never leave the account's supplies standing alone: the
+        // position would count as pure credit and NAV be over-reported by the whole borrow. Unregistered
+        // reserves are dropped from `active` below, so without this an unregistered borrow simply vanishes.
+        // Checked independently of `assetFilter` — a filtered view showing a supply while hiding an
+        // unreportable borrow over-reports the same way.
+        if (_hasUnreportableDebt(account, regAddrs)) return new INAVCalculator.PositionBalance[](0);
+
         address[] memory active = ArrayLib.intersection(reserves, regAddrs);
         if (active.length == 0) return new INAVCalculator.PositionBalance[](0);
 
@@ -190,6 +201,65 @@ contract SparkLendBalanceAdapter is BalanceAdapterBase {
 
     // ─── Internal helpers ─────────────────────────────────────────────────────
 
+    /// @notice True iff the account borrows any reserve whose asset is NOT registered on the NAV, i.e. a debt
+    ///         this adapter would silently drop.
+    /// @dev Uses Aave's user-configuration bitmap (SparkLend is an Aave V3 fork): one call identifies exactly
+    ///      which reserves the account borrows, so only those are checked. Falls back to scanning every
+    ///      unregistered reserve's debt if the bitmap is unavailable.
+    function _hasUnreportableDebt(address account, address[] memory regAddrs) private view returns (bool) {
+        // `try` does NOT catch Solidity's "call to non-contract address" check — it runs in this frame, so a
+        // code-less pool would revert the whole read rather than fall back. Check explicitly first.
+        if (POOL.code.length == 0) return _hasUnreportableDebtByScanSpark(account, regAddrs);
+
+        // Low-level, not `try`: `try` catches neither the non-contract check (pre-empted above) NOR a
+        // return-data decode failure, so a pool answering this selector with fewer than 32 bytes would escape
+        // the `catch` and revert the read instead of falling back to the scan.
+        (bool cfgOk, bytes memory cfgRet) =
+            POOL.staticcall(abi.encodeWithSelector(IAavePool.getUserConfiguration.selector, account));
+        if (!cfgOk || cfgRet.length < 32) return _hasUnreportableDebtByScanSpark(account, regAddrs);
+        uint256 cfgData = abi.decode(cfgRet, (uint256));
+        if (cfgData == 0) return false; // no supplies and no borrows
+
+        // Resolve each BORROWED reserve by its stored id — see the Aave adapter for why `getReservesList()`
+        // must not be indexed positionally, and why this lookup is a low-level staticcall rather than sitting
+        // inside the `try` above (a revert in a success block is not caught by that statement's `catch`).
+        for (uint256 id; id < MAX_RESERVES; ++id) {
+            if (cfgData & (1 << (id * 2)) == 0) continue; // not borrowing reserve `id`
+            (bool ok, bytes memory ret) =
+                POOL.staticcall(abi.encodeWithSelector(IAavePool.getReserveAddressById.selector, uint16(id)));
+            if (!ok || ret.length < 32) return _hasUnreportableDebtByScanSpark(account, regAddrs);
+            // Mask rather than `abi.decode(ret, (address))`: that reverts on a word with dirty upper bits,
+            // and a revert here would escape the fallback this branch exists to reach.
+            address asset = address(uint160(abi.decode(ret, (uint256))));
+            if (asset == address(0)) continue; // dropped reserve
+            if (_contains(regAddrs, asset)) continue; // reportable
+            // Confirm real debt before suppressing — the borrowing bit can outlive the debt (see the Aave
+            // adapter), and suppressing on a stale bit would erase the whole position and disagree with the
+            // scan fallback, which requires debt > 0.
+            (, uint256 debt,) = _reserveData(account, asset);
+            if (debt > 0) return true;
+        }
+        return false;
+    }
+
+    /// @notice Fallback for a pool without the configuration bitmap: check every unregistered reserve for debt.
+    function _hasUnreportableDebtByScanSpark(address account, address[] memory regAddrs) private view returns (bool) {
+        address[] memory all = _reserveAddresses();
+        for (uint256 i; i < all.length; ++i) {
+            if (_contains(regAddrs, all[i])) continue; // reportable, cannot be silently dropped
+            (, uint256 debt,) = _reserveData(account, all[i]);
+            if (debt > 0) return true;
+        }
+        return false;
+    }
+
+    function _contains(address[] memory xs, address x) private pure returns (bool) {
+        for (uint256 i; i < xs.length; ++i) {
+            if (xs[i] == x) return true;
+        }
+        return false;
+    }
+
     function _reserveAddresses() internal view returns (address[] memory addrs) {
         IProtocolDataProvider.TokenData[] memory tokens = DATA_PROVIDER.getAllReservesTokens();
         addrs = new address[](tokens.length);
@@ -232,6 +302,19 @@ contract SparkLendBalanceAdapter is BalanceAdapterBase {
 }
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
+
+interface IAavePool {
+    /// @notice Aave's per-user reserve bitmap: bit 2*i = borrowing reserve i, bit 2*i+1 = using it as collateral.
+    struct UserConfigurationMap {
+        uint256 data;
+    }
+
+    function getUserConfiguration(address user) external view returns (UserConfigurationMap memory);
+
+    /// @notice Reserve address by its STORED id — the key the bitmap uses. `getReservesList()` is NOT
+    ///         equivalent: it compacts out dropped reserves and truncates, so its indices drift from the ids.
+    function getReserveAddressById(uint16 id) external view returns (address);
+}
 
 interface IProtocolDataProvider {
     struct TokenData {

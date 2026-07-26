@@ -59,6 +59,19 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
         }
 
         Position memory pos = MORPHO.position(marketId, account);
+
+        // A debt this adapter cannot report must never leave the collateral standing alone: the position would
+        // count as pure credit and NAV be over-reported by the whole borrow. Checked on registration only, NOT
+        // the assetFilter — a filtered view showing collateral while hiding an unreportable debt over-reports
+        // the same way. Under-reporting the whole position is the safe direction.
+        if (!loanReg && pos.borrowShares != 0) {
+            // Gate on the REALISED borrow, not the raw share count: dust shares left by a repay-by-assets, or a
+            // degenerate market whose totalBorrowAssets was driven to 0 by a bad-debt seizure while shares
+            // remain, would otherwise erase an entire healthy collateral position.
+            (, uint256 unreportableBorrow) = _loanLegs(mp, pos);
+            if (unreportableBorrow > 0) return new INAVCalculator.PositionBalance[](0);
+        }
+
         bytes memory pid = _instancePositionId(instance);
 
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](3);

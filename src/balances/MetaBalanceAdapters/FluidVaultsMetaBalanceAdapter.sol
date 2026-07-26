@@ -57,10 +57,7 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
         // reported correctly, so skip `aggregate`'s scan of every Fluid NFT the account holds. `||`, not `&&`
         // — a half-zero pair would otherwise emit an unoffset Collateral leg while the Borrowed leg was
         // dropped by `_eligible(address(0))`.
-        // NOTE: this closes only the address(0) form. The same unoffset-collateral shape still arises when the
-        // debt token is simply not a REGISTERED asset — `_eligible` drops that leg while the collateral leg is
-        // still emitted (see `test_unregisteredAsset_skipped`). That is a codebase-wide convention, not
-        // specific to Fluid (cf. MorphoMarketsMetaBalanceAdapter), and is tracked separately.
+        // The unregistered-debt form of the same shape is closed just below, by the `debtRegistered` check.
         if (collToken == address(0) || debtToken == address(0)) {
             return new INAVCalculator.PositionBalance[](0);
         }
@@ -70,6 +67,15 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
 
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](2);
         uint256 count;
+
+        // A debt this adapter cannot report must never leave its collateral standing alone: the position would
+        // be counted as pure credit and NAV over-reported by the whole borrow. Registration is checked WITHOUT
+        // the assetFilter — a filtered view showing the collateral while hiding an unreportable debt
+        // over-reports exactly the same way. Under-reporting the whole position is the safe direction.
+        if (debt > 0) {
+            (, bool debtRegistered) = _getAssetInfo(debtToken);
+            if (!debtRegistered) return new INAVCalculator.PositionBalance[](0);
+        }
 
         if (collateral > 0) {
             (INAVCalculator.Asset memory a, bool ok) = _eligible(collToken, assetFilter);

@@ -361,4 +361,23 @@ contract GearboxV3CreditAccountsMetaBalanceAdapterTest is Test {
         assertEq(assets[1], address(weth));
         assertEq(assets[2], address(wbtc));
     }
+
+    /// @dev The adapter already drops the whole account when the debt cannot be READ. The same must hold when
+    ///      the debt is read but cannot be REPORTED — its underlying is not a registered asset — otherwise the
+    ///      collateral legs are emitted alone and NAV is over-reported by the entire borrow.
+    function test_unreportableDebtUnderlying_suppressesWholeAccount() public {
+        _seedAliceFullPosition(); // WETH + WBTC collateral, 1500 USDC debt
+        nav.unregisterAssetHelper(address(usdc)); // the pool underlying == the debt asset
+
+        assertEq(
+            adapter.getAdapterPositionsForInstances(alice, _instances(), address(0)).length,
+            0,
+            "collateral must not be reported without the unreportable debt"
+        );
+        assertEq(
+            adapter.getAdapterPositionsForInstances(alice, _instances(), address(weth)).length,
+            0,
+            "assetFilter must not resurrect the unoffset collateral legs"
+        );
+    }
 }

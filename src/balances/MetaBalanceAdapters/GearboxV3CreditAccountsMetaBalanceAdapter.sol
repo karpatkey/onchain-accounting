@@ -72,6 +72,13 @@ contract GearboxV3CreditAccountsMetaBalanceAdapter is MetaBalanceAdapter {
         (bool debtOk, uint256 debt) = _debtOf(cm, ca);
         if (!debtOk) return new INAVCalculator.PositionBalance[](0);
 
+        // Same reasoning one step further: a debt that is READ but cannot be REPORTED — `underlying()`
+        // unreadable, or the underlying not a registered NAV asset — is dropped by `_appendBorrow` while the
+        // collateral legs below are still emitted, which overstates equity exactly as an unreadable debt would.
+        // Checked on registration only, not the assetFilter: a filtered view showing collateral while hiding an
+        // unreportable debt over-reports the same way.
+        if (debt > 0 && !_debtReportable(cm)) return new INAVCalculator.PositionBalance[](0);
+
         // Upper bound: one Collateral leg per enabled token + one Borrowed leg. Over-allocate and resize (a tighter
         // count would mean re-reading balances/registry twice). `enabledMask` is bounded by the manager's allowed-token
         // count, and only set bits are visited.
@@ -126,6 +133,21 @@ contract GearboxV3CreditAccountsMetaBalanceAdapter is MetaBalanceAdapter {
             temp[n++] = _leg(info, bal, false, abi.encode(ca), PositionKind.Collateral);
         }
         return n;
+    }
+
+    /// @notice True iff a non-zero debt on `cm` can actually be emitted as a leg: its `underlying()` is readable
+    ///         and that asset is registered on the NAV.
+    /// @dev Deliberately ignores `assetFilter`, unlike {_appendBorrow}: a filtered view showing collateral
+    ///      while hiding an unreportable debt over-reports just as an unfiltered one would.
+    function _debtReportable(address cm) private view returns (bool) {
+        address underlying;
+        try ICreditManagerV3(cm).underlying() returns (address u) {
+            underlying = u;
+        } catch {
+            return false;
+        }
+        (, bool found) = _getAssetInfo(underlying);
+        return found;
     }
 
     /// @dev Appends the single `Borrowed` leg (the total owed in the pool's underlying) if `debt > 0` and the

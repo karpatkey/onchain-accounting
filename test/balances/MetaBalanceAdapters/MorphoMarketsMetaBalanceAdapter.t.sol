@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.sol";
 import {MorphoMarketsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/MorphoMarketsMetaBalanceAdapter.sol";
 import {MockMorpho} from "test/balances/MetaBalanceAdapters/MorphoMocks.sol";
+import {Mock_ERC20} from "test/mocks/tokens.sol";
 import {Id, MarketParams} from "morpho-blue/src/interfaces/IMorpho.sol";
 import {MarketParamsLib} from "morpho-blue/src/libraries/MarketParamsLib.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -108,5 +109,87 @@ contract MorphoMarketsMetaUnitTest is BalanceAdapterTestBase {
         assertEq(assets.length, 2);
         assertEq(assets[0], address(weth)); // collateral
         assertEq(assets[1], address(usdc)); // loan
+    }
+
+    /// @dev A borrow the adapter cannot report (loan token not a registered asset) must suppress the whole
+    ///      market position: emitting the collateral leg alone would count it as pure credit and over-report
+    ///      NAV by the entire borrow.
+    function test_unreportableLoanToken_suppressesWholePosition() public {
+        Mock_ERC20 unregistered = new Mock_ERC20("XYZ", 18); // deliberately NOT registered
+        MarketParams memory params = MarketParams({
+            loanToken: address(unregistered),
+            collateralToken: address(weth),
+            oracle: address(1),
+            irm: address(0),
+            lltv: 1e18
+        });
+        MockMorpho m2 = new MockMorpho(params);
+        m2.setMarket(TOTAL_SUPPLY_ASSETS, TOTAL_SUPPLY_SHARES, TOTAL_BORROW_ASSETS, TOTAL_BORROW_SHARES);
+        m2.setPosition(alice, 0, 1e18, 5e18); // borrowShares > 0, WETH collateral
+        MorphoMarketsMetaBalanceAdapter a2 =
+            new MorphoMarketsMetaBalanceAdapter(address(m2), "Morpho", address(balances));
+
+        bytes32[] memory ids = new bytes32[](1);
+        ids[0] = Id.unwrap(MarketParamsLib.id(params));
+
+        assertEq(
+            a2.getAdapterPositionsForInstances(alice, ids, address(0)).length,
+            0,
+            "collateral must not be reported without the unreportable borrow"
+        );
+        assertEq(
+            a2.getAdapterPositionsForInstances(alice, ids, address(weth)).length,
+            0,
+            "assetFilter must not resurrect the unoffset collateral leg"
+        );
+    }
+
+    /// @dev The mirror case: with NO borrow, an unregistered loan token is harmless — the collateral leg is
+    ///      still correct on its own and must keep being reported.
+    function test_unreportableLoanToken_noBorrow_stillReportsCollateral() public {
+        Mock_ERC20 unregistered = new Mock_ERC20("XYZ", 18);
+        MarketParams memory params = MarketParams({
+            loanToken: address(unregistered),
+            collateralToken: address(weth),
+            oracle: address(1),
+            irm: address(0),
+            lltv: 1e18
+        });
+        MockMorpho m2 = new MockMorpho(params);
+        m2.setMarket(TOTAL_SUPPLY_ASSETS, TOTAL_SUPPLY_SHARES, TOTAL_BORROW_ASSETS, TOTAL_BORROW_SHARES);
+        m2.setPosition(alice, 0, 0, 5e18); // no borrow
+        MorphoMarketsMetaBalanceAdapter a2 =
+            new MorphoMarketsMetaBalanceAdapter(address(m2), "Morpho", address(balances));
+
+        bytes32[] memory ids = new bytes32[](1);
+        ids[0] = Id.unwrap(MarketParamsLib.id(params));
+        assertEq(a2.getAdapterPositionsForInstances(alice, ids, address(0)).length, 1, "collateral still reported");
+    }
+
+    /// @dev The suppression must key on a REALISED borrow, not raw shares: a degenerate market where
+    ///      totalBorrowAssets is 0 while shares remain (bad-debt seizure) would otherwise erase a healthy
+    ///      collateral position over a borrow of zero.
+    function test_unreportableLoanToken_zeroRealisedBorrow_stillReportsCollateral() public {
+        Mock_ERC20 unregistered = new Mock_ERC20("XYZ", 18);
+        MarketParams memory params = MarketParams({
+            loanToken: address(unregistered),
+            collateralToken: address(weth),
+            oracle: address(1),
+            irm: address(0),
+            lltv: 1e18
+        });
+        MockMorpho m2 = new MockMorpho(params);
+        m2.setMarket(TOTAL_SUPPLY_ASSETS, TOTAL_SUPPLY_SHARES, 0, TOTAL_BORROW_SHARES); // 0 borrow assets
+        m2.setPosition(alice, 0, 1e18, 5e18); // shares outstanding, realised borrow rounds to 0
+        MorphoMarketsMetaBalanceAdapter a2 =
+            new MorphoMarketsMetaBalanceAdapter(address(m2), "Morpho", address(balances));
+
+        bytes32[] memory ids = new bytes32[](1);
+        ids[0] = Id.unwrap(MarketParamsLib.id(params));
+        assertEq(
+            a2.getAdapterPositionsForInstances(alice, ids, address(0)).length,
+            1,
+            "zero realised borrow must not suppress the collateral leg"
+        );
     }
 }

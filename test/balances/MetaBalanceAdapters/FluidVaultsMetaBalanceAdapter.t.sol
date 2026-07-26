@@ -43,8 +43,10 @@ contract FluidVaultsMetaBalanceAdapterTest is Test {
 
         vaultA = new MockFluidVaultT1();
         vaultA.setTokens(address(wsteth), address(usdc));
+        vaultA.setVaultId(11);
         vaultB = new MockFluidVaultT1();
         vaultB.setTokens(address(weeth), address(wsteth));
+        vaultB.setVaultId(22);
 
         resolver = new MockFluidVaultResolver();
         // alice: nft1 in vaultA (5 wstETH collateral, 1000 USDC debt); nft2 in vaultB (2 weETH, 1 wstETH debt).
@@ -155,8 +157,8 @@ contract FluidVaultsMetaBalanceAdapterTest is Test {
         assertEq(b.length, 2, "vaultB: expected [category, leaf]");
         assertEq(a[0], "Vault");
         assertEq(b[0], "Vault");
-        assertEq(a[1], "wstETH/USDC");
-        assertEq(b[1], "weETH/wstETH");
+        assertEq(a[1], "wstETH/USDC #11");
+        assertEq(b[1], "weETH/wstETH #22");
         assertTrue(
             keccak256(bytes(a[a.length - 1])) != keccak256(bytes(b[b.length - 1])),
             "two instances share a final label element"
@@ -194,7 +196,7 @@ contract FluidVaultsMetaBalanceAdapterTest is Test {
 
         string[] memory c = meta.positionLabels(abi.encode(address(vaultC)));
         assertEq(c.length, 2);
-        assertEq(c[1], "PAXG/USDC");
+        assertEq(c[1], "PAXG/USDC #0");
     }
 
     /// @dev An unreadable side renders "?" — the same fallback `_joinTokenSymbols` and the Morpho markets
@@ -205,11 +207,88 @@ contract FluidVaultsMetaBalanceAdapterTest is Test {
 
         string[] memory c = meta.positionLabels(abi.encode(address(vaultC)));
         assertEq(c.length, 2);
-        assertEq(c[1], "?/USDC");
+        assertEq(c[1], "?/USDC #0");
     }
 
     /// @dev Short positionId is rejected before any decode, as for every other meta-adapter.
     function test_positionLabels_shortPositionId_returnsEmpty() public view {
         assertEq(meta.positionLabels(hex"1234").length, 0);
+    }
+
+    /// @dev Fluid runs several isolated T1 vaults over the SAME pair — on mainnet all three configured vaults
+    ///      have a live same-pair twin — so the id is what actually keeps the leaf unique.
+    function test_positionLabels_samePair_distinctVaultId() public {
+        MockFluidVaultT1 twin = new MockFluidVaultT1();
+        twin.setTokens(address(wsteth), address(usdc)); // identical pair to vaultA
+        twin.setVaultId(99);
+
+        string[] memory a = meta.positionLabels(abi.encode(address(vaultA)));
+        string[] memory t = meta.positionLabels(abi.encode(address(twin)));
+        assertEq(a[1], "wstETH/USDC #11");
+        assertEq(t[1], "wstETH/USDC #99");
+        assertTrue(
+            keccak256(bytes(a[a.length - 1])) != keccak256(bytes(t[t.length - 1])),
+            "same-pair vaults must still differ in the final label element"
+        );
+    }
+
+    /// @dev A half-zero pair must be rejected by both guards: emitting the collateral leg without the debt leg
+    ///      would over-report the account.
+    function test_halfZeroPair_reportsNothing() public {
+        MockFluidVaultT1 halfZero = new MockFluidVaultT1();
+        halfZero.setTokens(address(wsteth), address(0)); // collateral set, debt missing
+        resolver.pushNft(alice, 3, address(halfZero), 5e18, 0, false);
+
+        bytes32[] memory ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(address(halfZero))));
+
+        assertEq(meta.getAdapterPositionsForInstances(alice, ins, address(0)).length, 0, "no unoffset leg");
+        assertEq(meta.underlyingAssetsSupportedForInstances(ins).length, 0, "no address(0) asset");
+        assertEq(meta.positionLabels(abi.encode(address(halfZero))).length, 1, "category-only label");
+    }
+
+    /// @dev The gate's fail-closed branch: a resolver that reverts (non-Fluid address, incompatible version)
+    ///      must read as not-T1, never as T1.
+    function test_resolverReverts_failsClosed() public {
+        resolver.setVaultTypeReverts(true);
+        bytes32[] memory ins = _instances();
+
+        assertEq(meta.getAdapterPositionsForInstances(alice, ins, address(0)).length, 0, "fails closed");
+        assertEq(meta.underlyingAssetsSupportedForInstances(ins).length, 0, "no assets when gate closed");
+        assertEq(meta.positionLabels(abi.encode(address(vaultA))).length, 1, "category-only label");
+    }
+
+    /// @dev The other fail-closed branch: short returndata must not be decoded as a type.
+    function test_resolverReturnsShortData_failsClosed() public {
+        resolver.setVaultTypeReturnsShort(true);
+        assertEq(meta.getAdapterPositionsForInstances(alice, _instances(), address(0)).length, 0, "fails closed");
+    }
+
+    /// @dev The registry-first branch of `_assetSymbol` — the reason this adapter does not reuse
+    ///      `_joinTokenSymbols`: the ERC-7528 native sentinel has no `symbol()` to call, so only the NAV's
+    ///      registered-asset record can name it.
+    function test_positionLabels_nativeSentinel_usesRegistrySymbol() public {
+        address nativeSentinel = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+        nav.registerAsset(nativeSentinel, 18, "ETH");
+
+        MockFluidVaultT1 nativeVault = new MockFluidVaultT1();
+        nativeVault.setTokens(nativeSentinel, address(usdc));
+        nativeVault.setVaultId(7);
+
+        string[] memory l = meta.positionLabels(abi.encode(address(nativeVault)));
+        assertEq(l.length, 2);
+        assertEq(l[1], "ETH/USDC #7", "native sentinel must resolve via the NAV registry, not symbol()");
+    }
+
+    /// @dev A resolver without `getVaultType` must be rejected at construction rather than silently zeroing
+    ///      every vault on that chain.
+    function test_constructor_rejectsResolverWithoutGetVaultType() public {
+        MockToken notAResolver = new MockToken("NOPE", 18);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                FluidVaultsMetaBalanceAdapter.ResolverMissingVaultType.selector, address(notAResolver)
+            )
+        );
+        new FluidVaultsMetaBalanceAdapter(address(notAResolver), "Fluid", address(nav));
     }
 }

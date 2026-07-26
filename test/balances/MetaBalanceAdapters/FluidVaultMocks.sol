@@ -15,6 +15,11 @@ contract MockFluidVaultT1 {
         _cv.borrowToken = borrowToken_;
     }
 
+    /// @notice Stages Fluid's per-vault numeric id (the label's uniqueness discriminator).
+    function setVaultId(uint256 vaultId_) external {
+        _cv.vaultId = vaultId_;
+    }
+
     function constantsView() external view returns (IFluidVaultT1.ConstantViews memory) {
         return _cv;
     }
@@ -32,6 +37,8 @@ contract MockFluidVaultResolver {
     mapping(address => uint256[]) private _userNftIds;
     mapping(uint256 => PosData) private _posByNftId;
     mapping(address => uint256) private _vaultType;
+    bool private _vaultTypeReverts;
+    bool private _vaultTypeShort;
 
     function pushNft(address user, uint256 nftId, address vault, uint256 supply, uint256 borrow, bool isLiquidated)
         external
@@ -46,7 +53,23 @@ contract MockFluidVaultResolver {
         _vaultType[vault] = vaultType;
     }
 
+    /// @notice Makes `getVaultType` revert, mimicking a non-Fluid address or an incompatible resolver version.
+    function setVaultTypeReverts(bool v) external {
+        _vaultTypeReverts = v;
+    }
+
+    /// @notice Makes `getVaultType` return fewer than 32 bytes, exercising the short-returndata guard.
+    function setVaultTypeReturnsShort(bool v) external {
+        _vaultTypeShort = v;
+    }
+
     function getVaultType(address vault) external view returns (uint256) {
+        if (_vaultTypeReverts) revert("resolver: no such vault");
+        if (_vaultTypeShort) {
+            assembly {
+                return(0, 8) // 8 bytes < 32 -> caller must treat as not-T1
+            }
+        }
         uint256 t = _vaultType[vault];
         return t == 0 ? 10000 : t;
     }

@@ -8,6 +8,7 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {FluidVaultLib} from "src/balances/MetaBalanceAdapters/FluidVaultLib.sol";
 import {LabelLib} from "src/balances/LabelLib.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 /// @title Fluid Vaults Meta Balance Adapter
 /// @author KPK
@@ -20,16 +21,24 @@ import {LabelLib} from "src/balances/LabelLib.sol";
 ///      T1 vaults only — Smart vaults (T2/T3/T4) have a different `constantsView` layout and must not be
 ///      configured.
 contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
+    /// @notice Thrown when the pinned resolver does not implement `getVaultType`, which token resolution needs.
+    error ResolverMissingVaultType(address resolver);
+
     /// @notice The Fluid VaultResolver (chain-level constant; used for NFT enumeration + per-NFT position reads).
     address public immutable VAULT_RESOLVER;
 
     /// @param vaultResolver_ The Fluid VaultResolver address.
     /// @param protocolName_ Human-readable protocol name (e.g. "Fluid").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
+    /// @dev Also asserts the resolver actually implements `getVaultType`. Token resolution is gated on it, so a
+    ///      resolver version without it would make every vault read as non-T1 and silently zero the whole
+    ///      adapter on that chain — a failure that would otherwise surface only as "no positions". Probed with
+    ///      `address(0)`, which a conforming resolver answers with 0 rather than reverting.
     constructor(address vaultResolver_, string memory protocolName_, address navCalculator_)
         MetaBalanceAdapter(protocolName_, navCalculator_)
     {
         AddressCheckLib.requireContract(vaultResolver_, "VaultResolver");
+        if (!FluidVaultLib.supportsVaultType(vaultResolver_)) revert ResolverMissingVaultType(vaultResolver_);
         VAULT_RESOLVER = vaultResolver_;
     }
 
@@ -44,9 +53,11 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     {
         address vault = _toAddress(instance);
         (address collToken, address debtToken) = FluidVaultLib.tokens(vault, VAULT_RESOLVER);
-        // Gated (non-T1) vault: no leg can be emitted without tokens, so skip `aggregate`'s scan of every
-        // Fluid NFT the account holds.
-        if (collToken == address(0) && debtToken == address(0)) {
+        // Gated (non-T1) vault, or a vault missing a token side: no complete pair means the legs cannot be
+        // reported correctly, so skip `aggregate`'s scan of every Fluid NFT the account holds. `||`, not `&&`
+        // — a half-zero pair would otherwise emit an unoffset Collateral leg (over-reporting) while the
+        // Borrowed leg was silently dropped by `_eligible(address(0))`.
+        if (collToken == address(0) || debtToken == address(0)) {
             return new INAVCalculator.PositionBalance[](0);
         }
         (uint256 collateral, uint256 debt) = FluidVaultLib.aggregate(vault, VAULT_RESOLVER, account);
@@ -77,8 +88,9 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @inheritdoc MetaBalanceAdapter
     function _instanceAssets(bytes32 instance) internal view override returns (address[] memory assets) {
         (address collToken, address debtToken) = FluidVaultLib.tokens(_toAddress(instance), VAULT_RESOLVER);
-        // Gated (non-T1) vault: report no underlying assets rather than a meaningless zero address.
-        if (collToken == address(0) && debtToken == address(0)) {
+        // Gated (non-T1) vault, or a vault missing a token side: report no underlying assets rather than
+        // publishing address(0) as one. `||` for the same reason as in `_instancePositions`.
+        if (collToken == address(0) || debtToken == address(0)) {
             return new address[](0);
         }
         if (collToken == debtToken) {
@@ -92,11 +104,12 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev Returns `["Vault", "<collateral>/<debt>"]` — e.g. `["Vault", "wstETH/USDC"]` — mirroring the
-    ///      Morpho markets adapter, since a Fluid vault is likewise identified by its isolated token pair. A
-    ///      Fluid vault is NOT an ERC20 (`name()`/`symbol()` revert), so the pair is the only on-chain
-    ///      distinguishing property. Leaf is "" (collapsing to `["Vault"]`) for a non-T1 or unreadable vault.
-    ///      Returns an empty array for a short positionId.
+    /// @dev Returns `["Vault", "<collateral>/<debt> #<vaultId>"]` — e.g. `["Vault", "wstETH/USDC #4"]`. A Fluid
+    ///      vault is NOT an ERC20 (`name()`/`symbol()` revert), so the pair is the only human-readable property
+    ///      available, but the pair alone does NOT identify a vault: Fluid runs several isolated T1 vaults over
+    ///      the same pair (mainnet: 101 T1 vaults, 91 distinct pairs — every configured vault has a live
+    ///      same-pair twin), so Fluid's own per-vault id is appended. Leaf is "" (collapsing to `["Vault"]`) for
+    ///      a non-T1 or unreadable vault. Returns an empty array for a short positionId.
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
         if (pid.length < 32) return new string[](0);
         address vault = abi.decode(pid, (address));
@@ -117,9 +130,9 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @param vault The T1 vault address.
     /// @return The pair label, or "" if the vault is not a readable T1 vault.
     function vaultPairSymbols(address vault) external view returns (string memory) {
-        (address collToken, address debtToken) = FluidVaultLib.tokens(vault, VAULT_RESOLVER);
-        if (collToken == address(0) && debtToken == address(0)) return "";
-        return string.concat(_assetSymbol(collToken), "/", _assetSymbol(debtToken));
+        (address collToken, address debtToken, uint256 vaultId) = FluidVaultLib.vaultInfo(vault, VAULT_RESOLVER);
+        if (collToken == address(0) || debtToken == address(0)) return "";
+        return string.concat(_assetSymbol(collToken), "/", _assetSymbol(debtToken), " #", Strings.toString(vaultId));
     }
 
     /// @notice Symbol for `token`: the NAV registry's (native-aware), else a direct ERC20 `symbol()`, else "?".

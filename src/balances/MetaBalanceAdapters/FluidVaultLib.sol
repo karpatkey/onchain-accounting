@@ -82,9 +82,34 @@ library FluidVaultLib {
     /// @return collateral Supply token, or `address(0)` if `vault` is not a T1 vault.
     /// @return debt Borrow token, or `address(0)` if `vault` is not a T1 vault.
     function tokens(address vault, address resolver) internal view returns (address collateral, address debt) {
-        if (!isT1(vault, resolver)) return (address(0), address(0));
+        (collateral, debt,) = vaultInfo(vault, resolver);
+    }
+
+    /// @notice Same read as {tokens}, plus Fluid's own per-vault numeric id from the same `constantsView()`.
+    /// @dev The id is what makes a label unique: Fluid runs several isolated T1 vaults over the SAME
+    ///      collateral/debt pair with different LTV/oracle configs (mainnet: 101 T1 vaults, only 91 distinct
+    ///      pairs — every currently configured vault has a live same-pair twin), so the pair alone does not
+    ///      identify an instance. Free to read: it comes from the struct {tokens} already decodes.
+    /// @return collateral Supply token, or `address(0)` if `vault` is not a T1 vault.
+    /// @return debt Borrow token, or `address(0)` if `vault` is not a T1 vault.
+    /// @return vaultId Fluid's per-vault id, or 0 if `vault` is not a T1 vault.
+    function vaultInfo(address vault, address resolver)
+        internal
+        view
+        returns (address collateral, address debt, uint256 vaultId)
+    {
+        if (!isT1(vault, resolver)) return (address(0), address(0), 0);
         IFluidVaultT1.ConstantViews memory cv = IFluidVaultT1(vault).constantsView();
-        return (cv.supplyToken, cv.borrowToken);
+        return (cv.supplyToken, cv.borrowToken, cv.vaultId);
+    }
+
+    /// @notice True iff `resolver` implements `getVaultType` at all — a deploy-time sanity check, since token
+    ///         resolution is gated on it and a resolver without it would silently zero the whole adapter.
+    /// @dev Probed with `address(0)`: a conforming resolver returns 0 for an unknown vault rather than reverting.
+    function supportsVaultType(address resolver) internal view returns (bool) {
+        (bool ok, bytes memory ret) =
+            resolver.staticcall(abi.encodeWithSelector(IFluidVaultResolver.getVaultType.selector, address(0)));
+        return ok && ret.length >= 32;
     }
 
     /// @notice True iff the resolver reports `vault` as a T1 vault. Fails closed: an unreadable or unknown vault

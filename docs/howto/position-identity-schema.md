@@ -761,8 +761,8 @@ Scenario: 1 WETH collateral, 500 USDC debt in a Fluid T1 vault.
 
 | asset | amount | value (USD) | positionKind | protocolName | labels     |
 |-------|--------|-------------|--------------|--------------|-------------------|
-| WETH  | 1.0    | +2 500      | `Collateral` | `"Fluid"`    | `["Vault", "ETH-USDC vault"]` |
-| USDC  | 500    | −500        | `Borrowed`   | `"Fluid"`    | `["Vault", "ETH-USDC vault"]` |
+| WETH  | 1.0    | +2 500      | `Collateral` | `"Fluid"`    | `["Vault", "ETH/USDC #21"]` |
+| USDC  | 500    | −500        | `Borrowed`   | `"Fluid"`    | `["Vault", "ETH/USDC #21"]` |
 | **NAV** | | **+2 000** | | | |
 
 #### `CompoundV3CometsMeta`
@@ -1495,7 +1495,7 @@ address widened → `abi.encode(address instance)`); overrides are flagged.
 | `ConvexCurveLPStakingMetaBalanceAdapter` | `convex-curve-lp-staking` | `"Convex"` | `["Staking", "Curve LP", "<coins>"]` (derived) | `abi.encode(address rewarder)` | Staking / Rewards | `["Convex","Staking","Curve LP","DAI/USDC/USDT"]` |
 | `EulerVaultsMetaBalanceAdapter` | `euler-vaults` | `"Euler"` | `["Vault", <vault.name()>]` (derived) | `abi.encode(address vault)` | Collateral/Supplied / Borrowed | `["Euler","Vault","eUSDC"]` |
 | `FluidFTokensMetaBalanceAdapter` | `fluid-ftokens` | `"Fluid"` | `["Lending", <fToken.symbol()>]` (derived) | `abi.encode(address fToken)` | Supplied | `["Fluid","Lending","fUSDC"]` |
-| `FluidVaultsMetaBalanceAdapter` | `fluid-vaults` | `"Fluid"` | `["Vault", <vault.name()>]` (derived) | `abi.encode(address vault)` | Collateral / Borrowed | `["Fluid","Vault","Fluid T1 USDC"]` |
+| `FluidVaultsMetaBalanceAdapter` | `fluid-vaults` | `"Fluid"` | `["Vault", "<collateral>/<debt> #<vaultId>"]` (derived) | `abi.encode(address vault)` | Collateral / Borrowed | `["Fluid","Vault","wstETH/USDC #4"]` |
 | `GearboxV3MarketsMetaBalanceAdapter` | `gearbox-v3-markets` | `"Gearbox"` | `["Market", <market.name()>]` (derived) | `abi.encode(address market)` | Supplied | `["Gearbox","Market","dDAI"]` |
 | `GearboxV3CreditAccountsMetaBalanceAdapter` | `gearbox-v3-credit-accounts` | `"Gearbox"` | `["Credit Account", <creditManager.name() / underlying symbol>]` (derived) | `abi.encode(address creditAccount)` | Collateral / Borrowed | `["Gearbox","Credit Account","USDC v3"]` |
 | `MorphoMarketsMetaBalanceAdapter` | `morpho-markets` | `"Morpho"` | `["Market", "<coll>/<loan>"]` (derived) | **override** `abi.encode(bytes32 marketId)` (raw) | Collateral / Supplied / Borrowed | `["Morpho","Market","wETH/USDC"]` |

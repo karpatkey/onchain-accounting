@@ -14,6 +14,16 @@ contract LabelLibHarness {
     function readSymbol(address token, string memory fallbackStr) external view returns (string memory) {
         return LabelLib.symbol(token, fallbackStr);
     }
+
+    /// @notice `n` reads inside ONE frame — the shape `_joinTokenSymbols` / `CurvePoolLib.coinSymbols` actually use.
+    /// @dev The amplification only appears in-frame: memory grows monotonically across the reads. Calling the
+    ///      single-read entry point N times from a test gives N fresh frames and hides the vector entirely.
+    function readSymbolsInOneFrame(address token, uint256 n) external view returns (uint256) {
+        for (uint256 i; i < n; ++i) {
+            LabelLib.symbol(token, "?");
+        }
+        return n;
+    }
 }
 
 /// @notice A well-behaved ERC20 metadata pair.
@@ -87,13 +97,28 @@ contract RawEnvelopeToken {
     }
 }
 
-/// @notice Consumes whatever gas it is given, then out-of-gasses.
+/// @notice Consumes every unit of gas forwarded to it.
+/// @dev NOT via the loop — `sink = i` is an `SSTORE` inside a `STATICCALL`, so the callee aborts on its FIRST store.
+///      That abort is a write-protection violation, i.e. an exceptional halt, and an exceptional halt consumes ALL gas
+///      forwarded to the frame. So this fixture exercises the stipend by a different mechanism than a naive reading
+///      suggests: uncapped it eats the caller's entire budget, capped it eats exactly {METADATA_READ_GAS}.
 contract GasBurnerToken {
     uint256 public sink;
 
     fallback() external {
         for (uint256 i = 0; true; ++i) {
             sink = i;
+        }
+    }
+}
+
+/// @notice Returns 200 KB of SUCCESSFUL returndata — the caller-side amplification vector.
+/// @dev A gas stipend alone does not bound this: the callee's own memory expansion for ~200 KB costs it about 95k, so
+///      it fits inside the stipend, while the CALLER pays `returndatacopy` plus its own growing memory outside it.
+contract BigReturnToken {
+    fallback() external {
+        assembly {
+            return(0, 200000)
         }
     }
 }
@@ -160,10 +185,39 @@ contract LabelLibTest is Test {
     function test_bytes32Metadata_returnsFallback() public {
         address t = address(new Bytes32Token());
         (bool okN, string memory n) = _tryName(t, "?");
-        (bool okS,) = _trySymbol(t, "?");
+        (bool okS, string memory sy) = _trySymbol(t, "?");
         assertTrue(okN, "name must not revert on a bytes32 return");
         assertTrue(okS, "symbol must not revert on a bytes32 return");
         assertEq(n, "?");
+        assertEq(sy, "?");
+    }
+
+    /// @notice Caller-side cost must be BOUNDED and LINEAR in the number of reads, whatever the token returns.
+    /// @dev The regression guard for the vector a gas stipend alone does not cover. With the stipend but no explicit
+    ///      `staticcall` output size, a token returning 200 KB of successful returndata cost 210,190 gas for one read
+    ///      and 14,518,293 across eight sequential reads in one frame — quadratic, because the caller's memory grows
+    ///      monotonically while the callee's expansion is paid from the stipend. A multi-token leaf does exactly these
+    ///      sequential reads (`_joinTokenSymbols` over a Balancer pool, `CurvePoolLib.coinSymbols` over an 8-coin
+    ///      pool), so this could starve a verbose NAV read. Bounding the copied returndata makes it flat.
+    ///      Fails if the explicit output size is dropped from the `staticcall`.
+    function test_oversizedReturndata_costIsBoundedAndLinear() public {
+        address t = address(new BigReturnToken());
+
+        uint256 g0 = gasleft();
+        h.readSymbolsInOneFrame(t, 1);
+        uint256 one = g0 - gasleft();
+
+        uint256 g1 = gasleft();
+        h.readSymbolsInOneFrame(t, 8);
+        uint256 eight = g1 - gasleft();
+
+        emit log_named_uint("1 read  in-frame", one);
+        emit log_named_uint("8 reads in-frame", eight);
+
+        assertEq(h.readSymbol(t, "?"), "?", "an oversized reply must fail open");
+        // Linear, not quadratic. Unbounded this was 14.5M for 8 in-frame reads against ~210k for one; bounded it is
+        // ~8x the single read. The 12x allowance leaves slack for the loop itself without admitting quadratic growth.
+        assertLt(eight, one * 12, "cost must scale linearly in the number of in-frame reads");
     }
 
     function test_nonCanonicalOffset_returnsFallback() public {

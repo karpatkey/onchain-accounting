@@ -83,8 +83,8 @@ contract LabelLibForkTest is BalanceAdapterTestBase {
         assertEq(l.length, 2, "leaf must survive an undecodable symbol() on one side");
         assertEq(l[0], "Vault");
         assertEq(bytes(l[1])[0], bytes("?")[0], "unreadable side renders as the ? placeholder");
-        assertTrue(_contains(l[1], "USDC"), "readable side must be preserved");
-        assertTrue(_contains(l[1], "#"), "Fluid vault id must be preserved");
+        assertTrue(vm.contains(l[1], "USDC"), "readable side must be preserved");
+        assertTrue(vm.contains(l[1], "#"), "Fluid vault id must be preserved");
     }
 
     /// @notice Same, for a `symbol()` that succeeds with ZERO returndata — the ERC-1967-proxy-to-no-code shape.
@@ -95,7 +95,7 @@ contract LabelLibForkTest is BalanceAdapterTestBase {
         string[] memory l = _leaf(VAULT);
         assertEq(l.length, 2, "leaf must survive empty returndata from symbol()");
         assertEq(bytes(l[1])[0], bytes("?")[0]);
-        assertTrue(_contains(l[1], "USDC"), "readable side must be preserved");
+        assertTrue(vm.contains(l[1], "USDC"), "readable side must be preserved");
     }
 
     /// @notice A `symbol()` returning an absurd declared length must also degrade rather than collapse the leaf.
@@ -107,22 +107,5 @@ contract LabelLibForkTest is BalanceAdapterTestBase {
         string[] memory l = _leaf(VAULT);
         assertEq(l.length, 2, "leaf must survive an absurd declared length");
         assertEq(bytes(l[1])[0], bytes("?")[0]);
-    }
-
-    function _contains(string memory haystack, string memory needle) internal pure returns (bool) {
-        bytes memory h = bytes(haystack);
-        bytes memory n = bytes(needle);
-        if (n.length == 0 || n.length > h.length) return false;
-        for (uint256 i; i <= h.length - n.length; ++i) {
-            bool hit = true;
-            for (uint256 j; j < n.length; ++j) {
-                if (h[i + j] != n[j]) {
-                    hit = false;
-                    break;
-                }
-            }
-            if (hit) return true;
-        }
-        return false;
     }
 }

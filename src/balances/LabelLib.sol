@@ -43,10 +43,29 @@ interface IERC20MetaView {
 library LabelLib {
     /// @notice Longest metadata string accepted; anything longer yields `fallbackStr`. Bounds how much a hostile
     ///         token can inflate a rendered label. Far above any real name or symbol.
+    /// @dev This is a NEW global constraint: the `try`/`catch` form this replaced returned any successfully-decoded
+    ///      string regardless of length, and none of the call sites previously asked for a cap. Deliberate — an
+    ///      unbounded label is an unbounded cost for every downstream renderer — but it does mean a token with an
+    ///      absurdly long name now renders as the caller's fallback rather than in full.
     uint256 private constant MAX_METADATA_BYTES = 256;
 
-    /// @notice Gas stipend for a metadata probe. Generous for a real (even proxied) `name()`/`symbol()`, small enough
-    ///         that a hostile address can neither burn the caller's budget nor afford a griefing-sized return payload.
+    /// @notice Hard ceiling on returndata **copied into this contract's memory**: the two ABI head words plus
+    ///         {MAX_METADATA_BYTES} of payload (64 + 256 = 320). Written as a literal because inline assembly accepts
+    ///         only direct number constants.
+    /// @dev This, not the gas stipend, is what bounds caller-side cost. A gas stipend alone does NOT: a hostile token
+    ///      can `return(0, 200_000)` — the callee's own memory expansion for ~200 KB costs it about 95k, so it fits
+    ///      inside {METADATA_READ_GAS} — while the *caller* pays `returndatacopy` plus its own monotonically growing
+    ///      memory, charged outside the stipend and quadratic in total. Measured on the stipend-only version: 210,190
+    ///      gas for one read and 14.5M across eight sequential reads in one frame, which a multi-token leaf
+    ///      (`_joinTokenSymbols` over a Balancer pool, `CurvePoolLib.coinSymbols` over an 8-coin pool) does. Passing an
+    ///      explicit output size to `staticcall` copies at most this many bytes no matter what the callee returns, so
+    ///      the cost is flat. `returndatasize()` still reports the true size, so an oversized reply is rejected rather
+    ///      than silently truncated.
+    uint256 private constant MAX_RETURN_BYTES = 320;
+
+    /// @notice Gas stipend for a metadata probe. Generous for a real (even proxied) `name()`/`symbol()`, and it bounds
+    ///         the callee's own execution — including a write-protection abort, which consumes everything forwarded.
+    /// @dev Necessary but NOT sufficient on its own; see {MAX_RETURN_BYTES} for the caller-side bound.
     uint256 private constant METADATA_READ_GAS = 100_000;
 
     /// @notice The token's ERC20 `name()`, or `fallbackStr` if the address has no code, the call reverts, the return
@@ -73,11 +92,31 @@ library LabelLib {
         view
         returns (string memory)
     {
+        // Cheap short-circuit only. A raw `staticcall` to a code-less address succeeds with empty returndata, which the
+        // length check below already rejects — unlike the high-level call this replaced, where `extcodesize` reverted
+        // before the call and made this guard load-bearing.
         if (token.code.length == 0) return fallbackStr;
 
-        (bool ok, bytes memory data) = token.staticcall{gas: METADATA_READ_GAS}(abi.encodeWithSelector(selector));
-        // A `string` return needs at least the offset and length words; anything shorter cannot be decoded.
-        if (!ok || data.length < 64) return fallbackStr;
+        bytes memory data = new bytes(MAX_RETURN_BYTES);
+        bool ok;
+        uint256 size;
+        assembly ("memory-safe") {
+            // Selector into scratch space; `bytes4` is left-aligned in its word, so the first 4 bytes are the selector.
+            mstore(0x00, selector)
+            // The explicit output size is the point: at most MAX_RETURN_BYTES is copied into our memory, whatever the
+            // callee returns. `returndatasize()` still reports the untruncated size.
+            ok := staticcall(METADATA_READ_GAS, token, 0x00, 0x04, add(data, 0x20), MAX_RETURN_BYTES)
+            size := returndatasize()
+        }
+        // A `string` return needs at least the offset and length words. An oversized reply is rejected outright rather
+        // than truncated: a canonical reply for a <= MAX_METADATA_BYTES string never exceeds MAX_RETURN_BYTES, so
+        // anything larger is malformed or hostile.
+        if (!ok || size < 64 || size > MAX_RETURN_BYTES) return fallbackStr;
+
+        // Shrink to what was actually returned so the payload bound below is exact.
+        assembly ("memory-safe") {
+            mstore(data, size)
+        }
 
         uint256 offset;
         uint256 len;
@@ -85,7 +124,7 @@ library LabelLib {
             offset := mload(add(data, 0x20))
             len := mload(add(data, 0x40))
         }
-        if (offset != 0x20 || len == 0 || len > MAX_METADATA_BYTES || len > data.length - 64) return fallbackStr;
+        if (offset != 0x20 || len == 0 || len > MAX_METADATA_BYTES || len > size - 64) return fallbackStr;
 
         return abi.decode(data, (string));
     }

@@ -461,11 +461,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
     /// @notice Deploys the Aave V3 instances meta-adapter. Constructor takes (navCalculator); the set of
     ///         instance DataProviders to query is configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06 (ADR 0010).
-    function _deployAaveV3InstancesMeta(
-        string memory,
-        /* adapterName unused: no config read */
-        address navCalculator
-    ) internal returns (address) {
+    function _deployAaveV3InstancesMeta(string memory, address navCalculator) internal returns (address) {
         AaveV3InstancesMetaBalanceAdapter adapter = new AaveV3InstancesMetaBalanceAdapter(navCalculator);
         return address(adapter);
     }
@@ -508,37 +504,19 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
     /// @notice Deploys the Morpho Vaults meta-adapter. Constructor takes only (navCalculator); the set of
     ///         vaults to query is configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06_Configure (ADR 0010).
-    function _deployMorphoVaultsMeta(
-        string memory,
-        /* adapterName unused: no config read */
-        address navCalculator
-    )
-        internal
-        returns (address)
-    {
+    function _deployMorphoVaultsMeta(string memory, address navCalculator) internal returns (address) {
         MorphoVaultsMetaBalanceAdapter adapter = new MorphoVaultsMetaBalanceAdapter(navCalculator);
         return address(adapter);
     }
 
-    function _deployEulerVaultsMeta(
-        string memory,
-        /* adapterName unused: no config read */
-        address navCalculator
-    )
-        internal
-        returns (address)
-    {
+    function _deployEulerVaultsMeta(string memory, address navCalculator) internal returns (address) {
         EulerVaultsMetaBalanceAdapter adapter = new EulerVaultsMetaBalanceAdapter(navCalculator);
         return address(adapter);
     }
 
     /// @notice Deploys the Gearbox markets meta-adapter. Constructor takes (navCalculator); the market
     ///         set is configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06 (ADR 0010).
-    function _deployGearboxV3MarketsMeta(
-        string memory,
-        /* adapterName unused: no config read */
-        address navCalculator
-    ) internal returns (address) {
+    function _deployGearboxV3MarketsMeta(string memory, address navCalculator) internal returns (address) {
         GearboxV3MarketsMetaBalanceAdapter adapter = new GearboxV3MarketsMetaBalanceAdapter(navCalculator);
         return address(adapter);
     }
@@ -555,14 +533,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(adapter);
     }
 
-    function _deployCurvePoolsMeta(
-        string memory,
-        /* adapterName unused: no config read */
-        address navCalculator
-    )
-        internal
-        returns (address)
-    {
+    function _deployCurvePoolsMeta(string memory, address navCalculator) internal returns (address) {
         return address(new CurvePoolsMetaBalanceAdapter(navCalculator));
     }
 
@@ -589,14 +560,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(new ConvexCurveLPStakingMetaBalanceAdapter(booster, cvxToken, navCalculator));
     }
 
-    function _deployAaveV3SafetyModule(
-        string memory,
-        /* adapterName unused: no config read */
-        address navCalculator
-    )
-        internal
-        returns (address)
-    {
+    function _deployAaveV3SafetyModule(string memory, address navCalculator) internal returns (address) {
         // The set of stake tokens is hardcoded in the adapter (AaveV3SafetyModuleBalanceAdapter).
         AaveV3SafetyModuleBalanceAdapter adapter = new AaveV3SafetyModuleBalanceAdapter(navCalculator);
         return address(adapter);
@@ -625,11 +589,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
     /// @notice Deploys the Balancer pools meta-adapter. Constructor takes (navCalculator); the set of
     ///         pools to query is configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06_Configure (ADR 0010).
-    function _deployBalancerV3PoolsMeta(
-        string memory,
-        /* adapterName unused: no config read */
-        address navCalculator
-    ) internal returns (address) {
+    function _deployBalancerV3PoolsMeta(string memory, address navCalculator) internal returns (address) {
         BalancerV3PoolsMetaBalanceAdapter adapter = new BalancerV3PoolsMetaBalanceAdapter(navCalculator);
         return address(adapter);
     }
@@ -688,14 +648,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
     /// @notice Deploys the Fluid fTokens meta-adapter. Constructor takes (navCalculator); the fToken
     ///         set is configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06 (ADR 0010).
-    function _deployFluidFTokensMeta(
-        string memory,
-        /* adapterName unused: no config read */
-        address navCalculator
-    )
-        internal
-        returns (address)
-    {
+    function _deployFluidFTokensMeta(string memory, address navCalculator) internal returns (address) {
         FluidFTokensMetaBalanceAdapter adapter = new FluidFTokensMetaBalanceAdapter(navCalculator);
         return address(adapter);
     }

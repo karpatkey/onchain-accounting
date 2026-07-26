@@ -349,6 +349,6 @@ contract FluidVaultsMetaBalanceAdapterTest is Test {
                 FluidVaultsMetaBalanceAdapter.ResolverMissingVaultType.selector, address(notAResolver)
             )
         );
-        new FluidVaultsMetaBalanceAdapter(address(notAResolver), "Fluid", address(nav));
+        new FluidVaultsMetaBalanceAdapter(address(notAResolver), address(nav));
     }
 }

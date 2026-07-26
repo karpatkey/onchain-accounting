@@ -83,6 +83,14 @@ import {BalancesHarness} from "test/balances/Balances.t.sol";
 ///      `protocolName()`, which is `pure`/`view` over a constant, so an empty contract is sufficient.
 contract CodeStub {}
 
+/// @dev Fluid's constructor probes `getVaultType(address(0))` and requires a >=32-byte answer
+///      (`FluidVaultLib.supportsVaultType`, added by #161), so a bare CodeStub is not enough here.
+contract FluidVaultResolverStub {
+    function getVaultType(address) external pure returns (uint256) {
+        return 0;
+    }
+}
+
 /// @dev SparkLend's constructor walks `dataProvider.ADDRESSES_PROVIDER().getPool()`, so its stub needs the chain.
 contract PoolProviderStub {
     function getPool() external view returns (address) {
@@ -292,7 +300,7 @@ contract ProtocolNameConsistencyTest is Test {
         names[i++] = new ConvexCurveLPStakingMetaBalanceAdapter(stub, stub, n).protocolName();
         names[i++] = new EulerVaultsMetaBalanceAdapter(n).protocolName();
         names[i++] = new FluidFTokensMetaBalanceAdapter(n).protocolName();
-        names[i++] = new FluidVaultsMetaBalanceAdapter(stub, n).protocolName();
+        names[i++] = new FluidVaultsMetaBalanceAdapter(address(new FluidVaultResolverStub()), n).protocolName();
         names[i++] = new GearboxV3CreditAccountsMetaBalanceAdapter(n).protocolName();
         names[i++] = new GearboxV3MarketsMetaBalanceAdapter(n).protocolName();
         names[i++] = new MorphoMarketsMetaBalanceAdapter(stub, n).protocolName();

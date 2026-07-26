@@ -179,13 +179,14 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
         // code-less pool would revert the whole read rather than fall back. Check explicitly first.
         if (pool.code.length == 0) return _hasUnreportableDebtByScan(dp, account);
 
-        IAavePool.UserConfigurationMap memory cfg;
-        try IAavePool(pool).getUserConfiguration(account) returns (IAavePool.UserConfigurationMap memory c) {
-            cfg = c;
-        } catch {
-            return _hasUnreportableDebtByScan(dp, account);
-        }
-        if (cfg.data == 0) return false; // no supplies and no borrows
+        // Low-level, not `try`: `try` catches neither the non-contract check (pre-empted above) NOR a
+        // return-data decode failure, so a pool answering this selector with fewer than 32 bytes would escape
+        // the `catch` and revert the read instead of falling back to the scan.
+        (bool cfgOk, bytes memory cfgRet) =
+            pool.staticcall(abi.encodeWithSelector(IAavePool.getUserConfiguration.selector, account));
+        if (!cfgOk || cfgRet.length < 32) return _hasUnreportableDebtByScan(dp, account);
+        uint256 cfgData = abi.decode(cfgRet, (uint256));
+        if (cfgData == 0) return false; // no supplies and no borrows
 
         // Iterate the bitmap's own key space (2 bits per reserve => 128 reserves) and resolve each BORROWED
         // reserve by its stored id. Indexing `getReservesList()` positionally would be wrong: that accessor
@@ -195,7 +196,7 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
         // success block is not caught by its own `catch`, so a pool answering `getUserConfiguration` but not
         // `getReserveAddressById` would revert the read instead of falling back.
         for (uint256 id = 0; id < MAX_RESERVES; id++) {
-            if (cfg.data & (1 << (id * 2)) == 0) continue; // not borrowing reserve `id`
+            if (cfgData & (1 << (id * 2)) == 0) continue; // not borrowing reserve `id`
             (bool ok, bytes memory ret) =
                 pool.staticcall(abi.encodeWithSelector(IAavePool.getReserveAddressById.selector, uint16(id)));
             if (!ok || ret.length < 32) return _hasUnreportableDebtByScan(dp, account);

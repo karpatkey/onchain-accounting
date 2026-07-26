@@ -211,19 +211,20 @@ contract SparkLendBalanceAdapter is BalanceAdapterBase {
         // code-less pool would revert the whole read rather than fall back. Check explicitly first.
         if (POOL.code.length == 0) return _hasUnreportableDebtByScanSpark(account, regAddrs);
 
-        IAavePool.UserConfigurationMap memory cfg;
-        try IAavePool(POOL).getUserConfiguration(account) returns (IAavePool.UserConfigurationMap memory c) {
-            cfg = c;
-        } catch {
-            return _hasUnreportableDebtByScanSpark(account, regAddrs);
-        }
-        if (cfg.data == 0) return false; // no supplies and no borrows
+        // Low-level, not `try`: `try` catches neither the non-contract check (pre-empted above) NOR a
+        // return-data decode failure, so a pool answering this selector with fewer than 32 bytes would escape
+        // the `catch` and revert the read instead of falling back to the scan.
+        (bool cfgOk, bytes memory cfgRet) =
+            POOL.staticcall(abi.encodeWithSelector(IAavePool.getUserConfiguration.selector, account));
+        if (!cfgOk || cfgRet.length < 32) return _hasUnreportableDebtByScanSpark(account, regAddrs);
+        uint256 cfgData = abi.decode(cfgRet, (uint256));
+        if (cfgData == 0) return false; // no supplies and no borrows
 
         // Resolve each BORROWED reserve by its stored id — see the Aave adapter for why `getReservesList()`
         // must not be indexed positionally, and why this lookup is a low-level staticcall rather than sitting
         // inside the `try` above (a revert in a success block is not caught by that statement's `catch`).
         for (uint256 id; id < MAX_RESERVES; ++id) {
-            if (cfg.data & (1 << (id * 2)) == 0) continue; // not borrowing reserve `id`
+            if (cfgData & (1 << (id * 2)) == 0) continue; // not borrowing reserve `id`
             (bool ok, bytes memory ret) =
                 POOL.staticcall(abi.encodeWithSelector(IAavePool.getReserveAddressById.selector, uint16(id)));
             if (!ok || ret.length < 32) return _hasUnreportableDebtByScanSpark(account, regAddrs);

@@ -38,6 +38,7 @@ contract MockAavePool {
     uint256 public cfgData;
     address[] private _list;
     mapping(uint16 => address) private _byId;
+    bool private _configReturnsShort;
 
     function setUserConfig(uint256 data) external {
         cfgData = data;
@@ -53,7 +54,17 @@ contract MockAavePool {
     }
 
     function getUserConfiguration(address) external view returns (MockUserConfigurationMap memory) {
+        if (_configReturnsShort) {
+            assembly {
+                return(0, 8) // <32 bytes: a `try` would NOT catch the decode failure, so the caller must
+            }
+        }
         return MockUserConfigurationMap({data: cfgData});
+    }
+
+    /// @dev Stage a pool that answers the selector successfully but with unusable data.
+    function setConfigReturnsShort(bool v) external {
+        _configReturnsShort = v;
     }
 
     function getReservesList() external view returns (address[] memory) {
@@ -364,5 +375,17 @@ contract AaveV3InstancesMetaUnitTest is BalanceAdapterTestBase {
             0,
             "a dropped reserve id must not suppress the instance"
         );
+    }
+
+    /// @dev A pool that answers `getUserConfiguration` with fewer than 32 bytes must reach the scan fallback,
+    ///      not revert. `try` catches neither the non-contract check nor a return-data decode failure, so the
+    ///      bitmap read is a low-level staticcall; without that this reverts into an empty array instead.
+    function test_shortConfigReturndata_reachesScanFallback() public {
+        pool.setConfigReturnsShort(true);
+        dp.setUserData(alice, address(weth), 5e18, 0, true);
+
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositionsForInstances(alice, _ids(), address(0));
+        assertEq(p.length, 1, "must fall back to the scan and still report");
+        assertEq(p[0].balanceAsset.asset, address(weth));
     }
 }

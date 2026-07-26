@@ -65,7 +65,11 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
         // the assetFilter — a filtered view showing collateral while hiding an unreportable debt over-reports
         // the same way. Under-reporting the whole position is the safe direction.
         if (!loanReg && pos.borrowShares != 0) {
-            return new INAVCalculator.PositionBalance[](0);
+            // Gate on the REALISED borrow, not the raw share count: dust shares left by a repay-by-assets, or a
+            // degenerate market whose totalBorrowAssets was driven to 0 by a bad-debt seizure while shares
+            // remain, would otherwise erase an entire healthy collateral position.
+            (, uint256 unreportableBorrow) = _loanLegs(mp, pos);
+            if (unreportableBorrow > 0) return new INAVCalculator.PositionBalance[](0);
         }
 
         bytes memory pid = _instancePositionId(instance);

@@ -167,8 +167,6 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
         }
     }
 
-    /// @notice Resolves the instance's Pool address (encoded as the instance's positionId).
-    /// @dev V3's PoolAddressesProvider resolves the pool via `getPool()`.
     /// @notice True iff the account borrows any reserve whose asset is NOT registered on the NAV, i.e. a debt
     ///         this adapter would silently drop.
     /// @dev Uses Aave's user-configuration bitmap: one call identifies exactly which reserves the account
@@ -201,10 +199,19 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
             (bool ok, bytes memory ret) =
                 pool.staticcall(abi.encodeWithSelector(IAavePool.getReserveAddressById.selector, uint16(id)));
             if (!ok || ret.length < 32) return _hasUnreportableDebtByScan(dp, account);
-            address asset = abi.decode(ret, (address));
+            // Mask rather than `abi.decode(ret, (address))`: that reverts on a word with dirty upper bits,
+            // and a revert here would escape the fallback this branch exists to reach.
+            address asset = address(uint160(abi.decode(ret, (uint256))));
             if (asset == address(0)) continue; // dropped reserve
             (, bool found) = _getAssetInfo(asset);
-            if (!found) return true;
+            if (found) continue; // reportable
+            // The bit alone is not proof of debt: Aave clears it only on an exact-full repay
+            // (`BorrowLogic.executeRepay`: `stableDebt + variableDebt - paybackAmount == 0`, unscaled), while
+            // the debt token burns scaled with rounding — so a bit can outlive the debt. Suppressing on a
+            // stale bit would erase the whole instance from NAV permanently, and would disagree with
+            // `_hasUnreportableDebtByScan`, which requires debt > 0. Confirm before suppressing.
+            (, uint256 stableDebt, uint256 variableDebt,,,,,,) = dp.getUserReserveData(asset, account);
+            if (stableDebt + variableDebt > 0) return true;
         }
         return false;
     }

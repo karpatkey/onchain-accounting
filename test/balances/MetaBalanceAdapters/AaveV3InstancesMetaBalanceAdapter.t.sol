@@ -295,6 +295,30 @@ contract AaveV3InstancesMetaUnitTest is BalanceAdapterTestBase {
             0,
             "scan fallback must suppress, not revert"
         );
+
+        // `length == 0` is ALSO what per-instance revert isolation returns, so the assertion above cannot by
+        // itself tell suppression from a swallowed revert. Pin it down: with the unreportable debt cleared,
+        // the very same code-less-pool path must report the supply leg.
+        dp2.setUserData(alice, address(unregistered), 0, 0, false);
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositionsForInstances(alice, ids, address(0));
+        assertEq(p.length, 1, "the fallback path itself must work, not merely revert into an empty array");
+        assertEq(p[0].balanceAsset.asset, address(weth));
+    }
+
+    /// @dev A borrowing bit can outlive the debt: Aave clears it only on an exact-full repay (unscaled), while
+    ///      the debt token burns scaled with rounding. Suppressing on the bit alone would erase the instance
+    ///      from NAV permanently, and would disagree with the scan fallback, which requires debt > 0.
+    function test_staleBorrowingBit_withZeroDebt_doesNotSuppress() public {
+        Mock_ERC20 unregistered = new Mock_ERC20("XYZ", 18);
+        dp.addReserve("XYZ", address(unregistered));
+        pool.setReserveById(4, address(unregistered));
+        pool.setBorrowing(4); // bit set...
+        dp.setUserData(alice, address(unregistered), 0, 0, false); // ...but the debt is gone
+        dp.setUserData(alice, address(weth), 5e18, 0, true);
+
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositionsForInstances(alice, _ids(), address(0));
+        assertEq(p.length, 1, "a stale borrowing bit with no debt must not suppress the instance");
+        assertEq(p[0].balanceAsset.asset, address(weth));
     }
 
     /// @dev Regression: the user-configuration bitmap is keyed on a reserve's STORED id, but

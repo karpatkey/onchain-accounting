@@ -227,9 +227,16 @@ contract SparkLendBalanceAdapter is BalanceAdapterBase {
             (bool ok, bytes memory ret) =
                 POOL.staticcall(abi.encodeWithSelector(IAavePool.getReserveAddressById.selector, uint16(id)));
             if (!ok || ret.length < 32) return _hasUnreportableDebtByScanSpark(account, regAddrs);
-            address asset = abi.decode(ret, (address));
+            // Mask rather than `abi.decode(ret, (address))`: that reverts on a word with dirty upper bits,
+            // and a revert here would escape the fallback this branch exists to reach.
+            address asset = address(uint160(abi.decode(ret, (uint256))));
             if (asset == address(0)) continue; // dropped reserve
-            if (!_contains(regAddrs, asset)) return true;
+            if (_contains(regAddrs, asset)) continue; // reportable
+            // Confirm real debt before suppressing — the borrowing bit can outlive the debt (see the Aave
+            // adapter), and suppressing on a stale bit would erase the whole position and disagree with the
+            // scan fallback, which requires debt > 0.
+            (, uint256 debt,) = _reserveData(account, asset);
+            if (debt > 0) return true;
         }
         return false;
     }

@@ -126,13 +126,14 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
         }
     }
 
-    /// @notice External wrapper (enables `try/catch` isolation in `positionLabels`): the vault's
-    ///         "<collateral>/<debt>" token symbols.
-    /// @dev Prefers the NAV's registered-asset symbol, which already resolves `NATIVE_ADDRESS` to the chain's
-    ///      native symbol — several Fluid T1 vaults use the ERC-7528 native sentinel as one side, and it has no
-    ///      `symbol()` to call. Falls back to a direct ERC20 read for a token that is not registered.
+    /// @notice External wrapper (enables `try/catch` isolation in `positionLabels`): the vault's label leaf,
+    ///         `"<collateral>/<debt> #<vaultId>"` — e.g. `"wstETH/USDC #4"`.
+    /// @dev Symbols prefer the NAV's registered-asset record, which already resolves `NATIVE_ADDRESS` to the
+    ///      chain's native symbol — several Fluid T1 vaults use the ERC-7528 native sentinel as one side, and it
+    ///      has no `symbol()` to call. Falls back to a direct ERC20 read for a token that is not registered.
+    ///      The trailing id is required for uniqueness: several T1 vaults share one collateral/debt pair.
     /// @param vault The T1 vault address.
-    /// @return The pair label, or "" if the vault is not a readable T1 vault.
+    /// @return The label leaf, or "" if the vault is not a readable T1 vault.
     function vaultPairSymbols(address vault) external view returns (string memory) {
         (address collToken, address debtToken, uint256 vaultId) = FluidVaultLib.vaultInfo(vault, VAULT_RESOLVER);
         if (collToken == address(0) || debtToken == address(0)) return "";

@@ -432,16 +432,20 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterTest is BalanceAdapterTest
 
     /// @dev Configuration-view probe. Nexus derives its breadcrumb from the staking-pool address in the
     ///      positionId, and its pool set is discovered per account from the cached NFT ids, so
-    ///      `positionLabels("")` must return [] — there is no configuration-level shape to name. That empty
-    ///      answer is correct, not a defect: the labels resolve against real positionIds (asserted above), and a
-    ///      consumer tells "account-derived shapes" apart from "broken adapter" via the `IAssistedBalanceAdapter`
-    ///      ERC165 marker, whose whole contract is "positions not derivable from on-chain state alone".
+    ///      `positionLabels("")` returns [] — there is no configuration-level shape to name. The labels do
+    ///      resolve against real positionIds (asserted above).
+    ///
+    ///      Note what does NOT follow: the `IAssistedBalanceAdapter` marker does not disambiguate this []. Both
+    ///      sibling assisted adapters carry the same marker (it is advertised by the shared `AssistedCoordCache`)
+    ///      yet answer the probe with a CONSTANT breadcrumb — ether.fi `["Withdrawal Queue","eETH"]`, StakeWise
+    ///      `["Exit Queue","osETH"]`. The marker means "coordinates are fed externally", not "labels are
+    ///      per-position", so it cannot separate "[] because account-derived" from "[] because broken". The
+    ///      ERC165 surface is asserted on its own in `test_supportsInterface`; it is deliberately not restated
+    ///      here, where it would imply a discrimination it does not provide.
     function test_positionLabels_emptyProbe_returnsEmptyForAccountDerivedShapes() public view {
         assertEq(adapter.positionLabels("").length, 0);
+        // Sub-32-byte input hits the `positionId.length < 32` guard. Not a general malformed-input guarantee:
+        // a 32-byte word with dirty high bits reaches `abi.decode(..., (address))` and reverts.
         assertEq(adapter.positionLabels(hex"0102030405060708090a0b0c").length, 0);
-        assertTrue(
-            adapter.supportsInterface(type(IAssistedBalanceAdapter).interfaceId),
-            "the marker is what makes the empty probe self-explaining"
-        );
     }
 }

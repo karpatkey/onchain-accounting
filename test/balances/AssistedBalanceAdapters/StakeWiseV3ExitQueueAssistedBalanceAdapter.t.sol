@@ -613,12 +613,16 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
         assertEq(amt, 1 ether);
     }
 
-    /// @dev Static breadcrumb is `["Exit Queue", "osETH"]`; the ticket rides in the typed `positionInstanceId`.
     /// @dev Configuration-view probe: a consumer describing configuration has no positionId, so it can only call
-    ///      `positionLabels("")`. This adapter has one position shape (the exit queue, leafed by the pinned
-    ///      `receiptSymbol`), so the probe must answer with that constant breadcrumb — the per-ticket coordinate
-    ///      is `positionInstanceId`, not a label. Deriving the leaf from the vault in `positionId` instead would
-    ///      silently return [] and drop this adapter off that view.
+    ///      `positionLabels("")`. This adapter's breadcrumb is positionId-INDEPENDENT (the leaf is the pinned
+    ///      `receiptSymbol`), so the probe answers with the full constant breadcrumb.
+    ///
+    ///      What this pins is that the probe never silently collapses to `[]`. It does NOT forbid a vault-derived
+    ///      leaf: the adapter accepts any VaultsRegistry-listed vault and emits `positionId = abi.encode(vault)`,
+    ///      so several distinct positionIds share this one breadcrumb — the label is lossy today, and PR #163 made
+    ///      exactly that improvement on the sibling `StakeWiseV3VaultsMetaBalanceAdapter`. If this adapter follows,
+    ///      the probe must still return at least the `"Exit Queue"` category (the `_labels` empty-leaf convention),
+    ///      and this assertion should be relaxed to that deliberately rather than deleted.
     function test_positionLabels_emptyProbe_returnsTheConstantShape() public view {
         string[] memory labels = adapter.positionLabels("");
         assertEq(labels.length, 2);
@@ -626,6 +630,7 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
         assertEq(labels[1], "osETH");
     }
 
+    /// @dev Static breadcrumb is `["Exit Queue", "osETH"]`; the ticket rides in the typed `positionInstanceId`.
     function _assertTicketLeg(INAVCalculator.PositionBalance memory leg) internal view {
         string[] memory labels = adapter.positionLabels(leg.positionId);
         assertEq(labels.length, 2);

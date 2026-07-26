@@ -261,8 +261,8 @@ contract ERC20DefaultBalanceAdapterTest is Test {
     }
 
     /// @dev Configuration-view probe. The wallet adapter's leaf IS the token symbol, so it is legitimately
-    ///      positionId-derived and `positionLabels("")` must return [] — there is no single shape to name. That
-    ///      is not a gap: a wallet position's shape set is the registered-asset list, which a configuration view
+    ///      positionId-derived and `positionLabels("")` returns [] — there is no single shape to name. That is
+    ///      not a gap: a wallet position's shape set is the registered-asset list, which a configuration view
     ///      already renders, and the adapter is identified as the wallet singleton by `AdapterType.Default`.
     function test_positionLabels_emptyProbe_returnsEmptyForThePerTokenLeaf() public view {
         assertEq(adapter.positionLabels("").length, 0);
@@ -275,5 +275,23 @@ contract ERC20DefaultBalanceAdapterTest is Test {
         string[] memory native = adapter.positionLabels(abi.encode(NATIVE_ADDRESS));
         assertEq(native.length, 1);
         assertEq(native[0], "native");
+    }
+
+    /// @dev Pins a KNOWN DIVERGENCE rather than a desired behaviour, so it is visible instead of implicit.
+    ///      `ERC20DefaultBalanceAdapter.positionLabels` guards `positionId.length == 0` only, then calls
+    ///      `abi.decode(positionId, (address))` unconditionally — whereas `CapBalanceAdapter` and
+    ///      `NexusMutualStakingPoolsAssistedBalanceAdapter` guard `length < 32` and return []. So the wallet
+    ///      adapter, the one adapter registered on all 24 chains, REVERTS for any truncated positionId where
+    ///      its two siblings return [].
+    ///
+    ///      Not reachable on the NAV path: the verbose reads call this behind a fail-open staticcall, and the
+    ///      positionIds this adapter emits are always clean 32-byte addresses. It IS reachable for a
+    ///      configuration view that generalises "per-position adapters answer the probe with []" and probes with
+    ///      anything other than exactly `""` — that call reverts. Widening the guard is a production-code change,
+    ///      deliberately out of scope for this tests-only PR; this test goes red if someone fixes it, which is
+    ///      the prompt to delete it.
+    function test_positionLabels_truncatedPositionId_revertsUnlikeCapAndNexus() public {
+        vm.expectRevert();
+        adapter.positionLabels(hex"0102030405060708090a0b0c");
     }
 }

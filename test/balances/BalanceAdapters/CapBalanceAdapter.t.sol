@@ -245,15 +245,32 @@ contract CapBalanceAdapterTest is Test {
         assertEq(labels1[1], "stcUSD");
     }
 
-    /// @dev Configuration-view probe. Unlike the single-shape adapters, Cap has TWO position shapes (cUSD and
-    ///      stcUSD) and derives the breadcrumb from the positionId, so `positionLabels("")` must return [] rather
-    ///      than guessing one of them. That empty answer is correct, not a defect: the shapes are still reachable
-    ///      against real positions (asserted above), and a consumer distinguishes "per-position labels" from
-    ///      "adapter is broken" via the typed ERC165 markers. It is the reason a configuration view cannot list
-    ///      Cap's two shapes today — see the enumeration discussion in BALANCE_ADAPTERS.md.
+    /// @dev Configuration-view probe. Unlike the positionId-independent adapters, Cap derives the breadcrumb from
+    ///      the positionId and has TWO shapes (cUSD and stcUSD), so `positionLabels("")` returns [] rather than
+    ///      guessing one of them. The shapes are still reachable against real positionIds (asserted above).
+    ///
+    ///      Cap has NO on-chain signal marking that [] as "by design". It advertises exactly the same interface
+    ///      set as every positionId-independent adapter — {IBalanceAdapter, IPositionDescribable, IERC165} from
+    ///      BalanceAdapterBase — and unlike the assisted family it carries no `IAssistedBalanceAdapter` marker.
+    ///      So a configuration view cannot tell "Cap has per-position shapes" from "Cap is broken", and cannot
+    ///      list its two shapes at all. That indistinguishability is exactly what motivates the deferred
+    ///      `IPositionEnumerable`; Cap is the adapter that needs it.
     function test_positionLabels_emptyProbe_returnsEmptyForAMultiShapeAdapter() public view {
         assertEq(adapter.positionLabels("").length, 0);
-        // Sub-32-byte junk is treated the same way — no partial decode, no revert.
+        // Sub-32-byte input hits the `positionId.length < 32` guard, so it returns [] without reaching the decode.
+        // This does NOT establish general malformed-input safety: a 32-byte word with dirty high bits reaches
+        // `abi.decode(..., (address))` and reverts (asserted below).
         assertEq(adapter.positionLabels(hex"0102030405060708090a0b0c").length, 0);
+    }
+
+    /// @dev Documents a real limit of the length guard rather than asserting the adapter is malformed-input-safe.
+    ///      `positionLabels` is reached from NAVCalculator's verbose reads via a fail-open staticcall, and the
+    ///      positionIds Cap itself emits are always clean 32-byte addresses, so this is not reachable on the NAV
+    ///      path. It IS reachable for a configuration view that probes with an arbitrary 32-byte word (e.g. a
+    ///      bytes32 market/pool id copied from another adapter), which gets `execution reverted`, not [].
+    ///      Widening the guard is a production-code change and deliberately out of scope for this tests-only PR.
+    function test_positionLabels_dirty32ByteWord_revertsRatherThanReturningEmpty() public {
+        vm.expectRevert();
+        adapter.positionLabels(abi.encode(type(uint256).max));
     }
 }

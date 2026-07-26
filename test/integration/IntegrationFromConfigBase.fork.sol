@@ -601,11 +601,25 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return address(new CompoundV3CometsMetaBalanceAdapter(compoundRewards, rewardToken, navAddr));
     }
 
-    function _deployMorphoVaultsMeta(string memory name, address navAddr) internal returns (address) {
+    function _deployMorphoVaultsMeta(
+        string memory,
+        /* name unused: no config read */
+        address navAddr
+    )
+        internal
+        returns (address)
+    {
         return address(new MorphoVaultsMetaBalanceAdapter(navAddr));
     }
 
-    function _deployBalancerV3PoolsMeta(string memory name, address navAddr) internal returns (address) {
+    function _deployBalancerV3PoolsMeta(
+        string memory,
+        /* name unused: no config read */
+        address navAddr
+    )
+        internal
+        returns (address)
+    {
         return address(new BalancerV3PoolsMetaBalanceAdapter(navAddr));
     }
 
@@ -632,11 +646,25 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return address(new MorphoMarketsMetaBalanceAdapter(morpho, navAddr));
     }
 
-    function _deployAaveV3InstancesMeta(string memory name, address navAddr) internal returns (address) {
+    function _deployAaveV3InstancesMeta(
+        string memory,
+        /* name unused: no config read */
+        address navAddr
+    )
+        internal
+        returns (address)
+    {
         return address(new AaveV3InstancesMetaBalanceAdapter(navAddr));
     }
 
-    function _deployGearboxV3MarketsMeta(string memory name, address navAddr) internal returns (address) {
+    function _deployGearboxV3MarketsMeta(
+        string memory,
+        /* name unused: no config read */
+        address navAddr
+    )
+        internal
+        returns (address)
+    {
         return address(new GearboxV3MarketsMetaBalanceAdapter(navAddr));
     }
 
@@ -648,7 +676,14 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return address(new CapBalanceAdapter(cUsd, stcUsd, usdc, navAddr));
     }
 
-    function _deployCurvePoolsMeta(string memory name, address navAddr) internal returns (address) {
+    function _deployCurvePoolsMeta(
+        string memory,
+        /* name unused: no config read */
+        address navAddr
+    )
+        internal
+        returns (address)
+    {
         return address(new CurvePoolsMetaBalanceAdapter(navAddr));
     }
 
@@ -667,7 +702,14 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return address(new ConvexCurveLPStakingMetaBalanceAdapter(booster, cvxToken, navAddr));
     }
 
-    function _deployAaveV3SafetyModule(string memory name, address navAddr) internal returns (address) {
+    function _deployAaveV3SafetyModule(
+        string memory,
+        /* name unused: no config read */
+        address navAddr
+    )
+        internal
+        returns (address)
+    {
         return address(new AaveV3SafetyModuleBalanceAdapter(navAddr));
     }
 
@@ -677,7 +719,14 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return address(new AaveUmbrellaBalanceAdapter(rewardsController, navAddr));
     }
 
-    function _deployFluidFTokensMeta(string memory name, address navAddr) internal returns (address) {
+    function _deployFluidFTokensMeta(
+        string memory,
+        /* name unused: no config read */
+        address navAddr
+    )
+        internal
+        returns (address)
+    {
         return address(new FluidFTokensMetaBalanceAdapter(navAddr));
     }
 

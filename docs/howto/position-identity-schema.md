@@ -1499,9 +1499,11 @@ legs, and a worked example — for every balance adapter on `main`.
 - **Full breadcrumb** = `[protocolName(), ...positionLabels(positionId)]`; the **leaf** is the last element.
 - **`protocolSubId`** column is the `keccak256` slug (constants in [`src/utils/ProtocolIds.sol`](../../src/utils/ProtocolIds.sol)).
 - **Leaf source:** `const` = hardcoded literal · `derived` = read live from chain · `gov` = constructor arg.
-  No leaf is governance-fed today; for meta-adapters only `protocolName()` (the breadcrumb root, marked ¹)
-  is a constructor arg, the category is a `const` literal, and the leaf is `derived` on-chain. Meta-adapters
-  use a `_labels(category, leaf)` helper that **drops an empty leaf**, so a failed read degrades to `[category]`.
+  Nothing is governance-fed today. For meta-adapters the breadcrumb root `protocolName()` is **derived from
+  the adapter's own `_protocolId()`** (`ProtocolNames.forProtocolId`) — not a constructor argument and not
+  configurable per deployment — the category is a `const` literal, and the leaf is `derived` on-chain.
+  Meta-adapters use a `_labels(category, leaf)` helper that **drops an empty leaf**, so a failed read
+  degrades to `[category]`.
 - Labels are returned by `positionLabels(positionId)`; the ephemeral per-item id (request / NFT / ticket)
   is **not** a label — it is the typed `PositionBalance.positionInstanceId`.
 
@@ -1522,10 +1524,11 @@ legs, and a worked example — for every balance adapter on `main`.
 
 #### Meta-adapters (`src/balances/MetaBalanceAdapters/`)
 
-`protocolName()` is a constructor arg (¹). Default `positionId` = base `_instancePositionId` (instance
-address widened → `abi.encode(address instance)`); overrides are flagged.
+`protocolName()` is derived from `_protocolId()` — identical for every adapter sharing a protocol id, and
+the same on every chain. Default `positionId` = base `_instancePositionId` (instance address widened →
+`abi.encode(address instance)`); overrides are flagged.
 
-| Adapter | `protocolSubId` | `protocolName()`¹ | `positionLabels()` → (source) | `positionId` schema | `PositionKind` legs | Example breadcrumb |
+| Adapter | `protocolSubId` | `protocolName()` | `positionLabels()` → (source) | `positionId` schema | `PositionKind` legs | Example breadcrumb |
 |---|---|---|---|---|---|---|
 | `AaveV3InstancesMetaBalanceAdapter` | `aave-v3-lending` | `"Aave V3"` | `["Market", <getMarketId()>]` (derived) | `abi.encode(address pool)` (computed inline) | Collateral/Supplied / Borrowed | `["Aave V3","Market","Aave Ethereum Market"]` |
 | `CompoundV3CometsMetaBalanceAdapter` | `compound-v3-comets` | `"Compound V3"` | `["Market", <comet.name()>]` (derived) | `abi.encode(address comet)` | Supplied/Borrowed / Collateral / Rewards | `["Compound V3","Market","cUSDCv3"]` |
@@ -1635,8 +1638,10 @@ When implementing a new balance adapter:
    - Uncollected LP/protocol fees → `Fees`
    - ERC20 wallet balance → `Wallet`
 4. Provide human-readable labels by implementing both `IPositionDescribable` methods:
-   - `protocolName()` — static `pure` string for per-instance adapters; the same constant (constructor
-     arg) for meta-adapters
+   - `protocolName()` — for per-instance adapters, return the `src/utils/ProtocolNames.sol` constant for
+     your protocol id. Meta-adapters do **not** implement it: `MetaBalanceAdapter` derives it from
+     `_protocolId()`. Either way, adapters sharing a `protocolId` report the same name — it names the
+     PROTOCOL, never the product (the product goes in `positionLabels()`).
    - `positionLabels(bytes positionId)` — return a `string[]` hierarchy below the protocol, leaf last,
      derived from `positionId`. Derive on-chain for meta-adapters (read token symbols, vault/pool names)
      via the `_labels(category, leaf)` helper; a fixed array for per-instance adapters. Labels are NOT

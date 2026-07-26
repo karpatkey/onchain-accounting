@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {Test} from "forge-std/Test.sol";
+import {Vm} from "forge-std/Vm.sol";
 
 import {ProtocolNames} from "src/utils/ProtocolNames.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -32,6 +33,49 @@ import {
 import {
     StakeWiseV3VaultsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/StakeWiseV3VaultsMetaBalanceAdapter.sol";
+import {
+    CompoundV3CometsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/CompoundV3CometsMetaBalanceAdapter.sol";
+import {
+    ConvexCurveLPStakingMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/ConvexCurveLPStakingMetaBalanceAdapter.sol";
+import {EulerVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/EulerVaultsMetaBalanceAdapter.sol";
+import {FluidFTokensMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/FluidFTokensMetaBalanceAdapter.sol";
+import {FluidVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/FluidVaultsMetaBalanceAdapter.sol";
+import {
+    GearboxV3CreditAccountsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/GearboxV3CreditAccountsMetaBalanceAdapter.sol";
+import {
+    GearboxV3MarketsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/GearboxV3MarketsMetaBalanceAdapter.sol";
+import {MorphoMarketsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/MorphoMarketsMetaBalanceAdapter.sol";
+import {MorphoVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/MorphoVaultsMetaBalanceAdapter.sol";
+import {
+    BalancerV2GaugesMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/balancer/BalancerV2GaugesMetaBalanceAdapter.sol";
+import {
+    BalancerV2PoolsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/balancer/BalancerV2PoolsMetaBalanceAdapter.sol";
+import {
+    BalancerV3GaugesMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/balancer/BalancerV3GaugesMetaBalanceAdapter.sol";
+import {
+    BalancerV3PoolsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/balancer/BalancerV3PoolsMetaBalanceAdapter.sol";
+import {CurveGaugesMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/curve/CurveGaugesMetaBalanceAdapter.sol";
+import {CurvePoolsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/curve/CurvePoolsMetaBalanceAdapter.sol";
+import {
+    PancakeSwapV2PoolsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/pancakeswap/PancakeSwapV2PoolsMetaBalanceAdapter.sol";
+import {
+    PancakeSwapV3PoolsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/pancakeswap/PancakeSwapV3PoolsMetaBalanceAdapter.sol";
+import {
+    UniswapV2PoolsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/uniswap/UniswapV2PoolsMetaBalanceAdapter.sol";
+import {
+    UniswapV3PoolsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/uniswap/UniswapV3PoolsMetaBalanceAdapter.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
 
 /// @dev Minimal deployed-bytecode stub. Several adapter constructors assert `code.length > 0` on their pinned
@@ -119,6 +163,10 @@ contract StaderWithdrawalManagerStub {
 contract ProtocolNameConsistencyTest is Test {
     string internal constant PLAIN_DIR = "script/config/contracts-deployment-config/balance-adapters";
     string internal constant META_DIR = "script/config/contracts-deployment-config/meta-balance-adapters";
+
+    /// @dev Number of concrete meta adapters. Pinned so adding one fails `test_metaAdapterCensus` until the
+    ///      author also adds it to `test_everyMetaAdapterHasANonEmptyName`.
+    uint256 internal constant META_ADAPTER_COUNT = 21;
 
     BalancesHarness internal nav;
     address internal stub;
@@ -226,34 +274,65 @@ contract ProtocolNameConsistencyTest is Test {
     // Half 2 — meta adapters: the name is DERIVED, so the invariant is structural
     // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-    /// @notice Every protocol id a meta adapter can declare must have a display name.
+    /// @notice EVERY meta adapter must resolve to a non-empty display name — asserted by deploying all of them
+    ///         and calling `protocolName()`, not against a hand-written list of protocol ids.
     /// @dev `MetaBalanceAdapter.protocolName()` is `ProtocolNames.forProtocolId(_protocolId())`, so sibling
-    ///      agreement no longer needs asserting — two adapters sharing a protocol id return the same string because
-    ///      it is the same expression over the same input. What CAN still go wrong is a protocol id with no entry
-    ///      in the table, which would revert on a verbose read (fail-open to an empty name, never a NAV revert).
-    ///      This pins every id the meta family actually declares.
-    function test_everyMetaProtocolIdHasAName() public pure {
-        bytes32[16] memory ids = [
-            ProtocolIds.AAVE_V3,
-            ProtocolIds.MORPHO,
-            ProtocolIds.EULER,
-            ProtocolIds.COMPOUND_V3,
-            ProtocolIds.FLUID,
-            ProtocolIds.GEARBOX_V3,
-            ProtocolIds.BALANCER_V2,
-            ProtocolIds.BALANCER_V3,
-            ProtocolIds.CURVE,
-            ProtocolIds.CONVEX,
-            ProtocolIds.UNISWAP_V2,
-            ProtocolIds.UNISWAP_V3,
-            ProtocolIds.PANCAKESWAP_V2,
-            ProtocolIds.PANCAKESWAP_V3,
-            ProtocolIds.STAKEWISE_V3,
-            ProtocolIds.SPARK
-        ];
-        for (uint256 i = 0; i < ids.length; i++) {
-            assertGt(bytes(ProtocolNames.forProtocolId(ids[i])).length, 0, "protocol id has no display name");
+    ///      agreement is structural and needs no assertion. What is NOT structural is *totality*: a new meta
+    ///      adapter whose `_protocolId()` has no `forProtocolId` branch compiles, passes its own tests (they never
+    ///      call `protocolName()`), and ships — adapters are immutable, plain CREATE — after which every verbose
+    ///      read returns `protocolName == ""` for it, because the revert is swallowed by NAVCalculator's
+    ///      fail-open `_safeString`. Calling `protocolName()` on a real instance is the only assertion that
+    ///      catches that, and `test_metaAdapterCensus` below stops a new adapter from silently escaping this list.
+    function test_everyMetaAdapterHasANonEmptyName() public {
+        address n = address(nav);
+        string[] memory names = new string[](META_ADAPTER_COUNT);
+        uint256 i;
+        names[i++] = new AaveV3InstancesMetaBalanceAdapter(n).protocolName();
+        names[i++] = new CompoundV3CometsMetaBalanceAdapter(stub, stub, n).protocolName();
+        names[i++] = new ConvexCurveLPStakingMetaBalanceAdapter(stub, stub, n).protocolName();
+        names[i++] = new EulerVaultsMetaBalanceAdapter(n).protocolName();
+        names[i++] = new FluidFTokensMetaBalanceAdapter(n).protocolName();
+        names[i++] = new FluidVaultsMetaBalanceAdapter(stub, n).protocolName();
+        names[i++] = new GearboxV3CreditAccountsMetaBalanceAdapter(n).protocolName();
+        names[i++] = new GearboxV3MarketsMetaBalanceAdapter(n).protocolName();
+        names[i++] = new MorphoMarketsMetaBalanceAdapter(stub, n).protocolName();
+        names[i++] = new MorphoVaultsMetaBalanceAdapter(n).protocolName();
+        names[i++] = new StakeWiseV3VaultsMetaBalanceAdapter(stub, stub, n).protocolName();
+        names[i++] = new BalancerV2GaugesMetaBalanceAdapter(stub, stub, n).protocolName();
+        names[i++] = new BalancerV2PoolsMetaBalanceAdapter(stub, n).protocolName();
+        names[i++] = new BalancerV3GaugesMetaBalanceAdapter(stub, n).protocolName();
+        names[i++] = new BalancerV3PoolsMetaBalanceAdapter(n).protocolName();
+        names[i++] = new CurveGaugesMetaBalanceAdapter(stub, stub, n).protocolName();
+        names[i++] = new CurvePoolsMetaBalanceAdapter(n).protocolName();
+        names[i++] = new PancakeSwapV2PoolsMetaBalanceAdapter(n).protocolName();
+        names[i++] = new PancakeSwapV3PoolsMetaBalanceAdapter(stub, n).protocolName();
+        names[i++] = new UniswapV2PoolsMetaBalanceAdapter(n).protocolName();
+        names[i++] = new UniswapV3PoolsMetaBalanceAdapter(stub, n).protocolName();
+
+        assertEq(i, META_ADAPTER_COUNT, "exercised count must equal META_ADAPTER_COUNT");
+        for (uint256 k = 0; k < names.length; k++) {
+            assertGt(bytes(names[k]).length, 0, "meta adapter reports an empty protocolName");
         }
+    }
+
+    /// @notice A new meta adapter must not be able to slip past the test above unnoticed.
+    /// @dev Counts the concrete `*MetaBalanceAdapter.sol` compilation artifacts and requires the number to equal
+    ///      the number this file actually deploys. Adding an adapter therefore fails here until it is added to
+    ///      `test_everyMetaAdapterHasANonEmptyName` — at which point that test catches a missing `forProtocolId`
+    ///      branch. Without this census the coverage list is a hand-maintained snapshot that silently rots.
+    ///
+    ///      Counts `out/` rather than `src/`: `fs_permissions` grants read on `out` but not `src`, and adding a
+    ///      permission would mean editing `foundry.toml`, which is off-limits while the library pin is being
+    ///      coordinated across parallel branches. `out/` mirrors the source set one directory per source file.
+    ///      A stale artifact from a deleted adapter would make this over-count — a loud failure fixed by
+    ///      `forge clean`, never a silent pass. CI always builds fresh.
+    function test_metaAdapterCensus() public view {
+        uint256 found = _countMetaAdapterSources("out");
+        assertEq(
+            found,
+            META_ADAPTER_COUNT,
+            "meta-adapter count changed: add the new adapter to test_everyMetaAdapterHasANonEmptyName and bump META_ADAPTER_COUNT"
+        );
     }
 
     /// @notice An unknown protocol id must revert rather than return "". A meta adapter is immutable, so a silent
@@ -268,6 +347,27 @@ contract ProtocolNameConsistencyTest is Test {
     /// @dev External wrapper so `vm.expectRevert` can catch a revert from an `internal pure` library function.
     function nameFor(bytes32 protocolId) external pure returns (string memory) {
         return ProtocolNames.forProtocolId(protocolId);
+    }
+
+    /// @dev Counts concrete meta-adapter artifacts, excluding the abstract base and the interface.
+    function _countMetaAdapterSources(string memory relDir) internal view returns (uint256 count) {
+        Vm.DirEntry[] memory entries = vm.readDir(string.concat(vm.projectRoot(), "/", relDir));
+        for (uint256 i = 0; i < entries.length; i++) {
+            if (!_endsWith(entries[i].path, "MetaBalanceAdapter.sol")) continue;
+            if (_endsWith(entries[i].path, "/MetaBalanceAdapter.sol")) continue; // abstract base
+            if (_endsWith(entries[i].path, "/IMetaBalanceAdapter.sol")) continue; // interface
+            count++;
+        }
+    }
+
+    function _endsWith(string memory value, string memory suffix) internal pure returns (bool) {
+        bytes memory v = bytes(value);
+        bytes memory sfx = bytes(suffix);
+        if (v.length < sfx.length) return false;
+        for (uint256 i = 0; i < sfx.length; i++) {
+            if (v[v.length - sfx.length + i] != sfx[i]) return false;
+        }
+        return true;
     }
 
     /// @notice Distinct protocols must not collide on one display name — otherwise a consumer grouping by name

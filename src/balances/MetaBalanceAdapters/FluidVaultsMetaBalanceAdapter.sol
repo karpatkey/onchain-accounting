@@ -113,11 +113,16 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
         return string.concat(_assetSymbol(collToken), "/", _assetSymbol(debtToken));
     }
 
-    /// @notice Symbol for `token`: the NAV registry's (native-aware), else a direct ERC20 `symbol()`, else "".
+    /// @notice Symbol for `token`: the NAV registry's (native-aware), else a direct ERC20 `symbol()`, else "?".
+    /// @dev Deliberately not `MetaBalanceAdapter._joinTokenSymbols`, which reads `symbol()` directly and so
+    ///      cannot resolve the ERC-7528 native sentinel — several Fluid T1 vaults use it as one side and it has
+    ///      no `symbol()` to call. The registry-first lookup also means a *registered* token's symbol never
+    ///      involves an external call into that token. Falls back to "?" to match `_joinTokenSymbols` and the
+    ///      Morpho markets adapter, so an unreadable side renders "?/USDC" rather than "/USDC".
     function _assetSymbol(address token) internal view returns (string memory) {
         (INAVCalculator.Asset memory info, bool found) = _getAssetInfo(token);
         if (found && bytes(info.symbol).length > 0) return info.symbol;
-        return LabelLib.symbol(token, "");
+        return LabelLib.symbol(token, "?");
     }
 
     /// @inheritdoc MetaBalanceAdapter

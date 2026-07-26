@@ -67,12 +67,16 @@ library FluidVaultLib {
     uint256 internal constant VAULT_TYPE_T1 = 10000;
 
     /// @notice Reads a T1 vault's `(collateral, debt)` tokens from its `constantsView()`.
-    /// @dev Gated on the resolver's `getVaultType` because the T1 `ConstantViews` decode is NOT self-checking:
-    ///      a Smart vault returns a longer (18-word) struct whose first 13 words decode WITHOUT reverting,
-    ///      yielding two non-token addresses in the supply/borrow slots. Verified on mainnet — decoding the T3
-    ///      vault 0xe0E722E9… as T1 succeeds and produces 0xB6FF36e7…/0x4EC7b668…, neither of which is a token.
-    ///      Returning zeros for a non-T1 vault makes a mis-configured instance report nothing (its assets fail
-    ///      the registry lookup) instead of reporting positions against garbage addresses.
+    /// @dev Gated on the resolver's `getVaultType` as defence in depth. The T1 `ConstantViews` decode is
+    ///      *partially* self-checking today — a Smart vault returns a longer (18-word) blob, and Solidity's
+    ///      decoder range-checks the `uint8` decimals slots, so every one of the 80 non-T1 vaults live on
+    ///      mainnet currently REVERTS rather than mis-decoding (surveyed across all 181 vaults; the T3 vault
+    ///      0xe0E722E9… reverts because its word 6 holds an address). Note `cast`'s decoder does NOT
+    ///      range-check `uint8` and will happily "decode" such a blob — do not use it to re-derive this.
+    ///      That self-check is incidental, not guaranteed: it depends on where addresses happen to land in a
+    ///      layout Fluid controls, so a future Smart variant could decode cleanly into wrong token slots. The
+    ///      gate makes the outcome explicit and independent of that luck: a non-T1 vault reads back as zeros,
+    ///      so a mis-configured instance reports nothing instead of positions against non-token addresses.
     /// @param vault The vault to read.
     /// @param resolver The Fluid VaultResolver, used for the type check.
     /// @return collateral Supply token, or `address(0)` if `vault` is not a T1 vault.

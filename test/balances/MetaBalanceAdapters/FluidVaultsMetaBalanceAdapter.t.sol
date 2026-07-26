@@ -199,6 +199,17 @@ contract FluidVaultsMetaBalanceAdapterTest is Test {
         assertEq(c[1], "PAXG/USDC");
     }
 
+    /// @dev An unreadable side renders "?" — the same fallback `_joinTokenSymbols` and the Morpho markets
+    ///      adapter use — rather than an empty component that would read as a malformed pair.
+    function test_positionLabels_unreadableToken_usesQuestionMark() public {
+        MockFluidVaultT1 vaultC = new MockFluidVaultT1();
+        vaultC.setTokens(address(0xdead), address(usdc)); // no code at 0xdead -> symbol() unreadable
+
+        string[] memory c = meta.positionLabels(abi.encode(address(vaultC)));
+        assertEq(c.length, 2);
+        assertEq(c[1], "?/USDC");
+    }
+
     /// @dev Short positionId is rejected before any decode, as for every other meta-adapter.
     function test_positionLabels_shortPositionId_returnsEmpty() public view {
         assertEq(meta.positionLabels(hex"1234").length, 0);

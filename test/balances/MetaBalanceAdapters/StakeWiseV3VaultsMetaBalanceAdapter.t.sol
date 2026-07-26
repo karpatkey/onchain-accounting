@@ -13,15 +13,31 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 
 /// @notice Minimal StakeWise V3 vault mock: settable shares/osToken positions, 1:1 share→asset, on-chain name.
+/// @dev An empty `name_` models the non-ERC20 StakeWise vault variants, whose `name()` reverts — {LabelLib} treats a
+///      revert and an empty string identically, so `_revertOnName` covers the other half of that behaviour.
 contract MockStakeWiseVault {
-    string public name;
+    string private _name;
+    bool private _revertOnName;
     uint256 private _rate; // assets per share, 1e18-scaled
     mapping(address => uint256) private _shares;
     mapping(address => uint256) private _osToken;
 
     constructor(string memory name_, uint256 rate_) {
-        name = name_;
+        _name = name_;
         _rate = rate_;
+    }
+
+    /// @notice Raised by `name()` on the mock's non-ERC20 vault setting.
+    error NameNotSupported();
+
+    /// @notice ERC20 `name()` — reverts when `revertOnName` is set, mirroring the non-ERC20 vault variants.
+    function name() external view returns (string memory) {
+        if (_revertOnName) revert NameNotSupported();
+        return _name;
+    }
+
+    function setRevertOnName(bool v) external {
+        _revertOnName = v;
     }
 
     function convertToAssets(uint256 shares) external view returns (uint256) {
@@ -151,6 +167,83 @@ contract StakeWiseV3VaultsMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, ins, address(0));
         assertEq(p.length, 1, "bad vault isolated, vaultB staking leg returned");
         assertEq(p[0].amount, 3e18);
+    }
+
+    // --- positionLabels ---------------------------------------------------------------------------------------
+
+    /// @notice Two ERC20-variant vaults produce different final label elements — the property the leaf exists for.
+    function test_positionLabels_distinctPerNamedVault() public view {
+        string[] memory a = meta.positionLabels(abi.encode(address(vaultA)));
+        string[] memory b = meta.positionLabels(abi.encode(address(vaultB)));
+
+        assertEq(a.length, 2);
+        assertEq(a[0], "Vault");
+        assertEq(a[1], "Genesis Vault");
+
+        assertEq(b.length, 2);
+        assertEq(b[0], "Vault");
+        assertEq(b[1], "Meta Vault");
+
+        assertTrue(
+            keccak256(bytes(a[a.length - 1])) != keccak256(bytes(b[b.length - 1])),
+            "distinct instances must produce distinct final label elements"
+        );
+    }
+
+    /// @notice A vault whose `name()` reverts (every non-ERC20 StakeWise variant) falls back to
+    ///         `"<underlying symbol> <vault address>"` — never a blank leaf.
+    function test_positionLabels_revertingName_fallsBackToSymbolAndAddress() public {
+        vaultA.setRevertOnName(true);
+        string[] memory l = meta.positionLabels(abi.encode(address(vaultA)));
+        assertEq(l.length, 2, "leaf is present even without an on-chain name");
+        assertEq(l[0], "Vault");
+        assertEq(l[1], string.concat("ETH ", address(vaultA).toHexString()));
+    }
+
+    /// @notice An empty `name()` is treated exactly like a reverting one.
+    function test_positionLabels_emptyName_fallsBackToSymbolAndAddress() public {
+        MockStakeWiseVault unnamed = new MockStakeWiseVault("", 1e18);
+        string[] memory l = meta.positionLabels(abi.encode(address(unnamed)));
+        assertEq(l.length, 2);
+        assertEq(l[1], string.concat("ETH ", address(unnamed).toHexString()));
+    }
+
+    /// @notice Two *unnamed* vaults still produce different final label elements — the fallback carries the
+    ///         per-instance coordinate, so the blank-breadcrumb collision cannot reappear.
+    function test_positionLabels_distinctForUnnamedVaults() public {
+        vaultA.setRevertOnName(true);
+        vaultB.setRevertOnName(true);
+        string[] memory a = meta.positionLabels(abi.encode(address(vaultA)));
+        string[] memory b = meta.positionLabels(abi.encode(address(vaultB)));
+        assertEq(a.length, 2);
+        assertEq(b.length, 2);
+        assertTrue(
+            keccak256(bytes(a[a.length - 1])) != keccak256(bytes(b[b.length - 1])),
+            "distinct instances must produce distinct final label elements"
+        );
+    }
+
+    /// @notice With the underlying unregistered there is no symbol to prefix, so the leaf is the bare address.
+    function test_positionLabels_unregisteredUnderlying_addressOnly() public {
+        vaultA.setRevertOnName(true);
+        nav.unregisterAssetHelper(address(underlying));
+        string[] memory l = meta.positionLabels(abi.encode(address(vaultA)));
+        assertEq(l.length, 2);
+        assertEq(l[1], address(vaultA).toHexString(), "symbol prefix dropped, address retained");
+    }
+
+    /// @notice A positionId pointing at a code-less address must not revert this display-only view.
+    function test_positionLabels_noCode_failsOpen() public view {
+        string[] memory l = meta.positionLabels(abi.encode(address(0xdead)));
+        assertEq(l.length, 2);
+        assertEq(l[0], "Vault");
+        assertEq(l[1], string.concat("ETH ", address(0xdead).toHexString()));
+    }
+
+    /// @notice A short/malformed positionId yields no labels rather than reverting.
+    function test_positionLabels_shortPositionId_empty() public view {
+        assertEq(meta.positionLabels(hex"1234").length, 0);
+        assertEq(meta.positionLabels("").length, 0);
     }
 
     function test_underlyingAssetsForInstances() public view {

@@ -786,6 +786,26 @@ Scenario: 2 ETH staked, 0.5 ETH equivalent minted as osETH (debt).
 | ETH   | 0.5    | −1 250      | `Borrowed`   | `"StakeWise V3"`  | `["Vault"]` |
 | **NAV** | | **+3 750** | | | |
 
+The leaf is two-tier, both tiers read live and fail-open:
+
+1. the vault's ERC20 `name()` — `["Vault", "Stakers Union GNO"]`. Only StakeWise's `…Erc20Vault` implementation
+   variants are ERC20s and answer it (58 of 239 mainnet and 18 of 106 Gnosis registered vaults, as of 2026-07-26);
+2. otherwise `"<underlying symbol> <vault address>"` — `["Vault", "GNO 0x4b4406ed8659d03423490d8b62a1639206da0a7a"]`.
+   All five instances configured today land here. The symbol comes from the NAVCalculator asset registry, not an
+   ERC20 `symbol()` read, because on mainnet the underlying is the ETH sentinel `0xEeee…EEeE`, which has no code; if
+   the underlying is unregistered the leaf is the bare address.
+
+Tier 2 is a coordinate rendering rather than a name, and that is deliberate: the non-ERC20 vault variants expose no
+human-readable identity on chain at all. `name()`, `symbol()`, `contractURI()` and `metadataIpfsHash()` all revert on
+them; `vaultId()` is `keccak256(<implementation type string>)`, a *type* hash that collides across vaults and whose
+pre-image is recoverable nowhere on chain — not even from the implementation bytecode, since the compiler folds the
+literal into the hash; `version()` collides; `admin()` / `mevEscrow()` / `feeRecipient()` are addresses and mutable;
+and `VaultsRegistry` stores only `vaults(address) → bool`. The vault names shown in StakeWise's own UI come from
+off-chain IPFS metadata, so a consumer wanting those must enrich off-chain from the vault address.
+
+The label is descriptive, never an identifier — operator names collide (three separate Gnosis vaults are all named
+`"SEED"`). Key on `positionId`.
+
 #### `BalancerV3PoolsMeta`
 
 Scenario: wallet holds BPT representing 800 USDC + 0.32 WETH in a Balancer V3 USDC/WETH pool.
@@ -1500,7 +1520,7 @@ address widened → `abi.encode(address instance)`); overrides are flagged.
 | `GearboxV3CreditAccountsMetaBalanceAdapter` | `gearbox-v3-credit-accounts` | `"Gearbox"` | `["Credit Account", <creditManager.name() / underlying symbol>]` (derived) | `abi.encode(address creditAccount)` | Collateral / Borrowed | `["Gearbox","Credit Account","USDC v3"]` |
 | `MorphoMarketsMetaBalanceAdapter` | `morpho-markets` | `"Morpho"` | `["Market", "<coll>/<loan>"]` (derived) | **override** `abi.encode(bytes32 marketId)` (raw) | Collateral / Supplied / Borrowed | `["Morpho","Market","wETH/USDC"]` |
 | `MorphoVaultsMetaBalanceAdapter` | `morpho-vaults` | `"Morpho"` | `["Vault", <vault.name()>]` (derived) | `abi.encode(address vault)` | Supplied | `["Morpho","Vault","Morpho DAI"]` |
-| `StakeWiseV3VaultsMetaBalanceAdapter` | `stakewise-v3-vaults` | `"StakeWise V3"` | `["Vault"]` (category only) | `abi.encode(address vault)` | Staking / Borrowed (osToken) | `["StakeWise V3","Vault"]` |
+| `StakeWiseV3VaultsMetaBalanceAdapter` | `stakewise-v3-vaults` | `"StakeWise V3"` | `["Vault", <vault.name()>]`, falling back to `["Vault", "<underlying symbol> <vault address>"]` (derived; only the `…Erc20Vault` variants answer `name()`) | `abi.encode(address vault)` | Staking / Borrowed (osToken) | `["StakeWise V3","Vault","Stakers Union GNO"]` / `["StakeWise V3","Vault","GNO 0x4b4406ed…"]` |
 | `BalancerV2PoolsMetaBalanceAdapter` | `balancer-v2-pools` | `"Balancer V2"` | `["AMM Liquidity Pool", <BPT.name()>]` (derived) | **override** `abi.encode(bytes32 poolId)` (raw) | Supplied | `["Balancer V2","AMM Liquidity Pool","50WETH-50USDC"]` |
 | `BalancerV2GaugesMetaBalanceAdapter` | `balancer-v2-gauges` | `"Balancer V2"` | `["Staking Gauge", <gauge.symbol()>]` (derived) | `abi.encode(address gauge)` | Staking / Rewards | `["Balancer V2","Staking Gauge","…-gauge"]` |
 | `BalancerV3PoolsMetaBalanceAdapter` | `balancer-v3-pools` | `"Balancer V3"` | `["AMM Liquidity Pool", <pool.name()>]` (derived) | `abi.encode(address pool)` | Supplied | `["Balancer V3","AMM Liquidity Pool","Balancer 50 WETH 50 USDC"]` |

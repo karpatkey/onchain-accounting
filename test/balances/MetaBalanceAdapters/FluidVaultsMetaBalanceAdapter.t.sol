@@ -123,13 +123,39 @@ contract FluidVaultsMetaBalanceAdapterTest is Test {
         assertTrue(p[0].isDebt);
     }
 
-    function test_unregisteredAsset_skipped() public {
-        nav.unregisterAssetHelper(address(usdc));
+    /// @dev An unreportable DEBT suppresses the WHOLE position. Emitting the collateral leg alone would count
+    ///      the position as pure credit and over-report NAV by the entire borrow — the direction the
+    ///      under-report-only invariant forbids. This test previously asserted the opposite ("only the
+    ///      registered collateral leg survives"), i.e. it codified the over-report as intended behaviour.
+    function test_unregisteredDebtAsset_suppressesWholePosition() public {
+        nav.unregisterAssetHelper(address(usdc)); // vaultA's DEBT token
         bytes32[] memory one = new bytes32[](1);
         one[0] = _instances()[0];
+
+        assertEq(
+            meta.getAdapterPositionsForInstances(alice, one, address(0)).length,
+            0,
+            "collateral must not be reported without its debt"
+        );
+        // The filter must not reopen it: a filtered view showing only the collateral over-reports the same way.
+        assertEq(
+            meta.getAdapterPositionsForInstances(alice, one, address(wsteth)).length,
+            0,
+            "assetFilter must not resurrect the unoffset collateral leg"
+        );
+    }
+
+    /// @dev The mirror case is safe and must still report: an unreportable COLLATERAL leaves the debt leg,
+    ///      which under-reports (shows the liability, hides the asset).
+    function test_unregisteredCollateralAsset_stillReportsDebt() public {
+        nav.unregisterAssetHelper(address(wsteth)); // vaultA's COLLATERAL token
+        bytes32[] memory one = new bytes32[](1);
+        one[0] = _instances()[0];
+
         INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, one, address(0));
-        assertEq(p.length, 1, "only the registered collateral leg survives");
-        assertEq(p[0].balanceAsset.asset, address(wsteth));
+        assertEq(p.length, 1, "the debt leg must still be reported");
+        assertEq(p[0].balanceAsset.asset, address(usdc));
+        assertTrue(p[0].isDebt);
     }
 
     function test_badInstance_isolated() public view {

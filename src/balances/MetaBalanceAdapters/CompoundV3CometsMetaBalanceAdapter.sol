@@ -55,6 +55,15 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceAdapter {
         CompoundV3CometLib.AccountData memory d =
             CompoundV3CometLib.accountData(comet, COMPOUND_REWARDS, REWARD_TOKEN, account);
 
+        // A borrow this adapter cannot report must never leave the collateral legs standing alone: the position
+        // would count as pure credit and NAV be over-reported by the whole borrow. Registration only, NOT the
+        // assetFilter — a filtered view showing collateral while hiding an unreportable borrow over-reports the
+        // same way. Under-reporting the whole comet position is the safe direction.
+        if (d.baseNet < 0) {
+            (, bool baseRegistered) = _getAssetInfo(d.baseToken);
+            if (!baseRegistered) return new INAVCalculator.PositionBalance[](0);
+        }
+
         bytes memory pid = _instancePositionId(instance);
 
         INAVCalculator.PositionBalance[] memory temp =

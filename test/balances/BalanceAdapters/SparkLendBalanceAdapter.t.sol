@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.0;
 
+import {Mock_ERC20} from "test/mocks/tokens.sol";
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.sol";
 import {SparkLendBalanceAdapter} from "src/balances/BalanceAdapters/SparkLendBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -173,5 +174,40 @@ contract SparkLendBalanceAdapterTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(address(0), address(0));
 
         assertEq(positions.length, 0);
+    }
+
+    /// @dev SparkLend drops unregistered reserves from `active`, so a borrow on one would simply vanish while
+    ///      the registered supplies were still reported — counting the position as pure credit and
+    ///      over-reporting NAV by the whole borrow. The whole instance must report nothing instead.
+    ///      Exercises the scan fallback: the mock's pool address has no code, so the configuration bitmap is
+    ///      unavailable (and must not revert the read).
+    function test_unreportableDebt_suppressesWholeInstance() public {
+        Mock_ERC20 unregistered = new Mock_ERC20("XYZ", 18); // deliberately NOT registered
+        mockDataProvider.addReserve("WETH", address(weth));
+        mockDataProvider.addReserve("XYZ", address(unregistered));
+
+        mockDataProvider.setUserReserve(address(weth), alice, 5e18, 0, 0, true); // registered supply
+        mockDataProvider.setUserReserve(address(unregistered), alice, 0, 0, 100e18, false); // unreportable debt
+
+        assertEq(
+            adapter.getAdapterPositions(alice, address(0)).length,
+            0,
+            "supplies must not be reported without the unreportable debt"
+        );
+        assertEq(
+            adapter.getAdapterPositions(alice, address(weth)).length,
+            0,
+            "assetFilter must not resurrect the unoffset supply leg"
+        );
+    }
+
+    /// @dev The mirror case: with every borrowed reserve registered, the position reports normally.
+    function test_reportableDebt_stillReports() public {
+        mockDataProvider.addReserve("WETH", address(weth));
+        mockDataProvider.addReserve("USDC", address(usdc));
+        mockDataProvider.setUserReserve(address(weth), alice, 5e18, 0, 0, true);
+        mockDataProvider.setUserReserve(address(usdc), alice, 0, 0, 400e6, false);
+
+        assertEq(adapter.getAdapterPositions(alice, address(0)).length, 2, "supply + borrow both reported");
     }
 }

@@ -121,6 +121,13 @@ contract SparkLendBalanceAdapter is BalanceAdapterBase {
             regAddrs[i] = reg[i].asset;
         }
 
+        // A borrow this adapter cannot report must never leave the account's supplies standing alone: the
+        // position would count as pure credit and NAV be over-reported by the whole borrow. Unregistered
+        // reserves are dropped from `active` below, so without this an unregistered borrow simply vanishes.
+        // Checked independently of `assetFilter` — a filtered view showing a supply while hiding an
+        // unreportable borrow over-reports the same way.
+        if (_hasUnreportableDebt(account, regAddrs)) return new INAVCalculator.PositionBalance[](0);
+
         address[] memory active = ArrayLib.intersection(reserves, regAddrs);
         if (active.length == 0) return new INAVCalculator.PositionBalance[](0);
 
@@ -190,6 +197,48 @@ contract SparkLendBalanceAdapter is BalanceAdapterBase {
 
     // ─── Internal helpers ─────────────────────────────────────────────────────
 
+    /// @notice True iff the account borrows any reserve whose asset is NOT registered on the NAV, i.e. a debt
+    ///         this adapter would silently drop.
+    /// @dev Uses Aave's user-configuration bitmap (SparkLend is an Aave V3 fork): one call identifies exactly
+    ///      which reserves the account borrows, so only those are checked. Falls back to scanning every
+    ///      unregistered reserve's debt if the bitmap is unavailable.
+    function _hasUnreportableDebt(address account, address[] memory regAddrs) private view returns (bool) {
+        // `try` does NOT catch Solidity's "call to non-contract address" check — it runs in this frame, so a
+        // code-less pool would revert the whole read rather than fall back. Check explicitly first.
+        if (POOL.code.length == 0) return _hasUnreportableDebtByScanSpark(account, regAddrs);
+
+        try IAavePool(POOL).getUserConfiguration(account) returns (IAavePool.UserConfigurationMap memory cfg) {
+            if (cfg.data == 0) return false; // no supplies and no borrows
+            address[] memory list = IAavePool(POOL).getReservesList();
+            for (uint256 i; i < list.length; ++i) {
+                if (i * 2 >= 256) break; // the bitmap addresses at most 128 reserves
+                if (cfg.data & (1 << (i * 2)) == 0) continue; // not borrowing reserve i
+                if (!_contains(regAddrs, list[i])) return true;
+            }
+            return false;
+        } catch {
+            return _hasUnreportableDebtByScanSpark(account, regAddrs);
+        }
+    }
+
+    /// @notice Fallback for a pool without the configuration bitmap: check every unregistered reserve for debt.
+    function _hasUnreportableDebtByScanSpark(address account, address[] memory regAddrs) private view returns (bool) {
+        address[] memory all = _reserveAddresses();
+        for (uint256 i; i < all.length; ++i) {
+            if (_contains(regAddrs, all[i])) continue; // reportable, cannot be silently dropped
+            (, uint256 debt,) = _reserveData(account, all[i]);
+            if (debt > 0) return true;
+        }
+        return false;
+    }
+
+    function _contains(address[] memory xs, address x) private pure returns (bool) {
+        for (uint256 i; i < xs.length; ++i) {
+            if (xs[i] == x) return true;
+        }
+        return false;
+    }
+
     function _reserveAddresses() internal view returns (address[] memory addrs) {
         IProtocolDataProvider.TokenData[] memory tokens = DATA_PROVIDER.getAllReservesTokens();
         addrs = new address[](tokens.length);
@@ -232,6 +281,16 @@ contract SparkLendBalanceAdapter is BalanceAdapterBase {
 }
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
+
+interface IAavePool {
+    /// @notice Aave's per-user reserve bitmap: bit 2*i = borrowing reserve i, bit 2*i+1 = using it as collateral.
+    struct UserConfigurationMap {
+        uint256 data;
+    }
+
+    function getUserConfiguration(address user) external view returns (UserConfigurationMap memory);
+    function getReservesList() external view returns (address[] memory);
+}
 
 interface IProtocolDataProvider {
     struct TokenData {

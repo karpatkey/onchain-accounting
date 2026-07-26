@@ -71,6 +71,15 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](2);
         uint256 count;
 
+        // A debt this adapter cannot report must never leave its collateral standing alone: the position would
+        // be counted as pure credit and NAV over-reported by the whole borrow. Registration is checked WITHOUT
+        // the assetFilter — a filtered view showing the collateral while hiding an unreportable debt
+        // over-reports exactly the same way. Under-reporting the whole position is the safe direction.
+        if (debt > 0) {
+            (, bool debtRegistered) = _getAssetInfo(debtToken);
+            if (!debtRegistered) return new INAVCalculator.PositionBalance[](0);
+        }
+
         if (collateral > 0) {
             (INAVCalculator.Asset memory a, bool ok) = _eligible(collToken, assetFilter);
             if (ok) {

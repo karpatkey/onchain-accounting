@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.sol";
+import {Mock_ERC20} from "test/mocks/tokens.sol";
 import {
     AaveV3InstancesMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/AaveV3InstancesMetaBalanceAdapter.sol";
@@ -30,6 +31,37 @@ contract MockAaveAddressesProvider {
     function getMarketId() external view returns (string memory) {
         return _marketId;
     }
+}
+
+/// @notice Minimal Aave Pool mock exposing the user-configuration bitmap the debt pre-pass uses.
+contract MockAavePool {
+    uint256 public cfgData;
+    address[] private _list;
+
+    function setUserConfig(uint256 data) external {
+        cfgData = data;
+    }
+
+    function setReservesList(address[] memory list) external {
+        _list = list;
+    }
+
+    /// @dev Bit 2*i marks "borrowing reserve i"; helper to set it for a reserve index.
+    function setBorrowing(uint256 reserveIndex) external {
+        cfgData |= (1 << (reserveIndex * 2));
+    }
+
+    function getUserConfiguration(address) external view returns (MockUserConfigurationMap memory) {
+        return MockUserConfigurationMap({data: cfgData});
+    }
+
+    function getReservesList() external view returns (address[] memory) {
+        return _list;
+    }
+}
+
+struct MockUserConfigurationMap {
+    uint256 data;
 }
 
 /// @notice Minimal Aave ProtocolDataProvider mock: reserves list, per-user reserve data, ADDRESSES_PROVIDER.
@@ -86,14 +118,20 @@ contract AaveV3InstancesMetaUnitTest is BalanceAdapterTestBase {
     AaveV3InstancesMetaBalanceAdapter public adapter;
     MockAaveDataProvider public dp;
     MockAaveAddressesProvider public addrProvider;
-    address public constant pool = 0x1111111111111111111111111111111111111111;
+    address public constant codelessPool = 0x1111111111111111111111111111111111111111;
+    MockAavePool public pool;
 
     function setUp() public override {
         super.setUp(); // registers usdc, dai, weth on `balances`
-        addrProvider = new MockAaveAddressesProvider(pool, "Aave V3 Test Instance");
+        pool = new MockAavePool();
+        addrProvider = new MockAaveAddressesProvider(address(pool), "Aave V3 Test Instance");
         dp = new MockAaveDataProvider(address(addrProvider));
         dp.addReserve("USDC", address(usdc));
         dp.addReserve("WETH", address(weth));
+        address[] memory list = new address[](2);
+        list[0] = address(usdc);
+        list[1] = address(weth);
+        pool.setReservesList(list);
         adapter = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(balances));
     }
 
@@ -180,5 +218,69 @@ contract AaveV3InstancesMetaUnitTest is BalanceAdapterTestBase {
         assertEq(assets.length, 2);
         assertEq(assets[0], address(usdc));
         assertEq(assets[1], address(weth));
+    }
+
+    //
+    // Unreportable debt must never leave supplies standing alone (over-report)
+    //
+
+    /// @dev Bitmap path: the account borrows a reserve whose asset is NOT registered, so the adapter cannot
+    ///      emit that debt leg. Reporting the registered supply alone would count the position as pure credit
+    ///      and over-report NAV by the whole borrow, so the entire instance must report nothing.
+    function test_unreportableDebt_viaBitmap_suppressesInstance() public {
+        Mock_ERC20 unregistered = new Mock_ERC20("XYZ", 18); // deliberately NOT registered
+        dp.addReserve("XYZ", address(unregistered));
+        address[] memory list = new address[](3);
+        list[0] = address(usdc);
+        list[1] = address(weth);
+        list[2] = address(unregistered);
+        pool.setReservesList(list);
+
+        dp.setUserData(alice, address(weth), 5e18, 0, true); // registered supply
+        dp.setUserData(alice, address(unregistered), 0, 100e18, false); // unreportable debt
+        pool.setBorrowing(2); // reserve index 2 == the unregistered token
+
+        assertEq(
+            adapter.getAdapterPositionsForInstances(alice, _ids(), address(0)).length,
+            0,
+            "supplies must not be reported without the unreportable debt"
+        );
+        assertEq(
+            adapter.getAdapterPositionsForInstances(alice, _ids(), address(weth)).length,
+            0,
+            "assetFilter must not resurrect the unoffset supply leg"
+        );
+    }
+
+    /// @dev The mirror case: a borrow on a REGISTERED reserve is reportable, so the position is emitted
+    ///      normally. Without this, the pre-pass could suppress everything and the suite would not notice.
+    function test_reportableDebt_viaBitmap_stillReports() public {
+        dp.setUserData(alice, address(weth), 5e18, 0, true);
+        dp.setUserData(alice, address(usdc), 0, 400e6, false);
+        pool.setBorrowing(0); // reserve index 0 == USDC, registered
+
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositionsForInstances(alice, _ids(), address(0));
+        assertEq(p.length, 2, "registered supply + registered borrow both reported");
+    }
+
+    /// @dev Fallback path: a pool without the bitmap (here, no code at all) must still detect the unreportable
+    ///      debt by scanning reserves — and must not revert, which it did before the explicit code check
+    ///      (Solidity's non-contract-call check fires in the caller frame and `try` cannot catch it).
+    function test_unreportableDebt_viaScanFallback_suppressesInstance() public {
+        MockAaveAddressesProvider ap2 = new MockAaveAddressesProvider(codelessPool, "codeless");
+        MockAaveDataProvider dp2 = new MockAaveDataProvider(address(ap2));
+        dp2.addReserve("WETH", address(weth));
+        Mock_ERC20 unregistered = new Mock_ERC20("XYZ", 18);
+        dp2.addReserve("XYZ", address(unregistered));
+        dp2.setUserData(alice, address(weth), 5e18, 0, true);
+        dp2.setUserData(alice, address(unregistered), 0, 100e18, false);
+
+        bytes32[] memory ids = new bytes32[](1);
+        ids[0] = bytes32(uint256(uint160(address(dp2))));
+        assertEq(
+            adapter.getAdapterPositionsForInstances(alice, ids, address(0)).length,
+            0,
+            "scan fallback must suppress, not revert"
+        );
     }
 }

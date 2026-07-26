@@ -5,7 +5,7 @@ import {MetaBalanceAdapter} from "../MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
-import {IProtocolDataProvider} from "../BalanceAdapters/SparkLendBalanceAdapter.sol";
+import {IProtocolDataProvider, IAavePool} from "../BalanceAdapters/SparkLendBalanceAdapter.sol";
 
 /// @notice Minimal views to derive an instance's identity on-chain from its ProtocolDataProvider.
 interface IAaveAddressesProviderSource {
@@ -62,6 +62,15 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
         // positionId is the instance Pool — one position per instance. The reserve is NOT in positionId; each
         // reserve's legs are distinguished by balanceAsset + positionKind (multi-leg convention).
         bytes memory pid = abi.encode(pool);
+
+        // A borrow this adapter cannot report must never leave the account's supplies standing alone: the
+        // position would count as pure credit and NAV be over-reported by the whole borrow. Checked across ALL
+        // reserves and independently of `assetFilter` — a filtered view showing a supply while hiding an
+        // unreportable borrow over-reports the same way. Under-reporting the whole instance is the safe
+        // direction.
+        if (_hasUnreportableDebt(dp, pool, account)) {
+            return new INAVCalculator.PositionBalance[](0);
+        }
 
         IProtocolDataProvider.TokenData[] memory reserves = dp.getAllReservesTokens();
         // up to 2 legs per reserve: supply/collateral + one Borrow (variable + stable summed)
@@ -156,6 +165,46 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
 
     /// @notice Resolves the instance's Pool address (encoded as the instance's positionId).
     /// @dev V3's PoolAddressesProvider resolves the pool via `getPool()`.
+    /// @notice True iff the account borrows any reserve whose asset is NOT registered on the NAV, i.e. a debt
+    ///         this adapter would silently drop.
+    /// @dev Uses Aave's user-configuration bitmap: one call identifies exactly which reserves the account
+    ///      borrows, so the registry check touches only those. Scanning every reserve's `getUserReserveData`
+    ///      instead would cost one call per reserve (67 on mainnet today) on every read, including the
+    ///      single-asset filtered path. Falls back to that scan only if the bitmap is unavailable (an older
+    ///      pool, or a fork that does not implement it).
+    function _hasUnreportableDebt(IProtocolDataProvider dp, address pool, address account) private view returns (bool) {
+        // `try` does NOT catch Solidity's "call to non-contract address" check — it runs in this frame, so a
+        // code-less pool would revert the whole read rather than fall back. Check explicitly first.
+        if (pool.code.length == 0) return _hasUnreportableDebtByScan(dp, account);
+
+        try IAavePool(pool).getUserConfiguration(account) returns (IAavePool.UserConfigurationMap memory cfg) {
+            if (cfg.data == 0) return false; // no supplies and no borrows
+            address[] memory list = IAavePool(pool).getReservesList();
+            for (uint256 i = 0; i < list.length; i++) {
+                if (i * 2 >= 256) break; // the bitmap addresses at most 128 reserves
+                if (cfg.data & (1 << (i * 2)) == 0) continue; // not borrowing reserve i
+                (, bool found) = _getAssetInfo(list[i]);
+                if (!found) return true;
+            }
+            return false;
+        } catch {
+            return _hasUnreportableDebtByScan(dp, account);
+        }
+    }
+
+    /// @notice Fallback for a pool without the configuration bitmap: check every unregistered reserve for debt.
+    function _hasUnreportableDebtByScan(IProtocolDataProvider dp, address account) private view returns (bool) {
+        IProtocolDataProvider.TokenData[] memory reserves = dp.getAllReservesTokens();
+        for (uint256 i = 0; i < reserves.length; i++) {
+            address asset = reserves[i].tokenAddress;
+            (, bool found) = _getAssetInfo(asset);
+            if (found) continue; // reportable, so it cannot be silently dropped
+            (, uint256 stableDebt, uint256 variableDebt,,,,,,) = dp.getUserReserveData(asset, account);
+            if (stableDebt + variableDebt > 0) return true;
+        }
+        return false;
+    }
+
     function _poolOf(IProtocolDataProvider dp) internal view returns (address) {
         return IAavePoolAddressesProvider(IAaveAddressesProviderSource(address(dp)).ADDRESSES_PROVIDER()).getPool();
     }

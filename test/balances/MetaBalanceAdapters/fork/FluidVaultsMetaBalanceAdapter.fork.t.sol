@@ -11,6 +11,8 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 ///         (parity over getAdapterPositions). Both adapters share one BalancesHarnessForFork.
 contract FluidVaultsMetaParityForkTest is BalanceAdapterTestBase {
     address public constant VAULT = 0x51197586F6A9e2571868b6ffaef308f3bdfEd3aE; // wstETH/USDC
+    address public constant VAULT_B = 0x4045720a33193b4Fe66c94DFbc8D37B0b4D9B469; // sUSDe/USDC (configured)
+    address public constant SMART_VAULT = 0xe0E722E9daF03b468a05Aca6cCE8D2e9F91D1e6D; // T3 (type 30000)
     address public constant VAULT_RESOLVER = 0xA5C3E16523eeeDDcC34706b0E6bE88b4c6EA95cC;
     address public constant WSTETH = 0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0;
     address public constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
@@ -66,5 +68,35 @@ contract FluidVaultsMetaParityForkTest is BalanceAdapterTestBase {
         assertEq(a.length, 2);
         assertEq(a[0], WSTETH, "collateral token");
         assertEq(a[1], USDC, "debt token");
+    }
+
+    /// @notice Two real configured vaults must be distinguishable by their final label element — the whole
+    ///         point of the change (both previously returned just ["Vault"]).
+    function test_positionLabels_realVaults_haveDistinctLeaves() public view {
+        string[] memory a = meta.positionLabels(abi.encode(VAULT));
+        string[] memory b = meta.positionLabels(abi.encode(VAULT_B));
+
+        assertEq(a.length, 2, "wstETH/USDC vault: expected [category, leaf]");
+        assertEq(b.length, 2, "sUSDe/USDC vault: expected [category, leaf]");
+        assertEq(a[0], "Vault");
+        assertEq(a[1], "wstETH/USDC");
+        assertEq(b[1], "sUSDe/USDC");
+        assertTrue(
+            keccak256(bytes(a[a.length - 1])) != keccak256(bytes(b[b.length - 1])),
+            "two configured vaults share a final label element"
+        );
+    }
+
+    /// @notice A real Smart (T3) vault is rejected by the resolver type gate rather than silently decoded with
+    ///         the T1 layout — which succeeds on-chain and yields two non-token addresses.
+    function test_smartVault_isGated() public view {
+        bytes32[] memory ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(SMART_VAULT)));
+
+        assertEq(meta.getAdapterPositionsForInstances(user, ins, address(0)).length, 0, "no legs for a T3 vault");
+
+        string[] memory l = meta.positionLabels(abi.encode(SMART_VAULT));
+        assertEq(l.length, 1, "smart vault collapses to the category-only label");
+        assertEq(l[0], "Vault");
     }
 }

@@ -25,6 +25,9 @@ interface IFluidVaultT1 {
 
 /// @notice Minimal Fluid VaultResolver interface — only the views the adapter calls at runtime.
 interface IFluidVaultResolver {
+    /// @notice Vault variant: 10000 = T1, 20000/30000/40000 = the Smart (T2/T3/T4) vaults.
+    function getVaultType(address vault) external view returns (uint256 vaultType);
+
     /// @notice All NFT IDs owned by `user` across every Fluid vault.
     function positionsNftIdOfUser(address user) external view returns (uint256[] memory nftIds);
 
@@ -60,10 +63,33 @@ interface IFluidVaultResolver {
 ///      call). Mirrors the per-vault adapter leg-for-leg (parity fork-tested). Only T1 vaults are supported —
 ///      Smart vaults (T2/T3/T4) have a different `constantsView` layout and must not be configured.
 library FluidVaultLib {
+    /// @notice Fluid's vault-variant discriminator for a T1 vault (Smart vaults return 20000/30000/40000).
+    uint256 internal constant VAULT_TYPE_T1 = 10000;
+
     /// @notice Reads a T1 vault's `(collateral, debt)` tokens from its `constantsView()`.
-    function tokens(address vault) internal view returns (address collateral, address debt) {
+    /// @dev Gated on the resolver's `getVaultType` because the T1 `ConstantViews` decode is NOT self-checking:
+    ///      a Smart vault returns a longer (18-word) struct whose first 13 words decode WITHOUT reverting,
+    ///      yielding two non-token addresses in the supply/borrow slots. Verified on mainnet — decoding the T3
+    ///      vault 0xe0E722E9… as T1 succeeds and produces 0xB6FF36e7…/0x4EC7b668…, neither of which is a token.
+    ///      Returning zeros for a non-T1 vault makes a mis-configured instance report nothing (its assets fail
+    ///      the registry lookup) instead of reporting positions against garbage addresses.
+    /// @param vault The vault to read.
+    /// @param resolver The Fluid VaultResolver, used for the type check.
+    /// @return collateral Supply token, or `address(0)` if `vault` is not a T1 vault.
+    /// @return debt Borrow token, or `address(0)` if `vault` is not a T1 vault.
+    function tokens(address vault, address resolver) internal view returns (address collateral, address debt) {
+        if (!isT1(vault, resolver)) return (address(0), address(0));
         IFluidVaultT1.ConstantViews memory cv = IFluidVaultT1(vault).constantsView();
         return (cv.supplyToken, cv.borrowToken);
+    }
+
+    /// @notice True iff the resolver reports `vault` as a T1 vault. Fails closed: an unreadable or unknown vault
+    ///         (resolver revert, unexpected return shape) is treated as not-T1.
+    function isT1(address vault, address resolver) internal view returns (bool) {
+        (bool ok, bytes memory ret) =
+            resolver.staticcall(abi.encodeWithSelector(IFluidVaultResolver.getVaultType.selector, vault));
+        if (!ok || ret.length < 32) return false;
+        return abi.decode(ret, (uint256)) == VAULT_TYPE_T1;
     }
 
     /// @notice Walks the account's Fluid NFTs through the resolver and sums collateral/debt for `vault`.

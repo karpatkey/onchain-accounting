@@ -31,12 +31,24 @@ contract MockFluidVaultResolver {
 
     mapping(address => uint256[]) private _userNftIds;
     mapping(uint256 => PosData) private _posByNftId;
+    mapping(address => uint256) private _vaultType;
 
     function pushNft(address user, uint256 nftId, address vault, uint256 supply, uint256 borrow, bool isLiquidated)
         external
     {
         _userNftIds[user].push(nftId);
         _posByNftId[nftId] = PosData({vault: vault, supply: supply, borrow: borrow, isLiquidated: isLiquidated});
+    }
+
+    /// @notice Stages a vault's variant. Unset vaults report T1 (10000) so existing tests need no wiring;
+    ///         set 20000/30000/40000 to stage a Smart vault.
+    function setVaultType(address vault, uint256 vaultType) external {
+        _vaultType[vault] = vaultType;
+    }
+
+    function getVaultType(address vault) external view returns (uint256) {
+        uint256 t = _vaultType[vault];
+        return t == 0 ? 10000 : t;
     }
 
     function positionsNftIdOfUser(address user) external view returns (uint256[] memory) {

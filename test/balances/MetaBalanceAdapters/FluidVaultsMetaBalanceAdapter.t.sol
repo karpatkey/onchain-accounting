@@ -140,4 +140,67 @@ contract FluidVaultsMetaBalanceAdapterTest is Test {
         assertEq(a[2], address(weeth));
         assertEq(a[3], address(wsteth));
     }
+
+    //
+    // Labels
+    //
+
+    /// @dev The property the whole change exists for: two instances of the SAME adapter must be
+    ///      distinguishable by their final label element. Previously both returned just ["Vault"].
+    function test_positionLabels_distinctLeafPerInstance() public view {
+        string[] memory a = meta.positionLabels(abi.encode(address(vaultA)));
+        string[] memory b = meta.positionLabels(abi.encode(address(vaultB)));
+
+        assertEq(a.length, 2, "vaultA: expected [category, leaf]");
+        assertEq(b.length, 2, "vaultB: expected [category, leaf]");
+        assertEq(a[0], "Vault");
+        assertEq(b[0], "Vault");
+        assertEq(a[1], "wstETH/USDC");
+        assertEq(b[1], "weETH/wstETH");
+        assertTrue(
+            keccak256(bytes(a[a.length - 1])) != keccak256(bytes(b[b.length - 1])),
+            "two instances share a final label element"
+        );
+    }
+
+    /// @dev A Smart (T2/T3/T4) vault must not produce a label: its `constantsView` decodes without reverting
+    ///      under the T1 layout and would otherwise yield a pair of non-token addresses.
+    function test_positionLabels_smartVault_collapsesToCategory() public {
+        resolver.setVaultType(address(vaultA), 30000);
+        string[] memory a = meta.positionLabels(abi.encode(address(vaultA)));
+        assertEq(a.length, 1, "smart vault must collapse to the category-only label");
+        assertEq(a[0], "Vault");
+    }
+
+    /// @dev The safety property behind the type gate: a mis-configured Smart vault under-reports (no legs)
+    ///      rather than reporting positions against the garbage addresses the T1 decode would produce.
+    function test_smartVault_reportsNoPositions() public {
+        resolver.setVaultType(address(vaultA), 40000);
+        bytes32[] memory ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(address(vaultA))));
+
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, ins, address(0));
+        assertEq(p.length, 0, "smart vault must report nothing");
+
+        // Both sides read back as address(0), so the pair collapses to a single, unregisterable entry.
+        address[] memory a = meta.underlyingAssetsSupportedForInstances(ins);
+        assertEq(a.length, 1, "smart vault assets collapse to one zero address");
+        assertEq(a[0], address(0));
+    }
+
+    /// @dev A vault side that is not a registered asset still labels via a direct ERC20 `symbol()` read.
+    function test_positionLabels_unregisteredToken_usesErc20Symbol() public {
+        MockToken unregistered = new MockToken("PAXG", 18);
+        MockFluidVaultT1 vaultC = new MockFluidVaultT1();
+        vaultC.setTokens(address(unregistered), address(usdc));
+
+        string[] memory c = meta.positionLabels(abi.encode(address(vaultC)));
+        assertEq(c.length, 2);
+        assertEq(c[1], "PAXG/USDC");
+    }
+
+    /// @dev Short positionId is rejected before any decode, as for every other meta-adapter.
+    function test_positionLabels_shortPositionId_returnsEmpty() public view {
+        assertEq(meta.positionLabels(hex"1234").length, 0);
+    }
 }

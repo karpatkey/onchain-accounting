@@ -7,6 +7,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {FluidVaultLib} from "src/balances/MetaBalanceAdapters/FluidVaultLib.sol";
+import {LabelLib} from "src/balances/LabelLib.sol";
 
 /// @title Fluid Vaults Meta Balance Adapter
 /// @author KPK
@@ -42,7 +43,7 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
         returns (INAVCalculator.PositionBalance[] memory)
     {
         address vault = _toAddress(instance);
-        (address collToken, address debtToken) = FluidVaultLib.tokens(vault);
+        (address collToken, address debtToken) = FluidVaultLib.tokens(vault, VAULT_RESOLVER);
         (uint256 collateral, uint256 debt) = FluidVaultLib.aggregate(vault, VAULT_RESOLVER, account);
 
         bytes memory pid = _instancePositionId(instance);
@@ -70,7 +71,7 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
 
     /// @inheritdoc MetaBalanceAdapter
     function _instanceAssets(bytes32 instance) internal view override returns (address[] memory assets) {
-        (address collToken, address debtToken) = FluidVaultLib.tokens(_toAddress(instance));
+        (address collToken, address debtToken) = FluidVaultLib.tokens(_toAddress(instance), VAULT_RESOLVER);
         if (collToken == debtToken) {
             assets = new address[](1);
             assets[0] = collToken;
@@ -82,10 +83,41 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev Returns `["Vault", <leaf>]` where the leaf is the vault's ERC20 name ("" if unreadable). Returns an
-    ///      empty array for a short positionId.
+    /// @dev Returns `["Vault", "<collateral>/<debt>"]` — e.g. `["Vault", "wstETH/USDC"]` — mirroring the
+    ///      Morpho markets adapter, since a Fluid vault is likewise identified by its isolated token pair. A
+    ///      Fluid vault is NOT an ERC20 (`name()`/`symbol()` revert), so the pair is the only on-chain
+    ///      distinguishing property. Leaf is "" (collapsing to `["Vault"]`) for a non-T1 or unreadable vault.
+    ///      Returns an empty array for a short positionId.
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
-        return _addressLabels(pid, "Vault", false);
+        if (pid.length < 32) return new string[](0);
+        address vault = abi.decode(pid, (address));
+        // External self-call so a revert anywhere in the type-check/constantsView/symbol chain fails open to the
+        // category-only label — a faulty label must never revert the (verbose-only) labels read.
+        try this.vaultPairSymbols(vault) returns (string memory leaf) {
+            return _labels("Vault", leaf);
+        } catch {
+            return _labels("Vault", "");
+        }
+    }
+
+    /// @notice External wrapper (enables `try/catch` isolation in `positionLabels`): the vault's
+    ///         "<collateral>/<debt>" token symbols.
+    /// @dev Prefers the NAV's registered-asset symbol, which already resolves `NATIVE_ADDRESS` to the chain's
+    ///      native symbol — several Fluid T1 vaults use the ERC-7528 native sentinel as one side, and it has no
+    ///      `symbol()` to call. Falls back to a direct ERC20 read for a token that is not registered.
+    /// @param vault The T1 vault address.
+    /// @return The pair label, or "" if the vault is not a readable T1 vault.
+    function vaultPairSymbols(address vault) external view returns (string memory) {
+        (address collToken, address debtToken) = FluidVaultLib.tokens(vault, VAULT_RESOLVER);
+        if (collToken == address(0) && debtToken == address(0)) return "";
+        return string.concat(_assetSymbol(collToken), "/", _assetSymbol(debtToken));
+    }
+
+    /// @notice Symbol for `token`: the NAV registry's (native-aware), else a direct ERC20 `symbol()`, else "".
+    function _assetSymbol(address token) internal view returns (string memory) {
+        (INAVCalculator.Asset memory info, bool found) = _getAssetInfo(token);
+        if (found && bytes(info.symbol).length > 0) return info.symbol;
+        return LabelLib.symbol(token, "");
     }
 
     /// @inheritdoc MetaBalanceAdapter

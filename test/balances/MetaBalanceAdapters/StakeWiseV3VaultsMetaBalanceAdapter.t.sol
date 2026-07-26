@@ -66,6 +66,37 @@ contract MockUnderlying {
     uint8 public decimals = 18;
 }
 
+/// @notice `name()` succeeds but returns ZERO bytes — the shape of an ERC-1967 proxy whose implementation slot
+///         points at a code-less address (the `delegatecall` succeeds and returns nothing).
+/// @dev Solidity's `try`/`catch` does NOT catch a return-data decode failure, so this shape reverts a naive
+///      `try IERC20MetaView(v).name()` reader. The adapter must still fail open.
+contract MockEmptyReturndataVault {
+    fallback() external {
+        assembly {
+            return(0, 0)
+        }
+    }
+}
+
+/// @notice `name()` succeeds but returns a `bytes32` instead of a `string` — MKR-style legacy metadata.
+contract MockBytes32NameVault {
+    function name() external pure returns (bytes32) {
+        return "Legacy";
+    }
+
+    function convertToAssets(uint256) external pure returns (uint256) {
+        return 0;
+    }
+
+    function getShares(address) external pure returns (uint256) {
+        return 0;
+    }
+
+    function osTokenPositions(address) external pure returns (uint256) {
+        return 0;
+    }
+}
+
 /// @title StakeWiseV3VaultsMetaBalanceAdapter unit tests (no fork)
 contract StakeWiseV3VaultsMetaBalanceAdapterTest is Test {
     using Strings for address;
@@ -230,6 +261,37 @@ contract StakeWiseV3VaultsMetaBalanceAdapterTest is Test {
         string[] memory l = meta.positionLabels(abi.encode(address(vaultA)));
         assertEq(l.length, 2);
         assertEq(l[1], address(vaultA).toHexString(), "symbol prefix dropped, address retained");
+    }
+
+    /// @notice A `name()` that SUCCEEDS but returns undecodable returndata must not revert this view.
+    /// @dev Regression guard. Solidity does not route a return-data decode failure into a `try`/`catch`, so reading
+    ///      the name through `LabelLib.name` (as an earlier revision of this adapter did) reverts here. Reverting
+    ///      `positionLabels` is worse than the blank leaf this PR set out to fix: NAVCalculator swallows it into an
+    ///      EMPTY label array, losing the category too. Fails if `_safeVaultName` is swapped back for `LabelLib.name`.
+    function test_positionLabels_emptyReturndataName_failsOpen() public {
+        address v = address(new MockEmptyReturndataVault());
+        string[] memory l = meta.positionLabels(abi.encode(v));
+        assertEq(l.length, 2, "must not revert on empty returndata");
+        assertEq(l[0], "Vault");
+        assertEq(l[1], string.concat("ETH ", v.toHexString()));
+    }
+
+    /// @notice A `bytes32`-returning `name()` (MKR-style) must not revert this view either.
+    function test_positionLabels_bytes32Name_failsOpen() public {
+        address v = address(new MockBytes32NameVault());
+        string[] memory l = meta.positionLabels(abi.encode(v));
+        assertEq(l.length, 2, "must not revert on a bytes32 name()");
+        assertEq(l[1], string.concat("ETH ", v.toHexString()));
+    }
+
+    /// @notice A 32-byte positionId with dirty upper bits must degrade, not revert.
+    /// @dev `abi.decode(pid, (address))` reverts on a non-zero high 96 bits; the adapter decodes a raw word and
+    ///      range-checks it instead. Fails if that guard is removed.
+    function test_positionLabels_dirtyUpperBits_failsOpen() public view {
+        bytes memory pid = abi.encodePacked(bytes32(type(uint256).max));
+        string[] memory l = meta.positionLabels(pid);
+        assertEq(l.length, 1, "malformed coordinate degrades to the category alone");
+        assertEq(l[0], "Vault");
     }
 
     /// @notice A positionId pointing at a code-less address must not revert this display-only view.

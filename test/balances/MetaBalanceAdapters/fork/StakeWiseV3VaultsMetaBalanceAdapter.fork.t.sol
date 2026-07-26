@@ -22,7 +22,7 @@ contract StakeWiseV3VaultsMetaParityForkTest is BalanceAdapterTestBase {
 
     /// @dev The two other configured Gnosis instances (see
     ///      `script/config/nav-config/meta-balance-adapters/100.json`). Both are `GnoVault` implementations, which
-    ///      are not ERC20s and whose `name()` reverts — they pin the category-only label branch.
+    ///      are not ERC20s and whose `name()` reverts — they pin the tier-2 symbol+address fallback branch.
     address public constant CONFIGURED_VAULT_2 = 0x00025C729A3364FaEf02c7D1F577068d87E90ba6;
     address public constant CONFIGURED_VAULT_3 = 0x2Cd404D9d75436e7d6dDbCcc2fB9cF7C06941BF1;
 

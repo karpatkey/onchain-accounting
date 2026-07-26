@@ -782,8 +782,8 @@ Scenario: 2 ETH staked, 0.5 ETH equivalent minted as osETH (debt).
 
 | asset | amount | value (USD) | positionKind | protocolName      | labels        |
 |-------|--------|-------------|--------------|-------------------|----------------------|
-| ETH   | 2.0    | +5 000      | `Staking`    | `"StakeWise V3"`  | `["Vault"]` |
-| ETH   | 0.5    | −1 250      | `Borrowed`   | `"StakeWise V3"`  | `["Vault"]` |
+| ETH   | 2.0    | +5 000      | `Staking`    | `"StakeWise V3"`  | `["Vault", "ETH 0xac0f906e…"]` |
+| ETH   | 0.5    | −1 250      | `Borrowed`   | `"StakeWise V3"`  | `["Vault", "ETH 0xac0f906e…"]` |
 | **NAV** | | **+3 750** | | | |
 
 The leaf is two-tier, both tiers read live and fail-open:

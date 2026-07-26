@@ -416,12 +416,12 @@ contract ConfigReaderTest is TestEnvConfigurator {
             ConfigReader.readAdapterParam(vm, 1, "deployBalanceAdapters", "MorphoBlue_USDC", "morpho");
         string memory marketId =
             ConfigReader.readAdapterParam(vm, 1, "deployBalanceAdapters", "MorphoBlue_USDC", "marketId");
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, 1, "deployBalanceAdapters", "MorphoBlue_USDC", "protocol");
+        string memory underlying =
+            ConfigReader.readAdapterParam(vm, 1, "deployBalanceAdapters", "MorphoBlue_USDC", "underlyingToken");
 
         assertEq(bytes(morpho).length, 0, "missing adapter param should return empty string");
         assertEq(bytes(marketId).length, 0, "missing adapter param should return empty string");
-        assertEq(bytes(protocol).length, 0, "missing adapter param should return empty string");
+        assertEq(bytes(underlying).length, 0, "missing adapter param should return empty string");
     }
 
     /// @notice All chains that carry config files (broader than `_supportedChainIds`, which is deployed-proxy chains).

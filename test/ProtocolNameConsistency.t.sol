@@ -192,7 +192,7 @@ contract ProtocolNameConsistencyTest is Test {
     }
 
     /// @notice The three `ProtocolIds.AAVE_V3` products — lending instances, Safety Module, Umbrella — must all
-    ///         report one name. Two are hardcoded, one takes it from the deploy resolver, so this spans both halves.
+    ///         report one name. Two hardcode it; the meta adapter derives it from `_protocolId()`. Spans both halves.
     function test_aaveV3Group_reportsOneProtocolName() public {
         string memory umbrella = new AaveUmbrellaBalanceAdapter(stub, address(nav)).protocolName();
         string memory safetyModule = new AaveV3SafetyModuleBalanceAdapter(address(nav)).protocolName();
@@ -211,7 +211,7 @@ contract ProtocolNameConsistencyTest is Test {
         assertEq(labels[0], "Umbrella Module", "product name must survive in positionLabels");
     }
 
-    /// @notice The two `ProtocolIds.STAKEWISE_V3` adapters — the vaults meta-adapter (constructor-arg name) and the
+    /// @notice The two `ProtocolIds.STAKEWISE_V3` adapters — the vaults meta-adapter (derived name) and the
     ///         exit-queue adapter (hardcoded name) — must agree.
     function test_stakeWiseV3Group_reportsOneProtocolName() public {
         string memory exitQueue =

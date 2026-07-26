@@ -104,7 +104,7 @@
   },
   "UniswapV3PoolsMeta": {
     "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every configured Uniswap V3 pool via on-chain NFT enumeration (NPM is ERC721Enumerable). Reverts the interim assisted UniswapV3PoolsAssisted. NonfungiblePositionManager pinned in the constructor; the active pool set lives on NAVCalculator (nav-config instances). 04 reads positionManager/protocol.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every configured Uniswap V3 pool via on-chain NFT enumeration (NPM is ERC721Enumerable). Reverts the interim assisted UniswapV3PoolsAssisted. NonfungiblePositionManager pinned in the constructor; the active pool set lives on NAVCalculator (nav-config instances). 04 reads positionManager (the display name is derived from _protocolId(), not configured).",
     "constructor": {
       "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88"
     }

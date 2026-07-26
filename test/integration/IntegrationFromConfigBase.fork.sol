@@ -9,10 +9,8 @@ import {stdJson} from "forge-std/StdJson.sol";
 
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {ConfigReader} from "script/utils/ConfigReader.sol";
-// Meta adapters' `protocolName_` comes from the SAME resolver `04_DeployBalanceAdapters` uses. This harness mirrors
-// the deploy script, so sourcing the display name from the chain JSON here while `04` resolves it from
-// `ProtocolNames` would give the two paths different sources of truth for one constructor argument — and the
-// divergence would surface only as a blank/stale `protocolName` in the nav-positions snapshot.
+// NOTE: meta adapters take no display-name argument — `MetaBalanceAdapter.protocolName()` derives it from
+// `_protocolId()`. This harness mirrors `04_DeployBalanceAdapters`, and both construct them with addresses only.
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";

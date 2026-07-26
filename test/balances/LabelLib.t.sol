@@ -97,18 +97,26 @@ contract RawEnvelopeToken {
     }
 }
 
-/// @notice Consumes every unit of gas forwarded to it.
-/// @dev NOT via the loop — `sink = i` is an `SSTORE` inside a `STATICCALL`, so the callee aborts on its FIRST store.
-///      That abort is a write-protection violation, i.e. an exceptional halt, and an exceptional halt consumes ALL gas
-///      forwarded to the frame. So this fixture exercises the stipend by a different mechanism than a naive reading
-///      suggests: uncapped it eats the caller's entire budget, capped it eats exactly {METADATA_READ_GAS}.
+/// @notice Burns gas by pure COMPUTATION until out-of-gas — runs happily under `STATICCALL`.
+/// @dev Deliberately computation-only. An earlier version looped on `sink = i`, but an `SSTORE` inside a `STATICCALL`
+///      is a write-protection violation, so the callee aborted on its FIRST store and never executed the loop. That
+///      still consumed all forwarded gas (an exceptional halt does), so the assertion held — but by a different
+///      mechanism than the fixture claimed, and it left the actual run-until-OOG path untested. See
+///      {WriteProtectionToken} for the abort shape, kept separately because it is a real and distinct token behaviour.
 contract GasBurnerToken {
+    fallback() external {
+        assembly {
+            for {} 1 {} { mstore(0x00, keccak256(0x00, 0x20)) }
+        }
+    }
+}
+
+/// @notice Attempts a state write inside the (static) metadata call — an exceptional halt that eats all forwarded gas.
+contract WriteProtectionToken {
     uint256 public sink;
 
     fallback() external {
-        for (uint256 i = 0; true; ++i) {
-            sink = i;
-        }
+        sink = 1;
     }
 }
 
@@ -265,8 +273,21 @@ contract LabelLibTest is Test {
         assertEq(h.readName(tooLong, "?"), "?", "257 bytes rejected");
     }
 
-    /// @notice A gas-burning metadata call must be bounded by the stipend, not consume the caller's budget.
-    /// @dev Fails without `staticcall{gas: METADATA_READ_GAS}`.
+    /// @notice A write-protection abort consumes everything forwarded, so the stipend must bound it too.
+    function test_writeProtectionAbort_boundedAndReturnsFallback() public {
+        address t = address(new WriteProtectionToken());
+        uint256 before = gasleft();
+        (bool ok, string memory n) = _tryName(t, "?");
+        uint256 used = before - gasleft();
+
+        assertTrue(ok, "must not revert when the callee aborts on a state write");
+        assertEq(n, "?");
+        assertLt(used, 400_000, "a write-protection abort must stay bounded by the stipend");
+    }
+
+    /// @notice A metadata call that burns gas by computation until OOG must be bounded by the stipend.
+    /// @dev Fails without `staticcall{gas: METADATA_READ_GAS}` — this is the run-until-OOG path, which a storage-write
+    ///      burner never reaches under `STATICCALL`.
     function test_gasBurner_boundedAndReturnsFallback() public {
         address t = address(new GasBurnerToken());
         uint256 before = gasleft();

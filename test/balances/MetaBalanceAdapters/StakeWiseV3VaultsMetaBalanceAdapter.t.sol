@@ -100,16 +100,14 @@ contract MockRawNameVault {
     }
 }
 
-/// @notice Consumes every unit of gas forwarded to it — the griefing shape the stipend bounds.
-/// @dev NOT via the loop: `sink = i` is an `SSTORE` inside a `STATICCALL`, so the callee aborts on its FIRST store.
-///      A write-protection violation is an exceptional halt, and an exceptional halt consumes ALL gas forwarded to the
-///      frame — which is why this burns the caller's whole budget when uncapped and exactly the stipend when capped.
+/// @notice Burns gas by pure COMPUTATION until out-of-gas — the griefing shape the stipend bounds.
+/// @dev Computation-only on purpose: an `SSTORE` inside a `STATICCALL` is a write-protection violation, so a
+///      storage-writing burner aborts on its first store and never reaches the loop. Both shapes consume all gas
+///      forwarded to the frame, but only this one exercises the run-until-OOG path.
 contract MockGasBurnerVault {
-    uint256 public sink;
-
     fallback() external {
-        for (uint256 i = 0; true; ++i) {
-            sink = i;
+        assembly {
+            for {} 1 {} { mstore(0x00, keccak256(0x00, 0x20)) }
         }
     }
 }

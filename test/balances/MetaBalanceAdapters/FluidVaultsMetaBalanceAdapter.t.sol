@@ -182,10 +182,8 @@ contract FluidVaultsMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, ins, address(0));
         assertEq(p.length, 0, "smart vault must report nothing");
 
-        // Both sides read back as address(0), so the pair collapses to a single, unregisterable entry.
-        address[] memory a = meta.underlyingAssetsSupportedForInstances(ins);
-        assertEq(a.length, 1, "smart vault assets collapse to one zero address");
-        assertEq(a[0], address(0));
+        // A gated vault reports no underlying assets at all, rather than a meaningless zero address.
+        assertEq(meta.underlyingAssetsSupportedForInstances(ins).length, 0, "smart vault exposes no assets");
     }
 
     /// @dev A vault side that is not a registered asset still labels via a direct ERC20 `symbol()` read.

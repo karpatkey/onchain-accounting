@@ -44,6 +44,11 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     {
         address vault = _toAddress(instance);
         (address collToken, address debtToken) = FluidVaultLib.tokens(vault, VAULT_RESOLVER);
+        // Gated (non-T1) vault: no leg can be emitted without tokens, so skip `aggregate`'s scan of every
+        // Fluid NFT the account holds.
+        if (collToken == address(0) && debtToken == address(0)) {
+            return new INAVCalculator.PositionBalance[](0);
+        }
         (uint256 collateral, uint256 debt) = FluidVaultLib.aggregate(vault, VAULT_RESOLVER, account);
 
         bytes memory pid = _instancePositionId(instance);
@@ -72,6 +77,10 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @inheritdoc MetaBalanceAdapter
     function _instanceAssets(bytes32 instance) internal view override returns (address[] memory assets) {
         (address collToken, address debtToken) = FluidVaultLib.tokens(_toAddress(instance), VAULT_RESOLVER);
+        // Gated (non-T1) vault: report no underlying assets rather than a meaningless zero address.
+        if (collToken == address(0) && debtToken == address(0)) {
+            return new address[](0);
+        }
         if (collToken == debtToken) {
             assets = new address[](1);
             assets[0] = collToken;

@@ -13,6 +13,7 @@ import {ERC4626RedeemLib} from "src/balances/ERC4626RedeemLib.sol";
 import "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
+import {ProtocolNames} from "src/utils/ProtocolNames.sol";
 
 /// @title Aave Umbrella Balance Adapter (multi-token, dynamic discovery)
 /// @author KPK
@@ -100,10 +101,20 @@ contract AaveUmbrellaBalanceAdapter is BalanceAdapterBase {
     // IERC165
     //
 
+    /// @inheritdoc IPositionDescribable
+    /// @dev Names the PROTOCOL, not the product: Umbrella is one of Aave V3's three products in this repo
+    ///      (lending instances, Safety Module, Umbrella), all sharing `ProtocolIds.AAVE_V3`, so all three report
+    ///      "Aave V3". The product is carried by `positionLabels()` (`["Umbrella Module"]`) and by the typed
+    ///      `protocolSubId` (`AAVE_V3_UMBRELLA`). Returning "Aave Umbrella" here — as this adapter did before —
+    ///      made consumers that group configured adapters by display name list Umbrella as a peer protocol of
+    ///      Aave V3 rather than one of its products. See `src/utils/ProtocolNames.sol`.
     function protocolName() external pure returns (string memory) {
-        return "Aave Umbrella";
+        return ProtocolNames.AAVE_V3;
     }
 
+    /// @inheritdoc IPositionDescribable
+    /// @dev Single-segment breadcrumb: the category IS the leaf. Rendered as `["Aave V3", "Umbrella Module"]`
+    ///      alongside `protocolName()`.
     function positionLabels(bytes calldata) external pure override returns (string[] memory) {
         string[] memory out = new string[](1);
         out[0] = "Umbrella Module";

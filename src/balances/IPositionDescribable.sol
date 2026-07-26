@@ -13,9 +13,25 @@ pragma solidity ^0.8;
 ///      `protocolSubId` / `positionId` / `PositionKind` fields on `PositionBalance` for those purposes.
 /// @author KPK
 interface IPositionDescribable {
-    /// @notice Human-readable protocol name, e.g. "Aave V3", "Morpho", "Uniswap V3".
-    /// @dev Per-instance adapters return a compile-time constant. Meta-adapters return a constant too
-    ///      (the protocol name is the same regardless of which instance is being described).
+    /// @notice Human-readable name of the PROTOCOL, e.g. "Aave V3", "Morpho", "Uniswap V3".
+    /// @dev **This names the protocol, never the product.** A protocol's individual products — Aave V3's Safety
+    ///      Module and Umbrella, Morpho's vaults and markets, Balancer's pools and gauges — all return the SAME
+    ///      string here; what distinguishes them is `positionLabels()` (`["Umbrella Module"]`, `["Safety Module"]`,
+    ///      `["Market", "wstETH/USDC"]`) and the typed `protocolSubId`. Equivalently: every adapter sharing a
+    ///      `ProtocolIds` protocol id MUST return the same name. Pull it from `src/utils/ProtocolNames.sol` rather
+    ///      than writing a literal; `test/ProtocolNameConsistency.t.sol` asserts the invariant.
+    ///
+    ///      Why the distinction is load-bearing rather than cosmetic: consumers group *configured adapters* by this
+    ///      string. The typed `protocolBrand`/`protocolId`/`protocolSubId` would group them correctly, but they are
+    ///      `private constant` and only ride on `PositionBalance` structs returned by an **account** read — a
+    ///      consumer enumerating registered adapters never sees them, so the display name is the only protocol
+    ///      identity it has. An adapter that returns its product name here splits itself out into a phantom sibling
+    ///      protocol (`AaveUmbrellaBalanceAdapter` returned "Aave Umbrella" and did exactly that).
+    ///
+    ///      Per-instance adapters return a compile-time constant. Meta-adapters return a constant too (the protocol
+    ///      name is the same regardless of which instance is being described), but supplied as a constructor
+    ///      argument — so for those the value is fixed at DEPLOY time and is not visible in `src/` at all. The
+    ///      deploy layer resolves it from the same constants via `script/utils/ProtocolNameResolver.sol`.
     function protocolName() external view returns (string memory);
 
     /// @notice Ordered, arbitrary-depth display hierarchy for a single position, BELOW the protocol level.

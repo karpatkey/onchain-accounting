@@ -602,6 +602,19 @@ The tables below show what the call returns for a representative account positio
 (the ordered hierarchy below `protocolName`, leaf last) — computed lazily from `positionId`, so
 meta-adapters derive it on-chain from live state and per-instance adapters return a fixed array.
 
+> **`protocolName()` names the protocol, never the product.** Every adapter sharing a `protocolId` returns the
+> same string: Aave V3's lending instances, Safety Module and Umbrella are all `"Aave V3"`; Morpho's vaults and
+> markets are both `"Morpho"`; Balancer's pools and gauges are both `"Balancer V3"`. The product is carried by
+> `positionLabels()` (`["Umbrella Module"]`, `["Safety Module"]`, `["Market", "wstETH/USDC"]`) and by the typed
+> `protocolSubId`. This matters because a consumer enumerating *configured adapters* — as opposed to reading an
+> account's positions — never sees the typed taxonomy (`protocolBrand`/`protocolId`/`protocolSubId` are
+> `private constant` and only ride on returned `PositionBalance` structs), so the display name is the only
+> protocol identity it has; an adapter returning its product name splits itself out into a phantom sibling
+> protocol. Canonical strings live in `src/utils/ProtocolNames.sol`, the deploy layer resolves meta-adapter
+> constructor arguments from them via `script/utils/ProtocolNameResolver.sol`, and
+> `test/ProtocolNameConsistency.t.sol` asserts the invariant. Clients must still never use these strings for
+> identity, indexing, or reconciliation — that is what `protocolSubId` / `positionId` are for.
+
 Assumed prices: USDC/DAI/GHO/USDS/crvUSD = $1 · WETH/ETH = $2 500 · wstETH = $2 900 ·
 stETH = $2 480 · AAVE = $200 · CRV = $0.50 · CVX = $3 · BAL = $3 · COMP = $50
 
@@ -647,8 +660,8 @@ Scenario: 1 000 USDC staked in stkwaEthUSDC.v1 with 5 USDC rewards pending.
 
 | asset | amount | value (USD) | positionKind | protocolName      | labels        |
 |-------|--------|-------------|--------------|-------------------|-----------------------|
-| USDC  | 1 000  | +1 000      | `Staking`    | `"Aave Umbrella"` | `["Umbrella Module"]` |
-| USDC  | 5      | +5          | `Rewards`    | `"Aave Umbrella"` | `["Umbrella Module"]` |
+| USDC  | 1 000  | +1 000      | `Staking`    | `"Aave V3"`       | `["Umbrella Module"]` |
+| USDC  | 5      | +5          | `Rewards`    | `"Aave V3"`       | `["Umbrella Module"]` |
 | **NAV** | | **+1 005** | | | |
 
 #### `Cap` — cUSD + stcUSD
@@ -1496,7 +1509,7 @@ legs, and a worked example — for every balance adapter on `main`.
 | Adapter | `protocolSubId` | `protocolName()` | `positionLabels()` → (source) | `positionId` schema | `PositionKind` legs | Example breadcrumb |
 |---|---|---|---|---|---|---|
 | `ERC20DefaultBalanceAdapter` | `wallet` | `"Wallet"` | `[<symbol>]` (derived); `["native"]`; `[]` on revert | `abi.encode(address asset)` | Wallet | `["Wallet","USDC"]` |
-| `AaveUmbrellaBalanceAdapter` | `aave-v3-umbrella` | `"Aave Umbrella"` | `["Umbrella Module"]` (const) | `abi.encode(address stakeToken)` | Staking / Rewards | `["Aave Umbrella","Umbrella Module"]` |
+| `AaveUmbrellaBalanceAdapter` | `aave-v3-umbrella` | `"Aave V3"` | `["Umbrella Module"]` (const) | `abi.encode(address stakeToken)` | Staking / Rewards | `["Aave V3","Umbrella Module"]` |
 | `AaveV3SafetyModuleBalanceAdapter` | `aave-v3-safety-module` | `"Aave V3"` | `["Safety Module"]` (const) | `abi.encode(address stakeToken)` | Staking / Rewards | `["Aave V3","Safety Module"]` |
 | `CapBalanceAdapter` (cUSD) | `cap` | `"Cap"` | `["Stablecoin","cUSD"]` (const) | `abi.encode(address CUSD)` | Supplied | `["Cap","Stablecoin","cUSD"]` |
 | `CapBalanceAdapter` (stcUSD) | `cap` | `"Cap"` | `["Savings","stcUSD"]` (const) | `abi.encode(address STCUSD)` | Staking | `["Cap","Savings","stcUSD"]` |

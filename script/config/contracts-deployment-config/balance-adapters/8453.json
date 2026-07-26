@@ -87,7 +87,7 @@
       "compoundRewards": "0x123964802e6ABabBE1Bc9547D72Ef1B69B00A6b1",
       "comet": "0x784efeB622244d2348d4F2522f8860B96fbEcE89",
       "rewardToken": "0x9e1028F5F1D5eDE59748FFceE5532509976840E0",
-      "protocol": "Compound v3",
+      "protocol": "Compound V3",
       "positionId": "0x784efeB622244d2348d4F2522f8860B96fbEcE89"
     }
   },
@@ -97,7 +97,7 @@
       "compoundRewards": "0x123964802e6ABabBE1Bc9547D72Ef1B69B00A6b1",
       "comet": "0x9c4ec768c28520B50860ea7a15bd7213a9fF58bf",
       "rewardToken": "0x9e1028F5F1D5eDE59748FFceE5532509976840E0",
-      "protocol": "Compound v3",
+      "protocol": "Compound V3",
       "positionId": "0x9c4ec768c28520B50860ea7a15bd7213a9fF58bf"
     }
   },
@@ -107,7 +107,7 @@
       "compoundRewards": "0x123964802e6ABabBE1Bc9547D72Ef1B69B00A6b1",
       "comet": "0xb125E6687d4313864e53df431d5425969c15Eb2F",
       "rewardToken": "0x9e1028F5F1D5eDE59748FFceE5532509976840E0",
-      "protocol": "Compound v3",
+      "protocol": "Compound V3",
       "positionId": "0xb125E6687d4313864e53df431d5425969c15Eb2F"
     }
   },
@@ -117,7 +117,7 @@
       "compoundRewards": "0x123964802e6ABabBE1Bc9547D72Ef1B69B00A6b1",
       "comet": "0x2c776041CCFe903071AF44aa147368a9c8EEA518",
       "rewardToken": "0x9e1028F5F1D5eDE59748FFceE5532509976840E0",
-      "protocol": "Compound v3",
+      "protocol": "Compound V3",
       "positionId": "0x2c776041CCFe903071AF44aa147368a9c8EEA518"
     }
   },
@@ -127,7 +127,7 @@
       "compoundRewards": "0x123964802e6ABabBE1Bc9547D72Ef1B69B00A6b1",
       "comet": "0x46e6b214b524310239732D51387075E0e70970bf",
       "rewardToken": "0x9e1028F5F1D5eDE59748FFceE5532509976840E0",
-      "protocol": "Compound v3",
+      "protocol": "Compound V3",
       "positionId": "0x46e6b214b524310239732D51387075E0e70970bf"
     }
   },

@@ -12,7 +12,9 @@ import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 import {
     MockFluidVaultT1,
     MockFluidVaultResolver,
-    MockToken
+    MockToken,
+    MockRevertingFluidVault,
+    FluidVaultLibHarness
 } from "test/balances/MetaBalanceAdapters/FluidVaultMocks.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 
@@ -49,6 +51,9 @@ contract FluidVaultsMetaBalanceAdapterTest is Test {
         vaultB.setVaultId(22);
 
         resolver = new MockFluidVaultResolver();
+        // The mock mirrors the live resolver: unknown vaults answer 0, so every vault must be typed explicitly.
+        resolver.setVaultType(address(vaultA), 10000);
+        resolver.setVaultType(address(vaultB), 10000);
         // alice: nft1 in vaultA (5 wstETH collateral, 1000 USDC debt); nft2 in vaultB (2 weETH, 1 wstETH debt).
         resolver.pushNft(alice, 1, address(vaultA), 5e18, 1000e6, false);
         resolver.pushNft(alice, 2, address(vaultB), 2e18, 1e18, false);
@@ -101,6 +106,7 @@ contract FluidVaultsMetaBalanceAdapterTest is Test {
     function test_liquidatedPosition_skipped() public {
         // A liquidated NFT contributes nothing.
         MockFluidVaultResolver r2 = new MockFluidVaultResolver();
+        r2.setVaultType(address(vaultA), 10000);
         r2.pushNft(alice, 9, address(vaultA), 5e18, 1000e6, true);
         FluidVaultsMetaBalanceAdapter m2 = new FluidVaultsMetaBalanceAdapter(address(r2), "Fluid", address(nav));
         bytes32[] memory one = new bytes32[](1);
@@ -193,6 +199,7 @@ contract FluidVaultsMetaBalanceAdapterTest is Test {
         MockToken unregistered = new MockToken("PAXG", 18);
         MockFluidVaultT1 vaultC = new MockFluidVaultT1();
         vaultC.setTokens(address(unregistered), address(usdc));
+        resolver.setVaultType(address(vaultC), 10000);
 
         string[] memory c = meta.positionLabels(abi.encode(address(vaultC)));
         assertEq(c.length, 2);
@@ -204,6 +211,7 @@ contract FluidVaultsMetaBalanceAdapterTest is Test {
     function test_positionLabels_unreadableToken_usesQuestionMark() public {
         MockFluidVaultT1 vaultC = new MockFluidVaultT1();
         vaultC.setTokens(address(0xdead), address(usdc)); // no code at 0xdead -> symbol() unreadable
+        resolver.setVaultType(address(vaultC), 10000);
 
         string[] memory c = meta.positionLabels(abi.encode(address(vaultC)));
         assertEq(c.length, 2);
@@ -221,6 +229,7 @@ contract FluidVaultsMetaBalanceAdapterTest is Test {
         MockFluidVaultT1 twin = new MockFluidVaultT1();
         twin.setTokens(address(wsteth), address(usdc)); // identical pair to vaultA
         twin.setVaultId(99);
+        resolver.setVaultType(address(twin), 10000);
 
         string[] memory a = meta.positionLabels(abi.encode(address(vaultA)));
         string[] memory t = meta.positionLabels(abi.encode(address(twin)));
@@ -237,6 +246,7 @@ contract FluidVaultsMetaBalanceAdapterTest is Test {
     function test_halfZeroPair_reportsNothing() public {
         MockFluidVaultT1 halfZero = new MockFluidVaultT1();
         halfZero.setTokens(address(wsteth), address(0)); // collateral set, debt missing
+        resolver.setVaultType(address(halfZero), 10000);
         resolver.pushNft(alice, 3, address(halfZero), 5e18, 0, false);
 
         bytes32[] memory ins = new bytes32[](1);
@@ -258,10 +268,33 @@ contract FluidVaultsMetaBalanceAdapterTest is Test {
         assertEq(meta.positionLabels(abi.encode(address(vaultA))).length, 1, "category-only label");
     }
 
-    /// @dev The other fail-closed branch: short returndata must not be decoded as a type.
-    function test_resolverReturnsShortData_failsClosed() public {
+    /// @dev The other fail-closed branch, asserted on isT1's RETURN VALUE. Going through the adapter would not
+    ///      be load-bearing: delete the `ret.length < 32` guard and `abi.decode` reverts instead, which the
+    ///      fan-out swallows into the same empty result. The harness distinguishes "returned false" from
+    ///      "reverted".
+    function test_isT1_shortReturndata_returnsFalseWithoutReverting() public {
+        FluidVaultLibHarness h = new FluidVaultLibHarness();
         resolver.setVaultTypeReturnsShort(true);
-        assertEq(meta.getAdapterPositionsForInstances(alice, _instances(), address(0)).length, 0, "fails closed");
+        assertFalse(h.isT1(address(vaultA), address(resolver)), "short returndata must read as not-T1");
+    }
+
+    /// @dev An unknown vault is the live resolver's most common rejection: it answers 0, not a revert.
+    function test_isT1_unknownVault_returnsFalse() public {
+        FluidVaultLibHarness h = new FluidVaultLibHarness();
+        MockFluidVaultT1 unknown = new MockFluidVaultT1();
+        assertFalse(h.isT1(address(unknown), address(resolver)), "unknown vault (type 0) must read as not-T1");
+    }
+
+    /// @dev The fail-open `catch` in positionLabels: a vault the resolver types T1 but whose `constantsView`
+    ///      reverts must still yield the category-only label, never propagate the revert. Deleting the catch
+    ///      makes this test revert.
+    function test_positionLabels_revertingVault_failsOpen() public {
+        MockRevertingFluidVault broken = new MockRevertingFluidVault();
+        resolver.setVaultType(address(broken), 10000);
+
+        string[] memory l = meta.positionLabels(abi.encode(address(broken)));
+        assertEq(l.length, 1, "must fail open to the category-only label");
+        assertEq(l[0], "Vault");
     }
 
     /// @dev The registry-first branch of `_assetSymbol` — the reason this adapter does not reuse
@@ -274,6 +307,7 @@ contract FluidVaultsMetaBalanceAdapterTest is Test {
         MockFluidVaultT1 nativeVault = new MockFluidVaultT1();
         nativeVault.setTokens(nativeSentinel, address(usdc));
         nativeVault.setVaultId(7);
+        resolver.setVaultType(address(nativeVault), 10000);
 
         string[] memory l = meta.positionLabels(abi.encode(address(nativeVault)));
         assertEq(l.length, 2);

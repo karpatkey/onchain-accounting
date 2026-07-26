@@ -103,17 +103,33 @@ library FluidVaultLib {
         return (cv.supplyToken, cv.borrowToken, cv.vaultId);
     }
 
-    /// @notice True iff `resolver` implements `getVaultType` at all — a deploy-time sanity check, since token
-    ///         resolution is gated on it and a resolver without it would silently zero the whole adapter.
-    /// @dev Probed with `address(0)`: a conforming resolver returns 0 for an unknown vault rather than reverting.
+    /// @notice True iff `resolver` answers the `getVaultType` selector at all — a deploy-time sanity check,
+    ///         since token resolution is gated on it and a resolver without it would silently zero the whole
+    ///         adapter (every vault reads as non-T1, so all Fluid legs, assets and labels disappear).
+    /// @dev Deliberately weak, and NOT an authenticity check: it only proves the address returns >=32 bytes for
+    ///      this selector, so any permissive fallback passes. That is acceptable because the resolver is
+    ///      deployer-supplied config, not attacker-supplied, and the failure mode is under-report (a wrong
+    ///      resolver types nothing as T1). It catches the realistic mistake — a resolver version that predates
+    ///      `getVaultType`.
+    ///      Probed with `address(0)` specifically: the live resolver returns 0 for a zero-code address but
+    ///      REVERTS for a non-vault contract (verified: `getVaultType(WETH)` reverts), so probing with an
+    ///      arbitrary address would reject a perfectly good resolver and abort the whole `04` deploy run —
+    ///      `_deployIfEnabled` has no try/catch. A resolver that instead guarded `address(0)` would be wrongly
+    ///      rejected here; none exists today.
     function supportsVaultType(address resolver) internal view returns (bool) {
         (bool ok, bytes memory ret) =
             resolver.staticcall(abi.encodeWithSelector(IFluidVaultResolver.getVaultType.selector, address(0)));
         return ok && ret.length >= 32;
     }
 
-    /// @notice True iff the resolver reports `vault` as a T1 vault. Fails closed: an unreadable or unknown vault
-    ///         (resolver revert, unexpected return shape) is treated as not-T1.
+    /// @notice True iff the resolver reports `vault` as a T1 vault. Fails closed: an unreadable or unknown
+    ///         vault (resolver revert, `0` for an address it does not know, unexpected return shape) is
+    ///         treated as not-T1.
+    /// @dev Screens out Fluid's OWN Smart (T2/T3/T4) vaults; it does NOT authenticate a vault. The resolver
+    ///      forwards to the vault's self-reported `TYPE()`, so a contract that claims `TYPE() == 10000` is
+    ///      typed T1 with whatever `constantsView()` it likes. Only the resolver's no-`TYPE()` catch branch
+    ///      verifies factory provenance. That is not a regression (there was no gate before) and requires
+    ///      MANAGER to configure the impostor as an instance, but do not read this as a trust boundary.
     function isT1(address vault, address resolver) internal view returns (bool) {
         (bool ok, bytes memory ret) =
             resolver.staticcall(abi.encodeWithSelector(IFluidVaultResolver.getVaultType.selector, vault));

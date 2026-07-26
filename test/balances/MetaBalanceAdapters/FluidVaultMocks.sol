@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
-import {IFluidVaultT1, IFluidVaultResolver} from "src/balances/MetaBalanceAdapters/FluidVaultLib.sol";
+import {IFluidVaultT1, IFluidVaultResolver, FluidVaultLib} from "src/balances/MetaBalanceAdapters/FluidVaultLib.sol";
 
 // Mock contracts extracted from FluidVault.t.sol for use by FluidVaultsMetaBalanceAdapter.t.sol
 
@@ -63,6 +63,9 @@ contract MockFluidVaultResolver {
         _vaultTypeShort = v;
     }
 
+    /// @notice Mirrors the live resolver: an address it does not know answers 0, NOT T1. Tests must stage a
+    ///         type explicitly (`setVaultType(vault, 10000)`), otherwise the vault is treated as unknown —
+    ///         which is the dominant rejection path in production.
     function getVaultType(address vault) external view returns (uint256) {
         if (_vaultTypeReverts) revert("resolver: no such vault");
         if (_vaultTypeShort) {
@@ -70,8 +73,7 @@ contract MockFluidVaultResolver {
                 return(0, 8) // 8 bytes < 32 -> caller must treat as not-T1
             }
         }
-        uint256 t = _vaultType[vault];
-        return t == 0 ? 10000 : t;
+        return _vaultType[vault];
     }
 
     function positionsNftIdOfUser(address user) external view returns (uint256[] memory) {
@@ -99,5 +101,32 @@ contract MockToken {
     constructor(string memory s, uint8 d) {
         symbol = s;
         decimals = d;
+    }
+}
+
+/// @notice A vault whose `constantsView()` reverts, while the resolver still types it T1 — the only way to
+///         reach `positionLabels`' fail-open `catch`, which otherwise has no test.
+contract MockRevertingFluidVault {
+    error VaultBroken();
+
+    function constantsView() external pure returns (IFluidVaultT1.ConstantViews memory) {
+        revert VaultBroken();
+    }
+}
+
+/// @notice Exposes `FluidVaultLib`'s internal helpers so tests can assert their RETURN VALUE rather than an
+///         indirect side effect. Without this, e.g. the short-returndata guard cannot be tested: deleting it
+///         makes `abi.decode` revert, the fan-out swallows that, and the observable result is identical.
+contract FluidVaultLibHarness {
+    function isT1(address vault, address resolver) external view returns (bool) {
+        return FluidVaultLib.isT1(vault, resolver);
+    }
+
+    function supportsVaultType(address resolver) external view returns (bool) {
+        return FluidVaultLib.supportsVaultType(resolver);
+    }
+
+    function vaultInfo(address vault, address resolver) external view returns (address, address, uint256) {
+        return FluidVaultLib.vaultInfo(vault, resolver);
     }
 }

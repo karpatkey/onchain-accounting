@@ -761,8 +761,8 @@ Scenario: 1 WETH collateral, 500 USDC debt in a Fluid T1 vault.
 
 | asset | amount | value (USD) | positionKind | protocolName | labels     |
 |-------|--------|-------------|--------------|--------------|-------------------|
-| WETH  | 1.0    | +2 500      | `Collateral` | `"Fluid"`    | `["Vault", "ETH/USDC #21"]` |
-| USDC  | 500    | −500        | `Borrowed`   | `"Fluid"`    | `["Vault", "ETH/USDC #21"]` |
+| WETH  | 1.0    | +2 500      | `Collateral` | `"Fluid"`    | `["Vault", "WETH/USDC #21"]` |
+| USDC  | 500    | −500        | `Borrowed`   | `"Fluid"`    | `["Vault", "WETH/USDC #21"]` |
 | **NAV** | | **+2 000** | | | |
 
 #### `CompoundV3CometsMeta`

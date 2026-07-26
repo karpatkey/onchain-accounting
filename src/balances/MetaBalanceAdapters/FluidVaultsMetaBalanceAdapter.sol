@@ -55,8 +55,12 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
         (address collToken, address debtToken) = FluidVaultLib.tokens(vault, VAULT_RESOLVER);
         // Gated (non-T1) vault, or a vault missing a token side: no complete pair means the legs cannot be
         // reported correctly, so skip `aggregate`'s scan of every Fluid NFT the account holds. `||`, not `&&`
-        // — a half-zero pair would otherwise emit an unoffset Collateral leg (over-reporting) while the
-        // Borrowed leg was silently dropped by `_eligible(address(0))`.
+        // — a half-zero pair would otherwise emit an unoffset Collateral leg while the Borrowed leg was
+        // dropped by `_eligible(address(0))`.
+        // NOTE: this closes only the address(0) form. The same unoffset-collateral shape still arises when the
+        // debt token is simply not a REGISTERED asset — `_eligible` drops that leg while the collateral leg is
+        // still emitted (see `test_unregisteredAsset_skipped`). That is a codebase-wide convention, not
+        // specific to Fluid (cf. MorphoMarketsMetaBalanceAdapter), and is tracked separately.
         if (collToken == address(0) || debtToken == address(0)) {
             return new INAVCalculator.PositionBalance[](0);
         }

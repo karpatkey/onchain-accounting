@@ -144,7 +144,13 @@ contract FluidVaultsMetaParityForkTest is BalanceAdapterTestBase {
     function test_samePairTwin_hasDistinctLeaf() public view {
         string[] memory a = meta.positionLabels(abi.encode(VAULT));
         string[] memory t = meta.positionLabels(abi.encode(VAULT_A_TWIN));
+
+        // Both must actually HAVE a leaf — without this the inequality below passes vacuously when the twin
+        // resolves to nothing and labels ["Vault"], proving nothing about same-pair distinctness.
+        assertEq(a.length, 2, "configured vault must have a leaf");
+        assertEq(t.length, 2, "twin must have a leaf");
         assertEq(a[1], "wstETH/USDC #4");
+        assertEq(t[1], "wstETH/USDC #14", "twin shares the pair, differs only by vault id");
         assertTrue(
             keccak256(bytes(t[t.length - 1])) != keccak256(bytes(a[a.length - 1])),
             "same-pair twin must not share the configured vault's leaf"

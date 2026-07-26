@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -39,6 +40,13 @@ interface IOsTokenVaultController {
 ///      `getAdapterBalances`/`getAdapterBalanceForAsset` convenience getters are dropped (the meta base returns
 ///      them empty, since they are not on the NAV path).
 contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceAdapter {
+    /// @notice Longest ERC20 `name()` accepted as a label leaf; anything longer degrades to the address fallback.
+    uint256 private constant MAX_NAME_BYTES = 256;
+
+    /// @notice Gas stipend for the `name()` probe. Generous for a real proxied metadata read, small enough that a
+    ///         hostile address cannot burn the caller's budget or return a griefing-sized revert payload.
+    uint256 private constant NAME_READ_GAS = 100_000;
+
     /// @notice The underlying staking asset all configured vaults are denominated in (chain-level constant).
     address public immutable UNDERLYING_TOKEN;
 
@@ -109,12 +117,101 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev Returns a single-element `["Vault"]`. StakeWise V3 vaults are minimal proxies with no on-chain
-    ///      ERC20 `name()`/`symbol()` (the human vault name lives off-chain via IPFS), so there is no leaf to
-    ///      derive — the category alone is the label. Returns an empty array for a short positionId.
-    function positionLabels(bytes calldata pid) external pure override returns (string[] memory) {
+    /// @dev `["Vault", <leaf>]` — the leaf is the vault's ERC20 `name()` when it has one, otherwise its address.
+    ///      Unlike the other address-keyed meta-adapters this does NOT use {_addressLabels}: that helper collapses an
+    ///      underivable leaf to `["Vault"]`, which for StakeWise is the common case, not the exception, and left every
+    ///      row rendering the same blank breadcrumb.
+    ///
+    ///      **Tier 1 — `name()`.** Only StakeWise's `…Erc20Vault` implementation variants are ERC20s and answer it,
+    ///      returning the operator's own name (e.g. `"Stakers Union GNO"`). Enumerating both `VaultsRegistry`
+    ///      deployments on 2026-07-26 (mainnet `0x3a0008a5…`, Gnosis `0x7d014B3C…`) found 58 of 239 mainnet and 18 of
+    ///      106 Gnosis registered vaults answering it. Read fail-open via {_safeVaultName} — which, unlike
+    ///      {LabelLib.name}, also survives returndata that cannot be ABI-decoded as a string.
+    ///
+    ///      **Tier 2 — `"<underlying symbol> <vault address>"`**, e.g. `"GNO 0x4b4406ed…0a7a"`. The address is
+    ///      rendered with `Strings.toHexString`, mirroring `NexusMutualStakingPoolsAssistedBalanceAdapter`'s fallback;
+    ///      the symbol prefix says what the vault stakes without pretending to name it. This is the position
+    ///      coordinate rather than a name, so it is the deliberate second choice — but it is always available, needs
+    ///      no maintenance, and means the breadcrumb is never blank. All five instances configured today land here.
+    ///      The symbol comes from the NAVCalculator asset registry rather than an ERC20 `symbol()` read, because on
+    ///      mainnet `UNDERLYING_TOKEN` is the ETH sentinel (`0xEeee…EEeE`), which has no code to read. If the
+    ///      underlying is unregistered the symbol is dropped and the leaf is the bare address.
+    ///
+    ///      The leaf is descriptive, NOT an identifier: operator names collide (three separate Gnosis vaults are all
+    ///      named `"SEED"`), so consumers must key on `positionId`, never on the label.
+    ///
+    ///      **Why there is no better tier 2, so nobody re-investigates.** The non-ERC20 variants expose no
+    ///      human-readable identity on chain at all:
+    ///        - `name()` / `symbol()` / `contractURI()` / `metadataIpfsHash()` / `asset()` all revert on them
+    ///          (checked against v3, v4, v5 and v7 vaults; newer versions do not help).
+    ///        - `vaultId()` answers, but it is `keccak256(<implementation type string>)` — a *type* hash, not a
+    ///          per-vault id, so it both collides (the two configured Gnosis vaults are both `GnoVault`) and would
+    ///          need a hardcoded hash→string table to render, since the pre-image is not recoverable on chain.
+    ///        - `version()` collides; `admin()` / `mevEscrow()` / `feeRecipient()` / `validatorsManager()` /
+    ///          `implementation()` are addresses, not names, and most are mutable.
+    ///        - `VaultsRegistry` stores only `vaults(address) → bool`; it holds no names.
+    ///      Every human-readable StakeWise vault name lives off-chain (IPFS metadata), and `positionLabels` is an
+    ///      on-chain view, so there is nothing further to derive.
+    ///
+    ///      Returns an empty array for a short positionId. Display-only and must never revert, hence the fail-open
+    ///      read.
+    function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
         if (pid.length < 32) return new string[](0);
-        return _labels("Vault", "");
+        // Decode as a raw word, not `abi.decode(pid, (address))`: Solidity's decoder REVERTS on an address whose
+        // upper 96 bits are dirty, which would turn a foreign/malformed positionId into a revert of a view that
+        // must never revert. A malformed coordinate degrades to the category alone instead.
+        uint256 raw = abi.decode(pid, (uint256));
+        if (raw >> 160 != 0) return _labels("Vault", "");
+        address vault = address(uint160(raw));
+
+        string memory leaf = _safeVaultName(vault);
+        if (bytes(leaf).length == 0) {
+            leaf = Strings.toHexString(vault);
+            (INAVCalculator.Asset memory underlying, bool found) = _getAssetInfo(UNDERLYING_TOKEN);
+            if (found && bytes(underlying.symbol).length != 0) {
+                leaf = string.concat(underlying.symbol, " ", leaf);
+            }
+        }
+        return _labels("Vault", leaf);
+    }
+
+    /// @notice Fail-open ERC20 `name()` read that also survives returndata which cannot be ABI-decoded as a string.
+    /// @dev NOT {LabelLib.name}, deliberately. LabelLib guards a code-less address and a reverting call, but decodes
+    ///      the result inside a `try`/`catch`, and Solidity does **not** route a return-data decode failure into the
+    ///      `catch` clause — it propagates to the caller. So a vault whose `name()` *succeeds* but returns something
+    ///      undecodable would revert this display-only view. Two realistic shapes do exactly that, both reproduced on
+    ///      solc 0.8.34: empty returndata (an ERC-1967 proxy whose implementation slot points at a code-less address —
+    ///      the `delegatecall` succeeds and returns nothing) and a `bytes32` name (MKR-style legacy tokens).
+    ///
+    ///      This validates the ABI head before decoding. A canonical `string` return is
+    ///      `[offset = 0x20][length][payload…]`, so require two full words, an offset of exactly `0x20`, and a length
+    ///      whose payload fits inside the returndata. Anything else yields "" and the caller falls back to the
+    ///      address. The length cap additionally bounds a hostile vault's ability to inflate the rendered label.
+    ///
+    ///      The call is **gas-capped**. A raw staticcall assigning `(bool, bytes memory)` always `returndatacopy`s the
+    ///      response, including a revert payload — which a parameterless `catch {}` does not — so without a cap this
+    ///      read would be *worse* than {LabelLib.name} against a hostile address: a `revert(0, 3_000_000)` was measured
+    ///      at ~35M gas, enough to out-of-gas a verbose NAV read. `NAME_READ_GAS` bounds both the callee's execution
+    ///      and, transitively, how much returndata it can afford to expand into, while leaving ample headroom for a
+    ///      real proxied `name()` (a few thousand gas).
+    ///
+    ///      `LabelLib` has the same decode weakness for every other adapter that reads a name/symbol through it. That
+    ///      is a pre-existing, repo-wide issue and is deliberately NOT fixed here — changing shared behaviour for the
+    ///      other adapters belongs in its own reviewed change, not in a StakeWise label PR.
+    function _safeVaultName(address vault) private view returns (string memory) {
+        if (vault.code.length == 0) return "";
+        (bool ok, bytes memory data) = vault.staticcall{gas: NAME_READ_GAS}(abi.encodeWithSignature("name()"));
+        if (!ok || data.length < 64) return "";
+
+        uint256 offset;
+        uint256 len;
+        assembly ("memory-safe") {
+            offset := mload(add(data, 0x20))
+            len := mload(add(data, 0x40))
+        }
+        if (offset != 0x20 || len == 0 || len > MAX_NAME_BYTES || len > data.length - 64) return "";
+
+        return abi.decode(data, (string));
     }
 
     /// @inheritdoc MetaBalanceAdapter

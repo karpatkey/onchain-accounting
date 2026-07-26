@@ -43,6 +43,10 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @notice Longest ERC20 `name()` accepted as a label leaf; anything longer degrades to the address fallback.
     uint256 private constant MAX_NAME_BYTES = 256;
 
+    /// @notice Gas stipend for the `name()` probe. Generous for a real proxied metadata read, small enough that a
+    ///         hostile address cannot burn the caller's budget or return a griefing-sized revert payload.
+    uint256 private constant NAME_READ_GAS = 100_000;
+
     /// @notice The underlying staking asset all configured vaults are denominated in (chain-level constant).
     address public immutable UNDERLYING_TOKEN;
 
@@ -184,12 +188,19 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceAdapter {
     ///      whose payload fits inside the returndata. Anything else yields "" and the caller falls back to the
     ///      address. The length cap additionally bounds a hostile vault's ability to inflate the rendered label.
     ///
-    ///      `LabelLib` has the same weakness for every other adapter that reads a name/symbol through it. That is a
-    ///      pre-existing, repo-wide issue and is deliberately NOT fixed here — changing shared behaviour for ~8 other
-    ///      adapters belongs in its own reviewed change, not in a StakeWise label PR.
+    ///      The call is **gas-capped**. A raw staticcall assigning `(bool, bytes memory)` always `returndatacopy`s the
+    ///      response, including a revert payload — which a parameterless `catch {}` does not — so without a cap this
+    ///      read would be *worse* than {LabelLib.name} against a hostile address: a `revert(0, 3_000_000)` was measured
+    ///      at ~35M gas, enough to out-of-gas a verbose NAV read. `NAME_READ_GAS` bounds both the callee's execution
+    ///      and, transitively, how much returndata it can afford to expand into, while leaving ample headroom for a
+    ///      real proxied `name()` (a few thousand gas).
+    ///
+    ///      `LabelLib` has the same decode weakness for every other adapter that reads a name/symbol through it. That
+    ///      is a pre-existing, repo-wide issue and is deliberately NOT fixed here — changing shared behaviour for the
+    ///      other adapters belongs in its own reviewed change, not in a StakeWise label PR.
     function _safeVaultName(address vault) private view returns (string memory) {
         if (vault.code.length == 0) return "";
-        (bool ok, bytes memory data) = vault.staticcall(abi.encodeWithSignature("name()"));
+        (bool ok, bytes memory data) = vault.staticcall{gas: NAME_READ_GAS}(abi.encodeWithSignature("name()"));
         if (!ok || data.length < 64) return "";
 
         uint256 offset;

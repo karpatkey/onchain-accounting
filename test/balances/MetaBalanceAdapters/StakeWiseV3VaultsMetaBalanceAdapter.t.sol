@@ -78,6 +78,40 @@ contract MockEmptyReturndataVault {
     }
 }
 
+/// @notice `name()` returns a hand-built ABI envelope, so a test can drive the exact head/payload shape.
+/// @dev `lenWord` is written verbatim as the length word and `payload` verbatim as the tail, so a test can produce a
+///      declared length that disagrees with the bytes actually present (truncated / unpadded / absurd).
+contract MockRawNameVault {
+    uint256 private immutable OFFSET_WORD;
+    uint256 private immutable LEN_WORD;
+    bytes private payload;
+
+    constructor(uint256 offsetWord_, uint256 lenWord_, bytes memory payload_) {
+        OFFSET_WORD = offsetWord_;
+        LEN_WORD = lenWord_;
+        payload = payload_;
+    }
+
+    fallback() external {
+        bytes memory out = abi.encodePacked(OFFSET_WORD, LEN_WORD, payload);
+        assembly {
+            return(add(out, 0x20), mload(out))
+        }
+    }
+}
+
+/// @notice `name()` burns gas until it runs out — the griefing shape the stipend is there to bound.
+contract MockGasBurnerVault {
+    uint256 public sink;
+
+    fallback() external {
+        // Unbounded loop: consumes whatever gas it is given, then reverts with out-of-gas.
+        for (uint256 i = 0; true; ++i) {
+            sink = i;
+        }
+    }
+}
+
 /// @notice `name()` succeeds but returns a `bytes32` instead of a `string` — MKR-style legacy metadata.
 contract MockBytes32NameVault {
     function name() external pure returns (bytes32) {
@@ -292,6 +326,61 @@ contract StakeWiseV3VaultsMetaBalanceAdapterTest is Test {
         string[] memory l = meta.positionLabels(pid);
         assertEq(l.length, 1, "malformed coordinate degrades to the category alone");
         assertEq(l[0], "Vault");
+    }
+
+    /// @notice A name exactly at `MAX_NAME_BYTES` (256) is accepted; 257 degrades to the address fallback.
+    /// @dev Pins the cap boundary in both directions so a future tweak to the constant cannot silently change which
+    ///      names render.
+    function test_positionLabels_nameLengthCapBoundary() public {
+        bytes memory at = new bytes(256);
+        bytes memory over = new bytes(257);
+        for (uint256 i; i < 257; ++i) {
+            if (i < 256) at[i] = "a";
+            over[i] = "a";
+        }
+        address okVault = address(new MockRawNameVault(0x20, 256, at));
+        address tooLong = address(new MockRawNameVault(0x20, 257, over));
+
+        string[] memory a = meta.positionLabels(abi.encode(okVault));
+        assertEq(a.length, 2);
+        assertEq(bytes(a[1]).length, 256, "256-byte name accepted verbatim");
+
+        string[] memory b = meta.positionLabels(abi.encode(tooLong));
+        assertEq(b.length, 2);
+        assertEq(b[1], string.concat("ETH ", tooLong.toHexString()), "257-byte name rejected, falls back");
+    }
+
+    /// @notice A declared length longer than the bytes actually returned must degrade, not revert.
+    /// @dev The `len > data.length - 64` bound. Truncated/unpadded payloads are the shape that would over-read if the
+    ///      envelope were trusted.
+    function test_positionLabels_truncatedPayload_failsOpen() public {
+        // Declares 64 bytes of string but returns only 8.
+        address v = address(new MockRawNameVault(0x20, 64, hex"6161616161616161"));
+        string[] memory l = meta.positionLabels(abi.encode(v));
+        assertEq(l.length, 2, "must not revert on a truncated payload");
+        assertEq(l[1], string.concat("ETH ", v.toHexString()));
+    }
+
+    /// @notice A non-canonical head offset must degrade, not revert.
+    function test_positionLabels_badOffset_failsOpen() public {
+        address v = address(new MockRawNameVault(type(uint256).max, 0, ""));
+        string[] memory l = meta.positionLabels(abi.encode(v));
+        assertEq(l.length, 2, "must not revert on an absurd offset word");
+        assertEq(l[1], string.concat("ETH ", v.toHexString()));
+    }
+
+    /// @notice A `name()` that burns unbounded gas must not consume the caller's budget or revert the view.
+    /// @dev The staticcall stipend bounds it. Asserts the whole call costs well under the caller's budget, so a hostile
+    ///      instance cannot out-of-gas a verbose NAV read through the label path.
+    function test_positionLabels_gasBurningName_boundedAndFailsOpen() public {
+        address v = address(new MockGasBurnerVault());
+        uint256 before = gasleft();
+        string[] memory l = meta.positionLabels(abi.encode(v));
+        uint256 used = before - gasleft();
+
+        assertEq(l.length, 2, "must not revert on a gas-burning name()");
+        assertEq(l[1], string.concat("ETH ", v.toHexString()));
+        assertLt(used, 400_000, "gas-burning name() must stay bounded by the stipend");
     }
 
     /// @notice A positionId pointing at a code-less address must not revert this display-only view.

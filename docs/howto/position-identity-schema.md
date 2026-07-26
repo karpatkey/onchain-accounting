@@ -786,14 +786,17 @@ Scenario: 2 ETH staked, 0.5 ETH equivalent minted as osETH (debt).
 | ETH   | 0.5    | −1 250      | `Borrowed`   | `"StakeWise V3"`  | `["Vault", "ETH 0xac0f906e…"]` |
 | **NAV** | | **+3 750** | | | |
 
-The leaf is two-tier, both tiers read live and fail-open:
+The leaf has three shapes, all reads live and fail-open:
 
 1. the vault's ERC20 `name()` — `["Vault", "Stakers Union GNO"]`. Only StakeWise's `…Erc20Vault` implementation
    variants are ERC20s and answer it (58 of 239 mainnet and 18 of 106 Gnosis registered vaults, as of 2026-07-26);
 2. otherwise `"<underlying symbol> <vault address>"` — `["Vault", "GNO 0x4b4406ed8659d03423490d8b62a1639206da0a7a"]`.
    All five instances configured today land here. The symbol comes from the NAVCalculator asset registry, not an
    ERC20 `symbol()` read, because on mainnet the underlying is the ETH sentinel `0xEeee…EEeE`, which has no code; if
-   the underlying is unregistered the leaf is the bare address.
+   the underlying is unregistered the leaf is the bare address;
+3. and `["Vault"]` — category only — for a **malformed coordinate**: a positionId shorter than 32 bytes yields `[]`,
+   and one whose 32-byte word has non-zero upper 96 bits (i.e. not a valid address) degrades to the category. Both
+   are fail-open paths, not error signals; `positionLabels` never reverts.
 
 Tier 2 is a coordinate rendering rather than a name, and that is deliberate: the non-ERC20 vault variants expose no
 human-readable identity on chain at all. `name()`, `symbol()`, `contractURI()` and `metadataIpfsHash()` all revert on

@@ -20,6 +20,10 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         The Borrow leg sums variable and stable debt: Aave/Spark deprecated NEW stable borrows, but
 ///         legacy stable debt can persist, so it is included to avoid understating debt (see `_reserveData`).
 contract SparkLendBalanceAdapter is BalanceAdapterBase {
+    /// @notice Aave's `ReserveConfiguration.MAX_RESERVES_COUNT` — the user-configuration bitmap packs 2 bits
+    ///         per reserve into one word, so it addresses ids 0..127.
+    uint256 private constant MAX_RESERVES = 128;
+
     IProtocolDataProvider public immutable DATA_PROVIDER;
     /// @notice Spark Pool address — used as the `positionId` (one position per instance; the reserve is not
     ///         encoded — reserves are distinguished by `balanceAsset` + `positionKind`).
@@ -207,18 +211,27 @@ contract SparkLendBalanceAdapter is BalanceAdapterBase {
         // code-less pool would revert the whole read rather than fall back. Check explicitly first.
         if (POOL.code.length == 0) return _hasUnreportableDebtByScanSpark(account, regAddrs);
 
-        try IAavePool(POOL).getUserConfiguration(account) returns (IAavePool.UserConfigurationMap memory cfg) {
-            if (cfg.data == 0) return false; // no supplies and no borrows
-            address[] memory list = IAavePool(POOL).getReservesList();
-            for (uint256 i; i < list.length; ++i) {
-                if (i * 2 >= 256) break; // the bitmap addresses at most 128 reserves
-                if (cfg.data & (1 << (i * 2)) == 0) continue; // not borrowing reserve i
-                if (!_contains(regAddrs, list[i])) return true;
-            }
-            return false;
+        IAavePool.UserConfigurationMap memory cfg;
+        try IAavePool(POOL).getUserConfiguration(account) returns (IAavePool.UserConfigurationMap memory c) {
+            cfg = c;
         } catch {
             return _hasUnreportableDebtByScanSpark(account, regAddrs);
         }
+        if (cfg.data == 0) return false; // no supplies and no borrows
+
+        // Resolve each BORROWED reserve by its stored id — see the Aave adapter for why `getReservesList()`
+        // must not be indexed positionally, and why this lookup is a low-level staticcall rather than sitting
+        // inside the `try` above (a revert in a success block is not caught by that statement's `catch`).
+        for (uint256 id; id < MAX_RESERVES; ++id) {
+            if (cfg.data & (1 << (id * 2)) == 0) continue; // not borrowing reserve `id`
+            (bool ok, bytes memory ret) =
+                POOL.staticcall(abi.encodeWithSelector(IAavePool.getReserveAddressById.selector, uint16(id)));
+            if (!ok || ret.length < 32) return _hasUnreportableDebtByScanSpark(account, regAddrs);
+            address asset = abi.decode(ret, (address));
+            if (asset == address(0)) continue; // dropped reserve
+            if (!_contains(regAddrs, asset)) return true;
+        }
+        return false;
     }
 
     /// @notice Fallback for a pool without the configuration bitmap: check every unregistered reserve for debt.
@@ -289,7 +302,10 @@ interface IAavePool {
     }
 
     function getUserConfiguration(address user) external view returns (UserConfigurationMap memory);
-    function getReservesList() external view returns (address[] memory);
+
+    /// @notice Reserve address by its STORED id — the key the bitmap uses. `getReservesList()` is NOT
+    ///         equivalent: it compacts out dropped reserves and truncates, so its indices drift from the ids.
+    function getReserveAddressById(uint16 id) external view returns (address);
 }
 
 interface IProtocolDataProvider {

@@ -30,7 +30,11 @@ contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     address public constant WBTC = MAINNET_WBTC;
     address public constant USDC = MAINNET_USDC;
     address public constant DAI = MAINNET_DAI;
-    // Account with WBTC collateral + USDC/DAI positions on Core at the default fork block.
+    // The account also BORROWS USDT (reserve id 8). It must be registered: an unreportable debt now suppresses
+    // the whole instance, so leaving USDT out would make this fixture assert the very over-report the adapter
+    // exists to prevent (collateral reported, USDT borrow silently dropped).
+    address public constant USDT = 0xdAC17F958D2ee523a2206206994597C13D831ec7;
+    // Account with WBTC collateral + USDC/DAI positions and USDC/USDT borrows on Core at the default fork block.
     address public constant USER = 0xe84A061897afc2e7fF5FB7e3686717C528617487;
 
     address admin = makeAddr("admin");
@@ -75,6 +79,9 @@ contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         );
         nav.registerAsset(
             DAI, address(new Mock_CustomPriceFeed("DAI", DAI, 1e8, 8)), IPrices.PriceType.Custom, type(uint256).max
+        );
+        nav.registerAsset(
+            USDT, address(new Mock_CustomPriceFeed("USDT", USDT, 1e8, 8)), IPrices.PriceType.Custom, type(uint256).max
         );
         vm.stopPrank();
 

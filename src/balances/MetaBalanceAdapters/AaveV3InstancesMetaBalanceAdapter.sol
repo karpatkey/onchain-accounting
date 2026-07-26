@@ -37,6 +37,10 @@ interface IAavePoolAddressesProvider {
 ///      market, whose provider was never added to it). Use the registry off-chain to *propose* instances; governance
 ///      approves them. See BALANCE_ADAPTERS.md §6.1.
 contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
+    /// @notice Aave's `ReserveConfiguration.MAX_RESERVES_COUNT` — the user-configuration bitmap packs 2 bits
+    ///         per reserve into one word, so it addresses ids 0..127.
+    uint256 private constant MAX_RESERVES = 128;
+
     /// @param protocolName_ Human-readable protocol name (e.g. "Aave V3").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
     constructor(string memory protocolName_, address navCalculator_)
@@ -177,19 +181,32 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
         // code-less pool would revert the whole read rather than fall back. Check explicitly first.
         if (pool.code.length == 0) return _hasUnreportableDebtByScan(dp, account);
 
-        try IAavePool(pool).getUserConfiguration(account) returns (IAavePool.UserConfigurationMap memory cfg) {
-            if (cfg.data == 0) return false; // no supplies and no borrows
-            address[] memory list = IAavePool(pool).getReservesList();
-            for (uint256 i = 0; i < list.length; i++) {
-                if (i * 2 >= 256) break; // the bitmap addresses at most 128 reserves
-                if (cfg.data & (1 << (i * 2)) == 0) continue; // not borrowing reserve i
-                (, bool found) = _getAssetInfo(list[i]);
-                if (!found) return true;
-            }
-            return false;
+        IAavePool.UserConfigurationMap memory cfg;
+        try IAavePool(pool).getUserConfiguration(account) returns (IAavePool.UserConfigurationMap memory c) {
+            cfg = c;
         } catch {
             return _hasUnreportableDebtByScan(dp, account);
         }
+        if (cfg.data == 0) return false; // no supplies and no borrows
+
+        // Iterate the bitmap's own key space (2 bits per reserve => 128 reserves) and resolve each BORROWED
+        // reserve by its stored id. Indexing `getReservesList()` positionally would be wrong: that accessor
+        // compacts out dropped reserves, so after any `dropReserve` list[i] is a different reserve than id i —
+        // the guard would check the wrong asset, and ids past the compacted length would never be examined.
+        // The id lookup is a low-level staticcall, NOT inside the `try` above: a revert raised in a `try`'s
+        // success block is not caught by its own `catch`, so a pool answering `getUserConfiguration` but not
+        // `getReserveAddressById` would revert the read instead of falling back.
+        for (uint256 id = 0; id < MAX_RESERVES; id++) {
+            if (cfg.data & (1 << (id * 2)) == 0) continue; // not borrowing reserve `id`
+            (bool ok, bytes memory ret) =
+                pool.staticcall(abi.encodeWithSelector(IAavePool.getReserveAddressById.selector, uint16(id)));
+            if (!ok || ret.length < 32) return _hasUnreportableDebtByScan(dp, account);
+            address asset = abi.decode(ret, (address));
+            if (asset == address(0)) continue; // dropped reserve
+            (, bool found) = _getAssetInfo(asset);
+            if (!found) return true;
+        }
+        return false;
     }
 
     /// @notice Fallback for a pool without the configuration bitmap: check every unregistered reserve for debt.

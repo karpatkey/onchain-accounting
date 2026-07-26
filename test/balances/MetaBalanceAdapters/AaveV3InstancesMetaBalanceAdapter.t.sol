@@ -37,6 +37,7 @@ contract MockAaveAddressesProvider {
 contract MockAavePool {
     uint256 public cfgData;
     address[] private _list;
+    mapping(uint16 => address) private _byId;
 
     function setUserConfig(uint256 data) external {
         cfgData = data;
@@ -57,6 +58,18 @@ contract MockAavePool {
 
     function getReservesList() external view returns (address[] memory) {
         return _list;
+    }
+
+    /// @dev Id-keyed accessor, mirroring the real pool. `_list` here is index==id; the dropped-reserve case
+    ///     (where the two diverge) is staged with `setReserveById`.
+    function getReserveAddressById(uint16 id) external view returns (address) {
+        if (_byId[id] != address(0)) return _byId[id];
+        return id < _list.length ? _list[id] : address(0);
+    }
+
+    /// @dev Stage an id->asset mapping that does NOT match `_list` order, reproducing a post-`dropReserve` pool.
+    function setReserveById(uint16 id, address asset) external {
+        _byId[id] = asset;
     }
 }
 
@@ -281,6 +294,51 @@ contract AaveV3InstancesMetaUnitTest is BalanceAdapterTestBase {
             adapter.getAdapterPositionsForInstances(alice, ids, address(0)).length,
             0,
             "scan fallback must suppress, not revert"
+        );
+    }
+
+    /// @dev Regression: the user-configuration bitmap is keyed on a reserve's STORED id, but
+    ///      `getReservesList()` compacts out dropped reserves and truncates, so after any `dropReserve` list
+    ///      index != id. Indexing the list positionally checked the WRONG asset — either missing the
+    ///      unreportable borrow (over-report) or suppressing a healthy instance. Stages that divergence: the
+    ///      borrowed reserve sits at id 5 while the compacted list holds a registered asset at index 5.
+    function test_droppedReserve_idNotListIndex_stillDetectsUnreportableDebt() public {
+        Mock_ERC20 unregistered = new Mock_ERC20("XYZ", 18); // deliberately NOT registered
+        dp.addReserve("XYZ", address(unregistered));
+
+        // Compacted list: index 5 is a REGISTERED asset (what the buggy positional lookup would have read).
+        address[] memory list = new address[](6);
+        list[0] = address(usdc);
+        list[1] = address(weth);
+        list[2] = address(usdc);
+        list[3] = address(weth);
+        list[4] = address(usdc);
+        list[5] = address(weth);
+        pool.setReservesList(list);
+        // True id mapping: id 5 is the UNREGISTERED token the account actually borrows.
+        pool.setReserveById(5, address(unregistered));
+
+        dp.setUserData(alice, address(weth), 5e18, 0, true); // registered supply
+        dp.setUserData(alice, address(unregistered), 0, 100e18, false); // unreportable debt
+        pool.setBorrowing(5);
+
+        assertEq(
+            adapter.getAdapterPositionsForInstances(alice, _ids(), address(0)).length,
+            0,
+            "must resolve the borrowed reserve by id, not by list position"
+        );
+    }
+
+    /// @dev A borrow on a DROPPED reserve id (address(0)) must be skipped, not treated as unreportable.
+    function test_droppedReserve_zeroAddress_doesNotSuppress() public {
+        dp.setUserData(alice, address(weth), 5e18, 0, true);
+        pool.setReserveById(7, address(0)); // dropped
+        pool.setBorrowing(7);
+
+        assertGt(
+            adapter.getAdapterPositionsForInstances(alice, _ids(), address(0)).length,
+            0,
+            "a dropped reserve id must not suppress the instance"
         );
     }
 }

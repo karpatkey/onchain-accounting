@@ -77,7 +77,13 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
             return new INAVCalculator.PositionBalance[](0);
         }
 
-        // Skip unregistered assets (NAVCalculator would drop them anyway).
+        // Skip unregistered assets (NAVCalculator would drop them anyway). Note this suppresses BOTH this
+        // vault's supply and debt legs together, since they share one asset — so within a vault there is no
+        // unoffset-collateral hazard. It does NOT generalise across vaults: in Euler's core EVK model an
+        // account borrows from a controller vault while its collateral sits in OTHER vaults with OTHER assets,
+        // so an unregistered controller asset would drop the debt while sibling vaults still report collateral.
+        // Not reachable today — both configured instances are EulerEarn aggregators, which have no `LTVList`
+        // and whose `debtOf` reverts, so `debt` is permanently 0 — but adding a core eVault would open it.
         (INAVCalculator.Asset memory assetInfo, bool found) = _getAssetInfo(asset);
         if (!found) {
             return new INAVCalculator.PositionBalance[](0);

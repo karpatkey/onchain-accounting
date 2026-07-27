@@ -653,6 +653,7 @@ contract GearboxV3CreditAccountsMetaTier2LeafTest is Test {
         assertEq(adapter.positionLabels(abi.encode(dirty)).length, 0, "dirty upper bits");
         assertEq(adapter.positionLabels(abi.encode(coord, uint256(1))).length, 0, "over-long");
     }
+
     /// @dev `positionLabels` must never revert, and the credit account in the positionId is caller-supplied — the
     ///      `_pidAddress` guard accepts any clean address word by design. `_creditManagerOf` previously read it
     ///      through `try ICreditAccountV3(ca).creditManager()`, which fails open for only ONE of the three ways

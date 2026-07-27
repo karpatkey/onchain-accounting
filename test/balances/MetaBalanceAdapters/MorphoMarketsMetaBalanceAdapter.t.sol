@@ -228,8 +228,7 @@ contract MorphoMarketsMetaUnitTest is BalanceAdapterTestBase {
     ///      Load-bearing: drop the `loanToken != address(0)` gate and the first assertion sees 2 labels, not 1.
     function test_positionLabels_unknownMarketId_collapsesToCategory() public {
         MockMorphoZeroGetter zeroMorpho = new MockMorphoZeroGetter();
-        MorphoMarketsMetaBalanceAdapter a =
-            new MorphoMarketsMetaBalanceAdapter(address(zeroMorpho), address(balances));
+        MorphoMarketsMetaBalanceAdapter a = new MorphoMarketsMetaBalanceAdapter(address(zeroMorpho), address(balances));
 
         string[] memory unknown = a.positionLabels(abi.encode(bytes32(uint256(keccak256("nope")))));
         assertEq(unknown.length, 1, "an id with no market must not render a token pair");

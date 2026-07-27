@@ -439,7 +439,8 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     /// @dev A plain `try/catch` only catches a reverting call — it does NOT catch a *successful* call whose
     ///      returndata cannot be decoded into `string` (e.g. a non-contract returning empty data, or a contract
     ///      returning a malformed/short blob), which would revert the whole verbose read. This validates the
-    ///      ABI envelope (canonical 0x20 offset + length within bounds) before decoding so it can never revert.
+    ///      ABI envelope (canonical 0x20 offset + length within bounds) before decoding so the decode itself can
+    ///      never revert on bounds. (Bounds, not cost — see the inline note at the guard.)
     ///
     ///      **The bound is the RAW declared length, not `ceil32` of it.** A memory-source `abi.decode` bounds on
     ///      the declared length itself: it needs `64 + strLen <= ret.length`, and reads exactly `strLen` bytes
@@ -462,9 +463,15 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             strLen := mload(add(ret, 0x40))
         }
         // Canonical ABI string: offset == 0x20 and the declared body fits inside the returndata. `ret.length >= 64`
-        // is guaranteed by the early return above, so the subtraction cannot underflow, and it also rules out a
-        // malicious huge strLen. This is exactly the bound `abi.decode` itself applies, so the decode below is
-        // provably unreachable-by-revert.
+        // is guaranteed by the early return above, so the subtraction cannot underflow. This is exactly the bound
+        // `abi.decode` itself applies, so the decode below cannot revert on bounds.
+        //
+        // That is a bounds claim, not a cost one. It does not rule out a large `strLen` outright — a target may
+        // return a huge blob with a matching declared length, and this frame pays to copy it either way, as it
+        // does for any staticcall. What the bound buys is that the decode can never allocate beyond what the
+        // target actually delivered, which is why no gas stipend is needed here, unlike `_safeStringArray`
+        // (whose declared array length is independent of the returndata size, so it can force unbounded
+        // memory expansion and must be capped).
         if (offset != 0x20 || strLen > ret.length - 64) return "";
         return abi.decode(ret, (string));
     }

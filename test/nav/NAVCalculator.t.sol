@@ -1093,9 +1093,12 @@ contract NAVCalculatorTest is SuperTest {
     /// @dev This is the regression the old `ceil32` bound caused. A canonical ABI `string` return is
     ///      `[offset=0x20][length][payload]`; solc pads the payload to a word when IT encodes, but a memory-source
     ///      `abi.decode` bounds on the RAW declared length and reads exactly that many bytes. The removed bound
-    ///      required `ret.length >= 64 + ceil32(strLen)`, so every reply whose payload was not an exact multiple of
-    ///      32 bytes — 62 of the 64 lengths in 1..64 — was rejected and the name silently rendered as "".
-    ///      `strLen = 5`, `ret.length = 69`: rejected before, decodes to "Wallet"-style text now.
+    ///      required `ret.length >= 64 + ceil32(strLen)`, so it rejected the band
+    ///      `64 + strLen <= ret.length < 64 + ceil32(strLen)` — replies that declare a length whose payload is
+    ///      *delivered* unpadded. Note the axis is the delivered `ret.length`, NOT whether `strLen` itself is a
+    ///      multiple of 32: a 5-byte name padded to `ret.length = 96` passed the old bound fine. Since solc always
+    ///      pads, no compiler-generated adapter was ever in that band — hence the assembly mock below.
+    ///      `strLen = 5`, `ret.length = 69`: rejected before, renders now.
     function test_getAccountPositionsVerbose_unpaddedProtocolName_renders() public {
         RawProtocolNameAdapter adapter = _registerRawNameAdapter();
         // offset 0x20, length 5, exactly 5 bytes of payload => returndatasize 69, not a multiple of 32.
@@ -1124,6 +1127,23 @@ contract NAVCalculatorTest is SuperTest {
 
         INAVCalculator.VerbosePosition[] memory verbose = nav.getAccountPositionsVerbose(safe, address(0));
         assertEq(_nameFor(verbose, address(adapter)), "", "a truncated payload must still degrade to \"\"");
+    }
+
+    /// @dev The shape that pins the `- 64` term, and the ONLY one that does. The four shapes above give identical
+    ///      verdicts under the strictly weaker `strLen > ret.length`, so a regression dropping `- 64` would keep
+    ///      them all green. Here the declared length overruns the delivered payload by 1..63 bytes
+    ///      (`ret.length - 64 < strLen <= ret.length`), which is exactly the band where `abi.decode` reverts:
+    ///      `strLen = 80`, `ret.length = 100`, so the correct guard rejects (80 > 36) while `strLen > ret.length`
+    ///      would accept (80 <= 100) and let the decode revert — propagating out of the try/catch-free
+    ///      `_safeString` and taking down the entire verbose read for the account. Degrading to "" is the
+    ///      fail-open contract; reverting is the bug.
+    function test_getAccountPositionsVerbose_overrunProtocolName_degrades() public {
+        RawProtocolNameAdapter adapter = _registerRawNameAdapter();
+        // 32 (offset) + 32 (length) + 36 (payload) = 100 bytes of returndata declaring an 80-byte body.
+        adapter.stageProtocolName(abi.encodePacked(uint256(0x20), uint256(80), new bytes(36)));
+
+        INAVCalculator.VerbosePosition[] memory verbose = nav.getAccountPositionsVerbose(safe, address(0));
+        assertEq(_nameFor(verbose, address(adapter)), "", "a declared length overrunning the payload must degrade");
     }
 
     /// @dev And the other malformed shapes stay rejected rather than reverting the verbose read.

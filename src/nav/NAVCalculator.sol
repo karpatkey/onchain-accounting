@@ -445,14 +445,20 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     ///      **The bound is the RAW declared length, not `ceil32` of it.** A memory-source `abi.decode` bounds on
     ///      the declared length itself: it needs `64 + strLen <= ret.length`, and reads exactly `strLen` bytes
     ///      (under cancun, an `mcopy` of precisely that many). Verified on solc 0.8.34 / via_ir / cancun —
-    ///      `offset = 0x20`, `strLen = 5`, `ret.length = 69` decodes to `"short"` rather than reverting.
+    ///      `offset = 0x20`, `strLen = 5`, `ret.length = 69` decodes to a 5-character name rather than reverting.
     ///
     ///      This previously carried a `ceil32` bound and a comment asserting the raw-length bound was unsafe
-    ///      ("would make abi.decode read 32 padded bytes past `ret` and revert"). That claim was **wrong**, and
-    ///      the extra bound was not merely redundant: it rejected every reply whose payload is not padded to a
-    ///      32-byte boundary — i.e. all but the exact multiples of 32 — so a legitimate `protocolName()` answered
-    ///      with an unpadded encoding silently rendered as "". Fail-open in the safe direction, but a false
-    ///      negative, and the misleading comment was the part most likely to be copied into the next reader.
+    ///      ("would make abi.decode read 32 padded bytes past `ret` and revert"). That claim was **wrong**: the
+    ///      extra bound demanded `ret.length >= 64 + ceil32(strLen)`, so it rejected any reply that declares a
+    ///      length whose payload is *delivered* unpadded — precisely the band
+    ///      `64 + strLen <= ret.length < 64 + ceil32(strLen)`, which `abi.decode` itself accepts.
+    ///
+    ///      Scope, stated honestly: solc (and vyper) always pad an encoded `string` to a word, so `ret.length` is
+    ///      exactly `64 + ceil32(strLen)` for any compiler-generated target and **no adapter in this repo was
+    ///      ever affected** — every `protocolName()` here is a plain `pure returns (string memory)`. The rejected
+    ///      band is only reachable from a hand-rolled assembly return or a non-solc toolchain. So this is a
+    ///      correctness-and-documentation fix, not a live bug: the removal is what makes the guard match
+    ///      `abi.decode`, and the misleading comment was the part most likely to be copied into the next reader.
     function _safeString(address target, bytes memory callData) private view returns (string memory) {
         (bool ok, bytes memory ret) = target.staticcall(callData);
         if (!ok || ret.length < 64) return ""; // need at least offset(32) + length(32)

@@ -346,24 +346,28 @@ contract NAVCalculatorErrorTest is SuperTest {
     // Asset Registration Argument Validation
     // ============================================
 
-    /// @notice A code-less `asset` must be rejected with this function's own error, not an opaque empty revert.
+    /// @notice A code-less `asset` must be rejected with an error that NAMES the problem, not an opaque empty
+    ///         revert and not the same selector every other bad argument produces.
     /// @dev `NAVRegistryLib.registerAsset` probes `IERC20Metadata(asset).decimals()` behind a `try`/`catch` that
     ///      reads as though it covered this. It does not: a high-level call to a code-less address reverts at the
     ///      `extcodesize` precheck, raised in the CALLING frame before the call, so `catch` never sees it and the
-    ///      revert reaches the MANAGER with empty returndata. Delete the `asset.code.length` guard in
-    ///      `NAVCalculator.registerAsset` and this fails on the revert DATA — the call still reverts, but with
-    ///      nothing to tell a mistyped address from a genuinely non-ERC20 one.
+    ///      revert reaches the MANAGER with empty returndata. Delete the guard in `NAVCalculator.registerAsset`
+    ///      and this fails on the revert DATA — the call still reverts, but with nothing in it.
+    ///
+    ///      The paired test below is what makes this one mean anything: the two inputs are different operator
+    ///      mistakes and must not produce the same selector. Swap `NotAContract` here for the `InvalidArguments`
+    ///      the rest of this function uses and the pair stops distinguishing them.
     function test_RevertWhen_registerAsset_codelessAsset() public {
         address codeless = makeAddr("codelessAsset");
         assertEq(codeless.code.length, 0, "the asset under test must have no code");
 
         vm.prank(navCalculatorManager);
-        vm.expectRevert(InvalidArguments.selector);
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "asset"));
         nav.registerAsset(codeless, address(usdcAdapter), IPrices.PriceType.Custom, type(uint256).max);
     }
 
-    /// @notice Control: a contract that HAS code but is not ERC20-compatible keeps reverting through the
-    ///         library's `try`/`catch`, with the same error. The guard narrows the code-less case only.
+    /// @notice A contract that HAS code but is not ERC20-compatible is a DIFFERENT mistake and keeps its own
+    ///         error, raised by the library's `try`/`catch`.
     function test_RevertWhen_registerAsset_nonErc20Contract() public {
         address notAToken = address(revertingAdapter);
         assertGt(notAToken.code.length, 0, "the control must have code");

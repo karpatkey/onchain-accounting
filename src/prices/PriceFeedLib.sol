@@ -988,55 +988,69 @@ library PriceFeedLib {
         return true;
     }
 
-    /// @notice Outer bound on the gas any single adapter may consume in one `getAdapterPositions`.
-    /// @dev A backstop, not the working limit: the EVM's own 63/64 rule already caps the forward, and this only
-    ///      binds when the read is given more gas than any legitimate adapter could need. What it buys is that an
-    ///      adapter which loops forever costs the read a bounded amount instead of 63/64 of whatever the caller
-    ///      offered, which on an archive-node `eth_call` is effectively unbounded.
+    /// @notice Share of the stipend an adapter must burn before a failed call is read as exhaustion rather than
+    ///         as a revert: `stipend - stipend / EXHAUSTION_SLACK_DIVISOR`.
+    /// @dev The threshold cannot be the full stipend, because a starved adapter never quite spends all of it. Gas
+    ///      runs out inside whatever the adapter is reading, not in the adapter's own frame: the sub-call takes
+    ///      63/64 of the stipend under EIP-150, out-of-gasses, and the adapter's own 1/64 reserve comes back
+    ///      unspent when it bubbles the revert. One level of nesting therefore consumes ~63/64 of the stipend,
+    ///      two levels ~0.969, three ~0.954, four ~0.939 — each level leaves another reserve behind. A full-stipend
+    ///      threshold sees the shortfall and classifies every one of those as a benign revert, which is the silent
+    ///      drop this guard exists to catch, and it is the shape ALL real adapters have.
     ///
-    ///      Sized from measurement, and the size is not arbitrary: `ERC20DefaultBalanceAdapter` — present on every
-    ///      deployment and the only adapter whose cost scales with the asset registry — runs at roughly 585k gas
-    ///      per registered asset, ~61M at 104 assets. Live chains carry well under half that many, but the
-    ///      headroom has to survive registry growth, so this sits above the 100-asset figure. The calibration test
-    ///      in test/nav/NAVCalculator.gasCaps.t.sol is what keeps that claim honest.
-    uint256 private constant ADAPTER_POSITIONS_GAS = 100_000_000;
+    ///      7/8 covers nesting well past anything in this repo. Being wrong in the other direction is cheap: a
+    ///      misclassified revert produces a loud, retryable failure, while a misclassified exhaustion produces a
+    ///      wrong number. Note also that no fixed fraction is exact — deep enough nesting always slips under —
+    ///      so this narrows the silent window rather than closing it.
+    uint256 private constant EXHAUSTION_SLACK_DIVISOR = 8;
 
-    /// @notice Calls an adapter's `getAdapterPositions` under a bounded stipend, failing open on a revert but
-    ///         NOT on gas exhaustion. Meta adapters read their NAV-configured instance set themselves, so the
-    ///         call path is uniform — and one stipend covers a meta-adapter's whole per-instance fan-out.
+    /// @notice Calls an adapter's `getAdapterPositions`, failing open on a revert but NOT on gas exhaustion.
     /// @dev The two failure modes look identical to `catch` and must not be treated identically:
     ///
     ///      - **A revert** means the adapter answered: it has nothing to report. Returning an empty list is the
     ///        long-standing fail-open behaviour, so one misconfigured adapter cannot take down the whole read.
-    ///      - **Exhausting the stipend** means the adapter did NOT answer. Reporting that as an empty list drops
-    ///        its legs, and a dropped *debt* leg RAISES the reported NAV — a silent over-report, produced by the
-    ///        read itself rather than by any adapter. It is also self-propagating: whatever an adapter burns is
-    ///        gone from the budget the adapters after it need, so one runaway adapter starves the rest and each
-    ///        of them disappears the same silent way.
+    ///      - **Running out of gas** means the adapter did NOT answer. Reporting that as an empty list drops its
+    ///        legs, and a dropped *debt* leg RAISES the reported NAV — a silent over-report, produced by the read
+    ///        itself rather than by any adapter. It is also self-propagating: whatever an adapter burns is gone
+    ///        from the budget the adapters after it need, so one runaway adapter starves the rest and each of
+    ///        them disappears the same silent way.
     ///
-    ///      So exhaustion reverts with {AdapterGasExhausted} instead. A NAV read either sees every adapter or it
-    ///      fails loudly; it never returns a number that quietly omits one. The distinction is drawn on gas
-    ///      consumed rather than on the revert data, because an out-of-gas revert carries none: an adapter that
-    ///      spends the whole stipend and only then reverts is classified as exhausted, which errs toward the loud
-    ///      outcome.
+    ///      So exhaustion reverts with {AdapterGasExhausted}. The stipend is exactly what the EVM would forward
+    ///      anyway (63/64 of what this frame holds) — deliberately NOT a smaller fixed ceiling. A fixed ceiling
+    ///      would make exhaustion unrecoverable: `ERC20DefaultBalanceAdapter`'s cost grows with the asset
+    ///      registry, and per-account adapters can be inflated by anyone who can add entries to the account's
+    ///      list at a protocol (a withdrawal-queue request names its own owner), so a ceiling turns ordinary
+    ///      registry growth and cheap third-party griefing alike into a permanent outage that no caller can
+    ///      escape and only a redeploy can lift. Keyed to the caller's own budget instead, the same situations
+    ///      surface as "this read needs more gas", which the caller can act on.
+    ///
+    ///      **Scope, stated plainly: this guard sees only what crosses the adapter boundary.** A meta-adapter
+    ///      runs its own per-instance `try`/`catch` fan-out internally and RETURNS SUCCESSFULLY with a starved
+    ///      instance recorded as empty, so a NAV read can still quietly omit one instance of a meta-adapter. That
+    ///      hole is in `MetaBalanceAdapter`, not here, and closing it needs the same distinction drawn at the
+    ///      per-instance `catch`.
     function _getAdapterPositions(address adapter, address account, address assetFilter)
         private
         view
         returns (INAVCalculator.PositionBalance[] memory)
     {
         uint256 available = gasleft();
-        // What the EVM would forward anyway (63/64), clamped by the backstop. Computed explicitly so the
-        // exhaustion test below has an exact figure to compare against rather than an implied one.
+        // `available` MUST be this one reading, taken before the stipend is derived from it, and not a fresh
+        // `gasleft()` nearer the call. The check below is `consumed >= threshold`, and deriving both from a single
+        // sample is what fixes the SIGN of the slack: the caller-side overhead the callee never spends lands on
+        // the consumed side. Re-sampling would compute the stipend from a larger reading than the one compared
+        // against it, subtracting that overhead instead of adding it, and push a real exhaustion below the
+        // threshold — reporting it as "no positions".
         uint256 stipend = available - available / 64;
-        if (stipend > ADAPTER_POSITIONS_GAS) stipend = ADAPTER_POSITIONS_GAS;
 
         try IBalanceAdapter(adapter).getAdapterPositions{gas: stipend}(account, assetFilter) returns (
             INAVCalculator.PositionBalance[] memory pos
         ) {
             return pos;
         } catch {
-            // The callee can only reach `stipend` consumed by exhausting it; a revert leaves the rest unspent.
-            if (available - gasleft() >= stipend) revert AdapterGasExhausted(adapter);
+            if (available - gasleft() >= stipend - stipend / EXHAUSTION_SLACK_DIVISOR) {
+                revert AdapterGasExhausted(adapter);
+            }
             return new INAVCalculator.PositionBalance[](0);
         }
     }

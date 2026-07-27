@@ -23,6 +23,10 @@ enum Misbehaviour {
     Revert,
     // Loop forever: consumes every unit of gas forwarded, and 63/64 of the caller's if uncapped.
     BurnGas,
+    // Burn about HALF of whatever gas it is given, then revert normally. An adapter that did real work and then
+    // hit a genuine error — the case that must still fail OPEN, and the one that pins how low the exhaustion
+    // threshold may sit.
+    BurnHalfThenRevert,
     // Reply SUCCESSFULLY with a large raw blob. The success path is the only way to exercise a reader's
     // returndata-copy cost — a revert bomb of the same size out-of-gasses inside the callee once a stipend is in
     // place, leaving `returndatasize() == 0` and nothing for the caller to copy. See test/mocks/RawReplier.sol.
@@ -36,7 +40,7 @@ abstract contract Misbehaving {
     uint256 internal constant BIG_REPLY_BYTES = 200_000;
 
     /// @dev Reverts, burns or replies big, per `m`; returns normally when honest so the caller continues.
-    function _misbehave(Misbehaviour m) internal pure {
+    function _misbehave(Misbehaviour m) internal view {
         if (m == Misbehaviour.Revert) revert MockAdapterUnavailable();
         if (m == Misbehaviour.BurnGas) {
             assembly {
@@ -50,6 +54,13 @@ abstract contract Misbehaving {
             assembly {
                 return(0, size)
             }
+        }
+        if (m == Misbehaviour.BurnHalfThenRevert) {
+            uint256 floor_ = gasleft() / 2;
+            assembly {
+                for {} gt(gas(), floor_) {} { mstore(0x00, keccak256(0x00, 0x20)) }
+            }
+            revert MockAdapterUnavailable();
         }
     }
 }
@@ -92,6 +103,70 @@ contract Mock_BurningBalanceAdapter is IBalanceAdapter, Misbehaving {
 
     function getAdapterBalanceForAsset(address, address) external view override returns (uint256, bool) {
         _misbehave(mode);
+        return (0, false);
+    }
+
+    function underlyingAssetsSupported() external pure override returns (address[] memory) {
+        return new address[](0);
+    }
+}
+
+/// @title Mock_NestedBurner
+/// @notice The sub-contract a realistic adapter reads its protocol through, which never returns.
+contract Mock_NestedBurner {
+    function burn() external pure {
+        assembly {
+            for {} 1 {} { mstore(0x00, keccak256(0x00, 0x20)) }
+        }
+    }
+}
+
+/// @title Mock_NestedBurningBalanceAdapter
+/// @notice An adapter that loses its gas one call level DOWN, not in its own frame.
+/// @dev The realistic shape, and the one a naive exhaustion test misses. Every adapter reads its protocol through
+///      external calls, so when the gas runs out it runs out inside the callee: the sub-call takes 63/64 of the
+///      adapter's stipend, out-of-gasses, and Solidity bubbles the empty revert — leaving the adapter's own 1/64
+///      EIP-150 reserve unspent and returned to the caller. The read therefore observes strictly LESS than the
+///      full stipend consumed, and a threshold set at the full stipend classifies a starved adapter as a benign
+///      revert. Each further level of nesting leaves another reserve behind.
+contract Mock_NestedBurningBalanceAdapter is IBalanceAdapter {
+    Mock_NestedBurner private immutable BURNER;
+    bool public burning = true;
+
+    constructor() {
+        BURNER = new Mock_NestedBurner();
+    }
+
+    function setBurning(bool b) external {
+        burning = b;
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
+        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
+
+    function getAdapterPositions(address, address)
+        external
+        view
+        override
+        returns (INAVCalculator.PositionBalance[] memory)
+    {
+        if (burning) BURNER.burn();
+        return new INAVCalculator.PositionBalance[](0);
+    }
+
+    function getAdapterBalances(address)
+        external
+        view
+        override
+        returns (address[] memory, uint256[] memory, bool[] memory)
+    {
+        if (burning) BURNER.burn();
+        return (new address[](0), new uint256[](0), new bool[](0));
+    }
+
+    function getAdapterBalanceForAsset(address, address) external view override returns (uint256, bool) {
+        if (burning) BURNER.burn();
         return (0, false);
     }
 
@@ -301,6 +376,18 @@ contract NavReadHarness {
         used = before - gasleft();
     }
 
+    /// @notice How a `getAccountPositions` under `budget` ended, distinguishing the three outcomes that matter.
+    /// @return status 0 = completed (the read returned a NAV), 1 = reverted with `AdapterGasExhausted`,
+    ///         2 = reverted some other way (typically the read itself running out of gas).
+    function positionsOutcome(address account, uint256 budget) external view returns (uint8 status) {
+        try NAV.getAccountPositions{gas: budget}(account, address(0)) returns (INAVCalculator.Position[] memory) {
+            return 0;
+        } catch (bytes memory err) {
+            if (err.length >= 4 && bytes4(err) == AdapterGasExhausted.selector) return 1;
+            return 2;
+        }
+    }
+
     /// @notice One `getAccountNav` under `budget`.
     /// @return ok Whether the read completed at all.
     /// @return value The reported NAV.
@@ -367,14 +454,6 @@ contract NAVCalculatorGasCapTest is SuperTest {
     /// @dev Gas a read is given when the point is that it must NOT run out. Well above any read in this setup.
     uint256 internal constant GENEROUS_BUDGET = 60_000_000;
 
-    /// @dev Budget for the tests that exercise the backstop itself: it has to exceed {ADAPTER_POSITIONS_GAS}
-    ///      before the clamp can bind, since below that the EVM's 63/64 rule is the tighter of the two.
-    uint256 internal constant OVER_CAP_BUDGET = 300_000_000;
-
-    /// @dev Ceiling on a read whose first adapter loops forever, given {OVER_CAP_BUDGET}. Bounded, the read
-    ///      spends the stipend and stops; unbounded it spends 63/64 of the budget, i.e. ~295M.
-    uint256 internal constant BURNED_READ_CEILING = 120_000_000;
-
     /// @dev Ceiling on a whole VERBOSE read against misbehaving label reads. Unbounded, the burn reaches ~58M
     ///      (63/64 of {GENEROUS_BUDGET}) and eight 200 KB replies reach ~8.9M. Bounded, both land near the cost
     ///      of the read itself.
@@ -386,12 +465,15 @@ contract NAVCalculatorGasCapTest is SuperTest {
 
     uint256 internal constant DEBT_AMOUNT = 1000e6; // USDC, 6 decimals
 
-    /// @dev Mirror of `PriceFeedLib.ADAPTER_POSITIONS_GAS`, which is private. Keep the two in lockstep.
-    uint256 internal constant ADAPTER_POSITIONS_GAS = 100_000_000;
-
-    /// @dev Registered-asset count the calibration test holds `ERC20DefaultBalanceAdapter` to — roughly twice the
+    /// @dev Registered-asset count the cost canary holds `ERC20DefaultBalanceAdapter` to — roughly twice the
     ///      largest live registry, since every registered asset is one more iteration of that adapter's loop.
     uint256 internal constant CALIBRATION_ASSETS = 100;
+
+    /// @dev Ceiling for that canary. Not a protocol limit — nothing in the contracts caps a single adapter any
+    ///      more — but a tripwire on the one adapter whose cost grows with configuration, so a change that makes
+    ///      it dramatically more expensive is caught here rather than by a NAV read that needs more gas than a
+    ///      node will give it.
+    uint256 internal constant ERC20_DEFAULT_COST_CANARY = 100_000_000;
 
     function setUp() public {
         setupAll();
@@ -462,30 +544,80 @@ contract NAVCalculatorGasCapTest is SuperTest {
         assertEq(legs, 1, "the adapters after it are still reported");
     }
 
-    /// @notice The backstop itself: a looping adapter costs the read a bounded amount, not 63/64 of the budget.
-    /// @dev Drop the `ADAPTER_POSITIONS_GAS` clamp in `PriceFeedLib._getAdapterPositions` and this fails — the
-    ///      stipend becomes 63/64 of {OVER_CAP_BUDGET} and the read burns ~295M before giving up.
-    function test_burningAdapter_isGasCapped() public {
+    /// @notice Exhaustion is detected at every budget scale, and the read never quietly completes without the
+    ///         burner's adapter.
+    /// @dev Guards the margin the detection rests on. `stipend` is derived from the same `available` it is later
+    ///      compared against, so the slack — the caller-side overhead the callee never sees — is a constant
+    ///      handful of gas whatever the budget, and always has the same sign. Sampling `available` closer to the
+    ///      call is an inviting simplification and would break exactly this: the stipend would then be computed
+    ///      from a LARGER reading than the one compared against it, and a genuine out-of-gas would slip under the
+    ///      threshold and be reported as "no positions" — status 0 below, the silent over-report. Parameterised
+    ///      over budgets spanning two orders of magnitude because a margin that holds only at one scale is not a
+    ///      margin.
+    function test_burningAdapter_exhaustionDetectedAtEveryBudget() public {
         Mock_BurningBalanceAdapter burner = new Mock_BurningBalanceAdapter();
         vm.prank(navCalculatorManager);
         nav.addBalanceAdapters(aa(address(burner)));
 
-        (bool ok,, uint256 used) = harness.positionsWithBudget(safe, OVER_CAP_BUDGET, address(burner));
-        assertFalse(ok, "an exhausted adapter fails the read");
-        assertLt(used, BURNED_READ_CEILING, "one adapter must not spend more than its stipend");
+        uint256[6] memory budgets = [uint256(2_000_000), 5_000_000, 12_000_000, 30_000_000, 60_000_000, 250_000_000];
+        for (uint256 i = 0; i < budgets.length; i++) {
+            uint8 status = harness.positionsOutcome(safe, budgets[i]);
+            assertEq(status, 1, "a starved adapter must be reported as exhausted at every budget, never as empty");
+        }
+    }
+
+    /// @notice An adapter that does real work and THEN reverts must still fail open, and the adapters after it
+    ///         must still be reported.
+    /// @dev The lower bound on the exhaustion threshold, and the counterweight to
+    ///      {test_nestedBurningAdapter_isStillDetected}: one test says the threshold cannot sit at the full
+    ///      stipend, this one says how far down it may go. Together they bracket it. Drop the threshold to half
+    ///      the stipend and this flips to a revert — every adapter that spends half its budget before failing
+    ///      would take the whole read down with it.
+    function test_partialBurnThenRevert_stillFailsOpen() public {
+        Mock_DebtLegAdapter debtor = new Mock_DebtLegAdapter(address(usdc), "USDC", usdc.decimals(), DEBT_AMOUNT);
+        Mock_BurningBalanceAdapter halfBurner = new Mock_BurningBalanceAdapter();
+        halfBurner.setMode(Misbehaviour.BurnHalfThenRevert);
+
+        vm.startPrank(navCalculatorManager);
+        nav.addBalanceAdapters(aa(address(halfBurner)));
+        nav.addBalanceAdapters(aa(address(debtor)));
+        vm.stopPrank();
+
+        (bool ok, uint256 legs,) = harness.positionsWithBudget(safe, GENEROUS_BUDGET, address(debtor));
+        assertTrue(ok, "an adapter that reverts after real work has ANSWERED - the read must continue");
+        assertEq(legs, 1, "and the adapters queried after it must still be reported");
+    }
+
+    /// @notice An adapter starved one call level DOWN must be caught too — the realistic shape.
+    /// @dev The threshold, not just the presence of the check, is what this pins. A starved adapter never spends
+    ///      quite all of its stipend: the sub-call takes 63/64, out-of-gasses, and the adapter's own EIP-150
+    ///      reserve comes back unspent, so a threshold at the FULL stipend reads the shortfall as a benign revert
+    ///      and fails open. Set the threshold back to `>= stipend` and this test returns status 0 — a NAV that
+    ///      silently omits the adapter — while every other test in this file still passes.
+    function test_nestedBurningAdapter_isStillDetected() public {
+        Mock_NestedBurningBalanceAdapter nested = new Mock_NestedBurningBalanceAdapter();
+        vm.prank(navCalculatorManager);
+        nav.addBalanceAdapters(aa(address(nested)));
+
+        uint256[4] memory budgets = [uint256(5_000_000), 30_000_000, 60_000_000, 250_000_000];
+        for (uint256 i = 0; i < budgets.length; i++) {
+            uint8 status = harness.positionsOutcome(safe, budgets[i]);
+            assertEq(status, 1, "an adapter starved inside a sub-call must be reported as exhausted, not as empty");
+        }
     }
 
     // -------------------------------------------------------------------------------------------------------
     // Calibration — the stipend must sit above what real adapters cost, not merely above a mock
     // -------------------------------------------------------------------------------------------------------
 
-    /// @notice `ERC20DefaultBalanceAdapter` — the one adapter present on every deployment, and the one whose cost
-    ///         grows with the asset registry — must fit inside the stipend.
-    /// @dev This is what makes the stipend safe to have at all. Sized against a mock it would prove nothing, so
-    ///      this drives the heaviest real adapter at roughly twice the largest live registry. An adapter that
-    ///      outgrows the stipend does not corrupt the NAV — the exhaustion branch makes that loud — but it does
-    ///      take the read down, so the margin is worth pinning.
-    function test_erc20DefaultAdapter_costStaysInsideTheStipend() public {
+    /// @notice Cost canary on `ERC20DefaultBalanceAdapter` — the one adapter present on every deployment, and the
+    ///         one whose cost grows with the asset registry rather than with the account.
+    /// @dev Nothing in the contracts caps a single adapter any more, so this pins no protocol limit; it exists
+    ///      because this adapter's cost is a function of CONFIGURATION. A NAV read has to be given more gas than
+    ///      the sum of its adapters, and this is the term that grows quietly as assets are registered, so a change
+    ///      that makes it dramatically more expensive should fail here rather than in a read that no node will
+    ///      fund. Driven at roughly twice the largest live registry.
+    function test_erc20DefaultAdapter_costCanary() public {
         address account = makeAddr("calibrationAccount");
         _registerAssets(CALIBRATION_ASSETS, account);
 
@@ -498,7 +630,7 @@ contract NAVCalculatorGasCapTest is SuperTest {
         emit log_named_uint("assets registered", nav.getAssetCount());
         emit log_named_uint("ERC20Default getAdapterPositions gas", used);
         assertGe(positions.length, CALIBRATION_ASSETS, "control: every funded asset must be reported");
-        assertLt(used, ADAPTER_POSITIONS_GAS, "the heaviest real adapter must fit inside the stipend");
+        assertLt(used, ERC20_DEFAULT_COST_CANARY, "the registry-scaled adapter must stay within the canary");
     }
 
     // -------------------------------------------------------------------------------------------------------

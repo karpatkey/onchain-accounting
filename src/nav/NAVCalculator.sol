@@ -12,6 +12,7 @@ import {ERC20DefaultBalanceAdapter} from "src/balances/BalanceAdapters/ERC20Defa
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "./INAVCalculator.sol";
 import {NAVRegistryLib} from "./NAVRegistryLib.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
@@ -100,21 +101,26 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             revert InvalidArguments(); // Asset already registered
         }
 
-        // A code-less `asset` must fail HERE, with this function's own error. `NAVRegistryLib.registerAsset`
-        // probes `IERC20Metadata(asset).decimals()` behind a `try`/`catch` that reads as if it covered this — it
-        // does not: a high-level call to a code-less address reverts at the `extcodesize` precheck, which fires in
-        // the CALLING frame before the call is made, so `catch` never sees it and the MANAGER gets an opaque
-        // empty revert instead of `InvalidArguments`. (This is the one place a `code.length` guard is not dead
-        // code — in front of a LOW-level staticcall it would be, because that succeeds against a code-less
+        // A code-less `asset` must fail HERE, and with an error that names the problem. `NAVRegistryLib.
+        // registerAsset` probes `IERC20Metadata(asset).decimals()` behind a `try`/`catch` that reads as if it
+        // covered this — it does not: a high-level call to a code-less address reverts at the `extcodesize`
+        // precheck, which fires in the CALLING frame before the call is made, so `catch` never sees it and the
+        // revert reaches the MANAGER with empty returndata. (This is the one place a `code.length` guard is not
+        // dead code — in front of a LOW-level staticcall it would be, because that succeeds against a code-less
         // address rather than reverting.)
+        //
+        // `NotAContract` rather than this function's `InvalidArguments`: a mistyped address and a real contract
+        // that simply is not ERC20-compatible are different operator problems, and the library already answers
+        // the second with `InvalidArguments`. Reusing that selector here would leave the two indistinguishable,
+        // which is the whole point of the guard.
         //
         // The guard lives at this call site rather than in the library on purpose: `NAVRegistryLib` is pre-linked
         // at a deterministic CREATE2 address, so changing its bytecode moves the pin, which forces a new
         // implementation and an upgrade on every deployed chain — a disproportionate price for an error-message
         // fix. `NATIVE_ADDRESS` is exempt because it is code-less by construction and takes the library's native
         // branch (it is pre-registered during `initialize`, so in practice it is already rejected above).
-        if (asset != NATIVE_ADDRESS && asset.code.length == 0) {
-            revert InvalidArguments();
+        if (asset != NATIVE_ADDRESS) {
+            AddressCheckLib.requireContract(asset, "asset");
         }
 
         // Register asset in NAV/Pricing registry; fetches decimals/symbol from ERC20 (or native); reverts if not ERC20 compatible
@@ -506,15 +512,21 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         view
         returns (bool ok, bytes memory ret)
     {
-        ret = new bytes(maxReturnBytes);
+        // Discard the reply at the call (`outsize = 0`), then copy back only what is both present and wanted.
+        // Allocating `maxReturnBytes` up front instead would charge this frame for the worst case on every read,
+        // however small the real reply: `_toVerbose` reads once per position in a SINGLE frame, memory cost is
+        // quadratic in that frame's total, and the honest path would pay it. Copying after the fact keeps the
+        // ceiling while charging only the actual size.
+        uint256 size;
         assembly ("memory-safe") {
-            ok := staticcall(gasStipend, target, add(callData, 0x20), mload(callData), add(ret, 0x20), maxReturnBytes)
-            // `returndatasize()` is the UNtruncated size; only `maxReturnBytes` of it landed in `ret`.
-            let copied := returndatasize()
-            if gt(copied, maxReturnBytes) { copied := maxReturnBytes }
-            // Shrink to the copied extent so every bound downstream — and `abi.decode`'s own — matches the bytes
-            // actually held, never what the callee claimed to send.
-            mstore(ret, copied)
+            ok := staticcall(gasStipend, target, add(callData, 0x20), mload(callData), 0x00, 0x00)
+            // `returndatasize()` is the untruncated size — the bound below is on what we choose to take.
+            size := returndatasize()
+            if gt(size, maxReturnBytes) { size := maxReturnBytes }
+        }
+        ret = new bytes(size);
+        assembly ("memory-safe") {
+            returndatacopy(add(ret, 0x20), 0x00, size)
         }
     }
 

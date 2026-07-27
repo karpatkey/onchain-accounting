@@ -566,7 +566,6 @@ contract AaveV3InstancesMetaLabelReadTest is BalanceAdapterTestBase {
         _assertCollapsed(address(poolReplier), "past the cap the label degrades rather than rendering");
     }
 
-    /// @dev An oversized reply is rejected outright rather than silently truncated to the copied window.
     /// @notice A reply with a large zero-padded tail BEHIND a short, in-cap market id must still render.
     /// @dev **This is a deliberate widening**, inherited by routing through {LabelLib}. The hand-rolled
     ///      `_safeStringRead` this replaced rejected any reply larger than its 320-byte window outright, so it
@@ -589,9 +588,12 @@ contract AaveV3InstancesMetaLabelReadTest is BalanceAdapterTestBase {
         assertEq(l[1], "Aave V3 Padded", "the market id must decode verbatim");
     }
 
+    /// @dev Collapses because of the declared STRING length, not the reply size — `stringOfLength(2048)` puts
+    ///      2048 bytes past the two head words, well past the 256-byte cap. Reply size alone no longer rejects
+    ///      anything (see the padded-buffer test above), so this pins the CONTENT cap; the two are independent.
     function test_labels_oversizedReply_collapses() public {
         providerReplier.stageReturn(RawReplyLib.stringOfLength(2048));
-        _assertCollapsed(address(poolReplier), "an oversized reply must not revert or truncate");
+        _assertCollapsed(address(poolReplier), "a string past the cap must not revert or truncate");
     }
 
     /// @dev Exercises the GAS STIPEND, not the output cap. A 3 MB revert payload costs the callee ~17.4M gas in

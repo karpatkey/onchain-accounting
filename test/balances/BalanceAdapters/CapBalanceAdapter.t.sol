@@ -6,6 +6,8 @@ import {Test} from "forge-std/Test.sol";
 import {CapBalanceAdapter} from "src/balances/BalanceAdapters/CapBalanceAdapter.sol";
 import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
+import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
+import {IPositionEnumerable} from "src/balances/IPositionEnumerable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
@@ -111,7 +113,74 @@ contract CapBalanceAdapterTest is Test {
     function test_supportsInterface() public view {
         assertTrue(adapter.supportsInterface(type(IBalanceAdapter).interfaceId));
         assertTrue(adapter.supportsInterface(type(IERC165).interfaceId));
+        assertTrue(adapter.supportsInterface(type(IPositionDescribable).interfaceId));
         assertFalse(adapter.supportsInterface(bytes4(0xdeadbeef)));
+    }
+
+    /// @dev The ERC165 bit is the whole point of the interface being optional: a configuration view uses it to
+    ///      decide whether to call `positionIds()` at all. Asserted separately from the base set because it is
+    ///      contributed by Cap's own `super`-chaining override, not by {BalanceAdapterBase}.
+    function test_supportsInterface_advertisesPositionEnumerable() public view {
+        assertTrue(adapter.supportsInterface(type(IPositionEnumerable).interfaceId));
+    }
+
+    // ============================================
+    // IPositionEnumerable
+    // ============================================
+
+    /// @dev Cap's two shapes, reported account-independently — this is what a configuration view could not get
+    ///      before, because Cap derives its breadcrumb per positionId and so answers `positionLabels("")` with [].
+    function test_positionIds_returnsBothShapes() public view {
+        bytes[] memory ids = adapter.positionIds();
+        assertEq(ids.length, 2, "Cap has exactly two shapes");
+        assertEq(ids[0], abi.encode(address(mockCUsd)), "shape 0 is the cUSD leg");
+        assertEq(ids[1], abi.encode(address(mockStcUsd)), "shape 1 is the stcUSD leg");
+    }
+
+    /// @dev Each enumerated shape must resolve to its breadcrumb — the pairing a configuration view renders.
+    ///      Together with the probe returning [] (asserted elsewhere in this file) this is the before/after:
+    ///      the labels always existed, they were simply unreachable without already knowing a positionId.
+    function test_positionIds_eachShapeResolvesItsLabels() public view {
+        bytes[] memory ids = adapter.positionIds();
+
+        string[] memory first = adapter.positionLabels(ids[0]);
+        assertEq(first.length, 2);
+        assertEq(first[0], "Stablecoin");
+        assertEq(first[1], "cUSD");
+
+        string[] memory second = adapter.positionLabels(ids[1]);
+        assertEq(second.length, 2);
+        assertEq(second[0], "Savings");
+        assertEq(second[1], "stcUSD");
+    }
+
+    /// @dev **The load-bearing assertion of the whole interface.** {IPositionEnumerable} requires each returned id
+    ///      to be byte-identical to the `PositionBalance.positionId` the adapter emits for that shape, because
+    ///      that is what lets a consumer JOIN the configuration view against real positions. An implementation
+    ///      that returned ids which merely *label* correctly while differing from the emitted bytes would satisfy
+    ///      every other test in this file and still silently break that join — which is exactly the trap
+    ///      `AaveV3InstancesMetaBalanceAdapter` sits in (its instance coordinate is a DataProvider, but it emits
+    ///      the resolved Pool; both label identically, so only a byte comparison catches it).
+    function test_positionIds_matchTheEmittedPositionIdsExactly() public {
+        mockCUsd.setBalance(alice, 100e18);
+        mockStcUsd.setBalance(alice, 50e18);
+
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(0));
+        assertEq(positions.length, 2, "both legs must be live for this comparison to be meaningful");
+
+        bytes[] memory ids = adapter.positionIds();
+        assertEq(ids.length, positions.length, "one advertised shape per emitted leg");
+        for (uint256 i; i < positions.length; ++i) {
+            assertEq(ids[i], positions[i].positionId, "advertised shape must equal the emitted positionId");
+        }
+    }
+
+    /// @dev Shapes describe what the adapter CAN report, not what anyone holds: with no balances at all,
+    ///      `getAdapterPositions` emits nothing while `positionIds()` still advertises both shapes. A
+    ///      configuration view must render the same rows whether or not an account is funded.
+    function test_positionIds_areAccountIndependent() public view {
+        assertEq(adapter.getAdapterPositions(alice, address(0)).length, 0, "no balances -> no positions");
+        assertEq(adapter.positionIds().length, 2, "shapes are advertised regardless");
     }
 
     // ============================================

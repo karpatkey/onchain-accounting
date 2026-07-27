@@ -5,6 +5,8 @@ import {BalanceAdapterBase} from "../BalanceAdapterBase.sol";
 import {IBalanceAdapter} from "../IBalanceAdapter.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
+import {IPositionEnumerable} from "../IPositionEnumerable.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -42,7 +44,7 @@ interface IStcUsd {
 ///      - stcUSD: ERC20.balanceOf → ERC4626 `convertToAssets` → cUSD → `getBurnAmount` → USDC. `["Savings", "stcUSD"]`.
 ///      The aggregate balance getters (`getAdapterBalances`/`getAdapterBalanceForAsset`) still report the combined
 ///      USDC total for the USDC asset; only the NAV `getAdapterPositions` path splits the legs.
-contract CapBalanceAdapter is BalanceAdapterBase {
+contract CapBalanceAdapter is BalanceAdapterBase, IPositionEnumerable {
     //
     // State
     //
@@ -115,6 +117,35 @@ contract CapBalanceAdapter is BalanceAdapterBase {
             return out;
         }
         return new string[](0);
+    }
+
+    //
+    // IPositionEnumerable
+    //
+
+    /// @inheritdoc IPositionEnumerable
+    /// @dev Cap's two shapes, in the order `getAdapterPositions` emits them: the held synthetic dollar (cUSD)
+    ///      and the staked savings token (stcUSD). Both are pinned at construction, so the set is fixed for the
+    ///      life of this immutable adapter — there is no governed instance list and nothing account-dependent.
+    ///
+    ///      These are the SAME bytes `getAdapterPositions` puts in `PositionBalance.positionId` for each leg
+    ///      (`abi.encode(address(CUSD))` / `abi.encode(address(STCUSD))`), which is what makes the configuration
+    ///      view joinable against real positions — the guarantee {IPositionEnumerable} requires. Note the shapes
+    ///      are reported unconditionally: unlike `getAdapterPositions`, which drops a leg whose balance is zero,
+    ///      this describes what the adapter CAN report, not what anyone holds.
+    function positionIds() external view override returns (bytes[] memory ids) {
+        ids = new bytes[](2);
+        ids[0] = abi.encode(address(CUSD));
+        ids[1] = abi.encode(address(STCUSD));
+    }
+
+    /// @inheritdoc IERC165
+    /// @dev Adds {IPositionEnumerable} to the base set. `super`-chains rather than restating the base list, which
+    ///      is why {BalanceAdapterBase}'s `supportsInterface` is `public` — an `external` one cannot be reached
+    ///      through `super`. Stays `pure`: the answer is a compile-time comparison, and a `pure` base cannot be
+    ///      widened to `view` by an override anyway.
+    function supportsInterface(bytes4 interfaceId) public pure override returns (bool) {
+        return interfaceId == type(IPositionEnumerable).interfaceId || super.supportsInterface(interfaceId);
     }
 
     //

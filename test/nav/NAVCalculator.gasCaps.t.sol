@@ -678,7 +678,7 @@ contract NAVCalculatorGasCapTest is SuperTest {
     ///      while the caller pays `returndatacopy` plus its own monotonically growing memory, charged outside the
     ///      stipend and quadratic in the frame's total. Staged on the SUCCESS path deliberately (a revert bomb of
     ///      this size OOGs inside the callee under the stipend, leaving nothing to copy) and across {LABEL_LEGS}
-    ///      sequential reads in one frame, where that quadratic total reaches ~14.5M gas unbounded.
+    ///      sequential reads in one frame, where that quadratic total reaches ~8.9M gas unbounded.
     function test_verbose_hugeLabelReply_isNotCopied() public {
         Mock_HostileLabelsAdapter mock = _registerLabelMock(LABEL_LEGS);
         mock.setLabelMode(Misbehaviour.BigReturn);

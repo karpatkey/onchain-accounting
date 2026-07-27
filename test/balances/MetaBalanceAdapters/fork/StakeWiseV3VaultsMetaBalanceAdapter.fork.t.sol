@@ -114,9 +114,9 @@ contract StakeWiseV3VaultsMetaParityForkTest is BalanceAdapterTestBase {
     ///         exists for: on `main` all three rendered an identical `["Vault"]`.
     /// @dev The on-chain counterpart of `test_positionLabels_distinctForUnnamedVaults`, and the reason the leaf
     ///      keeps the address even though consumers render a coordinate column beside it (settled 2026-07-27 —
-    ///      see the `positionLabels` NatSpec). These three are REAL non-ERC20 vaults whose `name()` reverts (two
-    ///      `GnoVault`s and one `GnoGenesisVault`), not mocks, so this is the direct evidence that a symbol-only
-    ///      leaf would collapse all of them to one `["Vault", "GNO"]`.
+    ///      see the `positionLabels` NatSpec). These three are live non-ERC20 vaults whose `name()` reverts on
+    ///      chain (two `GnoVault`s and one `GnoGenesisVault`) rather than mocks, so they are direct evidence that a
+    ///      symbol-only leaf would collapse all of them to one `["Vault", "GNO"]`.
     ///
     ///      Which assertion fires if someone shortens the leaf: the per-instance `assertEq` on the expected string
     ///      inside the first loop, NOT the pairwise loop below — the `assertEq` reverts first, so the pairwise loop

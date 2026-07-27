@@ -273,13 +273,12 @@ contract StakeWiseV3VaultsMetaBalanceAdapterTest is Test {
 
     /// @notice Two *unnamed* vaults still produce different final label elements — the fallback carries the
     ///         per-instance coordinate, so the blank-breadcrumb collision cannot reappear.
-    /// @dev THIS IS THE TEST THAT DEFENDS THE ADDRESS IN THE LEAF. Inter-instance distinctness is the property the
-    ///      embedded address buys, and it is the reason the leaf keeps duplicating what a consumer's coordinate
+    /// @dev This is the assertion that defends the address in the leaf. Inter-instance distinctness is the property
+    ///      the embedded address buys, and the reason the leaf keeps duplicating what a consumer's coordinate
     ///      column already shows (see the `positionLabels` NatSpec, settled 2026-07-27). The symbol is a
-    ///      chain-level constant, so a symbol-only leaf collapses every unnamed vault to one string — this test
-    ///      then fails loudly rather than letting the breadcrumb silently degrade to an undistinguished
-    ///      `["Vault", "ETH"]`. If you are here because you shortened the leaf, that is the trade-off you are
-    ///      making; re-read the NatSpec before changing this assertion.
+    ///      chain-level constant, so a symbol-only leaf collapses every unnamed vault to one string; this test then
+    ///      fails rather than letting the breadcrumb degrade silently to `["Vault", "ETH"]`. A change here is a
+    ///      change to that trade-off.
     function test_positionLabels_distinctForUnnamedVaults() public {
         vaultA.setRevertOnName(true);
         vaultB.setRevertOnName(true);

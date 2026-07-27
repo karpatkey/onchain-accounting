@@ -132,11 +132,12 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceAdapter {
     ///      named `"SEED"`), so consumers must key on `positionId`, never on the label.
     ///
     ///      **Why the address stays even though consumers render a coordinate column — settled 2026-07-27, do not
-    ///      reopen.** The tier-2 leaf embeds the full vault address, which the known consumers already show beside
-    ///      it: kpk-app's `/nav/registry` renders the label and then the whole `bytes32` instance coordinate with a
-    ///      copy button (`nav-registry-table.tsx` `PositionRow`), and this repo's own dashboard pairs `{v.label}`
-    ///      with an `AddressChip` (`app/src/components/protocol-group.tsx`). So on those two surfaces the address is
-    ///      shown twice. It is kept anyway, deliberately:
+    ///      reopen.** The tier-2 leaf embeds the full vault address, which the consumers known at that date already
+    ///      showed beside it: kpk-app's `/nav/registry` rendered the label and then the whole `bytes32` instance
+    ///      coordinate with a copy button, and this repo's own dashboard paired the label with an `AddressChip`
+    ///      (`app/src/components/protocol-group.tsx`). Those are point-in-time observations of code that lives
+    ///      outside this contract and will drift; the load-bearing claim is the general one, that a consumer showing
+    ///      a coordinate makes the address redundant *for that consumer*. It is kept anyway, deliberately:
     ///        - The label must stay self-contained. `positionLabels` is an on-chain view with no knowledge of what
     ///          its caller renders; a consumer that shows only the breadcrumb (a CSV export, an alert, a log line)
     ///          would otherwise lose the ability to tell two vaults apart entirely.

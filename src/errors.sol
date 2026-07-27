@@ -61,6 +61,22 @@ error AssetNotRegistered(string symbol);
 /// @param stipend Gas forwarded to it — 63/64 of what the read held at that point.
 /// @param consumed Gas the call actually cost, including this frame's call overhead.
 error AdapterGasExhausted(address adapter, uint256 stipend, uint256 consumed);
+
+/// @notice One governed instance of a meta-adapter consumed its gas stipend without answering.
+/// @dev The {AdapterGasExhausted} sibling, one frame in. A meta-adapter isolates each instance behind its own
+///      `try`/`catch` so a single faulty instance cannot zero out the batch, and that isolation has the same
+///      blind spot: an instance that runs out of gas is indistinguishable from one that reverted, and recording
+///      it as "no positions" drops its legs while the meta-adapter still RETURNS SUCCESSFULLY — so the caller
+///      sees a complete-looking answer. A dropped debt leg raises the reported NAV.
+///
+///      Raised rather than swallowed, and it names the instance because the adapter alone does not locate the
+///      fault. `PriceFeedLib` keys on this selector explicitly rather than re-deriving exhaustion from gas, so a
+///      cheap early raise here cannot be re-scored as a benign revert one frame out.
+/// @param adapter The meta-adapter that was fanning out.
+/// @param instance The governed instance coordinate whose read ran out of gas.
+/// @param stipend Gas forwarded to that instance — 63/64 of what the fan-out held at that point.
+/// @param consumed Gas the instance call actually cost, including the fan-out's call overhead.
+error InstanceGasExhausted(address adapter, bytes32 instance, uint256 stipend, uint256 consumed);
 error PriceFeedNotSet(address asset);
 error AssetNotFound();
 error OnlyNAVCalculator();

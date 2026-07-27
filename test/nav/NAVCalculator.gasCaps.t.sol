@@ -175,6 +175,45 @@ contract Mock_NestedBurningBalanceAdapter is IBalanceAdapter {
     }
 }
 
+/// @title Mock_InstanceExhaustedAdapter
+/// @notice An adapter that raises {InstanceGasExhausted} CHEAPLY — the signal a meta-adapter sends when one of
+///         its governed instances ran out of gas, at a cost nowhere near its own stipend.
+/// @dev The shape the adapter-level gas heuristic cannot see. A meta-adapter that stops on its FIRST starved
+///      instance has barely spent anything by the time it raises, so scoring the failure by gas consumed reads a
+///      deliberate exhaustion signal as a benign revert and fails open — dropping the whole meta-adapter instead
+///      of surfacing the one instance. Hence the explicit selector check upstream, which this mock exists to pin.
+contract Mock_InstanceExhaustedAdapter is IBalanceAdapter {
+    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
+        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
+
+    function getAdapterPositions(address, address)
+        external
+        view
+        override
+        returns (INAVCalculator.PositionBalance[] memory)
+    {
+        revert InstanceGasExhausted(address(this), bytes32(uint256(7)), 1_000_000, 999_999);
+    }
+
+    function getAdapterBalances(address)
+        external
+        view
+        override
+        returns (address[] memory, uint256[] memory, bool[] memory)
+    {
+        revert InstanceGasExhausted(address(this), bytes32(uint256(7)), 1_000_000, 999_999);
+    }
+
+    function getAdapterBalanceForAsset(address, address) external view override returns (uint256, bool) {
+        revert InstanceGasExhausted(address(this), bytes32(uint256(7)), 1_000_000, 999_999);
+    }
+
+    function underlyingAssetsSupported() external pure override returns (address[] memory) {
+        return new address[](0);
+    }
+}
+
 /// @title Mock_DebtLegAdapter
 /// @notice An honest adapter reporting `legCount` DEBT legs in one asset.
 /// @dev Debt on purpose. A dropped debt leg RAISES the reported NAV, which is what makes adapter starvation an
@@ -564,6 +603,43 @@ contract NAVCalculatorGasCapTest is SuperTest {
             uint8 status = harness.positionsOutcome(safe, budgets[i]);
             assertEq(status, 1, "a starved adapter must be reported as exhausted at every budget, never as empty");
         }
+    }
+
+    /// @notice A meta-adapter's own exhaustion signal must be honoured even when it costs almost nothing to
+    ///         raise — the heuristic cannot see it, so the selector must.
+    /// @dev The hazard the selector check exists for, and it is a REGRESSION guard, not a nicety: without it this
+    ///      cheap revert scores as benign, the read fails open, and the entire meta-adapter's legs vanish — worse
+    ///      than the per-instance hole the meta-side fix closes. Delete the `sig == InstanceGasExhausted.selector`
+    ///      branch in `PriceFeedLib._getAdapterPositions` and this returns status 0 with the adapter dropped.
+    function test_instanceExhaustedSignal_isHonouredRegardlessOfGas() public {
+        Mock_InstanceExhaustedAdapter signalling = new Mock_InstanceExhaustedAdapter();
+        vm.prank(navCalculatorManager);
+        nav.addBalanceAdapters(aa(address(signalling)));
+
+        uint8 status = harness.positionsOutcome(safe, GENEROUS_BUDGET);
+        assertEq(status, 2, "a cheap InstanceGasExhausted must still take the read down, not be scored benign");
+
+        vm.expectPartialRevert(InstanceGasExhausted.selector);
+        nav.getAccountPositions{gas: GENEROUS_BUDGET}(safe, address(0));
+    }
+
+    /// @notice And the specific error survives: the failing instance stays named rather than being collapsed
+    ///         into the generic adapter-level error.
+    function test_instanceExhaustedSignal_preservesTheInstance() public {
+        Mock_InstanceExhaustedAdapter signalling = new Mock_InstanceExhaustedAdapter();
+        vm.prank(navCalculatorManager);
+        nav.addBalanceAdapters(aa(address(signalling)));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                InstanceGasExhausted.selector,
+                address(signalling),
+                bytes32(uint256(7)),
+                uint256(1_000_000),
+                uint256(999_999)
+            )
+        );
+        nav.getAccountPositions{gas: GENEROUS_BUDGET}(safe, address(0));
     }
 
     /// @notice An adapter that does real work and THEN reverts must still fail open, and the adapters after it

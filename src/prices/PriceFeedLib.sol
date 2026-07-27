@@ -11,6 +11,7 @@ import {ICustomPriceFeed} from "./ICustomPriceFeed.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
+import {GasStipendLib} from "src/utils/GasStipendLib.sol";
 
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
@@ -988,21 +989,14 @@ library PriceFeedLib {
         return true;
     }
 
-    /// @notice Share of the stipend an adapter must burn before a failed call is read as exhaustion rather than
-    ///         as a revert: `stipend - stipend / EXHAUSTION_SLACK_DIVISOR`.
-    /// @dev The threshold cannot be the full stipend, because a starved adapter never quite spends all of it. Gas
-    ///      runs out inside whatever the adapter is reading, not in the adapter's own frame: the sub-call takes
-    ///      63/64 of the stipend under EIP-150, out-of-gasses, and the adapter's own 1/64 reserve comes back
-    ///      unspent when it bubbles the revert. One level of nesting therefore consumes ~63/64 of the stipend,
-    ///      two levels ~0.969, three ~0.954, four ~0.939 — each level leaves another reserve behind. A full-stipend
-    ///      threshold sees the shortfall and classifies every one of those as a benign revert, which is the silent
-    ///      drop this guard exists to catch, and it is the shape ALL real adapters have.
-    ///
-    ///      7/8 covers nesting well past anything in this repo. Being wrong in the other direction is cheap: a
-    ///      misclassified revert produces a loud, retryable failure, while a misclassified exhaustion produces a
-    ///      wrong number. Note also that no fixed fraction is exact — deep enough nesting always slips under —
-    ///      so this narrows the silent window rather than closing it.
-    uint256 private constant EXHAUSTION_SLACK_DIVISOR = 8;
+    /// @notice Bytes of revert data copied when an adapter's call fails: the exact ABI size of
+    ///         {InstanceGasExhausted} (selector + four words).
+    /// @dev A bound, not a size hint. The parameterless `catch` below copies nothing on its own, and switching to
+    ///      `catch (bytes memory)` to read the selector would `returndatacopy` the WHOLE revert payload — which a
+    ///      hostile adapter sizes, and which has been measured on this repo in the hundreds of millions of gas.
+    ///      Reading the selector straight out of the returndata buffer and copying only this many bytes keeps the
+    ///      cost flat. A forged payload is therefore truncated to a well-formed error, never propagated whole.
+    uint256 private constant INSTANCE_EXHAUSTED_BYTES = 4 + 32 * 4;
 
     /// @notice Calls an adapter's `getAdapterPositions`, failing open on a revert but NOT on gas exhaustion.
     /// @dev The two failure modes look identical to `catch` and must not be treated identically:
@@ -1024,16 +1018,19 @@ library PriceFeedLib {
     ///      escape and only a redeploy can lift. Keyed to the caller's own budget instead, the same situations
     ///      surface as "this read needs more gas", which the caller can act on.
     ///
-    ///      **Scope, stated plainly. This guard sees only what crosses the adapter boundary, and two things sit
-    ///      outside it:**
-    ///      - A meta-adapter runs its own per-instance `try`/`catch` fan-out internally and RETURNS SUCCESSFULLY
-    ///        with a starved instance recorded as empty. This function sees a successful call and never reaches
-    ///        the check, so a NAV read can still quietly omit one INSTANCE of a meta-adapter. That hole is in
-    ///        `MetaBalanceAdapter`, and closing it needs the same distinction drawn at the per-instance `catch`.
-    ///      - The `returndatacopy` and ABI decode of the adapter's reply are charged to THIS frame, outside the
-    ///        stipend, because a typed `try … returns (…[] memory)` copies whatever arrives. The stipend bounds
-    ///        it only indirectly, through what the callee could afford to build. The outcome is a loud
-    ///        out-of-gas rather than a wrong number, so this is availability, not correctness.
+    ///      A meta-adapter raises {InstanceGasExhausted} when one of its governed instances runs out of gas, and
+    ///      that selector is honoured HERE regardless of what the gas figures say. It has to be: the meta-adapter
+    ///      may raise it having spent very little — an early instance starves, the fan-out stops — and the gas
+    ///      test would then read a deliberate exhaustion signal as a benign revert and fail open, dropping the
+    ///      WHOLE meta-adapter rather than the one instance. An explicit signal beats a heuristic wherever one
+    ///      exists, and the specific error is re-raised rather than replaced with {AdapterGasExhausted}, so the
+    ///      failing instance stays named.
+    ///
+    ///      **Scope, stated plainly. What still sits outside this guard:** the `returndatacopy` and ABI decode of
+    ///      the adapter's reply are charged to THIS frame, outside the stipend, because a typed
+    ///      `try … returns (…[] memory)` copies whatever arrives. The stipend bounds it only indirectly, through
+    ///      what the callee could afford to build. The outcome is a loud out-of-gas rather than a wrong number,
+    ///      so this is availability, not correctness.
     ///
     ///      Nor is any fixed fraction exact: deep enough nesting always leaves enough unspent to slip under the
     ///      threshold. This narrows the silent window; it does not close it.
@@ -1042,25 +1039,48 @@ library PriceFeedLib {
         view
         returns (INAVCalculator.PositionBalance[] memory)
     {
+        // One sample, used both to derive the stipend and to measure against it — see GasStipendLib.exhausted.
         uint256 available = gasleft();
-        // `available` MUST be this one reading, taken before the stipend is derived from it, and not a fresh
-        // `gasleft()` nearer the call. The check below is `consumed >= threshold`, and deriving both from a single
-        // sample is what fixes the SIGN of the slack: the caller-side overhead the callee never spends lands on
-        // the consumed side. Re-sampling would compute the stipend from a larger reading than the one compared
-        // against it, subtracting that overhead instead of adding it, and push a real exhaustion below the
-        // threshold — reporting it as "no positions".
-        uint256 stipend = available - available / 64;
+        uint256 stipend = GasStipendLib.stipendFrom(available);
 
         try IBalanceAdapter(adapter).getAdapterPositions{gas: stipend}(account, assetFilter) returns (
             INAVCalculator.PositionBalance[] memory pos
         ) {
             return pos;
         } catch {
+            // The parameterless `catch` copies nothing, so the revert payload is still sitting in the returndata
+            // buffer untouched. Read four bytes of it; do NOT let solc copy the whole thing.
+            bytes4 sig;
+            assembly ("memory-safe") {
+                // Zero the word FIRST: only four bytes are copied in, and a `bytes4` read out of a word with
+                // stale low bytes is a dirty value that compares equal to nothing.
+                mstore(0x00, 0)
+                if gt(returndatasize(), 3) { returndatacopy(0x00, 0x00, 0x04) }
+                sig := mload(0x00)
+            }
+            if (sig == InstanceGasExhausted.selector) _reraiseInstanceExhausted();
+
             uint256 consumed = available - gasleft();
-            if (consumed >= stipend - stipend / EXHAUSTION_SLACK_DIVISOR) {
+            if (GasStipendLib.exhausted(stipend, consumed)) {
                 revert AdapterGasExhausted(adapter, stipend, consumed);
             }
             return new INAVCalculator.PositionBalance[](0);
+        }
+    }
+
+    /// @notice Re-raises the {InstanceGasExhausted} still resident in the returndata buffer, keeping the failing
+    ///         instance named instead of collapsing it into {AdapterGasExhausted}.
+    /// @dev Copies a fixed {INSTANCE_EXHAUSTED_BYTES} rather than `returndatasize()`, so an adapter that forges
+    ///      the selector behind a multi-megabyte payload cannot charge this frame for propagating it — the
+    ///      payload is truncated to the error's own ABI width. Split into its own frame-less helper only to keep
+    ///      `_getAdapterPositions` under the `via_ir` stack limit.
+    function _reraiseInstanceExhausted() private pure {
+        uint256 size = INSTANCE_EXHAUSTED_BYTES;
+        assembly ("memory-safe") {
+            if lt(returndatasize(), size) { size := returndatasize() }
+            let buf := mload(0x40)
+            returndatacopy(buf, 0x00, size)
+            revert(buf, size)
         }
     }
 

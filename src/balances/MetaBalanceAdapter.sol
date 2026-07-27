@@ -11,8 +11,9 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 import {LabelLib} from "./LabelLib.sol";
 import {ProtocolNames} from "src/utils/ProtocolNames.sol";
 import {RegisteredAssetLib} from "./RegisteredAssetLib.sol";
+import {GasStipendLib} from "src/utils/GasStipendLib.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {InvalidArgumentsWithContext} from "src/errors.sol";
+import {InstanceGasExhausted, InvalidArgumentsWithContext} from "src/errors.sol";
 
 /// @title MetaBalanceAdapter
 /// @author KPK
@@ -204,7 +205,18 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     // Internal fan-out
     //
 
-    /// @notice Aggregates positions across `instances`, isolating a faulty instance so it cannot zero out the batch.
+    /// @notice Aggregates positions across `instances`, isolating a faulty instance so it cannot zero out the
+    ///         batch — but NOT isolating one that ran out of gas.
+    /// @dev The isolation is deliberate and stays: an instance whose protocol read reverts has answered, and one
+    ///      bad instance must not cost the account the other instances' legs. Gas exhaustion is not that. It
+    ///      means the instance did not answer, and recording it as an empty leg list drops whatever it held —
+    ///      a dropped *debt* leg RAISES the reported NAV — while this function still returns SUCCESSFULLY, so
+    ///      nothing downstream can tell the answer was partial. That is the one failure the per-instance
+    ///      `try`/`catch` must not absorb, so it reverts {InstanceGasExhausted} instead.
+    ///
+    ///      The classification is {GasStipendLib}'s, shared with the adapter-level guard in
+    ///      `PriceFeedLib._getAdapterPositions` rather than restated here, because these two are the same
+    ///      question asked one frame apart and a threshold that drifts between them re-opens the hole.
     function _positionsForInstances(address account, bytes32[] memory instances, address assetFilter)
         internal
         view
@@ -213,12 +225,19 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
         INAVCalculator.PositionBalance[][] memory perInstance = new INAVCalculator.PositionBalance[][](instances.length);
         uint256 total = 0;
         for (uint256 i = 0; i < instances.length; i++) {
-            try this.instancePositions(account, instances[i], assetFilter) returns (
+            // One sample, used both to derive the stipend and to measure against it — see GasStipendLib.exhausted.
+            uint256 available = gasleft();
+            uint256 stipend = GasStipendLib.stipendFrom(available);
+            try this.instancePositions{gas: stipend}(account, instances[i], assetFilter) returns (
                 INAVCalculator.PositionBalance[] memory p
             ) {
                 perInstance[i] = p;
                 total += p.length;
             } catch {
+                uint256 consumed = available - gasleft();
+                if (GasStipendLib.exhausted(stipend, consumed)) {
+                    revert InstanceGasExhausted(address(this), instances[i], stipend, consumed);
+                }
                 perInstance[i] = new INAVCalculator.PositionBalance[](0);
             }
         }

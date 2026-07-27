@@ -101,6 +101,199 @@ contract MockToken {
     }
 }
 
+/// @notice Core-eVault-shaped mock whose `EVC()` returns an ARBITRARY raw byte string, so a test can hand the
+///         adapter returndata that succeeds but cannot be ABI-decoded as an `address` (empty returndata, a
+///         `bytes32`-shaped word with dirty high bits, a short word). `debtOf` is real so the debt leg can be
+///         observed surviving — or not — alongside the supply leg.
+contract MockRawEvcVault {
+    string public name = "Raw EVC Vault";
+    address private _asset;
+    bytes private _evcReturndata;
+    mapping(address => uint256) public balanceOf;
+    mapping(address => uint256) private _debt;
+
+    constructor(address asset_, bytes memory evcReturndata_) {
+        _asset = asset_;
+        _evcReturndata = evcReturndata_;
+    }
+
+    function asset() external view returns (address) {
+        return _asset;
+    }
+
+    function convertToAssets(uint256 shares) external pure returns (uint256) {
+        return shares;
+    }
+
+    function setBalance(address account, uint256 shares) external {
+        balanceOf[account] = shares;
+    }
+
+    function setDebt(address account, uint256 amount) external {
+        _debt[account] = amount;
+    }
+
+    function debtOf(address account) external view returns (uint256) {
+        return _debt[account];
+    }
+
+    // `EVC()` is served from the fallback so the mock can return non-conforming bytes.
+    fallback(bytes calldata data) external returns (bytes memory) {
+        if (bytes4(data) == bytes4(keccak256("EVC()"))) return _evcReturndata;
+        revert("unsupported");
+    }
+}
+
+/// @notice EVC-shaped mock returning an ARBITRARY raw byte string for `getCollaterals`, so a test can hand the
+///         adapter a malformed `address[]` (bad offset, absurd length, truncated payload).
+contract MockRawEVC {
+    bytes private _returndata;
+
+    constructor(bytes memory returndata_) {
+        _returndata = returndata_;
+    }
+
+    fallback(bytes calldata) external returns (bytes memory) {
+        return _returndata;
+    }
+}
+
+/// @notice EVC-shaped mock that burns its entire stipend and then reverts. Exercises the gas-burn half of the
+///         hazard only: it OOGs on the 3MB memory expansion before `revert(0, …)` can execute, so the caller
+///         copies ZERO bytes. Returndata-copy bounding is covered by {MockReturndataBombEVC} instead.
+contract MockHostileEVC {
+    // Always reverts, so the declared return value is never produced.
+    fallback(bytes calldata) external returns (bytes memory) {
+        assembly {
+            // Burn whatever stipend we were given, then attempt a 3MB revert payload.
+            for {} 1 {} { if lt(gas(), 5000) { revert(0, 3000000) } }
+        }
+        revert("unreachable");
+    }
+}
+
+/// @notice EVC-shaped mock that SUCCEEDS while returning a huge payload. This is the real returndata-copy hazard:
+///         a raw staticcall assigning `(bool, bytes memory)` always `returndatacopy`s the response, so the caller
+///         pays quadratic memory-expansion cost on whatever the callee can afford to emit. A success-path
+///         `return(0, N)` costs the callee only its own memory expansion, so it maximises what actually reaches
+///         the caller — unlike a revert bomb, which OOGs first. Bounded solely by {PROBE_GAS}.
+contract MockReturndataBombEVC {
+    uint256 private immutable PAD;
+
+    constructor(uint256 pad_) {
+        PAD = pad_;
+    }
+
+    fallback(bytes calldata) external returns (bytes memory) {
+        uint256 pad = PAD;
+        assembly {
+            return(0, pad)
+        }
+    }
+}
+
+/// @notice Vault whose own `EVC()` succeeds with a huge payload, so the FIRST probe carries the bomb. Emits it
+///         straight from memory (not storage) — a storage-backed payload would cost the test ~20M gas to set up
+///         and measure nothing extra.
+///
+///         `evc_` sets the payload's FIRST word. With `address(0)` the read is undecodable-as-nonzero and
+///         `_supplyKind` short-circuits, so only this probe bombs. With a real address the payload is a *valid*
+///         address encoding with trailing junk — which correctly passes `_safeEvc` — so the second probe fires
+///         too and both can bomb in one read. That is the true worst case.
+contract MockBombEvcVault {
+    address private _asset;
+    uint256 private immutable PAD;
+    address private immutable EVC_ADDR;
+    mapping(address => uint256) public balanceOf;
+    mapping(address => uint256) private _debt;
+
+    constructor(address asset_, uint256 pad_, address evc_) {
+        _asset = asset_;
+        PAD = pad_;
+        EVC_ADDR = evc_;
+    }
+
+    function asset() external view returns (address) {
+        return _asset;
+    }
+
+    function convertToAssets(uint256 shares) external pure returns (uint256) {
+        return shares;
+    }
+
+    function setBalance(address account, uint256 shares) external {
+        balanceOf[account] = shares;
+    }
+
+    function setDebt(address account, uint256 amount) external {
+        _debt[account] = amount;
+    }
+
+    function debtOf(address account) external view returns (uint256) {
+        return _debt[account];
+    }
+
+    fallback(bytes calldata) external returns (bytes memory) {
+        uint256 pad = PAD;
+        address evc = EVC_ADDR;
+        assembly {
+            mstore(0, evc)
+            return(0, pad)
+        }
+    }
+}
+
+/// @notice Vault whose `debtOf` SUCCEEDS but returns empty returndata — the ERC-1967 shape (implementation slot
+///         points at a code-less address, so the `delegatecall` succeeds and returns nothing) and the EVK
+///         dispatcher-with-unset-module shape. `abi.decode(…, (uint256))` on that reverts in the CALLING frame,
+///         which `try`/`catch` does not intercept. `asset`/`balanceOf`/`convertToAssets` are real; every other
+///         selector falls through to the empty fallback.
+contract MockEmptyDebtOfVault {
+    address private _asset;
+    mapping(address => uint256) public balanceOf;
+
+    constructor(address asset_) {
+        _asset = asset_;
+    }
+
+    function asset() external view returns (address) {
+        return _asset;
+    }
+
+    function convertToAssets(uint256 shares) external pure returns (uint256) {
+        return shares;
+    }
+
+    function setBalance(address account, uint256 shares) external {
+        balanceOf[account] = shares;
+    }
+
+    fallback() external {}
+}
+
+/// @notice Plain supply-only vault with no `debtOf` at all, so the call genuinely reverts. Used as the sibling
+///         collateral vault in the cross-vault unoffset-collateral test.
+contract MockSupplyOnlyVault {
+    address private _asset;
+    mapping(address => uint256) public balanceOf;
+
+    constructor(address asset_) {
+        _asset = asset_;
+    }
+
+    function asset() external view returns (address) {
+        return _asset;
+    }
+
+    function convertToAssets(uint256 shares) external pure returns (uint256) {
+        return shares;
+    }
+
+    function setBalance(address account, uint256 shares) external {
+        balanceOf[account] = shares;
+    }
+}
+
 /// @title EulerVaultsMetaBalanceAdapter unit tests (no fork)
 /// @notice Mirrors the MorphoVaultsMeta unit suite — same MetaBalanceAdapter base + ERC4626 convertToAssets shape —
 ///         plus Euler-specific asserts (protocolId = euler-vaults; positionKind Supplied / Collateral when EVC-enabled /
@@ -358,6 +551,338 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(alice, ins, address(0));
         assertEq(pos.length, 1);
         assertTrue(pos[0].positionKind == PositionKind.Supplied, "vault without EVC() degrades to Supplied");
+    }
+
+    // ----- _supplyKind is genuinely fail-open -----
+    //
+    // Every test below hands _supplyKind a failure mode that the previous `try`/`catch` form did NOT catch —
+    // Solidity routes neither a return-data decode failure nor the `extcodesize` precheck into `catch`, so the
+    // revert propagated out of `_instancePositions` and the base fan-out's per-instance `catch` dropped the WHOLE
+    // instance. Each test therefore asserts the two things that were actually lost, not just "no revert":
+    //   (a) the supply leg is still reported, with its amount intact, classified `Supplied`; and
+    //   (b) the debt leg is still reported — the sharp end, since a suppressed debt OVER-reports NAV.
+    // Reverting either guard in _supplyKind turns every one of these red (they return 0 legs).
+
+    /// @dev Helper: assert the vault still yields an intact supply leg + debt leg, with the supply classified
+    ///      `Supplied` (the fail-open default).
+    function _assertFailOpen(address vault, uint256 expectedSupply, uint256 expectedDebt) internal view {
+        bytes32[] memory ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(vault)));
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(alice, ins, address(0));
+
+        assertEq(pos.length, 2, "supply + debt legs both survive a broken EVC read");
+        assertEq(pos[0].amount, expectedSupply, "supply amount untouched by the classification failure");
+        assertFalse(pos[0].isDebt);
+        assertTrue(pos[0].positionKind == PositionKind.Supplied, "degrades to Supplied");
+        assertEq(pos[1].amount, expectedDebt, "debt leg not suppressed (suppressing it would over-report NAV)");
+        assertTrue(pos[1].isDebt);
+        assertTrue(pos[1].positionKind == PositionKind.Borrowed);
+    }
+
+    /// @dev Mode 2 (no-code address): the vault names an `evc` that has no code. A high-level call would revert on
+    ///      Solidity's `extcodesize` precheck, BEFORE the call, which `try`/`catch` cannot intercept. Note it is
+    ///      the switch to a low-level `staticcall` that fixes this — such a call returns `(true, "")`, which the
+    ///      returndata-length check rejects — not the explicit `code.length` guard, which is only a short-circuit.
+    ///      So this test stays green if that guard alone is removed; it goes red if the `try`/`catch` returns.
+    function test_supplyKind_noCodeEvc_degradesToSupplied() public {
+        MockCoreEVault core = new MockCoreEVault("EVK Vault eUSDC-2", address(usdc), 1e18);
+        core.setEVC(address(0xBEEF)); // no code
+        core.setBalance(alice, 1_000_000);
+        core.setDebt(alice, 400_000);
+        _assertFailOpen(address(core), 1_000_000, 400_000);
+    }
+
+    /// @dev Mode 1 (decode failure): `EVC()` SUCCEEDS but returns nothing — the ERC-1967 shape where the
+    ///      implementation slot points at a code-less address, so the `delegatecall` succeeds and returns empty.
+    ///      `abi.decode(…, (address))` then reverts in the CALLING frame, past `catch`.
+    function test_supplyKind_evcEmptyReturndata_degradesToSupplied() public {
+        MockRawEvcVault v = new MockRawEvcVault(address(usdc), "");
+        v.setBalance(alice, 1_000_000);
+        v.setDebt(alice, 400_000);
+        _assertFailOpen(address(v), 1_000_000, 400_000);
+    }
+
+    /// @dev Mode 1 (decode failure): `EVC()` returns a `bytes32`-shaped word whose high 96 bits are non-zero, which
+    ///      is not a valid `address` encoding.
+    function test_supplyKind_evcBytes32Shaped_degradesToSupplied() public {
+        MockRawEvcVault v = new MockRawEvcVault(address(usdc), abi.encode(bytes32(type(uint256).max)));
+        v.setBalance(alice, 1_000_000);
+        v.setDebt(alice, 400_000);
+        _assertFailOpen(address(v), 1_000_000, 400_000);
+    }
+
+    /// @dev Mode 1 (decode failure): `EVC()` returns fewer than 32 bytes.
+    function test_supplyKind_evcShortReturndata_degradesToSupplied() public {
+        MockRawEvcVault v = new MockRawEvcVault(address(usdc), hex"deadbeef");
+        v.setBalance(alice, 1_000_000);
+        v.setDebt(alice, 400_000);
+        _assertFailOpen(address(v), 1_000_000, 400_000);
+    }
+
+    /// @dev Mode 1 (decode failure): `getCollaterals` returns a single word — too short to be an `address[]` head.
+    function test_supplyKind_collateralsShortHead_degradesToSupplied() public {
+        MockCoreEVault core = _coreWithRawEvc(abi.encode(uint256(0x20)));
+        _assertFailOpen(address(core), 1_000_000, 400_000);
+    }
+
+    /// @dev Mode 1 (decode failure): `getCollaterals` returns a non-canonical offset.
+    function test_supplyKind_collateralsBadOffset_degradesToSupplied() public {
+        MockCoreEVault core = _coreWithRawEvc(abi.encode(uint256(0x40), uint256(0)));
+        _assertFailOpen(address(core), 1_000_000, 400_000);
+    }
+
+    /// @dev Mode 1 (decode failure): `getCollaterals` declares an absurd length the payload cannot back.
+    function test_supplyKind_collateralsAbsurdLength_degradesToSupplied() public {
+        MockCoreEVault core = _coreWithRawEvc(abi.encode(uint256(0x20), uint256(type(uint128).max)));
+        _assertFailOpen(address(core), 1_000_000, 400_000);
+    }
+
+    /// @dev Mode 1 (decode failure): a canonical head whose declared length overruns the actual payload.
+    function test_supplyKind_collateralsTruncatedPayload_degradesToSupplied() public {
+        // offset 0x20, length 3, but only one element word follows.
+        MockCoreEVault core = _coreWithRawEvc(abi.encode(uint256(0x20), uint256(3), uint256(0)));
+        _assertFailOpen(address(core), 1_000_000, 400_000);
+    }
+
+    /// @dev A hostile EVC that burns its whole stipend and then reverts. Covers the gas-burn half of the hazard.
+    ///      Note this mock OOGs on its 3MB memory expansion before the `revert` executes, so the caller copies
+    ///      nothing — returndata-copy bounding is covered separately by
+    ///      test_supplyKind_returndataBomb_boundedAndFailsOpen. The assertion is pinned just above the measured
+    ///      cost so a regression in {PROBE_GAS} actually trips it.
+    function test_supplyKind_hostileEvcGasBomb_boundedAndFailsOpen() public {
+        MockCoreEVault core = new MockCoreEVault("EVK Vault eUSDC-2", address(usdc), 1e18);
+        core.setEVC(address(new MockHostileEVC()));
+        core.setBalance(alice, 1_000_000);
+        core.setDebt(alice, 400_000);
+
+        bytes32[] memory ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(address(core))));
+        uint256 before = gasleft();
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(alice, ins, address(0));
+        uint256 used = before - gasleft();
+
+        assertEq(pos.length, 2, "hostile EVC cannot drop the legs");
+        assertTrue(pos[0].positionKind == PositionKind.Supplied);
+        assertLt(used, 300_000, "gas-burn cost bounded by the probe stipend");
+    }
+
+    /// @dev The returndata-copy hazard the {PROBE_GAS} docstring is actually about. A raw staticcall assigning
+    ///      `(bool, bytes memory)` always `returndatacopy`s the response, so an EVC that SUCCEEDS while emitting a
+    ///      huge payload makes the CALLER pay quadratic memory-expansion cost. A success-path `return(0, N)` is the
+    ///      maximising shape — a revert bomb OOGs on its own expansion first and delivers nothing.
+    ///
+    ///      256 KB is roughly the largest payload a callee can afford inside a 150k stipend (memory cost is
+    ///      `3w + w²/512`), so this is close to the worst case an attacker can actually reach. Asserts fail-open
+    ///      behaviour AND that the copy stays bounded — an unbounded version of this read measured ~52.6M gas.
+    function test_supplyKind_returndataBomb_boundedAndFailsOpen() public {
+        MockCoreEVault core = new MockCoreEVault("EVK Vault eUSDC-2", address(usdc), 1e18);
+        core.setEVC(address(new MockReturndataBombEVC(256_000)));
+        core.setBalance(alice, 1_000_000);
+        core.setDebt(alice, 400_000);
+
+        bytes32[] memory ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(address(core))));
+        uint256 before = gasleft();
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(alice, ins, address(0));
+        uint256 used = before - gasleft();
+
+        assertEq(pos.length, 2, "returndata bomb cannot drop the legs");
+        assertEq(pos[0].amount, 1_000_000, "supply amount intact");
+        assertEq(pos[1].amount, 400_000, "debt leg not suppressed");
+        assertTrue(pos[0].positionKind == PositionKind.Supplied);
+        assertLt(used, 500_000, "returndata copy bounded by the probe stipend");
+    }
+
+    /// @dev A bomb on the FIRST probe (`EVC()` on the vault itself), not just the second. Both reads carry the
+    ///      stipend; this pins that the vault-side one does too.
+    function test_safeEvc_returndataBomb_boundedAndFailsOpen() public {
+        // The vault's own EVC() returns a huge payload whose first word is zero, so it is also unusable.
+        MockBombEvcVault v = new MockBombEvcVault(address(usdc), 256_000, address(0));
+        v.setBalance(alice, 1_000_000);
+        v.setDebt(alice, 400_000);
+
+        bytes32[] memory ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(address(v))));
+        uint256 before = gasleft();
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(alice, ins, address(0));
+        uint256 used = before - gasleft();
+
+        assertEq(pos.length, 2, "vault-side bomb cannot drop the legs");
+        assertEq(pos[0].amount, 1_000_000, "supply amount intact");
+        assertEq(pos[1].amount, 400_000, "debt leg not suppressed");
+        assertTrue(pos[0].positionKind == PositionKind.Supplied);
+        assertLt(used, 500_000, "vault-side returndata copy bounded too");
+    }
+
+    /// @dev The true worst case: BOTH probes bomb in a single read. A 256 KB payload whose first word is a clean
+    ///      address is a *valid* address encoding with trailing junk, so it correctly passes `_safeEvc` (extra
+    ///      returndata is legal ABI) and the second probe then fires against an EVC that bombs as well. Total cost
+    ///      must still be bounded — this is the number {PROBE_GAS} ultimately has to hold down.
+    function test_bothProbesBomb_worstCase_stillBounded() public {
+        address bombEvc = address(new MockReturndataBombEVC(256_000));
+        MockBombEvcVault v = new MockBombEvcVault(address(usdc), 256_000, bombEvc);
+        v.setBalance(alice, 1_000_000);
+        v.setDebt(alice, 400_000);
+
+        bytes32[] memory ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(address(v))));
+        uint256 before = gasleft();
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(alice, ins, address(0));
+        uint256 used = before - gasleft();
+
+        assertEq(pos.length, 2, "double bomb cannot drop the legs");
+        assertEq(pos[0].amount, 1_000_000, "supply amount intact");
+        assertEq(pos[1].amount, 400_000, "debt leg not suppressed");
+        assertTrue(pos[0].positionKind == PositionKind.Supplied);
+        // Measured 958,612 here; an independent audit measured 926,673 for the same shape. Pinned just above so a
+        // regression in PROBE_GAS trips it. Per-instance: the base fan-out gives each instance a fresh memory
+        // frame via `try this.instancePositions(...)`, so this cost scales linearly, not quadratically.
+        assertLt(used, 1_000_000, "both probes bombed, still bounded");
+    }
+
+    /// @dev The membership scan compares FULL words, so a collateral entry whose high 96 bits are dirty never
+    ///      matches even when its low 160 bits are the vault — strictly under-classifying, per the fail-open
+    ///      contract, rather than reverting or trusting a malformed element.
+    function test_supplyKind_collateralsDirtyElement_degradesToSupplied() public {
+        MockCoreEVault core = new MockCoreEVault("EVK Vault eUSDC-2", address(usdc), 1e18);
+        // The single collateral entry carries the vault's address in its low 160 bits but a non-zero bit at 200,
+        // so a masked comparison would match it and the full-word comparison must not.
+        uint256 dirty = (uint256(1) << 200) | uint256(uint160(address(core)));
+        core.setEVC(address(new MockRawEVC(abi.encode(uint256(0x20), uint256(1), dirty))));
+        core.setBalance(alice, 1_000_000);
+        core.setDebt(alice, 400_000);
+        _assertFailOpen(address(core), 1_000_000, 400_000);
+    }
+
+    /// @dev A well-formed list longer than {MAX_COLLATERALS} is scanned as a 32-entry PREFIX, not rejected. An
+    ///      entry past the cap is missed, so this degrades to `Supplied` — the safe direction — while the work
+    ///      stays bounded.
+    function test_supplyKind_collateralsOverCap_beyondPrefix_degradesToSupplied() public {
+        MockCoreEVault core = new MockCoreEVault("EVK Vault eUSDC-2", address(usdc), 1e18);
+        uint256 n = 40; // MAX_COLLATERALS is 32
+        uint256[] memory els = new uint256[](n);
+        els[n - 1] = uint256(uint160(address(core))); // at index 39, past the 32-entry prefix
+        core.setEVC(address(new MockRawEVC(abi.encodePacked(abi.encode(uint256(0x20), n), abi.encodePacked(els)))));
+        core.setBalance(alice, 1_000_000);
+        core.setDebt(alice, 400_000);
+        _assertFailOpen(address(core), 1_000_000, 400_000);
+    }
+
+    /// @dev The reason the over-cap list is prefix-scanned rather than discarded: if Euler ever raised
+    ///      `SET_MAX_ELEMENTS` past 32, wholesale rejection would silently degrade EVERY classification. An entry
+    ///      inside the prefix of an over-long list is still found.
+    function test_supplyKind_collateralsOverCap_withinPrefix_stillCollateral() public {
+        MockCoreEVault core = new MockCoreEVault("EVK Vault eUSDC-2", address(usdc), 1e18);
+        uint256 n = 40;
+        uint256[] memory els = new uint256[](n);
+        els[5] = uint256(uint160(address(core))); // inside the 32-entry prefix
+        core.setEVC(address(new MockRawEVC(abi.encodePacked(abi.encode(uint256(0x20), n), abi.encodePacked(els)))));
+        core.setBalance(alice, 1_000_000);
+
+        bytes32[] memory ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(address(core))));
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(alice, ins, address(0));
+        assertEq(pos.length, 1);
+        assertTrue(pos[0].positionKind == PositionKind.Collateral, "prefix of an over-long list is still scanned");
+    }
+
+    /// @dev Positive control: a canonical list at the EVC's real cap (10) that contains the vault still classifies
+    ///      as `Collateral`. Guards against the hardening silently disabling classification altogether.
+    function test_supplyKind_canonicalListAtEvcCap_stillCollateral() public {
+        MockCoreEVault core = new MockCoreEVault("EVK Vault eUSDC-2", address(usdc), 1e18);
+        uint256[] memory els = new uint256[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            els[i] = uint256(uint160(address(uint160(0x1000 + i))));
+        }
+        els[9] = uint256(uint160(address(core)));
+        core.setEVC(
+            address(new MockRawEVC(abi.encodePacked(abi.encode(uint256(0x20), uint256(10)), abi.encodePacked(els))))
+        );
+        core.setBalance(alice, 1_000_000);
+
+        bytes32[] memory ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(address(core))));
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(alice, ins, address(0));
+        assertEq(pos.length, 1);
+        assertTrue(pos[0].positionKind == PositionKind.Collateral, "canonical EVC list still classifies Collateral");
+    }
+
+    /// @dev Mode 2 (no-code address), vault side. `_safeEvc`'s `vaultAddr.code.length` guard is defensive only:
+    ///      `_instancePositions` already reverts at `asset()` on a code-less vault, long before `_supplyKind` runs,
+    ///      and the base fan-out isolates it. Pinned here so the reasoning is not lost.
+    function test_supplyKind_noCodeVault_isolatedBeforeSupplyKind() public {
+        vaultA.setBalance(alice, 1_000_000);
+        bytes32[] memory ins = new bytes32[](2);
+        ins[0] = bytes32(uint256(uint160(address(0xdead)))); // no code: reverts at asset()
+        ins[1] = bytes32(uint256(uint160(address(vaultA))));
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(alice, ins, address(0));
+        assertEq(pos.length, 1, "code-less vault isolated by the fan-out, healthy instance survives");
+        assertTrue(pos[0].positionKind == PositionKind.Supplied);
+    }
+
+    // ----- `debtOf` is fail-open too (same uncaught class as the EVC reads) -----
+
+    /// @dev `debtOf` succeeding with undecodable returndata reverted `_instancePositions`, so the base fan-out
+    ///      dropped the whole instance and a real supply leg silently vanished. Reverting `_safeDebt` to the
+    ///      original `try`/`catch` turns this red (0 legs instead of 1).
+    function test_safeDebt_emptyReturndata_supplyLegSurvives() public {
+        MockEmptyDebtOfVault v = new MockEmptyDebtOfVault(address(usdc));
+        v.setBalance(alice, 1_000_000);
+
+        bytes32[] memory ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(address(v))));
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(alice, ins, address(0));
+
+        assertEq(pos.length, 1, "supply leg survives an undecodable debtOf");
+        assertEq(pos[0].amount, 1_000_000, "supply amount intact");
+        assertFalse(pos[0].isDebt);
+        assertTrue(pos[0].positionKind == PositionKind.Supplied);
+    }
+
+    /// @dev The reason this is worse than a classification failure. Euler's core EVK model puts the debt in a
+    ///      controller vault and the collateral in OTHER vaults. If the controller's `debtOf` decode-fails, the
+    ///      fan-out drops the controller entirely while the sibling collateral vault still reports — unoffset
+    ///      collateral, which OVER-reports NAV (the PR #164 hazard). With `_safeDebt` the controller keeps
+    ///      reporting; before it, the credit leg stood alone.
+    function test_safeDebt_crossVault_noUnoffsetCollateral() public {
+        MockSupplyOnlyVault coll = new MockSupplyOnlyVault(address(usdc));
+        coll.setBalance(alice, 1_000_000); // collateral in vault A
+
+        MockEmptyDebtOfVault controller = new MockEmptyDebtOfVault(address(usdc));
+        controller.setBalance(alice, 250_000); // supply in the controller vault B
+
+        bytes32[] memory ins = new bytes32[](2);
+        ins[0] = bytes32(uint256(uint160(address(coll))));
+        ins[1] = bytes32(uint256(uint160(address(controller))));
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(alice, ins, address(0));
+
+        assertEq(pos.length, 2, "both vaults report; the controller is not silently dropped");
+        assertEq(pos[0].amount, 1_000_000);
+        assertEq(pos[1].amount, 250_000, "controller leg survives its undecodable debtOf");
+    }
+
+    /// @dev Positive control: a real `debtOf` still produces the borrow leg, so the hardening did not disable the
+    ///      read. Covered more broadly by test_borrowLeg_emittedAlongsideSupply; pinned here next to its guard.
+    function test_safeDebt_realDebtStillReported() public {
+        MockCoreEVault core = new MockCoreEVault("EVK Vault eWETH-2", address(weth), 1e18);
+        core.setBalance(alice, 2e18);
+        core.setDebt(alice, 5e17);
+
+        bytes32[] memory ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(address(core))));
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(alice, ins, address(0));
+
+        assertEq(pos.length, 2);
+        assertEq(pos[1].amount, 5e17, "real debtOf still read through _safeDebt");
+        assertTrue(pos[1].isDebt);
+    }
+
+    /// @dev Builds a core eVault whose EVC returns `raw` for `getCollaterals`, pre-seeded with supply + debt.
+    function _coreWithRawEvc(bytes memory raw) internal returns (MockCoreEVault core) {
+        core = new MockCoreEVault("EVK Vault eUSDC-2", address(usdc), 1e18);
+        core.setEVC(address(new MockRawEVC(raw)));
+        core.setBalance(alice, 1_000_000);
+        core.setDebt(alice, 400_000);
     }
 
     function test_debtLeg_respectsAssetFilter() public {

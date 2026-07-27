@@ -437,18 +437,58 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
         (assetInfo, eligible) = _getAssetInfo(token);
     }
 
+    /// @notice Decodes an address-keyed `positionId`, accepting ONLY exactly one clean address word.
+    /// @dev The single entry point every address-keyed `positionLabels` in this family must use, because the obvious
+    ///      spelling — `if (pid.length < 32) …; abi.decode(pid, (address))` — is wrong in two ways at once, and
+    ///      `positionLabels` is a display-only view reachable from a configuration tool that probes with whatever
+    ///      word it has:
+    ///
+    ///      1. **It reverts.** Solidity's ABI decoder validates an `address`, so a 32-byte word whose upper 96 bits
+    ///         are dirty (a `bytes32` market/pool id copied from a sibling adapter is the ordinary source) reverts
+    ///         instead of degrading. Hence the raw-word decode and an explicit range check.
+    ///      2. **It over-claims.** `abi.decode` silently ignores trailing bytes, so a `< 32` guard lets a foreign
+    ///         MULTI-word coordinate through and labels it from its first word — a confident, wrong breadcrumb for a
+    ///         position the adapter never emitted. Every address-keyed positionId in this family is exactly
+    ///         `abi.encode(address)`, so the accept window is `== 32`, not `>= 32`.
+    ///
+    ///      A dirty word is rejected rather than masked down to its low 160 bits: those bits can name a real
+    ///      instance by coincidence, and a wrong label is worse than an absent one.
+    /// @return addr The decoded address; `address(0)` when `!ok`.
+    /// @return ok True only for a positionId that is exactly one word with clear upper 96 bits.
+    function _pidAddress(bytes calldata pid) internal pure returns (address addr, bool ok) {
+        if (pid.length != 32) return (address(0), false);
+        uint256 raw = abi.decode(pid, (uint256));
+        if (raw >> 160 != 0) return (address(0), false);
+        return (address(uint160(raw)), true);
+    }
+
+    /// @notice Decodes a `bytes32`-keyed `positionId` (Morpho marketIds, Balancer V2 poolIds), accepting ONLY
+    ///         exactly one word.
+    /// @dev The {_pidAddress} sibling for the raw-`bytes32` coordinate. There is no range check to make — every
+    ///      256-bit value is a valid `bytes32`, and `abi.decode(_, (bytes32))` cannot revert on a full word — so
+    ///      this exists purely for reason 2 above: `< 32` would label a foreign multi-word coordinate from its
+    ///      first word. Kept as a named helper rather than an inline `!= 32` so the two coordinate shapes stay
+    ///      visibly symmetric and a reader does not have to re-derive why one has a range check and the other
+    ///      does not.
+    /// @return word The decoded word; `bytes32(0)` when `!ok`.
+    /// @return ok True only for a positionId that is exactly one word.
+    function _pidWord(bytes calldata pid) internal pure returns (bytes32 word, bool ok) {
+        if (pid.length != 32) return (bytes32(0), false);
+        return (abi.decode(pid, (bytes32)), true);
+    }
+
     /// @notice Builds the `positionLabels` `[category, leaf]` for an address-keyed `positionId`, reading the
     ///         instance's on-chain `name()` (or `symbol()` when `useSymbol`) live and fail-open to "" — the
     ///         single-address label shape shared by the vault/market/lending meta-adapters (Morpho, Euler, Fluid,
-    ///         Gearbox markets, Compound comets). Returns an empty array for a short/malformed positionId; the
-    ///         empty-leaf collapse is handled by {_labels}.
+    ///         Gearbox markets, Compound comets). Returns an empty array for a malformed positionId (see
+    ///         {_pidAddress}); the empty-leaf collapse is handled by {_labels}.
     function _addressLabels(bytes calldata pid, string memory category, bool useSymbol)
         internal
         view
         returns (string[] memory)
     {
-        if (pid.length < 32) return new string[](0);
-        address addr = abi.decode(pid, (address));
+        (address addr, bool ok) = _pidAddress(pid);
+        if (!ok) return new string[](0);
         string memory leaf = useSymbol ? LabelLib.symbol(addr, "") : LabelLib.name(addr, "");
         return _labels(category, leaf);
     }

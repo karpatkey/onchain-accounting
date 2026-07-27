@@ -231,10 +231,11 @@ contract ConvexCurveLPStakingMetaBalanceAdapter is MetaBalanceAdapter {
     /// @inheritdoc MetaBalanceAdapter
     /// @dev `["Staking", "Curve LP", "TOKEN0/TOKEN1/…"]` — the third segment is the underlying Curve pool's coin
     ///      symbols, derived on-chain from the rewarder's LP token. Collapses to `["Staking", "Curve LP"]` if the
-    ///      coins can't be resolved; empty array for a short positionId.
+    ///      coins can't be resolved; empty array for a malformed positionId (see {_pidAddress}).
     function positionLabels(bytes calldata pid) external view override returns (string[] memory out) {
-        if (pid.length < 32) return new string[](0);
-        string memory coins = _coins(pid);
+        (address rewarder, bool ok) = _pidAddress(pid);
+        if (!ok) return new string[](0);
+        string memory coins = _coins(rewarder);
         if (bytes(coins).length == 0) {
             out = new string[](2);
             out[0] = "Staking";
@@ -264,8 +265,7 @@ contract ConvexCurveLPStakingMetaBalanceAdapter is MetaBalanceAdapter {
 
     /// @notice Derives the "TOKEN0/TOKEN1/…" coin-symbol string from the rewarder's underlying Curve pool ("" on
     ///         failure: unresolvable LP/pool/coins).
-    function _coins(bytes calldata pid) private view returns (string memory) {
-        address rewarder = abi.decode(pid, (address));
+    function _coins(address rewarder) private view returns (string memory) {
         address lpToken = _lpTokenOf(rewarder);
         if (lpToken == address(0)) return "";
         address pool = CurvePoolLib.getPool(lpToken);

@@ -116,10 +116,10 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     ///      available, but the pair alone does NOT identify a vault: Fluid runs several isolated T1 vaults over
     ///      the same pair (mainnet: 101 T1 vaults, 91 distinct pairs — every configured vault has a live
     ///      same-pair twin), so Fluid's own per-vault id is appended. Leaf is "" (collapsing to `["Vault"]`) for
-    ///      a non-T1 or unreadable vault. Returns an empty array for a short positionId.
+    ///      a non-T1 or unreadable vault. Returns an empty array for a malformed positionId (see {_pidAddress}).
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
-        if (pid.length < 32) return new string[](0);
-        address vault = abi.decode(pid, (address));
+        (address vault, bool ok) = _pidAddress(pid);
+        if (!ok) return new string[](0);
         // External self-call so a revert anywhere in the type-check/constantsView/symbol chain fails open to the
         // category-only label — a faulty label must never revert the (verbose-only) labels read.
         try this.vaultPairSymbols(vault) returns (string memory leaf) {

@@ -106,15 +106,22 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @inheritdoc MetaBalanceAdapter
     /// @dev Returns `["Market", "<collateral>/<loan>"]` where the leaf is built from the two token symbols. If the
     ///      marketId cannot be resolved the leaf is empty and collapses to `["Market"]` (see {_labels}). Returns an
-    ///      empty array for a short positionId.
+    ///      empty array for a malformed positionId — see {_pidWord}, NOT {_pidAddress}: a marketId is a keccak hash,
+    ///      so almost every real one has bits set above 160 and a range check would reject it.
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
-        if (pid.length < 32) return new string[](0);
-        bytes32 marketId = abi.decode(pid, (bytes32));
+        (bytes32 marketId, bool ok) = _pidWord(pid);
+        if (!ok) return new string[](0);
         string memory leaf = "";
         try MORPHO.idToMarketParams(Id.wrap(marketId)) returns (MarketParams memory mp) {
-            string memory collSym = _symbol(mp.collateralToken);
-            string memory loanSym = _symbol(mp.loanToken);
-            leaf = string.concat(collSym, "/", loanSym);
+            // `idToMarketParams` is a plain mapping getter, so an id with NO market returns an all-zero struct
+            // instead of reverting — the `catch` arm never fires for it. Both symbol reads would then fail open to
+            // "?" and the adapter would answer `["Market", "?/?"]`: a confident two-segment breadcrumb, byte-
+            // identical to a real market whose tokens both have unreadable symbols, for a market that does not
+            // exist on this chain. Gate on `loanToken` — every real market has one, whereas an "idle" market
+            // legitimately has `collateralToken == address(0)`, so only `loanToken` can carry the check.
+            if (mp.loanToken != address(0)) {
+                leaf = string.concat(_symbol(mp.collateralToken), "/", _symbol(mp.loanToken));
+            }
         } catch {}
         return _labels("Market", leaf);
     }

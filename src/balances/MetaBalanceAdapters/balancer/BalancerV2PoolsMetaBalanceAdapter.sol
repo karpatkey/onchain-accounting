@@ -90,10 +90,10 @@ contract BalancerV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     ///      Per-token fail-open: a token whose `symbol()` reverts (or has no code) contributes "?". A revert in the
     ///      Vault pool-token read (e.g. a malformed/removed instance) is caught by the `try/catch` self-call and falls
     ///      open here to the category-only label `["AMM Liquidity Pool"]`. Returns an empty array for a
-    ///      short/malformed `pid` (fewer than 32 bytes).
+    ///      malformed `pid` (see {_pidWord}).
     function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
-        if (pid.length < 32) return new string[](0);
-        bytes32 poolId = abi.decode(pid, (bytes32));
+        (bytes32 poolId, bool ok) = _pidWord(pid);
+        if (!ok) return new string[](0);
         // External self-call so a revert in the Vault pool-token read (bad/removed poolId) fails open to the
         // category-only label — a faulty label must never revert the (verbose-only) labels read.
         try this.poolTokenSymbols(poolId) returns (string memory leaf) {

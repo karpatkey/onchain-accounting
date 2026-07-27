@@ -64,7 +64,7 @@ contract GearboxV3MarketsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @inheritdoc MetaBalanceAdapter
     /// @dev Returns `["Market", <name>]` where the leaf is the market's ERC20 name; if the name is unreadable the
     ///      empty leaf is dropped and just `["Market"]` is returned (see `_labels`). Returns an empty array for a
-    ///      short positionId.
+    ///      malformed positionId (see {_pidAddress}).
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
         return _addressLabels(pid, "Market", false);
     }

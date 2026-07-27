@@ -107,7 +107,7 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceAdapter {
 
     /// @inheritdoc MetaBalanceAdapter
     /// @dev Returns `["Market", <leaf>]` where the leaf is the comet's ERC20 symbol (e.g. "cUSDCv3"; "" if
-    ///      unreadable, fail-open). Returns an empty array for a short positionId.
+    ///      unreadable, fail-open). Returns an empty array for a malformed positionId (see {_pidAddress}).
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
         return _addressLabels(pid, "Market", true);
     }

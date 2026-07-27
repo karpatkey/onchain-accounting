@@ -226,7 +226,12 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     ///      The raw probes below have neither problem, and additionally cap the gas a hostile pool can burn. `fee`
     ///      is range-checked because a full word that does not fit `uint24` is not a fee — masking it would invent
     ///      one — and the token reads use the STRICT address form for the same reason: a dirty word is a broken
-    ///      answer, not address(0).
+    ///      answer, not an address.
+    ///
+    ///      The `bad0`/`bad1` flags are checked for explicitness, not because they add reachability: `safeAddrStrict`
+    ///      already returns `address(0)` for a word it rejects, so the `== address(0)` clauses subsume them and no
+    ///      test can isolate the flags on their own. They are kept because reading `bad0` at the call site is what
+    ///      makes "rejected, not masked" visible here rather than only in the library.
     function _poolLeaf(address pool) private view returns (string memory) {
         (, bool hasFee, uint256 rawFee) =
             StaticCallLib.probeWord(pool, abi.encodeWithSelector(IUniswapV3Pool.fee.selector));

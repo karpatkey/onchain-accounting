@@ -15,7 +15,8 @@ import {
     MockCurvePool,
     MockCurvePoolWithSeparateLp,
     MockCurveLpToken,
-    MockCurvePoolInt128
+    MockCurvePoolInt128,
+    MockDirtyCoinsPool
 } from "test/balances/MetaBalanceAdapters/CurveMocks.sol";
 
 contract CurvePoolsMetaBalanceAdapterTest is Test {
@@ -336,5 +337,21 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
         uint256 dirty = uint256(uint160(coord)) | (uint256(1) << 255);
         assertEq(meta.positionLabels(abi.encode(dirty)).length, 0, "dirty upper bits");
         assertEq(meta.positionLabels(abi.encode(coord, uint256(1))).length, 0, "over-long");
+    }
+
+    /// @dev `positionLabels` must never revert. The pool in the positionId is caller-supplied — `_pidAddress`
+    ///      accepts any clean address word by design — and `CurvePoolLib` read `coins(i)` with only a
+    ///      `data.length >= 32` check before `abi.decode(data, (address))`. A length check is not a range check, so
+    ///      a pool answering with a dirty full word reverted this view. The readers now funnel through
+    ///      `CurvePoolLib._firstAddress`, which rejects (never masks — a masked word could name a different live
+    ///      pool, which on the NAV path would decompose the wrong thing) and returns the library's existing
+    ///      `address(0)` unresolved sentinel.
+    ///
+    ///      Load-bearing: restore `abi.decode(data, (address))` in `_coin` and this reverts with `EvmError`. The
+    ///      length assertion pins the degraded answer, not merely the absence of a revert.
+    function test_positionLabels_undecodableCoinRead_doesNotRevert() public {
+        string[] memory l = meta.positionLabels(abi.encode(address(new MockDirtyCoinsPool())));
+        assertEq(l.length, 1, "an unresolvable pool collapses to the category");
+        assertEq(l[0], "AMM Liquidity Pool");
     }
 }

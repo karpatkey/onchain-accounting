@@ -222,3 +222,19 @@ contract MockCurveMinter {
         minted[account][gauge] = amount;
     }
 }
+
+/// @notice A "pool" whose `coins(uint256)` answers with a full word that is not an address (dirty upper 96 bits).
+/// @dev `abi.decode(data, (address))` reverts on this, and a `data.length >= 32` check does not catch it — a length
+///      check is not a range check. Reaches `CurvePoolLib._firstAddress` via the label path.
+contract MockDirtyCoinsPool {
+    function coins(uint256) external pure returns (uint256) {
+        return type(uint256).max;
+    }
+}
+
+/// @notice A "gauge" whose `lp_token()` answers with a full word that is not an address.
+contract MockDirtyLpTokenGauge {
+    function lp_token() external pure returns (uint256) {
+        return type(uint256).max;
+    }
+}

@@ -14,7 +14,8 @@ import {
     MockCurveToken,
     MockCurvePool,
     MockCurveGauge,
-    MockCurveMinter
+    MockCurveMinter,
+    MockDirtyLpTokenGauge
 } from "test/balances/MetaBalanceAdapters/CurveMocks.sol";
 
 contract CurveGaugesMetaBalanceAdapterTest is Test {
@@ -314,5 +315,16 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
         uint256 dirty = uint256(uint160(coord)) | (uint256(1) << 255);
         assertEq(meta.positionLabels(abi.encode(dirty)).length, 0, "dirty upper bits");
         assertEq(meta.positionLabels(abi.encode(coord, uint256(1))).length, 0, "over-long");
+    }
+
+    /// @dev Same class as the Curve pools case, one hop earlier: `gaugeLpToken` read `lp_token()` with only a
+    ///      length check before `abi.decode(data, (address))`, so a gauge answering with a dirty full word reverted
+    ///      this display-only view. Now routed through `CurvePoolLib._firstAddress`.
+    ///
+    ///      Load-bearing: restore `abi.decode(data, (address))` in `gaugeLpToken` and this reverts.
+    function test_positionLabels_undecodableLpTokenRead_doesNotRevert() public {
+        string[] memory l = meta.positionLabels(abi.encode(address(new MockDirtyLpTokenGauge())));
+        assertEq(l.length, 1, "an unresolvable gauge collapses to the category");
+        assertEq(l[0], "Staking Gauge");
     }
 }

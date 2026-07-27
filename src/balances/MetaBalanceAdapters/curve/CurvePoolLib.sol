@@ -52,7 +52,7 @@ library CurvePoolLib {
     function getLpToken(address pool) internal view returns (address) {
         (bool ok, bytes memory data) = pool.staticcall(abi.encodeWithSignature("lp_token()"));
         if (ok && data.length == 32) {
-            address token = abi.decode(data, (address));
+            address token = _firstAddress(data);
             if (token != address(0) && token != pool) return token;
         }
         return pool; // pool IS the LP token (classic StableSwap, TriCryptoNG)
@@ -68,7 +68,7 @@ library CurvePoolLib {
         // StableSwap-NG / TwoCryptoNG LP tokens have minter() pointing to the pool
         (bool ok, bytes memory data) = lpToken.staticcall(abi.encodeWithSignature("minter()"));
         if (ok && data.length == 32) {
-            address minter = abi.decode(data, (address));
+            address minter = _firstAddress(data);
             if (minter != address(0)) return minter;
         }
 
@@ -140,7 +140,7 @@ library CurvePoolLib {
     ///         Returns address(0) if not available (unusual, defensive).
     function gaugeLpToken(address gauge) internal view returns (address) {
         (bool ok, bytes memory data) = gauge.staticcall(abi.encodeWithSignature("lp_token()"));
-        if (ok && data.length >= 32) return abi.decode(data, (address));
+        if (ok) return _firstAddress(data);
         return address(0);
     }
 
@@ -171,7 +171,7 @@ library CurvePoolLib {
     ///         Returns address(0) if the slot is empty or the method does not exist.
     function rewardToken(address gauge, uint256 i) internal view returns (address) {
         (bool ok, bytes memory data) = gauge.staticcall(abi.encodeWithSignature("reward_tokens(uint256)", i));
-        if (ok && data.length >= 32) return abi.decode(data, (address));
+        if (ok) return _firstAddress(data);
         return address(0);
     }
 
@@ -197,14 +197,35 @@ library CurvePoolLib {
     function _coin(address pool, uint256 i) private view returns (address) {
         // Try uint256 index (all modern pools: StableSwap 0.2+, StableSwap-NG, Crypto*, TriCryptoNG)
         (bool ok, bytes memory data) = pool.staticcall(abi.encodeWithSignature("coins(uint256)", i));
-        if (ok && data.length >= 32) {
-            address coin = abi.decode(data, (address));
+        if (ok) {
+            address coin = _firstAddress(data);
             if (coin != address(0)) return coin;
         }
         // Fallback: int128 index (original StableSwap, Vyper 0.1.x)
         (ok, data) = pool.staticcall(abi.encodeWithSignature("coins(int128)", int128(int256(i))));
-        if (ok && data.length >= 32) return abi.decode(data, (address));
+        if (ok) return _firstAddress(data);
         return address(0);
+    }
+
+    /// @notice First returned word as an address, or `address(0)` when the reply is not one clean address word.
+    /// @dev Every address reader in this library funnels through here instead of `abi.decode(data, (address))`,
+    ///      which REVERTS on a word whose upper 96 bits are dirty. A length check is not a range check, and these
+    ///      readers back `positionLabels` — a display-only view that must never revert, reachable with an arbitrary
+    ///      caller-supplied pool/gauge address — as well as the NAV read path.
+    ///
+    ///      **Rejects rather than masks.** `address(uint160(raw))` on a dirty word could name a DIFFERENT live pool
+    ///      or token, which on the NAV path would decompose and value the wrong thing. `address(0)` is the
+    ///      "unresolved" sentinel every caller here already handles (skip the LP decomposition, drop the reward
+    ///      slot, collapse the label leaf), so a malformed reply lands on the established degraded path — an
+    ///      under-report — instead of reverting or inventing an address.
+    ///
+    ///      A short or empty reply also yields `address(0)`, which is why the callers no longer pre-check
+    ///      `data.length >= 32`: that check lives here, applied uniformly.
+    function _firstAddress(bytes memory data) private pure returns (address) {
+        if (data.length < 32) return address(0);
+        uint256 raw = abi.decode(data, (uint256));
+        if (raw >> 160 != 0) return address(0);
+        return address(uint160(raw));
     }
 
     /// @notice Joins coin symbols with "/" — e.g. [USDC, DAI] → "USDC/DAI".

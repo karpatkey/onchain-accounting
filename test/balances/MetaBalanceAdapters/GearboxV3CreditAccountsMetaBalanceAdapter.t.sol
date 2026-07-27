@@ -42,6 +42,20 @@ contract MockCreditAccount {
     }
 }
 
+/// @notice An ordinary contract with a no-op fallback: `creditManager()` SUCCEEDS and returns zero bytes.
+/// @dev The mundane shape a `try`/`catch` around a typed call does not cover — the decode is emitted after the
+///      call, so its revert lands outside the `catch` arm. A plain receiver or default-fallback proxy is enough.
+contract MockNoopFallbackAccount {
+    fallback() external {}
+}
+
+/// @notice `creditManager()` answers with a full word whose upper 96 bits are dirty — not an address.
+contract MockDirtyWordAccount {
+    function creditManager() external pure returns (uint256) {
+        return type(uint256).max;
+    }
+}
+
 /// @notice Minimal Gearbox V3 CreditManager: per-account borrower / enabled-token mask / debt parts, a token-by-mask
 ///         registry, an underlying, and revert toggles to exercise the adapter's graceful-degradation paths.
 contract MockCreditManager {
@@ -638,5 +652,28 @@ contract GearboxV3CreditAccountsMetaTier2LeafTest is Test {
         uint256 dirty = uint256(uint160(coord)) | (uint256(1) << 255);
         assertEq(adapter.positionLabels(abi.encode(dirty)).length, 0, "dirty upper bits");
         assertEq(adapter.positionLabels(abi.encode(coord, uint256(1))).length, 0, "over-long");
+    }
+
+    /// @dev `positionLabels` must never revert, and the credit account in the positionId is caller-supplied — the
+    ///      `_pidAddress` guard accepts any clean address word by design. `_creditManagerOf` previously read it
+    ///      through `try ICreditAccountV3(ca).creditManager()`, which fails open for only ONE of the three ways
+    ///      that read breaks: `catch` covers a revert, the old `ca.code.length` guard covered a code-less address,
+    ///      and nothing covered a call that SUCCEEDS with returndata that will not decode as an address. Both cases
+    ///      below are that third class, and both reverted this view before the switch to
+    ///      `StaticCallLib.safeAddrStrict`.
+    ///
+    ///      Load-bearing: restore the `try`/`catch` form and both assertions revert with `EvmError`. The
+    ///      real-account tail keeps this from passing on a view that answers `["Credit Account"]` for everything.
+    function test_positionLabels_undecodableCreditManager_doesNotRevert() public {
+        // Succeeds, returns zero bytes.
+        string[] memory noop = adapter.positionLabels(abi.encode(address(new MockNoopFallbackAccount())));
+        assertEq(noop.length, 1, "an unresolvable account collapses to the category");
+        assertEq(noop[0], "Credit Account");
+
+        // Succeeds, returns a full word that is not an address. Rejected, not masked: masking could name a real
+        // CreditManager, and address(0) is the sentinel the caller branches on.
+        string[] memory dirty = adapter.positionLabels(abi.encode(address(new MockDirtyWordAccount())));
+        assertEq(dirty.length, 1);
+        assertEq(dirty[0], "Credit Account");
     }
 }

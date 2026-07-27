@@ -84,11 +84,7 @@ library StaticCallLib {
     /// @return ok The raw staticcall success flag.
     /// @return hasWord True when the call succeeded AND returned at least one full word.
     /// @return word The first 32 bytes of returndata.
-    function probeWord(address target, bytes memory data)
-        internal
-        view
-        returns (bool ok, bool hasWord, uint256 word)
-    {
+    function probeWord(address target, bytes memory data) internal view returns (bool ok, bool hasWord, uint256 word) {
         uint256 size;
         assembly ("memory-safe") {
             ok := staticcall(PROBE_GAS, target, add(data, 0x20), mload(data), 0x00, 0x20)

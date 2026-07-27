@@ -114,9 +114,15 @@ contract StakeWiseV3VaultsMetaParityForkTest is BalanceAdapterTestBase {
     ///         exists for: on `main` all three rendered an identical `["Vault"]`.
     /// @dev The on-chain counterpart of `test_positionLabels_distinctForUnnamedVaults`, and the reason the leaf
     ///      keeps the address even though consumers render a coordinate column beside it (settled 2026-07-27 —
-    ///      see the `positionLabels` NatSpec). These three are REAL unnamed `GnoVault`s, not mocks, so this is the
-    ///      direct evidence that a symbol-only leaf would collapse all of them to one `["Vault", "GNO"]`. The
-    ///      pairwise loop below is the assertion that would fail; it is the point of the test, not a formality.
+    ///      see the `positionLabels` NatSpec). These three are REAL non-ERC20 vaults whose `name()` reverts (two
+    ///      `GnoVault`s and one `GnoGenesisVault`), not mocks, so this is the direct evidence that a symbol-only
+    ///      leaf would collapse all of them to one `["Vault", "GNO"]`.
+    ///
+    ///      Which assertion fires if someone shortens the leaf: the per-instance `assertEq` on the expected string
+    ///      inside the first loop, NOT the pairwise loop below — the `assertEq` reverts first, so the pairwise loop
+    ///      never executes. The loop is what *states* the property being defended; the `assertEq` is what catches
+    ///      the change. If you are here having shortened the leaf, fixing the expected string will silence the
+    ///      first failure and the pairwise loop is what should stop you next.
     function test_positionLabels_configuredVaults_fallBackToSymbolAndAddress() public {
         fork = createSelectForkWithCadence(getAlchemyUrl("gnosis-mainnet"), FORK_BLOCK_1);
         _deploy();

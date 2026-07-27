@@ -141,9 +141,11 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceAdapter {
     ///          its caller renders; a consumer that shows only the breadcrumb (a CSV export, an alert, a log line)
     ///          would otherwise lose the ability to tell two vaults apart entirely.
     ///        - Dropping it costs inter-instance distinctness outright, not just verbosity. The symbol is a
-    ///          chain-level constant, so a symbol-only leaf collapses every unnamed vault to one string — all three
-    ///          configured Gnosis vaults are unnamed `GnoVault`s and would render an identical `["Vault", "GNO"]`.
-    ///          That is the undistinguished breadcrumb this tier was added to fix, reintroduced.
+    ///          chain-level constant, so a symbol-only leaf collapses every unnamed vault to one string — and none
+    ///          of the three configured Gnosis vaults answers `name()`, so all three would render an identical
+    ///          `["Vault", "GNO"]`. That is the undistinguished breadcrumb this tier was added to fix,
+    ///          reintroduced. (They are two `GnoVault`s plus one `GnoGenesisVault` — the types differ, but every
+    ///          one of them is a non-ERC20 variant with a reverting `name()`, which is the part that matters here.)
     ///      The duplication is therefore the accepted cost of a leaf that is meaningful without its coordinate.
     ///      `test_positionLabels_distinctForUnnamedVaults` (unit) and
     ///      `test_positionLabels_configuredVaults_fallBackToSymbolAndAddress` (Gnosis fork) pin that property.
@@ -153,8 +155,9 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceAdapter {
     ///        - `name()` / `symbol()` / `contractURI()` / `metadataIpfsHash()` / `asset()` all revert on them
     ///          (checked against v3, v4, v5 and v7 vaults; newer versions do not help).
     ///        - `vaultId()` answers, but it is `keccak256(<implementation type string>)` — a *type* hash, not a
-    ///          per-vault id, so it both collides (the two configured Gnosis vaults are both `GnoVault`) and would
-    ///          need a hardcoded hash→string table to render, since the pre-image is not recoverable on chain.
+    ///          per-vault id, so it both collides (of the three configured Gnosis vaults, two are `GnoVault` and
+    ///          share one hash; the third is a `GnoGenesisVault`) and would need a hardcoded hash→string table to
+    ///          render, since the pre-image is not recoverable on chain.
     ///        - `version()` collides; `admin()` / `mevEscrow()` / `feeRecipient()` / `validatorsManager()` /
     ///          `implementation()` are addresses, not names, and most are mutable.
     ///        - `VaultsRegistry` stores only `vaults(address) → bool`; it holds no names.

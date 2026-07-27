@@ -506,7 +506,7 @@ contract NAVCalculatorGasCapTest is SuperTest {
         assertLt(baseline, GENEROUS_BUDGET, "control: the read must fit in the budget with room to spare");
 
         burner.setMode(Misbehaviour.BurnGas);
-        vm.expectRevert(abi.encodeWithSelector(AdapterGasExhausted.selector, address(burner)));
+        vm.expectPartialRevert(AdapterGasExhausted.selector);
         nav.getAccountNav{gas: GENEROUS_BUDGET}(safe, address(0));
     }
 
@@ -516,13 +516,13 @@ contract NAVCalculatorGasCapTest is SuperTest {
         vm.prank(navCalculatorManager);
         nav.addBalanceAdapters(aa(address(burner)));
 
-        vm.expectRevert(abi.encodeWithSelector(AdapterGasExhausted.selector, address(burner)));
+        vm.expectPartialRevert(AdapterGasExhausted.selector);
         nav.getAccountPositions{gas: GENEROUS_BUDGET}(safe, address(0));
 
-        vm.expectRevert(abi.encodeWithSelector(AdapterGasExhausted.selector, address(burner)));
+        vm.expectPartialRevert(AdapterGasExhausted.selector);
         nav.getAccountNavVerbose{gas: GENEROUS_BUDGET}(safe, address(0));
 
-        vm.expectRevert(abi.encodeWithSelector(AdapterGasExhausted.selector, address(burner)));
+        vm.expectPartialRevert(AdapterGasExhausted.selector);
         nav.hasPositions{gas: GENEROUS_BUDGET}(safe);
     }
 

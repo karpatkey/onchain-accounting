@@ -1024,11 +1024,19 @@ library PriceFeedLib {
     ///      escape and only a redeploy can lift. Keyed to the caller's own budget instead, the same situations
     ///      surface as "this read needs more gas", which the caller can act on.
     ///
-    ///      **Scope, stated plainly: this guard sees only what crosses the adapter boundary.** A meta-adapter
-    ///      runs its own per-instance `try`/`catch` fan-out internally and RETURNS SUCCESSFULLY with a starved
-    ///      instance recorded as empty, so a NAV read can still quietly omit one instance of a meta-adapter. That
-    ///      hole is in `MetaBalanceAdapter`, not here, and closing it needs the same distinction drawn at the
-    ///      per-instance `catch`.
+    ///      **Scope, stated plainly. This guard sees only what crosses the adapter boundary, and two things sit
+    ///      outside it:**
+    ///      - A meta-adapter runs its own per-instance `try`/`catch` fan-out internally and RETURNS SUCCESSFULLY
+    ///        with a starved instance recorded as empty. This function sees a successful call and never reaches
+    ///        the check, so a NAV read can still quietly omit one INSTANCE of a meta-adapter. That hole is in
+    ///        `MetaBalanceAdapter`, and closing it needs the same distinction drawn at the per-instance `catch`.
+    ///      - The `returndatacopy` and ABI decode of the adapter's reply are charged to THIS frame, outside the
+    ///        stipend, because a typed `try … returns (…[] memory)` copies whatever arrives. The stipend bounds
+    ///        it only indirectly, through what the callee could afford to build. The outcome is a loud
+    ///        out-of-gas rather than a wrong number, so this is availability, not correctness.
+    ///
+    ///      Nor is any fixed fraction exact: deep enough nesting always leaves enough unspent to slip under the
+    ///      threshold. This narrows the silent window; it does not close it.
     function _getAdapterPositions(address adapter, address account, address assetFilter)
         private
         view
@@ -1048,8 +1056,9 @@ library PriceFeedLib {
         ) {
             return pos;
         } catch {
-            if (available - gasleft() >= stipend - stipend / EXHAUSTION_SLACK_DIVISOR) {
-                revert AdapterGasExhausted(adapter);
+            uint256 consumed = available - gasleft();
+            if (consumed >= stipend - stipend / EXHAUSTION_SLACK_DIVISOR) {
+                revert AdapterGasExhausted(adapter, stipend, consumed);
             }
             return new INAVCalculator.PositionBalance[](0);
         }

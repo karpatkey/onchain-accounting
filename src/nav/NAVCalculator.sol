@@ -474,10 +474,13 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     ///         payload, matching `LabelLib`'s own metadata window. A longer name yields "".
     uint256 private constant _NAME_RETURN_BYTES = 320;
 
-    /// @notice Bytes of `positionLabels()` returndata copied into this frame. A canonical reply for the label
-    ///         arrays this repo actually emits (a category plus a leaf, occasionally a joined token list) is a few
-    ///         hundred bytes, so this is an order of magnitude of headroom; a reply that genuinely exceeds it is
-    ///         truncated, fails to decode, and yields no labels — display degrades, the NAV numbers do not move.
+    /// @notice Bytes of `positionLabels()` returndata copied into this frame. A typical reply — a category plus a
+    ///         leaf — is a few hundred bytes, but the bound has to clear the worst LEGITIMATE one: no
+    ///         `positionLabels` here returns more than three elements, and the largest leaf is an 8-token join
+    ///         (`_joinTokenSymbols`, `CurvePoolLib.coinSymbols`, both capped at 8 coins) whose symbols are each
+    ///         capped at `LabelLib.MAX_METADATA_BYTES`, so ~2.4 KB encoded. The margin over that is ~1.7×, not an
+    ///         order of magnitude — widen this if a leaf ever joins more or longer strings. A reply that does
+    ///         exceed it is truncated, fails to decode and yields no labels: display degrades, NAV does not move.
     uint256 private constant _LABELS_RETURN_BYTES = 4096;
 
     /// @notice Staticcall bounded in BOTH directions — a gas stipend on the callee and a fixed output window on

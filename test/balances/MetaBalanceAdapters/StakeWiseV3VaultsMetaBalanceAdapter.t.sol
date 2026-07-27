@@ -100,14 +100,14 @@ contract MockRawNameVault {
     }
 }
 
-/// @notice `name()` burns gas until it runs out — the griefing shape the stipend is there to bound.
+/// @notice Burns gas by pure COMPUTATION until out-of-gas — the griefing shape the stipend bounds.
+/// @dev Computation-only on purpose: an `SSTORE` inside a `STATICCALL` is a write-protection violation, so a
+///      storage-writing burner aborts on its first store and never reaches the loop. Both shapes consume all gas
+///      forwarded to the frame, but only this one exercises the run-until-OOG path.
 contract MockGasBurnerVault {
-    uint256 public sink;
-
     fallback() external {
-        // Unbounded loop: consumes whatever gas it is given, then reverts with out-of-gas.
-        for (uint256 i = 0; true; ++i) {
-            sink = i;
+        assembly {
+            for {} 1 {} { mstore(0x00, keccak256(0x00, 0x20)) }
         }
     }
 }
@@ -301,7 +301,8 @@ contract StakeWiseV3VaultsMetaBalanceAdapterTest is Test {
     /// @dev Regression guard. Solidity does not route a return-data decode failure into a `try`/`catch`, so reading
     ///      the name through `LabelLib.name` (as an earlier revision of this adapter did) reverts here. Reverting
     ///      `positionLabels` is worse than the blank leaf this PR set out to fix: NAVCalculator swallows it into an
-    ///      EMPTY label array, losing the category too. Fails if `_safeVaultName` is swapped back for `LabelLib.name`.
+    ///      EMPTY label array, losing the category too. Fails if `LabelLib`'s ABI-head validation is removed (this
+    ///      adapter used to carry a local `_safeVaultName` copy of that guard; it now shares `LabelLib.name`).
     function test_positionLabels_emptyReturndataName_failsOpen() public {
         address v = address(new MockEmptyReturndataVault());
         string[] memory l = meta.positionLabels(abi.encode(v));
@@ -328,9 +329,10 @@ contract StakeWiseV3VaultsMetaBalanceAdapterTest is Test {
         assertEq(l[0], "Vault");
     }
 
-    /// @notice A name exactly at `MAX_NAME_BYTES` (256) is accepted; 257 degrades to the address fallback.
+    /// @notice A name exactly at `LabelLib`'s metadata cap (256 bytes) is accepted; 257 degrades to the fallback.
     /// @dev Pins the cap boundary in both directions so a future tweak to the constant cannot silently change which
-    ///      names render.
+    ///      names render. The 256 is duplicated from `LabelLib.MAX_METADATA_BYTES`, which is `private`; if that
+    ///      constant moves, this test and `test/balances/LabelLib.t.sol` must move with it.
     function test_positionLabels_nameLengthCapBoundary() public {
         bytes memory at = new bytes(256);
         bytes memory over = new bytes(257);

@@ -349,7 +349,6 @@ contract NavReadHarness {
     }
 }
 
-
 /// @title NAVCalculatorGasCapTest
 /// @notice Pins how the two read paths behave when an adapter spends without answering: the NAV path refuses to
 ///         report a read it could not complete, and the verbose path bounds what a label read may cost it.

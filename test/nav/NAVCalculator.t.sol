@@ -9,6 +9,7 @@ import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {aa} from "test/helpers/AdapterArray.sol";
+import {Mock_CustomBalanceAdapter} from "test/mocks/balance_adapters.sol";
 
 contract NAVCalculatorHarness is NAVCalculator {
     constructor(address admin, address chainlinkUptimeFeed, string memory nativeTokenSymbol) {
@@ -1088,6 +1089,87 @@ contract NAVCalculatorTest is SuperTest {
         assertTrue(found, "mock adapter position not found");
     }
 
+    /// @notice A `protocolName()` whose payload is in-bounds but NOT padded to a 32-byte boundary must render.
+    /// @dev This is the regression the old `ceil32` bound caused. A canonical ABI `string` return is
+    ///      `[offset=0x20][length][payload]`; solc pads the payload to a word when IT encodes, but a memory-source
+    ///      `abi.decode` bounds on the RAW declared length and reads exactly that many bytes. The removed bound
+    ///      required `ret.length >= 64 + ceil32(strLen)`, so every reply whose payload was not an exact multiple of
+    ///      32 bytes — 62 of the 64 lengths in 1..64 — was rejected and the name silently rendered as "".
+    ///      `strLen = 5`, `ret.length = 69`: rejected before, decodes to "Wallet"-style text now.
+    function test_getAccountPositionsVerbose_unpaddedProtocolName_renders() public {
+        RawProtocolNameAdapter adapter = _registerRawNameAdapter();
+        // offset 0x20, length 5, exactly 5 bytes of payload => returndatasize 69, not a multiple of 32.
+        adapter.stageProtocolName(abi.encodePacked(uint256(0x20), uint256(5), bytes("Aave5")));
+
+        INAVCalculator.VerbosePosition[] memory verbose = nav.getAccountPositionsVerbose(safe, address(0));
+        assertEq(_nameFor(verbose, address(adapter)), "Aave5", "an unpadded protocolName must render, not degrade");
+    }
+
+    /// @dev The boundary in the other direction: an exact multiple of 32 was the only shape the old bound accepted,
+    ///      and it must keep working.
+    function test_getAccountPositionsVerbose_paddedProtocolName_stillRenders() public {
+        RawProtocolNameAdapter adapter = _registerRawNameAdapter();
+        adapter.stageProtocolName(abi.encode(string("Aave V3")));
+
+        INAVCalculator.VerbosePosition[] memory verbose = nav.getAccountPositionsVerbose(safe, address(0));
+        assertEq(_nameFor(verbose, address(adapter)), "Aave V3", "a canonical protocolName must still render");
+    }
+
+    /// @dev Fail-open is preserved: a payload SHORTER than its declared length is still rejected, because that is
+    ///      the one case `abi.decode` itself would revert on. Removing the ceil32 bound must not remove this.
+    function test_getAccountPositionsVerbose_truncatedProtocolName_degrades() public {
+        RawProtocolNameAdapter adapter = _registerRawNameAdapter();
+        // Declares 100 bytes but carries 5 => strLen (100) > ret.length - 64 (5).
+        adapter.stageProtocolName(abi.encodePacked(uint256(0x20), uint256(100), bytes("short")));
+
+        INAVCalculator.VerbosePosition[] memory verbose = nav.getAccountPositionsVerbose(safe, address(0));
+        assertEq(_nameFor(verbose, address(adapter)), "", "a truncated payload must still degrade to \"\"");
+    }
+
+    /// @dev And the other malformed shapes stay rejected rather than reverting the verbose read.
+    function test_getAccountPositionsVerbose_malformedProtocolName_degrades() public {
+        RawProtocolNameAdapter adapter = _registerRawNameAdapter();
+
+        // bytes32-shaped (MKR-era): a single word, so shorter than the two-word head.
+        adapter.stageProtocolName(abi.encodePacked(bytes32("Aave V3")));
+        assertEq(_nameFor(nav.getAccountPositionsVerbose(safe, address(0)), address(adapter)), "", "bytes32 shape");
+
+        // Empty returndata (proxy to a code-less implementation).
+        adapter.stageProtocolName("");
+        assertEq(_nameFor(nav.getAccountPositionsVerbose(safe, address(0)), address(adapter)), "", "empty returndata");
+
+        // Non-canonical head offset.
+        adapter.stageProtocolName(abi.encodePacked(uint256(0x40), uint256(7), bytes("Aave V3")));
+        assertEq(_nameFor(nav.getAccountPositionsVerbose(safe, address(0)), address(adapter)), "", "bad offset");
+
+        // Absurd declared length.
+        adapter.stageProtocolName(abi.encodePacked(uint256(0x20), type(uint256).max, bytes("x")));
+        assertEq(_nameFor(nav.getAccountPositionsVerbose(safe, address(0)), address(adapter)), "", "absurd length");
+    }
+
+    /// @dev Registers an adapter reporting one USDC position for `safe`, so `_toVerbose` reaches its protocolName.
+    function _registerRawNameAdapter() private returns (RawProtocolNameAdapter adapter) {
+        adapter = new RawProtocolNameAdapter();
+        adapter.setBalances(nav);
+        adapter.setUnderlyingAssetsSupported(aa(address(usdc)));
+        adapter.setBalance(address(usdc), safe, 5 * 10 ** usdc.decimals(), false);
+
+        vm.prank(navCalculatorManager);
+        nav.addBalanceAdapters(aa(address(adapter)));
+    }
+
+    /// @dev The `protocolName` the verbose read resolved for `adapter`.
+    function _nameFor(INAVCalculator.VerbosePosition[] memory verbose, address adapter)
+        private
+        pure
+        returns (string memory)
+    {
+        for (uint256 i = 0; i < verbose.length; i++) {
+            if (verbose[i].position.balanceAdapter == adapter) return verbose[i].protocolName;
+        }
+        return "<adapter position not found>";
+    }
+
     function test_getAccountPositionsForAssetVerbose() public {
         usdc.mint(safe, 10 ** usdc.decimals());
         dai.mint(safe, 10 ** dai.decimals());
@@ -2146,5 +2228,23 @@ contract NAVCalculatorTest is SuperTest {
 
         // Should be very cheap (just helper call + early return)
         assertTrue(gasUsed < 100000, "Empty account should be very cheap");
+    }
+}
+
+/// @notice A balance adapter whose `protocolName()` answers with caller-staged RAW bytes.
+/// @dev A normal Solidity mock cannot express a non-canonical ABI encoding — its return value is well-formed by
+///      construction — so the unpadded shape has to be emitted from assembly.
+contract RawProtocolNameAdapter is Mock_CustomBalanceAdapter {
+    bytes private _raw;
+
+    function stageProtocolName(bytes memory raw) external {
+        _raw = raw;
+    }
+
+    function protocolName() external view returns (string memory) {
+        bytes memory r = _raw;
+        assembly {
+            return(add(r, 0x20), mload(r))
+        }
     }
 }

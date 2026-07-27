@@ -440,6 +440,18 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     ///      returndata cannot be decoded into `string` (e.g. a non-contract returning empty data, or a contract
     ///      returning a malformed/short blob), which would revert the whole verbose read. This validates the
     ///      ABI envelope (canonical 0x20 offset + length within bounds) before decoding so it can never revert.
+    ///
+    ///      **The bound is the RAW declared length, not `ceil32` of it.** A memory-source `abi.decode` bounds on
+    ///      the declared length itself: it needs `64 + strLen <= ret.length`, and reads exactly `strLen` bytes
+    ///      (under cancun, an `mcopy` of precisely that many). Verified on solc 0.8.34 / via_ir / cancun —
+    ///      `offset = 0x20`, `strLen = 5`, `ret.length = 69` decodes to `"short"` rather than reverting.
+    ///
+    ///      This previously carried a `ceil32` bound and a comment asserting the raw-length bound was unsafe
+    ///      ("would make abi.decode read 32 padded bytes past `ret` and revert"). That claim was **wrong**, and
+    ///      the extra bound was not merely redundant: it rejected every reply whose payload is not padded to a
+    ///      32-byte boundary — i.e. all but the exact multiples of 32 — so a legitimate `protocolName()` answered
+    ///      with an unpadded encoding silently rendered as "". Fail-open in the safe direction, but a false
+    ///      negative, and the misleading comment was the part most likely to be copied into the next reader.
     function _safeString(address target, bytes memory callData) private view returns (string memory) {
         (bool ok, bytes memory ret) = target.staticcall(callData);
         if (!ok || ret.length < 64) return ""; // need at least offset(32) + length(32)
@@ -449,14 +461,11 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             offset := mload(add(ret, 0x20))
             strLen := mload(add(ret, 0x40))
         }
-        // Canonical ABI string: offset == 0x20, and the full *padded* body must be present. abi.decode reads
-        // ceil32(strLen) bytes after the 64-byte (offset+length) header, so bounding on the raw strLen is not
-        // enough — a return with e.g. strLen=1, ret.length=65 would pass `ret.length >= 64+strLen` yet make
-        // abi.decode read 32 padded bytes past `ret` and revert (defeating fail-open). The `strLen > ret.length`
-        // guard also rules out a malicious huge strLen before the ceil32 add can overflow.
-        if (offset != 0x20 || strLen > ret.length) return "";
-        uint256 padded = (strLen + 31) & ~uint256(31);
-        if (ret.length < 64 + padded) return "";
+        // Canonical ABI string: offset == 0x20 and the declared body fits inside the returndata. `ret.length >= 64`
+        // is guaranteed by the early return above, so the subtraction cannot underflow, and it also rules out a
+        // malicious huge strLen. This is exactly the bound `abi.decode` itself applies, so the decode below is
+        // provably unreachable-by-revert.
+        if (offset != 0x20 || strLen > ret.length - 64) return "";
         return abi.decode(ret, (string));
     }
 

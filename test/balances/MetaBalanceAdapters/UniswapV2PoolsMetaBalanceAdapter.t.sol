@@ -115,6 +115,85 @@ contract UniswapV2PoolsMetaBalanceAdapterTest is Test {
         assertEq(meta.getAdapterPositionsForInstances(alice, one, address(0)).length, 0);
     }
 
+    /// @notice The protocol-fee dilution is applied when the factory answers coherently — the control for the
+    ///         two malformed-factory tests below.
+    function test_protocolFeeDilution_reducesReportedShare() public {
+        factory.setFeeTo(address(0xFEE));
+        pairA.setKLast(2.5e39); // rootK = 1e20, rootKLast = 5e19 → pendingMint = 100e18·5e19/5.5e20
+
+        bytes32[] memory one = new bytes32[](1);
+        one[0] = _instances()[0];
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, one, address(0));
+
+        assertEq(p.length, 2, "DAI + WETH legs");
+        assertLt(p[0].amount, 100e18, "dilution must reduce the reported share");
+        assertApproxEqRel(p[0].amount, 91.666e18, 1e15, "burn-equivalent share after protocol-fee dilution");
+    }
+
+    /// @notice A factory whose `feeTo()` word is not a valid address must make the pair report NOTHING — never
+    ///         the undiluted (larger) share.
+    /// @dev The regression this guards is subtle and was introduced by the move to masking. `StaticCallLib`
+    ///      deliberately masks a dirty word to 160 bits instead of reverting, which is right everywhere else in
+    ///      the sweep. But a word of `type(uint96).max << 160` masks to `address(0)`, and at THIS call site
+    ///      `feeTo == address(0)` means "no protocol fee" — so the dilution term silently vanishes and the
+    ///      reported share grows. Before masking, that word hit `abi.decode`'s validator, reverted, and the
+    ///      per-instance `try`/`catch` dropped the pair — the safe direction.
+    ///
+    ///      Delete the `feeToWord >> 160 != 0` check in `_pendingProtocolMint` and this fails with the full
+    ///      undiluted 100e18, i.e. an over-report of ~909 bps against the control above.
+    function test_malformedFeeTo_reportsNothingRatherThanUndilutedShare() public {
+        factory.setFeeTo(address(0xFEE));
+        pairA.setKLast(2.5e39);
+
+        // Upper 96 bits set, low 160 bits zero: masks to address(0), which this call site would read as
+        // "no protocol fee".
+        vm.mockCall(
+            address(factory), abi.encodeWithSignature("feeTo()"), abi.encodePacked(uint256(type(uint96).max) << 160)
+        );
+
+        bytes32[] memory one = new bytes32[](1);
+        one[0] = _instances()[0];
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, one, address(0));
+
+        assertEq(p.length, 0, "an unreadable factory must drop the pair, not inflate it");
+    }
+
+    /// @notice A factory returning a dirty word whose low 160 bits are a REAL address is equally unreadable.
+    /// @dev Complements the zero-low-bits case: here masking would yield a non-zero `feeTo` and apply dilution,
+    ///      which happens to under-report — but the word still is not an address, so the honest answer is that
+    ///      the dilution is unknowable. Pinning both directions stops a future "only reject when it masks to
+    ///      zero" narrowing.
+    function test_malformedFeeTo_withRealLowBits_alsoDropsThePair() public {
+        factory.setFeeTo(address(0xFEE));
+        pairA.setKLast(2.5e39);
+
+        vm.mockCall(
+            address(factory),
+            abi.encodeWithSignature("feeTo()"),
+            abi.encodePacked(uint256(uint160(address(0xFEE))) | (uint256(1) << 200))
+        );
+
+        bytes32[] memory one = new bytes32[](1);
+        one[0] = _instances()[0];
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, one, address(0));
+
+        assertEq(p.length, 0, "a dirty feeTo word is unreadable regardless of its low bits");
+    }
+
+    /// @notice A fork that genuinely omits `feeTo()` still reports, undiluted — the fail-open this branch exists
+    ///         for must survive the malformed-word guard.
+    function test_missingFeeToSelector_stillReportsUndiluted() public {
+        pairA.setKLast(2.5e39);
+        vm.mockCallRevert(address(factory), abi.encodeWithSignature("feeTo()"), "");
+
+        bytes32[] memory one = new bytes32[](1);
+        one[0] = _instances()[0];
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, one, address(0));
+
+        assertEq(p.length, 2, "a fee-less fork still reports");
+        assertEq(p[0].amount, 100e18, "no protocol fee means no dilution");
+    }
+
     function test_badInstance_isolated() public view {
         bytes32[] memory ins = new bytes32[](2);
         ins[0] = bytes32(uint256(uint160(address(0xdead))));

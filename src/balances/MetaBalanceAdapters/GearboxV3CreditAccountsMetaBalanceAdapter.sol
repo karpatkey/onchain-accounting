@@ -42,6 +42,26 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      external oracles (the basket includes leveraged positions) — not a manipulation-resistant mark; acceptable
 ///      under the asynchronous NAV-consumer model (see ADR 0017), same as the AMM-LP adapters.
 contract GearboxV3CreditAccountsMetaBalanceAdapter is MetaBalanceAdapter {
+    /// @notice Longest credit-manager name accepted as a label leaf; anything longer degrades to the underlying
+    ///         symbol fallback. Far above any real Gearbox credit-manager name.
+    uint256 private constant MAX_LABEL_BYTES = 256;
+
+    /// @notice Hard ceiling on returndata **copied into this contract's memory** for a label probe: the two ABI head
+    ///         words plus {MAX_LABEL_BYTES} of payload (64 + 256 = 320). Written as a literal because inline assembly
+    ///         accepts only direct number constants.
+    /// @dev This, not the gas stipend, is what bounds the *caller's* cost. A stipend alone does not: a hostile credit
+    ///      manager can `return(0, 200_000)` — its own memory expansion for ~200 KB costs it well under
+    ///      {LABEL_READ_GAS} — while this contract pays `returndatacopy` plus its own monotonically growing memory,
+    ///      charged outside the stipend and quadratic in total. Passing an explicit output size to `staticcall` copies
+    ///      at most this many bytes whatever the callee returns, so the cost is flat. `returndatasize()` still reports
+    ///      the true size, so an oversized reply is rejected rather than silently truncated.
+    uint256 private constant MAX_RETURN_BYTES = 320;
+
+    /// @notice Gas stipend for a label probe. Generous for a real (even proxied) metadata read, and it bounds the
+    ///         callee's own execution — including a write-protection abort, which consumes everything forwarded.
+    /// @dev Necessary but NOT sufficient on its own; see {MAX_RETURN_BYTES} for the caller-side bound.
+    uint256 private constant LABEL_READ_GAS = 100_000;
+
     /// @param protocolName_ Human-readable protocol name (e.g. "Gearbox").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
     constructor(string memory protocolName_, address navCalculator_)
@@ -218,21 +238,23 @@ contract GearboxV3CreditAccountsMetaBalanceAdapter is MetaBalanceAdapter {
     ///      "Trade WETH Tier 1"). If `name()` is missing/empty, falls back to the underlying asset symbol
     ///      (e.g. "USDC") via `underlying()` — the same accessor the position read uses. Leaf is "" (→ just
     ///      `["Credit Account"]`) only if both are unreadable. Returns an empty array for a short positionId.
+    ///
+    ///      Both reads go through the raw-call readers below rather than `try`/`catch`. `_creditManagerOf` guards the
+    ///      *credit account's* codesize but returns whatever `creditManager()` answered, so `cm` itself may be
+    ///      code-less — a high-level call to it reverts via `extcodesize` in this frame, past any `catch`. And a `cm`
+    ///      that answers either selector successfully but with undecodable returndata reverts in this frame too. Both
+    ///      would take down a display-only view; see {_safeStringRead} / {_safeAddressRead}.
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
         if (pid.length < 32) return new string[](0);
         address ca = abi.decode(pid, (address));
         address cm = _creditManagerOf(ca);
         if (cm == address(0)) return _labels("Credit Account", "");
 
-        string memory leaf;
-        try ICreditManagerV3(cm).name() returns (string memory n) {
-            leaf = n;
-        } catch {}
+        string memory leaf = _safeStringRead(cm, ICreditManagerV3.name.selector);
 
         if (bytes(leaf).length == 0) {
-            try ICreditManagerV3(cm).underlying() returns (address u) {
-                if (u != address(0)) leaf = LabelLib.symbol(u, "");
-            } catch {}
+            address u = _safeAddressRead(cm, ICreditManagerV3.underlying.selector);
+            if (u != address(0)) leaf = LabelLib.symbol(u, "");
         }
         return _labels("Credit Account", leaf);
     }
@@ -294,6 +316,89 @@ contract GearboxV3CreditAccountsMetaBalanceAdapter is MetaBalanceAdapter {
         } catch {
             return (false, 0);
         }
+    }
+
+    //
+    // Internal — fail-open label reads (display-only; must never revert)
+    //
+
+    /// @notice Fail-open read of a parameterless, `address`-returning view. `address(0)` on every failure path.
+    /// @dev `positionLabels` is display-only and MUST NOT revert, and a `try`/`catch` around this call would not make
+    ///      that true. Three distinct failure classes, only one of which `catch` handles:
+    ///        1. `target` has **no code** — a high-level call reverts via Solidity's `extcodesize` precheck *before*
+    ///           the call, in this frame, so `catch` never sees it;
+    ///        2. the call **reverts** — the one class `catch` does cover;
+    ///        3. the call **succeeds but the returndata is not decodable as an `address`** — fewer than 32 bytes, or
+    ///           32 bytes with dirty upper bits. Solidity's decoder runs in THIS frame after the call returned, so
+    ///           its revert propagates straight past `catch`.
+    ///      A raw `staticcall` turns class 2 into a `false` return; the codesize guard covers class 1; the explicit
+    ///      `returndatasize()` check plus a `uint160` mask (rather than `abi.decode(…, (address))`, which validates
+    ///      the upper bits and reverts) covers class 3. Output is written into scratch space with an explicit size, so
+    ///      nothing is copied beyond one word however much the callee returns.
+    function _safeAddressRead(address target, bytes4 selector) private view returns (address) {
+        if (target.code.length == 0) return address(0);
+        bool ok;
+        uint256 size;
+        uint256 word;
+        assembly ("memory-safe") {
+            // Scratch space (0x00–0x3f): selector in the first word, the single return word in the second.
+            // `bytes4` is left-aligned, so the 4 bytes at 0x00 are exactly the selector.
+            mstore(0x00, selector)
+            ok := staticcall(LABEL_READ_GAS, target, 0x00, 0x04, 0x20, 0x20)
+            size := returndatasize()
+            word := mload(0x20)
+        }
+        if (!ok || size < 32) return address(0);
+        return address(uint160(word));
+    }
+
+    /// @notice Fail-open read of a parameterless, `string`-returning view. "" on every failure path.
+    /// @dev Same three classes as {_safeAddressRead}; class 3 is the one a `try`/`catch` silently misses, and the
+    ///      shapes are not hypothetical — all reproduced on solc 0.8.34: empty returndata (an ERC-1967 proxy whose
+    ///      implementation slot points at a code-less address, so the `delegatecall` succeeds returning nothing), a
+    ///      `bytes32` name (MKR-era style), a bare offset word with no length word, a nonsense offset, and an absurd
+    ///      declared length.
+    ///
+    ///      So the ABI head is validated *before* decoding. A canonical `string` return is
+    ///      `[offset = 0x20][length][payload…]`: require two full words, an offset of exactly `0x20`, a non-zero
+    ///      length within {MAX_LABEL_BYTES}, and a payload that fits inside the returndata. Bounding on the raw
+    ///      declared length is sufficient — a memory-source `abi.decode` bounds on that length, not on `ceil32` of it.
+    ///
+    ///      The probe is gas-capped and output-capped, and both are load-bearing rather than defensive: a raw
+    ///      `staticcall` assigning `(bool, bytes memory)` always `returndatacopy`s the response *including a revert
+    ///      payload*, which the parameterless `catch {}` this replaced never did. Uncapped, this rewrite would be
+    ///      strictly worse than the old `try`/`catch` against a hostile credit manager. See {MAX_RETURN_BYTES}.
+    function _safeStringRead(address target, bytes4 selector) private view returns (string memory) {
+        if (target.code.length == 0) return "";
+
+        bytes memory data = new bytes(MAX_RETURN_BYTES);
+        bool ok;
+        uint256 size;
+        assembly ("memory-safe") {
+            mstore(0x00, selector)
+            ok := staticcall(LABEL_READ_GAS, target, 0x00, 0x04, add(data, 0x20), MAX_RETURN_BYTES)
+            size := returndatasize()
+        }
+        // A `string` return needs at least the offset and length words. An oversized reply is rejected outright rather
+        // than truncated: a canonical reply for a <= MAX_LABEL_BYTES string never exceeds MAX_RETURN_BYTES, so
+        // anything larger is malformed or hostile.
+        if (!ok || size < 64 || size > MAX_RETURN_BYTES) return "";
+
+        // Shrink to what was actually returned so the payload bound below — and `abi.decode`'s own bounds check — are
+        // exact. Only ever shrinks: `size <= MAX_RETURN_BYTES` is the allocated length.
+        assembly ("memory-safe") {
+            mstore(data, size)
+        }
+
+        uint256 offset;
+        uint256 len;
+        assembly ("memory-safe") {
+            offset := mload(add(data, 0x20))
+            len := mload(add(data, 0x40))
+        }
+        if (offset != 0x20 || len == 0 || len > MAX_LABEL_BYTES || len > size - 64) return "";
+
+        return abi.decode(data, (string));
     }
 
     /// @dev Population count (number of set bits) of `x`, via Kernighan's algorithm. Used to size the per-account leg

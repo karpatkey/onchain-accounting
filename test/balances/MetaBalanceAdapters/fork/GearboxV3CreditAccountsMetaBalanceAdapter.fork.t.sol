@@ -3,8 +3,11 @@ pragma solidity ^0.8;
 
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
 import {
-    GearboxV3CreditAccountsMetaBalanceAdapter
+    GearboxV3CreditAccountsMetaBalanceAdapter,
+    ICreditManagerV3,
+    ICreditAccountV3
 } from "src/balances/MetaBalanceAdapters/GearboxV3CreditAccountsMetaBalanceAdapter.sol";
+import {RawReplier, RawReplyLib} from "test/mocks/RawReplier.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -97,5 +100,71 @@ contract GearboxV3CreditAccountsMetaForkTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory p =
             meta.getAdapterPositionsForInstances(address(0xBEEF), _instance(), address(0));
         assertEq(p.length, 0, "non-borrower must not see the credit account");
+    }
+
+    /// @notice The hardened name reader decodes a REAL mainnet CreditManager byte-for-byte the same as a plain
+    ///         high-level call does.
+    /// @dev The unit tests prove the malformed shapes degrade; this proves the rewrite did not break the canonical
+    ///      path against production bytecode.
+    function test_positionLabels_realCreditManager_matchesDirectRead() public view {
+        address cm = ICreditAccountV3(CREDIT_ACCOUNT).creditManager();
+        string memory direct = ICreditManagerV3(cm).name();
+        assertGt(bytes(direct).length, 0, "the real credit manager name is non-empty");
+
+        string[] memory labels = meta.positionLabels(abi.encode(CREDIT_ACCOUNT));
+        assertEq(labels.length, 2, "category + name");
+        assertEq(labels[0], "Credit Account");
+        assertEq(labels[1], direct, "label leaf must equal the manager's own name()");
+    }
+
+    /// @notice Every uncaught failure mode degrades to `["Credit Account"]` against the real deployed adapter.
+    /// @dev The credit account is a governed instance coordinate, but `_creditManagerOf` returns whatever
+    ///      `creditManager()` answered — so the manager can be code-less or hostile even when the account is not.
+    ///      A `try`/`catch` reader reverts on all of these.
+    function test_positionLabels_hostileCreditManager_degradesOnFork() public {
+        RawReplier cm = new RawReplier();
+        FakeCreditAccount account = new FakeCreditAccount(address(cm));
+
+        bytes[] memory shapes = new bytes[](4);
+        shapes[0] = RawReplyLib.bytes32String("Trade WETH Tier 2"); // MKR-era bytes32 string
+        shapes[1] = ""; // proxy to a code-less implementation
+        shapes[2] = RawReplyLib.offsetOnly(); // head with no length word
+        shapes[3] = RawReplyLib.declaredLength(100, "short"); // truncated payload
+
+        for (uint256 i = 0; i < shapes.length; i++) {
+            cm.stageReturn(shapes[i]);
+            string[] memory labels = meta.positionLabels(abi.encode(address(account)));
+            assertEq(labels.length, 1, "must degrade, not revert");
+            assertEq(labels[0], "Credit Account");
+        }
+
+        // A credit manager with no code at all — the mode the `extcodesize` precheck reverts on, past any `catch`.
+        FakeCreditAccount codeless = new FakeCreditAccount(address(0xdead));
+        assertEq(meta.positionLabels(abi.encode(address(codeless))).length, 1, "code-less manager must degrade");
+    }
+
+    /// @notice A hostile credit manager cannot burn the caller's gas budget through the label path.
+    function test_positionLabels_hostileCreditManager_isGasBounded() public {
+        RawReplier cm = new RawReplier();
+        FakeCreditAccount account = new FakeCreditAccount(address(cm));
+
+        cm.stageBurnGas();
+        uint256 before = gasleft();
+        meta.positionLabels(abi.encode(address(account)));
+        assertLt(before - gasleft(), 1_000_000, "gas-burning manager must be capped");
+
+        cm.stageRevert(3_000_000);
+        before = gasleft();
+        meta.positionLabels(abi.encode(address(account)));
+        assertLt(before - gasleft(), 1_000_000, "giant revert payload must be capped");
+    }
+}
+
+/// @notice A credit account whose `creditManager()` points wherever the test wants — including at a {RawReplier}.
+contract FakeCreditAccount {
+    address public creditManager;
+
+    constructor(address creditManager_) {
+        creditManager = creditManager_;
     }
 }

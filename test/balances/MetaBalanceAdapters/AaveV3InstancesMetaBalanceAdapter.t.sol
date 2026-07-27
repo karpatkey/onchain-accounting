@@ -13,6 +13,7 @@ import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
+import {RawReplier, RawReplyLib} from "test/mocks/RawReplier.sol";
 
 /// @notice Minimal PoolAddressesProvider mock: getPool() + getMarketId().
 contract MockAaveAddressesProvider {
@@ -387,5 +388,186 @@ contract AaveV3InstancesMetaUnitTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositionsForInstances(alice, _ids(), address(0));
         assertEq(p.length, 1, "must fall back to the scan and still report");
         assertEq(p[0].balanceAsset.asset, address(weth));
+    }
+}
+
+/// @title AaveV3InstancesMetaBalanceAdapter — `positionLabels` fail-open tests
+/// @notice `positionLabels` is a verbose/display-only path and MUST NOT revert, whatever the instance's pool or
+///         addresses-provider answers with. The label chain is `pool.ADDRESSES_PROVIDER()` →
+///         `addressesProvider.getMarketId()`, and BOTH hops can fail in ways a `try`/`catch` does not cover:
+///         Solidity's `extcodesize` precheck fires before a high-level call to a code-less address, and a return-data
+///         **decode** failure reverts in the *calling* frame, so it propagates straight past `catch`. Each test below
+///         stages exactly one such shape via {RawReplier} and asserts the label degrades to `["Market"]`.
+contract AaveV3InstancesMetaLabelReadTest is BalanceAdapterTestBase {
+    /// @dev The gas the whole external `positionLabels` call may consume against a hostile target. Comfortably above
+    ///      the two 100k stipends the adapter forwards, and far below what an uncapped probe costs — the gas-burning
+    ///      and giant-revert-payload cases below each cost tens of millions without the cap.
+    uint256 private constant GAS_CEILING = 1_000_000;
+
+    AaveV3InstancesMetaBalanceAdapter public adapter;
+    RawReplier public poolReplier;
+    RawReplier public providerReplier;
+
+    address public constant CODELESS = 0x2222222222222222222222222222222222222222;
+
+    function setUp() public override {
+        super.setUp();
+        adapter = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(balances));
+        poolReplier = new RawReplier();
+        providerReplier = new RawReplier();
+        // Default chain: pool resolves to the provider, provider answers with a normal market id.
+        poolReplier.stageReturn(abi.encode(address(providerReplier)));
+        providerReplier.stageReturn(RawReplyLib.canonicalString("Aave V3 Test Instance"));
+    }
+
+    function _labelsFor(address pool) internal view returns (string[] memory) {
+        return adapter.positionLabels(abi.encode(pool));
+    }
+
+    function _assertCollapsed(address pool, string memory why) internal view {
+        string[] memory l = _labelsFor(pool);
+        assertEq(l.length, 1, why);
+        assertEq(l[0], "Market", why);
+    }
+
+    // ----- control: the chain works, so every "collapsed" assertion below is about the staged failure -----
+
+    function test_labels_canonicalChain_returnsMarketId() public view {
+        string[] memory l = _labelsFor(address(poolReplier));
+        assertEq(l.length, 2);
+        assertEq(l[0], "Market");
+        assertEq(l[1], "Aave V3 Test Instance");
+    }
+
+    function test_labels_shortPositionId_empty() public view {
+        assertEq(adapter.positionLabels(hex"1234").length, 0);
+    }
+
+    // ----- hop 1: pool.ADDRESSES_PROVIDER() -----
+
+    /// @dev Class 1 — no code at all. The `extcodesize` precheck reverts in this frame, before the call.
+    function test_labels_codelessPool_collapses() public view {
+        _assertCollapsed(CODELESS, "a code-less pool must not revert the label");
+    }
+
+    /// @dev Class 2 — the one a `catch` would have covered. Kept so the rewrite is proven not to have lost it.
+    function test_labels_revertingPool_collapses() public {
+        poolReplier.stageRevert(4);
+        _assertCollapsed(address(poolReplier), "a reverting pool must not revert the label");
+    }
+
+    /// @dev Class 3 — succeeds, but with fewer than 32 bytes. `abi.decode(…, (address))` would revert here.
+    function test_labels_poolReturnsShortWord_collapses() public {
+        poolReplier.stageReturn(hex"1234");
+        _assertCollapsed(address(poolReplier), "an 8-byte ADDRESSES_PROVIDER reply must not revert the label");
+    }
+
+    /// @dev Class 3 — succeeds with empty returndata (the ERC-1967-proxy-to-code-less-implementation shape).
+    function test_labels_poolReturnsNothing_collapses() public {
+        poolReplier.stageReturn("");
+        _assertCollapsed(address(poolReplier), "an empty ADDRESSES_PROVIDER reply must not revert the label");
+    }
+
+    /// @dev Class 3, tolerated rather than rejected: a full word whose bits above 160 are dirty. `abi.decode` would
+    ///      revert on the cleanup check; the reader masks instead, matching `_hasUnreportableDebt`'s precedent in the
+    ///      same contract — so the label still resolves rather than silently dropping a legitimate provider.
+    function test_labels_poolReturnsDirtyAddressWord_stillResolves() public {
+        poolReplier.stageReturn(RawReplyLib.dirtyAddress(address(providerReplier)));
+        string[] memory l = _labelsFor(address(poolReplier));
+        assertEq(l.length, 2, "dirty upper bits must be masked off, not reverted on");
+        assertEq(l[1], "Aave V3 Test Instance");
+    }
+
+    /// @dev The provider resolved from the pool is itself code-less.
+    function test_labels_codelessProvider_collapses() public {
+        poolReplier.stageReturn(abi.encode(CODELESS));
+        _assertCollapsed(address(poolReplier), "a code-less addresses provider must not revert the label");
+    }
+
+    // ----- hop 2: addressesProvider.getMarketId() -----
+
+    function test_labels_revertingProvider_collapses() public {
+        providerReplier.stageRevert(4);
+        _assertCollapsed(address(poolReplier), "a reverting getMarketId must not revert the label");
+    }
+
+    /// @dev MKR-era shape: `getMarketId()` answers with a single `bytes32` word.
+    function test_labels_bytes32MarketId_collapses() public {
+        providerReplier.stageReturn(RawReplyLib.bytes32String("Aave Ethereum Market"));
+        _assertCollapsed(address(poolReplier), "a bytes32-shaped market id must not revert the label");
+    }
+
+    /// @dev The proxy-with-code-less-implementation shape: `delegatecall` succeeds and returns nothing.
+    function test_labels_emptyReturndataMarketId_collapses() public {
+        providerReplier.stageReturn("");
+        _assertCollapsed(address(poolReplier), "empty returndata must not revert the label");
+    }
+
+    /// @dev A dynamic-type head with an offset word but no length word.
+    function test_labels_offsetOnlyMarketId_collapses() public {
+        providerReplier.stageReturn(RawReplyLib.offsetOnly());
+        _assertCollapsed(address(poolReplier), "a head with no length word must not revert the label");
+    }
+
+    /// @dev The offset points past the head. Real decoders follow it into unallocated returndata.
+    function test_labels_badOffsetMarketId_collapses() public {
+        providerReplier.stageReturn(RawReplyLib.badOffset(0x40, "Aave Ethereum Market"));
+        _assertCollapsed(address(poolReplier), "a non-0x20 offset must not revert the label");
+    }
+
+    /// @dev A declared length far beyond the returndata.
+    function test_labels_absurdLengthMarketId_collapses() public {
+        providerReplier.stageReturn(RawReplyLib.declaredLength(type(uint256).max, "x"));
+        _assertCollapsed(address(poolReplier), "an absurd declared length must not revert the label");
+    }
+
+    /// @dev A plausible length whose payload is truncated — the classic partial-returndata shape.
+    function test_labels_truncatedPayloadMarketId_collapses() public {
+        providerReplier.stageReturn(RawReplyLib.declaredLength(100, "short"));
+        _assertCollapsed(address(poolReplier), "a truncated payload must not revert the label");
+    }
+
+    // ----- bounds -----
+
+    /// @dev The length cap is a deliberate NEW constraint: a 256-byte market id still renders, 257 degrades.
+    function test_labels_lengthCapBoundary() public {
+        providerReplier.stageReturn(RawReplyLib.stringOfLength(256));
+        assertEq(_labelsFor(address(poolReplier)).length, 2, "256 bytes is inside the cap");
+
+        providerReplier.stageReturn(RawReplyLib.stringOfLength(257));
+        _assertCollapsed(address(poolReplier), "past the cap the label degrades rather than rendering");
+    }
+
+    /// @dev An oversized reply is rejected outright rather than silently truncated to the copied window.
+    function test_labels_oversizedReply_collapses() public {
+        providerReplier.stageReturn(RawReplyLib.stringOfLength(2048));
+        _assertCollapsed(address(poolReplier), "an oversized reply must not revert or truncate");
+    }
+
+    /// @dev The gas cap is load-bearing, not defensive. A raw `staticcall` assigning `(bool, bytes memory)` always
+    ///      `returndatacopy`s the response *including a revert payload* — which the parameterless `catch {}` this
+    ///      replaced never did. Without the stipend the callee's own memory expansion for a multi-megabyte revert
+    ///      runs to tens of millions of gas, enough to out-of-gas a verbose NAV read.
+    function test_labels_giantRevertPayload_isGasBounded() public {
+        providerReplier.stageRevert(3_000_000);
+        uint256 before = gasleft();
+        _assertCollapsed(address(poolReplier), "a giant revert payload must not revert the label");
+        assertLt(before - gasleft(), GAS_CEILING, "the probe must be gas-capped");
+    }
+
+    /// @dev Same cap, other direction: a callee that simply never returns.
+    function test_labels_gasBurningProvider_isGasBounded() public {
+        providerReplier.stageBurnGas();
+        uint256 before = gasleft();
+        _assertCollapsed(address(poolReplier), "a gas-burning provider must not revert the label");
+        assertLt(before - gasleft(), GAS_CEILING, "the probe must be gas-capped");
+    }
+
+    /// @dev Both hops hostile at once — the stipends are per-call, so the total is still bounded.
+    function test_labels_bothHopsHostile_isGasBounded() public {
+        poolReplier.stageBurnGas();
+        uint256 before = gasleft();
+        _assertCollapsed(address(poolReplier), "a gas-burning pool must not revert the label");
+        assertLt(before - gasleft(), GAS_CEILING, "the probe must be gas-capped");
     }
 }

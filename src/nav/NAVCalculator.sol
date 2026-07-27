@@ -439,7 +439,26 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     /// @dev A plain `try/catch` only catches a reverting call — it does NOT catch a *successful* call whose
     ///      returndata cannot be decoded into `string` (e.g. a non-contract returning empty data, or a contract
     ///      returning a malformed/short blob), which would revert the whole verbose read. This validates the
-    ///      ABI envelope (canonical 0x20 offset + length within bounds) before decoding so it can never revert.
+    ///      ABI envelope (canonical 0x20 offset + length within bounds) before decoding so the decode itself can
+    ///      never revert on bounds. (Bounds, not cost — see the inline note at the guard.)
+    ///
+    ///      **The bound is the RAW declared length, not `ceil32` of it.** A memory-source `abi.decode` bounds on
+    ///      the declared length itself: it needs `64 + strLen <= ret.length`, and reads exactly `strLen` bytes
+    ///      (under cancun, an `mcopy` of precisely that many). Verified on solc 0.8.34 / via_ir / cancun —
+    ///      `offset = 0x20`, `strLen = 5`, `ret.length = 69` decodes to a 5-character name rather than reverting.
+    ///
+    ///      This previously carried a `ceil32` bound and a comment asserting the raw-length bound was unsafe
+    ///      ("would make abi.decode read 32 padded bytes past `ret` and revert"). That claim was **wrong**: the
+    ///      extra bound demanded `ret.length >= 64 + ceil32(strLen)`, so it rejected any reply that declares a
+    ///      length whose payload is *delivered* unpadded — precisely the band
+    ///      `64 + strLen <= ret.length < 64 + ceil32(strLen)`, which `abi.decode` itself accepts.
+    ///
+    ///      Scope, stated honestly: solc (and vyper) always pad an encoded `string` to a word, so `ret.length` is
+    ///      exactly `64 + ceil32(strLen)` for any compiler-generated target and **no adapter in this repo was
+    ///      ever affected** — every `protocolName()` here is a plain `pure returns (string memory)`. The rejected
+    ///      band is only reachable from a hand-rolled assembly return or a non-solc toolchain. So this is a
+    ///      correctness-and-documentation fix, not a live bug: the removal is what makes the guard match
+    ///      `abi.decode`, and the misleading comment was the part most likely to be copied into the next reader.
     function _safeString(address target, bytes memory callData) private view returns (string memory) {
         (bool ok, bytes memory ret) = target.staticcall(callData);
         if (!ok || ret.length < 64) return ""; // need at least offset(32) + length(32)
@@ -449,14 +468,17 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             offset := mload(add(ret, 0x20))
             strLen := mload(add(ret, 0x40))
         }
-        // Canonical ABI string: offset == 0x20, and the full *padded* body must be present. abi.decode reads
-        // ceil32(strLen) bytes after the 64-byte (offset+length) header, so bounding on the raw strLen is not
-        // enough — a return with e.g. strLen=1, ret.length=65 would pass `ret.length >= 64+strLen` yet make
-        // abi.decode read 32 padded bytes past `ret` and revert (defeating fail-open). The `strLen > ret.length`
-        // guard also rules out a malicious huge strLen before the ceil32 add can overflow.
-        if (offset != 0x20 || strLen > ret.length) return "";
-        uint256 padded = (strLen + 31) & ~uint256(31);
-        if (ret.length < 64 + padded) return "";
+        // Canonical ABI string: offset == 0x20 and the declared body fits inside the returndata. `ret.length >= 64`
+        // is guaranteed by the early return above, so the subtraction cannot underflow. This is exactly the bound
+        // `abi.decode` itself applies, so the decode below cannot revert on bounds.
+        //
+        // That is a bounds claim, not a cost one. It does not rule out a large `strLen` outright — a target may
+        // return a huge blob with a matching declared length, and this frame pays to copy it either way, as it
+        // does for any staticcall. What the bound buys is that the decode can never allocate beyond what the
+        // target actually delivered, which is why no gas stipend is needed here, unlike `_safeStringArray`
+        // (whose declared array length is independent of the returndata size, so it can force unbounded
+        // memory expansion and must be capped).
+        if (offset != 0x20 || strLen > ret.length - 64) return "";
         return abi.decode(ret, (string));
     }
 

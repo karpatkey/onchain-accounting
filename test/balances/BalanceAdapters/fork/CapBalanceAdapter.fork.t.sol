@@ -6,6 +6,7 @@ import {CapBalanceAdapter} from "src/balances/BalanceAdapters/CapBalanceAdapter.
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
+import {IPositionEnumerable} from "src/balances/IPositionEnumerable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 
@@ -61,6 +62,68 @@ contract CapBalanceAdapterForkTest is BalanceAdapterTestBase {
     function test_supportsInterface() public view {
         assertTrue(adapter.supportsInterface(type(IBalanceAdapter).interfaceId));
         assertTrue(adapter.supportsInterface(type(IERC165).interfaceId));
+        assertTrue(adapter.supportsInterface(type(IPositionEnumerable).interfaceId));
+    }
+
+    // ============================================
+    // IPositionEnumerable
+    // ============================================
+
+    /// @dev The join guarantee against REAL mainnet positions, not mocks. `positionIds()` advertises Cap's two
+    ///      shapes; the SAFE holds both at this block, so every emitted `PositionBalance.positionId` must appear
+    ///      in the advertised set and vice versa. This is the property a configuration view depends on — it is
+    ///      what makes an enumerated row joinable to an actual holding — and mocks cannot establish it, because
+    ///      the pinned cUSD/stcUSD addresses are the real ones only on a fork.
+    function test_positionIds_matchTheEmittedPositionIdsOnMainnet() public view {
+        bytes[] memory ids = adapter.positionIds();
+        assertEq(ids.length, 2, "Cap advertises two shapes");
+        // Set membership, not `ids[0]`/`ids[1]`: {IPositionEnumerable} disclaims ordering.
+        assertTrue(_contains(ids, abi.encode(CUSD)), "the cUSD shape is advertised");
+        assertTrue(_contains(ids, abi.encode(STCUSD)), "the stcUSD shape is advertised");
+
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(SAFE, address(0));
+        assertEq(positions.length, 2, "SAFE holds both legs at this block");
+        // Both directions, as the docstring claims: every emitted id is advertised...
+        for (uint256 i = 0; i < positions.length; i++) {
+            assertTrue(_contains(ids, positions[i].positionId), "every emitted positionId is an advertised shape");
+        }
+        // ...and every advertised shape was emitted (the SAFE holds both here, so the sets are equal).
+        for (uint256 j = 0; j < ids.length; j++) {
+            bool emitted;
+            for (uint256 i = 0; i < positions.length; i++) {
+                if (keccak256(positions[i].positionId) == keccak256(ids[j])) emitted = true;
+            }
+            assertTrue(emitted, "every advertised shape is an emitted positionId");
+        }
+    }
+
+    /// @dev Each advertised shape resolves to its real breadcrumb against the live tokens. Driven off the pinned
+    ///      token addresses rather than off `ids[0]`/`ids[1]`, so it does not depend on enumeration order.
+    function test_positionIds_eachShapeResolvesItsLabelsOnMainnet() public view {
+        string[] memory cusd = adapter.positionLabels(abi.encode(CUSD));
+        assertEq(cusd.length, 2);
+        assertEq(cusd[0], "Stablecoin");
+        assertEq(cusd[1], "cUSD");
+
+        string[] memory stcusd = adapter.positionLabels(abi.encode(STCUSD));
+        assertEq(stcusd.length, 2);
+        assertEq(stcusd[0], "Savings");
+        assertEq(stcusd[1], "stcUSD");
+    }
+
+    /// @dev Set membership over `bytes`, compared by hash — the join {IPositionEnumerable} specifies.
+    function _contains(bytes[] memory haystack, bytes memory needle) private pure returns (bool) {
+        for (uint256 i; i < haystack.length; ++i) {
+            if (keccak256(haystack[i]) == keccak256(needle)) return true;
+        }
+        return false;
+    }
+
+    /// @dev The configuration-view path end to end: an account with nothing still advertises both shapes, so the
+    ///      registry page renders identically regardless of holdings.
+    function test_positionIds_areAccountIndependentOnMainnet() public view {
+        assertEq(adapter.getAdapterPositions(unknownAccount, address(0)).length, 0, "no holdings -> no positions");
+        assertEq(adapter.positionIds().length, 2, "shapes advertised anyway");
     }
 
     // ============================================

@@ -257,6 +257,12 @@ contract StaderWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(adapter.protocolName(), "Stader");
     }
 
+    /// @dev Configuration-view probe: a consumer describing configuration has no positionId, so it can only call
+    ///      `positionLabels("")`. This adapter's breadcrumb is positionId-independent and it emits a single
+    ///      positionId (the per-request id rides in `positionInstanceId`, not the label), so the probe answers with
+    ///      the full constant breadcrumb. What this pins is that the probe never silently collapses to `[]` — a
+    ///      positionId-derived leaf added later must still return at least the `"Withdrawal Queue"` category per
+    ///      the `_labels` empty-leaf convention, and this assertion should then be relaxed, not deleted.
     function test_positionLabels() public view {
         string[] memory labels = adapter.positionLabels("");
         assertEq(labels.length, 2);

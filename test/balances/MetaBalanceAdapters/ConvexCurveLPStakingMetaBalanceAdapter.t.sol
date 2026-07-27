@@ -234,7 +234,13 @@ contract ConvexCurveLPStakingMetaBalanceAdapterTest is Test {
         rewarder = new MockConvexRewarder(address(pool), address(crv), 42);
         booster.setPool(42, address(pool));
 
-        meta = new ConvexCurveLPStakingMetaBalanceAdapter(address(booster), address(cvx), "Convex", address(nav));
+        meta = new ConvexCurveLPStakingMetaBalanceAdapter(address(booster), address(cvx), address(nav));
+    }
+
+    function _coins() internal view returns (address[] memory c) {
+        c = new address[](2);
+        c[0] = address(usdc);
+        c[1] = address(weth);
     }
 
     function _instance(address r) internal pure returns (bytes32[] memory ins) {
@@ -346,7 +352,7 @@ contract ConvexCurveLPStakingMetaBalanceAdapterTest is Test {
 
     function test_noCvxToken_noCvxLeg() public {
         ConvexCurveLPStakingMetaBalanceAdapter noCvx =
-            new ConvexCurveLPStakingMetaBalanceAdapter(address(booster), address(0), "Convex", address(nav));
+            new ConvexCurveLPStakingMetaBalanceAdapter(address(booster), address(0), address(nav));
         rewarder.setEarned(alice, 500e18);
 
         INAVCalculator.PositionBalance[] memory pos =
@@ -426,6 +432,69 @@ contract ConvexCurveLPStakingMetaBalanceAdapterTest is Test {
 
         INAVCalculator.PositionBalance[] memory pos = meta.getAdapterPositionsForInstances(alice, instances, address(0));
         assertGt(pos.length, 0, "good rewarder returned");
+    }
+
+    /// @notice A rewarder whose `pid()` reply is too short to hold a word must resolve to no LP token at all —
+    ///         never to Booster pool 0's.
+    /// @dev The guard is `StaticCallLib.probeWord`'s `hasWord`, which is reported separately from `ok` precisely
+    ///      so this case stays distinguishable from a genuine `pid == 0`. Swap the read for the obvious
+    ///      `StaticCallLib.safeUint` and this test fails with two staking legs against the decoy: `safeUint`
+    ///      collapses "returned nothing" into `result == 0`, so the adapter reports someone else's pool as this
+    ///      account's position. That mis-report is what this test exists to forbid.
+    function test_shortPidReply_doesNotResolveToPoolZero() public {
+        rewarder.setStaked(alice, 100e18);
+
+        MockCurvePool decoy = new MockCurvePool(_coins());
+        decoy.setPoolBalance(0, 500e6);
+        decoy.setPoolBalance(1, 500e18);
+        decoy.setTotalSupply(1_000e18);
+        decoy.setWalletBalance(alice, 100e18);
+        booster.setPool(0, address(decoy));
+
+        vm.mockCall(address(rewarder), abi.encodeWithSignature("pid()"), hex"00112233");
+
+        INAVCalculator.PositionBalance[] memory pos =
+            meta.getAdapterPositionsForInstances(alice, _instance(address(rewarder)), address(0));
+
+        assertEq(_count(pos, PositionKind.Staking), 0, "a short pid() reply must yield no staking legs");
+    }
+
+    /// @notice A rewarder whose `pid()` REVERTS with ≥ 32 bytes of data must not have that payload read as a pid.
+    /// @dev The sibling of {test_shortPidReply_doesNotResolveToPoolZero}, covering the other way the output
+    ///      window can hold a full word without a value being returned. Any callee reverting with a standard
+    ///      `Error(string)` emits 100+ bytes, which the EVM copies into the window exactly as a reply would;
+    ///      `hasWord` excludes it only because it folds in the staticcall success flag. The payload's first word
+    ///      is 0 here, so a reader that dropped that flag would resolve Booster pool 0 — the decoy.
+    function test_revertingPidReply_doesNotResolveToPoolZero() public {
+        rewarder.setStaked(alice, 100e18);
+
+        MockCurvePool decoy = new MockCurvePool(_coins());
+        decoy.setPoolBalance(0, 500e6);
+        decoy.setPoolBalance(1, 500e18);
+        decoy.setTotalSupply(1_000e18);
+        decoy.setWalletBalance(alice, 100e18);
+        booster.setPool(0, address(decoy));
+
+        vm.mockCallRevert(
+            address(rewarder), abi.encodeWithSignature("pid()"), abi.encodePacked(uint256(0), uint256(0), uint256(0))
+        );
+
+        INAVCalculator.PositionBalance[] memory pos =
+            meta.getAdapterPositionsForInstances(alice, _instance(address(rewarder)), address(0));
+
+        assertEq(_count(pos, PositionKind.Staking), 0, "a reverting pid() must yield no staking legs");
+    }
+
+    /// @notice The control for {test_shortPidReply_doesNotResolveToPoolZero}: a genuine `pid == 0` still resolves.
+    function test_genuinePidZero_stillResolves() public {
+        MockConvexRewarder zeroPid = new MockConvexRewarder(address(pool), address(crv), 0);
+        booster.setPool(0, address(pool));
+        zeroPid.setStaked(alice, 100e18);
+
+        INAVCalculator.PositionBalance[] memory pos =
+            meta.getAdapterPositionsForInstances(alice, _instance(address(zeroPid)), address(0));
+
+        assertGt(_count(pos, PositionKind.Staking), 0, "pid 0 is a real pool, not a failure");
     }
 
     // ─── underlyingAssetsSupported ────────────────────────────────────────────

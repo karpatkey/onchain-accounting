@@ -496,8 +496,22 @@ library PriceFeedLib {
         priceFeedData.stale = stale || sequencerDown;
         priceFeedData.healthyFeedCount = healthyFeedCount;
 
-        // Fetch updatedAt for AggregatorV3-shaped feeds (Chainlink, Redstone, API3).
-        if (config.priceType != IPrices.PriceType.Custom) {
+        // Report the freshness pair (updatedAt, chainlinkHeartbeat) of the selected feed.
+        if (config.priceType == IPrices.PriceType.Custom) {
+            // Custom feeds are composites whose staleness is per-underlying-leg, so a single (updatedAt, heartbeat)
+            // can't be read off latestRoundData (which returns the worst-case/min timestamp with no companion
+            // heartbeat). Instead report the "governing leg" — the underlying Chainlink leg closest to its own
+            // staleness limit — so the pair is a real, matched pair from one oracle (a single-leg custom feed reports
+            // that leg). This OVERRIDES the config heartbeat set above. See ICustomPriceFeed.governingFeedFreshness.
+            try ICustomPriceFeed(config.priceFeed).governingFeedFreshness() returns (
+                uint256 govUpdatedAt, uint256 govHeartbeat
+            ) {
+                priceFeedData.updatedAt = govUpdatedAt;
+                priceFeedData.chainlinkHeartbeat = govHeartbeat;
+            } catch {} // updatedAt stays 0 / heartbeat stays the registered config value if the feed reverts
+        } else {
+            // AggregatorV3-shaped feeds (Chainlink, Redstone, API3): report the selected feed's own updatedAt against
+            // its configured heartbeat (already set above). A revert leaves updatedAt at 0.
             try AggregatorV3Interface(config.priceFeed).latestRoundData() returns (
                 uint80, int256, uint256, uint256 roundUpdatedAt, uint80
             ) {
@@ -743,9 +757,27 @@ library PriceFeedLib {
         nav.stalePriceAssets = _buildStaleAssets(assetIndex, registeredAssets, priceFeeds);
         nav.irregularPriceAssets = _buildIrregularAssets(assetIndex, registeredAssets, priceFeeds);
 
+        (positions, nav.value) =
+            _enrichAll(allPositions, priceFeeds, quoteInfo, quoteAssetIrregular, assetIndex, registeredAssets);
+    }
+
+    /// @dev Enrichment loop for `computeNavAndPositions`, extracted purely to stay under the `via_ir` stack limit.
+    ///      That function keeps five storage pointers plus the quote-asset info live across its whole body, and
+    ///      the inlined `_buildStaleAssets` / `_buildIrregularAssets` loops contribute their own counters; folding
+    ///      this loop's locals (`i`, `balance`, `registered`, `feed`, `length`, `totalValue`) in on top put it one
+    ///      slot over ("Variable _mpos_1 is 1 too deep in the stack"). Behaviour is byte-for-byte the same as the
+    ///      inline loop — do not re-inline it. Note the limit is reached only in a WHOLE-PROJECT compile, so an
+    ///      incremental `forge build` will not reproduce a regression here; use `forge clean && forge build`.
+    function _enrichAll(
+        INAVCalculator.PositionBalance[] memory allPositions,
+        PriceFeedCache[] memory priceFeeds,
+        QuoteAssetInfo memory quoteInfo,
+        bool quoteAssetIrregular,
+        mapping(address => uint256) storage assetIndex,
+        INAVCalculator.Asset[] storage registeredAssets
+    ) private view returns (INAVCalculator.Position[] memory positions, int256 totalValue) {
         uint256 length = allPositions.length;
         positions = new INAVCalculator.Position[](length);
-        int256 totalValue = 0;
         for (uint256 i = 0; i < length; i++) {
             INAVCalculator.PositionBalance memory balance = allPositions[i];
             INAVCalculator.Asset memory registered =
@@ -765,7 +797,6 @@ library PriceFeedLib {
             positions[i].quoteAssetIrregular = quoteAssetIrregular;
             totalValue += positions[i].value;
         }
-        nav.value = totalValue;
     }
 
     /// @notice True if the account holds any non-zero position. Mirrors NAVCalculator.hasPositions (fail-open via

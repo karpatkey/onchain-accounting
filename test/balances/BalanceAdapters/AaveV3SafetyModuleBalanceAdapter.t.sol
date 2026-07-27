@@ -278,4 +278,23 @@ contract AaveV3SafetyModuleBalanceAdapterTest is BalanceAdapterTestBase {
         assertTrue(positions[0].isLocked, "past the unstake window -> re-locked");
         assertEq(positions[0].amount, 1000e18, "active stake + expired cooldown both locked");
     }
+
+    // ---- IPositionDescribable ----
+
+    /// @dev Configuration-view probe: a consumer describing configuration has no positionId, so it can only call
+    ///      `positionLabels("")`. This adapter's breadcrumb is positionId-INDEPENDENT, so the probe answers with
+    ///      the constant `["Safety Module"]`.
+    ///
+    ///      positionId-independent is NOT the same as single-shape: the adapter emits
+    ///      `positionId = abi.encode(stakeToken)` across four stake tokens (stkAAVE, stkABPT, stkABPT_V2, stkGHO)
+    ///      plus separate Staking and Rewards legs, so an account staked in two of them gets two identical
+    ///      breadcrumbs. The label is lossy today. Adding a stake-token leaf would be an improvement, not a
+    ///      defect — what this test pins is only that the probe never silently collapses to `[]`; per the
+    ///      `_labels` empty-leaf convention it must keep returning at least the `"Safety Module"` category.
+    ///      A deliberate leaf change should relax this assertion, not delete it.
+    function test_positionLabels_emptyProbe_returnsTheConstantShape() public view {
+        string[] memory labels = adapter.positionLabels("");
+        assertEq(labels.length, 1);
+        assertEq(labels[0], "Safety Module");
+    }
 }

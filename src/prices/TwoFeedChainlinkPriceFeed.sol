@@ -136,6 +136,50 @@ abstract contract TwoFeedChainlinkPriceFeed is ICustomPriceFeed {
         answer = stale ? int256(0) : int256(price);
     }
 
+    /// @inheritdoc ICustomPriceFeed
+    /// @dev Two Chainlink legs: the rate feed (`RATE_HEARTBEAT`) and the NAV's base/USD leg (its own configured
+    ///      heartbeat). Report whichever has the larger `age/heartbeat` ratio — the input closest to its own
+    ///      staleness limit. If the rate feed is unreadable, fall back to the base leg.
+    function governingFeedFreshness() external view virtual override returns (uint256 updatedAt, uint256 heartbeat) {
+        (uint256 baseUpdatedAt, uint256 baseHeartbeat) = NavBaseUsdLib.baseFreshness(NAV, BASE_ASSET);
+        uint256 rateUpdatedAt;
+        try RATE_FEED.latestRoundData() returns (uint80, int256, uint256, uint256 u, uint80) {
+            rateUpdatedAt = u;
+        } catch {
+            return (baseUpdatedAt, baseHeartbeat); // rate leg unreadable → report the base leg
+        }
+        return _governingLeg(rateUpdatedAt, RATE_HEARTBEAT, baseUpdatedAt, baseHeartbeat);
+    }
+
+    /// @notice Returns the `(updatedAt, heartbeat)` of the leg with the greater `age/heartbeat` ratio (age measured
+    ///         against `block.timestamp`; a future timestamp counts as age 0). A leg with a zero heartbeat is treated
+    ///         as non-governing (the other leg wins). Compared via cross-multiplication to avoid division.
+    /// @dev Overflow-safe: a base leg may be registered with a `type(uint256).max` heartbeat (the documented
+    ///      "disable the staleness gate" sentinel, see PRICE_ADAPTERS.md). The ratio compare cross-multiplies
+    ///      (`ageA*hB` vs `ageB*hA`), so a cross-product can exceed uint256. `Math.tryMul` detects that; an overflow
+    ///      means that leg's heartbeat is astronomically large, so its `age/heartbeat` ratio is ≈ 0 and the OTHER leg
+    ///      governs (`!okA` ⇒ `hB` huge ⇒ leg A wins; `!okB` ⇒ `hA` huge ⇒ leg B wins). Without this a direct caller of
+    ///      `governingFeedFreshness()` would revert (the `buildPriceData` path already swallows reverts, but callers
+    ///      reading the feed straight should not).
+    function _governingLeg(uint256 tA, uint256 hA, uint256 tB, uint256 hB)
+        private
+        view
+        returns (uint256 updatedAt, uint256 heartbeat)
+    {
+        if (hA == 0) return (tB, hB);
+        if (hB == 0) return (tA, hA);
+        uint256 nowTs = block.timestamp;
+        uint256 ageA = tA >= nowTs ? 0 : nowTs - tA;
+        uint256 ageB = tB >= nowTs ? 0 : nowTs - tB;
+        // Governing = greater ratio: ageA/hA >= ageB/hB  <=>  ageA*hB >= ageB*hA  (hA, hB > 0).
+        (bool okA, uint256 prodA) = Math.tryMul(ageA, hB);
+        (bool okB, uint256 prodB) = Math.tryMul(ageB, hA);
+        if (okA && okB) return prodA >= prodB ? (tA, hA) : (tB, hB);
+        // Overflow: the leg whose heartbeat blew the product is effectively "never stale" (ratio ≈ 0) and loses.
+        if (!okA) return (tA, hA); // hB astronomically large → leg B ratio ≈ 0 → leg A governs
+        return (tB, hB); //          hA astronomically large → leg A ratio ≈ 0 → leg B governs
+    }
+
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) external pure virtual override returns (bool) {
         return interfaceId == type(ICustomPriceFeed).interfaceId || interfaceId == type(IERC165).interfaceId;

@@ -31,10 +31,9 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceAdapter {
 
     /// @param compoundRewards_ The chain's CometRewards contract.
     /// @param rewardToken_ The reward token (COMP).
-    /// @param protocolName_ Human-readable protocol name (e.g. "Compound V3").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(address compoundRewards_, address rewardToken_, string memory protocolName_, address navCalculator_)
-        MetaBalanceAdapter(protocolName_, navCalculator_)
+    constructor(address compoundRewards_, address rewardToken_, address navCalculator_)
+        MetaBalanceAdapter(navCalculator_)
     {
         AddressCheckLib.requireContract(compoundRewards_, "CompoundRewards");
         if (rewardToken_ == address(0)) revert InvalidArguments();
@@ -54,6 +53,15 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceAdapter {
         address comet = _toAddress(instance);
         CompoundV3CometLib.AccountData memory d =
             CompoundV3CometLib.accountData(comet, COMPOUND_REWARDS, REWARD_TOKEN, account);
+
+        // A borrow this adapter cannot report must never leave the collateral legs standing alone: the position
+        // would count as pure credit and NAV be over-reported by the whole borrow. Registration only, NOT the
+        // assetFilter — a filtered view showing collateral while hiding an unreportable borrow over-reports the
+        // same way. Under-reporting the whole comet position is the safe direction.
+        if (d.baseNet < 0) {
+            (, bool baseRegistered) = _getAssetInfo(d.baseToken);
+            if (!baseRegistered) return new INAVCalculator.PositionBalance[](0);
+        }
 
         bytes memory pid = _instancePositionId(instance);
 

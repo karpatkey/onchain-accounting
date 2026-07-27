@@ -103,6 +103,19 @@ contract EthenaCooldownBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(labels[1], "sUSDe");
     }
 
+    /// @dev Configuration-view probe: a consumer describing configuration has no positionId, so it can only call
+    ///      `positionLabels("")`. This adapter's breadcrumb is positionId-independent and it emits a single
+    ///      positionId (`abi.encode(STAKED_USDE)`), so the probe answers with the same constant breadcrumb a real
+    ///      positionId yields (asserted directly above). What this pins is that the probe never silently collapses
+    ///      to `[]` — a positionId-derived leaf added later must still return at least the `"Unstaking Cooldown"`
+    ///      category per the `_labels` empty-leaf convention, and this assertion should then be relaxed, not deleted.
+    function test_positionLabels_emptyProbe_returnsTheConstantShape() public view {
+        string[] memory labels = adapter.positionLabels("");
+        assertEq(labels.length, 2);
+        assertEq(labels[0], "Unstaking Cooldown");
+        assertEq(labels[1], "sUSDe");
+    }
+
     // ---- getAdapterBalanceForAsset ----
 
     function test_getAdapterBalanceForAsset_zeroAsset() public view {

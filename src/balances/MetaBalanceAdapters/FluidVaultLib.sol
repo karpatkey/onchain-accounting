@@ -25,6 +25,9 @@ interface IFluidVaultT1 {
 
 /// @notice Minimal Fluid VaultResolver interface — only the views the adapter calls at runtime.
 interface IFluidVaultResolver {
+    /// @notice Vault variant: 10000 = T1, 20000/30000/40000 = the Smart (T2/T3/T4) vaults.
+    function getVaultType(address vault) external view returns (uint256 vaultType);
+
     /// @notice All NFT IDs owned by `user` across every Fluid vault.
     function positionsNftIdOfUser(address user) external view returns (uint256[] memory nftIds);
 
@@ -60,10 +63,78 @@ interface IFluidVaultResolver {
 ///      call). Mirrors the per-vault adapter leg-for-leg (parity fork-tested). Only T1 vaults are supported —
 ///      Smart vaults (T2/T3/T4) have a different `constantsView` layout and must not be configured.
 library FluidVaultLib {
+    /// @notice Fluid's vault-variant discriminator for a T1 vault (Smart vaults return 20000/30000/40000).
+    uint256 internal constant VAULT_TYPE_T1 = 10000;
+
     /// @notice Reads a T1 vault's `(collateral, debt)` tokens from its `constantsView()`.
-    function tokens(address vault) internal view returns (address collateral, address debt) {
+    /// @dev Gated on the resolver's `getVaultType` as defence in depth. The T1 `ConstantViews` decode is
+    ///      *partially* self-checking today — a Smart vault returns a longer (18-word) blob, and Solidity's
+    ///      decoder range-checks the `uint8` decimals slots, so every one of the 80 non-T1 vaults live on
+    ///      mainnet currently REVERTS rather than mis-decoding (surveyed across all 181 vaults; the T3 vault
+    ///      0xe0E722E9… reverts because its word 6 holds an address). Note `cast`'s decoder does NOT
+    ///      range-check `uint8` and will happily "decode" such a blob — do not use it to re-derive this.
+    ///      That self-check is incidental, not guaranteed: it depends on where addresses happen to land in a
+    ///      layout Fluid controls, so a future Smart variant could decode cleanly into wrong token slots. The
+    ///      gate makes the outcome explicit and independent of that luck: a non-T1 vault reads back as zeros,
+    ///      so a mis-configured instance reports nothing instead of positions against non-token addresses.
+    /// @param vault The vault to read.
+    /// @param resolver The Fluid VaultResolver, used for the type check.
+    /// @return collateral Supply token, or `address(0)` if `vault` is not a T1 vault.
+    /// @return debt Borrow token, or `address(0)` if `vault` is not a T1 vault.
+    function tokens(address vault, address resolver) internal view returns (address collateral, address debt) {
+        (collateral, debt,) = vaultInfo(vault, resolver);
+    }
+
+    /// @notice Same read as {tokens}, plus Fluid's own per-vault numeric id from the same `constantsView()`.
+    /// @dev The id is what makes a label unique: Fluid runs several isolated T1 vaults over the SAME
+    ///      collateral/debt pair with different LTV/oracle configs (mainnet: 101 T1 vaults, only 91 distinct
+    ///      pairs — every currently configured vault has a live same-pair twin), so the pair alone does not
+    ///      identify an instance. Free to read: it comes from the struct {tokens} already decodes.
+    /// @return collateral Supply token, or `address(0)` if `vault` is not a T1 vault.
+    /// @return debt Borrow token, or `address(0)` if `vault` is not a T1 vault.
+    /// @return vaultId Fluid's per-vault id, or 0 if `vault` is not a T1 vault.
+    function vaultInfo(address vault, address resolver)
+        internal
+        view
+        returns (address collateral, address debt, uint256 vaultId)
+    {
+        if (!isT1(vault, resolver)) return (address(0), address(0), 0);
         IFluidVaultT1.ConstantViews memory cv = IFluidVaultT1(vault).constantsView();
-        return (cv.supplyToken, cv.borrowToken);
+        return (cv.supplyToken, cv.borrowToken, cv.vaultId);
+    }
+
+    /// @notice True iff `resolver` answers the `getVaultType` selector at all — a deploy-time sanity check,
+    ///         since token resolution is gated on it and a resolver without it would silently zero the whole
+    ///         adapter (every vault reads as non-T1, so all Fluid legs, assets and labels disappear).
+    /// @dev Deliberately weak, and NOT an authenticity check: it only proves the address returns >=32 bytes for
+    ///      this selector, so any permissive fallback passes. That is acceptable because the resolver is
+    ///      deployer-supplied config, not attacker-supplied, and the failure mode is under-report (a wrong
+    ///      resolver types nothing as T1). It catches the realistic mistake — a resolver version that predates
+    ///      `getVaultType`.
+    ///      Probed with `address(0)` specifically: the live resolver returns 0 for a zero-code address but
+    ///      REVERTS for a non-vault contract (verified: `getVaultType(WETH)` reverts), so probing with an
+    ///      arbitrary address would reject a perfectly good resolver and abort the whole `04` deploy run —
+    ///      `_deployIfEnabled` has no try/catch. A resolver that instead guarded `address(0)` would be wrongly
+    ///      rejected here; none exists today.
+    function supportsVaultType(address resolver) internal view returns (bool) {
+        (bool ok, bytes memory ret) =
+            resolver.staticcall(abi.encodeWithSelector(IFluidVaultResolver.getVaultType.selector, address(0)));
+        return ok && ret.length >= 32;
+    }
+
+    /// @notice True iff the resolver reports `vault` as a T1 vault. Fails closed: an unreadable or unknown
+    ///         vault (resolver revert, `0` for an address it does not know, unexpected return shape) is
+    ///         treated as not-T1.
+    /// @dev Screens out Fluid's OWN Smart (T2/T3/T4) vaults; it does NOT authenticate a vault. The resolver
+    ///      forwards to the vault's self-reported `TYPE()`, so a contract that claims `TYPE() == 10000` is
+    ///      typed T1 with whatever `constantsView()` it likes. Only the resolver's no-`TYPE()` catch branch
+    ///      verifies factory provenance. That is not a regression (there was no gate before) and requires
+    ///      MANAGER to configure the impostor as an instance, but do not read this as a trust boundary.
+    function isT1(address vault, address resolver) internal view returns (bool) {
+        (bool ok, bytes memory ret) =
+            resolver.staticcall(abi.encodeWithSelector(IFluidVaultResolver.getVaultType.selector, vault));
+        if (!ok || ret.length < 32) return false;
+        return abi.decode(ret, (uint256)) == VAULT_TYPE_T1;
     }
 
     /// @notice Walks the account's Fluid NFTs through the resolver and sums collateral/debt for `vault`.

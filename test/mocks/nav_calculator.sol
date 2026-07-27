@@ -128,8 +128,17 @@ contract Mock_NAVCalculator is INAVCalculator {
         return new address[](0);
     }
 
-    function getMetaInstances(address) external pure override returns (bytes32[] memory) {
-        return new bytes32[](0);
+    /// @dev Backing store for `getMetaInstances`. Defaults to empty for every adapter, so callers that never set
+    ///      it see the previous hardcoded-empty behaviour; `setMetaInstances` lets a test stand in for the
+    ///      governed instance set that `MetaBalanceAdapter.positionIds()` enumerates.
+    mapping(address => bytes32[]) private _metaInstances;
+
+    function setMetaInstances(address adapter, bytes32[] memory instances) external {
+        _metaInstances[adapter] = instances;
+    }
+
+    function getMetaInstances(address adapter) external view override returns (bytes32[] memory) {
+        return _metaInstances[adapter];
     }
 
     function addMetaInstances(address, bytes32[] calldata) external pure override {
@@ -255,6 +264,14 @@ contract Mock_NAVCalculator is INAVCalculator {
     /// @notice Flip the stale flag on an already-registered asset's price data (keeps price/decimals/updatedAt).
     function setAssetStale(address asset, bool stale) external {
         _priceData[asset].stale = stale;
+    }
+
+    /// @notice Set an asset's leg freshness (updatedAt + configured heartbeat) explicitly. Used by custom-feed unit
+    ///         tests to exercise `ICustomPriceFeed.governingFeedFreshness` via `NavBaseUsdLib.baseFreshness`, which
+    ///         reads `getPriceDataNoDivergence(baseAsset).{updatedAt, chainlinkHeartbeat}`.
+    function setAssetFreshness(address asset, uint256 updatedAt, uint256 heartbeat) external {
+        _priceData[asset].updatedAt = updatedAt;
+        _priceData[asset].chainlinkHeartbeat = heartbeat;
     }
 
     /// @notice Emulate the NAV's L2 sequencer state. Only sets the raw `sequencerDown` flag; the `stale` fold

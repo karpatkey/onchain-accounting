@@ -1,4 +1,4 @@
-# 0020 — Bridge adapter provenance + deploy hardening (multi-L2 Superchain, Gnosis mediator auth, initializer guard)
+# 0021 — Bridge adapter provenance + deploy hardening (multi-L2 Superchain, Gnosis mediator auth, initializer guard)
 
 **Status:** accepted
 

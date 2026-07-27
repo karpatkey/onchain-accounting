@@ -71,7 +71,7 @@ contract FluidFTokensMetaBalanceAdapterTest is Test {
         fUSDC.setBalance(alice, 100e6);
         fWETH.setBalance(alice, 3e18);
 
-        meta = new FluidFTokensMetaBalanceAdapter("Fluid", address(nav));
+        meta = new FluidFTokensMetaBalanceAdapter(address(nav));
     }
 
     function _instances() internal view returns (bytes32[] memory ins) {

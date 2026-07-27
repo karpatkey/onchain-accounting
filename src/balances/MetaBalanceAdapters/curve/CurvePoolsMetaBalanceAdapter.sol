@@ -39,11 +39,8 @@ import {CurvePoolLib} from "./CurvePoolLib.sol";
 ///      consumer). See docs/decisions/0017-lp-valuation-instantaneous-amounts.md; revisit if NAV is ever consumed
 ///      synchronously on-chain.
 contract CurvePoolsMetaBalanceAdapter is MetaBalanceAdapter {
-    /// @param protocolName_ Human-readable name (e.g. "Curve").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(string memory protocolName_, address navCalculator_)
-        MetaBalanceAdapter(protocolName_, navCalculator_)
-    {}
+    constructor(address navCalculator_) MetaBalanceAdapter(navCalculator_) {}
 
     // ─── MetaBalanceAdapter hooks ──────────────────────────────────────────────
 

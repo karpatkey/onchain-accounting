@@ -37,7 +37,7 @@ contract CurvePoolsMetaBalanceAdapterTest is Test {
         nav.registerAsset(address(dai), 18, "DAI");
         nav.registerAsset(address(weth), 18, "WETH");
 
-        meta = new CurvePoolsMetaBalanceAdapter("Curve", address(nav));
+        meta = new CurvePoolsMetaBalanceAdapter(address(nav));
     }
 
     // ─── helpers ──────────────────────────────────────────────────────────────

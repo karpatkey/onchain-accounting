@@ -5,7 +5,9 @@ import {MetaBalanceAdapter} from "../MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
-import {IProtocolDataProvider} from "../BalanceAdapters/SparkLendBalanceAdapter.sol";
+import {LabelLib} from "src/balances/LabelLib.sol";
+import {StaticCallLib} from "src/utils/StaticCallLib.sol";
+import {IProtocolDataProvider, IAavePool} from "../BalanceAdapters/SparkLendBalanceAdapter.sol";
 
 /// @notice Minimal views to derive an instance's identity on-chain from its ProtocolDataProvider.
 interface IAaveAddressesProviderSource {
@@ -37,11 +39,12 @@ interface IAavePoolAddressesProvider {
 ///      market, whose provider was never added to it). Use the registry off-chain to *propose* instances; governance
 ///      approves them. See BALANCE_ADAPTERS.md §6.1.
 contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
-    /// @param protocolName_ Human-readable protocol name (e.g. "Aave V3").
+    /// @notice Aave's `ReserveConfiguration.MAX_RESERVES_COUNT` — the user-configuration bitmap packs 2 bits
+    ///         per reserve into one word, so it addresses ids 0..127.
+    uint256 private constant MAX_RESERVES = 128;
+
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(string memory protocolName_, address navCalculator_)
-        MetaBalanceAdapter(protocolName_, navCalculator_)
-    {}
+    constructor(address navCalculator_) MetaBalanceAdapter(navCalculator_) {}
 
     /// @inheritdoc MetaBalanceAdapter
     /// @dev `instance` is the instance's ProtocolDataProvider. Emits up to two rows per registered reserve:
@@ -58,10 +61,22 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
         returns (INAVCalculator.PositionBalance[] memory)
     {
         IProtocolDataProvider dp = IProtocolDataProvider(_toAddress(instance));
-        address pool = _poolOf(dp);
         // positionId is the instance Pool — one position per instance. The reserve is NOT in positionId; each
         // reserve's legs are distinguished by balanceAsset + positionKind (multi-leg convention).
-        bytes memory pid = abi.encode(pool);
+        // Derived from the hook, and `pool` derived back out of it, so the emitted positionId and the one
+        // `positionIds()` advertises cannot drift — while still resolving the Pool exactly once. Decoding our own
+        // `abi.encode(address)` is the same assumption `positionLabels` already makes about this positionId.
+        bytes memory pid = _instancePositionId(instance);
+        address pool = abi.decode(pid, (address));
+
+        // A borrow this adapter cannot report must never leave the account's supplies standing alone: the
+        // position would count as pure credit and NAV be over-reported by the whole borrow. Checked across ALL
+        // reserves and independently of `assetFilter` — a filtered view showing a supply while hiding an
+        // unreportable borrow over-reports the same way. Under-reporting the whole instance is the safe
+        // direction.
+        if (_hasUnreportableDebt(dp, pool, account)) {
+            return new INAVCalculator.PositionBalance[](0);
+        }
 
         IProtocolDataProvider.TokenData[] memory reserves = dp.getAllReservesTokens();
         // up to 2 legs per reserve: supply/collateral + one Borrow (variable + stable summed)
@@ -136,27 +151,104 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @notice Resolves the instance's market id (for the display label) from its pool.
-    /// @dev V3 Pool exposes `ADDRESSES_PROVIDER()`.
-    ///      Best-effort: returns "" if the pool/provider does not expose the views (label then drops the market).
+    /// @dev V3 Pool exposes `ADDRESSES_PROVIDER()`. Best-effort: returns "" if the pool/provider does not expose the
+    ///      views, or answers them with anything unusable (label then drops the market leaf).
+    ///
+    ///      Both hops go through the shared hardened readers rather than `try`/`catch`, because `try`/`catch` covers
+    ///      only one of the three ways these reads fail — a code-less target reverts at the `extcodesize` precheck
+    ///      and undecodable returndata reverts in the decoder, both in THIS frame, past any `catch`. See
+    ///      {StaticCallLib} and {LabelLib} for the guards. `safeAddr`'s masking is correct for `ap`: a garbage
+    ///      provider address simply fails the next hop and the leaf drops, and `address(0)` carries no special
+    ///      meaning here beyond "unreadable".
     function _marketId(address pool) internal view returns (string memory) {
-        // Codesize guards: a high-level call to a codeless address reverts via extcodesize, which try/catch does
-        // NOT catch — a faulty label must never revert this (verbose-only) read.
-        if (pool.code.length == 0) return "";
-        try IAaveAddressesProviderSource(pool).ADDRESSES_PROVIDER() returns (address ap) {
-            if (ap.code.length == 0) return "";
-            try IAavePoolAddressesProvider(ap).getMarketId() returns (string memory m) {
-                return m;
-            } catch {
-                return "";
-            }
-        } catch {
-            return "";
-        }
+        (, address ap) = StaticCallLib.safeAddr(
+            pool, abi.encodeWithSelector(IAaveAddressesProviderSource.ADDRESSES_PROVIDER.selector)
+        );
+        if (ap == address(0)) return "";
+        return LabelLib.readString(ap, IAavePoolAddressesProvider.getMarketId.selector, "");
     }
 
-    /// @notice Resolves the instance's Pool address (encoded as the instance's positionId).
-    /// @dev V3's PoolAddressesProvider resolves the pool via `getPool()`.
+    /// @notice True iff the account borrows any reserve whose asset is NOT registered on the NAV, i.e. a debt
+    ///         this adapter would silently drop.
+    /// @dev Uses Aave's user-configuration bitmap: one call identifies exactly which reserves the account
+    ///      borrows, so the registry check touches only those. Scanning every reserve's `getUserReserveData`
+    ///      instead would cost one call per reserve (67 on mainnet today) on every read, including the
+    ///      single-asset filtered path. Falls back to that scan only if the bitmap is unavailable (an older
+    ///      pool, or a fork that does not implement it).
+    function _hasUnreportableDebt(IProtocolDataProvider dp, address pool, address account) private view returns (bool) {
+        // `try` does NOT catch Solidity's "call to non-contract address" check — it runs in this frame, so a
+        // code-less pool would revert the whole read rather than fall back. Check explicitly first.
+        if (pool.code.length == 0) return _hasUnreportableDebtByScan(dp, account);
+
+        // Low-level, not `try`: `try` catches neither the non-contract check (pre-empted above) NOR a
+        // return-data decode failure, so a pool answering this selector with fewer than 32 bytes would escape
+        // the `catch` and revert the read instead of falling back to the scan.
+        (bool cfgOk, bytes memory cfgRet) =
+            pool.staticcall(abi.encodeWithSelector(IAavePool.getUserConfiguration.selector, account));
+        if (!cfgOk || cfgRet.length < 32) return _hasUnreportableDebtByScan(dp, account);
+        uint256 cfgData = abi.decode(cfgRet, (uint256));
+        if (cfgData == 0) return false; // no supplies and no borrows
+
+        // Iterate the bitmap's own key space (2 bits per reserve => 128 reserves) and resolve each BORROWED
+        // reserve by its stored id. Indexing `getReservesList()` positionally would be wrong: that accessor
+        // compacts out dropped reserves, so after any `dropReserve` list[i] is a different reserve than id i —
+        // the guard would check the wrong asset, and ids past the compacted length would never be examined.
+        // The id lookup is a low-level staticcall, NOT inside the `try` above: a revert raised in a `try`'s
+        // success block is not caught by its own `catch`, so a pool answering `getUserConfiguration` but not
+        // `getReserveAddressById` would revert the read instead of falling back.
+        for (uint256 id = 0; id < MAX_RESERVES; id++) {
+            if (cfgData & (1 << (id * 2)) == 0) continue; // not borrowing reserve `id`
+            (bool ok, bytes memory ret) =
+                pool.staticcall(abi.encodeWithSelector(IAavePool.getReserveAddressById.selector, uint16(id)));
+            if (!ok || ret.length < 32) return _hasUnreportableDebtByScan(dp, account);
+            // Mask rather than `abi.decode(ret, (address))`: that reverts on a word with dirty upper bits,
+            // and a revert here would escape the fallback this branch exists to reach.
+            address asset = address(uint160(abi.decode(ret, (uint256))));
+            if (asset == address(0)) continue; // dropped reserve
+            (, bool found) = _getAssetInfo(asset);
+            if (found) continue; // reportable
+            // The bit alone is not proof of debt: Aave clears it only on an exact-full repay
+            // (`BorrowLogic.executeRepay`: `stableDebt + variableDebt - paybackAmount == 0`, unscaled), while
+            // the debt token burns scaled with rounding — so a bit can outlive the debt. Suppressing on a
+            // stale bit would erase the whole instance from NAV permanently, and would disagree with
+            // `_hasUnreportableDebtByScan`, which requires debt > 0. Confirm before suppressing.
+            (, uint256 stableDebt, uint256 variableDebt,,,,,,) = dp.getUserReserveData(asset, account);
+            if (stableDebt + variableDebt > 0) return true;
+        }
+        return false;
+    }
+
+    /// @notice Fallback for a pool without the configuration bitmap: check every unregistered reserve for debt.
+    function _hasUnreportableDebtByScan(IProtocolDataProvider dp, address account) private view returns (bool) {
+        IProtocolDataProvider.TokenData[] memory reserves = dp.getAllReservesTokens();
+        for (uint256 i = 0; i < reserves.length; i++) {
+            address asset = reserves[i].tokenAddress;
+            (, bool found) = _getAssetInfo(asset);
+            if (found) continue; // reportable, so it cannot be silently dropped
+            (, uint256 stableDebt, uint256 variableDebt,,,,,,) = dp.getUserReserveData(asset, account);
+            if (stableDebt + variableDebt > 0) return true;
+        }
+        return false;
+    }
+
     function _poolOf(IProtocolDataProvider dp) internal view returns (address) {
         return IAavePoolAddressesProvider(IAaveAddressesProviderSource(address(dp)).ADDRESSES_PROVIDER()).getPool();
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    /// @dev **Aave V3 is the one meta-adapter whose positionId is not its instance coordinate.** The coordinate is
+    ///      a `ProtocolDataProvider`; the emitted positionId is the `Pool` resolved from it via
+    ///      `ADDRESSES_PROVIDER().getPool()`. The base default would return `abi.encode(dataProvider)`, so
+    ///      `positionIds()` would advertise ids that no `PositionBalance` ever carries.
+    ///
+    ///      **The defect this prevents is a broken reconciliation, not a wrong label.** Measured against the
+    ///      deployed adapter on mainnet, `positionLabels(dataProvider)` and `positionLabels(pool)` BOTH return
+    ///      `["Market", "Aave Ethereum Market"]` — `_marketId` reads `ADDRESSES_PROVIDER()`, which a
+    ///      ProtocolDataProvider also exposes and which points at the same provider, so the label happens to come
+    ///      out right either way. What breaks is identity: a configuration view could not JOIN its enumerated
+    ///      rows against real `PositionBalance.positionId` values, and would do so silently, because the labels
+    ///      would look correct on both sides.
+    function _instancePositionId(bytes32 instance) internal view override returns (bytes memory) {
+        return abi.encode(_poolOf(IProtocolDataProvider(_toAddress(instance))));
     }
 }

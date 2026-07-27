@@ -97,7 +97,7 @@ contract DeployProxies is BaseDeployScript {
         vm.startBroadcast();
 
         if (bridgeOnly) {
-            // Bridge-only atomic path (front-run-safe; ADR 0020). Deploy + upgradeToAndCall(initialize) +
+            // Bridge-only atomic path (front-run-safe; ADR 0021). Deploy + upgradeToAndCall(initialize) +
             // role handoff for the BridgeEscrow proxy in ONE tx, touching NOTHING on the NAV side — so it is
             // safe on chains where NAV is already live (AtomicProxyDeployer would revert re-initializing NAV).
             // Accounts / assets / adapters are wired afterwards by 06.

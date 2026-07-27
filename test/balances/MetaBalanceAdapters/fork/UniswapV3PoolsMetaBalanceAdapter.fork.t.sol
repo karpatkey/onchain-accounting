@@ -53,7 +53,7 @@ contract UniswapV3PoolsMetaBalanceForkTest is BalanceAdapterTestBase {
         super.setUp();
         _setupFork();
         balances = _deployBalancesForAdapter(_assets());
-        meta = new UniswapV3PoolsMetaBalanceAdapter(NPM, "Uniswap V3", address(balances));
+        meta = new UniswapV3PoolsMetaBalanceAdapter(NPM, address(balances));
     }
 
     function _setupFork() internal override {

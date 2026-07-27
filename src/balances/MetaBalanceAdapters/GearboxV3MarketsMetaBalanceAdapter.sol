@@ -27,11 +27,8 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      deprecated/zombie entries). Use the register off-chain to *propose* instances; governance approves them.
 ///      See BALANCE_ADAPTERS.md §6.1.
 contract GearboxV3MarketsMetaBalanceAdapter is MetaBalanceAdapter {
-    /// @param protocolName_ Human-readable protocol name (e.g. "Gearbox").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(string memory protocolName_, address navCalculator_)
-        MetaBalanceAdapter(protocolName_, navCalculator_)
-    {}
+    constructor(address navCalculator_) MetaBalanceAdapter(navCalculator_) {}
 
     /// @inheritdoc MetaBalanceAdapter
     /// @dev `instance` is the market (ERC4626 pool) address. Emits one `Supplied` leg in the market's underlying,

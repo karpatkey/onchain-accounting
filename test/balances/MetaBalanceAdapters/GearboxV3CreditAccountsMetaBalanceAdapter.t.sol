@@ -14,6 +14,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {RawReplier, RawReplyLib} from "test/mocks/RawReplier.sol";
 
 /// @notice ERC20-shaped collateral token mock with a settable per-holder balance (the adapter reads
 ///         `balanceOf(creditAccount)` for each enabled collateral token).
@@ -145,7 +146,7 @@ contract GearboxV3CreditAccountsMetaBalanceAdapterTest is Test {
 
         ca = new MockCreditAccount(address(cm));
 
-        adapter = new GearboxV3CreditAccountsMetaBalanceAdapter("Gearbox", address(nav));
+        adapter = new GearboxV3CreditAccountsMetaBalanceAdapter(address(nav));
     }
 
     function _instances() internal view returns (bytes32[] memory ins) {
@@ -360,5 +361,259 @@ contract GearboxV3CreditAccountsMetaBalanceAdapterTest is Test {
         assertEq(assets[0], address(usdc));
         assertEq(assets[1], address(weth));
         assertEq(assets[2], address(wbtc));
+    }
+
+    /// @dev The adapter already drops the whole account when the debt cannot be READ. The same must hold when
+    ///      the debt is read but cannot be REPORTED — its underlying is not a registered asset — otherwise the
+    ///      collateral legs are emitted alone and NAV is over-reported by the entire borrow.
+    function test_unreportableDebtUnderlying_suppressesWholeAccount() public {
+        _seedAliceFullPosition(); // WETH + WBTC collateral, 1500 USDC debt
+        nav.unregisterAssetHelper(address(usdc)); // the pool underlying == the debt asset
+
+        assertEq(
+            adapter.getAdapterPositionsForInstances(alice, _instances(), address(0)).length,
+            0,
+            "collateral must not be reported without the unreportable debt"
+        );
+        assertEq(
+            adapter.getAdapterPositionsForInstances(alice, _instances(), address(weth)).length,
+            0,
+            "assetFilter must not resurrect the unoffset collateral legs"
+        );
+    }
+}
+
+/// @title GearboxV3CreditAccountsMetaBalanceAdapter — `positionLabels` fail-open tests
+/// @notice `positionLabels` is a verbose/display-only path and MUST NOT revert, whatever the credit manager answers
+///         with. `_creditManagerOf` guards the *credit account's* codesize but returns whatever `creditManager()`
+///         said, so the resolved manager can be code-less — and a high-level call to it reverts via `extcodesize`
+///         before the call, past any `catch`. A manager that answers `name()`/`underlying()` successfully but with
+///         undecodable returndata reverts in this frame too, which `catch` also never sees. Each test stages one such
+///         shape via {RawReplier} and asserts the label degrades to `["Credit Account"]`.
+contract GearboxV3CreditAccountsMetaLabelReadTest is Test {
+    /// @dev The gas the whole external `positionLabels` call may consume against a hostile manager. Comfortably above
+    ///      the 100k stipends the adapter forwards, and far below what an uncapped probe costs.
+    uint256 private constant GAS_CEILING = 1_000_000;
+
+    address public constant CODELESS = 0x3333333333333333333333333333333333333333;
+
+    Mock_NAVCalculator nav;
+    GearboxV3CreditAccountsMetaBalanceAdapter adapter;
+    MockGearboxToken usdc;
+    RawReplier cmReplier;
+    MockCreditAccount ca;
+
+    function setUp() public {
+        nav = new Mock_NAVCalculator();
+        usdc = new MockGearboxToken("USDC", 6);
+        nav.registerAsset(address(usdc), 6, "USDC");
+        adapter = new GearboxV3CreditAccountsMetaBalanceAdapter(address(nav));
+
+        cmReplier = new RawReplier();
+        cmReplier.stageReturn(RawReplyLib.canonicalString("Trade WETH Tier 1"));
+        ca = new MockCreditAccount(address(cmReplier));
+    }
+
+    function _labelsFor(address creditAccount) internal view returns (string[] memory) {
+        return adapter.positionLabels(abi.encode(creditAccount));
+    }
+
+    function _assertCollapsed(address creditAccount, string memory why) internal view {
+        string[] memory l = _labelsFor(creditAccount);
+        assertEq(l.length, 1, why);
+        assertEq(l[0], "Credit Account", why);
+    }
+
+    // ----- control -----
+
+    function test_labels_canonicalName_renders() public view {
+        string[] memory l = _labelsFor(address(ca));
+        assertEq(l.length, 2);
+        assertEq(l[0], "Credit Account");
+        assertEq(l[1], "Trade WETH Tier 1");
+    }
+
+    /// @dev With `name()` empty the leaf falls back to the underlying's symbol — the tier-2 path must still work
+    ///      through the rewritten readers.
+    function test_labels_emptyName_fallsBackToUnderlyingSymbol() public {
+        MockCreditManager plain = new MockCreditManager("", address(usdc));
+        MockCreditAccount account = new MockCreditAccount(address(plain));
+        string[] memory l = _labelsFor(address(account));
+        assertEq(l.length, 2);
+        assertEq(l[1], "USDC");
+    }
+
+    // ----- the credit manager itself -----
+
+    /// @dev The mode the audit flagged: `_creditManagerOf` returns a non-zero but **code-less** manager, so the
+    ///      high-level `name()` call reverted at the `extcodesize` precheck before the call was even made.
+    function test_labels_codelessCreditManager_collapses() public {
+        MockCreditAccount account = new MockCreditAccount(CODELESS);
+        _assertCollapsed(address(account), "a code-less credit manager must not revert the label");
+    }
+
+    function test_labels_revertingCreditManager_collapses() public {
+        cmReplier.stageRevert(4);
+        _assertCollapsed(address(ca), "a reverting credit manager must not revert the label");
+    }
+
+    // ----- undecodable `name()` returndata (the class `try`/`catch` misses) -----
+
+    /// @dev MKR-era shape: a single `bytes32` word where a `string` was declared.
+    function test_labels_bytes32Name_collapses() public {
+        cmReplier.stageReturn(RawReplyLib.bytes32String("Trade WETH Tier 1"));
+        _assertCollapsed(address(ca), "a bytes32-shaped name must not revert the label");
+    }
+
+    /// @dev The proxy-with-code-less-implementation shape: `delegatecall` succeeds and returns nothing.
+    function test_labels_emptyReturndataName_collapses() public {
+        cmReplier.stageReturn("");
+        _assertCollapsed(address(ca), "empty returndata must not revert the label");
+    }
+
+    function test_labels_offsetOnlyName_collapses() public {
+        cmReplier.stageReturn(RawReplyLib.offsetOnly());
+        _assertCollapsed(address(ca), "a head with no length word must not revert the label");
+    }
+
+    function test_labels_badOffsetName_collapses() public {
+        cmReplier.stageReturn(RawReplyLib.badOffset(0x40, "Trade WETH Tier 1"));
+        _assertCollapsed(address(ca), "a non-0x20 offset must not revert the label");
+    }
+
+    function test_labels_absurdLengthName_collapses() public {
+        cmReplier.stageReturn(RawReplyLib.declaredLength(type(uint256).max, "x"));
+        _assertCollapsed(address(ca), "an absurd declared length must not revert the label");
+    }
+
+    function test_labels_truncatedPayloadName_collapses() public {
+        cmReplier.stageReturn(RawReplyLib.declaredLength(100, "short"));
+        _assertCollapsed(address(ca), "a truncated payload must not revert the label");
+    }
+
+    // ----- undecodable `underlying()` returndata on the tier-2 fallback -----
+
+    /// @dev `name()` degrades, so the reader falls through to `underlying()` — which here answers with the same
+    ///      undecodable blob. `abi.decode(…, (address))` on a 2-byte reply would revert; the reader must not.
+    function test_labels_shortUnderlyingWord_collapses() public {
+        cmReplier.stageReturn(hex"1234");
+        _assertCollapsed(address(ca), "a short underlying() reply must not revert the label");
+    }
+
+    // ----- bounds -----
+
+    function test_labels_lengthCapBoundary() public {
+        cmReplier.stageReturn(RawReplyLib.stringOfLength(256));
+        assertEq(_labelsFor(address(ca)).length, 2, "256 bytes is inside the cap");
+
+        cmReplier.stageReturn(RawReplyLib.stringOfLength(257));
+        _assertCollapsed(address(ca), "past the cap the label degrades rather than rendering");
+    }
+
+    /// @notice A reply with a large zero-padded tail BEHIND a short, in-cap name must still render.
+    /// @dev The Gearbox half of the same deliberate widening — see the twin test on the AaveV3 adapter. The
+    ///      hand-rolled reader dropped this leaf; {LabelLib} renders it, which is the behaviour PR #165 landed
+    ///      for the real Curve 4096-byte-buffer LP tokens.
+    function test_labels_paddedBufferName_renders() public {
+        bytes memory tail = new bytes(4096 - 64);
+        bytes memory nm = bytes("Gearbox Padded v3");
+        for (uint256 i = 0; i < nm.length; i++) {
+            tail[i] = nm[i];
+        }
+        cmReplier.stageReturn(abi.encodePacked(uint256(0x20), nm.length, tail));
+
+        string[] memory l = _labelsFor(address(ca));
+        assertEq(l.length, 2, "an in-cap name must survive a large zero-padded tail");
+        assertEq(l[1], "Gearbox Padded v3", "the name must decode verbatim");
+    }
+
+    function test_labels_oversizedReply_collapses() public {
+        cmReplier.stageReturn(RawReplyLib.stringOfLength(2048));
+        _assertCollapsed(address(ca), "an oversized reply must not revert or truncate");
+    }
+
+    /// @dev The gas cap is load-bearing: a raw `staticcall` assigning `(bool, bytes memory)` always
+    ///      `returndatacopy`s the revert payload, which the parameterless `catch {}` this replaced never did.
+    function test_labels_giantRevertPayload_isGasBounded() public {
+        cmReplier.stageRevert(3_000_000);
+        uint256 before = gasleft();
+        _assertCollapsed(address(ca), "a giant revert payload must not revert the label");
+        assertLt(before - gasleft(), GAS_CEILING, "the probe must be gas-capped");
+    }
+
+    function test_labels_gasBurningCreditManager_isGasBounded() public {
+        cmReplier.stageBurnGas();
+        uint256 before = gasleft();
+        _assertCollapsed(address(ca), "a gas-burning credit manager must not revert the label");
+        assertLt(before - gasleft(), GAS_CEILING, "the probe must be gas-capped");
+    }
+}
+
+/// @title Gearbox tier-2 fallback — the underlying token's `symbol()` must be fail-open too
+/// @notice `positionLabels` degrades to the underlying asset's symbol when `name()` is unusable. The address it
+///         reads that symbol from comes from the credit manager's own `underlying()`, so it is attacker-chosen:
+///         `_safeAddressRead` masks whatever word came back, and the manager itself is only reachable through
+///         `creditManager()` on a governed instance — not governed itself. That makes the symbol read the last
+///         unguarded hop in the chain.
+contract GearboxV3CreditAccountsMetaTier2LeafTest is Test {
+    uint256 private constant GAS_CEILING = 1_000_000;
+
+    Mock_NAVCalculator nav;
+    GearboxV3CreditAccountsMetaBalanceAdapter adapter;
+    RawReplier hostileToken;
+    MockCreditManager cm;
+    MockCreditAccount ca;
+
+    function setUp() public {
+        nav = new Mock_NAVCalculator();
+        adapter = new GearboxV3CreditAccountsMetaBalanceAdapter(address(nav));
+        hostileToken = new RawReplier();
+        // Empty name() forces the tier-2 fallback; underlying() points at the hostile token.
+        cm = new MockCreditManager("", address(hostileToken));
+        ca = new MockCreditAccount(address(cm));
+    }
+
+    function _assertCollapsed(string memory why) internal view {
+        string[] memory l = adapter.positionLabels(abi.encode(address(ca)));
+        assertEq(l.length, 1, why);
+        assertEq(l[0], "Credit Account", why);
+    }
+
+    /// @dev The residual decode gap: `symbol()` succeeds with a `bytes32` where a `string` was declared.
+    function test_tier2_bytes32Symbol_collapses() public {
+        hostileToken.stageReturn(RawReplyLib.bytes32String("USDC"));
+        _assertCollapsed("a bytes32-shaped symbol must not revert the label");
+    }
+
+    function test_tier2_emptyReturndataSymbol_collapses() public {
+        hostileToken.stageReturn("");
+        _assertCollapsed("empty symbol returndata must not revert the label");
+    }
+
+    function test_tier2_truncatedPayloadSymbol_collapses() public {
+        hostileToken.stageReturn(RawReplyLib.declaredLength(100, "short"));
+        _assertCollapsed("a truncated symbol payload must not revert the label");
+    }
+
+    function test_tier2_absurdLengthSymbol_collapses() public {
+        hostileToken.stageReturn(RawReplyLib.declaredLength(type(uint256).max, "x"));
+        _assertCollapsed("an absurd declared symbol length must not revert the label");
+    }
+
+    /// @dev The gas leak. `NAVCalculator._safeStringArray` staticcalls `positionLabels` with NO `{gas:}` cap, so an
+    ///      unbounded hop here drains 63/64 of the whole verbose read, not just this position.
+    function test_tier2_gasBurningToken_isGasBounded() public {
+        hostileToken.stageBurnGas();
+        uint256 before = gasleft();
+        _assertCollapsed("a gas-burning underlying token must not revert the label");
+        assertLt(before - gasleft(), GAS_CEILING, "the tier-2 symbol probe must be gas-capped");
+    }
+
+    /// @dev A well-behaved token still renders, so the hardening did not break tier 2.
+    function test_tier2_canonicalSymbol_stillRenders() public {
+        hostileToken.stageReturn(RawReplyLib.canonicalString("USDC"));
+        string[] memory l = adapter.positionLabels(abi.encode(address(ca)));
+        assertEq(l.length, 2);
+        assertEq(l[1], "USDC");
     }
 }

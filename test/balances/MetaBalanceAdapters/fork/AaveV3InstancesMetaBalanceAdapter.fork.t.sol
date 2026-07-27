@@ -4,8 +4,11 @@ import {LibraryPins} from "script/utils/LibraryPins.sol";
 
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
 import {
-    AaveV3InstancesMetaBalanceAdapter
+    AaveV3InstancesMetaBalanceAdapter,
+    IAaveAddressesProviderSource,
+    IAavePoolAddressesProvider
 } from "src/balances/MetaBalanceAdapters/AaveV3InstancesMetaBalanceAdapter.sol";
+import {RawReplier, RawReplyLib} from "test/mocks/RawReplier.sol";
 import {SparkLendBalanceAdapter} from "src/balances/BalanceAdapters/SparkLendBalanceAdapter.sol";
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -30,7 +33,11 @@ contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     address public constant WBTC = MAINNET_WBTC;
     address public constant USDC = MAINNET_USDC;
     address public constant DAI = MAINNET_DAI;
-    // Account with WBTC collateral + USDC/DAI positions on Core at the default fork block.
+    // The account also BORROWS USDT (reserve id 8). It must be registered: an unreportable debt now suppresses
+    // the whole instance, so leaving USDT out would make this fixture assert the very over-report the adapter
+    // exists to prevent (collateral reported, USDT borrow silently dropped).
+    address public constant USDT = 0xdAC17F958D2ee523a2206206994597C13D831ec7;
+    // Account with WBTC collateral + USDC/DAI positions and USDC/USDT borrows on Core at the default fork block.
     address public constant USER = 0xe84A061897afc2e7fF5FB7e3686717C528617487;
 
     address admin = makeAddr("admin");
@@ -76,9 +83,12 @@ contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         nav.registerAsset(
             DAI, address(new Mock_CustomPriceFeed("DAI", DAI, 1e8, 8)), IPrices.PriceType.Custom, type(uint256).max
         );
+        nav.registerAsset(
+            USDT, address(new Mock_CustomPriceFeed("USDT", USDT, 1e8, 8)), IPrices.PriceType.Custom, type(uint256).max
+        );
         vm.stopPrank();
 
-        adapter = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(nav));
+        adapter = new AaveV3InstancesMetaBalanceAdapter(address(nav));
         perInstance = new SparkLendBalanceAdapter(CORE_DATA_PROVIDER, address(nav));
 
         vm.startPrank(manager);
@@ -140,5 +150,118 @@ contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         for (uint256 i = 0; i < pos.length; i++) {
             assertEq(pos[i].balanceAsset.asset, USDC);
         }
+    }
+
+    /// @notice `positionIds()` advertises the resolved **Pool**, not the ProtocolDataProvider coordinate, and those
+    ///         bytes are exactly what the adapter emits as `PositionBalance.positionId`.
+    /// @dev Aave V3 is the one meta-adapter whose positionId is not its instance coordinate, so it is the one that
+    ///      needs the `_instancePositionId` override. Without it the base default would advertise
+    ///      `abi.encode(dataProvider)` and a configuration view could not JOIN its rows against real positions.
+    ///
+    ///      **This failure would be invisible to a label-based check**, which is why it is asserted on bytes: on
+    ///      this very fork `positionLabels(dataProvider)` and `positionLabels(pool)` BOTH return
+    ///      `["Market", <marketId>]`, because `_marketId` reads `ADDRESSES_PROVIDER()` and a ProtocolDataProvider
+    ///      exposes that too, pointing at the same provider. The label is right by coincidence; only the identity
+    ///      is wrong. Asserted here against the live mainnet Core instance.
+    function test_positionIds_advertiseThePoolNotTheDataProvider() public view {
+        address ap = IAaveAddressesProviderSource(CORE_DATA_PROVIDER).ADDRESSES_PROVIDER();
+        address pool = IAavePoolAddressesProvider(ap).getPool();
+        assertTrue(pool != CORE_DATA_PROVIDER, "pool and data provider must differ for this test to mean anything");
+
+        bytes[] memory ids = adapter.positionIds();
+        assertEq(ids.length, 1, "one configured instance");
+        assertEq(ids[0], abi.encode(pool), "advertised id is the resolved Pool");
+        assertTrue(
+            keccak256(ids[0]) != keccak256(abi.encode(CORE_DATA_PROVIDER)),
+            "advertised id must NOT be the DataProvider coordinate"
+        );
+
+        // Both label identically — the coincidence that makes a label-based check useless here.
+        string[] memory viaPool = adapter.positionLabels(abi.encode(pool));
+        string[] memory viaDp = adapter.positionLabels(abi.encode(CORE_DATA_PROVIDER));
+        // Assert the shape before indexing: if a regression degraded either to a single segment, an out-of-bounds
+        // panic would obscure what actually broke.
+        assertEq(viaPool.length, 2, "pool label is [category, marketId]");
+        assertEq(viaDp.length, 2, "dataProvider label is [category, marketId] too: that is the coincidence");
+        assertEq(viaPool[1], viaDp[1], "the wrong id labels the same as the right one");
+    }
+
+    /// @notice The join guarantee against a REAL holder: every emitted positionId is an advertised shape.
+    /// @dev This is the property a configuration view depends on, and the reason the override above exists.
+    function test_positionIds_matchTheEmittedPositionIdsOnMainnet() public view {
+        INAVCalculator.PositionBalance[] memory positions =
+            adapter.getAdapterPositionsForInstances(USER, _ids(), address(0));
+        assertGt(positions.length, 0, "the pinned holder must have Aave positions at this block");
+
+        bytes[] memory ids = adapter.positionIds();
+        for (uint256 i; i < positions.length; ++i) {
+            bool matched;
+            for (uint256 j; j < ids.length; ++j) {
+                if (keccak256(ids[j]) == keccak256(positions[i].positionId)) matched = true;
+            }
+            assertTrue(matched, "every emitted positionId must be an advertised shape");
+        }
+    }
+
+    /// @notice The hardened market-id reader decodes a REAL, proxied Aave provider byte-for-byte the same as a plain
+    ///         high-level call does.
+    /// @dev The unit tests prove the malformed shapes degrade; this proves the rewrite did not break the canonical
+    ///      path against production bytecode. `getMarketId()` on mainnet Core is served through a proxy, which is
+    ///      exactly the shape the raw-staticcall reader had to keep working.
+    function test_positionLabels_realProvider_matchesDirectRead() public view {
+        address ap = IAaveAddressesProviderSource(CORE_DATA_PROVIDER).ADDRESSES_PROVIDER();
+        address pool = IAavePoolAddressesProvider(ap).getPool();
+        string memory direct = IAavePoolAddressesProvider(ap).getMarketId();
+        assertGt(bytes(direct).length, 0, "the real market id is non-empty");
+
+        string[] memory labels = adapter.positionLabels(abi.encode(pool));
+        assertEq(labels.length, 2, "category + market id");
+        assertEq(labels[0], "Market");
+        assertEq(labels[1], direct, "label leaf must equal the provider's own getMarketId()");
+    }
+
+    /// @notice Every uncaught failure mode degrades to `["Market"]` against the real deployed adapter — no revert.
+    /// @dev Staged on the fork with {RawReplier} rather than mocked in isolation, so the assertion covers the
+    ///      adapter as it will actually be deployed. A `try`/`catch` reader reverts on all four of these.
+    function test_positionLabels_hostilePool_degradesOnFork() public {
+        RawReplier provider = new RawReplier();
+        RawReplier pool = new RawReplier();
+        pool.stageReturn(abi.encode(address(provider)));
+
+        bytes[] memory shapes = new bytes[](4);
+        shapes[0] = RawReplyLib.bytes32String("Aave Ethereum Market"); // MKR-era bytes32 string
+        shapes[1] = ""; // proxy to a code-less implementation
+        shapes[2] = RawReplyLib.badOffset(0x40, "Aave Ethereum Market"); // malformed head
+        shapes[3] = RawReplyLib.declaredLength(type(uint256).max, "x"); // absurd length
+
+        for (uint256 i = 0; i < shapes.length; i++) {
+            provider.stageReturn(shapes[i]);
+            string[] memory labels = adapter.positionLabels(abi.encode(address(pool)));
+            assertEq(labels.length, 1, "must degrade, not revert");
+            assertEq(labels[0], "Market");
+        }
+
+        // A code-less pool reverts at Solidity's `extcodesize` precheck, which `try`/`catch` never sees either.
+        string[] memory codeless = adapter.positionLabels(abi.encode(address(0xdead)));
+        assertEq(codeless.length, 1, "a code-less pool must degrade too");
+    }
+
+    /// @notice A hostile provider cannot burn the caller's gas budget through the label path.
+    /// @dev Measured without the stipend elsewhere in this change: over 1e9 gas for the looping case and ~17M for a
+    ///      3 MB revert payload. Both are enough to out-of-gas a verbose NAV read.
+    function test_positionLabels_hostileProvider_isGasBounded() public {
+        RawReplier provider = new RawReplier();
+        RawReplier pool = new RawReplier();
+        pool.stageReturn(abi.encode(address(provider)));
+
+        provider.stageBurnGas();
+        uint256 before = gasleft();
+        adapter.positionLabels(abi.encode(address(pool)));
+        assertLt(before - gasleft(), 1_000_000, "gas-burning provider must be capped");
+
+        provider.stageRevert(3_000_000);
+        before = gasleft();
+        adapter.positionLabels(abi.encode(address(pool)));
+        assertLt(before - gasleft(), 1_000_000, "giant revert payload must be capped");
     }
 }

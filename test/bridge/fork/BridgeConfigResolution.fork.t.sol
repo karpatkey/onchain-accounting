@@ -75,6 +75,10 @@ contract BridgeConfigResolutionForkTest is TestEnvConfigurator {
                 string memory s = vm.parseJsonString(json, key);
                 if (bytes(s).length != 42) continue; // skip "" placeholders (admin/bridgeEscrow are filled at deploy)
                 address a = vm.parseAddress(s);
+                // An explicit zero address is an intentional "disabled/optional" sentinel — e.g. `usdcTransmuter`
+                // is address(0) on the Ethereum-side Gnosis adapter (native USDC, no swap). There is no live
+                // contract to assert for those, so skip. Required params are non-zero and DO get the live-contract
+                // check below; the `assertGt(checked, 0)` at the end guards against a config that resolved nothing.
                 if (a == address(0)) continue;
                 assertGt(
                     a.code.length,

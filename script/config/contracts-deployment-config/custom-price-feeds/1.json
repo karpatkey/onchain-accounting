@@ -180,8 +180,8 @@
     }
   },
   "ETHxCrossRate": {
-    "enabled": true,
-    "$comment": "ETHx redundancy feed (ETHx_CrossRateCustomPriceFeed). CrossRate: ETHx/USD = ETH/USD x ETHx/ETH. yToXFeed is the Redstone Classic Push ETHx/ETH market feed (verified 99.81% vs Stader getExchangeRate). Independent of the primary ETHx feed (Stader on-chain rate); added as priceFeeds[1] for freshest-wins redundancy.",
+    "enabled": false,
+    "$comment": "DISABLED 2026-07-27: Redstone is sunsetting all ETHx push feeds, including the ETHx/ETH market feed at yToXFeed (0xc799194cAa24E2874Efa89b4Bf5c92a530B047FF) that this cross-rate is built on, so the feed would price off a dead oracle. It was ETHx's Custom monitor feed (nav-config/assets-and-price-feeds/1.json); that monitor entry is removed too. ETHx's PRIMARY feed (Stader on-chain rate) is unaffected. Re-enable only against a non-Redstone ETHx/ETH source. Constructor args left intact so re-enabling is a one-line change.",
     "constructor": {
       "underlyingAsset": "0xA35b1B31Ce002FBF2058D22F30f95D405200A15b",
       "yToXFeed": "0xc799194cAa24E2874Efa89b4Bf5c92a530B047FF",

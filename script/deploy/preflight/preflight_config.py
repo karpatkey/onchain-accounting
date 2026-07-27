@@ -178,6 +178,15 @@ def check_chain(chain_id: int) -> list[tuple[str, str]]:
                                  f"address: {feed.get('address')!r}"))
             if not feed.get("heartbeat"):
                 f.append((WARN, f"asset '{sym}' feed[{i}] has no heartbeat"))
+        # A divergence tolerance with no monitors is inert, not broken: PriceFeedLib._monitorDivergence
+        # skips its check when no monitor is healthy, returning irregular=false. Worth surfacing anyway
+        # — it means the asset has NO divergence/irregular signal at all, which is easy to miss because
+        # the tolerance is still there. (It cannot be zeroed: Prices._setDivergenceTolerance reverts on
+        # 0, Prices.sol:198.) ETHx is deliberately in this state after Redstone sunset its ETHx feeds.
+        if entry.get("divergenceToleranceBps") and not (entry.get("monitorFeeds") or []):
+            f.append((WARN, f"asset '{sym}' sets divergenceToleranceBps="
+                            f"{entry['divergenceToleranceBps']} but has NO monitor feeds — it gets no "
+                            f"divergence/irregular signal until a monitor is added"))
     for fname, entry in dep_feeds.items():
         if entry.get("enabled") is not True:
             continue

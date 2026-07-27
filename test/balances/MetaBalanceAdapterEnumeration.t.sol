@@ -213,8 +213,11 @@ abstract contract PositionIdJoinAsserts is Test {
         assertEq(ids.length, coords.length, string.concat(who, ": every configured coordinate must advertise"));
 
         for (uint256 i; i < coords.length; ++i) {
+            // The hook's answer for this coordinate IS the advertised shape: `positionIds()` is literally
+            // `instancePositionId` mapped over the governed set, and the length assertion above already proved
+            // nothing was dropped. So no `_contains(ids, expected)` check here — it could never fail, and asserting
+            // it would imply the advertised side is independently verified in this suite when that is Half A's job.
             bytes memory expected = a.instancePositionId(coords[i]);
-            assertTrue(_contains(ids, expected), string.concat(who, ": the hook's id must be advertised"));
 
             INAVCalculator.PositionBalance[] memory pos =
                 a.getAdapterPositionsForInstances(account, _one(coords[i]), address(0));
@@ -426,7 +429,11 @@ contract MetaBalanceAdapterEnumerationTest is PositionIdJoinAsserts {
 ///      id also obliges an emitted-side join case. That is the lever, not a hand-maintained "who is covered" list.
 contract MetaBalanceAdapterAdvertisedShapeTest is PositionIdJoinAsserts {
     Mock_NAVCalculator internal nav;
+    /// @dev Constructor dependencies for the adapters under test. NEVER used as a coordinate — see
+    ///      `_assertAdvertisesCoordinate`.
     address internal stub;
+    /// @dev The governed coordinate, deliberately distinct from every constructor dependency.
+    address internal coordStub;
 
     /// @dev Pinned so adding an adapter fails `test_metaAdapterEnumerationCensus` until the author also adds it to
     ///      `test_everyMetaAdapter_advertisesItsCoordinateUnlessItDeclaresOtherwise`.
@@ -442,11 +449,20 @@ contract MetaBalanceAdapterAdvertisedShapeTest is PositionIdJoinAsserts {
     function setUp() public {
         nav = new Mock_NAVCalculator();
         stub = address(new CodeStub());
+        coordStub = address(new CodeStub());
     }
 
     /// @dev The address-keyed default: coordinate in, `abi.encode(coordinate)` out.
+    ///
+    ///      The coordinate is `coordStub`, a SEPARATE address from the `stub` passed to constructors, and that
+    ///      separation is load-bearing rather than tidy. Roughly eight adapters take `stub` as a constructor
+    ///      dependency (`CompoundV3Comets(stub, stub)`, `UniswapV3Pools(stub)`, …), pinning it as an immutable. If
+    ///      the coordinate were also `stub`, an adapter that advertised a constructor-pinned immutable instead of
+    ///      the per-instance coordinate — `abi.encode(POSITION_MANAGER)`, `abi.encode(BOOSTER)` — would still
+    ///      satisfy `abi.encode(stub)` and pass. That is the exact defect this suite exists to catch, so the
+    ///      expected value must not be reachable from anything but the coordinate itself.
     function _assertAdvertisesCoordinate(MetaBalanceAdapter a, string memory who) internal returns (uint256) {
-        return _assertAdvertisedId(nav, a, bytes32(uint256(uint160(stub))), abi.encode(stub), who);
+        return _assertAdvertisedId(nav, a, bytes32(uint256(uint160(coordStub))), abi.encode(coordStub), who);
     }
 
     function test_everyMetaAdapter_advertisesItsCoordinateUnlessItDeclaresOtherwise() public {
@@ -462,8 +478,11 @@ contract MetaBalanceAdapterAdvertisedShapeTest is PositionIdJoinAsserts {
         i += _assertAdvertisedId(
             nav, aave, bytes32(uint256(uint160(address(dp)))), abi.encode(dp.PROVIDER()), "AaveV3Instances"
         );
-        // The mutation guard. Without this, an accidental revert of the `_instancePositionId` override would leave
-        // the assertion above comparing the coordinate against itself and passing.
+        // A NAMED diagnostic, not the guard. The value assertion above is what actually fires when the override is
+        // reverted -- it pins the advertised bytes to the resolved Pool, which differs from the `dp` coordinate, so
+        // it fails outright. This assertion adds a message that says WHY in the reviewer's language; it is strictly
+        // weaker on its own (it would accept any value other than the coordinate, including a wrong resolution such
+        // as skipping `.getPool()`), so do NOT delete the comparison above believing this covers it.
         bytes[] memory aaveIds = aave.positionIds();
         assertTrue(
             keccak256(aaveIds[0]) != keccak256(abi.encode(address(dp))),
@@ -516,8 +535,10 @@ contract MetaBalanceAdapterAdvertisedShapeTest is PositionIdJoinAsserts {
             META_ADAPTER_COUNT,
             "meta-adapter count changed: add the new adapter to"
             " test_everyMetaAdapter_advertisesItsCoordinateUnlessItDeclaresOtherwise and bump META_ADAPTER_COUNT."
-            " If its positionId is DERIVED from the coordinate rather than being it (like Aave V3), it must"
-            " override _instancePositionId AND get an emitted-side case in MetaBalanceAdapterEmittedJoinTest."
+            " Then classify it. If its _instancePositions builds the positionId INLINE instead of passing"
+            " _instancePositionId(instance) to _leg, it can drift: add an emitted-side case in"
+            " MetaBalanceAdapterEmittedJoinTest and bump DRIFT_CAPABLE_COUNT. (A DERIVED id like Aave V3's must"
+            " also override _instancePositionId, but the join cannot guard that -- the value assertion here can.)"
             " If the count changed without you adding one, suspect a stale out/ artifact (forge clean)."
         );
     }
@@ -553,16 +574,24 @@ contract MetaBalanceAdapterAdvertisedShapeTest is PositionIdJoinAsserts {
 /// @author KPK
 /// @notice The emitted-side half: for adapters that build `PositionBalance.positionId` INDEPENDENTLY of
 ///         `_instancePositionId`, asserts the bytes they emit are byte-identical to the bytes they advertise.
-/// @dev **Why only these four, stated plainly rather than implied.** 17 of the 21 meta adapters pass
+/// @dev **The partition, counted rather than asserted.** Of the 21 meta adapters, **18** pass
 ///      `_instancePositionId(instance)` straight into `_leg`, so their join holds by construction and asserting it
-///      would only re-test the base (already covered by {MetaBalanceAdapterEnumerationTest}). These four do not:
+///      would only re-test the base (already covered by {MetaBalanceAdapterEnumerationTest}). That 18 includes
+///      `PancakeSwapV2PoolsMetaBalanceAdapter`, which inherits `UniswapV2Pools`'s `_instancePositions` unchanged,
+///      **and `AaveV3InstancesMetaBalanceAdapter`** — Aave derives a *different* id from the coordinate, but it
+///      derives it through the hook, so it cannot drift either.
+///
+///      Only **3** compute the id independently of the hook, and those are the drift-capable set:
 ///        - `UniswapV3PoolsMetaBalanceAdapter` builds `abi.encode(pool)` inline and assigns it through `_row`,
 ///          a SECOND positionId assignment site that exists because Uniswap needs a per-NFT `positionInstanceId`.
 ///        - `PancakeSwapV3PoolsMetaBalanceAdapter` inherits that path unchanged.
 ///        - `GearboxV3CreditAccountsMetaBalanceAdapter` builds `abi.encode(ca)` inline at both leg sites.
-///        - `AaveV3InstancesMetaBalanceAdapter` is the one adapter whose id is legitimately NOT its coordinate.
-///      For the first three the two sides agree TODAY by coincidence, not by construction — that coincidence is
+///      For those three the two sides agree TODAY by coincidence, not by construction — that coincidence is
 ///      exactly what is worth pinning, because nothing in the code forces it to stay true.
+///
+///      `AaveV3Instances` is exercised here as a **fourth** case for a different reason: it is the only adapter
+///      whose id is legitimately not its coordinate, so running the join over it documents that the derived id
+///      still reconciles. It is NOT here because it can drift. Hence 18 + 3 = 21 adapters, 4 cases in this suite.
 ///
 ///      **This suite does NOT guard the Aave `_instancePositionId` override, and must not be assumed to.** Aave's
 ///      `_instancePositions` derives its id from the hook (`bytes memory pid = _instancePositionId(instance)`), so
@@ -578,7 +607,7 @@ contract MetaBalanceAdapterEmittedJoinTest is PositionIdJoinAsserts {
 
     // ---- Aave V3 -------------------------------------------------------------------------------------------
 
-    function test_aaveV3_emitsTheAdvertisedPositionId() public {
+    function _caseAaveV3() internal returns (uint256) {
         Mock_NAVCalculator nav = new Mock_NAVCalculator();
         Mock_ERC20 usdc = new Mock_ERC20("USDC", 6);
         nav.registerAssetFromERC20(address(usdc));
@@ -600,11 +629,12 @@ contract MetaBalanceAdapterEmittedJoinTest is PositionIdJoinAsserts {
 
         uint256 legs = _assertJoin(a, alice, _one(coord), "AaveV3Instances");
         assertEq(legs, 1, "one Collateral leg -- the join must run over a real position");
+        return 1;
     }
 
     // ---- Uniswap V3 / PancakeSwap V3 -----------------------------------------------------------------------
 
-    function test_uniswapV3_emitsTheAdvertisedPositionId() public {
+    function _caseUniswapV3() internal returns (uint256) {
         Mock_NAVCalculator nav = new Mock_NAVCalculator();
         MockPositionManager npm = new MockPositionManager();
         MockToken wbtc = new MockToken("WBTC", 8);
@@ -638,9 +668,10 @@ contract MetaBalanceAdapterEmittedJoinTest is PositionIdJoinAsserts {
         // Emitted through `_row`, not `_leg` -- the second assignment site, and the reason this case exists.
         uint256 legs = _assertJoin(a, alice, _one(coord), "UniswapV3Pools");
         assertEq(legs, 4, "liq0 + liq1 + fee0 + fee1");
+        return 1;
     }
 
-    function test_pancakeSwapV3_emitsTheAdvertisedPositionId() public {
+    function _casePancakeSwapV3() internal returns (uint256) {
         Mock_NAVCalculator nav = new Mock_NAVCalculator();
         MockPositionManager npm = new MockPositionManager();
         MockToken usdc = new MockToken("USDC", 6);
@@ -673,11 +704,12 @@ contract MetaBalanceAdapterEmittedJoinTest is PositionIdJoinAsserts {
 
         uint256 legs = _assertJoin(a, alice, _one(coord), "PancakeSwapV3Pools");
         assertEq(legs, 4, "liq0 + liq1 + fee0 + fee1");
+        return 1;
     }
 
     // ---- Gearbox V3 credit accounts ------------------------------------------------------------------------
 
-    function test_gearboxV3CreditAccounts_emitsTheAdvertisedPositionId() public {
+    function _caseGearboxV3CreditAccounts() internal returns (uint256) {
         Mock_NAVCalculator nav = new Mock_NAVCalculator();
         MockGearboxToken usdc = new MockGearboxToken("USDC", 6);
         MockGearboxToken weth = new MockGearboxToken("WETH", 18);
@@ -697,10 +729,40 @@ contract MetaBalanceAdapterEmittedJoinTest is PositionIdJoinAsserts {
 
         uint256 legs = _assertJoin(a, alice, _one(coord), "GearboxV3CreditAccounts");
         assertEq(legs, 2, "one Collateral leg + one Borrowed leg");
+        return 1;
     }
 
-    /// @dev Keeps the pinned count honest against the cases actually written above.
-    function test_driftCapableSetIsFullyExercised() public pure {
-        assertEq(DRIFT_CAPABLE_COUNT, 4, "update this suite when the drift-capable set changes");
+    // ---- Per-adapter entry points, so a failure names one adapter rather than the whole set --------------
+
+    function test_aaveV3_emitsTheAdvertisedPositionId() public {
+        _caseAaveV3();
+    }
+
+    function test_uniswapV3_emitsTheAdvertisedPositionId() public {
+        _caseUniswapV3();
+    }
+
+    function test_pancakeSwapV3_emitsTheAdvertisedPositionId() public {
+        _casePancakeSwapV3();
+    }
+
+    function test_gearboxV3CreditAccounts_emitsTheAdvertisedPositionId() public {
+        _caseGearboxV3CreditAccounts();
+    }
+
+    /// @dev Keeps `DRIFT_CAPABLE_COUNT` honest against the cases actually written, by COUNTING them — each helper
+    ///      returns 1, exactly as Half A accumulates `i` from `_assertAdvertisedId`.
+    ///
+    ///      This deliberately does not compare the constant to a literal. It previously did
+    ///      (`assertEq(DRIFT_CAPABLE_COUNT, 4)`), which was a tautology: it stayed green whether a case was
+    ///      deleted or a fifth drift-capable adapter went un-cased, i.e. it asserted nothing in a suite whose whole
+    ///      purpose is to reject assertions that assert nothing.
+    function test_driftCapableSetIsFullyExercised() public {
+        uint256 i;
+        i += _caseAaveV3();
+        i += _caseUniswapV3();
+        i += _casePancakeSwapV3();
+        i += _caseGearboxV3CreditAccounts();
+        assertEq(i, DRIFT_CAPABLE_COUNT, "exercised emitted-side cases must equal DRIFT_CAPABLE_COUNT");
     }
 }

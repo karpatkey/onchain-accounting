@@ -22,7 +22,7 @@ contract StaticCallHarness {
     function probeAddrStrict(address target, bytes memory data)
         external
         view
-        returns (bool ok, address result, bool isAddr)
+        returns (bool ok, address result, bool malformed)
     {
         return StaticCallLib.safeAddrStrict(target, data);
     }
@@ -135,10 +135,10 @@ contract StaticCallLibTest is Test {
         address embedded = address(0xCAFE);
         replier.stageReturn(RawReplyLib.dirtyAddress(embedded));
 
-        (bool ok, address result, bool isAddr) =
+        (bool ok, address result, bool malformed) =
             harness.probeAddrStrict(address(replier), abi.encodeWithSignature("anything()"));
         assertTrue(ok, "the call itself succeeded");
-        assertFalse(isAddr, "a word with dirty upper bits is not an address");
+        assertTrue(malformed, "a full word with dirty upper bits is BROKEN, not absent");
         assertEq(result, address(0), "a rejected word yields no address");
 
         // The masking reader, same payload, deliberately disagrees.
@@ -151,38 +151,43 @@ contract StaticCallLibTest is Test {
         address expected = address(0xBEEF);
         replier.stageReturn(abi.encode(expected));
 
-        (bool ok, address result, bool isAddr) =
+        (bool ok, address result, bool malformed) =
             harness.probeAddrStrict(address(replier), abi.encodeWithSignature("anything()"));
         assertTrue(ok, "clean address should succeed");
-        assertTrue(isAddr, "a clean word IS an address");
+        assertFalse(malformed, "a clean word is not malformed");
         assertEq(result, expected, "clean address decodes");
     }
 
-    /// @notice `isAddr` is what separates "read a real zero" from "could not read" — `result` alone cannot.
-    /// @dev The whole reason the flag exists. A callee genuinely answering `address(0)` and one that reverted
-    ///      both yield `result == address(0)`; only `isAddr` tells them apart, and every strict call site
-    ///      branches on that distinction.
+    /// @notice `malformed` separates "broken" from "absent" — and a genuine zero from a failed read.
+    /// @dev The three outcomes a strict caller must tell apart, all of which yield `result == address(0)`:
+    ///      a callee genuinely answering `address(0)` (ok, not malformed), a callee that reverted or answered
+    ///      short (not ok / ok-but-no-word, NOT malformed — absent, so callers treat the getter as missing), and
+    ///      a callee that answered with a full non-address word (malformed — genuinely broken). Collapsing the
+    ///      middle case into `malformed` is the mistake this test exists to prevent: it makes Uniswap V2 drop a
+    ///      whole LP position over a code-less factory.
     function test_safeAddrStrict_realZero_distinguishableFromFailure() public {
         replier.stageReturn(abi.encode(address(0)));
-        (, address zeroResult, bool zeroIsAddr) =
+        (bool zeroOk, address zeroResult, bool zeroMalformed) =
             harness.probeAddrStrict(address(replier), abi.encodeWithSignature("anything()"));
-        assertTrue(zeroIsAddr, "a genuine zero IS a successfully read address");
+        assertTrue(zeroOk, "a genuine zero is a successful read");
+        assertFalse(zeroMalformed, "a genuine zero is not malformed");
         assertEq(zeroResult, address(0), "and its value is zero");
 
         replier.stageRevert(0);
-        (, address failResult, bool failIsAddr) =
+        (bool failOk, address failResult, bool failMalformed) =
             harness.probeAddrStrict(address(replier), abi.encodeWithSignature("anything()"));
-        assertFalse(failIsAddr, "a failed read is not an address");
+        assertFalse(failOk, "a revert is not a successful read");
+        assertFalse(failMalformed, "a revert is ABSENT, not broken - callers must not drop over it");
         assertEq(failResult, address(0), "same value, different meaning");
     }
 
     /// @notice A short reply carries no address, however its bytes happen to land.
     function test_safeAddrStrict_shortReply_rejected() public {
         replier.stageReturn(hex"00112233");
-        (bool ok, address result, bool isAddr) =
+        (bool ok, address result, bool malformed) =
             harness.probeAddrStrict(address(replier), abi.encodeWithSignature("anything()"));
         assertTrue(ok, "a short reply is still a successful call");
-        assertFalse(isAddr, "fewer than 32 bytes is not an address");
+        assertFalse(malformed, "a short reply is ABSENT, not broken - see the note on safeAddrStrict");
         assertEq(result, address(0), "short reply yields no address");
     }
 

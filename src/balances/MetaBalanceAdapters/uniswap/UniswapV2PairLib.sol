@@ -69,7 +69,9 @@ library UniswapV2PairLib {
     ///         `liquidity = ts·(√k − √kLast)·numFactor / (rootKCoeff·√k + rootKLastCoeff·√kLast)`. Uniswap uses
     ///         `(1, 5, 1)`; PancakeSwap V2 uses `(8, 17, 8)` (a different protocol-fee fraction). Returns 0 when
     ///         `feeTo` is unset, `kLast == 0`, or `√k <= √kLast`. `feeTo()`/`kLast()` are read defensively via
-    ///         staticcall (forks omitting them are treated as "no protocol fee").
+    ///         staticcall; forks omitting them — by reverting, by answering empty, or by having no factory code —
+    ///         are all treated as "no protocol fee". Only a factory that answers with a full word that is NOT an
+    ///         address is treated as broken, and that drops the pair (see `malformed` below).
     /// @dev **This is the one fail-open branch in this file whose failure direction is UPWARD**, and it is the
     ///      reason `feeTo()` is read through {StaticCallLib.safeAddrStrict} rather than {StaticCallLib.safeAddr}.
     ///      Returning 0 collapses `effectiveSupply` from `totalSupply + pendingMint` to plain `totalSupply`,
@@ -78,8 +80,13 @@ library UniswapV2PairLib {
     ///
     ///      Two distinct failures reach that branch, and they must NOT be conflated:
     ///
-    ///      - **The call fails** (`!ok`) — a fork that genuinely omits `feeTo()`. "No protocol fee" is the
-    ///        correct reading, and it is why this fail-open exists at all. The gas stipend does not meaningfully
+    ///      - **The factory does not answer with a word at all** — it reverts, returns nothing, or has no code.
+    ///        Every one of those says the fork omits `feeTo()`, so "no protocol fee" is the correct reading and
+    ///        the pair still reports, undiluted. This is why the fail-open exists at all, and why
+    ///        {StaticCallLib.safeAddrStrict}'s `malformed` is deliberately FALSE for a short or absent reply:
+    ///        folding "absent" into "broken" would drop an entire LP position over a missing optional getter,
+    ///        which is a far larger error than the dilution term this branch is about. The gas stipend does not
+    ///        meaningfully
     ///        widen this: on the canonical factory and pair, `feeTo()`/`kLast()` are single `SLOAD`s behind
     ///        public getters (~2.2k gas, measured ~2.7k against mainnet), more than an order of magnitude under
     ///        the stipend, and {pairAmounts} first makes six UNGUARDED high-level calls that would revert the
@@ -91,8 +98,8 @@ library UniswapV2PairLib {
     ///        the `feeTo == address(0)` clause. Before the masking change it hit `abi.decode`'s validator and
     ///        reverted, which the meta-adapter's per-instance `try`/`catch` turned into a drop — the SAFE
     ///        direction. Masking is right for every other reader in the sweep, and wrong here, which is exactly
-    ///        what {StaticCallLib.safeAddrStrict}'s `isAddr` flag distinguishes: a successful reply that is not
-    ///        an address reports `malformed`, so the caller drops the pair instead of guessing.
+    ///        what {StaticCallLib.safeAddrStrict}'s `malformed` flag reports: a full word that is not an address
+    ///        drops the pair instead of being guessed at.
     /// @return pendingMint The LP that would be minted to `feeTo` on the next mint/burn; 0 when there is no fee.
     /// @return malformed True when the factory answered with something that is not an address, meaning the
     ///         dilution is unknowable and the caller must report nothing rather than assume no fee.
@@ -106,10 +113,11 @@ library UniswapV2PairLib {
         uint256 rootKCoeff,
         uint256 rootKLastCoeff
     ) private view returns (uint256 pendingMint, bool malformed) {
-        (bool feeToOk, address feeTo, bool feeToIsAddr) =
+        (bool feeToOk, address feeTo, bool feeToMalformed) =
             StaticCallLib.safeAddrStrict(factory, abi.encodeCall(IUniswapV2Factory.feeTo, ()));
-        // A SUCCESSFUL reply that is not an address is a malformed factory, not a fee-less fork.
-        if (feeToOk && !feeToIsAddr) return (0, true);
+        // A full word that is not an address means a BROKEN factory. A revert, an empty reply or a code-less
+        // factory means the fork simply has no `feeTo()` — ordinary, and still "no protocol fee" as before.
+        if (feeToMalformed) return (0, true);
         if (!feeToOk || feeTo == address(0)) return (0, false);
 
         (bool kLastOk, uint256 kLast) = _safeCallUint(pair, abi.encodeCall(IUniswapV2Pair.kLast, ()));

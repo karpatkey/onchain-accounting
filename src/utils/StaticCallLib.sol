@@ -70,7 +70,8 @@ library StaticCallLib {
         if (hasWord) result = address(uint160(word));
     }
 
-    /// @notice As {safeAddr}, but REJECTS a word with dirty bits above 160 instead of masking it off.
+    /// @notice As {safeAddr}, but REJECTS a word with dirty bits above 160 instead of masking it off, and tells
+    ///         the caller when that happened.
     /// @dev Both policies are legitimate and the choice is per call site, not per library, which is why both
     ///      exist here rather than one being "the" address reader:
     ///
@@ -81,25 +82,33 @@ library StaticCallLib {
     ///        value that a caller branches on, so silently manufacturing it from garbage changes the answer
     ///        rather than losing it.
     ///
-    ///      Two call sites need the strict form, and both are cases where masking chooses the wrong direction:
-    ///      Euler's `EVC()` read, whose `address(0)` is the "cannot classify" sentinel `_supplyKind` short-circuits
-    ///      on, and Uniswap V2's `feeTo()`, whose `address(0)` means "no protocol fee" and so drops the dilution
-    ///      term and RAISES the reported LP share. Neither can distinguish a real zero from a masked one.
+    ///      Two call sites need the strict form: Euler's `EVC()`, whose `address(0)` is the "cannot classify"
+    ///      sentinel `_supplyKind` short-circuits on, and Uniswap V2's `feeTo()`, whose `address(0)` means "no
+    ///      protocol fee" and so drops the dilution term and RAISES the reported LP share.
+    ///
+    ///      **`malformed` reports "answered, but not with an address" — NOT merely "no address available".**
+    ///      That distinction is the whole point and it is easy to get wrong. A callee that returns NOTHING (a
+    ///      code-less target, an empty reply, a revert) has told you it does not implement the selector, which
+    ///      for an optional view is ordinary and usually means "treat it as absent". A callee that returns a
+    ///      full word which is not a valid address has told you something is broken. Folding both into one
+    ///      "not an address" flag makes callers drop positions over a missing optional getter — so `malformed`
+    ///      is deliberately false for a short or absent reply, and callers distinguish that case via `ok` and a
+    ///      zero `result` exactly as they would with {safeAddr}.
     /// @return ok The raw staticcall success flag (true even when the word was rejected as not an address).
     /// @return result The address; address(0) if the call reverted, returned fewer than 32 bytes, or returned a
     ///         word that is not a valid address.
-    /// @return isAddr True only when a full word came back AND its upper 96 bits are clear. Callers that branch
-    ///         on `address(0)` must gate on THIS, not on `result`, or they reinstate the ambiguity.
+    /// @return malformed True ONLY when a full word came back AND its upper 96 bits are dirty. False for a
+    ///         revert, a short reply, or a code-less target — those are "absent", not "broken".
     function safeAddrStrict(address target, bytes memory data)
         internal
         view
-        returns (bool ok, address result, bool isAddr)
+        returns (bool ok, address result, bool malformed)
     {
         bool hasWord;
         uint256 word;
         (ok, hasWord, word) = probeWord(target, data);
-        isAddr = hasWord && word >> 160 == 0;
-        if (isAddr) result = address(uint160(word));
+        malformed = hasWord && word >> 160 != 0;
+        if (hasWord && !malformed) result = address(uint160(word));
     }
 
     /// @notice Performs the bounded staticcall and hands back the first returned word, undecoded.

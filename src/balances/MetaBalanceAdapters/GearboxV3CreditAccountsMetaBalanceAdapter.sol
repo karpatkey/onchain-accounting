@@ -4,7 +4,7 @@ pragma solidity ^0.8;
 import {MetaBalanceAdapter} from "../MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IERC20MetaView, LabelLib} from "src/balances/LabelLib.sol";
+import {LabelLib} from "src/balances/LabelLib.sol";
 import {StaticCallLib} from "src/utils/StaticCallLib.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";

@@ -260,6 +260,31 @@ An unknown `protocolId` reverts (`UnknownProtocolId`) rather than returning `""`
 
 `test/ProtocolNameConsistency.t.sol` covers what remains assertable: every hardcoded adapter matches its constant (including the single-member protocols no group comparison reaches), every protocol id the meta family declares has a name, an unknown id reverts, and distinct protocols do not collide on one name.
 
+#### Describing an adapter with no account — `IPositionEnumerable`
+
+`positionLabels` needs a `positionId`, and a **configuration view** (a registry page listing what the NAVCalculator is set up to account for) has no account and therefore no positionId to pass. There are exactly three answers an adapter can give, and every adapter falls into one of them:
+
+| Adapter shape | What `positionLabels("")` returns | Does it implement `IPositionEnumerable`? |
+|---|---|---|
+| **Single-shape** — the breadcrumb does not depend on `positionId` (`ERC20Default`, `LidoWithdrawalQueue`, `EtherFiWithdrawalQueueAssisted`, …) | the full constant breadcrumb — that *is* the answer | No. Nothing to enumerate; the probe already answered. |
+| **Enumerable** — a bounded shape set derivable on-chain: pinned at construction (`Cap`: cUSD / stcUSD) or governed (every meta-adapter's instance set) | `[]`, because the breadcrumb is per-position | **Yes.** `positionIds()` lists the shapes; pair each with `positionLabels(id)`. |
+| **Per-account** — shapes are discovered from coordinates the position owner feeds in (`NexusMutualStakingPoolsAssisted`) | `[]` | No — there is no account-independent answer to give. |
+
+```solidity
+interface IPositionEnumerable {
+    function positionIds() external view returns (bytes[] memory);
+}
+```
+
+Optional, advertised via ERC-165, read through a fail-open staticcall, and **never called on the NAV path** — the same contract `IPositionDescribable` has. The ERC-165 bit is what makes the middle row distinguishable from the bottom one: both answer the probe with `[]`, and before this interface existed nothing on-chain told them apart, so a per-position adapter was indistinguishable from a broken one.
+
+**The one binding guarantee: each returned id MUST be byte-identical to the `PositionBalance.positionId` the adapter emits for that shape**, so a configuration view can be *joined* against real positions. An id that merely *labels* correctly while differing from the emitted bytes silently breaks that join — which is exactly the trap Aave V3 sat in (its instance coordinate is a ProtocolDataProvider, but it emits the resolved Pool; both label identically, so only a byte comparison catches it). Two consequences worth internalising:
+
+- **Join on the bytes, never on the index.** `positionIds()` is not index-aligned with `getAdapterPositions`, which omits shapes the account has no position in (and, for meta-adapters, may emit several legs sharing one id). Ordering is explicitly unspecified.
+- **A listed shape is capability, not coverage.** It says the adapter *can* report that shape — not that the account holds anything, nor that the relevant assets are registered for pricing.
+
+For meta-adapters this is implemented **once, on `MetaBalanceAdapter`**: the shape set of a meta-adapter *is* its governed instance set, so `positionIds()` reads `NAV_CALCULATOR.getMetaInstances(address(this))` and maps each coordinate through `_instancePositionId`. That makes `_instancePositionId` load-bearing rather than a convenience — a concrete adapter that computes its positionId inline while leaving the hook on its default would advertise ids no position carries, with every test still green. `AaveV3InstancesMetaBalanceAdapter` overrides it for exactly that reason.
+
 > **Adding a protocol.** Add a constant to `ProtocolNames` and a branch to `forProtocolId`. That is the whole change — there is no per-chain config value and no deploy-script wiring for the display name. The `protocol` key that used to live in `contracts-deployment-config/**` has been removed.
 >
 > **It did NOT feed nothing.** Until this change, `04_DeployBalanceAdapters.s.sol` read that key and passed it as every meta adapter's `protocolName_` constructor argument. Removing it is therefore *not* a config-only cleanup: the constructor signature changed, so all deployed meta adapters must be redeployed and re-registered (`addMetaBalanceAdapter` + `addMetaInstances`) before they report derived names. Until that happens the live adapters keep returning their old stored `_protocolName`, Umbrella included. Do not read the key's removal as "no on-chain consequence".

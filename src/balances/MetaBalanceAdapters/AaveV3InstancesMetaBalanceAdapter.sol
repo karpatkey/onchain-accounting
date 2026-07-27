@@ -89,7 +89,8 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
         address pool = _poolOf(dp);
         // positionId is the instance Pool — one position per instance. The reserve is NOT in positionId; each
         // reserve's legs are distinguished by balanceAsset + positionKind (multi-leg convention).
-        bytes memory pid = abi.encode(pool);
+        // Routed through the hook (not re-derived inline) so `positionIds()` advertises these exact bytes.
+        bytes memory pid = _instancePositionId(instance);
 
         // A borrow this adapter cannot report must never leave the account's supplies standing alone: the
         // position would count as pure credit and NAV be over-reported by the whole borrow. Checked across ALL
@@ -327,5 +328,22 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
 
     function _poolOf(IProtocolDataProvider dp) internal view returns (address) {
         return IAavePoolAddressesProvider(IAaveAddressesProviderSource(address(dp)).ADDRESSES_PROVIDER()).getPool();
+    }
+
+    /// @inheritdoc MetaBalanceAdapter
+    /// @dev **Aave V3 is the one meta-adapter whose positionId is not its instance coordinate.** The coordinate is
+    ///      a `ProtocolDataProvider`; the emitted positionId is the `Pool` resolved from it via
+    ///      `ADDRESSES_PROVIDER().getPool()`. The base default would return `abi.encode(dataProvider)`, so
+    ///      `positionIds()` would advertise ids that no `PositionBalance` ever carries.
+    ///
+    ///      **The defect this prevents is a broken reconciliation, not a wrong label.** Measured against the
+    ///      deployed adapter on mainnet, `positionLabels(dataProvider)` and `positionLabels(pool)` BOTH return
+    ///      `["Market", "Aave Ethereum Market"]` — `_marketId` reads `ADDRESSES_PROVIDER()`, which a
+    ///      ProtocolDataProvider also exposes and which points at the same provider, so the label happens to come
+    ///      out right either way. What breaks is identity: a configuration view could not JOIN its enumerated
+    ///      rows against real `PositionBalance.positionId` values, and would do so silently, because the labels
+    ///      would look correct on both sides.
+    function _instancePositionId(bytes32 instance) internal view override returns (bytes memory) {
+        return abi.encode(_poolOf(IProtocolDataProvider(_toAddress(instance))));
     }
 }

@@ -1617,6 +1617,45 @@ asset lives in `balanceAsset.asset`. No adapter emits an empty `positionId`.
 
 ---
 
+## Enumerating shapes without an account — `IPositionEnumerable`
+
+Everything above assumes you are reading an **account's** positions. A **configuration view** — a registry
+page listing what the NAVCalculator is set up to account for — has no account, so no `positionId` to pass to
+`positionLabels`. Adapters answer that in one of exactly three ways:
+
+| Adapter shape | `positionLabels("")` | `IPositionEnumerable` |
+|---|---|---|
+| **Single-shape** (breadcrumb independent of `positionId`) | the full constant breadcrumb | not implemented — the probe already answered |
+| **Enumerable** (bounded shape set: pinned at construction, or a governed instance set) | `[]` | **implemented** — `positionIds()` lists the shapes |
+| **Per-account** (shapes fed in by the position owner) | `[]` | not implemented — no account-independent answer exists |
+
+```solidity
+interface IPositionEnumerable {
+    function positionIds() external view returns (bytes[] memory);
+}
+```
+
+The ERC-165 bit is what separates rows 2 and 3, which give the same `[]`. Do **not** try to infer the shape
+from the `IAssistedBalanceAdapter` marker: it means "coordinates are fed externally", and two of the three
+assisted adapters answer the empty probe with a *constant* breadcrumb.
+
+**The binding guarantee — and the reason this section lives in the identity doc:** each returned id is
+byte-identical to the `PositionBalance.positionId` the adapter emits for that shape. That is what lets a
+configuration view be **joined** to real positions, and it makes the enumeration reconcilable using the same
+`positionId` column described above. Two rules follow:
+
+- **Join on the bytes, never the index.** `positionIds()` is not index-aligned with `getAdapterPositions`,
+  which omits shapes the account has no position in; ordering is unspecified.
+- **A listed shape is capability, not coverage** — not a holding, and not proof the assets are registered
+  for pricing.
+
+Meta-adapters get this from `MetaBalanceAdapter` for free: their shape set *is* the governed instance set, so
+`positionIds()` enumerates `getMetaInstances(adapter)` through `_instancePositionId`. Which is why that hook
+must return exactly what the adapter emits — `AaveV3InstancesMetaBalanceAdapter` overrides it because its
+coordinate is a ProtocolDataProvider while its positionId is the resolved Pool.
+
+---
+
 ## Adding a new adapter
 
 When implementing a new balance adapter:

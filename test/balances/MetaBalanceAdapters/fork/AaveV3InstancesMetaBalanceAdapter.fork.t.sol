@@ -152,6 +152,54 @@ contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         }
     }
 
+    /// @notice `positionIds()` advertises the resolved **Pool**, not the ProtocolDataProvider coordinate, and those
+    ///         bytes are exactly what the adapter emits as `PositionBalance.positionId`.
+    /// @dev Aave V3 is the one meta-adapter whose positionId is not its instance coordinate, so it is the one that
+    ///      needs the `_instancePositionId` override. Without it the base default would advertise
+    ///      `abi.encode(dataProvider)` and a configuration view could not JOIN its rows against real positions.
+    ///
+    ///      **This failure would be invisible to a label-based check**, which is why it is asserted on bytes: on
+    ///      this very fork `positionLabels(dataProvider)` and `positionLabels(pool)` BOTH return
+    ///      `["Market", <marketId>]`, because `_marketId` reads `ADDRESSES_PROVIDER()` and a ProtocolDataProvider
+    ///      exposes that too, pointing at the same provider. The label is right by coincidence; only the identity
+    ///      is wrong. Asserted here against the live mainnet Core instance.
+    function test_positionIds_advertiseThePoolNotTheDataProvider() public view {
+        address ap = IAaveAddressesProviderSource(CORE_DATA_PROVIDER).ADDRESSES_PROVIDER();
+        address pool = IAavePoolAddressesProvider(ap).getPool();
+        assertTrue(pool != CORE_DATA_PROVIDER, "pool and data provider must differ for this test to mean anything");
+
+        bytes[] memory ids = adapter.positionIds();
+        assertEq(ids.length, 1, "one configured instance");
+        assertEq(ids[0], abi.encode(pool), "advertised id is the resolved Pool");
+        assertTrue(
+            keccak256(ids[0]) != keccak256(abi.encode(CORE_DATA_PROVIDER)),
+            "advertised id must NOT be the DataProvider coordinate"
+        );
+
+        // Both label identically — the coincidence that makes a label-based check useless here.
+        string[] memory viaPool = adapter.positionLabels(abi.encode(pool));
+        string[] memory viaDp = adapter.positionLabels(abi.encode(CORE_DATA_PROVIDER));
+        assertEq(viaPool.length, viaDp.length);
+        assertEq(viaPool[1], viaDp[1], "the wrong id labels the same as the right one");
+    }
+
+    /// @notice The join guarantee against a REAL holder: every emitted positionId is an advertised shape.
+    /// @dev This is the property a configuration view depends on, and the reason the override above exists.
+    function test_positionIds_matchTheEmittedPositionIdsOnMainnet() public view {
+        INAVCalculator.PositionBalance[] memory positions =
+            adapter.getAdapterPositionsForInstances(USER, _ids(), address(0));
+        assertGt(positions.length, 0, "the pinned holder must have Aave positions at this block");
+
+        bytes[] memory ids = adapter.positionIds();
+        for (uint256 i; i < positions.length; ++i) {
+            bool matched;
+            for (uint256 j; j < ids.length; ++j) {
+                if (keccak256(ids[j]) == keccak256(positions[i].positionId)) matched = true;
+            }
+            assertTrue(matched, "every emitted positionId must be an advertised shape");
+        }
+    }
+
     /// @notice The hardened market-id reader decodes a REAL, proxied Aave provider byte-for-byte the same as a plain
     ///         high-level call does.
     /// @dev The unit tests prove the malformed shapes degrade; this proves the rewrite did not break the canonical

@@ -5,6 +5,7 @@ import {IBalanceAdapter} from "./IBalanceAdapter.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {IMetaBalanceAdapter} from "./IMetaBalanceAdapter.sol";
 import {IPositionDescribable} from "./IPositionDescribable.sol";
+import {IPositionEnumerable} from "./IPositionEnumerable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {LabelLib} from "./LabelLib.sol";
@@ -23,7 +24,7 @@ import {InvalidArgumentsWithContext} from "src/errors.sol";
 /// @dev The instance set lives on NAVCalculator (ADR 0010). The adapter reads its own set via
 ///      `NAV_CALCULATOR.getMetaInstances(address(this))` and holds no instance state or admin functions of its
 ///      own — it stays immutable. `getAdapterPositionsForInstances` is also exposed for explicit/off-chain queries.
-abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribable {
+abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribable, IPositionEnumerable {
     //
     // State
     //
@@ -48,9 +49,47 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     //
 
     /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) external pure virtual override returns (bool) {
+    /// @dev `public` rather than `external` so an adapter advertising a further interface can override and
+    ///      `super`-chain — Solidity cannot reach an `external` function through `super`, which would force the
+    ///      override to re-declare this whole list and silently drift from it. Matches the same fix on
+    ///      {BalanceAdapterBase} and the {AssistedCoordCache} precedent. {IPositionEnumerable} is in the list
+    ///      because this base implements it for every meta-adapter (see `positionIds`).
+    function supportsInterface(bytes4 interfaceId) public pure virtual override returns (bool) {
         return interfaceId == type(IMetaBalanceAdapter).interfaceId || interfaceId == type(IBalanceAdapter).interfaceId
-            || interfaceId == type(IPositionDescribable).interfaceId || interfaceId == type(IERC165).interfaceId;
+            || interfaceId == type(IPositionDescribable).interfaceId
+            || interfaceId == type(IPositionEnumerable).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
+
+    //
+    // IPositionEnumerable
+    //
+
+    /// @inheritdoc IPositionEnumerable
+    /// @dev Implemented once here for the whole meta family: the shape set of a meta-adapter *is* its governed
+    ///      instance set, which lives on the NAVCalculator (ADR 0010), so this reads
+    ///      `getMetaInstances(address(this))` and maps each coordinate through {_instancePositionId}.
+    ///      Adding or removing an instance is a MANAGER config TX, so this tracks configuration with no adapter
+    ///      state and no admin surface — the adapter stays immutable.
+    ///
+    ///      **This is what makes {_instancePositionId} load-bearing.** {IPositionEnumerable} requires each
+    ///      returned id to be byte-identical to the `PositionBalance.positionId` the adapter actually emits, so
+    ///      every concrete adapter MUST ensure this hook agrees with what its `_instancePositions` passes to
+    ///      {_leg}. An adapter that derives its positionId from something other than the raw coordinate — Aave
+    ///      V3, whose coordinate is a ProtocolDataProvider but whose positionId is the Pool resolved from it —
+    ///      must override the hook. See the hook's own docs.
+    ///
+    ///      Returns the ids in `getMetaInstances` order, but no ordering is promised and consumers must not rely
+    ///      on it: this is not index-aligned with `getAdapterPositions`, which omits instances an account has no
+    ///      position in and may emit several legs sharing one id. Join on the bytes.
+    ///
+    ///      A listed shape means the instance is configured, NOT that the account holds anything in it, nor that
+    ///      the instance's assets are registered for pricing.
+    function positionIds() external view virtual override returns (bytes[] memory ids) {
+        bytes32[] memory instances = NAV_CALCULATOR.getMetaInstances(address(this));
+        ids = new bytes[](instances.length);
+        for (uint256 i; i < instances.length; ++i) {
+            ids[i] = _instancePositionId(instances[i]);
+        }
     }
 
     //
@@ -301,10 +340,18 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     /// @notice Returns the positionId bytes for a given instance coordinate.
     /// @dev Default: encodes the instance as an address (address-keyed protocols).
     ///      Override when the coordinate is a raw bytes32 (e.g. Morpho market IDs, Balancer V2 poolIds).
-    ///      Adapters whose positionId is not the default-encoded instance coordinate do NOT use this hook —
-    ///      they compute positionId inline in _instancePositions, e.g. Aave V3: abi.encode(pool) — the instance Pool
-    ///      resolved from the DataProvider coordinate (one positionId per instance; reserves are distinguished by
-    ///      balanceAsset + positionKind).
+    ///
+    ///      **This hook must agree with what the adapter emits — it is not merely a convenience.** {positionIds}
+    ///      maps the governed instance set through it to satisfy {IPositionEnumerable}'s byte-identity
+    ///      guarantee, so `_instancePositionId(instance)` MUST equal the `positionId` that `_instancePositions`
+    ///      passes to {_leg} for that instance. Computing the positionId inline while leaving this hook on its
+    ///      default is a silent break: the enumeration would advertise ids no position ever carries and the
+    ///      configuration-view join would return nothing, with every test still green.
+    ///
+    ///      An adapter whose positionId is derived from the coordinate rather than being it — Aave V3, whose
+    ///      coordinate is a ProtocolDataProvider but whose positionId is the Pool resolved from it — therefore
+    ///      overrides this hook and calls it from `_instancePositions` instead of re-deriving inline. (One
+    ///      positionId per instance; reserves are distinguished by balanceAsset + positionKind.)
     function _instancePositionId(bytes32 instance) internal view virtual returns (bytes memory) {
         return abi.encode(_toAddress(instance));
     }

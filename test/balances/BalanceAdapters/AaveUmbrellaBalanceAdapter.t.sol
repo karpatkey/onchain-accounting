@@ -96,6 +96,24 @@ contract AaveUmbrellaBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(oracle.getAdapterPositions(address(0), address(0)).length, 0);
     }
 
+    // ─── IPositionDescribable ─────────────────────────────────────────────────
+
+    /// @dev Configuration-view probe. A registry consumer describing what the calculator is configured for has no
+    ///      positionId to pass, so it can only call `positionLabels("")`. This adapter's breadcrumb is
+    ///      positionId-INDEPENDENT, so the probe answers with the constant `["Umbrella Module"]`.
+    ///
+    ///      positionId-independent is NOT the same as single-shape: the adapter emits
+    ///      `positionId = abi.encode(stakeToken)` per Umbrella stake token, so several distinct positionIds share
+    ///      this one breadcrumb. Adding a stake-token leaf would be an improvement, not a defect — what this test
+    ///      pins is only that the probe never silently collapses to `[]`; per the `_labels` empty-leaf convention
+    ///      it must keep returning at least the `"Umbrella Module"` category. A deliberate leaf change should
+    ///      relax this assertion, not delete it.
+    function test_positionLabels_emptyProbe_returnsTheConstantShape() public view {
+        string[] memory labels = oracle.positionLabels("");
+        assertEq(labels.length, 1);
+        assertEq(labels[0], "Umbrella Module");
+    }
+
     // ─── ERC165 ───────────────────────────────────────────────────────────────
 
     function test_supportsInterface() public view {

@@ -272,4 +272,21 @@ contract SparkLendBalanceAdapterTest is BalanceAdapterTestBase {
         dp2.setUserReserve(address(unregistered), alice, 0, 0, 0, false);
         assertEq(a2.getAdapterPositions(alice, address(0)).length, 1, "stale bit with zero debt must not suppress");
     }
+
+    // ============================================
+    // IPositionDescribable
+    // ============================================
+
+    /// @dev Configuration-view probe: a consumer describing configuration has no positionId, so it can only call
+    ///      `positionLabels("")`. This adapter's breadcrumb is positionId-independent and it emits a single
+    ///      positionId (`abi.encode(POOL)`; reserves are told apart by balanceAsset + positionKind), so the probe
+    ///      answers with the full constant breadcrumb. What this pins is that the probe never silently collapses
+    ///      to `[]` — a positionId-derived leaf added later must still return at least the `"Market"` category
+    ///      per the `_labels` empty-leaf convention, and this assertion should then be relaxed, not deleted.
+    function test_positionLabels_emptyProbe_returnsTheConstantShape() public view {
+        string[] memory labels = adapter.positionLabels("");
+        assertEq(labels.length, 2);
+        assertEq(labels[0], "Market");
+        assertEq(labels[1], "SparkLend");
+    }
 }

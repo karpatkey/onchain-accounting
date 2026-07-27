@@ -368,4 +368,20 @@ contract LidoWithdrawalQueueBalanceAdapterTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory positions = freshAdapter.getAdapterPositions(alice, address(0));
         assertEq(positions.length, 0, "Unregistered underlying should not produce positions");
     }
+
+    // ---- IPositionDescribable ----
+
+    /// @dev Configuration-view probe: a consumer describing configuration has no positionId, so it can only call
+    ///      `positionLabels("")`. This adapter's breadcrumb is positionId-independent and it emits a single
+    ///      positionId (the per-request id rides in `positionInstanceId`, not the label), so the probe answers with
+    ///      the full constant breadcrumb. What this pins is that the probe never silently collapses to `[]` — the
+    ///      failure mode is swapping the hardcoded "stETH" leaf for one decoded from `positionId` WITHOUT keeping
+    ///      the `_labels` empty-leaf collapse, which returns [] and drops the adapter off the view. A leaf change
+    ///      that preserves the `"Withdrawal Queue"` category is fine and should relax this assertion deliberately.
+    function test_positionLabels_emptyProbe_returnsTheConstantShape() public view {
+        string[] memory labels = adapter.positionLabels("");
+        assertEq(labels.length, 2);
+        assertEq(labels[0], "Withdrawal Queue");
+        assertEq(labels[1], "stETH");
+    }
 }

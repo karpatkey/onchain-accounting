@@ -47,6 +47,20 @@ error AssetHasActiveInvoices(string symbol);
 error AssetNotRegistered(string symbol);
 
 // NAV Calculator / registry errors
+/// @notice A balance adapter consumed the gas stipend the NAV read forwarded to it without answering.
+/// @dev Deliberately NOT folded into the read's fail-open path. A revert means "this adapter has nothing to
+///      report"; running out of gas means "this adapter's answer is unknown", and reporting an unknown answer as
+///      an empty one drops the adapter's legs — a dropped debt leg RAISES the reported NAV.
+///
+///      `adapter` names the adapter that was running, which is not always the adapter at fault: the stipend is a
+///      share of what the READ still holds, so an under-funded call starves whichever adapter happens to be
+///      reached last. `stipend` and `consumed` are what separate the two cases. A large `stipend` fully consumed
+///      means that adapter is genuinely runaway; a small `stipend` means the read itself was short of gas and the
+///      fix is to supply more.
+/// @param adapter The adapter that was executing when its gas ran out.
+/// @param stipend Gas forwarded to it — 63/64 of what the read held at that point.
+/// @param consumed Gas the call actually cost, including this frame's call overhead.
+error AdapterGasExhausted(address adapter, uint256 stipend, uint256 consumed);
 error PriceFeedNotSet(address asset);
 error AssetNotFound();
 error OnlyNAVCalculator();

@@ -176,7 +176,7 @@ contract MockHostileEVC {
 ///         a raw staticcall assigning `(bool, bytes memory)` always `returndatacopy`s the response, so the caller
 ///         pays quadratic memory-expansion cost on whatever the callee can afford to emit. A success-path
 ///         `return(0, N)` costs the callee only its own memory expansion, so it maximises what actually reaches
-///         the caller — unlike a revert bomb, which OOGs first. Bounded solely by {EVC_PROBE_GAS}.
+///         the caller — unlike a revert bomb, which OOGs first. Bounded solely by {PROBE_GAS}.
 contract MockReturndataBombEVC {
     uint256 private immutable PAD;
 
@@ -648,7 +648,7 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
     ///      Note this mock OOGs on its 3MB memory expansion before the `revert` executes, so the caller copies
     ///      nothing — returndata-copy bounding is covered separately by
     ///      test_supplyKind_returndataBomb_boundedAndFailsOpen. The assertion is pinned just above the measured
-    ///      cost so a regression in {EVC_PROBE_GAS} actually trips it.
+    ///      cost so a regression in {PROBE_GAS} actually trips it.
     function test_supplyKind_hostileEvcGasBomb_boundedAndFailsOpen() public {
         MockCoreEVault core = new MockCoreEVault("EVK Vault eUSDC-2", address(usdc), 1e18);
         core.setEVC(address(new MockHostileEVC()));
@@ -666,7 +666,7 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
         assertLt(used, 300_000, "gas-burn cost bounded by the probe stipend");
     }
 
-    /// @dev The returndata-copy hazard the {EVC_PROBE_GAS} docstring is actually about. A raw staticcall assigning
+    /// @dev The returndata-copy hazard the {PROBE_GAS} docstring is actually about. A raw staticcall assigning
     ///      `(bool, bytes memory)` always `returndatacopy`s the response, so an EVC that SUCCEEDS while emitting a
     ///      huge payload makes the CALLER pay quadratic memory-expansion cost. A success-path `return(0, N)` is the
     ///      maximising shape — a revert bomb OOGs on its own expansion first and delivers nothing.
@@ -717,7 +717,7 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
     /// @dev The true worst case: BOTH probes bomb in a single read. A 256 KB payload whose first word is a clean
     ///      address is a *valid* address encoding with trailing junk, so it correctly passes `_safeEvc` (extra
     ///      returndata is legal ABI) and the second probe then fires against an EVC that bombs as well. Total cost
-    ///      must still be bounded — this is the number {EVC_PROBE_GAS} ultimately has to hold down.
+    ///      must still be bounded — this is the number {PROBE_GAS} ultimately has to hold down.
     function test_bothProbesBomb_worstCase_stillBounded() public {
         address bombEvc = address(new MockReturndataBombEVC(256_000));
         MockBombEvcVault v = new MockBombEvcVault(address(usdc), 256_000, bombEvc);
@@ -735,7 +735,7 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
         assertEq(pos[1].amount, 400_000, "debt leg not suppressed");
         assertTrue(pos[0].positionKind == PositionKind.Supplied);
         // Measured 958,612 here; an independent audit measured 926,673 for the same shape. Pinned just above so a
-        // regression in EVC_PROBE_GAS trips it. Per-instance: the base fan-out gives each instance a fresh memory
+        // regression in PROBE_GAS trips it. Per-instance: the base fan-out gives each instance a fresh memory
         // frame via `try this.instancePositions(...)`, so this cost scales linearly, not quadratically.
         assertLt(used, 1_000_000, "both probes bombed, still bounded");
     }

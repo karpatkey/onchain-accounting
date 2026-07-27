@@ -58,7 +58,8 @@ interface IEVC {
 ///      factory off-chain to *propose* instances; governance approves each into the allowlist. See
 ///      BALANCE_ADAPTERS.md §6.1.
 contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
-    /// @dev Gas stipend for each of the two EVC probe reads in {_supplyKind}. A raw staticcall assigning
+    /// @dev Gas stipend for each of the three fail-open probe reads: `debtOf` ({_safeDebt}), `EVC()`
+    ///      ({_safeEvc}) and `getCollaterals` ({_isEnabledCollateral}). A raw staticcall assigning
     ///      `(bool, bytes memory)` always `returndatacopy`s the response — including a revert payload, which a
     ///      parameterless `catch {}` does not — so an *uncapped* version of these reads would be strictly worse
     ///      against a hostile address than the `try`/`catch` they replace: a `revert(0, 3_000_000)` costs ~35M gas
@@ -70,7 +71,7 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     ///      honest reads: an EVC that ever exceeded it would silently classify every collateral-enabled supply as
     ///      `Supplied`. That is the safe direction, and the fork test pins the live cost, but it is the reason this
     ///      is generous rather than tight.
-    uint256 private constant EVC_PROBE_GAS = 150_000;
+    uint256 private constant PROBE_GAS = 150_000;
 
     /// @dev Upper bound on the collateral-list length {_supplyKind} will scan. The EVC caps an account's collateral
     ///      set at 10 elements (`SET_MAX_ELEMENTS`); this sits above that so a protocol-side bump does not silently
@@ -169,7 +170,7 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     ///      validated before decoding instead of trusting the declared return type (mode 1). The explicit
     ///      `code.length` guards in the helpers below are therefore a cheap short-circuit that skips a pointless
     ///      call, NOT the thing that makes mode 2 safe; the helpers behave identically without them. Both reads are
-    ///      additionally bounded by {EVC_PROBE_GAS}.
+    ///      additionally bounded by {PROBE_GAS}.
     ///
     ///      `vaultAddr` is MANAGER-governed and its guard is defensive only — `_instancePositions` already reverts
     ///      on a code-less vault at `asset()`, long before this is reached. The live exposure is `evc`, which is
@@ -210,7 +211,7 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     function _safeDebt(address vaultAddr, address account) private view returns (uint256) {
         if (vaultAddr.code.length == 0) return 0;
         (bool ok, bytes memory data) =
-            vaultAddr.staticcall{gas: EVC_PROBE_GAS}(abi.encodeCall(IEulerEVault.debtOf, (account)));
+            vaultAddr.staticcall{gas: PROBE_GAS}(abi.encodeCall(IEulerEVault.debtOf, (account)));
         if (!ok || data.length < 32) return 0;
 
         uint256 word;
@@ -225,7 +226,7 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     ///      returndata, or a word with dirty high bits (a `bytes32`-shaped return, not an address).
     function _safeEvc(address vaultAddr) private view returns (address) {
         if (vaultAddr.code.length == 0) return address(0);
-        (bool ok, bytes memory data) = vaultAddr.staticcall{gas: EVC_PROBE_GAS}(abi.encodeCall(IEulerEVault.EVC, ()));
+        (bool ok, bytes memory data) = vaultAddr.staticcall{gas: PROBE_GAS}(abi.encodeCall(IEulerEVault.EVC, ()));
         if (!ok || data.length < 32) return address(0);
 
         uint256 word;
@@ -245,8 +246,7 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     ///      with the fail-open contract.
     function _isEnabledCollateral(address evc, address account, address vaultAddr) private view returns (bool) {
         if (evc.code.length == 0) return false;
-        (bool ok, bytes memory data) =
-            evc.staticcall{gas: EVC_PROBE_GAS}(abi.encodeCall(IEVC.getCollaterals, (account)));
+        (bool ok, bytes memory data) = evc.staticcall{gas: PROBE_GAS}(abi.encodeCall(IEVC.getCollaterals, (account)));
         if (!ok || data.length < 64) return false;
 
         uint256 offset;

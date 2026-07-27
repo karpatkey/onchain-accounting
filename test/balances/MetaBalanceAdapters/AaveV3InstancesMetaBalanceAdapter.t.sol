@@ -530,12 +530,10 @@ contract AaveV3InstancesMetaLabelReadTest is BalanceAdapterTestBase {
         _assertCollapsed(address(poolReplier), "an absurd declared length must not revert the label");
     }
 
-    /// @dev The bound is `len <= size - 64` on the RAW declared length, not on `ceil32(len)`. Pin that: a reply
+    /// @dev The bound is `len <= copied - 64` on the RAW declared length, not on `ceil32(len)`. Pin that: a reply
     ///      whose payload is in-bounds but NOT padded to a 32-byte boundary must still decode. Verified on solc
     ///      0.8.34 that a memory-source `abi.decode` bounds on the raw length; if a future compiler tightened it to
-    ///      the padded bound, `_safeStringRead` would start reverting on unpadded replies and this test would catch
-    ///      it. (`NAVCalculator._safeString` carries a comment asserting the opposite and uses a ceil32 bound — it
-    ///      is merely stricter, not safer, and is outside this PR.)
+    ///      the padded bound, {LabelLib} would start rejecting unpadded replies and this test would catch it.
     function test_labels_unpaddedPayload_stillDecodes() public {
         // offset 0x20, len 5, exactly 5 bytes of payload => returndatasize 69, not a multiple of 32.
         providerReplier.stageReturn(RawReplyLib.declaredLength(5, "short"));
@@ -629,7 +627,7 @@ contract AaveV3InstancesMetaLabelReadTest is BalanceAdapterTestBase {
     }
 
     /// @dev The FIRST hop, gas-burning. Deliberately named for hop 1 only: a pool that burns its stipend fails, so
-    ///      `ap` is `address(0)` and `_safeStringRead` is never reached. "Both hops burn" is not constructible —
+    ///      `ap` is `address(0)` and the second hop is never reached. "Both hops burn" is not constructible —
     ///      a hop that consumes its whole stipend is by definition a hop that failed, which short-circuits the next
     ///      one. The per-hop bound is what is testable, and it is what {test_labels_gasBurningProvider_isGasBounded}
     ///      covers for hop 2.

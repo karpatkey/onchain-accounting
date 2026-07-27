@@ -243,6 +243,24 @@ interface IPositionDescribable {
 
 Meta-adapters derive the label hierarchy on-chain from live state (ERC20 symbols, vault names, pool composition), returning `_labels("Category", leaf)` (the shared helper that applies the fail-open empty-leaf convention). Per-instance adapters return a fixed array.
 
+##### Decoding `positionId`: never `abi.decode(pid, (address))`
+
+`positionLabels` is display-only and reachable from a **configuration view** that probes with whatever word it has, so the decode carries two obligations. The obvious spelling — `if (pid.length < 32) return new string[](0); address a = abi.decode(pid, (address));` — meets neither:
+
+1. **It must never revert.** Solidity's ABI decoder validates an `address`, so a 32-byte word whose upper 96 bits are dirty reverts rather than degrading. A `bytes32` marketId or poolId copied from a sibling adapter is the ordinary source of one.
+2. **It must never over-claim.** `abi.decode` silently ignores trailing bytes, so a `< 32` guard lets a foreign **multi-word** coordinate through and labels it from its first word — a confident, wrong breadcrumb for a position the adapter never emitted.
+
+Meta-adapters therefore go through the shared decoders on `MetaBalanceAdapter`, which accept **exactly one word** and reject everything else without reverting:
+
+```solidity
+(address instance, bool ok) = _pidAddress(pid);   // address-keyed coordinates
+if (!ok) return new string[](0);
+
+(bytes32 word, bool ok) = _pidWord(pid);          // raw-bytes32 coordinates (Morpho marketIds, Balancer V2 poolIds)
+```
+
+`_addressLabels` already applies `_pidAddress`, so adapters using it get this for free. A dirty word is **rejected, not masked** to its low 160 bits: those bits can name a real instance by coincidence, and a wrong label is worse than an absent one. Plain and assisted adapters do the same thing inline (`positionId.length != 32`, then a raw-word decode plus a `raw >> 160` range check) — see `CapBalanceAdapter`, `ERC20DefaultBalanceAdapter` and `NexusMutualStakingPoolsAssistedBalanceAdapter`.
+
 #### `protocolName()` names the protocol, never the product
 
 Every adapter sharing a `ProtocolIds` **protocolId** must return the **same** `protocolName()`. Aave V3's lending instances, Safety Module and Umbrella are all `"Aave V3"`; Morpho's vaults and markets are both `"Morpho"`; Balancer's pools and gauges are both `"Balancer V3"`. The *product* is what `positionLabels()` carries (`["Umbrella Module"]`, `["Safety Module"]`, `["Market", "wstETH/USDC"]`), backed by the typed `protocolSubId`.
@@ -418,6 +436,7 @@ Protocol adapters typically take **NAVCalculator** in the constructor to read th
 8. Implement **`IPositionDescribable.protocolName()`** and **`positionLabels(bytes positionId)`**, which derives the display hierarchy lazily from `positionId` (it runs only in the verbose reads, not on the NAV hot path):
    - Per-instance adapters return a fixed array (e.g. `["Safety Module"]`).
    - Meta-adapters derive labels on-chain (read token symbols, vault/pool names) and return `_labels("Category", leaf)`.
+   - Decode `positionId` with `_pidAddress` / `_pidWord` (meta) or the equivalent `length != 32` + `raw >> 160` check (plain/assisted) — **never** `abi.decode(pid, (address))`, which reverts on a dirty word and labels an over-long one from its first word. See §6.2.
 
 ### 8.2 PositionKind assignment
 

@@ -99,8 +99,9 @@ contract CurvePoolsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @inheritdoc MetaBalanceAdapter
     /// @dev Returns `["AMM Liquidity Pool", "TOKEN0/TOKEN1/…"]`; leaf derived on-chain from coin symbols ("" on failure).
     function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
-        if (pid.length < 32) return new string[](0);
-        string memory leaf = _leaf(pid);
+        (address pool, bool ok) = _pidAddress(pid);
+        if (!ok) return new string[](0);
+        string memory leaf = _leaf(pool);
         return _labels("AMM Liquidity Pool", leaf);
     }
 
@@ -120,8 +121,7 @@ contract CurvePoolsMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @notice Derives the "TOKEN0/TOKEN1/…" leaf from the pool coins ("" on failure).
-    function _leaf(bytes calldata pid) private view returns (string memory) {
-        address pool = abi.decode(pid, (address));
+    function _leaf(address pool) private view returns (string memory) {
         address[] memory coins = CurvePoolLib.getCoins(pool);
         if (coins.length == 0) return "";
         return CurvePoolLib.coinSymbols(coins);

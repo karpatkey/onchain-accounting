@@ -79,8 +79,8 @@ contract BalancerV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     ///      code) contributes "?". A revert in the pool-token read (a bad/non-pool instance) is caught by the
     ///      external self-call and fails open to the category-only label.
     function positionLabels(bytes calldata positionId) external view virtual override returns (string[] memory) {
-        if (positionId.length < 32) return new string[](0);
-        address pool = abi.decode(positionId, (address));
+        (address pool, bool ok) = _pidAddress(positionId);
+        if (!ok) return new string[](0);
         // External self-call so a revert in the pool-token read (bad/non-pool instance) fails open to the
         // category-only label — a faulty label must never revert the (verbose-only) labels read.
         try this.poolTokenSymbols(pool) returns (string memory leaf) {

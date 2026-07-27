@@ -215,7 +215,7 @@ contract GearboxV3CreditAccountsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @dev Returns `["Credit Account", <leaf>]` where the leaf is the credit manager's `name()` (e.g.
     ///      "Trade WETH Tier 1"). If `name()` is missing/empty, falls back to the underlying asset symbol
     ///      (e.g. "USDC") via `underlying()` — the same accessor the position read uses. Leaf is "" (→ just
-    ///      `["Credit Account"]`) only if both are unreadable. Returns an empty array for a short positionId.
+    ///      `["Credit Account"]`) only if both are unreadable. Returns an empty array for a malformed positionId (see {_pidAddress}).
     ///
     ///      **All THREE reads** go through the shared hardened readers rather than `try`/`catch`. `_creditManagerOf`
     ///      guards the *credit account's* codesize but returns whatever `creditManager()` answered, so `cm` itself may
@@ -234,8 +234,8 @@ contract GearboxV3CreditAccountsMetaBalanceAdapter is MetaBalanceAdapter {
     ///      caught revert, not an over-report — and putting a gas cap on a NAV-path read is a separate decision from
     ///      a label fix.
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
-        if (pid.length < 32) return new string[](0);
-        address ca = abi.decode(pid, (address));
+        (address ca, bool ok) = _pidAddress(pid);
+        if (!ok) return new string[](0);
         address cm = _creditManagerOf(ca);
         if (cm == address(0)) return _labels("Credit Account", "");
 

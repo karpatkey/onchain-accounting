@@ -167,7 +167,7 @@ BROADCAST="--rpc-url $RPC --broadcast --account my-deployer --password-file <pwf
 ### 1.1 Clear the deployment record — otherwise 03 and 04 are silent no-ops
 
 `03_DeployPriceFeeds` and `04_DeployBalanceAdapters` are skip-if-already-deployed. Every feed's
-`_deploy*` helper and `04`'s `_deployIfEnabled` (`04:229-234`) start with
+`_deploy*` helper and `04`'s `_deployIfEnabled` (`04:230-234`, 33 such guards in `03`) start with
 
 ```solidity
 address deployed = _readAdapterDeployed(<section>, <name>);
@@ -295,6 +295,11 @@ forge script script/deploy/06_Configure.s.sol $BROADCAST
 
 Idempotent and reconciling; safe to re-run. If a chain hits an RPC nonce race, re-run just this step
 with `--slow`.
+
+`06` also configures `BridgeEscrow`, but it reads `BridgeEscrowProxy` from the deployment record
+(`06:31`) and **no chain has one** — so it logs `WARNING: BridgeEscrow not deployed, skipping Bridge
+configuration` (`06:37`) and skips the entire bridge block. The deferred bridge is therefore not
+touched at all by this step, not merely touched idempotently.
 
 - **Precondition:** 1.5 and 1.6 done.
 - **Post-condition:** `getAdapterCount()` matches 1.6, and the summed `getMetaInstances()` over all

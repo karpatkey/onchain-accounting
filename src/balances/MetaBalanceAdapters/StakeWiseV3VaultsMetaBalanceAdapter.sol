@@ -131,6 +131,23 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceAdapter {
     ///      The leaf is descriptive, NOT an identifier: operator names collide (three separate Gnosis vaults are all
     ///      named `"SEED"`), so consumers must key on `positionId`, never on the label.
     ///
+    ///      **Why the address stays even though consumers render a coordinate column — settled 2026-07-27, do not
+    ///      reopen.** The tier-2 leaf embeds the full vault address, which the known consumers already show beside
+    ///      it: kpk-app's `/nav/registry` renders the label and then the whole `bytes32` instance coordinate with a
+    ///      copy button (`nav-registry-table.tsx` `PositionRow`), and this repo's own dashboard pairs `{v.label}`
+    ///      with an `AddressChip` (`app/src/components/protocol-group.tsx`). So on those two surfaces the address is
+    ///      shown twice. It is kept anyway, deliberately:
+    ///        - The label must stay self-contained. `positionLabels` is an on-chain view with no knowledge of what
+    ///          its caller renders; a consumer that shows only the breadcrumb (a CSV export, an alert, a log line)
+    ///          would otherwise lose the ability to tell two vaults apart entirely.
+    ///        - Dropping it costs inter-instance distinctness outright, not just verbosity. The symbol is a
+    ///          chain-level constant, so a symbol-only leaf collapses every unnamed vault to one string — all three
+    ///          configured Gnosis vaults are unnamed `GnoVault`s and would render an identical `["Vault", "GNO"]`.
+    ///          That is the undistinguished breadcrumb this tier was added to fix, reintroduced.
+    ///      The duplication is therefore the accepted cost of a leaf that is meaningful without its coordinate.
+    ///      `test_positionLabels_distinctForUnnamedVaults` (unit) and
+    ///      `test_positionLabels_configuredVaults_fallBackToSymbolAndAddress` (Gnosis fork) pin that property.
+    ///
     ///      **Why there is no better tier 2, so nobody re-investigates.** The non-ERC20 variants expose no
     ///      human-readable identity on chain at all:
     ///        - `name()` / `symbol()` / `contractURI()` / `metadataIpfsHash()` / `asset()` all revert on them

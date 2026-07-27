@@ -26,9 +26,16 @@ import {VmSafe} from "forge-std/Vm.sol";
 ///
 ///      **When this test fails**, do not just append the new name. Add a `test_positionLabels_emptyProbe_*` case
 ///      to that adapter's own suite first, deciding which of the two answers is correct for it:
-///        - breadcrumb is positionId-INDEPENDENT -> the probe returns the full constant breadcrumb;
-///        - breadcrumb is derived per positionId -> the probe returns `[]`, and the shapes are unreachable from a
-///          configuration view (this is the `CapBalanceAdapter` situation that motivates `IPositionEnumerable`).
+///        - breadcrumb is positionId-INDEPENDENT -> the probe returns the full constant breadcrumb, and that is
+///          the whole answer: the shape is already reachable from a configuration view;
+///        - breadcrumb is derived per positionId -> the probe returns `[]`, which on its own is indistinguishable
+///          from a broken adapter. **Implement {IPositionEnumerable} as well** so the shapes are reachable: its
+///          `positionIds()` lists them and its ERC-165 bit marks the `[]` as deliberate. `CapBalanceAdapter` is
+///          the worked example — see its `test_positionIds_*` cases.
+///
+///      Only the second branch needs the extra interface, and it is a real decision either way — an adapter whose
+///      shapes are discovered per ACCOUNT (a per-account coordinate cache) has no account-independent answer and
+///      must implement neither. That is decided per adapter, not per family.
 contract PositionLabelsProbeCoverageTest is Test {
     /// @dev Every non-meta adapter key that currently appears in any `script/config/deployments/<chainId>.json`.
     ///      Keep sorted by family, then alphabetically, so a diff to this list is easy to read in review.

@@ -124,15 +124,20 @@ contract CapBalanceAdapter is BalanceAdapterBase, IPositionEnumerable {
     //
 
     /// @inheritdoc IPositionEnumerable
-    /// @dev Cap's two shapes, in the order `getAdapterPositions` emits them: the held synthetic dollar (cUSD)
-    ///      and the staked savings token (stcUSD). Both are pinned at construction, so the set is fixed for the
-    ///      life of this immutable adapter — there is no governed instance list and nothing account-dependent.
+    /// @dev Cap's two shapes: the held synthetic dollar (cUSD) and the staked savings token (stcUSD). Both are
+    ///      pinned at construction, so the set is fixed for the life of this immutable adapter — there is no
+    ///      governed instance list and nothing account-dependent.
     ///
     ///      These are the SAME bytes `getAdapterPositions` puts in `PositionBalance.positionId` for each leg
     ///      (`abi.encode(address(CUSD))` / `abi.encode(address(STCUSD))`), which is what makes the configuration
-    ///      view joinable against real positions — the guarantee {IPositionEnumerable} requires. Note the shapes
-    ///      are reported unconditionally: unlike `getAdapterPositions`, which drops a leg whose balance is zero,
-    ///      this describes what the adapter CAN report, not what anyone holds.
+    ///      view joinable against real positions — the guarantee {IPositionEnumerable} requires.
+    ///
+    ///      **Join on the bytes, not on the index.** No ordering is promised, and this array is deliberately NOT
+    ///      index-aligned with `getAdapterPositions`: that function omits a leg whose balance is zero, so an
+    ///      account holding only stcUSD emits one position that pairs with the SECOND entry here. These shapes
+    ///      are reported unconditionally because they describe what the adapter CAN report, not what anyone
+    ///      holds — and, for the same reason, listing them does not imply USDC is registered on the
+    ///      NAVCalculator (without that registration `getAdapterPositions` emits nothing for any account).
     function positionIds() external view override returns (bytes[] memory ids) {
         ids = new bytes[](2);
         ids[0] = abi.encode(address(CUSD));
@@ -143,8 +148,9 @@ contract CapBalanceAdapter is BalanceAdapterBase, IPositionEnumerable {
     /// @dev Adds {IPositionEnumerable} to the base set. `super`-chains rather than restating the base list, which
     ///      is why {BalanceAdapterBase}'s `supportsInterface` is `public` — an `external` one cannot be reached
     ///      through `super`. Stays `pure`: the answer is a compile-time comparison, and a `pure` base cannot be
-    ///      widened to `view` by an override anyway.
-    function supportsInterface(bytes4 interfaceId) public pure override returns (bool) {
+    ///      widened to `view` by an override anyway. Kept `virtual` so the chain the base just opened does not
+    ///      dead-end here, matching the concrete bridge adapters that super-chain the same way.
+    function supportsInterface(bytes4 interfaceId) public pure virtual override returns (bool) {
         return interfaceId == type(IPositionEnumerable).interfaceId || super.supportsInterface(interfaceId);
     }
 

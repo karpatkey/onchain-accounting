@@ -45,5 +45,12 @@ interface IPositionDescribable {
     /// @param positionId The ABI-encoded position identifier (same bytes as `PositionBalance.positionId`).
     /// @return An array of display segments. An empty array is acceptable when no label can be derived.
     ///         Depth varies by adapter and position; consumers must not assume a fixed length.
+    ///
+    ///      **When there is no account to get a positionId from** — a configuration view listing what the
+    ///      NAVCalculator is set up to account for — an adapter whose breadcrumb is positionId-independent
+    ///      answers `positionLabels("")` with its full constant breadcrumb, and that is the whole answer. An
+    ///      adapter whose breadcrumb is derived per positionId returns `[]` instead and should implement
+    ///      {IPositionEnumerable}, whose `positionIds()` lists the shapes to pair with this function and whose
+    ///      ERC-165 bit is what distinguishes that `[]` from a broken adapter. See {IPositionEnumerable}.
     function positionLabels(bytes calldata positionId) external view returns (string[] memory);
 }

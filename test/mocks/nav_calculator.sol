@@ -128,8 +128,17 @@ contract Mock_NAVCalculator is INAVCalculator {
         return new address[](0);
     }
 
-    function getMetaInstances(address) external pure override returns (bytes32[] memory) {
-        return new bytes32[](0);
+    /// @dev Backing store for `getMetaInstances`. Defaults to empty for every adapter, so callers that never set
+    ///      it see the previous hardcoded-empty behaviour; `setMetaInstances` lets a test stand in for the
+    ///      governed instance set that `MetaBalanceAdapter.positionIds()` enumerates.
+    mapping(address => bytes32[]) private _metaInstances;
+
+    function setMetaInstances(address adapter, bytes32[] memory instances) external {
+        _metaInstances[adapter] = instances;
+    }
+
+    function getMetaInstances(address adapter) external view override returns (bytes32[] memory) {
+        return _metaInstances[adapter];
     }
 
     function addMetaInstances(address, bytes32[] calldata) external pure override {

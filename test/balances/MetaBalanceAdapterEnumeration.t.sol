@@ -193,10 +193,64 @@ contract MetaBalanceAdapterEnumerationTest is Test {
             bad.getAdapterPositionsForInstances(address(this), _instances(INSTANCE_A, INSTANCE_B), address(0));
 
         assertEq(positions.length, 2, "the violating adapter still emits legs");
+        // Without this, the assertFalse below would also hold for a completely different reason — an empty
+        // advertised set — so the negative control would pass vacuously if `positionIds()` ever broke.
+        assertEq(ids.length, 2, "and still advertises two shapes: the mismatch must be in CONTENT, not absence");
         // Every emitted id is ABSENT from the advertised set: the join silently returns nothing in production.
         for (uint256 i; i < positions.length; ++i) {
             assertFalse(_contains(ids, positions[i].positionId), "hook violation must be detectable by bytes");
         }
+    }
+
+    // ============================================
+    // Per-instance revert isolation
+    // ============================================
+
+    /// @dev **{IPositionEnumerable} requires `positionIds()` not to revert, and deriving a positionId is not
+    ///      inherently safe.** The base default reverts via `_toAddress` on a coordinate whose high bits are
+    ///      dirty, and `addMetaInstances` never checks a coordinate is even a contract — so one mistyped
+    ///      governance argument is enough. Without isolation that single bad coordinate would take down the
+    ///      enumeration for every OTHER configured instance, and silently: through the consumer's fail-open
+    ///      staticcall a reverting adapter is indistinguishable from one with nothing configured, which is the
+    ///      exact ambiguity this interface exists to remove.
+    ///
+    ///      The good instance must still enumerate, and the bad one is dropped — under-report, never over-report.
+    function test_positionIds_isolatesAMalformedCoordinate() public {
+        bytes32[] memory mixed = new bytes32[](2);
+        mixed[0] = bytes32(uint256(uint160(INSTANCE_A)));
+        mixed[1] = bytes32(type(uint256).max); // dirty high bits -> `_toAddress` reverts
+
+        nav.setMetaInstances(address(adapter), mixed);
+
+        bytes[] memory ids = adapter.positionIds();
+        assertEq(ids.length, 1, "the good instance survives the bad one");
+        assertEq(ids[0], abi.encode(INSTANCE_A));
+    }
+
+    /// @dev The isolation is per instance, not "give up at the first failure": a bad coordinate BEFORE a good one
+    ///      must not truncate the rest. Ordering out is compacted, which is why the interface disclaims order.
+    function test_positionIds_isolationDoesNotTruncateLaterInstances() public {
+        bytes32[] memory mixed = new bytes32[](3);
+        mixed[0] = bytes32(type(uint256).max); // bad, first
+        mixed[1] = bytes32(uint256(uint160(INSTANCE_A)));
+        mixed[2] = bytes32(uint256(uint160(INSTANCE_B)));
+
+        nav.setMetaInstances(address(adapter), mixed);
+
+        bytes[] memory ids = adapter.positionIds();
+        assertEq(ids.length, 2, "both good instances survive a leading bad one");
+        assertTrue(_contains(ids, abi.encode(INSTANCE_A)));
+        assertTrue(_contains(ids, abi.encode(INSTANCE_B)));
+    }
+
+    /// @dev Every coordinate malformed => empty, not a revert. Empty is a valid answer per the interface.
+    function test_positionIds_allCoordinatesBad_returnsEmptyWithoutReverting() public {
+        bytes32[] memory bad = new bytes32[](2);
+        bad[0] = bytes32(type(uint256).max);
+        bad[1] = bytes32(uint256(1) << 200);
+
+        nav.setMetaInstances(address(adapter), bad);
+        assertEq(adapter.positionIds().length, 0);
     }
 
     /// @dev Set membership over `bytes`, compared by hash — the join {IPositionEnumerable} specifies. Ordering is

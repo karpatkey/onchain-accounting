@@ -86,11 +86,13 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
         returns (INAVCalculator.PositionBalance[] memory)
     {
         IProtocolDataProvider dp = IProtocolDataProvider(_toAddress(instance));
-        address pool = _poolOf(dp);
         // positionId is the instance Pool — one position per instance. The reserve is NOT in positionId; each
         // reserve's legs are distinguished by balanceAsset + positionKind (multi-leg convention).
-        // Routed through the hook (not re-derived inline) so `positionIds()` advertises these exact bytes.
+        // Derived from the hook, and `pool` derived back out of it, so the emitted positionId and the one
+        // `positionIds()` advertises cannot drift — while still resolving the Pool exactly once. Decoding our own
+        // `abi.encode(address)` is the same assumption `positionLabels` already makes about this positionId.
         bytes memory pid = _instancePositionId(instance);
+        address pool = abi.decode(pid, (address));
 
         // A borrow this adapter cannot report must never leave the account's supplies standing alone: the
         // position would count as pure credit and NAV be over-reported by the whole borrow. Checked across ALL

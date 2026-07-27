@@ -84,11 +84,35 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     ///
     ///      A listed shape means the instance is configured, NOT that the account holds anything in it, nor that
     ///      the instance's assets are registered for pricing.
-    function positionIds() external view virtual override returns (bytes[] memory ids) {
+    ///
+    ///      **Per-instance revert isolation, like every other fan-out on this base.** {IPositionEnumerable}
+    ///      requires this function not to revert, and deriving a positionId is not inherently safe: the default
+    ///      hook reverts on a malformed coordinate, and Aave V3's override reads the chain to resolve its Pool.
+    ///      Without isolation one bad coordinate — which `addMetaInstances` does not prevent, since it never
+    ///      checks the coordinate is a contract — would drop the enumeration for every OTHER instance too, and do
+    ///      it silently: an adapter that reverts here is indistinguishable, through the consumer's fail-open
+    ///      staticcall, from one with nothing configured. That is the exact ambiguity this interface exists to
+    ///      remove. A failing instance is therefore dropped and the rest still enumerate — under-report, never
+    ///      over-report, the same direction the position fan-out degrades in.
+    ///
+    ///      Declared `public`, not `external`, for the same reason `supportsInterface` above is: a fork adapter
+    ///      that needs to extend or narrow the enumeration can then `super.positionIds()` instead of copying this
+    ///      body — a copy would silently keep the old behaviour if this one changes (as it just did, gaining the
+    ///      isolation), which is exactly the drift this interface exists to prevent.
+    function positionIds() public view virtual override returns (bytes[] memory ids) {
         bytes32[] memory instances = NAV_CALCULATOR.getMetaInstances(address(this));
-        ids = new bytes[](instances.length);
+        bytes[] memory buf = new bytes[](instances.length);
+        uint256 n;
         for (uint256 i; i < instances.length; ++i) {
-            ids[i] = _instancePositionId(instances[i]);
+            try this.instancePositionId(instances[i]) returns (bytes memory id) {
+                buf[n++] = id;
+            } catch {
+                // Coordinate could not be resolved — drop this shape, keep the others.
+            }
+        }
+        ids = new bytes[](n);
+        for (uint256 i; i < n; ++i) {
+            ids[i] = buf[i];
         }
     }
 
@@ -247,6 +271,17 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     /// @notice External wrapper around the concrete per-instance asset enumeration.
     function instanceAssets(bytes32 instance) external view returns (address[] memory) {
         return _instanceAssets(instance);
+    }
+
+    /// @notice External wrapper around the concrete per-instance positionId derivation.
+    /// @dev Called via `this.` inside `positionIds` so a single bad coordinate is isolated, exactly as
+    ///      `instancePositions` isolates the position fan-out. {_instancePositionId} is not inherently safe to call
+    ///      in a loop: the base default reverts via `_toAddress` on a coordinate with dirty high bits, and an
+    ///      override may read the chain — Aave V3's resolves the Pool through two external calls, so a codeless,
+    ///      reverting or undecodable coordinate reverts here too (none of which `try`/`catch` would catch if it
+    ///      were called inline).
+    function instancePositionId(bytes32 instance) external view returns (bytes memory) {
+        return _instancePositionId(instance);
     }
 
     //

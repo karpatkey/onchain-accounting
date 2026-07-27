@@ -3,6 +3,7 @@ pragma solidity ^0.8.0;
 
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
+import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 import {
     AaveV3InstancesMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/AaveV3InstancesMetaBalanceAdapter.sol";
@@ -204,6 +205,58 @@ contract AaveV3InstancesMetaUnitTest is BalanceAdapterTestBase {
             assertEq(pos[i].protocolBrand, keccak256("aave"));
             assertEq(pos[i].positionId, abi.encode(pool), "positionId = abi.encode(pool), no reserve");
         }
+    }
+
+    /// @dev **The `_instancePositionId` override, on the default CI gate.** Aave V3 is the one meta-adapter whose
+    ///      positionId is not its instance coordinate: the coordinate is a ProtocolDataProvider, the positionId is
+    ///      the Pool resolved from it. Without the override, the base default would advertise
+    ///      `abi.encode(dataProvider)` — bytes no `PositionBalance` carries — so a configuration view could not
+    ///      JOIN its rows against real positions.
+    ///
+    ///      Asserted on **bytes**, because a label-based check cannot see this: `positionLabels` resolves the
+    ///      DataProvider and the Pool to the SAME breadcrumb (both expose `ADDRESSES_PROVIDER()` pointing at the
+    ///      same provider), so the wrong id would look perfectly correct. The fork suite proves this against real
+    ///      mainnet; this mirrors it here so removing the override fails the standard `forge test` run too.
+    ///      Built against {Mock_NAVCalculator} rather than the `balances` harness because `positionIds()` reads
+    ///      the governed instance set, and registering one through `Balances` delegatecalls the pinned
+    ///      `NAVRegistryLib`, which this mock-only suite does not etch.
+    function test_positionIds_advertiseThePoolNotTheDataProvider() public {
+        AaveV3InstancesMetaBalanceAdapter a = _adapterWithConfiguredInstance();
+
+        bytes[] memory ids = a.positionIds();
+        assertEq(ids.length, 1, "one configured instance");
+        assertEq(ids[0], abi.encode(address(pool)), "advertised id is the resolved Pool");
+        assertTrue(
+            keccak256(ids[0]) != keccak256(abi.encode(address(dp))),
+            "advertised id must NOT be the DataProvider coordinate"
+        );
+    }
+
+    /// @dev The byte-identity guarantee for this adapter: every emitted positionId is an advertised shape.
+    function test_positionIds_matchTheEmittedPositionIds() public {
+        AaveV3InstancesMetaBalanceAdapter a = _adapterWithConfiguredInstance();
+        dp.setUserData(alice, address(usdc), 1000e6, 0, true);
+
+        INAVCalculator.PositionBalance[] memory pos = a.getAdapterPositionsForInstances(alice, _ids(), address(0));
+        assertGt(pos.length, 0, "the account must have a position for this to mean anything");
+
+        bytes[] memory ids = a.positionIds();
+        for (uint256 i = 0; i < pos.length; i++) {
+            bool matched;
+            for (uint256 j = 0; j < ids.length; j++) {
+                if (keccak256(ids[j]) == keccak256(pos[i].positionId)) matched = true;
+            }
+            assertTrue(matched, "every emitted positionId must be an advertised shape");
+        }
+    }
+
+    /// @dev An adapter wired to a mock NAVCalculator that has this suite's DataProvider as its one governed
+    ///      instance and USDC registered, so both `positionIds()` and the position read work.
+    function _adapterWithConfiguredInstance() internal returns (AaveV3InstancesMetaBalanceAdapter a) {
+        Mock_NAVCalculator mockNav = new Mock_NAVCalculator();
+        mockNav.registerAssetFromERC20(address(usdc));
+        a = new AaveV3InstancesMetaBalanceAdapter(address(mockNav));
+        mockNav.setMetaInstances(address(a), _ids());
     }
 
     function test_borrowLeg_sumsStableAndVariableDebt() public {

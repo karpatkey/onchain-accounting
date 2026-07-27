@@ -186,16 +186,28 @@ contract ERC20DefaultBalanceAdapter is BalanceAdapterBase {
         return "Wallet";
     }
 
+    /// @inheritdoc IPositionDescribable
+    /// @dev Display-only, so it must never revert — including for a positionId this adapter never emitted. A
+    ///      configuration view probes with whatever word it has (`""`, a bytes32 pool/market id copied from
+    ///      another adapter, a truncated buffer), and this is the one adapter registered on every chain.
+    ///
+    ///      Hence the raw-word decode rather than `abi.decode(positionId, (address))`: Solidity's decoder reverts
+    ///      on a buffer shorter than one word AND on an address whose upper 96 bits are dirty. Both cases collapse
+    ///      the leaf instead, which the fail-open tail below renders as `[]`. Same idiom as
+    ///      {StakeWiseV3VaultsMetaBalanceAdapter}. A dirty word is NOT truncated to its low 160 bits: those bits
+    ///      may spell a real registered asset by coincidence, and labelling a foreign coordinate with that
+    ///      asset's symbol would be a wrong answer where `[]` is merely an absent one.
     function positionLabels(bytes calldata positionId) external view override returns (string[] memory) {
         string memory leaf;
-        if (positionId.length == 0) {
-            leaf = "";
-        } else {
-            address addr = abi.decode(positionId, (address));
-            if (addr == NATIVE_ADDRESS) {
-                leaf = "native";
-            } else {
-                leaf = LabelLib.symbol(addr, "");
+        if (positionId.length >= 32) {
+            uint256 raw = abi.decode(positionId, (uint256));
+            if (raw >> 160 == 0) {
+                address addr = address(uint160(raw));
+                if (addr == NATIVE_ADDRESS) {
+                    leaf = "native";
+                } else {
+                    leaf = LabelLib.symbol(addr, "");
+                }
             }
         }
         // Fail-open: no derivable label → empty array (IPositionDescribable convention), not `[""]`,

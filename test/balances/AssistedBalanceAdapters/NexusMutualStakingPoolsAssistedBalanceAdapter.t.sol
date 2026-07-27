@@ -444,8 +444,32 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterTest is BalanceAdapterTest
     ///      here, where it would imply a discrimination it does not provide.
     function test_positionLabels_emptyProbe_returnsEmptyForAccountDerivedShapes() public view {
         assertEq(adapter.positionLabels("").length, 0);
-        // Sub-32-byte input hits the `positionId.length < 32` guard. Not a general malformed-input guarantee:
-        // a 32-byte word with dirty high bits reaches `abi.decode(..., (address))` and reverts.
+        // Sub-32-byte input hits the `positionId.length < 32` guard. Malformed input more generally is covered by
+        // the next test.
         assertEq(adapter.positionLabels(hex"0102030405060708090a0b0c").length, 0);
+    }
+
+    /// @dev A 32-byte word with dirty high bits clears the length guard but is not an address, and must degrade to
+    ///      [] rather than revert — `positionLabels` is display-only and a configuration view may probe with an
+    ///      arbitrary word. The fail-open `getPoolId()` staticcall inside does not help here: the revert would
+    ///      come from `abi.decode(..., (address))` before any read happens.
+    ///
+    ///      Load-bearing beyond "does not revert": `dirtyPool`'s low 160 bits are a REAL mock pool, so an
+    ///      implementation that masked instead of rejecting would render `["Staking Pools", "Pool #42"]` for a
+    ///      coordinate this adapter never emitted. Only the `raw >> 160` check gives []. The clean-word tail pins
+    ///      that the guard did not blank the view outright.
+    function test_positionLabels_dirty32ByteWord_returnsEmptyRatherThanReverting() public {
+        MockNexusStakingPool pool = new MockNexusStakingPool(42);
+
+        assertEq(adapter.positionLabels(abi.encode(type(uint256).max)).length, 0);
+
+        uint256 dirtyPool = uint256(uint160(address(pool))) | (uint256(1) << 160);
+        assertEq(adapter.positionLabels(abi.encode(dirtyPool)).length, 0);
+
+        // The clean word still resolves to the pool breadcrumb.
+        string[] memory clean = adapter.positionLabels(abi.encode(address(pool)));
+        assertEq(clean.length, 2);
+        assertEq(clean[0], "Staking Pools");
+        assertEq(clean[1], "Pool #42");
     }
 }

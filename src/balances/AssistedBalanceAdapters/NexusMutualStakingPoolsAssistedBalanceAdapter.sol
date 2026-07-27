@@ -94,7 +94,13 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedCoordCache, IP
     ///      pool address if the read reverts. Empty for a short/malformed positionId.
     function positionLabels(bytes calldata positionId) external view override returns (string[] memory out) {
         if (positionId.length < 32) return new string[](0);
-        address pool = abi.decode(positionId, (address));
+        // Decode as a raw word, not `abi.decode(positionId, (address))`: Solidity's decoder REVERTS on an address
+        // whose upper 96 bits are dirty, which would turn a foreign positionId into a revert of a view that must
+        // never revert. A dirty word takes the same `[]` exit as a short one — it names no pool, and truncating it
+        // to its low 160 bits would render a `Pool #` breadcrumb for a coordinate this adapter never emitted.
+        uint256 raw = abi.decode(positionId, (uint256));
+        if (raw >> 160 != 0) return new string[](0);
+        address pool = address(uint160(raw));
         out = new string[](2);
         out[0] = "Staking Pools";
         // Low-level staticcall + length check: a no-code / non-Nexus positionId returns success with empty data, which a

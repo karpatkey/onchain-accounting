@@ -101,10 +101,19 @@ contract CapBalanceAdapter is BalanceAdapterBase, IPositionEnumerable {
 
     /// @inheritdoc IPositionDescribable
     /// @dev Branches on the positionId token: `["Stablecoin", "cUSD"]` for the cUSD leg,
-    ///      `["Savings", "stcUSD"]` for the staked stcUSD leg. Empty array for anything else.
+    ///      `["Savings", "stcUSD"]` for the staked stcUSD leg. Empty array for anything else — including any
+    ///      malformed positionId, since this is a display-only view that must never revert and a configuration
+    ///      view may probe it with an arbitrary word.
     function positionLabels(bytes calldata positionId) external view override returns (string[] memory) {
         if (positionId.length < 32) return new string[](0);
-        address token = abi.decode(positionId, (address));
+        // Decode as a raw word, not `abi.decode(positionId, (address))`: Solidity's decoder REVERTS on an address
+        // whose upper 96 bits are dirty, which would turn a foreign positionId (e.g. a bytes32 pool/market id
+        // copied from another adapter) into a revert. A dirty word is a non-Cap coordinate, so it takes the same
+        // `[]` exit as any other unrecognised token — deliberately NOT truncated to its low 160 bits, which could
+        // spell CUSD/STCUSD by coincidence and mislabel a foreign id as a Cap leg.
+        uint256 raw = abi.decode(positionId, (uint256));
+        if (raw >> 160 != 0) return new string[](0);
+        address token = address(uint160(raw));
         string[] memory out = new string[](2);
         if (token == address(STCUSD)) {
             out[0] = "Savings";

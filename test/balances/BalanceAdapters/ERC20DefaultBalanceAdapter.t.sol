@@ -277,21 +277,32 @@ contract ERC20DefaultBalanceAdapterTest is Test {
         assertEq(native[0], "native");
     }
 
-    /// @dev Pins a KNOWN DIVERGENCE rather than a desired behaviour, so it is visible instead of implicit.
-    ///      `ERC20DefaultBalanceAdapter.positionLabels` guards `positionId.length == 0` only, then calls
-    ///      `abi.decode(positionId, (address))` unconditionally — whereas `CapBalanceAdapter` and
-    ///      `NexusMutualStakingPoolsAssistedBalanceAdapter` guard `length < 32` and return []. So the wallet
-    ///      adapter, the one adapter registered on all 24 chains, REVERTS for any truncated positionId where
-    ///      its two siblings return [].
+    /// @dev A malformed positionId degrades to `[]`; it must never revert. `positionLabels` is display-only and
+    ///      this is the one adapter registered on all 24 chains, so a configuration view that generalises
+    ///      "per-position adapters answer the probe with []" and probes with anything other than exactly `""`
+    ///      must still get an answer. Matches the `[]` its `CapBalanceAdapter` /
+    ///      `NexusMutualStakingPoolsAssistedBalanceAdapter` siblings return for the same inputs.
     ///
-    ///      Not reachable on the NAV path: the verbose reads call this behind a fail-open staticcall, and the
-    ///      positionIds this adapter emits are always clean 32-byte addresses. It IS reachable for a
-    ///      configuration view that generalises "per-position adapters answer the probe with []" and probes with
-    ///      anything other than exactly `""` — that call reverts. Widening the guard is a production-code change,
-    ///      deliberately out of scope for this tests-only PR; this test goes red if someone fixes it, which is
-    ///      the prompt to delete it.
-    function test_positionLabels_truncatedPositionId_revertsUnlikeCapAndNexus() public {
-        vm.expectRevert();
-        adapter.positionLabels(hex"0102030405060708090a0b0c");
+    ///      Both halves are load-bearing against the guard, not just against a revert:
+    ///        - truncated (1..31 bytes) would revert in `abi.decode` without the `length >= 32` check;
+    ///        - the dirty word is `usdc` with its upper 96 bits set. `abi.decode(_, (address))` reverts on it, and
+    ///          a "fix" that merely masked to the low 160 bits would answer "USDC" — a wrong label for a
+    ///          coordinate this adapter never emitted. Only the `raw >> 160` check yields [].
+    ///      The `assertEq(labels[0], "USDC")` tail pins that the guards did not simply blank the whole view.
+    function test_positionLabels_malformedPositionId_returnsEmptyRatherThanReverting() public view {
+        // Truncated: shorter than one word.
+        assertEq(adapter.positionLabels(hex"0102030405060708090a0b0c").length, 0);
+        assertEq(adapter.positionLabels(hex"00").length, 0);
+
+        // Full word, dirty upper 96 bits — including one whose low 160 bits ARE a supported asset.
+        assertEq(adapter.positionLabels(abi.encode(type(uint256).max)).length, 0);
+        uint256 dirtyUsdc = uint256(uint160(address(usdc))) | (uint256(1) << 255);
+        assertEq(adapter.positionLabels(abi.encode(dirtyUsdc)).length, 0);
+
+        // ...while the clean word still resolves, so the assertions above are about malformed input, not a
+        // permanently empty view.
+        string[] memory labels = adapter.positionLabels(abi.encode(address(usdc)));
+        assertEq(labels.length, 1);
+        assertEq(labels[0], "USDC");
     }
 }

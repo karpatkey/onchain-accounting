@@ -385,19 +385,33 @@ contract CapBalanceAdapterTest is Test {
     function test_positionLabels_emptyProbe_returnsEmptyForAMultiShapeAdapter() public view {
         assertEq(adapter.positionLabels("").length, 0);
         // Sub-32-byte input hits the `positionId.length < 32` guard, so it returns [] without reaching the decode.
-        // This does NOT establish general malformed-input safety: a 32-byte word with dirty high bits reaches
-        // `abi.decode(..., (address))` and reverts (asserted below).
+        // Malformed input more generally is covered by the next test.
         assertEq(adapter.positionLabels(hex"0102030405060708090a0b0c").length, 0);
     }
 
-    /// @dev Documents a real limit of the length guard rather than asserting the adapter is malformed-input-safe.
-    ///      `positionLabels` is reached from NAVCalculator's verbose reads via a fail-open staticcall, and the
-    ///      positionIds Cap itself emits are always clean 32-byte addresses, so this is not reachable on the NAV
-    ///      path. It IS reachable for a configuration view that probes with an arbitrary 32-byte word (e.g. a
-    ///      bytes32 market/pool id copied from another adapter), which gets `execution reverted`, not [].
-    ///      Widening the guard is a production-code change and deliberately out of scope for this tests-only PR.
-    function test_positionLabels_dirty32ByteWord_revertsRatherThanReturningEmpty() public {
-        vm.expectRevert();
-        adapter.positionLabels(abi.encode(type(uint256).max));
+    /// @dev A 32-byte word with dirty high bits clears the length guard but is not an address. It must degrade to
+    ///      [] like any other unrecognised token, not revert: `positionLabels` is display-only, and a
+    ///      configuration view can probe with an arbitrary word (e.g. a bytes32 market/pool id copied from another
+    ///      adapter). On the NAV path the verbose reads wrap this in a fail-open staticcall and Cap's own
+    ///      positionIds are always clean, so the exposure is the configuration view.
+    ///
+    ///      The `dirtyCUsd` case is what makes this load-bearing beyond "does not revert": its low 160 bits ARE
+    ///      `CUSD`, so an implementation that merely masked instead of rejecting would return
+    ///      `["Stablecoin", "cUSD"]` — labelling a foreign coordinate as a real Cap leg. Only the `raw >> 160`
+    ///      check gives []. The clean-word tail pins that the guard did not blank the view outright.
+    function test_positionLabels_dirty32ByteWord_returnsEmptyRatherThanReverting() public view {
+        assertEq(adapter.positionLabels(abi.encode(type(uint256).max)).length, 0);
+
+        uint256 dirtyCUsd = uint256(uint160(address(mockCUsd))) | (uint256(1) << 160);
+        assertEq(adapter.positionLabels(abi.encode(dirtyCUsd)).length, 0);
+
+        uint256 dirtyStcUsd = uint256(uint160(address(mockStcUsd))) | (uint256(1) << 255);
+        assertEq(adapter.positionLabels(abi.encode(dirtyStcUsd)).length, 0);
+
+        // The clean words still resolve to their legs.
+        string[] memory clean = adapter.positionLabels(abi.encode(address(mockCUsd)));
+        assertEq(clean.length, 2);
+        assertEq(clean[0], "Stablecoin");
+        assertEq(clean[1], "cUSD");
     }
 }

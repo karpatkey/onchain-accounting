@@ -47,8 +47,10 @@ LIVE_DEFAULT="$(jq -r '.balanceAdapters.ERC20Default // ""' "script/config/deplo
 echo "deployer=$DEPLOYER  live proxy=$LIVE_PROXY  live ERC20Default=$LIVE_DEFAULT"
 
 # --- anvil -------------------------------------------------------------------
+# `--gas-limit` and `--disable-block-gas-limit` are mutually exclusive in anvil; the explicit limit is
+# what we want, since the NAV impl deploy alone is ~12.5M gas.
 ANVIL_ARGS=(--fork-url "$FORK_URL" --port "$PORT" --auto-impersonate --silent
-            --gas-limit 60000000 --disable-block-gas-limit)
+            --gas-limit 60000000)
 [[ -n "$FORK_BLOCK" ]] && ANVIL_ARGS+=(--fork-block-number "$FORK_BLOCK")
 anvil "${ANVIL_ARGS[@]}" > "$WORK/anvil.log" 2>&1 &
 ANVIL_PID=$!

@@ -100,6 +100,23 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             revert InvalidArguments(); // Asset already registered
         }
 
+        // A code-less `asset` must fail HERE, with this function's own error. `NAVRegistryLib.registerAsset`
+        // probes `IERC20Metadata(asset).decimals()` behind a `try`/`catch` that reads as if it covered this — it
+        // does not: a high-level call to a code-less address reverts at the `extcodesize` precheck, which fires in
+        // the CALLING frame before the call is made, so `catch` never sees it and the MANAGER gets an opaque
+        // empty revert instead of `InvalidArguments`. (This is the one place a `code.length` guard is not dead
+        // code — in front of a LOW-level staticcall it would be, because that succeeds against a code-less
+        // address rather than reverting.)
+        //
+        // The guard lives at this call site rather than in the library on purpose: `NAVRegistryLib` is pre-linked
+        // at a deterministic CREATE2 address, so changing its bytecode moves the pin, which forces a new
+        // implementation and an upgrade on every deployed chain — a disproportionate price for an error-message
+        // fix. `NATIVE_ADDRESS` is exempt because it is code-less by construction and takes the library's native
+        // branch (it is pre-registered during `initialize`, so in practice it is already rejected above).
+        if (asset != NATIVE_ADDRESS && asset.code.length == 0) {
+            revert InvalidArguments();
+        }
+
         // Register asset in NAV/Pricing registry; fetches decimals/symbol from ERC20 (or native); reverts if not ERC20 compatible
         _registerAsset(asset);
 

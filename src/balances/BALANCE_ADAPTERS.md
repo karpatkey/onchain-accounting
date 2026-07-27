@@ -260,7 +260,9 @@ An unknown `protocolId` reverts (`UnknownProtocolId`) rather than returning `""`
 
 `test/ProtocolNameConsistency.t.sol` covers what remains assertable: every hardcoded adapter matches its constant (including the single-member protocols no group comparison reaches), every protocol id the meta family declares has a name, an unknown id reverts, and distinct protocols do not collide on one name.
 
-> **Adding a protocol.** Add a constant to `ProtocolNames` and a branch to `forProtocolId`. That is the whole change — there is no per-chain config value and no deploy-script wiring for the display name. The `protocol` key that used to live in `contracts-deployment-config/**` has been removed; it fed nothing.
+> **Adding a protocol.** Add a constant to `ProtocolNames` and a branch to `forProtocolId`. That is the whole change — there is no per-chain config value and no deploy-script wiring for the display name. The `protocol` key that used to live in `contracts-deployment-config/**` has been removed.
+>
+> **It did NOT feed nothing.** Until this change, `04_DeployBalanceAdapters.s.sol` read that key and passed it as every meta adapter's `protocolName_` constructor argument. Removing it is therefore *not* a config-only cleanup: the constructor signature changed, so all deployed meta adapters must be redeployed and re-registered (`addMetaBalanceAdapter` + `addMetaInstances`) before they report derived names. Until that happens the live adapters keep returning their old stored `_protocolName`, Umbrella included. Do not read the key's removal as "no on-chain consequence".
 
 > **Deployed-vs-source note (2026-07-26).** The Umbrella fix changes a `pure` function, so the currently deployed mainnet adapter (`0x94910a2E35b8749529Dc9555Ed1599cd77E045bF`) still returns `"Aave Umbrella"` on chain until it is redeployed and re-registered. It is deployed on Ethereum only. The redeploy is deliberately folded into the batch redeploy that follows the in-flight adapter PRs, rather than run standalone for a display string; downstream consumers should keep any Umbrella→Aave V3 alias until then.
 
@@ -411,6 +413,7 @@ import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
+import {ProtocolNames} from "src/utils/ProtocolNames.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 contract MyProtocolBalanceAdapter is IBalanceAdapter, IPositionDescribable {

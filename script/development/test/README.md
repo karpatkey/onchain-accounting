@@ -72,7 +72,7 @@ Multiple cases per protocol are allowed when one account doesn't cover all paths
 
 | Field | Meaning |
 |---|---|
-| `protocol` | Display name matching the `protocol` field in the adapter's per-chain deploy config under `script/config/contracts-deployment-config/` (e.g. `PancakeSwap V3`, `Uniswap V2`) |
+| `protocol` | Display name matching what the adapter's `protocolName()` returns (e.g. `PancakeSwap V3`, `Uniswap V2`). This is a label for the case file only — it is **not** read from deploy config: the `protocol` key there has been removed, and the name now comes from `ProtocolNames.forProtocolId(_protocolId())` for meta adapters or a bytecode literal for plain/assisted ones |
 | `chain.id`, `chain.name` | Chain the test runs against |
 | `holder.address` | The cherry-picked account |
 | `holder.type` | `EOA` / `Contract` / `EIP-7702 delegated EOA` / `Safe` / `Treasury` — for context |

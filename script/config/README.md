@@ -179,7 +179,9 @@ A meta-adapter is a single deployed contract; its **instance set is NOT here** �
 }
 ```
 
-> Only the constructor args `04_DeployBalanceAdapters.s.sol` reads are required per adapter (for `SparkLend`, just `dataProvider`). There is **no display-name field**: meta adapters derive `protocolName()` from their own `_protocolId()` (`ProtocolNames.forProtocolId`), and the plain/assisted adapters hardcode it, so the former `protocol` key fed nothing and has been removed from every config.
+> Only the constructor args `04_DeployBalanceAdapters.s.sol` reads are required per adapter (for `SparkLend`, just `dataProvider`). There is **no display-name field**: meta adapters derive `protocolName()` from their own `_protocolId()` (`ProtocolNames.forProtocolId`), and the plain/assisted adapters hardcode it, so the former `protocol` key has been removed from every config.
+>
+> That key was **not** inert before removal — `04` read it and passed it as each meta adapter's `protocolName_` constructor argument. Dropping it changed the constructor signature, so every deployed meta adapter needs a redeploy plus re-registration before it reports a derived name; a config-only diff is not enough. Note some ADRs still describe `protocol` as a live per-adapter field — they are historical records of the decision at the time, not current schema.
 >
 > The built-in `ERC20DefaultBalanceAdapter` is deployed inside `NAVCalculator.initialize()` (step `02`) and wired via `includeAssetInDefaultAdapter` / `excludeAssetFromDefaultAdapter`, **not** through these config files — don't list it here.
 

@@ -71,7 +71,7 @@ library UniswapV2PairLib {
     ///         `feeTo` is unset, `kLast == 0`, or `√k <= √kLast`. `feeTo()`/`kLast()` are read defensively via
     ///         staticcall (forks omitting them are treated as "no protocol fee").
     /// @dev **This is the one fail-open branch in this file whose failure direction is UPWARD**, and it is the
-    ///      reason `feeTo()` is read through {StaticCallLib.probeWord} rather than {StaticCallLib.safeAddr}.
+    ///      reason `feeTo()` is read through {StaticCallLib.safeAddrStrict} rather than {StaticCallLib.safeAddr}.
     ///      Returning 0 collapses `effectiveSupply` from `totalSupply + pendingMint` to plain `totalSupply`,
     ///      making the caller's reserve share LARGER — an over-report, the direction adapters are required never
     ///      to take. Every other probe failure in this file drops a leg and under-reports.
@@ -90,8 +90,9 @@ library UniswapV2PairLib {
     ///        rejecting it: a word like `type(uint96).max << 160` masks to `address(0)` and lands silently in
     ///        the `feeTo == address(0)` clause. Before the masking change it hit `abi.decode`'s validator and
     ///        reverted, which the meta-adapter's per-instance `try`/`catch` turned into a drop — the SAFE
-    ///        direction. Masking is right for every other reader in the sweep, and wrong here, so this call site
-    ///        checks the upper bits itself and reports `malformed` so the caller can drop the pair instead.
+    ///        direction. Masking is right for every other reader in the sweep, and wrong here, which is exactly
+    ///        what {StaticCallLib.safeAddrStrict}'s `isAddr` flag distinguishes: a successful reply that is not
+    ///        an address reports `malformed`, so the caller drops the pair instead of guessing.
     /// @return pendingMint The LP that would be minted to `feeTo` on the next mint/burn; 0 when there is no fee.
     /// @return malformed True when the factory answered with something that is not an address, meaning the
     ///         dilution is unknowable and the caller must report nothing rather than assume no fee.
@@ -105,11 +106,10 @@ library UniswapV2PairLib {
         uint256 rootKCoeff,
         uint256 rootKLastCoeff
     ) private view returns (uint256 pendingMint, bool malformed) {
-        (bool feeToOk, bool feeToHasWord, uint256 feeToWord) =
-            StaticCallLib.probeWord(factory, abi.encodeCall(IUniswapV2Factory.feeTo, ()));
-        if (feeToHasWord && feeToWord >> 160 != 0) return (0, true);
-
-        address feeTo = address(uint160(feeToWord));
+        (bool feeToOk, address feeTo, bool feeToIsAddr) =
+            StaticCallLib.safeAddrStrict(factory, abi.encodeCall(IUniswapV2Factory.feeTo, ()));
+        // A SUCCESSFUL reply that is not an address is a malformed factory, not a fee-less fork.
+        if (feeToOk && !feeToIsAddr) return (0, true);
         if (!feeToOk || feeTo == address(0)) return (0, false);
 
         (bool kLastOk, uint256 kLast) = _safeCallUint(pair, abi.encodeCall(IUniswapV2Pair.kLast, ()));

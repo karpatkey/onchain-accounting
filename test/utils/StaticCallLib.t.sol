@@ -19,6 +19,14 @@ contract StaticCallHarness {
         return StaticCallLib.probeWord(target, data);
     }
 
+    function probeAddrStrict(address target, bytes memory data)
+        external
+        view
+        returns (bool ok, address result, bool isAddr)
+    {
+        return StaticCallLib.safeAddrStrict(target, data);
+    }
+
     /// @notice Two probes in ONE frame, returning only the second — the only way to observe whether the first
     ///         probe's reply is still resident in the shared output window when the second returns nothing.
     function probeTwice(address first, bytes memory firstData, address second, bytes memory secondData)
@@ -115,6 +123,67 @@ contract StaticCallLibTest is Test {
         (bool ok, uint256 result) = harness.probeUint(address(replier), abi.encodeWithSignature("anything()"));
         assertTrue(ok, "dirty word must not fail the call");
         assertEq(result, uint256(uint160(embedded)) | (uint256(1) << 200), "uint reader must not mask");
+    }
+
+    /// @notice The strict reader REJECTS a dirty word where {safeAddr} masks it.
+    /// @dev Both policies ship because the right one is per call site. Masking favours liveness; rejecting
+    ///      favours a clean sentinel, and is required wherever `address(0)` is itself a meaningful answer —
+    ///      Euler's `EVC()` ("cannot classify") and Uniswap V2's `feeTo()` ("no protocol fee", which drops the
+    ///      dilution term and RAISES the reported LP share). Swap `safeAddrStrict` for `safeAddr` at either site
+    ///      and the caller silently manufactures that sentinel out of garbage.
+    function test_safeAddrStrict_dirtyUpperBits_rejected() public {
+        address embedded = address(0xCAFE);
+        replier.stageReturn(RawReplyLib.dirtyAddress(embedded));
+
+        (bool ok, address result, bool isAddr) =
+            harness.probeAddrStrict(address(replier), abi.encodeWithSignature("anything()"));
+        assertTrue(ok, "the call itself succeeded");
+        assertFalse(isAddr, "a word with dirty upper bits is not an address");
+        assertEq(result, address(0), "a rejected word yields no address");
+
+        // The masking reader, same payload, deliberately disagrees.
+        (, address masked) = harness.probeAddr(address(replier), abi.encodeWithSignature("anything()"));
+        assertEq(masked, embedded, "safeAddr still masks - the two policies must stay distinguishable");
+    }
+
+    /// @notice A clean word is accepted identically by both readers.
+    function test_safeAddrStrict_cleanWord_accepted() public {
+        address expected = address(0xBEEF);
+        replier.stageReturn(abi.encode(expected));
+
+        (bool ok, address result, bool isAddr) =
+            harness.probeAddrStrict(address(replier), abi.encodeWithSignature("anything()"));
+        assertTrue(ok, "clean address should succeed");
+        assertTrue(isAddr, "a clean word IS an address");
+        assertEq(result, expected, "clean address decodes");
+    }
+
+    /// @notice `isAddr` is what separates "read a real zero" from "could not read" — `result` alone cannot.
+    /// @dev The whole reason the flag exists. A callee genuinely answering `address(0)` and one that reverted
+    ///      both yield `result == address(0)`; only `isAddr` tells them apart, and every strict call site
+    ///      branches on that distinction.
+    function test_safeAddrStrict_realZero_distinguishableFromFailure() public {
+        replier.stageReturn(abi.encode(address(0)));
+        (, address zeroResult, bool zeroIsAddr) =
+            harness.probeAddrStrict(address(replier), abi.encodeWithSignature("anything()"));
+        assertTrue(zeroIsAddr, "a genuine zero IS a successfully read address");
+        assertEq(zeroResult, address(0), "and its value is zero");
+
+        replier.stageRevert(0);
+        (, address failResult, bool failIsAddr) =
+            harness.probeAddrStrict(address(replier), abi.encodeWithSignature("anything()"));
+        assertFalse(failIsAddr, "a failed read is not an address");
+        assertEq(failResult, address(0), "same value, different meaning");
+    }
+
+    /// @notice A short reply carries no address, however its bytes happen to land.
+    function test_safeAddrStrict_shortReply_rejected() public {
+        replier.stageReturn(hex"00112233");
+        (bool ok, address result, bool isAddr) =
+            harness.probeAddrStrict(address(replier), abi.encodeWithSignature("anything()"));
+        assertTrue(ok, "a short reply is still a successful call");
+        assertFalse(isAddr, "fewer than 32 bytes is not an address");
+        assertEq(result, address(0), "short reply yields no address");
     }
 
     // ---------------------------------------------------------------------------------------------------------

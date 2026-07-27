@@ -510,6 +510,23 @@ contract GearboxV3CreditAccountsMetaLabelReadTest is Test {
         _assertCollapsed(address(ca), "past the cap the label degrades rather than rendering");
     }
 
+    /// @notice A reply with a large zero-padded tail BEHIND a short, in-cap name must still render.
+    /// @dev The Gearbox half of the same deliberate widening — see the twin test on the AaveV3 adapter. The
+    ///      hand-rolled reader dropped this leaf; {LabelLib} renders it, which is the behaviour PR #165 landed
+    ///      for the real Curve 4096-byte-buffer LP tokens.
+    function test_labels_paddedBufferName_renders() public {
+        bytes memory tail = new bytes(4096 - 64);
+        bytes memory nm = bytes("Gearbox Padded v3");
+        for (uint256 i = 0; i < nm.length; i++) {
+            tail[i] = nm[i];
+        }
+        cmReplier.stageReturn(abi.encodePacked(uint256(0x20), nm.length, tail));
+
+        string[] memory l = _labelsFor(address(ca));
+        assertEq(l.length, 2, "an in-cap name must survive a large zero-padded tail");
+        assertEq(l[1], "Gearbox Padded v3", "the name must decode verbatim");
+    }
+
     function test_labels_oversizedReply_collapses() public {
         cmReplier.stageReturn(RawReplyLib.stringOfLength(2048));
         _assertCollapsed(address(ca), "an oversized reply must not revert or truncate");

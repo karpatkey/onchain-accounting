@@ -70,6 +70,38 @@ library StaticCallLib {
         if (hasWord) result = address(uint160(word));
     }
 
+    /// @notice As {safeAddr}, but REJECTS a word with dirty bits above 160 instead of masking it off.
+    /// @dev Both policies are legitimate and the choice is per call site, not per library, which is why both
+    ///      exist here rather than one being "the" address reader:
+    ///
+    ///      - **Mask** ({safeAddr}) favours liveness. A sloppy-but-honest callee — a `bytes32`-shaped return, a
+    ///        padding-careless implementation — still yields a usable address. Right when a wrong address simply
+    ///        fails downstream (an unregistered reward token is skipped; a bogus LP token resolves to nothing).
+    ///      - **Reject** (this) favours a clean "cannot read" sentinel. Right when `address(0)` is a MEANINGFUL
+    ///        value that a caller branches on, so silently manufacturing it from garbage changes the answer
+    ///        rather than losing it.
+    ///
+    ///      Two call sites need the strict form, and both are cases where masking chooses the wrong direction:
+    ///      Euler's `EVC()` read, whose `address(0)` is the "cannot classify" sentinel `_supplyKind` short-circuits
+    ///      on, and Uniswap V2's `feeTo()`, whose `address(0)` means "no protocol fee" and so drops the dilution
+    ///      term and RAISES the reported LP share. Neither can distinguish a real zero from a masked one.
+    /// @return ok The raw staticcall success flag (true even when the word was rejected as not an address).
+    /// @return result The address; address(0) if the call reverted, returned fewer than 32 bytes, or returned a
+    ///         word that is not a valid address.
+    /// @return isAddr True only when a full word came back AND its upper 96 bits are clear. Callers that branch
+    ///         on `address(0)` must gate on THIS, not on `result`, or they reinstate the ambiguity.
+    function safeAddrStrict(address target, bytes memory data)
+        internal
+        view
+        returns (bool ok, address result, bool isAddr)
+    {
+        bool hasWord;
+        uint256 word;
+        (ok, hasWord, word) = probeWord(target, data);
+        isAddr = hasWord && word >> 160 == 0;
+        if (isAddr) result = address(uint160(word));
+    }
+
     /// @notice Performs the bounded staticcall and hands back the first returned word, undecoded.
     /// @dev Exposed because {safeUint}'s `(ok, result)` pair cannot distinguish "returned zero" from "returned
     ///      nothing", and for some reads that difference is load-bearing — Convex's `pid()` is the canonical

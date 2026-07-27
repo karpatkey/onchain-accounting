@@ -567,6 +567,28 @@ contract AaveV3InstancesMetaLabelReadTest is BalanceAdapterTestBase {
     }
 
     /// @dev An oversized reply is rejected outright rather than silently truncated to the copied window.
+    /// @notice A reply with a large zero-padded tail BEHIND a short, in-cap market id must still render.
+    /// @dev **This is a deliberate widening**, inherited by routing through {LabelLib}. The hand-rolled
+    ///      `_safeStringRead` this replaced rejected any reply larger than its 320-byte window outright, so it
+    ///      dropped the leaf here. LabelLib bounds on what was COPIED instead, which PR #165 changed precisely
+    ///      because the shape is real: Curve's USD-metapool factory LP tokens return a fixed 4096-byte buffer
+    ///      behind a canonical head, carrying strings of only 10-57 bytes.
+    ///
+    ///      Note this does NOT loosen the length cap — {test_labels_oversizedReply_collapses} still collapses,
+    ///      because there the declared STRING is 2048 bytes. The distinction is reply size vs. content size.
+    function test_labels_paddedBufferMarketId_renders() public {
+        bytes memory tail = new bytes(4096 - 64);
+        bytes memory id = bytes("Aave V3 Padded");
+        for (uint256 i = 0; i < id.length; i++) {
+            tail[i] = id[i];
+        }
+        providerReplier.stageReturn(abi.encodePacked(uint256(0x20), id.length, tail));
+
+        string[] memory l = _labelsFor(address(poolReplier));
+        assertEq(l.length, 2, "an in-cap market id must survive a large zero-padded tail");
+        assertEq(l[1], "Aave V3 Padded", "the market id must decode verbatim");
+    }
+
     function test_labels_oversizedReply_collapses() public {
         providerReplier.stageReturn(RawReplyLib.stringOfLength(2048));
         _assertCollapsed(address(poolReplier), "an oversized reply must not revert or truncate");

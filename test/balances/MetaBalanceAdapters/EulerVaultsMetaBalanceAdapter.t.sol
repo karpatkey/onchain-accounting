@@ -611,6 +611,30 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
         _assertFailOpen(address(v), 1_000_000, 400_000);
     }
 
+    /// @dev The case that makes {StaticCallLib.safeAddrStrict} load-bearing here rather than merely tidy: a dirty
+    ///      word whose LOW 160 bits are a real, working EVC that would classify this vault as collateral.
+    ///
+    ///      The sibling `bytes32`-shaped test above does NOT discriminate — its low bits are `type(uint160).max`,
+    ///      a code-less address, so masking and rejecting both fall through to `Supplied` by different routes.
+    ///      Swap `safeAddrStrict` for `safeAddr` in `_safeEvc` and only THIS test goes red: masking hands
+    ///      `_supplyKind` an EVC the vault never validly named, and the supply is classified `Collateral` off an
+    ///      attacker-chosen contract. Rejecting keeps the "cannot classify" sentinel meaningful.
+    function test_supplyKind_dirtyEvcWordOverRealEvc_degradesToSupplied() public {
+        MockEVC evc = new MockEVC();
+        // Low 160 bits = the real EVC; bit 200 set, so the word is not a valid `address` encoding.
+        uint256 dirty = uint256(uint160(address(evc))) | (uint256(1) << 200);
+        MockRawEvcVault v = new MockRawEvcVault(address(usdc), abi.encode(dirty));
+        v.setBalance(alice, 1_000_000);
+        v.setDebt(alice, 400_000);
+
+        // That EVC really would report this vault as enabled collateral, so a masking reader classifies it.
+        address[] memory cols = new address[](1);
+        cols[0] = address(v);
+        evc.setCollaterals(alice, cols);
+
+        _assertFailOpen(address(v), 1_000_000, 400_000);
+    }
+
     /// @dev Mode 1 (decode failure): `EVC()` returns fewer than 32 bytes.
     function test_supplyKind_evcShortReturndata_degradesToSupplied() public {
         MockRawEvcVault v = new MockRawEvcVault(address(usdc), hex"deadbeef");

@@ -1,19 +1,29 @@
 #!/usr/bin/env bash
 # Rehearse the full from-scratch NAV deploy against a LOCAL anvil fork.
 #
-# Runs the real script sequence with the real config, so anything that would break on the day breaks
-# here instead: 01 -> 01_2 -> 02_2 -> RegisterAssets -> 03 -> 04 -> 06. Records gas and wall-clock per
-# step and asserts the things that are easy to get silently wrong:
+# Runs the real script sequence with the real config, in the RUNBOOK's order:
+#   01_2 -> 02_2 -> 03 -> RegisterAssets -> 04 -> 06
+# `RegisterAssets` MUST come after `03`: it resolves each Custom feed from
+# `deployments/<id>.json .customPriceFeeds.<name>` (RegisterAssets.s.sol:19), so run earlier it logs
+# `[skip] primary feed unresolved (deploy it first)` and skipped 20 of mainnet's 43 assets when this
+# rehearsal first ran in the original plan's order. `01` is deliberately NOT run — it has no library
+# pin assertions (unlike 01_2) and also deploys a BridgeEscrow implementation nobody wants.
+#
+# Asserts the things that are easy to get silently wrong:
 #   * `initialize()` minted a FRESH ERC20Default (a new proxy is the entire reason for this deploy)
 #   * the NAV proxy address is NOT the live one (if it is, DeploySalts.NAV_PROXY must be bumped)
 #   * the meta-instance reconcile landed exactly the configured set
+#   * every assistant's immutable ADAPTER points at the newly deployed assisted adapter
 #
-# SAFETY: this script REFUSES to run against anything but a loopback RPC. It is the only place in the
-# preflight tooling that broadcasts, and it must only ever broadcast to the local fork.
-#
-# The repo's `script/config/deployments/1.json` is archived before the run and restored afterwards
-# (the deploy scripts write to it), so the rehearsal leaves the tree clean. `git diff` is checked at
-# the end to prove it.
+# SAFETY, two independent rails:
+#   1. It REFUSES any RPC that is not loopback. This is the only script in the preflight tooling that
+#      broadcasts at all.
+#   2. The deploy scripts WRITE to `script/config/deployments/<id>.json` (and forge writes
+#      `broadcast/<script>/<chainId>/`), so the config tree is treated as DISPOSABLE: the run refuses
+#      to start unless `script/config` and `broadcast` are git-clean, and on exit it restores both
+#      with `git checkout --` (byte-exact, whatever the run did) plus removal of any untracked files
+#      it created, then ASSERTS both paths are clean again. `deployments/<id>.json` is the only record
+#      of what production runs, so it must come back exactly as it was.
 #
 # usage:
 #   script/deploy/preflight/rehearse_fork.sh [chainId] [forkBlock]
@@ -33,9 +43,27 @@ case "$RPC" in
   *) echo "REFUSING: rehearsal RPC '$RPC' is not loopback."; exit 2 ;;
 esac
 
+# --- disposable-config rail --------------------------------------------------
+# The run mutates tracked config, so it must start from a clean slate: otherwise the `git checkout --`
+# restore below would silently destroy someone's real uncommitted edits.
+DIRTY="$(git status --porcelain -- script/config broadcast)"
+if [[ -n "$DIRTY" ]]; then
+  echo "REFUSING: script/config and broadcast/ must be git-clean before a rehearsal — the run"
+  echo "mutates them and restores with 'git checkout --', which would discard these changes:"
+  echo "$DIRTY"
+  exit 2
+fi
+
 mkdir -p "$WORK"
 : > "$WORK/steps.tsv"
 echo -e "step\tseconds\tgas\tstatus" >> "$WORK/steps.tsv"
+# Reference copy of the pre-run config, purely so the result can be diffed after the restore.
+rm -rf "$WORK/config-before"
+cp -r script/config "$WORK/config-before"
+
+# RegisterAssets ends by writing a Safe-TX batch here and aborts if the directory is missing —
+# AFTER broadcasting its on-chain registrations. The dir is gitignored, so a fresh checkout lacks it.
+mkdir -p safe-transactions
 
 # A git worktree has no .env of its own — fall back to the canonical clone and to the OIV env, the
 # same two files chainlib.load_env reads, so the tooling all sees one endpoint inventory.
@@ -60,41 +88,37 @@ ANVIL_ARGS=(--fork-url "$FORK_URL" --port "$PORT" --auto-impersonate --silent
 anvil "${ANVIL_ARGS[@]}" > "$WORK/anvil.log" 2>&1 &
 ANVIL_PID=$!
 
-> "$WORK/broadcast-before.txt"
-find broadcast -mindepth 1 -maxdepth 3 -type d 2>/dev/null | sort > "$WORK/broadcast-before.txt"
-
 RESTORED=0
 cleanup() {
-  if [[ $RESTORED -eq 0 && -f "$WORK/deployments-${CHAIN_ID}.orig.json" ]]; then
-    cp "$WORK/deployments-${CHAIN_ID}.orig.json" "script/config/deployments/${CHAIN_ID}.json"
-    RESTORED=1
-    echo "restored script/config/deployments/${CHAIN_ID}.json"
-  fi
-  # The fork runs as the REAL chain id (ConfigReader keys everything off it), so forge writes
-  # broadcast/<script>/<CHAIN_ID>/run-latest.json — indistinguishable from a genuine mainnet
-  # broadcast, and NOT covered by .gitignore (which only excludes /broadcast/*/31337/). That matters
-  # because script/verify/sweeps/make_targets.py enumerates deployed price feeds by reading exactly
-  # those files, so a leftover rehearsal record would feed fork addresses into a verification sweep.
-  # Move anything this run created out of the tree.
-  if [[ -f "$WORK/broadcast-before.txt" ]]; then
-    mkdir -p "$WORK/broadcast-created"
-    find broadcast -mindepth 1 -maxdepth 3 -type d 2>/dev/null | sort > "$WORK/broadcast-after.txt"
-    comm -13 "$WORK/broadcast-before.txt" "$WORK/broadcast-after.txt" \
-      | grep -E "/${CHAIN_ID}\$" | while read -r d; do
-          [[ -d "$d" ]] || continue
-          # broadcast/ also holds COMMITTED records from real migrations (MigrateAssistedAdapters,
-          # RemoveMerkl, ...). Never touch anything git tracks — only this run's own output.
-          if git ls-files --error-unmatch "$d" >/dev/null 2>&1; then
-            echo "  leaving tracked broadcast dir alone: $d"
-            continue
-          fi
-          mkdir -p "$WORK/broadcast-created/$(dirname "$d")"
-          mv "$d" "$WORK/broadcast-created/$d" 2>/dev/null \
-            && echo "moved rehearsal broadcast $d -> $WORK/broadcast-created/$d"
-        done
-    find broadcast -mindepth 1 -type d -empty -delete 2>/dev/null
-  fi
   kill "$ANVIL_PID" 2>/dev/null
+  [[ $RESTORED -eq 1 ]] && return
+  RESTORED=1
+
+  # Keep a copy of what the run produced BEFORE throwing it away — it is the evidence for the
+  # post-conditions (new proxy / ERC20Default / feed + adapter addresses).
+  rm -rf "$WORK/config-after"
+  cp -r script/config "$WORK/config-after" 2>/dev/null
+
+  # Restore tracked state byte-exactly, whatever the run did to it. `git checkout --` is the
+  # authoritative restore: deployments/<id>.json is the ONLY record of what production runs, and the
+  # deploy scripts rewrite it wholesale (impl, proxy, every feed, every adapter incl. ERC20Default).
+  git checkout -- script/config broadcast 2>/dev/null
+
+  # Then remove anything UNTRACKED the run created under those paths. The fork runs as the REAL chain
+  # id (ConfigReader keys config off it), so forge writes broadcast/<script>/<CHAIN_ID>/ — which looks
+  # exactly like a genuine mainnet broadcast and is NOT covered by .gitignore (that only excludes
+  # /broadcast/*/31337/). script/verify/sweeps/make_targets.py enumerates deployed price feeds by
+  # reading precisely those files, so a leftover would feed fork addresses into a verification sweep.
+  git clean -fdq -- script/config broadcast 2>/dev/null
+
+  local dirty
+  dirty="$(git status --porcelain -- script/config broadcast)"
+  if [[ -n "$dirty" ]]; then
+    echo "WARNING: script/config or broadcast/ is STILL dirty after restore — inspect by hand:"
+    echo "$dirty"
+  else
+    echo "restored: script/config and broadcast/ are git-clean (run output kept in $WORK/config-after)"
+  fi
 }
 trap cleanup EXIT INT TERM
 
@@ -127,9 +151,11 @@ run_step() {
     > "$log" 2>&1
   rc=$?
   t1=$(date +%s)
-  # forge prints "Estimated gas price"/"Total Paid"; the authoritative number is the sum of the
-  # broadcast receipts, which --broadcast writes into broadcast/<script>/<chainId>/run-latest.json.
-  gas=$(grep -aoE "Total Paid: [0-9.]+ ETH \(([0-9]+) gas" "$log" | grep -oE "\(([0-9]+)" | tr -d '(' | paste -sd+ | bc 2>/dev/null)
+  # forge 1.7.1 prints "Estimated total gas used for script: <n>" (NOT the "Total Paid: … (n gas)"
+  # form an earlier version used — matching only that yielded gas=0 for every step). Sum all
+  # occurrences: a --slow run can emit one per broadcast batch.
+  gas=$(grep -aoE "Estimated total gas used for script: [0-9]+" "$log" \
+        | grep -oE "[0-9]+$" | paste -sd+ | bc 2>/dev/null)
   [[ -z "$gas" ]] && gas=0
   # Several scripts return cleanly when their precondition is unmet rather than reverting —
   # RegisterAssets prints "NAVCalculator not deployed for this chain" and returns, 06 prints
@@ -158,11 +184,12 @@ run_step() {
 }
 
 FAILED=0
-run_step 01_DeployImplementations   script/deploy/01_DeployImplementations.s.sol   || FAILED=1
+# THE RUNBOOK ORDER. `03` before `RegisterAssets` is load-bearing, not cosmetic — see the header.
+# `01` is intentionally absent (no pin assertions, plus an unwanted BridgeEscrow impl).
 run_step 01_2_DeployNAVImplementation script/deploy/01_2_DeployNAVImplementation.s.sol || FAILED=1
 run_step 02_2_DeployNAVProxy        script/deploy/02_2_DeployNAVProxy.s.sol        || FAILED=1
-run_step RegisterAssets             script/manage/RegisterAssets.s.sol             || FAILED=1
 run_step 03_DeployPriceFeeds        script/deploy/03_DeployPriceFeeds.s.sol        || FAILED=1
+run_step RegisterAssets             script/manage/RegisterAssets.s.sol             || FAILED=1
 run_step 04_DeployBalanceAdapters   script/deploy/04_DeployBalanceAdapters.s.sol   || FAILED=1
 run_step 06_Configure               script/deploy/06_Configure.s.sol               || FAILED=1
 
@@ -201,6 +228,28 @@ if [[ -n "$NEW_PROXY" ]]; then
          "script/config/nav-config/meta-balance-adapters/${CHAIN_ID}.json")
   echo "meta instances on-chain=$TOTAL configured=$WANT"
   assert "meta-instance reconcile landed exactly the configured set" '[[ "$TOTAL" == "$WANT" ]]'
+
+  # Every registered asset must be registered, not silently skipped for want of a Custom feed.
+  WANT_ASSETS=$(jq '[keys[] | select(startswith("$") | not)] | length' \
+                "script/config/nav-config/assets-and-price-feeds/${CHAIN_ID}.json" 2>/dev/null || echo 0)
+  echo "assets on-chain=$ASSETS configured=$WANT_ASSETS"
+  assert "every configured asset registered (RegisterAssets ran after 03)" \
+         '[[ "$ASSETS" == "$WANT_ASSETS" ]]'
+
+  # Each assistant's immutable ADAPTER must point at the assisted adapter just deployed. On the live
+  # stack all four are ORPHANS (they point at unregistered adapters left behind by the PR #141 swap),
+  # so this is the assertion that proves the redeploy fixes it.
+  for PAIR in "NexusMutualStakingPoolsAssistant:NexusMutualStakingPoolsAssisted" \
+              "EtherFiWithdrawalQueueAssistant:EtherFiWithdrawalQueueAssisted" \
+              "StakeWiseV3ExitQueueAssistant:StakeWiseV3ExitQueueAssisted"; do
+    ASST_KEY=${PAIR%%:*}; ADAP_KEY=${PAIR##*:}
+    ASST=$(jq -r ".${ASST_KEY} // \"\"" "script/config/deployments/${CHAIN_ID}.json")
+    ADAP=$(jq -r ".balanceAdapters.${ADAP_KEY} // \"\"" "script/config/deployments/${CHAIN_ID}.json")
+    [[ -z "$ASST" || -z "$ADAP" ]] && continue
+    PTR=$(cast call "$ASST" "ADAPTER()(address)" --rpc-url "$RPC" 2>/dev/null | tr -d '\n')
+    assert "${ASST_KEY}.ADAPTER() == ${ADAP_KEY} (got '${PTR}')" \
+           '[[ -n "$PTR" && "${PTR,,}" == "${ADAP,,}" ]]'
+  done
 fi
 
 cp "script/config/deployments/${CHAIN_ID}.json" "$WORK/deployments-${CHAIN_ID}.result.json"
@@ -211,10 +260,10 @@ echo "=== per-step timing / gas ==="
 column -t "$WORK/steps.tsv"
 echo
 echo "logs + result record in $WORK"
-if ! git diff --quiet -- "script/config/deployments/${CHAIN_ID}.json"; then
-  echo "WARNING: script/config/deployments/${CHAIN_ID}.json is still modified — restore it by hand."
+DIRTY_END="$(git status --porcelain -- script/config broadcast)"
+if [[ -n "$DIRTY_END" ]]; then
+  echo "WARNING: script/config or broadcast/ still dirty — restore by hand:"
+  echo "$DIRTY_END"
   FAILED=1
-else
-  echo "tree clean: deployments/${CHAIN_ID}.json restored"
 fi
 exit $FAILED

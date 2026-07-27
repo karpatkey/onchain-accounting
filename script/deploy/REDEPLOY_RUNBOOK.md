@@ -77,15 +77,21 @@ the rehearsal after any further source change, since the placeholder's bytecode 
 script/deploy/preflight/rehearse_fork.sh 1        # asserts the proxy address differs from live
 ```
 
-> The rehearsal forks as the **real** chain id (ConfigReader keys everything off it), so forge writes
-> `broadcast/<script>/1/run-latest.json` — indistinguishable from a genuine mainnet broadcast.
-> `.gitignore` only excludes `/broadcast/*/31337/`, and
-> `script/verify/sweeps/make_targets.py` enumerates deployed price feeds by reading exactly those
-> files, so a leftover rehearsal record would feed **fork** addresses into a verification sweep.
-> `rehearse_fork.sh` moves its own output out of the tree on exit and refuses to touch anything git
-> tracks — `broadcast/` also holds committed records from the real PR #141 migrations
-> (`MigrateAssistedAdapters`, `MigrateGnosisStakeWiseExit`, `RemoveMerkl`). Never blanket-delete
-> `broadcast/`.
+> **The rehearsal treats the config tree as disposable, and you must let it.** It forks as the *real*
+> chain id (ConfigReader keys every path off it), so the deploy scripts rewrite
+> `script/config/deployments/<id>.json` wholesale — impl, proxy, every feed, every adapter including
+> `ERC20Default` — with **anvil** addresses, and forge writes `broadcast/<script>/1/run-latest.json`,
+> indistinguishable from a genuine mainnet broadcast (`.gitignore` only excludes
+> `/broadcast/*/31337/`, and `script/verify/sweeps/make_targets.py` enumerates deployed price feeds
+> from exactly those files, so a leftover would feed fork addresses into a verification sweep).
+>
+> `deployments/<id>.json` is the only record of what production runs and the baseline every audit
+> diffs against, so `rehearse_fork.sh`: (a) **refuses to start** unless `script/config` and
+> `broadcast` are git-clean, (b) restores both on exit with `git checkout --` + `git clean -fd`
+> — byte-exact, whatever the run did — and (c) asserts they are clean again, keeping the run's own
+> output under `/tmp/nav-rehearsal-<id>/config-after/`. Never blanket-delete `broadcast/`: it also
+> holds committed records from the real PR #141 migrations (`MigrateAssistedAdapters`,
+> `MigrateGnosisStakeWiseExit`, `RemoveMerkl`).
 
 If the rehearsal's `NAV proxy address differs from the live one` assertion **fails**, bump
 `DeploySalts.NAV_PROXY` again and re-run. The bump must land **before** 0.3 — `DeploySalts.sol` is in
@@ -168,6 +174,29 @@ python3 script/deploy/preflight/bytecode_audit.py --self-test
 ---
 
 ## 1. Per-chain deploy sequence
+
+**THE AUTHORITATIVE ORDER:**
+
+```
+1.1  clear the deployment record
+1.2  01_2_DeployNAVImplementation     libraries + NAV impl        PERSIST_DEPLOYMENTS=1
+1.3  02_2_DeployNAVProxy              new proxy + ERC20Default    PERSIST_DEPLOYMENTS=1
+1.4  03_DeployPriceFeeds              39 custom feeds             <- BEFORE RegisterAssets
+1.5  RegisterAssets                   assets + feeds on the NAV
+1.6  04_DeployBalanceAdapters         adapters + assistants
+1.7  06_Configure                     register + reconcile
+```
+
+This **differs from the original plan**, which had `RegisterAssets` before `03`. That order is wrong:
+`RegisterAssets` resolves each `Custom` feed from `deployments/<id>.json .customPriceFeeds.<name>`
+(`RegisterAssets.s.sol:19` states the dependency outright), so run first it logs
+`[skip] primary feed unresolved (deploy it first)` and moves on. Measured on a mainnet fork in the
+plan's order: **20 of 43 assets skipped** — wstETH, eETH, weETH, rETH, ezETH, rsETH, ETHx, osETH,
+stETH, lsETH, sUSDe, sUSDS, syrupUSDC, RWIV, sGHO, LDO, OETH, ankrETH, NXM, wNXM. `RegisterAssets` is
+idempotent so a later re-run tops them up, but the first pass leaves nearly half of mainnet
+unregistered while reporting nothing worse than a skip line.
+
+`01_DeployImplementations` is **not** in the sequence — see 1.2 for why.
 
 Every command runs from the repo root. Common flags:
 
@@ -294,13 +323,22 @@ proxy invalidates every existing feed.
 ### 1.5 `RegisterAssets` — assets + feeds on the new NAV
 
 ```bash
+mkdir -p safe-transactions        # REQUIRED — see below
 FOUNDRY_PROFILE=slow forge script script/manage/RegisterAssets.s.sol $BROADCAST
 ```
 
 `FOUNDRY_PROFILE=slow` (16 GiB) is required on mainnet — 43 assets otherwise `MemoryOOG`.
 
-- **Precondition:** 1.4 done (Custom feeds resolve through
-  `deployments/<id>.json .customPriceFeeds.<name>`).
+`safe-transactions/` must exist: the script ends by writing a Safe-TX batch there, and if the
+directory is missing it aborts with
+`vm.writeJson: failed to open file ".../safe-transactions/1-register-assets.json"` **after** the
+on-chain registrations have already been broadcast. The chain state is fine and the script is
+idempotent, but the run reports failure. The directory is not in the repo, so create it once per
+checkout.
+
+- **Precondition:** **1.4 done** — Custom feeds resolve through
+  `deployments/<id>.json .customPriceFeeds.<name>`, and without them 20 of mainnet's 43 assets are
+  silently skipped (see the authoritative order at the top of section 1).
 - **Post-condition:** `cast call $PROXY 'getAssetCount()(uint256)'` equals the configured asset count
   (43 / 11 / 11 / 6 / 11 / 5 / 6 for chains 1 / 42161 / 8453 / 10 / 100 / 137 / 56).
 
@@ -480,6 +518,8 @@ to the new proxy. The old stack keeps answering until they do; nothing needs unr
 | `06` finishes but adapter/instance counts are short | an adapter never deployed; `06:113` skipped it silently | `preflight_config.py`, then re-run 1.6 and 1.7 |
 | `06` reverts `addMetaInstances failed … DuplicateMetaInstance` | duplicate coordinate in config | `preflight_config.py` flags it; fix nav-config |
 | `RegisterAssets` `MemoryOOG` on mainnet | default memory limit | `FOUNDRY_PROFILE=slow` |
+| `RegisterAssets` logs `[skip] primary feed unresolved (deploy it first)` | it ran before `03`, so Custom feeds are not in the record | run `03` first; re-run `RegisterAssets` (idempotent) and confirm `getAssetCount()` |
+| `vm.writeJson: failed to open .../safe-transactions/<id>-register-assets.json` | the directory does not exist; on-chain writes already succeeded | `mkdir -p safe-transactions`, re-run |
 | addresses differ per chain that should be identical | a chain ran with a different build or submodule set | 0.4, then rebuild and redeploy that chain |
 | hyperevm impl deploy "exceeds block gas limit" | small blocks | enable big blocks (1.8) |
 | hemi tx rejected on price | fee floor | raise `--with-gas-price` (1.8) |

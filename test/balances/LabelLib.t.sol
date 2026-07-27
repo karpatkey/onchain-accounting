@@ -258,7 +258,31 @@ contract LabelLibTest is Test {
         }
     }
 
-    /// @notice The length cap, pinned in both directions.
+    /// @notice A reply carrying a large zero-padded tail BEHIND a valid, in-cap string must still decode.
+    /// @dev This is a REAL token shape, not a synthetic one. Curve's USD-metapool factory
+    ///      (`0xB9fC157394Af804a3578134A6585C0dc9cc990d4`) deploys Vyper LP tokens whose `name()`/`symbol()` return a
+    ///      fixed 4096-byte buffer behind a canonical head — FRAX3CRV-f, MIM-3LP3CRV-f, alUSD3CRV-f, LUSD3CRV-f, 12 of
+    ///      the first 80 pools — carrying strings of 10-57 bytes. `abi.decode` accepts them and so did both of
+    ///      LabelLib's predecessors; an earlier revision of this PR rejected them on their PADDING via a
+    ///      `returndatasize()`-keyed check. Bounding on the copied extent instead fixes it.
+    ///      Fails if the accept window is keyed on `size` again.
+    function test_curveStyleOversizedCanonicalReply_stillDecodes() public {
+        // Mirrors the real reply: canonical head, a 10-byte symbol, zero-padded out to a 4096-byte total.
+        bytes memory tail = new bytes(4096 - 64);
+        bytes memory sym = "FRAX3CRV-f";
+        for (uint256 i; i < sym.length; ++i) {
+            tail[i] = sym[i];
+        }
+        address t = address(new RawEnvelopeToken(0x20, sym.length, tail));
+        (bool ok, string memory got) = _trySymbol(t, "?");
+        assertTrue(ok, "must not revert on a 4096-byte canonical reply");
+        assertEq(got, "FRAX3CRV-f", "an in-cap string must decode despite a large zero-padded tail");
+    }
+
+    /// @notice The cap boundary, and the MECHANISM that enforces it.
+    /// @dev 256 is accepted because its payload lands exactly on the copy window (64 + 256 == MAX_RETURN_BYTES); 257 is
+    ///      rejected because 64 + 257 exceeds it. There is deliberately no separate `len > MAX_METADATA_BYTES` clause —
+    ///      it would be unreachable — so this test is what pins the cap.
     function test_lengthCapBoundary() public {
         bytes memory at = new bytes(256);
         bytes memory over = new bytes(257);

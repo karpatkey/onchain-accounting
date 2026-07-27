@@ -26,8 +26,9 @@ contract LabelLibForkTest is BalanceAdapterTestBase {
 
     FluidVaultsMetaBalanceAdapter public meta;
 
-    function setUp() public override {
-        super.setUp();
+    /// @dev Overrides the hook rather than calling `super.setUp()` and forking again — the base's `setUp` already
+    ///      spins up a fork at `DEFAULT_FORK_BLOCK`, so doing both cost two fork instantiations per test.
+    function _setupFork() internal override {
         fork = createForkWithCadence(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);

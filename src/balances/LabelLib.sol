@@ -52,7 +52,22 @@ library LabelLib {
     /// @notice Hard ceiling on returndata **copied into this contract's memory**: the two ABI head words plus
     ///         {MAX_METADATA_BYTES} of payload (64 + 256 = 320). Written as a literal because inline assembly accepts
     ///         only direct number constants.
-    /// @dev This, not the gas stipend, is what bounds caller-side cost. A gas stipend alone does NOT: a hostile token
+    /// @dev **This constant is where {MAX_METADATA_BYTES} is actually enforced.** The payload-fits check bounds `len`
+    ///      by `copied - 64`, and `copied <= MAX_RETURN_BYTES`, so the cap follows structurally — which is why there is
+    ///      no separate `len > MAX_METADATA_BYTES` clause (it would be provably unreachable). Keep the two constants in
+    ///      lockstep: `MAX_RETURN_BYTES == 64 + MAX_METADATA_BYTES`.
+    ///
+    ///      **Bound on what was COPIED, never on `returndatasize()`.** An earlier revision rejected any reply larger
+    ///      than this constant, on the stated assumption that a canonical reply for an in-cap string never exceeds it.
+    ///      That assumption is **wrong**, and the counterexamples are ordinary mainnet tokens: the Vyper LP tokens from
+    ///      Curve's USD-metapool factory (`0xB9fC157394Af804a3578134A6585C0dc9cc990d4`) return a fixed **4096-byte**
+    ///      buffer behind a perfectly canonical head — FRAX3CRV-f, MIM-3LP3CRV-f, alUSD3CRV-f and LUSD3CRV-f among
+    ///      them, 12 of the first 80 pools in that factory — carrying strings of only 10-57 bytes. `abi.decode`
+    ///      accepts those, as did both predecessors; only a size-keyed reject discarded them, and on their padding
+    ///      rather than their content. None is a configured instance today, but the Curve/Convex roadmap makes it a
+    ///      live trap. Hence `copied = min(size, MAX_RETURN_BYTES)` and a payload bound against `copied`.
+    ///
+    ///      This, not the gas stipend, is what bounds caller-side cost. A gas stipend alone does NOT: a hostile token
     ///      can `return(0, 200_000)` — the callee's own memory expansion for ~200 KB costs it about 95k, so it fits
     ///      inside {METADATA_READ_GAS} — while the *caller* pays `returndatacopy` plus its own monotonically growing
     ///      memory, charged outside the stipend and quadratic in total. Measured on the stipend-only version: 210,190
@@ -108,14 +123,19 @@ library LabelLib {
             ok := staticcall(METADATA_READ_GAS, token, 0x00, 0x04, add(data, 0x20), MAX_RETURN_BYTES)
             size := returndatasize()
         }
-        // A `string` return needs at least the offset and length words. An oversized reply is rejected outright rather
-        // than truncated: a canonical reply for a <= MAX_METADATA_BYTES string never exceeds MAX_RETURN_BYTES, so
-        // anything larger is malformed or hostile.
-        if (!ok || size < 64 || size > MAX_RETURN_BYTES) return fallbackStr;
+        // A `string` return needs at least the offset and length words.
+        if (!ok || size < 64) return fallbackStr;
 
-        // Shrink to what was actually returned so the payload bound below is exact.
+        // Only the first MAX_RETURN_BYTES were copied; `size` may be larger. Bound on what we actually HAVE, not on
+        // what the callee claimed to send. Keying the accept window on `size` instead would reject a reply whose
+        // string sits entirely inside the copied window but which carries trailing or over-padded bytes behind it —
+        // a narrowing versus both predecessors (the high-level typed call and StakeWise's `_safeVaultName`), and one
+        // no real string needs. `copied >= 64` because `size >= 64` and MAX_RETURN_BYTES far exceeds 64.
+        uint256 copied = size < MAX_RETURN_BYTES ? size : MAX_RETURN_BYTES;
+
+        // Shrink to the copied extent so `abi.decode`'s own bound matches the bytes we hold.
         assembly ("memory-safe") {
-            mstore(data, size)
+            mstore(data, copied)
         }
 
         uint256 offset;
@@ -124,7 +144,13 @@ library LabelLib {
             offset := mload(add(data, 0x20))
             len := mload(add(data, 0x40))
         }
-        if (offset != 0x20 || len == 0 || len > MAX_METADATA_BYTES || len > size - 64) return fallbackStr;
+        // `len > copied - 64` is the payload-fits check, written as a subtraction on the LEFT so an attacker-supplied
+        // `len` near 2^256 cannot overflow `64 + len`. It also enforces {MAX_METADATA_BYTES} structurally: `copied` is
+        // at most `MAX_RETURN_BYTES` = 64 + MAX_METADATA_BYTES, so any accepted `len` is at most MAX_METADATA_BYTES.
+        // An explicit `len > MAX_METADATA_BYTES` clause here would be dead code — mutation-testable to nothing — so the
+        // cap lives in the MAX_RETURN_BYTES definition instead. Change one of those two constants and you must change
+        // the other.
+        if (offset != 0x20 || len == 0 || len > copied - 64) return fallbackStr;
 
         return abi.decode(data, (string));
     }

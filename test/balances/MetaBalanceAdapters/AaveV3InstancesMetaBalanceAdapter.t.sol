@@ -583,12 +583,10 @@ contract AaveV3InstancesMetaLabelReadTest is BalanceAdapterTestBase {
         _assertCollapsed(address(poolReplier), "an absurd declared length must not revert the label");
     }
 
-    /// @dev The bound is `len <= size - 64` on the RAW declared length, not on `ceil32(len)`. Pin that: a reply
+    /// @dev The bound is `len <= copied - 64` on the RAW declared length, not on `ceil32(len)`. Pin that: a reply
     ///      whose payload is in-bounds but NOT padded to a 32-byte boundary must still decode. Verified on solc
     ///      0.8.34 that a memory-source `abi.decode` bounds on the raw length; if a future compiler tightened it to
-    ///      the padded bound, `_safeStringRead` would start reverting on unpadded replies and this test would catch
-    ///      it. (`NAVCalculator._safeString` carries a comment asserting the opposite and uses a ceil32 bound — it
-    ///      is merely stricter, not safer, and is outside this PR.)
+    ///      the padded bound, {LabelLib} would start rejecting unpadded replies and this test would catch it.
     function test_labels_unpaddedPayload_stillDecodes() public {
         // offset 0x20, len 5, exactly 5 bytes of payload => returndatasize 69, not a multiple of 32.
         providerReplier.stageReturn(RawReplyLib.declaredLength(5, "short"));
@@ -619,10 +617,34 @@ contract AaveV3InstancesMetaLabelReadTest is BalanceAdapterTestBase {
         _assertCollapsed(address(poolReplier), "past the cap the label degrades rather than rendering");
     }
 
-    /// @dev An oversized reply is rejected outright rather than silently truncated to the copied window.
+    /// @notice A reply with a large zero-padded tail BEHIND a short, in-cap market id must still render.
+    /// @dev **This is a deliberate widening**, inherited by routing through {LabelLib}. The hand-rolled
+    ///      `_safeStringRead` this replaced rejected any reply larger than its 320-byte window outright, so it
+    ///      dropped the leaf here. LabelLib bounds on what was COPIED instead, which PR #165 changed precisely
+    ///      because the shape is real: Curve's USD-metapool factory LP tokens return a fixed 4096-byte buffer
+    ///      behind a canonical head, carrying strings of only 10-57 bytes.
+    ///
+    ///      Note this does NOT loosen the length cap — {test_labels_oversizedReply_collapses} still collapses,
+    ///      because there the declared STRING is 2048 bytes. The distinction is reply size vs. content size.
+    function test_labels_paddedBufferMarketId_renders() public {
+        bytes memory tail = new bytes(4096 - 64);
+        bytes memory id = bytes("Aave V3 Padded");
+        for (uint256 i = 0; i < id.length; i++) {
+            tail[i] = id[i];
+        }
+        providerReplier.stageReturn(abi.encodePacked(uint256(0x20), id.length, tail));
+
+        string[] memory l = _labelsFor(address(poolReplier));
+        assertEq(l.length, 2, "an in-cap market id must survive a large zero-padded tail");
+        assertEq(l[1], "Aave V3 Padded", "the market id must decode verbatim");
+    }
+
+    /// @dev Collapses because of the declared STRING length, not the reply size — `stringOfLength(2048)` puts
+    ///      2048 bytes past the two head words, well past the 256-byte cap. Reply size alone no longer rejects
+    ///      anything (see the padded-buffer test above), so this pins the CONTENT cap; the two are independent.
     function test_labels_oversizedReply_collapses() public {
         providerReplier.stageReturn(RawReplyLib.stringOfLength(2048));
-        _assertCollapsed(address(poolReplier), "an oversized reply must not revert or truncate");
+        _assertCollapsed(address(poolReplier), "a string past the cap must not revert or truncate");
     }
 
     /// @dev Exercises the GAS STIPEND, not the output cap. A 3 MB revert payload costs the callee ~17.4M gas in
@@ -658,7 +680,7 @@ contract AaveV3InstancesMetaLabelReadTest is BalanceAdapterTestBase {
     }
 
     /// @dev The FIRST hop, gas-burning. Deliberately named for hop 1 only: a pool that burns its stipend fails, so
-    ///      `ap` is `address(0)` and `_safeStringRead` is never reached. "Both hops burn" is not constructible —
+    ///      `ap` is `address(0)` and the second hop is never reached. "Both hops burn" is not constructible —
     ///      a hop that consumes its whole stipend is by definition a hop that failed, which short-circuits the next
     ///      one. The per-hop bound is what is testable, and it is what {test_labels_gasBurningProvider_isGasBounded}
     ///      covers for hop 2.

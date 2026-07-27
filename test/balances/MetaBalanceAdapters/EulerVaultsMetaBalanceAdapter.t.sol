@@ -299,6 +299,17 @@ contract MockSupplyOnlyVault {
 ///         plus Euler-specific asserts (protocolId = euler-vaults; positionKind Supplied / Collateral when EVC-enabled /
 ///         Borrowed for the debt leg).
 contract EulerVaultsMetaBalanceAdapterTest is Test {
+    /// @dev Payload size for a bomb served through the VAULT-side `EVC()` probe, which is bounded by
+    ///      `StaticCallLib.PROBE_GAS` (100_000) rather than this file's `PROBE_GAS` (150_000).
+    ///
+    ///      The size is load-bearing and must stay AFFORDABLE to the callee. `return(0, N)` costs the callee
+    ///      `3w + w^2/512` for `w = N/32`: 256_000 bytes costs ~149k and simply MemoryOOGs under a 100k stipend,
+    ///      so the callee returns nothing, the probe fails for the wrong reason, and the test passes while
+    ///      exercising none of the hazard it names. (That is exactly what happened when the stipend moved from
+    ///      150_000 to 100_000 — the payload had been sized for the old value.) 160_000 bytes costs ~64k, which
+    ///      the callee can afford, so a genuinely large reply reaches the probe.
+    uint256 internal constant VAULT_BOMB_BYTES = 160_000;
+
     Mock_NAVCalculator nav;
     EulerVaultsMetaBalanceAdapter adapter;
 
@@ -611,6 +622,30 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
         _assertFailOpen(address(v), 1_000_000, 400_000);
     }
 
+    /// @dev The case that makes {StaticCallLib.safeAddrStrict} load-bearing here rather than merely tidy: a dirty
+    ///      word whose LOW 160 bits are a real, working EVC that would classify this vault as collateral.
+    ///
+    ///      The sibling `bytes32`-shaped test above does NOT discriminate — its low bits are `type(uint160).max`,
+    ///      a code-less address, so masking and rejecting both fall through to `Supplied` by different routes.
+    ///      Swap `safeAddrStrict` for `safeAddr` in `_safeEvc` and only THIS test goes red: masking hands
+    ///      `_supplyKind` an EVC the vault never validly named, and the supply is classified `Collateral` off an
+    ///      attacker-chosen contract. Rejecting keeps the "cannot classify" sentinel meaningful.
+    function test_supplyKind_dirtyEvcWordOverRealEvc_degradesToSupplied() public {
+        MockEVC evc = new MockEVC();
+        // Low 160 bits = the real EVC; bit 200 set, so the word is not a valid `address` encoding.
+        uint256 dirty = uint256(uint160(address(evc))) | (uint256(1) << 200);
+        MockRawEvcVault v = new MockRawEvcVault(address(usdc), abi.encode(dirty));
+        v.setBalance(alice, 1_000_000);
+        v.setDebt(alice, 400_000);
+
+        // That EVC really would report this vault as enabled collateral, so a masking reader classifies it.
+        address[] memory cols = new address[](1);
+        cols[0] = address(v);
+        evc.setCollaterals(alice, cols);
+
+        _assertFailOpen(address(v), 1_000_000, 400_000);
+    }
+
     /// @dev Mode 1 (decode failure): `EVC()` returns fewer than 32 bytes.
     function test_supplyKind_evcShortReturndata_degradesToSupplied() public {
         MockRawEvcVault v = new MockRawEvcVault(address(usdc), hex"deadbeef");
@@ -697,7 +732,7 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
     ///      stipend; this pins that the vault-side one does too.
     function test_safeEvc_returndataBomb_boundedAndFailsOpen() public {
         // The vault's own EVC() returns a huge payload whose first word is zero, so it is also unusable.
-        MockBombEvcVault v = new MockBombEvcVault(address(usdc), 256_000, address(0));
+        MockBombEvcVault v = new MockBombEvcVault(address(usdc), VAULT_BOMB_BYTES, address(0));
         v.setBalance(alice, 1_000_000);
         v.setDebt(alice, 400_000);
 
@@ -711,16 +746,24 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
         assertEq(pos[0].amount, 1_000_000, "supply amount intact");
         assertEq(pos[1].amount, 400_000, "debt leg not suppressed");
         assertTrue(pos[0].positionKind == PositionKind.Supplied);
-        assertLt(used, 500_000, "vault-side returndata copy bounded too");
+        // Measured 117,299 on this branch; 199,716 with `probeWord`'s fixed output window replaced by a
+        // `(bool, bytes memory)` assignment. The ceiling sits between the two deliberately — a loose bound
+        // would pass in BOTH cases and assert nothing.
+        assertLt(used, 150_000, "vault-side returndata copy bounded too");
     }
 
-    /// @dev The true worst case: BOTH probes bomb in a single read. A 256 KB payload whose first word is a clean
-    ///      address is a *valid* address encoding with trailing junk, so it correctly passes `_safeEvc` (extra
-    ///      returndata is legal ABI) and the second probe then fires against an EVC that bombs as well. Total cost
-    ///      must still be bounded — this is the number {PROBE_GAS} ultimately has to hold down.
+    /// @dev The true worst case: BOTH probes bomb in a single read. A payload whose first word is a clean address
+    ///      is a *valid* address encoding with trailing junk, so it correctly passes `_safeEvc` (extra returndata
+    ///      is legal ABI) and the second probe then fires against an EVC that bombs as well.
+    ///
+    ///      The vault-side payload is {VAULT_BOMB_BYTES}, not 256 KB, because that probe is now bounded by
+    ///      `StaticCallLib.PROBE_GAS` (100_000): at 256 KB the callee MemoryOOGs, `_safeEvc` yields address(0),
+    ///      `_supplyKind` short-circuits, and the SECOND probe never fires — "both probes bomb" would bomb
+    ///      neither. The EVC-side payload stays at 256 KB because `_isEnabledCollateral` still carries this
+    ///      file's own 150_000 stipend.
     function test_bothProbesBomb_worstCase_stillBounded() public {
         address bombEvc = address(new MockReturndataBombEVC(256_000));
-        MockBombEvcVault v = new MockBombEvcVault(address(usdc), 256_000, bombEvc);
+        MockBombEvcVault v = new MockBombEvcVault(address(usdc), VAULT_BOMB_BYTES, bombEvc);
         v.setBalance(alice, 1_000_000);
         v.setDebt(alice, 400_000);
 
@@ -737,7 +780,13 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
         // Measured 958,612 here; an independent audit measured 926,673 for the same shape. Pinned just above so a
         // regression in PROBE_GAS trips it. Per-instance: the base fan-out gives each instance a fresh memory
         // frame via `try this.instancePositions(...)`, so this cost scales linearly, not quadratically.
-        assertLt(used, 1_000_000, "both probes bombed, still bounded");
+        assertLt(
+            // Measured 444,913 on this branch; 683,778 with the fixed output window replaced by a
+            // `(bool, bytes memory)` assignment on the vault-side probe.
+            used,
+            550_000,
+            "both probes bombing must stay bounded"
+        );
     }
 
     /// @dev The membership scan compares FULL words, so a collateral entry whose high 96 bits are dirty never

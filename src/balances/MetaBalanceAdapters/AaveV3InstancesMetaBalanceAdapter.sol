@@ -5,6 +5,8 @@ import {MetaBalanceAdapter} from "../MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
+import {LabelLib} from "src/balances/LabelLib.sol";
+import {StaticCallLib} from "src/utils/StaticCallLib.sol";
 import {IProtocolDataProvider, IAavePool} from "../BalanceAdapters/SparkLendBalanceAdapter.sol";
 
 /// @notice Minimal views to derive an instance's identity on-chain from its ProtocolDataProvider.
@@ -40,33 +42,6 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
     /// @notice Aave's `ReserveConfiguration.MAX_RESERVES_COUNT` — the user-configuration bitmap packs 2 bits
     ///         per reserve into one word, so it addresses ids 0..127.
     uint256 private constant MAX_RESERVES = 128;
-
-    /// @notice Longest market id accepted as a label leaf; anything longer degrades to "" (the label then drops
-    ///         the leaf and renders as just `["Market"]`). Far above any real Aave market id.
-    /// @dev Currently IMPLIED by {MAX_RETURN_BYTES} rather than independently enforced: past the size check below,
-    ///      `size <= MAX_RETURN_BYTES`, and `len <= size - 64` then forces `len <= 256` on its own — so the
-    ///      `len > MAX_LABEL_BYTES` clause cannot fire today. It is kept because the two constants express one
-    ///      invariant, `MAX_RETURN_BYTES == 64 + MAX_LABEL_BYTES`, and they must move together: that equality is
-    ///      also what guarantees there is no off-by-one rejecting a *valid* maximum-length label (a canonical
-    ///      256-byte string encodes to exactly 320 bytes). Raise one without the other and the clause stops being
-    ///      redundant — which is precisely when you want it already there.
-    uint256 private constant MAX_LABEL_BYTES = 256;
-
-    /// @notice Hard ceiling on returndata **copied into this contract's memory** for a label probe: the two ABI head
-    ///         words plus {MAX_LABEL_BYTES} of payload (64 + 256 = 320). Written as a literal because inline assembly
-    ///         accepts only direct number constants.
-    /// @dev This, not the gas stipend, is what bounds the *caller's* cost. A stipend alone does not: a hostile
-    ///      provider can `return(0, 200_000)` — its own memory expansion for ~200 KB costs it well under
-    ///      {LABEL_READ_GAS} — while this contract pays `returndatacopy` plus its own monotonically growing memory,
-    ///      charged outside the stipend and quadratic in total. Passing an explicit output size to `staticcall` copies
-    ///      at most this many bytes whatever the callee returns, so the cost is flat. `returndatasize()` still reports
-    ///      the true size, so an oversized reply is rejected rather than silently truncated.
-    uint256 private constant MAX_RETURN_BYTES = 320;
-
-    /// @notice Gas stipend for a label probe. Generous for a real (even proxied) metadata read, and it bounds the
-    ///         callee's own execution — including a write-protection abort, which consumes everything forwarded.
-    /// @dev Necessary but NOT sufficient on its own; see {MAX_RETURN_BYTES} for the caller-side bound.
-    uint256 private constant LABEL_READ_GAS = 100_000;
 
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
     constructor(address navCalculator_) MetaBalanceAdapter(navCalculator_) {}
@@ -177,92 +152,20 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
 
     /// @notice Resolves the instance's market id (for the display label) from its pool.
     /// @dev V3 Pool exposes `ADDRESSES_PROVIDER()`. Best-effort: returns "" if the pool/provider does not expose the
-    ///      views, or answers them with anything unusable (label then drops the market leaf). Both hops go through the
-    ///      raw-call readers below rather than `try`/`catch`, because `try`/`catch` does not cover every way these
-    ///      reads fail — see {_safeAddressRead} / {_safeStringRead}.
+    ///      views, or answers them with anything unusable (label then drops the market leaf).
+    ///
+    ///      Both hops go through the shared hardened readers rather than `try`/`catch`, because `try`/`catch` covers
+    ///      only one of the three ways these reads fail — a code-less target reverts at the `extcodesize` precheck
+    ///      and undecodable returndata reverts in the decoder, both in THIS frame, past any `catch`. See
+    ///      {StaticCallLib} and {LabelLib} for the guards. `safeAddr`'s masking is correct for `ap`: a garbage
+    ///      provider address simply fails the next hop and the leaf drops, and `address(0)` carries no special
+    ///      meaning here beyond "unreadable".
     function _marketId(address pool) internal view returns (string memory) {
-        address ap = _safeAddressRead(pool, IAaveAddressesProviderSource.ADDRESSES_PROVIDER.selector);
+        (, address ap) = StaticCallLib.safeAddr(
+            pool, abi.encodeWithSelector(IAaveAddressesProviderSource.ADDRESSES_PROVIDER.selector)
+        );
         if (ap == address(0)) return "";
-        return _safeStringRead(ap, IAavePoolAddressesProvider.getMarketId.selector);
-    }
-
-    /// @notice Fail-open read of a parameterless, `address`-returning view. `address(0)` on every failure path.
-    /// @dev `positionLabels` is display-only and MUST NOT revert, and a `try`/`catch` around this call would not
-    ///      make that true. Three distinct failure classes, only one of which `catch` handles:
-    ///        1. `target` has **no code** — a high-level call reverts via Solidity's `extcodesize` precheck *before*
-    ///           the call, in this frame, so `catch` never sees it;
-    ///        2. the call **reverts** — the one class `catch` does cover;
-    ///        3. the call **succeeds but the returndata is not decodable as an `address`** — fewer than 32 bytes, or
-    ///           32 bytes with dirty upper bits. Solidity's decoder runs in THIS frame after the call returned, so
-    ///           its revert propagates straight past `catch`.
-    ///      A raw `staticcall` turns class 2 into a `false` return; the codesize guard covers class 1; the explicit
-    ///      `returndatasize()` check plus a `uint160` mask (rather than `abi.decode(…, (address))`, which validates
-    ///      the upper bits and reverts) covers class 3. Output is written into scratch space with an explicit size, so
-    ///      nothing is copied beyond one word however much the callee returns.
-    function _safeAddressRead(address target, bytes4 selector) private view returns (address) {
-        if (target.code.length == 0) return address(0);
-        bool ok;
-        uint256 size;
-        uint256 word;
-        assembly ("memory-safe") {
-            // Scratch space (0x00–0x3f): selector in the first word, the single return word in the second.
-            // `bytes4` is left-aligned, so the 4 bytes at 0x00 are exactly the selector.
-            mstore(0x00, selector)
-            ok := staticcall(LABEL_READ_GAS, target, 0x00, 0x04, 0x20, 0x20)
-            size := returndatasize()
-            word := mload(0x20)
-        }
-        if (!ok || size < 32) return address(0);
-        return address(uint160(word));
-    }
-
-    /// @notice Fail-open read of a parameterless, `string`-returning view. "" on every failure path.
-    /// @dev Same three classes as {_safeAddressRead}; class 3 is the one a `try`/`catch` silently misses, and the
-    ///      shapes are not hypothetical — all reproduced on solc 0.8.34: empty returndata (an ERC-1967 proxy whose
-    ///      implementation slot points at a code-less address, so the `delegatecall` succeeds returning nothing), a
-    ///      `bytes32` market id (MKR-era style), a bare offset word with no length word, a nonsense offset, and an
-    ///      absurd declared length.
-    ///
-    ///      So the ABI head is validated *before* decoding. A canonical `string` return is
-    ///      `[offset = 0x20][length][payload…]`: require two full words, an offset of exactly `0x20`, a non-zero
-    ///      length within {MAX_LABEL_BYTES}, and a payload that fits inside the returndata. Bounding on the raw
-    ///      declared length is sufficient — a memory-source `abi.decode` bounds on that length, not on `ceil32` of it.
-    ///
-    ///      The probe is gas-capped and output-capped, and both are load-bearing rather than defensive: a raw
-    ///      `staticcall` assigning `(bool, bytes memory)` always `returndatacopy`s the response *including a revert
-    ///      payload*, which the parameterless `catch {}` this replaced never did. Uncapped, this rewrite would be
-    ///      strictly worse than the old `try`/`catch` against a hostile provider. See {MAX_RETURN_BYTES}.
-    function _safeStringRead(address target, bytes4 selector) private view returns (string memory) {
-        if (target.code.length == 0) return "";
-
-        bytes memory data = new bytes(MAX_RETURN_BYTES);
-        bool ok;
-        uint256 size;
-        assembly ("memory-safe") {
-            mstore(0x00, selector)
-            ok := staticcall(LABEL_READ_GAS, target, 0x00, 0x04, add(data, 0x20), MAX_RETURN_BYTES)
-            size := returndatasize()
-        }
-        // A `string` return needs at least the offset and length words. An oversized reply is rejected outright rather
-        // than truncated: a canonical reply for a <= MAX_LABEL_BYTES string never exceeds MAX_RETURN_BYTES, so
-        // anything larger is malformed or hostile.
-        if (!ok || size < 64 || size > MAX_RETURN_BYTES) return "";
-
-        // Shrink to what was actually returned so the payload bound below — and `abi.decode`'s own bounds check — are
-        // exact. Only ever shrinks: `size <= MAX_RETURN_BYTES` is the allocated length.
-        assembly ("memory-safe") {
-            mstore(data, size)
-        }
-
-        uint256 offset;
-        uint256 len;
-        assembly ("memory-safe") {
-            offset := mload(add(data, 0x20))
-            len := mload(add(data, 0x40))
-        }
-        if (offset != 0x20 || len == 0 || len > MAX_LABEL_BYTES || len > size - 64) return "";
-
-        return abi.decode(data, (string));
+        return LabelLib.readString(ap, IAavePoolAddressesProvider.getMarketId.selector, "");
     }
 
     /// @notice True iff the account borrows any reserve whose asset is NOT registered on the NAV, i.e. a debt

@@ -180,6 +180,46 @@ contract UniswapV2PoolsMetaBalanceAdapterTest is Test {
         assertEq(p.length, 0, "a dirty feeTo word is unreadable regardless of its low bits");
     }
 
+    /// @notice A factory that answers `feeTo()` SUCCESSFULLY but with fewer than 32 bytes is "absent", not
+    ///         "broken" — the pair must still report, undiluted.
+    /// @dev The input class that no test covered, and the one that separates "cannot read an address" from
+    ///      "answered with something that is not an address". A raw staticcall to a CODE-LESS factory succeeds
+    ///      with zero returndata, so this is not exotic: it is what a fork with a mis-set `factory()`, or a proxy
+    ///      whose implementation slot is unset, looks like. Treating it as malformed would drop the operator's
+    ///      entire LP position — both legs to zero — over a missing optional getter, which is a far bigger error
+    ///      than the dilution term the malformed path exists to protect.
+    ///
+    ///      Widen `malformed` in {StaticCallLib.safeAddrStrict} to any non-address (i.e. `hasWord` dropped from
+    ///      its definition) and this test fails with 0 legs.
+    function test_emptyFeeToReply_reportsUndilutedRatherThanDropping() public {
+        factory.setFeeTo(address(0xFEE));
+        pairA.setKLast(2.5e39);
+
+        // Successful call, zero-length reply — exactly what a code-less factory returns to a raw staticcall.
+        vm.mockCall(address(factory), abi.encodeWithSignature("feeTo()"), "");
+
+        bytes32[] memory one = new bytes32[](1);
+        one[0] = _instances()[0];
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, one, address(0));
+
+        assertEq(p.length, 2, "an absent feeTo() must not drop the pair");
+        assertEq(p[0].amount, 100e18, "absent feeTo() means no protocol fee, so no dilution");
+    }
+
+    /// @notice Same for a truncated word: still absent, not broken.
+    function test_shortFeeToReply_reportsUndilutedRatherThanDropping() public {
+        factory.setFeeTo(address(0xFEE));
+        pairA.setKLast(2.5e39);
+        vm.mockCall(address(factory), abi.encodeWithSignature("feeTo()"), hex"00112233");
+
+        bytes32[] memory one = new bytes32[](1);
+        one[0] = _instances()[0];
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, one, address(0));
+
+        assertEq(p.length, 2, "a short feeTo() reply must not drop the pair");
+        assertEq(p[0].amount, 100e18, "no readable feeTo() means no dilution");
+    }
+
     /// @notice A fork that genuinely omits `feeTo()` still reports, undiluted — the fail-open this branch exists
     ///         for must survive the malformed-word guard.
     function test_missingFeeToSelector_stillReportsUndiluted() public {

@@ -6,6 +6,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
+import {StaticCallLib} from "src/utils/StaticCallLib.sol";
 
 /// @notice Minimal Euler V2 vault accessors beyond ERC4626. `debtOf` exists only on core eVaults (EVK); `EVC()` is
 ///         exposed by both core eVaults and EulerEarn vaults. A vault lacking either (or a non-Euler ERC4626)
@@ -58,19 +59,33 @@ interface IEVC {
 ///      factory off-chain to *propose* instances; governance approves each into the allowlist. See
 ///      BALANCE_ADAPTERS.md §6.1.
 contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
-    /// @dev Gas stipend for each of the three fail-open probe reads: `debtOf` ({_safeDebt}), `EVC()`
-    ///      ({_safeEvc}) and `getCollaterals` ({_isEnabledCollateral}). A raw staticcall assigning
-    ///      `(bool, bytes memory)` always `returndatacopy`s the response — including a revert payload, which a
-    ///      parameterless `catch {}` does not — so an *uncapped* version of these reads would be strictly worse
-    ///      against a hostile address than the `try`/`catch` they replace: a `revert(0, 3_000_000)` costs ~35M gas
-    ///      to copy, enough to out-of-gas the whole account read. The cap bounds both the callee's execution and,
-    ///      transitively, how much returndata it can afford to expand into.
+    /// @dev Gas stipend for the `getCollaterals` probe ({_isEnabledCollateral}) — the one fail-open read here that
+    ///      is still hand-rolled, because it decodes an `address[]` with a bounded prefix scan rather than a single
+    ///      word or a string, so neither shared reader fits it. A raw staticcall assigning `(bool, bytes memory)`
+    ///      always `returndatacopy`s the response — including a revert payload, which a parameterless `catch {}`
+    ///      does not — so an *uncapped* version would be strictly worse against a hostile address than the
+    ///      `try`/`catch` it replaced: a `revert(0, 3_000_000)` costs ~35M gas to copy, enough to out-of-gas the
+    ///      whole account read. The cap bounds both the callee's execution and, transitively, how much returndata it
+    ///      can afford to expand into.
     ///
-    ///      Measured against the real mainnet EVC at the fork-test block, fully cold: `EVC()` costs 15,336 gas and
-    ///      `getCollaterals` 6,328 — roughly 10x and 24x headroom. The stipend is a genuine (if distant) ceiling on
-    ///      honest reads: an EVC that ever exceeded it would silently classify every collateral-enabled supply as
-    ///      `Supplied`. That is the safe direction, and the fork test pins the live cost, but it is the reason this
-    ///      is generous rather than tight.
+    ///      Measured against the real mainnet EVC at the fork-test block, fully cold: `getCollaterals` costs 6,328
+    ///      gas — roughly 24x headroom. The stipend is a genuine (if distant) ceiling on honest reads: an EVC that
+    ///      ever exceeded it would silently classify every collateral-enabled supply as `Supplied`. That is the safe
+    ///      direction, and the fork test pins the live cost, but it is the reason this is generous rather than tight.
+    ///
+    ///      `debtOf` ({_safeDebt}) and `EVC()` ({_safeEvc}) no longer use this constant: they are single-word reads
+    ///      and now go through {StaticCallLib}, whose stipend is 100_000 — the value LabelLib and every other
+    ///      hardened reader in the repo already uses. That LOWERS their ceiling from 150_000, so both are measured
+    ///      against mainnet rather than assumed: `EVC()` costs 15,318 gas cold, and `debtOf` on a live core-eVault
+    ///      borrow costs 32,125 cold with a binary-searched minimum viable stipend of 29,543 — 3.4x headroom.
+    ///
+    ///      Be precise about `debtOf`'s failure shape, because the obvious reassurance is WRONG. It is tempting to
+    ///      say a starved `debtOf` merely reads 0 alongside a surviving supply leg, so the two vanish together.
+    ///      That holds only when the same vault carries both. In Euler's canonical core topology the account
+    ///      borrows from a CONTROLLER vault while its collateral sits in other vaults, so on the controller
+    ///      `balanceOf(account) == 0` and a starved `debtOf` emits no legs at all — while the sibling vaults still
+    ///      report their collateral in full. That is unoffset collateral, which OVER-reports NAV. The 3.4x
+    ///      measured headroom is what makes this acceptable, not the shape of the failure.
     uint256 private constant PROBE_GAS = 150_000;
 
     /// @dev Upper bound on the collateral-list length {_supplyKind} will scan. The EVC caps an account's collateral
@@ -164,10 +179,15 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     ///      The fix for BOTH modes is the same move: drop to a low-level `staticcall`. That is what removes the
     ///      `extcodesize` precheck (mode 2) — a raw `staticcall` to a code-less address simply returns
     ///      `(true, "")`, which the returndata-length checks then reject — and it is what lets the ABI head be
-    ///      validated before decoding instead of trusting the declared return type (mode 1). The explicit
-    ///      `code.length` guards in the helpers below are therefore a cheap short-circuit that skips a pointless
-    ///      call, NOT the thing that makes mode 2 safe; the helpers behave identically without them. Both reads are
-    ///      additionally bounded by {PROBE_GAS}.
+    ///      validated before decoding instead of trusting the declared return type (mode 1). A `code.length` guard
+    ///      in front of a low-level `staticcall` is therefore a cheap short-circuit that skips a pointless call,
+    ///      NOT the thing that makes mode 2 safe — which is why `_safeEvc`/`_safeDebt` no longer carry one at all
+    ///      now that they delegate to {StaticCallLib}, and behave identically.
+    ///
+    ///      Stipends differ per read and it matters when tuning them: `_safeEvc` and `_safeDebt` are bounded by
+    ///      `StaticCallLib.PROBE_GAS` (100_000), while `_isEnabledCollateral` — still hand-rolled, because it
+    ///      decodes an `address[]` with a bounded prefix scan — is bounded by this file's own {PROBE_GAS}
+    ///      (150_000). Changing the local constant moves only the collateral probe.
     ///
     ///      `vaultAddr` is MANAGER-governed and its guard is defensive only — `_instancePositions` already reverts
     ///      on a code-less vault at `asset()`, long before this is reached. The live exposure is `evc`, which is
@@ -206,32 +226,18 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     ///      Not reachable on the configured mainnet instances today (both are EulerEarn aggregators whose `debtOf`
     ///      genuinely reverts), but the instance set is governed config and adding a core eVault would open it.
     function _safeDebt(address vaultAddr, address account) private view returns (uint256) {
-        if (vaultAddr.code.length == 0) return 0;
-        (bool ok, bytes memory data) =
-            vaultAddr.staticcall{gas: PROBE_GAS}(abi.encodeCall(IEulerEVault.debtOf, (account)));
-        if (!ok || data.length < 32) return 0;
-
-        uint256 word;
-        assembly ("memory-safe") {
-            word := mload(add(data, 0x20))
-        }
-        return word;
+        (, uint256 debt) = StaticCallLib.safeUint(vaultAddr, abi.encodeCall(IEulerEVault.debtOf, (account)));
+        return debt;
     }
 
     /// @dev Fail-open `EVC()` read. Returns `address(0)` — the "cannot classify" sentinel {_supplyKind}
     ///      short-circuits on — for a code-less vault, a reverting/out-of-stipend call, fewer than 32 bytes of
     ///      returndata, or a word with dirty high bits (a `bytes32`-shaped return, not an address).
     function _safeEvc(address vaultAddr) private view returns (address) {
-        if (vaultAddr.code.length == 0) return address(0);
-        (bool ok, bytes memory data) = vaultAddr.staticcall{gas: PROBE_GAS}(abi.encodeCall(IEulerEVault.EVC, ()));
-        if (!ok || data.length < 32) return address(0);
-
-        uint256 word;
-        assembly ("memory-safe") {
-            word := mload(add(data, 0x20))
-        }
-        if (word >> 160 != 0) return address(0);
-        return address(uint160(word));
+        // STRICT, not {StaticCallLib.safeAddr}: `address(0)` is this read's "cannot classify" sentinel, so a
+        // masked-from-garbage zero would be indistinguishable from a real one. See {StaticCallLib.safeAddrStrict}.
+        (, address evc,) = StaticCallLib.safeAddrStrict(vaultAddr, abi.encodeCall(IEulerEVault.EVC, ()));
+        return evc;
     }
 
     /// @dev Fail-open `getCollaterals` membership test. Returns false — degrading the leg to `Supplied` — for a

@@ -95,7 +95,25 @@ library LabelLib {
         return _readString(token, IERC20MetaView.symbol.selector, fallbackStr);
     }
 
-    /// @notice Shared fail-open string-metadata read behind {name} and {symbol}.
+    /// @notice Fail-open read of ANY parameterless, `string`-returning view — the generic form of {name}/{symbol}.
+    /// @dev The canonical home for hardened string-metadata reads. Three sessions independently wrote this same
+    ///      reader — here, and as a `_safeStringRead` duplicated verbatim across the AaveV3 and Gearbox
+    ///      adapters — before it was exposed; those copies now route here so a fourth cannot accumulate.
+    ///
+    ///      Callers wanting ERC20 metadata should still use {name}/{symbol}; this is for everything else
+    ///      (Aave's `getMarketId()`, Gearbox's credit-manager `name()`, …).
+    /// @param token The contract to probe.
+    /// @param selector The parameterless, string-returning selector to call.
+    /// @param fallbackStr Returned unchanged on every failure path, and for an empty result.
+    function readString(address token, bytes4 selector, string memory fallbackStr)
+        internal
+        view
+        returns (string memory)
+    {
+        return _readString(token, selector, fallbackStr);
+    }
+
+    /// @notice Shared fail-open string-metadata read behind {name}, {symbol} and {readString}.
     /// @param token The contract to probe.
     /// @param selector The parameterless, string-returning selector to call.
     /// @param fallbackStr Returned unchanged on every failure path, and for an empty result.

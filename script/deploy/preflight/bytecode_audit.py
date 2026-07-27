@@ -253,7 +253,28 @@ def check_immutable_pointers(chain_id: int, url: str, res: dict) -> None:
         if kind == "feed":
             e["pointerCheck"] = "OK" if ptr.lower() == proxy else f"STALE_NAV (-> {ptr})"
         else:
-            e["pointerCheck"] = "OK" if ptr.lower() in adapters else f"STALE_ADAPTER (-> {ptr})"
+            # Two conditions, and the second is the one that matters. Being in the deployment record
+            # is not enough — the adapter must be REGISTERED on the NAV, or the coordinate cache the
+            # assistant feeds is never read. On the live stack all four assistants fail exactly here:
+            # they point at adapters the PR #141 swap left behind, which have code but are not
+            # registered, so submitted coordinates go into a cache the NAV ignores.
+            recorded = ptr.lower() in adapters
+            registered = None
+            if proxy:
+                try:
+                    reg = c.eth_call(
+                        url, proxy,
+                        _sel("isAdapterRegistered(address)") + "0" * 24 + ptr[2:].lower())
+                    registered = int(reg, 16) == 1
+                except Exception:  # noqa: BLE001
+                    registered = None
+            e["adapterRegisteredOnNav"] = registered
+            if not recorded:
+                e["pointerCheck"] = f"STALE_ADAPTER (-> {ptr}, not in deployment record)"
+            elif registered is False:
+                e["pointerCheck"] = f"ORPHAN (-> {ptr} recorded but NOT registered on the NAV)"
+            else:
+                e["pointerCheck"] = "OK"
         # A contract whose code is current but whose pointer is stale still has to be redeployed.
         if e["pointerCheck"] != "OK" and e["status"].startswith("CURRENT"):
             e["status"] = "CURRENT_CODE_STALE_POINTER"

@@ -409,7 +409,7 @@ assistants hold an `immutable ADAPTER`, so they are redeployed too and the Safe 
 | 1 | `EtherFiWithdrawalQueueAssisted` | `EtherFiWithdrawalQueueAssistant` |
 | 1 | `NexusMutualStakingPoolsAssisted` | `NexusMutualStakingPoolsAssistant` |
 | 1 | `StakeWiseV3ExitQueueAssisted` | `StakeWiseV3ExitQueueAssistant` |
-| **100** | **`StakeWiseV3ExitQueueAssisted`** | **`StakeWiseV3ExitQueueAssistant`** |
+| **100 gnosis** | **`StakeWiseV3ExitQueueAssisted`** | **`StakeWiseV3ExitQueueAssistant`** — the easy miss |
 
 The gnosis pair is easy to miss — the assisted family is usually described as mainnet-only. Read the
 new addresses out of `deployments/{1,100}.json` and hand them to the owners. This was left open after
@@ -432,13 +432,46 @@ PR #141; do not let it slip again.
 > correctly.
 >
 > The redeploy fixes it by construction: `04`'s `_deployAssistantsIfEnabled` builds each assistant
-> from the freshly-deployed adapter address. **But only if the `*Assistant` keys are cleared** — it
-> skips an assistant whose key is already populated. `reset_deployment_records.py` clears them; do not
-> hand-edit around that. After the deploy, assert `ADAPTER()` on each new assistant equals the new
-> assisted adapter:
-> ```bash
-> python3 script/deploy/preflight/bytecode_audit.py 1 100   # pointerCheck must be OK for all four
-> ```
+> from the freshly-deployed adapter address, so the pairings are rebuilt from nothing. **But only if
+> the `*Assistant` keys are cleared** — it skips an assistant whose key is already populated.
+> `reset_deployment_records.py` clears them; do not hand-edit around that.
+
+**2.1a Verify every assistant pairing — REQUIRED, both chains.**
+
+```bash
+python3 script/deploy/preflight/bytecode_audit.py 1 100
+# every entry must be CURRENT; no CURRENT_CODE_STALE_POINTER, no ORPHAN
+```
+
+The audit resolves `ADAPTER()` on each assistant and checks **two** things — that it is in the
+deployment record, *and* that `isAdapterRegistered(ADAPTER())` is true on the new NAV. The second is
+the one that matters: an assistant pointing at an unregistered adapter feeds a cache the NAV never
+reads, which is precisely the live failure (all four report `ORPHAN` against the current stack). Or by
+hand, per pair:
+
+```bash
+ASST=$(jq -r '.StakeWiseV3ExitQueueAssistant' script/config/deployments/$CID.json)
+ADAP=$(cast call $ASST 'ADAPTER()(address)' --rpc-url $RPC)
+cast call $PROXY 'isAdapterRegistered(address)(bool)' $ADAP --rpc-url $RPC   # must be true
+jq -r '.balanceAdapters.StakeWiseV3ExitQueueAssisted' script/config/deployments/$CID.json  # must equal $ADAP
+```
+
+**2.1b Owners re-feed the coordinate caches — 4 caches on 2 chains.**
+
+Hand the owners the **new** assistant addresses from `deployments/{1,100}.json` and confirm each cache
+is non-empty afterwards. All four must be done; the gnosis one is the easy miss because the assisted
+family is usually described as mainnet-only. Until a cache is re-fed, those positions are
+**under-reported** — the adapter reports what it can verify, so NAV is low, not wrong.
+
+```bash
+# per (chain, adapter): returns [] until the owner has re-submitted, then the coordinate blobs.
+# `coordsOf` is the only cache view getter (AssistedCoordCache.sol:81) — there is no count getter.
+cast call $ADAPTER 'coordsOf(address)(bytes[])' $OWNER_SAFE --rpc-url $RPC
+```
+
+The cache is keyed per account (`mapping(address account => bytes[] coords)`,
+`AssistedCoordCache.sol:41`), so query it for **the owner Safe that holds the positions**, not for the
+deployer.
 
 ### 2.2 Bytecode-reality audit — the acceptance test
 

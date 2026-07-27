@@ -289,6 +289,13 @@ contract ConvexCurveLPStakingMetaBalanceAdapter is MetaBalanceAdapter {
         // a short return, which leaves result == 0 — indistinguishable from a genuine pid 0.) That is what
         // {StaticCallLib.probeWord}'s `hasWord` is for; routing through it also picks up the library's gas
         // stipend and fixed output window, which the hand-rolled staticcall here did not have.
+        //
+        // Scope note, so the stipend is not read as more than it is: it bounds THIS read, not the instance. The
+        // `balanceOf` at the top of `_instancePositions` is still an unguarded high-level call that forwards
+        // 63/64 of the frame, and it runs first — so a rewarder that loops still starves the sibling instances
+        // in the same `getAdapterPositions` sweep, with `MetaBalanceAdapter`'s per-instance try/catch absorbing
+        // the OOG silently. Closing that belongs in the meta-adapter instance loop, where it fixes every meta
+        // adapter at once, not here.
         (, bool hasPid, uint256 pid) = StaticCallLib.probeWord(rewarder, abi.encodeWithSignature("pid()"));
         if (!hasPid) return address(0);
         try BOOSTER.poolInfo(pid) returns (address lptoken, address, address, address, address, bool) {

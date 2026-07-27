@@ -79,18 +79,28 @@ library StaticCallLib {
     ///      The output window is the 32-byte scratch slot at 0x00, so `returndatasize()` never influences the
     ///      caller's memory footprint: the EVM copies `min(returndatasize(), 32)` bytes and drops the rest. The
     ///      scratch space (0x00–0x3f) is free for transient use, which is why this block is `memory-safe`.
-    ///      `word` is read unconditionally and is meaningless unless `hasWord` — on failure the slot holds
-    ///      whatever prefix of the revert payload the EVM copied into it.
-    /// @return ok The raw staticcall success flag.
+    ///
+    ///      `word` is returned as 0 unless `hasWord`, and that assignment is load-bearing rather than tidiness.
+    ///      A fixed output window is not cleared between probes: on an empty reply the EVM writes nothing, so
+    ///      the slot still holds whatever the *previous* probe left there — inside one `getAdapterPositions`
+    ///      sweep, that is the preceding instance's successful reply, not obvious garbage. The `bytes memory`
+    ///      shape this replaced allocated fresh memory per call and so made "the callee returned nothing"
+    ///      structurally unreadable; zeroing here restores that guarantee for the same three gas.
+    /// @return ok The raw staticcall success flag. Callers wanting "did I get a value" want `hasWord`, not this.
     /// @return hasWord True when the call succeeded AND returned at least one full word.
-    /// @return word The first 32 bytes of returndata.
+    /// @return word The first 32 bytes of returndata, or 0 when `!hasWord`.
     function probeWord(address target, bytes memory data) internal view returns (bool ok, bool hasWord, uint256 word) {
         uint256 size;
+        uint256 raw;
         assembly ("memory-safe") {
             ok := staticcall(PROBE_GAS, target, add(data, 0x20), mload(data), 0x00, 0x20)
             size := returndatasize()
-            word := mload(0x00)
+            raw := mload(0x00)
         }
         hasWord = ok && size >= 32;
+        // `ok &&` is not redundant with the size check: a callee that reverts with a standard `Error(string)`
+        // payload produces ≥ 32 bytes of returndata, which the EVM copies into the output window exactly as a
+        // successful reply would. Without `ok`, that revert payload's first word would be handed back as a value.
+        if (hasWord) word = raw;
     }
 }

@@ -19,8 +19,16 @@ contract RawReplier {
         Return,
         Revert,
         BurnGas,
-        BigReturn
+        BigReturn,
+        RevertWith
     }
+
+    /// @notice First word of a {Mode.BigReturn} reply, so a test can assert the big reply actually ARRIVED
+    ///         rather than only that the caller stayed cheap.
+    /// @dev Without a recognisable marker, a huge-reply test passes vacuously the moment the callee can no
+    ///      longer afford to produce the reply: `returndatasize()` collapses to 0, the caller's gas drops, and
+    ///      an upper-bound-only assertion still holds while the property under test is no longer exercised.
+    uint256 public constant BIG_RETURN_MARKER = 0x5BADC0DE;
 
     Mode public mode;
 
@@ -53,15 +61,25 @@ contract RawReplier {
         mode = Mode.BurnGas;
     }
 
-    /// @notice Reply **successfully** with `size` zero bytes.
+    /// @notice Reply **successfully** with `size` bytes, the first word being {BIG_RETURN_MARKER}.
     /// @dev The success path is the only way to test a reader's returndata-copy cost. A revert bomb proves
     ///      nothing about it: a big `revert(0, size)` out-of-gasses inside the callee's own memory expansion once
     ///      the reader caps the stipend, so `returndatasize()` collapses to 0 and the caller never copies
     ///      anything. `return(0, size)` costs the callee the same memory expansion but leaves a genuinely large
-    ///      reply for the caller to (not) copy.
+    ///      reply for the caller to (not) copy — and the marker lets the test prove the reply arrived.
     function stageBigReturn(uint256 size) external {
         mode = Mode.BigReturn;
         returnBytes = size;
+    }
+
+    /// @notice Revert with `data` verbatim.
+    /// @dev Distinct from {stageRevert}, which reverts with `size` zero bytes out of untouched memory. A reader
+    ///      that gates only on `returndatasize()` and not on the success flag cannot tell this from a real reply,
+    ///      so staging a revert payload with recognisable CONTENT is the only way to exercise that distinction —
+    ///      and it must be small enough that the callee can afford to emit it under the reader's stipend.
+    function stageRevertWith(bytes memory data) external {
+        mode = Mode.RevertWith;
+        payload = data;
     }
 
     fallback() external {
@@ -72,9 +90,16 @@ contract RawReplier {
                 revert(0, size)
             }
         }
+        if (m == Mode.RevertWith) {
+            bytes memory r = payload;
+            assembly {
+                revert(add(r, 0x20), mload(r))
+            }
+        }
         if (m == Mode.BigReturn) {
             uint256 size = returnBytes;
             assembly {
+                mstore(0x00, BIG_RETURN_MARKER)
                 return(0, size)
             }
         }

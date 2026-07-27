@@ -52,17 +52,14 @@ library UniswapV2PairLib {
         if (totalSupply == 0) return (token0, token1, 0, 0);
 
         (uint112 reserve0, uint112 reserve1,) = IUniswapV2Pair(pair).getReserves();
-        uint256 effectiveSupply = totalSupply
-            + _pendingProtocolMint(
-                pair,
-                IUniswapV2Pair(pair).factory(),
-                reserve0,
-                reserve1,
-                totalSupply,
-                numFactor,
-                rootKCoeff,
-                rootKLastCoeff
-            );
+        (uint256 pendingMint, bool malformed) = _pendingProtocolMint(
+            pair, IUniswapV2Pair(pair).factory(), reserve0, reserve1, totalSupply, numFactor, rootKCoeff, rootKLastCoeff
+        );
+        // A factory we cannot read COHERENTLY leaves the dilution term unknowable, and an unknown dilution can
+        // only be resolved downward — see {_pendingProtocolMint} on why its own fail-open resolves upward.
+        // Reporting nothing for the pair under-reports; guessing "no protocol fee" would over-report.
+        if (malformed) return (token0, token1, 0, 0);
+        uint256 effectiveSupply = totalSupply + pendingMint;
 
         amount0 = reserve0 == 0 ? 0 : (balance * uint256(reserve0)) / effectiveSupply;
         amount1 = reserve1 == 0 ? 0 : (balance * uint256(reserve1)) / effectiveSupply;
@@ -73,6 +70,31 @@ library UniswapV2PairLib {
     ///         `(1, 5, 1)`; PancakeSwap V2 uses `(8, 17, 8)` (a different protocol-fee fraction). Returns 0 when
     ///         `feeTo` is unset, `kLast == 0`, or `√k <= √kLast`. `feeTo()`/`kLast()` are read defensively via
     ///         staticcall (forks omitting them are treated as "no protocol fee").
+    /// @dev **This is the one fail-open branch in this file whose failure direction is UPWARD**, and it is the
+    ///      reason `feeTo()` is read through {StaticCallLib.probeWord} rather than {StaticCallLib.safeAddr}.
+    ///      Returning 0 collapses `effectiveSupply` from `totalSupply + pendingMint` to plain `totalSupply`,
+    ///      making the caller's reserve share LARGER — an over-report, the direction adapters are required never
+    ///      to take. Every other probe failure in this file drops a leg and under-reports.
+    ///
+    ///      Two distinct failures reach that branch, and they must NOT be conflated:
+    ///
+    ///      - **The call fails** (`!ok`) — a fork that genuinely omits `feeTo()`. "No protocol fee" is the
+    ///        correct reading, and it is why this fail-open exists at all. The gas stipend does not meaningfully
+    ///        widen this: on the canonical factory and pair, `feeTo()`/`kLast()` are single `SLOAD`s behind
+    ///        public getters (~2.2k gas, measured ~2.7k against mainnet), more than an order of magnitude under
+    ///        the stipend, and {pairAmounts} first makes six UNGUARDED high-level calls that would revert the
+    ///        instance long before the frame could starve a 2.7k read.
+    ///      - **The call SUCCEEDS but the word is not a valid address** (dirty bits above 160). That is a
+    ///        malformed factory, not a fee-less fork, and reading it as "no protocol fee" is exactly the
+    ///        over-report. It needs separating because {StaticCallLib.safeAddr} masks such a word rather than
+    ///        rejecting it: a word like `type(uint96).max << 160` masks to `address(0)` and lands silently in
+    ///        the `feeTo == address(0)` clause. Before the masking change it hit `abi.decode`'s validator and
+    ///        reverted, which the meta-adapter's per-instance `try`/`catch` turned into a drop — the SAFE
+    ///        direction. Masking is right for every other reader in the sweep, and wrong here, so this call site
+    ///        checks the upper bits itself and reports `malformed` so the caller can drop the pair instead.
+    /// @return pendingMint The LP that would be minted to `feeTo` on the next mint/burn; 0 when there is no fee.
+    /// @return malformed True when the factory answered with something that is not an address, meaning the
+    ///         dilution is unknowable and the caller must report nothing rather than assume no fee.
     function _pendingProtocolMint(
         address pair,
         address factory,
@@ -82,27 +104,27 @@ library UniswapV2PairLib {
         uint256 numFactor,
         uint256 rootKCoeff,
         uint256 rootKLastCoeff
-    ) private view returns (uint256) {
-        (bool feeToOk, address feeTo) = _safeCallAddress(factory, abi.encodeCall(IUniswapV2Factory.feeTo, ()));
-        if (!feeToOk || feeTo == address(0)) return 0;
+    ) private view returns (uint256 pendingMint, bool malformed) {
+        (bool feeToOk, bool feeToHasWord, uint256 feeToWord) =
+            StaticCallLib.probeWord(factory, abi.encodeCall(IUniswapV2Factory.feeTo, ()));
+        if (feeToHasWord && feeToWord >> 160 != 0) return (0, true);
+
+        address feeTo = address(uint160(feeToWord));
+        if (!feeToOk || feeTo == address(0)) return (0, false);
 
         (bool kLastOk, uint256 kLast) = _safeCallUint(pair, abi.encodeCall(IUniswapV2Pair.kLast, ()));
-        if (!kLastOk || kLast == 0) return 0;
+        if (!kLastOk || kLast == 0) return (0, false);
 
         uint256 rootK = Math.sqrt(uint256(reserve0) * uint256(reserve1));
         uint256 rootKLast = Math.sqrt(kLast);
-        if (rootK <= rootKLast) return 0;
+        if (rootK <= rootKLast) return (0, false);
 
         uint256 numerator = totalSupply * (rootK - rootKLast) * numFactor;
         uint256 denominator = rootK * rootKCoeff + rootKLast * rootKLastCoeff;
-        return numerator / denominator;
+        return (numerator / denominator, false);
     }
 
     function _safeCallUint(address target, bytes memory data) private view returns (bool success, uint256 result) {
         return StaticCallLib.safeUint(target, data);
-    }
-
-    function _safeCallAddress(address target, bytes memory data) private view returns (bool success, address result) {
-        return StaticCallLib.safeAddr(target, data);
     }
 }

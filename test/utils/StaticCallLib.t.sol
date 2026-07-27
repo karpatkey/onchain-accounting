@@ -15,6 +15,21 @@ contract StaticCallHarness {
         return StaticCallLib.safeAddr(target, data);
     }
 
+    function probe(address target, bytes memory data) external view returns (bool ok, bool hasWord, uint256 word) {
+        return StaticCallLib.probeWord(target, data);
+    }
+
+    /// @notice Two probes in ONE frame, returning only the second — the only way to observe whether the first
+    ///         probe's reply is still resident in the shared output window when the second returns nothing.
+    function probeTwice(address first, bytes memory firstData, address second, bytes memory secondData)
+        external
+        view
+        returns (bool ok, bool hasWord, uint256 word)
+    {
+        StaticCallLib.probeWord(first, firstData);
+        return StaticCallLib.probeWord(second, secondData);
+    }
+
     /// @notice Gas consumed by one {StaticCallLib.safeUint}, measured from inside the calling frame.
     function gasForUint(address target, bytes memory data) external view returns (uint256 used) {
         uint256 before = gasleft();
@@ -138,14 +153,28 @@ contract StaticCallLibTest is Test {
     ///      memory expansion on top of what the callee already spent. Staged on the SUCCESS path deliberately —
     ///      a revert bomb of the same size out-of-gasses inside the callee once the stipend is capped, leaving
     ///      `returndatasize() == 0` and nothing to copy.
+    ///
+    ///      The marker assertion is what keeps this test honest. A gas ceiling alone passes VACUOUSLY the moment
+    ///      the callee can no longer afford to emit the reply — lower `PROBE_GAS` below the ~57k this reply costs
+    ///      and `returndatasize()` collapses to 0, `used` drops to roughly the stipend, and the ceiling still
+    ///      holds while the output window under test is never exercised. Asserting the marker arrived means the
+    ///      reply must genuinely have been produced AND discarded.
     function test_safeUint_hugeSuccessReply_isNotCopied() public {
         replier.stageBigReturn(BIG_REPLY_BYTES);
+        (bool ok, uint256 result) = harness.probeUint(address(replier), abi.encodeWithSignature("anything()"));
+        assertTrue(ok, "the big reply must actually have been produced");
+        assertEq(result, replier.BIG_RETURN_MARKER(), "the big reply must have reached the reader's first word");
+
         uint256 used = harness.gasForUint(address(replier), abi.encodeWithSignature("anything()"));
         assertLt(used, COPY_CEILING, "reply size must not reach the caller's memory");
     }
 
     function test_safeAddr_hugeSuccessReply_isNotCopied() public {
         replier.stageBigReturn(BIG_REPLY_BYTES);
+        (bool ok, address result) = harness.probeAddr(address(replier), abi.encodeWithSignature("anything()"));
+        assertTrue(ok, "the big reply must actually have been produced");
+        assertEq(result, address(uint160(replier.BIG_RETURN_MARKER())), "the big reply must have reached the reader");
+
         uint256 used = harness.gasForAddr(address(replier), abi.encodeWithSignature("anything()"));
         assertLt(used, COPY_CEILING, "reply size must not reach the caller's memory");
     }
@@ -162,8 +191,8 @@ contract StaticCallLibTest is Test {
     // Legacy semantics the two live call sites rely on.
     // ---------------------------------------------------------------------------------------------------------
 
-    /// @dev `ok` is the raw success flag and does NOT fold in the length check — Convex's `_pidLpToken` reads the
-    ///      word itself precisely because of this.
+    /// @dev `ok` is the raw success flag and does NOT fold in the length check — Convex's `_lpTokenOf` gates on
+    ///      `hasWord` precisely because of this.
     function test_shortReply_reportsOkWithZeroValue() public {
         replier.stageReturn(hex"00112233");
         (bool okU, uint256 u) = harness.probeUint(address(replier), abi.encodeWithSignature("anything()"));
@@ -202,10 +231,64 @@ contract StaticCallLibTest is Test {
         assertEq(a, address(0), "a reverting callee yields no address");
     }
 
-    /// @dev A revert payload large enough to matter is bounded by the same stipend, from the callee side.
+    /// @dev A callee ATTEMPTING a huge revert payload is bounded by the same stipend, from the callee side.
+    ///      Note precisely what this does and does not prove: 3 MB of revert data needs ~17.4M gas of callee
+    ///      memory expansion, so under `PROBE_GAS` the callee MemoryOOGs before emitting anything and
+    ///      `returndatasize()` is 0. So this pins the stipend, NOT the output window — nothing is ever copied.
+    ///      Revert-payload handling proper is covered by {test_revertWithFullWord_isNotMistakenForAValue}, which
+    ///      stages a payload small enough for the callee to actually emit.
     function test_revertBomb_isGasCapped() public {
         replier.stageRevert(3_000_000);
         uint256 used = harness.gasForUint{gas: 5_000_000}(address(replier), abi.encodeWithSignature("anything()"));
         assertLt(used, BURN_CEILING, "a revert bomb must not escape the stipend");
+    }
+
+    /// @notice A revert carrying ≥ 32 bytes must never be mistaken for a returned value.
+    /// @dev This is the load-bearing test for the `ok &&` conjunct in `hasWord`, and the one case the rest of the
+    ///      suite structurally cannot reach: every other failure staging here yields `returndatasize() == 0`
+    ///      (a zero-byte revert, or a callee that OOGs before emitting), so `size >= 32` is already false and
+    ///      `ok` never has to carry the check. Delete `ok &&` and the whole suite stays green without this test.
+    ///
+    ///      The scenario is ordinary, not exotic: any callee reverting with a standard `Error(string)` produces
+    ///      100+ bytes, which the EVM copies into the output window exactly as a successful reply would. Convex's
+    ///      `_lpTokenOf` DISCARDS `ok` and gates solely on `hasWord`, so if `ok` ever stopped being folded in, the
+    ///      first word of a revert payload would be handed to `Booster.poolInfo(pid)` as a pool id.
+    function test_revertWithFullWord_isNotMistakenForAValue() public {
+        // A plausible-looking pid plus filler, mimicking an `Error(string)` head. Small enough that the callee
+        // can genuinely emit it under the stipend — a bomb would OOG and prove nothing.
+        replier.stageRevertWith(abi.encodePacked(uint256(42), uint256(1), uint256(0)));
+
+        (bool ok, bool hasWord, uint256 word) = harness.probe(address(replier), abi.encodeWithSignature("anything()"));
+        assertFalse(ok, "a reverting callee reports failure");
+        assertFalse(hasWord, "revert data is not a returned word");
+        assertEq(word, 0, "a revert payload must never surface as a value");
+
+        (bool okU, uint256 u) = harness.probeUint(address(replier), abi.encodeWithSignature("anything()"));
+        assertFalse(okU, "a reverting callee reports failure");
+        assertEq(u, 0, "revert payload must not decode as a uint");
+
+        (bool okA, address a) = harness.probeAddr(address(replier), abi.encodeWithSignature("anything()"));
+        assertFalse(okA, "a reverting callee reports failure");
+        assertEq(a, address(0), "revert payload must not decode as an address");
+    }
+
+    /// @notice `word` is zeroed when `!hasWord`, so an empty reply cannot surface the PREVIOUS probe's value.
+    /// @dev The output window at 0x00 is not cleared between probes: on an empty reply the EVM writes nothing,
+    ///      leaving the prior probe's word in place. Within one `getAdapterPositions` sweep that residue is the
+    ///      preceding instance's real value — a plausible-looking wrong answer rather than obvious garbage.
+    ///      Drop the `if (hasWord)` assignment in the library and this fails with the marker still resident.
+    function test_emptyReply_doesNotLeakPreviousProbesWord() public {
+        replier.stageReturn(abi.encode(uint256(0xC0FFEE)));
+        (, bool firstHasWord, uint256 firstWord) = harness.probe(address(replier), abi.encodeWithSignature("a()"));
+        assertTrue(firstHasWord, "control: the first probe must land a word");
+        assertEq(firstWord, 0xC0FFEE, "control: the first probe's word");
+
+        // Same frame, same scratch slot — a code-less target succeeds with zero returndata and writes nothing.
+        (bool ok, bool hasWord, uint256 word) = harness.probeTwice(
+            address(replier), abi.encodeWithSignature("a()"), address(0xDEAD), abi.encodeWithSignature("b()")
+        );
+        assertTrue(ok, "staticcall to a code-less address succeeds");
+        assertFalse(hasWord, "an empty reply carries no word");
+        assertEq(word, 0, "residue from the previous probe must not surface");
     }
 }

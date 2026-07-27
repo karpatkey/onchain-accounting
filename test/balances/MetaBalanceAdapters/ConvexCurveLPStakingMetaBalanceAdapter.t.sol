@@ -459,6 +459,32 @@ contract ConvexCurveLPStakingMetaBalanceAdapterTest is Test {
         assertEq(_count(pos, PositionKind.Staking), 0, "a short pid() reply must yield no staking legs");
     }
 
+    /// @notice A rewarder whose `pid()` REVERTS with ≥ 32 bytes of data must not have that payload read as a pid.
+    /// @dev The sibling of {test_shortPidReply_doesNotResolveToPoolZero}, covering the other way the output
+    ///      window can hold a full word without a value being returned. Any callee reverting with a standard
+    ///      `Error(string)` emits 100+ bytes, which the EVM copies into the window exactly as a reply would;
+    ///      `hasWord` excludes it only because it folds in the staticcall success flag. The payload's first word
+    ///      is 0 here, so a reader that dropped that flag would resolve Booster pool 0 — the decoy.
+    function test_revertingPidReply_doesNotResolveToPoolZero() public {
+        rewarder.setStaked(alice, 100e18);
+
+        MockCurvePool decoy = new MockCurvePool(_coins());
+        decoy.setPoolBalance(0, 500e6);
+        decoy.setPoolBalance(1, 500e18);
+        decoy.setTotalSupply(1_000e18);
+        decoy.setWalletBalance(alice, 100e18);
+        booster.setPool(0, address(decoy));
+
+        vm.mockCallRevert(
+            address(rewarder), abi.encodeWithSignature("pid()"), abi.encodePacked(uint256(0), uint256(0), uint256(0))
+        );
+
+        INAVCalculator.PositionBalance[] memory pos =
+            meta.getAdapterPositionsForInstances(alice, _instance(address(rewarder)), address(0));
+
+        assertEq(_count(pos, PositionKind.Staking), 0, "a reverting pid() must yield no staking legs");
+    }
+
     /// @notice The control for {test_shortPidReply_doesNotResolveToPoolZero}: a genuine `pid == 0` still resolves.
     function test_genuinePidZero_stillResolves() public {
         MockConvexRewarder zeroPid = new MockConvexRewarder(address(pool), address(crv), 0);

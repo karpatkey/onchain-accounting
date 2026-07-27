@@ -47,7 +47,7 @@ contract LabelLibForkTest is BalanceAdapterTestBase {
             trimmed[i] = assetsList[i];
         }
         balances = _deployBalancesForAdapter(trimmed);
-        meta = new FluidVaultsMetaBalanceAdapter(VAULT_RESOLVER, "Fluid", address(balances));
+        meta = new FluidVaultsMetaBalanceAdapter(VAULT_RESOLVER, address(balances));
     }
 
     function _leaf(address vault) internal view returns (string[] memory) {

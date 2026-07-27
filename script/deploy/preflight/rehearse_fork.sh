@@ -37,8 +37,13 @@ mkdir -p "$WORK"
 : > "$WORK/steps.tsv"
 echo -e "step\tseconds\tgas\tstatus" >> "$WORK/steps.tsv"
 
-if [[ -f .env ]]; then set -a; source .env; set +a; fi
-: "${ALCHEMY_API_KEY:?ALCHEMY_API_KEY must be set}"
+# A git worktree has no .env of its own — fall back to the canonical clone and to the OIV env, the
+# same two files chainlib.load_env reads, so the tooling all sees one endpoint inventory.
+for ENVF in .env "$(dirname "$ROOT")/onchain-accounting/.env" \
+            "$(dirname "$ROOT")/onchain-investment-vehicles/.env"; do
+  [[ -f "$ENVF" ]] && { set -a; source "$ENVF"; set +a; }
+done
+: "${ALCHEMY_API_KEY:?ALCHEMY_API_KEY must be set (checked .env, ../onchain-accounting/.env)}"
 FORK_URL="${MAINNET_URL:-https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}}"
 
 DEPLOYER="$(jq -r '.addresses.admin' "script/config/chains/${CHAIN_ID}.json")"
@@ -99,6 +104,18 @@ run_step() {
   # broadcast receipts, which --broadcast writes into broadcast/<script>/<chainId>/run-latest.json.
   gas=$(grep -aoE "Total Paid: [0-9.]+ ETH \(([0-9]+) gas" "$log" | grep -oE "\(([0-9]+)" | tr -d '(' | paste -sd+ | bc 2>/dev/null)
   [[ -z "$gas" ]] && gas=0
+  # Several scripts return cleanly when their precondition is unmet rather than reverting —
+  # RegisterAssets prints "NAVCalculator not deployed for this chain" and returns, 06 prints
+  # "BridgeEscrow not deployed, skipping", 03/04 print "Already deployed at:". Exit status 0 is
+  # therefore NOT evidence that work happened, so treat these phrases as failures in a rehearsal
+  # whose whole point is to prove the sequence does something.
+  local noop_re="NAVCalculator not deployed for this chain|Already deployed at:|No assets configured"
+  if grep -qaE "$noop_re" "$log"; then
+    echo -e "${label}\t$((t1-t0))\t${gas}\tNO-OP" >> "$WORK/steps.tsv"
+    echo "    NO-OP ($((t1-t0))s) — script exited 0 but did nothing:"
+    grep -aE "$noop_re" "$log" | head -3 | sed 's/^/      /'
+    return 1
+  fi
   if [[ $rc -eq 0 ]] && ! grep -qa "^Error" "$log"; then
     echo -e "${label}\t$((t1-t0))\t${gas}\tOK" >> "$WORK/steps.tsv"
     echo "    OK  $((t1-t0))s  gas=${gas}"

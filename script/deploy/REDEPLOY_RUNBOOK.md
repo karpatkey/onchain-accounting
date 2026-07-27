@@ -200,10 +200,20 @@ pointer. The pre-clear record is archived to `preflight/archive/pre-redeploy/<CI
 PERSIST_DEPLOYMENTS=1 forge script script/deploy/01_2_DeployNAVImplementation.s.sol $BROADCAST
 ```
 
-**Use `01_2`, not `01`.** `01` additionally deploys and persists `BridgeEscrowImplementation`
-(`01:68,115`). The bridge is deferred, so that is a wasted ~3–4M gas on each of 24 chains and it
-overwrites bridge deployment state for a stack that is not being touched. `01_2` deploys exactly the
-NAV subset.
+**Use `01_2`, not `01` — this matters more than it looks.**
+
+1. **`01` has NO pin assertions.** `01_2` carries four `require`s (both CREATE2 pins, plus
+   impl-linked-against-both, `01_2:46-68`); `01` has only "deploy failed" checks. Measured on a
+   mainnet fork against `main` @ `31c7b1b7` (stale pin): `01_2` reverted safely before broadcasting,
+   while `01` **succeeded** and deployed `PriceFeedLib` to `0xee114702…` and `NAVRegistryLib` to
+   `0x660e6018…` — the *computed* addresses — even though `NAVCalculator` is linked against the
+   foundry.toml pins `0x450421a3…` / `0x549f6fB0…`. On a fresh chain that impl would DELEGATECALL
+   code-less addresses and `initialize()` would revert. It only looked healthy on the fork because
+   the old pinned libraries already exist on mainnet.
+2. `01` additionally deploys and persists `BridgeEscrowImplementation` (`01:68,115`) — wasted ~3–4M
+   gas on each of 24 chains, and it rewrites bridge deployment state for a deferred stack.
+
+`01_2` deploys exactly the NAV subset and fails fast on a bad pin.
 
 - **Precondition:** pins regenerated (0.3); record cleared (1.1).
 - **Post-condition:** `PriceFeedLib`, `NavRegistryLib`, `NAVCalculatorImplementation` populated in
@@ -431,9 +441,19 @@ to the new proxy. The old stack keeps answering until they do; nothing needs unr
 
 ## 3. Failure playbook
 
+> **Exit status 0 does not mean work happened.** Several scripts return cleanly when a precondition
+> is unmet: `RegisterAssets` prints `NAVCalculator not deployed for this chain. Deploy it first, then
+> re-run.` and returns; `03`/`04` print `Already deployed at:`; `06` prints `BridgeEscrow not
+> deployed, skipping`. In the fork rehearsal, `RegisterAssets`, `04` and `06` all reported success
+> having done nothing, purely because `01_2` had reverted upstream. Always verify the
+> post-condition counts, never the exit code. `rehearse_fork.sh` now treats those phrases as
+> failures.
+
 | symptom | cause | fix |
 | --- | --- | --- |
 | `01_2` reverts `… CREATE2 addr != foundry.toml pin` | library bytecode drifted from the pin | regenerate both pins against the final tree (0.3); never from an incremental build |
+| `01` "succeeds" but the NAV reverts on `initialize` | `01` has no pin assertions and deployed the libraries at the *computed* addresses while the impl links the *pinned* ones | use `01_2`; never `01` |
+| a step exits 0 having done nothing | unmet precondition, handled by an early `return` | check the post-condition, not the exit code |
 | `01_2` reverts `NAVCalculator impl not linked against pinned …` | `foundry.toml [libraries]` drifted from `LibraryPins` | make them agree, rebuild |
 | `02_2` reverts inside `AtomicNAVProxyDeployer` | proxy address unchanged → code already there → `upgradeToAndCall` with no admin | bump `DeploySalts.NAV_PROXY` (0.2), then re-pin (0.3) |
 | `03`/`04` log "Already deployed at:" and deploy nothing | the record was not cleared | run 1.1, re-run |

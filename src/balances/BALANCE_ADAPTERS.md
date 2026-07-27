@@ -259,7 +259,9 @@ if (!ok) return new string[](0);
 (bytes32 word, bool ok) = _pidWord(pid);          // raw-bytes32 coordinates (Morpho marketIds, Balancer V2 poolIds)
 ```
 
-`_addressLabels` already applies `_pidAddress`, so adapters using it get this for free. A dirty word is **rejected, not masked** to its low 160 bits: those bits can name a real instance by coincidence, and a wrong label is worse than an absent one. Plain and assisted adapters do the same thing inline (`positionId.length != 32`, then a raw-word decode plus a `raw >> 160` range check) — see `CapBalanceAdapter`, `ERC20DefaultBalanceAdapter` and `NexusMutualStakingPoolsAssistedBalanceAdapter`.
+`_addressLabels` already applies `_pidAddress`, so adapters using it get this for free. A dirty word is **rejected, not masked** to its low 160 bits: those bits can name a real instance by coincidence, and a wrong label is worse than an absent one.
+
+Plain and assisted adapters have no shared base to hang this on, so they must spell the same rule inline — `positionId.length != 32`, then a raw-word decode plus a `raw >> 160` range check. `StakeWiseV3VaultsMetaBalanceAdapter` is where the idiom originated and is the reference to copy.
 
 #### `protocolName()` names the protocol, never the product
 
@@ -436,7 +438,7 @@ Protocol adapters typically take **NAVCalculator** in the constructor to read th
 8. Implement **`IPositionDescribable.protocolName()`** and **`positionLabels(bytes positionId)`**, which derives the display hierarchy lazily from `positionId` (it runs only in the verbose reads, not on the NAV hot path):
    - Per-instance adapters return a fixed array (e.g. `["Safety Module"]`).
    - Meta-adapters derive labels on-chain (read token symbols, vault/pool names) and return `_labels("Category", leaf)`.
-   - Decode `positionId` with `_pidAddress` / `_pidWord` (meta) or the equivalent `length != 32` + `raw >> 160` check (plain/assisted) — **never** `abi.decode(pid, (address))`, which reverts on a dirty word and labels an over-long one from its first word. See §6.2.
+   - Decode `positionId` with `_pidAddress` / `_pidWord` (meta) or the equivalent `length != 32` + `raw >> 160` check spelled inline (plain/assisted) — **never** `abi.decode(pid, (address))`, which reverts on a dirty word and labels an over-long one from its first word. See §6.2.
 
 ### 8.2 PositionKind assignment
 

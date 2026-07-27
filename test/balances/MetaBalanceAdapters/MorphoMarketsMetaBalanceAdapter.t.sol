@@ -202,12 +202,61 @@ contract MorphoMarketsMetaUnitTest is BalanceAdapterTestBase {
     ///      rejected everything would fail here rather than pass the rejections trivially.
 
     function test_positionLabels_malformedPositionId_returnsEmpty() public view {
-        bytes32 coord = bytes32(uint256(0xBEEF));
+        // High bits deliberately SET. A Morpho marketId is a keccak hash, so essentially every real coordinate has
+        // `raw >> 160 != 0` — which is exactly why this adapter uses `_pidWord` and not the range-checked
+        // `_pidAddress`. Using a small word here instead would let a regression that swapped the two helpers pass.
+        bytes32 coord = marketId;
+        assertTrue(uint256(coord) >> 160 != 0, "a real marketId has bits above 160");
 
         assertGt(adapter.positionLabels(abi.encode(coord)).length, 0, "one full word is the accepted shape");
 
         assertEq(adapter.positionLabels("").length, 0, "empty");
         assertEq(adapter.positionLabels(hex"0102030405060708090a0b0c").length, 0, "truncated");
         assertEq(adapter.positionLabels(abi.encode(coord, uint256(1))).length, 0, "over-long");
+    }
+
+    /// @dev The real `Morpho.idToMarketParams` is a plain mapping getter: for an id with NO market it returns an
+    ///      all-zero `MarketParams` and does NOT revert, so `positionLabels`' `catch` arm never fires. Without the
+    ///      `loanToken != address(0)` gate both symbol reads fail open to "?" and the adapter answers
+    ///      `["Market", "?/?"]` — a confident two-segment breadcrumb, byte-identical to a real market whose tokens
+    ///      both have unreadable symbols, for a market that does not exist. That is precisely the over-claim the
+    ///      positionId guards exist to prevent, reached one layer deeper.
+    ///
+    ///      `MockMorpho` cannot show this: it `require`s a known id, so it reverts and the `catch` arm hides the
+    ///      path. This test therefore uses a getter-shaped mock that mirrors real Morpho.
+    ///
+    ///      Load-bearing: drop the `loanToken != address(0)` gate and the first assertion sees 2 labels, not 1.
+    function test_positionLabels_unknownMarketId_collapsesToCategory() public {
+        MockMorphoZeroGetter zeroMorpho = new MockMorphoZeroGetter();
+        MorphoMarketsMetaBalanceAdapter a =
+            new MorphoMarketsMetaBalanceAdapter(address(zeroMorpho), address(balances));
+
+        string[] memory unknown = a.positionLabels(abi.encode(bytes32(uint256(keccak256("nope")))));
+        assertEq(unknown.length, 1, "an id with no market must not render a token pair");
+        assertEq(unknown[0], "Market");
+
+        // A market that DOES exist still renders its pair, so the collapse above is about the missing market and
+        // not about the guard blanking every label.
+        zeroMorpho.setMarket(bytes32(uint256(1)), address(weth), address(usdc));
+        string[] memory known = a.positionLabels(abi.encode(bytes32(uint256(1))));
+        assertEq(known.length, 2);
+        assertEq(known[0], "Market");
+    }
+}
+
+/// @notice Morpho mock whose `idToMarketParams` behaves like the REAL one: a plain mapping getter that returns an
+///         all-zero `MarketParams` for an unknown id instead of reverting.
+/// @dev `MockMorpho` reverts on an unknown id, which routes the adapter into its `catch` arm and hides the
+///      zero-struct path entirely. Only this shape exposes it.
+contract MockMorphoZeroGetter {
+    mapping(bytes32 => MarketParams) private _params;
+
+    function setMarket(bytes32 id, address collateralToken, address loanToken) external {
+        _params[id].collateralToken = collateralToken;
+        _params[id].loanToken = loanToken;
+    }
+
+    function idToMarketParams(Id id) external view returns (MarketParams memory) {
+        return _params[Id.unwrap(id)];
     }
 }

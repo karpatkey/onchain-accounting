@@ -187,7 +187,11 @@ contract BalancerV2PoolsMetaBalanceAdapterTest is Test {
     ///      rejected everything would fail here rather than pass the rejections trivially.
 
     function test_positionLabels_malformedPositionId_returnsEmpty() public view {
-        bytes32 coord = bytes32(uint256(0xBEEF));
+        // High bits deliberately SET. A Balancer V2 poolId packs the pool ADDRESS into its top 20 bytes, so every
+        // real coordinate has `raw >> 160 != 0` — which is why this adapter uses `_pidWord` rather than the
+        // range-checked `_pidAddress`. A small word here would let a regression that swapped the two helpers pass.
+        bytes32 coord = bytes32(uint256(uint160(0xBA12222222228d8Ba445958a75a0704d566BF2C8)) << 96);
+        assertTrue(uint256(coord) >> 160 != 0, "a real Balancer V2 poolId has bits above 160");
 
         assertGt(adapter.positionLabels(abi.encode(coord)).length, 0, "one full word is the accepted shape");
 

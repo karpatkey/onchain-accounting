@@ -206,4 +206,25 @@ contract CompoundV3CometsMetaBalanceAdapterTest is Test {
             assertTrue(p[i].balanceAsset.asset != address(usdc), "the unregistered base must not be emitted");
         }
     }
+
+    /// @dev Pins that THIS adapter routes its positionId through the shared guard. `positionLabels` is display-only
+    ///      and must never revert, and must never label a coordinate the adapter never emitted; both were reachable
+    ///      before (`abi.decode(pid, (address))` reverts on dirty upper bits, and a `< 32` guard labels a foreign
+    ///      multi-word coordinate from its first word). The accept window itself is pinned exhaustively in
+    ///      `test/balances/MetaBalanceAdapterPidGuards.t.sol` — this case exists because that harness cannot catch
+    ///      an adapter re-inlining the old idiom, which is a one-line regression.
+    ///
+    ///      The clean-coordinate assertion keeps the rejections load-bearing: a shape-valid but unknown coordinate
+    ///      still resolves to the category-only label, so a view that rejected everything would fail here.
+    function test_positionLabels_malformedPositionId_returnsEmpty() public view {
+        address coord = address(0xBEEF);
+
+        assertGt(meta.positionLabels(abi.encode(coord)).length, 0, "one clean word is the accepted shape");
+
+        assertEq(meta.positionLabels("").length, 0, "empty");
+        assertEq(meta.positionLabels(hex"0102030405060708090a0b0c").length, 0, "truncated");
+        uint256 dirty = uint256(uint160(coord)) | (uint256(1) << 255);
+        assertEq(meta.positionLabels(abi.encode(dirty)).length, 0, "dirty upper bits");
+        assertEq(meta.positionLabels(abi.encode(coord, uint256(1))).length, 0, "over-long");
+    }
 }

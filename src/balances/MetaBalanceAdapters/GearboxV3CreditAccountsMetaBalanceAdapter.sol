@@ -272,17 +272,25 @@ contract GearboxV3CreditAccountsMetaBalanceAdapter is MetaBalanceAdapter {
     // Internal — Gearbox reads (all try/catch'd by callers or here, so a non-Gearbox/stale instance degrades to empty)
     //
 
-    /// @dev Resolves the CreditManager that owns a credit account; `address(0)` if `ca` is not a Gearbox credit
-    ///      account (the `creditManager()` call reverts).
+    /// @dev Resolves the CreditManager that owns a credit account; `address(0)` if `ca` does not answer with one
+    ///      clean address word — not a Gearbox credit account, or not a well-behaved contract at all.
+    /// @dev Read through {StaticCallLib.safeAddrStrict} rather than `try ICreditAccountV3(ca).creditManager()`.
+    ///      `ca` is caller-supplied — `positionLabels` accepts any clean address word by design — and the typed
+    ///      form fails open for only ONE of the three ways that read can go wrong:
+    ///        - code-less `ca`: the compiler's `extcodesize` check reverts BEFORE the call, outside `catch`. The
+    ///          `ca.code.length` guard this replaces existed for exactly that, and is now redundant.
+    ///        - the call reverts: `catch` handles it. This was the only covered case.
+    ///        - the call SUCCEEDS with returndata that will not decode as an address — zero bytes, a short reply,
+    ///          or a full word with dirty upper 96 bits. The decode is emitted after the call, so its revert is
+    ///          outside `catch` too. The mundane instance is any ordinary contract with a no-op
+    ///          `fallback() external {}` — a plain receiver or a default-fallback proxy — which succeeds and
+    ///          returns nothing. That reverted this display-only view.
+    ///      The STRICT form is deliberate: masking a dirty word could name a real CreditManager, and `address(0)`
+    ///      here is a MEANINGFUL sentinel the callers branch on (drop the account / collapse the label), so
+    ///      inventing an address from garbage would change the answer rather than lose it. The probe is also gas-
+    ///      bounded, which the typed call was not.
     function _creditManagerOf(address ca) private view returns (address cm) {
-        // Codesize guard: a high-level call to a codeless address reverts via extcodesize, which try/catch does
-        // NOT catch — keep this fail-open (it backs both the position read and the verbose-only label).
-        if (ca.code.length == 0) return address(0);
-        try ICreditAccountV3(ca).creditManager() returns (address m) {
-            cm = m;
-        } catch {
-            cm = address(0);
-        }
+        (, cm,) = StaticCallLib.safeAddrStrict(ca, abi.encodeWithSelector(ICreditAccountV3.creditManager.selector));
     }
 
     /// @dev Reads `(enabledTokensMask, borrower)` from the manager's `creditAccountInfo`. `(0, address(0))` on revert

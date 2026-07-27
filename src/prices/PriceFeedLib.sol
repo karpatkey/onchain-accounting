@@ -799,8 +799,9 @@ library PriceFeedLib {
         }
     }
 
-    /// @notice True if the account holds any non-zero position. Mirrors NAVCalculator.hasPositions (fail-open via
-    ///         the per-adapter try/catch in `_getPositionBalances`).
+    /// @notice True if the account holds any non-zero position. Mirrors NAVCalculator.hasPositions, and inherits
+    ///         `_getAdapterPositions`'s policy: a reverting adapter is skipped, one that exhausts its gas
+    ///         stipend reverts the scan rather than being read as "no positions".
     function hasPositions(
         address[] memory allAdapters,
         uint256 metaInstanceTotal,
@@ -916,7 +917,8 @@ library PriceFeedLib {
     // -------------------------------------------------------------------------
 
     /// @notice Gathers an account's registered-asset positions across all adapters (single-leg + meta), filtered
-    ///         by `assetFilter` (address(0) = all). A reverting adapter is skipped (fail-open). Mirrors the former
+    ///         by `assetFilter` (address(0) = all). A reverting adapter is skipped; one that exhausts its gas
+    ///         stipend reverts the whole read (see {_getAdapterPositions}). Mirrors the former
     ///         NAVCalculator._getPositionBalances. Each adapter is queried once and its rows retained, then a
     ///         counting pass sizes the output to the EXACT number of surviving rows (registered asset + matching
     ///         filter) — not a fixed `2·(adapters+instances)·assetCount` heuristic, which a multi-leg adapter
@@ -986,18 +988,55 @@ library PriceFeedLib {
         return true;
     }
 
-    /// @notice Calls an adapter's getAdapterPositions in a try/catch (fail-open: returns empty on revert). Meta
-    ///         adapters read their NAV-configured instance set themselves, so the call path is uniform.
+    /// @notice Outer bound on the gas any single adapter may consume in one `getAdapterPositions`.
+    /// @dev A backstop, not the working limit: the EVM's own 63/64 rule already caps the forward, and this only
+    ///      binds when the read is given more gas than any legitimate adapter could need. What it buys is that an
+    ///      adapter which loops forever costs the read a bounded amount instead of 63/64 of whatever the caller
+    ///      offered, which on an archive-node `eth_call` is effectively unbounded.
+    ///
+    ///      Sized from measurement, and the size is not arbitrary: `ERC20DefaultBalanceAdapter` — present on every
+    ///      deployment and the only adapter whose cost scales with the asset registry — runs at roughly 585k gas
+    ///      per registered asset, ~61M at 104 assets. Live chains carry well under half that many, but the
+    ///      headroom has to survive registry growth, so this sits above the 100-asset figure. The calibration test
+    ///      in test/nav/NAVCalculator.gasCaps.t.sol is what keeps that claim honest.
+    uint256 private constant ADAPTER_POSITIONS_GAS = 100_000_000;
+
+    /// @notice Calls an adapter's `getAdapterPositions` under a bounded stipend, failing open on a revert but
+    ///         NOT on gas exhaustion. Meta adapters read their NAV-configured instance set themselves, so the
+    ///         call path is uniform — and one stipend covers a meta-adapter's whole per-instance fan-out.
+    /// @dev The two failure modes look identical to `catch` and must not be treated identically:
+    ///
+    ///      - **A revert** means the adapter answered: it has nothing to report. Returning an empty list is the
+    ///        long-standing fail-open behaviour, so one misconfigured adapter cannot take down the whole read.
+    ///      - **Exhausting the stipend** means the adapter did NOT answer. Reporting that as an empty list drops
+    ///        its legs, and a dropped *debt* leg RAISES the reported NAV — a silent over-report, produced by the
+    ///        read itself rather than by any adapter. It is also self-propagating: whatever an adapter burns is
+    ///        gone from the budget the adapters after it need, so one runaway adapter starves the rest and each
+    ///        of them disappears the same silent way.
+    ///
+    ///      So exhaustion reverts with {AdapterGasExhausted} instead. A NAV read either sees every adapter or it
+    ///      fails loudly; it never returns a number that quietly omits one. The distinction is drawn on gas
+    ///      consumed rather than on the revert data, because an out-of-gas revert carries none: an adapter that
+    ///      spends the whole stipend and only then reverts is classified as exhausted, which errs toward the loud
+    ///      outcome.
     function _getAdapterPositions(address adapter, address account, address assetFilter)
         private
         view
         returns (INAVCalculator.PositionBalance[] memory)
     {
-        try IBalanceAdapter(adapter).getAdapterPositions(account, assetFilter) returns (
+        uint256 available = gasleft();
+        // What the EVM would forward anyway (63/64), clamped by the backstop. Computed explicitly so the
+        // exhaustion test below has an exact figure to compare against rather than an implied one.
+        uint256 stipend = available - available / 64;
+        if (stipend > ADAPTER_POSITIONS_GAS) stipend = ADAPTER_POSITIONS_GAS;
+
+        try IBalanceAdapter(adapter).getAdapterPositions{gas: stipend}(account, assetFilter) returns (
             INAVCalculator.PositionBalance[] memory pos
         ) {
             return pos;
         } catch {
+            // The callee can only reach `stipend` consumed by exhausting it; a revert leaves the rest unspent.
+            if (available - gasleft() >= stipend) revert AdapterGasExhausted(adapter);
             return new INAVCalculator.PositionBalance[](0);
         }
     }

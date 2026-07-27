@@ -113,6 +113,30 @@ contract MockNexusStakingPool {
     }
 }
 
+/// @notice A hostile `getPoolId()` that never returns — the gas-starvation case for the label probe.
+/// @dev Loops on `keccak256` rather than an empty `while(true)`: an empty loop is a candidate for compiler
+///      elimination, and hashing guarantees real gas is consumed per iteration.
+contract MockLoopingStakingPool {
+    function getPoolId() external pure returns (uint256) {
+        uint256 i;
+        while (true) {
+            i = uint256(keccak256(abi.encode(i)));
+        }
+        return i;
+    }
+}
+
+/// @notice A `getPoolId()` that SUCCEEDS while returning megabytes — the returndata-copy case.
+/// @dev Uses the success path (`return`), not a revert bomb: a revert would be caught by the `ok`/`hasWord` flag
+///      regardless of size, so it would prove nothing about the output bound.
+contract MockFatReturnStakingPool {
+    function getPoolId() external pure returns (uint256) {
+        assembly {
+            return(0, 4000000)
+        }
+    }
+}
+
 /// @title NexusMutualStakingPoolsAssistedBalanceAdapter unit tests (permissionless, wrapper-fed)
 /// @notice The Nexus staking adapter is permissionless wrapper-fed: `submit`/`remove` are `msg.sender`-keyed (the
 ///         owner Safe delegatecalls the wrapper, so the adapter sees the Safe as `msg.sender`). Covers the feed
@@ -471,5 +495,49 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterTest is BalanceAdapterTest
         assertEq(clean.length, 2);
         assertEq(clean[0], "Staking Pools");
         assertEq(clean[1], "Pool #42");
+    }
+
+    /// @dev Pins the `== 32` boundary. `abi.decode` ignores trailing bytes, so a `>= 32` guard would decode the
+    ///      first word of a foreign multi-word coordinate and render a `Pool #`/hex breadcrumb for it. Every
+    ///      positionId this adapter emits is `abi.encode(poolAddress)`, exactly one word.
+    ///
+    ///      Load-bearing: relax the guard to `>= 32` and the 64-byte case returns 2 labels.
+    function test_positionLabels_overlongPositionId_returnsEmpty() public {
+        MockNexusStakingPool pool = new MockNexusStakingPool(42);
+
+        assertEq(adapter.positionLabels(abi.encode(address(pool), uint256(7))).length, 0);
+        assertEq(adapter.positionLabels(abi.encodePacked(abi.encode(address(pool)), hex"01")).length, 0);
+
+        assertEq(adapter.positionLabels(abi.encode(address(pool))).length, 2);
+    }
+
+    /// @dev The `getPoolId()` probe must be BOUNDED, not merely fail-open. This view is reachable with an arbitrary
+    ///      clean address, so `pool` can be a contract chosen by whoever forms the probe. The previous raw
+    ///      `pool.staticcall` forwarded all gas and copied the entire reply into `bytes memory`: measured at
+    ///      1.04e9 gas for a looping `getPoolId()` and 6.2e7 for one returning 4 MB. Both "failed open" to the hex
+    ///      fallback — and both starved the frame, which is an out-of-gas in the view this adapter promises never
+    ///      reverts. {StaticCallLib.probeWord} caps the stipend and copies at most one word.
+    ///
+    ///      Asserted as a gas CEILING rather than an exact figure, so it survives unrelated codegen drift while
+    ///      still failing by three orders of magnitude if the bound is ever removed. The label assertions pin that
+    ///      the bound degrades to the hex fallback instead of dropping the breadcrumb.
+    function test_positionLabels_hostilePoolRead_isGasBounded() public {
+        address looping = address(new MockLoopingStakingPool());
+        uint256 before = gasleft();
+        string[] memory l = adapter.positionLabels(abi.encode(looping));
+        uint256 used = before - gasleft();
+        assertLt(used, 1_000_000, "looping getPoolId() must not burn an unbounded amount of gas");
+        assertEq(l.length, 2);
+        assertEq(l[0], "Staking Pools");
+        assertEq(l[1], Strings.toHexString(looping), "an unreadable pool degrades to its address");
+
+        address fat = address(new MockFatReturnStakingPool());
+        before = gasleft();
+        string[] memory f = adapter.positionLabels(abi.encode(fat));
+        used = before - gasleft();
+        assertLt(used, 1_000_000, "a megabyte reply must not be copied into memory");
+        // A 4 MB reply's first word is zero, and `hasWord` is true, so this reads as "Pool #0" rather than
+        // degrading — the point of the assertion is the gas bound above, not the leaf.
+        assertEq(f.length, 2);
     }
 }

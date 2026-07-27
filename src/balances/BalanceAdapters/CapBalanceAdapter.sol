@@ -105,7 +105,10 @@ contract CapBalanceAdapter is BalanceAdapterBase, IPositionEnumerable {
     ///      malformed positionId, since this is a display-only view that must never revert and a configuration
     ///      view may probe it with an arbitrary word.
     function positionLabels(bytes calldata positionId) external view override returns (string[] memory) {
-        if (positionId.length < 32) return new string[](0);
+        // Exactly one word. Both ids this adapter emits (and both {positionIds} advertises) are `abi.encode(token)`,
+        // so a shorter buffer is unusable and a LONGER one is a foreign multi-word coordinate whose first word could
+        // coincide with CUSD/STCUSD — `abi.decode` ignores the tail, so `>= 32` would label it as a Cap leg.
+        if (positionId.length != 32) return new string[](0);
         // Decode as a raw word, not `abi.decode(positionId, (address))`: Solidity's decoder REVERTS on an address
         // whose upper 96 bits are dirty, which would turn a foreign positionId (e.g. a bytes32 pool/market id
         // copied from another adapter) into a revert. A dirty word is a non-Cap coordinate, so it takes the same

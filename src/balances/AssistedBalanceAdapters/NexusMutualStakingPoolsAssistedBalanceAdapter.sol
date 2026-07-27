@@ -8,6 +8,7 @@ import {AssistedCoordCache} from "./AssistedCoordCache.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
+import {StaticCallLib} from "src/utils/StaticCallLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -91,25 +92,40 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedCoordCache, IP
 
     /// @inheritdoc IPositionDescribable
     /// @dev `["Staking Pools", "Pool #<poolId>"]` — the numeric pool id read live via `getPoolId()`. Falls back to the
-    ///      pool address if the read reverts. Empty for a short/malformed positionId.
+    ///      pool address when that read does not answer with a word. Empty for a malformed positionId.
+    ///
+    ///      **What the guards below do and do not promise.** They reject any positionId that is not exactly one clean
+    ///      address word, so no foreign coordinate can be truncated or padded into a `Pool #` breadcrumb. They do NOT
+    ///      establish that a rendered breadcrumb names a pool this adapter tracks: a CLEAN address that simply is not
+    ///      a Nexus pool still renders `["Staking Pools", "0x…"]` through the hex fallback. That is unavoidable here —
+    ///      Nexus pools are discovered per ACCOUNT from the cached NFT ids, so there is no account-independent set to
+    ///      check a positionId against, and {IPositionDescribable} defines labels as a pure function of `positionId`.
+    ///      The fallback is kept because it is the useful answer for the case it exists for: a real pool whose
+    ///      `getPoolId()` read fails, where the address is what an operator needs. Callers that must know whether a
+    ///      coordinate is actually tracked ask {tokenIdsOf}, not this view.
     function positionLabels(bytes calldata positionId) external view override returns (string[] memory out) {
-        if (positionId.length < 32) return new string[](0);
+        // Exactly one word. Every positionId this adapter emits is `abi.encode(poolAddress)`; a shorter buffer would
+        // revert inside `abi.decode`, and a LONGER one would decode its first word and label a multi-word coordinate
+        // belonging to some other adapter as a Nexus pool. Both are foreign, so both take the same `[]` exit.
+        if (positionId.length != 32) return new string[](0);
         // Decode as a raw word, not `abi.decode(positionId, (address))`: Solidity's decoder REVERTS on an address
         // whose upper 96 bits are dirty, which would turn a foreign positionId into a revert of a view that must
-        // never revert. A dirty word takes the same `[]` exit as a short one — it names no pool, and truncating it
-        // to its low 160 bits would render a `Pool #` breadcrumb for a coordinate this adapter never emitted.
+        // never revert. A dirty word takes the same `[]` exit — it is not masked down to its low 160 bits, which
+        // would render a `Pool #` breadcrumb for a coordinate this adapter never emitted.
         uint256 raw = abi.decode(positionId, (uint256));
         if (raw >> 160 != 0) return new string[](0);
         address pool = address(uint160(raw));
         out = new string[](2);
         out[0] = "Staking Pools";
-        // Low-level staticcall + length check: a no-code / non-Nexus positionId returns success with empty data, which a
-        // typed call would fail to decode and revert uncaught — this display view must never revert.
-        (bool ok, bytes memory data) =
-            pool.staticcall(abi.encodeWithSelector(INexusMutualStakingPool.getPoolId.selector));
-        out[1] = (ok && data.length >= 32)
-            ? string.concat("Pool #", Strings.toString(abi.decode(data, (uint256))))
-            : Strings.toHexString(pool);
+        // Bounded probe, not a raw `pool.staticcall`. This view is reachable with an ARBITRARY clean address, and the
+        // unbounded form forwarded all gas and `returndatacopy`d the whole reply into `bytes memory`: measured at
+        // 1.04e9 gas against a looping `getPoolId()` and 6.2e7 against one returning 4 MB. It failed open in both
+        // cases but starved the frame — an out-of-gas in the very view that must never revert. {probeWord} caps the
+        // stipend at `PROBE_GAS` and copies at most one word. Its `hasWord` is the exact equivalent of the previous
+        // `ok && data.length >= 32` (and already folds in `ok`), so a pool id of 0 still counts as answered.
+        (, bool hasWord, uint256 poolId) =
+            StaticCallLib.probeWord(pool, abi.encodeWithSelector(INexusMutualStakingPool.getPoolId.selector));
+        out[1] = hasWord ? string.concat("Pool #", poolId.toString()) : Strings.toHexString(pool);
     }
 
     /// @inheritdoc IERC165

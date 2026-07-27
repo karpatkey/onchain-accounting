@@ -305,4 +305,19 @@ contract ERC20DefaultBalanceAdapterTest is Test {
         assertEq(labels.length, 1);
         assertEq(labels[0], "USDC");
     }
+
+    /// @dev Pins the `== 32` boundary, which is NOT the same guard as "at least a word". `abi.decode` silently
+    ///      ignores trailing bytes, so under a `>= 32` guard a foreign multi-word coordinate whose FIRST word is a
+    ///      registered asset would be labelled with that asset's symbol — the same over-claim the dirty-word
+    ///      rejection exists to prevent, reached through a far more ordinary input (any adapter that encodes a
+    ///      `(address, uint256)` pair).
+    ///
+    ///      Load-bearing: with the guard relaxed to `>= 32` the 64-byte case returns `["USDC"]` and this fails.
+    ///      The exactly-32 tail keeps it from passing on a view that rejects everything.
+    function test_positionLabels_overlongPositionId_returnsEmpty() public view {
+        assertEq(adapter.positionLabels(abi.encode(address(usdc), uint256(42))).length, 0);
+        assertEq(adapter.positionLabels(abi.encodePacked(abi.encode(address(usdc)), hex"01")).length, 0);
+
+        assertEq(adapter.positionLabels(abi.encode(address(usdc))).length, 1);
+    }
 }

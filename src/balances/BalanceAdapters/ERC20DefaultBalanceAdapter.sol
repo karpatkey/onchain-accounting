@@ -197,9 +197,14 @@ contract ERC20DefaultBalanceAdapter is BalanceAdapterBase {
     ///      {StakeWiseV3VaultsMetaBalanceAdapter}. A dirty word is NOT truncated to its low 160 bits: those bits
     ///      may spell a real registered asset by coincidence, and labelling a foreign coordinate with that
     ///      asset's symbol would be a wrong answer where `[]` is merely an absent one.
+    ///
+    ///      The length test is `== 32`, not `>= 32`, for that same reason: every positionId this adapter emits is
+    ///      `abi.encode(asset)`, and `abi.decode` silently ignores trailing bytes — so a foreign multi-word
+    ///      coordinate whose first word happens to be a registered asset would otherwise be labelled with that
+    ///      asset's symbol.
     function positionLabels(bytes calldata positionId) external view override returns (string[] memory) {
         string memory leaf;
-        if (positionId.length >= 32) {
+        if (positionId.length == 32) {
             uint256 raw = abi.decode(positionId, (uint256));
             if (raw >> 160 == 0) {
                 address addr = address(uint160(raw));

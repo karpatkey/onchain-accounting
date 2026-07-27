@@ -414,4 +414,18 @@ contract CapBalanceAdapterTest is Test {
         assertEq(clean[0], "Stablecoin");
         assertEq(clean[1], "cUSD");
     }
+
+    /// @dev Pins the `== 32` boundary. `abi.decode` ignores trailing bytes, so a `>= 32` guard would label a foreign
+    ///      multi-word coordinate whose first word is `CUSD`/`STCUSD` as a real Cap leg — the dirty-word over-claim
+    ///      again, via an input any adapter encoding an `(address, uint256)` pair produces. Both `positionIds()`
+    ///      entries are exactly one word, so anything else is foreign by construction.
+    ///
+    ///      Load-bearing: relax the guard to `>= 32` and the 64-byte case returns `["Stablecoin", "cUSD"]`.
+    function test_positionLabels_overlongPositionId_returnsEmpty() public view {
+        assertEq(adapter.positionLabels(abi.encode(address(mockCUsd), uint256(42))).length, 0);
+        assertEq(adapter.positionLabels(abi.encode(address(mockStcUsd), uint256(1))).length, 0);
+        assertEq(adapter.positionLabels(abi.encodePacked(abi.encode(address(mockCUsd)), hex"01")).length, 0);
+
+        assertEq(adapter.positionLabels(abi.encode(address(mockCUsd))).length, 2);
+    }
 }

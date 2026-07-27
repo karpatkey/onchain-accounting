@@ -44,7 +44,7 @@ contract BalancerV2PoolsMetaForkTest is BalanceAdapterTestBase {
     function setUp() public override {
         _setupFork();
         balances = _deployBalancesForAdapter(_supportedAssets());
-        adapter = new BalancerV2PoolsMetaBalanceAdapter(VAULT, "Balancer V2", address(balances));
+        adapter = new BalancerV2PoolsMetaBalanceAdapter(VAULT, address(balances));
     }
 
     function _setupFork() internal override {

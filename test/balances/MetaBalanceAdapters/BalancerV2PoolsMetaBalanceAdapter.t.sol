@@ -56,7 +56,7 @@ contract BalancerV2PoolsMetaBalanceAdapterTest is Test {
         vault.setPool(poolId, tokens, balances);
         pool.setTotalSupply(1000e18);
 
-        adapter = new BalancerV2PoolsMetaBalanceAdapter(address(vault), "Balancer V2", address(nav));
+        adapter = new BalancerV2PoolsMetaBalanceAdapter(address(vault), address(nav));
     }
 
     function _instances() internal view returns (bytes32[] memory ins) {

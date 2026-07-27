@@ -63,7 +63,7 @@ contract BalancerV2GaugesMetaBalanceAdapterTest is Test {
         minter = new MockBalancerMinter(address(bal));
         gauge = new MockBalancerGauge(address(pool));
 
-        adapter = new BalancerV2GaugesMetaBalanceAdapter(address(vault), address(minter), "Balancer V2", address(nav));
+        adapter = new BalancerV2GaugesMetaBalanceAdapter(address(vault), address(minter), address(nav));
     }
 
     function _instances() internal view returns (bytes32[] memory ins) {

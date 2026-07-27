@@ -44,7 +44,7 @@ contract GearboxV3CreditAccountsMetaForkTest is BalanceAdapterTestBase {
         assets[0] = WETH;
         assets[1] = WEETH;
         balances = _deployBalancesForAdapter(assets);
-        meta = new GearboxV3CreditAccountsMetaBalanceAdapter("Gearbox", address(balances));
+        meta = new GearboxV3CreditAccountsMetaBalanceAdapter(address(balances));
     }
 
     function _instance() internal pure returns (bytes32[] memory ins) {

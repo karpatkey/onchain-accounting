@@ -40,11 +40,8 @@ contract BalancerV2GaugesMetaBalanceAdapter is MetaBalanceAdapter {
 
     /// @param vault_ The Balancer V2 Vault address.
     /// @param balancerMinter_ Address of the Balancer Minter contract.
-    /// @param protocolName_ Protocol identifier (e.g. "Balancer V2").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(address vault_, address balancerMinter_, string memory protocolName_, address navCalculator_)
-        MetaBalanceAdapter(protocolName_, navCalculator_)
-    {
+    constructor(address vault_, address balancerMinter_, address navCalculator_) MetaBalanceAdapter(navCalculator_) {
         AddressCheckLib.requireContract(vault_, "Vault");
         AddressCheckLib.requireContract(balancerMinter_, "BalancerMinter");
         VAULT = vault_;

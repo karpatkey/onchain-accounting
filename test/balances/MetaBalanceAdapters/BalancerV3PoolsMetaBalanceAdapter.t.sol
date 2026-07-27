@@ -44,7 +44,7 @@ contract BalancerV3PoolsMetaBalanceAdapterTest is Test {
         pool.addToken(address(tokenY), 200e18, 1, 1e18);
         pool.setTotalSupply(1000e18);
 
-        adapter = new BalancerV3PoolsMetaBalanceAdapter("Balancer V3", address(nav));
+        adapter = new BalancerV3PoolsMetaBalanceAdapter(address(nav));
     }
 
     function _instances() internal view returns (bytes32[] memory ins) {

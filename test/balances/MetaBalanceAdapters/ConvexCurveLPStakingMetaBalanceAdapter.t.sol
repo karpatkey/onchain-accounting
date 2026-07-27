@@ -234,7 +234,7 @@ contract ConvexCurveLPStakingMetaBalanceAdapterTest is Test {
         rewarder = new MockConvexRewarder(address(pool), address(crv), 42);
         booster.setPool(42, address(pool));
 
-        meta = new ConvexCurveLPStakingMetaBalanceAdapter(address(booster), address(cvx), "Convex", address(nav));
+        meta = new ConvexCurveLPStakingMetaBalanceAdapter(address(booster), address(cvx), address(nav));
     }
 
     function _instance(address r) internal pure returns (bytes32[] memory ins) {
@@ -346,7 +346,7 @@ contract ConvexCurveLPStakingMetaBalanceAdapterTest is Test {
 
     function test_noCvxToken_noCvxLeg() public {
         ConvexCurveLPStakingMetaBalanceAdapter noCvx =
-            new ConvexCurveLPStakingMetaBalanceAdapter(address(booster), address(0), "Convex", address(nav));
+            new ConvexCurveLPStakingMetaBalanceAdapter(address(booster), address(0), address(nav));
         rewarder.setEarned(alice, 500e18);
 
         INAVCalculator.PositionBalance[] memory pos =

@@ -30,7 +30,6 @@ else
 fi
 [ -n "$VAULTS" ] && [ "$VAULTS" != "null" ] || { echo "error: no eVault instances resolved" >&2; exit 1; }
 
-PROTOCOL_NAME=${DEV_PROTOCOL_NAME:-"Euler"}
 
 # Anvil prefunded account #0 (holds MANAGER after 01_DeployNAV).
 DEV_PRIVATE_KEY="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
@@ -51,7 +50,6 @@ echo "    eVaults: $VAULTS"
 
 out=$(
   DEV_NAV_PROXY="$NAV" \
-  DEV_PROTOCOL_NAME="$PROTOCOL_NAME" \
   DEV_EULER_VAULTS="$VAULTS" \
   FOUNDRY_PROFILE=dev \
   forge script "$DEPLOY_DIR/deploy-euler-vaults-meta.s.sol:DeployEulerVaultsMeta" \

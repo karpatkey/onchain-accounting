@@ -46,7 +46,10 @@ contract AaveUmbrellaBalanceAdapterTest is BalanceAdapterTestBase {
     function test_constructor_pinsImmutables() public view {
         assertEq(address(oracle.REWARDS_CONTROLLER()), stubRewardsController);
         assertEq(address(oracle.NAV_CALCULATOR()), address(balances));
-        assertEq(oracle.protocolName(), "Aave Umbrella");
+        // Names the PROTOCOL, not the product — Umbrella is one of Aave V3's products and shares
+        // ProtocolIds.AAVE_V3 with the Safety Module and the lending instances. The product is in
+        // positionLabels() (asserted below). Cross-adapter invariant: test/ProtocolNameConsistency.t.sol.
+        assertEq(oracle.protocolName(), "Aave V3");
     }
 
     function test_constructor_revertsOnZeroRewardsController() public {

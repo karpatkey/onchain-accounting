@@ -34,7 +34,7 @@ contract MorphoMarketsMetaUnitTest is BalanceAdapterTestBase {
         mockMorpho = new MockMorpho(params);
         mockMorpho.setMarket(TOTAL_SUPPLY_ASSETS, TOTAL_SUPPLY_SHARES, TOTAL_BORROW_ASSETS, TOTAL_BORROW_SHARES);
 
-        adapter = new MorphoMarketsMetaBalanceAdapter(address(mockMorpho), "Morpho", address(balances));
+        adapter = new MorphoMarketsMetaBalanceAdapter(address(mockMorpho), address(balances));
     }
 
     function _ids() internal view returns (bytes32[] memory a) {
@@ -126,8 +126,7 @@ contract MorphoMarketsMetaUnitTest is BalanceAdapterTestBase {
         MockMorpho m2 = new MockMorpho(params);
         m2.setMarket(TOTAL_SUPPLY_ASSETS, TOTAL_SUPPLY_SHARES, TOTAL_BORROW_ASSETS, TOTAL_BORROW_SHARES);
         m2.setPosition(alice, 0, 1e18, 5e18); // borrowShares > 0, WETH collateral
-        MorphoMarketsMetaBalanceAdapter a2 =
-            new MorphoMarketsMetaBalanceAdapter(address(m2), "Morpho", address(balances));
+        MorphoMarketsMetaBalanceAdapter a2 = new MorphoMarketsMetaBalanceAdapter(address(m2), address(balances));
 
         bytes32[] memory ids = new bytes32[](1);
         ids[0] = Id.unwrap(MarketParamsLib.id(params));
@@ -158,8 +157,7 @@ contract MorphoMarketsMetaUnitTest is BalanceAdapterTestBase {
         MockMorpho m2 = new MockMorpho(params);
         m2.setMarket(TOTAL_SUPPLY_ASSETS, TOTAL_SUPPLY_SHARES, TOTAL_BORROW_ASSETS, TOTAL_BORROW_SHARES);
         m2.setPosition(alice, 0, 0, 5e18); // no borrow
-        MorphoMarketsMetaBalanceAdapter a2 =
-            new MorphoMarketsMetaBalanceAdapter(address(m2), "Morpho", address(balances));
+        MorphoMarketsMetaBalanceAdapter a2 = new MorphoMarketsMetaBalanceAdapter(address(m2), address(balances));
 
         bytes32[] memory ids = new bytes32[](1);
         ids[0] = Id.unwrap(MarketParamsLib.id(params));
@@ -181,8 +179,7 @@ contract MorphoMarketsMetaUnitTest is BalanceAdapterTestBase {
         MockMorpho m2 = new MockMorpho(params);
         m2.setMarket(TOTAL_SUPPLY_ASSETS, TOTAL_SUPPLY_SHARES, 0, TOTAL_BORROW_SHARES); // 0 borrow assets
         m2.setPosition(alice, 0, 1e18, 5e18); // shares outstanding, realised borrow rounds to 0
-        MorphoMarketsMetaBalanceAdapter a2 =
-            new MorphoMarketsMetaBalanceAdapter(address(m2), "Morpho", address(balances));
+        MorphoMarketsMetaBalanceAdapter a2 = new MorphoMarketsMetaBalanceAdapter(address(m2), address(balances));
 
         bytes32[] memory ids = new bytes32[](1);
         ids[0] = Id.unwrap(MarketParamsLib.id(params));

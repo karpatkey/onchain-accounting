@@ -53,7 +53,7 @@ contract BalancerV3GaugesMetaBalanceAdapterTest is Test {
         gauge = new MockBalancerGauge(address(pool));
         gauge.addRewardToken(address(extraReward));
 
-        adapter = new BalancerV3GaugesMetaBalanceAdapter(address(minter), "Balancer V3", address(nav));
+        adapter = new BalancerV3GaugesMetaBalanceAdapter(address(minter), address(nav));
     }
 
     function _instances() internal view returns (bytes32[] memory ins) {

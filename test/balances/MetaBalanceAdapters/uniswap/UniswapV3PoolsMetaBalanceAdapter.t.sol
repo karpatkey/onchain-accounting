@@ -58,7 +58,7 @@ contract UniswapV3PoolsMetaBalanceAdapterTest is Test {
         _mint(1, address(wbtc), address(weth), 3000, 1_000_000, 42, 1337);
         _mint(2, address(usdc), address(weth), 500, 2_000_000, 7, 99);
 
-        meta = new UniswapV3PoolsMetaBalanceAdapter(address(npm), "Uniswap V3", address(nav));
+        meta = new UniswapV3PoolsMetaBalanceAdapter(address(npm), address(nav));
     }
 
     function _mint(uint256 id, address t0, address t1, uint24 fee, uint128 liq, uint128 owed0, uint128 owed1) internal {

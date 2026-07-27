@@ -82,13 +82,12 @@ contract BaseForkNAVCalculator is NAVCalculatorForkHarness {
     }
 
     function setupBalanceAdapter() internal override {
-        AaveV3InstancesMetaBalanceAdapter aaveMeta = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(nav));
+        AaveV3InstancesMetaBalanceAdapter aaveMeta = new AaveV3InstancesMetaBalanceAdapter(address(nav));
         aaveAdapter = aaveMeta;
 
-        compoundV3Comet =
-            new CompoundV3CometsMetaBalanceAdapter(compoundRewardContract, compound, "Compound V3", address(nav));
+        compoundV3Comet = new CompoundV3CometsMetaBalanceAdapter(compoundRewardContract, compound, address(nav));
 
-        morphoBlueAdapter = new MorphoMarketsMetaBalanceAdapter(morphoBlue, "Morpho", address(nav));
+        morphoBlueAdapter = new MorphoMarketsMetaBalanceAdapter(morphoBlue, address(nav));
 
         // Meta-adapters register + seed atomically via addMetaBalanceAdapter (plain addBalanceAdapters rejects meta).
         bytes32[] memory aaveInstances = new bytes32[](1);

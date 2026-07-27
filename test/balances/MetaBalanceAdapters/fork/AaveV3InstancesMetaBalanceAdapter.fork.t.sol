@@ -88,7 +88,7 @@ contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         );
         vm.stopPrank();
 
-        adapter = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(nav));
+        adapter = new AaveV3InstancesMetaBalanceAdapter(address(nav));
         perInstance = new SparkLendBalanceAdapter(CORE_DATA_PROVIDER, address(nav));
 
         vm.startPrank(manager);

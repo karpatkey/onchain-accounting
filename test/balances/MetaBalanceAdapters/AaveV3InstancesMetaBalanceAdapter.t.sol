@@ -157,7 +157,7 @@ contract AaveV3InstancesMetaUnitTest is BalanceAdapterTestBase {
         list[0] = address(usdc);
         list[1] = address(weth);
         pool.setReservesList(list);
-        adapter = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(balances));
+        adapter = new AaveV3InstancesMetaBalanceAdapter(address(balances));
     }
 
     function _ids() internal view returns (bytes32[] memory a) {
@@ -421,7 +421,7 @@ contract AaveV3InstancesMetaLabelReadTest is BalanceAdapterTestBase {
 
     function setUp() public override {
         super.setUp();
-        adapter = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(balances));
+        adapter = new AaveV3InstancesMetaBalanceAdapter(address(balances));
         poolReplier = new RawReplier();
         providerReplier = new RawReplier();
         // Default chain: pool resolves to the provider, provider answers with a normal market id.

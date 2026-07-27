@@ -146,7 +146,7 @@ contract GearboxV3CreditAccountsMetaBalanceAdapterTest is Test {
 
         ca = new MockCreditAccount(address(cm));
 
-        adapter = new GearboxV3CreditAccountsMetaBalanceAdapter("Gearbox", address(nav));
+        adapter = new GearboxV3CreditAccountsMetaBalanceAdapter(address(nav));
     }
 
     function _instances() internal view returns (bytes32[] memory ins) {
@@ -407,7 +407,7 @@ contract GearboxV3CreditAccountsMetaLabelReadTest is Test {
         nav = new Mock_NAVCalculator();
         usdc = new MockGearboxToken("USDC", 6);
         nav.registerAsset(address(usdc), 6, "USDC");
-        adapter = new GearboxV3CreditAccountsMetaBalanceAdapter("Gearbox", address(nav));
+        adapter = new GearboxV3CreditAccountsMetaBalanceAdapter(address(nav));
 
         cmReplier = new RawReplier();
         cmReplier.stageReturn(RawReplyLib.canonicalString("Trade WETH Tier 1"));
@@ -549,7 +549,7 @@ contract GearboxV3CreditAccountsMetaTier2LeafTest is Test {
 
     function setUp() public {
         nav = new Mock_NAVCalculator();
-        adapter = new GearboxV3CreditAccountsMetaBalanceAdapter("Gearbox", address(nav));
+        adapter = new GearboxV3CreditAccountsMetaBalanceAdapter(address(nav));
         hostileToken = new RawReplier();
         // Empty name() forces the tier-2 fallback; underlying() points at the hostile token.
         cm = new MockCreditManager("", address(hostileToken));

@@ -68,7 +68,7 @@ contract CompoundV3CometsMetaBalanceAdapterTest is Test {
         // alice in cometB: borrow 50 WETH.
         cometB.setPrincipal(alice, -int104(uint104(50e18)));
 
-        meta = new CompoundV3CometsMetaBalanceAdapter(address(rewards), address(comp), "Compound V3", address(nav));
+        meta = new CompoundV3CometsMetaBalanceAdapter(address(rewards), address(comp), address(nav));
     }
 
     function _instances() internal view returns (bytes32[] memory ins) {

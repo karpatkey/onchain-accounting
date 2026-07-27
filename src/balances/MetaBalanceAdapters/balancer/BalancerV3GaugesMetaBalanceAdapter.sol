@@ -34,11 +34,8 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceAdapter {
     IBalancerMinter public immutable BALANCER_MINTER;
 
     /// @param balancerMinter_ Address of the Balancer Minter contract.
-    /// @param protocolName_ Protocol identifier (e.g. "Balancer V3").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(address balancerMinter_, string memory protocolName_, address navCalculator_)
-        MetaBalanceAdapter(protocolName_, navCalculator_)
-    {
+    constructor(address balancerMinter_, address navCalculator_) MetaBalanceAdapter(navCalculator_) {
         AddressCheckLib.requireContract(balancerMinter_, "BalancerMinter");
         BALANCER_MINTER = IBalancerMinter(balancerMinter_);
     }

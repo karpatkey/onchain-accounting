@@ -36,7 +36,7 @@ contract FluidVaultsMetaParityForkTest is BalanceAdapterTestBase {
         assetsList[1] = USDC;
         balances = _deployBalancesForAdapter(assetsList);
 
-        meta = new FluidVaultsMetaBalanceAdapter(VAULT_RESOLVER, "Fluid", address(balances));
+        meta = new FluidVaultsMetaBalanceAdapter(VAULT_RESOLVER, address(balances));
     }
 
     function _instance() internal pure returns (bytes32[] memory ins) {

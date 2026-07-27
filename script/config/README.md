@@ -179,7 +179,9 @@ A meta-adapter is a single deployed contract; its **instance set is NOT here** â
 }
 ```
 
-> Only the constructor args `04_DeployBalanceAdapters.s.sol` reads are required per adapter (for `SparkLend`, just `dataProvider`); real configs may also carry informational fields (e.g. `protocol`, used for display / comparison-report rendering) that the deploy does not consume.
+> Only the constructor args `04_DeployBalanceAdapters.s.sol` reads are required per adapter (for `SparkLend`, just `dataProvider`). There is **no display-name field**: meta adapters derive `protocolName()` from their own `_protocolId()` (`ProtocolNames.forProtocolId`), and the plain/assisted adapters hardcode it, so the former `protocol` key has been removed from every config.
+>
+> That key was **not** inert before removal â€” `04` read it and passed it as each meta adapter's `protocolName_` constructor argument. Dropping it changed the constructor signature, so every deployed meta adapter needs a redeploy plus re-registration before it reports a derived name; a config-only diff is not enough. Note some ADRs still describe `protocol` as a live per-adapter field â€” they are historical records of the decision at the time, not current schema.
 >
 > The built-in `ERC20DefaultBalanceAdapter` is deployed inside `NAVCalculator.initialize()` (step `02`) and wired via `includeAssetInDefaultAdapter` / `excludeAssetFromDefaultAdapter`, **not** through these config files â€” don't list it here.
 
@@ -189,11 +191,11 @@ A meta-adapter is a single deployed contract; its **instance set is NOT here** â
 {
   "AaveV3InstancesMeta": {
     "enabled": true,
-    "constructor": { "protocol": "Aave V3" }
+    "constructor": {}
   },
   "MorphoMarketsMeta": {
     "enabled": true,
-    "constructor": { "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb", "protocol": "Morpho" }
+    "constructor": { "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb" }
   }
 }
 ```
@@ -203,7 +205,7 @@ A meta-adapter is a single deployed contract; its **instance set is NOT here** â
 | Field | Type | Description |
 |-------|------|-------------|
 | `enabled` | bool | Deploy this adapter on this chain? |
-| `constructor` | object | Constructor parameters for the adapter, keyed by parameter name (e.g. `protocol`, plus any protocol-specific args like `morpho`). `navCalculator` is injected by the deploy script and is not listed here. |
+| `constructor` | object | Constructor parameters for the adapter, keyed by parameter name (protocol-specific args like `morpho`, `vaultResolver`, `positionManager`). `navCalculator` is injected by the deploy script and is not listed here. Meta adapters take **no** display-name argument â€” see `src/utils/ProtocolNames.sol`. |
 
 ---
 
@@ -747,7 +749,6 @@ After deployment, addresses are saved to `deployments/{chainId}.json`.
     "AaveV3InstancesMeta": {
       "address": "0x222...",
       "constructor": {
-        "protocol": "Aave V3",
         "navCalculator": "0xdef..."
       },
       "instances": [

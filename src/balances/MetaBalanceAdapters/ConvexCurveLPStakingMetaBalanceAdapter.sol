@@ -66,11 +66,8 @@ contract ConvexCurveLPStakingMetaBalanceAdapter is MetaBalanceAdapter {
     /// @param booster_       Convex Booster contract (0xF403C135812408BFbE8713b5A23a04b3D48AAE31 on mainnet).
     /// @param cvxToken_      CVX token address (0x4e3FBD56CD56c3e72c1403e103b45Db9da5B9D2B on mainnet,
     ///                       address(0) to skip CVX computation).
-    /// @param protocolName_  Human-readable name (e.g. "Convex").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(address booster_, address cvxToken_, string memory protocolName_, address navCalculator_)
-        MetaBalanceAdapter(protocolName_, navCalculator_)
-    {
+    constructor(address booster_, address cvxToken_, address navCalculator_) MetaBalanceAdapter(navCalculator_) {
         if (booster_ != address(0) && booster_.code.length == 0) revert NotAContract("Booster");
         BOOSTER = IConvexBooster(booster_);
         CVX_TOKEN = cvxToken_;

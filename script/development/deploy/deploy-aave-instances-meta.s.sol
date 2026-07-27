@@ -16,12 +16,10 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 ///         meta-adapter equivalent of script/deploy/06_Configure.s.sol.
 /// @dev Env vars set by the wrapper shell script:
 ///        DEV_NAV_PROXY      — deployed NAVCalculator proxy (broadcaster must hold MANAGER)
-///        DEV_PROTOCOL_NAME  — human-readable name ("Aave V3")
 ///        DEV_DATA_PROVIDERS — comma-separated instance ProtocolDataProvider addresses
 contract DeployAaveInstancesMeta is Script {
     function run() public {
         address navProxy = vm.envAddress("DEV_NAV_PROXY");
-        string memory protocolName = vm.envString("DEV_PROTOCOL_NAME");
         address[] memory dataProviders = vm.envAddress("DEV_DATA_PROVIDERS", ",");
 
         // DataProvider addresses widen to the bytes32 instance coordinate exactly as
@@ -33,7 +31,7 @@ contract DeployAaveInstancesMeta is Script {
 
         vm.startBroadcast();
 
-        address adapter = address(new AaveV3InstancesMetaBalanceAdapter(protocolName, navProxy));
+        address adapter = address(new AaveV3InstancesMetaBalanceAdapter(navProxy));
 
         INAVCalculator nav = INAVCalculator(navProxy);
         nav.addMetaBalanceAdapter(adapter, instances);
@@ -41,7 +39,6 @@ contract DeployAaveInstancesMeta is Script {
         vm.stopBroadcast();
 
         console2.log("NAV proxy:       ", navProxy);
-        console2.log("protocol name:   ", protocolName);
         console2.log("instances:       ", dataProviders.length);
         for (uint256 i = 0; i < dataProviders.length; i++) {
             console2.log("  dataProvider:  ", dataProviders[i]);

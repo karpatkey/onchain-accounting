@@ -602,6 +602,20 @@ The tables below show what the call returns for a representative account positio
 (the ordered hierarchy below `protocolName`, leaf last) — computed lazily from `positionId`, so
 meta-adapters derive it on-chain from live state and per-instance adapters return a fixed array.
 
+> **`protocolName()` names the protocol, never the product.** Every adapter sharing a `protocolId` returns the
+> same string: Aave V3's lending instances, Safety Module and Umbrella are all `"Aave V3"`; Morpho's vaults and
+> markets are both `"Morpho"`; Balancer's pools and gauges are both `"Balancer V3"`. The product is carried by
+> `positionLabels()` (`["Umbrella Module"]`, `["Safety Module"]`, `["Market", "wstETH/USDC"]`) and by the typed
+> `protocolSubId`. This matters because a consumer enumerating *configured adapters* — as opposed to reading an
+> account's positions — never sees the typed taxonomy (`protocolBrand`/`protocolId`/`protocolSubId` are
+> `private constant` and only ride on returned `PositionBalance` structs), so the display name is the only
+> protocol identity it has; an adapter returning its product name splits itself out into a phantom sibling
+> protocol. Canonical strings live in `src/utils/ProtocolNames.sol`. Meta-adapters **derive** the name from their
+> own protocol id (`ProtocolNames.forProtocolId(_protocolId())`), so for that family the invariant is structural
+> rather than asserted; the hardcoded plain/assisted adapters are pinned to the same table by
+> `test/ProtocolNameConsistency.t.sol`. Clients must still never use these strings for identity, indexing, or
+> reconciliation — that is what `protocolSubId` / `positionId` are for.
+
 Assumed prices: USDC/DAI/GHO/USDS/crvUSD = $1 · WETH/ETH = $2 500 · wstETH = $2 900 ·
 stETH = $2 480 · AAVE = $200 · CRV = $0.50 · CVX = $3 · BAL = $3 · COMP = $50
 
@@ -647,8 +661,8 @@ Scenario: 1 000 USDC staked in stkwaEthUSDC.v1 with 5 USDC rewards pending.
 
 | asset | amount | value (USD) | positionKind | protocolName      | labels        |
 |-------|--------|-------------|--------------|-------------------|-----------------------|
-| USDC  | 1 000  | +1 000      | `Staking`    | `"Aave Umbrella"` | `["Umbrella Module"]` |
-| USDC  | 5      | +5          | `Rewards`    | `"Aave Umbrella"` | `["Umbrella Module"]` |
+| USDC  | 1 000  | +1 000      | `Staking`    | `"Aave V3"`       | `["Umbrella Module"]` |
+| USDC  | 5      | +5          | `Rewards`    | `"Aave V3"`       | `["Umbrella Module"]` |
 | **NAV** | | **+1 005** | | | |
 
 #### `Cap` — cUSD + stcUSD
@@ -1485,9 +1499,11 @@ legs, and a worked example — for every balance adapter on `main`.
 - **Full breadcrumb** = `[protocolName(), ...positionLabels(positionId)]`; the **leaf** is the last element.
 - **`protocolSubId`** column is the `keccak256` slug (constants in [`src/utils/ProtocolIds.sol`](../../src/utils/ProtocolIds.sol)).
 - **Leaf source:** `const` = hardcoded literal · `derived` = read live from chain · `gov` = constructor arg.
-  No leaf is governance-fed today; for meta-adapters only `protocolName()` (the breadcrumb root, marked ¹)
-  is a constructor arg, the category is a `const` literal, and the leaf is `derived` on-chain. Meta-adapters
-  use a `_labels(category, leaf)` helper that **drops an empty leaf**, so a failed read degrades to `[category]`.
+  Nothing is governance-fed today. For meta-adapters the breadcrumb root `protocolName()` is **derived from
+  the adapter's own `_protocolId()`** (`ProtocolNames.forProtocolId`) — not a constructor argument and not
+  configurable per deployment — the category is a `const` literal, and the leaf is `derived` on-chain.
+  Meta-adapters use a `_labels(category, leaf)` helper that **drops an empty leaf**, so a failed read
+  degrades to `[category]`.
 - Labels are returned by `positionLabels(positionId)`; the ephemeral per-item id (request / NFT / ticket)
   is **not** a label — it is the typed `PositionBalance.positionInstanceId`.
 
@@ -1496,7 +1512,7 @@ legs, and a worked example — for every balance adapter on `main`.
 | Adapter | `protocolSubId` | `protocolName()` | `positionLabels()` → (source) | `positionId` schema | `PositionKind` legs | Example breadcrumb |
 |---|---|---|---|---|---|---|
 | `ERC20DefaultBalanceAdapter` | `wallet` | `"Wallet"` | `[<symbol>]` (derived); `["native"]`; `[]` on revert | `abi.encode(address asset)` | Wallet | `["Wallet","USDC"]` |
-| `AaveUmbrellaBalanceAdapter` | `aave-v3-umbrella` | `"Aave Umbrella"` | `["Umbrella Module"]` (const) | `abi.encode(address stakeToken)` | Staking / Rewards | `["Aave Umbrella","Umbrella Module"]` |
+| `AaveUmbrellaBalanceAdapter` | `aave-v3-umbrella` | `"Aave V3"` | `["Umbrella Module"]` (const) | `abi.encode(address stakeToken)` | Staking / Rewards | `["Aave V3","Umbrella Module"]` |
 | `AaveV3SafetyModuleBalanceAdapter` | `aave-v3-safety-module` | `"Aave V3"` | `["Safety Module"]` (const) | `abi.encode(address stakeToken)` | Staking / Rewards | `["Aave V3","Safety Module"]` |
 | `CapBalanceAdapter` (cUSD) | `cap` | `"Cap"` | `["Stablecoin","cUSD"]` (const) | `abi.encode(address CUSD)` | Supplied | `["Cap","Stablecoin","cUSD"]` |
 | `CapBalanceAdapter` (stcUSD) | `cap` | `"Cap"` | `["Savings","stcUSD"]` (const) | `abi.encode(address STCUSD)` | Staking | `["Cap","Savings","stcUSD"]` |
@@ -1508,10 +1524,11 @@ legs, and a worked example — for every balance adapter on `main`.
 
 #### Meta-adapters (`src/balances/MetaBalanceAdapters/`)
 
-`protocolName()` is a constructor arg (¹). Default `positionId` = base `_instancePositionId` (instance
-address widened → `abi.encode(address instance)`); overrides are flagged.
+`protocolName()` is derived from `_protocolId()` — identical for every adapter sharing a protocol id, and
+the same on every chain. Default `positionId` = base `_instancePositionId` (instance address widened →
+`abi.encode(address instance)`); overrides are flagged.
 
-| Adapter | `protocolSubId` | `protocolName()`¹ | `positionLabels()` → (source) | `positionId` schema | `PositionKind` legs | Example breadcrumb |
+| Adapter | `protocolSubId` | `protocolName()` | `positionLabels()` → (source) | `positionId` schema | `PositionKind` legs | Example breadcrumb |
 |---|---|---|---|---|---|---|
 | `AaveV3InstancesMetaBalanceAdapter` | `aave-v3-lending` | `"Aave V3"` | `["Market", <getMarketId()>]` (derived) | `abi.encode(address pool)` (computed inline) | Collateral/Supplied / Borrowed | `["Aave V3","Market","Aave Ethereum Market"]` |
 | `CompoundV3CometsMetaBalanceAdapter` | `compound-v3-comets` | `"Compound V3"` | `["Market", <comet.name()>]` (derived) | `abi.encode(address comet)` | Supplied/Borrowed / Collateral / Rewards | `["Compound V3","Market","cUSDCv3"]` |
@@ -1621,8 +1638,10 @@ When implementing a new balance adapter:
    - Uncollected LP/protocol fees → `Fees`
    - ERC20 wallet balance → `Wallet`
 4. Provide human-readable labels by implementing both `IPositionDescribable` methods:
-   - `protocolName()` — static `pure` string for per-instance adapters; the same constant (constructor
-     arg) for meta-adapters
+   - `protocolName()` — for per-instance adapters, return the `src/utils/ProtocolNames.sol` constant for
+     your protocol id. Meta-adapters do **not** implement it: `MetaBalanceAdapter` derives it from
+     `_protocolId()`. Either way, adapters sharing a `protocolId` report the same name — it names the
+     PROTOCOL, never the product (the product goes in `positionLabels()`).
    - `positionLabels(bytes positionId)` — return a `string[]` hierarchy below the protocol, leaf last,
      derived from `positionId`. Derive on-chain for meta-adapters (read token symbols, vault/pool names)
      via the `_labels(category, leaf)` helper; a fixed array for per-instance adapters. Labels are NOT

@@ -31,10 +31,9 @@ contract CompoundV3CometsMetaBalanceAdapter is MetaBalanceAdapter {
 
     /// @param compoundRewards_ The chain's CometRewards contract.
     /// @param rewardToken_ The reward token (COMP).
-    /// @param protocolName_ Human-readable protocol name (e.g. "Compound V3").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(address compoundRewards_, address rewardToken_, string memory protocolName_, address navCalculator_)
-        MetaBalanceAdapter(protocolName_, navCalculator_)
+    constructor(address compoundRewards_, address rewardToken_, address navCalculator_)
+        MetaBalanceAdapter(navCalculator_)
     {
         AddressCheckLib.requireContract(compoundRewards_, "CompoundRewards");
         if (rewardToken_ == address(0)) revert InvalidArguments();

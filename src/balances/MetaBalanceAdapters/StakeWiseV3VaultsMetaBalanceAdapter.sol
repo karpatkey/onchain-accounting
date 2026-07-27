@@ -49,14 +49,10 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceAdapter {
 
     /// @param underlyingToken_ The underlying staking asset (e.g. ETH sentinel on mainnet, GNO on Gnosis).
     /// @param osTokenVaultController_ The chain's StakeWise OsTokenVaultController (same one osToken_CustomPriceFeed uses).
-    /// @param protocolName_ Human-readable protocol name (e.g. "StakeWise V3").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(
-        address underlyingToken_,
-        address osTokenVaultController_,
-        string memory protocolName_,
-        address navCalculator_
-    ) MetaBalanceAdapter(protocolName_, navCalculator_) {
+    constructor(address underlyingToken_, address osTokenVaultController_, address navCalculator_)
+        MetaBalanceAdapter(navCalculator_)
+    {
         if (underlyingToken_ == address(0)) revert InvalidArguments();
         AddressCheckLib.requireContract(osTokenVaultController_, "osTokenVaultController");
         UNDERLYING_TOKEN = underlyingToken_;

@@ -68,7 +68,7 @@ contract PancakeSwapV3PoolsMetaBalanceForkTest is BalanceAdapterTestBase {
     function setUp() public override {
         super.setUp(); // dispatches to the _setupFork() override below — no need to call it again
         balances = _deployBalancesForAdapter(_assets());
-        meta = new PancakeSwapV3PoolsMetaBalanceAdapter(NPM, "PancakeSwap V3", address(balances));
+        meta = new PancakeSwapV3PoolsMetaBalanceAdapter(NPM, address(balances));
     }
 
     function _setupFork() internal override {

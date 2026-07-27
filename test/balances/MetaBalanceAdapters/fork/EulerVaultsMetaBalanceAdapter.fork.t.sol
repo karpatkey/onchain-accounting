@@ -108,7 +108,7 @@ contract EulerVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         vm.stopPrank();
 
         // Deploy the meta-adapter and register it on NAV with both eVaults as instances.
-        adapter = new EulerVaultsMetaBalanceAdapter("Euler", address(nav));
+        adapter = new EulerVaultsMetaBalanceAdapter(address(nav));
         vm.startPrank(manager);
         bytes32[] memory instances = new bytes32[](2);
         instances[0] = bytes32(uint256(uint160(address(KPK_ETH_TERM))));

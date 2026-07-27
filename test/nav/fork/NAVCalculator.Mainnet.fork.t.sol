@@ -148,12 +148,11 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
     }
 
     function setupBalanceAdapter() internal override {
-        AaveV3InstancesMetaBalanceAdapter aaveMeta = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(nav));
+        AaveV3InstancesMetaBalanceAdapter aaveMeta = new AaveV3InstancesMetaBalanceAdapter(address(nav));
         aaveAdapter = aaveMeta;
         AaveV3SafetyModuleBalanceAdapter smAdapter = new AaveV3SafetyModuleBalanceAdapter(address(nav));
-        compoundV3Comet =
-            new CompoundV3CometsMetaBalanceAdapter(compoundRewardContract, compound, "Compound V3", address(nav));
-        morphoBlueAdapter = new MorphoMarketsMetaBalanceAdapter(morphoBlue, "Morpho", address(nav));
+        compoundV3Comet = new CompoundV3CometsMetaBalanceAdapter(compoundRewardContract, compound, address(nav));
+        morphoBlueAdapter = new MorphoMarketsMetaBalanceAdapter(morphoBlue, address(nav));
 
         // Non-meta adapters register via the plain batch path.
         nav.addBalanceAdapters(aa(address(smAdapter)));

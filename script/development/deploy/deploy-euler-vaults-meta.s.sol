@@ -12,12 +12,10 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 ///         coordinate is an eVault address widened to bytes32 exactly as MetaBalanceAdapter._toAddress reverses it.
 /// @dev Env vars (set by the wrapper shell script):
 ///        DEV_NAV_PROXY     — deployed NAVCalculator proxy (broadcaster must hold MANAGER)
-///        DEV_PROTOCOL_NAME — human-readable name ("Euler")
 ///        DEV_EULER_VAULTS  — comma-separated eVault addresses
 contract DeployEulerVaultsMeta is Script {
     function run() public {
         address navProxy = vm.envAddress("DEV_NAV_PROXY");
-        string memory protocolName = vm.envString("DEV_PROTOCOL_NAME");
         address[] memory vaults = vm.envAddress("DEV_EULER_VAULTS", ",");
 
         bytes32[] memory instances = new bytes32[](vaults.length);
@@ -26,12 +24,11 @@ contract DeployEulerVaultsMeta is Script {
         }
 
         vm.startBroadcast();
-        address adapter = address(new EulerVaultsMetaBalanceAdapter(protocolName, navProxy));
+        address adapter = address(new EulerVaultsMetaBalanceAdapter(navProxy));
         INAVCalculator(navProxy).addMetaBalanceAdapter(adapter, instances);
         vm.stopBroadcast();
 
         console2.log("NAV proxy:       ", navProxy);
-        console2.log("protocol name:   ", protocolName);
         console2.log("instances:       ", vaults.length);
         for (uint256 i = 0; i < vaults.length; i++) {
             console2.log("  eVault:        ", vaults[i]);

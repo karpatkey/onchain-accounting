@@ -29,7 +29,7 @@ contract GearboxV3MarketsMetaParityForkTest is BalanceAdapterTestBase {
         vm.rollFork(FORK_BLOCK);
 
         balances = _deployBalancesForAdapter(WETH);
-        meta = new GearboxV3MarketsMetaBalanceAdapter("Gearbox", address(balances));
+        meta = new GearboxV3MarketsMetaBalanceAdapter(address(balances));
     }
 
     function _instance() internal pure returns (bytes32[] memory ins) {

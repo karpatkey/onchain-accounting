@@ -4,8 +4,11 @@ import {LibraryPins} from "script/utils/LibraryPins.sol";
 
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
 import {
-    AaveV3InstancesMetaBalanceAdapter
+    AaveV3InstancesMetaBalanceAdapter,
+    IAaveAddressesProviderSource,
+    IAavePoolAddressesProvider
 } from "src/balances/MetaBalanceAdapters/AaveV3InstancesMetaBalanceAdapter.sol";
+import {RawReplier, RawReplyLib} from "test/mocks/RawReplier.sol";
 import {SparkLendBalanceAdapter} from "src/balances/BalanceAdapters/SparkLendBalanceAdapter.sol";
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -147,5 +150,67 @@ contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         for (uint256 i = 0; i < pos.length; i++) {
             assertEq(pos[i].balanceAsset.asset, USDC);
         }
+    }
+
+    /// @notice The hardened market-id reader decodes a REAL, proxied Aave provider byte-for-byte the same as a plain
+    ///         high-level call does.
+    /// @dev The unit tests prove the malformed shapes degrade; this proves the rewrite did not break the canonical
+    ///      path against production bytecode. `getMarketId()` on mainnet Core is served through a proxy, which is
+    ///      exactly the shape the raw-staticcall reader had to keep working.
+    function test_positionLabels_realProvider_matchesDirectRead() public view {
+        address ap = IAaveAddressesProviderSource(CORE_DATA_PROVIDER).ADDRESSES_PROVIDER();
+        address pool = IAavePoolAddressesProvider(ap).getPool();
+        string memory direct = IAavePoolAddressesProvider(ap).getMarketId();
+        assertGt(bytes(direct).length, 0, "the real market id is non-empty");
+
+        string[] memory labels = adapter.positionLabels(abi.encode(pool));
+        assertEq(labels.length, 2, "category + market id");
+        assertEq(labels[0], "Market");
+        assertEq(labels[1], direct, "label leaf must equal the provider's own getMarketId()");
+    }
+
+    /// @notice Every uncaught failure mode degrades to `["Market"]` against the real deployed adapter — no revert.
+    /// @dev Staged on the fork with {RawReplier} rather than mocked in isolation, so the assertion covers the
+    ///      adapter as it will actually be deployed. A `try`/`catch` reader reverts on all four of these.
+    function test_positionLabels_hostilePool_degradesOnFork() public {
+        RawReplier provider = new RawReplier();
+        RawReplier pool = new RawReplier();
+        pool.stageReturn(abi.encode(address(provider)));
+
+        bytes[] memory shapes = new bytes[](4);
+        shapes[0] = RawReplyLib.bytes32String("Aave Ethereum Market"); // MKR-era bytes32 string
+        shapes[1] = ""; // proxy to a code-less implementation
+        shapes[2] = RawReplyLib.badOffset(0x40, "Aave Ethereum Market"); // malformed head
+        shapes[3] = RawReplyLib.declaredLength(type(uint256).max, "x"); // absurd length
+
+        for (uint256 i = 0; i < shapes.length; i++) {
+            provider.stageReturn(shapes[i]);
+            string[] memory labels = adapter.positionLabels(abi.encode(address(pool)));
+            assertEq(labels.length, 1, "must degrade, not revert");
+            assertEq(labels[0], "Market");
+        }
+
+        // A code-less pool reverts at Solidity's `extcodesize` precheck, which `try`/`catch` never sees either.
+        string[] memory codeless = adapter.positionLabels(abi.encode(address(0xdead)));
+        assertEq(codeless.length, 1, "a code-less pool must degrade too");
+    }
+
+    /// @notice A hostile provider cannot burn the caller's gas budget through the label path.
+    /// @dev Measured without the stipend elsewhere in this change: over 1e9 gas for the looping case and ~17M for a
+    ///      3 MB revert payload. Both are enough to out-of-gas a verbose NAV read.
+    function test_positionLabels_hostileProvider_isGasBounded() public {
+        RawReplier provider = new RawReplier();
+        RawReplier pool = new RawReplier();
+        pool.stageReturn(abi.encode(address(provider)));
+
+        provider.stageBurnGas();
+        uint256 before = gasleft();
+        adapter.positionLabels(abi.encode(address(pool)));
+        assertLt(before - gasleft(), 1_000_000, "gas-burning provider must be capped");
+
+        provider.stageRevert(3_000_000);
+        before = gasleft();
+        adapter.positionLabels(abi.encode(address(pool)));
+        assertLt(before - gasleft(), 1_000_000, "giant revert payload must be capped");
     }
 }

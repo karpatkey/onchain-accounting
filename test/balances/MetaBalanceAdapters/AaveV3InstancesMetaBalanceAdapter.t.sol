@@ -404,6 +404,15 @@ contract AaveV3InstancesMetaLabelReadTest is BalanceAdapterTestBase {
     ///      and giant-revert-payload cases below each cost tens of millions without the cap.
     uint256 private constant GAS_CEILING = 1_000_000;
 
+    /// @dev Mirrors the adapter's private `LABEL_READ_GAS`, so a test can assert a hop really burned its stipend.
+    uint256 private constant LABEL_READ_GAS = 100_000;
+
+    /// @dev Deliberately much tighter than {GAS_CEILING}. The 150 KB revert payload costs ~82k with the explicit
+    ///      staticcall output size and ~153k without it (the caller would `returndatacopy` all 150 KB and pay the
+    ///      quadratic memory expansion). A loose ceiling would pass in BOTH cases and assert nothing — this bound is
+    ///      what makes removing the output size a test failure rather than a silent regression.
+    uint256 private constant OUTPUT_CAP_CEILING = 120_000;
+
     AaveV3InstancesMetaBalanceAdapter public adapter;
     RawReplier public poolReplier;
     RawReplier public providerReplier;
@@ -521,6 +530,20 @@ contract AaveV3InstancesMetaLabelReadTest is BalanceAdapterTestBase {
         _assertCollapsed(address(poolReplier), "an absurd declared length must not revert the label");
     }
 
+    /// @dev The bound is `len <= size - 64` on the RAW declared length, not on `ceil32(len)`. Pin that: a reply
+    ///      whose payload is in-bounds but NOT padded to a 32-byte boundary must still decode. Verified on solc
+    ///      0.8.34 that a memory-source `abi.decode` bounds on the raw length; if a future compiler tightened it to
+    ///      the padded bound, `_safeStringRead` would start reverting on unpadded replies and this test would catch
+    ///      it. (`NAVCalculator._safeString` carries a comment asserting the opposite and uses a ceil32 bound — it
+    ///      is merely stricter, not safer, and is outside this PR.)
+    function test_labels_unpaddedPayload_stillDecodes() public {
+        // offset 0x20, len 5, exactly 5 bytes of payload => returndatasize 69, not a multiple of 32.
+        providerReplier.stageReturn(RawReplyLib.declaredLength(5, "short"));
+        string[] memory l = _labelsFor(address(poolReplier));
+        assertEq(l.length, 2, "an unpadded but in-bounds payload must decode, not degrade");
+        assertEq(l[1], "short");
+    }
+
     /// @dev A plausible length whose payload is truncated — the classic partial-returndata shape.
     function test_labels_truncatedPayloadMarketId_collapses() public {
         providerReplier.stageReturn(RawReplyLib.declaredLength(100, "short"));
@@ -530,6 +553,11 @@ contract AaveV3InstancesMetaLabelReadTest is BalanceAdapterTestBase {
     // ----- bounds -----
 
     /// @dev The length cap is a deliberate NEW constraint: a 256-byte market id still renders, 257 degrades.
+    /// @dev Note which clause actually fires. 257 bytes encodes to 64 + ceil32(257) = 352, so it is rejected by
+    ///      `size > MAX_RETURN_BYTES`, NOT by `len > MAX_LABEL_BYTES` — that clause is currently unreachable (see
+    ///      the {MAX_LABEL_BYTES} docstring). What this pins is the *observable* cap and, more usefully, that 256 is
+    ///      genuinely accepted: the two constants are exactly one head apart, so a valid maximum-length label must
+    ///      not be rejected by an off-by-one.
     function test_labels_lengthCapBoundary() public {
         providerReplier.stageReturn(RawReplyLib.stringOfLength(256));
         assertEq(_labelsFor(address(poolReplier)).length, 2, "256 bytes is inside the cap");
@@ -544,15 +572,28 @@ contract AaveV3InstancesMetaLabelReadTest is BalanceAdapterTestBase {
         _assertCollapsed(address(poolReplier), "an oversized reply must not revert or truncate");
     }
 
-    /// @dev The gas cap is load-bearing, not defensive. A raw `staticcall` assigning `(bool, bytes memory)` always
-    ///      `returndatacopy`s the response *including a revert payload* — which the parameterless `catch {}` this
-    ///      replaced never did. Without the stipend the callee's own memory expansion for a multi-megabyte revert
-    ///      runs to tens of millions of gas, enough to out-of-gas a verbose NAV read.
+    /// @dev Exercises the GAS STIPEND, not the output cap. A 3 MB revert payload costs the callee ~17.4M gas in
+    ///      memory expansion alone, so under a 100k stipend it halts exceptionally *before* the REVERT executes:
+    ///      `ok` is false and `returndatasize()` is 0. That is exactly the protection being asserted — but it means
+    ///      this test would still pass if the explicit staticcall output size were removed, which is why
+    ///      {test_labels_affordableRevertPayload_isOutputCapped} exists alongside it.
     function test_labels_giantRevertPayload_isGasBounded() public {
         providerReplier.stageRevert(3_000_000);
         uint256 before = gasleft();
         _assertCollapsed(address(poolReplier), "a giant revert payload must not revert the label");
         assertLt(before - gasleft(), GAS_CEILING, "the probe must be gas-capped");
+    }
+
+    /// @dev Exercises the OUTPUT CAP. A revert payload the callee can actually afford inside its stipend (150 KB
+    ///      costs it ~57k of memory expansion) genuinely reaches the caller, so `returndatasize()` really is 150,000.
+    ///      A raw `staticcall` assigning `(bool, bytes memory)` would `returndatacopy` all of it — the parameterless
+    ///      `catch {}` this replaced never did, which is why an uncapped rewrite would be worse than the bug. The
+    ///      explicit output size keeps the copy at 320 bytes no matter what came back.
+    function test_labels_affordableRevertPayload_isOutputCapped() public {
+        providerReplier.stageRevert(150_000);
+        uint256 before = gasleft();
+        _assertCollapsed(address(poolReplier), "an affordable revert payload must not revert the label");
+        assertLt(before - gasleft(), OUTPUT_CAP_CEILING, "the copied returndata must be capped, not the full payload");
     }
 
     /// @dev Same cap, other direction: a callee that simply never returns.
@@ -563,11 +604,26 @@ contract AaveV3InstancesMetaLabelReadTest is BalanceAdapterTestBase {
         assertLt(before - gasleft(), GAS_CEILING, "the probe must be gas-capped");
     }
 
-    /// @dev Both hops hostile at once — the stipends are per-call, so the total is still bounded.
-    function test_labels_bothHopsHostile_isGasBounded() public {
+    /// @dev The FIRST hop, gas-burning. Deliberately named for hop 1 only: a pool that burns its stipend fails, so
+    ///      `ap` is `address(0)` and `_safeStringRead` is never reached. "Both hops burn" is not constructible —
+    ///      a hop that consumes its whole stipend is by definition a hop that failed, which short-circuits the next
+    ///      one. The per-hop bound is what is testable, and it is what {test_labels_gasBurningProvider_isGasBounded}
+    ///      covers for hop 2.
+    function test_labels_gasBurningPool_isGasBounded() public {
         poolReplier.stageBurnGas();
         uint256 before = gasleft();
         _assertCollapsed(address(poolReplier), "a gas-burning pool must not revert the label");
         assertLt(before - gasleft(), GAS_CEILING, "the probe must be gas-capped");
+    }
+
+    /// @dev Both hops reached, the second hostile — the only shape where two probes actually run in one call. Pins
+    ///      that the stipends compose rather than the second one being unbounded.
+    function test_labels_bothHopsReached_secondHostile_isGasBounded() public {
+        providerReplier.stageBurnGas();
+        uint256 before = gasleft();
+        _assertCollapsed(address(poolReplier), "hop 1 succeeding must not un-bound hop 2");
+        uint256 used = before - gasleft();
+        assertLt(used, GAS_CEILING, "two hops must stay inside one ceiling");
+        assertGt(used, LABEL_READ_GAS, "hop 2 must genuinely have been reached and burned its stipend");
     }
 }

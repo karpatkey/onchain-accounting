@@ -4,7 +4,7 @@ pragma solidity ^0.8;
 import {MetaBalanceAdapter} from "../MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {LabelLib} from "src/balances/LabelLib.sol";
+import {IERC20MetaView} from "src/balances/LabelLib.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
@@ -44,6 +44,13 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 contract GearboxV3CreditAccountsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @notice Longest credit-manager name accepted as a label leaf; anything longer degrades to the underlying
     ///         symbol fallback. Far above any real Gearbox credit-manager name.
+    /// @dev Currently IMPLIED by {MAX_RETURN_BYTES} rather than independently enforced: past the size check below,
+    ///      `size <= MAX_RETURN_BYTES`, and `len <= size - 64` then forces `len <= 256` on its own — so the
+    ///      `len > MAX_LABEL_BYTES` clause cannot fire today. It is kept because the two constants express one
+    ///      invariant, `MAX_RETURN_BYTES == 64 + MAX_LABEL_BYTES`, and they must move together: that equality is
+    ///      also what guarantees there is no off-by-one rejecting a *valid* maximum-length label (a canonical
+    ///      256-byte string encodes to exactly 320 bytes). Raise one without the other and the clause stops being
+    ///      redundant — which is precisely when you want it already there.
     uint256 private constant MAX_LABEL_BYTES = 256;
 
     /// @notice Hard ceiling on returndata **copied into this contract's memory** for a label probe: the two ABI head
@@ -239,11 +246,21 @@ contract GearboxV3CreditAccountsMetaBalanceAdapter is MetaBalanceAdapter {
     ///      (e.g. "USDC") via `underlying()` — the same accessor the position read uses. Leaf is "" (→ just
     ///      `["Credit Account"]`) only if both are unreadable. Returns an empty array for a short positionId.
     ///
-    ///      Both reads go through the raw-call readers below rather than `try`/`catch`. `_creditManagerOf` guards the
-    ///      *credit account's* codesize but returns whatever `creditManager()` answered, so `cm` itself may be
-    ///      code-less — a high-level call to it reverts via `extcodesize` in this frame, past any `catch`. And a `cm`
-    ///      that answers either selector successfully but with undecodable returndata reverts in this frame too. Both
-    ///      would take down a display-only view; see {_safeStringRead} / {_safeAddressRead}.
+    ///      **All THREE reads** go through the raw-call readers below rather than `try`/`catch`. `_creditManagerOf`
+    ///      guards the *credit account's* codesize but returns whatever `creditManager()` answered, so `cm` itself may
+    ///      be code-less — a high-level call to it reverts via `extcodesize` in this frame, past any `catch`. And a
+    ///      `cm` that answers any of these selectors successfully but with undecodable returndata reverts in this
+    ///      frame too. All of it would take down a display-only view; see {_safeStringRead} / {_safeAddressRead}.
+    ///
+    ///      The tier-2 `symbol()` hop matters as much as the first two, and is easy to overlook: the chain is only as
+    ///      fail-open as its last link, and `u` is *manager-chosen* (see the inline note below). Hardening `name()`
+    ///      and `underlying()` while leaving the symbol read on `try`/`catch` would have left the whole function
+    ///      revert-able and gas-unbounded through a one-line gap.
+    ///
+    ///      Note the deliberate asymmetry inside this file: `underlying()` is read through {_safeAddressRead} here,
+    ///      but still through `try`/`catch` on the NAV path (`_debtReportable`, `_instanceAssets`, `_appendBorrow`).
+    ///      Those callers already treat a failed read as "drop the leg", so their failure mode is a caught revert,
+    ///      not an over-report — and putting a gas cap on a NAV-path read is a separate decision from a label fix.
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
         if (pid.length < 32) return new string[](0);
         address ca = abi.decode(pid, (address));
@@ -254,7 +271,12 @@ contract GearboxV3CreditAccountsMetaBalanceAdapter is MetaBalanceAdapter {
 
         if (bytes(leaf).length == 0) {
             address u = _safeAddressRead(cm, ICreditManagerV3.underlying.selector);
-            if (u != address(0)) leaf = LabelLib.symbol(u, "");
+            // NOT `LabelLib.symbol`: `u` is whatever the (already untrusted) credit manager returned from
+            // `underlying()`, and `_safeAddressRead` masks that word rather than rejecting it — so this hop's
+            // target is fully manager-chosen. LabelLib still reads through `try`/`catch`, which leaves both the
+            // decode-failure revert and an uncapped gas burn on the very last hop of the chain this function
+            // exists to harden. Read it with the same guarded reader as the two hops above.
+            if (u != address(0)) leaf = _safeStringRead(u, IERC20MetaView.symbol.selector);
         }
         return _labels("Credit Account", leaf);
     }

@@ -43,6 +43,13 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
 
     /// @notice Longest market id accepted as a label leaf; anything longer degrades to "" (the label then drops
     ///         the leaf and renders as just `["Market"]`). Far above any real Aave market id.
+    /// @dev Currently IMPLIED by {MAX_RETURN_BYTES} rather than independently enforced: past the size check below,
+    ///      `size <= MAX_RETURN_BYTES`, and `len <= size - 64` then forces `len <= 256` on its own — so the
+    ///      `len > MAX_LABEL_BYTES` clause cannot fire today. It is kept because the two constants express one
+    ///      invariant, `MAX_RETURN_BYTES == 64 + MAX_LABEL_BYTES`, and they must move together: that equality is
+    ///      also what guarantees there is no off-by-one rejecting a *valid* maximum-length label (a canonical
+    ///      256-byte string encodes to exactly 320 bytes). Raise one without the other and the clause stops being
+    ///      redundant — which is precisely when you want it already there.
     uint256 private constant MAX_LABEL_BYTES = 256;
 
     /// @notice Hard ceiling on returndata **copied into this contract's memory** for a label probe: the two ABI head

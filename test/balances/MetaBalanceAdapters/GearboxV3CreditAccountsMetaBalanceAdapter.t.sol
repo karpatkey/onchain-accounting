@@ -531,3 +531,72 @@ contract GearboxV3CreditAccountsMetaLabelReadTest is Test {
         assertLt(before - gasleft(), GAS_CEILING, "the probe must be gas-capped");
     }
 }
+
+/// @title Gearbox tier-2 fallback — the underlying token's `symbol()` must be fail-open too
+/// @notice `positionLabels` degrades to the underlying asset's symbol when `name()` is unusable. The address it
+///         reads that symbol from comes from the credit manager's own `underlying()`, so it is attacker-chosen:
+///         `_safeAddressRead` masks whatever word came back, and the manager itself is only reachable through
+///         `creditManager()` on a governed instance — not governed itself. That makes the symbol read the last
+///         unguarded hop in the chain.
+contract GearboxV3CreditAccountsMetaTier2LeafTest is Test {
+    uint256 private constant GAS_CEILING = 1_000_000;
+
+    Mock_NAVCalculator nav;
+    GearboxV3CreditAccountsMetaBalanceAdapter adapter;
+    RawReplier hostileToken;
+    MockCreditManager cm;
+    MockCreditAccount ca;
+
+    function setUp() public {
+        nav = new Mock_NAVCalculator();
+        adapter = new GearboxV3CreditAccountsMetaBalanceAdapter("Gearbox", address(nav));
+        hostileToken = new RawReplier();
+        // Empty name() forces the tier-2 fallback; underlying() points at the hostile token.
+        cm = new MockCreditManager("", address(hostileToken));
+        ca = new MockCreditAccount(address(cm));
+    }
+
+    function _assertCollapsed(string memory why) internal view {
+        string[] memory l = adapter.positionLabels(abi.encode(address(ca)));
+        assertEq(l.length, 1, why);
+        assertEq(l[0], "Credit Account", why);
+    }
+
+    /// @dev The residual decode gap: `symbol()` succeeds with a `bytes32` where a `string` was declared.
+    function test_tier2_bytes32Symbol_collapses() public {
+        hostileToken.stageReturn(RawReplyLib.bytes32String("USDC"));
+        _assertCollapsed("a bytes32-shaped symbol must not revert the label");
+    }
+
+    function test_tier2_emptyReturndataSymbol_collapses() public {
+        hostileToken.stageReturn("");
+        _assertCollapsed("empty symbol returndata must not revert the label");
+    }
+
+    function test_tier2_truncatedPayloadSymbol_collapses() public {
+        hostileToken.stageReturn(RawReplyLib.declaredLength(100, "short"));
+        _assertCollapsed("a truncated symbol payload must not revert the label");
+    }
+
+    function test_tier2_absurdLengthSymbol_collapses() public {
+        hostileToken.stageReturn(RawReplyLib.declaredLength(type(uint256).max, "x"));
+        _assertCollapsed("an absurd declared symbol length must not revert the label");
+    }
+
+    /// @dev The gas leak. `NAVCalculator._safeStringArray` staticcalls `positionLabels` with NO `{gas:}` cap, so an
+    ///      unbounded hop here drains 63/64 of the whole verbose read, not just this position.
+    function test_tier2_gasBurningToken_isGasBounded() public {
+        hostileToken.stageBurnGas();
+        uint256 before = gasleft();
+        _assertCollapsed("a gas-burning underlying token must not revert the label");
+        assertLt(before - gasleft(), GAS_CEILING, "the tier-2 symbol probe must be gas-capped");
+    }
+
+    /// @dev A well-behaved token still renders, so the hardening did not break tier 2.
+    function test_tier2_canonicalSymbol_stillRenders() public {
+        hostileToken.stageReturn(RawReplyLib.canonicalString("USDC"));
+        string[] memory l = adapter.positionLabels(abi.encode(address(ca)));
+        assertEq(l.length, 2);
+        assertEq(l[1], "USDC");
+    }
+}

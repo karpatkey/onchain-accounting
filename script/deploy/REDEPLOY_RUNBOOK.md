@@ -20,11 +20,11 @@ Companion tooling lives in [`preflight/`](preflight/README.md). Everything there
 | the other 17 | ERC20Default only |
 
 Configured totals, reconciled from config **and** confirmed against the live NAV on 2026-07-27:
-**33 meta adapters, 110 meta instances, 12 plain adapters, 38 custom price feeds, 93 assets.**
+**33 meta adapters, 110 meta instances, 12 plain adapters, 39 custom price feeds, 93 assets.**
 
 | chain | meta adapters | meta instances | plain | feeds | assets |
 | --- | --- | --- | --- | --- | --- |
-| 1 mainnet | 15 | 66 | 11 | 23 | 43 |
+| 1 mainnet | 15 | 66 | 11 | 24 | 43 |
 | 42161 arbitrum | 7 | 16 | 0 | 8 | 11 |
 | 8453 base | 6 | 16 | 0 | 4 | 11 |
 | 10 optimism | 2 | 4 | 0 | 0 | 6 |
@@ -181,7 +181,7 @@ python3 script/deploy/preflight/bytecode_audit.py --self-test
 1.1  clear the deployment record
 1.2  01_2_DeployNAVImplementation     libraries + NAV impl        PERSIST_DEPLOYMENTS=1
 1.3  02_2_DeployNAVProxy              new proxy + ERC20Default    PERSIST_DEPLOYMENTS=1
-1.4  03_DeployPriceFeeds              38 custom feeds             <- BEFORE RegisterAssets
+1.4  03_DeployPriceFeeds              39 custom feeds             <- BEFORE RegisterAssets
 1.5  RegisterAssets                   assets + feeds on the NAV
 1.6  04_DeployBalanceAdapters         adapters + assistants
 1.7  06_Configure                     register + reconcile
@@ -306,13 +306,13 @@ admin. `initialize()` mints the fresh `ERC20DefaultBalanceAdapter` via
 *Chains 130, 143, 146, 196, 204, 480, 999, 5000, 9745, 16661, 42220, 43111, 43114, 57073, 59144,
 80094, 534352 are finished here.*
 
-### 1.4 `03_DeployPriceFeeds` — 38 custom feeds
+### 1.4 `03_DeployPriceFeeds` — 39 custom feeds
 
 ```bash
 forge script script/deploy/03_DeployPriceFeeds.s.sol $BROADCAST
 ```
 
-Chains 1 (23), 42161 (8), 8453 (4), 100 (3) only. Each feed's constructor takes the NAV proxy
+Chains 1 (24), 42161 (8), 8453 (4), 100 (3) only. Each feed's constructor takes the NAV proxy
 address, held as `INAVCalculator public immutable NAV` (ADR 0019) — which is precisely why a new
 proxy invalidates every existing feed.
 
@@ -464,16 +464,21 @@ an explanation before the cutover.
 
 **Known-expected diffs — do NOT treat these as regressions:**
 
-- **ETHx loses both monitor feeds on mainnet.** Redstone is sunsetting all its ETHx push feeds, which
-  were the basis of both: the direct ETHx/USD feed `0xFaBEb147…` (registered as `monitorFeeds[1]`) and
-  the ETHx/ETH feed `0xc799194c…` that `ETHxCrossRate` wrapped. Both are removed from config, so the
-  diff will show ETHx's `monitorFeeds` going from 2 to 0 and mainnet's feed count from 24 to 23.
-  ETHx's **primary** price is unaffected — `ETHx_CustomPriceFeed` reads Stader's on-chain rate via
-  `stakePoolsManager` and has no Redstone dependency — so `nav.value` should not move.
-  Accepted consequence: ETHx has no divergence/`irregular` signal until a non-Redstone monitor is
-  wired. `preflight_config.py` warns about this by design; `divergenceToleranceBps` stays at 250
-  because `Prices._setDivergenceTolerance` reverts on `0` (`Prices.sol:198`) and keeping it means the
-  check revives as soon as a monitor is added.
+- **ETHx drops from 2 monitor feeds to 1 on mainnet.** Redstone is retiring both of its ETHx push
+  feeds, which backed both monitors. The direct Redstone **ETHx/USD** monitor `0xFaBEb147…` is gone
+  with no replacement — Chainlink has no ETHx/USD feed at all (`FeedRegistry.getFeed` reverts
+  `Feed not found`). The **`ETHxCrossRate`** monitor survives: its underlying ETHx/ETH rate feed was
+  migrated from Redstone `0xc799194c…` to **Chainlink `0xC499ec76e2F5ac15e127A352Bc40cF24FC472401`**.
+  So the diff shows ETHx's `monitorFeeds` 2 → 1, and the cross-rate feed at a new address (every feed
+  is redeployed anyway). Feed counts are unchanged at 24 mainnet / 39 total, and ETHx keeps its
+  divergence/`irregular` signal at 250 bps.
+  ETHx's **primary** price was never involved — `ETHx_CustomPriceFeed` reads Stader's on-chain rate
+  via `stakePoolsManager` — so `nav.value` should not move.
+  Verified on-chain before adopting: `description() == "ETHx / ETH"`, 18 decimals, answer
+  `1.093319e18` vs Stader `getExchangeRate` `1.093906e18` = **5.4 bps** apart, last update ~13.8 h
+  (inside the 86400 s heartbeat). The 18 decimals need no config change —
+  `TwoFeedChainlinkPriceFeed` captures `10 ** rateFeed.decimals()` in its constructor
+  (`TwoFeedChainlinkPriceFeed.sol:72`), so the rate decimals cancel into `NAV_DECIMALS`.
 
 ### 2.4 Records and docs
 

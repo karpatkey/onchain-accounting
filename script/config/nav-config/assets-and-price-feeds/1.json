@@ -152,8 +152,14 @@
         "heartbeat": 3600
       }
     ],
-    "monitorFeeds": [],
-    "note": "MONITOR FEEDS REMOVED 2026-07-27: Redstone is sunsetting BOTH of its ETHx push feeds, which were the basis of both monitors — the direct ETHx/USD feed (0xFaBEb1474C2Ab34838081BFdDcE4132f640E7D2d) and the ETHx/ETH feed (0xc799194cAa24E2874Efa89b4Bf5c92a530B047FF) that ETHxCrossRate wrapped (ETHxCrossRate is therefore disabled in contracts-deployment-config/custom-price-feeds/1.json). The PRIMARY price is unaffected: ETHx_CustomPriceFeed reads Stader's on-chain rate via stakePoolsManager and has no Redstone dependency. Consequence to accept knowingly: ETHx now has ZERO monitor feeds, so it gets NO divergence/irregular signal — PriceFeedLib._monitorDivergence skips its check when no monitor is healthy (n == 0), returning irregular=false without reverting. divergenceToleranceBps is deliberately LEFT at 250 rather than removed: Prices._setDivergenceTolerance reverts on 0 (Prices.sol:198), so it cannot be zeroed, and keeping it means the check reactivates the moment a replacement monitor is added. Restore a monitor when a non-Redstone ETHx/ETH or ETHx/USD source is available."
+    "monitorFeeds": [
+      {
+        "type": "Custom",
+        "feed": "ETHxCrossRate",
+        "heartbeat": 86400
+      }
+    ],
+    "note": "MONITOR FEEDS REWORKED 2026-07-27 for Redstone's ETHx sunset. Redstone is retiring BOTH of its ETHx push feeds, which backed both of ETHx's monitors. (1) The direct Redstone ETHx/USD monitor (0xFaBEb1474C2Ab34838081BFdDcE4132f640E7D2d) is REMOVED with no replacement — Chainlink has no ETHx/USD feed (FeedRegistry.getFeed reverts \"Feed not found\"). (2) The ETHxCrossRate monitor SURVIVES: its underlying ETHx/ETH rate feed was migrated from Redstone to the Chainlink ETHx/ETH feed 0xC499ec76e2F5ac15e127A352Bc40cF24FC472401 (see contracts-deployment-config/custom-price-feeds/1.json). So ETHx keeps ONE monitor and retains its divergence/irregular signal at the 250 bps tolerance. The PRIMARY price was never affected: ETHx_CustomPriceFeed reads Stader's on-chain rate via stakePoolsManager, no Redstone dependency."
   },
   "osETH": {
     "address": "0xf1C9acDc66974dFB6dEcB12aA385b9cD01190E38",

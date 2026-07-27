@@ -180,11 +180,11 @@
     }
   },
   "ETHxCrossRate": {
-    "enabled": false,
-    "$comment": "DISABLED 2026-07-27: Redstone is sunsetting all ETHx push feeds, including the ETHx/ETH market feed at yToXFeed (0xc799194cAa24E2874Efa89b4Bf5c92a530B047FF) that this cross-rate is built on, so the feed would price off a dead oracle. It was ETHx's Custom monitor feed (nav-config/assets-and-price-feeds/1.json); that monitor entry is removed too. ETHx's PRIMARY feed (Stader on-chain rate) is unaffected. Re-enable only against a non-Redstone ETHx/ETH source. Constructor args left intact so re-enabling is a one-line change.",
+    "enabled": true,
+    "$comment": "ETHx redundancy feed (ETHx_CrossRateCustomPriceFeed). CrossRate: ETHx/USD = ETH/USD x ETHx/ETH, with ETH/USD read from the NAV (ADR 0019). yToXFeed MIGRATED 2026-07-27 from the Redstone Classic Push ETHx/ETH feed (0xc799194cAa24E2874Efa89b4Bf5c92a530B047FF) to the CHAINLINK ETHx/ETH feed (0xC499ec76e2F5ac15e127A352Bc40cF24FC472401) because Redstone is sunsetting all its ETHx feeds. Chainlink feed verified on-chain: description() == \"ETHx / ETH\", decimals 18, answer 1.093319e18 vs Stader getExchangeRate 1.093906e18 = 5.4 bps apart (well inside ETHx's 250 bps divergence tolerance). There is NO Chainlink ETHx/USD feed (FeedRegistry.getFeed reverts \"Feed not found\"), so the ETH-quoted cross-rate is the only Chainlink route. The 18 decimals need no config change: TwoFeedChainlinkPriceFeed captures 10**rateFeed.decimals() in its constructor (TwoFeedChainlinkPriceFeed.sol:72), so the rate decimals cancel into NAV_DECIMALS. Independent of the primary ETHx feed (Stader on-chain rate); serves as ETHx's monitor feed.",
     "constructor": {
       "underlyingAsset": "0xA35b1B31Ce002FBF2058D22F30f95D405200A15b",
-      "yToXFeed": "0xc799194cAa24E2874Efa89b4Bf5c92a530B047FF",
+      "yToXFeed": "0xC499ec76e2F5ac15e127A352Bc40cF24FC472401",
       "yToXHeartbeat": "86400",
       "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }

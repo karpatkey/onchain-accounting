@@ -60,12 +60,39 @@ ANVIL_ARGS=(--fork-url "$FORK_URL" --port "$PORT" --auto-impersonate --silent
 anvil "${ANVIL_ARGS[@]}" > "$WORK/anvil.log" 2>&1 &
 ANVIL_PID=$!
 
+> "$WORK/broadcast-before.txt"
+find broadcast -mindepth 1 -maxdepth 3 -type d 2>/dev/null | sort > "$WORK/broadcast-before.txt"
+
 RESTORED=0
 cleanup() {
   if [[ $RESTORED -eq 0 && -f "$WORK/deployments-${CHAIN_ID}.orig.json" ]]; then
     cp "$WORK/deployments-${CHAIN_ID}.orig.json" "script/config/deployments/${CHAIN_ID}.json"
     RESTORED=1
     echo "restored script/config/deployments/${CHAIN_ID}.json"
+  fi
+  # The fork runs as the REAL chain id (ConfigReader keys everything off it), so forge writes
+  # broadcast/<script>/<CHAIN_ID>/run-latest.json — indistinguishable from a genuine mainnet
+  # broadcast, and NOT covered by .gitignore (which only excludes /broadcast/*/31337/). That matters
+  # because script/verify/sweeps/make_targets.py enumerates deployed price feeds by reading exactly
+  # those files, so a leftover rehearsal record would feed fork addresses into a verification sweep.
+  # Move anything this run created out of the tree.
+  if [[ -f "$WORK/broadcast-before.txt" ]]; then
+    mkdir -p "$WORK/broadcast-created"
+    find broadcast -mindepth 1 -maxdepth 3 -type d 2>/dev/null | sort > "$WORK/broadcast-after.txt"
+    comm -13 "$WORK/broadcast-before.txt" "$WORK/broadcast-after.txt" \
+      | grep -E "/${CHAIN_ID}\$" | while read -r d; do
+          [[ -d "$d" ]] || continue
+          # broadcast/ also holds COMMITTED records from real migrations (MigrateAssistedAdapters,
+          # RemoveMerkl, ...). Never touch anything git tracks — only this run's own output.
+          if git ls-files --error-unmatch "$d" >/dev/null 2>&1; then
+            echo "  leaving tracked broadcast dir alone: $d"
+            continue
+          fi
+          mkdir -p "$WORK/broadcast-created/$(dirname "$d")"
+          mv "$d" "$WORK/broadcast-created/$d" 2>/dev/null \
+            && echo "moved rehearsal broadcast $d -> $WORK/broadcast-created/$d"
+        done
+    find broadcast -mindepth 1 -type d -empty -delete 2>/dev/null
   fi
   kill "$ANVIL_PID" 2>/dev/null
 }

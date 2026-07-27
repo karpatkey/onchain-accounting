@@ -68,6 +68,16 @@ under `via_ir` whole-program compilation that bytecode can shift with no source 
 script/deploy/preflight/rehearse_fork.sh 1        # asserts the proxy address differs from live
 ```
 
+> The rehearsal forks as the **real** chain id (ConfigReader keys everything off it), so forge writes
+> `broadcast/<script>/1/run-latest.json` — indistinguishable from a genuine mainnet broadcast.
+> `.gitignore` only excludes `/broadcast/*/31337/`, and
+> `script/verify/sweeps/make_targets.py` enumerates deployed price feeds by reading exactly those
+> files, so a leftover rehearsal record would feed **fork** addresses into a verification sweep.
+> `rehearse_fork.sh` moves its own output out of the tree on exit and refuses to touch anything git
+> tracks — `broadcast/` also holds committed records from the real PR #141 migrations
+> (`MigrateAssistedAdapters`, `MigrateGnosisStakeWiseExit`, `RemoveMerkl`). Never blanket-delete
+> `broadcast/`.
+
 If the rehearsal's `NAV proxy address differs from the live one` assertion **fails**, bump
 `DeploySalts.NAV_PROXY` from `6` to `7` and re-run. Do this **before** 0.3 — `DeploySalts.sol` is in
 the full-project `via_ir` compile scope, so editing it can move the `PriceFeedLib` pin.

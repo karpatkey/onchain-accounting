@@ -18,7 +18,8 @@ contract RawReplier {
     enum Mode {
         Return,
         Revert,
-        BurnGas
+        BurnGas,
+        BigReturn
     }
 
     Mode public mode;
@@ -29,6 +30,9 @@ contract RawReplier {
     /// @notice Size of the revert payload in {Mode.Revert}. Large values make the *callee* pay for the memory
     ///         expansion, which is exactly what a gas stipend is meant to stop.
     uint256 public revertBytes;
+
+    /// @notice Size of the SUCCESS-path reply in {Mode.BigReturn}.
+    uint256 public returnBytes;
 
     /// @notice Reply to every call with `data`, byte for byte.
     function stageReturn(bytes memory data) external {
@@ -49,12 +53,29 @@ contract RawReplier {
         mode = Mode.BurnGas;
     }
 
+    /// @notice Reply **successfully** with `size` zero bytes.
+    /// @dev The success path is the only way to test a reader's returndata-copy cost. A revert bomb proves
+    ///      nothing about it: a big `revert(0, size)` out-of-gasses inside the callee's own memory expansion once
+    ///      the reader caps the stipend, so `returndatasize()` collapses to 0 and the caller never copies
+    ///      anything. `return(0, size)` costs the callee the same memory expansion but leaves a genuinely large
+    ///      reply for the caller to (not) copy.
+    function stageBigReturn(uint256 size) external {
+        mode = Mode.BigReturn;
+        returnBytes = size;
+    }
+
     fallback() external {
         Mode m = mode;
         if (m == Mode.Revert) {
             uint256 size = revertBytes;
             assembly {
                 revert(0, size)
+            }
+        }
+        if (m == Mode.BigReturn) {
+            uint256 size = returnBytes;
+            assembly {
+                return(0, size)
             }
         }
         if (m == Mode.BurnGas) {

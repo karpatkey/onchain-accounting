@@ -314,7 +314,11 @@ def enumerate_deployed(chain_id: int) -> list[dict]:
                 continue
             for sub, addr in v.items():
                 if is_address(addr):
-                    out.append(dict(chain=chain_id, addr=addr, key=f"{k}.{sub}", group=k, name=sub))
+                    # `configName` is the operator-facing key ("wstETH_L2", "AaveV3InstancesMeta").
+                    # It is deliberately NOT `name`: only the canonical top-level keys map to an
+                    # artifact name, so only they carry a name expectation for the audit.
+                    out.append(dict(chain=chain_id, addr=addr, key=f"{k}.{sub}", group=k,
+                                    configName=sub, name=None))
             continue
         if is_address(v):
             out.append(dict(chain=chain_id, addr=v, key=k, group="canonical",

@@ -347,6 +347,31 @@ The gnosis pair is easy to miss — the assisted family is usually described as 
 new addresses out of `deployments/{1,100}.json` and hand them to the owners. This was left open after
 PR #141; do not let it slip again.
 
+> **The assistants recorded today are ORPHANS — measured 2026-07-27.** All four point at adapters
+> that are *not* registered on the NAV:
+>
+> | chain | assistant | its `ADAPTER()` | registered assisted adapter |
+> | --- | --- | --- | --- |
+> | 1 | `0x8a887C7F` Nexus | `0xb73b3a6b` (has code, **not registered**) | `0x9b3ee866` |
+> | 1 | `0xd45cB5B6` ether.fi | `0xb0a8a756` (has code, **not registered**) | `0xdCF0E047` |
+> | 1 | `0x13845Fc9` StakeWise | `0xb9a7a8ac` (has code, **not registered**) | `0xcb97dA2c` |
+> | 100 | `0xEb438283` StakeWise | `0xe333a72e` (has code, **not registered**) | `0x04E39d91` |
+>
+> Almost certainly fallout from the PR #141 adapter swap: the assisted adapters were replaced, the
+> assistants were not. Delegatecalling the recorded assistants today writes coordinates into the
+> cache of an unregistered adapter, which the NAV never reads — so those positions are currently
+> un-feedable through the recorded addresses, and this deploy is the first time they will be fed
+> correctly.
+>
+> The redeploy fixes it by construction: `04`'s `_deployAssistantsIfEnabled` builds each assistant
+> from the freshly-deployed adapter address. **But only if the `*Assistant` keys are cleared** — it
+> skips an assistant whose key is already populated. `reset_deployment_records.py` clears them; do not
+> hand-edit around that. After the deploy, assert `ADAPTER()` on each new assistant equals the new
+> assisted adapter:
+> ```bash
+> python3 script/deploy/preflight/bytecode_audit.py 1 100   # pointerCheck must be OK for all four
+> ```
+
 ### 2.2 Bytecode-reality audit — the acceptance test
 
 ```bash

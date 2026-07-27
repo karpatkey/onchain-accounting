@@ -210,6 +210,55 @@ def self_test(index: Index, artifacts: list[dict]) -> int:
 # Audit
 # ---------------------------------------------------------------------------
 
+def _sel(sig: str) -> str:
+    from eth_utils import keccak
+    return "0x" + keccak(text=sig)[:4].hex()
+
+
+def check_immutable_pointers(chain_id: int, url: str, res: dict) -> None:
+    """Bytecode-CURRENT is necessary but NOT sufficient — this is the complement.
+
+    Masking `immutableReferences` is what makes the comparison work at all, and it is also what hides
+    the single most important reason a contract needs redeploying here: an immutable that POINTS at
+    something. Every custom price feed holds `INAVCalculator public immutable NAV` (ADR 0019,
+    e.g. TwoFeedChainlinkPriceFeed.sol:43) and every assistant holds `address public immutable
+    ADAPTER` (BalanceAdapterAssistant.sol:27). A feed whose code this build reproduces exactly is
+    still wrong if its NAV pointer is the OLD proxy.
+
+    So for every feed we read NAV() and compare against the recorded NAVCalculatorProxy, and for every
+    assistant we read ADAPTER() and check it is a recorded assisted adapter on this chain.
+    """
+    rec = c.deployment(chain_id)
+    proxy = (rec.get("NAVCalculatorProxy") or "").lower()
+    adapters = {v.lower() for v in (rec.get("balanceAdapters") or {}).values() if c.is_address(v)}
+    by_addr = {e["address"].lower(): e for e in res["entries"]}
+
+    targets: list[tuple[str, str, str]] = []   # (address, selector, kind)
+    for e in res["entries"]:
+        if e["key"].startswith("customPriceFeeds."):
+            targets.append((e["address"], _sel("NAV()"), "feed"))
+        elif e["key"].endswith("Assistant"):
+            targets.append((e["address"], _sel("ADAPTER()"), "assistant"))
+    if not targets:
+        return
+
+    out = c.rpc_batch(url, [("eth_call", [{"to": a, "data": d}, "latest"]) for a, d, _ in targets])
+    for (addr, _d, kind), val in zip(targets, out):
+        e = by_addr[addr.lower()]
+        if isinstance(val, Exception) or not isinstance(val, str) or len(val) < 66:
+            e["pointerCheck"] = f"UNREADABLE ({val})"
+            continue
+        ptr = "0x" + val[-40:]
+        e["pointer"] = ptr
+        if kind == "feed":
+            e["pointerCheck"] = "OK" if ptr.lower() == proxy else f"STALE_NAV (-> {ptr})"
+        else:
+            e["pointerCheck"] = "OK" if ptr.lower() in adapters else f"STALE_ADAPTER (-> {ptr})"
+        # A contract whose code is current but whose pointer is stale still has to be redeployed.
+        if e["pointerCheck"] != "OK" and e["status"].startswith("CURRENT"):
+            e["status"] = "CURRENT_CODE_STALE_POINTER"
+
+
 def audit_chain(chain_id: int, index: Index) -> dict:
     url, note, _rejected = c.probe_rpc(chain_id)
     name = c.chain_config(chain_id).get("name", "?")
@@ -236,10 +285,17 @@ def audit_chain(chain_id: int, index: Index) -> dict:
             if not hits:
                 entry["status"] = "STALE"      # not produced by the current build
             elif entry["expected"] and entry["expected"] not in entry["matched"]:
+                # Only the canonical top-level keys carry a real artifact-name expectation. Nested
+                # keys ("customPriceFeeds.wstETH_L2") are operator config names, never contract names.
                 entry["status"] = "CURRENT_UNEXPECTED_NAME"
             else:
                 entry["status"] = "CURRENT"
+            if len(hits) > 1:
+                # Many custom feeds differ only in their immutables, so masked code is genuinely
+                # shared. Ambiguity is expected and is not a failure.
+                entry["ambiguous"] = True
         res["entries"].append(entry)
+    check_immutable_pointers(chain_id, url, res)
     return res
 
 

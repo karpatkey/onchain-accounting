@@ -179,7 +179,10 @@ contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         // Both label identically — the coincidence that makes a label-based check useless here.
         string[] memory viaPool = adapter.positionLabels(abi.encode(pool));
         string[] memory viaDp = adapter.positionLabels(abi.encode(CORE_DATA_PROVIDER));
-        assertEq(viaPool.length, viaDp.length);
+        // Assert the shape before indexing: if a regression degraded either to a single segment, an out-of-bounds
+        // panic would obscure what actually broke.
+        assertEq(viaPool.length, 2, "pool label is [category, marketId]");
+        assertEq(viaDp.length, 2, "dataProvider label is [category, marketId] too: that is the coincidence");
         assertEq(viaPool[1], viaDp[1], "the wrong id labels the same as the right one");
     }
 

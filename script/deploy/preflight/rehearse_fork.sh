@@ -136,7 +136,10 @@ run_step() {
   # "BridgeEscrow not deployed, skipping", 03/04 print "Already deployed at:". Exit status 0 is
   # therefore NOT evidence that work happened, so treat these phrases as failures in a rehearsal
   # whose whole point is to prove the sequence does something.
-  local noop_re="NAVCalculator not deployed for this chain|Already deployed at:|No assets configured"
+  # Measured on the fork: with the proxy unset, 04 logs "ERROR: NAVCalculator not configured or
+  # deployed, cannot deploy adapter" once per adapter (26x on mainnet) and STILL exits 0, and 06 logs
+  # two "WARNING: ... skipping" and exits 0. 03 is the only one that reverts (NotAContract).
+  local noop_re="NAVCalculator not deployed for this chain|Already deployed at:|No assets configured|ERROR: NAVCalculator not configured|WARNING: NAVCalculator not deployed"
   if grep -qaE "$noop_re" "$log"; then
     echo -e "${label}\t$((t1-t0))\t${gas}\tNO-OP" >> "$WORK/steps.tsv"
     echo "    NO-OP ($((t1-t0))s) — script exited 0 but did nothing:"

@@ -47,7 +47,7 @@ The gas-cap PR (`PriceFeedLib._getAdapterPositions`, `NAVCalculator._safeStringA
 caller-side `registerAsset` codesize guard), the malformed-`positionId` guards, and the StakeWise
 label-leaf decision. Deploying before them means doing this twice.
 
-### 0.2 Bump `DeploySalts.NAV_PROXY` — **verify this, do not assume it**
+### 0.2 Bump `DeploySalts.NAV_PROXY` — **CONFIRMED REQUIRED, already done (6 → 7)**
 
 The NAV proxy address is
 `CREATE2(0x4e59…4956C, keccak256("NAVCalculatorProxy" ++ DeploySalts.NAV_PROXY), UUPSProxy.creationCode ++ abi.encode(placeholder, ""))`.
@@ -55,14 +55,23 @@ Its creation code carries **no per-chain and no per-implementation data**, so a 
 does **not** move it — unlike the libraries and the impl, whose addresses change automatically because
 their bytecode changed.
 
-`NAV_PROXY` is currently `6`, which is the live proxy `0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d`.
-If the computed address still equals that, `AtomicNAVProxyDeployer` finds code already there, skips
-the deploy (`AtomicNAVProxyDeployer.sol:43`), and then reverts on `upgradeToAndCall` because it holds
-no admin role on the existing proxy — **on every chain**.
+**Measured on a mainnet fork, 2026-07-27.** With `NAV_PROXY = 6`, `02_2` computed
+`0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d` — the live proxy — so `AtomicNAVProxyDeployer` found
+code already there, skipped the deploy (`AtomicNAVProxyDeployer.sol:43`), and reverted on
+`upgradeToAndCall` holding no admin role:
 
-The address *can* move on its own: `UUPSPlaceholder`'s bytecode feeds the proxy's creation code, and
-under `via_ir` whole-program compilation that bytecode can shift with no source change (the
-`NAVRegistryLib` precedent). So measure, don't assume:
+```
+Placeholder impl (same on all chains): 0x85Ee38b0385D042918a59C01dB319b6eDdF7A8Cf
+  NAVCalculator proxy: 0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d
+[ATOMIC] Deploying placeholder + NAV proxy + upgrade in a single transaction
+Error: script failed: NotAuthorized()
+```
+
+That would happen on **every chain**. The address did *not* drift on its own because
+`UUPSPlaceholder`'s bytecode is unchanged — it still lands at `0x85Ee38b0…`, matching
+`DEPLOYED_ADDRESSES.md`. **`NAV_PROXY` is therefore bumped to `7` on this branch.** Re-confirm with
+the rehearsal after any further source change, since the placeholder's bytecode *can* shift under
+`via_ir` with no source change (the `NAVRegistryLib` precedent):
 
 ```bash
 script/deploy/preflight/rehearse_fork.sh 1        # asserts the proxy address differs from live
@@ -79,8 +88,9 @@ script/deploy/preflight/rehearse_fork.sh 1        # asserts the proxy address di
 > `broadcast/`.
 
 If the rehearsal's `NAV proxy address differs from the live one` assertion **fails**, bump
-`DeploySalts.NAV_PROXY` from `6` to `7` and re-run. Do this **before** 0.3 — `DeploySalts.sol` is in
-the full-project `via_ir` compile scope, so editing it can move the `PriceFeedLib` pin.
+`DeploySalts.NAV_PROXY` again and re-run. The bump must land **before** 0.3 — `DeploySalts.sol` is in
+the full-project `via_ir` compile scope, so it can move the `PriceFeedLib` pin, and any pin computed
+before the bump is stale on arrival.
 
 ### 0.3 Regenerate BOTH library pins — last, in its own commit
 

@@ -14,6 +14,9 @@ import {
     BalancerV2GaugesMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/balancer/BalancerV2GaugesMetaBalanceAdapter.sol";
 import {FluidVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/FluidVaultsMetaBalanceAdapter.sol";
+import {
+    UniswapV2PoolsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/uniswap/UniswapV2PoolsMetaBalanceAdapter.sol";
 import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 import {MockCurveToken} from "test/balances/MetaBalanceAdapters/CurveMocks.sol";
 import {MockV2Vault} from "test/balances/MetaBalanceAdapters/BalancerV2MetaMocks.sol";
@@ -125,6 +128,57 @@ contract Mock_Bpt {
 
     function getPoolId() external view returns (bytes32) {
         return pid;
+    }
+}
+
+/// @notice A Curve pool that is also its own LP token and minter — the shape the gauge and Convex leaves walk to.
+contract Mock_CurveLpPool {
+    address[] private _c;
+
+    constructor(address[] memory t) {
+        for (uint256 i; i < t.length; i++) {
+            _c.push(t[i]);
+        }
+    }
+
+    function coins(uint256 i) external view returns (address) {
+        if (i >= _c.length) revert("out of range");
+        return _c[i];
+    }
+
+    function lp_token() external view returns (address) {
+        return address(this);
+    }
+
+    function minter() external view returns (address) {
+        return address(this);
+    }
+
+    function token() external view returns (address) {
+        return address(this);
+    }
+}
+
+/// @notice A Uniswap V2 pair — exactly two tokens, which is why this leaf can never widen.
+contract Mock_UniV2Pair {
+    address public immutable token0;
+    address public immutable token1;
+
+    constructor(address a, address b) {
+        token0 = a;
+        token1 = b;
+    }
+
+    function getReserves() external pure returns (uint112, uint112, uint32) {
+        return (1e18, 1e18, 0);
+    }
+
+    function totalSupply() external pure returns (uint256) {
+        return 1e18;
+    }
+
+    function balanceOf(address) external pure returns (uint256) {
+        return 0;
     }
 }
 
@@ -256,6 +310,13 @@ contract MetaLabelGasBoundsTest is Test {
     BalancerV2GaugesMetaBalanceAdapter internal coldGauges50;
     address internal coldGauge50;
 
+    CurveGaugesMetaBalanceAdapter internal coldCurveGauge;
+    address internal coldGaugeCoord;
+    ConvexCurveLPStakingMetaBalanceAdapter internal coldConvex;
+    address internal coldRewarder;
+    UniswapV2PoolsMetaBalanceAdapter internal coldUniV2;
+    address internal coldPair;
+
     FluidVaultsMetaBalanceAdapter internal coldFluidMeta;
     MockFluidVaultT1 internal coldFluidVault;
 
@@ -271,6 +332,14 @@ contract MetaLabelGasBoundsTest is Test {
     ///      `_labels` build, the return encode). Deliberately close to {LEAF_GAS} — a loose bound here is what
     ///      let an earlier ceiling of 2M pass while bounding almost nothing.
     uint256 internal constant BOUNDED_CEILING = LEAF_GAS + 150_000;
+
+    /// @dev Mirrors `MetaBalanceAdapter.LABEL_LEAF_GAS_NARROW`, applied where the protocol caps the token count.
+    uint256 internal constant LEAF_GAS_NARROW = 300_000;
+
+    /// @dev The narrow tier's equivalent of {BOUNDED_CEILING}. The whole point of the tier is that this number
+    ///      is far below {BOUNDED_CEILING}, so asserting against the wide one at a narrow site would pass
+    ///      whether or not the tier exists.
+    uint256 internal constant BOUNDED_CEILING_NARROW = LEAF_GAS_NARROW + 100_000;
 
     /// @dev Mainnet's registered-asset count at the time of writing, from
     ///      `script/config/nav-config/assets-and-price-feeds/1.json`. The Fluid leaf's cost is linear in this.
@@ -308,6 +377,27 @@ contract MetaLabelGasBoundsTest is Test {
         (coldVault33, coldBalancer33, coldPoolId33) = _buildBalancerPool(33);
         (coldVault50, coldBalancer50, coldPoolId50) = _buildBalancerPool(50);
         (coldGauges50, coldGauge50) = _buildBalancerGauge(50);
+
+        // Narrow tier: the widest honest leaf each of these four can produce, built cold.
+        address[] memory eight = new address[](8);
+        for (uint256 i; i < 8; i++) {
+            eight[i] = _proxiedToken("TOKENNAM");
+        }
+        coldGaugeCoord = address(new Mock_CurveLpPool(eight));
+        coldCurveGauge = new CurveGaugesMetaBalanceAdapter(_proxiedToken("MINT"), _proxiedToken("CRV"), address(nav));
+
+        address[] memory eightB = new address[](8);
+        for (uint256 i; i < 8; i++) {
+            eightB[i] = _proxiedToken("TOKENNAM");
+        }
+        address convexLp = address(new Mock_CurveLpPool(eightB));
+        coldConvex = new ConvexCurveLPStakingMetaBalanceAdapter(
+            address(new Mock_ConvexBooster(convexLp)), _proxiedToken("CVX"), address(nav)
+        );
+        coldRewarder = address(new Mock_ConvexRewarder());
+
+        coldPair = address(new Mock_UniV2Pair(_proxiedToken("TOKENNAM"), _proxiedToken("TOKENNAM")));
+        coldUniV2 = new UniswapV2PoolsMetaBalanceAdapter(address(nav));
 
         // Fluid: the leaf fetches the WHOLE registered-asset array, so its cost is linear in the registry, not
         // in anything about Fluid. Pad the registry to mainnet's size so the measurement is the real one.
@@ -377,7 +467,7 @@ contract MetaLabelGasBoundsTest is Test {
 
         assertTrue(ok, "positionLabels must not revert on a hostile coordinate");
         assertEq(segments, 1, "the leaf is dropped, the category survives");
-        assertLt(used, BOUNDED_CEILING, "a hostile coordinate must not spend the caller's budget");
+        assertLt(used, BOUNDED_CEILING_NARROW, "a hostile coordinate must not spend the caller's budget");
     }
 
     /// @notice Same for the gauge adapter, which reaches the pool one hop further along.
@@ -391,7 +481,7 @@ contract MetaLabelGasBoundsTest is Test {
 
         assertTrue(ok, "positionLabels must not revert on a hostile coordinate");
         assertEq(segments, 1, "the leaf is dropped, the category survives");
-        assertLt(used, BOUNDED_CEILING, "a hostile coordinate must not spend the caller's budget");
+        assertLt(used, BOUNDED_CEILING_NARROW, "a hostile coordinate must not spend the caller's budget");
     }
 
     /// @notice And Convex, which reaches `CurvePoolLib` through its own helper rather than the shared name.
@@ -409,7 +499,7 @@ contract MetaLabelGasBoundsTest is Test {
 
         assertTrue(ok, "positionLabels must not revert on a hostile coordinate");
         assertEq(segments, 2, "Convex degrades to its TWO category segments, not to one");
-        assertLt(used, BOUNDED_CEILING, "a hostile coordinate must not spend the caller's budget");
+        assertLt(used, BOUNDED_CEILING_NARROW, "a hostile coordinate must not spend the caller's budget");
     }
 
     // ---------------------------------------------------------------------------------------------------------
@@ -590,6 +680,58 @@ contract MetaLabelGasBoundsTest is Test {
         assertEq(segments, 2, "the leaf must NOT have been dropped");
         assertLt(used, BOUNDED_CEILING, "and it must still be bounded");
         emit log_named_uint("cold Balancer V2 GAUGE n=50 leaf, ERC-1967 tokens", used);
+    }
+
+    // ---------------------------------------------------------------------------------------------------------
+    // The narrow tier — sites whose token count the protocol itself caps
+    // ---------------------------------------------------------------------------------------------------------
+
+    /// @notice Every leaf on the narrow tier must render in full, well inside its tighter ceiling.
+    /// @dev The acceptance side of `LABEL_LEAF_GAS_NARROW`. A tighter bound is only worth having if it cannot
+    ///      drop a legitimate leaf, so all four widest-honest shapes are pinned together: 8 coins for the three
+    ///      Curve-reaching adapters (`CurvePoolLib.MAX_COINS`) and 2 for a Uniswap V2 pair. These are the widest
+    ///      each protocol permits, not merely the widest configured today.
+    ///
+    ///      Registry-independent by construction — `_joinTokenSymbols` reads `LabelLib.symbol` directly and never
+    ///      consults `_getAssetInfo` — so these figures do not move with the registered-asset count, and the
+    ///      queued O(1) registry lookup cannot invalidate them.
+    function test_narrowTier_honestLeaves_allRenderCold() public {
+        (bool ok1, uint256 u1, uint256 s1) =
+            harness.labelCost(address(coldProxiedCurveMeta), abi.encode(address(coldProxiedPool)), BUDGET);
+        assertTrue(ok1);
+        assertEq(s1, 2, "Curve pools: leaf must not be dropped");
+        assertLt(u1, BOUNDED_CEILING_NARROW, "Curve pools must fit the narrow ceiling");
+        emit log_named_uint("narrow: Curve pools n=8", u1);
+
+        (bool ok2, uint256 u2, uint256 s2) =
+            harness.labelCost(address(coldCurveGauge), abi.encode(coldGaugeCoord), BUDGET);
+        assertTrue(ok2);
+        assertEq(s2, 2, "Curve gauges: leaf must not be dropped");
+        assertLt(u2, BOUNDED_CEILING_NARROW, "Curve gauges must fit the narrow ceiling");
+        emit log_named_uint("narrow: Curve gauges n=8", u2);
+
+        (bool ok3, uint256 u3, uint256 s3) = harness.labelCost(address(coldConvex), abi.encode(coldRewarder), BUDGET);
+        assertTrue(ok3);
+        assertEq(s3, 3, "Convex: three segments, leaf must not be dropped");
+        assertLt(u3, BOUNDED_CEILING_NARROW, "Convex must fit the narrow ceiling");
+        emit log_named_uint("narrow: Convex n=8", u3);
+
+        (bool ok4, uint256 u4, uint256 s4) = harness.labelCost(address(coldUniV2), abi.encode(coldPair), BUDGET);
+        assertTrue(ok4);
+        assertEq(s4, 2, "Uniswap V2: leaf must not be dropped");
+        assertLt(u4, BOUNDED_CEILING_NARROW, "Uniswap V2 must fit the narrow ceiling");
+        emit log_named_uint("narrow: Uniswap V2 pair", u4);
+    }
+
+    /// @notice The narrow tier must be strictly tighter than the wide one, and both inside the outer cap.
+    /// @dev Stated arithmetically because it is arithmetic. If a later edit raises the narrow tier to the wide
+    ///      value the two stop being distinct and the tier silently stops doing anything, with every
+    ///      behavioural test still green — the tier's whole purpose is that a hostile coordinate at a capped
+    ///      site cannot spend a wide site's budget.
+    function test_narrowTier_isStrictlyTighter() public pure {
+        assertLt(LEAF_GAS_NARROW, LEAF_GAS, "the narrow tier must be tighter than the wide one");
+        uint256 outerBudget = 1_000_000; // `NAVCalculator._LABEL_READ_GAS`, private there.
+        assertLt(LEAF_GAS, outerBudget - outerBudget / 64, "a ceiling at or above 63/64 of the outer cap bounds nothing");
     }
 
     /// @notice The Fluid leaf must render at mainnet's current registered-asset count, with room to spare.

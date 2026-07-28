@@ -69,11 +69,39 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     ///      - The widest Curve pool, often assumed to be the worst case, is 138,033 — under a sixth of this.
     ///
     ///      That leaves ~4% over the floor and ~3.5% under the hard ceiling. The margin is thin because the box
-    ///      is ~72k wide, not because the value is badly chosen; a materially larger margin needs per-site
-    ///      ceilings (the narrow sites — Curve, Convex, Uniswap V2, all capped at 8 tokens — would take ~300k)
-    ///      rather than a different single number. Re-measure before changing this: it is a compile-time
-    ///      constant on immutable adapters, so a value that turns out too low needs a redeploy to correct.
+    ///      is ~72k wide, not because the value is badly chosen — there is no better value available for a leaf
+    ///      whose width the protocol does not cap. Re-measure before changing this: it is a compile-time constant
+    ///      on immutable adapters, so a value that turns out too low needs a redeploy to correct.
+    ///
+    ///      Leaves whose fan-out IS capped by their protocol take {LABEL_LEAF_GAS_NARROW} instead.
     uint256 internal constant LABEL_LEAF_GAS = 950_000;
+
+    /// @notice Gas ceiling for a `positionLabels` leaf whose token count is bounded by the protocol itself.
+    /// @dev {LABEL_LEAF_GAS} has to clear a 50-token Balancer pool, which leaves it ~7x looser than the leaves
+    ///      that can never be that wide. A ceiling only bounds to the extent it is tight: under one global value
+    ///      a hostile Curve, Convex or Uniswap V2 coordinate could still spend 950k of `NAVCalculator`'s
+    ///      1,000,000 per-position label budget — nearly all of it — for a display string that legitimately
+    ///      costs under 150k. This tier exists to make the bound mean something at those sites, NOT to widen any
+    ///      margin: the Balancer box above is unchanged by it.
+    ///
+    ///      Applied where the fan-out is capped by the protocol, not by convention:
+    ///
+    ///      - **Curve pools and gauges** — `CurvePoolLib.MAX_COINS` stops the coin enumeration at 8.
+    ///      - **Convex** — reaches the same capped Curve enumeration through its rewarder's LP token.
+    ///      - **Uniswap V2 pools** — a pair is exactly two tokens.
+    ///
+    ///      Deliberately NOT applied to Balancer V3 despite its pools being narrow in practice: nothing in this
+    ///      repo enforces a token cap there, and `BalancerV3PoolLib.poolTokens` is the more expensive per token
+    ///      of the two Balancer families (~21.8k against V2's ~15.2k) because it makes an extra uncapped
+    ///      `asset()` staticcall per token to unwrap ERC4626. Nor to Fluid vaults, whose leaf is linear in the
+    ///      registered-asset count rather than in anything it can cap.
+    ///
+    ///      Measured COLD with the same discipline as {LABEL_LEAF_GAS} — fixtures built in `setUp`, ERC-1967
+    ///      tokens each with their own implementation. Worst honest leaf is Convex at 145,459, so this clears the
+    ///      binding case by ~2x; Curve gauges 138,897, Curve pools 138,033, Uniswap V2 33,508. All four are
+    ///      registry-independent (`_joinTokenSymbols` reads `LabelLib.symbol` directly), so these figures do not
+    ///      move with how many assets are registered.
+    uint256 internal constant LABEL_LEAF_GAS_NARROW = 300_000;
 
     //
     // Constructor

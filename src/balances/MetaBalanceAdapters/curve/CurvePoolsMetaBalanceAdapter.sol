@@ -102,7 +102,7 @@ contract CurvePoolsMetaBalanceAdapter is MetaBalanceAdapter {
         (address pool, bool ok) = _pidAddress(pid);
         if (!ok) return new string[](0);
         string memory leaf = "";
-        try this.poolCoinSymbols{gas: LABEL_LEAF_GAS}(pool) returns (string memory l) {
+        try this.poolCoinSymbols{gas: LABEL_LEAF_GAS_NARROW}(pool) returns (string memory l) {
             leaf = l;
         } catch {}
         return _labels("AMM Liquidity Pool", leaf);

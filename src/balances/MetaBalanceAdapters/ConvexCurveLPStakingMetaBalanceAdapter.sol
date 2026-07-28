@@ -236,7 +236,7 @@ contract ConvexCurveLPStakingMetaBalanceAdapter is MetaBalanceAdapter {
         (address rewarder, bool ok) = _pidAddress(pid);
         if (!ok) return new string[](0);
         string memory coins = "";
-        try this.rewarderCoinSymbols{gas: LABEL_LEAF_GAS}(rewarder) returns (string memory c) {
+        try this.rewarderCoinSymbols{gas: LABEL_LEAF_GAS_NARROW}(rewarder) returns (string memory c) {
             coins = c;
         } catch {}
         if (bytes(coins).length == 0) {

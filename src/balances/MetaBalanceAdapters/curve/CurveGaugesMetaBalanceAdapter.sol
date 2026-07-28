@@ -187,7 +187,7 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
         (address gauge, bool ok) = _pidAddress(pid);
         if (!ok) return new string[](0);
         string memory leaf = "";
-        try this.gaugeCoinSymbols{gas: LABEL_LEAF_GAS}(gauge) returns (string memory l) {
+        try this.gaugeCoinSymbols{gas: LABEL_LEAF_GAS_NARROW}(gauge) returns (string memory l) {
             leaf = l;
         } catch {}
         return _labels("Staking Gauge", leaf);

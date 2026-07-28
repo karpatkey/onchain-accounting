@@ -99,7 +99,11 @@ contract MorphoMarketsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         string[] memory live = adapter.positionLabels(abi.encode(MARKET_ID));
         assertEq(live.length, 2, "a real market must render its token pair");
         assertEq(live[0], "Market");
-        assertGt(bytes(live[1]).length, 1, "the pair leaf must be non-empty");
+        // Pinned to the exact pair rather than to "non-empty": once `live.length == 2` holds, a length check
+        // cannot fail — `_labels` emits a second segment only for a non-empty leaf, and the most degraded leaf
+        // this path can produce is still "?/?". Asserting the value instead catches a symbol-read regression
+        // against the live deployment AND the collateral-before-loan ordering, neither covered elsewhere here.
+        assertEq(live[1], "apyUSD/apxUSD", "collateral/loan symbols, read from the real tokens");
 
         // An id no `createMarket` ever wrote: params come back all-zero AND `lastUpdate` is 0.
         string[] memory absent = adapter.positionLabels(abi.encode(bytes32(uint256(keccak256("no such market")))));

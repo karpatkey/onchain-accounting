@@ -14,14 +14,25 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 ///         If that invariant holds, the API is sound and an off-chain caller following the documented contract can
 ///         reassemble a NAV that is byte-identical to the complete read's. If it fails, the API is not shippable —
 ///         a slice-based reader would produce a wrong NAV that looks entirely plausible.
-/// @dev Uses `IntegrationFromConfigBase` rather than the leaner NAV fork harness because only the former builds the
-///      REAL registry (43 configured assets, 27 configured adapters, real meta-instance sets). A partition
-///      invariant proven against three mock adapters proves very little; the interesting cases — a meta-adapter
-///      fanning out over 14 Morpho markets, an adapter reporting a debt leg, two adapters reporting the same asset
-///      — only exist here.
+/// @dev Uses `IntegrationFromConfigBase` rather than the leaner NAV fork harness because only the former builds a
+///      real registry from the deploy config, with real meta-instance sets. A partition invariant proven against
+///      three mock adapters proves very little; the interesting cases — a meta-adapter fanning out over 14 Morpho
+///      markets, an adapter reporting a debt leg, two adapters reporting the same asset — only exist here.
 ///
-///      Fork block and accounts come from test/integration/accounts.json (see
-///      docs/howto/refresh-integration-test-blocks.md). Nothing is pinned in this file.
+///      **Coverage, stated honestly: this harness registers 41 assets and 21 adapters, where the mainnet deploy
+///      config carries 43 and 27.** The six it skips are the ones whose deploy type the harness does not know
+///      (`EthenaCooldown`, `LidoWithdrawalQueue`, `EulerVaultsMeta`, and the three assisted adapters). So the
+///      invariant is NOT exercised over those six, and an adapter whose behaviour differs under a one-adapter slice
+///      would ship unverified. Do not read this file as proving the whole production registry. (The exact counts are
+///      asserted below rather than trusted from this comment, so the two cannot drift.)
+///
+///      The fork block comes from test/integration/accounts.json via the base (see
+///      docs/howto/refresh-integration-test-blocks.md). The two ACCOUNT addresses below ARE pinned here — the base
+///      class exposes no per-account accessor to read them by label, and the refresh script only rewrites
+///      `forkBlock` and the expected NAVs, not the address list. That pinning is why
+///      `_assertPartitionReproducesNav` asserts the account actually holds positions: if one of these accounts ever
+///      exits everything, `computeNav` takes its empty-positions early return and every partition assertion below
+///      would compare 0 against 0 and pass while proving nothing.
 contract MainnetPaginatedNavIntegration is IntegrationFromConfigBase {
     /// @notice The most diversified mainnet test account — positions across lending, LP, staking and queues, which
     ///         is what makes its partition worth summing.
@@ -59,6 +70,22 @@ contract MainnetPaginatedNavIntegration is IntegrationFromConfigBase {
         _assertPartitionReproducesNav(ACCOUNT_11, 3);
     }
 
+    /// @notice Pins what this harness actually covers, so the docblock's honesty claim is enforced rather than
+    ///         asserted in prose. If the harness gains or loses an adapter/asset — because a deploy type became
+    ///         recognised, or the config changed — this fails and the coverage caveat above must be re-stated
+    ///         rather than silently becoming wrong.
+    /// @dev Deliberately a hard equality, not a lower bound. A lower bound would let coverage silently shrink,
+    ///      which is the direction that matters: the caveat exists to stop a reader believing the invariant spans
+    ///      the production registry.
+    function test_harnessCoverageIsWhatTheDocblockClaims() public view {
+        assertEq(nav.getAssetCount(), 41, "harness asset count changed - update the coverage caveat in the docblock");
+        assertEq(
+            nav.getAllAdapters().length,
+            21,
+            "harness adapter count changed - update the coverage caveat in the docblock"
+        );
+    }
+
     /// @notice Partitions `getAllAdapters()` into consecutive slices of at most `sliceSize`, reads each, and
     ///         asserts the reassembled result equals `getAccountNav` in every field a caller would use.
     /// @param account The account to value.
@@ -67,6 +94,21 @@ contract MainnetPaginatedNavIntegration is IntegrationFromConfigBase {
         INAVCalculator.NAV memory complete = nav.getAccountNav(account, QUOTE_USD);
         address[] memory all = nav.getAllAdapters();
         assertGt(all.length, 5, "the mainnet registry should have many adapters; partitioning is trivial otherwise");
+
+        // NON-VACUITY GUARD. Without this, an account that has exited all its positions makes computeNav take its
+        // `allPositions.length == 0` early return: complete.value is 0, every slice is 0, both flag arrays are empty
+        // on both sides, and every assertion below compares zero against zero. All three partition tests would stay
+        // green while proving nothing — and this file is the gate that decides the API is shippable, so a genuine
+        // partition defect could ship behind it. The accounts are pinned in this file (see the note above), so
+        // nothing else notices when one of them goes quiet.
+        assertTrue(
+            complete.value != 0, "account holds no value at this fork block; partition assertions would be vacuous"
+        );
+        assertGt(
+            nav.getAccountPositions(account, QUOTE_USD).length,
+            1,
+            "account must hold several positions for a partition to test anything"
+        );
 
         int256 summedValue;
         uint256 coveredCount;

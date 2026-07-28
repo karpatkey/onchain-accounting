@@ -12,7 +12,9 @@ import {Mock_CustomBalanceAdapter} from "test/mocks/balance_adapters.sol";
 ///         returned, the partition invariant on a controlled registry, and the fact that the health flags are
 ///         SLICE-LOCAL (the property a reassembler must union, and the one that silently loses signals if it
 ///         doesn't). The same partition invariant is pinned against the real mainnet registry in
-///         test/integration/NAV.PaginatedNav.Mainnet.integration.fork.t.sol.
+///         test/integration/NAV.PaginatedNav.Mainnet.integration.fork.t.sol, and the gas-starvation exception to
+///         it — the one case where the sums legitimately differ — in
+///         test/nav/NAVCalculator.paginatedNav.starvation.t.sol.
 /// @dev One property is deliberately NOT tested here because it cannot be: that a `PartialNAV` is not assignable
 ///      where a `NAV` is expected. That is a compile-time guarantee of the two structs being distinct types — a
 ///      test asserting it would have to fail to compile, so the guarantee is enforced by the type system and
@@ -87,6 +89,28 @@ contract NAVCalculatorPaginatedNavTest is SuperTest {
     ///      inside a 24-hour window and the feed stays fresh.
     function _staleDaiOnly() internal {
         vm.warp(block.timestamp + 2 days);
+    }
+
+    /// @notice Makes DAI — and ONLY DAI — `irregular`, by giving it a monitor feed that diverges from its primary
+    ///         far beyond the configured tolerance.
+    /// @dev Uses only the public MANAGER API. DAI's primary reads $1.00 and its price is fixed at construction, so
+    ///      the divergence is created from the monitor side: a $0.90 monitor against a 1% tolerance is ~1000bps of
+    ///      divergence. No other registered asset has a monitor feed or a divergence tolerance, so none of them can
+    ///      be flagged irregular — which is what makes the slice-locality assertion meaningful.
+    function _irregularDaiOnly() internal {
+        Mock_PriceOracleChainlink monitor = new Mock_PriceOracleChainlink("DAI-monitor", 90_000_000, 8);
+        vm.startPrank(navCalculatorManager);
+        nav.setDivergenceTolerance(address(dai), 100); // 1%
+        nav.addMonitorFeed(address(dai), address(monitor), IPrices.PriceType.Chainlink, type(uint256).max);
+        vm.stopPrank();
+    }
+
+    function _append(address[] memory arr, address item) internal pure returns (address[] memory out) {
+        out = new address[](arr.length + 1);
+        for (uint256 i = 0; i < arr.length; i++) {
+            out[i] = arr[i];
+        }
+        out[arr.length] = item;
     }
 
     function _contains(address[] memory haystack, address needle) internal pure returns (bool) {
@@ -289,19 +313,68 @@ contract NAVCalculatorPaginatedNavTest is SuperTest {
         // caller that checked flags on this slice alone would conclude the portfolio has no stale prices.
         assertEq(withoutStale.stalePriceAssets.length, 0, "a slice not holding DAI reports nothing stale");
 
-        // Union across the full partition recovers exactly the complete read's set.
+        // Union across the full partition recovers exactly the complete read's SET.
+        //
+        // Compared as a set, deliberately, and NOT by counting entries. Two adapters that both touch one stale
+        // asset each report it, so the concatenation legitimately contains duplicates — that is precisely why the
+        // documented rule is "union, de-duplicated". An entry-count assertion would encode the opposite rule; it
+        // would pass here only because this fixture happens to reach DAI through exactly one adapter, and would
+        // start failing the moment a second DAI-touching adapter existed — accusing the slice of inventing a stale
+        // asset while it behaved exactly as specified.
         address[] memory all = nav.getAllAdapters();
-        bool foundDai;
-        uint256 unionCount;
+        address[] memory union = new address[](0);
         for (uint256 i = 0; i < all.length; i++) {
             INAVCalculator.PartialNAV memory p = _slice(_arr1(all[i]));
             for (uint256 j = 0; j < p.stalePriceAssets.length; j++) {
-                unionCount++;
-                if (p.stalePriceAssets[j].asset == address(dai)) foundDai = true;
+                union = _append(union, p.stalePriceAssets[j].asset);
             }
         }
-        assertTrue(foundDai, "union over the partition recovers the stale asset");
-        assertEq(unionCount, complete.stalePriceAssets.length, "and adds nothing the complete read didn't have");
+        assertTrue(_contains(union, address(dai)), "union over the partition recovers the stale asset");
+        for (uint256 i = 0; i < union.length; i++) {
+            bool inComplete;
+            for (uint256 j = 0; j < complete.stalePriceAssets.length; j++) {
+                if (complete.stalePriceAssets[j].asset == union[i]) inComplete = true;
+            }
+            assertTrue(inComplete, "the union introduces no asset the complete read did not report");
+        }
+        for (uint256 j = 0; j < complete.stalePriceAssets.length; j++) {
+            assertTrue(
+                _contains(union, complete.stalePriceAssets[j].asset), "the union loses no asset the complete read had"
+            );
+        }
+    }
+
+    /// @notice The `irregularPriceAssets` half of the flag-union contract, which `stalePriceAssets` coverage above
+    ///         does not imply: `_buildStaleAssets` and `_buildIrregularAssets` are independent functions in
+    ///         PriceFeedLib, and a change that scoped the irregular list from the asset registry rather than from
+    ///         the slice-local price-feed cache would silently alter what a slice reports as depegged while every
+    ///         staleness assertion here still passed. Depeg is the signal this repo's `irregular` work exists to
+    ///         surface, so it gets its own pin.
+    function test_irregularPriceAssetsAreSliceLocalAndUnionRecoversThem() public {
+        _irregularDaiOnly();
+
+        INAVCalculator.NAV memory complete = nav.getAccountNav(safe, address(0));
+        assertEq(complete.irregularPriceAssets.length, 1, "complete read sees DAI irregular");
+        assertEq(complete.irregularPriceAssets[0].asset, address(dai));
+
+        // Slice-local: the adapter holding DAI reports it, the one that does not reports nothing.
+        INAVCalculator.PartialNAV memory withIrregular = _slice(_arr1(address(adapterC)));
+        INAVCalculator.PartialNAV memory withoutIrregular = _slice(_arr1(address(adapterA)));
+
+        assertEq(withIrregular.irregularPriceAssets.length, 1, "the slice holding DAI reports it irregular");
+        assertEq(withIrregular.irregularPriceAssets[0].asset, address(dai));
+        assertEq(withoutIrregular.irregularPriceAssets.length, 0, "a slice not holding DAI reports nothing irregular");
+
+        // And the union over the partition recovers it.
+        address[] memory all = nav.getAllAdapters();
+        bool foundDai;
+        for (uint256 i = 0; i < all.length; i++) {
+            INAVCalculator.PartialNAV memory p = _slice(_arr1(all[i]));
+            for (uint256 j = 0; j < p.irregularPriceAssets.length; j++) {
+                if (p.irregularPriceAssets[j].asset == address(dai)) foundDai = true;
+            }
+        }
+        assertTrue(foundDai, "union over the partition recovers the irregular asset");
     }
 
     /// @notice A stale price does not stop a slice from being returned — it is reported alongside a value, exactly

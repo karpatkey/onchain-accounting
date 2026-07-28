@@ -277,10 +277,38 @@ interface INAVCalculator is IBalances {
     ///      accepting that the prefix correspondence ends there. Prefer the latter: shifting a field's offset in a
     ///      struct a live off-chain reassembler decodes is worse than losing a documentation convenience.
     /// @param value Net value of THIS SLICE's positions in `quoteAsset`, signed (negative if the slice is net
-    ///        debt). **This is the one field that sums.** Debt legs are already negative, prices are per-asset and
-    ///        independent of which adapter reported the position, so the sum of `value` over a partition of
-    ///        `getAllAdapters()` equals `getAccountNav().value` exactly — no tolerance, no rounding slack. Every
-    ///        other field below does NOT sum.
+    ///        debt). **This is the one field that sums.** Debt legs are already negative, and prices are per-asset
+    ///        and independent of which adapter reported the position, so the arithmetic is exact: summing `value`
+    ///        over a partition of `getAllAdapters()` reproduces `getAccountNav().value` bit-for-bit, with no
+    ///        tolerance and no rounding slack. Every other field below does NOT sum.
+    ///
+    ///        **One precondition, and it is not theoretical: no adapter may have been GAS-STARVED in either read.**
+    ///        Some adapters fail open inside their own frame and return SUCCESSFULLY having dropped legs —
+    ///        `AssistedCoordCache._collect` isolates each cached coordinate behind an UNCAPPED
+    ///        `try this.valueCoordSelf(…)`/`catch {}`, and `ERC20DefaultBalanceAdapter` records 0 for an asset whose
+    ///        `balanceOf` staticcall fails. Nothing upstream can see that; see the "Scope, stated plainly" note on
+    ///        `PriceFeedLib._getAdapterPositions`.
+    ///
+    ///        The per-adapter stipend is a share of what the READ still holds at the moment that adapter is reached,
+    ///        and `computeNav` scans the supplied array IN ORDER. So the stipend depends on **slice composition AND
+    ///        ORDERING**, not merely on how few adapters a slice names. Both directions are reachable:
+    ///        a singleton slice gives its adapter more gas than the full scan did and may value legs the complete
+    ///        read dropped; a multi-adapter slice that places an adapter BEHIND an expensive one can starve it below
+    ///        what the complete read gave it. The second case is not hypothetical — `getAllAdapters()[0]` is
+    ///        permanently `ERC20DefaultBalanceAdapter` (pushed in `initialize`, unremovable, and swap-and-pop only
+    ///        ever fills a hole at the removed index, which index 0 can never be), so the complete read already
+    ///        hands it the largest stipend any read can and **a slice can only ever give it less.**
+    ///
+    ///        **Therefore: do NOT assume a direction, and do not adopt "trust the slice sum" as a rule.** Either
+    ///        side can be the short one. Reconcile before publishing either; if a single mechanical rule is needed,
+    ///        the conservative one is to take the LOWER of the two, never the slice. And do not treat the two reads
+    ///        agreeing as a health check that passes silently — they agree when nothing was starved, which is the
+    ///        common case and therefore uninformative.
+    ///
+    ///        What currently keeps a starved read from OVER-reporting is a property of the adapter layer that is
+    ///        load-bearing and enforced nowhere: **no adapter emits an `isDebt == true` leg from behind an uncapped
+    ///        or `gas()`-forwarding fail-open read.** The two known absorbers are credit-only, so today a starved
+    ///        read under-reports. An adapter that broke that property would make a starved read raise NAV instead.
     /// @param quoteAsset Quote currency; `address(0)` denotes USD. Identical in every slice (it is the caller's
     ///        argument), so a reassembler can assert it rather than combine it.
     /// @param timestamp Block timestamp of THIS call. A reassembler MUST check that every slice carries the same
@@ -585,6 +613,11 @@ interface INAVCalculator is IBalances {
     ///
     ///      ### The caller contract
     ///
+    ///      **Canonical statement: `docs/howto/read-nav-in-slices.md`.** That document is the single source for the
+    ///      reassembly rules, including the worked example and the gas-starvation precondition. What follows is the
+    ///      short form, kept here because a consumer generating against this ABI may never open the repo — if the
+    ///      two ever disagree, the how-to wins and this block is the bug.
+    ///
     ///      Four obligations. The first two this function enforces; the last two it cannot see, and they are
     ///      where a reassembled NAV goes wrong.
     ///
@@ -633,10 +666,23 @@ interface INAVCalculator is IBalances {
     ///      in one frame and cannot reassemble across calls. For those callers the only fixes are reducing the
     ///      cost of the read itself or shrinking the registry. This API is for off-chain readers.
     ///
-    ///      One thing it does help, though: the per-adapter gas stipend in the read path is a share of what the
-    ///      READ still holds, so an adapter starved into {AdapterGasExhausted} inside the complete scan may have
-    ///      ample budget when asked for on its own. A slice is therefore also the way to get an answer out of a
-    ///      portfolio whose complete read has started reverting.
+    ///      One thing it does help, but read the caveat before relying on it: the per-adapter gas stipend is a
+    ///      share of what the READ still holds, so an adapter starved into {AdapterGasExhausted} inside the
+    ///      complete scan may have ample budget when asked for on its own. A slice can therefore get an answer out
+    ///      of a portfolio whose complete read has started reverting.
+    ///
+    ///      **The caveat: a slice can also convert that loud revert into a silent omission.** Exhaustion is
+    ///      classified by `GasStipendLib.exhausted` as `consumed >= stipend - stipend/8` — measured against a
+    ///      stipend that is itself a share of the CALLER's budget. An adapter that fails at a roughly fixed cost
+    ///      `G` for a non-gas reason is scored "exhausted" (loud {AdapterGasExhausted}) when the full scan's
+    ///      stipend is small enough that `G` clears that bar, and scored "benign revert" — fail open, legs dropped,
+    ///      nothing flagged — when the slice's larger stipend puts `G` below it. `adaptersCovered` still lists the
+    ///      adapter, so the documented coverage check reports full coverage. If a dropped leg is a DEBT leg the
+    ///      reassembled NAV over-reports.
+    ///
+    ///      So: a slice that succeeds where the complete read reverted is **evidence about gas, not a repaired
+    ///      answer.** Treat it as a diagnostic, compare it against the complete read once that read has enough gas
+    ///      to finish, and do not silently promote it to the authoritative NAV.
     ///
     ///      No verbose (labelled) counterpart exists yet. The label paths carry the heavier gas pressure and their
     ///      bounds are being re-derived; a paginated read built against numbers about to change would be wasted.

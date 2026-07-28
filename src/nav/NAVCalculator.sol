@@ -23,7 +23,9 @@ import "src/constants.sol";
 /// @notice NAV Calculator.
 /// @author KPK
 /// @dev EIP-170 budget: this contract runs close to the 24,576-byte runtime limit (CI's `forge build --sizes`
-///      enforces it). **As of the paginated-NAV read it is 218 bytes under.** Measure with a clean
+///      enforces it). **As of the paginated-NAV read it is 325 bytes under** (runtime 24,251 B, measured from
+///      `out/NAVCalculator.sol/NAVCalculator.json` under the default profile — the one CI's `--sizes` uses).
+///      Measure with a clean
 ///      `forge build --sizes` before and after anything added here, and assume nothing non-trivial fits: the next
 ///      substantive read will need the verbose label block (`_toVerbose` / `_safeString` / `_safeStringArray` /
 ///      `decodeStringArray`) moved out to a separate LENS CONTRACT first. Not to a library — `decodeStringArray`

@@ -98,7 +98,7 @@ This is the dangerous one.
 
 | Field | How it composes | Why |
 |---|---|---|
-| `value` | **sum** | Signed; debt legs are already negative, and prices are per-asset and independent of which adapter reported the position. Exact — no tolerance. |
+| `value` | **sum** | Signed; debt legs are already negative, and prices are per-asset and independent of which adapter reported the position. Exact arithmetic — but equality with the complete read assumes **no adapter was gas-starved in either read**, and when that fails **neither side is reliably the larger**. See [the precondition](#the-precondition-is-not-theoretical--read-this-before-reconciling). |
 | `stalePriceAssets` | **union, de-duplicated** | Restricted to the assets *this slice's* positions touched. An asset held only through an adapter in another slice is absent here. Two slices holding the same stale asset each report it. |
 | `irregularPriceAssets` | **union, de-duplicated** | Same restriction. This is the depeg signal. |
 | `sequencerDown` | **OR** | Derived from the sequencer config, so invariant across slices — but reading it on one slice relies on that invariant rather than checking it. |
@@ -139,7 +139,25 @@ The per-adapter gas stipend in the read path is a share of what the **read** sti
 `PriceFeedLib._getAdapterPositions`). An adapter starved into `AdapterGasExhausted` inside the complete scan may
 have ample budget when asked for on its own.
 
-So a slice is also the way to get an answer out of a portfolio whose complete read has started reverting.
+So a slice can get an answer out of a portfolio whose complete read has started reverting.
+
+> **⚠️ But a slice can also turn that loud revert into a silent omission — read this before relying on it.**
+>
+> Exhaustion is classified by `GasStipendLib.exhausted` as `consumed >= stipend - stipend/8`, measured against a
+> stipend that is itself a share of the *caller's* budget. Consider an adapter that fails at a roughly fixed cost
+> `G` for a **non-gas** reason (say, a multi-item adapter reverting on one malformed entry):
+>
+> | read | stipend `S` | verdict | result |
+> |---|---|---|---|
+> | complete | small | `G >= 0.875·S` → **exhausted** | loud `AdapterGasExhausted` revert |
+> | slice | ~10× larger | `G < 0.875·S` → **benign revert** | fail open, legs dropped, **nothing flagged** |
+>
+> `adaptersCovered` still lists that adapter, so the documented coverage check reports full coverage. If a dropped
+> leg is a **debt** leg, the reassembled NAV **over-reports** — the exact failure class this repo's hardening work
+> exists to eliminate.
+>
+> Treat a slice that succeeds where the complete read reverted as **evidence about gas, not a repaired answer.**
+> Raise the complete read's gas and compare, rather than silently promoting the slice sum to the authoritative NAV.
 
 ---
 
@@ -213,13 +231,64 @@ if (covered.length !== all.length || new Set(covered).size !== all.length) {
 ## The invariant, and where it is pinned
 
 > The sum of `getAccountNavForAdapters` over a disjoint partition covering all of `getAllAdapters()` equals
-> `getAccountNav` exactly — the `value`, and the union of every flag.
+> `getAccountNav` — the `value`, and the union of every flag — **provided no adapter was gas-starved in either
+> read.** When that precondition fails, the two can differ in **either** direction.
 
-This is a property of the code, not of two implementations agreeing:
-`PriceFeedLib.computeNavForAdapters` and `PriceFeedLib.computeNav` both run the **same** `_navCore`, differing only
-in which adapters are handed to it.
+The arithmetic half is a property of the code, not of two implementations agreeing:
+`NAVCalculator.getAccountNavForAdapters` calls the **same** `PriceFeedLib.computeNav` that `getAccountNav` calls,
+differing only in which adapters are handed to it. There is no second NAV entrypoint to drift from.
 
-Pinned against the real mainnet registry (all adapters, real meta-instance sets) in
+### The precondition is not theoretical — read this before reconciling
+
+Some adapters **fail open inside their own frame and return successfully having dropped legs.**
+`AssistedCoordCache._collect` isolates each cached coordinate behind an *uncapped*
+`try this.valueCoordSelf(…)` / `catch {}`, and `ERC20DefaultBalanceAdapter` records `0` for an asset whose
+`balanceOf` staticcall fails. Nothing upstream can detect either — see the "Scope, stated plainly" note on
+`PriceFeedLib._getAdapterPositions`.
+
+The per-adapter gas stipend is a share of what the **read** still holds *at the moment that adapter is reached*, and
+`computeNav` scans the supplied array **in order**. So the stipend depends on **slice composition *and ordering***,
+not merely on how few adapters a slice names — and **both directions of error are reachable**:
+
+| slice shape | effect on that adapter's stipend | resulting skew |
+|---|---|---|
+| singleton | **more** gas than the full scan gave it | slice values legs the complete read dropped ⇒ `sum(slices) > complete` |
+| multi-adapter, adapter placed **behind** an expensive one | **less** gas than the full scan gave it | slice drops legs the complete read valued ⇒ `sum(slices) < complete` |
+
+The second row is not hypothetical. **`getAllAdapters()[0]` is permanently `ERC20DefaultBalanceAdapter`** — pushed in
+`initialize`, unremovable, and swap-and-pop only ever fills the hole at a removed index, which index 0 can never be.
+So the complete read already hands it the largest stipend any read can, and **a slice can only ever give it less.**
+That adapter is one of the two known absorbers.
+
+> ### ⛔ Do not assume a direction
+>
+> **There is no "trust the slice" rule.** Either side can be the short one, and nothing in either result says which.
+> Reconcile before publishing either number. If you need one mechanical rule, the conservative choice is **take the
+> lower**, never "take the slice".
+>
+> Also do **not** treat "the two reads agree" as a health check that quietly passes — they agree whenever nothing was
+> starved, which is the ordinary case and therefore tells you nothing.
+
+**One load-bearing invariant, enforced nowhere.** What keeps a starved read from *over*-reporting today is that
+**no adapter emits an `isDebt == true` leg from behind an uncapped or `gas()`-forwarding fail-open read.** Both known
+absorbers are credit-only, so a starved read currently under-reports. An adapter that broke that property would make
+a starved read *raise* NAV — the failure class this repo's hardening work exists to eliminate. Treat it as an
+invariant of the adapter layer when adding or changing one, alongside the `GasStipendLib` "Scope, stated plainly"
+note.
+
+There is a second, sharper edge in the same mechanism, covered under
+[One thing pagination *does* fix](#one-thing-pagination-does-fix-beyond-gas): a slice's larger stipend can convert a
+loud `AdapterGasExhausted` into a **silent** fail-open drop, and `adaptersCovered` will still claim full coverage.
+
+### Where it is pinned
+
 `test/integration/NAV.PaginatedNav.Mainnet.integration.fork.t.sol` — under a singleton partition, a batched
-partition, and a second portfolio shape. Unit-level cases (the three rejections, order preservation, slice-local
-staleness, gap detection) are in `test/nav/NAVCalculator.paginatedNav.t.sol`.
+partition, and a second portfolio shape, with a non-vacuity guard so the assertions cannot pass against an account
+that holds nothing. **That harness covers 41 assets / 21 adapters, not the production 43 / 27** — the six skipped are
+`EthenaCooldown`, `LidoWithdrawalQueue`, `EulerVaultsMeta` and the three assisted adapters, and the counts are
+asserted in the test so this claim cannot silently rot. Note that a fork test cannot exercise the starvation case at
+all: forge grants effectively unlimited gas, so no adapter is ever starved there.
+
+Unit-level cases (the three rejections, order preservation, an adapter removed from the registry mid-paging, debt
+netting across a slice boundary, and slice-locality + union recovery for **both** `stalePriceAssets` and
+`irregularPriceAssets`) are in `test/nav/NAVCalculator.paginatedNav.t.sol`.

@@ -275,8 +275,9 @@ PERSIST_DEPLOYMENTS=1 forge script script/deploy/01_2_DeployNAVImplementation.s.
 
 **Use `01_2`, not `01` — this matters more than it looks.**
 
-1. **`01` has NO pin assertions.** `01_2` carries four `require`s (both CREATE2 pins, plus
-   impl-linked-against-both, `01_2:46-68`); `01` has only "deploy failed" checks. Measured on a
+1. ~~**`01` has NO pin assertions.**~~ **No longer true** — `01` gained the same four `require`s
+   (both CREATE2 pins, plus impl-linked-against-both, `01_2:47-68`) in the PR superseding #188. The
+   history is kept because it is the measurement that motivated the change. Measured on a
    mainnet fork against `main` @ `31c7b1b7` (stale pin): `01_2` reverted safely before broadcasting,
    while `01` **succeeded** and deployed `PriceFeedLib` to `0xee114702…` and `NAVRegistryLib` to
    `0x660e6018…` — the *computed* addresses — even though `NAVCalculator` is linked against the
@@ -591,7 +592,7 @@ to the new proxy. The old stack keeps answering until they do; nothing needs unr
 | symptom | cause | fix |
 | --- | --- | --- |
 | `01_2` reverts `… CREATE2 addr != foundry.toml pin` | library bytecode drifted from the pin | regenerate both pins against the final tree (0.3); never from an incremental build |
-| `01` "succeeds" but the NAV reverts on `initialize` | `01` has no pin assertions and deployed the libraries at the *computed* addresses while the impl links the *pinned* ones | use `01_2`; never `01` |
+| `01` "succeeds" but the NAV reverts on `initialize` | historical: `01` had no pin assertions and deployed the libraries at the *computed* addresses while the impl links the *pinned* ones. `01` now asserts the pins, so this fails fast instead | if it still happens, the pins are stale — regenerate, do not work around |
 | a step exits 0 having done nothing | unmet precondition, handled by an early `return` | check the post-condition, not the exit code |
 | `01_2` reverts `NAVCalculator impl not linked against pinned …` | `foundry.toml [libraries]` drifted from `LibraryPins` | make them agree, rebuild |
 | `02_2` reverts inside `AtomicNAVProxyDeployer` | proxy address unchanged → code already there → `upgradeToAndCall` with no admin | bump `DeploySalts.NAV_PROXY` (0.2), then re-pin (0.3) |

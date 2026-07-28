@@ -57,11 +57,24 @@ jobs:
       # could go away.
       - name: Add swap for the via_ir compile
         run: |
-          sudo fallocate -l 8G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
+          echo "--- before ---"
           free -h
+          swapon --show || true
+          df -h /mnt | tail -1
+          # `ubuntu-latest` already ships an ACTIVE /swapfile, so creating one at that path fails with
+          # "fallocate failed: Text file busy" — and it is what main has been squeaking by on. Add a SECOND
+          # swap area instead of resizing the existing one (resizing means swapoff first, which needs the
+          # pages to fit in RAM and can fail on its own).
+          #
+          # It goes on /mnt, the runner's large ephemeral disk (~65 GB free), not on / (~20 GB, and shared
+          # with the compile's own out/ + cache/ artifacts).
+          sudo fallocate -l 8G /mnt/swapfile-ci
+          sudo chmod 600 /mnt/swapfile-ci
+          sudo mkswap /mnt/swapfile-ci
+          sudo swapon /mnt/swapfile-ci
+          echo "--- after ---"
+          free -h
+          swapon --show
 
       - name: Build
         run: forge build --sizes

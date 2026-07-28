@@ -87,6 +87,26 @@ contract MorphoMarketsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         vm.stopPrank();
     }
 
+    /// @notice The existence gate against a REAL Morpho deployment: a live market renders its pair, an
+    ///         unallocated id collapses to the category.
+    /// @dev The gate reads `MORPHO.market(id).lastUpdate`, and every in-repo test of it runs against a mock. That
+    ///      leaves the one thing a mock cannot establish unchecked — that the real deployment answers this
+    ///      selector at all, with a decodable `Market`. `Id` is a UDVT over `bytes32`, so `market(Id)` and the
+    ///      deployed `mapping(Id => Market) public market` auto-getter must resolve to the same selector; if they
+    ///      ever did not, the `try` would swallow it and every Morpho leaf would silently degrade to `["Market"]`
+    ///      on-chain while the unit suite stayed green.
+    function test_positionLabels_existenceGate_againstRealMorpho() public view {
+        string[] memory live = adapter.positionLabels(abi.encode(MARKET_ID));
+        assertEq(live.length, 2, "a real market must render its token pair");
+        assertEq(live[0], "Market");
+        assertGt(bytes(live[1]).length, 1, "the pair leaf must be non-empty");
+
+        // An id no `createMarket` ever wrote: params come back all-zero AND `lastUpdate` is 0.
+        string[] memory absent = adapter.positionLabels(abi.encode(bytes32(uint256(keccak256("no such market")))));
+        assertEq(absent.length, 1, "an unallocated id must not render a token pair");
+        assertEq(absent[0], "Market");
+    }
+
     function test_threeLegs_present() public view {
         bytes32[] memory instances = new bytes32[](1);
         instances[0] = MARKET_ID;

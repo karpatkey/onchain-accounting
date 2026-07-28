@@ -139,8 +139,14 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
         //
         // Two separate `try`s, deliberately. The body of a `try` runs in the CALLER's frame, so a second external
         // call placed inside the first one's success arm is NOT covered by its `catch` — a revert there would
-        // propagate straight out of this view instead of degrading to the category. Each read therefore gets its
-        // own boundary. Sequencing existence first also means a non-existent id costs one read rather than two.
+        // propagate straight out of this view instead of degrading to the category. The two `MORPHO` reads
+        // therefore each get their own boundary. Sequencing existence first also means a non-existent id costs one
+        // read rather than two.
+        //
+        // The two `_symbol` reads DO remain inside the second `try`'s body and are deliberately left there: they
+        // are safe because {LabelLib} is revert-free by construction (codesize guard, raw staticcall, ABI-head
+        // validation before decode), NOT because that `catch` covers them — it does not. Anything added alongside
+        // them that is not equally revert-free needs its own `try`.
         uint256 lastUpdate;
         try MORPHO.market(Id.wrap(marketId)) returns (Market memory m) {
             lastUpdate = m.lastUpdate;

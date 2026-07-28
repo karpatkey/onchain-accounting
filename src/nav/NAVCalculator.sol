@@ -334,26 +334,24 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     }
 
     /// @inheritdoc INAVCalculator
-    /// @dev Slice validation and the scan itself live in `PriceFeedLib.computeNavForAdapters` to keep this contract
-    ///      under EIP-170 (see the contract-level note). The library runs the slice through the SAME `_navCore`
-    ///      that `getAccountNav` runs, so the complete and partial reads cannot diverge in their NAV math — which
-    ///      is what makes the partition invariant a property of the code rather than of two bodies agreeing.
+    /// @dev **Validate, then call the very same `PriceFeedLib.computeNav` that {getAccountNav} calls**, with the
+    ///      validated slice in place of the full registry. There is no separate partial-read entrypoint in the
+    ///      library, deliberately: a second copy of that function's body roughly doubles the IR the `via_ir`
+    ///      optimizer must process for the largest function in the largest library in this repo, and doing so was
+    ///      measured to push CI's whole-project compile past the runner's memory (SIGTERM mid-compile, twice,
+    ///      reproducibly, while `main` completed in the same time). Sharing the function is also the stronger
+    ///      design: the partition invariant — sum of slices == complete NAV — holds because the two reads are
+    ///      literally the same code, not because two implementations agree. It reuses this contract's existing
+    ///      `computeNav` argument encoder and `NAV` decoder too, which matters at the margin below.
     ///
     ///      `getAllAdapters()` is passed as the registration authority, which makes "registered" mean exactly "in
     ///      the list {getAccountNav} scans" — one definition, read from storage in the same call, so a slice can
     ///      never be validated against a different registry than the one it is measured against.
     ///
-    ///      **The `PartialNAV` is assembled HERE rather than returned by the library**, which is why this function
-    ///      is not the pure pass-through its siblings are. Returning the assembled struct across the DELEGATECALL
-    ///      would make solc emit a `PartialNAV` decoder in this contract on top of the encoder its own return value
-    ///      needs regardless; reusing the `NAV` decoder {getAccountNav} already forces to exist, and paying nine
-    ///      field copies instead, measured 44 bytes cheaper here (and 379 in the library). 44 bytes is trivial in
-    ///      isolation and a fifth of the margin this contract has left, which is the point.
-    ///
     ///      The intermediate `NAV` never leaves this frame. It must not: it is a PARTIAL result wearing the
     ///      complete result's type for the length of one function body, which is exactly what {PartialNAV} exists
-    ///      to prevent anywhere else. Widening `computeNavForAdapters`' visibility, or returning `n` from a variant
-    ///      of this function, would reintroduce that hazard.
+    ///      to prevent anywhere else. Returning `n` from any variant of this function would reintroduce that
+    ///      hazard, and so would exposing a `computeNav` result reached through a slice by any other route.
     function getAccountNavForAdapters(address account, address quoteAsset, address[] calldata adapters)
         external
         view
@@ -361,14 +359,16 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     {
         _validateQuoteAsset(quoteAsset);
 
-        (INAVCalculator.NAV memory n, address[] memory covered) = PriceFeedLib.computeNavForAdapters(
+        address[] memory covered = PriceFeedLib.validateAdapterSlice(getAllAdapters(), adapters);
+
+        INAVCalculator.NAV memory n = PriceFeedLib.computeNav(
             _priceOracles,
             _monitorFeeds,
             _assetPricing,
             _assetIndex,
             _registeredAssets,
-            getAllAdapters(),
-            adapters,
+            covered,
+            _metaInstanceTotal,
             account,
             quoteAsset,
             _isSequencerDown(),

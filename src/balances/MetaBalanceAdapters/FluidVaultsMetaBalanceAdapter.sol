@@ -122,7 +122,7 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
         if (!ok) return new string[](0);
         // External self-call so a revert anywhere in the type-check/constantsView/symbol chain fails open to the
         // category-only label — a faulty label must never revert the (verbose-only) labels read.
-        try this.vaultPairSymbols(vault) returns (string memory leaf) {
+        try this.vaultPairSymbols{gas: LABEL_LEAF_GAS}(vault) returns (string memory leaf) {
             return _labels("Vault", leaf);
         } catch {
             return _labels("Vault", "");

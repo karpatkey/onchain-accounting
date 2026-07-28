@@ -33,6 +33,25 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     /// @notice NAVCalculator reference, used for the registered-asset registry.
     INAVCalculator public immutable NAV_CALCULATOR;
 
+    /// @notice Gas ceiling for deriving ONE `positionLabels` leaf, applied at the self-call each adapter already
+    ///         routes its leaf through.
+    /// @dev A leaf reads the chain — pool tokens, gauge LP tokens, ERC20 symbols — through addresses that come
+    ///      from a governed coordinate. Without a ceiling the `try this.<leaf>()` boundary forwards 63/64 of the
+    ///      frame, so one coordinate whose reads loop consumes nearly the whole budget of whatever called in.
+    ///      That is display-only work; it must not be able to spend a caller's read.
+    ///
+    ///      **This is a fixed ceiling, deliberately, and NOT {GasStipendLib}.** That library answers a different
+    ///      question — "did this call run out of gas, or did it answer?" — and its `stipendFrom` is 63/64 of what
+    ///      remains, which is what the EVM forwards anyway and therefore bounds nothing. Here there is nothing to
+    ///      classify: a leaf that does not fit is simply dropped, and the caller wants a number it can reason
+    ///      about. Same idiom as `LabelLib.METADATA_READ_GAS` and `StaticCallLib.PROBE_GAS`.
+    ///
+    ///      Sized to clear the worst legitimate leaf with room: the widest is an 8-coin Curve pool, whose symbol
+    ///      reads are themselves capped at 100k each by `LabelLib` but cost a few thousand in practice. It also
+    ///      sits well inside `NAVCalculator`'s own per-position `_LABEL_READ_GAS`, so a verbose read still gets
+    ///      its labels rather than losing them to the outer cap.
+    uint256 internal constant LABEL_LEAF_GAS = 500_000;
+
     //
     // Constructor
     //
@@ -389,6 +408,9 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     ///         the category+leaf shape every meta-adapter uses.
     /// @dev Centralising this here keeps the convention identical across all meta-adapters instead of being
     ///      re-decided per adapter; concrete adapters derive `leaf` then `return _labels("Category", leaf);`.
+    ///
+    ///      Deriving that leaf is what {LABEL_LEAF_GAS} bounds — see its docs for why a label read needs a
+    ///      ceiling of its own even though the leaf itself is display-only.
     function _labels(string memory category, string memory leaf) internal pure returns (string[] memory) {
         if (bytes(leaf).length == 0) {
             if (bytes(category).length == 0) return new string[](0);

@@ -1,9 +1,13 @@
 #!/usr/bin/env bun
 // NAV historical backtest driver (single-file, no dependencies — run with bun).
 // Usage: bun script/test/nav-backtest.ts [--chain 1] [--window w1-1d] [--mode report|snapshot|assert]
+//                                        [--allow-errors]
 //   report   (default) run sweep, print summary, do not touch the fixture
 //   snapshot run sweep and (over)write the window's entry in test/integration/nav-timeseries.json
 //   assert   run sweep and deep-diff against the fixture's window entry; exit 1 on any difference
+//   --allow-errors  permit `snapshot` to pin a sweep containing reverting points (refused by default:
+//                   an all-error sweep is what a broken harness looks like, and pinning it makes
+//                   `assert` pass forever while measuring nothing)
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -15,7 +19,6 @@ const FIXTURE = `${ROOT}/test/integration/nav-timeseries.json`;
 // ── Types ──
 
 interface WindowDef { fromBlock: number; toBlock: number; blockStep: number; metrics: string[]; accounts: string[] }
-interface BlocksFile { windows: Record<string, { chains: Record<string, WindowDef> }> }
 interface Point { block: number; timestamp: number; value?: string; error?: string }
 type Series = Record<string, Record<string, Point[]>>;
 interface FixtureWindowEntry { generatedAtCommit: string; accounts: Series }
@@ -41,39 +44,48 @@ function isHexAddress(v: unknown): v is string { return typeof v === "string" &&
 
 // ── Boundary parsers (no `as`, no `any`, no non-null) ──
 
-function parseWindowDef(raw: unknown): WindowDef {
-  if (!isRecord(raw)) fail("window def must be an object", 2);
+function parseWindowDef(raw: unknown, name: string, chain: string): WindowDef {
+  const where = `window ${name} / chain ${chain}`;
+  if (!isRecord(raw)) fail(`${where}: window def must be an object`, 2);
   const { fromBlock, toBlock, blockStep } = raw;
-  if (!isFiniteNonNeg(fromBlock)) fail("fromBlock must be a finite non-negative integer", 2);
-  if (!isFiniteNonNeg(toBlock)) fail("toBlock must be a finite non-negative integer", 2);
-  if (!isFiniteNonNeg(blockStep) || blockStep === 0) fail("blockStep must be a positive integer", 2);
-  if (toBlock <= fromBlock) fail("toBlock must be > fromBlock", 2);
+  if (!isFiniteNonNeg(fromBlock)) fail(`${where}: fromBlock must be a finite non-negative integer`, 2);
+  // 0 is the Solidity base class's "fork block unset" sentinel: it would fork at accounts.json's
+  // pinned block instead and emit points labelled with blocks it never read.
+  if (fromBlock === 0) fail(`${where}: fromBlock must be > 0`, 2);
+  if (!isFiniteNonNeg(toBlock)) fail(`${where}: toBlock must be a finite non-negative integer`, 2);
+  if (!isFiniteNonNeg(blockStep) || blockStep === 0) fail(`${where}: blockStep must be a positive integer`, 2);
+  if (toBlock <= fromBlock) fail(`${where}: toBlock must be > fromBlock`, 2);
   const mr = raw.metrics;
   const metrics: string[] = mr !== undefined
-    ? (isStringArray(mr) && mr.length > 0 ? mr : fail("metrics must be a non-empty string array", 2))
+    ? (isStringArray(mr) && mr.length > 0 ? mr : fail(`${where}: metrics must be a non-empty string array`, 2))
     : ["nav"];
   const accounts = raw.accounts;
-  if (!isStringArray(accounts) || accounts.length === 0) fail("accounts must be a non-empty string array", 2);
+  // The Solidity harness treats `accounts` as optional (absent => every chain-enabled account), but
+  // the driver's completeness check needs the expected set, so it is required for a driver run.
+  if (!isStringArray(accounts) || accounts.length === 0) {
+    fail(`${where}: accounts must be a non-empty string array to run through the driver (run forge directly for the all-accounts path)`, 2);
+  }
   const seen = new Set<string>();
   for (const account of accounts) {
-    if (!isHexAddress(account)) fail(`invalid account address: ${account}`, 2);
+    if (!isHexAddress(account)) fail(`${where}: invalid account address: ${account}`, 2);
     const normalized = account.toLowerCase();
-    if (seen.has(normalized)) fail(`duplicate account: ${account}`, 2);
+    if (seen.has(normalized)) fail(`${where}: duplicate account: ${account}`, 2);
     seen.add(normalized);
   }
   return { fromBlock, toBlock, blockStep, metrics, accounts };
 }
 
-function parseBlocksFile(raw: unknown): BlocksFile {
+// Validates ONLY the window/chain about to be run. Validating every window in the file would make
+// one unrelated entry — e.g. a window with no `accounts`, which the Solidity harness accepts and
+// runs over all chain-enabled accounts — break every invocation of this driver, including runs
+// against an untouched window.
+function selectWindow(raw: unknown, name: string, chain: string): WindowDef {
   if (!isRecord(raw) || !isRecord(raw.windows)) fail(`invalid structure in ${BLOCKS_JSON}`, 2);
-  const windows: BlocksFile["windows"] = {};
-  for (const [name, wc] of Object.entries(raw.windows)) {
-    if (!isRecord(wc) || !isRecord(wc.chains)) fail(`window ${name}: chains must be an object`, 2);
-    const chains: Record<string, WindowDef> = {};
-    for (const [cid, def] of Object.entries(wc.chains)) chains[cid] = parseWindowDef(def);
-    windows[name] = { chains };
-  }
-  return { windows };
+  const wc = raw.windows[name];
+  if (!isRecord(wc) || !isRecord(wc.chains)) fail(`no window ${name} in ${BLOCKS_JSON}`, 2);
+  const def = wc.chains[chain];
+  if (def === undefined) fail(`window ${name} has no chain ${chain} in ${BLOCKS_JSON}`, 2);
+  return parseWindowDef(def, name, chain);
 }
 
 function parseFixture(raw: unknown): Fixture {
@@ -154,17 +166,21 @@ function isMode(v: string): v is Mode { return v === "report" || v === "snapshot
 // ── Main ──
 
 const { values: args } = parseArgs({
-  options: { chain: { type: "string", default: "1" }, window: { type: "string", default: "w1-1d" }, mode: { type: "string", default: "report" } },
+  options: {
+    chain: { type: "string", default: "1" },
+    window: { type: "string", default: "w1-1d" },
+    mode: { type: "string", default: "report" },
+    "allow-errors": { type: "boolean", default: false },
+  },
 });
 const chain = args.chain ?? "1", windowName = args.window ?? "w1-1d", modeRaw = args.mode ?? "report";
+const allowErrors = args["allow-errors"] === true;
 if (!isMode(modeRaw)) fail(`bad --mode: ${modeRaw} (expected report|snapshot|assert)`, 2);
 const mode: Mode = modeRaw;
 
 let blocksFileRaw: unknown;
 try { blocksFileRaw = await Bun.file(BLOCKS_JSON).json(); } catch { fail(`missing/invalid ${BLOCKS_JSON}`, 2); }
-const blocksFile = parseBlocksFile(blocksFileRaw);
-const win = blocksFile.windows[windowName]?.chains[chain];
-if (!win) fail(`no window ${windowName} / chain ${chain} in ${BLOCKS_JSON}`, 2);
+const win = selectWindow(blocksFileRaw, windowName, chain);
 
 const expectedBlocks = Math.floor((win.toBlock - win.fromBlock) / win.blockStep) + 1
   + ((win.toBlock - win.fromBlock) % win.blockStep === 0 ? 0 : 1);
@@ -219,10 +235,13 @@ for (const [account, bm] of Object.entries(results)) {
 }
 
 // Report
+let totalPoints = 0, totalErrors = 0;
 console.log(`== Backtest report (window ${windowName}, chain ${chain}) ==`);
 for (const [account, bm] of Object.entries(results)) {
   for (const [metric, points] of Object.entries(bm)) {
     const errors = points.filter((p) => p.error !== undefined).length;
+    totalPoints += points.length;
+    totalErrors += errors;
     console.log(`${account}/${metric}: ${points.length} points, ${errors} reverting`);
     const vals = points.filter((p) => p.value !== undefined);
     let worst: { block: number; pct: number } | undefined;
@@ -243,8 +262,24 @@ switch (mode) {
     break;
   case "snapshot": {
     if (missing) fail("snapshot aborted: sweep has missing points", 1);
-    let fixture: Fixture;
-    try { fixture = parseFixture(await Bun.file(FIXTURE).json()); } catch { fixture = { $comment: "Backtest fixture. Regenerate: bun script/test/nav-backtest.ts --mode snapshot", windows: {} }; }
+    // A sweep whose points all reverted is what a BROKEN harness looks like — a dead RPC, a pruned
+    // archive block, an address the stack lost. Pinning it produces a baseline that `assert` then
+    // matches forever, so the regression gate reports OK while measuring nothing.
+    if (totalErrors > 0 && !allowErrors) {
+      fail(
+        `snapshot aborted: ${totalErrors}/${totalPoints} points reverted. Investigate first; pass --allow-errors to pin a window whose reverts are the intended signal.`,
+        1,
+      );
+    }
+    // Only an ABSENT fixture starts a fresh one. A fixture that exists but does not parse is a
+    // damaged file (bad hand-edit, bad merge resolution, truncated write): reinitialising would
+    // silently drop every other window's baseline, each of which can cost hours of archive RPC.
+    let fixture: Fixture = { $comment: "Backtest fixture. Regenerate: bun script/test/nav-backtest.ts --mode snapshot", windows: {} };
+    if (await Bun.file(FIXTURE).exists()) {
+      let existingRaw: unknown;
+      try { existingRaw = await Bun.file(FIXTURE).json(); } catch { fail(`${FIXTURE} exists but is not valid JSON — fix or delete it before snapshotting (refusing to overwrite other windows' baselines)`, 2); }
+      fixture = parseFixture(existingRaw);
+    }
     const commit = await gitShortHash();
     const we: FixtureWindowEntry = { generatedAtCommit: commit, accounts: results };
     const ec = fixture.windows[windowName]?.chains ?? {};
@@ -261,7 +296,9 @@ switch (mode) {
     const pinned = fixture.windows[windowName]?.chains[chain]?.accounts;
     if (!pinned) fail(`no fixture entry for window ${windowName} / chain ${chain} — run --mode snapshot first`, 2);
     if (JSON.stringify(sortKeys(pinned)) === JSON.stringify(sortKeys(results))) {
-      console.log("ASSERT OK: sweep matches fixture exactly");
+      // Report the error rate even on success: a baseline that pinned reverts matches a sweep that
+      // still reverts, and "ASSERT OK" alone would read as a healthy stack.
+      console.log(`ASSERT OK: sweep matches fixture exactly (${totalErrors}/${totalPoints} points reverting)`);
     } else {
       console.error("ASSERT FAIL: sweep differs from fixture");
       diffSeries(pinned, results);

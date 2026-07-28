@@ -35,6 +35,34 @@ jobs:
           version: ${{ env.FOUNDRY_VERSION }}
           cache: true
 
+      # DO NOT REMOVE — this is not cruft, the build does not fit in the runner without it.
+      #
+      # A whole-program `via_ir` compile of this repo peaks at 7-8 GB RSS (measured locally with
+      # `/usr/bin/time -v forge build --sizes` after `forge clean`; one run on a larger box reported 9.7 GB).
+      # This repo is INTERNAL, so `ubuntu-latest` is a standard GitHub-hosted runner: 2 vCPU / 7 GB RAM.
+      # The compile therefore needs more memory than the runner has, and every green Build on this repo has
+      # been solc landing just under a line it structurally exceeds. A branch that adds even ~1 KB of
+      # contract code in the wrong shape tips it, and the failure mode is silent and confusing: the log ends
+      # at "Compiling NNN files with Solc 0.8.34" and the step exits 143 (SIGTERM, i.e. the kernel killed
+      # solc) with no compiler error at all.
+      #
+      # The tempting "fixes" are all traps: lowering `optimizer_runs`, disabling `via_ir`, or changing
+      # `bytecode_hash` would make the build pass AND silently change library bytecode, which moves the
+      # deterministic CREATE2 pins that `foundry.toml [libraries]` and `script/utils/LibraryPins.sol` hard-code.
+      # Never trade a pin move for a green build.
+      #
+      # Swap is slower than RAM but correct, and it fixes every branch at once. A cleaner fix, if the org
+      # wants it: this org has Blacksmith runners registered (`blacksmith-4vcpu-ubuntu-2404` through
+      # `blacksmith-32vcpu-ubuntu-2404`), so `runs-on:` could point at one with enough RAM and this step
+      # could go away.
+      - name: Add swap for the via_ir compile
+        run: |
+          sudo fallocate -l 8G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+
       - name: Build
         run: forge build --sizes
 

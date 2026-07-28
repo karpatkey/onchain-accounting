@@ -176,7 +176,13 @@ const forgeProc = Bun.spawn(
   { cwd: ROOT, env: { ...process.env, BACKTEST_CHAIN: chain, BACKTEST_BLOCKS_FILE: "test/integration/backtest-blocks.json", BACKTEST_WINDOW: windowName, FOUNDRY_PROFILE: "slow" }, stdout: "pipe", stderr: "pipe" },
 );
 const { out, err, exitCode } = await drainProc(forgeProc);
-if (exitCode !== 0) fail(`forge test failed (exit ${exitCode}):\n${(out + err).split("\n").slice(-50).join("\n")}`, 2);
+const tail = (out + err).split("\n").slice(-50).join("\n");
+if (exitCode !== 0) fail(`forge test failed (exit ${exitCode}):\n${tail}`, 2);
+// forge test can exit 0 while a test failed (e.g. a reverting setUp), so never trust the exit
+// code alone — a failed suite means the sweep is incomplete or invalid, whatever forge returned.
+if (/^\s*(\[FAIL|Suite result: FAILED)/m.test(out) || /^\s*(\[FAIL|Suite result: FAILED)/m.test(err)) {
+  fail(`forge test reported a failing test despite exit ${exitCode}:\n${tail}`, 2);
+}
 
 // Parse BACKTEST lines
 const results: Series = {};

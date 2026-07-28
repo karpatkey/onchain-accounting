@@ -186,7 +186,10 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
     function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
         (address gauge, bool ok) = _pidAddress(pid);
         if (!ok) return new string[](0);
-        string memory leaf = _leaf(gauge);
+        string memory leaf = "";
+        try this.gaugeCoinSymbols{gas: LABEL_LEAF_GAS}(gauge) returns (string memory l) {
+            leaf = l;
+        } catch {}
         return _labels("Staking Gauge", leaf);
     }
 
@@ -206,7 +209,13 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @notice Derives the "TOKEN0/TOKEN1/…" leaf from the gauge's pool coins ("" on failure).
-    function _leaf(address gauge) private view returns (string memory) {
+    /// @dev The leaf is derived behind a bounded self-call rather than inline. It reads the chain through
+    ///      addresses reached from the governed coordinate — pool coins, and an ERC20 `symbol()` per coin — and
+    ///      unbounded that work can consume the budget of whatever called in, for a display string. The helper is
+    ///      `external` only so this boundary exists; it is the same shape the pool/gauge symbol readers elsewhere
+    ///      in the family already use. Exhaustion degrades to the category alone, exactly as an unreadable symbol
+    ///      already does.
+    function gaugeCoinSymbols(address gauge) external view returns (string memory) {
         address lpToken = CurvePoolLib.gaugeLpToken(gauge);
         if (lpToken == address(0)) return "";
         address pool = CurvePoolLib.getPool(lpToken);

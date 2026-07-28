@@ -112,6 +112,17 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
         (bytes32 marketId, bool ok) = _pidWord(pid);
         if (!ok) return new string[](0);
         string memory leaf = "";
+        // No {LABEL_LEAF_GAS} ceiling here, unlike the leaves that reach a caller-chosen contract. This leaf is
+        // already bounded by composition: `MORPHO` is a constructor-pinned immutable, so the call TARGET is not
+        // caller-controlled — only the `marketId` argument is, and it lands in a plain mapping getter whose cost
+        // is fixed. The only caller-influenced work is the two `_symbol` reads, and {LabelLib} already caps each
+        // at `METADATA_READ_GAS`. That is the same reason most of the adapters whose leaves bottom out directly
+        // in {LabelLib} or {StaticCallLib} carry no ceiling either.
+        //
+        // That reasoning does NOT extend to every unbounded leaf in the family, and one is a known exception:
+        // `StakeWiseV3VaultsMetaBalanceAdapter.positionLabels` reaches `_getAssetInfo`, which fetches the entire
+        // registered-asset array — work that is linear in the registry and capped by nothing. It is tracked
+        // separately; it is not made safe by the argument above.
         try MORPHO.idToMarketParams(Id.wrap(marketId)) returns (MarketParams memory mp) {
             // `idToMarketParams` is a plain mapping getter, so an id with NO market returns an all-zero struct
             // instead of reverting — the `catch` arm never fires for it. Both symbol reads would then fail open to

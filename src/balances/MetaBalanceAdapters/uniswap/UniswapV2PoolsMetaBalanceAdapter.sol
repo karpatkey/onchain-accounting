@@ -107,7 +107,7 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
         if (!ok) return new string[](0);
         // External self-call so a revert in the pair token0()/token1() reads (bad/non-pair instance) fails open
         // to the category-only label — a faulty label must never revert the (verbose-only) labels read.
-        try this.pairTokenSymbols(pair) returns (string memory leaf) {
+        try this.pairTokenSymbols{gas: LABEL_LEAF_GAS}(pair) returns (string memory leaf) {
             return _labels("AMM Liquidity Pool", leaf);
         } catch {
             return _labels("AMM Liquidity Pool", "");

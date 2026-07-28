@@ -8,6 +8,7 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {FluidVaultLib} from "src/balances/MetaBalanceAdapters/FluidVaultLib.sol";
 import {LabelLib} from "src/balances/LabelLib.sol";
+import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 /// @title Fluid Vaults Meta Balance Adapter
@@ -140,7 +141,24 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     function vaultPairSymbols(address vault) external view returns (string memory) {
         (address collToken, address debtToken, uint256 vaultId) = FluidVaultLib.vaultInfo(vault, VAULT_RESOLVER);
         if (collToken == address(0) || debtToken == address(0)) return "";
-        return string.concat(_assetSymbol(collToken), "/", _assetSymbol(debtToken), " #", Strings.toString(vaultId));
+        // ONE registry fetch for both sides. `_assetSymbol` pulls the entire registered-asset array across the
+        // call boundary and linear-scans it, so calling it twice made this leaf cost O(2 x registered assets) —
+        // coupling a Fluid breadcrumb to how many assets happen to be registered protocol-wide. That is the
+        // dangerous shape: registering unrelated assets is a routine config TX, and it would push this leaf over
+        // its ceiling with nothing about Fluid having changed.
+        INAVCalculator.Asset[] memory registry = NAV_CALCULATOR.getRegisteredAssets();
+        return string.concat(
+            _symbolFrom(registry, collToken), "/", _symbolFrom(registry, debtToken), " #", Strings.toString(vaultId)
+        );
+    }
+
+    /// @notice The registered symbol for `token`, falling back to its on-chain `symbol()` and then to "?".
+    /// @dev Takes the registry the caller already holds rather than fetching its own, which is what keeps the
+    ///      leaf to a single fetch regardless of how many sides it labels.
+    function _symbolFrom(INAVCalculator.Asset[] memory registry, address token) private view returns (string memory) {
+        (INAVCalculator.Asset memory info, bool found) = RegisteredAssetLib.find(registry, token);
+        if (found && bytes(info.symbol).length > 0) return info.symbol;
+        return LabelLib.symbol(token, "?");
     }
 
     /// @notice Symbol for `token`: the NAV registry's (native-aware), else a direct ERC20 `symbol()`, else "?".

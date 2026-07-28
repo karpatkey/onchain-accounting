@@ -13,7 +13,7 @@ A single command runs the sweep, parses the per-block output, and either prints 
 1. Loads the configured window from `test/integration/backtest-blocks.json` (block range, step, metrics, account allowlist).
 2. Deploys the full NAV stack from local source at the window's `fromBlock`.
 3. For each block in the range (inclusive of `toBlock`, at `blockStep` intervals), `vm.rollFork`s forward and emits a `BACKTEST|<chain>|<block>|<timestamp>|<account>|<metric>|<value>` line for every (account × metric).
-4. Per-point reverts are caught and recorded as `ERROR:…`; they are the stability signal, not fatal.
+4. Per-point reverts are caught and recorded as `ERROR:<kind>:<detail>` — `revert:<sanitised string>`, `panic:<code>`, `custom:<4-byte selector>`, or `empty:0` (no returndata, typically out-of-gas). They are the stability signal, not fatal. Three conditions *are* fatal, because they mean the harness rather than the protocol is broken: a stack address that lost its code across a roll (`BacktestStackNotPersistent`), an exhausted sweep gas budget (`BacktestGasBudgetExhausted`), and a sweep in which every single point reverted (`BacktestAllPointsFailed`).
 
 The driver collects those lines into a `Series` (chain → window → accounts → metrics → points), runs completeness checks (every account produced all expected points, no missing/extra accounts), prints a per-(account × metric) report with the worst step-to-step percentage jump, then dispatches by mode.
 
@@ -101,8 +101,10 @@ The fixture is a normal JSON file. The driver sorts keys before comparing in `as
 | Mode | What it does | Exit codes |
 |---|---|---|
 | `report` (default) | Run the sweep and print a per-(account × metric) summary. | `0` on success (even if some points reverted; the report shows the count). `1` if completeness checks fail (missing accounts, missing points, extra accounts). `2` on bad CLI / missing blocks file / no `BACKTEST` lines. |
-| `snapshot` | Run the sweep, then (over)write the window's entry in `test/integration/nav-timeseries.json`. | `0` on success. `1` if completeness checks fail (snapshot is aborted, you can't snapshot a partial sweep). `2` on bad CLI / missing blocks file. |
-| `assert` | Run the sweep and deep-diff against the fixture. | `0` if the sweep matches the fixture. `1` on any difference (up to 30 diff lines printed). `2` if the fixture is missing or has no entry for the requested window/chain. |
+| `snapshot` | Run the sweep, then (over)write the window's entry in `test/integration/nav-timeseries.json`. | `0` on success. `1` if completeness checks fail, or if any point reverted and `--allow-errors` was not passed (you can't snapshot a partial or all-error sweep). `2` on bad CLI / missing blocks file / a fixture that exists but does not parse. |
+| `assert` | Run the sweep and deep-diff against the fixture. Prints the reverting-point count even when it matches. | `0` if the sweep matches the fixture. `1` on any difference (up to 30 diff lines printed). `2` if the fixture is missing or has no entry for the requested window/chain. |
+
+`snapshot` refuses by default to pin a sweep containing reverting points, because an all-error sweep is what a *broken* harness looks like (dead RPC, pruned archive block, a stack address that lost its code) and pinning it yields a baseline that `assert` matches forever while measuring nothing. Pass `--allow-errors` when the reverts are genuinely the signal you want pinned. A fixture file that exists but does not parse is a hard error, never silently reinitialised — reinitialising would drop every other window's baseline, each of which can cost hours of archive RPC.
 
 In all modes, a failing sweep is fatal: the driver exits with `2` and prints the last 50 lines of forge output. It treats both a non-zero forge exit (RPC error, compile failure) **and** a `[FAIL`/`Suite result: FAILED` line in the output as a failure, because `forge test` can exit `0` with a failing test.
 
@@ -145,7 +147,9 @@ The full fixture path is `test/integration/nav-timeseries.json`; the example abo
 - **Canonical / slow mode is the only mode.** There is no "fast" / mocked / pre-recorded sweep. The whole point of the harness is to read live mainnet state at each pinned block. If you want a near-instant sanity check, use the lite smoke mode (below).
 - **Lite smoke is a no-op for the canonical window.** When `BACKTEST_BLOCKS_FILE` is unset (or empty), `NavBacktest` runs a **2-point smoke sweep** at the chain's `accounts.json` forkBlock and `forkBlock - 300`. It evaluates every chain-enabled account (no per-window allowlist); on mainnet that is 9 accounts × 1 metric × 2 points = 18 emitted rows. The point is cheap CI coverage of the harness plumbing; it gives no speedup over a small canonical window and produces no fixture data. Run it directly with `forge test --match-contract NavBacktest` (no env vars); the driver always sets `BACKTEST_BLOCKS_FILE` and uses the canonical window.
 - **Fixture size scales with `accounts × metrics × ((toBlock - fromBlock) / blockStep + 1)`.** The shipped `w1-1d` window is 25 points/account × 2 accounts = 50 points total (8,469 bytes on disk). Keep the step coarse for long windows; the metric is meant to spot drift, not to be a tick-level feed.
-- **Stale oracle responses look like real data.** A `Chainlink` feed that went down mid-window will return whatever it last reported (or revert depending on the heartbeat config); the harness records the value as-is and does not flag staleness. Cross-check any unexpected flatline against the live integration test or Debank before snapshotting.
+- **Stale oracle responses look like real data.** A stale or feedless asset is priced at `0` and summed as a zero-value leg (`src/prices/PriceFeedLib.sol`), so a feed breaching its heartbeat mid-window shows up as an ordinary NAV drop — `report` will print it as a large "max step jump" — with nothing in the `nav` metric marking it as an oracle event. Add the `nav-stale-assets` metric to a window's `metrics` to record `NAV.stalePriceAssets.length` alongside the value, and cross-check any unexpected step against the live integration test or Debank before snapshotting. The shipped `w1-1d` window pins `nav` only (adding a metric to it would require re-snapshotting the whole window).
+- **A window must not predate its own dependencies.** The stack is deployed once at `fromBlock` with *today's* configured assets, feeds and adapters. Any configured dependency that had no code at `fromBlock` — e.g. the custom price feeds redeployed on 2026-07-25/27, or a newly governed meta-instance — reverts or reads garbage until the block where it appeared, which the harness records as a revert or a step jump rather than a configuration problem. Choose `fromBlock` at or after the deploy block of every configured dependency.
+- **The sweep is one transaction, so gas caps the window.** A point costs ~25-31M gas (25.5M average in CI, 31.1M worst observed locally), so `[profile.slow]`'s `gas_limit` allows roughly 550-670 of them (less in practice: memory is never freed and expansion cost is quadratic). The harness now stops with `BacktestGasBudgetExhausted` while headroom remains rather than letting an out-of-gas revert be caught and recorded as an ordinary `ERROR:` point — which would cluster fabricated errors at the end of a long sweep and read exactly like the protocol destabilising. Shorten the window (coarser `blockStep`, fewer accounts/metrics) if you hit it.
 
 ---
 
@@ -156,7 +160,8 @@ The full fixture path is `test/integration/nav-timeseries.json`; the example abo
 Edit `test/integration/backtest-blocks.json`. Pick a name (kebab-case, prefixed with the chain: `w1-1d`, `w42161-7d`, …). Under `windows.<name>.chains.<chainId>` set `fromBlock`, `toBlock`, `blockStep`, `metrics`, and `accounts`. Constraints enforced by the driver:
 
 - `toBlock > fromBlock`, `blockStep > 0`, `metrics` is a non-empty string array if present, and `accounts` is a non-empty array of unique hex addresses.
-- Every configured address must be chain-enabled in `accounts.json`; the Solidity test reverts with `BacktestConfiguredAccountUnavailable(matched, configured)` otherwise. Direct Forge smoke mode remains the only all-enabled-account path.
+- `fromBlock` must be non-zero (`0` is the base class's "fork block unset" sentinel), `toBlock > fromBlock`, `blockStep > 0`, `metrics` a non-empty string array if present, and `accounts` a non-empty array of unique hex addresses. The driver validates only the window it is about to run, so an unrelated malformed window cannot break other invocations.
+- Every configured address must be chain-enabled in `accounts.json`; the Solidity test reverts with `BacktestConfiguredAccountUnavailable(account, chainId)` — naming the offending address — and with `BacktestDuplicateConfiguredAccount(account)` on a repeated entry. Direct Forge smoke mode remains the only all-enabled-account path; a window with no `accounts` key works under Forge but is rejected by the driver, which needs the expected set for its completeness check.
 
 Then snapshot:
 
@@ -170,7 +175,7 @@ bun script/test/nav-backtest.ts --window <name> --chain <id> --mode snapshot
 
 ### Adding a new metric
 
-The metric registry lives in `NavBacktest.fork.t.sol`. To expose a new probe:
+Two metrics ship today: `nav` (the raw `uint256` NAV value) and `nav-stale-assets` (`NAV.stalePriceAssets.length`, so a value drop caused by a stale feed is distinguishable from a real one). The metric registry lives in `NavBacktest.fork.t.sol`. To expose a new probe:
 
 1. Add a `METRIC_<NAME>` constant: `bytes32 internal constant METRIC_<NAME> = keccak256("<name>");`.
 2. Branch in `_evalMetric` (and add the hash to `_isKnownMetric` so unknown names fail fast in `setUp`).

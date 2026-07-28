@@ -228,6 +228,15 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     ///      It also cannot see an instance that swallows its OWN out-of-gas — a `_instancePositions`
     ///      implementation whose protocol read is itself wrapped in `try`/`catch` returns normally with a leg
     ///      missing, and nothing here fires. See {GasStipendLib}.
+    ///
+    ///      **The cost of raising, taken knowingly.** Several protocols let anyone grow a per-account list — a
+    ///      withdrawal request names its own owner — so a third party can push one instance's read past what the
+    ///      fan-out can hand it and make that account's NAV read FAIL, where before it returned a number that was
+    ///      quietly missing a leg. That is the intended direction: a read that cannot see everything must not
+    ///      answer as though it did. It is also recoverable in a way the silent version never was, because the
+    ///      stipend is a share of the caller's own budget rather than a fixed ceiling — more gas, up to whatever
+    ///      the node's `eth_call` cap allows, gets the read through. Past that cap the remedy is the MANAGER's:
+    ///      remove the instance.
     function _positionsForInstances(address account, bytes32[] memory instances, address assetFilter)
         internal
         view

@@ -38,7 +38,8 @@ import "src/constants.sol";
 ///      *inside* the library, because returning them across the ABI boundary (and piecemeal helper extraction
 ///      generally) can cost more than the inlined body under `via_ir`. Always measure with a clean
 ///      `forge build --sizes`. The verbose label-enrichment read path (`get*Verbose` + `_toVerbose`/`_safeString`)
-///      is inlined here rather than split into a separate lens contract; it fits within the remaining margin.
+///      is inlined here rather than split into a separate lens contract — it fits today, but it is the block to move
+///      out first when it stops fitting (see the margin note above).
 contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeable, INAVCalculator, Prices, Balances {
     //
     // State
@@ -370,6 +371,13 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             _assetIndex,
             _registeredAssets,
             covered,
+            // `_metaInstanceTotal` is a WHOLE-REGISTRY quantity being passed alongside `covered`, a SLICE. That is
+            // inconsistent on its face and safe only because `computeNav` never reads the parameter (solc reports it
+            // unused). Passing it keeps this call site identical to `getAccountNav`'s, which is what lets the two
+            // share one argument encoder. **If it is ever given a use — pre-sizing a buffer, say — it must be
+            // derived from `allAdapters`, not from the registry**, or the slice and the complete read would allocate
+            // differently and `computeNav` would become adapter-set-dependent in exactly the way its own docstring
+            // forbids.
             _metaInstanceTotal,
             account,
             quoteAsset,

@@ -299,16 +299,29 @@ interface INAVCalculator is IBalances {
     ///        ever fills a hole at the removed index, which index 0 can never be), so the complete read already
     ///        hands it the largest stipend any read can and **a slice can only ever give it less.**
     ///
-    ///        **Therefore: do NOT assume a direction, and do not adopt "trust the slice sum" as a rule.** Either
-    ///        side can be the short one. Reconcile before publishing either; if a single mechanical rule is needed,
-    ///        the conservative one is to take the LOWER of the two, never the slice. And do not treat the two reads
-    ///        agreeing as a health check that passes silently — they agree when nothing was starved, which is the
-    ///        common case and therefore uninformative.
+    ///        Which read ends up LARGER is a separate question from which one was starved. The sign of the skew is
+    ///        set by the `isDebt` of the dropped legs, not by which read dropped them: a dropped credit leg lowers
+    ///        that read, a dropped debt leg raises it.
     ///
-    ///        What currently keeps a starved read from OVER-reporting is a property of the adapter layer that is
-    ///        load-bearing and enforced nowhere: **no adapter emits an `isDebt == true` leg from behind an uncapped
-    ///        or `gas()`-forwarding fail-open read.** The two known absorbers are credit-only, so today a starved
-    ///        read under-reports. An adapter that broke that property would make a starved read raise NAV instead.
+    ///        **Therefore: do NOT assume a direction, and do not pick by magnitude either.** "Trust the slice" is
+    ///        wrong, and so is "take the lower" — with today's credit-only absorbers starvation can only LOWER a
+    ///        read, so "take the lower" would select the starved number every time the two disagree. Nor is
+    ///        under-reporting a safe default: a processor pricing shares off a low NAV over-issues to a subscriber.
+    ///        Reconcile before publishing either. If a choice must be automated, key it to the SIGNAL rather than
+    ///        the magnitude — prefer the read that did not raise {AdapterGasExhausted} / {InstanceGasExhausted}, and
+    ///        publish neither if the two disagree while neither raised one. And do not treat the two reads agreeing
+    ///        as a health check that passes silently — they agree when nothing was starved, which is the common case
+    ///        and therefore uninformative.
+    ///
+    ///        The property that would keep a starved read from OVER-reporting is: **no adapter emits an
+    ///        `isDebt == true` leg from behind ANY fail-open read.** "Any" is load-bearing — a gas CAP makes this
+    ///        worse, not better, because an uncapped read can at least be rescued by supplying more gas whereas a
+    ///        capped one (`StaticCallLib.PROBE_GAS`) is starved by the cap and drops unconditionally.
+    ///        **Three shipped adapters currently break it** — `EulerVaultsMetaBalanceAdapter._safeDebt` (capped
+    ///        probe, supply leg survives), `FluidVaultLib.aggregate` (uncapped, drops one NFT's supply and borrow),
+    ///        and `GearboxV3CreditAccountsMetaBalanceAdapter._appendBorrow` (narrowly mitigated by a
+    ///        `_debtReportable` gate evaluated before the gas is drained). None is introduced or fixed here, and the
+    ///        first two over-report the COMPLETE read as much as a slice. See `docs/howto/read-nav-in-slices.md`.
     /// @param quoteAsset Quote currency; `address(0)` denotes USD. Identical in every slice (it is the caller's
     ///        argument), so a reassembler can assert it rather than combine it.
     /// @param timestamp Block timestamp of THIS call. A reassembler MUST check that every slice carries the same
@@ -606,10 +619,16 @@ interface INAVCalculator is IBalances {
     ///      This is that smaller question.
     ///
     ///      **A SET, NOT AN INDEX RANGE, AND THAT IS NOT A STYLE CHOICE.** `getAllAdapters()` is maintained with
-    ///      swap-and-pop, so removing any adapter moves the LAST adapter into the removed one's index. A caller
-    ///      paging `[0,10)` then `[10,20)` with a governance removal landing in between would read one adapter
-    ///      twice and never see another, and both slices would look completely well-formed. Naming the adapters
-    ///      removes the possibility rather than documenting it away.
+    ///      swap-and-pop, so removing any adapter moves the LAST adapter into the removed one's index — always to a
+    ///      LOWER index. A caller paging `[0,10)` then `[10,20)` across a governance removal therefore **silently
+    ///      SKIPS** the moved adapter: it was at the tail, it lands in a slot the caller has already passed, and it
+    ///      is never read. Both pages still look completely well-formed and the total is short by that adapter's
+    ///      positions.
+    ///
+    ///      Precisely because elements only ever move DOWN, a removal cannot make an already-read adapter reappear
+    ///      in a later page — so the hazard is a missed adapter, not a double-counted one. (An earlier version of
+    ///      this note claimed a double-read; that is not reachable through either removal path.) Naming the adapters
+    ///      removes the whole class rather than documenting it away.
     ///
     ///      ### The caller contract
     ///
@@ -624,11 +643,19 @@ interface INAVCalculator is IBalances {
     ///      1. **Every adapter must be registered and appear at most once** — else {AdapterNotRegistered} or
     ///         {DuplicateAdapterInSlice}. An empty list reverts {EmptyAdapterSlice}.
     ///      2. **The slice is queried as one atomic read**, so `value` is internally consistent.
-    ///      3. **All slices MUST be read at the same block.** Pass an explicit block number (or tag) to every
-    ///         `eth_call`; do not let successive calls land on different heads. Positions and prices both move
-    ///         between blocks, so slices from different blocks sum to a number that was never any account's NAV —
-    ///         and the sum will look entirely reasonable. `PartialNAV.timestamp` is the check: assert it is
-    ///         identical across every slice before summing.
+    ///      3. **All slices MUST be read at the same block, and PINNING THE BLOCK NUMBER IN THE REQUEST is the only
+    ///         real control.** Pass an explicit block number to every `eth_call` — not `latest`, which lets
+    ///         successive calls land on different heads. Positions and prices both move between blocks, so slices
+    ///         from different blocks sum to a number that was never any account's NAV, and the sum looks entirely
+    ///         reasonable.
+    ///
+    ///         `PartialNAV.timestamp` is a **cross-check, not the check**, and it is deliberately described that way
+    ///         here: equal timestamps do NOT imply the same block. Arbitrum Nitro mints blocks roughly every 250ms,
+    ///         so consecutive blocks routinely share a `block.timestamp`, and this contract is deployed there. The
+    ///         field therefore catches only the gross case (slices seconds apart) and is blind to the narrow one
+    ///         (two blocks inside one second) — which is the case an unpinned paging loop actually produces. There
+    ///         is no block number in `PartialNAV` to check instead, by choice: adding one would not fix an unpinned
+    ///         caller, and pinning the request already does.
     ///      4. **The union of the slices must cover `getAllAdapters()` exactly once**, and
     ///         `PartialNAV.adaptersCovered` is how that is verified: concatenate it across slices and compare
     ///         against `getAllAdapters()` read at the same block. A missing adapter yields a NAV short by its
@@ -681,8 +708,12 @@ interface INAVCalculator is IBalances {
     ///      reassembled NAV over-reports.
     ///
     ///      So: a slice that succeeds where the complete read reverted is **evidence about gas, not a repaired
-    ///      answer.** Treat it as a diagnostic, compare it against the complete read once that read has enough gas
-    ///      to finish, and do not silently promote it to the authoritative NAV.
+    ///      answer.** Do not silently promote it to the authoritative NAV.
+    ///
+    ///      And note what "just give the complete read more gas and compare" does NOT achieve: raising the budget
+    ///      raises the stipend, which puts a fixed-cost failure below the same 7/8 bar for the COMPLETE read too.
+    ///      Both reads then fail open on the identical adapter and AGREE on the identical wrong number. The signal
+    ///      is the {AdapterGasExhausted} disappearing, not the two figures converging.
     ///
     ///      No verbose (labelled) counterpart exists yet. The label paths carry the heavier gas pressure and their
     ///      bounds are being re-derived; a paginated read built against numbers about to change would be wasted.

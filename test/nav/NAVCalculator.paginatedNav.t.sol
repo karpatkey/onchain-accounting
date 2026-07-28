@@ -365,16 +365,33 @@ contract NAVCalculatorPaginatedNavTest is SuperTest {
         assertEq(withIrregular.irregularPriceAssets[0].asset, address(dai));
         assertEq(withoutIrregular.irregularPriceAssets.length, 0, "a slice not holding DAI reports nothing irregular");
 
-        // And the union over the partition recovers it.
+        // And the DE-DUPLICATED union over the partition recovers exactly the complete read's set.
+        //
+        // `rawHits > dedupedCount` is the load-bearing assertion here, not decoration: it proves the documented
+        // de-duplication obligation is real rather than theoretical, by showing the raw concatenation genuinely
+        // over-counts. To make that reachable, DAI is deliberately held through TWO adapters below, so two slices
+        // each report it. Without a second holder the raw and de-duplicated unions coincide and the assertion
+        // would be vacuous.
+        Mock_CustomBalanceAdapter secondDaiHolder = new Mock_CustomBalanceAdapter();
+        _wire(secondDaiHolder, address(dai), 1_000e18, false);
+        vm.prank(navCalculatorManager);
+        nav.addBalanceAdapters(_arr1(address(secondDaiHolder)));
+
         address[] memory all = nav.getAllAdapters();
-        bool foundDai;
+        address[] memory seen = new address[](0);
+        uint256 rawHits;
         for (uint256 i = 0; i < all.length; i++) {
             INAVCalculator.PartialNAV memory p = _slice(_arr1(all[i]));
             for (uint256 j = 0; j < p.irregularPriceAssets.length; j++) {
-                if (p.irregularPriceAssets[j].asset == address(dai)) foundDai = true;
+                rawHits++;
+                if (!_contains(seen, p.irregularPriceAssets[j].asset)) {
+                    seen = _append(seen, p.irregularPriceAssets[j].asset);
+                }
             }
         }
-        assertTrue(foundDai, "union over the partition recovers the irregular asset");
+        assertEq(seen.length, 1, "de-duplicated union has exactly the complete read's cardinality");
+        assertEq(seen[0], address(dai), "and it is the same asset");
+        assertGt(rawHits, seen.length, "the RAW union over-counts - the de-duplication obligation is load-bearing");
     }
 
     /// @notice A stale price does not stop a slice from being returned — it is reported alongside a value, exactly

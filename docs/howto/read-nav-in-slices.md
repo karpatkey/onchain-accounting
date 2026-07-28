@@ -41,11 +41,16 @@ are still being re-derived; a paginated verbose read built against numbers about
 Because index ranges are silently wrong.
 
 `getAllAdapters()` is maintained with **swap-and-pop** (see `NAVRegistryLib.removeBalanceAdapter` and
-`removeBalanceAdapters`): removing an adapter moves the **last** adapter into the removed one's index. A caller
-paging `[0,10)` then `[10,20)` with a governance removal landing between the two calls would read one adapter twice
-and never see another — and both slices would look completely well-formed.
+`removeBalanceAdapters`): removing an adapter moves the **last** adapter into the removed one's index — always to a
+**lower** index.
 
-Naming the adapters removes the possibility instead of documenting it away.
+So a caller paging `[0,10)` then `[10,20)` across a governance removal **silently skips** the moved adapter: it was at
+the tail, it lands in a slot already passed, and it is never read. Both pages look completely well-formed and the
+total is short by that adapter's positions.
+
+Because elements only ever move *down*, a removal cannot make an already-read adapter reappear in a later page — the
+hazard is a **missed** adapter, not a double-counted one. Naming the adapters removes the whole class instead of
+documenting it away.
 
 ---
 
@@ -71,11 +76,16 @@ an adapter can be removed under a paging loop.
 
 ### 2. Read all slices at the same block
 
-Pass an explicit block number or tag to **every** call. Positions and prices both move between blocks, so slices
-taken from different heads sum to a number that was never any account's NAV — and the sum will look entirely
-reasonable.
+Pass an **explicit block number** to every call — not `latest`, which lets successive calls land on different heads.
+Positions and prices both move between blocks, so slices taken from different heads sum to a number that was never
+any account's NAV, and the sum will look entirely reasonable. **Pinning the block in the request is the only real
+control.**
 
-`PartialNAV.timestamp` is the check. Assert it is identical across every slice before summing.
+> `PartialNAV.timestamp` is a **cross-check, not the check.** Equal timestamps do not imply the same block: Arbitrum
+> Nitro mints blocks roughly every 250ms and this contract is deployed there, so consecutive blocks routinely share a
+> `block.timestamp`. The field catches slices seconds apart and is blind to two blocks inside one second — which is
+> exactly what an unpinned paging loop produces. `PartialNAV` carries no block number to check instead, deliberately:
+> it would not rescue an unpinned caller, and pinning the request already does.
 
 Re-read `getAllAdapters()` **at the same pinned block** too, rather than trusting a cached list.
 
@@ -104,7 +114,7 @@ This is the dangerous one.
 | `sequencerDown` | **OR** | Derived from the sequencer config, so invariant across slices — but reading it on one slice relies on that invariant rather than checking it. |
 | `quoteAssetStale` | **OR** | Invariant across slices, and *more* dangerous to skip for it: if true, **every** slice's `value` is in USD (8dp) rather than the requested quote. |
 | `quoteAssetIrregular` | **OR** | Invariant across slices; always false for a USD quote. |
-| `timestamp`, `quoteAsset` | **assert equal** | Differing values mean the slices are not comparable. |
+| `timestamp`, `quoteAsset` | **assert equal** | Differing values mean the slices are not comparable. Necessary but **not sufficient** for `timestamp` — see obligation 2. |
 
 > **A caller that checks the flags on one slice — or on the last slice, or on whichever slice it happened to keep —
 > silently loses every staleness, depeg and sequencer-down signal carried by the others, and gets a NAV number that
@@ -156,8 +166,13 @@ So a slice can get an answer out of a portfolio whose complete read has started 
 > leg is a **debt** leg, the reassembled NAV **over-reports** — the exact failure class this repo's hardening work
 > exists to eliminate.
 >
-> Treat a slice that succeeds where the complete read reverted as **evidence about gas, not a repaired answer.**
-> Raise the complete read's gas and compare, rather than silently promoting the slice sum to the authoritative NAV.
+> Treat a slice that succeeds where the complete read reverted as **evidence about gas, not a repaired answer.** Do
+> not silently promote the slice sum to the authoritative NAV.
+>
+> And note the trap in "just give the complete read more gas and compare": raising the budget raises the stipend,
+> which puts a fixed-cost failure below the same 7/8 bar for the *complete* read as well. Both reads then fail open on
+> the same adapter and **agree on the same wrong number.** The signal is the `AdapterGasExhausted` *disappearing*, not
+> the two figures converging.
 
 ---
 
@@ -208,6 +223,9 @@ for (let i = 0; i < all.length; i += SLICE) {
 
   if (timestamp === undefined) timestamp = p.timestamp;
   else if (p.timestamp !== timestamp) throw new Error("slices read at different blocks");
+  if (p.quoteAsset.asset.toLowerCase() !== quoteAsset.toLowerCase()) {
+    throw new Error("slice denominated in a different quote asset");   // composition table: assert, don't combine
+  }
 
   value += p.value;                                     // the ONLY field that sums
   covered.push(...p.adaptersCovered);
@@ -223,8 +241,24 @@ if (covered.length !== all.length || new Set(covered).size !== all.length) {
   throw new Error("slice partition did not cover getAllAdapters() exactly once");
 }
 
-// And now act on the unioned flags, exactly as you would on a complete NAV.
+// RECONCILE before publishing. `value` is only equal to the complete read when nothing was gas-starved, and
+// when they differ NEITHER side is reliably the correct one — see the precondition section above. Do not
+// resolve a mismatch by picking the larger or the smaller.
+const complete = await nav.getAccountNav(account, quoteAsset, { blockTag: block });
+if (value !== complete.value) {
+  // Expected causes: an adapter starved in one of the two reads. The signal to key on is which read raised
+  // AdapterGasExhausted / InstanceGasExhausted — not which number is bigger. If neither reverted, publish
+  // neither and alert: you cannot tell which read is short.
+  throw new Error(`slice sum ${value} != complete ${complete.value} — reconcile, do not pick`);
+}
+
+// And only now act on the unioned flags, exactly as you would on a complete NAV.
 ```
+
+> Reconciling against `getAccountNav` obviously defeats the point when the complete read is what you could not
+> afford in the first place. In that case you have no second opinion available, and the honest position is that
+> the slice sum is **unverified** — publish it labelled as such, and treat any `AdapterGasExhausted` from a slice
+> as disqualifying. Do not silently drop the check because it is inconvenient.
 
 ---
 
@@ -250,31 +284,65 @@ The per-adapter gas stipend is a share of what the **read** still holds *at the 
 `computeNav` scans the supplied array **in order**. So the stipend depends on **slice composition *and ordering***,
 not merely on how few adapters a slice names — and **both directions of error are reachable**:
 
-| slice shape | effect on that adapter's stipend | resulting skew |
-|---|---|---|
-| singleton | **more** gas than the full scan gave it | slice values legs the complete read dropped ⇒ `sum(slices) > complete` |
-| multi-adapter, adapter placed **behind** an expensive one | **less** gas than the full scan gave it | slice drops legs the complete read valued ⇒ `sum(slices) < complete` |
+| slice shape | effect on that adapter's stipend |
+|---|---|
+| singleton | **more** gas than the full scan gave it — it may value legs the complete read dropped |
+| multi-adapter, adapter placed **behind** an expensive one | **less** gas than the full scan gave it — it may drop legs the complete read valued |
+
+**Which read ends up larger is a separate question, and the table above does not answer it.** The *sign* of the skew
+is set by the `isDebt` of the legs that got dropped, not by which read dropped them:
+
+- a dropped **credit** leg makes that read **lower**;
+- a dropped **debt** leg makes that read **higher**.
+
+So each row above has two possible skews, giving four combinations in total. (This is why the repo's own
+`test_sliceOrderingCanManufactureAnOverReport` produces `sum(slices) > complete` from the *second* row's shape: its
+fixture drops a debt leg.)
 
 The second row is not hypothetical. **`getAllAdapters()[0]` is permanently `ERC20DefaultBalanceAdapter`** — pushed in
 `initialize`, unremovable, and swap-and-pop only ever fills the hole at a removed index, which index 0 can never be.
 So the complete read already hands it the largest stipend any read can, and **a slice can only ever give it less.**
-That adapter is one of the two known absorbers.
+That adapter is itself one of the absorbers, and it is credit-only — so starving it makes the *slice* the lower and
+the *complete read* the correct one.
 
-> ### ⛔ Do not assume a direction
+> ### ⛔ Do not assume a direction, and do not pick by magnitude
 >
-> **There is no "trust the slice" rule.** Either side can be the short one, and nothing in either result says which.
-> Reconcile before publishing either number. If you need one mechanical rule, the conservative choice is **take the
-> lower**, never "take the slice".
+> **There is no "trust the slice" rule, and there is no "take the lower" rule either.** Nothing in either result says
+> which one is short. Worse, magnitude is actively misleading: with today's credit-only absorbers, starvation can only
+> **lower** a read — so "take the lower" would select the *starved* number every single time the two disagree.
+>
+> "Conservative" is also the wrong frame. An under-reported NAV is not a safe default: a sub/redeem processor pricing
+> shares off it **over-issues** to a subscriber. It is a wealth transfer in the other direction, not free.
+>
+> **Reconcile before publishing either number.** If you must automate a choice, key it to the *signal*, not the
+> magnitude: prefer the read that did **not** raise `AdapterGasExhausted` / `InstanceGasExhausted`, and refuse to
+> publish at all if neither raised one and the two still disagree.
 >
 > Also do **not** treat "the two reads agree" as a health check that quietly passes — they agree whenever nothing was
 > starved, which is the ordinary case and therefore tells you nothing.
 
-**One load-bearing invariant, enforced nowhere.** What keeps a starved read from *over*-reporting today is that
-**no adapter emits an `isDebt == true` leg from behind an uncapped or `gas()`-forwarding fail-open read.** Both known
-absorbers are credit-only, so a starved read currently under-reports. An adapter that broke that property would make
-a starved read *raise* NAV — the failure class this repo's hardening work exists to eliminate. Treat it as an
-invariant of the adapter layer when adding or changing one, alongside the `GasStipendLib` "Scope, stated plainly"
-note.
+**One load-bearing invariant, and it currently has known exceptions.** What would keep a starved read from
+*over*-reporting is:
+
+> **No adapter emits an `isDebt == true` leg from behind *any* fail-open read.**
+
+Note "any" — **a gas *cap* makes this worse, not better.** An uncapped fail-open read at least lets the caller recover
+by supplying more gas; a capped one (`StaticCallLib.PROBE_GAS` is 100,000) is starved by the *cap*, so no amount of
+caller gas fixes it and the drop is unconditional. That is the same reasoning `GasStipendLib`'s own docstring uses to
+reject a fixed ceiling.
+
+**Three shipped adapters currently break it**, and they are listed here rather than papered over — each drops a debt
+leg while sibling credit legs survive, which raises reported NAV:
+
+| site | shape |
+|---|---|
+| `EulerVaultsMetaBalanceAdapter._safeDebt` | `StaticCallLib` **capped** probe on `debtOf`; a failure means "no debt leg" while the supply leg is still emitted. Unconditional — extra caller gas does not help. |
+| `FluidVaultLib.aggregate` | `resolver.staticcall(positionByNftId)` with no gas argument, `continue` on failure; drops that NFT's supply *and* borrow, so it over-reports when the dropped NFT is net-debt or is the only debt-carrying one. |
+| `GearboxV3CreditAccountsMetaBalanceAdapter._appendBorrow` | uncapped `try`/`catch` that drops only the borrow leg. Mitigated by the `_debtReportable(cm)` gate that drops the whole position first, but that gate is evaluated *before* the gas is drained, so it is a narrow TOCTOU rather than a closed hole. |
+
+None of these is introduced or fixed by the paginated read — they are pre-existing, and two of them over-report the
+**complete** read just as much as a slice. They are named so the invariant tells the truth. Treat it as a property to
+check when adding or changing an adapter, alongside the `GasStipendLib` "Scope, stated plainly" note.
 
 There is a second, sharper edge in the same mechanism, covered under
 [One thing pagination *does* fix](#one-thing-pagination-does-fix-beyond-gas): a slice's larger stipend can convert a

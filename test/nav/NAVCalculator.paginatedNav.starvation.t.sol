@@ -7,8 +7,6 @@ import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
-import {Mock_CustomBalanceAdapter} from "test/mocks/balance_adapters.sol";
-import {Mock_CustomPriceFeed} from "test/mocks/price_oracles.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 // ---------------------------------------------------------------------------
@@ -182,8 +180,10 @@ contract FailOpenAmountAdapter is IBalanceAdapter {
 ///      - the directional claim they refute ("when the two disagree, trust the slice") was written into this PR's
 ///        docs and had to be removed; without a test, it is the kind of simplification that gets written back;
 ///      - `test_erc20DefaultIsPermanentlyAdapterIndexZero` pins the structural fact the corrected docs now rely on;
-///      - `test_irregularIsSliceLocalAndDedupedUnionRecoversIt` asserts `rawHits > dedupedCount`, i.e. that the
-///        documented de-duplication obligation is load-bearing rather than decorative.
+///      - `test_erc20DefaultIsPermanentlyAdapterIndexZero` also witnesses a genuine interior swap-and-pop, because
+///        removing the last element is a self-assign that proves nothing.
+///      (The irregular-flag slice-locality case that started life in the same probe file lives in the sibling unit
+///      test, where it belongs — it has nothing to do with starvation.)
 ///
 ///      Every read here is given the SAME total budget (`BUDGET`), so gas is a constant across every comparison and
 ///      the only variable is slice composition. The fork integration test structurally cannot cover any of this:
@@ -198,8 +198,17 @@ contract PaginatedNavStarvationTest is SuperTest {
     /// @dev What the hog leaves behind. Chosen so the fail-open adapter after it CANNOT forward SINK_COST, but
     ///      still has ample budget (>= (leftover)/64) to finish its own frame and return successfully.
     uint256 internal constant HOG_LEAVES = 2_000_000;
-    /// @dev Total budget handed to every NAV read in these probes, so gas is a CONSTANT across the comparison and
-    ///      the only variable is the slice composition.
+    /// @dev Total budget handed to every NAV read here, so gas is a CONSTANT across every comparison and the only
+    ///      variable is slice composition/ordering.
+    ///
+    ///      **BUDGET is not a free parameter, and this is the fixture's one maintenance trap.** What reaches
+    ///      `failOpen` behind the hog is NOT `HOG_LEAVES`: it is `HOG_LEAVES + ~BUDGET/64`, because the hog's own
+    ///      stipend was 63/64 of the frame and the unspent 1/64 reserve comes back when it returns. That second
+    ///      term scales with BUDGET. At 30M it is ~0.47M (so ~2.4M reaches `failOpen`, under SINK_COST, and the leg
+    ///      is dropped); at 300M it would be ~4.7M, putting ~6.6M over SINK_COST so the sink COMPLETES and every
+    ///      test here silently inverts. The failures would read as "the over-report is gone", i.e. as the defect
+    ///      having been fixed. `test_fixturePreconditionHolds` asserts the relation directly so that a retune fails
+    ///      loudly, with a message naming the cause.
     uint256 internal constant BUDGET = 30_000_000;
 
     function setUp() public {
@@ -260,6 +269,23 @@ contract PaginatedNavStarvationTest is SuperTest {
         p = abi.decode(ret, (INAVCalculator.PartialNAV));
     }
 
+    /// @notice The fixture's own precondition, asserted rather than assumed: `failOpen` must be starved when it sits
+    ///         behind the hog and NOT starved when it is reached first. Every other test in this file is meaningless
+    ///         if this inverts, and it inverts silently if BUDGET, HOG_LEAVES or SINK_COST are retuned — see the
+    ///         note on BUDGET.
+    function test_fixturePreconditionHolds() public view {
+        assertEq(
+            _sliceAt(BUDGET, _arr(address(failOpen))).value,
+            -int256(3 * 324_057_000_000),
+            "PRECONDITION BROKEN: failOpen must report its leg when reached first (SINK_COST too high for BUDGET?)"
+        );
+        assertEq(
+            _sliceAt(BUDGET, _arr(address(hog), address(failOpen))).value,
+            0,
+            "PRECONDITION BROKEN: failOpen must be starved behind the hog (BUDGET raised? HOG_LEAVES too high?)"
+        );
+    }
+
     // ======================================================================
     // P1. The partition invariant is gas-conditional: reordering the adapters
     //     INSIDE a slice raises the reported NAV by dropping a debt leg.
@@ -273,9 +299,20 @@ contract PaginatedNavStarvationTest is SuperTest {
         assertEq(complete.value, 100_000 * 1e8 - 3 * 324_057_000_000, "debt leg counted in the complete read");
     }
 
-    /// @notice THE PROBE. Same block, same account, same total gas, coverage exactly equal to `getAllAdapters()`
-    ///         once, no duplicates, identical timestamps — and the reassembled NAV is HIGHER than
-    ///         `getAccountNav()` because one slice's ORDERING starved the fail-open debt read.
+    /// @notice Same block, same account, same total gas, coverage exactly `getAllAdapters()` once, no duplicates,
+    ///         identical timestamps — and the reassembled NAV is HIGHER than `getAccountNav()`, because one slice's
+    ///         ORDERING starved a fail-open debt read.
+    /// @dev **What this test is for, stated precisely.** `FailOpenAmountAdapter` is configured with `debt_ = true`,
+    ///      and NO shipped adapter in this repo emits a debt leg from behind an unbounded fail-open read of the kind
+    ///      it models. So this is not a reproduction of a live over-report on today's adapter set — with the shipped
+    ///      credit-only absorbers this mechanism can only UNDER-report.
+    ///
+    ///      It is the **enforcement of the adapter-layer invariant** recorded on `INAVCalculator.PartialNAV.value`:
+    ///      *no adapter may emit an `isDebt == true` leg from behind any fail-open read.* This is what happens the
+    ///      day one does. That framing is stronger than "here is a bug", because the invariant is written down and
+    ///      enforced nowhere else, and three shipped adapters already sit close to violating it
+    ///      (`EulerVaultsMeta._safeDebt`, `FluidVaultLib.aggregate`,
+    ///      `GearboxV3CreditAccountsMeta._appendBorrow`).
     function test_sliceOrderingCanManufactureAnOverReport() public {
         address[] memory all = nav.getAllAdapters();
         INAVCalculator.NAV memory complete = _completeAt(BUDGET);
@@ -287,7 +324,23 @@ contract PaginatedNavStarvationTest is SuperTest {
         // Every check the API tells a reassembler to run PASSES.
         assertEq(p1.timestamp, complete.timestamp, "same block");
         assertEq(p2.timestamp, complete.timestamp, "same block");
-        assertEq(p1.adaptersCovered.length + p2.adaptersCovered.length, all.length, "coverage count matches");
+        // Coverage as a SET, not an entry count. (An entry-count check is the pattern the sibling unit file was
+        // deliberately moved away from — it cannot tell "covered each once" from "covered one twice, missed one".)
+        address[] memory covered = new address[](p1.adaptersCovered.length + p2.adaptersCovered.length);
+        for (uint256 i = 0; i < p1.adaptersCovered.length; i++) {
+            covered[i] = p1.adaptersCovered[i];
+        }
+        for (uint256 i = 0; i < p2.adaptersCovered.length; i++) {
+            covered[p1.adaptersCovered.length + i] = p2.adaptersCovered[i];
+        }
+        assertEq(covered.length, all.length, "no adapter covered twice, none missed");
+        for (uint256 i = 0; i < all.length; i++) {
+            bool seen;
+            for (uint256 j = 0; j < covered.length; j++) {
+                if (covered[j] == all[i]) seen = true;
+            }
+            assertTrue(seen, "every registered adapter appears in the coverage union exactly once");
+        }
         assertEq(p1.quoteAssetStale, complete.quoteAssetStale);
         assertEq(p1.sequencerDown, complete.sequencerDown);
         assertEq(p1.stalePriceAssets.length, 0, "no stale signal in the tampered slice");
@@ -336,73 +389,34 @@ contract PaginatedNavStarvationTest is SuperTest {
         );
 
         (bool ok, bytes memory ret) = address(nav).staticcall(cd);
-        emit log_named_bytes("returndata", ret);
+
+        // The call fails, but NOT where you would guess, and the distinction is the point: returndata is EMPTY,
+        // because Solidity's ABI decoder rejects an `address[] calldata` word with dirty upper bits BEFORE
+        // `validateAdapterSlice` ever runs. So the duplicate check is never reached, and the security property
+        // ("dirty bits cannot manufacture a duplicate") holds for a different reason than a reader might assume.
+        // Asserted as an empty revert rather than as `DuplicateAdapterInSlice`, so that if a future compiler or a
+        // hand-rolled decoder ever let such a word through, this test fails and sends the reader to the validator.
         assertFalse(ok, "a dirty-bits duplicate must not be answered");
-        if (ret.length >= 4) {
-            bytes4 sel = bytes4(ret);
-            assertTrue(
-                sel == INAVCalculator.DuplicateAdapterInSlice.selector || sel == bytes4(0),
-                "expected DuplicateAdapterInSlice (or a bare ABI-validation revert)"
-            );
-        }
+        assertEq(ret.length, 0, "rejected by ABI decoding, before validateAdapterSlice - not by the dedup check");
     }
 
-    // ======================================================================
-    // P3. irregularPriceAssets slice-locality + union recovery (test gap).
-    // ======================================================================
+    /// @notice The sharpest form of the ordering hazard, and the one the docs assert: the SAME SET of adapters in
+    ///         two different ORDERS yields two different values. `test_oneAdapterOneBlockTwoValuesDependingOnSliceOrder`
+    ///         above varies composition (`{failOpen}` vs `{hog, failOpen}`), which leaves open the reading that only
+    ///         slice SIZE matters. It does not: `validateAdapterSlice` preserves caller order and `computeNav` scans
+    ///         in that order, so position within the slice is what decides the stipend.
+    function test_sameSetInTwoOrdersGivesTwoDifferentValues() public view {
+        INAVCalculator.PartialNAV memory failOpenFirst = _sliceAt(BUDGET, _arr(address(failOpen), address(hog)));
+        INAVCalculator.PartialNAV memory hogFirst = _sliceAt(BUDGET, _arr(address(hog), address(failOpen)));
 
-    function test_irregularIsSliceLocalAndDedupedUnionRecoversIt() public {
-        // Make WETH irregular (primary $3240.57 vs monitor $3400 -> ~492bps > 250bps tolerance).
-        Mock_CustomPriceFeed monitor = new Mock_CustomPriceFeed("WETH-monitor", address(weth), 340_000_000_000, 8);
-        vm.startPrank(navCalculatorManager);
-        nav.setDivergenceTolerance(address(weth), 250);
-        nav.addMonitorFeed(address(weth), address(monitor), IPrices.PriceType.Custom, type(uint256).max);
-        vm.stopPrank();
+        // Identical sets, identical coverage cardinality, identical block.
+        assertEq(failOpenFirst.adaptersCovered.length, hogFirst.adaptersCovered.length, "same set size");
+        assertEq(failOpenFirst.timestamp, hogFirst.timestamp, "same block");
 
-        // A plain adapter holding WETH, so WETH is reachable through exactly one non-fail-open adapter.
-        Mock_CustomBalanceAdapter wethAd = new Mock_CustomBalanceAdapter();
-        address[] memory sup = new address[](1);
-        sup[0] = address(weth);
-        wethAd.setUnderlyingAssetsSupported(sup);
-        wethAd.setBalance(address(weth), address(safe), 1e18, false);
-        address[] memory add = new address[](1);
-        add[0] = address(wethAd);
-        vm.prank(navCalculatorManager);
-        nav.addBalanceAdapters(add);
-
-        INAVCalculator.NAV memory complete = _completeAt(BUDGET);
-        assertEq(complete.irregularPriceAssets.length, 1, "complete read sees WETH irregular");
-        assertEq(complete.irregularPriceAssets[0].asset, address(weth));
-
-        INAVCalculator.PartialNAV memory withIrr = _sliceAt(BUDGET, _arr(address(wethAd)));
-        assertEq(withIrr.irregularPriceAssets.length, 1, "the slice holding WETH reports it");
-        assertEq(withIrr.irregularPriceAssets[0].asset, address(weth));
-
-        // A slice NOT holding WETH loses the signal entirely - the documented hazard, pinned.
-        address[] memory all = nav.getAllAdapters();
-        INAVCalculator.PartialNAV memory withoutIrr = _sliceAt(BUDGET, _arr(all[0]));
-        assertEq(withoutIrr.irregularPriceAssets.length, 0, "a slice not holding WETH reports nothing irregular");
-
-        // Union over the whole partition, DE-DUPLICATED (the interface docstring requires the dedupe: WETH is
-        // reachable through two adapters here, so two slices each report it), recovers exactly the complete set.
-        address[] memory seen = new address[](16);
-        uint256 seenN;
-        uint256 rawHits;
-        for (uint256 i = 0; i < all.length; i++) {
-            INAVCalculator.PartialNAV memory p = _sliceAt(BUDGET, _arr(all[i]));
-            for (uint256 j = 0; j < p.irregularPriceAssets.length; j++) {
-                rawHits++;
-                address a = p.irregularPriceAssets[j].asset;
-                bool dup;
-                for (uint256 k = 0; k < seenN; k++) {
-                    if (seen[k] == a) dup = true;
-                }
-                if (!dup) seen[seenN++] = a;
-            }
-        }
-        assertEq(seenN, 1, "de-duplicated union has exactly the complete read's cardinality");
-        assertEq(seen[0], address(weth), "and it is the same asset");
-        assertGt(rawHits, seenN, "the RAW union over-counts - the documented dedupe obligation is load-bearing");
+        // ...and different values, purely from ordering.
+        assertEq(failOpenFirst.value, -int256(3 * 324_057_000_000), "reached first: debt leg present");
+        assertEq(hogFirst.value, 0, "reached second, behind the hog: debt leg silently gone");
+        assertTrue(failOpenFirst.value != hogFirst.value, "one set, one block, two orders, two values");
     }
 
     // ======================================================================
@@ -410,19 +424,44 @@ contract PaginatedNavStarvationTest is SuperTest {
     //      the largest stipend any read can. A slice can only give it LESS.
     // ======================================================================
 
+    /// @notice `getAllAdapters()[0]` is permanently the ERC20Default singleton, so the COMPLETE read already gives
+    ///         it the largest stipend any read can and a slice can only ever give it LESS. The corrected docs rely on
+    ///         this, so it is pinned rather than asserted in prose.
+    /// @dev Two things this must actually prove, both of which an earlier version of this test did not:
+    ///      1. the singleton is unremovable **for that reason** — so the revert is pinned to `InvalidArguments`, not
+    ///         to `vm.expectRevert()` with no selector, which would also pass if the call reverted because the
+    ///         address were merely unregistered;
+    ///      2. index 0 survives a **real** swap-and-pop. Removing the LAST element is the degenerate case
+    ///         (`arr[j] = arr[len-1]` with `j == len-1` is a self-assign, so nothing moves and nothing is proven).
+    ///         An INTERIOR adapter is removed here, and the test additionally asserts the last element really did
+    ///         fill the hole — otherwise it is not witnessing a swap-and-pop at all.
     function test_erc20DefaultIsPermanentlyAdapterIndexZero() public {
-        address[] memory all = nav.getAllAdapters();
-        address def = all[0];
+        address[] memory before = nav.getAllAdapters();
+        assertGt(before.length, 2, "need >=3 adapters so that index 1 is interior, not the last element");
 
-        // It cannot be removed at all.
+        // Read the singleton from its OWN getter, then assert index 0 IS it. Defining `def = before[0]` and later
+        // asserting `getAllAdapters()[0] == def` would be a tautology: it pins that index 0 does not change, not
+        // that index 0 is the default adapter, which is the claim the docs rely on.
+        address def = nav.erc20DefaultBalanceAdapter();
+        assertEq(before[0], def, "index 0 IS the ERC20Default singleton, not merely stable");
+
+        // (1) The singleton is unremovable, and specifically because it is the singleton.
         vm.prank(navCalculatorManager);
-        vm.expectRevert();
+        vm.expectRevert(InvalidArguments.selector);
         nav.removeBalanceAdapters(_arr(def));
 
-        // Removing anything else swap-and-pops the LAST element into the hole, never index 0.
+        // (2) Remove an INTERIOR adapter (index 1) and watch the LAST element fill its hole while index 0 holds.
+        address interior = before[1];
+        address last = before[before.length - 1];
+        assertTrue(interior != last, "index 1 must not be the last element or this is the degenerate case again");
+
         vm.prank(navCalculatorManager);
-        nav.removeBalanceAdapters(_arr(address(hog)));
-        assertEq(nav.getAllAdapters()[0], def, "index 0 survives a swap-and-pop removal");
+        nav.removeBalanceAdapters(_arr(interior));
+
+        address[] memory after_ = nav.getAllAdapters();
+        assertEq(after_.length, before.length - 1, "one adapter removed");
+        assertEq(after_[1], last, "the LAST element filled the hole - this is a genuine swap-and-pop");
+        assertEq(after_[0], def, "and index 0 is untouched by it");
     }
 
     // ======================================================================

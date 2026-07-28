@@ -23,8 +23,12 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 ///      config carries 43 and 27.** The six it skips are the ones whose deploy type the harness does not know
 ///      (`EthenaCooldown`, `LidoWithdrawalQueue`, `EulerVaultsMeta`, and the three assisted adapters). So the
 ///      invariant is NOT exercised over those six, and an adapter whose behaviour differs under a one-adapter slice
-///      would ship unverified. Do not read this file as proving the whole production registry. (The exact counts are
-///      asserted below rather than trusted from this comment, so the two cannot drift.)
+///      would ship unverified. Do not read this file as proving the whole production registry.
+///
+///      The six-adapter GAP is asserted by name in `test_harnessCoverageGapIsWhatTheDocblockClaims`, so that claim
+///      cannot silently rot. The counts (41/21) are descriptive only and deliberately NOT pinned: asserting them
+///      coupled this suite to the mainnet asset config, where adding one asset reddened it with a message about a
+///      docblock.
 ///
 ///      The fork block comes from test/integration/accounts.json via the base (see
 ///      docs/howto/refresh-integration-test-blocks.md). The two ACCOUNT addresses below ARE pinned here — the base
@@ -70,20 +74,49 @@ contract MainnetPaginatedNavIntegration is IntegrationFromConfigBase {
         _assertPartitionReproducesNav(ACCOUNT_11, 3);
     }
 
-    /// @notice Pins what this harness actually covers, so the docblock's honesty claim is enforced rather than
-    ///         asserted in prose. If the harness gains or loses an adapter/asset — because a deploy type became
-    ///         recognised, or the config changed — this fails and the coverage caveat above must be re-stated
-    ///         rather than silently becoming wrong.
-    /// @dev Deliberately a hard equality, not a lower bound. A lower bound would let coverage silently shrink,
-    ///      which is the direction that matters: the caveat exists to stop a reader believing the invariant spans
-    ///      the production registry.
-    function test_harnessCoverageIsWhatTheDocblockClaims() public view {
-        assertEq(nav.getAssetCount(), 41, "harness asset count changed - update the coverage caveat in the docblock");
-        assertEq(
-            nav.getAllAdapters().length,
-            21,
-            "harness adapter count changed - update the coverage caveat in the docblock"
-        );
+    /// @notice Pins the harness's coverage GAP — the six adapters it cannot build — rather than an absolute count.
+    /// @dev An earlier version asserted `getAssetCount() == 41` and `getAllAdapters().length == 21`. That coupled a
+    ///      paginated-NAV test to the mainnet deploy config: adding one asset to
+    ///      `script/config/nav-config/assets-and-price-feeds/1.json` — routine ops, no Solidity touched — turned this
+    ///      suite red on whatever branch happened to be open, with a message about a docblock. Wrong tripwire.
+    ///
+    ///      What the docblock actually claims is the SHAPE of the gap: the harness builds every enabled adapter
+    ///      except the six whose deploy type it does not know. That is what is asserted here, so the test fails when
+    ///      the gap changes (a skipped type becomes recognised, or a new one appears) and stays green when unrelated
+    ///      config grows. A lower bound is kept on the counts purely so a wholesale collapse of the harness cannot
+    ///      pass unnoticed.
+    function test_harnessCoverageGapIsWhatTheDocblockClaims() public view {
+        address[] memory all = nav.getAllAdapters();
+
+        // The gap, by name. These are absent because IntegrationFromConfigBase has no deploy branch for them.
+        string[6] memory skipped = [
+            "EthenaCooldown",
+            "LidoWithdrawalQueue",
+            "EulerVaultsMeta",
+            "EtherFiWithdrawalQueueAssisted",
+            "NexusMutualStakingPoolsAssisted",
+            "StakeWiseV3ExitQueueAssisted"
+        ];
+        for (uint256 i = 0; i < skipped.length; i++) {
+            assertFalse(
+                _harnessBuilt(skipped[i]),
+                string.concat(
+                    "harness now builds ", skipped[i], " - the coverage caveat in the docblock is stale, update it"
+                )
+            );
+        }
+
+        // Sanity floor only, deliberately NOT an equality: enough registry to make a partition meaningful.
+        assertGt(all.length, 15, "harness registry collapsed - partition tests would be near-trivial");
+        assertGt(nav.getAssetCount(), 30, "harness asset registry collapsed");
+    }
+
+    /// @notice Whether the harness deployed an adapter under this config name.
+    function _harnessBuilt(string memory name) internal view returns (bool) {
+        for (uint256 i = 0; i < _deployedBalanceAdapterNames.length; i++) {
+            if (keccak256(bytes(_deployedBalanceAdapterNames[i])) == keccak256(bytes(name))) return true;
+        }
+        return false;
     }
 
     /// @notice Partitions `getAllAdapters()` into consecutive slices of at most `sliceSize`, reads each, and
@@ -112,6 +145,12 @@ contract MainnetPaginatedNavIntegration is IntegrationFromConfigBase {
 
         int256 summedValue;
         uint256 coveredCount;
+        // Counts slices that actually contributed value. `complete.value != 0` alone does NOT close vacuity: if all
+        // the value sits behind ONE adapter, every other slice returns 0, the sum is `x + 0 + 0 + ... = x`, and the
+        // invariant is satisfied trivially without ever testing that contributions COMBINE across slices. Asserted
+        // below. This also replaces a `getAccountPositions()` call the previous guard made purely to count
+        // positions - a second full 21-adapter scan per test, for less information than this.
+        uint256 nonZeroSlices;
         bool unionSequencerDown;
         bool unionQuoteAssetStale;
         bool unionQuoteAssetIrregular;
@@ -133,6 +172,7 @@ contract MainnetPaginatedNavIntegration is IntegrationFromConfigBase {
 
             summedValue += p.value;
             coveredCount += p.adaptersCovered.length;
+            if (p.value != 0) nonZeroSlices++;
             unionSequencerDown = unionSequencerDown || p.sequencerDown;
             unionQuoteAssetStale = unionQuoteAssetStale || p.quoteAssetStale;
             unionQuoteAssetIrregular = unionQuoteAssetIrregular || p.quoteAssetIrregular;
@@ -159,6 +199,8 @@ contract MainnetPaginatedNavIntegration is IntegrationFromConfigBase {
         for (uint256 i = 0; i < all.length; i++) {
             assertTrue(_contains(concatCovered, all[i]), "every registered adapter appears in the coverage union");
         }
+
+        assertGt(nonZeroSlices, 1, "value must be spread over >1 slice or the partition proves nothing about summing");
 
         // --- The one field that sums. Exactly, with no tolerance. ---
         assertEq(summedValue, complete.value, "sum of slice values == complete NAV value, exactly");

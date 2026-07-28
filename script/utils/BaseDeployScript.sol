@@ -13,6 +13,26 @@ abstract contract BaseDeployScript is Script {
     using ConfigReader for *;
     using SafeTxBuilder for *;
 
+    /// @notice The active `FOUNDRY_PROFILE` does not produce deploy-valid bytecode.
+    /// @param profile The offending profile name.
+    error DeployProfileNotAllowed(string profile);
+
+    /// @notice The ALLOWLIST of build profiles whose artifacts are valid to deploy, as `keccak256(name)`.
+    /// @dev An allowlist, not a denylist, deliberately: a denylist must be extended every time a profile is added, and
+    ///      the failure mode of forgetting is silent and on-chain. PR #156 reached the same conclusion for
+    ///      `LibraryPinConsistency`'s skip logic after review pushed back on name-based denylisting.
+    ///
+    ///      - `default` — the profile the library CREATE2 pins in `foundry.toml` were generated under.
+    ///      - `slow` — inherits `[profile.default]` wholesale (it sets only `threads` /
+    ///        `compute_units_per_second`), so its bytecode is identical. REQUIRED, not merely tolerated: the redeploy
+    ///        runbook runs `RegisterAssets` under it, because mainnet's 43 assets otherwise `MemoryOOG`.
+    ///
+    ///      Everything else is refused, including profiles that do not exist yet — `dev` and `lite` both clear the
+    ///      `libraries` array by design, and `lite` additionally disables the optimizer and raises `code_size_limit`
+    ///      16×. Kept as constants rather than a state array so this adds no storage to the 18 subclasses.
+    bytes32 private constant PROFILE_DEFAULT = keccak256(bytes("default"));
+    bytes32 private constant PROFILE_SLOW = keccak256(bytes("slow"));
+
     /// @notice Chain configuration for the current deployment
     ConfigReader.ChainConfig internal chainConfig;
 
@@ -22,8 +42,46 @@ abstract contract BaseDeployScript is Script {
     /// @notice Whether this run should persist on-chain/config side effects (e.g. real broadcast + config writes)
     bool internal shouldBroadcast;
 
+    /// @notice Reverts unless the active build profile produces deploy-valid bytecode.
+    /// @dev The accident this exists for: a `FOUNDRY_PROFILE` left exported in the shell. Under `lite` (and `dev`)
+    ///      the `libraries` array is empty, so `01_DeployImplementations` would CREATE2-deploy UNOPTIMIZED libraries
+    ///      at non-pinned addresses — and the canonical CREATE2 factory returns `address(0)` rather than reverting on
+    ///      a failed deploy, so the script logs success and records a bogus address. `01_2` catches this via its four
+    ///      `LibraryPins` assertions; `01` has no `LibraryPins` reference at all, and neither do `03`–`07` or
+    ///      `script/manage/**`. This closes that gap for all 18 `BaseDeployScript` subclasses at once. Escalated out
+    ///      of PR #156's review, which introduces `[profile.lite]` and makes the pin tests skip under it — removing
+    ///      the tripwire that would otherwise have caught the mistake in CI.
+    ///
+    ///      Scope, stated honestly: this checks the profile NAME, so it catches the realistic accident and not a
+    ///      doctored `[profile.default]`. The rigorous check is the CREATE2-vs-`LibraryPins` comparison `01_2`
+    ///      already performs, which is deliberately NOT hoisted here — it would fire on every branch while the pin
+    ///      regen (#185) is held open, and it would impose a pin dependency on `06_Configure`, `RegisterAssets` and
+    ///      the `verify`/`upgrade` scripts, none of which deploy library-linked bytecode.
+    ///
+    ///      There is intentionally no bypass env var. If a new profile is genuinely deploy-valid, add it to the
+    ///      allowlist above after checking it inherits `[profile.default]`'s `libraries`, `optimizer` and
+    ///      `code_size_limit`; do not add an escape hatch that a stray export can also set.
+    function _assertDeployProfile() internal view {
+        _assertDeployProfileName(vm.envOr("FOUNDRY_PROFILE", string("default")));
+    }
+
+    /// @notice The allowlist decision itself, split out so it is `pure` and testable without touching the environment.
+    /// @dev `vm.setEnv` mutates the process environment for the whole `forge test` run, so a suite that drove this
+    ///      through the env leaked values between its own cases (observed: the `default` case reading `lite`). Keeping
+    ///      the predicate parameterised means the profile matrix is tested deterministically and only the thin env
+    ///      adapter above needs env mutation at all.
+    /// @param profile The profile name to check; empty means forge's own default.
+    function _assertDeployProfileName(string memory profile) internal pure {
+        // Unset and explicitly-empty both mean forge's own default.
+        bytes32 active = bytes(profile).length == 0 ? PROFILE_DEFAULT : keccak256(bytes(profile));
+        if (active == PROFILE_DEFAULT || active == PROFILE_SLOW) return;
+        revert DeployProfileNotAllowed(profile);
+    }
+
     /// @notice Setup function called before deployment
     function setUp() public virtual {
+        _assertDeployProfile();
+
         currentChainId = block.chainid;
         chainConfig = ConfigReader.readChainConfig(vm, currentChainId);
 

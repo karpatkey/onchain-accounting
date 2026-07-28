@@ -89,7 +89,7 @@ contract MorphoVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         vm.stopPrank();
 
         // Deploy the meta-adapter and register it on NAV with both vaults as instances.
-        adapter = new MorphoVaultsMetaBalanceAdapter("Morpho", address(nav));
+        adapter = new MorphoVaultsMetaBalanceAdapter(address(nav));
         vm.startPrank(manager);
         bytes32[] memory instances = new bytes32[](2);
         instances[0] = bytes32(uint256(uint160(address(KPK_USDC_VAULT))));

@@ -27,11 +27,8 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      deprecated/zombie entries). Use the register off-chain to *propose* instances; governance approves them.
 ///      See BALANCE_ADAPTERS.md §6.1.
 contract GearboxV3MarketsMetaBalanceAdapter is MetaBalanceAdapter {
-    /// @param protocolName_ Human-readable protocol name (e.g. "Gearbox").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(string memory protocolName_, address navCalculator_)
-        MetaBalanceAdapter(protocolName_, navCalculator_)
-    {}
+    constructor(address navCalculator_) MetaBalanceAdapter(navCalculator_) {}
 
     /// @inheritdoc MetaBalanceAdapter
     /// @dev `instance` is the market (ERC4626 pool) address. Emits one `Supplied` leg in the market's underlying,
@@ -67,7 +64,7 @@ contract GearboxV3MarketsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @inheritdoc MetaBalanceAdapter
     /// @dev Returns `["Market", <name>]` where the leaf is the market's ERC20 name; if the name is unreadable the
     ///      empty leaf is dropped and just `["Market"]` is returned (see `_labels`). Returns an empty array for a
-    ///      short positionId.
+    ///      malformed positionId (see {_pidAddress}).
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
         return _addressLabels(pid, "Market", false);
     }

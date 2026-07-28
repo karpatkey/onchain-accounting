@@ -5,7 +5,8 @@ import {LibraryPins} from "script/utils/LibraryPins.sol";
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
 import {
     EulerVaultsMetaBalanceAdapter,
-    IEulerEVault
+    IEulerEVault,
+    IEVC
 } from "src/balances/MetaBalanceAdapters/EulerVaultsMetaBalanceAdapter.sol";
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -107,7 +108,7 @@ contract EulerVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         vm.stopPrank();
 
         // Deploy the meta-adapter and register it on NAV with both eVaults as instances.
-        adapter = new EulerVaultsMetaBalanceAdapter("Euler", address(nav));
+        adapter = new EulerVaultsMetaBalanceAdapter(address(nav));
         vm.startPrank(manager);
         bytes32[] memory instances = new bytes32[](2);
         instances[0] = bytes32(uint256(uint160(address(KPK_ETH_TERM))));
@@ -285,6 +286,108 @@ contract EulerVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
             }
         }
         assertTrue(foundDebt, "NAV surfaces the Euler borrow leg as signed debt");
+    }
+
+    /// @notice `_supplyKind` reads `EVC()` off the vault and `getCollaterals` off that EVC. Both are real contracts
+    ///         here, so this pins the *live* classification the hardened reads must keep producing: the two
+    ///         kpk-curated EulerEarn instances resolve to `Supplied` (their shares are never EVC collateral) and the
+    ///         real borrower's core eVault supply resolves to `Collateral`. Also asserts the EVC pointers are what
+    ///         the adapter's guards expect — a decodable address with code — so a future protocol-side change that
+    ///         breaks that assumption surfaces here rather than as a silently dropped position.
+    function test_supplyKind_liveEvcReadsClassifyCorrectly() public view {
+        address earnEvc = IEulerEVault(address(KPK_ETH_TERM)).EVC();
+        address coreEvc = IEulerEVault(address(E_USDC2)).EVC();
+        assertTrue(earnEvc.code.length > 0, "EulerEarn EVC() points at a contract");
+        assertTrue(coreEvc.code.length > 0, "core eVault EVC() points at a contract");
+
+        bytes32[] memory earn = new bytes32[](1);
+        earn[0] = bytes32(uint256(uint160(address(KPK_ETH_TERM))));
+        INAVCalculator.PositionBalance[] memory e = adapter.getAdapterPositionsForInstances(SAFE, earn, address(0));
+        assertEq(e.length, 1, "live EulerEarn supply leg survives the EVC reads");
+        assertTrue(e[0].positionKind == PositionKind.Supplied, "EulerEarn shares are never EVC collateral");
+
+        bytes32[] memory core = new bytes32[](1);
+        core[0] = bytes32(uint256(uint160(address(E_USDC2))));
+        INAVCalculator.PositionBalance[] memory c = adapter.getAdapterPositionsForInstances(BORROWER, core, address(0));
+        assertEq(c.length, 1, "live core-eVault supply leg survives the EVC reads");
+        assertTrue(c[0].positionKind == PositionKind.Collateral, "real EVC-enabled supply still classifies Collateral");
+    }
+
+    /// @notice The hardened `_supplyKind` degrades to `Supplied` — never reverts, never drops a leg — when the EVC
+    ///         pointer a REAL vault reports is broken after registration. `evc` is read from the vault and the
+    ///         collateral list from that `evc`, so neither is covered by the MANAGER-governed instance allowlist;
+    ///         both can be upgraded or swapped once an instance is live. Uses the real eUSDC-2 vault (real balance,
+    ///         real `debtOf`) and only rewrites what `EVC()` returns, via `vm.mockCall`.
+    ///
+    ///         Both legs must survive: dropping them would silently zero a real collateral balance and, on the
+    ///         borrow side, suppress a real debt — which over-reports NAV. Reverting either guard in `_supplyKind`
+    ///         turns this red.
+    function test_supplyKind_brokenEvcOnRealVault_failsOpen() public {
+        bytes32[] memory core = new bytes32[](2);
+        core[0] = bytes32(uint256(uint160(address(E_USDC2)))); // real USDC collateral
+        core[1] = bytes32(uint256(uint160(address(E_WETH2)))); // real WETH debt
+
+        uint256 expectedSupply = E_USDC2.convertToAssets(E_USDC2.balanceOf(BORROWER));
+        uint256 expectedDebt = IEulerEVault(address(E_WETH2)).debtOf(BORROWER);
+        assertGt(expectedSupply, 0);
+        assertGt(expectedDebt, 0);
+        // Read the genuine EVC up front — the sub-cases below mock `EVC()` itself, so reading it later would
+        // return the mocked value.
+        address realEvc = IEulerEVault(address(E_USDC2)).EVC();
+
+        // `EVC()` succeeds but returns a bytes32-shaped word — undecodable as an address, and a shape Solidity's
+        // `catch` does not intercept.
+        bytes memory evcCall = abi.encodeWithSelector(IEulerEVault.EVC.selector);
+        vm.mockCall(address(E_USDC2), evcCall, abi.encode(bytes32(type(uint256).max)));
+        vm.mockCall(address(E_WETH2), evcCall, abi.encode(bytes32(type(uint256).max)));
+        _assertRealLegsIntact(core, expectedSupply, expectedDebt, "bytes32-shaped EVC()");
+
+        // `EVC()` succeeds but returns nothing (the ERC-1967 empty-returndata shape).
+        vm.mockCall(address(E_USDC2), evcCall, "");
+        vm.mockCall(address(E_WETH2), evcCall, "");
+        _assertRealLegsIntact(core, expectedSupply, expectedDebt, "empty EVC() returndata");
+
+        // `EVC()` returns a code-less address — Solidity's `extcodesize` precheck, also uncatchable.
+        vm.mockCall(address(E_USDC2), evcCall, abi.encode(address(0xBEEF)));
+        vm.mockCall(address(E_WETH2), evcCall, abi.encode(address(0xBEEF)));
+        _assertRealLegsIntact(core, expectedSupply, expectedDebt, "code-less EVC");
+
+        // The genuine EVC, but its `getCollaterals` returns a malformed `address[]`. This one is load-bearing on the
+        // ABI-head validation alone: the address is real and has code, so only the head check can save the read.
+        vm.clearMockedCalls();
+        vm.mockCall(
+            realEvc,
+            abi.encodeWithSelector(IEVC.getCollaterals.selector, BORROWER),
+            abi.encode(uint256(0x20), uint256(type(uint128).max)) // absurd length
+        );
+        _assertRealLegsIntact(core, expectedSupply, expectedDebt, "malformed getCollaterals");
+    }
+
+    /// @dev Asserts the real supply + debt legs are both still reported with their real amounts, and that the
+    ///      supply leg degraded to the fail-open default `Supplied`.
+    function _assertRealLegsIntact(
+        bytes32[] memory instances,
+        uint256 expectedSupply,
+        uint256 expectedDebt,
+        string memory what
+    ) internal view {
+        INAVCalculator.PositionBalance[] memory pos =
+            adapter.getAdapterPositionsForInstances(BORROWER, instances, address(0));
+
+        bool sawSupply;
+        bool sawDebt;
+        for (uint256 i = 0; i < pos.length; i++) {
+            if (!pos[i].isDebt && keccak256(pos[i].positionId) == keccak256(abi.encode(address(E_USDC2)))) {
+                sawSupply = true;
+                assertEq(pos[i].amount, expectedSupply, string.concat(what, ": supply amount intact"));
+                assertTrue(pos[i].positionKind == PositionKind.Supplied, string.concat(what, ": degrades to Supplied"));
+            } else if (pos[i].isDebt && keccak256(pos[i].positionId) == keccak256(abi.encode(address(E_WETH2)))) {
+                sawDebt = true;
+                assertEq(pos[i].amount, expectedDebt, string.concat(what, ": debt leg not suppressed"));
+            }
+        }
+        assertTrue(sawSupply, string.concat(what, ": supply leg dropped"));
+        assertTrue(sawDebt, string.concat(what, ": debt leg dropped"));
     }
 
     /// @notice Real-holder check for the USDC instance: KPK Foundation's actual kpk_RWA_USDC position is reported as a

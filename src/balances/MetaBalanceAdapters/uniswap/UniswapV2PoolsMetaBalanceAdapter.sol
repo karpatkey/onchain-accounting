@@ -58,11 +58,8 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
         return (1, 5, 1);
     }
 
-    /// @param protocolName_ Human-readable protocol name (e.g. "Uniswap V2").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(string memory protocolName_, address navCalculator_)
-        MetaBalanceAdapter(protocolName_, navCalculator_)
-    {}
+    constructor(address navCalculator_) MetaBalanceAdapter(navCalculator_) {}
 
     /// @inheritdoc MetaBalanceAdapter
     /// @dev `instance` is the pair address. Emits up to 2 `Supplied` legs, dropping zeros and unregistered assets,
@@ -106,8 +103,8 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @inheritdoc MetaBalanceAdapter
     /// @dev Returns `["AMM Liquidity Pool", "sym0/sym1"]`; leaf derived on-chain from the pair's token symbols.
     function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
-        if (pid.length < 32) return new string[](0);
-        address pair = abi.decode(pid, (address));
+        (address pair, bool ok) = _pidAddress(pid);
+        if (!ok) return new string[](0);
         // External self-call so a revert in the pair token0()/token1() reads (bad/non-pair instance) fails open
         // to the category-only label — a faulty label must never revert the (verbose-only) labels read.
         try this.pairTokenSymbols(pair) returns (string memory leaf) {

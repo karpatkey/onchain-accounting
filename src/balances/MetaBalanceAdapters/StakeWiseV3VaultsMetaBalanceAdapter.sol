@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
+import {LabelLib} from "src/balances/LabelLib.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -47,14 +49,10 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceAdapter {
 
     /// @param underlyingToken_ The underlying staking asset (e.g. ETH sentinel on mainnet, GNO on Gnosis).
     /// @param osTokenVaultController_ The chain's StakeWise OsTokenVaultController (same one osToken_CustomPriceFeed uses).
-    /// @param protocolName_ Human-readable protocol name (e.g. "StakeWise V3").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(
-        address underlyingToken_,
-        address osTokenVaultController_,
-        string memory protocolName_,
-        address navCalculator_
-    ) MetaBalanceAdapter(protocolName_, navCalculator_) {
+    constructor(address underlyingToken_, address osTokenVaultController_, address navCalculator_)
+        MetaBalanceAdapter(navCalculator_)
+    {
         if (underlyingToken_ == address(0)) revert InvalidArguments();
         AddressCheckLib.requireContract(osTokenVaultController_, "osTokenVaultController");
         UNDERLYING_TOKEN = underlyingToken_;
@@ -109,12 +107,88 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev Returns a single-element `["Vault"]`. StakeWise V3 vaults are minimal proxies with no on-chain
-    ///      ERC20 `name()`/`symbol()` (the human vault name lives off-chain via IPFS), so there is no leaf to
-    ///      derive — the category alone is the label. Returns an empty array for a short positionId.
-    function positionLabels(bytes calldata pid) external pure override returns (string[] memory) {
-        if (pid.length < 32) return new string[](0);
-        return _labels("Vault", "");
+    /// @dev `["Vault", <leaf>]` — the leaf is the vault's ERC20 `name()` when it has one, otherwise its address.
+    ///      Unlike the other address-keyed meta-adapters this does NOT use {_addressLabels}: that helper collapses an
+    ///      underivable leaf to `["Vault"]`, which for StakeWise is the common case, not the exception, and left every
+    ///      row rendering the same blank breadcrumb.
+    ///
+    ///      **Tier 1 — `name()`.** Only StakeWise's `…Erc20Vault` implementation variants are ERC20s and answer it,
+    ///      returning the operator's own name (e.g. `"Stakers Union GNO"`). Enumerating both `VaultsRegistry`
+    ///      deployments on 2026-07-26 (mainnet `0x3a0008a5…`, Gnosis `0x7d014B3C…`) found 58 of 239 mainnet and 18 of
+    ///      106 Gnosis registered vaults answering it. Read fail-open via {LabelLib.name}, which validates the ABI
+    ///      head before decoding and gas-caps the probe, so a vault whose `name()` succeeds with undecodable
+    ///      returndata degrades to tier 2 instead of reverting.
+    ///
+    ///      **Tier 2 — `"<underlying symbol> <vault address>"`**, e.g. `"GNO 0x4b4406ed…0a7a"`. The address is
+    ///      rendered with `Strings.toHexString`, mirroring `NexusMutualStakingPoolsAssistedBalanceAdapter`'s fallback;
+    ///      the symbol prefix says what the vault stakes without pretending to name it. This is the position
+    ///      coordinate rather than a name, so it is the deliberate second choice — but it is always available, needs
+    ///      no maintenance, and means the breadcrumb is never blank. All five instances configured today land here.
+    ///      The symbol comes from the NAVCalculator asset registry rather than an ERC20 `symbol()` read, because on
+    ///      mainnet `UNDERLYING_TOKEN` is the ETH sentinel (`0xEeee…EEeE`), which has no code to read. If the
+    ///      underlying is unregistered the symbol is dropped and the leaf is the bare address.
+    ///
+    ///      The leaf is descriptive, NOT an identifier: operator names collide (three separate Gnosis vaults are all
+    ///      named `"SEED"`), so consumers must key on `positionId`, never on the label.
+    ///
+    ///      **Why the address stays even though consumers render a coordinate column — settled 2026-07-27, do not
+    ///      reopen.** The tier-2 leaf embeds the full vault address, which the consumers known at that date already
+    ///      showed beside it: kpk-app's `/nav/registry` rendered the label and then the whole `bytes32` instance
+    ///      coordinate with a copy button, and this repo's own dashboard paired the label with an `AddressChip`
+    ///      (`app/src/components/protocol-group.tsx`). Those are point-in-time observations of code that lives
+    ///      outside this contract and will drift; the load-bearing claim is the general one, that a consumer showing
+    ///      a coordinate makes the address redundant *for that consumer*. It is kept anyway, deliberately:
+    ///        - The label must stay self-contained. `positionLabels` is an on-chain view with no knowledge of what
+    ///          its caller renders; a consumer that shows only the breadcrumb (a CSV export, an alert, a log line)
+    ///          would otherwise lose the ability to tell two vaults apart entirely.
+    ///        - Dropping it costs inter-instance distinctness outright, not just verbosity. The symbol is a
+    ///          chain-level constant, so a symbol-only leaf collapses every unnamed vault to one string — and none
+    ///          of the three configured Gnosis vaults answers `name()`, so all three would render an identical
+    ///          `["Vault", "GNO"]`. That is the undistinguished breadcrumb this tier was added to fix,
+    ///          reintroduced. (They are two `GnoVault`s plus one `GnoGenesisVault` — the types differ, but every
+    ///          one of them is a non-ERC20 variant with a reverting `name()`, which is the part that matters here.)
+    ///      The duplication is therefore the accepted cost of a leaf that is meaningful without its coordinate.
+    ///      `test_positionLabels_distinctForUnnamedVaults` (unit) and
+    ///      `test_positionLabels_configuredVaults_fallBackToSymbolAndAddress` (Gnosis fork) pin that property.
+    ///
+    ///      **Why there is no better tier 2, so nobody re-investigates.** The non-ERC20 variants expose no
+    ///      human-readable identity on chain at all:
+    ///        - `name()` / `symbol()` / `contractURI()` / `metadataIpfsHash()` / `asset()` all revert on them
+    ///          (checked against v3, v4, v5 and v7 vaults; newer versions do not help).
+    ///        - `vaultId()` answers, but it is `keccak256(<implementation type string>)` — a *type* hash, not a
+    ///          per-vault id, so it both collides (of the three configured Gnosis vaults, two are `GnoVault` and
+    ///          share one hash; the third is a `GnoGenesisVault`) and would need a hardcoded hash→string table to
+    ///          render, since the pre-image is not recoverable on chain.
+    ///        - `version()` collides; `admin()` / `mevEscrow()` / `feeRecipient()` / `validatorsManager()` /
+    ///          `implementation()` are addresses, not names, and most are mutable.
+    ///        - `VaultsRegistry` stores only `vaults(address) → bool`; it holds no names.
+    ///      Every human-readable StakeWise vault name lives off-chain (IPFS metadata), and `positionLabels` is an
+    ///      on-chain view, so there is nothing further to derive.
+    ///
+    ///      Returns an empty array for a short positionId. Display-only and must never revert, hence the fail-open
+    ///      read.
+    function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
+        // Exactly one word, not `< 32`. `abi.decode` silently ignores trailing bytes, so a `< 32` guard lets a
+        // foreign MULTI-word coordinate through and labels it from its first word — a confident, wrong breadcrumb
+        // for a position this adapter never emitted. This positionId is always `abi.encode(address(vault))`, so
+        // the accept window is `== 32`. Matches the family-wide window {MetaBalanceAdapter._pidAddress} sets.
+        if (pid.length != 32) return new string[](0);
+        // Decode as a raw word, not `abi.decode(pid, (address))`: Solidity's decoder REVERTS on an address whose
+        // upper 96 bits are dirty, which would turn a foreign/malformed positionId into a revert of a view that
+        // must never revert. A malformed coordinate degrades to the category alone instead.
+        uint256 raw = abi.decode(pid, (uint256));
+        if (raw >> 160 != 0) return _labels("Vault", "");
+        address vault = address(uint160(raw));
+
+        string memory leaf = LabelLib.name(vault, "");
+        if (bytes(leaf).length == 0) {
+            leaf = Strings.toHexString(vault);
+            (INAVCalculator.Asset memory underlying, bool found) = _getAssetInfo(UNDERLYING_TOKEN);
+            if (found && bytes(underlying.symbol).length != 0) {
+                leaf = string.concat(underlying.symbol, " ", leaf);
+            }
+        }
+        return _labels("Vault", leaf);
     }
 
     /// @inheritdoc MetaBalanceAdapter

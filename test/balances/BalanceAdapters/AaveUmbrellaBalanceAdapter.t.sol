@@ -46,7 +46,10 @@ contract AaveUmbrellaBalanceAdapterTest is BalanceAdapterTestBase {
     function test_constructor_pinsImmutables() public view {
         assertEq(address(oracle.REWARDS_CONTROLLER()), stubRewardsController);
         assertEq(address(oracle.NAV_CALCULATOR()), address(balances));
-        assertEq(oracle.protocolName(), "Aave Umbrella");
+        // Names the PROTOCOL, not the product — Umbrella is one of Aave V3's products and shares
+        // ProtocolIds.AAVE_V3 with the Safety Module and the lending instances. The product is in
+        // positionLabels() (asserted below). Cross-adapter invariant: test/ProtocolNameConsistency.t.sol.
+        assertEq(oracle.protocolName(), "Aave V3");
     }
 
     function test_constructor_revertsOnZeroRewardsController() public {
@@ -94,6 +97,24 @@ contract AaveUmbrellaBalanceAdapterTest is BalanceAdapterTestBase {
     function test_getAdapterPositions_returnsEmptyArrayForZeroAccount() public view {
         // Zero-account shortcut returns [] before touching NAV_CALCULATOR or the controller.
         assertEq(oracle.getAdapterPositions(address(0), address(0)).length, 0);
+    }
+
+    // ─── IPositionDescribable ─────────────────────────────────────────────────
+
+    /// @dev Configuration-view probe. A registry consumer describing what the calculator is configured for has no
+    ///      positionId to pass, so it can only call `positionLabels("")`. This adapter's breadcrumb is
+    ///      positionId-INDEPENDENT, so the probe answers with the constant `["Umbrella Module"]`.
+    ///
+    ///      positionId-independent is NOT the same as single-shape: the adapter emits
+    ///      `positionId = abi.encode(stakeToken)` per Umbrella stake token, so several distinct positionIds share
+    ///      this one breadcrumb. Adding a stake-token leaf would be an improvement, not a defect — what this test
+    ///      pins is only that the probe never silently collapses to `[]`; per the `_labels` empty-leaf convention
+    ///      it must keep returning at least the `"Umbrella Module"` category. A deliberate leaf change should
+    ///      relax this assertion, not delete it.
+    function test_positionLabels_emptyProbe_returnsTheConstantShape() public view {
+        string[] memory labels = oracle.positionLabels("");
+        assertEq(labels.length, 1);
+        assertEq(labels[0], "Umbrella Module");
     }
 
     // ─── ERC165 ───────────────────────────────────────────────────────────────

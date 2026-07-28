@@ -555,4 +555,21 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterTest is BalanceAdapterTestB
         (uint256 amt,) = adapter.getAdapterBalanceForAsset(holder, NATIVE);
         assertEq(amt, 0);
     }
+
+    /// @dev Configuration-view probe: a consumer describing configuration has no positionId, so it can only call
+    ///      `positionLabels("")`. This adapter's breadcrumb is positionId-independent and it emits a single
+    ///      positionId (`abi.encode(WITHDRAW_REQUEST_NFT)`; the per-request NFT id rides in `positionInstanceId`),
+    ///      so the probe answers with the full constant breadcrumb. What this pins is that the probe never
+    ///      silently collapses to `[]` — a positionId-derived leaf added later must still return at least the
+    ///      `"Withdrawal Queue"` category per the `_labels` empty-leaf convention.
+    ///
+    ///      Note this adapter carries the `IAssistedBalanceAdapter` marker yet answers with a CONSTANT breadcrumb.
+    ///      That is why the marker cannot be used to infer "labels are per-position" — see the corresponding note
+    ///      in the Nexus suite.
+    function test_positionLabels_emptyProbe_returnsTheConstantShape() public view {
+        string[] memory labels = adapter.positionLabels("");
+        assertEq(labels.length, 2);
+        assertEq(labels[0], "Withdrawal Queue");
+        assertEq(labels[1], "eETH");
+    }
 }

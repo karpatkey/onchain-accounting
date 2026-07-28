@@ -40,11 +40,8 @@ contract BalancerV2GaugesMetaBalanceAdapter is MetaBalanceAdapter {
 
     /// @param vault_ The Balancer V2 Vault address.
     /// @param balancerMinter_ Address of the Balancer Minter contract.
-    /// @param protocolName_ Protocol identifier (e.g. "Balancer V2").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(address vault_, address balancerMinter_, string memory protocolName_, address navCalculator_)
-        MetaBalanceAdapter(protocolName_, navCalculator_)
-    {
+    constructor(address vault_, address balancerMinter_, address navCalculator_) MetaBalanceAdapter(navCalculator_) {
         AddressCheckLib.requireContract(vault_, "Vault");
         AddressCheckLib.requireContract(balancerMinter_, "BalancerMinter");
         VAULT = vault_;
@@ -136,8 +133,8 @@ contract BalancerV2GaugesMetaBalanceAdapter is MetaBalanceAdapter {
     ///      by the `try this.gaugeTokenSymbols(...)` self-call and falls open to the category-only label
     ///      (`["Staking Gauge"]`).
     function positionLabels(bytes calldata positionId) external view virtual override returns (string[] memory) {
-        if (positionId.length < 32) return new string[](0);
-        address gauge = abi.decode(positionId, (address));
+        (address gauge, bool ok) = _pidAddress(positionId);
+        if (!ok) return new string[](0);
         // External self-call so a revert anywhere in the gauge→lp_token→poolId→Vault-token chain fails open to
         // the category-only label — a faulty label must never revert the (verbose-only) labels read.
         try this.gaugeTokenSymbols(gauge) returns (string memory leaf) {

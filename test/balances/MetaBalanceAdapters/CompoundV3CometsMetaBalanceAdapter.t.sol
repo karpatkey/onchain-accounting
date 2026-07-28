@@ -68,7 +68,7 @@ contract CompoundV3CometsMetaBalanceAdapterTest is Test {
         // alice in cometB: borrow 50 WETH.
         cometB.setPrincipal(alice, -int104(uint104(50e18)));
 
-        meta = new CompoundV3CometsMetaBalanceAdapter(address(rewards), address(comp), "Compound V3", address(nav));
+        meta = new CompoundV3CometsMetaBalanceAdapter(address(rewards), address(comp), address(nav));
     }
 
     function _instances() internal view returns (bytes32[] memory ins) {
@@ -169,5 +169,62 @@ contract CompoundV3CometsMetaBalanceAdapterTest is Test {
             if (ok) return true;
         }
         return false;
+    }
+
+    /// @dev A comet whose BASE asset carries a borrow the adapter cannot report must suppress the whole comet:
+    ///      emitting its collateral legs alone would count the position as pure credit and over-report NAV by
+    ///      the entire borrow.
+    function test_unreportableBaseBorrow_suppressesWholeComet() public {
+        // alice borrows USDC in cometA (negative principal) with WBTC collateral, then USDC is unregistered.
+        cometA.setPrincipal(alice, -int104(uint104(100e6)));
+        nav.unregisterAssetHelper(address(usdc));
+
+        bytes32[] memory ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(address(cometA))));
+        assertEq(
+            meta.getAdapterPositionsForInstances(alice, ins, address(0)).length,
+            0,
+            "collateral must not be reported without the unreportable base borrow"
+        );
+        assertEq(
+            meta.getAdapterPositionsForInstances(alice, ins, address(wbtc)).length,
+            0,
+            "assetFilter must not resurrect the unoffset collateral leg"
+        );
+    }
+
+    /// @dev The mirror case: an unreportable base SUPPLY (positive principal) is not a debt, so the remaining
+    ///      legs are still safe to report — dropping them would under-report for no reason.
+    function test_unreportableBaseSupply_stillReportsCollateral() public {
+        nav.unregisterAssetHelper(address(usdc)); // alice's cometA base is a SUPPLY of 100 USDC
+
+        bytes32[] memory ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(address(cometA))));
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, ins, address(0));
+        assertGt(p.length, 0, "an unreportable supply must not suppress the position");
+        for (uint256 i = 0; i < p.length; i++) {
+            assertTrue(p[i].balanceAsset.asset != address(usdc), "the unregistered base must not be emitted");
+        }
+    }
+
+    /// @dev Pins that THIS adapter routes its positionId through the shared guard. `positionLabels` is display-only
+    ///      and must never revert, and must never label a coordinate the adapter never emitted; both were reachable
+    ///      before (`abi.decode(pid, (address))` reverts on dirty upper bits, and a `< 32` guard labels a foreign
+    ///      multi-word coordinate from its first word). The accept window itself is pinned exhaustively in
+    ///      `test/balances/MetaBalanceAdapterPidGuards.t.sol` — this case exists because that harness cannot catch
+    ///      an adapter re-inlining the old idiom, which is a one-line regression.
+    ///
+    ///      The clean-coordinate assertion keeps the rejections load-bearing: a shape-valid but unknown coordinate
+    ///      still resolves to the category-only label, so a view that rejected everything would fail here.
+    function test_positionLabels_malformedPositionId_returnsEmpty() public view {
+        address coord = address(0xBEEF);
+
+        assertGt(meta.positionLabels(abi.encode(coord)).length, 0, "one clean word is the accepted shape");
+
+        assertEq(meta.positionLabels("").length, 0, "empty");
+        assertEq(meta.positionLabels(hex"0102030405060708090a0b0c").length, 0, "truncated");
+        uint256 dirty = uint256(uint160(coord)) | (uint256(1) << 255);
+        assertEq(meta.positionLabels(abi.encode(dirty)).length, 0, "dirty upper bits");
+        assertEq(meta.positionLabels(abi.encode(coord, uint256(1))).length, 0, "over-long");
     }
 }

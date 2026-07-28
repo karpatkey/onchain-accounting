@@ -13,15 +13,31 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 
 /// @notice Minimal StakeWise V3 vault mock: settable shares/osToken positions, 1:1 share→asset, on-chain name.
+/// @dev An empty `name_` models the non-ERC20 StakeWise vault variants, whose `name()` reverts — {LabelLib} treats a
+///      revert and an empty string identically, so `_revertOnName` covers the other half of that behaviour.
 contract MockStakeWiseVault {
-    string public name;
+    string private _name;
+    bool private _revertOnName;
     uint256 private _rate; // assets per share, 1e18-scaled
     mapping(address => uint256) private _shares;
     mapping(address => uint256) private _osToken;
 
     constructor(string memory name_, uint256 rate_) {
-        name = name_;
+        _name = name_;
         _rate = rate_;
+    }
+
+    /// @notice Raised by `name()` on the mock's non-ERC20 vault setting.
+    error NameNotSupported();
+
+    /// @notice ERC20 `name()` — reverts when `revertOnName` is set, mirroring the non-ERC20 vault variants.
+    function name() external view returns (string memory) {
+        if (_revertOnName) revert NameNotSupported();
+        return _name;
+    }
+
+    function setRevertOnName(bool v) external {
+        _revertOnName = v;
     }
 
     function convertToAssets(uint256 shares) external view returns (uint256) {
@@ -48,6 +64,71 @@ contract MockStakeWiseVault {
 contract MockUnderlying {
     string public symbol = "ETH";
     uint8 public decimals = 18;
+}
+
+/// @notice `name()` succeeds but returns ZERO bytes — the shape of an ERC-1967 proxy whose implementation slot
+///         points at a code-less address (the `delegatecall` succeeds and returns nothing).
+/// @dev Solidity's `try`/`catch` does NOT catch a return-data decode failure, so this shape reverts a naive
+///      `try IERC20MetaView(v).name()` reader. The adapter must still fail open.
+contract MockEmptyReturndataVault {
+    fallback() external {
+        assembly {
+            return(0, 0)
+        }
+    }
+}
+
+/// @notice `name()` returns a hand-built ABI envelope, so a test can drive the exact head/payload shape.
+/// @dev `lenWord` is written verbatim as the length word and `payload` verbatim as the tail, so a test can produce a
+///      declared length that disagrees with the bytes actually present (truncated / unpadded / absurd).
+contract MockRawNameVault {
+    uint256 private immutable OFFSET_WORD;
+    uint256 private immutable LEN_WORD;
+    bytes private payload;
+
+    constructor(uint256 offsetWord_, uint256 lenWord_, bytes memory payload_) {
+        OFFSET_WORD = offsetWord_;
+        LEN_WORD = lenWord_;
+        payload = payload_;
+    }
+
+    fallback() external {
+        bytes memory out = abi.encodePacked(OFFSET_WORD, LEN_WORD, payload);
+        assembly {
+            return(add(out, 0x20), mload(out))
+        }
+    }
+}
+
+/// @notice Burns gas by pure COMPUTATION until out-of-gas — the griefing shape the stipend bounds.
+/// @dev Computation-only on purpose: an `SSTORE` inside a `STATICCALL` is a write-protection violation, so a
+///      storage-writing burner aborts on its first store and never reaches the loop. Both shapes consume all gas
+///      forwarded to the frame, but only this one exercises the run-until-OOG path.
+contract MockGasBurnerVault {
+    fallback() external {
+        assembly {
+            for {} 1 {} { mstore(0x00, keccak256(0x00, 0x20)) }
+        }
+    }
+}
+
+/// @notice `name()` succeeds but returns a `bytes32` instead of a `string` — MKR-style legacy metadata.
+contract MockBytes32NameVault {
+    function name() external pure returns (bytes32) {
+        return "Legacy";
+    }
+
+    function convertToAssets(uint256) external pure returns (uint256) {
+        return 0;
+    }
+
+    function getShares(address) external pure returns (uint256) {
+        return 0;
+    }
+
+    function osTokenPositions(address) external pure returns (uint256) {
+        return 0;
+    }
 }
 
 /// @title StakeWiseV3VaultsMetaBalanceAdapter unit tests (no fork)
@@ -79,9 +160,7 @@ contract StakeWiseV3VaultsMetaBalanceAdapterTest is Test {
         // OsTokenVaultController converts osToken debt shares → underlying at its own rate (2e18 here): alice's
         // 1 osToken share → 2 underlying debt, matching the comment above.
         osTokenController = new MockStakeWiseVault("OsTokenVaultController", 2e18);
-        meta = new StakeWiseV3VaultsMetaBalanceAdapter(
-            address(underlying), address(osTokenController), "StakeWise V3", address(nav)
-        );
+        meta = new StakeWiseV3VaultsMetaBalanceAdapter(address(underlying), address(osTokenController), address(nav));
     }
 
     function _instances() internal view returns (bytes32[] memory ins) {
@@ -151,6 +230,198 @@ contract StakeWiseV3VaultsMetaBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, ins, address(0));
         assertEq(p.length, 1, "bad vault isolated, vaultB staking leg returned");
         assertEq(p[0].amount, 3e18);
+    }
+
+    // --- positionLabels ---------------------------------------------------------------------------------------
+
+    /// @notice Two ERC20-variant vaults produce different final label elements — the property the leaf exists for.
+    function test_positionLabels_distinctPerNamedVault() public view {
+        string[] memory a = meta.positionLabels(abi.encode(address(vaultA)));
+        string[] memory b = meta.positionLabels(abi.encode(address(vaultB)));
+
+        assertEq(a.length, 2);
+        assertEq(a[0], "Vault");
+        assertEq(a[1], "Genesis Vault");
+
+        assertEq(b.length, 2);
+        assertEq(b[0], "Vault");
+        assertEq(b[1], "Meta Vault");
+
+        assertTrue(
+            keccak256(bytes(a[a.length - 1])) != keccak256(bytes(b[b.length - 1])),
+            "distinct instances must produce distinct final label elements"
+        );
+    }
+
+    /// @notice A vault whose `name()` reverts (every non-ERC20 StakeWise variant) falls back to
+    ///         `"<underlying symbol> <vault address>"` — never a blank leaf.
+    function test_positionLabels_revertingName_fallsBackToSymbolAndAddress() public {
+        vaultA.setRevertOnName(true);
+        string[] memory l = meta.positionLabels(abi.encode(address(vaultA)));
+        assertEq(l.length, 2, "leaf is present even without an on-chain name");
+        assertEq(l[0], "Vault");
+        assertEq(l[1], string.concat("ETH ", address(vaultA).toHexString()));
+    }
+
+    /// @notice An empty `name()` is treated exactly like a reverting one.
+    function test_positionLabels_emptyName_fallsBackToSymbolAndAddress() public {
+        MockStakeWiseVault unnamed = new MockStakeWiseVault("", 1e18);
+        string[] memory l = meta.positionLabels(abi.encode(address(unnamed)));
+        assertEq(l.length, 2);
+        assertEq(l[1], string.concat("ETH ", address(unnamed).toHexString()));
+    }
+
+    /// @notice Two *unnamed* vaults still produce different final label elements — the fallback carries the
+    ///         per-instance coordinate, so the blank-breadcrumb collision cannot reappear.
+    /// @dev This is the assertion that defends the address in the leaf. Inter-instance distinctness is the property
+    ///      the embedded address buys, and the reason the leaf keeps duplicating what a consumer's coordinate
+    ///      column already shows (see the `positionLabels` NatSpec, settled 2026-07-27). The symbol is a
+    ///      chain-level constant, so a symbol-only leaf collapses every unnamed vault to one string; this test then
+    ///      fails rather than letting the breadcrumb degrade silently to `["Vault", "ETH"]`. A change here is a
+    ///      change to that trade-off.
+    function test_positionLabels_distinctForUnnamedVaults() public {
+        vaultA.setRevertOnName(true);
+        vaultB.setRevertOnName(true);
+        string[] memory a = meta.positionLabels(abi.encode(address(vaultA)));
+        string[] memory b = meta.positionLabels(abi.encode(address(vaultB)));
+        assertEq(a.length, 2);
+        assertEq(b.length, 2);
+        assertTrue(
+            keccak256(bytes(a[a.length - 1])) != keccak256(bytes(b[b.length - 1])),
+            "distinct instances must produce distinct final label elements"
+        );
+    }
+
+    /// @notice With the underlying unregistered there is no symbol to prefix, so the leaf is the bare address.
+    function test_positionLabels_unregisteredUnderlying_addressOnly() public {
+        vaultA.setRevertOnName(true);
+        nav.unregisterAssetHelper(address(underlying));
+        string[] memory l = meta.positionLabels(abi.encode(address(vaultA)));
+        assertEq(l.length, 2);
+        assertEq(l[1], address(vaultA).toHexString(), "symbol prefix dropped, address retained");
+    }
+
+    /// @notice A `name()` that SUCCEEDS but returns undecodable returndata must not revert this view.
+    /// @dev Regression guard. Solidity does not route a return-data decode failure into a `try`/`catch`, so reading
+    ///      the name through `LabelLib.name` (as an earlier revision of this adapter did) reverts here. Reverting
+    ///      `positionLabels` is worse than the blank leaf this PR set out to fix: NAVCalculator swallows it into an
+    ///      EMPTY label array, losing the category too. Fails if `LabelLib`'s ABI-head validation is removed (this
+    ///      adapter used to carry a local `_safeVaultName` copy of that guard; it now shares `LabelLib.name`).
+    function test_positionLabels_emptyReturndataName_failsOpen() public {
+        address v = address(new MockEmptyReturndataVault());
+        string[] memory l = meta.positionLabels(abi.encode(v));
+        assertEq(l.length, 2, "must not revert on empty returndata");
+        assertEq(l[0], "Vault");
+        assertEq(l[1], string.concat("ETH ", v.toHexString()));
+    }
+
+    /// @notice A `bytes32`-returning `name()` (MKR-style) must not revert this view either.
+    function test_positionLabels_bytes32Name_failsOpen() public {
+        address v = address(new MockBytes32NameVault());
+        string[] memory l = meta.positionLabels(abi.encode(v));
+        assertEq(l.length, 2, "must not revert on a bytes32 name()");
+        assertEq(l[1], string.concat("ETH ", v.toHexString()));
+    }
+
+    /// @notice A 32-byte positionId with dirty upper bits must degrade, not revert.
+    /// @dev `abi.decode(pid, (address))` reverts on a non-zero high 96 bits; the adapter decodes a raw word and
+    ///      range-checks it instead. Fails if that guard is removed.
+    function test_positionLabels_dirtyUpperBits_failsOpen() public view {
+        bytes memory pid = abi.encodePacked(bytes32(type(uint256).max));
+        string[] memory l = meta.positionLabels(pid);
+        assertEq(l.length, 1, "malformed coordinate degrades to the category alone");
+        assertEq(l[0], "Vault");
+    }
+
+    /// @notice A name exactly at `LabelLib`'s metadata cap (256 bytes) is accepted; 257 degrades to the fallback.
+    /// @dev Pins the cap boundary in both directions so a future tweak to the constant cannot silently change which
+    ///      names render. The 256 is duplicated from `LabelLib.MAX_METADATA_BYTES`, which is `private`; if that
+    ///      constant moves, this test and `test/balances/LabelLib.t.sol` must move with it.
+    function test_positionLabels_nameLengthCapBoundary() public {
+        bytes memory at = new bytes(256);
+        bytes memory over = new bytes(257);
+        for (uint256 i; i < 257; ++i) {
+            if (i < 256) at[i] = "a";
+            over[i] = "a";
+        }
+        address okVault = address(new MockRawNameVault(0x20, 256, at));
+        address tooLong = address(new MockRawNameVault(0x20, 257, over));
+
+        string[] memory a = meta.positionLabels(abi.encode(okVault));
+        assertEq(a.length, 2);
+        assertEq(bytes(a[1]).length, 256, "256-byte name accepted verbatim");
+
+        string[] memory b = meta.positionLabels(abi.encode(tooLong));
+        assertEq(b.length, 2);
+        assertEq(b[1], string.concat("ETH ", tooLong.toHexString()), "257-byte name rejected, falls back");
+    }
+
+    /// @notice A declared length longer than the bytes actually returned must degrade, not revert.
+    /// @dev The `len > data.length - 64` bound. Truncated/unpadded payloads are the shape that would over-read if the
+    ///      envelope were trusted.
+    function test_positionLabels_truncatedPayload_failsOpen() public {
+        // Declares 64 bytes of string but returns only 8.
+        address v = address(new MockRawNameVault(0x20, 64, hex"6161616161616161"));
+        string[] memory l = meta.positionLabels(abi.encode(v));
+        assertEq(l.length, 2, "must not revert on a truncated payload");
+        assertEq(l[1], string.concat("ETH ", v.toHexString()));
+    }
+
+    /// @notice A non-canonical head offset must degrade, not revert.
+    function test_positionLabels_badOffset_failsOpen() public {
+        address v = address(new MockRawNameVault(type(uint256).max, 0, ""));
+        string[] memory l = meta.positionLabels(abi.encode(v));
+        assertEq(l.length, 2, "must not revert on an absurd offset word");
+        assertEq(l[1], string.concat("ETH ", v.toHexString()));
+    }
+
+    /// @notice A `name()` that burns unbounded gas must not consume the caller's budget or revert the view.
+    /// @dev The staticcall stipend bounds it. Asserts the whole call costs well under the caller's budget, so a hostile
+    ///      instance cannot out-of-gas a verbose NAV read through the label path.
+    function test_positionLabels_gasBurningName_boundedAndFailsOpen() public {
+        address v = address(new MockGasBurnerVault());
+        uint256 before = gasleft();
+        string[] memory l = meta.positionLabels(abi.encode(v));
+        uint256 used = before - gasleft();
+
+        assertEq(l.length, 2, "must not revert on a gas-burning name()");
+        assertEq(l[1], string.concat("ETH ", v.toHexString()));
+        assertLt(used, 400_000, "gas-burning name() must stay bounded by the stipend");
+    }
+
+    /// @notice A positionId pointing at a code-less address must not revert this display-only view.
+    function test_positionLabels_noCode_failsOpen() public view {
+        string[] memory l = meta.positionLabels(abi.encode(address(0xdead)));
+        assertEq(l.length, 2);
+        assertEq(l[0], "Vault");
+        assertEq(l[1], string.concat("ETH ", address(0xdead).toHexString()));
+    }
+
+    /// @notice A short/malformed positionId yields no labels rather than reverting.
+    function test_positionLabels_shortPositionId_empty() public view {
+        assertEq(meta.positionLabels(hex"1234").length, 0);
+        assertEq(meta.positionLabels("").length, 0);
+    }
+
+    /// @notice An OVER-long positionId is rejected too — the accept window is exactly one word, not "at least one".
+    /// @dev The half a `< 32` guard misses, and the reason #179 moved the family to `== 32`. `abi.decode` silently
+    ///      ignores trailing bytes, so under `< 32` a foreign MULTI-word coordinate is labelled from its first
+    ///      word: this adapter would answer `["Vault", <name of whatever the first word happens to name>]` for a
+    ///      position it never emitted. A confident wrong breadcrumb is worse than an absent one, so it degrades to
+    ///      an empty array.
+    ///
+    ///      Both shapes below pass a `< 32` guard and are rejected only by `!= 32`:
+    ///        - a real vault address followed by a second word (the sibling-adapter copy-paste shape), which is the
+    ///          one that would have rendered a plausible-looking label;
+    ///        - a bare 33-byte blob, one byte past the window.
+    function test_positionLabels_overLongPositionId_empty() public view {
+        // A well-formed vault word plus a trailing word. Under `< 32` this rendered vaultA's name.
+        bytes memory twoWords = abi.encode(address(vaultA), uint256(1));
+        assertEq(twoWords.length, 64, "fixture must be two words");
+        assertEq(meta.positionLabels(twoWords).length, 0, "multi-word positionId must not be labelled");
+
+        // One byte past the window.
+        assertEq(meta.positionLabels(abi.encodePacked(bytes32(uint256(uint160(address(vaultA)))), bytes1(0))).length, 0);
     }
 
     function test_underlyingAssetsForInstances() public view {

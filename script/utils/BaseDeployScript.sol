@@ -187,4 +187,27 @@ abstract contract BaseDeployScript is Script {
         IPrices.AssetPricing memory pricing = abi.decode(data, (IPrices.AssetPricing));
         return pricing.divergenceToleranceBps;
     }
+
+    /// @notice Decodes an `Error(string)` revert payload (selector 0x08c379a0) into its message; returns a
+    ///         placeholder for empty or custom-error (non-string) reverts. Never reverts. Shared by the manage/
+    ///         deploy scripts' `--broadcast` error reporting.
+    /// @dev `Error(string)` ABI layout: [0,4) selector · [4,36) offset · [36,68) length · [68,…) string bytes.
+    ///      The bounds check is written as `len <= data.length - 68` (not `68 + len`) so a garbage length word
+    ///      can't overflow-panic inside the decoder (`data.length >= 68` is guaranteed by the outer guard).
+    function _revertMsg(bytes memory data) internal pure returns (string memory) {
+        if (data.length >= 68 && data[0] == 0x08 && data[1] == 0xc3 && data[2] == 0x79 && data[3] == 0xa0) {
+            uint256 len;
+            assembly {
+                len := mload(add(add(data, 32), 36))
+            }
+            if (len <= data.length - 68) {
+                bytes memory msgBytes = new bytes(len);
+                for (uint256 i = 0; i < len; i++) {
+                    msgBytes[i] = data[i + 68];
+                }
+                return string(msgBytes);
+            }
+        }
+        return data.length > 0 ? "custom error (non-string revert)" : "unknown";
+    }
 }

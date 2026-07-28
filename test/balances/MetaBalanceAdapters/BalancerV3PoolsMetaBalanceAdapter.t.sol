@@ -44,7 +44,7 @@ contract BalancerV3PoolsMetaBalanceAdapterTest is Test {
         pool.addToken(address(tokenY), 200e18, 1, 1e18);
         pool.setTotalSupply(1000e18);
 
-        adapter = new BalancerV3PoolsMetaBalanceAdapter("Balancer V3", address(nav));
+        adapter = new BalancerV3PoolsMetaBalanceAdapter(address(nav));
     }
 
     function _instances() internal view returns (bytes32[] memory ins) {
@@ -126,5 +126,28 @@ contract BalancerV3PoolsMetaBalanceAdapterTest is Test {
         assertEq(assets.length, 2);
         assertEq(assets[0], address(tokenX));
         assertEq(assets[1], address(tokenY));
+    }
+
+    /// @dev `positionLabels` is display-only and must never revert, and must never label a coordinate this adapter
+    ///      never emitted. Both were reachable before: `abi.decode(pid, (address))` reverts on a word with dirty
+    ///      upper 96 bits, and a `pid.length < 32` guard let a foreign MULTI-word coordinate through to be labelled
+    ///      from its first word. The decode now goes through `MetaBalanceAdapter._pidAddress`, whose own accept window is
+    ///      pinned exhaustively in `test/balances/MetaBalanceAdapterPidGuards.t.sol`; this case pins that THIS
+    ///      adapter routes through it.
+    ///
+    ///      The clean-coordinate assertion is what keeps the rest load-bearing. A shape-valid but unknown
+    ///      coordinate still resolves to the category-only label (the fail-open leaf collapse), so a view that
+    ///      rejected everything would fail here rather than pass the rejections trivially.
+
+    function test_positionLabels_malformedPositionId_returnsEmpty() public view {
+        address coord = address(0xBEEF);
+
+        assertGt(adapter.positionLabels(abi.encode(coord)).length, 0, "one clean word is the accepted shape");
+
+        assertEq(adapter.positionLabels("").length, 0, "empty");
+        assertEq(adapter.positionLabels(hex"0102030405060708090a0b0c").length, 0, "truncated");
+        uint256 dirty = uint256(uint160(coord)) | (uint256(1) << 255);
+        assertEq(adapter.positionLabels(abi.encode(dirty)).length, 0, "dirty upper bits");
+        assertEq(adapter.positionLabels(abi.encode(coord, uint256(1))).length, 0, "over-long");
     }
 }

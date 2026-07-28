@@ -15,6 +15,9 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 import {
     MockUniswapV3Pool,
+    MockOversizedFeePool,
+    MockDirtyToken0Pool,
+    MockLoopingFeePool,
     MockPositionManager,
     MockToken
 } from "test/balances/MetaBalanceAdapters/uniswap/UniswapV3Mocks.sol";
@@ -58,7 +61,7 @@ contract UniswapV3PoolsMetaBalanceAdapterTest is Test {
         _mint(1, address(wbtc), address(weth), 3000, 1_000_000, 42, 1337);
         _mint(2, address(usdc), address(weth), 500, 2_000_000, 7, 99);
 
-        meta = new UniswapV3PoolsMetaBalanceAdapter(address(npm), "Uniswap V3", address(nav));
+        meta = new UniswapV3PoolsMetaBalanceAdapter(address(npm), address(nav));
     }
 
     function _mint(uint256 id, address t0, address t1, uint24 fee, uint128 liq, uint128 owed0, uint128 owed1) internal {
@@ -269,5 +272,63 @@ contract UniswapV3PoolsMetaBalanceAdapterTest is Test {
 
     function test_positionLabels_shortId_empty() public view {
         assertEq(meta.positionLabels(hex"00").length, 0);
+    }
+
+    /// @dev `positionLabels` is display-only and must never revert, and must never label a coordinate this adapter
+    ///      never emitted. Both were reachable before: `abi.decode(pid, (address))` reverts on a word with dirty
+    ///      upper 96 bits, and a `pid.length < 32` guard let a foreign MULTI-word coordinate through to be labelled
+    ///      from its first word. The decode now goes through `MetaBalanceAdapter._pidAddress`, whose own accept window is
+    ///      pinned exhaustively in `test/balances/MetaBalanceAdapterPidGuards.t.sol`; this case pins that THIS
+    ///      adapter routes through it.
+    ///
+    ///      The clean-coordinate assertion is what keeps the rest load-bearing. A shape-valid but unknown
+    ///      coordinate still resolves to the category-only label (the fail-open leaf collapse), so a view that
+    ///      rejected everything would fail here rather than pass the rejections trivially.
+
+    function test_positionLabels_malformedPositionId_returnsEmpty() public view {
+        address coord = address(0xBEEF);
+
+        assertGt(meta.positionLabels(abi.encode(coord)).length, 0, "one clean word is the accepted shape");
+
+        assertEq(meta.positionLabels("").length, 0, "empty");
+        assertEq(meta.positionLabels(hex"0102030405060708090a0b0c").length, 0, "truncated");
+        uint256 dirty = uint256(uint160(coord)) | (uint256(1) << 255);
+        assertEq(meta.positionLabels(abi.encode(dirty)).length, 0, "dirty upper bits");
+        assertEq(meta.positionLabels(abi.encode(coord, uint256(1))).length, 0, "over-long");
+    }
+
+    /// @dev The three rejection branches the `_poolLeaf` rewrite introduced, none of which the typed mocks can
+    ///      reach: they declare `uint24 public fee` and real `address public token0/token1`, so an oversized fee
+    ///      word, a dirty token word, and an unbounded read are all structurally impossible for them. Each branch
+    ///      must fail open to the category-only label.
+    ///
+    ///      Load-bearing, per branch:
+    ///        - delete `|| rawFee > type(uint24).max` and the first case renders a bogus truncated fee (2 labels);
+    ///        - the second pins the token rejection as a whole. It cannot isolate the `bad0` flag, which is
+    ///          subsumed by the `t0 == address(0)` clause (`safeAddrStrict` zeroes a word it rejects); switching to
+    ///          the MASKING `safeAddr` is the regression it does catch, rendering a bogus token symbol.
+    ///        - restore the typed `try` reads and the third burns ~39M gas instead of ~105k.
+    ///      The real-pool tail keeps all three from passing on a view that answers category-only for everything.
+    function test_positionLabels_malformedPoolReads_failOpenToCategory() public {
+        string[] memory oversized =
+            meta.positionLabels(abi.encode(address(new MockOversizedFeePool(address(wbtc), address(weth)))));
+        assertEq(oversized.length, 1, "a fee that does not fit uint24 is not a fee");
+        assertEq(oversized[0], "AMM Liquidity Pool");
+
+        string[] memory dirtyToken = meta.positionLabels(abi.encode(address(new MockDirtyToken0Pool())));
+        assertEq(dirtyToken.length, 1, "a token word with dirty upper bits must be rejected, not masked");
+        assertEq(dirtyToken[0], "AMM Liquidity Pool");
+
+        address looping = address(new MockLoopingFeePool());
+        uint256 before = gasleft();
+        string[] memory bounded = meta.positionLabels(abi.encode(looping));
+        uint256 used = before - gasleft();
+        assertLt(used, 1_000_000, "the pool read must be gas-bounded");
+        assertEq(bounded.length, 1);
+
+        // A real pool still renders its full leaf, so none of the above is the guard blanking the view.
+        string[] memory real = meta.positionLabels(abi.encode(address(poolA)));
+        assertEq(real.length, 2, "a real pool still resolves its pair + fee");
+        assertEq(real[0], "AMM Liquidity Pool");
     }
 }

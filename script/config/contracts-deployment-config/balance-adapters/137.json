@@ -3,7 +3,6 @@
     "enabled": false,
     "constructor": {
       "fToken": "0x571d456b578fDC34E26E6D636736ED7c0CDB9d89",
-      "protocol": "Fluid Lending",
       "positionId": "0x571d456b578fDC34E26E6D636736ED7c0CDB9d89"
     }
   },
@@ -11,7 +10,6 @@
     "enabled": false,
     "constructor": {
       "fToken": "0x6f5e34eFf43D9ab7c977512509C53840B5EfBA85",
-      "protocol": "Fluid Lending",
       "positionId": "0x6f5e34eFf43D9ab7c977512509C53840B5EfBA85"
     }
   },
@@ -19,7 +17,6 @@
     "enabled": false,
     "constructor": {
       "fToken": "0xD3154535E4D0e179583ad694859E4e876EB12d24",
-      "protocol": "Fluid Lending",
       "positionId": "0xD3154535E4D0e179583ad694859E4e876EB12d24"
     }
   },
@@ -27,7 +24,6 @@
     "enabled": false,
     "constructor": {
       "fToken": "0x41b8B33A413681CB7d869D287E99C30c6DF775b9",
-      "protocol": "Fluid Lending",
       "positionId": "0x41b8B33A413681CB7d869D287E99C30c6DF775b9"
     }
   }

@@ -12,11 +12,16 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 ///         repeats verbatim — `supportsInterface` advertising that pair plus {IERC165}. Concrete adapters implement
 ///         the balance/position reads and the {IPositionDescribable} display hooks.
 /// @dev Plain adapters stay immutable (no Ownable/admin). The assisted family has its own base
-///      ({AssistedCoordCache}); meta-adapters have {MetaBalanceAdapter}. `supportsInterface` is `virtual` so an
-///      adapter advertising an extra interface can override and `super`-chain.
+///      ({AssistedCoordCache}); meta-adapters have {MetaBalanceAdapter}. `supportsInterface` is `public virtual`
+///      so an adapter advertising an extra interface can override and `super`-chain — it was `external`, which
+///      made that impossible (Solidity cannot reach an `external` function through `super`), forcing any such
+///      adapter to re-declare the whole base list and silently drift from it. `public` matches the
+///      {AssistedCoordCache} precedent, where the Nexus adapter really does `super`-chain. It stays `pure`
+///      because the answer is a compile-time comparison; an override that must read state (an immutable, say)
+///      cannot widen it, and should expose its extra interface from a `pure` override here regardless.
 abstract contract BalanceAdapterBase is IBalanceAdapter, IPositionDescribable {
     /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) external pure virtual override returns (bool) {
+    function supportsInterface(bytes4 interfaceId) public pure virtual override returns (bool) {
         return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IPositionDescribable).interfaceId
             || interfaceId == type(IERC165).interfaceId;
     }

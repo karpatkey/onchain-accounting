@@ -49,7 +49,6 @@ deploy_one() {
   local out line adapter
   out=$(
     DEV_NAV_PROXY="$NAV" \
-    DEV_PROTOCOL_NAME="$name" \
     DEV_DATA_PROVIDERS="$dps" \
     FOUNDRY_PROFILE=dev \
     forge script "$DEPLOY_DIR/deploy-aave-instances-meta.s.sol:DeployAaveInstancesMeta" \

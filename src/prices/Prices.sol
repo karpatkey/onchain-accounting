@@ -208,9 +208,4 @@ abstract contract Prices is IPrices, Initializable {
         _assetPricing[asset].pegToleranceBps = pegToleranceBps;
         emit PegToleranceSet(asset, pegToleranceBps);
     }
-
-    /// @notice Returns the number of monitor feeds registered for an asset.
-    function _monitorFeedCount(address asset) internal view returns (uint256) {
-        return _monitorFeeds[asset].length;
-    }
 }

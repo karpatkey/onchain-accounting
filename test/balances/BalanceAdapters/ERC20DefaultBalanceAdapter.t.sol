@@ -259,4 +259,65 @@ contract ERC20DefaultBalanceAdapterTest is Test {
         assertTrue(adapter.isSupportedByDefault(NATIVE_ADDRESS));
         assertFalse(adapter.isSupportedByDefault(address(0x1234)));
     }
+
+    /// @dev Configuration-view probe. The wallet adapter's leaf IS the token symbol, so it is legitimately
+    ///      positionId-derived and `positionLabels("")` returns [] — there is no single shape to name. That is
+    ///      not a gap: a wallet position's shape set is the registered-asset list, which a configuration view
+    ///      already renders, and the adapter is identified as the wallet singleton by `AdapterType.Default`.
+    function test_positionLabels_emptyProbe_returnsEmptyForThePerTokenLeaf() public view {
+        assertEq(adapter.positionLabels("").length, 0);
+
+        // Against a real positionId the leaf resolves, so [] above is "per-position", not "broken".
+        string[] memory labels = adapter.positionLabels(abi.encode(address(usdc)));
+        assertEq(labels.length, 1);
+        assertEq(labels[0], "USDC");
+
+        string[] memory native = adapter.positionLabels(abi.encode(NATIVE_ADDRESS));
+        assertEq(native.length, 1);
+        assertEq(native[0], "native");
+    }
+
+    /// @dev A malformed positionId degrades to `[]`; it must never revert. `positionLabels` is display-only and
+    ///      this is the one adapter registered on all 24 chains, so a configuration view that generalises
+    ///      "per-position adapters answer the probe with []" and probes with anything other than exactly `""`
+    ///      must still get an answer. Matches the `[]` its `CapBalanceAdapter` /
+    ///      `NexusMutualStakingPoolsAssistedBalanceAdapter` siblings return for the same inputs.
+    ///
+    ///      Both halves are load-bearing against the guard, not just against a revert:
+    ///        - truncated (1..31 bytes) would revert in `abi.decode` without the `length >= 32` check;
+    ///        - the dirty word is `usdc` with its upper 96 bits set. `abi.decode(_, (address))` reverts on it, and
+    ///          a "fix" that merely masked to the low 160 bits would answer "USDC" — a wrong label for a
+    ///          coordinate this adapter never emitted. Only the `raw >> 160` check yields [].
+    ///      The `assertEq(labels[0], "USDC")` tail pins that the guards did not simply blank the whole view.
+    function test_positionLabels_malformedPositionId_returnsEmptyRatherThanReverting() public view {
+        // Truncated: shorter than one word.
+        assertEq(adapter.positionLabels(hex"0102030405060708090a0b0c").length, 0);
+        assertEq(adapter.positionLabels(hex"00").length, 0);
+
+        // Full word, dirty upper 96 bits — including one whose low 160 bits ARE a supported asset.
+        assertEq(adapter.positionLabels(abi.encode(type(uint256).max)).length, 0);
+        uint256 dirtyUsdc = uint256(uint160(address(usdc))) | (uint256(1) << 255);
+        assertEq(adapter.positionLabels(abi.encode(dirtyUsdc)).length, 0);
+
+        // ...while the clean word still resolves, so the assertions above are about malformed input, not a
+        // permanently empty view.
+        string[] memory labels = adapter.positionLabels(abi.encode(address(usdc)));
+        assertEq(labels.length, 1);
+        assertEq(labels[0], "USDC");
+    }
+
+    /// @dev Pins the `== 32` boundary, which is NOT the same guard as "at least a word". `abi.decode` silently
+    ///      ignores trailing bytes, so under a `>= 32` guard a foreign multi-word coordinate whose FIRST word is a
+    ///      registered asset would be labelled with that asset's symbol — the same over-claim the dirty-word
+    ///      rejection exists to prevent, reached through a far more ordinary input (any adapter that encodes a
+    ///      `(address, uint256)` pair).
+    ///
+    ///      Load-bearing: with the guard relaxed to `>= 32` the 64-byte case returns `["USDC"]` and this fails.
+    ///      The exactly-32 tail keeps it from passing on a view that rejects everything.
+    function test_positionLabels_overlongPositionId_returnsEmpty() public view {
+        assertEq(adapter.positionLabels(abi.encode(address(usdc), uint256(42))).length, 0);
+        assertEq(adapter.positionLabels(abi.encodePacked(abi.encode(address(usdc)), hex"01")).length, 0);
+
+        assertEq(adapter.positionLabels(abi.encode(address(usdc))).length, 1);
+    }
 }

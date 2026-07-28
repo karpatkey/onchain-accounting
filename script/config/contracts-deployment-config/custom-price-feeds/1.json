@@ -171,20 +171,20 @@
   },
   "ezETHCrossRate": {
     "enabled": true,
-    "$comment": "ezETH redundancy feed (ezETH_CrossRateCustomPriceFeed). CrossRate: ezETH/USD = ETH/USD x ezETH/ETH. yToXFeed is the Redstone Classic Push ezETH/ETH market feed (verified 99.87% vs Renzo RestakeManager rate). Independent of the primary ezETH feed (Renzo on-chain rate); added as priceFeeds[1] for freshest-wins redundancy.",
+    "$comment": "ezETH divergence monitor (ezETH_CrossRateCustomPriceFeed). CrossRate: ezETH/USD = ETH/USD x ezETH/ETH. yToXFeed migrated 2026-07-22 to the RedStone multi-feed ezETH_FUNDAMENTAL feed (0x701e83Bd…) after the old Classic-Push ezETH/ETH market feed (0xF4a3e183…) was sunset by RedStone (per Slack C03BP6L2A9W / Nicolas). Still independent of the primary (Renzo RestakeManager on-chain rate) — RedStone's rate vs Renzo's, plus the NAV ETH/USD leg. Feed is 8-dec, ~12h update cadence; heartbeat kept at 24h for margin.",
     "constructor": {
       "underlyingAsset": "0xbf5495Efe5DB9ce00f80364C8B423567e58d2110",
-      "yToXFeed": "0xF4a3e183F59D2599ee3DF213ff78b1B3b1923696",
+      "yToXFeed": "0x701e83Bd1B84D02c10587f0De9Dfad5A22419DF7",
       "yToXHeartbeat": "86400",
       "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }
   },
   "ETHxCrossRate": {
     "enabled": true,
-    "$comment": "ETHx redundancy feed (ETHx_CrossRateCustomPriceFeed). CrossRate: ETHx/USD = ETH/USD x ETHx/ETH. yToXFeed is the Redstone Classic Push ETHx/ETH market feed (verified 99.81% vs Stader getExchangeRate). Independent of the primary ETHx feed (Stader on-chain rate); added as priceFeeds[1] for freshest-wins redundancy.",
+    "$comment": "ETHx redundancy feed (ETHx_CrossRateCustomPriceFeed). CrossRate: ETHx/USD = ETH/USD x ETHx/ETH, with ETH/USD read from the NAV (ADR 0019). yToXFeed MIGRATED 2026-07-27 from the Redstone Classic Push ETHx/ETH feed (0xc799194cAa24E2874Efa89b4Bf5c92a530B047FF) to the CHAINLINK ETHx/ETH feed (0xC499ec76e2F5ac15e127A352Bc40cF24FC472401) because Redstone is sunsetting all its ETHx feeds. Chainlink feed verified on-chain: description() == \"ETHx / ETH\", decimals 18, answer 1.093319e18 vs Stader getExchangeRate 1.093906e18 = 5.4 bps apart (well inside ETHx's 250 bps divergence tolerance). There is NO Chainlink ETHx/USD feed (FeedRegistry.getFeed reverts \"Feed not found\"), so the ETH-quoted cross-rate is the only Chainlink route. The 18 decimals need no config change: TwoFeedChainlinkPriceFeed captures 10**rateFeed.decimals() in its constructor (TwoFeedChainlinkPriceFeed.sol:72), so the rate decimals cancel into NAV_DECIMALS. Independent of the primary ETHx feed (Stader on-chain rate); serves as ETHx's monitor feed.",
     "constructor": {
       "underlyingAsset": "0xA35b1B31Ce002FBF2058D22F30f95D405200A15b",
-      "yToXFeed": "0xc799194cAa24E2874Efa89b4Bf5c92a530B047FF",
+      "yToXFeed": "0xC499ec76e2F5ac15e127A352Bc40cF24FC472401",
       "yToXHeartbeat": "86400",
       "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }

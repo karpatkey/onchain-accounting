@@ -20,7 +20,9 @@ import {console2} from "forge-std/console2.sol";
 ///        Pass A (adds/sets): addPriceFeed(target primary, if absent on-chain); setDivergenceTolerance;
 ///                            setPegTolerance; addMonitorFeed(each target monitor not already present).
 ///        Pass B (removes):   removePriceFeed(each on-chain PRICING feed whose address != the target primary) —
-///                            i.e. the old (swapped-out) primary and every redundancy feed now living in monitorFeeds.
+///                            i.e. the old (swapped-out) primary and every redundancy feed now living in monitorFeeds;
+///                            removeMonitorFeed(each on-chain MONITOR feed absent from the config's monitor set) —
+///                            i.e. the superseded cross-rate monitors left behind when `03` re-deploys a Custom feed.
 ///      setDivergenceTolerance is emitted before any addMonitorFeed (a monitor cannot be added until the tolerance is
 ///      set). An asset whose target primary does not resolve (new feed not deployed yet) is SKIPPED WHOLESALE — a
 ///      missing deploy can never strand an asset. Idempotent, MANAGER-gated. Requires --rpc-url.
@@ -43,6 +45,7 @@ contract MigrateToMonitorFeeds is BaseDeployScript {
         uint256[] addMonitorHbs;
         // Pass B — removes
         address[] removePricing;
+        address[] removeMonitors;
     }
 
     function run() public override {
@@ -62,7 +65,7 @@ contract MigrateToMonitorFeeds is BaseDeployScript {
         for (uint256 i = 0; i < symbols.length; i++) {
             plans[i] = _planAsset(symbols[i], navProxy);
             nA += _passACount(plans[i]);
-            nB += plans[i].removePricing.length;
+            nB += plans[i].removePricing.length + plans[i].removeMonitors.length;
         }
 
         console2.log("Planned adds/sets:", nA);
@@ -119,6 +122,7 @@ contract MigrateToMonitorFeeds is BaseDeployScript {
         p.removePricing = _pricingToRemove(pricing, prim);
 
         (p.addMonitors, p.addMonitorTypes, p.addMonitorHbs) = _monitorsToAdd(symbol, asset, navProxy);
+        p.removeMonitors = _monitorsToRemove(symbol, asset, navProxy);
 
         uint256 monCount = ConfigReader.assetMonitorFeedCount(vm, currentChainId, symbol);
         uint256 divTol = ConfigReader.readAssetDivergenceToleranceBps(vm, currentChainId, symbol);
@@ -226,6 +230,44 @@ contract MigrateToMonitorFeeds is BaseDeployScript {
         }
     }
 
+    /// @notice On-chain monitor feeds absent from the config's monitor set (to be removed from `_monitorFeeds`).
+    /// @dev The case this exists for: `03_DeployPriceFeeds` re-deploys a Custom cross-rate feed, so the config now
+    ///      names the NEW address while the superseded contract is still registered as a monitor — leaving both
+    ///      would count the same source twice in the divergence check. Conservative: if ANY config monitor for the
+    ///      asset is unresolvable (unknown type, blank address, not yet deployed), NO monitor is removed for that
+    ///      asset — an incomplete target set must never be able to strip live monitoring. Pass A adds the missing
+    ///      target monitors before Pass B removes anything, so the asset is never left unmonitored mid-batch.
+    function _monitorsToRemove(string memory symbol, address asset, address navProxy)
+        private
+        view
+        returns (address[] memory out)
+    {
+        uint256 monCount = ConfigReader.assetMonitorFeedCount(vm, currentChainId, symbol);
+        address[] memory target = new address[](monCount);
+        for (uint256 i = 0; i < monCount; i++) {
+            (, bool validType) = ConfigReader.readAssetMonitorFeedPriceType(vm, currentChainId, symbol, i);
+            string memory maddr =
+                validType ? ConfigReader.readAssetMonitorFeedAddress(vm, currentChainId, symbol, i) : "";
+            address feed = bytes(maddr).length == 0 ? address(0) : vm.parseAddress(maddr);
+            if (feed == address(0)) {
+                console2.log("  [skip monitor removals] target monitor unresolved:", symbol);
+                return new address[](0);
+            }
+            target[i] = feed;
+        }
+
+        IPrices.PriceFeedConfig[] memory onChain = IPrices(navProxy).getMonitorFeeds(asset);
+        address[] memory tmp = new address[](onChain.length);
+        uint256 n;
+        for (uint256 i = 0; i < onChain.length; i++) {
+            if (!_contains(target, onChain[i].priceFeed)) tmp[n++] = onChain[i].priceFeed;
+        }
+        out = new address[](n);
+        for (uint256 i = 0; i < n; i++) {
+            out[i] = tmp[i];
+        }
+    }
+
     function _passACount(Plan memory p) private pure returns (uint256 c) {
         if (p.asset == address(0)) return 0;
         if (p.addPrimary != address(0)) c++;
@@ -294,6 +336,11 @@ contract MigrateToMonitorFeeds is BaseDeployScript {
                     navProxy, 0, abi.encodeCall(NAVCalculator.removePriceFeed, (p.asset, p.removePricing[k]))
                 );
             }
+            for (uint256 k = 0; k < p.removeMonitors.length; k++) {
+                batch[j++] = SafeTxBuilder.call(
+                    navProxy, 0, abi.encodeCall(NAVCalculator.removeMonitorFeed, (p.asset, p.removeMonitors[k]))
+                );
+            }
         }
         return j;
     }
@@ -301,6 +348,13 @@ contract MigrateToMonitorFeeds is BaseDeployScript {
     function _containsFeed(IPrices.PriceFeedConfig[] memory feeds, address feed) private pure returns (bool) {
         for (uint256 i = 0; i < feeds.length; i++) {
             if (feeds[i].priceFeed == feed) return true;
+        }
+        return false;
+    }
+
+    function _contains(address[] memory addrs, address addr) private pure returns (bool) {
+        for (uint256 i = 0; i < addrs.length; i++) {
+            if (addrs[i] == addr) return true;
         }
         return false;
     }
@@ -325,26 +379,5 @@ contract MigrateToMonitorFeeds is BaseDeployScript {
         }
         vm.stopBroadcast();
         console2.log("[OK] Broadcast", batch.length, "tx(s) from the deployer EOA.");
-    }
-
-    /// @notice Decodes an `Error(string)` revert payload; returns "unknown" for custom errors / empty data.
-    function _revertMsg(bytes memory data) internal pure returns (string memory) {
-        if (data.length >= 68 && data[0] == 0x08 && data[1] == 0xc3 && data[2] == 0x79 && data[3] == 0xa0) {
-            uint256 len;
-            assembly {
-                len := mload(add(add(data, 32), 36))
-            }
-            // Error(string) layout: [0,4) selector · [4,36) offset · [36,68) length · [68,…) string bytes.
-            // Compare without `68 + len` so a garbage length word can't overflow-panic inside the error decoder
-            // (data.length >= 68 is guaranteed by the outer guard).
-            if (len <= data.length - 68) {
-                bytes memory msgBytes = new bytes(len);
-                for (uint256 i = 0; i < len; i++) {
-                    msgBytes[i] = data[i + 68];
-                }
-                return string(msgBytes);
-            }
-        }
-        return "unknown";
     }
 }

@@ -26,11 +26,8 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
     IMorpho public immutable MORPHO;
 
     /// @param morpho_ The Morpho contract address.
-    /// @param protocolName_ Human-readable protocol name (e.g. "Morpho").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(address morpho_, string memory protocolName_, address navCalculator_)
-        MetaBalanceAdapter(protocolName_, navCalculator_)
-    {
+    constructor(address morpho_, address navCalculator_) MetaBalanceAdapter(navCalculator_) {
         AddressCheckLib.requireContract(morpho_, "Morpho");
         MORPHO = IMorpho(morpho_);
     }
@@ -59,6 +56,19 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
         }
 
         Position memory pos = MORPHO.position(marketId, account);
+
+        // A debt this adapter cannot report must never leave the collateral standing alone: the position would
+        // count as pure credit and NAV be over-reported by the whole borrow. Checked on registration only, NOT
+        // the assetFilter — a filtered view showing collateral while hiding an unreportable debt over-reports
+        // the same way. Under-reporting the whole position is the safe direction.
+        if (!loanReg && pos.borrowShares != 0) {
+            // Gate on the REALISED borrow, not the raw share count: dust shares left by a repay-by-assets, or a
+            // degenerate market whose totalBorrowAssets was driven to 0 by a bad-debt seizure while shares
+            // remain, would otherwise erase an entire healthy collateral position.
+            (, uint256 unreportableBorrow) = _loanLegs(mp, pos);
+            if (unreportableBorrow > 0) return new INAVCalculator.PositionBalance[](0);
+        }
+
         bytes memory pid = _instancePositionId(instance);
 
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](3);
@@ -96,15 +106,22 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @inheritdoc MetaBalanceAdapter
     /// @dev Returns `["Market", "<collateral>/<loan>"]` where the leaf is built from the two token symbols. If the
     ///      marketId cannot be resolved the leaf is empty and collapses to `["Market"]` (see {_labels}). Returns an
-    ///      empty array for a short positionId.
+    ///      empty array for a malformed positionId — see {_pidWord}, NOT {_pidAddress}: a marketId is a keccak hash,
+    ///      so almost every real one has bits set above 160 and a range check would reject it.
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
-        if (pid.length < 32) return new string[](0);
-        bytes32 marketId = abi.decode(pid, (bytes32));
+        (bytes32 marketId, bool ok) = _pidWord(pid);
+        if (!ok) return new string[](0);
         string memory leaf = "";
         try MORPHO.idToMarketParams(Id.wrap(marketId)) returns (MarketParams memory mp) {
-            string memory collSym = _symbol(mp.collateralToken);
-            string memory loanSym = _symbol(mp.loanToken);
-            leaf = string.concat(collSym, "/", loanSym);
+            // `idToMarketParams` is a plain mapping getter, so an id with NO market returns an all-zero struct
+            // instead of reverting — the `catch` arm never fires for it. Both symbol reads would then fail open to
+            // "?" and the adapter would answer `["Market", "?/?"]`: a confident two-segment breadcrumb, byte-
+            // identical to a real market whose tokens both have unreadable symbols, for a market that does not
+            // exist on this chain. Gate on `loanToken` — every real market has one, whereas an "idle" market
+            // legitimately has `collateralToken == address(0)`, so only `loanToken` can carry the check.
+            if (mp.loanToken != address(0)) {
+                leaf = string.concat(_symbol(mp.collateralToken), "/", _symbol(mp.loanToken));
+            }
         } catch {}
         return _labels("Market", leaf);
     }

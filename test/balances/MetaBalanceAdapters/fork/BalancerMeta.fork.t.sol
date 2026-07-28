@@ -51,8 +51,8 @@ contract BalancerMetaParityForkTest is BalanceAdapterTestBase {
 
     function _deployAll() internal {
         balances = _deployBalancesForAdapter(_supportedAssets());
-        pools = new BalancerV3PoolsMetaBalanceAdapter("Balancer V3", address(balances));
-        gauges = new BalancerV3GaugesMetaBalanceAdapter(BALANCER_MINTER, "Balancer V3", address(balances));
+        pools = new BalancerV3PoolsMetaBalanceAdapter(address(balances));
+        gauges = new BalancerV3GaugesMetaBalanceAdapter(BALANCER_MINTER, address(balances));
     }
 
     function _supportedAssets() internal pure returns (address[] memory assets) {

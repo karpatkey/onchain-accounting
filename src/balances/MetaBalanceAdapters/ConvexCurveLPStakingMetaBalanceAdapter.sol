@@ -66,11 +66,8 @@ contract ConvexCurveLPStakingMetaBalanceAdapter is MetaBalanceAdapter {
     /// @param booster_       Convex Booster contract (0xF403C135812408BFbE8713b5A23a04b3D48AAE31 on mainnet).
     /// @param cvxToken_      CVX token address (0x4e3FBD56CD56c3e72c1403e103b45Db9da5B9D2B on mainnet,
     ///                       address(0) to skip CVX computation).
-    /// @param protocolName_  Human-readable name (e.g. "Convex").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(address booster_, address cvxToken_, string memory protocolName_, address navCalculator_)
-        MetaBalanceAdapter(protocolName_, navCalculator_)
-    {
+    constructor(address booster_, address cvxToken_, address navCalculator_) MetaBalanceAdapter(navCalculator_) {
         if (booster_ != address(0) && booster_.code.length == 0) revert NotAContract("Booster");
         BOOSTER = IConvexBooster(booster_);
         CVX_TOKEN = cvxToken_;
@@ -234,10 +231,11 @@ contract ConvexCurveLPStakingMetaBalanceAdapter is MetaBalanceAdapter {
     /// @inheritdoc MetaBalanceAdapter
     /// @dev `["Staking", "Curve LP", "TOKEN0/TOKEN1/…"]` — the third segment is the underlying Curve pool's coin
     ///      symbols, derived on-chain from the rewarder's LP token. Collapses to `["Staking", "Curve LP"]` if the
-    ///      coins can't be resolved; empty array for a short positionId.
+    ///      coins can't be resolved; empty array for a malformed positionId (see {_pidAddress}).
     function positionLabels(bytes calldata pid) external view override returns (string[] memory out) {
-        if (pid.length < 32) return new string[](0);
-        string memory coins = _coins(pid);
+        (address rewarder, bool ok) = _pidAddress(pid);
+        if (!ok) return new string[](0);
+        string memory coins = _coins(rewarder);
         if (bytes(coins).length == 0) {
             out = new string[](2);
             out[0] = "Staking";
@@ -267,8 +265,7 @@ contract ConvexCurveLPStakingMetaBalanceAdapter is MetaBalanceAdapter {
 
     /// @notice Derives the "TOKEN0/TOKEN1/…" coin-symbol string from the rewarder's underlying Curve pool ("" on
     ///         failure: unresolvable LP/pool/coins).
-    function _coins(bytes calldata pid) private view returns (string memory) {
-        address rewarder = abi.decode(pid, (address));
+    function _coins(address rewarder) private view returns (string memory) {
         address lpToken = _lpTokenOf(rewarder);
         if (lpToken == address(0)) return "";
         address pool = CurvePoolLib.getPool(lpToken);
@@ -286,15 +283,18 @@ contract ConvexCurveLPStakingMetaBalanceAdapter is MetaBalanceAdapter {
         if (address(BOOSTER) == address(0)) return address(0);
         // Require a FULL 32-byte pid() word: a short/empty return (malformed rewarder) would otherwise decode as
         // pid == 0 and silently resolve to Booster pool 0's LP token. (`_safeUint`'s ok flag does not distinguish
-        // a short return, which leaves result == 0 — indistinguishable from a genuine pid 0.)
-        (bool pidOk, bytes memory ret) = rewarder.staticcall(abi.encodeWithSignature("pid()"));
-        if (!pidOk || ret.length < 32) return address(0);
-        // Read the first word directly: abi.decode(ret, (uint256)) can revert on a non-32-multiple length
-        // (e.g. 33 bytes), which would defeat the fail-open intent for a malformed rewarder.
-        uint256 pid;
-        assembly {
-            pid := mload(add(ret, 0x20))
-        }
+        // a short return, which leaves result == 0 — indistinguishable from a genuine pid 0.) That is what
+        // {StaticCallLib.probeWord}'s `hasWord` is for; routing through it also picks up the library's gas
+        // stipend and fixed output window, which the hand-rolled staticcall here did not have.
+        //
+        // Scope note, so the stipend is not read as more than it is: it bounds THIS read, not the instance. The
+        // `balanceOf` at the top of `_instancePositions` is still an unguarded high-level call that forwards
+        // 63/64 of the frame, and it runs first — so a rewarder that loops still starves the sibling instances
+        // in the same `getAdapterPositions` sweep, with `MetaBalanceAdapter`'s per-instance try/catch absorbing
+        // the OOG silently. Closing that belongs in the meta-adapter instance loop, where it fixes every meta
+        // adapter at once, not here.
+        (, bool hasPid, uint256 pid) = StaticCallLib.probeWord(rewarder, abi.encodeWithSignature("pid()"));
+        if (!hasPid) return address(0);
         try BOOSTER.poolInfo(pid) returns (address lptoken, address, address, address, address, bool) {
             return lptoken;
         } catch {

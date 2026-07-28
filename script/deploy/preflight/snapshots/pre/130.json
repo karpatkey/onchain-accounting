@@ -1,0 +1,61 @@
+{
+ "chainId": 130,
+ "name": "unichain",
+ "rpcSource": "env UNICHAIN_URL",
+ "block": 54422579,
+ "capturedAtUnix": 1785170941,
+ "proxy": "0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d",
+ "errors": [],
+ "implementation": "0x07bd077cfb40bbda8a67d0d33ce41b974ab0f8a8",
+ "implementationRecorded": "0x07bd077cFB40bBDa8A67d0D33ce41b974aB0F8a8",
+ "version": 1,
+ "usdDecimals": 8,
+ "erc20DefaultBalanceAdapter": "0x41967559d0a20ad102f6e27b7723b1963390ad75",
+ "erc20DefaultRecorded": "0x41967559D0a20Ad102F6e27b7723b1963390aD75",
+ "erc20DefaultSupportedAssets": [
+  "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+ ],
+ "roles": {
+  "securityCouncil": {
+   "address": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
+   "DEFAULT_ADMIN_ROLE": false,
+   "MANAGER": false
+  },
+  "admin": {
+   "address": "0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72",
+   "DEFAULT_ADMIN_ROLE": true,
+   "MANAGER": true
+  },
+  "manager": {
+   "address": "0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72",
+   "DEFAULT_ADMIN_ROLE": true,
+   "MANAGER": true
+  }
+ },
+ "assetCount": 1,
+ "assets": [
+  {
+   "address": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+   "symbol": "ETH",
+   "decimals": 18,
+   "priceFeeds": [],
+   "monitorFeeds": [],
+   "divergenceToleranceBps": 0,
+   "pegToleranceBps": 0,
+   "includedInDefaultAdapter": true
+  }
+ ],
+ "excludedFromDefaultAdapter": [],
+ "adapterCount": 1,
+ "adapters": [
+  {
+   "address": "0x41967559d0a20ad102f6e27b7723b1963390ad75",
+   "configKey": "ERC20Default",
+   "adapterType": "Default",
+   "metaInstanceCount": 0,
+   "metaInstances": []
+  }
+ ],
+ "metaInstanceTotal": 0,
+ "accounts": []
+}

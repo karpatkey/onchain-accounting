@@ -27,7 +27,7 @@ Before writing code, answer:
 If the protocol has **many fungible instances** (Morpho vaults/markets, Balancer pools/gauges, Aave instances, Uniswap/PancakeSwap V2 pairs), prefer a **meta-adapter** over one contract per instance:
 
 - **Per-instance** (the default skeleton below): pin the pool/market/vault address in the constructor. One deployed contract per instance. Right for singletons (a savings vault, a withdrawal queue, SparkLend) or one-off adapters with unusual constructor args.
-- **Meta-adapter** (`IMetaBalanceAdapter` / `MetaBalanceAdapter`): one immutable contract for *all* instances of the protocol; the active set is configured on NAVCalculator via `addMetaInstances`/`removeMetaInstances` (a `MANAGER` TX), not by deploying more contracts. Extend `MetaBalanceAdapter` and implement the two data hooks `_instancePositions(account, instance, assetFilter)` + `_instanceAssets(instance)`, plus the three identity hooks `_protocolBrand()` / `_protocolId()` / `_protocolSubId()` (the version-stripped brand, the ecosystem roll-up, and the per-product slug — see §1.1). Build each leg with the base's `_leg(asset, amount, isDebt, positionId, kind)` helper (it stamps the three identity fields, `balanceAdapter = address(this)`, `isLocked = false`, and `positionInstanceId = bytes32(0)`), and derive `positionLabels` via the base's `_labels(category, leaf)` helper. Optionally override `_instancePositionId(bytes32 instance)` to customise positionId encoding — the default is `abi.encode(_toAddress(instance))` (address-keyed protocols); override with `abi.encode(instance)` for raw-bytes32 coordinates (Morpho marketIds, Balancer V2 poolIds); adapters where positionId varies per leg (e.g. Aave V3, which builds `abi.encode(pool)` inline) skip the hook and build positionId inline. Adding a pool/vault later is a config TX, not a deploy. See `GearboxV3MarketsMetaBalanceAdapter.sol`, §6.1 of `src/balances/BALANCE_ADAPTERS.md`, and [ADR 0010](../decisions/0010-meta-balance-adapters.md). Meta-adapters still take **no admin functions** — the governed state lives on NAVCalculator.
+- **Meta-adapter** (`IMetaBalanceAdapter` / `MetaBalanceAdapter`): one immutable contract for *all* instances of the protocol; the active set is configured on NAVCalculator via `addMetaInstances`/`removeMetaInstances` (a `MANAGER` TX), not by deploying more contracts. Extend `MetaBalanceAdapter` and implement the two data hooks `_instancePositions(account, instance, assetFilter)` + `_instanceAssets(instance)`, plus the three identity hooks `_protocolBrand()` / `_protocolId()` / `_protocolSubId()` (the version-stripped brand, the ecosystem roll-up, and the per-product slug — see §1.1). Build each leg with the base's `_leg(asset, amount, isDebt, positionId, kind)` helper (it stamps the three identity fields, `balanceAdapter = address(this)`, `isLocked = false`, and `positionInstanceId = bytes32(0)`), and derive `positionLabels` via the base's `_labels(category, leaf)` helper. Override `_instancePositionId(bytes32 instance)` whenever your positionId is not the default `abi.encode(_toAddress(instance))` — `abi.encode(instance)` for raw-bytes32 coordinates (Morpho marketIds, Balancer V2 poolIds), or a derived value (Aave V3's coordinate is a ProtocolDataProvider but its positionId is the Pool resolved from it). **This hook is load-bearing, not decorative:** the base's `positionIds()` maps the governed instance set through it to satisfy `IPositionEnumerable`, so it MUST equal the positionId your `_instancePositions` passes to `_leg`. Computing the positionId inline while leaving the hook on its default is a silent break — the enumeration advertises ids no position carries, the configuration-view join returns nothing, and every test stays green. Call the hook from `_instancePositions` rather than re-deriving. Adding a pool/vault later is a config TX, not a deploy. See `GearboxV3MarketsMetaBalanceAdapter.sol`, §6.1 of `src/balances/BALANCE_ADAPTERS.md`, and [ADR 0010](../decisions/0010-meta-balance-adapters.md). Meta-adapters still take **no admin functions** — the governed state lives on NAVCalculator.
 
 Today meta-adapters cover all major multi-instance protocols (Aave V3, Compound V3, Morpho Vaults/Markets, Euler V2, Gearbox V3 markets + credit accounts, Balancer V2/V3 pools + gauges, Curve pools + gauges, Convex, Fluid fTokens + Vaults, StakeWise V3, Uniswap V2/V3, PancakeSwap V2/V3). For a new multi-instance protocol, a meta-adapter is almost always the right choice. (Uniswap V3 / PancakeSwap V3 are meta-adapters too — their `NonfungiblePositionManager` is `ERC721Enumerable`, so an account's LP NFTs are enumerable on-chain and no off-chain assistant is needed.)
 
@@ -74,6 +74,7 @@ import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
+import {ProtocolNames} from "src/utils/ProtocolNames.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
@@ -110,8 +111,14 @@ contract MyProtocolBalanceAdapter is IBalanceAdapter, IPositionDescribable {
     // ─── IPositionDescribable ─────────────────────────────────────────────────
 
     /// @inheritdoc IPositionDescribable
+    /// @dev Names the PROTOCOL, never the product. Return the `ProtocolNames` constant for your protocol id —
+    ///      adapters sharing a `ProtocolIds` protocol id MUST return the same string, and the product goes in
+    ///      `positionLabels()` below. Add a constant to `src/utils/ProtocolNames.sol` (and a branch to
+    ///      `forProtocolId`) if the protocol is new. `test/ProtocolNameConsistency.t.sol` pins every hardcoded
+    ///      adapter to its constant. NOTE: meta-adapters do NOT declare this at all — `MetaBalanceAdapter`
+    ///      derives it from `_protocolId()`, so omit it entirely when extending `MetaBalanceAdapter`.
     function protocolName() external pure returns (string memory) {
-        return "My Protocol";
+        return ProtocolNames.MY_PROTOCOL;
     }
 
     // ─── IBalanceAdapter ────────────────────────────────────────────────
@@ -257,14 +264,18 @@ For a **per-instance adapter**, add the constructor block (only the protocol-spe
 }
 ```
 
-For a **meta-adapter**, add the constructor block (only chain-level constants — the protocol's global contracts) to `contracts-deployment-config/meta-balance-adapters/<chainId>.json`:
+For a **meta-adapter**, add the constructor block (only chain-level constants — the protocol's global contracts) to `contracts-deployment-config/meta-balance-adapters/<chainId>.json`. There is **no display-name key**: `MetaBalanceAdapter.protocolName()` derives it from `_protocolId()`, so a meta adapter with no chain-global contracts has an empty constructor block:
 
 ```json
 {
   "GearboxV3MarketsMeta": {
     "enabled": true,
+    "constructor": {}
+  },
+  "MorphoMarketsMeta": {
+    "enabled": true,
     "constructor": {
-      "protocol": "Gearbox"
+      "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb"
     }
   }
 }
@@ -335,7 +346,7 @@ if (_equals(adapterName, "MyProtocol") || _startsWith(adapterName, "MyProtocol_"
 
 And a `_deployIfEnabled("MyProtocol")` call in `run()`.
 
-For a **meta-adapter**, the helper typically only reads a `protocol` string (the human-readable name passed to the `MetaBalanceAdapter` base constructor) plus any chain-global contract addresses the constructor needs. See `_deployGearboxV3MarketsMeta` or `_deploySparkLend` in the same file for concrete patterns.
+For a **meta-adapter**, the helper reads only the chain-global contract addresses the constructor needs — often none, in which case it just passes `navCalculator`. The display name is **not** a constructor argument: `MetaBalanceAdapter` derives it from `_protocolId()` via `ProtocolNames.forProtocolId`. If your protocol is new, add its constant and a `forProtocolId` branch in `src/utils/ProtocolNames.sol`, or every verbose read will show a blank name. See `_deployGearboxV3MarketsMeta` or `_deploySparkLend` in the same file for concrete patterns.
 
 ---
 

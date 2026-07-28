@@ -130,6 +130,17 @@ jobs:
         run: forge test --match-path "test/integration/*" -vvv --threads 1
 
   # Format check
+  lockfile:
+    name: Lockfile
+    runs-on: ubuntu-latest
+    steps:
+      # No submodule content needed: the check reads the committed gitlinks via `git ls-tree HEAD`, so this job
+      # stays fast and cannot be confused by whatever a checkout happens to leave in lib/.
+      - uses: actions/checkout@v4
+
+      - name: foundry.lock matches the submodule gitlinks
+        run: script/ci/check-foundry-lock.sh
+
   lint:
     name: Format
     runs-on: blacksmith-2vcpu-ubuntu-2404

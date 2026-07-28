@@ -78,7 +78,7 @@ contract MorphoMarketsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         );
         vm.stopPrank();
 
-        adapter = new MorphoMarketsMetaBalanceAdapter(MORPHO, "Morpho", address(nav));
+        adapter = new MorphoMarketsMetaBalanceAdapter(MORPHO, address(nav));
 
         vm.startPrank(manager);
         bytes32[] memory instances = new bytes32[](1);

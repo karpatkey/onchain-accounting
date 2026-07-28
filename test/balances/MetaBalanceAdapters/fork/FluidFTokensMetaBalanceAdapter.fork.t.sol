@@ -34,7 +34,7 @@ contract FluidFTokensMetaParityForkTest is BalanceAdapterTestBase {
         vm.stopPrank();
 
         balances = _deployBalancesForAdapter(USDC);
-        meta = new FluidFTokensMetaBalanceAdapter("Fluid", address(balances));
+        meta = new FluidFTokensMetaBalanceAdapter(address(balances));
     }
 
     function _instance() internal pure returns (bytes32[] memory ins) {

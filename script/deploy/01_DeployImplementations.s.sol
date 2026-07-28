@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
+import {LibraryPins} from "../utils/LibraryPins.sol";
 import {NAVCalculator} from "../../src/nav/NAVCalculator.sol";
 import {BridgeEscrow} from "../../src/bridge/BridgeEscrow.sol";
 import {PriceFeedLib} from "../../src/prices/PriceFeedLib.sol";
@@ -39,6 +40,46 @@ contract DeployImplementations is BaseDeployScript {
         validateAddresses();
 
         ImplPlan memory plan = _computeImplPlan();
+
+        // Fail fast if the library bytecode no longer maps to the addresses NAVCalculator is linked against —
+        // otherwise the libraries deploy at their COMPUTED (unpinned) addresses, this script records those, and the
+        // impl it deploys alongside them DELEGATECALLs the PINNED addresses instead, which hold no code on a fresh
+        // chain. `initialize()` then reverts, after the deploy has already been broadcast and recorded.
+        //
+        // These are the four assertions `01_2_DeployNAVImplementation` has always carried (01_2:46-68); `01` had none
+        // at all, so it was the only script that could broadcast library-linked bytecode unchecked. Copied rather than
+        // hoisted into `BaseDeployScript`: in the shared base they would fire for `06_Configure`, `RegisterAssets` and
+        // the `verify`/`upgrade` scripts, none of which deploy library-linked bytecode, and they would go red on every
+        // branch whenever a pin regen is in flight.
+        //
+        // This checks the OUTCOME — does the bytecode about to be broadcast map to the pins? — rather than trying to
+        // enumerate the causes of a bad build. That distinction is why it supersedes the profile/env guard attempted in
+        // PR #188; see this PR's description for the evidence that enumeration could not be completed.
+        //
+        // LibraryPins is the single Solidity source of truth for these pins (shared with the CI guard in
+        // test/LibraryPinConsistency.t.sol); if these fire the library bytecode drifted — regenerate the pins
+        // (LibraryPins + foundry.toml) for the pinned solc + bytecode_hash.
+        require(
+            plan.priceFeedLib == LibraryPins.PRICE_FEED_LIB,
+            "PriceFeedLib CREATE2 addr != foundry.toml pin (lib bytecode drift; regenerate the pin)"
+        );
+        require(
+            plan.navRegistryLib == LibraryPins.NAV_REGISTRY_LIB,
+            "NAVRegistryLib CREATE2 addr != foundry.toml pin (lib bytecode drift; regenerate the pin)"
+        );
+
+        // End-to-end: the NAVCalculator impl bytecode about to be broadcast must actually be linked against both
+        // pinned addresses. The two checks above only confirm the libs' own bytecode maps to LibraryPins; if
+        // foundry.toml `libraries` drifts from LibraryPins, those still pass but NAVCalculator would DELEGATECALL the
+        // wrong (empty) address and revert on initialize(). Mirrors the CI guard in test/LibraryPinConsistency.t.sol.
+        require(
+            LibraryPins.contains(plan.navImplBytecode, LibraryPins.PRICE_FEED_LIB),
+            "NAVCalculator impl not linked against pinned PriceFeedLib (foundry.toml `libraries` drift)"
+        );
+        require(
+            LibraryPins.contains(plan.navImplBytecode, LibraryPins.NAV_REGISTRY_LIB),
+            "NAVCalculator impl not linked against pinned NAVRegistryLib (foundry.toml `libraries` drift)"
+        );
 
         // EOA deploy: broadcast the four CREATE2 deploys (PriceFeedLib, NAVRegistryLib, NAVCalculator impl,
         // BridgeEscrow impl) directly via the deployer private key. Same deterministic addresses on every chain.

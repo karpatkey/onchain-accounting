@@ -41,16 +41,33 @@ contract DeployImplementations is BaseDeployScript {
 
         ImplPlan memory plan = _computeImplPlan();
 
-        // Fail fast if the library bytecode no longer maps to the addresses NAVCalculator is linked against —
-        // otherwise the libraries deploy at their COMPUTED (unpinned) addresses, this script records those, and the
-        // impl it deploys alongside them DELEGATECALLs the PINNED addresses instead, which hold no code on a fresh
-        // chain. `initialize()` then reverts, after the deploy has already been broadcast and recorded.
+        // Fail fast if the library bytecode no longer maps to the addresses NAVCalculator is linked against. The
+        // libraries then deploy SUCCESSFULLY at their COMPUTED (unpinned) addresses — the CREATE2 does not fail, so
+        // `require(ok, ...)` below never fires — and the impl links the PINNED addresses instead. Two outcomes,
+        // and the quiet one is the likelier:
+        //   - fresh chain (nothing at the pinned addresses): `initialize()` reverts on the first library call
+        //     (`call to non-contract address`), after the deploy was broadcast and recorded;
+        //   - a chain that ALREADY holds the current pinned libraries — all 24 configured chains do — NOTHING reverts.
+        //     A library-only source change leaves `NAVCalculator.creationCode` untouched (it embeds the unchanged
+        //     pins), so the impl address is unchanged and this script logs `[SKIP] NAV implementation already at:`,
+        //     the two new libraries land at their computed addresses as orphans, `_saveAndLog` overwrites
+        //     `deployments/<id>.json` with those orphans, and the NAV keeps DELEGATECALLing the OLD library code.
+        //     Silent wrong-version, which is why an assertion and not an eyeball is what is wanted here.
         //
-        // These are the four assertions `01_2_DeployNAVImplementation` has always carried (01_2:46-68); `01` had none
-        // at all, so it was the only script that could broadcast library-linked bytecode unchecked. Copied rather than
-        // hoisted into `BaseDeployScript`: in the shared base they would fire for `06_Configure`, `RegisterAssets` and
-        // the `verify`/`upgrade` scripts, none of which deploy library-linked bytecode, and they would go red on every
-        // branch whenever a pin regen is in flight.
+        // These are the four assertions `01_2_DeployNAVImplementation` carries (01_2:47-68) — added there in
+        // `62311fb7` and `a8d5dd73`, not from the start. `01` had none at all, so it was the only NUMBERED PROD NAV
+        // deploy script that could broadcast library-linked bytecode unchecked. It is NOT the only script that can:
+        // `script/upgrade/UpgradeNAVCalculator.s.sol:33-34` does `new NAVCalculator()` inside a broadcast with no pin
+        // check and then repoints a LIVE proxy at it, `UpgradeBridgeEscrow.s.sol:34` and `05_DeployBridgeAdapters`
+        // broadcast `InvoiceDataLib`-linked bytecode, and `01` still broadcasts the `InvoiceDataLib`-linked
+        // `BridgeEscrow` impl below (that library is not pinned at all — see this PR's discussion).
+        //
+        // Copied rather than hoisted into `BaseDeployScript` for ONE reason only: in the shared base they would go red
+        // on every branch whenever a pin regen is in flight, and would fire for `06_Configure`, `RegisterAssets` and
+        // the `verify` scripts, which deploy nothing. The `upgrade` scripts are NOT such a case — they DO extend
+        // `BaseDeployScript` and DO deploy library-linked bytecode, so hoisting would have covered them; they need a
+        // different check anyway (they deploy via plain `new`, so assertions 1-2 do not apply — what they need is the
+        // linkage assertions plus "the pinned address has code on THIS chain").
         //
         // This checks the OUTCOME — does the bytecode about to be broadcast map to the pins? — rather than trying to
         // enumerate the causes of a bad build. That distinction is why it supersedes the profile/env guard attempted in

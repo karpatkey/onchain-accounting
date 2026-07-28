@@ -10,6 +10,9 @@ import {
 import {
     BalancerV2PoolsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/balancer/BalancerV2PoolsMetaBalanceAdapter.sol";
+import {
+    BalancerV2GaugesMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/balancer/BalancerV2GaugesMetaBalanceAdapter.sol";
 import {FluidVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/FluidVaultsMetaBalanceAdapter.sol";
 import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 import {MockCurveToken} from "test/balances/MetaBalanceAdapters/CurveMocks.sol";
@@ -99,6 +102,32 @@ contract Mock_WideCurvePool {
     }
 }
 
+/// @notice A Balancer liquidity gauge answering `lp_token()` — the extra hop the gauge leaf makes.
+contract Mock_Gauge {
+    address public immutable LP;
+
+    constructor(address lp) {
+        LP = lp;
+    }
+
+    function lp_token() external view returns (address) {
+        return LP;
+    }
+}
+
+/// @notice A BPT answering `getPoolId()` — the gauge leaf's second extra hop before it reaches the Vault.
+contract Mock_Bpt {
+    bytes32 public pid;
+
+    function setPid(bytes32 p) external {
+        pid = p;
+    }
+
+    function getPoolId() external view returns (bytes32) {
+        return pid;
+    }
+}
+
 /// @notice The `symbol()` implementation behind {Mock_ProxiedToken}, reached by `delegatecall`.
 contract Mock_TokenImpl {
     string internal _symbol;
@@ -112,13 +141,18 @@ contract Mock_TokenImpl {
     }
 }
 
-/// @notice An ERC-1967 proxy-shaped ERC20 — the shape most mainnet tokens actually have.
+/// @notice An ERC-1967 proxy-shaped ERC20 — the shape a large share of mainnet tokens have (USDC and most
+///         bridged or wrapped tokens; WETH, USDT, DAI and wstETH are flat).
 /// @dev Calibrating against a flat mock understates every symbol read, and always in the same direction. A read
 ///      through a proxy additionally pays a cold implementation-slot SLOAD (2,100) and a cold account access for
 ///      the implementation (2,600) *inside the callee*, charged against the leaf's stipend. On a wide pool that
-///      is a per-token surcharge, so it scales with exactly the axis the ceiling is sized along. USDC, USDT and
-///      essentially every wrapped or bridged token on the venues this family reads are upgradeable proxies, so
-///      this — not the flat mock — is the shape the ceiling has to clear.
+///      is a per-token surcharge, so it scales with exactly the axis the ceiling is sized along.
+///
+///      **Give every proxy its OWN implementation** — see {_proxiedToken}. Pointing a whole fixture at one
+///      shared implementation is the subtler version of the same error: EIP-2929 charges 2,600 for the first
+///      access to an address and 100 thereafter, so 50 proxies over one implementation pay the cold price once
+///      and the warm price 49 times. Measured on the n=50 Balancer leaf that is 767,081 shared against 889,581
+///      distinct — a 122,500 understatement, exactly 49 x 2,500 — and real tokens do not share implementations.
 contract Mock_ProxiedToken {
     string internal _symbol;
 
@@ -205,7 +239,6 @@ contract MetaLabelGasBoundsTest is Test {
     Mock_NAVCalculator internal nav;
     LabelHarness internal harness;
     MockCurveToken internal usdc;
-    Mock_TokenImpl internal tokenImpl;
 
     // Cold fixtures. See the contract docblock for why these cannot be built in the test body.
     Mock_WideCurvePool internal coldPool;
@@ -220,6 +253,9 @@ contract MetaLabelGasBoundsTest is Test {
     bytes32 internal coldPoolId33;
     bytes32 internal coldPoolId50;
 
+    BalancerV2GaugesMetaBalanceAdapter internal coldGauges50;
+    address internal coldGauge50;
+
     FluidVaultsMetaBalanceAdapter internal coldFluidMeta;
     MockFluidVaultT1 internal coldFluidVault;
 
@@ -229,7 +265,7 @@ contract MetaLabelGasBoundsTest is Test {
 
     /// @dev Mirrors `MetaBalanceAdapter.LABEL_LEAF_GAS`, which is `internal` and so not reachable from here.
     ///      Keep the two in step: this file is the calibration that justifies that constant's value.
-    uint256 internal constant LEAF_GAS = 900_000;
+    uint256 internal constant LEAF_GAS = 950_000;
 
     /// @dev Ceiling for one bounded leaf: the stipend plus the enclosing read's own overhead (pid decode, the
     ///      `_labels` build, the return encode). Deliberately close to {LEAF_GAS} — a loose bound here is what
@@ -240,10 +276,16 @@ contract MetaLabelGasBoundsTest is Test {
     ///      `script/config/nav-config/assets-and-price-feeds/1.json`. The Fluid leaf's cost is linear in this.
     uint256 internal constant MAINNET_REGISTERED_ASSETS = 43;
 
+    /// @dev A proxied token with its OWN implementation contract. Never share one across a fixture: EIP-2929
+    ///      would then charge the cold 2,600 once and the warm 100 for every other token, understating a wide
+    ///      leaf by ~2,500 per token.
+    function _proxiedToken(string memory symbol_) private returns (address) {
+        return address(new Mock_ProxiedToken(address(new Mock_TokenImpl()), symbol_));
+    }
+
     function setUp() public {
         nav = new Mock_NAVCalculator();
         harness = new LabelHarness();
-        tokenImpl = new Mock_TokenImpl();
         usdc = new MockCurveToken("USDC", 6);
         nav.registerAsset(address(usdc), 6, "USDC");
 
@@ -258,24 +300,24 @@ contract MetaLabelGasBoundsTest is Test {
 
         address[] memory wideProxied = new address[](8);
         for (uint256 i; i < 8; i++) {
-            wideProxied[i] = address(new Mock_ProxiedToken(address(tokenImpl), "TOKENNAM"));
+            wideProxied[i] = _proxiedToken("TOKENNAM");
         }
         coldProxiedPool = new Mock_WideCurvePool(wideProxied);
         coldProxiedCurveMeta = new CurvePoolsMetaBalanceAdapter(address(nav));
 
         (coldVault33, coldBalancer33, coldPoolId33) = _buildBalancerPool(33);
         (coldVault50, coldBalancer50, coldPoolId50) = _buildBalancerPool(50);
+        (coldGauges50, coldGauge50) = _buildBalancerGauge(50);
 
         // Fluid: the leaf fetches the WHOLE registered-asset array, so its cost is linear in the registry, not
         // in anything about Fluid. Pad the registry to mainnet's size so the measurement is the real one.
         while (nav.getRegisteredAssets().length < MAINNET_REGISTERED_ASSETS) {
-            Mock_ProxiedToken pad = new Mock_ProxiedToken(address(tokenImpl), "PADPAD");
-            nav.registerAsset(address(pad), 18, "PADPAD");
+            nav.registerAsset(_proxiedToken("PADPAD"), 18, "PADPAD");
         }
         MockFluidVaultResolver resolver = new MockFluidVaultResolver();
         coldFluidVault = new MockFluidVaultT1();
-        address coll = address(new Mock_ProxiedToken(address(tokenImpl), "wstETH"));
-        address debt = address(new Mock_ProxiedToken(address(tokenImpl), "USDC"));
+        address coll = _proxiedToken("wstETH");
+        address debt = _proxiedToken("USDC");
         coldFluidVault.setTokens(coll, debt);
         coldFluidVault.setVaultId(4);
         resolver.setVaultType(address(coldFluidVault), 10_000);
@@ -289,16 +331,34 @@ contract MetaLabelGasBoundsTest is Test {
         returns (MockV2Vault vault, BalancerV2PoolsMetaBalanceAdapter meta, bytes32 poolId)
     {
         vault = new MockV2Vault();
-        address bpt = address(new Mock_ProxiedToken(address(tokenImpl), "BPT"));
+        address bpt = _proxiedToken("BPT");
         poolId = bytes32(uint256(uint160(bpt)) << 96);
         address[] memory tokens = new address[](n);
         uint256[] memory balances = new uint256[](n);
         for (uint256 i; i < n; i++) {
             // 8-character symbols: the length the acceptance band is stated at.
-            tokens[i] = address(new Mock_ProxiedToken(address(tokenImpl), "TOKENNAM"));
+            tokens[i] = _proxiedToken("TOKENNAM");
         }
         vault.setPool(poolId, tokens, balances);
         meta = new BalancerV2PoolsMetaBalanceAdapter(address(vault), address(nav));
+    }
+
+    /// @dev A gauge over a fresh `n`-token pool. The gauge leaf reaches the same Vault read as the pools leaf,
+    ///      but only after `lp_token()` and `getPoolId()` — two extra cold hops, which is what makes it and not
+    ///      the pools leaf the widest site in the family.
+    function _buildBalancerGauge(uint256 n) private returns (BalancerV2GaugesMetaBalanceAdapter meta, address gauge) {
+        Mock_Bpt bpt = new Mock_Bpt();
+        bytes32 poolId = bytes32(uint256(uint160(address(bpt))) << 96);
+        bpt.setPid(poolId);
+        MockV2Vault vault = new MockV2Vault();
+        address[] memory tokens = new address[](n);
+        uint256[] memory balances = new uint256[](n);
+        for (uint256 i; i < n; i++) {
+            tokens[i] = _proxiedToken("TOKENNAM");
+        }
+        vault.setPool(poolId, tokens, balances);
+        gauge = address(new Mock_Gauge(address(bpt)));
+        meta = new BalancerV2GaugesMetaBalanceAdapter(address(vault), _proxiedToken("MINTER"), address(nav));
     }
 
     // ---------------------------------------------------------------------------------------------------------
@@ -388,7 +448,7 @@ contract MetaLabelGasBoundsTest is Test {
     ///      `LabelLib` bounds any single read, this bounds however many reads a leaf makes.
     function test_honestPool_withManyExpensiveTokens_isBounded() public {
         MockV2Vault vault = new MockV2Vault();
-        address bpt = address(new Mock_ProxiedToken(address(tokenImpl), "BPT"));
+        address bpt = _proxiedToken("BPT");
         bytes32 poolId = bytes32(uint256(uint160(bpt)) << 96);
         address[] memory tokens = new address[](50);
         uint256[] memory balances = new uint256[](50);
@@ -414,12 +474,23 @@ contract MetaLabelGasBoundsTest is Test {
     ///      at the first `coins(i)` that answers `address(0)`, and a starved raw staticcall answers exactly that.
     ///      Were the enclosing frame to survive that, the adapter would render a 2-coin leaf for an 8-coin pool —
     ///      a confident, complete-looking, WRONG breadcrumb that a consumer joins on. A missing leaf is safe; a
-    ///      wrong one is not. The sweep walks the budget across the whole transition so it cannot miss the window
-    ///      where the inner call dies on 63/64 while the outer frame lives on the remaining 1/64.
-    function test_leafDegradation_isAllOrNothing() public view {
+    ///      wrong one is not.
+    ///
+    ///      **This pins EIP-150's forwarding geometry, not {LEAF_GAS}, and it is guard-insensitive by
+    ///      construction** — it passes with every `{gas: LABEL_LEAF_GAS}` in `src/` deleted, and that is the
+    ///      correct result rather than a defect in the test. What makes truncation impossible is that a call
+    ///      keeps only 1/64 of its frame while the callee spends the other 63/64: after a starved `coins(i)` the
+    ///      surviving reader holds a few dozen gas, which cannot pay the next `EXTCODESIZE`, the `string.concat`
+    ///      or the return encode, so the whole helper reverts into the `catch` and the leaf is dropped whole. The
+    ///      ceiling changes WHEN that happens, never WHETHER a partial leaf can escape. Kept because the property
+    ///      is load-bearing and non-obvious, and because a future reader who bounds `CurvePoolLib._coin`
+    ///      internally — which would give the reader a full frame after a starved coin read — needs this to be
+    ///      already standing. The sweep runs past {LEAF_GAS} so it covers both regimes: below it the 63/64 term
+    ///      binds, above it the ceiling does and the outer frame stays rich.
+    function test_starvedLeaf_isNeverTruncated() public view {
         uint256 complete;
         uint256 absent;
-        for (uint256 budget = 20_000; budget <= 400_000; budget += 2_000) {
+        for (uint256 budget = 20_000; budget <= LEAF_GAS + 120_000; budget += 5_000) {
             (bool ok, uint256 segments, string memory leaf) =
                 harness.labelLeaf(address(coldProxiedCurveMeta), abi.encode(address(coldProxiedPool)), budget);
             if (!ok || segments == 0) continue; // budget too small to even return; not a rendering outcome
@@ -491,22 +562,34 @@ contract MetaLabelGasBoundsTest is Test {
         emit log_named_uint("cold Balancer V2 n=50 leaf, ERC-1967 tokens", used);
     }
 
-    /// @notice Under NAVCalculator's real per-position label budget, a hostile coordinate still returns its
-    ///         category rather than being killed outright by the outer cap.
-    /// @dev The composition the two ceilings have to satisfy: `LABEL_LEAF_GAS` plus the enclosing read's own
-    ///      overhead must fit inside `NAVCalculator._LABEL_READ_GAS`. Were the leaf ceiling raised to meet or
-    ///      exceed 63/64 of the outer one, the outer cap would bind first — the inner ceiling would stop
-    ///      bounding anything on the verbose path, and a starved label would come back empty instead of
-    ///      degraded. This is the upper end of the band the constant can be chosen from.
-    function test_hostileLeaf_underNavCalculatorLabelBudget_stillDegrades() public {
-        CurvePoolsMetaBalanceAdapter meta = new CurvePoolsMetaBalanceAdapter(address(nav));
-        Mock_BurningCoinsPool hostile = new Mock_BurningCoinsPool();
-
+    /// @notice The ceiling must stay strictly inside NAVCalculator's own per-position label budget.
+    /// @dev Stated as a static bound because it CANNOT be observed behaviourally. A runtime probe asserting
+    ///      "a hostile coordinate still degrades under a 1,000,000 budget" passes in both worlds: when the outer
+    ///      cap binds first the burn simply takes 63/64 of it and the outer frame still returns the category on
+    ///      the remaining 1/64, so `ok == true, segments == 1` whether or not {LEAF_GAS} is in force. The real
+    ///      property is arithmetic — at or above 63/64 of `_LABEL_READ_GAS` the outer cap binds first and this
+    ///      ceiling stops bounding anything on the verbose path — so it is asserted arithmetically.
+    function test_leafCeiling_staysInsideNavCalculatorLabelBudget() public pure {
         // `NAVCalculator._LABEL_READ_GAS`, which is `private` there and so restated here.
-        (bool ok,, uint256 segments) = harness.labelCost(address(meta), abi.encode(address(hostile)), 1_000_000);
+        uint256 outerBudget = 1_000_000;
+        uint256 forwarded = outerBudget - outerBudget / 64;
+        assertLt(LEAF_GAS, forwarded, "a ceiling at or above 63/64 of the outer cap bounds nothing");
+    }
 
-        assertTrue(ok, "the label read must still answer under the outer per-position cap");
-        assertEq(segments, 1, "and answer with the category, not nothing at all");
+    /// @notice The Balancer V2 GAUGE leaf at 50 tokens — the widest site in the family — must still render.
+    /// @dev This, not the pools leaf, is what the ceiling has to clear. `gaugeTokenSymbols` does everything
+    ///      `poolTokenSymbols` does and reaches it through two further cold hops (`lp_token()` on the gauge,
+    ///      `getPoolId()` on the BPT), so it is strictly the more expensive of the two over the same pool. An
+    ///      earlier revision sized the ceiling against the pools leaf and left this one unpinned, which put the
+    ///      site that would hit the ceiling first outside the acceptance suite entirely.
+    function test_balancerV2Gauges_50Tokens_rendersCold() public {
+        (bool ok, uint256 used, uint256 segments) =
+            harness.labelCost(address(coldGauges50), abi.encode(coldGauge50), BUDGET);
+
+        assertTrue(ok, "the widest gauge Balancer V2 permits must label successfully");
+        assertEq(segments, 2, "the leaf must NOT have been dropped");
+        assertLt(used, BOUNDED_CEILING, "and it must still be bounded");
+        emit log_named_uint("cold Balancer V2 GAUGE n=50 leaf, ERC-1967 tokens", used);
     }
 
     /// @notice The Fluid leaf must render at mainnet's current registered-asset count, with room to spare.
@@ -521,7 +604,11 @@ contract MetaLabelGasBoundsTest is Test {
 
         assertTrue(ok, "the Fluid leaf must label successfully at mainnet's registry size");
         assertEq(segments, 2, "the leaf must NOT have been dropped");
-        assertLt(used, BOUNDED_CEILING, "and it must still be bounded");
+        // Tight deliberately, and tighter than {BOUNDED_CEILING}. This leaf's cost is the argument for the
+        // ceiling's value, so a bound loose enough to survive a regression in it pins nothing: resolving the two
+        // symbols with one registry fetch per SIDE instead of one per leaf costs ~660k here and would sail past
+        // any ceiling-shaped assertion while silently undoing the change this figure is quoted from.
+        assertLt(used, 550_000, "the leaf must resolve both symbols from a SINGLE registry fetch");
         emit log_named_uint("cold Fluid leaf gas at 43 registered assets", used);
     }
 }

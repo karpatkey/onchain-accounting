@@ -46,24 +46,34 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     ///      classify: a leaf that does not fit is simply dropped, and the caller wants a number it can reason
     ///      about. Same idiom as `LabelLib.METADATA_READ_GAS` and `StaticCallLib.PROBE_GAS`.
     ///
-    ///      Sized to clear the worst leaf a governed coordinate can legitimately produce, measured COLD and
-    ///      against ERC-1967 tokens (a proxied `symbol()` costs roughly a fifth more than a flat one, and that
-    ///      surcharge is per token, so it scales along the same axis as the ceiling itself). Two cases bind, and
-    ///      neither is the widest Curve pool — that one costs ~120k, under a seventh of this:
+    ///      **The value is boxed in from both sides, and the box is narrow.** The floor is the widest leaf a
+    ///      governed coordinate can legitimately produce; the hard ceiling is 63/64 of `NAVCalculator`'s
+    ///      per-position `_LABEL_READ_GAS` (984,375 at 1,000,000), at or above which the outer cap binds first
+    ///      and this constant stops bounding anything on the verbose path. Raising the OUTER budget is not the
+    ///      escape hatch it looks like: it is charged per position, so N positions pay N times it.
     ///
-    ///      - **Balancer V2 at the protocol maximum of 50 tokens: ~780k.** A ManagedPool's token list is mutable
-    ///        after the instance is governed, so registration cannot screen the wide case out.
-    ///      - **Fluid vaults: ~400k at 43 registered assets, and linear in that count.** `vaultPairSymbols`
-    ///        pulls the whole registered-asset array over to resolve two symbols, so this leaf's cost tracks how
-    ///        many assets are registered protocol-wide rather than anything about Fluid. The headroom above it
-    ///        is therefore a budget denominated in future `registerAsset` calls, roughly 70 of them.
+    ///      Measured COLD in `test/balances/MetaLabelGasBounds.t.sol`, against ERC-1967 tokens that each have
+    ///      their OWN implementation — both properties matter and both understate if dropped. A fixture built in
+    ///      a test body is read warm and costs under half; a fixture sharing one implementation across n proxies
+    ///      pays EIP-2929's cold 2,600 once and the warm 100 for the rest, understating an n=50 leaf by 122,500.
     ///
-    ///      Both are pinned in `test/balances/MetaLabelGasBounds.t.sol`; re-measure there before changing this,
-    ///      and note it is a compile-time constant on immutable adapters, so a value that turns out too low
-    ///      cannot be corrected without a redeploy. It must also stay below 63/64 of `NAVCalculator`'s
-    ///      per-position `_LABEL_READ_GAS` — at or above that, the outer cap binds first and this one stops
-    ///      bounding anything on the verbose path.
-    uint256 internal constant LABEL_LEAF_GAS = 900_000;
+    ///      - **Balancer V2 gauges at the protocol maximum of 50 tokens: 912,434 — the binding case.** Strictly
+    ///        the widest site: `gaugeTokenSymbols` does everything the pools leaf does (889,581) and reaches it
+    ///        through two further cold hops. A ManagedPool's token list is mutable after the instance is
+    ///        governed, so registration cannot screen the wide case out.
+    ///      - **Fluid vaults: 488,249 at 43 registered assets, rising 9,657 per further asset.**
+    ///        `vaultPairSymbols` pulls the whole registered-asset array over to resolve two symbols, so this
+    ///        leaf's cost tracks how many assets are registered protocol-wide rather than anything about Fluid.
+    ///        Its headroom is therefore denominated in future `registerAsset` calls — about 48 of them; the leaf
+    ///        renders at 90 registered assets and is dropped at 93.
+    ///      - The widest Curve pool, often assumed to be the worst case, is 138,033 — under a sixth of this.
+    ///
+    ///      That leaves ~4% over the floor and ~3.5% under the hard ceiling. The margin is thin because the box
+    ///      is ~72k wide, not because the value is badly chosen; a materially larger margin needs per-site
+    ///      ceilings (the narrow sites — Curve, Convex, Uniswap V2, all capped at 8 tokens — would take ~300k)
+    ///      rather than a different single number. Re-measure before changing this: it is a compile-time
+    ///      constant on immutable adapters, so a value that turns out too low needs a redeploy to correct.
+    uint256 internal constant LABEL_LEAF_GAS = 950_000;
 
     //
     // Constructor

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -100,12 +101,64 @@ def all_chain_ids() -> list[int]:
 
 
 def deployed_chain_ids() -> list[int]:
-    """Chains with a live NAVCalculatorProxy — the actual redeploy scope (24 as of 2026-07-27)."""
+    """Chains whose deployment record currently holds a NAVCalculatorProxy.
+
+    NOT a safe default for a tool's chain scope — see `resolve_chains`. This reads *live* record
+    state, and runbook step 1.1 (`reset_deployment_records.py --apply`) sets `NAVCalculatorProxy` to
+    `""` on every chain, at which point this returns `[]`.
+    """
     out = []
     for cid in all_chain_ids():
         if deployment(cid).get("NAVCalculatorProxy"):
             out.append(cid)
     return out
+
+
+def snapshot_scope(tag: str = "pre") -> list[int]:
+    """The chain scope recorded in `snapshots/<tag>/index.json` — 24 chains in the `pre` capture.
+
+    The committed pre-deploy snapshot is the one scope authority the deploy cannot invalidate: it is
+    a file, not a query against records the deploy rewrites.
+    """
+    idx = SNAPSHOT_DIR / tag / "index.json"
+    if not idx.is_file():
+        return []
+    doc = json.loads(idx.read_text())
+    return sorted({int(e["chainId"]) for e in doc.get("chains", []) if e.get("chainId")})
+
+
+def redeploy_scope() -> tuple[list[int], str]:
+    """The chains in the redeploy scope, as (chain_ids, where_it_came_from).
+
+    Prefers the committed `snapshots/pre/index.json` over live record state, because the records go
+    empty mid-deploy (step 1.1) while the snapshot does not.
+    """
+    ids = snapshot_scope("pre")
+    if ids:
+        return ids, "snapshots/pre/index.json"
+    return deployed_chain_ids(), "deployments/*.json (NAVCalculatorProxy populated)"
+
+
+def resolve_chains(explicit: list[int] | None) -> tuple[list[int], str]:
+    """Resolve a tool's chain scope, exiting non-zero rather than silently checking nothing.
+
+    Every preflight tool used to default to `deployed_chain_ids()`, which reads the deployment
+    records — the very files step 1.1 blanks. An empty list then flows straight through the tool's
+    main loop: `preflight_config.py` reports `0 error(s) across 0 chain(s)` and exits 0, and
+    `reset_deployment_records.py --restore <tag>` restores nothing and exits 0, so the rollback path
+    fails silently at the exact moment it is needed. Since the whole point of this suite is that a
+    clean exit must mean work happened, an unresolvable scope has to be fatal, not empty.
+    """
+    if explicit:
+        return sorted(set(explicit)), "command line"
+    ids, src = redeploy_scope()
+    if not ids:
+        print("ERROR: could not resolve any chain to operate on.\n"
+              "  Neither snapshots/pre/index.json nor a populated NAVCalculatorProxy in\n"
+              "  script/config/deployments/*.json yielded a chain list. If the records were cleared\n"
+              "  by reset_deployment_records.py, pass the chain ids explicitly.", file=sys.stderr)
+        sys.exit(2)
+    return ids, src
 
 
 def chain_config(chain_id: int) -> dict:

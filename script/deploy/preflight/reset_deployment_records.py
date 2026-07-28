@@ -152,7 +152,10 @@ def main() -> int:
                     help="restore records from archive/<TAG> instead of clearing")
     args = ap.parse_args()
 
-    chains = args.chains or c.deployed_chain_ids()
+    # NOT `deployed_chain_ids()`: --apply blanks NAVCalculatorProxy, so a later `--restore` with no
+    # explicit chains would resolve to zero chains and report success having restored nothing.
+    chains, src = c.resolve_chains(args.chains)
+    print(f"scope: {len(chains)} chain(s) from {src}")
     if args.restore:
         return do_restore(args.restore, chains)
     return do_clear(chains, args.tag, apply=args.apply and not args.dry_run)

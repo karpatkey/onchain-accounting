@@ -320,7 +320,8 @@ def main() -> int:
     out_dir = Path(args.out) if "/" in args.out else c.SNAPSHOT_DIR / args.out
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    chains = args.chains or c.deployed_chain_ids()
+    chains, scope_src = c.resolve_chains(args.chains)
+    print(f"scope: {len(chains)} chain(s) from {scope_src}")
 
     def one(cid: int):
         url, note, rejected = c.probe_rpc(cid)

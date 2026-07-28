@@ -1,9 +1,9 @@
 # NAV stack — from-scratch redeploy runbook
 
 Ordered, per-chain command sequence for the full redeploy of the NAV stack onto a **new proxy**, with
-the precondition and post-condition of every step. Written 2026-07-27, revised 2026-07-28 against
-`main` @ `2077c82e` — the hardening wave (PRs #161–#183) is **complete**, so the only remaining
-prerequisite is the two-library pin regen (0.3).
+the precondition and post-condition of every step. Written 2026-07-27, revised 2026-07-29 against
+`main` @ `dc5810eb` — the hardening wave is complete and a short merge train still runs ahead of the
+two-library pin regen (0.1, 0.3).
 
 Companion tooling lives in [`preflight/`](preflight/README.md). Everything there is read-only except
 `rehearse_fork.sh`, which only ever broadcasts to a loopback anvil.
@@ -56,7 +56,8 @@ Do not start until **all** of these hold.
 | #189 | Morpho existence invariant + a tighter `protocolName` ceiling |
 | #190 | enough runner memory for the `via_ir` build (see 0.8) |
 
-`main` is at **`15dd123c`**. What still has to land, **in this order**, before 0.3 can be computed:
+`main` is at **`dc5810eb`** (#191, the pin assertions in `01`, landed 2026-07-29 — see 1.2). What
+still has to land, **in this order**, before 0.3 can be computed:
 
 | open | why it blocks the pin regen |
 | --- | --- |
@@ -65,9 +66,7 @@ Do not start until **all** of these hold.
 | **#185, the regen itself (0.3)** | must be computed last, against the final tree |
 
 Pins move only when a file in *that library's* compilation closure changes — not on any `src/` edit —
-but `INAVCalculator.sol` is imported by both, so both of the above move both pins. #191 (pin
-assertions in `01_DeployImplementations`) is also open; it does **not** block, because this runbook
-never invokes `01` (see 1.2).
+but `INAVCalculator.sol` is imported by both, so both of the above move both pins.
 
 ### 0.2 Bump `DeploySalts.NAV_PROXY` — **CONFIRMED REQUIRED, already done (6 → 7)**
 
@@ -313,8 +312,9 @@ PERSIST_DEPLOYMENTS=1 forge script script/deploy/01_2_DeployNAVImplementation.s.
 
 **Use `01_2`, not `01` — this matters more than it looks.**
 
-1. **`01` has NO pin assertions.** `01_2` carries four `require`s (both CREATE2 pins, plus
-   impl-linked-against-both, `01_2:46-68`); `01` has only "deploy failed" checks. Measured on a
+1. ~~**`01` has NO pin assertions.**~~ **No longer true** — `01` gained the same four `require`s
+   (both CREATE2 pins, plus impl-linked-against-both, `01_2:47-68`) in the PR superseding #188. The
+   history is kept because it is the measurement that motivated the change. Measured on a
    mainnet fork against `main` @ `31c7b1b7` (stale pin): `01_2` reverted safely before broadcasting,
    while `01` **succeeded** and deployed `PriceFeedLib` to `0xee114702…` and `NAVRegistryLib` to
    `0x660e6018…` — the *computed* addresses — even though `NAVCalculator` is linked against the
@@ -664,7 +664,7 @@ to the new proxy. The old stack keeps answering until they do; nothing needs unr
 | symptom | cause | fix |
 | --- | --- | --- |
 | `01_2` reverts `… CREATE2 addr != foundry.toml pin` | library bytecode drifted from the pin | regenerate both pins against the final tree (0.3); never from an incremental build |
-| `01` "succeeds" but the NAV reverts on `initialize` | `01` has no pin assertions and deployed the libraries at the *computed* addresses while the impl links the *pinned* ones | use `01_2`; never `01` |
+| `01` "succeeds" but the NAV reverts on `initialize` | historical: `01` had no pin assertions and deployed the libraries at the *computed* addresses while the impl links the *pinned* ones. `01` now asserts the pins, so this fails fast instead | if it still happens, the pins are stale — regenerate, do not work around |
 | a step exits 0 having done nothing | unmet precondition, handled by an early `return` | `verify_step.py <step>`; check the post-condition, not the exit code |
 | a preflight tool reports `0 … across 0 chain(s)` | its chain scope resolved to empty | it now exits 2 instead; if you see this on an old checkout, pass the chain ids explicitly |
 | `--restore` prints `restored 0 record(s)` | same empty-scope bug, on the rollback path | pass the chain ids explicitly, and check `archive/<tag>/` actually holds the records |

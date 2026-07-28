@@ -104,7 +104,7 @@ The fixture is a normal JSON file. The driver sorts keys before comparing in `as
 | `snapshot` | Run the sweep, then (over)write the window's entry in `test/integration/nav-timeseries.json`. | `0` on success. `1` if completeness checks fail (snapshot is aborted, you can't snapshot a partial sweep). `2` on bad CLI / missing blocks file. |
 | `assert` | Run the sweep and deep-diff against the fixture. | `0` if the sweep matches the fixture. `1` on any difference (up to 30 diff lines printed). `2` if the fixture is missing or has no entry for the requested window/chain. |
 
-In all modes, a non-zero forge exit (test failure, RPC error) is fatal: the driver exits with `2` and prints the last 50 lines of forge output.
+In all modes, a failing sweep is fatal: the driver exits with `2` and prints the last 50 lines of forge output. It treats both a non-zero forge exit (RPC error, compile failure) **and** a `[FAIL`/`Suite result: FAILED` line in the output as a failure, because `forge test` can exit `0` with a failing test.
 
 ---
 
@@ -156,7 +156,7 @@ The full fixture path is `test/integration/nav-timeseries.json`; the example abo
 Edit `test/integration/backtest-blocks.json`. Pick a name (kebab-case, prefixed with the chain: `w1-1d`, `w42161-7d`, …). Under `windows.<name>.chains.<chainId>` set `fromBlock`, `toBlock`, `blockStep`, `metrics`, and `accounts`. Constraints enforced by the driver:
 
 - `toBlock > fromBlock`, `blockStep > 0`, `metrics` is a non-empty string array if present, and `accounts` is a non-empty array of unique hex addresses.
-- Every configured address must be chain-enabled in `accounts.json`; the Solidity test reverts with `backtest: configured account missing or disabled` otherwise. Direct Forge smoke mode remains the only all-enabled-account path.
+- Every configured address must be chain-enabled in `accounts.json`; the Solidity test reverts with `BacktestConfiguredAccountUnavailable(matched, configured)` otherwise. Direct Forge smoke mode remains the only all-enabled-account path.
 
 Then snapshot:
 

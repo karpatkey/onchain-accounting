@@ -18,6 +18,21 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 contract NavBacktest is IntegrationFromConfigBase {
     using stdJson for string;
 
+    /// @notice A window lists a metric name with no branch in `_evalMetric`.
+    error BacktestUnknownMetric(string metric);
+    /// @notice The blocks file has no entry for the requested window/chain pair.
+    error BacktestWindowNotFound(string window, uint256 chainId);
+    /// @notice `toBlock` must be strictly after `fromBlock` and the step must be non-zero.
+    error BacktestBadWindowBounds(uint256 fromBlock, uint256 toBlock, uint256 blockStep);
+    /// @notice The window declares a `metrics` key holding an empty array.
+    error BacktestEmptyMetrics(string window);
+    /// @notice The window declares an `accounts` key holding an empty array.
+    error BacktestEmptyAccounts(string window);
+    /// @notice A configured account is absent from accounts.json, disabled for this chain, or duplicated.
+    error BacktestConfiguredAccountUnavailable(uint256 matched, uint256 configured);
+    /// @notice accounts.json enables no account for the backtested chain.
+    error BacktestNoEnabledAccounts(uint256 chainId);
+
     bytes32 internal constant METRIC_NAV = keccak256("nav");
 
     uint256[] internal _blocks;
@@ -36,9 +51,7 @@ contract NavBacktest is IntegrationFromConfigBase {
 
         // Fail fast on unknown metric names before paying for the fork.
         for (uint256 m = 0; m < _metrics.length; m++) {
-            require(
-                _isKnownMetric(keccak256(bytes(_metrics[m]))), string.concat("backtest: unknown metric ", _metrics[m])
-            );
+            if (!_isKnownMetric(keccak256(bytes(_metrics[m])))) revert BacktestUnknownMetric(_metrics[m]);
         }
 
         _forkBlock = _blocks[0]; // oldest point: deploy here, roll forward
@@ -78,10 +91,10 @@ contract NavBacktest is IntegrationFromConfigBase {
         if (h == METRIC_NAV) {
             return vm.toString(nav.getAccountNav(account, QUOTE_USD).value);
         }
-        revert("backtest: unknown metric");
+        revert BacktestUnknownMetric(vm.toString(h));
     }
 
-    function _emitPoint(uint256 blockNum, address account, string memory metric) internal {
+    function _emitPoint(uint256 blockNum, address account, string memory metric) internal view {
         string memory result;
         try this.evalMetricExternal(keccak256(bytes(metric)), account) returns (string memory v) {
             result = v;
@@ -128,12 +141,12 @@ contract NavBacktest is IntegrationFromConfigBase {
         string memory json = vm.readFile(blocksFile);
         string memory window = vm.envOr("BACKTEST_WINDOW", string("w1-1d"));
         string memory base = string.concat(".windows.", window, ".chains.", vm.toString(_chainId));
-        require(vm.keyExists(json, base), "backtest: no window/chain in blocks file");
+        if (!vm.keyExists(json, base)) revert BacktestWindowNotFound(window, _chainId);
 
         uint256 fromBlock = json.readUint(string.concat(base, ".fromBlock"));
         uint256 toBlock = json.readUint(string.concat(base, ".toBlock"));
         uint256 step = json.readUint(string.concat(base, ".blockStep"));
-        require(toBlock > fromBlock && step > 0, "backtest: bad window bounds");
+        if (toBlock <= fromBlock || step == 0) revert BacktestBadWindowBounds(fromBlock, toBlock, step);
         for (uint256 b = fromBlock; b < toBlock; b += step) {
             _blocks.push(b);
         }
@@ -142,7 +155,7 @@ contract NavBacktest is IntegrationFromConfigBase {
         if (vm.keyExists(json, string.concat(base, ".metrics"))) {
             delete _metrics;
             string[] memory configured = json.readStringArray(string.concat(base, ".metrics"));
-            require(configured.length > 0, "backtest: empty metrics array");
+            if (configured.length == 0) revert BacktestEmptyMetrics(window);
             for (uint256 m = 0; m < configured.length; m++) {
                 _metrics.push(configured[m]);
             }
@@ -154,7 +167,7 @@ contract NavBacktest is IntegrationFromConfigBase {
         string memory accountsKey = string.concat(base, ".accounts");
         if (vm.keyExists(json, accountsKey)) {
             string[] memory configured = json.readStringArray(accountsKey);
-            require(configured.length > 0, "backtest: empty accounts array");
+            if (configured.length == 0) revert BacktestEmptyAccounts(window);
             for (uint256 a = 0; a < configured.length; a++) {
                 _configuredAccounts.push(vm.parseAddress(configured[a]));
             }
@@ -190,12 +203,14 @@ contract NavBacktest is IntegrationFromConfigBase {
                     count++;
                 }
             }
-            require(count == _configuredAccounts.length, "backtest: configured account missing or disabled");
+            if (count != _configuredAccounts.length) {
+                revert BacktestConfiguredAccountUnavailable(count, _configuredAccounts.length);
+            }
             // Compact in-place.
             assembly { mstore(filtered, count) }
             _backtestAccounts = filtered;
         }
-        require(_backtestAccounts.length > 0, "backtest: no enabled accounts for chain");
+        if (_backtestAccounts.length == 0) revert BacktestNoEnabledAccounts(_chainId);
     }
 
     function _isConfiguredAccount(address account) internal view returns (bool) {

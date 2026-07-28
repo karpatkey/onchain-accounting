@@ -173,6 +173,22 @@ So a slice can get an answer out of a portfolio whose complete read has started 
 > which puts a fixed-cost failure below the same 7/8 bar for the *complete* read as well. Both reads then fail open on
 > the same adapter and **agree on the same wrong number.** The signal is the `AdapterGasExhausted` *disappearing*, not
 > the two figures converging.
+>
+> **Scope, and it is narrower than the table suggests.** A *fixed absolute cost* `G` is the ONLY case whose verdict
+> moves with the budget — and slicing is merely one way to change the budget, not the mechanism. The ordinary case,
+> an adapter that genuinely runs out of gas and bubbles it, is **completely budget-invariant**: `consumed` and
+> `stipend` are both proportional to the gas available at that point, so the ratio the classifier tests reduces to
+> `≈ (63/64)^d` for nesting depth `d`, and the budget cancels. Slice size moves the budget; it does not move `d`.
+>
+> Measured across a 50× budget spread (600k to 30M) through the paginated entrypoint at slice size 1: the verdict
+> flips from loud to silent between `d = 8` and `d = 9`, **at the same depth for every budget**, and the complete
+> read agrees with a slice of 1 at every depth. `SLACK_DIVISOR = 8` is what puts the maximum detectable nesting depth
+> at exactly 8 — far past the realistic chain (classifier → meta-adapter → instance → protocol read, `d ≤ 5`), which
+> classified loud at every budget from 400k up.
+>
+> One consequence runs the reassuring way: a *larger* stipend moves the spurious-exhaustion window
+> (`consumed ∈ [0.875·stipend, stipend]`) to higher absolute cost, so **slice size 1 minimises spurious
+> `AdapterGasExhausted`**, it does not maximise it.
 
 ---
 

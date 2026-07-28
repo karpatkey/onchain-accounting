@@ -39,7 +39,6 @@ Onchain accounting infrastructure for portfolio NAV: **balances** (per-protocol 
 | Understand the whole repo at a glance | `README.md` (this file is a *deeper* index — README is the elevator pitch) |
 | Run or refresh a NAV historical backtest window | `docs/howto/nav-backtest.md` (driver `script/test/nav-backtest.ts`, Solidity `test/integration/NavBacktest.fork.t.sol`, window config `test/integration/backtest-blocks.json`, fixture `test/integration/nav-timeseries.json`) |
 
-
 ## Conventions you must respect
 
 - **Adapters report balances, not values.** Every balance adapter returns `INAVCalculator.PositionBalance[]` with `amount` always **positive** and `isDebt` flagging debt vs. credit. NAVCalculator does the pricing and signing. See `src/balances/BALANCE_ADAPTERS.md` §2–§3.

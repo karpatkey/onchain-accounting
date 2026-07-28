@@ -60,6 +60,35 @@ interface INAVCalculator is IBalances {
     /// @param consumed Gas the instance call actually cost, including the fan-out's call overhead.
     error InstanceGasExhausted(address adapter, bytes32 instance, uint256 stipend, uint256 consumed);
 
+    /// @notice {getAccountNavForAdapters} was given an empty adapter list.
+    /// @dev Not silently answered with a zero NAV. An empty slice is indistinguishable from "this portion of the
+    ///      portfolio is worth nothing", and a caller that built its slice list from a stale or mis-parsed source
+    ///      would read that zero as a real answer and reassemble a NAV that is short by exactly the adapters it
+    ///      forgot to ask for. Declared here rather than in `src/errors.sol` for the same reason as
+    ///      {AdapterGasExhausted}: it is raised inside a DELEGATECALLed library, so it only reaches consumers'
+    ///      generated ABIs by being named in this interface.
+    error EmptyAdapterSlice();
+
+    /// @notice {getAccountNavForAdapters} was given an adapter that is not in the global registry.
+    /// @dev The registry is `getAllAdapters()` — the exact list the complete read scans — so "registered" here
+    ///      means "would have been included in `getAccountNav`". Rejected rather than skipped: an unregistered
+    ///      address (a decommissioned adapter, a typo, an address from another chain) has no positions to report,
+    ///      so skipping it would return a well-formed slice whose `value` is silently missing whatever the caller
+    ///      believed that address covered — and whose `adaptersCovered` would then have to either echo an address
+    ///      that contributed nothing or omit one the caller asked for. Both mislead the coverage check that
+    ///      `adaptersCovered` exists to support.
+    /// @param adapter The supplied address that is not a registered balance adapter.
+    error AdapterNotRegistered(address adapter);
+
+    /// @notice {getAccountNavForAdapters} was given the same adapter twice in one slice.
+    /// @dev A repeated adapter is queried twice and its positions summed twice, so the slice over-reports by that
+    ///      adapter's whole value. Rejected rather than deduplicated, because a duplicate means the caller's
+    ///      partition logic is wrong and the same defect will be producing overlaps ACROSS slices — which this
+    ///      contract cannot see and silently deduplicating here would hide. Cross-slice overlap is what
+    ///      `PartialNAV.adaptersCovered` is for.
+    /// @param adapter The address that appeared more than once.
+    error DuplicateAdapterInSlice(address adapter);
+
     //
     // Structs
     //
@@ -229,6 +258,74 @@ interface INAVCalculator is IBalances {
         // True if the quote (unit-of-account) asset's own primary diverged from its monitors beyond tolerance —
         // the divergence counterpart to `quoteAssetStale`. Always false for a USD quote (no quote feed).
         bool quoteAssetIrregular;
+    }
+
+    /// @notice One SLICE of an account's NAV: the same snapshot as {NAV} but covering only the balance adapters
+    ///         named in the request, plus the list of adapters it actually covered.
+    /// @dev Returned by {getAccountNavForAdapters}. Deliberately a DISTINCT type from {NAV}, not a reuse of it,
+    ///      and that is the whole safety property of this API: a partial result must not be assignable, passable
+    ///      or decodable where a complete NAV is expected. A `PartialNAV` that type-checked as a `NAV` would let a
+    ///      caller hand one slice to a consumer that believes it holds the whole portfolio — the exact silent
+    ///      under-report pagination exists to make impossible. The cost is that a caller must reassemble
+    ///      explicitly; that cost is the point.
+    ///
+    ///      **Field order mirrors {NAV} exactly for its first eight fields, including NAV's own appended ones, so
+    ///      a decoder written for `NAV` maps 1:1 onto this struct's prefix.** `adaptersCovered` is appended last.
+    ///      Keep it that way: any future field goes at the END of this struct (see the APPENDED note on {NAV}),
+    ///      and any field appended to {NAV} must be appended here too — BEFORE `adaptersCovered` if the prefix
+    ///      correspondence is to survive, which means moving `adaptersCovered` and accepting the ABI shift, or
+    ///      accepting that the prefix correspondence ends there. Prefer the latter: shifting a field's offset in a
+    ///      struct a live off-chain reassembler decodes is worse than losing a documentation convenience.
+    /// @param value Net value of THIS SLICE's positions in `quoteAsset`, signed (negative if the slice is net
+    ///        debt). **This is the one field that sums.** Debt legs are already negative, prices are per-asset and
+    ///        independent of which adapter reported the position, so the sum of `value` over a partition of
+    ///        `getAllAdapters()` equals `getAccountNav().value` exactly — no tolerance, no rounding slack. Every
+    ///        other field below does NOT sum.
+    /// @param quoteAsset Quote currency; `address(0)` denotes USD. Identical in every slice (it is the caller's
+    ///        argument), so a reassembler can assert it rather than combine it.
+    /// @param timestamp Block timestamp of THIS call. A reassembler MUST check that every slice carries the same
+    ///        value: differing timestamps mean the slices were read at different blocks, and a NAV assembled from
+    ///        positions priced at different blocks is not a NAV of anything. See the caller contract on
+    ///        {getAccountNavForAdapters}.
+    /// @param stalePriceAssets Assets whose prices were stale, **restricted to the assets this slice's positions
+    ///        touched**. NOT a portfolio-wide list: an asset that is stale but only held through an adapter in
+    ///        another slice is absent here and present there. Must be UNIONED across slices, and the union
+    ///        de-duplicated — two slices holding the same stale asset each report it.
+    /// @param sequencerDown True if the L2 sequencer was down or in grace period (L2 only). Derived from this
+    ///        contract's sequencer config, not from the slice, so it is the same in every slice — but it is still
+    ///        per-slice data and a caller that reads it on only one slice is relying on that invariant rather than
+    ///        checking it. OR it across slices.
+    /// @param quoteAssetStale True if the quote asset's own price feed was stale, in which case `value` is in USD
+    ///        (8dp) despite `quoteAsset` being non-zero. Also invariant across slices (it depends on the quote
+    ///        asset, not the adapters) — which makes it *more* dangerous to ignore, not less: if it is true, every
+    ///        slice's `value` is in USD, and a reassembler that never looked will label a USD total with the
+    ///        requested quote currency. OR it across slices.
+    /// @param irregularPriceAssets Assets whose primary price diverged from their monitor feeds beyond tolerance
+    ///        (or, for stablecoins, from the $1 peg), **restricted to the assets this slice touched**. Same
+    ///        per-slice restriction and same union-and-dedupe requirement as `stalePriceAssets`. This is the depeg
+    ///        signal; a slice-local read of it is a slice-local depeg picture.
+    /// @param quoteAssetIrregular True if the quote asset's own primary diverged from its monitors. Invariant
+    ///        across slices, always false for a USD quote. OR it across slices.
+    /// @param adaptersCovered The adapters this slice actually queried — element-for-element identical to the
+    ///        `adapters` argument, order included, because the call reverts rather than silently dropping, adding
+    ///        or reordering one. That makes it a machine-checkable record rather than a restatement of the input:
+    ///        the guarantee is that nothing came between the request and the scan. Its purpose is reassembly
+    ///        verification: concatenate it
+    ///        across every slice and compare against `getAllAdapters()`. A missing address means the assembled NAV
+    ///        is short by that adapter's positions; a repeated one means it is double-counted. Neither is
+    ///        detectable from `value` alone, because a short NAV is a perfectly plausible number.
+    // forge-lint: disable-next-line(pascal-case-struct)
+    struct PartialNAV {
+        int256 value;
+        Asset quoteAsset;
+        uint64 timestamp;
+        Asset[] stalePriceAssets;
+        bool sequencerDown;
+        bool quoteAssetStale;
+        Asset[] irregularPriceAssets;
+        bool quoteAssetIrregular;
+        // APPENDED last, after the {NAV}-mirroring prefix — see the struct-evolution note above.
+        address[] adaptersCovered;
     }
 
     /// @notice Price data for the freshest non-stale feed selected for an asset.
@@ -472,6 +569,89 @@ interface INAVCalculator is IBalances {
     /// @param quoteAsset Quote currency; address(0) for USD. Must have a price feed if not zero.
     /// @return nav NAV struct (value, quoteAsset, timestamp, stalePriceAssets, sequencerDown, quoteAssetStale).
     function getAccountNav(address account, address quoteAsset) external view returns (NAV memory nav);
+
+    /// @notice Computes the NAV contribution of a CALLER-SUPPLIED SET of balance adapters, so an off-chain caller
+    ///         can read a portfolio's NAV in slices and reassemble it.
+    /// @dev Exists because {getAccountNav} scans every registered adapter in one `eth_call` and that cost grows
+    ///      with the asset registry and the adapter set. Past a node's `eth_call` gas cap the complete read stops
+    ///      returning anything at all — not a degraded NAV, no NAV — and there is no smaller question to ask.
+    ///      This is that smaller question.
+    ///
+    ///      **A SET, NOT AN INDEX RANGE, AND THAT IS NOT A STYLE CHOICE.** `getAllAdapters()` is maintained with
+    ///      swap-and-pop, so removing any adapter moves the LAST adapter into the removed one's index. A caller
+    ///      paging `[0,10)` then `[10,20)` with a governance removal landing in between would read one adapter
+    ///      twice and never see another, and both slices would look completely well-formed. Naming the adapters
+    ///      removes the possibility rather than documenting it away.
+    ///
+    ///      ### The caller contract
+    ///
+    ///      Four obligations. The first two this function enforces; the last two it cannot see, and they are
+    ///      where a reassembled NAV goes wrong.
+    ///
+    ///      1. **Every adapter must be registered and appear at most once** — else {AdapterNotRegistered} or
+    ///         {DuplicateAdapterInSlice}. An empty list reverts {EmptyAdapterSlice}.
+    ///      2. **The slice is queried as one atomic read**, so `value` is internally consistent.
+    ///      3. **All slices MUST be read at the same block.** Pass an explicit block number (or tag) to every
+    ///         `eth_call`; do not let successive calls land on different heads. Positions and prices both move
+    ///         between blocks, so slices from different blocks sum to a number that was never any account's NAV —
+    ///         and the sum will look entirely reasonable. `PartialNAV.timestamp` is the check: assert it is
+    ///         identical across every slice before summing.
+    ///      4. **The union of the slices must cover `getAllAdapters()` exactly once**, and
+    ///         `PartialNAV.adaptersCovered` is how that is verified: concatenate it across slices and compare
+    ///         against `getAllAdapters()` read at the same block. A missing adapter yields a NAV short by its
+    ///         positions; a repeated one double-counts. Re-read `getAllAdapters()` at the pinned block rather than
+    ///         trusting a cached list — the registry is governed and can change under a paging loop.
+    ///
+    ///      ### **Health flags do NOT sum. Ignoring them on ANY slice silently destroys a signal.**
+    ///
+    ///      `value` is the only field that composes by addition. **`stalePriceAssets` and `irregularPriceAssets`
+    ///      are restricted to the assets THIS slice's positions touched, and `sequencerDown`, `quoteAssetStale`
+    ///      and `quoteAssetIrregular` are reported per slice. A caller that checks the flags on one slice, or on
+    ///      the last slice, or on a slice it happened to keep, silently loses every staleness, depeg and
+    ///      sequencer-down signal carried by the others — and gets a NAV number that looks fine.** That failure
+    ///      shape is exactly what this repo's fail-open hardening work was for; it must not be reintroduced at the
+    ///      reassembly boundary. **UNION the two asset arrays (de-duplicating: two slices holding the same stale
+    ///      asset each report it) and OR the three booleans, across every slice, before treating the summed
+    ///      `value` as usable.**
+    ///
+    ///      ### A meta-adapter is the atomic unit
+    ///
+    ///      A slice naming a meta-adapter includes **all** of that adapter's governed instances — every Aave V3
+    ///      instance, every Morpho market, every Curve pool. There is no way to page WITHIN one meta-adapter
+    ///      through this API, by design: the governed instance set is itself swap-and-pop mutable
+    ///      (`addMetaInstances`/`removeMetaInstances`), so an instance-level range would carry the same
+    ///      reordering hazard this signature exists to avoid, and an instance-level set would need the adapter to
+    ///      accept a filter it does not have. So the finest slice available is one adapter. If a SINGLE
+    ///      meta-adapter's read alone exceeds the gas budget, pagination does not help and the problem is that
+    ///      adapter's per-instance cost, not the number of adapters — a different problem with a different fix.
+    ///
+    ///      ### What this does NOT do
+    ///
+    ///      Pagination reduces the gas of one call. It does not reduce the total gas of reading the whole NAV
+    ///      (it slightly increases it — per-call overhead is paid per slice) and it does nothing whatsoever for an
+    ///      ON-CHAIN consumer that must read a NAV inside a transaction: that consumer needs one complete answer
+    ///      in one frame and cannot reassemble across calls. For those callers the only fixes are reducing the
+    ///      cost of the read itself or shrinking the registry. This API is for off-chain readers.
+    ///
+    ///      One thing it does help, though: the per-adapter gas stipend in the read path is a share of what the
+    ///      READ still holds, so an adapter starved into {AdapterGasExhausted} inside the complete scan may have
+    ///      ample budget when asked for on its own. A slice is therefore also the way to get an answer out of a
+    ///      portfolio whose complete read has started reverting.
+    ///
+    ///      No verbose (labelled) counterpart exists yet. The label paths carry the heavier gas pressure and their
+    ///      bounds are being re-derived; a paginated read built against numbers about to change would be wasted.
+    /// @param account Account address.
+    /// @param quoteAsset Quote currency; `address(0)` for USD. Must have a price feed if non-zero. Pass the SAME
+    ///        value to every slice — the per-slice `value`s are otherwise denominated differently and summing them
+    ///        is meaningless.
+    /// @param adapters The balance adapters to include. Each must be currently registered (in `getAllAdapters()`)
+    ///        and may appear only once. Must be non-empty.
+    /// @return partialNav The slice's NAV contribution plus `adaptersCovered`. See {PartialNAV} — in particular,
+    ///         `value` sums and nothing else does.
+    function getAccountNavForAdapters(address account, address quoteAsset, address[] calldata adapters)
+        external
+        view
+        returns (PartialNAV memory partialNav);
 
     /// @notice Returns all positions for an account with pricing in the quote currency.
     /// @param account Account address.

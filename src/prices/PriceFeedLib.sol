@@ -546,12 +546,13 @@ library PriceFeedLib {
     /// @dev Mirrors the former NAVCalculator.getAccountNav + _readPositionsWithQuote. The caller validates the
     ///      quote asset and computes `sequencerDown` (it depends on the caller's sequencer-feed config) before
     ///      calling. All position arrays are built and consumed here, never crossing the ABI boundary.
-    /// @dev The NAV-summation semantics here (quote-info fetch, empty-registry / empty-position early returns,
-    ///      stale-asset build, per-position value accumulation) are intentionally duplicated in
-    ///      `computeNavAndPositions` rather than shared via a helper: this lean path avoids materializing the
-    ///      `Position[]` that `getAccountNav` does not need (the diff's via_ir note: helper extraction can cost
-    ///      more than the inlined body). **Any change to the NAV math here MUST be mirrored in
-    ///      `computeNavAndPositions` (and vice versa)** or `getAccountNav` and `getAccountNavVerbose` will diverge.
+    /// @dev The NAV-summation semantics live in `_navCore` below, which this and `computeNavForAdapters` both
+    ///      call, so the complete read and every partial read are the SAME code and cannot drift apart. They are
+    ///      still intentionally duplicated in `computeNavAndPositions` rather than shared with it: this lean path
+    ///      avoids materializing the `Position[]` that `getAccountNav` does not need (the diff's via_ir note:
+    ///      helper extraction can cost more than the inlined body). **Any change to the NAV math in `_navCore`
+    ///      MUST be mirrored in `computeNavAndPositions` (and vice versa)** or `getAccountNav` and
+    ///      `getAccountNavVerbose` will diverge.
     function computeNav(
         mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
         mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
@@ -565,6 +566,156 @@ library PriceFeedLib {
         bool sequencerDown,
         string memory nativeTokenSymbol
     ) external view returns (INAVCalculator.NAV memory nav) {
+        return _navCore(
+            priceOracles,
+            monitorFeeds,
+            assetPricing,
+            assetIndex,
+            registeredAssets,
+            allAdapters,
+            account,
+            quoteAsset,
+            sequencerDown,
+            nativeTokenSymbol
+        );
+    }
+
+    /// @notice Computes the NAV contribution of a caller-supplied SET of balance adapters — the paginated read
+    ///         behind `NAVCalculator.getAccountNavForAdapters`.
+    /// @dev Runs `_navCore` over the validated slice, i.e. **literally the same summation code `computeNav` runs**,
+    ///      differing only in which adapters are scanned. That identity is what makes the partition invariant
+    ///      (sum of slices == complete NAV) a property of the code rather than of two implementations agreeing.
+    ///
+    ///      Validation is up front and total (see `_validateAdapterSlice`) because every rejected input would
+    ///      otherwise produce a well-formed slice carrying a silently wrong `value`.
+    ///
+    ///      **Returns the slice's `NAV` and its coverage list SEPARATELY rather than the assembled
+    ///      `INAVCalculator.PartialNAV`, and the caller assembles.** Not a stylistic preference: returning the
+    ///      struct across this DELEGATECALL makes solc emit a `PartialNAV` ENCODER here and a matching DECODER in
+    ///      NAVCalculator, neither of which buys anything, since NAVCalculator has to encode `PartialNAV` for its
+    ///      own return value regardless. Handing back a `NAV` reuses the decoder `getAccountNav` already forces to
+    ///      exist there. Measured on solc 0.8.34 / via_ir / cancun: 379 bytes off this library's runtime and 44 off
+    ///      NAVCalculator's — the bulk of the win is here, but NAVCalculator's is the margin that is nearly gone
+    ///      (218 bytes under EIP-170), so both matter. The cost is nine field copies at the call site, with the
+    ///      arrays copied as memory pointers.
+    /// @param priceOracles Per-asset primary price-feed configs (storage ref).
+    /// @param monitorFeeds Per-asset monitor (divergence-only) feed configs (storage ref).
+    /// @param assetPricing Per-asset pricing metadata — divergence/peg tolerances (storage ref).
+    /// @param assetIndex 1-based asset-registry index map (storage ref).
+    /// @param registeredAssets The asset registry (storage ref).
+    /// @param allAdapters The FULL global adapter registry (`getAllAdapters()`), the authority every supplied
+    ///        adapter is checked against. Passing the complete list rather than a registration mapping makes
+    ///        "registered" mean exactly "in the list the complete read scans".
+    /// @param adapters The caller's slice: registered, distinct, non-empty.
+    /// @param account The account to value.
+    /// @param quoteAsset Quote currency; `address(0)` for USD. Validated by the caller.
+    /// @param sequencerDown L2 sequencer status, computed by the caller (it depends on the caller's config).
+    /// @param nativeTokenSymbol Display symbol for the chain's native token.
+    /// @return nav The slice's NAV snapshot — every field of `PartialNAV` except `adaptersCovered`. Typed `NAV`
+    ///         only because it is the shape `_navCore` produces and the shape the caller can already decode; it is
+    ///         a PARTIAL result and the caller must not surface it as a complete one. Nothing outside
+    ///         `NAVCalculator.getAccountNavForAdapters` may call this function.
+    /// @return covered The adapters actually scanned, order preserved — `PartialNAV.adaptersCovered`.
+    function computeNavForAdapters(
+        mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
+        mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
+        mapping(address => IPrices.AssetPricing) storage assetPricing,
+        mapping(address => uint256) storage assetIndex,
+        INAVCalculator.Asset[] storage registeredAssets,
+        address[] memory allAdapters,
+        address[] calldata adapters,
+        address account,
+        address quoteAsset,
+        bool sequencerDown,
+        string memory nativeTokenSymbol
+    ) external view returns (INAVCalculator.NAV memory nav, address[] memory covered) {
+        covered = _validateAdapterSlice(allAdapters, adapters);
+
+        nav = _navCore(
+            priceOracles,
+            monitorFeeds,
+            assetPricing,
+            assetIndex,
+            registeredAssets,
+            covered,
+            account,
+            quoteAsset,
+            sequencerDown,
+            nativeTokenSymbol
+        );
+    }
+
+    /// @notice Validates a caller-supplied adapter slice and returns it as a memory array for the read path.
+    /// @dev Every rejection here is a case that would otherwise return a plausible-looking slice with a wrong
+    ///      `value`, which is strictly worse than a revert because the caller sums it and never finds out:
+    ///
+    ///      - **Empty** → a zero NAV indistinguishable from "worth nothing".
+    ///      - **Unregistered** → no positions to report, so the slice is short by whatever the caller thought that
+    ///        address covered, and `adaptersCovered` can no longer be read as a coverage record.
+    ///      - **Duplicate** → the adapter is queried and summed twice, over-reporting the slice by its full value.
+    ///
+    ///      Both scans are O(n·m) / O(n²) over memory arrays with no external calls, against an adapter registry
+    ///      in the tens: a few thousand gas against a read that costs tens of millions. A mapping lookup or a
+    ///      sorted-input requirement would be cheaper and neither is worth the extra surface — the sorted variant
+    ///      would also push a correctness obligation onto the caller, which is the opposite of this API's design.
+    /// @param allAdapters The full global adapter registry to check membership against.
+    /// @param adapters The caller's slice.
+    /// @return covered `adapters` copied to memory, order preserved — both the read path's input and the
+    ///         `adaptersCovered` receipt, so the two can never disagree.
+    function _validateAdapterSlice(address[] memory allAdapters, address[] calldata adapters)
+        private
+        pure
+        returns (address[] memory covered)
+    {
+        uint256 len = adapters.length;
+        if (len == 0) revert INAVCalculator.EmptyAdapterSlice();
+
+        covered = new address[](len);
+        for (uint256 i = 0; i < len; i++) {
+            address adapter = adapters[i];
+
+            // Duplicate check against what has already been accepted, so the FIRST repeat is what gets named
+            // rather than whichever element a full pairwise sweep reached last. Scans the already-copied prefix of
+            // `covered`, which is element-for-element `adapters[0..i)`, so this is the same comparison one memory
+            // read cheaper than re-reading calldata.
+            for (uint256 j = 0; j < i; j++) {
+                if (covered[j] == adapter) revert INAVCalculator.DuplicateAdapterInSlice(adapter);
+            }
+
+            bool registered;
+            uint256 total = allAdapters.length;
+            for (uint256 k = 0; k < total; k++) {
+                if (allAdapters[k] == adapter) {
+                    registered = true;
+                    break;
+                }
+            }
+            if (!registered) revert INAVCalculator.AdapterNotRegistered(adapter);
+
+            covered[i] = adapter;
+        }
+    }
+
+    /// @notice The NAV summation itself, shared by `computeNav` (whole registry) and `computeNavForAdapters` (a
+    ///         caller-supplied slice), which differ ONLY in the `allAdapters` array handed to it.
+    /// @dev Extracted so there is exactly one implementation of the NAV math on this path. The consequence worth
+    ///      stating: because a slice and the complete read execute this identical body, the sum of `value` over a
+    ///      partition of the registry equals the complete `value` exactly — every position is priced the same way
+    ///      regardless of which call reported it, and debt legs are already signed. The per-slice health fields
+    ///      are the ones that do not compose, because `stalePriceAssets` / `irregularPriceAssets` are built from
+    ///      the assets the SCANNED adapters happened to touch; see `INAVCalculator.PartialNAV`.
+    function _navCore(
+        mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
+        mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
+        mapping(address => IPrices.AssetPricing) storage assetPricing,
+        mapping(address => uint256) storage assetIndex,
+        INAVCalculator.Asset[] storage registeredAssets,
+        address[] memory allAdapters,
+        address account,
+        address quoteAsset,
+        bool sequencerDown,
+        string memory nativeTokenSymbol
+    ) private view returns (INAVCalculator.NAV memory nav) {
         nav.timestamp = uint64(block.timestamp);
         QuoteAssetInfo memory quoteInfo =
             _getQuoteAssetInfo(priceOracles, assetIndex, registeredAssets, quoteAsset, nativeTokenSymbol);

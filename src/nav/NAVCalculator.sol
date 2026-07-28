@@ -23,7 +23,12 @@ import "src/constants.sol";
 /// @notice NAV Calculator.
 /// @author KPK
 /// @dev EIP-170 budget: this contract runs close to the 24,576-byte runtime limit (CI's `forge build --sizes`
-///      enforces it). The read/compute engine (NAV, positions, health, value) and the registry storage-mutation
+///      enforces it). **As of the paginated-NAV read it is 218 bytes under.** Measure with a clean
+///      `forge build --sizes` before and after anything added here, and assume nothing non-trivial fits: the next
+///      substantive read will need the verbose label block (`_toVerbose` / `_safeString` / `_safeStringArray` /
+///      `decodeStringArray`) moved out to a separate LENS CONTRACT first. Not to a library — `decodeStringArray`
+///      has to be an external function on a contract for `try`/`catch` to reach it, which is why that block is
+///      inlined here today. The read/compute engine (NAV, positions, health, value) and the registry storage-mutation
 ///      loops are deliberately delegated to the external libraries `PriceFeedLib` and `NAVRegistryLib`
 ///      (DELEGATECALL) to stay under it — NAVCalculator keeps only storage, admin mutations, and thin
 ///      view wrappers. When adding code here, watch the margin and prefer moving substantial loops into a
@@ -326,6 +331,59 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             _isSequencerDown(),
             _nativeTokenSymbol
         );
+    }
+
+    /// @inheritdoc INAVCalculator
+    /// @dev Slice validation and the scan itself live in `PriceFeedLib.computeNavForAdapters` to keep this contract
+    ///      under EIP-170 (see the contract-level note). The library runs the slice through the SAME `_navCore`
+    ///      that `getAccountNav` runs, so the complete and partial reads cannot diverge in their NAV math — which
+    ///      is what makes the partition invariant a property of the code rather than of two bodies agreeing.
+    ///
+    ///      `getAllAdapters()` is passed as the registration authority, which makes "registered" mean exactly "in
+    ///      the list {getAccountNav} scans" — one definition, read from storage in the same call, so a slice can
+    ///      never be validated against a different registry than the one it is measured against.
+    ///
+    ///      **The `PartialNAV` is assembled HERE rather than returned by the library**, which is why this function
+    ///      is not the pure pass-through its siblings are. Returning the assembled struct across the DELEGATECALL
+    ///      would make solc emit a `PartialNAV` decoder in this contract on top of the encoder its own return value
+    ///      needs regardless; reusing the `NAV` decoder {getAccountNav} already forces to exist, and paying nine
+    ///      field copies instead, measured 44 bytes cheaper here (and 379 in the library). 44 bytes is trivial in
+    ///      isolation and a fifth of the margin this contract has left, which is the point.
+    ///
+    ///      The intermediate `NAV` never leaves this frame. It must not: it is a PARTIAL result wearing the
+    ///      complete result's type for the length of one function body, which is exactly what {PartialNAV} exists
+    ///      to prevent anywhere else. Widening `computeNavForAdapters`' visibility, or returning `n` from a variant
+    ///      of this function, would reintroduce that hazard.
+    function getAccountNavForAdapters(address account, address quoteAsset, address[] calldata adapters)
+        external
+        view
+        returns (INAVCalculator.PartialNAV memory partialNav)
+    {
+        _validateQuoteAsset(quoteAsset);
+
+        (INAVCalculator.NAV memory n, address[] memory covered) = PriceFeedLib.computeNavForAdapters(
+            _priceOracles,
+            _monitorFeeds,
+            _assetPricing,
+            _assetIndex,
+            _registeredAssets,
+            getAllAdapters(),
+            adapters,
+            account,
+            quoteAsset,
+            _isSequencerDown(),
+            _nativeTokenSymbol
+        );
+
+        partialNav.value = n.value;
+        partialNav.quoteAsset = n.quoteAsset;
+        partialNav.timestamp = n.timestamp;
+        partialNav.stalePriceAssets = n.stalePriceAssets;
+        partialNav.sequencerDown = n.sequencerDown;
+        partialNav.quoteAssetStale = n.quoteAssetStale;
+        partialNav.irregularPriceAssets = n.irregularPriceAssets;
+        partialNav.quoteAssetIrregular = n.quoteAssetIrregular;
+        partialNav.adaptersCovered = covered;
     }
 
     /// @inheritdoc INAVCalculator

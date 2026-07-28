@@ -5,11 +5,14 @@ pragma solidity ^0.8.0;
 import "test/SuperTest.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IBalances} from "src/balances/IBalances.sol";
+import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {aa} from "test/helpers/AdapterArray.sol";
+import {InstanceGasExhausted} from "src/errors.sol";
+import {Mock_FanOutMetaAdapter} from "test/balances/MetaBalanceAdapterGasExhaustion.t.sol";
 
 /// @notice A mock's own revert, so a test can tell "the adapter answered: nothing" from "the adapter never
 ///         answered". Named rather than a bare `revert()` because the two are indistinguishable to `catch`
@@ -183,8 +186,11 @@ contract Mock_NestedBurningBalanceAdapter is IBalanceAdapter {
 ///      deliberate exhaustion signal as a benign revert and fails open — dropping the whole meta-adapter instead
 ///      of surfacing the one instance. Hence the explicit selector check upstream, which this mock exists to pin.
 contract Mock_InstanceExhaustedAdapter is IBalanceAdapter {
+    /// @dev Advertises {IMetaBalanceAdapter}: only something with instances can mean anything by an
+    ///      instance-exhaustion signal, and the reader gates on exactly that.
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IERC165).interfaceId
+            || interfaceId == type(IMetaBalanceAdapter).interfaceId;
     }
 
     function getAdapterPositions(address, address)
@@ -211,6 +217,190 @@ contract Mock_InstanceExhaustedAdapter is IBalanceAdapter {
 
     function underlyingAssetsSupported() external pure override returns (address[] memory) {
         return new address[](0);
+    }
+}
+
+/// @title Mock_ForgingPlainAdapter
+/// @notice A PLAIN adapter that raises {InstanceGasExhausted} it has no standing to raise.
+/// @dev Honouring a callee-chosen selector means letting a callee force a revert, so the reader gates on the
+///      caller actually being a meta-adapter. An adapter with no instances cannot have had one starve; its
+///      revert is an ordinary revert and must keep failing open, as every adapter revert always has.
+contract Mock_ForgingPlainAdapter is IBalanceAdapter {
+    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
+        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
+
+    function getAdapterPositions(address, address)
+        external
+        view
+        override
+        returns (INAVCalculator.PositionBalance[] memory)
+    {
+        revert InstanceGasExhausted(address(this), bytes32(uint256(9)), 1_000_000, 999_999);
+    }
+
+    function getAdapterBalances(address)
+        external
+        view
+        override
+        returns (address[] memory, uint256[] memory, bool[] memory)
+    {
+        revert InstanceGasExhausted(address(this), bytes32(uint256(9)), 1_000_000, 999_999);
+    }
+
+    function getAdapterBalanceForAsset(address, address) external view override returns (uint256, bool) {
+        revert InstanceGasExhausted(address(this), bytes32(uint256(9)), 1_000_000, 999_999);
+    }
+
+    function underlyingAssetsSupported() external pure override returns (address[] memory) {
+        return new address[](0);
+    }
+}
+
+/// @title Mock_ShortForgeAdapter
+/// @notice Reverts with the {InstanceGasExhausted} selector and NOTHING else, while advertising as a meta-adapter.
+/// @dev Four bytes cannot be decoded against the error's four arguments. Re-raising them verbatim would hand the
+///      operator a payload their tooling throws on, so the reader demands the exact ABI width.
+contract Mock_ShortForgeAdapter is IBalanceAdapter {
+    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
+        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IERC165).interfaceId
+            || interfaceId == type(IMetaBalanceAdapter).interfaceId;
+    }
+
+    function getAdapterPositions(address, address)
+        external
+        view
+        override
+        returns (INAVCalculator.PositionBalance[] memory)
+    {
+        _shortRevert();
+        return new INAVCalculator.PositionBalance[](0);
+    }
+
+    function getAdapterBalances(address)
+        external
+        view
+        override
+        returns (address[] memory, uint256[] memory, bool[] memory)
+    {
+        _shortRevert();
+        return (new address[](0), new uint256[](0), new bool[](0));
+    }
+
+    function getAdapterBalanceForAsset(address, address) external view override returns (uint256, bool) {
+        _shortRevert();
+        return (0, false);
+    }
+
+    function underlyingAssetsSupported() external pure override returns (address[] memory) {
+        return new address[](0);
+    }
+
+    function _shortRevert() private pure {
+        bytes4 sel = InstanceGasExhausted.selector;
+        assembly {
+            mstore(0x00, sel)
+            revert(0x00, 0x04)
+        }
+    }
+}
+
+/// @title Mock_LyingExhaustedAdapter
+/// @notice Raises a full-width, correctly-shaped {InstanceGasExhausted} that names a DIFFERENT adapter.
+/// @dev The payload is the callee's own account of itself. Only the address the read actually called is a fact
+///      the reader knows independently, so that is the one word it refuses to take on trust.
+contract Mock_LyingExhaustedAdapter is IBalanceAdapter {
+    address public constant INNOCENT = address(0xBADC0DE);
+
+    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
+        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IERC165).interfaceId
+            || interfaceId == type(IMetaBalanceAdapter).interfaceId;
+    }
+
+    function getAdapterPositions(address, address)
+        external
+        view
+        override
+        returns (INAVCalculator.PositionBalance[] memory)
+    {
+        revert InstanceGasExhausted(INNOCENT, bytes32(uint256(11)), 1_000_000, 999_999);
+    }
+
+    function getAdapterBalances(address)
+        external
+        view
+        override
+        returns (address[] memory, uint256[] memory, bool[] memory)
+    {
+        revert InstanceGasExhausted(INNOCENT, bytes32(uint256(11)), 1_000_000, 999_999);
+    }
+
+    function getAdapterBalanceForAsset(address, address) external view override returns (uint256, bool) {
+        revert InstanceGasExhausted(INNOCENT, bytes32(uint256(11)), 1_000_000, 999_999);
+    }
+
+    function underlyingAssetsSupported() external pure override returns (address[] memory) {
+        return new address[](0);
+    }
+}
+
+/// @title Mock_BloatedExhaustedAdapter
+/// @notice Raises a well-formed {InstanceGasExhausted} followed by `padBytes` of filler.
+/// @dev The re-raiser copies a FIXED width out of the returndata buffer. Copying `returndatasize()` instead would
+///      charge the NAV frame for whatever an adapter chose to append — the unbounded-copy shape this path guards
+///      against everywhere else — so the bound needs a test that fails when it is removed.
+contract Mock_BloatedExhaustedAdapter is IBalanceAdapter {
+    uint256 public padBytes = 200_000;
+
+    function setPadBytes(uint256 n) external {
+        padBytes = n;
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
+        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IERC165).interfaceId
+            || interfaceId == type(IMetaBalanceAdapter).interfaceId;
+    }
+
+    function getAdapterPositions(address, address)
+        external
+        view
+        override
+        returns (INAVCalculator.PositionBalance[] memory)
+    {
+        _bloatedRevert();
+        return new INAVCalculator.PositionBalance[](0);
+    }
+
+    function getAdapterBalances(address)
+        external
+        view
+        override
+        returns (address[] memory, uint256[] memory, bool[] memory)
+    {
+        _bloatedRevert();
+        return (new address[](0), new uint256[](0), new bool[](0));
+    }
+
+    function getAdapterBalanceForAsset(address, address) external view override returns (uint256, bool) {
+        _bloatedRevert();
+        return (0, false);
+    }
+
+    function underlyingAssetsSupported() external pure override returns (address[] memory) {
+        return new address[](0);
+    }
+
+    function _bloatedRevert() private view {
+        bytes memory head = abi.encodeWithSelector(
+            InstanceGasExhausted.selector, address(this), bytes32(uint256(3)), uint256(1), uint256(2)
+        );
+        uint256 total = head.length + padBytes;
+        assembly {
+            let buf := mload(0x40)
+            let len := mload(head)
+            for { let i := 0 } lt(i, len) { i := add(i, 0x20) } { mstore(add(buf, i), mload(add(add(head, 0x20), i))) }
+            revert(buf, total)
+        }
     }
 }
 
@@ -427,6 +617,17 @@ contract NavReadHarness {
         }
     }
 
+    /// @notice Raw revert data from a `getAccountPositions` under `budget`; empty when the read succeeded.
+    /// @dev `catch (bytes memory)` is safe HERE and nowhere near the production path: the payloads under test are
+    ///      this repo's own fixed-width errors, not an adapter-sized blob.
+    function positionsRevertData(address account, uint256 budget) external view returns (bytes memory err) {
+        try NAV.getAccountPositions{gas: budget}(account, address(0)) returns (INAVCalculator.Position[] memory) {
+            return bytes("");
+        } catch (bytes memory e) {
+            return e;
+        }
+    }
+
     /// @notice One `getAccountNav` under `budget`.
     /// @return ok Whether the read completed at all.
     /// @return value The reported NAV.
@@ -614,7 +815,7 @@ contract NAVCalculatorGasCapTest is SuperTest {
     function test_instanceExhaustedSignal_isHonouredRegardlessOfGas() public {
         Mock_InstanceExhaustedAdapter signalling = new Mock_InstanceExhaustedAdapter();
         vm.prank(navCalculatorManager);
-        nav.addBalanceAdapters(aa(address(signalling)));
+        nav.addMetaBalanceAdapter(address(signalling), new bytes32[](0));
 
         uint8 status = harness.positionsOutcome(safe, GENEROUS_BUDGET);
         assertEq(status, 2, "a cheap InstanceGasExhausted must still take the read down, not be scored benign");
@@ -628,7 +829,7 @@ contract NAVCalculatorGasCapTest is SuperTest {
     function test_instanceExhaustedSignal_preservesTheInstance() public {
         Mock_InstanceExhaustedAdapter signalling = new Mock_InstanceExhaustedAdapter();
         vm.prank(navCalculatorManager);
-        nav.addBalanceAdapters(aa(address(signalling)));
+        nav.addMetaBalanceAdapter(address(signalling), new bytes32[](0));
 
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -640,6 +841,126 @@ contract NAVCalculatorGasCapTest is SuperTest {
             )
         );
         nav.getAccountPositions{gas: GENEROUS_BUDGET}(safe, address(0));
+    }
+
+    /// @notice A PLAIN adapter forging the signal must NOT be honoured — it keeps failing open.
+    /// @dev The gate that keeps "honour a callee-chosen selector" from meaning "any adapter may revert the whole
+    ///      portfolio read". Remove the `IMetaBalanceAdapter` check in `_reraiseIfInstanceExhausted` and this
+    ///      flips: an adapter with no instances takes down every account's NAV, where an ordinary revert from the
+    ///      same adapter has always been skipped.
+    function test_forgedSignalFromPlainAdapter_stillFailsOpen() public {
+        Mock_DebtLegAdapter debtor = new Mock_DebtLegAdapter(address(usdc), "USDC", usdc.decimals(), DEBT_AMOUNT);
+        Mock_ForgingPlainAdapter forger = new Mock_ForgingPlainAdapter();
+
+        vm.startPrank(navCalculatorManager);
+        nav.addBalanceAdapters(aa(address(forger)));
+        nav.addBalanceAdapters(aa(address(debtor)));
+        vm.stopPrank();
+
+        (bool ok, uint256 legs,) = harness.positionsWithBudget(safe, GENEROUS_BUDGET, address(debtor));
+        assertTrue(ok, "a plain adapter has no instances and no standing to fail the read");
+        assertEq(legs, 1, "and the adapters after it are still reported");
+    }
+
+    /// @notice A signal too short to decode must not be re-raised as a named error.
+    /// @dev Re-raising four bytes would hand the operator a payload carrying a real selector and no arguments,
+    ///      which decodes to nothing. Drop the exact-width check and this stops failing open.
+    function test_shortForgedSignal_isNotHonoured() public {
+        Mock_DebtLegAdapter debtor = new Mock_DebtLegAdapter(address(usdc), "USDC", usdc.decimals(), DEBT_AMOUNT);
+        Mock_ShortForgeAdapter shortForge = new Mock_ShortForgeAdapter();
+
+        vm.startPrank(navCalculatorManager);
+        nav.addMetaBalanceAdapter(address(shortForge), new bytes32[](0));
+        nav.addBalanceAdapters(aa(address(debtor)));
+        vm.stopPrank();
+
+        (bool ok, uint256 legs,) = harness.positionsWithBudget(safe, GENEROUS_BUDGET, address(debtor));
+        assertTrue(ok, "an undecodable signal is an ordinary revert");
+        assertEq(legs, 1, "and the adapters after it are still reported");
+    }
+
+    /// @notice The re-raised `adapter` word is the address actually called, not the one the payload claimed.
+    /// @dev The callee wrote those bytes. Left as-is, a misbehaving adapter could name an innocent sibling and
+    ///      send an operator to remove the wrong thing; the reader overwrites word 0 with the address it called.
+    function test_reraisedError_namesTheAdapterActuallyCalled() public {
+        Mock_LyingExhaustedAdapter liar = new Mock_LyingExhaustedAdapter();
+        vm.prank(navCalculatorManager);
+        nav.addMetaBalanceAdapter(address(liar), new bytes32[](0));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                InstanceGasExhausted.selector, address(liar), bytes32(uint256(11)), uint256(1_000_000), uint256(999_999)
+            )
+        );
+        nav.getAccountPositions{gas: GENEROUS_BUDGET}(safe, address(0));
+    }
+
+    /// @notice END TO END: a genuinely starved INSTANCE of a real meta-adapter, registered on the real
+    ///         NAVCalculator, surfaces out of a NAV read as `InstanceGasExhausted` naming that instance.
+    /// @dev The composed claim, and the only test that pins it. Every other test in this wave drives one half:
+    ///      the fan-out against a mock NAVCalculator, or the selector branch against an adapter that fabricates
+    ///      the error rather than starving. A regression anywhere in the join — the fan-out accumulating instead
+    ///      of reverting, the selector gate rejecting a real meta-adapter, an intervening catch — would collapse
+    ///      this into `AdapterGasExhausted` or back into a silent partial answer with everything else green.
+    function test_endToEnd_starvedInstanceOfRealMetaAdapter_namesTheInstance() public {
+        Mock_FanOutMetaAdapter meta = new Mock_FanOutMetaAdapter(address(nav), address(usdc));
+        bytes32 healthy = bytes32(uint256(1));
+        bytes32 starving = bytes32(uint256(2));
+        bytes32[] memory instances = new bytes32[](2);
+        instances[0] = healthy;
+        instances[1] = starving;
+
+        vm.prank(navCalculatorManager);
+        nav.addMetaBalanceAdapter(address(meta), instances);
+
+        bytes memory err = harness.positionsRevertData(safe, GENEROUS_BUDGET);
+        assertGt(err.length, 0, "a starved instance must not produce a successful read");
+        assertEq(err.length, 4 + 32 * 4, "the error must arrive at its full declared width");
+
+        bytes4 sel;
+        assembly {
+            sel := mload(add(err, 0x20))
+        }
+        assertEq(sel, InstanceGasExhausted.selector, "and it must be the instance-level error, not the adapter one");
+
+        (address reportedAdapter, bytes32 reportedInstance,,) =
+            abi.decode(_argsOf(err), (address, bytes32, uint256, uint256));
+        assertEq(reportedAdapter, address(meta), "the adapter named must be the meta-adapter actually called");
+        assertEq(reportedInstance, starving, "and the instance named must be the one that starved");
+    }
+
+    /// @dev Strips the 4-byte selector so the arguments can be decoded.
+    function _argsOf(bytes memory err) private pure returns (bytes memory args) {
+        args = new bytes(err.length - 4);
+        for (uint256 i = 0; i < args.length; i++) {
+            args[i] = err[i + 4];
+        }
+    }
+
+    /// @notice A signal padded with filler must not be honoured, and must not be copied.
+    /// @dev The error is a fixed width; anything wider is not something it can produce, so the reader rejects it
+    ///      outright rather than copying a prefix. That keeps the cost flat no matter how much an adapter
+    ///      appends — replace the width check with `returndatasize()` and the read pays for the padding.
+    function test_bloatedSignal_isNotHonouredAndNotCopied() public {
+        Mock_DebtLegAdapter debtor = new Mock_DebtLegAdapter(address(usdc), "USDC", usdc.decimals(), DEBT_AMOUNT);
+        Mock_BloatedExhaustedAdapter bloated = new Mock_BloatedExhaustedAdapter();
+
+        vm.startPrank(navCalculatorManager);
+        nav.addMetaBalanceAdapter(address(bloated), new bytes32[](0));
+        nav.addBalanceAdapters(aa(address(debtor)));
+        vm.stopPrank();
+
+        bloated.setPadBytes(50_000);
+        (bool okSmall, uint256 legsSmall, uint256 usedSmall) =
+            harness.positionsWithBudget(safe, GENEROUS_BUDGET, address(debtor));
+        assertTrue(okSmall, "an over-wide signal is an ordinary revert - the read continues");
+        assertEq(legsSmall, 1, "and the adapters after it are still reported");
+
+        bloated.setPadBytes(400_000);
+        (,, uint256 usedLarge) = harness.positionsWithBudget(safe, GENEROUS_BUDGET, address(debtor));
+
+        // The callee pays for its own memory expansion out of its stipend; what must not grow is THIS frame.
+        assertLt(usedLarge - usedSmall, 400_000, "the read's cost must not scale with the padding an adapter appends");
     }
 
     /// @notice An adapter that does real work and THEN reverts must still fail open, and the adapters after it

@@ -162,12 +162,35 @@ contract MetaBalanceAdapterGasExhaustionTest is Test {
         }
     }
 
-    /// @notice The error names the instance, because the adapter alone does not locate the fault.
+    /// @notice The error carries the coordinate of the instance that starved — asserted, not assumed.
+    /// @dev Checking only the selector would leave the one thing this error exists for unpinned: a refactor
+    ///      passing the wrong coordinate (a stale loop variable, `bytes32(0)`, the adapter widened into the
+    ///      instance slot) keeps a selector-only test green while the operator can no longer locate the market.
     function test_starvedInstance_errorNamesTheInstance() public {
         _govern(_set(HEALTHY, STARVING));
 
-        vm.expectPartialRevert(InstanceGasExhausted.selector);
-        adapter.getAdapterPositions{gas: 30_000_000}(account, address(0));
+        (bool ok, bytes memory err) = address(adapter).staticcall{gas: 30_000_000}(
+            abi.encodeCall(adapter.getAdapterPositions, (account, address(0)))
+        );
+        assertFalse(ok, "a starved instance must fail the fan-out");
+        assertEq(err.length, 4 + 32 * 4, "the error must arrive at its full declared width");
+
+        bytes4 sel;
+        assembly {
+            sel := mload(add(err, 0x20))
+        }
+        assertEq(sel, InstanceGasExhausted.selector, "selector");
+
+        bytes memory args = new bytes(err.length - 4);
+        for (uint256 i = 0; i < args.length; i++) {
+            args[i] = err[i + 4];
+        }
+        (address reportedAdapter, bytes32 reportedInstance, uint256 stipend, uint256 consumed) =
+            abi.decode(args, (address, bytes32, uint256, uint256));
+        assertEq(reportedAdapter, address(adapter), "the adapter field must name this adapter");
+        assertEq(reportedInstance, STARVING, "the instance field must name the coordinate that starved");
+        assertGt(stipend, 0, "the stipend actually forwarded must be reported");
+        assertGe(consumed, stipend - stipend / 8, "and consumed must be what tripped the predicate");
     }
 
     /// @notice Order must not matter: a starved instance FIRST is caught just as one starved last is.

@@ -21,6 +21,13 @@ pragma solidity ^0.8;
 ///
 ///      Being wrong the other way is cheap: a busy callee that reverts after real work gets read as exhausted
 ///      and produces a loud, retryable failure instead of a wrong number.
+///
+///      **What this cannot see at all.** The question is only asked when the callee BUBBLES its out-of-gas. A
+///      callee that wraps its own read in `try`/`catch` — or in a fail-open low-level staticcall — absorbs the
+///      out-of-gas itself, carries on with the ~1/64 the EVM handed back, and RETURNS SUCCESSFULLY with a leg
+///      missing. No classifier upstream is reached, because nothing failed from where it is standing. That
+///      residual is a property of each adapter's internal error handling, not of this threshold, and it is why
+///      "narrows the silent window" is the accurate claim rather than "closes it".
 library GasStipendLib {
     /// @notice Fraction of the stipend a failed call may leave unspent and still count as exhausted: `1/8`.
     /// @dev Covers nesting far past anything in this repo. Raising it (a smaller divisor) widens the window in

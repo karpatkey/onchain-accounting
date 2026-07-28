@@ -217,6 +217,17 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     ///      The classification is {GasStipendLib}'s, shared with the adapter-level guard in
     ///      `PriceFeedLib._getAdapterPositions` rather than restated here, because these two are the same
     ///      question asked one frame apart and a threshold that drifts between them re-opens the hole.
+    ///
+    ///      Note what this deliberately does NOT do: unlike the adapter-level guard, it does not honour an
+    ///      {InstanceGasExhausted} selector arriving in the revert data. That guard can afford to, because the
+    ///      thing it is listening to is a meta-adapter it has ERC165-checked. Here the revert data comes from a
+    ///      protocol this adapter merely reads, so treating a selector in it as a trusted signal would let a
+    ///      third-party contract decide that a NAV read must fail. Gas consumed is the only evidence available
+    ///      at this boundary that the callee cannot choose.
+    ///
+    ///      It also cannot see an instance that swallows its OWN out-of-gas — a `_instancePositions`
+    ///      implementation whose protocol read is itself wrapped in `try`/`catch` returns normally with a leg
+    ///      missing, and nothing here fires. See {GasStipendLib}.
     function _positionsForInstances(address account, bytes32[] memory instances, address assetFilter)
         internal
         view

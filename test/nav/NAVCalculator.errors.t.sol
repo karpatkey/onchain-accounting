@@ -366,6 +366,34 @@ contract NAVCalculatorErrorTest is SuperTest {
         nav.registerAsset(codeless, address(usdcAdapter), IPrices.PriceType.Custom, type(uint256).max);
     }
 
+    /// @notice A code-less `priceFeed` must be rejected by name too — the same mistake on the sibling argument.
+    /// @dev The asset guard alone leaves this open: for the AggregatorV3-shaped types the validator falls through
+    ///      to a high-level `latestRoundData()` on `priceFeed`, whose `extcodesize` precheck fires in the calling
+    ///      frame and reverts with empty returndata. The zero-address check above does not cover it — an EOA or a
+    ///      mistyped address is non-zero and code-less. Remove the guard and this fails on the revert DATA.
+    function test_RevertWhen_registerAsset_codelessPriceFeed() public {
+        Mock_ERC20 realToken = new Mock_ERC20("REAL", 18);
+        address codelessFeed = makeAddr("codelessFeed");
+        assertEq(codelessFeed.code.length, 0, "the feed under test must have no code");
+
+        vm.prank(navCalculatorManager);
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "priceFeed"));
+        nav.registerAsset(address(realToken), codelessFeed, IPrices.PriceType.Chainlink, 86_400);
+    }
+
+    /// @notice `addPriceFeed` and `addMonitorFeed` reach the same validator and must answer the same way.
+    function test_RevertWhen_addFeeds_codelessPriceFeed() public {
+        address codelessFeed = makeAddr("codelessFeed2");
+
+        vm.prank(navCalculatorManager);
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "priceFeed"));
+        nav.addPriceFeed(address(usdc), codelessFeed, IPrices.PriceType.Chainlink, 86_400);
+
+        vm.prank(navCalculatorManager);
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "priceFeed"));
+        nav.addMonitorFeed(address(usdc), codelessFeed, IPrices.PriceType.Chainlink, 86_400);
+    }
+
     /// @notice A contract that HAS code but is not ERC20-compatible is a DIFFERENT mistake and keeps its own
     ///         error, raised by the library's `try`/`catch`.
     function test_RevertWhen_registerAsset_nonErc20Contract() public {

@@ -10,6 +10,8 @@ import {IPrices} from "./IPrices.sol";
 import {ICustomPriceFeed} from "./ICustomPriceFeed.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
+import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 import {GasStipendLib} from "src/utils/GasStipendLib.sol";
 
@@ -1048,19 +1050,13 @@ library PriceFeedLib {
         ) {
             return pos;
         } catch {
-            // The parameterless `catch` copies nothing, so the revert payload is still sitting in the returndata
-            // buffer untouched. Read four bytes of it; do NOT let solc copy the whole thing.
-            bytes4 sig;
-            assembly ("memory-safe") {
-                // Zero the word FIRST: only four bytes are copied in, and a `bytes4` read out of a word with
-                // stale low bytes is a dirty value that compares equal to nothing.
-                mstore(0x00, 0)
-                if gt(returndatasize(), 3) { returndatacopy(0x00, 0x00, 0x04) }
-                sig := mload(0x00)
-            }
-            if (sig == InstanceGasExhausted.selector) _reraiseInstanceExhausted();
-
+            // FIRST, before any bookkeeping of our own: `consumed` must measure what the CALL cost, which is what
+            // {GasStipendLib.exhausted} is defined against and what the error reports. Reading it after the
+            // selector work below would fold this frame's own gas into the figure.
             uint256 consumed = available - gasleft();
+
+            _reraiseIfInstanceExhausted(adapter);
+
             if (GasStipendLib.exhausted(stipend, consumed)) {
                 revert AdapterGasExhausted(adapter, stipend, consumed);
             }
@@ -1068,19 +1064,63 @@ library PriceFeedLib {
         }
     }
 
-    /// @notice Re-raises the {InstanceGasExhausted} still resident in the returndata buffer, keeping the failing
-    ///         instance named instead of collapsing it into {AdapterGasExhausted}.
-    /// @dev Copies a fixed {INSTANCE_EXHAUSTED_BYTES} rather than `returndatasize()`, so an adapter that forges
-    ///      the selector behind a multi-megabyte payload cannot charge this frame for propagating it — the
-    ///      payload is truncated to the error's own ABI width. Split into its own frame-less helper only to keep
-    ///      `_getAdapterPositions` under the `via_ir` stack limit.
-    function _reraiseInstanceExhausted() private pure {
+    /// @notice Re-raises a meta-adapter's {InstanceGasExhausted}, still resident in the returndata buffer, so a
+    ///         starved INSTANCE is not re-scored by the gas heuristic and failed open.
+    /// @dev Needed because the heuristic cannot see this case: a meta-adapter that stops on its FIRST starved
+    ///      instance has spent almost nothing, so `consumed` is small and the failure would be read as a benign
+    ///      revert — dropping the whole adapter rather than surfacing the one instance.
+    ///
+    ///      Honouring a callee-chosen selector is a decision to let a callee force a revert, so it is gated
+    ///      hard, cheapest check first, and every gate must pass:
+    ///      1. **Exactly** {INSTANCE_EXHAUSTED_BYTES} of revert data. A shorter payload carrying the selector
+    ///         would otherwise be re-raised as-is and could not be decoded against the error's signature; a
+    ///         longer one is not something the error can produce.
+    ///      2. The selector matches.
+    ///      3. The adapter answers ERC165 for {IMetaBalanceAdapter}. Only a meta-adapter has instances, so only
+    ///         a meta-adapter can mean anything by this signal. This runs last because it is the only gate that
+    ///         costs a call, and by then the two cheap gates have already excluded ordinary reverts — so the
+    ///         normal fail-open path never pays for it.
+    ///
+    ///      The `adapter` word is then OVERWRITTEN with the address actually called, rather than trusted from
+    ///      the payload. The callee wrote those bytes; left alone, a misbehaving adapter could name an innocent
+    ///      one and send an operator to remove the wrong thing. `instance`, `stipend` and `consumed` are still
+    ///      the callee's own account of itself and can only be read as such.
+    ///
+    ///      What this does NOT bound is a registered adapter deliberately forging the selector to turn its own
+    ///      failure into a whole-read revert. That is adapter-controlled, not account-controlled — a registered
+    ///      adapter can already stop a read by burning gas — and no third-party path reaches this buffer: a
+    ///      meta-adapter's per-instance `catch` swallows an inner protocol's revert before it can surface here,
+    ///      and the plain adapters read constructor-pinned addresses.
+    /// @param adapter The adapter whose call just failed, used to overwrite the payload's first word.
+    function _reraiseIfInstanceExhausted(address adapter) private view {
         uint256 size = INSTANCE_EXHAUSTED_BYTES;
+        if (_returndatasize() != size) return;
+
+        // Save the payload BEFORE anything else can touch the returndata buffer. The ERC165 probe below is an
+        // external call, and a call REPLACES this frame's returndata — read it after and you get the probe's
+        // answer, not the adapter's error. Allocated properly rather than scribbled above the free pointer,
+        // because the probe's own calldata is allocated there.
+        bytes memory payload = new bytes(size);
+        bytes4 want = InstanceGasExhausted.selector;
+        bool matches;
         assembly ("memory-safe") {
-            if lt(returndatasize(), size) { size := returndatasize() }
-            let buf := mload(0x40)
-            returndatacopy(buf, 0x00, size)
-            revert(buf, size)
+            returndatacopy(add(payload, 0x20), 0x00, size)
+            matches := eq(shr(224, mload(add(payload, 0x20))), shr(224, want))
+        }
+        if (!matches) return;
+        if (!adapter.supportsInterface(type(IMetaBalanceAdapter).interfaceId)) return;
+
+        assembly ("memory-safe") {
+            // Word 0 is the callee's claim about which adapter failed; replace it with the one actually called.
+            mstore(add(payload, 0x24), adapter)
+            revert(add(payload, 0x20), size)
+        }
+    }
+
+    /// @notice `returndatasize()` as a Solidity value, so the gates above read as plain control flow.
+    function _returndatasize() private pure returns (uint256 size) {
+        assembly ("memory-safe") {
+            size := returndatasize()
         }
     }
 
@@ -1512,6 +1552,13 @@ library PriceFeedLib {
 
     function _validateFeedSupportInternal(address token, address priceFeed, IPrices.PriceType priceType) private view {
         if (priceFeed == address(0) || token == address(0)) revert IPrices.InvalidPriceOracle();
+        // A code-less `priceFeed` must fail by name, here, for the same reason the asset is checked at the
+        // NAVCalculator call site: the AggregatorV3 branch below ends in a HIGH-LEVEL `latestRoundData()`, whose
+        // `extcodesize` precheck fires in this frame before the call and reverts with empty returndata — no
+        // selector for the MANAGER to read. The zero-address check above does not cover it; an EOA or a mistyped
+        // address is non-zero and code-less. Placed in the shared validator rather than at each entry point so
+        // `registerAsset`, `addPriceFeed` and `addMonitorFeed` all answer the same way.
+        AddressCheckLib.requireContract(priceFeed, "priceFeed");
         if (priceType == IPrices.PriceType.Custom) {
             if (!priceFeed.supportsInterface(type(ICustomPriceFeed).interfaceId)) revert IPrices.InvalidPriceOracle();
         } else if (

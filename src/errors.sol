@@ -69,12 +69,20 @@ error AdapterGasExhausted(address adapter, uint256 stipend, uint256 consumed);
 ///      it as "no positions" drops its legs while the meta-adapter still RETURNS SUCCESSFULLY — so the caller
 ///      sees a complete-looking answer. A dropped debt leg raises the reported NAV.
 ///
-///      Raised rather than swallowed, and it names the instance because the adapter alone does not locate the
-///      fault. `PriceFeedLib` keys on this selector explicitly rather than re-deriving exhaustion from gas, so a
-///      cheap early raise here cannot be re-scored as a benign revert one frame out.
-/// @param adapter The meta-adapter that was fanning out.
-/// @param instance The governed instance coordinate whose read ran out of gas.
-/// @param stipend Gas forwarded to that instance — 63/64 of what the fan-out held at that point.
+///      Raised rather than swallowed. `PriceFeedLib` keys on this selector explicitly rather than re-deriving
+///      exhaustion from gas, so a cheap early raise here cannot be re-scored as a benign revert one frame out.
+///
+///      `instance` is where the budget ran out, which is NOT the same as where it went. The fan-out gives each
+///      instance a share of whatever its predecessors left, so a single runaway instance early in the governed
+///      set can leave the NEXT one too little and get it named instead. Read the pair together: a large
+///      `stipend` fully consumed means that instance is genuinely runaway; a small `stipend` means it was
+///      starved by something before it, or the read was under-funded to begin with. Removing the named instance
+///      is the wrong first move when `stipend` is small.
+/// @param adapter The meta-adapter that was fanning out. Overwritten by `PriceFeedLib` with the address it
+///        actually called, so it is trustworthy even when the rest of the payload is not.
+/// @param instance The governed instance coordinate whose read ran out of gas — see the caveat above.
+/// @param stipend Gas forwarded to that instance — 63/64 of what the fan-out held at that point. Computed from a
+///        sample taken just before the call, so it overstates by the handful of gas spent reaching it.
 /// @param consumed Gas the instance call actually cost, including the fan-out's call overhead.
 error InstanceGasExhausted(address adapter, bytes32 instance, uint256 stipend, uint256 consumed);
 error PriceFeedNotSet(address asset);

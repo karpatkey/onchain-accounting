@@ -326,6 +326,10 @@ def main() -> int:
     ap.add_argument("--self-test", action="store_true")
     ap.add_argument("--jobs", type=int, default=6)
     ap.add_argument("--json", help="write the full report here")
+    ap.add_argument("--require-current", action="store_true",
+                    help="exit non-zero unless every audited address is CURRENT and every chain was "
+                         "reachable — the runbook 2.2 acceptance gate. Omit for the pre-deploy run, "
+                         "where widespread STALE is the expected finding, not a failure.")
     args = ap.parse_args()
     c.load_env()
 
@@ -339,7 +343,8 @@ def main() -> int:
     if args.self_test:
         return self_test(index, artifacts)
 
-    chains = args.chains or c.deployed_chain_ids()
+    chains, scope_src = c.resolve_chains(args.chains)
+    print(f"scope: {len(chains)} chain(s) from {scope_src}")
     results = []
     with ThreadPoolExecutor(max_workers=args.jobs) as pool:
         for res in pool.map(lambda cid: audit_chain(cid, index), chains):
@@ -373,6 +378,28 @@ def main() -> int:
         json.dump({"results": results, "totals": dict(tally),
                    "artifactCount": len(artifacts)}, open(args.json, "w"), indent=1)
         print(f"wrote {args.json}")
+
+    if not args.require_current:
+        return 0
+
+    # The post-deploy gate. A skipped chain counts as a failure: "no address was found STALE" is
+    # worthless if the chain was never read. Same reason the empty-scope guard above is fatal.
+    skipped = [r for r in results if r["error"]]
+    not_current = tally_total = 0
+    for k, v in tally.items():
+        tally_total += v
+        if k != "CURRENT":
+            not_current += v
+    if not tally_total:
+        print("\nFAIL: no addresses were audited at all.")
+        return 1
+    if skipped or not_current:
+        print(f"\nFAIL (--require-current): {not_current} address(es) not CURRENT, "
+              f"{len(skipped)} chain(s) unreachable "
+              f"({', '.join(str(r['chainId']) for r in skipped) or 'none'}).")
+        return 1
+    print(f"\nPASS (--require-current): all {tally_total} address(es) across {len(results)} chain(s) "
+          f"are CURRENT.")
     return 0
 
 

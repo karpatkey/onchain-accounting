@@ -17,19 +17,37 @@ abstract contract BaseDeployScript is Script {
     /// @param profile The offending profile name.
     error DeployProfileNotAllowed(string profile);
 
+    /// @notice A `FOUNDRY_*` env override is set that changes compiled bytecode, so the artifacts are not
+    ///         deploy-valid regardless of which profile is selected.
+    /// @param envVar The offending environment variable.
+    /// @param value Its value (empty string when it is exported empty — which is itself the dangerous case for
+    ///        `FOUNDRY_LIBRARIES`, since it replaces the pinned array with `[""]`).
+    error DeployConfigOverridden(string envVar, string value);
+
     /// @notice The ALLOWLIST of build profiles whose artifacts are valid to deploy, as `keccak256(name)`.
     /// @dev An allowlist, not a denylist, deliberately: a denylist must be extended every time a profile is added, and
     ///      the failure mode of forgetting is silent and on-chain. PR #156 reached the same conclusion for
     ///      `LibraryPinConsistency`'s skip logic after review pushed back on name-based denylisting.
     ///
     ///      - `default` — the profile the library CREATE2 pins in `foundry.toml` were generated under.
-    ///      - `slow` — inherits `[profile.default]` wholesale (it sets only `threads` /
-    ///        `compute_units_per_second`), so its bytecode is identical. REQUIRED, not merely tolerated: the redeploy
-    ///        runbook runs `RegisterAssets` under it, because mainnet's 43 assets otherwise `MemoryOOG`.
+    ///      - `slow` — sets only `threads`, `gas_limit` and `memory_limit`, none of which reach the compiler. Verified
+    ///        by diffing resolved configs: `default` and `slow` differ in exactly those three keys, while every
+    ///        compiler-relevant key (`solc`, `evm_version`, `optimizer`, `optimizer_runs`, `via_ir`, `bytecode_hash`,
+    ///        `libraries`, `cbor_metadata`, `code_size_limit`) is identical. REQUIRED, not merely tolerated: the
+    ///        redeploy runbook runs `RegisterAssets` under it, because mainnet's 43 assets otherwise `MemoryOOG`.
     ///
-    ///      Everything else is refused, including profiles that do not exist yet — `dev` and `lite` both clear the
-    ///      `libraries` array by design, and `lite` additionally disables the optimizer and raises `code_size_limit`
-    ///      16×. Kept as constants rather than a state array so this adds no storage to the 18 subclasses.
+    ///      Everything else is refused, including profiles that do not exist yet. `dev` clears the `libraries` array
+    ///      (`libraries = []` is its entire body), so its artifacts link libraries at UNPINNED, auto-deployed
+    ///      addresses; `lite` — introduced by PR #156, absent on this branch — clears `libraries` AND disables the
+    ///      optimizer AND raises `code_size_limit` 16×.
+    ///
+    ///      To add a profile, BOTH must hold: (1) it overrides no compiler-relevant key, and (2) there is a real need
+    ///      to run a deploy script under it. `coverage` satisfies (1) — its whole body is `no_match_coverage`, so its
+    ///      artifacts are byte-identical — but fails (2): `forge coverage` does not execute these scripts, so
+    ///      allowlisting it would widen the guard for no caller. Criterion (1) alone is not sufficient; the allowlist
+    ///      is kept minimal on purpose.
+    ///
+    ///      Kept as constants rather than a state array so this adds no storage to the 18 subclasses.
     bytes32 private constant PROFILE_DEFAULT = keccak256(bytes("default"));
     bytes32 private constant PROFILE_SLOW = keccak256(bytes("slow"));
 
@@ -43,33 +61,93 @@ abstract contract BaseDeployScript is Script {
     bool internal shouldBroadcast;
 
     /// @notice Reverts unless the active build profile produces deploy-valid bytecode.
-    /// @dev The accident this exists for: a `FOUNDRY_PROFILE` left exported in the shell. Under `lite` (and `dev`)
-    ///      the `libraries` array is empty, so `01_DeployImplementations` would CREATE2-deploy UNOPTIMIZED libraries
-    ///      at non-pinned addresses — and the canonical CREATE2 factory returns `address(0)` rather than reverting on
+    /// @dev The accident this exists for: a `FOUNDRY_PROFILE` left exported in the shell. Under `dev` (and `lite`) the
+    ///      `libraries` array is empty, so `01_DeployImplementations` would CREATE2-deploy libraries at NON-PINNED,
+    ///      auto-deployed addresses — additionally UNOPTIMIZED under `lite`, which is the only one of the two that
+    ///      disables the optimizer — and the canonical CREATE2 factory returns `address(0)` rather than reverting on
     ///      a failed deploy, so the script logs success and records a bogus address. `01_2` catches this via its four
     ///      `LibraryPins` assertions; `01` has no `LibraryPins` reference at all, and neither do `03`–`07` or
     ///      `script/manage/**`. This closes that gap for all 18 `BaseDeployScript` subclasses at once. Escalated out
     ///      of PR #156's review, which introduces `[profile.lite]` and makes the pin tests skip under it — removing
     ///      the tripwire that would otherwise have caught the mistake in CI.
     ///
-    ///      Scope, stated honestly: this checks the profile NAME, so it catches the realistic accident and not a
-    ///      doctored `[profile.default]`. The rigorous check is the CREATE2-vs-`LibraryPins` comparison `01_2`
-    ///      already performs, which is deliberately NOT hoisted here — it would fire on every branch while the pin
-    ///      regen (#185) is held open, and it would impose a pin dependency on `06_Configure`, `RegisterAssets` and
-    ///      the `verify`/`upgrade` scripts, none of which deploy library-linked bytecode.
+    ///      A profile name is NOT the only way to get invalid artifacts, so the name check alone is not enough — see
+    ///      {_assertNoBytecodeOverrides}, which closes the sibling channel.
     ///
-    ///      There is intentionally no bypass env var. If a new profile is genuinely deploy-valid, add it to the
-    ///      allowlist above after checking it inherits `[profile.default]`'s `libraries`, `optimizer` and
-    ///      `code_size_limit`; do not add an escape hatch that a stray export can also set.
+    ///      Scope, stated honestly. Two things this cannot see:
+    ///      - a doctored `[profile.default]` in `foundry.toml`;
+    ///      - per-invocation CLI flags (`forge script --libraries / --optimize / --via-ir / --use / --evm-version /
+    ///        --optimizer-runs`), which leave no trace in the environment.
+    ///      Both are deliberate acts at the command line rather than stale shell state, which is the accident class
+    ///      this guards. The rigorous check is the CREATE2-vs-`LibraryPins` comparison `01_2` already performs,
+    ///      deliberately NOT hoisted here — it would fire on every branch while the pin regen (#185) is held open, and
+    ///      would impose a pin dependency on `06_Configure`, `RegisterAssets` and the `verify`/`upgrade` scripts, none
+    ///      of which deploy library-linked bytecode.
+    ///
+    ///      There is intentionally no bypass env var: an escape hatch a stray export can also set defeats the guard.
     function _assertDeployProfile() internal view {
-        _assertDeployProfileName(vm.envOr("FOUNDRY_PROFILE", string("default")));
+        _assertDeployProfileName(_activeProfile());
+        _assertNoBytecodeOverrides();
+    }
+
+    /// @notice The selected build profile. `FOUNDRY_PROFILE` is the ONLY profile selector — forge 1.7.1 has no
+    ///         `--profile` flag — and a profile set via a `.env` file is visible here too, so the channel this observes
+    ///         is the same channel that selects.
+    /// @dev `virtual` purely as a test seam: it lets the guard's wiring be exercised without `vm.setEnv`, which mutates
+    ///      the process environment for the whole `forge test` run and cannot be undone (forge-std has no `unsetEnv`).
+    ///      Overriding this in production code would defeat the guard.
+    function _activeProfile() internal view virtual returns (string memory) {
+        return vm.envOr("FOUNDRY_PROFILE", string("default"));
+    }
+
+    /// @notice Reverts if any `FOUNDRY_*` env override that changes compiled bytecode is set.
+    /// @dev The profile name is not the only way to get undeployable artifacts. Foundry maps every config key to a
+    ///      `FOUNDRY_`-prefixed env var, so the SAME stray-export accident reproduces the exact harm while the profile
+    ///      name stays `default`. Measured against this repo with `forge config`:
+    ///        `FOUNDRY_LIBRARIES=`          -> `libraries: [""]`   (the pins are GONE)
+    ///        `FOUNDRY_OPTIMIZER=false`     -> `optimizer: false`
+    ///        `FOUNDRY_VIA_IR=false`        -> `via_ir: false`
+    ///        `FOUNDRY_EVM_VERSION=osaka`   -> `evm_version: osaka`
+    ///        `FOUNDRY_BYTECODE_HASH=ipfs`  -> `bytecode_hash: ipfs`
+    ///      Each yields unpinned or otherwise-mismatched libraries, and the canonical CREATE2 factory returns
+    ///      `address(0)` rather than reverting, so the run logs success and records a bogus address.
+    ///
+    ///      Presence is checked with `vm.envExists`, NOT `vm.envOr`: `FOUNDRY_LIBRARIES=` exported EMPTY is the
+    ///      dangerous case, and `envOr` cannot distinguish it from unset. None of these is ever legitimately set in
+    ///      this repo — CI sets only `FOUNDRY_PROFILE` — so refusing on mere presence costs nothing.
+    /// @dev `virtual` for the same test-seam reason as {_activeProfile}.
+    function _assertNoBytecodeOverrides() internal view virtual {
+        string[8] memory keys = _bytecodeOverrideKeys();
+        for (uint256 i; i < keys.length; ++i) {
+            _assertNotOverridden(keys[i], vm.envExists(keys[i]), vm.envOr(keys[i], string("")));
+        }
+    }
+
+    /// @notice The `FOUNDRY_*` keys whose presence invalidates deploy artifacts.
+    /// @dev A `pure` getter so the list itself can be pinned by a test without reading the environment.
+    function _bytecodeOverrideKeys() internal pure returns (string[8] memory) {
+        return [
+            "FOUNDRY_LIBRARIES",
+            "FOUNDRY_OPTIMIZER",
+            "FOUNDRY_OPTIMIZER_RUNS",
+            "FOUNDRY_VIA_IR",
+            "FOUNDRY_SOLC",
+            "FOUNDRY_SOLC_VERSION",
+            "FOUNDRY_EVM_VERSION",
+            "FOUNDRY_BYTECODE_HASH"
+        ];
+    }
+
+    /// @notice The override decision, `pure` so it is testable without touching the environment.
+    function _assertNotOverridden(string memory key, bool isSet, string memory value) internal pure {
+        if (isSet) revert DeployConfigOverridden(key, value);
     }
 
     /// @notice The allowlist decision itself, split out so it is `pure` and testable without touching the environment.
-    /// @dev `vm.setEnv` mutates the process environment for the whole `forge test` run, so a suite that drove this
-    ///      through the env leaked values between its own cases (observed: the `default` case reading `lite`). Keeping
-    ///      the predicate parameterised means the profile matrix is tested deterministically and only the thin env
-    ///      adapter above needs env mutation at all.
+    /// @dev Driving this through `vm.setEnv` instead is what an earlier version of the test did, and the cases leaked
+    ///      into each other: `setEnv` mutates the environment for the entire `forge test` run, test contracts execute
+    ///      in parallel, and forge-std has no `unsetEnv` to restore an inherited-unset variable. Keeping every decision
+    ///      parameterised means the whole matrix is deterministic and the suite mutates no shared state at all.
     /// @param profile The profile name to check; empty means forge's own default.
     function _assertDeployProfileName(string memory profile) internal pure {
         // Unset and explicitly-empty both mean forge's own default.

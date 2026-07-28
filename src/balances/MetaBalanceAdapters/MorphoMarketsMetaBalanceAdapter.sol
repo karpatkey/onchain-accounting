@@ -112,13 +112,13 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
         (bytes32 marketId, bool ok) = _pidWord(pid);
         if (!ok) return new string[](0);
         string memory leaf = "";
-        // Bounded for UNIFORMITY, not because this one is reachable. `MORPHO` is a constructor-pinned immutable,
-        // so unlike every other leaf in this family the call TARGET is not caller-controlled — only the
-        // `marketId` argument is, and it lands in a plain mapping getter. Every other adapter's leaf now carries
-        // {LABEL_LEAF_GAS}; leaving the tenth uncapped is what produces a "why is this one different" question
-        // later, so it carries the same ceiling. The two NAV-path reads of the same method are deliberately NOT
-        // bounded — a stipend there could skip a real market's valuation, which is a different risk class.
-        try MORPHO.idToMarketParams{gas: LABEL_LEAF_GAS}(Id.wrap(marketId)) returns (MarketParams memory mp) {
+        // No {LABEL_LEAF_GAS} ceiling here, unlike the leaves that reach a caller-chosen contract. This leaf is
+        // already bounded by composition: `MORPHO` is a constructor-pinned immutable, so the call TARGET is not
+        // caller-controlled — only the `marketId` argument is, and it lands in a plain mapping getter whose cost
+        // is fixed. The only caller-influenced work is the two `_symbol` reads, and {LabelLib} already caps each
+        // at `METADATA_READ_GAS`. That is the same reason the adapters whose leaves bottom out directly in
+        // {LabelLib} or {StaticCallLib} carry no ceiling either.
+        try MORPHO.idToMarketParams(Id.wrap(marketId)) returns (MarketParams memory mp) {
             // `idToMarketParams` is a plain mapping getter, so an id with NO market returns an all-zero struct
             // instead of reverting — the `catch` arm never fires for it. Both symbol reads would then fail open to
             // "?" and the adapter would answer `["Market", "?/?"]`: a confident two-segment breadcrumb, byte-

@@ -141,11 +141,11 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     function vaultPairSymbols(address vault) external view returns (string memory) {
         (address collToken, address debtToken, uint256 vaultId) = FluidVaultLib.vaultInfo(vault, VAULT_RESOLVER);
         if (collToken == address(0) || debtToken == address(0)) return "";
-        // ONE registry fetch for both sides. `_assetSymbol` pulls the entire registered-asset array across the
-        // call boundary and linear-scans it, so calling it twice made this leaf cost O(2 x registered assets) —
-        // coupling a Fluid breadcrumb to how many assets happen to be registered protocol-wide. That is the
-        // dangerous shape: registering unrelated assets is a routine config TX, and it would push this leaf over
-        // its ceiling with nothing about Fluid having changed.
+        // ONE registry fetch, shared by both sides. The fetch pulls the entire registered-asset array across the
+        // call boundary, so its cost is O(registered assets) — a Fluid breadcrumb is therefore coupled to how
+        // many assets happen to be registered protocol-wide, and registering an unrelated asset is a routine
+        // config TX. Fetching once per leaf rather than once per side is what keeps that coupling linear instead
+        // of quadratic; see {LABEL_LEAF_GAS} for the headroom this leaf is sized against.
         INAVCalculator.Asset[] memory registry = NAV_CALCULATOR.getRegisteredAssets();
         return string.concat(
             _symbolFrom(registry, collToken), "/", _symbolFrom(registry, debtToken), " #", Strings.toString(vaultId)
@@ -155,20 +155,15 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @notice The registered symbol for `token`, falling back to its on-chain `symbol()` and then to "?".
     /// @dev Takes the registry the caller already holds rather than fetching its own, which is what keeps the
     ///      leaf to a single fetch regardless of how many sides it labels.
+    ///
+    ///      Registry-first, deliberately, rather than `MetaBalanceAdapter._joinTokenSymbols`: that helper reads
+    ///      `symbol()` directly and so cannot resolve the ERC-7528 native sentinel, which several Fluid T1 vaults
+    ///      use as one side and which has no `symbol()` to call. The registry record already carries the chain's
+    ///      native symbol. It also means a *registered* token's symbol costs no external call into that token.
+    ///      Falls back to "?" to match `_joinTokenSymbols` and the Morpho markets adapter, so an unreadable side
+    ///      renders "?/USDC" rather than "/USDC".
     function _symbolFrom(INAVCalculator.Asset[] memory registry, address token) private view returns (string memory) {
         (INAVCalculator.Asset memory info, bool found) = RegisteredAssetLib.find(registry, token);
-        if (found && bytes(info.symbol).length > 0) return info.symbol;
-        return LabelLib.symbol(token, "?");
-    }
-
-    /// @notice Symbol for `token`: the NAV registry's (native-aware), else a direct ERC20 `symbol()`, else "?".
-    /// @dev Deliberately not `MetaBalanceAdapter._joinTokenSymbols`, which reads `symbol()` directly and so
-    ///      cannot resolve the ERC-7528 native sentinel — several Fluid T1 vaults use it as one side and it has
-    ///      no `symbol()` to call. The registry-first lookup also means a *registered* token's symbol never
-    ///      involves an external call into that token. Falls back to "?" to match `_joinTokenSymbols` and the
-    ///      Morpho markets adapter, so an unreadable side renders "?/USDC" rather than "/USDC".
-    function _assetSymbol(address token) internal view returns (string memory) {
-        (INAVCalculator.Asset memory info, bool found) = _getAssetInfo(token);
         if (found && bytes(info.symbol).length > 0) return info.symbol;
         return LabelLib.symbol(token, "?");
     }

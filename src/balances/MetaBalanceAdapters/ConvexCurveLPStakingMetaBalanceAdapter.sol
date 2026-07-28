@@ -272,8 +272,8 @@ contract ConvexCurveLPStakingMetaBalanceAdapter is MetaBalanceAdapter {
     ///      addresses reached from the governed coordinate — pool coins, and an ERC20 `symbol()` per coin — and
     ///      unbounded that work can consume the budget of whatever called in, for a display string. The helper is
     ///      `external` only so this boundary exists; it is the same shape the pool/gauge symbol readers elsewhere
-    ///      in the family already use. Exhaustion degrades to the category alone, exactly as an unreadable symbol
-    ///      already does.
+    ///      in the family already use. Exhaustion degrades to the two category segments — `["Staking", "Curve LP"]`
+    ///      — exactly as an unreadable symbol already does.
     function rewarderCoinSymbols(address rewarder) external view returns (string memory) {
         address lpToken = _lpTokenOf(rewarder);
         if (lpToken == address(0)) return "";

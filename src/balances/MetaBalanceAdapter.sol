@@ -46,11 +46,24 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     ///      classify: a leaf that does not fit is simply dropped, and the caller wants a number it can reason
     ///      about. Same idiom as `LabelLib.METADATA_READ_GAS` and `StaticCallLib.PROBE_GAS`.
     ///
-    ///      Sized to clear the worst legitimate leaf with room: the widest is an 8-coin Curve pool, whose symbol
-    ///      reads are themselves capped at 100k each by `LabelLib` but cost a few thousand in practice. It also
-    ///      sits well inside `NAVCalculator`'s own per-position `_LABEL_READ_GAS`, so a verbose read still gets
-    ///      its labels rather than losing them to the outer cap.
-    uint256 internal constant LABEL_LEAF_GAS = 500_000;
+    ///      Sized to clear the worst leaf a governed coordinate can legitimately produce, measured COLD and
+    ///      against ERC-1967 tokens (a proxied `symbol()` costs roughly a fifth more than a flat one, and that
+    ///      surcharge is per token, so it scales along the same axis as the ceiling itself). Two cases bind, and
+    ///      neither is the widest Curve pool — that one costs ~120k, under a seventh of this:
+    ///
+    ///      - **Balancer V2 at the protocol maximum of 50 tokens: ~780k.** A ManagedPool's token list is mutable
+    ///        after the instance is governed, so registration cannot screen the wide case out.
+    ///      - **Fluid vaults: ~400k at 43 registered assets, and linear in that count.** `vaultPairSymbols`
+    ///        pulls the whole registered-asset array over to resolve two symbols, so this leaf's cost tracks how
+    ///        many assets are registered protocol-wide rather than anything about Fluid. The headroom above it
+    ///        is therefore a budget denominated in future `registerAsset` calls, roughly 70 of them.
+    ///
+    ///      Both are pinned in `test/balances/MetaLabelGasBounds.t.sol`; re-measure there before changing this,
+    ///      and note it is a compile-time constant on immutable adapters, so a value that turns out too low
+    ///      cannot be corrected without a redeploy. It must also stay below 63/64 of `NAVCalculator`'s
+    ///      per-position `_LABEL_READ_GAS` — at or above that, the outer cap binds first and this one stops
+    ///      bounding anything on the verbose path.
+    uint256 internal constant LABEL_LEAF_GAS = 900_000;
 
     //
     // Constructor

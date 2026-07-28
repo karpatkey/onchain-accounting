@@ -38,6 +38,15 @@ GAS_PER_ASSET = 350_000       # registerAsset / addPriceFeed
 GAS_PER_META_INSTANCE = 120_000
 GAS_CONFIG_BASE = 800_000
 
+# A quoted `eth_gasPrice` below this is not a usable price, and the resulting estimate collapses
+# toward zero — gnosis answered **4,868 wei** (0.0000049 gwei) on 2026-07-29, which makes a 36.7M-gas
+# deploy "cost" 0.0000003 xDAI. The estimate is NOT inflated in response: cheap rollups legitimately
+# quote ~0.001 gwei, so any floor generous enough to cover gnosis over-states optimism/base/scroll by
+# two to four orders of magnitude and reports TOP UP on chains that are amply funded. A false alarm on
+# 11 of 24 chains is its own failure. So the quote is reported instead, and an implausible one is
+# flagged for a human to price by hand — see also hemi's documented fee floor in WORKAROUNDS.
+GAS_PRICE_IMPLAUSIBLE_WEI = 1_000_000  # 0.001 gwei
+
 WORKAROUNDS = {
     999: "big blocks: enable via Hyperliquid evmUserModify (usingBigBlocks=true) before 01_2/02_2, "
          "disable after — the ~12.5M-gas impl deploy does not fit HyperEVM's ~3M small blocks",
@@ -97,10 +106,12 @@ def one(chain_id: int, gas_units: dict) -> dict:
         return row
     try:
         bal = int(c.rpc(url, "eth_getBalance", [deployer.lower(), "latest"]), 16)
-        price = int(c.rpc(url, "eth_gasPrice", []), 16)
+        quoted = int(c.rpc(url, "eth_gasPrice", []), 16)
     except Exception as e:  # noqa: BLE001
         row["error"] = str(e)
         return row
+    price = quoted
+    row["gasPriceImplausible"] = quoted < GAS_PRICE_IMPLAUSIBLE_WEI
     # 2x headroom on gas price: these deploys span many blocks and base fee moves.
     need = gas * price * 2
     row.update(balanceWei=bal, gasPriceWei=price, needWei=need,
@@ -119,7 +130,8 @@ def main() -> int:
     c.load_env()
 
     gas_units = json.load(open(args.gas_units)) if args.gas_units else {}
-    chains = args.chains or c.deployed_chain_ids()
+    chains, scope_src = c.resolve_chains(args.chains)
+    print(f"scope: {len(chains)} chain(s) from {scope_src}")
     with ThreadPoolExecutor(max_workers=6) as pool:
         rows = list(pool.map(lambda cid: one(cid, gas_units), chains))
     rows.sort(key=lambda r: r["chainId"])
@@ -133,6 +145,9 @@ def main() -> int:
             continue
         sym = c.chain_config(r["chainId"]).get("nativeTokenSymbol", "")
         status = "OK" if r["sufficient"] else "TOP UP"
+        if r.get("gasPriceImplausible"):
+            status += (f" — CHECK BY HAND: node quoted {r['gasPriceWei']} wei "
+                       f"({r['gasPriceWei'] / 1e9:.7f} gwei), too low to price a deploy from")
         print(f"{r['chainId']:>8} {r['name']:16} {r['balanceEth']:>12.5f} {r['needEth']:>12.5f} "
               f"{r['shortfallEth']:>11.5f}  {status} ({sym})")
         if not r["sufficient"]:

@@ -24,14 +24,24 @@ import {ConfigReader} from "script/utils/ConfigReader.sol";
 contract LibraryPinConsistencyTest is Test {
     address internal constant CANONICAL_CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
-    /// @dev The `dev` and `lite` profiles deliberately clear foundry.toml's `libraries` array (forge
-    ///      auto-deploys + auto-links the two libraries instead), and `lite` also drops the optimizer.
-    ///      Both therefore produce library bytecode that CANNOT match the pins, so these assertions are
-    ///      meaningless there: skip rather than hand a local `lite` run three red tests, which invites a
-    ///      pin regeneration that would break every default-profile build and deploy.
+    /// @dev These assertions are only meaningful under a profile that actually carries foundry.toml's
+    ///      `libraries` pins. `dev` and `lite` deliberately clear that array (forge auto-deploys and
+    ///      auto-links the two libraries instead) and `lite` also drops the optimizer, so their library
+    ///      bytecode CANNOT match the pins — three red tests that invite a pin regeneration which would
+    ///      break every default-profile build and deploy.
+    ///
+    ///      Deliberately an ALLOWLIST of pin-bearing profiles rather than a denylist of pin-clearing
+    ///      ones: an unrecognised profile skips (safe, loses coverage) instead of going red (unsafe,
+    ///      invites the repin). `default` is CI's unit job; `slow` overrides only threads/gas/memory and
+    ///      inherits the pins, so both must assert. Add any future pin-bearing profile here.
+    ///
+    ///      Note this cannot key on the observable condition — "is NAVCalculator linked to the pin?" —
+    ///      because that is exactly what test_navCalculator_creationCodeLinkedAgainstPins asserts, so
+    ///      such a check would make that test skip itself in precisely the case it exists to catch.
     modifier onlyPinnedProfile() {
         bytes32 profile = keccak256(bytes(vm.envOr("FOUNDRY_PROFILE", string("default"))));
-        vm.skip(profile == keccak256("dev") || profile == keccak256("lite"));
+        bool pinBearing = profile == keccak256("default") || profile == keccak256("slow") || profile == keccak256("");
+        vm.skip(!pinBearing);
         _;
     }
 

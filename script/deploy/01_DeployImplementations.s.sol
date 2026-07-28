@@ -54,11 +54,11 @@ contract DeployImplementations is BaseDeployScript {
         //     `deployments/<id>.json` with those orphans, and the NAV keeps DELEGATECALLing the OLD library code.
         //     Silent wrong-version, which is why an assertion and not an eyeball is what is wanted here.
         //
-        // These are the four assertions `01_2_DeployNAVImplementation` carries (01_2:47-68) — added there in
+        // These are the four assertions `01_2_DeployNAVImplementation` carries in its own `run()` — added there in
         // `62311fb7` and `a8d5dd73`, not from the start. `01` had none at all, so it was the only NUMBERED PROD NAV
         // deploy script that could broadcast library-linked bytecode unchecked. It is NOT the only script that can:
-        // `script/upgrade/UpgradeNAVCalculator.s.sol:33-34` does `new NAVCalculator()` inside a broadcast with no pin
-        // check and then repoints a LIVE proxy at it, `UpgradeBridgeEscrow.s.sol:34` and `05_DeployBridgeAdapters`
+        // `script/upgrade/UpgradeNAVCalculator` does `new NAVCalculator()` inside a broadcast with no pin
+        // check and then repoints a LIVE proxy at it, `UpgradeBridgeEscrow` and `05_DeployBridgeAdapters`
         // broadcast `InvoiceDataLib`-linked bytecode, and `01` still broadcasts the `InvoiceDataLib`-linked
         // `BridgeEscrow` impl below (that library is not pinned at all — see this PR's discussion).
         //

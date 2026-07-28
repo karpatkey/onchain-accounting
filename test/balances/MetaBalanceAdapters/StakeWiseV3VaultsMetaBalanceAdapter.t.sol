@@ -403,6 +403,27 @@ contract StakeWiseV3VaultsMetaBalanceAdapterTest is Test {
         assertEq(meta.positionLabels("").length, 0);
     }
 
+    /// @notice An OVER-long positionId is rejected too — the accept window is exactly one word, not "at least one".
+    /// @dev The half a `< 32` guard misses, and the reason #179 moved the family to `== 32`. `abi.decode` silently
+    ///      ignores trailing bytes, so under `< 32` a foreign MULTI-word coordinate is labelled from its first
+    ///      word: this adapter would answer `["Vault", <name of whatever the first word happens to name>]` for a
+    ///      position it never emitted. A confident wrong breadcrumb is worse than an absent one, so it degrades to
+    ///      an empty array.
+    ///
+    ///      Both shapes below pass a `< 32` guard and are rejected only by `!= 32`:
+    ///        - a real vault address followed by a second word (the sibling-adapter copy-paste shape), which is the
+    ///          one that would have rendered a plausible-looking label;
+    ///        - a bare 33-byte blob, one byte past the window.
+    function test_positionLabels_overLongPositionId_empty() public view {
+        // A well-formed vault word plus a trailing word. Under `< 32` this rendered vaultA's name.
+        bytes memory twoWords = abi.encode(address(vaultA), uint256(1));
+        assertEq(twoWords.length, 64, "fixture must be two words");
+        assertEq(meta.positionLabels(twoWords).length, 0, "multi-word positionId must not be labelled");
+
+        // One byte past the window.
+        assertEq(meta.positionLabels(abi.encodePacked(bytes32(uint256(uint160(address(vaultA)))), bytes1(0))).length, 0);
+    }
+
     function test_underlyingAssetsForInstances() public view {
         address[] memory a = meta.underlyingAssetsSupportedForInstances(_instances());
         assertEq(a.length, 2); // one per instance

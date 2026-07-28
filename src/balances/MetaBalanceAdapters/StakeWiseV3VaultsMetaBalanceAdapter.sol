@@ -168,7 +168,11 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceAdapter {
     ///      Returns an empty array for a short positionId. Display-only and must never revert, hence the fail-open
     ///      read.
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
-        if (pid.length < 32) return new string[](0);
+        // Exactly one word, not `< 32`. `abi.decode` silently ignores trailing bytes, so a `< 32` guard lets a
+        // foreign MULTI-word coordinate through and labels it from its first word — a confident, wrong breadcrumb
+        // for a position this adapter never emitted. This positionId is always `abi.encode(address(vault))`, so
+        // the accept window is `== 32`. Matches the family-wide window {MetaBalanceAdapter._pidAddress} sets.
+        if (pid.length != 32) return new string[](0);
         // Decode as a raw word, not `abi.decode(pid, (address))`: Solidity's decoder REVERTS on an address whose
         // upper 96 bits are dirty, which would turn a foreign/malformed positionId into a revert of a view that
         // must never revert. A malformed coordinate degrades to the category alone instead.

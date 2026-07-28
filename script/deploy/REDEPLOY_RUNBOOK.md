@@ -183,18 +183,20 @@ replaced with real ones before broadcasting.
 python3 script/deploy/preflight/deployer_balances.py --json topup.json
 ```
 
-Re-measured **2026-07-29**: only **linea (59144)** is short — it has 0.01067 ETH against an estimated
-0.02800, so send **≥ 0.01733 ETH** to `0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72`. (It was the only
-short chain on 2026-07-27 too, at ~0.0036 ETH; linea quotes a flat 1 gwei, so the requirement is
-stable and the earlier top-up did not clear it.) Every other chain is funded. Re-check on the day.
+Re-measured **2026-07-29, after the linea top-up landed**: every priced chain is funded, linea
+included (0.03066 ETH against an estimated 0.02800). Re-check on the day — linea had already been
+topped up once on 2026-07-27 without clearing, so measure rather than assume.
 
-**Three chains need their gas priced by hand** — gnosis (4,786 wei), scroll (120,108 wei) and plasma
-(300,001 wei) quote an `eth_gasPrice` far below any usable price, so their estimate collapses toward
-zero and cannot support an `OK`. The script flags them `CHECK BY HAND` rather than inflating the
-estimate: a floor generous enough to cover gnosis over-states the cheap rollups by three to four
-orders of magnitude and would report `TOP UP` on 11 amply-funded chains. Gnosis (7.9 xDAI) and plasma
-(163 XPL) have obvious headroom; **scroll holds 0.00648 ETH and is the one to price properly** before
-broadcasting. Hemi's fee floor (1.8) is the same failure mode with a known workaround.
+**Some chains report `UNPRICEABLE`, which is a third state and not a pass.** Gnosis, scroll and
+intermittently plasma quote an `eth_gasPrice` far below any usable price (gnosis ~5–10k wei, scroll
+~120k), so `need` computes to roughly zero and `balance >= need` is true for *any* balance. The test
+is a tautology and its `True` means nothing, so the script reports `sufficient = None`, lists those
+chains under `NOT PRICED`, and exits non-zero. The estimate is deliberately **not** inflated to
+compensate: a floor generous enough to cover gnosis over-states the cheap rollups by three to four
+orders of magnitude, and a 1 gwei floor was measured reporting `TOP UP` on 11 of 24 amply-funded
+chains. Funding on those chains has been confirmed sufficient out of band; the state exists so nobody
+later reads a green row as evidence the chain was checked. Hemi's fee floor (1.8) is the same species
+with a known workaround.
 
 ### 0.7 Capture the pre-deploy production state — **irreplaceable, do it before anything else**
 

@@ -111,13 +111,20 @@ def one(chain_id: int, gas_units: dict) -> dict:
         row["error"] = str(e)
         return row
     price = quoted
-    row["gasPriceImplausible"] = quoted < GAS_PRICE_IMPLAUSIBLE_WEI
+    priceable = quoted >= GAS_PRICE_IMPLAUSIBLE_WEI
     # 2x headroom on gas price: these deploys span many blocks and base fee moves.
     need = gas * price * 2
     row.update(balanceWei=bal, gasPriceWei=price, needWei=need,
                balanceEth=bal / 1e18, needEth=need / 1e18,
                shortfallEth=max(0.0, (need - bal) / 1e18),
-               sufficient=bal >= need)
+               priceable=priceable,
+               # `sufficient` is a THIRD state, not a boolean. On an unpriceable chain `need`
+               # computes to ~0 from an unusable quote, so `bal >= need` is true for every possible
+               # balance — the test is a tautology and its `True` carries no information. Reporting
+               # that as OK is the same defect as a checker that returns 0 without checking, so it
+               # reports None and the chain is listed separately. Nobody should later read a green
+               # row here as evidence the chain was funded.
+               sufficient=(bal >= need) if priceable else None)
     return row
 
 
@@ -137,20 +144,27 @@ def main() -> int:
     rows.sort(key=lambda r: r["chainId"])
 
     print(f"{'chain':>8} {'name':16} {'native':>12} {'need':>12} {'shortfall':>11}  status")
-    topup = []
+    topup, unpriceable, errored = [], [], []
     for r in rows:
         if r.get("error"):
+            errored.append(r)
             print(f"{r['chainId']:>8} {r['name']:16} {'—':>12} {'—':>12} {'—':>11}  "
                   f"RPC ERROR: {r['error'][:70]}")
             continue
         sym = c.chain_config(r["chainId"]).get("nativeTokenSymbol", "")
-        status = "OK" if r["sufficient"] else "TOP UP"
-        if r.get("gasPriceImplausible"):
-            status += (f" — CHECK BY HAND: node quoted {r['gasPriceWei']} wei "
-                       f"({r['gasPriceWei'] / 1e9:.7f} gwei), too low to price a deploy from")
+        if r["sufficient"] is None:
+            status = (f"UNPRICEABLE — node quotes {r['gasPriceWei']} wei "
+                      f"({r['gasPriceWei'] / 1e9:.7f} gwei); the estimate is meaningless here, so "
+                      f"this is NOT a pass")
+        else:
+            status = "OK" if r["sufficient"] else "TOP UP"
         print(f"{r['chainId']:>8} {r['name']:16} {r['balanceEth']:>12.5f} {r['needEth']:>12.5f} "
               f"{r['shortfallEth']:>11.5f}  {status} ({sym})")
-        if not r["sufficient"]:
+        if r["sufficient"] is None:
+            unpriceable.append({"chainId": r["chainId"], "name": r["name"], "nativeSymbol": sym,
+                                "gasPriceWei": r["gasPriceWei"],
+                                "haveEth": round(r["balanceEth"], 6)})
+        elif not r["sufficient"]:
             topup.append({"chainId": r["chainId"], "name": r["name"],
                           "nativeSymbol": sym, "deployer": r["deployer"],
                           "shortfallEth": round(r["shortfallEth"], 6),
@@ -163,15 +177,31 @@ def main() -> int:
             print(f"  {t['name']:16} send >= {t['shortfallEth']:.5f} {t['nativeSymbol']} "
                   f"to {t['deployer']}")
     else:
-        print("  none — every chain is funded for the estimated gas")
+        print("  none — every priced chain is funded for the estimated gas")
+
+    if unpriceable:
+        print("\n--- NOT PRICED (these chains were not checked, and are not OK) ---")
+        for u in unpriceable:
+            print(f"  {u['name']:16} holds {u['haveEth']:.5f} {u['nativeSymbol']}; node quotes "
+                  f"{u['gasPriceWei']} wei, too low to size a deploy from")
 
     print("\n--- chain-specific workarounds ---")
     for cid, note in WORKAROUNDS.items():
         print(f"  {cid} {c.chain_config(cid).get('name','?')}: {note}")
 
     if args.json:
-        json.dump({"rows": rows, "topup": topup}, open(args.json, "w"), indent=1)
+        json.dump({"rows": rows, "topup": topup, "unpriceable": unpriceable},
+                  open(args.json, "w"), indent=1)
         print(f"\nwrote {args.json}")
+
+    # Exit non-zero on anything unresolved. An unpriceable or unreachable chain counts: this script
+    # exists to answer "is the deployer funded everywhere", and it cannot answer that for a chain it
+    # could not price or could not reach.
+    if topup or unpriceable or errored:
+        print(f"\n{len(topup)} chain(s) short, {len(unpriceable)} unpriceable, "
+              f"{len(errored)} unreachable — not clear to deploy.")
+        return 1
+    print(f"\nAll {len(rows)} chain(s) priced and funded.")
     return 0
 
 

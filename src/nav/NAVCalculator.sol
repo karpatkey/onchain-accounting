@@ -475,13 +475,24 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     uint256 private constant _NAME_RETURN_BYTES = 320;
 
     /// @notice Bytes of `positionLabels()` returndata copied into this frame. A typical reply — a category plus a
-    ///         leaf — is a few hundred bytes, but the bound has to clear the worst LEGITIMATE one: no
-    ///         `positionLabels` here returns more than three elements, and the largest leaf is an 8-token join
-    ///         (`_joinTokenSymbols`, `CurvePoolLib.coinSymbols`, both capped at 8 coins) whose symbols are each
-    ///         capped at `LabelLib.MAX_METADATA_BYTES`, so ~2.4 KB encoded. The margin over that is ~1.7×, not an
-    ///         order of magnitude — widen this if a leaf ever joins more or longer strings. A reply that does
-    ///         exceed it is truncated, fails to decode and yields no labels: display degrades, NAV does not move.
+    ///         leaf — is a few hundred bytes. The worst legitimate one is a joined multi-token leaf, whose
+    ///         symbols are each capped at `LabelLib.MAX_METADATA_BYTES`; at eight tokens that is ~2.4 KB encoded,
+    ///         inside this window.
+    ///
+    ///         **The token count is protocol-supplied, not capped, on the Balancer side.**
+    ///         `CurvePoolLib.coinSymbols` stops at 8 coins, but `MetaBalanceAdapter._joinTokenSymbols` iterates
+    ///         whatever the pool reports, and Balancer V2 permits up to 50 tokens. Live symbols are short, so
+    ///         nothing deployed approaches this — but the honest bound is the sum of the symbol lengths, not a
+    ///         token count, and a pool with many long symbols would cross it. A reply that does exceed the window
+    ///         is truncated, fails to decode and yields no labels: display degrades, NAV does not move.
     uint256 private constant _LABELS_RETURN_BYTES = 4096;
+
+    /// @notice Most elements a `positionLabels()` reply may decode to before it is rejected as implausible.
+    /// @dev The output-side companion to {_LABELS_RETURN_BYTES}: see {decodeStringArray} for why bounding the
+    ///      input alone does not bound what comes back. Every `positionLabels` in this repo returns a category
+    ///      and at most a couple of leaves, so this is many times the real maximum while still being far below
+    ///      the count an aliased-offset blob needs to be worth building.
+    uint256 private constant _MAX_LABEL_ELEMENTS = 8;
 
     /// @notice Staticcall bounded in BOTH directions — a gas stipend on the callee and a fixed output window on
     ///         the reply — returning the success flag and the bytes actually copied.
@@ -527,6 +538,10 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             size := returndatasize()
             if gt(size, maxReturnBytes) { size := maxReturnBytes }
         }
+        // A failed call's payload is discarded by both callers, so do not pay to carry it. `_toVerbose` runs this
+        // once per position in a single frame and Solidity never reclaims memory, so copying revert data would
+        // accumulate across the whole position list for something no one reads.
+        if (!ok) return (false, ret);
         ret = new bytes(size);
         assembly ("memory-safe") {
             returndatacopy(add(ret, 0x20), 0x00, size)
@@ -608,9 +623,17 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     /// @notice External ABI-decode shim so `_safeStringArray` can wrap a possibly-reverting `abi.decode` in
     ///         try/catch (try/catch requires an external call). Internal-only: reverts unless the caller is
     ///         this contract, so it is not a usable public API surface.
-    function decodeStringArray(bytes calldata data) external view returns (string[] memory) {
+    function decodeStringArray(bytes calldata data) external view returns (string[] memory arr) {
         if (msg.sender != address(this)) revert NotAuthorized();
-        return abi.decode(data, (string[]));
+        arr = abi.decode(data, (string[]));
+        // Bounding the INPUT does not bound the OUTPUT. `string[]` element offsets may all point at the same
+        // payload, so a reply that fits the window decodes to an arbitrary multiple of it — measured at ~30x for
+        // a 4 KB blob aliasing one long string. That expansion is returned across this boundary and copied into
+        // the verbose read's frame outside {_LABEL_DECODE_GAS}, where memory cost is quadratic and `_toVerbose`
+        // repeats it once per position. Rejecting an implausible element count here is what makes the window's
+        // containment claim true; the caller's `catch` turns this into the same empty label set as any other
+        // malformed reply.
+        if (arr.length > _MAX_LABEL_ELEMENTS) revert InvalidArguments();
     }
 
     /// @inheritdoc INAVCalculator

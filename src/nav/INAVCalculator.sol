@@ -12,6 +12,54 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 ///      UUPS-upgradeable and use AccessControl (MANAGER for mutations, DEFAULT_ADMIN_ROLE for upgrades).
 /// @author KPK
 interface INAVCalculator is IBalances {
+    /// @notice A balance adapter consumed the gas stipend the NAV read forwarded to it without answering.
+    /// @dev Deliberately NOT folded into the read's fail-open path. A revert means "this adapter has nothing to
+    ///      report"; running out of gas means "this adapter's answer is unknown", and reporting an unknown answer
+    ///      as an empty one drops the adapter's legs — a dropped debt leg RAISES the reported NAV.
+    ///
+    ///      Declared here rather than alongside the shared errors so it reaches consumers: it is raised inside a
+    ///      DELEGATECALLed library, and an error a contract never names itself does not appear in that contract's
+    ///      ABI. Callers generate against this interface and the NAVCalculator implementing it, so a revert they
+    ///      can actually decode has to be part of it.
+    ///
+    ///      `adapter` names the adapter that was running, which is not always the adapter at fault: the stipend is
+    ///      a share of what the READ still holds, so an under-funded call starves whichever adapter happens to be
+    ///      reached last. `stipend` and `consumed` are what separate the two cases. A large `stipend` fully
+    ///      consumed means that adapter is genuinely runaway; a small `stipend` means the read itself was short of
+    ///      gas and the fix is to supply more.
+    /// @param adapter The adapter that was executing when its gas ran out.
+    /// @param stipend The budget the classification was measured against: 63/64 of what the read held just before
+    ///        the call. It is NOT precisely what the EVM forwarded — the same 63/64 rule is applied again at the
+    ///        CALL itself, to a figure already reduced by building the calldata — so on a genuine exhaustion
+    ///        `consumed` lands a few tens of gas ABOVE it. Read the two as a ratio, not as a balance.
+    /// @param consumed Gas the call actually cost this frame, including the call overhead.
+    error AdapterGasExhausted(address adapter, uint256 stipend, uint256 consumed);
+
+    /// @notice One governed instance of a meta-adapter consumed its gas stipend without answering.
+    /// @dev The {AdapterGasExhausted} sibling, one frame in. A meta-adapter isolates each instance behind its own
+    ///      `try`/`catch` so a single faulty instance cannot zero out the batch, and that isolation has the same
+    ///      blind spot: an instance that runs out of gas is indistinguishable from one that reverted, and recording
+    ///      it as "no positions" drops its legs while the meta-adapter still RETURNS SUCCESSFULLY — so the caller
+    ///      sees a complete-looking answer. A dropped debt leg raises the reported NAV.
+    ///
+    ///      Raised rather than swallowed. `PriceFeedLib` keys on this selector explicitly rather than re-deriving
+    ///      exhaustion from gas, so a cheap early raise here cannot be re-scored as a benign revert one frame out.
+    ///
+    ///      `instance` is where the budget ran out, which is NOT the same as where it went. The fan-out gives each
+    ///      instance a share of whatever its predecessors left, so a single runaway instance early in the governed
+    ///      set can leave the NEXT one too little and get it named instead. Read the pair together: a large
+    ///      `stipend` fully consumed means that instance is genuinely runaway; a small `stipend` means it was
+    ///      starved by something before it, or the read was under-funded to begin with. Removing the named instance
+    ///      is the wrong first move when `stipend` is small.
+    /// @param adapter The meta-adapter that was fanning out. Overwritten by `PriceFeedLib` with the address it
+    ///        actually called, so it is trustworthy even when the rest of the payload is not.
+    /// @param instance The governed instance coordinate whose read ran out of gas — see the caveat above.
+    /// @param stipend The budget the classification was measured against: 63/64 of what the fan-out held just
+    ///        before the call. As with {AdapterGasExhausted} it is NOT precisely what the EVM forwarded — the same
+    ///        rule is applied again at the CALL — so `consumed` lands slightly above it. A ratio, not a balance.
+    /// @param consumed Gas the instance call actually cost, including the fan-out's call overhead.
+    error InstanceGasExhausted(address adapter, bytes32 instance, uint256 stipend, uint256 consumed);
+
     //
     // Structs
     //

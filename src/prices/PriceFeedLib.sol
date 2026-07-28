@@ -812,6 +812,10 @@ library PriceFeedLib {
         uint256 assetCount,
         address account
     ) external view returns (bool) {
+        // Nothing can be counted with an empty registry — `_isCounted` discards every row — so skip the fan-out
+        // entirely, as the NAV entrypoints already do. Without this the scan still runs, and a starved adapter
+        // makes this revert where `computeNav` answers 0 on the same state.
+        if (assetCount == 0) return false;
         INAVCalculator.PositionBalance[] memory positions =
             _getPositionBalances(allAdapters, assetIndex, account, address(0));
         for (uint256 i = 0; i < positions.length; i++) {
@@ -829,6 +833,8 @@ library PriceFeedLib {
         uint256 assetCount,
         address account
     ) external view returns (address[] memory) {
+        // See `hasPositions`: an empty registry cannot yield a counted row, so do not fan out for one.
+        if (assetCount == 0) return new address[](0);
         return _extractUniqueAssets(_getPositionBalances(allAdapters, assetIndex, account, address(0)));
     }
 
@@ -1026,13 +1032,21 @@ library PriceFeedLib {
     ///      test would then read a deliberate exhaustion signal as a benign revert and fail open, dropping the
     ///      WHOLE meta-adapter rather than the one instance. An explicit signal beats a heuristic wherever one
     ///      exists, and the specific error is re-raised rather than replaced with {AdapterGasExhausted}, so the
-    ///      failing instance stays named.
+    ///      failing instance stays named. See {_reraiseIfInstanceExhausted} for what that signal must satisfy.
     ///
-    ///      **Scope, stated plainly. What still sits outside this guard:** the `returndatacopy` and ABI decode of
-    ///      the adapter's reply are charged to THIS frame, outside the stipend, because a typed
-    ///      `try … returns (…[] memory)` copies whatever arrives. The stipend bounds it only indirectly, through
-    ///      what the callee could afford to build. The outcome is a loud out-of-gas rather than a wrong number,
-    ///      so this is availability, not correctness.
+    ///      **Scope, stated plainly. Apart from that signal this guard only ever sees a FAILED call, so anything
+    ///      an adapter absorbs internally is invisible to it. Two things sit outside:**
+    ///      - An adapter that fails open in its own frame and returns SUCCESSFULLY. The most common shape, and
+    ///        the one present on every chain: `ERC20DefaultBalanceAdapter` reads each asset with an unstipended
+    ///        `staticcall` and records 0 on failure, so a single token whose `balanceOf` loops takes 63/64 of
+    ///        that adapter's budget, drops its own wallet balance from the NAV, and still returns normally. No
+    ///        classifier upstream is reached, because nothing failed from where this function is standing. The
+    ///        meta-adapter position fan-out used to behave this way too and now raises instead — but its
+    ///        `positionIds` and `_assetsForInstances` siblings still absorb a starved instance silently.
+    ///      - The `returndatacopy` and ABI decode of the adapter's reply are charged to THIS frame, outside the
+    ///        stipend, because a typed `try … returns (…[] memory)` copies whatever arrives. The stipend bounds
+    ///        it only indirectly, through what the callee could afford to build. The outcome is a loud
+    ///        out-of-gas rather than a wrong number, so this is availability, not correctness.
     ///
     ///      Nor is any fixed fraction exact: deep enough nesting always leaves enough unspent to slip under the
     ///      threshold. This narrows the silent window; it does not close it.
@@ -1058,7 +1072,7 @@ library PriceFeedLib {
             _reraiseIfInstanceExhausted(adapter);
 
             if (GasStipendLib.exhausted(stipend, consumed)) {
-                revert AdapterGasExhausted(adapter, stipend, consumed);
+                revert INAVCalculator.AdapterGasExhausted(adapter, stipend, consumed);
             }
             return new INAVCalculator.PositionBalance[](0);
         }
@@ -1101,7 +1115,7 @@ library PriceFeedLib {
         // answer, not the adapter's error. Allocated properly rather than scribbled above the free pointer,
         // because the probe's own calldata is allocated there.
         bytes memory payload = new bytes(size);
-        bytes4 want = InstanceGasExhausted.selector;
+        bytes4 want = INAVCalculator.InstanceGasExhausted.selector;
         bool matches;
         assembly ("memory-safe") {
             returndatacopy(add(payload, 0x20), 0x00, size)

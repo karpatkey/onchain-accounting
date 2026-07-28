@@ -1,0 +1,326 @@
+#!/usr/bin/env python3
+"""Shared helpers for the preflight tools: repo paths, RPC resolution, JSON-RPC, deployment enumeration.
+
+RPC resolution mirrors `script/utils/ConfigReader.sol` exactly:
+  - `"$ALCHEMY"`      -> https://<network>.g.alchemy.com/v2/$ALCHEMY_API_KEY, network from
+                         `_alchemyNetworkForChainId` (ConfigReader.sol:769)
+  - `"$FOO"`          -> os.environ["FOO"]
+  - anything else     -> used verbatim
+A chain whose RPC cannot be resolved is reported, never silently skipped.
+"""
+from __future__ import annotations
+
+import json
+import os
+import time
+from pathlib import Path
+
+import requests
+
+REPO = Path(__file__).resolve().parents[3]
+CHAINS_DIR = REPO / "script/config/chains"
+DEPLOY_DIR = REPO / "script/config/deployments"
+NAV_CONFIG_DIR = REPO / "script/config/nav-config"
+CONTRACTS_CONFIG_DIR = REPO / "script/config/contracts-deployment-config"
+PREFLIGHT_DIR = REPO / "script/deploy/preflight"
+SNAPSHOT_DIR = PREFLIGHT_DIR / "snapshots"
+
+# ConfigReader.sol:769 `_alchemyNetworkForChainId`. Kept in the same order as the source so a
+# drift check is a straight visual diff.
+ALCHEMY_NETWORK = {
+    1: "eth-mainnet",
+    10: "opt-mainnet",
+    56: "bnb-mainnet",
+    100: "gnosis-mainnet",
+    42161: "arb-mainnet",
+    8453: "base-mainnet",
+    137: "polygon-mainnet",
+    1101: "polygonzkevm-mainnet",
+    80094: "berachain-mainnet",
+    999: "hyperliquid-mainnet",
+    57073: "ink-mainnet",
+    59144: "linea-mainnet",
+    204: "opbnb-mainnet",
+    146: "sonic-mainnet",
+    130: "unichain-mainnet",
+    534352: "scroll-mainnet",
+    196: "xlayer-mainnet",
+    42220: "celo-mainnet",
+    43114: "avax-mainnet",
+    5000: "mantle-mainnet",
+    480: "worldchain-mainnet",
+    143: "monad-mainnet",
+    9745: "plasma-mainnet",
+}
+
+# Per-chain URL env vars. `ConfigReader` does NOT read these — it resolves `$ALCHEMY` from
+# ALCHEMY_API_KEY only — but `forge script --rpc-url` overrides the config, and this is how the
+# 2026-07-22 redeploy actually reached the chains the Alchemy app does not have enabled. Keeping the
+# mapping here means the preflight sees exactly the endpoint inventory the deploy will have.
+CHAIN_URL_ENV = {
+    1: "MAINNET_URL", 10: "OP_URL", 56: "BNB_URL", 100: "GNOSIS_URL", 130: "UNICHAIN_URL",
+    137: "POLYGON_URL", 146: "SONIC_URL", 480: "WORLDCHAIN_URL", 999: "HYPEREVM_URL",
+    5000: "MANTLE_URL", 8453: "BASE_URL", 9745: "PLASMA_URL", 42161: "ARBITRUM_URL",
+    42220: "CELO_URL", 43114: "AVALANCHE_URL", 57073: "INK_URL", 59144: "LINEA_URL",
+    80094: "BERACHAIN_URL", 534352: "SCROLL_URL",
+}
+
+# Public fallbacks for chains with no configured endpoint at all. Read-only use only; the deploy
+# itself must use a proper endpoint.
+PUBLIC_FALLBACK_RPC = {
+    43111: "https://rpc.hemi.network/rpc",
+    16661: "https://evmrpc.0g.ai",
+    143: "https://rpc.monad.xyz",
+    196: "https://rpc.xlayer.tech",
+    204: "https://opbnb-mainnet-rpc.bnbchain.org",
+}
+
+
+DEFAULT_ENV_FILES = [
+    REPO.parent / "onchain-accounting" / ".env",
+    REPO.parent / "onchain-investment-vehicles" / ".env",
+]
+
+
+def load_env(dotenv: Path | None = None) -> None:
+    """Load KEY=VALUE lines from .env files into os.environ without overriding what is already set."""
+    for path in ([dotenv] if dotenv else DEFAULT_ENV_FILES):
+        if not path or not path.exists():
+            continue
+        for line in path.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+
+
+def all_chain_ids() -> list[int]:
+    return sorted(int(p.stem) for p in DEPLOY_DIR.glob("*.json"))
+
+
+def deployed_chain_ids() -> list[int]:
+    """Chains with a live NAVCalculatorProxy — the actual redeploy scope (24 as of 2026-07-27)."""
+    out = []
+    for cid in all_chain_ids():
+        if deployment(cid).get("NAVCalculatorProxy"):
+            out.append(cid)
+    return out
+
+
+def chain_config(chain_id: int) -> dict:
+    p = CHAINS_DIR / f"{chain_id}.json"
+    return json.loads(p.read_text()) if p.exists() else {}
+
+
+def deployment(chain_id: int) -> dict:
+    p = DEPLOY_DIR / f"{chain_id}.json"
+    return json.loads(p.read_text()) if p.exists() else {}
+
+
+def resolve_rpc(chain_id: int, allow_fallback: bool = True,
+                config_only: bool = False) -> tuple[str | None, str]:
+    """Return (url, note). url is None when the chain has no resolvable endpoint.
+
+    `config_only=True` resolves exactly the way `ConfigReader` does, so the preflight can report
+    which chains a bare `forge script` (no `--rpc-url`) would fail to reach.
+    """
+    cfg = chain_config(chain_id)
+    raw = cfg.get("rpc", "")
+    if raw == "$ALCHEMY":
+        net = ALCHEMY_NETWORK.get(chain_id)
+        key = os.environ.get("ALCHEMY_API_KEY", "")
+        if net and key:
+            return f"https://{net}.g.alchemy.com/v2/{key}", "alchemy"
+        missing = "ALCHEMY_API_KEY" if net else f"no alchemy network mapped for {chain_id}"
+        note = f"unresolved ($ALCHEMY, {missing})"
+    elif raw.startswith("$"):
+        val = os.environ.get(raw[1:], "")
+        if val:
+            return val, f"env {raw[1:]}"
+        note = f"unresolved ({raw} not in env)"
+    elif raw:
+        return raw, "literal"
+    else:
+        note = "no rpc in chain config"
+
+    if config_only:
+        return None, note
+    # `--rpc-url $<CHAIN>_URL` overrides the chain config; this is how the previous redeploy reached
+    # the chains the Alchemy app has disabled.
+    envvar = CHAIN_URL_ENV.get(chain_id)
+    if envvar and os.environ.get(envvar):
+        return os.environ[envvar], f"env {envvar} (config rpc {raw} unusable)"
+    if allow_fallback and chain_id in PUBLIC_FALLBACK_RPC:
+        return PUBLIC_FALLBACK_RPC[chain_id], f"public fallback ({note})"
+    return None, note
+
+
+class RpcError(RuntimeError):
+    pass
+
+
+def rpc_candidates(chain_id: int) -> list[tuple[str, str]]:
+    """Every endpoint worth trying for a chain, best first, as [(url, note)]."""
+    out: list[tuple[str, str]] = []
+    primary, note = resolve_rpc(chain_id, allow_fallback=False, config_only=True)
+    if primary:
+        out.append((primary, note))
+    envvar = CHAIN_URL_ENV.get(chain_id)
+    if envvar and os.environ.get(envvar):
+        out.append((os.environ[envvar], f"env {envvar}"))
+    if chain_id in PUBLIC_FALLBACK_RPC:
+        out.append((PUBLIC_FALLBACK_RPC[chain_id], "public fallback"))
+    return out
+
+
+def probe_rpc(chain_id: int) -> tuple[str | None, str, list[str]]:
+    """Return the first endpoint that actually answers, plus why the earlier ones did not.
+
+    A URL resolving is not the same as a URL working: the Alchemy app behind ALCHEMY_API_KEY has most
+    networks disabled and answers `-32600 ... is not enabled for this app`, which only shows up on a
+    real request. The preflight has to know the difference.
+    """
+    rejected: list[str] = []
+    for url, note in rpc_candidates(chain_id):
+        try:
+            rpc(url, "eth_blockNumber", [], retries=1, timeout=20)
+            return url, note, rejected
+        except Exception as e:  # noqa: BLE001
+            rejected.append(f"{note}: {str(e)[:160]}")
+    return None, "no working endpoint", rejected
+
+
+def rpc(url: str, method: str, params: list, retries: int = 4, timeout: int = 60):
+    last = None
+    for attempt in range(retries):
+        try:
+            r = requests.post(
+                url,
+                json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params},
+                timeout=timeout,
+            )
+            body = r.json()
+            if "error" in body:
+                raise RpcError(f"{method}: {body['error']}")
+            return body["result"]
+        except RpcError:
+            raise
+        except Exception as e:  # transport / json / rate limit
+            last = e
+            time.sleep(1.5 * (attempt + 1))
+    raise RpcError(f"{method} failed after {retries} attempts: {last}")
+
+
+def eth_call(url: str, to: str, data: str, block: str = "latest") -> str:
+    return rpc(url, "eth_call", [{"to": to, "data": data}, block])
+
+
+def rpc_batch(url: str, calls: list[tuple[str, list]], chunk: int = 40,
+              retries: int = 4, timeout: int = 120) -> list:
+    """Batch JSON-RPC. `calls` is [(method, params)]; returns a same-length list whose entries are
+    either the result or an RpcError instance (per-call errors do not fail the batch).
+
+    Providers meter per *request*, not per call, so batching is what makes a 200-call snapshot
+    finish in seconds rather than minutes when the endpoint is throttled.
+    """
+    out: list = [None] * len(calls)
+    for base in range(0, len(calls), chunk):
+        window = calls[base:base + chunk]
+        payload = [{"jsonrpc": "2.0", "id": i, "method": m, "params": p}
+                   for i, (m, p) in enumerate(window)]
+        body = None
+        last = None
+        for attempt in range(retries):
+            try:
+                r = requests.post(url, json=payload, timeout=timeout)
+                body = r.json()
+                if not isinstance(body, list):
+                    raise RuntimeError(f"non-batch response: {str(body)[:200]}")
+                break
+            except Exception as e:  # noqa: BLE001
+                last = e
+                body = None
+                time.sleep(2.0 * (attempt + 1))
+        if body is None:
+            for i in range(len(window)):
+                out[base + i] = RpcError(f"batch failed: {last}")
+            continue
+        by_id = {item.get("id"): item for item in body}
+        for i, (m, _p) in enumerate(window):
+            item = by_id.get(i)
+            if item is None:
+                out[base + i] = RpcError(f"{m}: missing from batch response")
+            elif "error" in item:
+                out[base + i] = RpcError(f"{m}: {item['error']}")
+            else:
+                out[base + i] = item["result"]
+    return out
+
+
+def eth_call_batch(url: str, targets: list[tuple[str, str]], block: str = "latest") -> list:
+    """Batch of (to, data) eth_calls at a fixed block."""
+    return rpc_batch(url, [("eth_call", [{"to": to, "data": data}, block])
+                           for to, data in targets])
+
+
+def get_code(url: str, addr: str, block: str = "latest") -> str:
+    return rpc(url, "eth_getCode", [addr, block])
+
+
+def block_number(url: str) -> int:
+    return int(rpc(url, "eth_blockNumber", []), 16)
+
+
+# ---------------------------------------------------------------------------
+# Deployment-record enumeration
+# ---------------------------------------------------------------------------
+
+# Top-level string keys that hold a deployed address, mapped to the artifact contract name used to
+# look up out/<File>.sol/<Name>.json. `NavRegistryLib` is the deliberate spelling exception (the
+# CREATE2 salt seed string) — the contract is `NAVRegistryLib`.
+CANONICAL_KEYS = {
+    "PriceFeedLib": "PriceFeedLib",
+    "NavRegistryLib": "NAVRegistryLib",
+    "NAVCalculatorImplementation": "NAVCalculator",
+    "BridgeEscrowImplementation": "BridgeEscrow",
+    "NAVCalculatorProxy": "ERC1967Proxy",
+    "BridgeEscrowProxy": "ERC1967Proxy",
+    "NexusMutualStakingPoolsAssistant": "NexusMutualStakingPoolsAssistant",
+    "EtherFiWithdrawalQueueAssistant": "EtherFiWithdrawalQueueAssistant",
+    "StakeWiseV3ExitQueueAssistant": "StakeWiseV3ExitQueueAssistant",
+}
+
+NESTED_KEYS = ("balanceAdapters", "customPriceFeeds", "bridgeAdapters")
+
+
+def is_address(v) -> bool:
+    return isinstance(v, str) and v.startswith("0x") and len(v) == 42 and int(v, 16) != 0
+
+
+def enumerate_deployed(chain_id: int) -> list[dict]:
+    """Every address in deployments/<chainId>.json, as {chain, addr, key, group, name?}.
+
+    Unlike `script/verify/sweeps/make_targets.py` — which only emits PriceFeedLib + the NAV impl
+    plus feed instances read out of uncommitted broadcast logs — this walks the whole record, so
+    the proxy, NAVRegistryLib, every balance adapter (incl. ERC20Default) and every assistant are
+    covered. That completeness is the point: the audit has to be able to say "nothing was missed".
+    """
+    rec = deployment(chain_id)
+    out: list[dict] = []
+    for k, v in rec.items():
+        if k in NESTED_KEYS:
+            if not isinstance(v, dict):
+                continue
+            for sub, addr in v.items():
+                if is_address(addr):
+                    # `configName` is the operator-facing key ("wstETH_L2", "AaveV3InstancesMeta").
+                    # It is deliberately NOT `name`: only the canonical top-level keys map to an
+                    # artifact name, so only they carry a name expectation for the audit.
+                    out.append(dict(chain=chain_id, addr=addr, key=f"{k}.{sub}", group=k,
+                                    configName=sub, name=None))
+            continue
+        if is_address(v):
+            out.append(dict(chain=chain_id, addr=v, key=k, group="canonical",
+                            name=CANONICAL_KEYS.get(k)))
+    return out

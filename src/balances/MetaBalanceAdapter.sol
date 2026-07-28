@@ -13,7 +13,7 @@ import {ProtocolNames} from "src/utils/ProtocolNames.sol";
 import {RegisteredAssetLib} from "./RegisteredAssetLib.sol";
 import {GasStipendLib} from "src/utils/GasStipendLib.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {InstanceGasExhausted, InvalidArgumentsWithContext} from "src/errors.sol";
+import {InvalidArgumentsWithContext} from "src/errors.sol";
 
 /// @title MetaBalanceAdapter
 /// @author KPK
@@ -247,7 +247,7 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
             } catch {
                 uint256 consumed = available - gasleft();
                 if (GasStipendLib.exhausted(stipend, consumed)) {
-                    revert InstanceGasExhausted(address(this), instances[i], stipend, consumed);
+                    revert INAVCalculator.InstanceGasExhausted(address(this), instances[i], stipend, consumed);
                 }
                 perInstance[i] = new INAVCalculator.PositionBalance[](0);
             }

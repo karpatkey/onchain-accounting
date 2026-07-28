@@ -8,7 +8,6 @@ import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
-import {InstanceGasExhausted} from "src/errors.sol";
 
 /// @notice A mock's own revert, so a test can tell "this instance answered: nothing" from "this instance never
 ///         answered". The two are indistinguishable to `catch`, which is the whole point.
@@ -96,7 +95,7 @@ contract FanOutHarness {
         ) {
             return (0, p.length);
         } catch (bytes memory err) {
-            if (err.length >= 4 && bytes4(err) == InstanceGasExhausted.selector) return (1, 0);
+            if (err.length >= 4 && bytes4(err) == INAVCalculator.InstanceGasExhausted.selector) return (1, 0);
             return (2, 0);
         }
     }
@@ -179,7 +178,7 @@ contract MetaBalanceAdapterGasExhaustionTest is Test {
         assembly {
             sel := mload(add(err, 0x20))
         }
-        assertEq(sel, InstanceGasExhausted.selector, "selector");
+        assertEq(sel, INAVCalculator.InstanceGasExhausted.selector, "selector");
 
         bytes memory args = new bytes(err.length - 4);
         for (uint256 i = 0; i < args.length; i++) {

@@ -1,0 +1,428 @@
+{
+ "chainId": 10,
+ "name": "optimism",
+ "rpcSource": "alchemy",
+ "block": 154786073,
+ "capturedAtUnix": 1785170930,
+ "proxy": "0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d",
+ "errors": [],
+ "implementation": "0x07bd077cfb40bbda8a67d0d33ce41b974ab0f8a8",
+ "implementationRecorded": "0x07bd077cFB40bBDa8A67d0D33ce41b974aB0F8a8",
+ "version": 1,
+ "usdDecimals": 8,
+ "erc20DefaultBalanceAdapter": "0x41967559d0a20ad102f6e27b7723b1963390ad75",
+ "erc20DefaultRecorded": "0x41967559D0a20Ad102F6e27b7723b1963390aD75",
+ "erc20DefaultSupportedAssets": [
+  "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "0x4200000000000000000000000000000000000006",
+  "0x1f32b1c2345538c0c6f582fcb022739c4a194ebb",
+  "0x0b2c639c533813f4aa9d7837caf62653d097ff85",
+  "0x94b008aa00579c1307b0ef2c499ad98a8ce58e58",
+  "0x7e7d4467112689329f7e06571ed0e8cbad4910ee"
+ ],
+ "roles": {
+  "securityCouncil": {
+   "address": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
+   "DEFAULT_ADMIN_ROLE": false,
+   "MANAGER": false
+  },
+  "admin": {
+   "address": "0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72",
+   "DEFAULT_ADMIN_ROLE": true,
+   "MANAGER": true
+  },
+  "manager": {
+   "address": "0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72",
+   "DEFAULT_ADMIN_ROLE": true,
+   "MANAGER": true
+  }
+ },
+ "assetCount": 6,
+ "assets": [
+  {
+   "address": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+   "symbol": "ETH",
+   "decimals": 18,
+   "priceFeeds": [
+    {
+     "priceFeed": "0x13e3ee699d1909e989722e753853ae30b17e08c5",
+     "decimals": 8,
+     "priceType": "Chainlink",
+     "heartbeat": 1200
+    }
+   ],
+   "monitorFeeds": [
+    {
+     "priceFeed": "0x3fd49f2146fe0e10c4ae7e3fe04b3d5126385ac4",
+     "decimals": 8,
+     "priceType": "Redstone",
+     "heartbeat": 86400
+    }
+   ],
+   "divergenceToleranceBps": 50,
+   "pegToleranceBps": 0,
+   "includedInDefaultAdapter": true
+  },
+  {
+   "address": "0x4200000000000000000000000000000000000006",
+   "symbol": "WETH",
+   "decimals": 18,
+   "priceFeeds": [
+    {
+     "priceFeed": "0x13e3ee699d1909e989722e753853ae30b17e08c5",
+     "decimals": 8,
+     "priceType": "Chainlink",
+     "heartbeat": 1200
+    }
+   ],
+   "monitorFeeds": [
+    {
+     "priceFeed": "0x3fd49f2146fe0e10c4ae7e3fe04b3d5126385ac4",
+     "decimals": 8,
+     "priceType": "Redstone",
+     "heartbeat": 86400
+    }
+   ],
+   "divergenceToleranceBps": 50,
+   "pegToleranceBps": 0,
+   "includedInDefaultAdapter": true
+  },
+  {
+   "address": "0x1f32b1c2345538c0c6f582fcb022739c4a194ebb",
+   "symbol": "wstETH",
+   "decimals": 18,
+   "priceFeeds": [
+    {
+     "priceFeed": "0x698b585cbc4407e2d54aa898b2600b53c68958f7",
+     "decimals": 8,
+     "priceType": "Chainlink",
+     "heartbeat": 86400
+    }
+   ],
+   "monitorFeeds": [],
+   "divergenceToleranceBps": 0,
+   "pegToleranceBps": 0,
+   "includedInDefaultAdapter": true
+  },
+  {
+   "address": "0x0b2c639c533813f4aa9d7837caf62653d097ff85",
+   "symbol": "USDC",
+   "decimals": 6,
+   "priceFeeds": [
+    {
+     "priceFeed": "0x16a9fa2fda030272ce99b29cf780dfa30361e0f3",
+     "decimals": 8,
+     "priceType": "Chainlink",
+     "heartbeat": 86400
+    }
+   ],
+   "monitorFeeds": [
+    {
+     "priceFeed": "0x3587a73aa02519335a8a6053a97657bece0bc2cc",
+     "decimals": 8,
+     "priceType": "Redstone",
+     "heartbeat": 86400
+    }
+   ],
+   "divergenceToleranceBps": 50,
+   "pegToleranceBps": 100,
+   "includedInDefaultAdapter": true
+  },
+  {
+   "address": "0x94b008aa00579c1307b0ef2c499ad98a8ce58e58",
+   "symbol": "USDT",
+   "decimals": 6,
+   "priceFeeds": [
+    {
+     "priceFeed": "0xecef79e109e997bca29c1c0897ec9d7b03647f5e",
+     "decimals": 8,
+     "priceType": "Chainlink",
+     "heartbeat": 86400
+    }
+   ],
+   "monitorFeeds": [
+    {
+     "priceFeed": "0x4bad96dd1c7d541270a0c92e1d4e5f12eeea7a57",
+     "decimals": 8,
+     "priceType": "Redstone",
+     "heartbeat": 86400
+    }
+   ],
+   "divergenceToleranceBps": 50,
+   "pegToleranceBps": 100,
+   "includedInDefaultAdapter": true
+  },
+  {
+   "address": "0x7e7d4467112689329f7e06571ed0e8cbad4910ee",
+   "symbol": "COMP",
+   "decimals": 18,
+   "priceFeeds": [
+    {
+     "priceFeed": "0xe1011160d78a80e2eebd60c228eef7af4dfcd4d7",
+     "decimals": 8,
+     "priceType": "Chainlink",
+     "heartbeat": 86400
+    }
+   ],
+   "monitorFeeds": [],
+   "divergenceToleranceBps": 0,
+   "pegToleranceBps": 0,
+   "includedInDefaultAdapter": true
+  }
+ ],
+ "excludedFromDefaultAdapter": [],
+ "adapterCount": 3,
+ "adapters": [
+  {
+   "address": "0x41967559d0a20ad102f6e27b7723b1963390ad75",
+   "configKey": "ERC20Default",
+   "adapterType": "Default",
+   "metaInstanceCount": 0,
+   "metaInstances": []
+  },
+  {
+   "address": "0xdf311222bfbb8f2bb1572ff08e96936c3d22418b",
+   "configKey": "AaveV3InstancesMeta",
+   "adapterType": "Custom",
+   "metaInstanceCount": 1,
+   "metaInstances": [
+    "0x0000000000000000000000007f23d86ee20d869112572136221e173428dd740b"
+   ]
+  },
+  {
+   "address": "0x5ed372f3ac1f3039608180792caffcacf000e11c",
+   "configKey": "CompoundV3CometsMeta",
+   "adapterType": "Custom",
+   "metaInstanceCount": 3,
+   "metaInstances": [
+    "0x0000000000000000000000002e44e174f7d53f0212823acc11c01a11d58c5bcb",
+    "0x000000000000000000000000995e394b8b2437ac8ce61ee0bc610d617962b214",
+    "0x000000000000000000000000e36a30d249f7761327fd973001a32010b521b6fd"
+   ]
+  }
+ ],
+ "metaInstanceTotal": 4,
+ "accounts": [
+  {
+   "address": "0xa57F127099421cEffEd866C1d969f8B0F4fCdbc6",
+   "label": "ACCOUNT_1",
+   "nav": {
+    "value": "0",
+    "quoteAsset": {
+     "address": "0x0000000000000000000000000000000000000000",
+     "symbol": "USD",
+     "decimals": 8
+    },
+    "timestamp": 1785170923,
+    "stalePriceAssets": [],
+    "sequencerDown": false,
+    "quoteAssetStale": false,
+    "irregularPriceAssets": [],
+    "quoteAssetIrregular": false
+   },
+   "positions": [],
+   "positionCount": 0
+  },
+  {
+   "address": "0x99b9F5F24205Cb88E33b1CC72008f644Fc23768b",
+   "label": "ACCOUNT_2",
+   "nav": {
+    "value": "0",
+    "quoteAsset": {
+     "address": "0x0000000000000000000000000000000000000000",
+     "symbol": "USD",
+     "decimals": 8
+    },
+    "timestamp": 1785170923,
+    "stalePriceAssets": [],
+    "sequencerDown": false,
+    "quoteAssetStale": false,
+    "irregularPriceAssets": [],
+    "quoteAssetIrregular": false
+   },
+   "positions": [],
+   "positionCount": 0
+  },
+  {
+   "address": "0x408ea1bC71ec2562ABCB27520cf7077718403496",
+   "label": "ACCOUNT_3",
+   "nav": {
+    "value": "0",
+    "quoteAsset": {
+     "address": "0x0000000000000000000000000000000000000000",
+     "symbol": "USD",
+     "decimals": 8
+    },
+    "timestamp": 1785170923,
+    "stalePriceAssets": [],
+    "sequencerDown": false,
+    "quoteAssetStale": false,
+    "irregularPriceAssets": [],
+    "quoteAssetIrregular": false
+   },
+   "positions": [],
+   "positionCount": 0
+  },
+  {
+   "address": "0xD20E007881ea62B5922B06D025c9dc1D41962953",
+   "label": "ACCOUNT_6_COMPOUND_OPTIMISM",
+   "nav": {
+    "value": "350516025278",
+    "quoteAsset": {
+     "address": "0x0000000000000000000000000000000000000000",
+     "symbol": "USD",
+     "decimals": 8
+    },
+    "timestamp": 1785170923,
+    "stalePriceAssets": [],
+    "sequencerDown": false,
+    "quoteAssetStale": false,
+    "irregularPriceAssets": [],
+    "quoteAssetIrregular": false
+   },
+   "positions": [
+    {
+     "position": {
+      "balanceAsset": {
+       "address": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+       "symbol": "ETH",
+       "decimals": 18
+      },
+      "balanceAdapter": "0x41967559d0a20ad102f6e27b7723b1963390ad75",
+      "amount": "49048461992886275",
+      "isDebt": false,
+      "quoteAsset": {
+       "address": "0x0000000000000000000000000000000000000000",
+       "symbol": "USD",
+       "decimals": 8
+      },
+      "value": "9514489994",
+      "price": "193981413646",
+      "priceDecimals": 8,
+      "stale": false,
+      "quoteAssetStale": false,
+      "protocolBrand": "0x46a31f1f917570aa8a60b2339f1a0469cbce2feb53c705746446981548845b3b",
+      "protocolId": "0x46a31f1f917570aa8a60b2339f1a0469cbce2feb53c705746446981548845b3b",
+      "protocolSubId": "0x46a31f1f917570aa8a60b2339f1a0469cbce2feb53c705746446981548845b3b",
+      "positionId": "0x000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "positionKind": "Wallet",
+      "isLocked": false,
+      "positionInstanceId": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "irregular": false,
+      "quoteAssetIrregular": false
+     },
+     "protocolName": "Wallet",
+     "labels": [
+      "native"
+     ]
+    },
+    {
+     "position": {
+      "balanceAsset": {
+       "address": "0x0b2c639c533813f4aa9d7837caf62653d097ff85",
+       "symbol": "USDC",
+       "decimals": 6
+      },
+      "balanceAdapter": "0x41967559d0a20ad102f6e27b7723b1963390ad75",
+      "amount": "189",
+      "isDebt": false,
+      "quoteAsset": {
+       "address": "0x0000000000000000000000000000000000000000",
+       "symbol": "USD",
+       "decimals": 8
+      },
+      "value": "18897",
+      "price": "99986716",
+      "priceDecimals": 8,
+      "stale": false,
+      "quoteAssetStale": false,
+      "protocolBrand": "0x46a31f1f917570aa8a60b2339f1a0469cbce2feb53c705746446981548845b3b",
+      "protocolId": "0x46a31f1f917570aa8a60b2339f1a0469cbce2feb53c705746446981548845b3b",
+      "protocolSubId": "0x46a31f1f917570aa8a60b2339f1a0469cbce2feb53c705746446981548845b3b",
+      "positionId": "0x0000000000000000000000000b2c639c533813f4aa9d7837caf62653d097ff85",
+      "positionKind": "Wallet",
+      "isLocked": false,
+      "positionInstanceId": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "irregular": false,
+      "quoteAssetIrregular": false
+     },
+     "protocolName": "Wallet",
+     "labels": [
+      "USDC"
+     ]
+    },
+    {
+     "position": {
+      "balanceAsset": {
+       "address": "0x94b008aa00579c1307b0ef2c499ad98a8ce58e58",
+       "symbol": "USDT",
+       "decimals": 6
+      },
+      "balanceAdapter": "0x41967559d0a20ad102f6e27b7723b1963390ad75",
+      "amount": "100",
+      "isDebt": false,
+      "quoteAsset": {
+       "address": "0x0000000000000000000000000000000000000000",
+       "symbol": "USD",
+       "decimals": 8
+      },
+      "value": "9988",
+      "price": "99886441",
+      "priceDecimals": 8,
+      "stale": false,
+      "quoteAssetStale": false,
+      "protocolBrand": "0x46a31f1f917570aa8a60b2339f1a0469cbce2feb53c705746446981548845b3b",
+      "protocolId": "0x46a31f1f917570aa8a60b2339f1a0469cbce2feb53c705746446981548845b3b",
+      "protocolSubId": "0x46a31f1f917570aa8a60b2339f1a0469cbce2feb53c705746446981548845b3b",
+      "positionId": "0x00000000000000000000000094b008aa00579c1307b0ef2c499ad98a8ce58e58",
+      "positionKind": "Wallet",
+      "isLocked": false,
+      "positionInstanceId": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "irregular": false,
+      "quoteAssetIrregular": false
+     },
+     "protocolName": "Wallet",
+     "labels": [
+      "USDT"
+     ]
+    },
+    {
+     "position": {
+      "balanceAsset": {
+       "address": "0x7e7d4467112689329f7e06571ed0e8cbad4910ee",
+       "symbol": "COMP",
+       "decimals": 18
+      },
+      "balanceAdapter": "0x41967559d0a20ad102f6e27b7723b1963390ad75",
+      "amount": "202339341000000000000",
+      "isDebt": false,
+      "quoteAsset": {
+       "address": "0x0000000000000000000000000000000000000000",
+       "symbol": "USD",
+       "decimals": 8
+      },
+      "value": "341001506399",
+      "price": "1685295132",
+      "priceDecimals": 8,
+      "stale": false,
+      "quoteAssetStale": false,
+      "protocolBrand": "0x46a31f1f917570aa8a60b2339f1a0469cbce2feb53c705746446981548845b3b",
+      "protocolId": "0x46a31f1f917570aa8a60b2339f1a0469cbce2feb53c705746446981548845b3b",
+      "protocolSubId": "0x46a31f1f917570aa8a60b2339f1a0469cbce2feb53c705746446981548845b3b",
+      "positionId": "0x0000000000000000000000007e7d4467112689329f7e06571ed0e8cbad4910ee",
+      "positionKind": "Wallet",
+      "isLocked": false,
+      "positionInstanceId": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "irregular": false,
+      "quoteAssetIrregular": false
+     },
+     "protocolName": "Wallet",
+     "labels": [
+      "COMP"
+     ]
+    }
+   ],
+   "positionCount": 4
+  }
+ ]
+}

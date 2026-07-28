@@ -11,7 +11,6 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {aa} from "test/helpers/AdapterArray.sol";
-import {InstanceGasExhausted} from "src/errors.sol";
 import {Mock_FanOutMetaAdapter} from "test/balances/MetaBalanceAdapterGasExhaustion.t.sol";
 
 /// @notice A mock's own revert, so a test can tell "the adapter answered: nothing" from "the adapter never
@@ -178,6 +177,98 @@ contract Mock_NestedBurningBalanceAdapter is IBalanceAdapter {
     }
 }
 
+/// @title Mock_AmplifyingLabelsAdapter
+/// @notice `positionLabels` returns a blob that FITS the input window and decodes to many times its size.
+/// @dev The case a size cap on the input cannot catch. `string[]` element offsets may all point at the same
+///      payload, so N elements aliasing one long string decode to N copies of it. The expansion crosses back
+///      into the verbose read's frame, where memory cost is quadratic and the read repeats it per position.
+contract Mock_AmplifyingLabelsAdapter is IBalanceAdapter, IPositionDescribable {
+    address private immutable ASSET;
+    uint8 private immutable DECS;
+    uint256 public legCount = 1;
+
+    /// @dev Elements, all aliasing one string, sized so the whole blob still fits `_LABELS_RETURN_BYTES`.
+    uint256 public constant ELEMENTS = 63;
+    uint256 public constant STR_BYTES = 1_984;
+
+    constructor(address asset_, uint8 decs_) {
+        ASSET = asset_;
+        DECS = decs_;
+    }
+
+    function setLegCount(uint256 n) external {
+        legCount = n;
+    }
+
+    function supportsInterface(bytes4 id) external pure override returns (bool) {
+        return id == type(IBalanceAdapter).interfaceId || id == type(IERC165).interfaceId
+            || id == type(IPositionDescribable).interfaceId;
+    }
+
+    function protocolName() external pure override returns (string memory) {
+        return "Amplifier";
+    }
+
+    /// @dev Hand-rolled: `[head offset][length N][N element offsets, all equal][one long string]`.
+    function positionLabels(bytes calldata) external pure override returns (string[] memory) {
+        uint256 n = ELEMENTS;
+        uint256 strBytes = STR_BYTES;
+        assembly {
+            let buf := mload(0x40)
+            mstore(buf, 0x20)
+            let arr := add(buf, 0x20)
+            mstore(arr, n)
+            let offs := add(arr, 0x20)
+            // Every element points at the same string, which sits just past the offset table.
+            let strAt := mul(n, 0x20)
+            for { let i := 0 } lt(i, n) { i := add(i, 1) } { mstore(add(offs, mul(i, 0x20)), strAt) }
+            let strPtr := add(offs, strAt)
+            mstore(strPtr, strBytes)
+            let total := add(0x40, add(strAt, add(0x20, strBytes)))
+            return(buf, total)
+        }
+    }
+
+    function getAdapterPositions(address, address)
+        external
+        view
+        override
+        returns (INAVCalculator.PositionBalance[] memory positions)
+    {
+        positions = new INAVCalculator.PositionBalance[](legCount);
+        for (uint256 i = 0; i < legCount; i++) {
+            positions[i].balanceAsset = INAVCalculator.Asset({asset: ASSET, symbol: "USDC", decimals: DECS});
+            positions[i].balanceAdapter = address(this);
+            positions[i].amount = 1e6;
+            positions[i].positionId = abi.encode(address(this));
+            positions[i].positionKind = PositionKind.Supplied;
+        }
+    }
+
+    function getAdapterBalances(address)
+        external
+        view
+        override
+        returns (address[] memory a, uint256[] memory m, bool[] memory d)
+    {
+        a = new address[](1);
+        m = new uint256[](1);
+        d = new bool[](1);
+        a[0] = ASSET;
+        m[0] = 1e6 * legCount;
+    }
+
+    function getAdapterBalanceForAsset(address, address asset) external view override returns (uint256, bool) {
+        if (asset != ASSET) return (0, false);
+        return (1e6 * legCount, false);
+    }
+
+    function underlyingAssetsSupported() external view override returns (address[] memory a) {
+        a = new address[](1);
+        a[0] = ASSET;
+    }
+}
+
 /// @title Mock_InstanceExhaustedAdapter
 /// @notice An adapter that raises {InstanceGasExhausted} CHEAPLY — the signal a meta-adapter sends when one of
 ///         its governed instances ran out of gas, at a cost nowhere near its own stipend.
@@ -199,7 +290,7 @@ contract Mock_InstanceExhaustedAdapter is IBalanceAdapter {
         override
         returns (INAVCalculator.PositionBalance[] memory)
     {
-        revert InstanceGasExhausted(address(this), bytes32(uint256(7)), 1_000_000, 999_999);
+        revert INAVCalculator.InstanceGasExhausted(address(this), bytes32(uint256(7)), 1_000_000, 999_999);
     }
 
     function getAdapterBalances(address)
@@ -208,11 +299,11 @@ contract Mock_InstanceExhaustedAdapter is IBalanceAdapter {
         override
         returns (address[] memory, uint256[] memory, bool[] memory)
     {
-        revert InstanceGasExhausted(address(this), bytes32(uint256(7)), 1_000_000, 999_999);
+        revert INAVCalculator.InstanceGasExhausted(address(this), bytes32(uint256(7)), 1_000_000, 999_999);
     }
 
     function getAdapterBalanceForAsset(address, address) external view override returns (uint256, bool) {
-        revert InstanceGasExhausted(address(this), bytes32(uint256(7)), 1_000_000, 999_999);
+        revert INAVCalculator.InstanceGasExhausted(address(this), bytes32(uint256(7)), 1_000_000, 999_999);
     }
 
     function underlyingAssetsSupported() external pure override returns (address[] memory) {
@@ -236,7 +327,7 @@ contract Mock_ForgingPlainAdapter is IBalanceAdapter {
         override
         returns (INAVCalculator.PositionBalance[] memory)
     {
-        revert InstanceGasExhausted(address(this), bytes32(uint256(9)), 1_000_000, 999_999);
+        revert INAVCalculator.InstanceGasExhausted(address(this), bytes32(uint256(9)), 1_000_000, 999_999);
     }
 
     function getAdapterBalances(address)
@@ -245,11 +336,11 @@ contract Mock_ForgingPlainAdapter is IBalanceAdapter {
         override
         returns (address[] memory, uint256[] memory, bool[] memory)
     {
-        revert InstanceGasExhausted(address(this), bytes32(uint256(9)), 1_000_000, 999_999);
+        revert INAVCalculator.InstanceGasExhausted(address(this), bytes32(uint256(9)), 1_000_000, 999_999);
     }
 
     function getAdapterBalanceForAsset(address, address) external view override returns (uint256, bool) {
-        revert InstanceGasExhausted(address(this), bytes32(uint256(9)), 1_000_000, 999_999);
+        revert INAVCalculator.InstanceGasExhausted(address(this), bytes32(uint256(9)), 1_000_000, 999_999);
     }
 
     function underlyingAssetsSupported() external pure override returns (address[] memory) {
@@ -297,7 +388,7 @@ contract Mock_ShortForgeAdapter is IBalanceAdapter {
     }
 
     function _shortRevert() private pure {
-        bytes4 sel = InstanceGasExhausted.selector;
+        bytes4 sel = INAVCalculator.InstanceGasExhausted.selector;
         assembly {
             mstore(0x00, sel)
             revert(0x00, 0x04)
@@ -323,7 +414,7 @@ contract Mock_LyingExhaustedAdapter is IBalanceAdapter {
         override
         returns (INAVCalculator.PositionBalance[] memory)
     {
-        revert InstanceGasExhausted(INNOCENT, bytes32(uint256(11)), 1_000_000, 999_999);
+        revert INAVCalculator.InstanceGasExhausted(INNOCENT, bytes32(uint256(11)), 1_000_000, 999_999);
     }
 
     function getAdapterBalances(address)
@@ -332,11 +423,11 @@ contract Mock_LyingExhaustedAdapter is IBalanceAdapter {
         override
         returns (address[] memory, uint256[] memory, bool[] memory)
     {
-        revert InstanceGasExhausted(INNOCENT, bytes32(uint256(11)), 1_000_000, 999_999);
+        revert INAVCalculator.InstanceGasExhausted(INNOCENT, bytes32(uint256(11)), 1_000_000, 999_999);
     }
 
     function getAdapterBalanceForAsset(address, address) external view override returns (uint256, bool) {
-        revert InstanceGasExhausted(INNOCENT, bytes32(uint256(11)), 1_000_000, 999_999);
+        revert INAVCalculator.InstanceGasExhausted(INNOCENT, bytes32(uint256(11)), 1_000_000, 999_999);
     }
 
     function underlyingAssetsSupported() external pure override returns (address[] memory) {
@@ -392,7 +483,7 @@ contract Mock_BloatedExhaustedAdapter is IBalanceAdapter {
 
     function _bloatedRevert() private view {
         bytes memory head = abi.encodeWithSelector(
-            InstanceGasExhausted.selector, address(this), bytes32(uint256(3)), uint256(1), uint256(2)
+            INAVCalculator.InstanceGasExhausted.selector, address(this), bytes32(uint256(3)), uint256(1), uint256(2)
         );
         uint256 total = head.length + padBytes;
         assembly {
@@ -612,7 +703,7 @@ contract NavReadHarness {
         try NAV.getAccountPositions{gas: budget}(account, address(0)) returns (INAVCalculator.Position[] memory) {
             return 0;
         } catch (bytes memory err) {
-            if (err.length >= 4 && bytes4(err) == AdapterGasExhausted.selector) return 1;
+            if (err.length >= 4 && bytes4(err) == INAVCalculator.AdapterGasExhausted.selector) return 1;
             return 2;
         }
     }
@@ -746,7 +837,7 @@ contract NAVCalculatorGasCapTest is SuperTest {
         assertLt(baseline, GENEROUS_BUDGET, "control: the read must fit in the budget with room to spare");
 
         burner.setMode(Misbehaviour.BurnGas);
-        vm.expectPartialRevert(AdapterGasExhausted.selector);
+        vm.expectPartialRevert(INAVCalculator.AdapterGasExhausted.selector);
         nav.getAccountNav{gas: GENEROUS_BUDGET}(safe, address(0));
     }
 
@@ -756,13 +847,13 @@ contract NAVCalculatorGasCapTest is SuperTest {
         vm.prank(navCalculatorManager);
         nav.addBalanceAdapters(aa(address(burner)));
 
-        vm.expectPartialRevert(AdapterGasExhausted.selector);
+        vm.expectPartialRevert(INAVCalculator.AdapterGasExhausted.selector);
         nav.getAccountPositions{gas: GENEROUS_BUDGET}(safe, address(0));
 
-        vm.expectPartialRevert(AdapterGasExhausted.selector);
+        vm.expectPartialRevert(INAVCalculator.AdapterGasExhausted.selector);
         nav.getAccountNavVerbose{gas: GENEROUS_BUDGET}(safe, address(0));
 
-        vm.expectPartialRevert(AdapterGasExhausted.selector);
+        vm.expectPartialRevert(INAVCalculator.AdapterGasExhausted.selector);
         nav.hasPositions{gas: GENEROUS_BUDGET}(safe);
     }
 
@@ -806,11 +897,49 @@ contract NAVCalculatorGasCapTest is SuperTest {
         }
     }
 
+    /// @notice A label reply that FITS the window but decodes to many times its size must be rejected.
+    /// @dev Bounding what the adapter sends does not bound what comes back: 63 element offsets aliasing one
+    ///      1,984-byte string is a 4 KB reply that decodes to ~125 KB, returned across the shim boundary and
+    ///      copied into the verbose read's frame outside the decode stipend — once per position, in a frame
+    ///      whose memory cost is quadratic. Remove the element-count check in `decodeStringArray` and this
+    ///      fails on both counts: labels come back non-empty and the read's cost explodes.
+    function test_amplifyingLabels_areRejected() public {
+        Mock_AmplifyingLabelsAdapter amp = new Mock_AmplifyingLabelsAdapter(address(usdc), usdc.decimals());
+        amp.setLegCount(LABEL_LEGS);
+        vm.prank(navCalculatorManager);
+        nav.addBalanceAdapters(aa(address(amp)));
+
+        (bool ok, uint256 legs, uint256 labelled,, uint256 used) =
+            harness.verboseWithBudget(safe, GENEROUS_BUDGET, address(amp));
+        assertTrue(ok, "the verbose read must survive an amplifying label reply");
+        assertEq(legs, LABEL_LEGS, "positions themselves are unaffected");
+        assertEq(labelled, 0, "a reply decoding to an implausible element count yields no labels");
+        assertLt(used, VERBOSE_READ_CEILING, "and the expansion must not reach the verbose read's frame");
+    }
+
+    /// @notice The remaining two aggregating reads revert on a starved adapter as well.
+    /// @dev `getAssetsWithPositions` and the asset-filtered position read both reach the same scan, and neither
+    ///      was asserted anywhere. A fail-open reintroduced on either would ship green.
+    function test_burningAdapter_revertsOnTheFilteredAndAssetReads() public {
+        Mock_BurningBalanceAdapter burner = new Mock_BurningBalanceAdapter();
+        vm.prank(navCalculatorManager);
+        nav.addBalanceAdapters(aa(address(burner)));
+
+        vm.expectPartialRevert(INAVCalculator.AdapterGasExhausted.selector);
+        nav.getAssetsWithPositions{gas: GENEROUS_BUDGET}(safe);
+
+        vm.expectPartialRevert(INAVCalculator.AdapterGasExhausted.selector);
+        nav.getAccountPositionsForAsset{gas: GENEROUS_BUDGET}(safe, address(usdc), address(0));
+
+        vm.expectPartialRevert(INAVCalculator.AdapterGasExhausted.selector);
+        nav.getAccountPositionsForAssetVerbose{gas: GENEROUS_BUDGET}(safe, address(usdc), address(0));
+    }
+
     /// @notice A meta-adapter's own exhaustion signal must be honoured even when it costs almost nothing to
     ///         raise — the heuristic cannot see it, so the selector must.
     /// @dev The hazard the selector check exists for, and it is a REGRESSION guard, not a nicety: without it this
     ///      cheap revert scores as benign, the read fails open, and the entire meta-adapter's legs vanish — worse
-    ///      than the per-instance hole the meta-side fix closes. Delete the `sig == InstanceGasExhausted.selector`
+    ///      than the per-instance hole the meta-side fix closes. Delete the `sig == INAVCalculator.InstanceGasExhausted.selector`
     ///      branch in `PriceFeedLib._getAdapterPositions` and this returns status 0 with the adapter dropped.
     function test_instanceExhaustedSignal_isHonouredRegardlessOfGas() public {
         Mock_InstanceExhaustedAdapter signalling = new Mock_InstanceExhaustedAdapter();
@@ -820,7 +949,7 @@ contract NAVCalculatorGasCapTest is SuperTest {
         uint8 status = harness.positionsOutcome(safe, GENEROUS_BUDGET);
         assertEq(status, 2, "a cheap InstanceGasExhausted must still take the read down, not be scored benign");
 
-        vm.expectPartialRevert(InstanceGasExhausted.selector);
+        vm.expectPartialRevert(INAVCalculator.InstanceGasExhausted.selector);
         nav.getAccountPositions{gas: GENEROUS_BUDGET}(safe, address(0));
     }
 
@@ -833,7 +962,7 @@ contract NAVCalculatorGasCapTest is SuperTest {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                InstanceGasExhausted.selector,
+                INAVCalculator.InstanceGasExhausted.selector,
                 address(signalling),
                 bytes32(uint256(7)),
                 uint256(1_000_000),
@@ -889,7 +1018,11 @@ contract NAVCalculatorGasCapTest is SuperTest {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                InstanceGasExhausted.selector, address(liar), bytes32(uint256(11)), uint256(1_000_000), uint256(999_999)
+                INAVCalculator.InstanceGasExhausted.selector,
+                address(liar),
+                bytes32(uint256(11)),
+                uint256(1_000_000),
+                uint256(999_999)
             )
         );
         nav.getAccountPositions{gas: GENEROUS_BUDGET}(safe, address(0));
@@ -921,7 +1054,11 @@ contract NAVCalculatorGasCapTest is SuperTest {
         assembly {
             sel := mload(add(err, 0x20))
         }
-        assertEq(sel, InstanceGasExhausted.selector, "and it must be the instance-level error, not the adapter one");
+        assertEq(
+            sel,
+            INAVCalculator.InstanceGasExhausted.selector,
+            "and it must be the instance-level error, not the adapter one"
+        );
 
         (address reportedAdapter, bytes32 reportedInstance,,) =
             abi.decode(_argsOf(err), (address, bytes32, uint256, uint256));
@@ -1084,7 +1221,10 @@ contract NAVCalculatorGasCapTest is SuperTest {
             harness.verboseWithBudget(safe, GENEROUS_BUDGET, address(mock));
         assertTrue(ok, "the verbose read must survive a huge label reply");
         assertEq(legs, LABEL_LEGS, "positions themselves are unaffected");
-        assertEq(labelled, 0, "an undecodable label reply yields no labels");
+        // NOTE: this particular reply is 200_000 ZERO bytes, which truncate to a well-formed empty `string[]`.
+        // `labelled == 0` is therefore not evidence the window exists — the cost ceiling below is what carries
+        // this test, and `test_amplifyingLabels_areRejected` covers the decodable case the window must reject.
+        assertEq(labelled, 0, "a truncated all-zero reply decodes to an empty label set");
         assertLt(used, VERBOSE_READ_CEILING, "reply size must not reach the verbose read's memory");
     }
 

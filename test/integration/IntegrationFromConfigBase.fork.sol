@@ -940,16 +940,32 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     ///         vm.rollFork sweeps (backtest harness). Covers proxy, etched libraries,
     ///         every balance adapter, and every ephemeral price feed.
     function _makeStackPersistent() internal {
-        vm.makePersistent(address(nav));
-        vm.makePersistent(Upgrades.getImplementationAddress(address(nav)));
-        vm.makePersistent(nav.erc20DefaultBalanceAdapter()); // deployed inside initialize, not in _deployedBalanceAdapters
-        vm.makePersistent(LibraryPins.PRICE_FEED_LIB);
-        vm.makePersistent(LibraryPins.NAV_REGISTRY_LIB);
+        address[] memory stack = _persistentStackAddresses();
+        for (uint256 i = 0; i < stack.length; i++) {
+            vm.makePersistent(stack[i]);
+        }
+    }
+
+    /// @notice Every locally-deployed or etched address the NAV read path touches, i.e. exactly the
+    ///         set that must survive a `vm.rollFork`. Kept as one enumerable list rather than a
+    ///         sequence of `makePersistent` calls so a caller can re-assert code presence after a
+    ///         roll (see `NavBacktest._assertStackPersistent`) against the same source of truth —
+    ///         otherwise an address added here but forgotten there reverts every read and the
+    ///         backtest records it as protocol instability.
+    function _persistentStackAddresses() internal view returns (address[] memory stack) {
+        uint256 fixedCount = 5;
+        stack = new address[](fixedCount + _deployedBalanceAdapters.length + _deployedPriceFeedAddresses.length);
+        stack[0] = address(nav);
+        stack[1] = Upgrades.getImplementationAddress(address(nav));
+        stack[2] = nav.erc20DefaultBalanceAdapter(); // deployed inside initialize, not in _deployedBalanceAdapters
+        stack[3] = LibraryPins.PRICE_FEED_LIB;
+        stack[4] = LibraryPins.NAV_REGISTRY_LIB;
+        uint256 next = fixedCount;
         for (uint256 i = 0; i < _deployedBalanceAdapters.length; i++) {
-            vm.makePersistent(_deployedBalanceAdapters[i]);
+            stack[next++] = _deployedBalanceAdapters[i];
         }
         for (uint256 i = 0; i < _deployedPriceFeedAddresses.length; i++) {
-            vm.makePersistent(_deployedPriceFeedAddresses[i]);
+            stack[next++] = _deployedPriceFeedAddresses[i];
         }
     }
 

@@ -50,8 +50,8 @@ contract FluidFTokensMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev Returns `["Lending", <fToken symbol>]` (leaf "" if unreadable). Returns an empty array for a short
-    ///      positionId.
+    /// @dev Returns `["Lending", <fToken symbol>]` (leaf "" if unreadable). Returns an empty array for a malformed
+    ///      positionId (see {_pidAddress}).
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
         return _addressLabels(pid, "Lending", true);
     }

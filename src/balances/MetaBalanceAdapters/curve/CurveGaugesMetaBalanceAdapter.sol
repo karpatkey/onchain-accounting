@@ -184,8 +184,9 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
     /// @inheritdoc MetaBalanceAdapter
     /// @dev Returns `["Staking Gauge", "TOKEN0/TOKEN1/…"]`; leaf derived on-chain from coin symbols ("" on failure).
     function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
-        if (pid.length < 32) return new string[](0);
-        string memory leaf = _leaf(pid);
+        (address gauge, bool ok) = _pidAddress(pid);
+        if (!ok) return new string[](0);
+        string memory leaf = _leaf(gauge);
         return _labels("Staking Gauge", leaf);
     }
 
@@ -205,8 +206,7 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @notice Derives the "TOKEN0/TOKEN1/…" leaf from the gauge's pool coins ("" on failure).
-    function _leaf(bytes calldata pid) private view returns (string memory) {
-        address gauge = abi.decode(pid, (address));
+    function _leaf(address gauge) private view returns (string memory) {
         address lpToken = CurvePoolLib.gaugeLpToken(gauge);
         if (lpToken == address(0)) return "";
         address pool = CurvePoolLib.getPool(lpToken);

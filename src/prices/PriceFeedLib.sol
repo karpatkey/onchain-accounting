@@ -10,7 +10,10 @@ import {IPrices} from "./IPrices.sol";
 import {ICustomPriceFeed} from "./ICustomPriceFeed.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
+import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
+import {GasStipendLib} from "src/utils/GasStipendLib.sol";
 
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
@@ -799,8 +802,9 @@ library PriceFeedLib {
         }
     }
 
-    /// @notice True if the account holds any non-zero position. Mirrors NAVCalculator.hasPositions (fail-open via
-    ///         the per-adapter try/catch in `_getPositionBalances`).
+    /// @notice True if the account holds any non-zero position. Mirrors NAVCalculator.hasPositions, and inherits
+    ///         `_getAdapterPositions`'s policy: a reverting adapter is skipped, one that exhausts its gas
+    ///         stipend reverts the scan rather than being read as "no positions".
     function hasPositions(
         address[] memory allAdapters,
         uint256 metaInstanceTotal,
@@ -808,6 +812,10 @@ library PriceFeedLib {
         uint256 assetCount,
         address account
     ) external view returns (bool) {
+        // Nothing can be counted with an empty registry — `_isCounted` discards every row — so skip the fan-out
+        // entirely, as the NAV entrypoints already do. Without this the scan still runs, and a starved adapter
+        // makes this revert where `computeNav` answers 0 on the same state.
+        if (assetCount == 0) return false;
         INAVCalculator.PositionBalance[] memory positions =
             _getPositionBalances(allAdapters, assetIndex, account, address(0));
         for (uint256 i = 0; i < positions.length; i++) {
@@ -825,6 +833,8 @@ library PriceFeedLib {
         uint256 assetCount,
         address account
     ) external view returns (address[] memory) {
+        // See `hasPositions`: an empty registry cannot yield a counted row, so do not fan out for one.
+        if (assetCount == 0) return new address[](0);
         return _extractUniqueAssets(_getPositionBalances(allAdapters, assetIndex, account, address(0)));
     }
 
@@ -916,7 +926,8 @@ library PriceFeedLib {
     // -------------------------------------------------------------------------
 
     /// @notice Gathers an account's registered-asset positions across all adapters (single-leg + meta), filtered
-    ///         by `assetFilter` (address(0) = all). A reverting adapter is skipped (fail-open). Mirrors the former
+    ///         by `assetFilter` (address(0) = all). A reverting adapter is skipped; one that exhausts its gas
+    ///         stipend reverts the whole read (see {_getAdapterPositions}). Mirrors the former
     ///         NAVCalculator._getPositionBalances. Each adapter is queried once and its rows retained, then a
     ///         counting pass sizes the output to the EXACT number of surviving rows (registered asset + matching
     ///         filter) — not a fixed `2·(adapters+instances)·assetCount` heuristic, which a multi-leg adapter
@@ -986,19 +997,144 @@ library PriceFeedLib {
         return true;
     }
 
-    /// @notice Calls an adapter's getAdapterPositions in a try/catch (fail-open: returns empty on revert). Meta
-    ///         adapters read their NAV-configured instance set themselves, so the call path is uniform.
+    /// @notice Bytes of revert data copied when an adapter's call fails: the exact ABI size of
+    ///         {InstanceGasExhausted} (selector + four words).
+    /// @dev A bound, not a size hint. The parameterless `catch` below copies nothing on its own, and switching to
+    ///      `catch (bytes memory)` to read the selector would `returndatacopy` the WHOLE revert payload — which a
+    ///      hostile adapter sizes, and which has been measured on this repo in the hundreds of millions of gas.
+    ///      Reading the selector straight out of the returndata buffer and copying only this many bytes keeps the
+    ///      cost flat. A forged payload is therefore truncated to a well-formed error, never propagated whole.
+    uint256 private constant INSTANCE_EXHAUSTED_BYTES = 4 + 32 * 4;
+
+    /// @notice Calls an adapter's `getAdapterPositions`, failing open on a revert but NOT on gas exhaustion.
+    /// @dev The two failure modes look identical to `catch` and must not be treated identically:
+    ///
+    ///      - **A revert** means the adapter answered: it has nothing to report. Returning an empty list is the
+    ///        long-standing fail-open behaviour, so one misconfigured adapter cannot take down the whole read.
+    ///      - **Running out of gas** means the adapter did NOT answer. Reporting that as an empty list drops its
+    ///        legs, and a dropped *debt* leg RAISES the reported NAV — a silent over-report, produced by the read
+    ///        itself rather than by any adapter. It is also self-propagating: whatever an adapter burns is gone
+    ///        from the budget the adapters after it need, so one runaway adapter starves the rest and each of
+    ///        them disappears the same silent way.
+    ///
+    ///      So exhaustion reverts with {AdapterGasExhausted}. The stipend is exactly what the EVM would forward
+    ///      anyway (63/64 of what this frame holds) — deliberately NOT a smaller fixed ceiling. A fixed ceiling
+    ///      would make exhaustion unrecoverable: `ERC20DefaultBalanceAdapter`'s cost grows with the asset
+    ///      registry, and per-account adapters can be inflated by anyone who can add entries to the account's
+    ///      list at a protocol (a withdrawal-queue request names its own owner), so a ceiling turns ordinary
+    ///      registry growth and cheap third-party griefing alike into a permanent outage that no caller can
+    ///      escape and only a redeploy can lift. Keyed to the caller's own budget instead, the same situations
+    ///      surface as "this read needs more gas", which the caller can act on.
+    ///
+    ///      A meta-adapter raises {InstanceGasExhausted} when one of its governed instances runs out of gas, and
+    ///      that selector is honoured HERE regardless of what the gas figures say. It has to be: the meta-adapter
+    ///      may raise it having spent very little — an early instance starves, the fan-out stops — and the gas
+    ///      test would then read a deliberate exhaustion signal as a benign revert and fail open, dropping the
+    ///      WHOLE meta-adapter rather than the one instance. An explicit signal beats a heuristic wherever one
+    ///      exists, and the specific error is re-raised rather than replaced with {AdapterGasExhausted}, so the
+    ///      failing instance stays named. See {_reraiseIfInstanceExhausted} for what that signal must satisfy.
+    ///
+    ///      **Scope, stated plainly. Apart from that signal this guard only ever sees a FAILED call, so anything
+    ///      an adapter absorbs internally is invisible to it. Two things sit outside:**
+    ///      - An adapter that fails open in its own frame and returns SUCCESSFULLY. The most common shape, and
+    ///        the one present on every chain: `ERC20DefaultBalanceAdapter` reads each asset with an unstipended
+    ///        `staticcall` and records 0 on failure, so a single token whose `balanceOf` loops takes 63/64 of
+    ///        that adapter's budget, drops its own wallet balance from the NAV, and still returns normally. No
+    ///        classifier upstream is reached, because nothing failed from where this function is standing. The
+    ///        meta-adapter position fan-out used to behave this way too and now raises instead — but its
+    ///        `positionIds` and `_assetsForInstances` siblings still absorb a starved instance silently.
+    ///      - The `returndatacopy` and ABI decode of the adapter's reply are charged to THIS frame, outside the
+    ///        stipend, because a typed `try … returns (…[] memory)` copies whatever arrives. The stipend bounds
+    ///        it only indirectly, through what the callee could afford to build. The outcome is a loud
+    ///        out-of-gas rather than a wrong number, so this is availability, not correctness.
+    ///
+    ///      Nor is any fixed fraction exact: deep enough nesting always leaves enough unspent to slip under the
+    ///      threshold. This narrows the silent window; it does not close it.
     function _getAdapterPositions(address adapter, address account, address assetFilter)
         private
         view
         returns (INAVCalculator.PositionBalance[] memory)
     {
-        try IBalanceAdapter(adapter).getAdapterPositions(account, assetFilter) returns (
+        // One sample, used both to derive the stipend and to measure against it — see GasStipendLib.exhausted.
+        uint256 available = gasleft();
+        uint256 stipend = GasStipendLib.stipendFrom(available);
+
+        try IBalanceAdapter(adapter).getAdapterPositions{gas: stipend}(account, assetFilter) returns (
             INAVCalculator.PositionBalance[] memory pos
         ) {
             return pos;
         } catch {
+            // FIRST, before any bookkeeping of our own: `consumed` must measure what the CALL cost, which is what
+            // {GasStipendLib.exhausted} is defined against and what the error reports. Reading it after the
+            // selector work below would fold this frame's own gas into the figure.
+            uint256 consumed = available - gasleft();
+
+            _reraiseIfInstanceExhausted(adapter);
+
+            if (GasStipendLib.exhausted(stipend, consumed)) {
+                revert INAVCalculator.AdapterGasExhausted(adapter, stipend, consumed);
+            }
             return new INAVCalculator.PositionBalance[](0);
+        }
+    }
+
+    /// @notice Re-raises a meta-adapter's {InstanceGasExhausted}, still resident in the returndata buffer, so a
+    ///         starved INSTANCE is not re-scored by the gas heuristic and failed open.
+    /// @dev Needed because the heuristic cannot see this case: a meta-adapter that stops on its FIRST starved
+    ///      instance has spent almost nothing, so `consumed` is small and the failure would be read as a benign
+    ///      revert — dropping the whole adapter rather than surfacing the one instance.
+    ///
+    ///      Honouring a callee-chosen selector is a decision to let a callee force a revert, so it is gated
+    ///      hard, cheapest check first, and every gate must pass:
+    ///      1. **Exactly** {INSTANCE_EXHAUSTED_BYTES} of revert data. A shorter payload carrying the selector
+    ///         would otherwise be re-raised as-is and could not be decoded against the error's signature; a
+    ///         longer one is not something the error can produce.
+    ///      2. The selector matches.
+    ///      3. The adapter answers ERC165 for {IMetaBalanceAdapter}. Only a meta-adapter has instances, so only
+    ///         a meta-adapter can mean anything by this signal. This runs last because it is the only gate that
+    ///         costs a call, and by then the two cheap gates have already excluded ordinary reverts — so the
+    ///         normal fail-open path never pays for it.
+    ///
+    ///      The `adapter` word is then OVERWRITTEN with the address actually called, rather than trusted from
+    ///      the payload. The callee wrote those bytes; left alone, a misbehaving adapter could name an innocent
+    ///      one and send an operator to remove the wrong thing. `instance`, `stipend` and `consumed` are still
+    ///      the callee's own account of itself and can only be read as such.
+    ///
+    ///      What this does NOT bound is a registered adapter deliberately forging the selector to turn its own
+    ///      failure into a whole-read revert. That is adapter-controlled, not account-controlled — a registered
+    ///      adapter can already stop a read by burning gas — and no third-party path reaches this buffer: a
+    ///      meta-adapter's per-instance `catch` swallows an inner protocol's revert before it can surface here,
+    ///      and the plain adapters read constructor-pinned addresses.
+    /// @param adapter The adapter whose call just failed, used to overwrite the payload's first word.
+    function _reraiseIfInstanceExhausted(address adapter) private view {
+        uint256 size = INSTANCE_EXHAUSTED_BYTES;
+        if (_returndatasize() != size) return;
+
+        // Save the payload BEFORE anything else can touch the returndata buffer. The ERC165 probe below is an
+        // external call, and a call REPLACES this frame's returndata — read it after and you get the probe's
+        // answer, not the adapter's error. Allocated properly rather than scribbled above the free pointer,
+        // because the probe's own calldata is allocated there.
+        bytes memory payload = new bytes(size);
+        bytes4 want = INAVCalculator.InstanceGasExhausted.selector;
+        bool matches;
+        assembly ("memory-safe") {
+            returndatacopy(add(payload, 0x20), 0x00, size)
+            matches := eq(shr(224, mload(add(payload, 0x20))), shr(224, want))
+        }
+        if (!matches) return;
+        if (!adapter.supportsInterface(type(IMetaBalanceAdapter).interfaceId)) return;
+
+        assembly ("memory-safe") {
+            // Word 0 is the callee's claim about which adapter failed; replace it with the one actually called.
+            mstore(add(payload, 0x24), adapter)
+            revert(add(payload, 0x20), size)
+        }
+    }
+
+    /// @notice `returndatasize()` as a Solidity value, so the gates above read as plain control flow.
+    function _returndatasize() private pure returns (uint256 size) {
+        assembly ("memory-safe") {
+            size := returndatasize()
         }
     }
 
@@ -1430,6 +1566,13 @@ library PriceFeedLib {
 
     function _validateFeedSupportInternal(address token, address priceFeed, IPrices.PriceType priceType) private view {
         if (priceFeed == address(0) || token == address(0)) revert IPrices.InvalidPriceOracle();
+        // A code-less `priceFeed` must fail by name, here, for the same reason the asset is checked at the
+        // NAVCalculator call site: the AggregatorV3 branch below ends in a HIGH-LEVEL `latestRoundData()`, whose
+        // `extcodesize` precheck fires in this frame before the call and reverts with empty returndata — no
+        // selector for the MANAGER to read. The zero-address check above does not cover it; an EOA or a mistyped
+        // address is non-zero and code-less. Placed in the shared validator rather than at each entry point so
+        // `registerAsset`, `addPriceFeed` and `addMonitorFeed` all answer the same way.
+        AddressCheckLib.requireContract(priceFeed, "priceFeed");
         if (priceType == IPrices.PriceType.Custom) {
             if (!priceFeed.supportsInterface(type(ICustomPriceFeed).interfaceId)) revert IPrices.InvalidPriceOracle();
         } else if (

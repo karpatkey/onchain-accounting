@@ -122,8 +122,8 @@ contract BalancerV3GaugesMetaBalanceAdapter is MetaBalanceAdapter {
     ///      resolution chain is caught by the `try this.gaugeTokenSymbols(...)` self-call and falls open to the
     ///      category-only label `["Staking Gauge"]`.
     function positionLabels(bytes calldata positionId) external view virtual override returns (string[] memory) {
-        if (positionId.length < 32) return new string[](0);
-        address gauge = abi.decode(positionId, (address));
+        (address gauge, bool ok) = _pidAddress(positionId);
+        if (!ok) return new string[](0);
         // External self-call so a revert anywhere in the gauge→lp_token→pool-token chain fails open to the
         // category-only label — a faulty label must never revert the (verbose-only) labels read.
         try this.gaugeTokenSymbols(gauge) returns (string memory leaf) {

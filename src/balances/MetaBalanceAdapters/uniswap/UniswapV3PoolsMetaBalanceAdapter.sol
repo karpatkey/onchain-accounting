@@ -3,6 +3,7 @@ pragma solidity ^0.8;
 
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
+import {StaticCallLib} from "src/utils/StaticCallLib.sol";
 
 import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
 import {LabelLib} from "src/balances/LabelLib.sol";
@@ -198,10 +199,11 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @inheritdoc IPositionDescribable
     /// @dev `["AMM Liquidity Pool", "<sym0>/<sym1> <fee>%"]` (e.g. `["AMM Liquidity Pool", "USDC/WETH 0.3%"]`) — the
     ///      leaf is read live from the pool decoded out of `positionId`. An unreadable symbol falls back to "?"; a
-    ///      reverting pool falls back to just `["AMM Liquidity Pool"]`. Empty for a short/malformed positionId.
+    ///      reverting pool falls back to just `["AMM Liquidity Pool"]`. Empty for a malformed positionId (see {_pidAddress}).
     function positionLabels(bytes calldata positionId) external view override returns (string[] memory out) {
-        if (positionId.length < 32) return new string[](0);
-        string memory leaf = _poolLeaf(abi.decode(positionId, (address)));
+        (address pool, bool pidOk) = _pidAddress(positionId);
+        if (!pidOk) return new string[](0);
+        string memory leaf = _poolLeaf(pool);
         if (bytes(leaf).length == 0) {
             out = new string[](1);
             out[0] = "AMM Liquidity Pool";
@@ -212,27 +214,38 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
         out[1] = leaf;
     }
 
-    /// @dev "<sym0>/<sym1> <fee>%" read live from the pool (e.g. "USDC/WETH 0.3%"); "" if a core pool read reverts.
+    /// @dev "<sym0>/<sym1> <fee>%" read live from the pool (e.g. "USDC/WETH 0.3%"); "" if the pool does not answer
+    ///      all three reads with a well-formed value.
+    /// @dev Read through {StaticCallLib}, not `try`/`catch` on a typed call. `positionLabels` is reachable with an
+    ///      arbitrary clean address — that is the whole point of the {_pidAddress} guard above accepting one — and
+    ///      `try IUniswapV3Pool(pool).fee()` does NOT fail open for such an address in two ways:
+    ///        - a typed high-level call compiles to an `extcodesize` check that reverts BEFORE the call, outside the
+    ///          `catch` arm, so any code-less address reverted this view outright;
+    ///        - `catch` also does not cover a decode failure, so a contract answering with undecodable returndata
+    ///          reverted too.
+    ///      The raw probes below have neither problem, and additionally cap the gas a hostile pool can burn. `fee`
+    ///      is range-checked because a full word that does not fit `uint24` is not a fee — masking it would invent
+    ///      one — and the token reads use the STRICT address form for the same reason: a dirty word is a broken
+    ///      answer, not an address.
+    ///
+    ///      The `bad0`/`bad1` flags are checked for explicitness, not because they add reachability: `safeAddrStrict`
+    ///      already returns `address(0)` for a word it rejects, so the `== address(0)` clauses subsume them and no
+    ///      test can isolate the flags on their own. They are kept because reading `bad0` at the call site is what
+    ///      makes "rejected, not masked" visible here rather than only in the library.
     function _poolLeaf(address pool) private view returns (string memory) {
-        uint24 fee;
-        try IUniswapV3Pool(pool).fee() returns (uint24 f) {
-            fee = f;
-        } catch {
-            return "";
-        }
-        address t0;
-        address t1;
-        try IUniswapV3Pool(pool).token0() returns (address a) {
-            t0 = a;
-        } catch {
-            return "";
-        }
-        try IUniswapV3Pool(pool).token1() returns (address a) {
-            t1 = a;
-        } catch {
-            return "";
-        }
-        return string.concat(_symbol(t0), "/", _symbol(t1), " ", _feePercent(fee), "%");
+        (, bool hasFee, uint256 rawFee) =
+            StaticCallLib.probeWord(pool, abi.encodeWithSelector(IUniswapV3Pool.fee.selector));
+        if (!hasFee || rawFee > type(uint24).max) return "";
+
+        (bool ok0, address t0, bool bad0) =
+            StaticCallLib.safeAddrStrict(pool, abi.encodeWithSelector(IUniswapV3Pool.token0.selector));
+        if (!ok0 || bad0 || t0 == address(0)) return "";
+
+        (bool ok1, address t1, bool bad1) =
+            StaticCallLib.safeAddrStrict(pool, abi.encodeWithSelector(IUniswapV3Pool.token1.selector));
+        if (!ok1 || bad1 || t1 == address(0)) return "";
+
+        return string.concat(_symbol(t0), "/", _symbol(t1), " ", _feePercent(uint24(rawFee)), "%");
     }
 
     /// @dev ERC20 symbol with a "?" fallback for non-standard tokens (e.g. bytes32 symbols) or reverts.

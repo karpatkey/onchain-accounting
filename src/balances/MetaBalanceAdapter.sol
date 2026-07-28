@@ -11,6 +11,7 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 import {LabelLib} from "./LabelLib.sol";
 import {ProtocolNames} from "src/utils/ProtocolNames.sol";
 import {RegisteredAssetLib} from "./RegisteredAssetLib.sol";
+import {GasStipendLib} from "src/utils/GasStipendLib.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {InvalidArgumentsWithContext} from "src/errors.sol";
 
@@ -204,7 +205,38 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     // Internal fan-out
     //
 
-    /// @notice Aggregates positions across `instances`, isolating a faulty instance so it cannot zero out the batch.
+    /// @notice Aggregates positions across `instances`, isolating a faulty instance so it cannot zero out the
+    ///         batch — but NOT isolating one that ran out of gas.
+    /// @dev The isolation is deliberate and stays: an instance whose protocol read reverts has answered, and one
+    ///      bad instance must not cost the account the other instances' legs. Gas exhaustion is not that. It
+    ///      means the instance did not answer, and recording it as an empty leg list drops whatever it held —
+    ///      a dropped *debt* leg RAISES the reported NAV — while this function still returns SUCCESSFULLY, so
+    ///      nothing downstream can tell the answer was partial. That is the one failure the per-instance
+    ///      `try`/`catch` must not absorb, so it reverts {InstanceGasExhausted} instead.
+    ///
+    ///      The classification is {GasStipendLib}'s, shared with the adapter-level guard in
+    ///      `PriceFeedLib._getAdapterPositions` rather than restated here, because these two are the same
+    ///      question asked one frame apart and a threshold that drifts between them re-opens the hole.
+    ///
+    ///      Note what this deliberately does NOT do: unlike the adapter-level guard, it does not honour an
+    ///      {InstanceGasExhausted} selector arriving in the revert data. That guard can afford to, because the
+    ///      thing it is listening to is a meta-adapter it has ERC165-checked. Here the revert data comes from a
+    ///      protocol this adapter merely reads, so treating a selector in it as a trusted signal would let a
+    ///      third-party contract decide that a NAV read must fail. Gas consumed is the only evidence available
+    ///      at this boundary that the callee cannot choose.
+    ///
+    ///      It also cannot see an instance that swallows its OWN out-of-gas — a `_instancePositions`
+    ///      implementation whose protocol read is itself wrapped in `try`/`catch` returns normally with a leg
+    ///      missing, and nothing here fires. See {GasStipendLib}.
+    ///
+    ///      **The cost of raising, taken knowingly.** Several protocols let anyone grow a per-account list — a
+    ///      withdrawal request names its own owner — so a third party can push one instance's read past what the
+    ///      fan-out can hand it and make that account's NAV read FAIL, where before it returned a number that was
+    ///      quietly missing a leg. That is the intended direction: a read that cannot see everything must not
+    ///      answer as though it did. It is also recoverable in a way the silent version never was, because the
+    ///      stipend is a share of the caller's own budget rather than a fixed ceiling — more gas, up to whatever
+    ///      the node's `eth_call` cap allows, gets the read through. Past that cap the remedy is the MANAGER's:
+    ///      remove the instance.
     function _positionsForInstances(address account, bytes32[] memory instances, address assetFilter)
         internal
         view
@@ -213,12 +245,19 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
         INAVCalculator.PositionBalance[][] memory perInstance = new INAVCalculator.PositionBalance[][](instances.length);
         uint256 total = 0;
         for (uint256 i = 0; i < instances.length; i++) {
-            try this.instancePositions(account, instances[i], assetFilter) returns (
+            // One sample, used both to derive the stipend and to measure against it — see GasStipendLib.exhausted.
+            uint256 available = gasleft();
+            uint256 stipend = GasStipendLib.stipendFrom(available);
+            try this.instancePositions{gas: stipend}(account, instances[i], assetFilter) returns (
                 INAVCalculator.PositionBalance[] memory p
             ) {
                 perInstance[i] = p;
                 total += p.length;
             } catch {
+                uint256 consumed = available - gasleft();
+                if (GasStipendLib.exhausted(stipend, consumed)) {
+                    revert INAVCalculator.InstanceGasExhausted(address(this), instances[i], stipend, consumed);
+                }
                 perInstance[i] = new INAVCalculator.PositionBalance[](0);
             }
         }
@@ -437,18 +476,58 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
         (assetInfo, eligible) = _getAssetInfo(token);
     }
 
+    /// @notice Decodes an address-keyed `positionId`, accepting ONLY exactly one clean address word.
+    /// @dev The single entry point every address-keyed `positionLabels` in this family must use, because the obvious
+    ///      spelling — `if (pid.length < 32) …; abi.decode(pid, (address))` — is wrong in two ways at once, and
+    ///      `positionLabels` is a display-only view reachable from a configuration tool that probes with whatever
+    ///      word it has:
+    ///
+    ///      1. **It reverts.** Solidity's ABI decoder validates an `address`, so a 32-byte word whose upper 96 bits
+    ///         are dirty (a `bytes32` market/pool id copied from a sibling adapter is the ordinary source) reverts
+    ///         instead of degrading. Hence the raw-word decode and an explicit range check.
+    ///      2. **It over-claims.** `abi.decode` silently ignores trailing bytes, so a `< 32` guard lets a foreign
+    ///         MULTI-word coordinate through and labels it from its first word — a confident, wrong breadcrumb for a
+    ///         position the adapter never emitted. Every address-keyed positionId in this family is exactly
+    ///         `abi.encode(address)`, so the accept window is `== 32`, not `>= 32`.
+    ///
+    ///      A dirty word is rejected rather than masked down to its low 160 bits: those bits can name a real
+    ///      instance by coincidence, and a wrong label is worse than an absent one.
+    /// @return addr The decoded address; `address(0)` when `!ok`.
+    /// @return ok True only for a positionId that is exactly one word with clear upper 96 bits.
+    function _pidAddress(bytes calldata pid) internal pure returns (address addr, bool ok) {
+        if (pid.length != 32) return (address(0), false);
+        uint256 raw = abi.decode(pid, (uint256));
+        if (raw >> 160 != 0) return (address(0), false);
+        return (address(uint160(raw)), true);
+    }
+
+    /// @notice Decodes a `bytes32`-keyed `positionId` (Morpho marketIds, Balancer V2 poolIds), accepting ONLY
+    ///         exactly one word.
+    /// @dev The {_pidAddress} sibling for the raw-`bytes32` coordinate. There is no range check to make — every
+    ///      256-bit value is a valid `bytes32`, and `abi.decode(_, (bytes32))` cannot revert on a full word — so
+    ///      this exists purely for reason 2 above: `< 32` would label a foreign multi-word coordinate from its
+    ///      first word. Kept as a named helper rather than an inline `!= 32` so the two coordinate shapes stay
+    ///      visibly symmetric and a reader does not have to re-derive why one has a range check and the other
+    ///      does not.
+    /// @return word The decoded word; `bytes32(0)` when `!ok`.
+    /// @return ok True only for a positionId that is exactly one word.
+    function _pidWord(bytes calldata pid) internal pure returns (bytes32 word, bool ok) {
+        if (pid.length != 32) return (bytes32(0), false);
+        return (abi.decode(pid, (bytes32)), true);
+    }
+
     /// @notice Builds the `positionLabels` `[category, leaf]` for an address-keyed `positionId`, reading the
     ///         instance's on-chain `name()` (or `symbol()` when `useSymbol`) live and fail-open to "" — the
     ///         single-address label shape shared by the vault/market/lending meta-adapters (Morpho, Euler, Fluid,
-    ///         Gearbox markets, Compound comets). Returns an empty array for a short/malformed positionId; the
-    ///         empty-leaf collapse is handled by {_labels}.
+    ///         Gearbox markets, Compound comets). Returns an empty array for a malformed positionId (see
+    ///         {_pidAddress}); the empty-leaf collapse is handled by {_labels}.
     function _addressLabels(bytes calldata pid, string memory category, bool useSymbol)
         internal
         view
         returns (string[] memory)
     {
-        if (pid.length < 32) return new string[](0);
-        address addr = abi.decode(pid, (address));
+        (address addr, bool ok) = _pidAddress(pid);
+        if (!ok) return new string[](0);
         string memory leaf = useSymbol ? LabelLib.symbol(addr, "") : LabelLib.name(addr, "");
         return _labels(category, leaf);
     }

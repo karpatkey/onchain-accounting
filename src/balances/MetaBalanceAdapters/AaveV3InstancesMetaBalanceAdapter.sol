@@ -128,10 +128,10 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
     ///      (e.g. "Aave Ethereum Market" vs "Aave V3 Lido Ethereum"), which distinguishes instances that share
     ///      the same protocolId. positionId is the instance Pool, so the label is per-instance, not per-reserve
     ///      (the reserve token lives in `balanceAsset`). Collapses to `["Market"]` if the market id is
-    ///      unavailable; empty array for a short positionId.
+    ///      unavailable; empty array for a malformed positionId (see {_pidAddress}).
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
-        if (pid.length < 32) return new string[](0);
-        address pool = abi.decode(pid, (address));
+        (address pool, bool ok) = _pidAddress(pid);
+        if (!ok) return new string[](0);
         return _labels("Market", _marketId(pool));
     }
 

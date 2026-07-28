@@ -14,7 +14,8 @@ import {
     MockCurveToken,
     MockCurvePool,
     MockCurveGauge,
-    MockCurveMinter
+    MockCurveMinter,
+    MockDirtyLpTokenGauge
 } from "test/balances/MetaBalanceAdapters/CurveMocks.sol";
 
 contract CurveGaugesMetaBalanceAdapterTest is Test {
@@ -291,5 +292,39 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
             if (pos[i].balanceAsset.asset == asset) return pos[i];
         }
         revert("asset not found");
+    }
+
+    /// @dev `positionLabels` is display-only and must never revert, and must never label a coordinate this adapter
+    ///      never emitted. Both were reachable before: `abi.decode(pid, (address))` reverts on a word with dirty
+    ///      upper 96 bits, and a `pid.length < 32` guard let a foreign MULTI-word coordinate through to be labelled
+    ///      from its first word. The decode now goes through `MetaBalanceAdapter._pidAddress`, whose own accept window is
+    ///      pinned exhaustively in `test/balances/MetaBalanceAdapterPidGuards.t.sol`; this case pins that THIS
+    ///      adapter routes through it.
+    ///
+    ///      The clean-coordinate assertion is what keeps the rest load-bearing. A shape-valid but unknown
+    ///      coordinate still resolves to the category-only label (the fail-open leaf collapse), so a view that
+    ///      rejected everything would fail here rather than pass the rejections trivially.
+
+    function test_positionLabels_malformedPositionId_returnsEmpty() public view {
+        address coord = address(0xBEEF);
+
+        assertGt(meta.positionLabels(abi.encode(coord)).length, 0, "one clean word is the accepted shape");
+
+        assertEq(meta.positionLabels("").length, 0, "empty");
+        assertEq(meta.positionLabels(hex"0102030405060708090a0b0c").length, 0, "truncated");
+        uint256 dirty = uint256(uint160(coord)) | (uint256(1) << 255);
+        assertEq(meta.positionLabels(abi.encode(dirty)).length, 0, "dirty upper bits");
+        assertEq(meta.positionLabels(abi.encode(coord, uint256(1))).length, 0, "over-long");
+    }
+
+    /// @dev Same class as the Curve pools case, one hop earlier: `gaugeLpToken` read `lp_token()` with only a
+    ///      length check before `abi.decode(data, (address))`, so a gauge answering with a dirty full word reverted
+    ///      this display-only view. Now routed through `CurvePoolLib._firstAddress`.
+    ///
+    ///      Load-bearing: restore `abi.decode(data, (address))` in `gaugeLpToken` and this reverts.
+    function test_positionLabels_undecodableLpTokenRead_doesNotRevert() public {
+        string[] memory l = meta.positionLabels(abi.encode(address(new MockDirtyLpTokenGauge())));
+        assertEq(l.length, 1, "an unresolvable gauge collapses to the category");
+        assertEq(l[0], "Staking Gauge");
     }
 }

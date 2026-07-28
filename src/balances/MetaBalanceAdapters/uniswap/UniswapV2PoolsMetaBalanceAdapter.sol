@@ -103,8 +103,8 @@ contract UniswapV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @inheritdoc MetaBalanceAdapter
     /// @dev Returns `["AMM Liquidity Pool", "sym0/sym1"]`; leaf derived on-chain from the pair's token symbols.
     function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
-        if (pid.length < 32) return new string[](0);
-        address pair = abi.decode(pid, (address));
+        (address pair, bool ok) = _pidAddress(pid);
+        if (!ok) return new string[](0);
         // External self-call so a revert in the pair token0()/token1() reads (bad/non-pair instance) fails open
         // to the category-only label — a faulty label must never revert the (verbose-only) labels read.
         try this.pairTokenSymbols(pair) returns (string memory leaf) {

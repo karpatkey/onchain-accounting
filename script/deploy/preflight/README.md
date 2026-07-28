@@ -15,6 +15,7 @@ The ordered procedure these support is [`../REDEPLOY_RUNBOOK.md`](../REDEPLOY_RU
 | `preflight_config.py` | validates every per-chain config the deploy reads, before a tx is sent |
 | `reset_deployment_records.py` | archives + clears the deployment records so `03`/`04` actually redeploy |
 | `deployer_balances.py` | deployer-EOA balance vs estimated gas per chain; emits a top-up list |
+| `verify_step.py` | asserts the runbook's post-condition for a given deploy step, on-chain, per chain |
 | `rehearse_fork.sh` | runs the real deploy sequence end-to-end against a local anvil fork |
 
 ## Typical order
@@ -27,12 +28,15 @@ python3 deployer_balances.py --json topup.json
 ./rehearse_fork.sh 1                              # dress rehearsal on a mainnet fork
 python3 reset_deployment_records.py --apply --tag pre-redeploy
 
-# … deploy per the runbook …
+# … deploy per the runbook, gating each step on its post-condition …
+python3 verify_step.py 1.2                        # after 01_2, before 02_2
+python3 verify_step.py 1.3                        # … and so on through 1.7
 
 # after the deploy
 forge clean && forge build
 python3 bytecode_audit.py --self-test
-python3 bytecode_audit.py --json post-bytecode.json      # every address must be CURRENT
+python3 bytecode_audit.py --require-current --json post-bytecode.json   # every address CURRENT, or exit 1
+python3 verify_step.py all                        # every post-condition, all 24 chains
 python3 snapshot_production.py --out post
 python3 diff_snapshots.py pre post
 ```
@@ -75,6 +79,26 @@ audit indexes every artifact by its immutable-masked runtime code and looks the 
 `--self-test` first: it verifies on real artifacts that masking recovers a contract whose immutables
 differ, that a byte flipped outside the immutable ranges does *not* match, and that garbage and
 truncated code match nothing.
+
+**Chain scope never silently resolves to nothing.** Every tool takes chain ids positionally and
+otherwise calls `chainlib.resolve_chains`, which prefers the committed `snapshots/pre/index.json` over
+live record state and **exits 2 rather than returning an empty list**. The obvious-looking default,
+`deployed_chain_ids()`, reads `NAVCalculatorProxy` out of the deployment records — the exact key
+`reset_deployment_records.py --apply` blanks on all 24 chains at runbook step 1.1. With that default,
+everything downstream of the reset checked zero chains and exited 0: `preflight_config.py` reported
+`0 error(s) across 0 chain(s)`, and `--restore <tag>` with no chain arguments restored nothing while
+reporting success, which is the rollback path failing exactly when it is wanted. Each tool now prints
+the scope it resolved and its source.
+
+**Post-conditions are assertions, not prose.** `verify_step.py <1.1…1.7|all>` runs the runbook's
+stated post-condition for a step against every chain in scope: record shape, addresses that must have
+moved, CREATE2 addresses that must be identical everywhere, `NAV()`/`ADAPTER()` immutable pointers,
+role layout, `getAssetCount()`, and per-adapter meta-instance **set** equality against config. It
+reads only the deployment records and the chains — no `out/`, no `forge build` — so it is usable
+between steps, and an unreachable chain counts as a failure rather than a pass. It deliberately does
+not check code identity; that is `bytecode_audit.py`, and `--require-current` gives it the exit code
+the acceptance test in runbook 2.2 needs (bare, it prints findings and exits 0, which is correct for
+the pre-deploy run where nearly everything is expected to be `STALE`).
 
 **Enumeration is complete by construction.** `chainlib.enumerate_deployed` walks the whole deployment
 record — 231 addresses across the 24 chains. `script/verify/sweeps/make_targets.py` covers only

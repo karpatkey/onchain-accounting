@@ -809,6 +809,10 @@ library PriceFeedLib {
         uint256 assetCount,
         address account
     ) external view returns (bool) {
+        // Nothing can be counted with an empty registry — `_isCounted` discards every row — so skip the fan-out
+        // entirely, as the NAV entrypoints already do. Without this the scan still runs, and a starved adapter
+        // makes this revert where `computeNav` answers 0 on the same state.
+        if (assetCount == 0) return false;
         INAVCalculator.PositionBalance[] memory positions =
             _getPositionBalances(allAdapters, assetIndex, account, address(0));
         for (uint256 i = 0; i < positions.length; i++) {
@@ -826,6 +830,8 @@ library PriceFeedLib {
         uint256 assetCount,
         address account
     ) external view returns (address[] memory) {
+        // See `hasPositions`: an empty registry cannot yield a counted row, so do not fan out for one.
+        if (assetCount == 0) return new address[](0);
         return _extractUniqueAssets(_getPositionBalances(allAdapters, assetIndex, account, address(0)));
     }
 
@@ -1024,12 +1030,17 @@ library PriceFeedLib {
     ///      escape and only a redeploy can lift. Keyed to the caller's own budget instead, the same situations
     ///      surface as "this read needs more gas", which the caller can act on.
     ///
-    ///      **Scope, stated plainly. This guard sees only what crosses the adapter boundary, and two things sit
-    ///      outside it:**
-    ///      - A meta-adapter runs its own per-instance `try`/`catch` fan-out internally and RETURNS SUCCESSFULLY
-    ///        with a starved instance recorded as empty. This function sees a successful call and never reaches
-    ///        the check, so a NAV read can still quietly omit one INSTANCE of a meta-adapter. That hole is in
-    ///        `MetaBalanceAdapter`, and closing it needs the same distinction drawn at the per-instance `catch`.
+    ///      **Scope, stated plainly. This guard only ever sees a FAILED call, so anything an adapter absorbs
+    ///      internally is invisible to it. Three things sit outside:**
+    ///      - An adapter that fails open in its own frame and returns SUCCESSFULLY. The most common shape, and
+    ///        the one present on every chain: `ERC20DefaultBalanceAdapter` reads each asset with an unstipended
+    ///        `staticcall` and records 0 on failure, so a single token whose `balanceOf` loops takes 63/64 of
+    ///        that adapter's budget, drops its own wallet balance from the NAV, and still returns normally. No
+    ///        classifier upstream is reached, because nothing failed from where this function is standing.
+    ///      - A meta-adapter running its own per-instance `try`/`catch` fan-out, which likewise RETURNS
+    ///        SUCCESSFULLY with a starved instance recorded as empty, so a read can quietly omit one INSTANCE.
+    ///        That hole is in `MetaBalanceAdapter` and needs the same distinction drawn at the per-instance
+    ///        `catch`.
     ///      - The `returndatacopy` and ABI decode of the adapter's reply are charged to THIS frame, outside the
     ///        stipend, because a typed `try … returns (…[] memory)` copies whatever arrives. The stipend bounds
     ///        it only indirectly, through what the callee could afford to build. The outcome is a loud
@@ -1058,7 +1069,7 @@ library PriceFeedLib {
         } catch {
             uint256 consumed = available - gasleft();
             if (consumed >= stipend - stipend / EXHAUSTION_SLACK_DIVISOR) {
-                revert AdapterGasExhausted(adapter, stipend, consumed);
+                revert INAVCalculator.AdapterGasExhausted(adapter, stipend, consumed);
             }
             return new INAVCalculator.PositionBalance[](0);
         }

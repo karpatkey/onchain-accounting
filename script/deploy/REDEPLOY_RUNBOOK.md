@@ -294,6 +294,21 @@ Scope: each of the 7 configured chains, for each account in `test/integration/ac
 on that chain (14 accounts; 9 on mainnet, 4 on optimism, 4 on base, 4 on arbitrum, 3 on gnosis,
 1 on polygon). Record every figure — this capture is not repeatable.
 
+**Capture the DeBank side by hand, from the UI.** That is the documented method, not a fallback. At
+this size — 25 account/chain pairs — it is tractable in one sitting, it needs no API key and no
+credential handling on deploy day, and the comparison is a human judgement anyway: the residual has to
+be attributed to named positions (see the list below), which is not something a script decides. A
+figure read off the UI is no less trustworthy for that purpose than one pulled by an API.
+
+Record, per account and chain: the DeBank total, the NAV from `getAccountNavVerbose` on the live
+proxy, the block the NAV was read at, and the wall-clock time of the DeBank read. The two are not
+synchronised, so note the gap — an unexplained residual is only meaningful once price movement between
+the two reads is accounted for.
+
+**Do not build tooling for this.** If the account set grows enough that hand capture stops being
+tractable, the alternative is an API-based capture against DeBank's endpoint, which needs a key
+provisioned first — an edit to this step, not a redesign of it.
+
 > **Write the expected-divergence list BEFORE the first run, or this step is decoration.** DeBank does
 > not hold, or values differently, several classes this portfolio carries. If the list is written
 > afterwards it becomes a rationalisation of whatever came out, someone waves it through, and the check

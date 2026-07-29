@@ -33,7 +33,21 @@ jobs:
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: ${{ env.FOUNDRY_VERSION }}
-          cache: true
+          # cache: false ONLY on this job. The restored Foundry cache lets `forge build` reuse
+          # compilation state across runs, and that reuse changes the compilation scope enough to
+          # change PriceFeedLib's emitted bytecode — and so the deterministic CREATE2 address the
+          # LibraryPinConsistency test derives from it. Three different PriceFeedLib values appeared
+          # across branches whose PriceFeedLib source was byte-identical, one of which changed no
+          # file under src/ at all; a --force probe recovered the correct value every time.
+          #
+          # This is the job that matters: it produces the `out/` every test job downloads, so a wrong
+          # value here is wrong everywhere downstream. Disabled rather than passing `forge build
+          # --force` because it names the cause instead of overriding it — with nothing restored
+          # there is no stale state to reuse. Identical compile cost either way.
+          #
+          # The test jobs keep `cache: true`: they consume this job's `out/` artifact and do not
+          # recompile, so their cache cannot affect a pin value.
+          cache: false
 
       # DO NOT REMOVE — this is not cruft, the build does not fit in the runner without it.
       #

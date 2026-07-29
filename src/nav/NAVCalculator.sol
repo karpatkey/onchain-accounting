@@ -715,6 +715,21 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     }
 
     /// @inheritdoc INAVCalculator
+    /// @dev Deliberately NOT `return _getRegisteredAsset(asset)` with a try/catch or a pre-check: that helper
+    ///      reverts `AssetNotFound`, and re-deriving "absent" from a revert would cost a call frame to learn
+    ///      something one `SLOAD` already answers. The index read is the whole lookup.
+    function getRegisteredAsset(address asset)
+        external
+        view
+        override
+        returns (INAVCalculator.Asset memory assetInfo, bool found)
+    {
+        uint256 idx = _assetIndex[asset];
+        if (idx == 0) return (assetInfo, false);
+        return (_registeredAssets[idx - 1], true);
+    }
+
+    /// @inheritdoc INAVCalculator
     function getAssetCount() public view override returns (uint256) {
         return _registeredAssets.length;
     }

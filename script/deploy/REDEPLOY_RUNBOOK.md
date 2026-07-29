@@ -37,6 +37,44 @@ feed count is **pending #199**, see the note under 1.4.
 ("plain" excludes `ERC20Default`, which every chain gets automatically. Chain 56's only meta adapter,
 `PancakeSwapV2PoolsMeta`, is `enabled: false` in nav-config, so BSC registers `ERC20Default` only.)
 
+#### Meta instances: **110**, reconciled from config and confirmed on-chain (2026-07-29)
+
+This number is what tells you at step 1.7 whether `06_Configure`'s reconciliation succeeded, so it is
+settled here rather than at execution time. Three figures had been circulating — 104, 110 and 113.
+
+| chain | enabled meta adapters | `instances` | `instancesRaw` | total |
+| --- | --- | --- | --- | --- |
+| 1 mainnet | 15 | 52 | 14 | **66** |
+| 42161 arbitrum | 7 | 14 | 2 | **16** |
+| 8453 base | 6 | 12 | 4 | **16** |
+| 10 optimism | 2 | 4 | 0 | **4** |
+| 100 gnosis | 2 | 4 | 0 | **4** |
+| 137 polygon | 1 | 4 | 0 | **4** |
+| 56 bsc | 0 | 0 | 0 | **0** |
+| **total** | **33** | **90** | **20** | **110** |
+
+Counted from `script/config/nav-config/meta-balance-adapters/<chainId>.json`, taking only adapters
+with `enabled: true` and summing `instances` + `instancesRaw`. Two independent confirmations: the
+deduplicated count is also 110 (no coordinate repeats within an adapter, so `06` cannot revert
+`DuplicateMetaInstance`), and unique `(chain, coordinate)` pairs across *all* adapters is also 110
+(no coordinate is claimed by two adapters on one chain). **`verify_step.py 1.7` then compared each
+adapter's on-chain `getMetaInstances()` against config as a SET on all 7 configured chains and passed
+— so config and the live NAV agree exactly, not merely in total.**
+
+**Where the other two figures come from:**
+
+- **113** = every adapter in the files, ignoring `enabled`. The difference is exactly three disabled
+  adapters carrying one instance each: mainnet `BalancerV2PoolsMeta`, mainnet `BalancerV2GaugesMeta`,
+  bsc `PancakeSwapV2PoolsMeta`. `ConfigReader.isAdapterEnabled` gates registration and a missing key
+  reads as **false** (`ConfigReader.sol:367-368`), so `06` will not register any of them. 110 + 3 = 113.
+- **104** is not reproducible from the current tree by any derivation — not `instances` alone (90),
+  not the deploy-config tree (0, it holds no instance lists), not any enabled-filter variant. It
+  predates the config split in `f4873617` and should be treated as retired, not reconciled.
+
+Do not re-derive this by hand on deploy day. `preflight_config.py` prints the configured total and
+`verify_step.py 1.7` asserts it per adapter against the chain; if a future config change moves the
+number, those two move with it and this table is the thing that goes stale.
+
 ---
 
 ## 0. Blocking prerequisites

@@ -39,12 +39,15 @@ GAS_PER_META_INSTANCE = 120_000
 GAS_CONFIG_BASE = 800_000
 
 # A quoted `eth_gasPrice` below this is not a usable price, and the resulting estimate collapses
-# toward zero — gnosis answered **4,868 wei** (0.0000049 gwei) on 2026-07-29, which makes a 36.7M-gas
-# deploy "cost" 0.0000003 xDAI. The estimate is NOT inflated in response: cheap rollups legitimately
-# quote ~0.001 gwei, so any floor generous enough to cover gnosis over-states optimism/base/scroll by
-# two to four orders of magnitude and reports TOP UP on chains that are amply funded. A false alarm on
-# 11 of 24 chains is its own failure. So the quote is reported instead, and an implausible one is
-# flagged for a human to price by hand — see also hemi's documented fee floor in WORKAROUNDS.
+# toward zero — gnosis quotes single-digit thousands of wei, which makes a ~37M-gas deploy "cost"
+# a fraction of a millionth of an xDAI, so `balance >= need` holds for any balance at all. (Observed
+# on gnosis, scroll, and intermittently plasma; the quotes move, so no specific figure is pinned
+# here — run the script for the current ones.) The estimate is NOT inflated in response: cheap
+# rollups legitimately quote ~0.001 gwei, so any floor generous enough to cover gnosis over-states
+# optimism/base/scroll by two to four orders of magnitude — a 1 gwei floor was measured reporting
+# TOP UP on 11 of 24 amply-funded chains, and a false alarm on 11 chains is its own failure. So the
+# chain is reported as UNPRICEABLE rather than priced or passed. See hemi in WORKAROUNDS for the
+# same species with a known fix.
 GAS_PRICE_IMPLAUSIBLE_WEI = 1_000_000  # 0.001 gwei
 
 WORKAROUNDS = {

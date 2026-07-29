@@ -273,6 +273,12 @@ def check_immutable_pointers(chain_id: int, url: str, res: dict) -> None:
                 e["pointerCheck"] = f"STALE_ADAPTER (-> {ptr}, not in deployment record)"
             elif registered is False:
                 e["pointerCheck"] = f"ORPHAN (-> {ptr} recorded but NOT registered on the NAV)"
+            elif registered is None:
+                # The registration call failed. Do NOT fall through to OK: the orphan case is
+                # precisely what this check exists to catch, and an unanswered question is not a
+                # clean answer. `--require-current` reads this status for its exit code.
+                e["pointerCheck"] = (f"UNKNOWN (-> {ptr} recorded, but isAdapterRegistered could not "
+                                     f"be read; re-run before trusting this)")
             else:
                 e["pointerCheck"] = "OK"
         # A contract whose code is current but whose pointer is stale still has to be redeployed.
@@ -382,9 +388,14 @@ def main() -> int:
     if not args.require_current:
         return 0
 
-    # The post-deploy gate. A skipped chain counts as a failure: "no address was found STALE" is
-    # worthless if the chain was never read. Same reason the empty-scope guard above is fatal.
+    # The post-deploy gate. A chain that produced no verdict counts as a failure: "no address was
+    # found STALE" is worthless if the chain was never read — and equally worthless if it WAS read
+    # but contributed zero addresses, which is what an empty deployment record looks like. Checking
+    # only `r["error"]` misses that second case entirely: a chain whose record never got written
+    # (PERSIST_DEPLOYMENTS unset, or a deploy that silently no-op'd) answers RPC fine, yields
+    # `entries: []`, and would ride to PASS on the other chains' addresses.
     skipped = [r for r in results if r["error"]]
+    empty = [r for r in results if not r["error"] and not r["entries"]]
     not_current = tally_total = 0
     for k, v in tally.items():
         tally_total += v
@@ -393,10 +404,12 @@ def main() -> int:
     if not tally_total:
         print("\nFAIL: no addresses were audited at all.")
         return 1
-    if skipped or not_current:
+    if skipped or empty or not_current:
         print(f"\nFAIL (--require-current): {not_current} address(es) not CURRENT, "
               f"{len(skipped)} chain(s) unreachable "
-              f"({', '.join(str(r['chainId']) for r in skipped) or 'none'}).")
+              f"({', '.join(str(r['chainId']) for r in skipped) or 'none'}), "
+              f"{len(empty)} chain(s) with an EMPTY deployment record "
+              f"({', '.join(str(r['chainId']) for r in empty) or 'none'}).")
         return 1
     print(f"\nPASS (--require-current): all {tally_total} address(es) across {len(results)} chain(s) "
           f"are CURRENT.")

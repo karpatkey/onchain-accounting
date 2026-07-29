@@ -187,11 +187,20 @@ class Chk:
 
 def step_1_1(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     """The record must be cleared, the bridge must NOT be, and a rollback must exist."""
+    # `reset_deployment_records.py` writes "" rather than deleting, because
+    # `ConfigReader._readAddrOrZero` (ConfigReader.sol:216) requires `vm.keyExists` first and
+    # `writeAdapterAddress` writes into an EXISTING JSON pointer. A record whose keys were deleted —
+    # by hand, by `jq del(...)`, or by regenerating from a template — therefore reads as cleared but
+    # breaks the write-back in 01_2/02_2. Absence must fail, not pass.
     for key in rd.CLEAR_TOP:
-        if key in rec:
-            k.require(not c.is_address(rec[key]),
-                      f"{key} is still populated ({rec[key]}) — 03/04 will skip-if-deployed and 06 "
-                      f"will register the OLD contracts on the NEW proxy")
+        if key not in rec:
+            k.fail.append(f"{key} is ABSENT from the record, not blanked. ConfigReader needs the key "
+                          f"to exist (vm.keyExists) for the deploy to write the new address back; "
+                          f"restore it as \"\" rather than deleting it")
+            continue
+        k.require(not c.is_address(rec[key]),
+                  f"{key} is still populated ({rec[key]}) — 03/04 will skip-if-deployed and 06 "
+                  f"will register the OLD contracts on the NEW proxy")
     for sec in rd.CLEAR_SECTIONS:
         still = populated(rec.get(sec))
         k.require(not still,
@@ -255,10 +264,19 @@ def step_1_3(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
                      "NAVCalculatorProxy is not in the record — 02_2 did not run, or ran without "
                      "PERSIST_DEPLOYMENTS=1"):
         return
-    old = base.get(k.chain_id, {})
-    k.require(lower(proxy) != lower(old.get("proxy")),
-              f"NAVCalculatorProxy {proxy} is the SAME as the pre-deploy proxy — DeploySalts.NAV_PROXY "
-              f"was not bumped, so 02_2 skipped the deploy (runbook 0.2)")
+    # The freshness proof needs a baseline to compare against. Without one the comparison is
+    # vacuous — `lower(None)` is None and `addr != None` is always true — so a chain missing from
+    # the pre-snapshot would PASS 1.3 while still pointing at the old proxy. Say so instead.
+    old = base.get(k.chain_id)
+    if old is None:
+        k.fail.append(f"chain {k.chain_id} is not in snapshots/pre/index.json, so there is no "
+                      f"pre-deploy proxy to compare against and 'the proxy actually moved' cannot "
+                      f"be shown. Capture it (snapshot_production.py) or accept 1.3 unverified here")
+        old = {}
+    else:
+        k.require(lower(proxy) != lower(old.get("proxy")),
+                  f"NAVCalculatorProxy {proxy} is the SAME as the pre-deploy proxy — "
+                  f"DeploySalts.NAV_PROXY was not bumped, so 02_2 skipped the deploy (runbook 0.2)")
     if not url:
         return
     if not k.require(code_at(url, proxy), f"proxy {proxy} has NO CODE on chain {k.chain_id}"):
@@ -275,10 +293,12 @@ def step_1_3(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
 
     erc20 = call1(url, proxy, "erc20DefaultBalanceAdapter()", "address")
     recorded = (rec.get("balanceAdapters") or {}).get("ERC20Default")
-    k.require(c.is_address(erc20) and lower(erc20) != lower(old.get("erc20Default")),
-              f"erc20DefaultBalanceAdapter() is {erc20}, the SAME as the pre-deploy one — a fresh "
-              f"ERC20Default is minted inside initialize() (NAVCalculator.sol:77), so this means the "
-              f"proxy is the old one")
+    k.require(c.is_address(erc20), f"erc20DefaultBalanceAdapter() returned {erc20}")
+    if c.is_address(old.get("erc20Default")):
+        k.require(lower(erc20) != lower(old["erc20Default"]),
+                  f"erc20DefaultBalanceAdapter() is {erc20}, the SAME as the pre-deploy one — a fresh "
+                  f"ERC20Default is minted inside initialize() (NAVCalculator.sol:77), so this means "
+                  f"the proxy is the old one")
     k.require(lower(erc20) == lower(recorded),
               f"erc20DefaultBalanceAdapter() is {erc20} but the record says {recorded} — 02_2 did not "
               f"persist it (PERSIST_DEPLOYMENTS=1 gates that write too)")
@@ -303,6 +323,14 @@ def step_1_3(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
 def step_1_4(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     """Every configured custom feed deployed, with code, pointing at the NEW proxy."""
     feeds = populated(rec.get("customPriceFeeds"))
+    # Names, not just cardinality — a stale record key surviving a rename, or one feed substituted
+    # for another, keeps the count intact. 1.4 is the only step covering feeds, and a swapped
+    # monitor feed is not caught by 1.5 either, since RegisterAssets registers off the primary.
+    want = set(pc.enabled_keys(pc.dcfg("custom-price-feeds", k.chain_id)))
+    got = set(feeds)
+    missing, extra = sorted(want - got), sorted(got - want)
+    k.require(not missing, f"{len(missing)} configured custom feed(s) NOT in the record: {missing}")
+    k.require(not extra, f"{len(extra)} recorded custom feed(s) are not enabled in config: {extra}")
     k.require(len(feeds) == exp["customFeeds"],
               f"{len(feeds)} custom price feed(s) in the record, config expects "
               f"{exp['customFeeds']}")
@@ -319,8 +347,14 @@ def step_1_4(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
             k.fail.append(f"customPriceFeeds.{n} {feeds[n]} has NO CODE")
             continue
         if isinstance(nav, Exception) or not isinstance(nav, str) or len(nav) < 66:
-            k.warn.append(f"customPriceFeeds.{n}: NAV() unreadable ({nav}) — not every feed exposes "
-                          f"it; bytecode_audit.py is the authority here")
+            # MUST fail, not warn. `NAV` is a public immutable on every custom feed (ADR 0019), so
+            # an unreadable NAV() is either a leftover feed from the old stack — exactly what this
+            # step hunts — or an RPC failure, and `rpc_batch` returns its errors IN-BAND, filling a
+            # whole window with RpcError on one transport hiccup. Warning meant the heavier `navs`
+            # batch could fail wholesale and the chain still printed PASS with zero pointers
+            # verified. bytecode_audit treats the same evidence as CURRENT_CODE_STALE_POINTER.
+            k.fail.append(f"customPriceFeeds.{n} {feeds[n]}: NAV() unreadable ({nav}) — cannot show "
+                          f"this feed points at the new proxy, so the step is not satisfied")
             continue
         ptr = "0x" + nav[-40:]
         k.require(lower(ptr) == lower(proxy),
@@ -344,18 +378,32 @@ def step_1_5(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     got = {lower(a[0]) for a in abi_decode([f"{pc_asset()}[]"], bytes.fromhex(raw[2:]))[0]}
     missing, extra = sorted(want - got), sorted(got - want)
     k.require(not missing, f"{len(missing)} configured asset(s) NOT registered: {missing[:6]}")
-    k.expect(not extra, f"{len(extra)} registered asset(s) are not in config: {extra[:6]}")
+    # Set EQUALITY, both directions. An extra registered asset is priced and summed into NAV like
+    # any other, so it is not cosmetic; the runbook post-condition is equality, not containment.
+    k.require(not extra, f"{len(extra)} registered asset(s) are not in config: {extra[:6]}")
 
 
 def step_1_6(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     """Every adapter deployed, plus an assistant correctly paired to each assisted adapter."""
     adapters = populated(rec.get("balanceAdapters"))
     # +1 for ERC20Default, which every chain gets from initialize() rather than from config.
-    want = exp["plainAdapters"] + exp["metaAdapters"] + 1
-    k.require(len(adapters) == want,
-              f"{len(adapters)} balance adapter(s) in the record, expected {want} "
+    want_n = exp["plainAdapters"] + exp["metaAdapters"] + 1
+    k.require(len(adapters) == want_n,
+              f"{len(adapters)} balance adapter(s) in the record, expected {want_n} "
               f"({exp['plainAdapters']} plain + {exp['metaAdapters']} meta + ERC20Default)")
     k.require("ERC20Default" in adapters, "balanceAdapters.ERC20Default is missing from the record")
+
+    # NAMES, not just cardinality. preflight_config errors on "enabled in nav-config but absent from
+    # deploy-config" and only warns on the reverse, so a chain can have one adapter missing and a
+    # different one extra — same count, wrong set, and 04 deployed the wrong one. 1.7 catches it
+    # only afterwards and only because 06 declines to register the unconfigured adapter.
+    want_names = {"ERC20Default"}
+    want_names |= set(pc.enabled_keys(pc.cfg("balance-adapters", k.chain_id)))
+    want_names |= set(pc.enabled_keys(pc.cfg("meta-balance-adapters", k.chain_id)))
+    missing = sorted(want_names - set(adapters))
+    extra = sorted(set(adapters) - want_names)
+    k.require(not missing, f"{len(missing)} configured adapter(s) NOT deployed: {missing}")
+    k.require(not extra, f"{len(extra)} recorded adapter(s) are not enabled in nav-config: {extra}")
 
     if url and adapters:
         names = sorted(adapters)
@@ -402,9 +450,12 @@ def step_1_7(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     recorded = {lower(v) for v in adapters.values()}
     unreg = sorted({key for key, v in adapters.items() if lower(v) not in onchain})
     k.require(not unreg, f"{len(unreg)} recorded adapter(s) NOT registered on the NAV: {unreg[:8]}")
-    k.expect(not (onchain - recorded),
-             f"{len(onchain - recorded)} adapter(s) registered on the NAV are not in the record: "
-             f"{sorted(onchain - recorded)[:6]}")
+    # An adapter registered on the NAV but absent from the record contributes positions to every NAV
+    # read while being invisible to the deployment record — the only place addresses live — so it
+    # escapes the bytecode audit and every later migration. The post-condition is equality.
+    k.require(not (onchain - recorded),
+              f"{len(onchain - recorded)} adapter(s) registered on the NAV are not in the record: "
+              f"{sorted(onchain - recorded)[:6]}")
 
     # Meta instances, per adapter, as sets. A count-only check passes when one instance is swapped
     # for another — and #172's operator note is precisely about a wrong instance (Aave V3 exposes two
@@ -414,8 +465,20 @@ def step_1_7(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     for name, entry in meta_cfg.items():
         if entry.get("enabled") is not True:
             continue
-        want = {widen(a) for a in (entry.get("instances") or []) if c.is_address(a)}
-        want |= {lower(b) for b in (entry.get("instancesRaw") or []) if pc.is_bytes32(b)}
+        raw_insts = entry.get("instances") or []
+        raw_bytes = entry.get("instancesRaw") or []
+        want = {widen(a) for a in raw_insts if c.is_address(a)}
+        want |= {lower(b) for b in raw_bytes if pc.is_bytes32(b)}
+        # Malformed entries would silently drop out of `want` above and make the comparison narrower
+        # than the config it claims to check.
+        bad = ([a for a in raw_insts if not c.is_address(a)]
+               + [b for b in raw_bytes if not pc.is_bytes32(b)])
+        k.require(not bad, f"{name} has {len(bad)} malformed instance coordinate(s): {bad[:3]}")
+        # An enabled meta adapter with no instances would make the set comparison vacuously true —
+        # {} == {} — while the adapter reports nothing at all on the NAV.
+        k.require(want, f"{name} is enabled in nav-config with an EMPTY instance set — it would "
+                        f"register and report nothing, and a set comparison against it proves "
+                        f"nothing")
         total += len(want)
         addr = adapters.get(name)
         if not c.is_address(addr):
@@ -427,9 +490,12 @@ def step_1_7(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
         k.require(not missing and not extra,
                   f"{name} meta instances differ from config: {len(missing)} missing "
                   f"{missing[:3]}, {len(extra)} unexpected {extra[:3]}")
+    # `total` counts DEDUPED coordinates while preflight_config counts raw list lengths, so this
+    # also catches a coordinate repeated within one adapter's config — which would otherwise collapse
+    # invisibly into the set above and, on the deploy side, revert 06 with DuplicateMetaInstance.
     k.require(total == exp["metaInstances"],
-              f"internal: summed configured instances {total} != preflight_config count "
-              f"{exp['metaInstances']}")
+              f"summed configured instances {total} != the {exp['metaInstances']} preflight_config "
+              f"counts — a duplicate coordinate in config collapses in the set comparison above")
 
 
 CHECKS = {"1.1": step_1_1, "1.2": step_1_2, "1.3": step_1_3, "1.4": step_1_4,

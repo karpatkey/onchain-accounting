@@ -125,19 +125,41 @@ def do_clear(chains: list[int], tag: str, apply: bool) -> int:
 
 
 def do_restore(tag: str, chains: list[int]) -> int:
+    """Put archived records back. A PARTIAL restore is a failure, not a success.
+
+    `deployments/<id>.json` is the only place deployed addresses live, so a chain that is asked for
+    and not restored has lost its addresses — and silently skipping it (the previous behaviour: a
+    bare `continue` and `return 0`) reports that loss as a clean rollback. Anything in the archive
+    but outside the requested scope is also surfaced, since it is usually a scope mistake rather
+    than an intentional omission.
+    """
     archive = ARCHIVE_DIR / tag
     if not archive.is_dir():
         print(f"ERROR: no archive at {archive}")
         return 2
-    n = 0
+    restored, missing = [], []
     for cid in chains:
         src = archive / f"{cid}.json"
         if not src.exists():
+            missing.append(cid)
+            print(f"  {cid:8} MISSING — no {src.name} in this archive")
             continue
         shutil.copy2(src, c.DEPLOY_DIR / f"{cid}.json")
         print(f"  restored {cid}")
-        n += 1
-    print(f"restored {n} record(s) from {archive}")
+        restored.append(cid)
+
+    held = sorted(int(p.stem) for p in archive.glob("*.json") if p.stem.isdigit())
+    unrequested = [cid for cid in held if cid not in set(chains)]
+    if unrequested:
+        print(f"\nNOTE: {archive} also holds records for {unrequested}, which were not in scope. "
+              f"Pass them explicitly if they should be restored too.")
+
+    print(f"\nrestored {len(restored)} record(s) from {archive}")
+    if missing:
+        print(f"FAILED to restore {len(missing)} requested chain(s): {missing}. "
+              f"Their deployments/<id>.json still holds whatever the deploy left there, and this "
+              f"archive cannot recover it.")
+        return 1
     return 0
 
 

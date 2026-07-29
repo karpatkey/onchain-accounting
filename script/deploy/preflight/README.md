@@ -16,6 +16,7 @@ The ordered procedure these support is [`../REDEPLOY_RUNBOOK.md`](../REDEPLOY_RU
 | `reset_deployment_records.py` | archives + clears the deployment records so `03`/`04` actually redeploy |
 | `deployer_balances.py` | deployer-EOA balance vs estimated gas per chain; emits a top-up list |
 | `verify_step.py` | asserts the runbook's post-condition for a given deploy step, on-chain, per chain |
+| `redeploy_scope.json` | the declared 24-chain scope; hand-maintained, never written by tooling |
 | `rehearse_fork.sh` | runs the real deploy sequence end-to-end against a local anvil fork |
 
 ## Typical order
@@ -80,9 +81,16 @@ audit indexes every artifact by its immutable-masked runtime code and looks the 
 differ, that a byte flipped outside the immutable ranges does *not* match, and that garbage and
 truncated code match nothing.
 
-**Chain scope never silently resolves to nothing.** Every tool takes chain ids positionally and
-otherwise calls `chainlib.resolve_chains`, which prefers the committed `snapshots/pre/index.json` over
-live record state and **exits 2 rather than returning an empty list**. The obvious-looking default,
+**Chain scope is DECLARED, never inferred.** `redeploy_scope.json` holds the 24 chain ids and no tool
+writes it. Every derived alternative is rewritten by something in the deploy, so each one can shrink
+the scope silently: `deployments/<id>.json .NAVCalculatorProxy` is blanked by step 1.1, and
+`snapshots/pre/index.json` is rebuilt from whichever chains the last `snapshot_production.py` run
+covered — so a chain that failed capture, or the documented per-chain re-snapshot, would have narrowed
+every downstream tool at once. `chainlib.resolve_chains` reads the declared list, reports any
+disagreement with derived state as a `SCOPE WARNING` instead of absorbing it, labels an explicit
+chain list as a `SUBSET` when it omits declared chains, and **exits 2 rather than returning an empty
+list**. `snapshot_production.py` merges into its index rather than replacing it, so a capture can only
+ever add knowledge. The obvious-looking default,
 `deployed_chain_ids()`, reads `NAVCalculatorProxy` out of the deployment records — the exact key
 `reset_deployment_records.py --apply` blanks on all 24 chains at runbook step 1.1. With that default,
 everything downstream of the reset checked zero chains and exited 0: `preflight_config.py` reported

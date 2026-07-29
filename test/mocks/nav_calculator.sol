@@ -83,6 +83,22 @@ contract Mock_NAVCalculator is INAVCalculator {
     }
 
     /// @inheritdoc INAVCalculator
+    /// @dev Must be a WORKING implementation, not a `revert("Not implemented in mock")` stub like the unused
+    ///      members below: `MetaBalanceAdapter._getAssetInfo` routes through this, so every meta-adapter unit test
+    ///      resolves its assets here. Linear-scans because the mock has no index map — the real contract is O(1)
+    ///      via `_assetIndex`, and the difference does not matter at mock scale.
+    function getRegisteredAsset(address asset) external view override returns (Asset memory assetInfo, bool found) {
+        if (!_isRegistered[asset]) return (assetInfo, false);
+        for (uint256 i = 0; i < _assets.length; i++) {
+            if (_assets[i].asset == asset) {
+                return
+                    (Asset({asset: _assets[i].asset, symbol: _assets[i].symbol, decimals: _assets[i].decimals}), true);
+            }
+        }
+        return (assetInfo, false);
+    }
+
+    /// @inheritdoc INAVCalculator
     function assetCount() external view override returns (uint256) {
         return _assets.length;
     }

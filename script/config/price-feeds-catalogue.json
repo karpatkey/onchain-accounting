@@ -192,10 +192,6 @@
           "note": "No direct Chainlink LDO/USD feed — priced via Custom adapter (LDO_CustomPriceFeed = LDO/ETH x ETH/USD). API3 LDO/USD proxy is NOT deployed (confirmed no on-chain code 2026-06-23), so it cannot be used for redundancy yet.",
           "API3": { "address": "0x6305e1C926AcfCfd5f28136C988b17dC8ed26d3e", "dapiName": "LDO/USD", "decimals": 18, "heartbeat": 86400, "deployed": false }
         },
-        "sDAI": {
-          "address": "0x83F20F44975D03b1b09e64809B757c47f942BEeA",
-          "note": "Maker DSR vault token. No direct Chainlink sDAI/USD feed — use Custom adapter (sDAI_CustomPriceFeed). Not yet registered in nav-config/assets-and-price-feeds/<chainId>.json."
-        },
         "MORPHO": {
           "address": "0x58D97B57BB95320F9a05dC918Aef65434969c2B2",
           "note": "No Chainlink MORPHO/USD feed on mainnet.",

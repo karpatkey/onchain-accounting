@@ -28,7 +28,7 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 ///      oracle) makes the base term identical to the one the NAV prices the base asset's own legs with — so it
 ///      cancels cleanly when NAV is quoted in the base (see {NavBaseUsdLib}, incl. the circularity invariant). The
 ///      5 `ICustomPriceFeed` thunks, the immutables, and the constructor validation live here once instead of being
-///      copy-pasted into each vault feed. Feeds whose rate is a non-ERC4626 source (e.g. sDAI's DSR `chi`) stay
+///      copy-pasted into each vault feed. Feeds whose rate is a non-ERC4626 source (e.g. a DSR-`chi`-style accumulator) stay
 ///      bespoke; feeds with an 18-decimal rate against a NAV base use {BaseCustomPriceFeed} instead.
 abstract contract ERC4626VaultRatePriceFeed is ICustomPriceFeed {
     using Math for uint256;

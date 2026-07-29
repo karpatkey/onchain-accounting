@@ -39,7 +39,7 @@ src/
 │   ├── IPrices.sol
 │   ├── ICustomPriceFeed.sol
 │   ├── PriceFeedLib.sol         # External library (EIP-170 size management)
-│   └── protocols/               # Custom price adapters (sDAI, wstETH, rsETH, osToken, …)
+│   └── protocols/               # Custom price adapters (sUSDS, wstETH, rsETH, osToken, …)
 ├── nav/                         # NAV calculator
 │   ├── NAVCalculator.sol        # UUPS upgradeable; inherits Prices + Balances; verbose (labeled) position APIs
 │   ├── INAVCalculator.sol
@@ -89,7 +89,7 @@ Balance adapters return **PositionBalance** (`balanceAsset`, `balanceAdapter`, `
   - `Redstone` — Redstone Classic Push; same read path as Chainlink.
   - `API3` — `Api3ReaderProxyV1` (implements `AggregatorV2V3Interface`); deterministic cross-chain address; proxy returns 18 dec, normalised to 8 dec internally.
   - `Custom` — Implements `ICustomPriceFeed` (`getLatestPrice() → (price, stale)` + `latestRoundData()` for freshness ranking). Used for derived prices where the staleness condition spans multiple constituent Chainlink feeds (the `getLatestPrice` stale bool is the primary gate; `latestRoundData().updatedAt` is used for heartbeat + freshness ranking). `updatedAt == 0` is treated as `block.timestamp - 1` so rate-only feeds participate but yield to feeds with a real push timestamp.
-- **Existing custom feeds** in `src/prices/protocols/`: yield-bearing stable wrappers (`sDAI`, `sUSDS`, `sUSDe`, `sXDAI`, `syrupUSDC`), liquid (re)staking tokens (`wstETH`, `rETH`, `cbETH`, `rsETH`, `eETH`, `weETH`, `ezETH`, `ETHx`, `ankrETH`, `osToken`), and derived feeds (`LDO`, `ETH+`, `CrossRate`, `NXM`). L2 variants (`*_L2_*`) read Chainlink-secured rate feeds on L2 rather than L1 rate providers.
+- **Existing custom feeds** in `src/prices/protocols/`: yield-bearing stable wrappers (`sUSDS`, `sUSDe`, `sXDAI`, `syrupUSDC`), liquid (re)staking tokens (`wstETH`, `rETH`, `cbETH`, `rsETH`, `eETH`, `weETH`, `ezETH`, `ETHx`, `ankrETH`, `osToken`), and derived feeds (`LDO`, `ETH+`, `CrossRate`, `NXM`). L2 variants (`*_L2_*`) read Chainlink-secured rate feeds on L2 rather than L1 rate providers.
 - **`PriceFeedLib`**: external Solidity library (`DELEGATECALL`) holding the `selectFeed` loop, feed-management functions, **and NAVCalculator's read/compute engine** (NAV, positions, health, value) — extracted to stay under EIP-170's 24 576-byte bytecode limit (see [ADR 0011](docs/decisions/0011-nav-size-and-shared-abstractions.md)). Deployed at a deterministic CREATE2 address (linked in `foundry.toml`).
 - Full architecture, staleness design, and how to add a custom feed: [`src/prices/PRICE_ADAPTERS.md`](src/prices/PRICE_ADAPTERS.md).
 

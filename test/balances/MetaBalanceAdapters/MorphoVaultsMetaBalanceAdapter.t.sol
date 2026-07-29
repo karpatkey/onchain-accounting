@@ -33,6 +33,17 @@ contract MockMetaVault {
         return (shares * _rate) / 1e18;
     }
 
+    /// @notice Fee-less redemption preview, equal to {convertToAssets}.
+    /// @dev `previewRedeem` is MANDATORY in ERC4626 and this mock lacked it, so it modelled a vault that cannot
+    ///      exist — every real Morpho (MetaMorpho) vault implements it. The omission mattered because the
+    ///      adapter values shares through `ERC4626RedeemLib.redeemValue`, which prefers the fee-aware accessor;
+    ///      against a mock without it these tests were silently exercising the fallback rather than the real
+    ///      path. Fee-less here, so both accessors agree and the aggregation/isolation behaviour under test is
+    ///      unchanged; the fee-charging case is covered in `test/balances/ERC4626RedeemLib.t.sol`.
+    function previewRedeem(uint256 shares) external view returns (uint256) {
+        return (shares * _rate) / 1e18;
+    }
+
     function setBalance(address account, uint256 shares) external {
         balanceOf[account] = shares;
     }

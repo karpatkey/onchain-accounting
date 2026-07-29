@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
+import {GasStipendLib} from "src/utils/GasStipendLib.sol";
+
 /// @title StaticCallLib
 /// @author KPK
 /// @notice Best-effort view-call helpers for reading from possibly-noncompliant external contracts: a staticcall
@@ -15,11 +17,19 @@ pragma solidity ^0.8;
 ///      into each caller (no separate deployment, no DELEGATECALL), so this is a maintainability change, not a
 ///      size one.
 ///
-///      **Three properties make the "never reverts" claim actually hold**, and all three are load-bearing:
+///      **Three properties make the "never reverts" claim actually hold** for {safeUint}, {safeAddr},
+///      {safeAddrStrict} and {probeWord}, and all three are load-bearing. **{probeWordMetered} is deliberately
+///      NOT one of these helpers**: it keeps properties 2 and 3 but drops property 1, forwarding 63/64 of the
+///      frame instead of a fixed ceiling. It still does not revert *itself* — nothing in its body can — but it
+///      is the one helper whose contract asks the CALLER to revert, on `starved`, so a read routed through it
+///      is no longer one that cannot fail. Read its own docblock before routing anything through it:
 ///
 ///      1. **Bounded gas** ({PROBE_GAS}). Without a stipend a callee that loops forever consumes 63/64 of
 ///         whatever the caller had, so one malformed instance starves every read that follows it — a fail-open
-///         that silently drops later positions rather than a single value.
+///         that silently drops later positions rather than a single value. {probeWordMetered} forwards exactly
+///         that 63/64, on purpose: it is for a read whose absence changes a NAV number, where a fixed ceiling is
+///         unrecoverable and the starvation must be made visible rather than absorbed. Its caller is expected to
+///         REVERT on `starved`. Do not reach for it merely because it is the one that reports starvation.
 ///      2. **A fixed 32-byte output area.** Assigning `(bool ok, bytes memory ret)` from a raw staticcall makes
 ///         solc `returndatacopy` the *entire* reply into freshly allocated memory — revert payloads included —
 ///         and the quadratic cost of that copy is paid by the *caller*, on top of whatever the callee already
@@ -143,5 +153,73 @@ library StaticCallLib {
         // payload produces ≥ 32 bytes of returndata, which the EVM copies into the output window exactly as a
         // successful reply would. Without `ok`, that revert payload's first word would be handed back as a value.
         if (hasWord) word = raw;
+    }
+
+    /// @notice As {probeWord}, but it derives its own stipend from the calling frame and reports whether a
+    ///         failed call ran out of that stipend rather than answering.
+    /// @dev Exists because {probeWord}'s two properties — a fixed {PROBE_GAS} ceiling and a `false` that folds
+    ///      "reverted" together with "ran out of gas" — are wrong for a read whose absence changes a NAV number
+    ///      rather than a label.
+    ///
+    ///      **Why the stipend is a share of the frame.** {PROBE_GAS} is local and fixed, so a starved read cannot
+    ///      be rescued by handing the whole call more gas — the ceiling binds first, identically, at every budget.
+    ///      That is tolerable for a cosmetic read and not for an accounting one: it makes the failure permanent
+    ///      rather than a matter of asking for more.
+    ///
+    ///      **Why `starved` is separate from `ok`.** A revert and an exhausted stipend are indistinguishable in
+    ///      the success flag alone, and they deserve opposite treatment: a contract that genuinely does not
+    ///      implement the selector has ANSWERED, and failing open is right; one that ran out of gas has not, and
+    ///      recording its absence as a zero is how a missing debt leg becomes a higher NAV.
+    ///
+    ///      **The threshold is measured against `available`, NOT against the stipend, and that is the whole of
+    ///      the correctness argument.** These reads sit under a caller — `MetaBalanceAdapter`'s per-instance
+    ///      classifier — that asks the same question one frame up, on ITS budget `S`, and raises only at
+    ///      `7/8 * S`. Classifying here against the stipend would test `7/8 * (63/64) * S = 0.861 * S`, strictly
+    ///      LOWER. Between the two lies a real band: a callee burning 86-87% of the frame trips this guard, the
+    ///      caller's `catch` then reads the resulting revert as an ordinary one, and the whole instance is
+    ///      dropped in silence — the exact outcome the guard exists to prevent, plus a fresh silent loss of any
+    ///      leg that would otherwise have survived. Measured at ~1.3% of the stipend wide before this was
+    ///      corrected. Testing against `available` puts this threshold at or above the caller's, so a raise here
+    ///      always becomes the caller's loud classification instead of vanishing into it.
+    ///
+    ///      **Generalise it before adding another one of these.** Any guard nested beneath a frame-share
+    ///      classifier inherits that band unless it derives its threshold from the same frame. Two guards that
+    ///      both use {GasStipendLib} are still not composed correctly if one of them measures a 63/64 slice of
+    ///      what the other measures.
+    ///
+    ///      **The operand here is deliberately not what its name says.** `GasStipendLib.exhausted`'s first
+    ///      parameter is called `stipend` and its NatSpec describes the value passed as `{gas: ...}` — which is
+    ///      what `MetaBalanceAdapter` passes, correctly, because it IS the outermost guard. This call passes the
+    ///      FRAME instead, and that inversion is the whole of the fix above: an inner guard has to test against
+    ///      the same quantity its caller will, not against the smaller slice it forwarded. Anyone reading
+    ///      `exhausted`'s signature and matching the parameter name will reintroduce the band.
+    ///
+    ///      No stipend parameter, deliberately. A caller-supplied one invites exactly the value that breaks the
+    ///      nesting above — a fixed ceiling, or a slice of a frame this function cannot see — and `0` would make
+    ///      `exhausted` true for every failed call.
+    /// @return ok The raw staticcall success flag.
+    /// @return hasWord True when the call succeeded AND returned at least one full word.
+    /// @return word The first 32 bytes of returndata, or 0 when `!hasWord`.
+    /// @return starved True ONLY when the call failed AND consumed essentially the whole calling frame.
+    /// @return budget The frame this was measured against — reportable in the caller's error.
+    /// @return consumed Gas the call cost this frame — likewise.
+    function probeWordMetered(address target, bytes memory data)
+        internal
+        view
+        returns (bool ok, bool hasWord, uint256 word, bool starved, uint256 budget, uint256 consumed)
+    {
+        budget = gasleft();
+        uint256 stipend = GasStipendLib.stipendFrom(budget);
+        uint256 size;
+        uint256 raw;
+        assembly ("memory-safe") {
+            ok := staticcall(stipend, target, add(data, 0x20), mload(data), 0x00, 0x20)
+            size := returndatasize()
+            raw := mload(0x00)
+        }
+        consumed = budget - gasleft();
+        hasWord = ok && size >= 32;
+        if (hasWord) word = raw;
+        if (!ok) starved = GasStipendLib.exhausted(budget, consumed);
     }
 }

@@ -93,7 +93,7 @@ If a Chainlink USD feed exists and is canonical, use Chainlink directly. Don't r
 
 | Pattern | Existing reference | When to use |
 |---|---|---|
-| `(rate × USD)` from a single Chainlink feed | `src/prices/protocols/sDAI_CustomPriceFeed.sol` (DAI/USD × DSR `chi`) | Yield-bearing wrappers with an on-chain `chi`/`rate` field |
+| `(rate × USD)` from a single Chainlink feed | `src/prices/protocols/ankrETH_CustomPriceFeed.sol` (ETH/USD ÷ `ratio()`) | Wrappers with an on-chain `rate`/`ratio` field and no ERC-4626 surface |
 | LST/LRT receipt token with `getExchangeRate`-style method (extends `BaseCustomPriceFeed`, implement only `_rate()`) | `src/prices/protocols/rETH_CustomPriceFeed.sol`, `cbETH_CustomPriceFeed.sol` | Liquid staking tokens whose redeem rate is exposed on-chain as an 18-decimal rate |
 | L2 mirror of an L1 rate | `src/prices/protocols/wstETH_L2_CustomPriceFeed.sol`, `cbETH_L2_CustomPriceFeed.sol` | Same asset, but the canonical rate lives on L1; reads a Chainlink-secured rate feed on L2 instead |
 | Two Chainlink feeds composed | `src/prices/protocols/CrossRateCustomPriceFeed.sol` | A/B × B/C when there's no direct A/USD feed |
@@ -109,7 +109,7 @@ For the common "18-decimal on-chain rate × NAV-sourced base/USD" case (rETH, cb
 
 > **ERC-4626 manipulation-resistance check (before wiring a vault to `ERC4626VaultRatePriceFeed`):** the base reads live `convertToAssets()` on every read with no TWAP or bounds check, so it inherits the vault's share-price manipulation surface. Confirm the candidate vault's `totalAssets()` is **not naively `balanceOf(vault)`-based** — a raw balance-of vault can be donation/inflation-spiked within a single block, letting an attacker over-value shares (and therefore over-report NAV). The vaults wired today (sUSDe, sGHO, sUSDS, sXDAI, syrupUSDC, RWIV) use time-accrued exchange rates, not balance-of accounting; a new vault that does not must not use this base without a manipulation-resistant wrapper.
 
-Skeleton (bespoke yield-bearing pattern, à la `sDAI_CustomPriceFeed.sol`; adjust for LST/LRT or cross-rate):
+Skeleton (bespoke on-chain-rate pattern, à la `ankrETH_CustomPriceFeed.sol`; adjust for LST/LRT or cross-rate):
 
 ```solidity
 // SPDX-License-Identifier: BUSL-1.1

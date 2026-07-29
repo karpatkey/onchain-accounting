@@ -78,7 +78,7 @@ import {sUSDe_CustomPriceFeed} from "src/prices/protocols/sUSDe_CustomPriceFeed.
 import {syrupUSDC_CustomPriceFeed} from "src/prices/protocols/syrupUSDC_CustomPriceFeed.sol";
 import {sGHO_CustomPriceFeed} from "src/prices/protocols/sGHO_CustomPriceFeed.sol";
 import {wstETH_CustomPriceFeed} from "src/prices/protocols/wstETH_CustomPriceFeed.sol";
-import {stETH_CustomPriceFeed} from "src/prices/protocols/stETH_CustomPriceFeed.sol";
+import {CrossRateCustomPriceFeed} from "src/prices/protocols/CrossRateCustomPriceFeed.sol";
 import {OETH_CustomPriceFeed} from "src/prices/protocols/OETH_CustomPriceFeed.sol";
 import {rETH_CustomPriceFeed} from "src/prices/protocols/rETH_CustomPriceFeed.sol";
 import {ankrETH_CustomPriceFeed} from "src/prices/protocols/ankrETH_CustomPriceFeed.sol";
@@ -305,15 +305,18 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return address(new wstETH_CustomPriceFeed(wstEth, address(nav), baseAsset));
     }
 
-    /// @notice stETH divergence MONITOR: the former market primary, demoted. Still the dedicated
-    ///         stETH_CustomPriceFeed (a CrossRate subclass); only the config key moved to "stETHCrossRate".
+    /// @notice stETH divergence MONITOR: the former market primary, demoted. Deploys the GENERIC
+    ///         CrossRateCustomPriceFeed — the same contract `03_DeployPriceFeeds._deployCrossRateMonitor` ships —
+    ///         rather than the named stETH_CustomPriceFeed subclass, so this fork test exercises the bytecode that
+    ///         will actually be deployed. The two are behaviourally identical (the subclass is a constructor-only
+    ///         pass-through with no overrides), but they are distinct artifacts to `preflight/bytecode_audit.py`.
     function _deployStEthCrossRate() internal returns (address) {
         string memory k = "stETHCrossRate";
         address underlying = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, k, "underlyingAsset"));
         address yToX = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, k, "yToXFeed"));
         uint256 yToXHb = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, k, "yToXHeartbeat"));
         address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, k, "baseAsset"));
-        return address(new stETH_CustomPriceFeed(underlying, yToX, yToXHb, address(nav), baseAsset));
+        return address(new CrossRateCustomPriceFeed(underlying, yToX, yToXHb, address(nav), baseAsset));
     }
 
     function _deployREth() internal returns (address) {

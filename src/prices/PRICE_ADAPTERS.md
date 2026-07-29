@@ -186,7 +186,7 @@ Encoding the check inside each adapter's `getLatestPrice()` is the only approach
 
 Single-rate adapters (e.g. `rETH_Price`, `cbETH_Price`) benefit from the same pattern: the on-chain exchange rate (rETH exchange rate, cbETH exchange rate) has no heartbeat of its own — it updates from protocol interactions — so the only staleness source is the NAV-sourced base/USD leg, whose stale flag the adapter surfaces directly. Checking that in `getLatestPrice()` is natural.
 
-`wstETH_Price` is a **two-feed** adapter: it combines `stEthPerToken` (no heartbeat) with the stETH/ETH Chainlink **rate** feed and the **NAV-sourced ETH/USD** base ([ADR 0019](../../docs/decisions/0019-nav-sourced-base-price.md)), so it does the OR check above internally (same as `CrossRateCustomPriceFeed`, used for stETH). Its `latestRoundData()` reports the **most-stale** of the two legs (lowest `updatedAt`), which for stETH/ETH is a ~daily cadence.
+`wstETH_Price` combines `stEthPerToken` (an on-chain rate, no heartbeat) with the **NAV-sourced ETH/USD** base ([ADR 0019](../../docs/decisions/0019-nav-sourced-base-price.md)), holding stETH/ETH at 1.0. Its only heartbeat-bearing leg is therefore the NAV's ETH/USD.
 
 **Register a multi-feed Custom adapter with the slowest underlying leg's heartbeat.** Per the multi-feed model above, `Prices.sol` applies the single registered `chainlinkHeartbeat` to the adapter's `latestRoundData().updatedAt` as a *secondary* gate (after the primary `getLatestPrice().stale` gate). Since `latestRoundData()` surfaces the **slowest** leg's `updatedAt`, the registered heartbeat must be at least that leg's heartbeat — otherwise a tight scalar (e.g. 3600) falsely marks the asset stale whenever the slow leg hasn't ticked within the window (the exact failure a single threshold cannot avoid; see the false-positive/false-negative note above). For wstETH/stETH the slowest leg is stETH/ETH (86400), so they register `heartbeat = 86400`: the secondary gate then exactly mirrors the adapter's own stETH/ETH check (never false-trips), while the primary `getLatestPrice().stale` gate still independently covers the faster ETH/USD (3600) leg. Registering `type(uint256).max` is an equivalent alternative that disables the secondary gate entirely and delegates staleness fully to the adapter; the finite slowest-leg value is preferred here because it keeps a real NAV-level backstop and is consistent with the other Custom entries. (Note: on the legacy live NAV, whose `ICustomPriceFeed` has no `latestRoundData()`, the heartbeat param is ignored for Custom feeds and staleness is taken solely from `getLatestPrice()`.)
 
@@ -262,9 +262,10 @@ All in `src/prices/protocols/`. Pattern is one file per asset; L2-specific varia
 | Feed | Asset | Underlying inputs |
 |---|---|---|
 | `cbETH_Price` **(base)**, `cbETH_L2_Price` | cbETH | cbETH-per-ETH rate × ETH/USD. **`cbETH_Price` is deployed nowhere** — mainnet cbETH is not held. Retained intentionally: its on-chain `exchangeRate()` is *fundamental*, independent of the Chainlink cbETH/ETH *market* feed `cbETH_L2_Price` composes, so it is the natural monitor feed if mainnet cbETH is ever held. See *Built but intentionally not deployed* below. |
-| `stETH_Price` | stETH (Mainnet) | stETH/ETH (Chainlink) × ETH/USD — a thin `CrossRateCustomPriceFeed` subclass; replaces the raw STETH/USD Chainlink feed so ETH/USD cancels when NAV is quoted in ETH |
+| stETH primary | stETH (Mainnet) | **1.0 × ETH/USD** — a unit-rate `eETH_CustomPriceFeed` (`stETHFundamental`). stETH/ETH is held at 1.0, matching wstETH and eETH. |
+| stETH monitor | stETH (Mainnet) | stETH/ETH (Chainlink **market**) × ETH/USD via the generic `CrossRateCustomPriceFeed` (`stETHCrossRate`), alongside the Chainlink stETH/USD monitor — divergence-only, never prices the NAV. |
 | `lsETH_Price` | lsETH (Mainnet) | lsETH/ETH (Chainlink) × ETH/USD — thin `CrossRateCustomPriceFeed` subclass |
-| `wstETH_Price` | wstETH (Mainnet) | `stEthPerToken` × stETH/ETH × ETH/USD — ETH/USD cancels when NAV is quoted in ETH (uses the real stETH/ETH rate, no 1:1 assumption) |
+| `wstETH_Price` | wstETH (Mainnet) | `stEthPerToken` × ETH/USD — pure fundamental: stETH/ETH is held at **1.0** (Lido's redemption invariant), NOT read from a market feed. ETH/USD cancels when NAV is quoted in ETH. Market divergence is surfaced by its monitors, not by moving this price. |
 | `wstETH_L2_Price` | wstETH (Arbitrum/Base/Gnosis) | wstETH/ETH rate × ETH/USD |
 | `rETH_Price` **(base)** | rETH | `getExchangeRate` × ETH/USD |
 | `rsETH_Price` **(base)**, `rsETH_L2_Price` | rsETH | rsETH-per-ETH rate × ETH/USD |
@@ -288,13 +289,15 @@ All in `src/prices/protocols/`. Pattern is one file per asset; L2-specific varia
 
 ### Built but intentionally not deployed
 
-Two feeds compile and are tested but are deployed on **no chain**, and their `03_DeployPriceFeeds` branches are
-reachable-but-never-taken (`isAdapterEnabled` returns false). This is a recorded choice, not an oversight — do not
-delete them as dead code, and do not wire them up without the corresponding held position.
+Three feeds compile and are tested but are deployed on **no chain**. Two of them (`cbETH_Price`, `ETHPlus_Price`)
+keep a reachable-but-never-taken `03_DeployPriceFeeds` branch (`isAdapterEnabled` returns false); the third
+(`stETH_Price`) has **no deploy site at all**. This is a recorded choice, not an oversight — do not delete them as
+dead code, and do not wire them up without the corresponding held position.
 
 | Feed | Why it is not deployed | Why it is kept |
 |---|---|---|
 | `cbETH_Price` | Mainnet cbETH is not a held asset, so there is no `cbETH` key in `custom-price-feeds/1.json` and no `nav-config` registration. | It reads `cbETH.exchangeRate()` — a **fundamental** rate — while `cbETH_L2_Price` composes a Chainlink cbETH/ETH **market** feed. Independent sources are exactly what a divergence check needs, so this is the natural **monitor** feed if mainnet cbETH is ever held. `Prices` keeps `_monitorFeeds` strictly separate: "NEVER used to price the NAV; read only to detect divergence", with "exactly one primary feed per asset, with redundancy moved to `_monitorFeeds`". Fundamental primary + market monitor is the shape wstETH and weETH already use. |
+| `stETH_Price` | stETH's primary is now the fundamental unit-rate feed, and its market cross-rate monitor is deployed from the **generic** `CrossRateCustomPriceFeed` (the renamed `stETHCrossRate` config block matches that helper's shape), so this named subclass has no remaining deploy site. | It is a zero-override, constructor-only `CrossRateCustomPriceFeed` subclass kept for its name at the call site and as the harness's stand-in. If it is ever deleted, check `IntegrationFromConfigBase._deployStEthCrossRate` first. |
 | `ETHPlus_Price` | Its config entry is `"enabled": false`. ETH+ is priced by the Chainlink "Calculated ETH+/USD" feed registered in `nav-config`; this 8-dec Custom feed cannot co-register with that 18-dec feed (`PriceFeedDecimalsMismatch`). | The disabled entry and its `$comment` are the **record** of why a custom feed did not work for ETH+. Deleting the contract would leave that explanation dangling. |
 
 (By contrast `sDAI_CustomPriceFeed` *was* deleted: it was superseded on Gnosis by `sXDAI_CustomPriceFeed`, mainnet sDAI

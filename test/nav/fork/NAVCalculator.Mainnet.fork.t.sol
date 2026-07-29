@@ -54,8 +54,6 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
     uint256 public susdsHeartbeat = 82_800;
     sUSDS_CustomPriceFeed public susdsPriceOracle;
 
-    // Maker DSR
-
     /// @dev Pinned to a known-good block. Forking at latest is fragile: when a Chainlink feed
     ///      (or its proxy) gets replaced, the bare `latestRoundData()` call starts reverting
     ///      and setUp fails. Re-pin (or migrate to the new feed addresses) when something

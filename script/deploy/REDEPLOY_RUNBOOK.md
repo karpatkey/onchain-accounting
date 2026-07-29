@@ -297,7 +297,7 @@ BROADCAST="--rpc-url $RPC --broadcast --account my-deployer --password-file <pwf
 ### 1.1 Clear the deployment record — otherwise 03 and 04 are silent no-ops
 
 `03_DeployPriceFeeds` and `04_DeployBalanceAdapters` are skip-if-already-deployed. Every feed's
-`_deploy*` helper and `04`'s `_deployIfEnabled` (`04:230-234`, 33 such guards in `03`) start with
+`_deploy*` helper and `04`'s `_deployIfEnabled` (`04:230-234`, **32** such guards in `03`) start with
 
 ```solidity
 address deployed = _readAdapterDeployed(<section>, <name>);
@@ -407,6 +407,39 @@ forge script script/deploy/03_DeployPriceFeeds.s.sol $BROADCAST
 Chains 1 (24), 42161 (8), 8453 (4), 100 (3) only. Each feed's constructor takes the NAV proxy
 address, held as `INAVCalculator public immutable NAV` (ADR 0019) — which is precisely why a new
 proxy invalidates every existing feed.
+
+> **Three feed contracts are dead code, and the count is still 39.** `cbETH_CustomPriceFeed`,
+> `ETHPlus_CustomPriceFeed` and `sDAI_CustomPriceFeed` are deployed on no chain and are enabled in no
+> chain's config: `cbETH` and `sDAI` are not config keys at all, and `ETHPlus` is present on mainnet
+> with `enabled: false`. Their deploy branches (`03:231`, `03:525`, `03:701`) are reachable in the
+> source but never taken, because all three call sites are gated on `ConfigReader.isAdapterEnabled`
+> (`03:98`, `03:153`, `03:183`) and a missing key reads as false.
+>
+> **Dropping them would change the feed count by zero** — they were never among the 39. An audit note
+> suggested the redeploy might be 36 rather than 39 instances if they were removed; that is not the
+> case, and the 39 in the table above stands. Verified against both the deployment records and the
+> enabled config on 2026-07-29.
+>
+> Worth noting they stay harmless after step 1.1 too: clearing the record removes the skip-guard
+> short-circuit, but the `isAdapterEnabled` gate upstream still keeps the branches unreached, so
+> nothing tries to read the constructor params they do not have.
+
+> **THE HIGHEST-CONSEQUENCE ORDERING REQUIREMENT IN THIS RUNBOOK: 1.1 MUST precede 1.4, on every
+> chain.** Each of `03`'s 32 `_deploy*` helpers opens with a skip-if-deployed guard that `return`s
+> early without reverting (`03:233-237` and alike). If the `customPriceFeeds` records survive from
+> the previous NAV generation, `03` no-ops on **every** feed, logs, and exits 0 — leaving all 39
+> instances bound to the OLD proxy through their `immutable NAV` (ADR 0019). Nothing fails at deploy
+> time. It surfaces only when the old proxy is decommissioned, at which point `NavBaseUsdLib`'s catch
+> drops **every custom-priced asset to $0 simultaneously** — 24 on mainnet, 8 on arbitrum, 4 on base,
+> 3 on gnosis. `03` also exits 0 on logged errors, so a green run is not evidence anything deployed.
+>
+> `reset_deployment_records.py` clears `customPriceFeeds` (`:66`), and `ConfigReader.sol:147` confirms
+> `03`'s `"priceFeeds"` section token is an alias for that same key — so the mitigation exists and
+> this is purely an ordering discipline. **`verify_step.py 1.4` now enforces it**: it asserts each
+> recorded feed address is *new*, not merely non-zero, by comparing against the pre-clear archive and
+> the `pre` snapshot's Custom-type feeds. A count or name check cannot catch this — after a skipped
+> reset the names and the count are identical to the previous generation, which is precisely what
+> makes it quiet.
 
 - **Precondition:** 1.1 cleared `customPriceFeeds.*`; 1.3 wrote the NEW `NAVCalculatorProxy`.
 - **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.4` — the feed count matches

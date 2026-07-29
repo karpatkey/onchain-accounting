@@ -1,0 +1,120 @@
+{
+ "contract": "src/nav/NAVCalculator.sol:NAVCalculator",
+ "note": "Committed storage-layout baseline for the UUPS implementation behind NAVCalculatorProxy. Compared by script/upgrade/check_storage_layout.py before any upgrade. astId and the type dictionary are deliberately excluded: astId shifts on unrelated edits, and the type strings carry the astId of each struct, so both would churn without indicating a layout change.",
+ "storage": [
+  {
+   "slot": "0",
+   "offset": 0,
+   "label": "chainlinkL2SequencerGracePeriod",
+   "type": "t_uint256"
+  },
+  {
+   "slot": "1",
+   "offset": 0,
+   "label": "chainlinkL2SequencerUptimeFeed",
+   "type": "t_contract(AggregatorV3Interface)45"
+  },
+  {
+   "slot": "2",
+   "offset": 0,
+   "label": "_priceOracles",
+   "type": "t_mapping(t_address,t_array(t_struct(PriceFeedConfig)_storage)dyn_storage)"
+  },
+  {
+   "slot": "3",
+   "offset": 0,
+   "label": "_monitorFeeds",
+   "type": "t_mapping(t_address,t_array(t_struct(PriceFeedConfig)_storage)dyn_storage)"
+  },
+  {
+   "slot": "4",
+   "offset": 0,
+   "label": "_assetPricing",
+   "type": "t_mapping(t_address,t_struct(AssetPricing)_storage)"
+  },
+  {
+   "slot": "5",
+   "offset": 0,
+   "label": "__pricesGap",
+   "type": "t_array(t_uint256)_storage"
+  },
+  {
+   "slot": "53",
+   "offset": 0,
+   "label": "_nativeTokenSymbol",
+   "type": "t_string_storage"
+  },
+  {
+   "slot": "54",
+   "offset": 0,
+   "label": "_balanceAdapters",
+   "type": "t_mapping(t_address,t_struct(AddressToUintMap)_storage)"
+  },
+  {
+   "slot": "55",
+   "offset": 0,
+   "label": "balanceAdapterTotalCount",
+   "type": "t_uint256"
+  },
+  {
+   "slot": "56",
+   "offset": 0,
+   "label": "_globalAdapters",
+   "type": "t_array(t_address)dyn_storage"
+  },
+  {
+   "slot": "57",
+   "offset": 0,
+   "label": "_adapterTypes",
+   "type": "t_mapping(t_address,t_enum(AdapterType)13835)"
+  },
+  {
+   "slot": "58",
+   "offset": 0,
+   "label": "_isAdapterRegistered",
+   "type": "t_mapping(t_address,t_bool)"
+  },
+  {
+   "slot": "59",
+   "offset": 0,
+   "label": "erc20DefaultBalanceAdapter",
+   "type": "t_address"
+  },
+  {
+   "slot": "60",
+   "offset": 0,
+   "label": "_metaInstances",
+   "type": "t_mapping(t_address,t_array(t_bytes32)dyn_storage)"
+  },
+  {
+   "slot": "61",
+   "offset": 0,
+   "label": "_metaInstanceTotal",
+   "type": "t_uint256"
+  },
+  {
+   "slot": "62",
+   "offset": 0,
+   "label": "__balancesGap",
+   "type": "t_array(t_uint256)_storage"
+  },
+  {
+   "slot": "110",
+   "offset": 0,
+   "label": "_registeredAssets",
+   "type": "t_array(t_struct(Asset)_storage)dyn_storage"
+  },
+  {
+   "slot": "111",
+   "offset": 0,
+   "label": "_assetIndex",
+   "type": "t_mapping(t_address,t_uint256)"
+  },
+  {
+   "slot": "112",
+   "offset": 0,
+   "label": "_gap",
+   "type": "t_array(t_uint256)_storage"
+  }
+ ]
+}

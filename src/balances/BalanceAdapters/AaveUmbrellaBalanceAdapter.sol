@@ -467,8 +467,7 @@ contract AaveUmbrellaBalanceAdapter is BalanceAdapterBase {
     ///      returning the bare reserve; non-aToken reward tokens (e.g. plain GHO for stkGHO.v1)
     ///      and tokens with permissive fallbacks return as-is.
     function _resolveRewardBareReserve(address rewardToken) internal view returns (address) {
-        (, address bare) =
-            StaticCallLib.safeAddr(rewardToken, abi.encodeWithSignature("UNDERLYING_ASSET_ADDRESS()"));
+        (, address bare) = StaticCallLib.safeAddr(rewardToken, abi.encodeWithSignature("UNDERLYING_ASSET_ADDRESS()"));
         return bare == address(0) ? rewardToken : bare;
     }
 

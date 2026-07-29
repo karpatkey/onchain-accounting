@@ -137,11 +137,58 @@ contract UpgradeNAVCalculator is BaseDeployScript {
     /// @dev `virtual` so the test harness can neutralise it. The harness's reverting `setUp()` is what actually
     ///      closes the harness-rooted script paths — `run()`'s first statement is `setUp()`, so this override is
     ///      defence in depth rather than the barrier, and the harness overrides both.
+    /// @dev EIP-1967 implementation slot: keccak256("eip1967.proxy.implementation") - 1.
+    bytes32 internal constant ERC1967_IMPL_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
+
+    string internal constant LAYOUT_CHECK = "script/upgrade/check_storage_layout.py";
+
+    /// @notice Runs the storage-layout compatibility check and refuses to continue unless it passes.
+    /// @dev    A UUPS upgrade keeps the proxy's storage and replaces only the code, so an implementation that
+    ///         assigns a different meaning to an occupied slot does not revert - it reinterprets live state from the
+    ///         next block. This script had no layout check of any kind.
+    ///
+    ///         This RUNS the check (`ffi = true`, foundry.toml:11) rather than asking the operator to attest that
+    ///         they ran it. Two earlier designs were both defeated in review and are worth recording, because both
+    ///         looked adequate:
+    ///
+    ///         1. `STORAGE_LAYOUT_VERIFIED=1`. forge auto-loads `.env`, so one line in an untracked, gitignored
+    ///            file satisfied it permanently on every future upgrade, while logging like a deliberate act.
+    ///         2. Requiring the value to equal `keccak256(bytes(vm.readFile(baseline)))`. This looked like it fixed
+    ///            (1) and did not. The token is a pure function of a COMMITTED file, so it can be computed without
+    ///            ever running the check, and its expiry condition is inverted relative to the threat: it dies when
+    ///            the baseline changes, which happens only during a deliberate reviewed migration -- precisely when
+    ///            the operator is already being careful. In the dangerous case, where the source moved
+    ///            incompatibly and the baseline was therefore NOT regenerated, the parked token never expires. An
+    ///            audit demonstrated end-to-end that an incompatible tree plus a stale `.env` line passes.
+    ///
+    ///         Running the check removes the attestation entirely: there is no token to park, and the answer is
+    ///         computed from the tree in front of it. `vm.ffi` reverts on a non-zero exit, which is the checker's
+    ///         signal for an incompatible layout.
+    function _requireStorageLayoutVerified() internal virtual {
+        string[] memory cmd = new string[](2);
+        cmd[0] = "python3";
+        cmd[1] = LAYOUT_CHECK;
+        try vm.ffi(cmd) returns (bytes memory out) {
+            console2.log(string(out));
+            console2.log("Storage layout: check passed against the committed baseline.");
+        } catch {
+            console2.log("\nREFUSING TO UPGRADE: the storage-layout check did not pass.");
+            console2.log("  A UUPS upgrade swaps code and KEEPS storage. A moved, removed or retyped variable");
+            console2.log("  silently reinterprets live state on every chain this is applied to -- no revert, no log.");
+            console2.log("  Run it directly to see why:");
+            console2.log("    python3", LAYOUT_CHECK);
+            console2.log("  (This also fails if python3 or the checker is unavailable -- deliberately closed.)");
+            revert("storage layout check failed or could not be run");
+        }
+    }
+
     function run() public virtual override {
         setUp();
         validateAddresses();
 
         console2.log("\n=== Upgrading NAVCalculator ===");
+
+        _requireStorageLayoutVerified();
 
         // Get proxy address
         address proxy = readDeployedAddress("NAVCalculatorProxy");
@@ -161,16 +208,67 @@ contract UpgradeNAVCalculator is BaseDeployScript {
 
         console2.log("New implementation deployed at:", address(newImplementation));
 
-        // Check if implementation is different
-        if (address(newImplementation) == currentImpl) {
-            console2.log("\nWARNING: New implementation has same address as current!");
-            console2.log("This likely means you haven't made any changes to the contract.");
+        // Is this upgrade a no-op? Two earlier versions of this check were both wired to the wrong thing.
+        // The original compared ADDRESSES, which can never match: `new` is CREATE from an ever-incrementing
+        // nonce. Replacing that with a runtime-CODE comparison asked the right question but still read
+        // `currentImpl` from the deployment RECORD, which this script overwrites on every run, before the Safe
+        // has executed anything. Run the script twice without executing the batch - the normal state, since the
+        // filename scheme below exists precisely because a batch can sit circulating for signature - and run 2
+        // compares against run 1's never-activated implementation, finds identical code, and announces "this
+        // upgrade would change nothing" while the proxy still delegates to the genuinely old code. An operator
+        // could abandon a needed upgrade on the strength of a warning added to prevent that exact mistake.
+        //
+        // The only source that cannot lie is the proxy's own EIP-1967 slot.
+        address liveImpl = address(uint160(uint256(vm.load(proxy, ERC1967_IMPL_SLOT))));
+        console2.log("Implementation the proxy actually delegates to:", liveImpl);
+        if (liveImpl != currentImpl) {
+            console2.log("NOTE: that differs from the deployment record's", currentImpl);
+            console2.log("      (an earlier upgrade was deployed but its Safe batch was never executed).");
+        }
+        if (liveImpl != address(0) && liveImpl.code.length > 0) {
+            if (keccak256(address(newImplementation).code) == keccak256(liveImpl.code)) {
+                console2.log("\nWARNING: the new implementation's runtime code is IDENTICAL to the LIVE one.");
+                console2.log("This upgrade would change nothing. Check you rebuilt after editing the source.");
+            }
         }
 
-        // Save new implementation address
+        // The canonical `NAVCalculatorImplementation` key is written here, deliberately, even though the proxy
+        // does not point at this implementation yet.
+        //
+        // An earlier revision of this file renamed it to `...Pending` on the reasoning that the record should not
+        // assert an untrue state. That was wrong, and review caught it: four consumers read the canonical key and
+        // all of them want "the implementation we just deployed and must now verify", not "what the proxy currently
+        // delegates to" -- `script/verify/VerifyEtherscan.s.sol`, `script/verify/sweeps/make_targets.py`,
+        // `chainlib.CANONICAL_KEYS` (which gives `bytecode_audit.py` its artifact-name expectation) and
+        // `snapshot_production.py`. Renaming the key silently pointed every one of them at the OLD implementation,
+        // so this script's own "run verification" instruction would have re-verified the superseded contract and
+        // reported success while the live one went unverified and unaudited. The rename also made
+        // `verify_step.py 1.3` hard-fail a chain that had upgraded correctly.
+        //
+        // The residual inaccuracy -- a window where the record names an implementation the Safe has not yet
+        // activated -- is real but strictly smaller, and it belongs to the tooling that interprets the key rather
+        // than to the key itself. It is called out loudly below instead of being encoded in a name.
         string memory implName = string(abi.encodePacked("NAVCalculatorImplementation_v", vm.toString(block.timestamp)));
         saveDeployedAddress(implName, address(newImplementation));
         saveDeployedAddress("NAVCalculatorImplementation", address(newImplementation));
+
+        if (shouldBroadcast) {
+            console2.log("\nNOTE: the deployment record now names the implementation just deployed, which the");
+            console2.log("      proxy does NOT yet delegate to. It becomes live only when the Safe batch below is");
+            console2.log("      executed. Until then, preflight checks that compare the record against the proxy's");
+            console2.log("      EIP-1967 slot (verify_step.py 1.3) will correctly report a mismatch.");
+        } else {
+            // Without PERSIST_DEPLOYMENTS the record was NOT written (BaseDeployScript.sol:72 early-returns),
+            // yet an implementation was still deployed and a Safe batch naming it is still written below. Saying
+            // "the record already names it" here would be false, and would tell the operator to ignore the one
+            // signal that distinguishes this run from a correct one.
+            console2.log("\nWARNING: PERSIST_DEPLOYMENTS is not set, so the deployment record was NOT updated.");
+            console2.log("      An implementation has been deployed and a Safe batch naming it is written below.");
+            console2.log("      If that batch is executed, the proxy will point at an address recorded NOWHERE:");
+            console2.log("      source verification, the bytecode audit and the production snapshot all resolve");
+            console2.log("      the implementation from the record, so they would all keep describing the OLD one.");
+            console2.log("      Re-run with PERSIST_DEPLOYMENTS=1 before circulating this batch.");
+        }
 
         // Step 2: Generate Safe transaction for upgrade
         console2.log("\nStep 2: Generating Safe transaction for upgrade...");
@@ -182,7 +280,16 @@ contract UpgradeNAVCalculator is BaseDeployScript {
             proxy, 0, abi.encodeCall(UUPSUpgradeable.upgradeToAndCall, (address(newImplementation), ""))
         );
 
-        string memory filename = string(abi.encodePacked(vm.toString(currentChainId), "-upgrade-navcalc.json"));
+        // The filename carries the target implementation. It used to be `<chainId>-upgrade-navcalc.json` for every
+        // run on a chain, so a second run silently overwrote the first — including a batch already circulating for
+        // signature. Safe owners would then be reviewing a file whose contents had changed underneath them, with
+        // nothing in the UI or the filename to indicate it. `newImplementation` is unique per run (CREATE, from an
+        // incrementing nonce), so this both prevents the collision and names the batch after what it does.
+        string memory filename = string(
+            abi.encodePacked(
+                vm.toString(currentChainId), "-upgrade-navcalc-", vm.toString(address(newImplementation)), ".json"
+            )
+        );
 
         writeSafeTx(
             filename,
@@ -190,7 +297,7 @@ contract UpgradeNAVCalculator is BaseDeployScript {
             string(
                 abi.encodePacked(
                     "Upgrades NAVCalculator from ",
-                    vm.toString(currentImpl),
+                    vm.toString(liveImpl),
                     " to ",
                     vm.toString(address(newImplementation))
                 )
@@ -208,7 +315,18 @@ contract UpgradeNAVCalculator is BaseDeployScript {
         console2.log("\nOld implementation:", currentImpl);
         console2.log("New implementation:", address(newImplementation));
         console2.log("\nAfter execution:");
+        console2.log("- Confirm the proxy actually moved:");
+        console2.log("    cast storage", proxy, vm.toString(ERC1967_IMPL_SLOT));
+        console2.log("  It must equal the new implementation below.");
+        if (shouldBroadcast) {
+            console2.log("  No JSON edit is needed -- the record already names it, and every verification and");
+            console2.log("  audit tool reads it from there.");
+        } else {
+            console2.log("  The record was NOT written this run (see the PERSIST_DEPLOYMENTS warning above), so");
+            console2.log("  nothing downstream knows about this implementation yet.");
+        }
         console2.log("- Run verification script to verify new implementation");
+
         console2.log("- Test upgraded contract functionality");
         console2.log("===============================");
     }

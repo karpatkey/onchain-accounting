@@ -21,11 +21,12 @@ Companion tooling lives in [`preflight/`](preflight/README.md). Everything there
 | the other 17 | ERC20Default only |
 
 Configured totals, reconciled from config **and** confirmed against the live NAV on 2026-07-27:
-**33 meta adapters, 110 meta instances, 12 plain adapters, 39 custom price feeds, 93 assets.**
+**33 meta adapters, 110 meta instances, 12 plain adapters, 40 custom price feeds, 93 assets** — the
+feed count is **pending #199**, see the note under 1.4.
 
 | chain | meta adapters | meta instances | plain | feeds | assets |
 | --- | --- | --- | --- | --- | --- |
-| 1 mainnet | 15 | 66 | 11 | 24 | 43 |
+| 1 mainnet | 15 | 66 | 11 | 25 | 43 |
 | 42161 arbitrum | 7 | 16 | 0 | 8 | 11 |
 | 8453 base | 6 | 16 | 0 | 4 | 11 |
 | 10 optimism | 2 | 4 | 0 | 0 | 6 |
@@ -146,7 +147,13 @@ before it broadcasts anything.
 Iterate to a fixpoint; a 2-cycle has been observed. Always `forge clean` first — an incremental `out/`
 yields a wrong address that looks authoritative.
 
-> **A CI reading is NOT a reliable measurement of a pin value.** Two runs of the same branch 25
+> **A CI reading is only trustworthy if the branch contains #200.** That PR set `cache: false` on the
+> Build job; anything measured before it was reading a partially cached compile, which is the most
+> likely explanation for the divergent `PriceFeedLib` values seen across branches. Treat every pin
+> figure measured on a pre-#200 branch as corroboration at best, never as proof — including the reading
+> from #197's own CI run, which predates it.
+>
+> **Even with #200, a CI reading is not a measurement of record.** Two runs of the same branch 25
 > minutes apart, with a one-markdown-file diff and **zero `.sol` changed**, produced two different
 > computed `PriceFeedLib` addresses (`0x00a3AFAC…` and `0xD477d7e2…`), both runs' `headSha` confirmed
 > via the API. Cause not yet settled — `via_ir` non-determinism or a CI cache effect; the regen
@@ -226,7 +233,8 @@ python3 script/deploy/preflight/snapshot_production.py --out pre
 ```
 
 This is the only chance: the old NAV is abandoned in place, and without the snapshot "does the new
-stack reproduce the old one?" becomes unanswerable. The `pre/` capture from 2026-07-27 is committed;
+stack reproduce the old one?" becomes unanswerable. **0.9 is the other one-shot capture** — do both
+while the old stack is still live, and do not let a green build or a busy day defer either. The `pre/` capture from 2026-07-27 is committed;
 refresh it if the deploy happens materially later.
 
 ### 0.8 Green build and tests
@@ -236,6 +244,47 @@ forge clean && forge build --sizes
 forge test                                   # both LibraryPinConsistency tests must pass
 python3 script/deploy/preflight/bytecode_audit.py --self-test
 ```
+
+### 0.9 NAV parity against DeBank — on the OLD stack, and only here
+
+**This is the last moment it can be done.** After the deploy every address is new, so a disagreement
+found later cannot be attributed: it will look like the redeploy caused it. Running it now answers
+"did the deployed NAV already disagree with an independent source?" and establishes the reference
+figure for 2.3's before/after comparison.
+
+Scope: each of the 7 configured chains, for each account in `test/integration/accounts.json` enabled
+on that chain (14 accounts; 9 on mainnet, 4 on optimism, 4 on base, 4 on arbitrum, 3 on gnosis,
+1 on polygon). Record every figure — this capture is not repeatable.
+
+> **Write the expected-divergence list BEFORE the first run, or this step is decoration.** DeBank does
+> not hold, or values differently, several classes this portfolio carries. If the list is written
+> afterwards it becomes a rationalisation of whatever came out, someone waves it through, and the check
+> joins the sixteen other things this wave found that reported success without checking anything.
+>
+> Known-divergent classes, to be itemised with their positions and values at capture time:
+>
+> | class | why it diverges |
+> | --- | --- |
+> | withdrawal queues — StakeWise exit queue, ether.fi, Stader | in-flight exits; DeBank may show the burnt principal, the claimable amount, or neither |
+> | Nexus Mutual staking pools | pool-share positions DeBank does not decompose |
+> | assisted-adapter coordinate sets | we report only what the owner Safe has fed and we can re-verify (ADR 0015, under-report only) |
+> | LP positions | ADR 0017 pins instantaneous amounts deliberately; DeBank uses its own methodology |
+>
+> Make the list **subtractive and itemised**: name each excluded position and its value, so the residual
+> is a number rather than a hand-wave. "Everything else is expected to differ" is not a list.
+
+**The threshold, so this is a gate and not a report.** Express it per account, in basis points of that
+account's own NAV, not as an absolute figure — mainnet's accounts differ by orders of magnitude, so one
+dollar threshold is simultaneously too loose for the largest and too tight for the smallest.
+
+- **residual ≤ 50 bps** of the account's NAV, after subtracting the itemised list → proceed.
+- **50–200 bps** → explain before proceeding; an unexplained residual in this band is the shape a real
+  pricing bug takes.
+- **> 200 bps, or any residual that cannot be attributed to a named position** → **stop.** Do not
+  deploy on top of a discrepancy nobody can account for; after the cutover it becomes unattributable.
+
+Record the residual per account even when it passes: 2.3 compares against these numbers, and a
+threshold with no recorded baseline cannot detect drift.
 
 ---
 
@@ -247,7 +296,7 @@ python3 script/deploy/preflight/bytecode_audit.py --self-test
 1.1  clear the deployment record
 1.2  01_2_DeployNAVImplementation     libraries + NAV impl        PERSIST_DEPLOYMENTS=1
 1.3  02_2_DeployNAVProxy              new proxy + ERC20Default    PERSIST_DEPLOYMENTS=1
-1.4  03_DeployPriceFeeds              39 custom feeds             <- BEFORE RegisterAssets
+1.4  03_DeployPriceFeeds              40 custom feeds             <- BEFORE RegisterAssets
 1.5  RegisterAssets                   assets + feeds on the NAV
 1.6  04_DeployBalanceAdapters         adapters + assistants
 1.7  06_Configure                     register + reconcile
@@ -297,7 +346,7 @@ BROADCAST="--rpc-url $RPC --broadcast --account my-deployer --password-file <pwf
 ### 1.1 Clear the deployment record — otherwise 03 and 04 are silent no-ops
 
 `03_DeployPriceFeeds` and `04_DeployBalanceAdapters` are skip-if-already-deployed. Every feed's
-`_deploy*` helper and `04`'s `_deployIfEnabled` (`04:230-234`, 33 such guards in `03`) start with
+`_deploy*` helper and `04`'s `_deployIfEnabled` (`04:230-234`, **32** such guards in `03`) start with
 
 ```solidity
 address deployed = _readAdapterDeployed(<section>, <name>);
@@ -398,15 +447,42 @@ admin. `initialize()` mints the fresh `ERC20DefaultBalanceAdapter` via
 *Chains 130, 143, 146, 196, 204, 480, 999, 5000, 9745, 16661, 42220, 43111, 43114, 57073, 59144,
 80094, 534352 are finished here.*
 
-### 1.4 `03_DeployPriceFeeds` — 39 custom feeds
+### 1.4 `03_DeployPriceFeeds` — 40 custom feeds (pending #199)
 
 ```bash
 forge script script/deploy/03_DeployPriceFeeds.s.sol $BROADCAST
 ```
 
-Chains 1 (24), 42161 (8), 8453 (4), 100 (3) only. Each feed's constructor takes the NAV proxy
+Chains 1 (25), 42161 (8), 8453 (4), 100 (3) only. Each feed's constructor takes the NAV proxy
 address, held as `INAVCalculator public immutable NAV` (ADR 0019) — which is precisely why a new
 proxy invalidates every existing feed.
+
+> **THE COUNT IS 40, AND IT DEPENDS ON #199 — WHICH HAS NOT MERGED.** Write it down before deploy day
+> rather than discovering it during verification, but do not treat it as true yet.
+>
+> #199 swaps mainnet's stETH pricing: it deploys a **stETH primary** feed and demotes the existing
+> `stETHCrossRate` to a monitor, so mainnet goes 24 → **25** and the total 39 → **40**. It needs a small
+> change to `03_DeployPriceFeeds.s.sol` — `_deployEEth` parameterised by config key, the way `_deployNxm`
+> and `_deployOsToken` already are, since no existing deploy path produces a unit-rate feed for a second
+> asset — plus `_deployCrossRateMonitor("stETHCrossRate")` for the demoted monitor, whose constructor
+> block is shape-identical to `rETHCrossRate` and so needs no new script logic. Without that change `03`
+> cannot deploy the new primary and `RegisterAssets` skips stETH as `primary feed unresolved`.
+>
+> **Until #199 lands, config produces 39 and 39 is correct.** #199 is held on a `via_ir`
+> stack-too-deep in `computeNav` that only CI caught. Check its state before the deploy and use whichever
+> number matches the merged tree — `preflight_config.py` prints the configured total, and
+> `verify_step.py 1.4` compares against it, so both follow the config automatically. The figures in this
+> runbook are the thing that goes stale, not the tooling.
+>
+> **The three dead feed contracts are a separate matter and change the count by ZERO.**
+> `cbETH_CustomPriceFeed`, `ETHPlus_CustomPriceFeed` and `sDAI_CustomPriceFeed` are deployed on no chain
+> and enabled in no config (`cbETH`/`sDAI` are not config keys at all; `ETHPlus` is present on mainnet
+> with `enabled: false`). All three call sites are `isAdapterEnabled`-gated (`03:98`, `03:153`, `03:183`)
+> and a missing key reads as false, so the branches are never taken — and they stay unreached after step
+> 1.1, since clearing the record removes only the skip-guard short-circuit, not the enablement gate.
+> #199 deletes the sDAI contract; that is dead-code removal, not a count change. An earlier audit note
+> suggested dropping all three would make the redeploy 36 instances; it would not, because they were
+> never among the 39. Verified against both the deployment records and the enabled config 2026-07-29.
 
 - **Precondition:** 1.1 cleared `customPriceFeeds.*`; 1.3 wrote the NEW `NAVCalculatorProxy`.
 - **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.4` — the feed count matches
@@ -611,6 +687,23 @@ Expect equality except where a hardening fix legitimately changes a label or sup
 unreportable leg. Any change in `nav.value` beyond price drift between the two capture blocks needs
 an explanation before the cutover.
 
+> **Enumerate the expected differences BEFORE running the comparison** — same discipline as 0.9, and
+> for the same reason. This wave changed labels and suppressed legs deliberately, so a raw diff will
+> not be empty, and a non-empty diff nobody predicted is indistinguishable from a regression. After
+> #193, #195, #199 and the `main:9` PR there will be several, and they must be listed with the adapter,
+> the account and the field each one touches *before* the first run. Without that list the comparison
+> cannot be adjudicated, and the outcome is someone waving through a difference that mattered.
+>
+> The two capture blocks differ, so price drift is expected on every priced position. Compare
+> **structure** (position count, `protocolId`/`protocolSubId`/`positionId`, `positionKind`, `isDebt`,
+> labels) exactly, and `nav.value` only against the 0.9 residual band — that is what 0.9's per-account
+> figures are for. A structural difference is never explained by drift.
+
+**This is step 3 of 3.** The end-to-end validation is: **0.9** DeBank parity on the old stack
+(pre-deploy, unrepeatable) → **2.3** old-vs-new NAV comparison (here) → **2.6** integration-snapshot
+refresh. Each depends on the one before it: 0.9 supplies the reference figures this step compares
+against, and 2.6 cannot run until the new addresses are recorded.
+
 **Known-expected diffs — do NOT treat these as regressions:**
 
 - **ETHx drops from 2 monitor feeds to 1 on mainnet.** Redstone is retiring both of its ETHx push
@@ -647,15 +740,21 @@ limit, and `settings.libraries` linking **both** `NAVRegistryLib` and `PriceFeed
 Comment-stripping corrupts the bytecode; whitespace-only reduction does not. Always local-compile the
 reduced JSON and assert the `PriceFeedLib` creation size before submitting.
 
-### 2.6 Integration snapshots
+### 2.6 Integration snapshots — AFTER the deploy, not before
 
 ```bash
 script/test/refresh-integration-snapshot.sh
 ```
 
-Fork blocks and expected NAVs derive from live addresses, so they must be refreshed after the
-cutover. PR #174 (the bot's snapshot refresh) was **closed, not merged**, so this is outstanding
-independently of this deploy.
+**Order matters and is not arbitrary.** `refresh-integration-snapshot.sh` derives fork blocks and
+expected NAVs from live addresses, and the redeploy replaces every one of them. Refreshing beforehand
+would pin the old stack and be invalidated by the deploy it was meant to guard — so the pre-deploy
+slot belongs to 0.9 (DeBank parity), which is only possible while the old stack exists, and the
+refresh belongs here, once the new addresses are recorded.
+
+PR #174 (the bot's snapshot refresh) was **closed, not merged**, so nothing has refreshed these since
+before the wave. That is outstanding independently of this deploy and should not be mistaken for
+redeploy fallout.
 
 ### 2.7 Downstream cutover — the user's
 

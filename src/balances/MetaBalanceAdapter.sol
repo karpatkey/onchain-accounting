@@ -78,11 +78,51 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     // Constructor
     //
 
+    /// @notice The NAVCalculator behind `navCalculator_` cannot serve `getRegisteredAsset`, so it predates the
+    ///         O(1) registry lookup this adapter family depends on.
+    /// @dev Deployment-time, not read-time, and that is the whole point — see the constructor.
+    /// @param navCalculator The proxy that failed the probe.
+    error NAVCalculatorTooOld(address navCalculator);
+
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
     /// @dev No `protocolName_`: the display name is derived from `_protocolId()` (see `protocolName()`), so there is
     ///      no deployment-time string to supply, mis-spell, or let drift between two adapters of one protocol.
+    ///
+    ///      Pins the NAVCalculator and **refuses to deploy against one that cannot answer
+    ///      `getRegisteredAsset(address)`**.
+    ///
+    ///      This guard exists because the alternative failure is silent and raises NAV. Meta-adapters are
+    ///      IMMUTABLE with this proxy pinned here; NAVCalculator is UUPS-UPGRADEABLE. An adapter built on this base
+    ///      and pointed at a proxy running an implementation from before that getter existed would hit a missing
+    ///      selector on every `_eligible` call. The proxy reverts cheaply with empty returndata, that revert lands
+    ///      in the per-instance `catch` in {_positionsForInstances}, and because `consumed` is small
+    ///      `GasStipendLib.exhausted` reads false — so it is NOT re-raised as {InstanceGasExhausted}. The instance
+    ///      is recorded as an empty leg list and `getAdapterPositions` **returns successfully**.
+    ///
+    ///      Dropped legs that included a DEBT leg raise reported NAV, and nothing downstream can tell the answer
+    ///      was partial: `underlyingAssetsSupported()` and `positionIds()` both keep answering correctly, because
+    ///      neither passes through `_eligible`. That is precisely the failure the per-instance `try`/`catch` is
+    ///      documented as never being allowed to absorb, reached by a route the gas classifier is structurally
+    ///      blind to — the cause is a missing selector, not exhaustion, so there is no gas signature to detect.
+    ///
+    ///      **Reachable, and one route is on record as having happened.** `script/deploy/REDEPLOY_RUNBOOK.md` §3
+    ///      records `01_2` (the NAV implementation) reverting while `04` (adapters) proceeded: *"RegisterAssets, 04
+    ///      and 06 all reported success having done nothing."* The others are a partial rollout across chains where
+    ///      one chain's implementation was not upgraded, and an implementation rollback after adapters are
+    ///      deployed. `verify_step.py` steps 1.6/1.7 check adapter counts, names, code presence and registration —
+    ///      none of which is a functional read, so none of which would notice.
+    ///
+    ///      A `staticcall` rather than a typed call so a missing selector is a `false` return instead of a revert
+    ///      inside the constructor. `address(0)` is a deliberately inert probe argument: on a NAVCalculator that
+    ///      has the getter it resolves to `(zeroed, false)` without reverting, so a healthy deploy always passes.
+    ///
+    ///      Costs zero NAVCalculator bytecode — the budget under pressure is that contract's (181 bytes under
+    ///      EIP-170), not the adapters', which carry 14-19 KB of margin each.
     constructor(address navCalculator_) {
         AddressCheckLib.requireContract(navCalculator_, "NAVCalculator");
+        (bool servesGetter,) =
+            navCalculator_.staticcall(abi.encodeWithSelector(INAVCalculator.getRegisteredAsset.selector, address(0)));
+        if (!servesGetter) revert NAVCalculatorTooOld(navCalculator_);
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 

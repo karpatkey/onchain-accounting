@@ -160,6 +160,15 @@ contract Mock_NAVCalculator is INAVCalculator {
         revert("Not implemented in mock");
     }
 
+    function getAccountNavForAdapters(address, address, address[] calldata)
+        external
+        pure
+        override
+        returns (PartialNAV memory)
+    {
+        revert("Not implemented in mock");
+    }
+
     function getAccountPositions(address, address) external pure override returns (Position[] memory) {
         revert("Not implemented in mock");
     }

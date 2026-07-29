@@ -23,7 +23,14 @@ import "src/constants.sol";
 /// @notice NAV Calculator.
 /// @author KPK
 /// @dev EIP-170 budget: this contract runs close to the 24,576-byte runtime limit (CI's `forge build --sizes`
-///      enforces it). The read/compute engine (NAV, positions, health, value) and the registry storage-mutation
+///      enforces it). **As of the paginated-NAV read it is 325 bytes under** (runtime 24,251 B, measured from
+///      `out/NAVCalculator.sol/NAVCalculator.json` under the default profile — the one CI's `--sizes` uses).
+///      Measure with a clean
+///      `forge build --sizes` before and after anything added here, and assume nothing non-trivial fits: the next
+///      substantive read will need the verbose label block (`_toVerbose` / `_safeString` / `_safeStringArray` /
+///      `decodeStringArray`) moved out to a separate LENS CONTRACT first. Not to a library — `decodeStringArray`
+///      has to be an external function on a contract for `try`/`catch` to reach it, which is why that block is
+///      inlined here today. The read/compute engine (NAV, positions, health, value) and the registry storage-mutation
 ///      loops are deliberately delegated to the external libraries `PriceFeedLib` and `NAVRegistryLib`
 ///      (DELEGATECALL) to stay under it — NAVCalculator keeps only storage, admin mutations, and thin
 ///      view wrappers. When adding code here, watch the margin and prefer moving substantial loops into a
@@ -31,7 +38,8 @@ import "src/constants.sol";
 ///      *inside* the library, because returning them across the ABI boundary (and piecemeal helper extraction
 ///      generally) can cost more than the inlined body under `via_ir`. Always measure with a clean
 ///      `forge build --sizes`. The verbose label-enrichment read path (`get*Verbose` + `_toVerbose`/`_safeString`)
-///      is inlined here rather than split into a separate lens contract; it fits within the remaining margin.
+///      is inlined here rather than split into a separate lens contract — it fits today, but it is the block to move
+///      out first when it stops fitting (see the margin note above).
 contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeable, INAVCalculator, Prices, Balances {
     //
     // State
@@ -326,6 +334,66 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             _isSequencerDown(),
             _nativeTokenSymbol
         );
+    }
+
+    /// @inheritdoc INAVCalculator
+    /// @dev **Validate, then call the very same `PriceFeedLib.computeNav` that {getAccountNav} calls**, with the
+    ///      validated slice in place of the full registry. There is no separate partial-read entrypoint in the
+    ///      library, deliberately: a second copy of that function's body roughly doubles the IR the `via_ir`
+    ///      optimizer must process for the largest function in the largest library in this repo, and doing so was
+    ///      measured to push CI's whole-project compile past the runner's memory (SIGTERM mid-compile, twice,
+    ///      reproducibly, while `main` completed in the same time). Sharing the function is also the stronger
+    ///      design: the partition invariant — sum of slices == complete NAV — holds because the two reads are
+    ///      literally the same code, not because two implementations agree. It reuses this contract's existing
+    ///      `computeNav` argument encoder and `NAV` decoder too, which matters at the margin below.
+    ///
+    ///      `getAllAdapters()` is passed as the registration authority, which makes "registered" mean exactly "in
+    ///      the list {getAccountNav} scans" — one definition, read from storage in the same call, so a slice can
+    ///      never be validated against a different registry than the one it is measured against.
+    ///
+    ///      The intermediate `NAV` never leaves this frame. It must not: it is a PARTIAL result wearing the
+    ///      complete result's type for the length of one function body, which is exactly what {PartialNAV} exists
+    ///      to prevent anywhere else. Returning `n` from any variant of this function would reintroduce that
+    ///      hazard, and so would exposing a `computeNav` result reached through a slice by any other route.
+    function getAccountNavForAdapters(address account, address quoteAsset, address[] calldata adapters)
+        external
+        view
+        returns (INAVCalculator.PartialNAV memory partialNav)
+    {
+        _validateQuoteAsset(quoteAsset);
+
+        address[] memory covered = PriceFeedLib.validateAdapterSlice(getAllAdapters(), adapters);
+
+        INAVCalculator.NAV memory n = PriceFeedLib.computeNav(
+            _priceOracles,
+            _monitorFeeds,
+            _assetPricing,
+            _assetIndex,
+            _registeredAssets,
+            covered,
+            // `_metaInstanceTotal` is a WHOLE-REGISTRY quantity being passed alongside `covered`, a SLICE. That is
+            // inconsistent on its face and safe only because `computeNav` never reads the parameter (solc reports it
+            // unused). Passing it keeps this call site identical to `getAccountNav`'s, which is what lets the two
+            // share one argument encoder. **If it is ever given a use — pre-sizing a buffer, say — it must be
+            // derived from `allAdapters`, not from the registry**, or the slice and the complete read would allocate
+            // differently and `computeNav` would become adapter-set-dependent in exactly the way its own docstring
+            // forbids.
+            _metaInstanceTotal,
+            account,
+            quoteAsset,
+            _isSequencerDown(),
+            _nativeTokenSymbol
+        );
+
+        partialNav.value = n.value;
+        partialNav.quoteAsset = n.quoteAsset;
+        partialNav.timestamp = n.timestamp;
+        partialNav.stalePriceAssets = n.stalePriceAssets;
+        partialNav.sequencerDown = n.sequencerDown;
+        partialNav.quoteAssetStale = n.quoteAssetStale;
+        partialNav.irregularPriceAssets = n.irregularPriceAssets;
+        partialNav.quoteAssetIrregular = n.quoteAssetIrregular;
+        partialNav.adaptersCovered = covered;
     }
 
     /// @inheritdoc INAVCalculator

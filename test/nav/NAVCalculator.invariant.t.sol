@@ -10,6 +10,7 @@ import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IBalances} from "src/balances/IBalances.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {aa} from "test/helpers/AdapterArray.sol";
+import {NAV_DECIMALS, MAX_DECIMAL_EXPONENT_INT256} from "src/constants.sol";
 
 /// @title NAVCalculator Invariant Tests
 /// @notice Tests critical system invariants for NAVCalculator
@@ -240,14 +241,38 @@ contract NAVCalculatorInvariantTest is SuperTest {
             assertTrue(nav.isAssetRegistered(asset), "All position assets should be registered");
         }
 
-        // Verify all registered assets can be queried
+        // Verify all registered assets can be queried.
+        //
+        // Both assertions in this loop used to be tautologies and checked nothing: `decimals <= 255` is always
+        // true for a `uint8`, and `bytes(symbol).length >= 0` is always true for a `uint256` length. They read
+        // like bounds checks, which is why they survived review.
+        //
+        // Assert instead what the registry actually guarantees, and only that. `NAVRegistryLib.registerAsset`
+        // does NOT bound decimals and does NOT require a non-empty symbol — it copies whatever the token's
+        // `decimals()` / `symbol()` returned — so a non-empty-symbol assertion here would be inventing an
+        // invariant the code does not hold. What IS guaranteed is that the array and the index agree, and that
+        // the record is reachable by its own address; that is what "can be queried" was reaching for.
         INAVCalculator.Asset[] memory registeredAssets = nav.getRegisteredAssets();
         for (uint256 i = 0; i < registeredAssets.length; i++) {
-            // Asset struct already contains decimals and symbol
-            uint8 decimals = registeredAssets[i].decimals;
-            assertTrue(decimals <= 255, "Decimals should be valid");
+            address registered = registeredAssets[i].asset;
+            assertTrue(registered != address(0), "a registered record must name an asset");
+            assertTrue(nav.isAssetRegistered(registered), "every array entry must be reachable by address");
 
-            assertTrue(bytes(registeredAssets[i].symbol).length >= 0, "symbol queryable");
+            // Assert the predicate `PriceFeedLib._priceConversion` ACTUALLY enforces, not a proxy for it. Its two
+            // guards are both on the EXPONENT `assetDecimals + assetPriceDecimals - NAV_DECIMALS`:
+            //   - it reverts `InvalidAssetDecimals` when that sum is below NAV_DECIMALS (underflow), and
+            //   - it reverts `InvalidDecimalExponent` when the resulting exponent exceeds the 10**x bound.
+            // An earlier revision of this line asserted `decimals <= 77` instead. That was wrong twice over: it
+            // checked `assetDecimals` in ISOLATION, when neither guard is a function of it alone, and 77 is
+            // off-by-one against `MAX_DECIMAL_EXPONENT_INT256 = 76`. It could therefore pass for an asset whose
+            // pricing path reverts — a check that looks like a bound and is not one, which is the exact defect
+            // this loop was being fixed for. Caught in review by Copilot.
+            (, uint8 priceDecimals,,) = nav.latestPrice(registered);
+            uint256 sum = uint256(registeredAssets[i].decimals) + uint256(priceDecimals);
+            assertGe(sum, NAV_DECIMALS, "asset+feed decimals must reach NAV_DECIMALS or _priceConversion reverts");
+            assertLe(
+                sum - NAV_DECIMALS, MAX_DECIMAL_EXPONENT_INT256, "exponent must stay inside the int256 10**x bound"
+            );
         }
     }
 

@@ -9,6 +9,7 @@ import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
+import {GasStipendLib} from "src/utils/GasStipendLib.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
 import {
     MockErc4626Wrapper,
@@ -413,5 +414,294 @@ contract AaveUmbrellaBalanceMathTest is BalanceAdapterTestBase {
             if (assets[i] == needle) return amounts[i];
         }
         return type(uint256).max; // sentinel: not found → fails the equality assertion
+    }
+
+    // ─── redeemValue's failure paths, through the widest-blast-radius caller ──
+    //
+    // Both review gates flagged that these were untestable: the wrapper mock's `previewRedeem` always
+    // succeeded, and the ERC4626RedeemLib suite wires only MorphoVaultsMetaBalanceAdapter. So the caller the
+    // PR itself identifies as the widest blast radius — a PLAIN adapter with no per-stake-token isolation,
+    // where `_sharesToUnderlying` runs inline in a loop over `getAllAssets()` — had no assertion on either
+    // branch.
+
+    /// @notice An unreadable `previewRedeem` on the wa-wrapper drops that stake token's leg and no other.
+    /// @dev The "reports 0, caller treats it as no leg" branch. The GHO stake token takes a different path
+    ///      (one hop, no wrapper), so it must be entirely unaffected — that is what proves the omission is
+    ///      scoped to the failing token rather than the adapter.
+    function test_unreadablePreview_dropsOnlyThatStakeTokensLeg() public {
+        waUsdc.setPreviewMode(MockErc4626Wrapper.PreviewMode.Revert);
+
+        INAVCalculator.PositionBalance[] memory pos = oracle.getAdapterPositions(alice, address(0));
+
+        uint256 usdcAmt;
+        uint256 ghoAmt;
+        for (uint256 i; i < pos.length; ++i) {
+            if (pos[i].balanceAsset.asset == address(usdc)) usdcAmt += pos[i].amount;
+            if (pos[i].balanceAsset.asset == address(gho)) ghoAmt += pos[i].amount;
+        }
+        assertEq(usdcAmt, EXP_USDC_REWARD, "only the wrapper-hop STAKING leg is dropped; the reward leg stays");
+        assertEq(ghoAmt, EXP_GHO_TOTAL, "the other stake token must be untouched");
+    }
+
+    /// @notice An unreadable preview must never fall through to a fee-inclusive or pre-hop figure.
+    /// @dev The over-report this guards. `_sharesToUnderlying` computes `convertToAssets(shares)` BEFORE the
+    ///      wrapper hop, so a regression that returned that pre-hop value would report waUSDC-denominated
+    ///      units (1100e6) under USDC's registered-asset record.
+    function test_unreadablePreview_doesNotFallThroughToThePreHopAmount() public {
+        waUsdc.setPreviewMode(MockErc4626Wrapper.PreviewMode.Revert);
+        (uint256 amount,) = oracle.getAdapterBalanceForAsset(alice, address(usdc));
+        assertEq(amount, EXP_USDC_REWARD, "must not report the pre-hop waUSDC amount as USDC");
+        assertTrue(amount != 1100e6, "1100e6 is the pre-hop figure - reporting it would over-report");
+    }
+
+    /// @notice A STARVED preview takes the whole adapter out LOUDLY, not silently.
+    /// @dev This adapter has no per-stake-token isolation, so the blast radius is the whole adapter — that is
+    ///      architectural, and acceptable only because it is loud. Measured the way `PriceFeedLib` measures it:
+    ///      a starve consumes ~63/64 of the forwarded stipend against a 7/8 threshold, so `GasStipendLib`
+    ///      scores it exhausted and the read fails visibly rather than returning a short list.
+    function test_starvedPreview_isClassifiedExhaustedAtTheAdapterBoundary() public {
+        waUsdc.setPreviewMode(MockErc4626Wrapper.PreviewMode.Starve);
+
+        uint256 available = 4_000_000;
+        uint256 stipend = GasStipendLib.stipendFrom(available);
+        uint256 before = gasleft();
+        try oracle.getAdapterPositions{gas: stipend}(alice, address(0)) returns (
+            INAVCalculator.PositionBalance[] memory
+        ) {
+            fail("a starved preview must not return a partial answer");
+        } catch {
+            uint256 consumed = before - gasleft();
+            assertTrue(
+                GasStipendLib.exhausted(stipend, consumed),
+                "PriceFeedLib's heuristic must score this exhausted, not benign"
+            );
+        }
+    }
+
+    /// @notice A truncated cooldown reply must not be read as a live cooldown.
+    /// @dev PINS the `size < 0x60` arm, which the zero-byte test only REACHED. Review found both arms of
+    ///      `if (!ok || size < 0x60)` unpinned by mutation: with a zero-length reply the window is zeroed, so
+    ///      `cdAmount == 0` short-circuits and deleting the gate produces an identical answer. This fixture
+    ///      answers differently on the arm beneath — word 0 is a full-stake cooldown amount and word 1 is
+    ///      `block.timestamp`, so without the gate the adapter infers an in-window cooldown from two words and
+    ///      emits an UNLOCKED leg. Reaching an arm is not pinning it.
+    function test_truncatedCooldownReply_isRejectedNotReadAsLive() public {
+        MockTruncatedCooldownStakeToken trunc = new MockTruncatedCooldownStakeToken(address(gho), 1.2e18);
+        MockUmbrellaRewardsController c4 = new MockUmbrellaRewardsController();
+        c4.addStakeToken(address(trunc));
+        AaveUmbrellaBalanceAdapter o4 = new AaveUmbrellaBalanceAdapter(address(c4), address(balances));
+        trunc.setBalance(alice, 2000e18);
+
+        INAVCalculator.PositionBalance[] memory pos = o4.getAdapterPositions(alice, address(0));
+
+        assertEq(pos.length, 1, "a truncated reply must yield ONE leg, not a locked/unlocked split");
+        assertTrue(pos[0].isLocked, "and it must be the locked leg");
+        assertEq(pos[0].amount, 2400e18, "carrying the full principal");
+    }
+
+    /// @notice A REVERTING cooldown read must not have its revert payload read as cooldown data.
+    /// @dev PINS the `!ok` arm. The EVM copies returndata into the output window on revert too, and an
+    ///      `Error(string)` payload is 100 bytes — >= 0x60 — so the SIZE gate does not catch a reverting read
+    ///      and `!ok` is the only thing that does. A first attempt used `require(false, ...)` and did NOT pin
+    ///      the arm: that payload's words yield `inWindow == false`, so both arms agreed and the mutation
+    ///      survived. This fixture crafts the revert payload so they disagree — dropping `!ok` makes the
+    ///      adapter infer a live cooldown FROM A REVERT and emit an unlocked leg. Reaching an arm is not
+    ///      pinning it, and the difference is only visible under mutation.
+    function test_revertingCooldownRead_payloadIsNotReadAsCooldownData() public {
+        MockRevertingCooldownPayloadStakeToken noAbi = new MockRevertingCooldownPayloadStakeToken(address(gho), 1.2e18);
+        MockUmbrellaRewardsController c5 = new MockUmbrellaRewardsController();
+        c5.addStakeToken(address(noAbi));
+        AaveUmbrellaBalanceAdapter o5 = new AaveUmbrellaBalanceAdapter(address(c5), address(balances));
+        noAbi.setBalance(alice, 2000e18);
+
+        INAVCalculator.PositionBalance[] memory pos = o5.getAdapterPositions(alice, address(0));
+
+        assertEq(pos.length, 1, "a reverting cooldown read must yield ONE locked leg");
+        assertTrue(pos[0].isLocked);
+        assertEq(pos[0].amount, 2400e18, "carrying the full principal");
+    }
+
+    /// @notice Dirty padding above the declared field widths must not revert the adapter.
+    /// @dev The raw cooldown read replaced a decode of NARROWER types (uint192/uint32/uint32) and so inherited
+    ///      the job of range-checking them. Without the mask, `endOfCooldown + withdrawalWindow` runs checked
+    ///      arithmetic on unmasked words and panics with Panic(0x11) in the caller's frame — past every
+    ///      `catch`, and with no per-stake-token isolation that drops every Umbrella leg from the NAV. Exactly
+    ///      the uncatchable-revert class the read was rewritten to remove, reintroduced by the rewrite. Found
+    ///      in review with a PoC.
+    function test_dirtyCooldownPadding_doesNotRevertTheAdapter() public {
+        MockDirtyCooldownStakeToken dirty = new MockDirtyCooldownStakeToken(address(gho), 1.2e18);
+        MockUmbrellaRewardsController c3 = new MockUmbrellaRewardsController();
+        c3.addStakeToken(address(dirty));
+        AaveUmbrellaBalanceAdapter o3 = new AaveUmbrellaBalanceAdapter(address(c3), address(balances));
+        dirty.setBalance(alice, 2000e18);
+
+        INAVCalculator.PositionBalance[] memory pos = o3.getAdapterPositions(alice, address(0));
+
+        uint256 total;
+        for (uint256 i; i < pos.length; ++i) {
+            total += pos[i].amount;
+        }
+        assertGt(pos.length, 0, "the position must still be reported, not lost to a panic");
+        // The masked window is 0xffffffff, so the cooldown is long past and the split is real rather than a
+        // degradation — what matters is that the full principal survives either way.
+        assertApproxEqAbs(total, 2400e18, 1, "the full principal must be reported");
+    }
+
+    /// @notice A stake token whose `getStakerCooldown` SUCCEEDS with zero bytes does not take the adapter down.
+    /// @dev The same decode-past-the-catch shape `ERC4626RedeemLib` was rewritten for, three lines away in the
+    ///      same call chain: a high-level call expecting return data emits no `extcodesize` check, so an empty
+    ///      reply made the struct decode revert in the caller's frame, past the `catch`. With no
+    ///      per-stake-token isolation that dropped every Umbrella leg. Found in review.
+    function test_emptyCooldownReply_degradesToAllLockedRatherThanRevertingTheAdapter() public {
+        MockEmptyCooldownStakeToken broken = new MockEmptyCooldownStakeToken(address(gho), 1.2e18);
+        MockUmbrellaRewardsController c2 = new MockUmbrellaRewardsController();
+        c2.addStakeToken(address(broken));
+        AaveUmbrellaBalanceAdapter o2 = new AaveUmbrellaBalanceAdapter(address(c2), address(balances));
+        broken.setBalance(alice, 2000e18);
+
+        INAVCalculator.PositionBalance[] memory pos = o2.getAdapterPositions(alice, address(0));
+        assertEq(pos.length, 1, "the position must still be reported");
+        assertEq(pos[0].amount, 2400e18, "at its full amount");
+        assertTrue(pos[0].isLocked, "and degrade to all-locked, which is classification only");
+    }
+}
+
+/// @notice A stake token whose cooldown snapshot has DIRTY padding above the declared field widths.
+/// @dev `CooldownSnapshot` is `(uint192, uint32, uint32)`, so the ABI decoder range-checked every field. A raw
+///      read that skips the mask inherits words the decoder would have rejected — and the window arithmetic is
+///      CHECKED, so `endOfCooldown + withdrawalWindow` panics with Panic(0x11) in the CALLER's frame, past every
+///      `catch`. `amount = 1` clears the no-cooldown early return and `endOfCooldown = 1` keeps the `&&` from
+///      short-circuiting, so the add is actually reached.
+contract MockDirtyCooldownStakeToken {
+    address public immutable asset;
+    uint256 public immutable rate;
+    string public symbol = "stkDIRTY";
+
+    mapping(address => uint256) public balanceOf;
+
+    constructor(address asset_, uint256 rate_) {
+        asset = asset_;
+        rate = rate_;
+    }
+
+    function setBalance(address account, uint256 shares) external {
+        balanceOf[account] = shares;
+    }
+
+    function convertToAssets(uint256 shares) external view returns (uint256) {
+        return (shares * rate) / 1e18;
+    }
+
+    function getStakerCooldown(address) external pure {
+        assembly {
+            mstore(0x00, 1) // amount: non-zero, so the no-cooldown early return is not taken
+            mstore(0x20, 1) // endOfCooldown: <= block.timestamp, so `&&` does not short-circuit
+            mstore(0x40, not(0)) // withdrawalWindow: dirty above bit 32
+            return(0x00, 0x60)
+        }
+    }
+}
+
+/// @notice REVERTS with a 96-byte payload whose words would read as a live, in-window cooldown.
+/// @dev Pins the `!ok` arm, which a plain `require(false, "...")` cannot. The EVM copies returndata into the
+///      output window on revert as well as on success, so `size` is whatever the payload is — and an
+///      `Error(string)` payload is 100 bytes, comfortably >= 0x60. The size gate therefore does NOT catch a
+///      reverting read; `!ok` is the only thing that does. But `Error(string)`'s words happen to yield
+///      `inWindow == false`, so with that payload both arms agree and the mutation survives. This one crafts
+///      the payload so the arms DISAGREE: word 0 is a full-stake amount and word 1 is `block.timestamp`, so
+///      dropping `!ok` makes the adapter infer a live cooldown FROM A REVERT and emit an unlocked leg.
+contract MockRevertingCooldownPayloadStakeToken {
+    address public immutable asset;
+    uint256 public immutable rate;
+    string public symbol = "stkREVPAY";
+
+    mapping(address => uint256) public balanceOf;
+
+    constructor(address asset_, uint256 rate_) {
+        asset = asset_;
+        rate = rate_;
+    }
+
+    function setBalance(address account, uint256 shares) external {
+        balanceOf[account] = shares;
+    }
+
+    function convertToAssets(uint256 shares) external view returns (uint256) {
+        return (shares * rate) / 1e18;
+    }
+
+    function getStakerCooldown(address) external view {
+        assembly {
+            mstore(0x00, 2000000000000000000000) // amount: the whole stake
+            mstore(0x20, timestamp()) // endOfCooldown == now
+            mstore(0x40, 0) // withdrawalWindow 0 -> inWindow reduces to `now == cdEnd`
+            revert(0x00, 0x60) // REVERTS, but with a full three-word payload
+        }
+    }
+}
+
+/// @notice Returns 64 bytes — two words, one short of the snapshot — with a cooldown that would read as LIVE.
+/// @dev Built so the `size < 0x60` arm answers DIFFERENTLY from the arm beneath it, which the zero-byte mock
+///      does not: with a zero-length reply the window is still zeroed, so `cdAmount == 0` short-circuits and
+///      removing the gate changes nothing. Here word 0 is a real cooldown amount and word 1 is
+///      `block.timestamp`, so WITHOUT the gate the adapter infers a live, in-window cooldown from a truncated
+///      reply and splits the principal into an unlocked leg. WITH the gate it reports one locked leg. The leg
+///      shape is the observable difference. `cdWindow` is word 2, which a 64-byte reply never writes, so it
+///      stays the zeroed 0 and `inWindow` reduces to `block.timestamp == cdEnd` — hence returning `timestamp()`.
+contract MockTruncatedCooldownStakeToken {
+    address public immutable asset;
+    uint256 public immutable rate;
+    string public symbol = "stkTRUNC";
+
+    mapping(address => uint256) public balanceOf;
+
+    constructor(address asset_, uint256 rate_) {
+        asset = asset_;
+        rate = rate_;
+    }
+
+    function setBalance(address account, uint256 shares) external {
+        balanceOf[account] = shares;
+    }
+
+    function convertToAssets(uint256 shares) external view returns (uint256) {
+        return (shares * rate) / 1e18;
+    }
+
+    function getStakerCooldown(address) external view {
+        assembly {
+            mstore(0x00, 2000000000000000000000) // amount: the whole stake, so the split is total
+            mstore(0x20, timestamp()) // endOfCooldown == now, so `inWindow` is true with a zero window
+            return(0x00, 0x40) // 64 bytes — one word short
+        }
+    }
+}
+
+/// @notice A stake token that answers `getStakerCooldown` with ZERO bytes rather than reverting.
+/// @dev `try`/`catch` does not intercept this: the call SUCCEEDS and the struct decode reverts in the caller.
+contract MockEmptyCooldownStakeToken {
+    address public immutable asset;
+    uint256 public immutable rate;
+    string public symbol = "stkBROKEN";
+
+    mapping(address => uint256) public balanceOf;
+
+    constructor(address asset_, uint256 rate_) {
+        asset = asset_;
+        rate = rate_;
+    }
+
+    function setBalance(address account, uint256 shares) external {
+        balanceOf[account] = shares;
+    }
+
+    function convertToAssets(uint256 shares) external view returns (uint256) {
+        return (shares * rate) / 1e18;
+    }
+
+    function getStakerCooldown(address) external pure {
+        assembly {
+            return(0x00, 0x00)
+        }
     }
 }

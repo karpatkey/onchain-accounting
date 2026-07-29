@@ -56,18 +56,22 @@ contract DeployImplementations is BaseDeployScript {
         //
         // These are the four assertions `01_2_DeployNAVImplementation` carries in its own `run()` — added there in
         // `62311fb7` and `a8d5dd73`, not from the start. `01` had none at all, so it was the only NUMBERED PROD NAV
-        // deploy script that could broadcast library-linked bytecode unchecked. It is NOT the only script that can:
-        // `script/upgrade/UpgradeNAVCalculator` does `new NAVCalculator()` inside a broadcast with no pin
-        // check and then repoints a LIVE proxy at it, `UpgradeBridgeEscrow` and `05_DeployBridgeAdapters`
-        // broadcast `InvoiceDataLib`-linked bytecode, and `01` still broadcasts the `InvoiceDataLib`-linked
-        // `BridgeEscrow` impl below (that library is not pinned at all — see this PR's discussion).
+        // deploy script that could broadcast library-linked bytecode unchecked. It was not the only script that
+        // could: `script/upgrade/UpgradeNAVCalculator` did `new NAVCalculator()` inside a broadcast with no pin
+        // check and then repointed a LIVE proxy at it — it now carries `_assertPinnedLibrariesUsable`: both
+        // CREATE2-address assertions and both linkage assertions below, plus a code-presence pair the plain-`new`
+        // path needs (it deploys no libraries, so linked-but-empty is a DELEGATECALL into nothing). Still unguarded:
+        // `UpgradeBridgeEscrow` and `05_DeployBridgeAdapters` broadcast `InvoiceDataLib`-linked bytecode, and `01`
+        // still broadcasts the `InvoiceDataLib`-linked `BridgeEscrow` impl below — that library is not pinned at
+        // all, so there is no pin for any of them to assert against.
         //
         // Copied rather than hoisted into `BaseDeployScript` for ONE reason only: in the shared base they would go red
         // on every branch whenever a pin regen is in flight, and would fire for `06_Configure`, `RegisterAssets` and
-        // the `verify` scripts, which deploy nothing. The `upgrade` scripts are NOT such a case — they DO extend
-        // `BaseDeployScript` and DO deploy library-linked bytecode, so hoisting would have covered them; they need a
-        // different check anyway (they deploy via plain `new`, so assertions 1-2 do not apply — what they need is the
-        // linkage assertions plus "the pinned address has code on THIS chain").
+        // the `verify` scripts, which deploy nothing. `UpgradeNAVCalculator` now carries its own copy: all four of
+        // these assertions PLUS a code-presence pair. An earlier draft of that script argued assertions 1-2 did not
+        // apply to it because it deploys via plain `new` and deploys no libraries — that was wrong. Assertions 1-2
+        // are pure functions of the library creation code, the canonical deployer and the salt; they say nothing
+        // about who deploys what, and they are the only ones that catch a pin gone stale against current source.
         //
         // This checks the OUTCOME — does the bytecode about to be broadcast map to the pins? — rather than trying to
         // enumerate the causes of a bad build. That distinction is why it supersedes the profile/env guard attempted in

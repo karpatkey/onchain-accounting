@@ -112,11 +112,9 @@ contract DeployNAVImplementationHarness is DeployNAVImplementation, PinHarnessBe
     }
 
     /// @notice The CREATE2 addresses this script would deploy to, so a test can assert the deploy happened.
-    /// @dev    `bridgeImpl` is `01`'s FOURTH broadcast and is returned separately rather than folded into the
-    ///         3-tuple, because `01_2` has no equivalent. Omitting it left `02_DeployProxies`' dependency on the
-    ///         BridgeEscrow implementation unasserted: deleting the whole `if (plan.bridgeImpl.code.length == 0)`
-    ///         block from `01` used to leave this file entirely green.
-    /// @notice `01_2` deploys three contracts; `01`'s harness returns a fourth. See its docstring.
+    /// @dev    Three, not four: `01_2`'s `ImplPlan` has no `bridgeImpl` member because this script does not deploy
+    ///         the BridgeEscrow implementation. See `DeployImplementationsHarness.computedAddresses` for the
+    ///         fourth address and why it is asserted there.
     function computedAddresses() external pure returns (address priceFeedLib, address navRegistryLib, address navImpl) {
         ImplPlan memory plan = _computeImplPlan();
         return (plan.priceFeedLib, plan.navRegistryLib, plan.navImpl);

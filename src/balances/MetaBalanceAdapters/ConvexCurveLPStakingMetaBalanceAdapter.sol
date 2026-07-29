@@ -235,7 +235,10 @@ contract ConvexCurveLPStakingMetaBalanceAdapter is MetaBalanceAdapter {
     function positionLabels(bytes calldata pid) external view override returns (string[] memory out) {
         (address rewarder, bool ok) = _pidAddress(pid);
         if (!ok) return new string[](0);
-        string memory coins = _coins(rewarder);
+        string memory coins = "";
+        try this.rewarderCoinSymbols{gas: LABEL_LEAF_GAS}(rewarder) returns (string memory c) {
+            coins = c;
+        } catch {}
         if (bytes(coins).length == 0) {
             out = new string[](2);
             out[0] = "Staking";
@@ -265,7 +268,13 @@ contract ConvexCurveLPStakingMetaBalanceAdapter is MetaBalanceAdapter {
 
     /// @notice Derives the "TOKEN0/TOKEN1/…" coin-symbol string from the rewarder's underlying Curve pool ("" on
     ///         failure: unresolvable LP/pool/coins).
-    function _coins(address rewarder) private view returns (string memory) {
+    /// @dev The leaf is derived behind a bounded self-call rather than inline. It reads the chain through
+    ///      addresses reached from the governed coordinate — pool coins, and an ERC20 `symbol()` per coin — and
+    ///      unbounded that work can consume the budget of whatever called in, for a display string. The helper is
+    ///      `external` only so this boundary exists; it is the same shape the pool/gauge symbol readers elsewhere
+    ///      in the family already use. Exhaustion degrades to the two category segments — `["Staking", "Curve LP"]`
+    ///      — exactly as an unreadable symbol already does.
+    function rewarderCoinSymbols(address rewarder) external view returns (string memory) {
         address lpToken = _lpTokenOf(rewarder);
         if (lpToken == address(0)) return "";
         address pool = CurvePoolLib.getPool(lpToken);

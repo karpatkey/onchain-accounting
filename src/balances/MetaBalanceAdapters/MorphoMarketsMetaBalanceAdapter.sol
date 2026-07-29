@@ -6,7 +6,7 @@ import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {LabelLib} from "src/balances/LabelLib.sol";
-import {Id, IMorpho, MarketParams, Position} from "morpho-blue/src/interfaces/IMorpho.sol";
+import {Id, IMorpho, Market, MarketParams, Position} from "morpho-blue/src/interfaces/IMorpho.sol";
 import {MorphoBalancesLib} from "morpho-blue/src/libraries/periphery/MorphoBalancesLib.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -112,17 +112,51 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
         (bytes32 marketId, bool ok) = _pidWord(pid);
         if (!ok) return new string[](0);
         string memory leaf = "";
-        try MORPHO.idToMarketParams(Id.wrap(marketId)) returns (MarketParams memory mp) {
-            // `idToMarketParams` is a plain mapping getter, so an id with NO market returns an all-zero struct
-            // instead of reverting — the `catch` arm never fires for it. Both symbol reads would then fail open to
-            // "?" and the adapter would answer `["Market", "?/?"]`: a confident two-segment breadcrumb, byte-
-            // identical to a real market whose tokens both have unreadable symbols, for a market that does not
-            // exist on this chain. Gate on `loanToken` — every real market has one, whereas an "idle" market
-            // legitimately has `collateralToken == address(0)`, so only `loanToken` can carry the check.
-            if (mp.loanToken != address(0)) {
-                leaf = string.concat(_symbol(mp.collateralToken), "/", _symbol(mp.loanToken));
-            }
+        // No {LABEL_LEAF_GAS} ceiling here, unlike the leaves that reach a caller-chosen contract. This leaf is
+        // already bounded by composition: `MORPHO` is a constructor-pinned immutable, so the call TARGET is not
+        // caller-controlled — only the `marketId` argument is, and it lands in a plain mapping getter whose cost
+        // is fixed — as is the `market` existence read below, on the same already-warm account. The only
+        // caller-influenced work is the two `_symbol` reads, and {LabelLib} already caps each at
+        // `METADATA_READ_GAS`. That is the same reason most of the adapters whose leaves bottom out directly in
+        // {LabelLib} or {StaticCallLib} carry no ceiling either.
+        //
+        // That reasoning does NOT extend to every unbounded leaf in the family, and one is a known exception:
+        // `StakeWiseV3VaultsMetaBalanceAdapter.positionLabels` reaches `_getAssetInfo`, which fetches the entire
+        // registered-asset array — work that is linear in the registry and capped by nothing. It is tracked
+        // separately; it is not made safe by the argument above.
+        // `idToMarketParams` is a plain mapping getter, so an id with NO market returns an all-zero struct instead
+        // of reverting — a `catch` never fires for it. Both symbol reads would then fail open to "?" and the
+        // adapter would answer `["Market", "?/?"]`: a confident two-segment breadcrumb, byte-identical to a real
+        // market whose tokens both have unreadable symbols, for a market that does not exist on this chain.
+        //
+        // Existence is therefore checked against the invariant Morpho actually ENFORCES: `createMarket` sets
+        // `lastUpdate` to the creation timestamp and nothing else ever returns it to zero, so `lastUpdate != 0`
+        // holds if and only if the market was created. Do NOT infer existence from the params instead —
+        // `createMarket` validates only `isIrmEnabled`, `isLltvEnabled` and `lastUpdate == 0`, so it does not
+        // reject a zero `loanToken`, and a market with one is creatable. `collateralToken` is worse still: an idle
+        // market legitimately has none. Both are properties that merely hold for the markets that exist today,
+        // not properties the protocol guarantees.
+        //
+        // Two separate `try`s, deliberately. The body of a `try` runs in the CALLER's frame, so a second external
+        // call placed inside the first one's success arm is NOT covered by its `catch` — a revert there would
+        // propagate straight out of this view instead of degrading to the category. The two `MORPHO` reads
+        // therefore each get their own boundary. Sequencing existence first also means a non-existent id costs one
+        // read rather than two.
+        //
+        // The two `_symbol` reads DO remain inside the second `try`'s body and are deliberately left there: they
+        // are safe because {LabelLib} is revert-free by construction (codesize guard, raw staticcall, ABI-head
+        // validation before decode), NOT because that `catch` covers them — it does not. Anything added alongside
+        // them that is not equally revert-free needs its own `try`.
+        uint256 lastUpdate;
+        try MORPHO.market(Id.wrap(marketId)) returns (Market memory m) {
+            lastUpdate = m.lastUpdate;
         } catch {}
+
+        if (lastUpdate != 0) {
+            try MORPHO.idToMarketParams(Id.wrap(marketId)) returns (MarketParams memory mp) {
+                leaf = string.concat(_symbol(mp.collateralToken), "/", _symbol(mp.loanToken));
+            } catch {}
+        }
         return _labels("Market", leaf);
     }
 

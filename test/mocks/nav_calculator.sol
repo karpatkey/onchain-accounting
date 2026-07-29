@@ -12,10 +12,16 @@ import {PriceFeedNotSet} from "src/errors.sol";
 /// @dev Only implements the minimal interface methods needed by adapters (ERC20DefaultBalanceAdapter)
 contract Mock_NAVCalculator is INAVCalculator {
     /// @notice Registered assets with their metadata
+    /// @dev Field order mirrors `INAVCalculator.Asset` exactly, and that is load-bearing rather than cosmetic:
+    ///      `{address, string, uint8}` cannot pack, so it occupies THREE storage slots per asset, where the
+    ///      tidier `{address, uint8, string}` packs the address and decimals together and occupies two. Any test
+    ///      measuring what a `getRegisteredAssets()` fetch costs — the label leaves that resolve a symbol through
+    ///      the registry scale linearly in it — would understate the real contract by one cold SLOAD per
+    ///      registered asset if this mock packed more tightly than the thing it stands in for.
     struct AssetInfo {
         address asset;
-        uint8 decimals;
         string symbol;
+        uint8 decimals;
     }
 
     AssetInfo[] private _assets;
@@ -151,6 +157,15 @@ contract Mock_NAVCalculator is INAVCalculator {
 
     // Stub implementations for other INAVCalculator methods (not used by adapters)
     function getAccountNav(address, address) external pure override returns (NAV memory) {
+        revert("Not implemented in mock");
+    }
+
+    function getAccountNavForAdapters(address, address, address[] calldata)
+        external
+        pure
+        override
+        returns (PartialNAV memory)
+    {
         revert("Not implemented in mock");
     }
 

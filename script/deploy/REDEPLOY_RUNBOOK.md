@@ -1,8 +1,9 @@
 # NAV stack — from-scratch redeploy runbook
 
 Ordered, per-chain command sequence for the full redeploy of the NAV stack onto a **new proxy**, with
-the precondition and post-condition of every step. Written 2026-07-27 against `main` @ `31c7b1b7`,
-for the hardening wave (PRs #161–#173 + the in-flight gas-cap / positionId-guard / StakeWise work).
+the precondition and post-condition of every step. Written 2026-07-27, revised 2026-07-28 against
+`main` @ `2077c82e` — the hardening wave (PRs #161–#183) is **complete**, so the only remaining
+prerequisite is the two-library pin regen (0.3).
 
 Companion tooling lives in [`preflight/`](preflight/README.md). Everything there is read-only except
 `rehearse_fork.sh`, which only ever broadcasts to a loopback anvil.
@@ -41,11 +42,22 @@ Configured totals, reconciled from config **and** confirmed against the live NAV
 
 Do not start until **all** of these hold.
 
-### 0.1 The in-flight code lands
+### 0.1 The hardening wave — **COMPLETE, no longer blocking**
 
-The gas-cap PR (`PriceFeedLib._getAdapterPositions`, `NAVCalculator._safeStringArray`, the
-caller-side `registerAsset` codesize guard), the malformed-`positionId` guards, and the StakeWise
-label-leaf decision. Deploying before them means doing this twice.
+Every item on this list has merged; `main` is at **`2077c82e`** and no wave PR remains open.
+
+| landed | what it was |
+| --- | --- |
+| #175, #179 | malformed-`positionId` guards |
+| #176 | StakeWise label leaf |
+| #177 | cross-adapter enumeration tripwire |
+| #178 | adapter gas caps (`PriceFeedLib._getAdapterPositions`, `NAVCalculator._safeStringArray`, the caller-side `registerAsset` codesize guard) |
+| #181, #183 | `foundry.lock` drift + its CI guard (see 0.4) |
+| #182 | meta-instance gas starvation |
+
+**The only remaining prerequisite is 0.3, the two-library pin regen.** It is deliberately last so it
+is computed against the fully merged tree — which now includes this branch's `DeploySalts.NAV_PROXY`
+bump (0.2), merged in #180 ahead of it for exactly that reason.
 
 ### 0.2 Bump `DeploySalts.NAV_PROXY` — **CONFIRMED REQUIRED, already done (6 → 7)**
 
@@ -100,8 +112,8 @@ before the bump is stale on arrival.
 
 ### 0.3 Regenerate BOTH library pins — last, in its own commit
 
-Own PR, own commit, computed against the **final merged tree** (including any `DeploySalts` bump from
-0.2). Never in the same commit as a source change — that is exactly how `6b7e4851` wrote a
+Own PR, own commit, computed against the **final merged tree** — which already includes the
+`DeploySalts.NAV_PROXY` bump from 0.2 (merged in #180 ahead of the regen for this reason). Never in the same commit as a source change — that is exactly how `6b7e4851` wrote a
 stale-from-birth pin.
 
 This is a hard gate, not a nicety: `01_2` asserts the computed CREATE2 addresses equal
@@ -113,13 +125,25 @@ Iterate to a fixpoint against CI's computed (LEFT) value; a 2-cycle has been obs
 `forge clean` first — an incremental `out/` yields a wrong address that looks authoritative. See
 `reference_pricefeedlib_pin_drift` for the full history.
 
-### 0.4 Submodules at the recorded commits
+### 0.4 Submodules at the recorded commits — **root cause fixed, keep the check**
 
-A fresh worktree has an empty `lib/`, and `forge build` will run `forge install` and check out
-**different commits than the repo records** — observed here moving
+This was a live hazard during deploy prep and is now resolved. The history is worth keeping because
+the failure was silent and would have invalidated every measurement taken against it.
+
+**What went wrong:** a fresh worktree has an empty `lib/`, so `forge build` runs `forge install`. The
+committed `foundry.lock` was **malformed JSON** (a trailing comma), so forge discarded it
+(`Warning: Failed to parse foundry.lock`) and resolved to remote tips instead — observed moving
 `openzeppelin-contracts-upgradeable` from `1334fc17` to `heads/master` and `forge-std` from
 `887e8725` to `6e8c4a92`, among others. OZ-upgradeable is in `NAVCalculator`'s inheritance chain, so
-this silently changes compiled bytecode and invalidates both the pins and the bytecode audit.
+that silently changes compiled bytecode and would poison both the library pins and the bytecode audit.
+Worse, the lock's revisions also **disagreed with the gitlinks for 5 of 9** submodules, so repairing
+only the comma would have made forge honour a lock that installs the *wrong* set.
+
+**Fixed by #181 + #183:** the lock was regenerated from the gitlinks, and CI now asserts they stay in
+agreement (`script/ci/check-foundry-lock.sh`, wired into `.github/workflows/foundry.yml`). Verified on
+`2077c82e`: the lock parses, has 9 entries, and matches all 9 gitlinks.
+
+Still run the check before building — it is two seconds and it is the thing that goes wrong:
 
 ```bash
 git submodule update --init --recursive --force
@@ -251,8 +275,9 @@ PERSIST_DEPLOYMENTS=1 forge script script/deploy/01_2_DeployNAVImplementation.s.
 
 **Use `01_2`, not `01` — this matters more than it looks.**
 
-1. **`01` has NO pin assertions.** `01_2` carries four `require`s (both CREATE2 pins, plus
-   impl-linked-against-both, `01_2:46-68`); `01` has only "deploy failed" checks. Measured on a
+1. ~~**`01` has NO pin assertions.**~~ **No longer true** — `01` gained the same four `require`s
+   (both CREATE2 pins, plus impl-linked-against-both, `01_2:47-68`) in the PR superseding #188. The
+   history is kept because it is the measurement that motivated the change. Measured on a
    mainnet fork against `main` @ `31c7b1b7` (stale pin): `01_2` reverted safely before broadcasting,
    while `01` **succeeded** and deployed `PriceFeedLib` to `0xee114702…` and `NAVRegistryLib` to
    `0x660e6018…` — the *computed* addresses — even though `NAVCalculator` is linked against the
@@ -278,7 +303,7 @@ PERSIST_DEPLOYMENTS=1 forge script script/deploy/02_2_DeployNAVProxy.s.sol $BROA
 One atomic transaction: placeholder + proxy + `upgradeToAndCall(impl, initialize(...))`, with roles
 granted to `addresses.admin` / `addresses.manager` and the deployer contract renouncing its own
 admin. `initialize()` mints the fresh `ERC20DefaultBalanceAdapter` via
-`NAVRegistryLib.deployDefaultAdapter` (`NAVCalculator.sol:77`) and `02_2` records it.
+`NAVRegistryLib.deployDefaultAdapter` (`NAVCalculator.sol:78`) and `02_2` records it.
 
 - **Precondition:** 1.2 done; `DeploySalts.NAV_PROXY` bumped if 0.2 said so.
 - **Post-condition:**
@@ -291,9 +316,9 @@ admin. `initialize()` mints the fresh `ERC20DefaultBalanceAdapter` via
 
 > **There is no `initialAssets` argument.** `initialize(admin_, chainlinkL2SequencerUptimeFeed_,
 > nativeTokenSymbol_)` hardcodes the ERC20Default seed to `[NATIVE_ADDRESS]`
-> (`NAVCalculator.sol:61-79`). The asset set is *not* frozen at genesis — every `registerAsset` calls
-> `addSupportedAsset` on it (`NAVCalculator.sol:110`), and
-> `excludeAssetFromDefaultAdapter`/`includeAssetInDefaultAdapter` (`:217`/`:224`) mutate it later.
+> (`NAVCalculator.sol:62-78`). The asset set is *not* frozen at genesis — every `registerAsset` calls
+> `addSupportedAsset` on it (`NAVCalculator.sol:133`), and
+> `excludeAssetFromDefaultAdapter`/`includeAssetInDefaultAdapter` (`:240`/`:247`) mutate it later.
 > Nothing needs preparing here, and `script/manage/update-erc20-default-from-chain.sh` is dead code
 > (it reads `chains/<id>.json .deployed.NAVCalculatorProxy`, a path that no longer exists, and skips
 > every chain).
@@ -460,8 +485,14 @@ jq -r '.balanceAdapters.StakeWiseV3ExitQueueAssisted' script/config/deployments/
 
 Hand the owners the **new** assistant addresses from `deployments/{1,100}.json` and confirm each cache
 is non-empty afterwards. All four must be done; the gnosis one is the easy miss because the assisted
-family is usually described as mainnet-only. Until a cache is re-fed, those positions are
-**under-reported** — the adapter reports what it can verify, so NAV is low, not wrong.
+family is usually described as mainnet-only.
+
+**Until a cache is re-fed those positions UNDER-report — they do not report wrongly.** That is the
+family invariant (ADR 0015): the adapter caches position *coordinates only*, values every position
+from live on-chain reads, and re-verifies ownership on every read, so a missing coordinate can only
+omit value, never invent it. Consequence for triage: a NAV that is *low* after the cutover points at
+an un-fed cache and is safe to sit with while owners catch up; a NAV that is *high* is a different
+bug entirely and must not be attributed to this step.
 
 ```bash
 # per (chain, adapter): returns [] until the owner has re-submitted, then the coordinate blobs.
@@ -561,7 +592,7 @@ to the new proxy. The old stack keeps answering until they do; nothing needs unr
 | symptom | cause | fix |
 | --- | --- | --- |
 | `01_2` reverts `… CREATE2 addr != foundry.toml pin` | library bytecode drifted from the pin | regenerate both pins against the final tree (0.3); never from an incremental build |
-| `01` "succeeds" but the NAV reverts on `initialize` | `01` has no pin assertions and deployed the libraries at the *computed* addresses while the impl links the *pinned* ones | use `01_2`; never `01` |
+| `01` "succeeds" but the NAV reverts on `initialize` | historical: `01` had no pin assertions and deployed the libraries at the *computed* addresses while the impl links the *pinned* ones. `01` now asserts the pins, so this fails fast instead | if it still happens, the pins are stale — regenerate, do not work around |
 | a step exits 0 having done nothing | unmet precondition, handled by an early `return` | check the post-condition, not the exit code |
 | `01_2` reverts `NAVCalculator impl not linked against pinned …` | `foundry.toml [libraries]` drifted from `LibraryPins` | make them agree, rebuild |
 | `02_2` reverts inside `AtomicNAVProxyDeployer` | proxy address unchanged → code already there → `upgradeToAndCall` with no admin | bump `DeploySalts.NAV_PROXY` (0.2), then re-pin (0.3) |

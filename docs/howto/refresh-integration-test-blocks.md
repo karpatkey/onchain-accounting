@@ -27,7 +27,7 @@ The single source of truth is [`test/integration/accounts.json`](../../test/inte
 │    submissions in step 2 are tolerated (NAV treats them as 0).       │
 ├──────────────────────────────────────────────────────────────────────┤
 │ 2. forge build once (warm cache) → forge test per chain (PARALLEL)   │
-│    → deploys NAV stack (incl. MerklRewardsAssisted) at the new       │
+│    → deploys NAV stack (incl. MerklRewards) at the new               │
 │    fork, replays fixture proofs into the cache, reads NAV per        │
 │    enabled account, emits SNAPSHOT|... lines applied via jq          │
 ├──────────────────────────────────────────────────────────────────────┤

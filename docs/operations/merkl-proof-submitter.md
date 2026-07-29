@@ -1,8 +1,8 @@
 # Merkl proof-submitter bot — operator's guide
 
-> **Status (2026-07):** the `MerklRewardsAssistedBalanceAdapter` was **removed from `src/`** pending a rewrite (see [CLAUDE.md](../../CLAUDE.md) and [`src/balances/AssistedBalanceAdapters/README.md`](../../src/balances/AssistedBalanceAdapters/README.md)). This runbook is retained for that adapter and applies once it is re-added and deployed. When re-added it will follow the **permissionless assistant-fed** model ([ADR 0018](../decisions/0018-assistant-fed-assisted-balance-adapters.md)) — the `ASSISTANT_ROLE` framing below is historical.
+> **Status (2026-07):** the Merkl adapter is being **re-added as `MerklRewardsBalanceAdapter`** — its own **`attested`** balance-adapter family ([ADR 0022](../decisions/0022-attested-balance-adapter-family.md)), NOT the assisted family. It is **permissionless** and **proof-verified** (no roles), and submit is **upsert** semantics; any `ASSISTANT_ROLE` framing below is historical and does not apply. This runbook applies once the adapter is deployed and its per-chain address is wired.
 
-The `MerklRewardsAssistedBalanceAdapter` adapter (`src/balances/AssistedBalanceAdapters/MerklRewardsAssistedBalanceAdapter.sol`) reports a portfolio's *unclaimed* Merkl rewards by reading an on-chain cache of `(user, token, cumulativeAmount)` tuples. The cache is populated by an off-chain bot that fetches merkle proofs from the Merkl API and submits them to the adapter, where they're verified against the live `Distributor.getMerkleRoot()` before being stored. The adapter cannot fabricate amounts; the bot cannot fabricate amounts; only Merkl's published merkle tree determines what the adapter reports. See [`docs/decisions/0007-merkl-trust-minimized-cache.md`](../decisions/0007-merkl-trust-minimized-cache.md) for the design rationale and trust model.
+The `MerklRewardsBalanceAdapter` adapter (`src/balances/AttestedBalanceAdapters/MerklRewardsBalanceAdapter.sol`) reports a portfolio's *unclaimed* Merkl rewards by reading an on-chain cache of `(user, token, cumulativeAmount)` tuples. The cache is populated by an off-chain bot that fetches merkle proofs from the Merkl API and submits them to the adapter, where they're verified against the live `Distributor.getMerkleRoot()` before being stored. The adapter cannot fabricate amounts; the bot cannot fabricate amounts; only Merkl's published merkle tree determines what the adapter reports. See [`docs/decisions/0007-merkl-trust-minimized-cache.md`](../decisions/0007-merkl-trust-minimized-cache.md) for the design rationale and trust model.
 
 > **Access control: none — permissionless.** `submitProofs` / `submitProofsBatch` / `clearAllocation` take no roles; any address can call them, and every write is verified against the live `Distributor.getMerkleRoot()` — so **proof-verification, not a role, is the integrity guarantee** (no caller can fabricate amounts). The submitter is therefore just a **funded keeper EOA** (this bot): it needs gas and nothing else — no Safe module, no role grant, no ownership wiring. See ADR 0007's 2026-07 permissionless amendment. Where this guide says "owner"/"owner key" below, read it as the keeper EOA.
 
@@ -15,7 +15,7 @@ This document specifies what the bot must do, how often, with what inputs and wh
 Exactly two things, every cycle:
 
 1. **For each (account, chain) pair the operator wants tracked**, fetch the current set of `(token, cumulativeAmount, proof, breakdowns)` allocations from Merkl's API.
-2. **Submit each account's complete allocation set to the deployed `MerklRewardsAssistedBalanceAdapter` on that chain** via `submitProofs` (or the multi-account `submitProofsBatch`), signed by the keeper EOA (no on-chain role required). Submission is **replace** semantics: each `submitProofs(user, allocs)` call drops the user's entire prior cached token set and stores the supplied list, so the bot submits the user's full current allocation list every cycle — not a delta.
+2. **Submit each account's allocations to the deployed `MerklRewardsBalanceAdapter` on that chain** via `submitProofs` (or the multi-account `submitProofsBatch`), signed by the keeper EOA (no on-chain role required). Submission is **upsert** semantics: each `submitProofs(user, allocs)` call adds or refreshes the `(user, token)` entries it carries and **never drops** a token it omits (a token that leaves the tree goes stale → reads 0, and is GC'd via `clearAllocation`). The bot submits the account's full current allocation set every cycle; a partial submit is also safe (it can only add/refresh, never suppress).
 
 That's the whole job. Garbage collection (`clearAllocation`) and ownership transfer are infrequent operator actions, not part of the steady-state loop.
 
@@ -27,7 +27,7 @@ The bot needs four pieces of operator-provided configuration:
 |---|---|---|
 | **Account list** | Operator config | One or more EVM addresses to track. Typically the OIV's per-chain accounts. |
 | **Chain list** | Operator config | Subset of {1, 10, 100, 8453, 42161}. Merkl supports more chains; only those the OIV deploys to matter. |
-| **Adapter address per chain** | `script/config/deployments/<id>.json` → `balanceAdapters.MerklRewardsAssisted` | Read at startup; refresh on redeploy. |
+| **Adapter address per chain** | `script/config/deployments/<id>.json` → `balanceAdapters.MerklRewards` | Read at startup; refresh on redeploy. |
 | **Keeper EOA** | Operator secret store | The EOA that signs `submitProofs`. **No on-chain role** — the adapter is permissionless, so any funded EOA works; keep it topped up with gas on each chain. A plain hot EOA is acceptable here precisely because the key has no privilege beyond paying gas to submit proof-verified data: it cannot fabricate amounts, move funds, or suppress live entries (`clearAllocation` is stale-gated). |
 
 The Distributor address and proof-verification rules are pinned in the adapter; the bot does not need to know about them.
@@ -159,7 +159,7 @@ Which is correct: the user's true total is `cum_{N+1}`, the latest cumulative al
 
 ## Reference
 
-- Adapter source: [`src/balances/AssistedBalanceAdapters/MerklRewardsAssistedBalanceAdapter.sol`](../../src/balances/AssistedBalanceAdapters/MerklRewardsAssistedBalanceAdapter.sol)
+- Adapter source: [`src/balances/AttestedBalanceAdapters/MerklRewardsBalanceAdapter.sol`](../../src/balances/AttestedBalanceAdapters/MerklRewardsBalanceAdapter.sol)
 - Trust-model ADR: [`docs/decisions/0007-merkl-trust-minimized-cache.md`](../decisions/0007-merkl-trust-minimized-cache.md)
 - Merkl Distributor source: <https://github.com/AngleProtocol/merkl-contracts/blob/main/contracts/Distributor.sol>
 - Merkl API: <https://api.merkl.xyz/v4/users/{address}/rewards?chainId={cid}>

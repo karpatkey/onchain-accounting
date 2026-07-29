@@ -4,12 +4,12 @@ pragma solidity ^0.8.0;
 import {NotAContract} from "src/errors.sol";
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.sol";
 import {
-    MerklRewardsAssistedBalanceAdapter,
+    MerklRewardsBalanceAdapter,
     IMerklDistributor
-} from "src/balances/AssistedBalanceAdapters/MerklRewardsAssistedBalanceAdapter.sol";
+} from "src/balances/AttestedBalanceAdapters/MerklRewardsBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
-import {IListFedBalanceAdapter} from "src/balances/IListFedBalanceAdapter.sol";
+import {IAttestedBalanceAdapter} from "src/balances/IAttestedBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
@@ -52,16 +52,16 @@ contract MockMerklDistributor is IMerklDistributor {
     }
 }
 
-/// @title MerklRewardsAssistedBalanceAdapterTest
-/// @notice Unit tests for MerklRewardsAssistedBalanceAdapter. Builds toy 1-, 2-, and 4-leaf merkle trees in-memory using the
+/// @title MerklRewardsBalanceAdapterTest
+/// @notice Unit tests for MerklRewardsBalanceAdapter. Builds toy 1-, 2-, and 4-leaf merkle trees in-memory using the
 ///         same hashing rule as Merkl's Distributor (sorted-pair, `keccak256(abi.encode(a, b))`).
 /// @dev    The adapter is PERMISSIONLESS: `submitProofs`/`submitProofsBatch` take no roles and are callable by anyone
-///         (integrity comes from live-root proof verification). `clearAllocation` is stale-gated: a live entry can only
-///         be replaced, never cleared. Submit is REPLACE semantics: `submitProofs(user, Allocation[])` sets the user's
-///         COMPLETE cached token set (clearing the prior set), so a user's multiple tokens must be submitted in ONE
-///         call (see `_submitMany`).
-contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
-    MerklRewardsAssistedBalanceAdapter public adapter;
+///         (integrity comes from live-root proof verification). Submit is UPSERT semantics: each `(token, proof)`
+///         entry adds/refreshes just that `(user, token)` and never drops a token it omits — so a third party can't
+///         suppress a live entry (removal is only via the stale-gated `clearAllocation`/`clearAccount`). Across-submit
+///         monotonicity (`AmountRegression`) is enforced. Batching a user's tokens in one call is a convenience.
+contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
+    MerklRewardsBalanceAdapter public adapter;
     MockMerklDistributor public distributor;
 
     address public stranger = makeAddr("stranger");
@@ -80,7 +80,7 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
         morpho = _createAndRegisterToken("MORPHO", 18);
 
         // Permissionless: no admin/assistant roles.
-        adapter = new MerklRewardsAssistedBalanceAdapter(address(distributor), address(balances));
+        adapter = new MerklRewardsBalanceAdapter(address(distributor), address(balances));
     }
 
     // ============================================
@@ -131,33 +131,32 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
         proof[0] = leaves[leafIdx == 0 ? 1 : 0];
     }
 
-    /// @dev Wrap a single (token, amount, proof) into the per-user replace submit. Submit is replace semantics, so this
-    ///      sets the user's cached set to exactly this one token. Permissionless — any caller works.
+    /// @dev Wrap a single (token, amount, proof) into a submit. Submit is UPSERT semantics — this adds/refreshes just
+    ///      this one (user, token) and leaves any other cached tokens untouched. Permissionless — any caller works.
     function _submitOne(address user, address token, uint256 amount, bytes32[] memory proof) internal {
-        MerklRewardsAssistedBalanceAdapter.Allocation[] memory allocs =
-            new MerklRewardsAssistedBalanceAdapter.Allocation[](1);
-        allocs[0] = MerklRewardsAssistedBalanceAdapter.Allocation({
+        MerklRewardsBalanceAdapter.Allocation[] memory allocs = new MerklRewardsBalanceAdapter.Allocation[](1);
+        allocs[0] = MerklRewardsBalanceAdapter.Allocation({
             token: token,
             cumulativeAmount: amount,
             proof: proof,
-            campaigns: new MerklRewardsAssistedBalanceAdapter.CampaignShare[](0)
+            campaigns: new MerklRewardsBalanceAdapter.CampaignShare[](0)
         });
         adapter.submitProofs(user, allocs);
     }
 
-    /// @dev Submit several (token, amount, proof) entries for one user in a single replace submit. Needed because a
-    ///      per-user submit replaces the whole set — multiple tokens for one user must go in one call.
+    /// @dev Submit several (token, amount, proof) entries for one user in one call. Upsert semantics — each entry
+    ///      adds/refreshes its (user, token); batching in one call is a convenience, not a requirement.
     function _submitMany(address user, address[] memory tokens, uint256[] memory amounts, bytes32[][] memory proofs)
         internal
     {
-        MerklRewardsAssistedBalanceAdapter.Allocation[] memory allocs =
-            new MerklRewardsAssistedBalanceAdapter.Allocation[](tokens.length);
+        MerklRewardsBalanceAdapter.Allocation[] memory allocs =
+            new MerklRewardsBalanceAdapter.Allocation[](tokens.length);
         for (uint256 i; i < tokens.length; ++i) {
-            allocs[i] = MerklRewardsAssistedBalanceAdapter.Allocation({
+            allocs[i] = MerklRewardsBalanceAdapter.Allocation({
                 token: tokens[i],
                 cumulativeAmount: amounts[i],
                 proof: proofs[i],
-                campaigns: new MerklRewardsAssistedBalanceAdapter.CampaignShare[](0)
+                campaigns: new MerklRewardsBalanceAdapter.CampaignShare[](0)
             });
         }
         adapter.submitProofs(user, allocs);
@@ -169,22 +168,22 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_constructor_revertsOnZeroDistributor() public {
         vm.expectRevert(InvalidArguments.selector);
-        new MerklRewardsAssistedBalanceAdapter(address(0), address(balances));
+        new MerklRewardsBalanceAdapter(address(0), address(balances));
     }
 
     function test_constructor_revertsOnZeroNavCalculator() public {
         vm.expectRevert(InvalidArguments.selector);
-        new MerklRewardsAssistedBalanceAdapter(address(distributor), address(0));
+        new MerklRewardsBalanceAdapter(address(distributor), address(0));
     }
 
     function test_constructor_revertsOnNonContractDistributor() public {
         vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "Distributor"));
-        new MerklRewardsAssistedBalanceAdapter(makeAddr("eoa"), address(balances));
+        new MerklRewardsBalanceAdapter(makeAddr("eoa"), address(balances));
     }
 
     function test_constructor_revertsOnNonContractNavCalculator() public {
         vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "NAVCalculator"));
-        new MerklRewardsAssistedBalanceAdapter(address(distributor), makeAddr("eoa"));
+        new MerklRewardsBalanceAdapter(address(distributor), makeAddr("eoa"));
     }
 
     function test_constructor_setsImmutableState() public view {
@@ -198,7 +197,7 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_supportsInterface() public view {
         assertTrue(adapter.supportsInterface(type(IBalanceAdapter).interfaceId));
-        assertTrue(adapter.supportsInterface(type(IListFedBalanceAdapter).interfaceId));
+        assertTrue(adapter.supportsInterface(type(IAttestedBalanceAdapter).interfaceId));
         assertTrue(adapter.supportsInterface(type(IPositionDescribable).interfaceId));
         assertTrue(adapter.supportsInterface(type(IERC165).interfaceId));
         // No AccessControl anymore — permissionless.
@@ -229,13 +228,12 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
         bytes32 leaf = _leaf(alice, address(arb), 100 ether);
         distributor.setRoot(leaf);
 
-        MerklRewardsAssistedBalanceAdapter.Allocation[] memory allocs =
-            new MerklRewardsAssistedBalanceAdapter.Allocation[](1);
-        allocs[0] = MerklRewardsAssistedBalanceAdapter.Allocation({
+        MerklRewardsBalanceAdapter.Allocation[] memory allocs = new MerklRewardsBalanceAdapter.Allocation[](1);
+        allocs[0] = MerklRewardsBalanceAdapter.Allocation({
             token: address(arb),
             cumulativeAmount: 100 ether,
             proof: new bytes32[](0),
-            campaigns: new MerklRewardsAssistedBalanceAdapter.CampaignShare[](0)
+            campaigns: new MerklRewardsBalanceAdapter.CampaignShare[](0)
         });
         vm.prank(stranger);
         adapter.submitProofs(alice, allocs);
@@ -250,15 +248,14 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
         bytes32 leaf = _leaf(alice, address(arb), 100 ether);
         distributor.setRoot(leaf);
 
-        MerklRewardsAssistedBalanceAdapter.Allocation[] memory allocs =
-            new MerklRewardsAssistedBalanceAdapter.Allocation[](1);
-        allocs[0] = MerklRewardsAssistedBalanceAdapter.Allocation({
+        MerklRewardsBalanceAdapter.Allocation[] memory allocs = new MerklRewardsBalanceAdapter.Allocation[](1);
+        allocs[0] = MerklRewardsBalanceAdapter.Allocation({
             token: address(arb),
             cumulativeAmount: 999 ether, // fabricated — not the leaf amount
             proof: new bytes32[](0),
-            campaigns: new MerklRewardsAssistedBalanceAdapter.CampaignShare[](0)
+            campaigns: new MerklRewardsBalanceAdapter.CampaignShare[](0)
         });
-        vm.expectRevert(MerklRewardsAssistedBalanceAdapter.InvalidProof.selector);
+        vm.expectRevert(MerklRewardsBalanceAdapter.InvalidProof.selector);
         vm.prank(stranger);
         adapter.submitProofs(alice, allocs);
     }
@@ -341,14 +338,17 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
         distributor.setRoot(leaf);
 
         vm.expectEmit(true, true, false, true, address(adapter));
-        emit MerklRewardsAssistedBalanceAdapter.AllocationCached(
+        emit MerklRewardsBalanceAdapter.AllocationCached(
             alice, address(arb), 100 ether, leaf, uint64(block.timestamp), 0
         );
         _submitOne(alice, address(arb), 100 ether, new bytes32[](0));
     }
 
-    function test_submitProofs_replacesPriorSet() public {
-        // Seed alice with {ARB, OP}.
+    /// @notice UPSERT semantics (not replace): a submit that OMITS a token leaves that token's live entry intact — a
+    ///         caller can never suppress a live allocation by omitting it (removal is only via the stale-gated
+    ///         `clearAllocation`/`clearAccount`). This is the fix for the permissionless-suppression finding.
+    function test_submitProofs_upsertKeepsOmittedTokens() public {
+        // Seed alice with {ARB, OP} under one root.
         bytes32[2] memory leaves;
         leaves[0] = _leaf(alice, address(arb), 100 ether);
         leaves[1] = _leaf(alice, address(op), 50 ether);
@@ -367,16 +367,29 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
         _submitMany(alice, tokens, amounts, proofs);
         assertEq(adapter.userTokens(alice).length, 2);
 
-        // Re-submitting ONLY {OP} replaces the set — ARB is dropped.
-        bytes32 opLeaf = _leaf(alice, address(op), 50 ether);
-        distributor.setRoot(opLeaf);
-        _submitOne(alice, address(op), 50 ether, new bytes32[](0));
+        // Re-submit ONLY {OP} against the SAME (still-live) root — an upsert of OP; ARB is NOT dropped.
+        _submitOne(alice, address(op), 50 ether, p1);
 
-        address[] memory after_ = adapter.userTokens(alice);
-        assertEq(after_.length, 1, "prior set replaced, not merged");
-        assertEq(after_[0], address(op));
+        assertEq(adapter.userTokens(alice).length, 2, "omitted token NOT dropped (upsert, not replace)");
         (uint256 arbAmt,,) = adapter.allocations(alice, address(arb));
-        assertEq(arbAmt, 0, "dropped ARB entry zeroed");
+        assertEq(arbAmt, 100 ether, "omitted ARB entry left intact");
+    }
+
+    /// @notice A third party cannot suppress a victim's live rewards with an empty (or partial) submit — the upsert
+    ///         never clears. (The old `_replace` clear-first design let `submitProofs(victim, [])` wipe the set.)
+    function test_submitProofs_emptyListCannotSuppressLive() public {
+        bytes32 leaf = _leaf(alice, address(arb), 100 ether);
+        distributor.setRoot(leaf);
+        _submitOne(alice, address(arb), 100 ether, new bytes32[](0));
+        assertEq(adapter.userTokens(alice).length, 1);
+
+        // Attacker submits an EMPTY list for alice — a no-op, not a wipe.
+        vm.prank(makeAddr("attacker"));
+        adapter.submitProofs(alice, new MerklRewardsBalanceAdapter.Allocation[](0));
+
+        assertEq(adapter.userTokens(alice).length, 1, "empty submit must not drop live entries");
+        (uint256 amt,,) = adapter.allocations(alice, address(arb));
+        assertEq(amt, 100 ether, "live ARB entry untouched by third-party empty submit");
     }
 
     function test_submitProofs_overwritesPriorEntry_doesNotDuplicateUserTokenList() public {
@@ -422,21 +435,21 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_submitProofs_revertsOnUninitializedRoot() public {
         // root == 0
-        vm.expectRevert(MerklRewardsAssistedBalanceAdapter.UninitializedRoot.selector);
+        vm.expectRevert(MerklRewardsBalanceAdapter.UninitializedRoot.selector);
         _submitOne(alice, address(arb), 100 ether, new bytes32[](0));
     }
 
     function test_submitProofs_revertsOnInvalidProof_wrongAmount() public {
         bytes32 leaf = _leaf(alice, address(arb), 100 ether);
         distributor.setRoot(leaf);
-        vm.expectRevert(MerklRewardsAssistedBalanceAdapter.InvalidProof.selector);
+        vm.expectRevert(MerklRewardsBalanceAdapter.InvalidProof.selector);
         _submitOne(alice, address(arb), 999 ether, new bytes32[](0));
     }
 
     function test_submitProofs_revertsOnInvalidProof_wrongUser() public {
         bytes32 leaf = _leaf(alice, address(arb), 100 ether);
         distributor.setRoot(leaf);
-        vm.expectRevert(MerklRewardsAssistedBalanceAdapter.InvalidProof.selector);
+        vm.expectRevert(MerklRewardsBalanceAdapter.InvalidProof.selector);
         _submitOne(bob, address(arb), 100 ether, new bytes32[](0));
     }
 
@@ -451,13 +464,12 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
         // Corrupt the sibling
         proof[0] = bytes32(uint256(proof[0]) ^ uint256(1));
 
-        vm.expectRevert(MerklRewardsAssistedBalanceAdapter.InvalidProof.selector);
+        vm.expectRevert(MerklRewardsBalanceAdapter.InvalidProof.selector);
         _submitOne(alice, address(arb), 100 ether, proof);
     }
 
-    /// @notice Across-submit monotonicity is NOT enforced under replace (the cleared cache makes the guard moot) — the
-    ///         live-root proof is the guarantee. The `AmountRegression` guard still catches a decreasing DUPLICATE
-    ///         token within a single submitted list.
+    /// @notice The `AmountRegression` guard rejects a decreasing cumulative — both a DUPLICATE token within one list
+    ///         (this test) and across submits (now that upsert no longer clears the prior entry; see below).
     function test_submitProofs_revertsOnWithinListRegression() public {
         // Tree containing both leaf(alice, ARB, 100) and leaf(alice, ARB, 50) so both proofs verify against one root.
         bytes32[2] memory leaves;
@@ -468,35 +480,43 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
         distributor.setRoot(root);
 
         // Same token twice, decreasing: the second entry trips AmountRegression.
-        MerklRewardsAssistedBalanceAdapter.Allocation[] memory allocs =
-            new MerklRewardsAssistedBalanceAdapter.Allocation[](2);
-        allocs[0] = MerklRewardsAssistedBalanceAdapter.Allocation({
+        MerklRewardsBalanceAdapter.Allocation[] memory allocs = new MerklRewardsBalanceAdapter.Allocation[](2);
+        allocs[0] = MerklRewardsBalanceAdapter.Allocation({
             token: address(arb),
             cumulativeAmount: 100 ether,
             proof: p0,
-            campaigns: new MerklRewardsAssistedBalanceAdapter.CampaignShare[](0)
+            campaigns: new MerklRewardsBalanceAdapter.CampaignShare[](0)
         });
-        allocs[1] = MerklRewardsAssistedBalanceAdapter.Allocation({
+        allocs[1] = MerklRewardsBalanceAdapter.Allocation({
             token: address(arb),
             cumulativeAmount: 50 ether,
             proof: p1,
-            campaigns: new MerklRewardsAssistedBalanceAdapter.CampaignShare[](0)
+            campaigns: new MerklRewardsBalanceAdapter.CampaignShare[](0)
         });
-        vm.expectRevert(MerklRewardsAssistedBalanceAdapter.AmountRegression.selector);
+        vm.expectRevert(MerklRewardsBalanceAdapter.AmountRegression.selector);
         adapter.submitProofs(alice, allocs);
     }
 
-    /// @notice Under replace, a NEW submit with a lower amount than a prior submit is accepted (the prior cache is
-    ///         cleared first) — across-submit monotonicity is intentionally not enforced.
-    function test_submitProofs_lowerAmountInNewSubmitAccepted() public {
+    /// @notice Under UPSERT, a new submit with a lower cumulative than the cached one REVERTS `AmountRegression`
+    ///         (the prior entry is no longer cleared first). A legitimately lower value only arises after a root
+    ///         rotation, which makes the cached entry stale (reads 0) and clearable — so the keeper clears, then
+    ///         resubmits. This test proves both halves.
+    function test_submitProofs_lowerAmountAcrossSubmitsRevertsThenClearable() public {
         bytes32 leaf1 = _leaf(alice, address(arb), 100 ether);
         distributor.setRoot(leaf1);
         _submitOne(alice, address(arb), 100 ether, new bytes32[](0));
 
+        // Root rotates to a tree where ARB's cumulative is lower.
         bytes32 leaf2 = _leaf(alice, address(arb), 50 ether);
         distributor.setRoot(leaf2);
-        _submitOne(alice, address(arb), 50 ether, new bytes32[](0)); // lower — accepted under replace
 
+        // Direct resubmit is rejected — 50 < cached 100.
+        vm.expectRevert(MerklRewardsBalanceAdapter.AmountRegression.selector);
+        _submitOne(alice, address(arb), 50 ether, new bytes32[](0));
+
+        // The cached entry is stale (cached root != live root) → reads 0 → clearable; then the lower value lands.
+        adapter.clearAllocation(alice, address(arb));
+        _submitOne(alice, address(arb), 50 ether, new bytes32[](0));
         (uint256 amt,,) = adapter.allocations(alice, address(arb));
         assertEq(amt, 50 ether);
     }
@@ -516,31 +536,30 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
         distributor.setRoot(root);
 
         address[] memory users = new address[](2);
-        MerklRewardsAssistedBalanceAdapter.Allocation[][] memory allocs =
-            new MerklRewardsAssistedBalanceAdapter.Allocation[][](2);
+        MerklRewardsBalanceAdapter.Allocation[][] memory allocs = new MerklRewardsBalanceAdapter.Allocation[][](2);
 
         // alice: ARB (leaf 0) + OP (leaf 2)
         users[0] = alice;
-        allocs[0] = new MerklRewardsAssistedBalanceAdapter.Allocation[](2);
+        allocs[0] = new MerklRewardsBalanceAdapter.Allocation[](2);
         (, bytes32[] memory aArb) = _buildTree4(leaves, 0);
         (, bytes32[] memory aOp) = _buildTree4(leaves, 2);
-        allocs[0][0] = MerklRewardsAssistedBalanceAdapter.Allocation(
-            address(arb), 100 ether, aArb, new MerklRewardsAssistedBalanceAdapter.CampaignShare[](0)
+        allocs[0][0] = MerklRewardsBalanceAdapter.Allocation(
+            address(arb), 100 ether, aArb, new MerklRewardsBalanceAdapter.CampaignShare[](0)
         );
-        allocs[0][1] = MerklRewardsAssistedBalanceAdapter.Allocation(
-            address(op), 50 ether, aOp, new MerklRewardsAssistedBalanceAdapter.CampaignShare[](0)
+        allocs[0][1] = MerklRewardsBalanceAdapter.Allocation(
+            address(op), 50 ether, aOp, new MerklRewardsBalanceAdapter.CampaignShare[](0)
         );
 
         // bob: ARB (leaf 1) + OP (leaf 3)
         users[1] = bob;
-        allocs[1] = new MerklRewardsAssistedBalanceAdapter.Allocation[](2);
+        allocs[1] = new MerklRewardsBalanceAdapter.Allocation[](2);
         (, bytes32[] memory bArb) = _buildTree4(leaves, 1);
         (, bytes32[] memory bOp) = _buildTree4(leaves, 3);
-        allocs[1][0] = MerklRewardsAssistedBalanceAdapter.Allocation(
-            address(arb), 200 ether, bArb, new MerklRewardsAssistedBalanceAdapter.CampaignShare[](0)
+        allocs[1][0] = MerklRewardsBalanceAdapter.Allocation(
+            address(arb), 200 ether, bArb, new MerklRewardsBalanceAdapter.CampaignShare[](0)
         );
-        allocs[1][1] = MerklRewardsAssistedBalanceAdapter.Allocation(
-            address(op), 75 ether, bOp, new MerklRewardsAssistedBalanceAdapter.CampaignShare[](0)
+        allocs[1][1] = MerklRewardsBalanceAdapter.Allocation(
+            address(op), 75 ether, bOp, new MerklRewardsBalanceAdapter.CampaignShare[](0)
         );
 
         adapter.submitProofsBatch(users, allocs);
@@ -551,8 +570,7 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_submitProofsBatch_revertsOnLengthMismatch() public {
         address[] memory users = new address[](2);
-        MerklRewardsAssistedBalanceAdapter.Allocation[][] memory allocs =
-            new MerklRewardsAssistedBalanceAdapter.Allocation[][](1); // mismatch
+        MerklRewardsBalanceAdapter.Allocation[][] memory allocs = new MerklRewardsBalanceAdapter.Allocation[][](1); // mismatch
 
         vm.expectRevert(InvalidArguments.selector);
         adapter.submitProofsBatch(users, allocs);
@@ -603,14 +621,14 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
     function test_clearAllocation_revertsWhenLive() public {
         _seedAllocation(alice, address(arb), 100 ether);
         vm.expectRevert(
-            abi.encodeWithSelector(MerklRewardsAssistedBalanceAdapter.AllocationStillLive.selector, alice, address(arb))
+            abi.encodeWithSelector(MerklRewardsBalanceAdapter.AllocationStillLive.selector, alice, address(arb))
         );
         adapter.clearAllocation(alice, address(arb));
     }
 
     /// @notice Clearing a (user, token) with nothing cached reverts NothingToClear.
     function test_clearAllocation_revertsNothingToClear() public {
-        vm.expectRevert(MerklRewardsAssistedBalanceAdapter.NothingToClear.selector);
+        vm.expectRevert(MerklRewardsBalanceAdapter.NothingToClear.selector);
         adapter.clearAllocation(alice, address(arb));
     }
 
@@ -696,7 +714,7 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
         distributor.setClaimed(alice, address(op), uint208(50 ether), uint48(block.timestamp), bytes32(0));
 
         vm.expectRevert(
-            abi.encodeWithSelector(MerklRewardsAssistedBalanceAdapter.AllocationStillLive.selector, alice, address(arb))
+            abi.encodeWithSelector(MerklRewardsBalanceAdapter.AllocationStillLive.selector, alice, address(arb))
         );
         adapter.clearAccount(alice);
 
@@ -713,7 +731,7 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
         distributor.setRoot(keccak256("rotated root"));
 
         vm.expectEmit(true, false, false, false, address(adapter));
-        emit MerklRewardsAssistedBalanceAdapter.AccountCleared(alice);
+        emit MerklRewardsBalanceAdapter.AccountCleared(alice);
         adapter.clearAccount(alice);
 
         assertEq(adapter.userTokens(alice).length, 0);
@@ -733,7 +751,7 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
 
     /// @notice Bulk-clearing a never-cached account reverts NothingToClear.
     function test_clearAccount_revertsNothingToClear() public {
-        vm.expectRevert(MerklRewardsAssistedBalanceAdapter.NothingToClear.selector);
+        vm.expectRevert(MerklRewardsBalanceAdapter.NothingToClear.selector);
         adapter.clearAccount(alice);
     }
 
@@ -948,13 +966,12 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
         address user,
         address token,
         uint256 tokenCumulative,
-        MerklRewardsAssistedBalanceAdapter.CampaignShare[] memory shares
+        MerklRewardsBalanceAdapter.CampaignShare[] memory shares
     ) internal {
         bytes32 leaf = _leaf(user, token, tokenCumulative);
         distributor.setRoot(leaf);
-        MerklRewardsAssistedBalanceAdapter.Allocation[] memory allocs =
-            new MerklRewardsAssistedBalanceAdapter.Allocation[](1);
-        allocs[0] = MerklRewardsAssistedBalanceAdapter.Allocation({
+        MerklRewardsBalanceAdapter.Allocation[] memory allocs = new MerklRewardsBalanceAdapter.Allocation[](1);
+        allocs[0] = MerklRewardsBalanceAdapter.Allocation({
             token: token, cumulativeAmount: tokenCumulative, proof: new bytes32[](0), campaigns: shares
         });
         adapter.submitProofs(user, allocs);
@@ -963,9 +980,8 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
     function test_positionInstanceId_carriesCampaignPair() public {
         bytes32 cid = keccak256("merkl-campaign-1");
         bytes32 sub = keccak256("merkl-subcampaign-1");
-        MerklRewardsAssistedBalanceAdapter.CampaignShare[] memory shares =
-            new MerklRewardsAssistedBalanceAdapter.CampaignShare[](1);
-        shares[0] = MerklRewardsAssistedBalanceAdapter.CampaignShare({
+        MerklRewardsBalanceAdapter.CampaignShare[] memory shares = new MerklRewardsBalanceAdapter.CampaignShare[](1);
+        shares[0] = MerklRewardsBalanceAdapter.CampaignShare({
             campaignId: cid, subCampaignId: sub, cumulativeAmount: 100 ether
         });
         _submitWithCampaigns(alice, address(arb), 100 ether, shares);
@@ -991,12 +1007,11 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
     function test_multipleCampaigns_splitProRataByShare() public {
         bytes32 cidA = keccak256("campaign-A");
         bytes32 cidB = keccak256("campaign-B");
-        MerklRewardsAssistedBalanceAdapter.CampaignShare[] memory shares =
-            new MerklRewardsAssistedBalanceAdapter.CampaignShare[](2);
-        shares[0] = MerklRewardsAssistedBalanceAdapter.CampaignShare({
+        MerklRewardsBalanceAdapter.CampaignShare[] memory shares = new MerklRewardsBalanceAdapter.CampaignShare[](2);
+        shares[0] = MerklRewardsBalanceAdapter.CampaignShare({
             campaignId: cidA, subCampaignId: ZERO, cumulativeAmount: 60 ether
         });
-        shares[1] = MerklRewardsAssistedBalanceAdapter.CampaignShare({
+        shares[1] = MerklRewardsBalanceAdapter.CampaignShare({
             campaignId: cidB, subCampaignId: ZERO, cumulativeAmount: 40 ether
         });
         _submitWithCampaigns(alice, address(arb), 100 ether, shares); // Σ shares == 100 ether == token total
@@ -1014,22 +1029,20 @@ contract MerklRewardsAssistedBalanceAdapterTest is BalanceAdapterTestBase {
     function test_submit_revertsWhenCampaignSharesDontSumToTotal() public {
         bytes32 leaf = _leaf(alice, address(arb), 100 ether);
         distributor.setRoot(leaf);
-        MerklRewardsAssistedBalanceAdapter.CampaignShare[] memory shares =
-            new MerklRewardsAssistedBalanceAdapter.CampaignShare[](2);
-        shares[0] = MerklRewardsAssistedBalanceAdapter.CampaignShare({
+        MerklRewardsBalanceAdapter.CampaignShare[] memory shares = new MerklRewardsBalanceAdapter.CampaignShare[](2);
+        shares[0] = MerklRewardsBalanceAdapter.CampaignShare({
             campaignId: keccak256("a"), subCampaignId: ZERO, cumulativeAmount: 60 ether
         });
-        shares[1] = MerklRewardsAssistedBalanceAdapter.CampaignShare({
+        shares[1] = MerklRewardsBalanceAdapter.CampaignShare({
             campaignId: keccak256("b"), subCampaignId: ZERO, cumulativeAmount: 30 ether
         }); // sum 90 != 100
-        MerklRewardsAssistedBalanceAdapter.Allocation[] memory allocs =
-            new MerklRewardsAssistedBalanceAdapter.Allocation[](1);
-        allocs[0] = MerklRewardsAssistedBalanceAdapter.Allocation({
+        MerklRewardsBalanceAdapter.Allocation[] memory allocs = new MerklRewardsBalanceAdapter.Allocation[](1);
+        allocs[0] = MerklRewardsBalanceAdapter.Allocation({
             token: address(arb), cumulativeAmount: 100 ether, proof: new bytes32[](0), campaigns: shares
         });
         vm.expectRevert(
             abi.encodeWithSelector(
-                MerklRewardsAssistedBalanceAdapter.CampaignSumMismatch.selector, address(arb), 90 ether, 100 ether
+                MerklRewardsBalanceAdapter.CampaignSumMismatch.selector, address(arb), 90 ether, 100 ether
             )
         );
         adapter.submitProofs(alice, allocs);

@@ -22,24 +22,31 @@ harmful); they cannot fabricate, inflate, or populate fake entries. So the compl
 assistant is removed — anyone (a public keeper, or the account itself) can refresh — while the "cannot over-report"
 Iron Law is preserved by the same proof check.
 
-**`clearAllocation` is now stale-gated (fixes finding L-02).** It reverts `AllocationStillLive` if the entry still
-contributes to NAV (cached root == live root AND unclaimed > 0), and `NothingToClear` if nothing is cached; it only
-deletes entries that are stale (root rotated) or fully claimed. A live entry can only be *replaced* via `submitProofs`,
-never suppressed — so the old L-02 vector (an `ASSISTANT_ROLE` holder zeroing a valid allocation) is structurally gone.
+**`submitProofs` is upsert; `clearAllocation`/`clearAccount` are stale-gated (fixes L-02 and the permissionless-
+suppression follow-up).** `submitProofs` **upserts** each proven `(user, token)` — it adds or refreshes the entries it
+carries and never drops a token it omits — so a partial or empty submit can NOT suppress a live entry. Removal is only
+via `clearAllocation`/`clearAccount`, which revert `AllocationStillLive` while an entry still contributes to NAV
+(cached root == live root AND unclaimed > 0) and only delete stale (root-rotated) or fully-claimed entries. So a live
+allocation can be *refreshed* but never suppressed by any caller — both the old L-02 vector (an `ASSISTANT_ROLE`
+holder zeroing a valid allocation) and the clear-then-store wipe (`submitProofs(victim, [])` under the earlier
+"replace whole list" draft) are structurally gone.
 
-**A new "list-fed" family (`IListFedBalanceAdapter`), NOT the coordinate-cache `IAssistedBalanceAdapter`.** Merkl does
-**not** implement the `IAssistedBalanceAdapter` marker ([ADR 0018](0018-assistant-fed-assisted-balance-adapters.md)):
-that family is `msg.sender`-keyed and caches *coordinates, never amounts*, valuing each read from live on-chain reads +
-per-read ownership re-verification, fed by a `delegatecall` assistant. Merkl is categorically different, so it gets its
-own marker **`IListFedBalanceAdapter`** (`src/balances/IListFedBalanceAdapter.sol`): externally-fed by a **permissionless
-keeper EOA** (no assistant contract) that submits an account's **whole element list** (replace), **on-behalf-of** (explicit
-`account`), and caches a **proof-verified amount** (the allocation is off-chain and not derivable on-chain). Its
-"under-report only" guarantee rests on **proof-verification + stale-root→0** (return 0 whenever the cached root ≠ the
-live root), not on `msg.sender`-keying or live ownership re-verification. The family's one universal mutator is a
-stale-gated `clearAccount(address)` (reverts while any element is live). Merkl is the first list-fed member; it is a
-`IListFedBalanceAdapter` + `IPositionDescribable` adapter (the documented mutable exception), permissionless. The fully-on-chain alternative was researched and ruled out: Merkl commits only a root
-+ IPFS pointer on-chain and computes allocations off-chain, so no `view` (and no on-chain recomputation) can produce an
-unclaimed amount without externally-supplied leaf data — the proof-fed cache is the trust-minimized optimum.
+**A new "attested" family (`IAttestedBalanceAdapter`), NOT the coordinate-cache `IAssistedBalanceAdapter` — see
+[ADR 0022](0022-attested-balance-adapter-family.md).** Merkl does **not** implement the `IAssistedBalanceAdapter`
+marker ([ADR 0018](0018-assistant-fed-assisted-balance-adapters.md)): that family is `msg.sender`-keyed and caches
+*coordinates, never amounts*, valuing each read from live on-chain reads + per-read ownership re-verification, fed by a
+`delegatecall` assistant. Merkl is categorically different, so it gets its own marker **`IAttestedBalanceAdapter`**
+(`src/balances/IAttestedBalanceAdapter.sol`): externally-fed by a **permissionless keeper EOA** (no assistant
+contract) that **upserts** proven `(account, token)` allocations **on-behalf-of** (explicit `account`) — each write
+adds/refreshes, never drops an omitted entry — and caches a **proof-verified amount** (the allocation is off-chain and
+not derivable on-chain). Its "under-report only" guarantee rests on **proof-verification + stale-root→0** (return 0
+whenever the cached root ≠ the live root), not on `msg.sender`-keying or live ownership re-verification. The family's
+one universal mutator is a stale-gated `clearAccount(address)` (reverts while any element is live). Merkl
+(`MerklRewardsBalanceAdapter`, `src/balances/AttestedBalanceAdapters/`) is the first attested member — an
+`IAttestedBalanceAdapter` + `IPositionDescribable` adapter (the documented mutable exception), permissionless. The
+fully-on-chain alternative was researched and ruled out: Merkl commits only a root + IPFS pointer on-chain and computes
+allocations off-chain, so no `view` (and no on-chain recomputation) can produce an unclaimed amount without
+externally-supplied leaf data — the proof-fed cache is the trust-minimized optimum.
 
 ## Context
 
@@ -106,10 +113,12 @@ Ship `MerklRewardsAssistedBalanceAdapter` (`src/balances/AssistedBalanceAdapters
 
 ## Reference
 
-- Adapter: `src/balances/AssistedBalanceAdapters/MerklRewardsAssistedBalanceAdapter.sol`
-- Tests: `test/balances/AssistedBalanceAdapters/MerklRewardsAssistedBalanceAdapter.t.sol` (unit, including synthetic merkle trees), `test/balances/AssistedBalanceAdapters/fork/MerklRewardsAssistedBalanceAdapter.fork.t.sol` (Mainnet integration sanity)
+> The refs below are the **current** (post-amendment) locations — the `attested` family (see [ADR 0022](0022-attested-balance-adapter-family.md)). The original ship lived under `AssistedBalanceAdapters/` with an `admin`/`assistant` ctor; both are superseded (see the amendment at the top).
+
+- Adapter: `src/balances/AttestedBalanceAdapters/MerklRewardsBalanceAdapter.sol`
+- Tests: `test/balances/AttestedBalanceAdapters/MerklRewardsBalanceAdapter.t.sol` (unit, including synthetic merkle trees), `test/balances/AttestedBalanceAdapters/fork/MerklRewardsBalanceAdapter.fork.t.sol` (Mainnet integration sanity)
 - Merkl Distributor source (verified leaf encoding, `_verifyProof`, `getMerkleRoot`): https://github.com/AngleProtocol/merkl-contracts/blob/main/contracts/Distributor.sol
 - Merkl API (proof source for the bot): `https://api.merkl.xyz/v4/users/{address}/rewards?chainId={cid}`
-- Deploy schema: `script/config/contracts-deployment-config/balance-adapters/<id>.json` `MerklRewardsAssisted.constructor` (`distributor`, plus `protocol`/`positionId` identity metadata); `navCalculator`, `admin`, and `assistant` are supplied by the deploy script — `admin`/`assistant` default to `addresses.admin` (the OIV Safe) from `script/config/chains/<id>.json`.
+- Deploy schema: `script/config/contracts-deployment-config/balance-adapters/<id>.json` `MerklRewards.constructor` (`distributor`, plus `protocol`/`positionId` identity metadata); `navCalculator` is supplied by the deploy script. Permissionless — **no** `admin`/`assistant` args (that was the superseded role-gated ship).
 - Operator's guide for the proof-submission bot: [`docs/operations/merkl-proof-submitter.md`](../operations/merkl-proof-submitter.md)
 - Operational follow-ups (NOT in this PR): bot implementation, optional permissionless mode (see Alternative 1), price feeds for new reward tokens.

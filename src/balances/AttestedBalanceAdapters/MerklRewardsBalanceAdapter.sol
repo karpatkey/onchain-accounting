@@ -6,7 +6,7 @@ import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
-import {IListFedBalanceAdapter} from "src/balances/IListFedBalanceAdapter.sol";
+import {IAttestedBalanceAdapter} from "src/balances/IAttestedBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
@@ -21,11 +21,11 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         the on-chain Distributor stores only cumulative *claimed* amounts + the current root (the full tree lives
 ///         off-chain behind an IPFS pointer), so a user's allocation is not derivable on-chain. To make pending
 ///         allocations queryable from a `view`, this adapter caches per-(user, token) cumulative allocations submitted
-///         via `submitProofs`. Each submission carries a user's **complete** allocation set and **replaces** that
-///         user's prior cache (an omitted token is dropped). Every entry is verified against the live Distributor
-///         merkle root, so **no caller can fabricate amounts** — a submission only lands if its proof validates
-///         against Merkl's real root for that exact `(user, token, cumulativeAmount)` leaf. The feeder is trusted only
-///         to keep the cache fresh; failure to do so makes NAV under-count rewards, never over-count.
+///         via `submitProofs`, which **upserts** each proven `(user, token)` entry (adds or refreshes it) and leaves
+///         omitted tokens untouched — so a submit can never suppress a live entry. Every entry is verified against the
+///         live Distributor merkle root, so **no caller can fabricate amounts** — a submission only lands if its proof
+///         validates against Merkl's real root for that exact `(user, token, cumulativeAmount)` leaf. The feeder is
+///         trusted only to keep the cache fresh; failure to do so makes NAV under-count rewards, never over-count.
 /// @dev **Permissionless & submit-on-behalf-of.** `submitProofs(user, …)` takes an explicit `user` and is callable by
 ///      anyone — no roles, no AccessControl. The intended feeder is a keeper EOA (cron job) that periodically submits
 ///      the tracked accounts' allocations, but because every write is proof-verified, opening it to anyone adds no
@@ -37,11 +37,12 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      **stale-gated** (removable only once an entry contributes 0 to NAV), so no caller can suppress a live entry.
 ///      Trust model + mutability rationale: see `docs/decisions/0007-merkl-trust-minimized-cache.md`.
 ///
-///      **Family: {IListFedBalanceAdapter} (list-fed), NOT {IAssistedBalanceAdapter} (coordinate cache).** The feeder
-///      submits an account's **whole allocation list** (replace), on-behalf-of, from a plain keeper EOA — there is no
-///      `delegatecall` assistant contract. Integrity is the per-write merkle-proof check, not `msg.sender`-keying or
-///      live-ownership re-verification; the "under-report only" guarantee rests on proof-verification + stale-root→0.
-contract MerklRewardsAssistedBalanceAdapter is IListFedBalanceAdapter, IPositionDescribable {
+///      **Family: {IAttestedBalanceAdapter} (attested), NOT {IAssistedBalanceAdapter} (coordinate cache).** The feeder
+///      submits proven per-(user, token) allocations on-behalf-of, from a plain keeper EOA — there is no `delegatecall`
+///      assistant contract, and each write is an upsert (never drops an omitted entry). Integrity is the per-write
+///      merkle-proof check ("attestation"), not `msg.sender`-keying or live-ownership re-verification; the
+///      "under-report only" guarantee rests on proof-verification + stale-root→0.
+contract MerklRewardsBalanceAdapter is IAttestedBalanceAdapter, IPositionDescribable {
     //
     // Type Definitions
     //
@@ -105,6 +106,13 @@ contract MerklRewardsAssistedBalanceAdapter is IListFedBalanceAdapter, IPosition
     ///         try/catch). A real token has a handful of campaigns; enforced fail-loud at submit.
     uint256 public constant MAX_CAMPAIGNS_PER_TOKEN = 64;
 
+    /// @notice Upper bound on distinct reward tokens cached per user. Bounds the read-side fan-out (the position/
+    ///         balance loops iterate `_userTokens[user]`) so a NAV read is deterministically gas-bounded, mirroring
+    ///         the sibling assisted adapters' per-account caps. A real portfolio's Merkl reward-token footprint is a
+    ///         handful; enforced fail-loud when a *new* token is first cached (a refresh of an existing token is
+    ///         unaffected). Every cached token is proof-verified, so this can never be pushed past a user's real set.
+    uint256 public constant MAX_TOKENS_PER_USER = 256;
+
     /// @notice Merkl Distributor (Angle Labs). Same address on every supported EVM chain.
     address public immutable DISTRIBUTOR;
 
@@ -165,9 +173,12 @@ contract MerklRewardsAssistedBalanceAdapter is IListFedBalanceAdapter, IPosition
     /// @notice More than `MAX_CAMPAIGNS_PER_TOKEN` campaign shares submitted for one token (read-gas bound).
     error TooManyCampaigns(address token, uint256 count);
 
+    /// @notice Adding this token would exceed `MAX_TOKENS_PER_USER` distinct cached tokens for `user`.
+    error TooManyTokens(address user, uint256 count);
+
     /// @notice `clearAllocation` was called on an entry that still contributes to NAV (cached root matches the live
     ///         root AND it has an unclaimed balance). Clearing is GC for dead entries only — a live entry can only be
-    ///         *replaced* via `submitProofs`, never suppressed. This is what makes the permissionless clear safe: no
+    ///         *refreshed* via `submitProofs` (upsert), never suppressed. This is what makes the permissionless clear safe: no
     ///         caller can zero out another account's valid reward (the fix for the old `ASSISTANT_ROLE` L-02 vector).
     error AllocationStillLive(address user, address token);
 
@@ -197,29 +208,34 @@ contract MerklRewardsAssistedBalanceAdapter is IListFedBalanceAdapter, IPosition
     // Mutators (permissionless — every write is proof-verified against the live Distributor root)
     //
 
-    /// @notice Submit `user`'s **complete** set of Merkl allocations — this **replaces** the user's cached token set
-    ///         entirely (every prior `(user, token)` entry is dropped first), so the feeder always submits the full
-    ///         list of the user's currently-allocated reward tokens, not a delta; a token omitted from the list is
-    ///         removed from NAV. Each entry's proof is verified against the live Distributor merkle root, so no caller
-    ///         can fabricate amounts.
+    /// @notice Submit Merkl allocations for `user` — each entry **upserts** its `(user, token)` cache (adds or
+    ///         refreshes it); tokens omitted from `allocs` are left untouched, so this can never suppress a live
+    ///         entry. The feeder typically submits the user's full current allocation set each cycle, but a partial
+    ///         list is safe (it only add/refreshes what it carries). Each entry's proof is verified against the live
+    ///         Distributor merkle root, so no caller can fabricate amounts.
     /// @dev Permissionless (no roles): keyed on the explicit `user` arg and callable by anyone — proof-verification is
     ///      the integrity guarantee, so a submission for `user` only lands if its proof validates against Merkl's live
-    ///      root for that user's leaf. **Reverts** `InvalidArguments` (zero user/token), `UninitializedRoot`,
-    ///      `InvalidProof`, `CampaignSumMismatch`, or `TooManyCampaigns` — fail-loud and atomic, so a bad list leaves
-    ///      the prior set intact. Monotonicity across submits is not enforced (the clear-first makes the
-    ///      `AmountRegression` guard moot across calls); it still catches a decreasing duplicate token within one list.
+    ///      root for that user's leaf. Each entry is an **upsert** of that `(user, token)`; entries omitted from
+    ///      `allocs` are left untouched, so a caller can only add or refresh proven data — it can NEVER suppress a
+    ///      live entry it omits (removal is only via the stale-gated `clearAllocation`/`clearAccount`). **Reverts**
+    ///      `InvalidArguments` (zero user/token), `UninitializedRoot`, `InvalidProof`, `AmountRegression` (a proven
+    ///      cumulative below the cached one), `CampaignSumMismatch`, or `TooManyCampaigns` — fail-loud and atomic, so
+    ///      a bad entry reverts the whole call and leaves the prior set intact.
     /// @param user        Account the allocations are for.
-    /// @param allocs      The user's complete set of (token, cumulativeAmount, proof, campaigns) entries.
+    /// @param allocs      The (token, cumulativeAmount, proof, campaigns) entries to add/refresh for `user`.
     function submitProofs(address user, Allocation[] calldata allocs) external {
-        _replace(user, allocs);
+        if (user == address(0)) revert InvalidArguments();
+        _upsert(user, allocs);
     }
 
-    /// @notice Batch variant: for each user, their allocation list **replaces** that user's cached set. `users` and
-    ///         `allocs` must have the same length.
+    /// @notice Batch variant: for each user, their allocation list is **upserted** into that user's cache (each entry
+    ///         adds/refreshes its `(user, token)`; omitted entries are never suppressed). `users` and `allocs` must
+    ///         have the same length.
     function submitProofsBatch(address[] calldata users, Allocation[][] calldata allocs) external {
         if (users.length != allocs.length) revert InvalidArguments();
         for (uint256 i; i < users.length; ++i) {
-            _replace(users[i], allocs[i]);
+            if (users[i] == address(0)) revert InvalidArguments();
+            _upsert(users[i], allocs[i]);
         }
     }
 
@@ -239,7 +255,7 @@ contract MerklRewardsAssistedBalanceAdapter is IListFedBalanceAdapter, IPosition
         emit AllocationCleared(user, token);
     }
 
-    /// @inheritdoc IListFedBalanceAdapter
+    /// @inheritdoc IAttestedBalanceAdapter
     /// @dev Stale-gated **bulk** GC: reverts `AllocationStillLive` on the first of `account`'s tokens that still
     ///      contributes to NAV, so a live set can never be suppressed — it clears only when the whole set is dead
     ///      (every token already reads 0: stale root or fully claimed). Reverts `NothingToClear` if nothing is cached.
@@ -254,11 +270,12 @@ contract MerklRewardsAssistedBalanceAdapter is IListFedBalanceAdapter, IPosition
         emit AccountCleared(account);
     }
 
-    /// @dev Replace `user`'s entire cached set with `allocs`: clear, then verify each leaf against the live Distributor
-    ///      root and store (fail-loud). Clears first and each write is atomic, so a bad entry reverts the whole call
-    ///      and leaves the prior set intact.
-    function _replace(address user, Allocation[] calldata allocs) private {
-        _clearUser(user);
+    /// @dev Upsert each proven entry into `user`'s cache: verify each leaf against the live Distributor root and
+    ///      overwrite that `(user, token)` entry (fail-loud — a bad entry reverts the whole call, leaving the prior
+    ///      set intact). Does NOT clear the prior set — entries omitted from `allocs` are left untouched, so a caller
+    ///      can only add or refresh proven data, never suppress a live entry it omits. Removal is only via the
+    ///      stale-gated `clearAllocation`/`clearAccount`.
+    function _upsert(address user, Allocation[] calldata allocs) private {
         for (uint256 i; i < allocs.length; ++i) {
             _submitProof(user, allocs[i].token, allocs[i].cumulativeAmount, allocs[i].proof, allocs[i].campaigns);
         }
@@ -283,11 +300,11 @@ contract MerklRewardsAssistedBalanceAdapter is IListFedBalanceAdapter, IPosition
     }
 
     /// @inheritdoc IERC165
-    /// @dev Advertises {IListFedBalanceAdapter} (its family marker) + {IBalanceAdapter} + {IPositionDescribable} +
-    ///      {IERC165}. It is list-fed, NOT a coordinate-cache {IAssistedBalanceAdapter} member, so that marker is not
+    /// @dev Advertises {IAttestedBalanceAdapter} (its family marker) + {IBalanceAdapter} + {IPositionDescribable} +
+    ///      {IERC165}. It is attested, NOT a coordinate-cache {IAssistedBalanceAdapter} member, so that marker is not
     ///      advertised.
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IListFedBalanceAdapter).interfaceId
+        return interfaceId == type(IAttestedBalanceAdapter).interfaceId
             || interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IPositionDescribable).interfaceId
             || interfaceId == type(IERC165).interfaceId;
     }
@@ -495,9 +512,10 @@ contract MerklRewardsAssistedBalanceAdapter is IListFedBalanceAdapter, IPosition
         bytes32 leaf = keccak256(abi.encode(user, token, cumulativeAmount));
         if (!_verifyMerklProof(leaf, proof, root)) revert InvalidProof();
 
-        // Defense in depth: Merkl's tree generator guarantees per-(user, token) cumulative amounts are monotonic.
-        // A regression suggests stale or wrong data; reject loudly. Resubmit via `submitProofs` (which clears first)
-        // to legitimately move a value.
+        // Defense in depth: Merkl's tree generator guarantees per-(user, token) cumulative amounts are monotonic
+        // (lifetime-cumulative, non-decreasing across roots). A regression suggests stale or wrong data; reject
+        // loudly. A legitimately lower value can only arise after a root rotation, which makes the cached entry stale
+        // (reads 0) and thus clearable via `clearAllocation` before a fresh submit.
         CachedAllocation storage a = allocations[user][token];
         if (cumulativeAmount < a.cumulativeAmount) revert AmountRegression();
 
@@ -516,6 +534,8 @@ contract MerklRewardsAssistedBalanceAdapter is IListFedBalanceAdapter, IPosition
         }
 
         if (a.submittedAt == 0) {
+            uint256 n = _userTokens[user].length;
+            if (n >= MAX_TOKENS_PER_USER) revert TooManyTokens(user, n);
             _userTokens[user].push(token);
             _userTokenIdxPlus1[user][token] = _userTokens[user].length;
         }
@@ -524,8 +544,8 @@ contract MerklRewardsAssistedBalanceAdapter is IListFedBalanceAdapter, IPosition
         a.root = root;
         a.submittedAt = uint64(block.timestamp);
 
-        // Replace the token's campaign shares (the per-user set is fully replaced by the submit chokepoint, but a
-        // re-submit of the same token within one list overwrites cleanly here too).
+        // Replace this token's campaign shares wholesale (a re-submit of the same (user, token) overwrites its prior
+        // breakdown cleanly — the upsert only ever touches the token(s) named in the submission).
         delete _campaigns[user][token];
         for (uint256 i; i < nCampaigns; ++i) {
             _campaigns[user][token].push(campaigns[i]);
@@ -534,8 +554,8 @@ contract MerklRewardsAssistedBalanceAdapter is IListFedBalanceAdapter, IPosition
         emit AllocationCached(user, token, cumulativeAmount, root, a.submittedAt, nCampaigns);
     }
 
-    /// @dev Delete a user's entire cached allocation set (storage only, no event). Shared by `submitProofs`/batch as
-    ///      the replace-on-submit clear step.
+    /// @dev Delete a user's entire cached allocation set (storage only, no event). Used by the stale-gated
+    ///      `clearAccount` after it has verified every entry is dead (reads 0); never called from the submit path.
     function _clearUser(address user) private {
         address[] storage toks = _userTokens[user];
         for (uint256 i; i < toks.length; ++i) {

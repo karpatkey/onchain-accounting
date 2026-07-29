@@ -35,7 +35,47 @@ feed count is **pending #199**, see the note under 1.4.
 | 56 bsc | 0 | 0 | 0 | 0 | 6 |
 
 ("plain" excludes `ERC20Default`, which every chain gets automatically. Chain 56's only meta adapter,
-`PancakeSwapV2PoolsMeta`, is `enabled: false` in nav-config, so BSC registers `ERC20Default` only.)
+`PancakeSwapV2PoolsMeta`, is `enabled: false` in nav-config, so BSC registers `ERC20Default` only. The
+`meta adapters` and `meta instances` columns above are a summary of the table immediately below, which
+is where they are derived and which is the authoritative one if the two ever disagree.)
+
+#### Meta instances: **110**, reconciled from config and confirmed on-chain (2026-07-29)
+
+This number is what tells you at step 1.7 whether `06_Configure`'s reconciliation succeeded, so it is
+settled here rather than at execution time. Three figures had been circulating — 104, 110 and 113.
+
+| chain | enabled meta adapters | `instances` | `instancesRaw` | total |
+| --- | --- | --- | --- | --- |
+| 1 mainnet | 15 | 52 | 14 | **66** |
+| 42161 arbitrum | 7 | 14 | 2 | **16** |
+| 8453 base | 6 | 12 | 4 | **16** |
+| 10 optimism | 2 | 4 | 0 | **4** |
+| 100 gnosis | 2 | 4 | 0 | **4** |
+| 137 polygon | 1 | 4 | 0 | **4** |
+| 56 bsc | 0 | 0 | 0 | **0** |
+| **total** | **33** | **90** | **20** | **110** |
+
+Counted from `script/config/nav-config/meta-balance-adapters/<chainId>.json`, taking only adapters
+with `enabled: true` and summing `instances` + `instancesRaw`. Two independent confirmations: the
+deduplicated count is also 110 (no coordinate repeats within an adapter, so `06` cannot revert
+`DuplicateMetaInstance`), and unique `(chain, coordinate)` pairs across *all* adapters is also 110
+(no coordinate is claimed by two adapters on one chain). **`verify_step.py 1.7` then compared each
+adapter's on-chain `getMetaInstances()` against config as a SET on all 7 configured chains and passed
+— so config and the live NAV agree exactly, not merely in total.**
+
+**Where the other two figures come from:**
+
+- **113** = every adapter in the files, ignoring `enabled`. The difference is exactly three disabled
+  adapters carrying one instance each: mainnet `BalancerV2PoolsMeta`, mainnet `BalancerV2GaugesMeta`,
+  bsc `PancakeSwapV2PoolsMeta`. `ConfigReader.isAdapterEnabled` gates registration and a missing key
+  reads as **false** (`ConfigReader.sol:367-368`), so `06` will not register any of them. 110 + 3 = 113.
+- **104** is not reproducible from the current tree by any derivation — not `instances` alone (90),
+  not the deploy-config tree (0, it holds no instance lists), not any enabled-filter variant. It
+  predates the config split in `f4873617` and should be treated as retired, not reconciled.
+
+Do not re-derive this by hand on deploy day. `preflight_config.py` prints the configured total and
+`verify_step.py 1.7` asserts it per adapter against the chain; if a future config change moves the
+number, those two move with it and this table is the thing that goes stale.
 
 ---
 
@@ -255,6 +295,21 @@ figure for 2.3's before/after comparison.
 Scope: each of the 7 configured chains, for each account in `test/integration/accounts.json` enabled
 on that chain (14 accounts; 9 on mainnet, 4 on optimism, 4 on base, 4 on arbitrum, 3 on gnosis,
 1 on polygon). Record every figure — this capture is not repeatable.
+
+**Capture the DeBank side by hand, from the UI.** That is the documented method, not a fallback. At
+this size — 25 account/chain pairs — it is tractable in one sitting, it needs no API key and no
+credential handling on deploy day, and the comparison is a human judgement anyway: the residual has to
+be attributed to named positions (see the list below), which is not something a script decides. A
+figure read off the UI is no less trustworthy for that purpose than one pulled by an API.
+
+Record, per account and chain: the DeBank total, the NAV from `getAccountNavVerbose` on the live
+proxy, the block the NAV was read at, and the wall-clock time of the DeBank read. The two are not
+synchronised, so note the gap — an unexplained residual is only meaningful once price movement between
+the two reads is accounted for.
+
+**Do not build tooling for this.** If the account set grows enough that hand capture stops being
+tractable, the alternative is an API-based capture against DeBank's endpoint, which needs a key
+provisioned first — an edit to this step, not a redesign of it.
 
 > **Write the expected-divergence list BEFORE the first run, or this step is decoration.** DeBank does
 > not hold, or values differently, several classes this portfolio carries. If the list is written
@@ -548,7 +603,9 @@ touched at all by this step, not merely touched idempotently.
 - **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.7` — `getAdapterCount()`
   matches 1.6, every recorded adapter reports `isAdapterRegistered`, nothing is registered that is not
   in the record, and each meta adapter's `getMetaInstances()` **set equals** its configured coordinate
-  set, summing to **110 across the 7 configured chains** (66 / 16 / 16 / 4 / 4 / 4 / 0).
+  set, summing to the total in the meta-instance table at the top of this document (**110** as
+  reconciled 2026-07-29). The per-chain breakdown lives in that table only — it is not repeated here,
+  so there is one place to correct if config changes.
 
 > **Watch for the silent skip.** `06` does `if (deployed == address(0)) continue;` (`06:113` for
 > meta, same shape for plain), so an adapter that failed to deploy is skipped **without an error**.

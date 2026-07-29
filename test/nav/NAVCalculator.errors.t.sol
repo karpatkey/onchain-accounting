@@ -64,6 +64,15 @@ contract Mock_RevertingBalanceAdapter is IBalanceAdapter {
 /// @title Mock Reverting Price Oracle
 /// @notice Price oracle that reverts for testing error handling
 contract Mock_RevertingPriceOracle is ICustomPriceFeed {
+    address private immutable _asset;
+
+    /// @param asset_ The asset this feed claims to price. Must be the asset it is registered for — registration
+    ///        enforces `underlyingAssetSupported() == asset` (IPrices.CustomFeedAssetMismatch), and a real feed that
+    ///        misbehaves at READ time still reports its own underlying correctly, which is what this mock models.
+    constructor(address asset_) {
+        _asset = asset_;
+    }
+
     function getLatestPrice() external pure override returns (uint256, bool) {
         revert("Price oracle revert");
     }
@@ -72,8 +81,8 @@ contract Mock_RevertingPriceOracle is ICustomPriceFeed {
         return 8;
     }
 
-    function underlyingAssetSupported() external pure override returns (address) {
-        return address(0);
+    function underlyingAssetSupported() external view override returns (address) {
+        return _asset;
     }
 
     function latestRoundData() external pure override returns (uint80, int256, uint256, uint256, uint80) {
@@ -92,6 +101,13 @@ contract Mock_RevertingPriceOracle is ICustomPriceFeed {
 /// @title Mock Malformed Price Oracle
 /// @notice Price oracle that returns invalid data
 contract Mock_MalformedPriceOracle is ICustomPriceFeed {
+    address private immutable _asset;
+
+    /// @param asset_ The asset this feed claims to price; see {Mock_RevertingPriceOracle} for why it must match.
+    constructor(address asset_) {
+        _asset = asset_;
+    }
+
     function getLatestPrice() external pure override returns (uint256, bool) {
         // Return zero price (should be marked as stale)
         return (0, true);
@@ -101,8 +117,8 @@ contract Mock_MalformedPriceOracle is ICustomPriceFeed {
         return 8;
     }
 
-    function underlyingAssetSupported() external pure override returns (address) {
-        return address(0);
+    function underlyingAssetSupported() external view override returns (address) {
+        return _asset;
     }
 
     function latestRoundData() external pure override returns (uint80, int256, uint256, uint256, uint80) {
@@ -301,8 +317,8 @@ contract NAVCalculatorErrorTest is SuperTest {
 
     /// @notice Test that a reverting price oracle is skipped and marked stale (not propagated).
     function test_RevertWhen_priceOracleReverts() public {
-        Mock_RevertingPriceOracle revertingPriceOracle = new Mock_RevertingPriceOracle();
         Mock_ERC20 token = new Mock_ERC20("REVERT", 18);
+        Mock_RevertingPriceOracle revertingPriceOracle = new Mock_RevertingPriceOracle(address(token));
 
         vm.startPrank(navCalculatorManager);
         nav.registerAsset(address(token), address(revertingPriceOracle), IPrices.PriceType.Custom, type(uint256).max);
@@ -324,10 +340,10 @@ contract NAVCalculatorErrorTest is SuperTest {
 
     /// @notice Test that malformed price oracle responses are handled
     function test_RevertWhen_malformedPriceOracle() public {
-        // Create malformed price oracle (returns zero price)
-        Mock_MalformedPriceOracle malformedAdapter = new Mock_MalformedPriceOracle();
-
         Mock_ERC20 token = new Mock_ERC20("MALFORMED", 18);
+
+        // Create malformed price oracle (returns zero price)
+        Mock_MalformedPriceOracle malformedAdapter = new Mock_MalformedPriceOracle(address(token));
 
         vm.startPrank(navCalculatorManager);
         nav.registerAsset(address(token), address(malformedAdapter), IPrices.PriceType.Custom, type(uint256).max);
@@ -439,8 +455,8 @@ contract NAVCalculatorErrorTest is SuperTest {
         nav.addBalanceAdapters(aa(address(revertingAdapter)));
 
         // Create token with reverting price oracle
-        Mock_RevertingPriceOracle revertingPriceOracle = new Mock_RevertingPriceOracle();
         Mock_ERC20 token = new Mock_ERC20("FAIL", 18);
+        Mock_RevertingPriceOracle revertingPriceOracle = new Mock_RevertingPriceOracle(address(token));
         nav.registerAsset(address(token), address(revertingPriceOracle), IPrices.PriceType.Custom, type(uint256).max);
         vm.stopPrank();
 

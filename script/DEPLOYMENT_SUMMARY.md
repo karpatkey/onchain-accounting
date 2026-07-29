@@ -331,7 +331,6 @@ script/verify/verify-all.sh
 ## Adapter Types
 
 ### Price Adapters (Custom Price Feeds)
-- `sDAI_CustomPriceFeed` - Savings DAI price
 - `LDO_CustomPriceFeed` - Lido DAO token price
 - `sUSDS_CustomPriceFeed` - Sky Savings USDS price
 - `CrossRateCustomPriceFeed` - Cross-rate calculations

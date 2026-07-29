@@ -98,6 +98,23 @@ contract DivergenceMonitorTest is SuperTest {
         nav.addMonitorFeed(address(weth), address(monitor), IPrices.PriceType.Custom, type(uint256).max);
     }
 
+    /// @notice A Custom MONITOR feed is asset-bound too: `addMonitorFeed` runs the same validator as the primary path,
+    ///         so a monitor that prices a different asset is rejected. This is the likelier of the two crossings in
+    ///         practice — every `*CrossRate` instance is a monitor, and their config keys sit next to the primaries'.
+    function test_RevertIf_addMonitorFeed_customFeedPricesDifferentAsset() public {
+        Mock_CustomPriceFeed wrongAsset = new Mock_CustomPriceFeed("usdc-monitor", address(usdc), 100_000_000, 8);
+        vm.prank(navCalculatorManager);
+        nav.setDivergenceTolerance(address(weth), 250);
+
+        vm.prank(navCalculatorManager);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IPrices.CustomFeedAssetMismatch.selector, address(weth), address(wrongAsset), address(usdc)
+            )
+        );
+        nav.addMonitorFeed(address(weth), address(wrongAsset), IPrices.PriceType.Custom, type(uint256).max);
+    }
+
     function test_setDivergenceTolerance_rejectsOutOfRange() public {
         vm.prank(navCalculatorManager);
         vm.expectRevert(abi.encodeWithSelector(IPrices.InvalidTolerance.selector, uint32(0)));

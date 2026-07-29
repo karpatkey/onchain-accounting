@@ -220,16 +220,31 @@ contract NAVCalculatorTest is SuperTest {
         assertEq(nav.chainlinkL2SequencerGracePeriod(), 3600);
     }
 
+    /// @dev This test was byte-identical to `test_registerAsset`: it called `registerAsset`, never touched
+    ///      `addBalanceAdapters`, and asserted nothing at all — so gutting `addBalanceAdapters` entirely could not
+    ///      have failed it. It now exercises the function it is named for and pins the observable result, so
+    ///      removing the registration write fails here.
     function test_addBalanceAdapter() public {
         vm.startPrank(admin);
         nav = this.setupNAVCalculatorWithParams(admin, address(sequencerUptimeFeed));
         nav.grantRole(MANAGER, navCalculatorManager);
         vm.stopPrank();
 
-        vm.startPrank(navCalculatorManager);
-        nav.registerAsset(address(usdc), address(usdcAdapter), IPrices.PriceType.Custom, type(uint256).max);
-        // ERC20DefaultBalanceAdapter is already registered globally, no need to add it again
-        vm.stopPrank();
+        assertFalse(nav.isAdapterRegistered(address(mockBalanceAdapter)), "adapter already registered before the call");
+        uint256 countBefore = nav.getAllAdapters().length;
+
+        vm.prank(navCalculatorManager);
+        nav.addBalanceAdapters(aa(address(mockBalanceAdapter)));
+
+        assertTrue(nav.isAdapterRegistered(address(mockBalanceAdapter)), "adapter not registered after the call");
+
+        address[] memory all = nav.getAllAdapters();
+        assertEq(all.length, countBefore + 1, "adapter count did not grow by exactly one");
+        bool found;
+        for (uint256 i; i < all.length; ++i) {
+            if (all[i] == address(mockBalanceAdapter)) found = true;
+        }
+        assertTrue(found, "adapter absent from getAllAdapters()");
     }
 
     function test_addBalanceAdapter_notAuthorized() public {
@@ -692,11 +707,11 @@ contract NAVCalculatorTest is SuperTest {
         assertTrue(registered.length > 0);
     }
 
-    function test_assetCount() public view {
-        uint256 count = nav.assetCount();
-
-        // Should have at least the assets from setup (usdc, dai, weth, native)
-        assertTrue(count >= 4);
+    /// @dev `assetCount()` is a one-line alias for `getAssetCount()` (NAVCalculator.sol). Asserting a floor here
+    ///      would restate `test_getAssetCount` without touching what makes the alias a separate ABI entry point,
+    ///      so this pins the only property that is actually its own: the two agree.
+    function test_assetCount_agreesWithGetAssetCount() public view {
+        assertEq(nav.assetCount(), nav.getAssetCount(), "assetCount() must alias getAssetCount()");
     }
 
     // ============================================
@@ -756,11 +771,31 @@ contract NAVCalculatorTest is SuperTest {
     // Asset Registry Tests (from Balances)
     // ============================================
 
-    function test_getRegisteredAssets() public view {
+    /// @dev Pins the CONTENT of the registry, not its length — `test_getRegisteredAssets_lengthMatchesAssetCount`
+    ///      already owns the length invariant, and this test used to assert the same two lines verbatim, so it
+    ///      could not fail for any reason the other one would not have caught first.
+    function test_getRegisteredAssets_containsTheAssetsRegisteredInSetup() public view {
         INAVCalculator.Asset[] memory assets = nav.getRegisteredAssets();
 
-        assertEq(assets.length, nav.getAssetCount());
-        assertTrue(assets.length > 0);
+        bool foundUsdc;
+        bool foundDai;
+        bool foundWeth;
+        for (uint256 i; i < assets.length; ++i) {
+            if (assets[i].asset == address(usdc)) {
+                foundUsdc = true;
+                assertEq(assets[i].decimals, usdc.decimals(), "usdc decimals");
+                assertEq(assets[i].symbol, usdc.symbol(), "usdc symbol");
+            } else if (assets[i].asset == address(dai)) {
+                foundDai = true;
+                assertEq(assets[i].decimals, dai.decimals(), "dai decimals");
+            } else if (assets[i].asset == address(weth)) {
+                foundWeth = true;
+                assertEq(assets[i].decimals, weth.decimals(), "weth decimals");
+            }
+        }
+        assertTrue(foundUsdc, "usdc missing from registry");
+        assertTrue(foundDai, "dai missing from registry");
+        assertTrue(foundWeth, "weth missing from registry");
     }
 
     function test_getAssetCount() public view {

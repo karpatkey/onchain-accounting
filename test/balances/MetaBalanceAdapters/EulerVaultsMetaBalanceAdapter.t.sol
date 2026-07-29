@@ -1194,13 +1194,14 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
     ///      | discard the flag (plain `safeUint`) | both gas bombs, this test's NEAR side | did not revert |
     ///      | fixed `PROBE_GAS` ceiling, named error kept | the same three | did not revert — INDISTINGUISHABLE |
     ///      | classify against the forwarded stipend | `burnInsideTheReopenedBand` alone | `0 != 1` |
-    ///      | `starved = !ok` | `genuineRevert`, this test's FAR side, `burnInside` | `0 != 1` |
+    ///      | `starved = !ok` | `genuineRevert`, this test's FAR side, `burnInsideTheReopenedBand` | `0 != 1` |
     ///
     ///      So the two halves of this bracket pin DIFFERENT properties, which is the reason it is one test. The
     ///      near side pins propagation, alongside the gas bombs. The far side pins fail-open on a genuine revert,
     ///      alongside `genuineRevert_stillFailsOpen` — and that pair is what would go red if a change broke every
     ///      EulerEarn instance on mainnet, since a live aggregator's `debtOf` reverts cheaply and must keep
-    ///      reading 0. No mutation makes a fixed ceiling break them.
+    ///      reading 0. A fixed ceiling leaves both of them green, which is precisely why attributing that harm
+    ///      to it was wrong.
     function test_debtOf_expensiveButGenuineRevert_bracketsTheClassifier() public {
         MockExpensiveRevertVault slow = new MockExpensiveRevertVault(address(usdc), 5_000_000);
         slow.setBalance(alice, 1_000_000);

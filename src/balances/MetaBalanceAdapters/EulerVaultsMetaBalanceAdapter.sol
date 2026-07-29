@@ -276,22 +276,20 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     ///
     ///      Two bounds follow from that, both measured rather than assumed:
     ///
-    ///      - **Depth.** Starvation is classified loud through 8 callee frames below the probe. Real EVK
-    ///        dispatcher/module hops are 2-4, so this is ample against accidents — but the depth is the CALLEE's,
-    ///        so it does not bound a vault choosing it. (This counts FRAMES on the composed path;
-    ///        {StaticCallLib.probeWordMetered} states the same bound as `d = 8` counted from its own direct
-    ///        callee, and the two coincide only because the base's `try this.instancePositions{gas: …}` adds one
-    ///        further 63/64 hop. If that hop ever changes, only one of the two figures moves.)
+    ///      - **Depth.** Starvation is classified loud through 8 callee frames below the probe, counting frames
+    ///        on the composed path. Real EVK dispatcher/module hops are 2-4, so this is ample against accidents —
+    ///        but the depth is the CALLEE's, so it does not bound a vault choosing it.
     ///
-    ///        What happens past it is not one failure but two. At 9 frames this function still raises
-    ///        {DebtReadGasExhausted} and the base's gas classifier swallows it, so the instance is dropped whole
-    ///        — the supply leg goes with the debt leg, which under-reports and is the safe direction. Only at 10
-    ///        and beyond does the debt read as 0 while the supply leg survives, which is the over-report this
-    ///        guard exists to close.
+    ///        Past 8 the debt reads 0 while the supply leg survives: the unoffset-collateral over-report, at 9
+    ///        frames and beyond. There is no intervening regime. An earlier revision of this note claimed 9 was
+    ///        a safe middle case in which the whole instance dropped — that was a symptom of classifying against
+    ///        the forwarded stipend rather than the frame, i.e. of the silent-drop band this adapter's guard was
+    ///        corrected to close, and it disappeared with it. Measured invariant across frame size.
     ///      - **Cost.** A genuine revert is misread as starvation only when it costs a large fraction of the
-    ///        frame — roughly `gasleft <= 1.16 * revert_cost`. A real EulerEarn dispatch failure costs single-digit
-    ///        thousands, so the band sits far below a viable frame and is empty in practice. The counter-intuitive
-    ///        part is the direction: a MORE expensive genuine revert is MORE likely to be called starved, not less.
+    ///        frame — `frame <= (8/7) * revert_cost`, about 1.14x. A real EulerEarn dispatch failure costs
+    ///        single-digit thousands, two orders of magnitude below the frame its own prologue needs, so the band
+    ///        is empty in practice. The counter-intuitive part is the direction: a MORE expensive genuine revert
+    ///        is MORE likely to be called starved, not less.
     ///
     ///      **Starvation is not the only route to unoffset collateral here, and the others keep the old policy.**
     ///      A successful reply carrying fewer than 32 bytes (an EVK dispatcher with an unset module; an ERC-1967

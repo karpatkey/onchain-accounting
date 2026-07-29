@@ -179,6 +179,13 @@ library StaticCallLib {
     ///      both use {GasStipendLib} are still not composed correctly if one of them measures a 63/64 slice of
     ///      what the other measures.
     ///
+    ///      **The operand here is deliberately not what its name says.** `GasStipendLib.exhausted`'s first
+    ///      parameter is called `stipend` and its NatSpec describes the value passed as `{gas: ...}` — which is
+    ///      what `MetaBalanceAdapter` passes, correctly, because it IS the outermost guard. This call passes the
+    ///      FRAME instead, and that inversion is the whole of the fix above: an inner guard has to test against
+    ///      the same quantity its caller will, not against the smaller slice it forwarded. Anyone reading
+    ///      `exhausted`'s signature and matching the parameter name will reintroduce the band.
+    ///
     ///      No stipend parameter, deliberately. A caller-supplied one invites exactly the value that breaks the
     ///      nesting above — a fixed ceiling, or a slice of a frame this function cannot see — and `0` would make
     ///      `exhausted` true for every failed call.

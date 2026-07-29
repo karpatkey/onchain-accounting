@@ -1109,6 +1109,34 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
         return adapter.getAdapterPositionsForInstances(alice, ins, address(0));
     }
 
+    /// @notice A raise from the inner guard must REACH the base's classifier, never vanish into its `catch`.
+    /// @dev The only assertion in this suite that fails if `StaticCallLib.probeWordMetered` goes back to
+    ///      classifying against the forwarded stipend instead of the frame — the one-token regression this
+    ///      adapter's guard was corrected for. Everything else here survives it: the gas-bomb pair cannot see it
+    ///      because an infinite bomb lands at ~0.984 of the frame, past both thresholds; the cheap-revert test
+    ///      never approaches either; and the bracket below cannot, because the regression shifts the flip frame
+    ///      by only ~1.6% and both of its budgets straddle that too.
+    ///
+    ///      The burn is chosen to sit INSIDE the band the regression reopens. Classifying against the stipend
+    ///      tests `7/8 * (63/64) * frame = 0.861 * frame` while `MetaBalanceAdapter` raises at `0.875 * frame`;
+    ///      a callee consuming between the two trips the inner guard, and the base then reads the resulting
+    ///      revert as an ordinary one and drops the whole instance silently. At frame 8,000,000 that band is
+    ///      ~6,666,000-6,769,000 of burn and ~103,000 wide. 6,700,000 is inside it: this returns one leg with
+    ///      the fix and ZERO legs without, which is both the over-report the guard exists to close and a fresh
+    ///      silent loss of a leg that would otherwise have survived.
+    function test_debtOf_starvationRaise_reachesTheClassifier_neverVanishes() public {
+        MockExpensiveRevertVault slow = new MockExpensiveRevertVault(address(usdc), 6_700_000);
+        slow.setBalance(alice, 1_000_000);
+
+        bytes32[] memory ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(address(slow))));
+
+        INAVCalculator.PositionBalance[] memory pos = this.callPositions{gas: 8_000_000}(ins);
+
+        assertEq(pos.length, 1, "a raise here must reach the base's classifier, never vanish into its catch");
+        assertFalse(pos[0].isDebt, "and the surviving leg is the credit one");
+    }
+
     /// @notice A `debtOf` that reverts only after real work brackets the classifier from BOTH sides.
     /// @dev Two assertions straddling a measured boundary, and the VALUES are the test — both were re-derived
     ///      after the classification threshold changed, because a bracket that no longer brackets passes
@@ -1123,9 +1151,16 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
     ///      is correct given the evidence available, and pinning it is what makes the pair a bracket rather than
     ///      two independent assertions.
     ///
-    ///      **Why these numbers.** With a 5,000,000-gas burn the flip sits at a frame of ~5,917,000 — the point
-    ///      where `consumed` reaches `7/8` of the probe's frame, plus ~203,000 of prologue (`asset()`, the
-    ///      registry fetch, `convertToAssets`, `balanceOf`) that runs before the probe. 5,600,000 is ~5% below
+    ///      **Why these numbers.** With a 5,000,000-gas burn the flip sits at a frame of ~5,915,000. To
+    ///      re-derive it at a different burn, use `flip ~= (8/7 * burn + 16,000) * (64/63)^2`: the `8/7` is the
+    ///      `7/8` threshold inverted, the ~16,000 is the fixed prologue (`asset()`, the registry fetch,
+    ///      `convertToAssets`, `balanceOf`) at ~19,500 gas, and the two `64/63` factors are the EIP-150 reserves
+    ///      withheld at `getAdapterPositionsForInstances` and again at `try this.instancePositions{gas: ...}`.
+    ///      Do NOT model the gap as a fixed additive constant — those reserves SCALE with the frame, so a
+    ///      constant fits only near burn = 5,000,000 and diverges in opposite directions either side of it
+    ///      (~150,000 low at burn 1,000,000, ~177,000 high at burn 10,000,000). Getting that wrong de-calibrates
+    ///      the sensitivity property below, which is the only reason these two numbers are what they are.
+    ///      5,600,000 is ~5% below
     ///      it and 6,300,000 ~6% above: far enough that solc or forge gas drift cannot cross either, close
     ///      enough that a change to the threshold does. That second half is not automatic and was got wrong
     ///      once — an earlier pair of 5,400,000/8,000,000 straddled the flip and still passed, but a

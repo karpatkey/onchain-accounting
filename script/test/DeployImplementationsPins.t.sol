@@ -306,15 +306,26 @@ contract DeployImplementationsPinsTest is Test {
     // `_assertPinnedLibrariesUsable` call from `_guardedDeploy` makes these deploys SUCCEED and these tests fail.
     // ---------------------------------------------------------------
 
+    /// @dev The revert MESSAGE is pinned, not just the fact of a revert. `UpgradeNAVCalculatorPins.t.sol` uses a
+    ///      bare `expectRevert` for its equivalent, correctly — it injects no pins, so which of its six assertions
+    ///      objects first depends on the tree's pin state. That rationale does not transfer here: both pins are
+    ///      injected wrong, so assertion 1 fires deterministically in any pin state and the message is knowable.
+    ///
+    ///      Worth the extra argument because a bare `expectRevert` here would be satisfied by ANY revert,
+    ///      including one from `_deployIfNeeded` rather than from the guard. It kills the guard-deletion mutation
+    ///      today only because a raw `.call` to the code-less canonical factory returns `ok == true` in a bare
+    ///      test EVM, so the deploy cannot fail on its own — an incidental property, not a designed one. Pinning
+    ///      the message removes the dependency. This is the same lesson as `ETHPlus_CustomPriceFeed.t.sol` in
+    ///      this PR, where a bare `expectRevert` let one constructor guard stand in for another.
     function test_01_guardedDeploy_revertsWhenTheGuardRejects() public {
         impls.setPinOverrides(WRONG_PRICE_FEED_PIN, WRONG_REGISTRY_PIN);
-        vm.expectRevert();
+        vm.expectRevert("PriceFeedLib CREATE2 addr != foundry.toml pin (lib bytecode drift; regenerate the pin)");
         impls.guardedDeploy();
     }
 
     function test_01_2_guardedDeploy_revertsWhenTheGuardRejects() public {
         navImpl.setPinOverrides(WRONG_PRICE_FEED_PIN, WRONG_REGISTRY_PIN);
-        vm.expectRevert();
+        vm.expectRevert("PriceFeedLib CREATE2 addr != foundry.toml pin (lib bytecode drift; regenerate the pin)");
         navImpl.guardedDeploy();
     }
 

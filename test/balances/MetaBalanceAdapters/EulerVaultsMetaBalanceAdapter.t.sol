@@ -1180,15 +1180,27 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
     ///      it. 6,300,000 lies below that, so the same change turns this red. A bracket has to sit inside the
     ///      interval the regression would move the boundary across, not merely on both sides of it today.
     ///
-    ///      It also catches a return to a fixed local ceiling: under `StaticCallLib.PROBE_GAS` this vault
-    ///      consumes the whole 100_000 and is classified starved, so a read that must succeed instead reverts
-    ///      and the far side fails `0 != 1`.
+    ///      **Which mutation each side catches — measured, and NOT what an earlier revision of this docstring
+    ///      claimed.** It asserted that a return to a fixed `StaticCallLib.PROBE_GAS` ceiling classifies this
+    ///      vault as starved and destroys the far side with `0 != 1`. That reasoning silently assumed
+    ///      classification against the forwarded STIPEND; against the frame, 100_000 spent inside a multi-megagas
+    ///      frame is nowhere near `7/8`, so a fixed ceiling makes the read fail OPEN, not closed. The claim
+    ///      described the code as it stood before the frame-vs-stipend correction, and survived a review round.
     ///
-    ///      All four `debtOf` tests go red under that fixed-ceiling mutation, but for two different reasons, and
-    ///      only this one names the harm: the gas-bomb pair fails because a real starvation stops PROPAGATING
-    ///      (the instance is dropped silently instead of raising), while this fails because a LEGITIMATE read is
-    ///      destroyed. A fix that restored propagation without the frame-derived stipend would satisfy the pair
-    ///      and still break every EulerEarn instance.
+    ///      What the four mutations actually do:
+    ///
+    ///      | mutation | red | signature |
+    ///      |---|---|---|
+    ///      | discard the flag (plain `safeUint`) | both gas bombs, this test's NEAR side | did not revert |
+    ///      | fixed `PROBE_GAS` ceiling, named error kept | the same three | did not revert — INDISTINGUISHABLE |
+    ///      | classify against the forwarded stipend | `burnInsideTheReopenedBand` alone | `0 != 1` |
+    ///      | `starved = !ok` | `genuineRevert`, this test's FAR side, `burnInside` | `0 != 1` |
+    ///
+    ///      So the two halves of this bracket pin DIFFERENT properties, which is the reason it is one test. The
+    ///      near side pins propagation, alongside the gas bombs. The far side pins fail-open on a genuine revert,
+    ///      alongside `genuineRevert_stillFailsOpen` — and that pair is what would go red if a change broke every
+    ///      EulerEarn instance on mainnet, since a live aggregator's `debtOf` reverts cheaply and must keep
+    ///      reading 0. No mutation makes a fixed ceiling break them.
     function test_debtOf_expensiveButGenuineRevert_bracketsTheClassifier() public {
         MockExpensiveRevertVault slow = new MockExpensiveRevertVault(address(usdc), 5_000_000);
         slow.setBalance(alice, 1_000_000);

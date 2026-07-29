@@ -1110,29 +1110,38 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
     }
 
     /// @notice A `debtOf` that reverts only after real work brackets the classifier from BOTH sides.
-    /// @dev Two assertions, deliberately, because one of them alone pins almost nothing.
+    /// @dev Two assertions straddling a measured boundary, and the VALUES are the test — both were re-derived
+    ///      after the classification threshold changed, because a bracket that no longer brackets passes
+    ///      silently.
     ///
     ///      The far side is the property that matters in production: an expensive but GENUINE revert — a
     ///      dispatcher hop, or a vault made dearer by an upgrade — must still yield the supply leg. That is the
-    ///      live EulerEarn configuration's path, and the regression it guards is a return to a fixed local
-    ///      ceiling: under `StaticCallLib.PROBE_GAS` this same vault consumes the whole 100_000 and is classified
-    ///      starved, so a read that must succeed instead reverts and this test fails `0 != 1`.
+    ///      path the live EulerEarn configuration takes.
     ///
-    ///      All four `debtOf` tests go red under that mutation, but for two different reasons, and only this one
-    ///      names the harm: the gas-bomb pair fails because a real starvation stops PROPAGATING (the instance is
-    ///      dropped silently instead of raising), while this one fails because a LEGITIMATE read is destroyed.
-    ///      A fix that restored propagation without restoring the frame-derived stipend would satisfy the pair
+    ///      The near side pins that the same vault fails CLOSED once the frame is too small to tell its revert
+    ///      from starvation. That false positive is documented in {EulerVaultsMetaBalanceAdapter._safeDebt}; it
+    ///      is correct given the evidence available, and pinning it is what makes the pair a bracket rather than
+    ///      two independent assertions.
+    ///
+    ///      **Why these numbers.** With a 5,000,000-gas burn the flip sits at a frame of ~5,917,000 — the point
+    ///      where `consumed` reaches `7/8` of the probe's frame, plus ~203,000 of prologue (`asset()`, the
+    ///      registry fetch, `convertToAssets`, `balanceOf`) that runs before the probe. 5,600,000 is ~5% below
+    ///      it and 6,300,000 ~6% above: far enough that solc or forge gas drift cannot cross either, close
+    ///      enough that a change to the threshold does. That second half is not automatic and was got wrong
+    ///      once — an earlier pair of 5,400,000/8,000,000 straddled the flip and still passed, but a
+    ///      `SLACK_DIVISOR` move from 8 to 4 shifts the flip to ~6,870,000 and BOTH of those assertions survive
+    ///      it. 6,300,000 lies below that, so the same change turns this red. A bracket has to sit inside the
+    ///      interval the regression would move the boundary across, not merely on both sides of it today.
+    ///
+    ///      It also catches a return to a fixed local ceiling: under `StaticCallLib.PROBE_GAS` this vault
+    ///      consumes the whole 100_000 and is classified starved, so a read that must succeed instead reverts
+    ///      and the far side fails `0 != 1`.
+    ///
+    ///      All four `debtOf` tests go red under that fixed-ceiling mutation, but for two different reasons, and
+    ///      only this one names the harm: the gas-bomb pair fails because a real starvation stops PROPAGATING
+    ///      (the instance is dropped silently instead of raising), while this fails because a LEGITIMATE read is
+    ///      destroyed. A fix that restored propagation without the frame-derived stipend would satisfy the pair
     ///      and still break every EulerEarn instance.
-    ///
-    ///      The near side pins WHERE the boundary sits. Below roughly `1.16 * revert_cost` of frame, a genuine
-    ///      revert is indistinguishable from starvation and is — correctly, given the evidence available —
-    ///      called starved. That false positive is documented in {EulerVaultsMetaBalanceAdapter._safeDebt}; here
-    ///      it is pinned, so any change to `GasStipendLib.SLACK_DIVISOR` or to the `forwarded` floor moves the
-    ///      boundary and turns this red.
-    ///
-    ///      Both budgets are capped explicitly. Run at the runner's default ~1e9 frame this test sits roughly
-    ///      184x away from the boundary and cannot detect a threshold change at all — it would then be
-    ///      behaviourally identical to the cheap-revert test above, while its docstring claimed otherwise.
     function test_debtOf_expensiveButGenuineRevert_bracketsTheClassifier() public {
         MockExpensiveRevertVault slow = new MockExpensiveRevertVault(address(usdc), 5_000_000);
         slow.setBalance(alice, 1_000_000);
@@ -1140,13 +1149,13 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
         bytes32[] memory ins = new bytes32[](1);
         ins[0] = bytes32(uint256(uint160(address(slow))));
 
-        // Far side of the boundary: the revert is genuine and is read as one.
-        INAVCalculator.PositionBalance[] memory pos = this.callPositions{gas: 8_000_000}(ins);
+        // Far side of the boundary (~5,917,000): the revert is genuine and is read as one.
+        INAVCalculator.PositionBalance[] memory pos = this.callPositions{gas: 6_300_000}(ins);
         assertEq(pos.length, 1, "an expensive but genuine revert must still yield the supply leg");
         assertFalse(pos[0].isDebt, "and it is the credit leg");
 
         // Near side: too little frame to tell this revert from starvation, so it fails closed.
         vm.expectPartialRevert(INAVCalculator.InstanceGasExhausted.selector);
-        this.callPositions{gas: 5_400_000}(ins);
+        this.callPositions{gas: 5_600_000}(ins);
     }
 }

@@ -147,61 +147,54 @@ library StaticCallLib {
         if (hasWord) word = raw;
     }
 
-    /// @notice As {probeWord}, but with a CALLER-SUPPLIED stipend, and it reports whether a failed call ran out
-    ///         of that stipend rather than answering.
+    /// @notice As {probeWord}, but it derives its own stipend from the calling frame and reports whether a
+    ///         failed call ran out of that stipend rather than answering.
     /// @dev Exists because {probeWord}'s two properties — a fixed {PROBE_GAS} ceiling and a `false` that folds
     ///      "reverted" together with "ran out of gas" — are wrong for a read whose absence changes a NAV number
     ///      rather than a label.
     ///
-    ///      **Why the stipend is the caller's.** {PROBE_GAS} is local and fixed, so a starved read cannot be
-    ///      rescued by handing the whole call more gas — the ceiling binds first, identically, at every budget.
+    ///      **Why the stipend is a share of the frame.** {PROBE_GAS} is local and fixed, so a starved read cannot
+    ///      be rescued by handing the whole call more gas — the ceiling binds first, identically, at every budget.
     ///      That is tolerable for a cosmetic read and not for an accounting one: it makes the failure permanent
-    ///      rather than a matter of asking for more. A caller passing `GasStipendLib.stipendFrom(gasleft())` gets
-    ///      the same recoverable shape the rest of the read path already has.
+    ///      rather than a matter of asking for more.
     ///
     ///      **Why `starved` is separate from `ok`.** A revert and an exhausted stipend are indistinguishable in
     ///      the success flag alone, and they deserve opposite treatment: a contract that genuinely does not
     ///      implement the selector has ANSWERED, and failing open is right; one that ran out of gas has not, and
     ///      recording its absence as a zero is how a missing debt leg becomes a higher NAV.
     ///
-    ///      The classification is {GasStipendLib}'s, deliberately shared rather than restated — a threshold that
-    ///      drifts between the guards asking this question re-opens the hole between them.
+    ///      **The threshold is measured against `available`, NOT against the stipend, and that is the whole of
+    ///      the correctness argument.** These reads sit under a caller — `MetaBalanceAdapter`'s per-instance
+    ///      classifier — that asks the same question one frame up, on ITS budget `S`, and raises only at
+    ///      `7/8 * S`. Classifying here against the stipend would test `7/8 * (63/64) * S = 0.861 * S`, strictly
+    ///      LOWER. Between the two lies a real band: a callee burning 86-87% of the frame trips this guard, the
+    ///      caller's `catch` then reads the resulting revert as an ordinary one, and the whole instance is
+    ///      dropped in silence — the exact outcome the guard exists to prevent, plus a fresh silent loss of any
+    ///      leg that would otherwise have survived. Measured at ~1.3% of the stipend wide before this was
+    ///      corrected. Testing against `available` puts this threshold at or above the caller's, so a raise here
+    ///      always becomes the caller's loud classification instead of vanishing into it.
     ///
-    ///      It is measured against what was ACTUALLY forwarded, not against `stipend`. EIP-150 hands the callee
-    ///      `min(stipend, 63/64 of what remains)`, so in a frame too poor to forward the full stipend a callee
-    ///      that burns everything it got would consume far less than `stipend` and read as a cheap revert. That
-    ///      false negative is precisely the nested-starvation case, so the floor is computed here.
+    ///      **Generalise it before adding another one of these.** Any guard nested beneath a frame-share
+    ///      classifier inherits that band unless it derives its threshold from the same frame. Two guards that
+    ///      both use {GasStipendLib} are still not composed correctly if one of them measures a 63/64 slice of
+    ///      what the other measures.
     ///
-    ///      **The guarantee has a depth, and for THIS function it is `d = 8`.** Index `d` as nesting levels
-    ///      below the direct callee, so the callee this staticcall reaches is `d = 0`. Every level leaves another
-    ///      1/64 reserve behind, so a callee at depth `d` burns at most `(63/64)^d` of what was forwarded here.
-    ///      `GasStipendLib`'s `SLACK_DIVISOR` of 8 accepts anything at or above `7/8`, and `(63/64)^d >= 7/8`
-    ///      holds to `d ~= 8.48`: `starved` is set LOUD through `d = 8` and goes SILENT at `d = 9`, invariant
-    ///      across the whole gas range rather than only at some budgets. Measured ratios track the model to five
-    ///      digits (`d = 8` -> 0.881646 against a theoretical 0.881630; `d = 9` -> 0.867875, below 7/8).
-    ///
-    ///      **Mind the frame of reference when comparing this to a caller's own depth figure.** `d` is counted
-    ///      from the direct callee, so `d = 8` is NINE frames below this staticcall. A caller that counts frames
-    ///      instead, and that is itself reached through a further 63/64 hop, will correctly quote 8 for what is
-    ///      `d = 7` here — the two numbers coincide only because that one extra hop cancels the difference. They
-    ///      are separate measurements of one composed path, not the same measurement.
-    ///
-    ///      Nothing in this repo nests near either figure, so it does not bound the reads routed here today. It
-    ///      is stated numerically because {GasStipendLib} asserts it only qualitatively ("covers nesting far past
-    ///      anything in this repo"), and a future reader stacking fan-outs needs the number, not the reassurance.
-    /// @param stipend Gas ceiling for the call. Pass `GasStipendLib.stipendFrom(gasleft())` for the recoverable
-    ///        shape; a fixed value only where the read's absence is cosmetic.
+    ///      No stipend parameter, deliberately. A caller-supplied one invites exactly the value that breaks the
+    ///      nesting above — a fixed ceiling, or a slice of a frame this function cannot see — and `0` would make
+    ///      `exhausted` true for every failed call.
     /// @return ok The raw staticcall success flag.
     /// @return hasWord True when the call succeeded AND returned at least one full word.
     /// @return word The first 32 bytes of returndata, or 0 when `!hasWord`.
-    /// @return starved True ONLY when the call failed AND consumed essentially everything it was forwarded.
-    /// @return consumed Gas the call cost this frame — reportable in the caller's error.
-    function probeWordMetered(address target, bytes memory data, uint256 stipend)
+    /// @return starved True ONLY when the call failed AND consumed essentially the whole calling frame.
+    /// @return budget The frame this was measured against — reportable in the caller's error.
+    /// @return consumed Gas the call cost this frame — likewise.
+    function probeWordMetered(address target, bytes memory data)
         internal
         view
-        returns (bool ok, bool hasWord, uint256 word, bool starved, uint256 consumed)
+        returns (bool ok, bool hasWord, uint256 word, bool starved, uint256 budget, uint256 consumed)
     {
-        uint256 available = gasleft();
+        budget = gasleft();
+        uint256 stipend = GasStipendLib.stipendFrom(budget);
         uint256 size;
         uint256 raw;
         assembly ("memory-safe") {
@@ -209,13 +202,9 @@ library StaticCallLib {
             size := returndatasize()
             raw := mload(0x00)
         }
-        consumed = available - gasleft();
+        consumed = budget - gasleft();
         hasWord = ok && size >= 32;
         if (hasWord) word = raw;
-        if (!ok) {
-            uint256 forwarded = available - available / 64;
-            if (stipend < forwarded) forwarded = stipend;
-            starved = GasStipendLib.exhausted(forwarded, consumed);
-        }
+        if (!ok) starved = GasStipendLib.exhausted(budget, consumed);
     }
 }

@@ -7,7 +7,6 @@ import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {StaticCallLib} from "src/utils/StaticCallLib.sol";
-import {GasStipendLib} from "src/utils/GasStipendLib.sol";
 
 /// @notice Minimal Euler V2 vault accessors beyond ERC4626. `debtOf` exists only on core eVaults (EVK); `EVC()` is
 ///         exposed by both core eVaults and EulerEarn vaults. A vault lacking either (or a non-Euler ERC4626)
@@ -65,7 +64,7 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     ///      fan-out catches it and re-raises `INAVCalculator.InstanceGasExhausted`, which is the wave-wide signal
     ///      for this condition. Its purpose is to make the instance revert instead of returning a leg-shaped
     ///      answer with the debt missing. See {_safeDebt}.
-    error DebtReadGasExhausted(address vault, address account, uint256 stipend, uint256 consumed);
+    error DebtReadGasExhausted(address vault, address account, uint256 budget, uint256 consumed);
 
     /// @dev Gas stipend for the `getCollaterals` probe ({_isEnabledCollateral}) — the one fail-open read here that
     ///      is still hand-rolled, because it decodes an `address[]` with a bounded prefix scan rather than a single
@@ -253,8 +252,8 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     ///      vault that ran out of gas has answered nothing, and reading 0 there is how a real borrow becomes a
     ///      higher NAV. Reverting instead makes the instance fail rather than return a number missing a leg.
     ///
-    ///      The stipend is a share of THIS frame rather than {StaticCallLib.PROBE_GAS}, and that is the half that
-    ///      actually closes the hole. A fixed local ceiling is unrecoverable — it binds identically at every
+    ///      The stipend {StaticCallLib.probeWordMetered} uses is a share of THIS frame rather than
+    ///      {StaticCallLib.PROBE_GAS}, and that is the half that actually closes the hole. A fixed local ceiling is unrecoverable — it binds identically at every
     ///      budget, so no amount of extra gas gets the read through — and, worse, it is invisible: 100_000 spent
     ///      inside a multi-megagas instance stipend looks like a cheap revert to the base fan-out's gas-based
     ///      classifier, which then drops the instance silently. A frame-derived stipend makes a starved read
@@ -308,10 +307,9 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     ///      its debt leg removes the instance's ONLY leg while sibling vaults keep reporting collateral in full.
     ///      Nothing inside this instance can offset that; only refusing to answer can.
     function _safeDebt(address vaultAddr, address account) private view returns (uint256) {
-        uint256 stipend = GasStipendLib.stipendFrom(gasleft());
-        (bool ok, bool hasWord, uint256 debt, bool starved, uint256 consumed) =
-            StaticCallLib.probeWordMetered(vaultAddr, abi.encodeCall(IEulerEVault.debtOf, (account)), stipend);
-        if (starved) revert DebtReadGasExhausted(vaultAddr, account, stipend, consumed);
+        (bool ok, bool hasWord, uint256 debt, bool starved, uint256 budget, uint256 consumed) =
+            StaticCallLib.probeWordMetered(vaultAddr, abi.encodeCall(IEulerEVault.debtOf, (account)));
+        if (starved) revert DebtReadGasExhausted(vaultAddr, account, budget, consumed);
         if (!ok || !hasWord) return 0;
         return debt;
     }

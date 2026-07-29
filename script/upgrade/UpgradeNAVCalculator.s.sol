@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
+import {LibraryPins} from "../utils/LibraryPins.sol";
 import {SafeTxBuilder} from "../utils/SafeTxBuilder.sol";
 import {NAVCalculator} from "../../src/nav/NAVCalculator.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -10,6 +11,48 @@ import {console2} from "forge-std/console2.sol";
 /// @title UpgradeNAVCalculator
 /// @notice Upgrades NAVCalculator implementation via Safe multisig
 contract UpgradeNAVCalculator is BaseDeployScript {
+    /// @notice Refuses to broadcast a NAVCalculator implementation that is not usable on THIS chain.
+    /// @dev    This script does `new NAVCalculator()` inside a broadcast and then repoints a LIVE proxy at the
+    ///         result, so an impl linked against the wrong library addresses is worse here than in the numbered
+    ///         deploy scripts: there is already value behind the proxy.
+    ///
+    ///         The failure is quiet, not loud. `NAVCalculator`'s creation bytecode embeds whatever foundry.toml's
+    ///         `libraries` array says, and the CREATE succeeds regardless of what lives at those addresses:
+    ///           - on the 24 configured chains the pinned addresses ALREADY hold library bytecode, so nothing
+    ///             reverts at any point. The impl deploys, the Safe TX is written, the upgrade executes, and the
+    ///             proxy quietly DELEGATECALLs a library version nobody intended. That is the likely outcome.
+    ///           - on a fresh chain, or after a pin regen that has not been deployed there yet, the pinned address
+    ///             holds nothing and the first library call reverts — after the impl was broadcast and recorded.
+    ///
+    ///         Hence two kinds of assertion. The linkage pair mirrors `01_DeployImplementations` (and the CI guard
+    ///         in `test/LibraryPinConsistency.t.sol`): the bytecode about to be broadcast must actually embed both
+    ///         pins. `01`'s other two assertions — that each library's own CREATE2 address equals its pin — do not
+    ///         transfer, because this script deploys via plain `new` (CREATE) and deploys no libraries at all. What
+    ///         replaces them is the check `01` does not need: the pinned addresses must hold code ON THIS CHAIN,
+    ///         since linked-but-empty is a DELEGATECALL into nothing.
+    ///
+    ///         Addresses come from `LibraryPins`, never hardcoded, so a pin regeneration propagates here with no
+    ///         edit to this file.
+    /// @param  implBytecode The creation bytecode this script is about to broadcast.
+    function _assertPinnedLibrariesUsable(bytes memory implBytecode) internal view {
+        require(
+            LibraryPins.contains(implBytecode, LibraryPins.PRICE_FEED_LIB),
+            "NAVCalculator impl not linked against pinned PriceFeedLib (foundry.toml `libraries` drift)"
+        );
+        require(
+            LibraryPins.contains(implBytecode, LibraryPins.NAV_REGISTRY_LIB),
+            "NAVCalculator impl not linked against pinned NAVRegistryLib (foundry.toml `libraries` drift)"
+        );
+        require(
+            LibraryPins.PRICE_FEED_LIB.code.length > 0,
+            "pinned PriceFeedLib has no code on this chain (deploy the libraries here before upgrading)"
+        );
+        require(
+            LibraryPins.NAV_REGISTRY_LIB.code.length > 0,
+            "pinned NAVRegistryLib has no code on this chain (deploy the libraries here before upgrading)"
+        );
+    }
+
     function run() public override {
         setUp();
         validateAddresses();
@@ -30,6 +73,7 @@ contract UpgradeNAVCalculator is BaseDeployScript {
 
         // Step 1: Deploy new implementation
         console2.log("\nStep 1: Deploying new implementation...");
+        _assertPinnedLibrariesUsable(type(NAVCalculator).creationCode);
         vm.startBroadcast();
         NAVCalculator newImplementation = new NAVCalculator();
         vm.stopBroadcast();

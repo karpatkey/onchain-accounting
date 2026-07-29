@@ -77,7 +77,11 @@ jobs:
           swapon --show
 
       - name: Build
-        run: forge build --sizes
+        # THROWAWAY PROBE — do not merge. Tests whether CI's PriceFeedLib pin value is an artifact of
+        # sticky out/ + cache/ reuse across runs. --force ignores the restored cache and recompiles
+        # everything. If the pin test then reports 0xD477d7e2 (the value two local clean builds agree
+        # on) instead of 0x00a3AFAC, the cache is confirmed as the cause.
+        run: forge build --sizes --force
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

@@ -261,7 +261,7 @@ All in `src/prices/protocols/`. Pattern is one file per asset; L2-specific varia
 
 | Feed | Asset | Underlying inputs |
 |---|---|---|
-| `cbETH_Price` **(base)**, `cbETH_L2_Price` | cbETH | cbETH-per-ETH rate × ETH/USD |
+| `cbETH_Price` **(base)**, `cbETH_L2_Price` | cbETH | cbETH-per-ETH rate × ETH/USD. **`cbETH_Price` is deployed nowhere** — mainnet cbETH is not held. Retained intentionally: its on-chain `exchangeRate()` is *fundamental*, independent of the Chainlink cbETH/ETH *market* feed `cbETH_L2_Price` composes, so it is the natural monitor feed if mainnet cbETH is ever held. See *Built but intentionally not deployed* below. |
 | `stETH_Price` | stETH (Mainnet) | stETH/ETH (Chainlink) × ETH/USD — a thin `CrossRateCustomPriceFeed` subclass; replaces the raw STETH/USD Chainlink feed so ETH/USD cancels when NAV is quoted in ETH |
 | `lsETH_Price` | lsETH (Mainnet) | lsETH/ETH (Chainlink) × ETH/USD — thin `CrossRateCustomPriceFeed` subclass |
 | `wstETH_Price` | wstETH (Mainnet) | `stEthPerToken` × stETH/ETH × ETH/USD — ETH/USD cancels when NAV is quoted in ETH (uses the real stETH/ETH rate, no 1:1 assumption) |
@@ -281,9 +281,25 @@ All in `src/prices/protocols/`. Pattern is one file per asset; L2-specific varia
 | Feed | Asset | Notes |
 |---|---|---|
 | `LDO_Price` | LDO | LDO/ETH (Chainlink) × ETH/USD (via NAV) — thin `TwoFeedChainlinkPriceFeed` subclass |
-| `ETHPlus_Price` | ETH+ | Reserve Protocol RToken. Price = (basketsNeeded / totalSupply) × basketPrice(low). Returns stale if `IBasketHandler.status() != SOUND` (catches IFFY — lagging oracle — as well as DISABLED) or if `block.timestamp − min(IAsset.lastSave()) > RESERVE_PROTOCOL_HEARTBEAT`. `latestRoundData()` returns `updatedAt = min(IAsset.lastSave())` across prime basket components for external observability. |
+| `ETHPlus_Price` | ETH+ | **Deployed nowhere** (`"enabled": false`); ETH+ is priced by the Chainlink "Calculated ETH+/USD" feed instead — this 8-dec Custom feed is incompatible with that 18-dec feed (`PriceFeedDecimalsMismatch`). Retained with its disabled config entry as the record of why. See *Built but intentionally not deployed* below. Reserve Protocol RToken. Price = (basketsNeeded / totalSupply) × basketPrice(low). Returns stale if `IBasketHandler.status() != SOUND` (catches IFFY — lagging oracle — as well as DISABLED) or if `block.timestamp − min(IAsset.lastSave()) > RESERVE_PROTOCOL_HEARTBEAT`. `latestRoundData()` returns `updatedAt = min(IAsset.lastSave())` across prime basket components for external observability. |
 | `CrossRate_Price` | generic | Generic helper: `asset/base × base/USD` from a Chainlink rate feed × the NAV's base/USD (used when no direct asset/USD feed exists, or to keep a shared feed cancelling — e.g. the stETH instance prices stETH as stETH/ETH × ETH/USD) |
 | `NXM_Price` **(base)** | NXM, wNXM (Mainnet) | Nexus Mutual RAMM `getInternalPrice()` (ETH-per-NXM, manipulation-resistant TWAP) × ETH/USD. NXM has no external market oracle by design. One instance per priced token: NXM, and wNXM (the 1:1 wrapper a Nexus member can unwrap to NXM, so book value is realizable — matches how aggregators price wNXM). |
+
+
+### Built but intentionally not deployed
+
+Two feeds compile and are tested but are deployed on **no chain**, and their `03_DeployPriceFeeds` branches are
+reachable-but-never-taken (`isAdapterEnabled` returns false). This is a recorded choice, not an oversight — do not
+delete them as dead code, and do not wire them up without the corresponding held position.
+
+| Feed | Why it is not deployed | Why it is kept |
+|---|---|---|
+| `cbETH_Price` | Mainnet cbETH is not a held asset, so there is no `cbETH` key in `custom-price-feeds/1.json` and no `nav-config` registration. | It reads `cbETH.exchangeRate()` — a **fundamental** rate — while `cbETH_L2_Price` composes a Chainlink cbETH/ETH **market** feed. Independent sources are exactly what a divergence check needs, so this is the natural **monitor** feed if mainnet cbETH is ever held. `Prices` keeps `_monitorFeeds` strictly separate: "NEVER used to price the NAV; read only to detect divergence", with "exactly one primary feed per asset, with redundancy moved to `_monitorFeeds`". Fundamental primary + market monitor is the shape wstETH and weETH already use. |
+| `ETHPlus_Price` | Its config entry is `"enabled": false`. ETH+ is priced by the Chainlink "Calculated ETH+/USD" feed registered in `nav-config`; this 8-dec Custom feed cannot co-register with that 18-dec feed (`PriceFeedDecimalsMismatch`). | The disabled entry and its `$comment` are the **record** of why a custom feed did not work for ETH+. Deleting the contract would leave that explanation dangling. |
+
+(By contrast `sDAI_CustomPriceFeed` *was* deleted: it was superseded on Gnosis by `sXDAI_CustomPriceFeed`, mainnet sDAI
+is not a registered asset, and nothing about it was worth recording. Gnosis still holds an asset **named** `sDAI` —
+priced by `sXDAI_Price` — so the asset survives while the contract does not.)
 
 **Redundancy `*CrossRate` feeds.** `ETHx_CrossRate_Price`, `ezETH_CrossRate_Price`, and `osETH_CrossRate_Price` are thin `CrossRateCustomPriceFeed` subclasses registered *alongside* their primary feed (`ETHx_Price` / `ezETH_Price` / `osToken_Price`). Each sources the `asset/ETH` rate from an independent Redstone Classic Push market feed rather than the protocol's on-chain rate, giving the freshest-wins selector a genuinely separate fallback source.
 

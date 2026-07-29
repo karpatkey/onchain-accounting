@@ -150,7 +150,12 @@ contract DeployPriceFeeds is BaseDeployScript {
             _deployREth();
         }
 
-        // Deploy cbETH Price Oracle
+        // INTENTIONALLY BUILT BUT NEVER DEPLOYED — not an oversight. Mainnet cbETH is not held, so there is no
+        // "cbETH" key in custom-price-feeds/1.json and this gate is always false. The contract is retained as the
+        // natural MONITOR feed if mainnet cbETH is ever held: it reads cbETH.exchangeRate() (fundamental), which is
+        // independent of the Chainlink cbETH/ETH market feed that cbETH_L2 composes — exactly the independence a
+        // divergence check needs. See the NatSpec on cbETH_CustomPriceFeed. Do not delete; do not wire up without a
+        // held position.
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "cbETH")) {
             _deployCbEth();
         }
@@ -180,7 +185,13 @@ contract DeployPriceFeeds is BaseDeployScript {
             _deployEthx();
         }
 
-        // Deploy ETHPlus Price Oracle (Reserve Protocol RToken)
+        // Deploy ETHPlus Price Oracle (Reserve Protocol RToken).
+        // INTENTIONALLY BUILT BUT NEVER DEPLOYED — not an oversight. The "ETHPlus" entry in
+        // custom-price-feeds/1.json is "enabled": false, so this gate is always false. ETH+ is priced instead by the
+        // Chainlink "Calculated ETH+/USD" feed registered in nav-config; this 8-dec Custom feed is incompatible with
+        // that 18-dec Chainlink feed (PriceFeedDecimalsMismatch on registration). The disabled config entry and its
+        // $comment are the RECORD of why a custom feed did not work here, so both the entry and this contract are
+        // retained rather than deleted.
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "ETHPlus")) {
             _deployEthPlus();
         }

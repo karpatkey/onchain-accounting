@@ -7,6 +7,20 @@ import {BaseCustomPriceFeed} from "src/prices/BaseCustomPriceFeed.sol";
 /// @notice USD price of cbETH = `cbETH.exchangeRate()` (ETH per cbETH, 18 dec) × the NAV's ETH/USD price.
 /// @dev Shared skeleton (base/USD via the NAV, staleness, decimals, latestRoundData, the `rate × base/USD / 1e18`
 ///      math) lives in BaseCustomPriceFeed; this feed supplies only the cbETH exchange rate via `_rate()`.
+/// @dev **DEPLOYED NOWHERE TODAY — retained deliberately, not an oversight.** Mainnet cbETH is not a held asset, so
+///      this contract has no entry in `contracts-deployment-config/custom-price-feeds/1.json` and no registration in
+///      `nav-config`. `03_DeployPriceFeeds._deployCbEth()` is therefore a reachable-but-never-taken branch: its
+///      `isAdapterEnabled("cbETH")` gate returns false because the key is absent.
+///
+///      It is kept because it is the natural MONITOR feed if mainnet cbETH is ever held. This contract reads
+///      `cbETH.exchangeRate()` — a **fundamental** rate straight off the token — whereas {cbETH_L2_CustomPriceFeed}
+///      (live on Base) composes a Chainlink cbETH/ETH **market** feed. Those are genuinely independent sources, which
+///      is precisely what a divergence check requires: per `Prices.sol`, `_monitorFeeds` is "NEVER used to price the
+///      NAV; read only to detect divergence", and "the intended production configuration is exactly one primary feed
+///      per asset, with redundancy moved to `_monitorFeeds`". Pairing a fundamental primary against a market monitor
+///      is the shape wstETH and weETH already use.
+///
+///      Do not delete it as dead code, and do not wire it up without a held cbETH position to price.
 /// @author KPK
 /* solhint-disable contract-name-camelcase */
 contract cbETH_CustomPriceFeed is BaseCustomPriceFeed {

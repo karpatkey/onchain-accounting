@@ -61,6 +61,17 @@ contract UpgradeNAVCalculatorHarness is UpgradeNAVCalculator {
     }
 }
 
+/// @dev Deploys with the guard neutralised. The wiring tests prove the deploy REFUSES when the guard objects;
+///      this proves it can still SUCCEED, so "the guard rejects correctly" is distinguishable from "the deploy
+///      path always reverts". Reviewers demonstrated the gap: `require(false)` inside
+///      `_deployGuardedNavImplementation` left all 15 tests green, because every test that reaches the deploy
+///      expects a revert. A full six-assertion success cannot be staged on a tree whose pins drift — the impl
+///      bytecode embeds the real pins, so no pin injection satisfies linkage and source-match at once — which is
+///      why the deploy mechanics are proved separately here.
+contract UnguardedDeployHarness is UpgradeNAVCalculatorHarness {
+    function _assertPinnedLibrariesUsable(bytes memory) internal view override {}
+}
+
 /// @title UpgradeNAVCalculatorPinsTest
 /// @notice The upgrade script repoints a LIVE proxy at whatever `new NAVCalculator()` produced, so it must refuse
 ///         to broadcast an implementation that is not usable on the target chain. Three failure families: a pin
@@ -270,15 +281,30 @@ contract UpgradeNAVCalculatorPinsTest is Test {
         }
     }
 
-    /// @notice Nothing under `script/test/` should be reachable by `forge script` at all. `setUp()` is the
-    ///         barrier that closes every path, including a `--sig` target such as
-    ///         `deployGuardedNavImplementation()`, which is externally reachable and would otherwise deploy a
-    ///         real implementation once the pins match. `run()` is neutralised too.
+    /// @notice The HARNESS is not runnable as a script: `setUp()` reverts, and `forge script` calls it before
+    ///         any entry point including a `--sig` target such as `deployGuardedNavImplementation()`. `run()` is
+    ///         neutralised too, as defence in depth.
+    /// @dev    Scope, stated precisely because an earlier revision of this docstring overclaimed: this closes the
+    ///         HARNESS-rooted script paths, not every path in the file. `UpgradeNAVCalculatorPinsTest` is itself
+    ///         a `forge script` entry point — its own `setUp()` cannot revert, since `forge test` needs it — so
+    ///         `forge script <this file>:UpgradeNAVCalculatorPinsTest --sig "<a test that deploys>" --broadcast
+    ///         --rpc-url <chain>` can still deploy an implementation once the pins match. That is a generic
+    ///         property of any test contract that constructs a broadcasting helper, not something this file can
+    ///         fix; the blast radius is one orphan implementation — no address recorded, no Safe TX, no proxy
+    ///         repointed — and it takes a deliberate invocation of a test file as a script.
     function test_harnessIsNotRunnableAsADeployScript() public {
         vm.expectRevert("harness: not a deploy script");
         harness.setUp();
         vm.expectRevert("harness: not a deploy script");
         harness.run();
+    }
+
+    /// @notice The deploy wrapper can still succeed when the guard permits it — the direction no other test
+    ///         covers while the pins drift, and the one that makes "rejects always" a detectable regression.
+    function test_deployWrapper_succeedsWhenTheGuardPermits() public {
+        UnguardedDeployHarness unguarded = new UnguardedDeployHarness();
+        NAVCalculator impl = unguarded.deployGuardedNavImplementation();
+        assertGt(address(impl).code.length, 0, "deploy wrapper produced no implementation");
     }
 
     /// @notice Guards the guard: the real implementation bytecode must embed both pins, so the positive tests

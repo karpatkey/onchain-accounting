@@ -35,7 +35,14 @@ implementation it deploys:
   guard body does not catch. (The suite can prove the call exists, not that it precedes the broadcast: relocating
   it below `new` reverts the same external call. `forge script` broadcasts nothing when the run reverts.)
 - ✅ the composite guard invokes the source-match family, constructed so only that family can object
-- ✅ the harness cannot be used to broadcast a live-proxy upgrade from `script/test/`
+- ✅ the harness is inert as a script: its `setUp()` reverts, and `forge script` calls `setUp()` before any entry
+  point, so `--sig deployGuardedNavImplementation()` is closed too. Scope: this covers the *harness*-rooted paths.
+  The test contract's own `setUp()` cannot revert (`forge test` needs it), so running a deploying test function
+  via `forge script --broadcast` remains possible — a generic property of any test contract that constructs a
+  broadcasting helper, with a blast radius of one orphan implementation (no address recorded, no Safe TX, no proxy
+  repointed)
+- ✅ the deploy wrapper can still succeed when the guard permits — so "the guard rejects correctly" is
+  distinguishable from "the deploy path always reverts", which a reviewer mutation showed nothing else caught
 - ✅ the two weaker families still pass on a stale pin, so they cannot substitute for the source check
 
 Every negative test is written to fail if its `require` is removed; the drift tests assert that the guard *tracks*

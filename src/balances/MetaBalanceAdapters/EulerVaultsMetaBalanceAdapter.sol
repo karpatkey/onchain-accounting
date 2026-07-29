@@ -39,8 +39,8 @@ interface IEVC {
 ///        - **Supplied** — `convertToAssets(balanceOf)`, for any vault the account has shares in (EulerEarn earn
 ///          deposits, or core-eVault lend/collateral supply). Always positive, `isDebt = false`.
 ///        - **Borrowed** — `debtOf(account)`, for core eVaults the account borrows from. `isDebt = true`. EulerEarn
-///          vaults do not implement `debtOf`, so it is read fail-open ({_safeDebt}) and a failure means "no debt
-///          leg".
+///          vaults do not implement `debtOf`, so a REVERT is read fail-open ({_safeDebt}) and means "no debt leg".
+///          A read that runs out of gas is not a failure of that kind and fails closed instead — see {_safeDebt}.
 ///      Both legs share the same `positionId` (`abi.encode(address(vault))`) and are distinguished by `positionKind`,
 ///      matching the multi-leg convention used by the lending adapters (Aave/Spark supply vs borrow on one reserve).
 ///      A supply the account has enabled as EVC collateral is reported as `Collateral`; an unencumbered supply
@@ -197,10 +197,16 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     ///      NOT the thing that makes mode 2 safe — which is why `_safeEvc`/`_safeDebt` no longer carry one at all
     ///      now that they delegate to {StaticCallLib}, and behave identically.
     ///
-    ///      Stipends differ per read and it matters when tuning them: `_safeEvc` and `_safeDebt` are bounded by
-    ///      `StaticCallLib.PROBE_GAS` (100_000), while `_isEnabledCollateral` — still hand-rolled, because it
-    ///      decodes an `address[]` with a bounded prefix scan — is bounded by this file's own {PROBE_GAS}
-    ///      (150_000). Changing the local constant moves only the collateral probe.
+    ///      Stipends differ per read and it matters when tuning them: `_safeEvc` is bounded by
+    ///      `StaticCallLib.PROBE_GAS` (100_000); `_isEnabledCollateral` — still hand-rolled, because it decodes an
+    ///      `address[]` with a bounded prefix scan — by this file's own {PROBE_GAS} (150_000); and `_safeDebt` by
+    ///      neither, taking a share of the calling frame instead (see there for why an accounting read cannot use
+    ///      a fixed local ceiling). Changing the local constant moves only the collateral probe.
+    ///
+    ///      One consequence of that split is worth stating: `_safeDebt` runs BEFORE the classification probes and
+    ///      no longer has a ceiling, so a vault that makes it expensive leaves less for `_safeEvc` and
+    ///      `_isEnabledCollateral` further down. Those degrade to `Supplied`, which changes no number — the
+    ///      ordering costs classification fidelity, never an amount.
     ///
     ///      `vaultAddr` is MANAGER-governed and its guard is defensive only — `_instancePositions` already reverts
     ///      on a code-less vault at `asset()`, long before this is reached. The live exposure is `evc`, which is
@@ -218,8 +224,9 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
         return _isEnabledCollateral(evc, account, vaultAddr) ? PositionKind.Collateral : PositionKind.Supplied;
     }
 
-    /// @dev Fail-open `debtOf` read. Returns 0 — "no debt leg" — for a code-less vault, a reverting/out-of-stipend
-    ///      call, or fewer than 32 bytes of returndata.
+    /// @dev Reads `debtOf`, failing OPEN on a revert and CLOSED on an exhausted stipend. Returns 0 — "no debt
+    ///      leg" — for a code-less vault, a reverting call, or fewer than 32 bytes of returndata; reverts
+    ///      {DebtReadGasExhausted} when the call consumed essentially everything it was forwarded.
     ///
     ///      Uses the same bounded low-level form as {_safeEvc} rather than `try`/`catch`, and for the same reason:
     ///      `catch` does not intercept a return-data decode failure. EulerEarn aggregators genuinely revert here
@@ -233,8 +240,9 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     ///      an asset, so both vanish together — the same reasoning as the unregistered-asset early return above).
     ///      Across vaults it is not: in Euler's core EVK model an account borrows from a controller vault while its
     ///      collateral sits in OTHER vaults, so a decode-failing controller drops the debt while sibling vaults
-    ///      still report collateral — unoffset collateral, which OVER-reports NAV. Reading 0 on failure keeps the
-    ///      failure mode in the safe direction only because the supply leg survives alongside it.
+    ///      still report collateral — unoffset collateral, which OVER-reports NAV. Reading 0 keeps the failure in
+    ///      the safe direction only when the supply leg survives alongside it, which on a controller vault
+    ///      (`balanceOf == 0`) it does not — which is why an exhausted stipend now reverts rather than reading 0.
     ///
     ///      Not reachable on the configured mainnet instances today (both are EulerEarn aggregators whose `debtOf`
     ///      genuinely reverts), but the instance set is governed config and adding a core eVault would open it.
@@ -259,6 +267,32 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     ///      {DebtReadGasExhausted} is therefore the MECHANISM rather than the signal a consumer sees: its job is
     ///      to make the instance revert at all. The base re-labels it as `InstanceGasExhausted`, which is the
     ///      error already carried on `INAVCalculator` for exactly this condition.
+    ///
+    ///      **What this guard is and is not for.** Its threat model is ACCIDENTAL starvation — an honest vault
+    ///      made dearer by an upgrade, a proxy hop that grew, a frame squeezed by the instances ahead of it. It is
+    ///      not a defence against a hostile vault, and cannot be: a vault willing to starve the read can instead
+    ///      `return 0` from `debtOf` and produce the identical unoffset-collateral over-report for free, at no
+    ///      gas cost and with nothing anywhere to classify. The trust boundary for a hostile vault is governance
+    ///      approving the instance; this guard sits inside it.
+    ///
+    ///      Two bounds follow from that, both measured rather than assumed:
+    ///
+    ///      - **Depth.** Starvation is classified loud through 8 callee frames below the probe and goes silent at
+    ///        9 (see {StaticCallLib.probeWordMetered}). Real EVK dispatcher/module hops are 2-4, so this is ample
+    ///        against accidents — but the depth is the CALLEE's, so it does not bound a vault choosing it.
+    ///      - **Cost.** A genuine revert is misread as starvation only when it costs a large fraction of the
+    ///        frame — roughly `gasleft <= 1.16 * revert_cost`. A real EulerEarn dispatch failure costs single-digit
+    ///        thousands, so the band sits far below a viable frame and is empty in practice. The counter-intuitive
+    ///        part is the direction: a MORE expensive genuine revert is MORE likely to be called starved, not less.
+    ///
+    ///      **Starvation is not the only route to unoffset collateral here, and the others keep the old policy.**
+    ///      A successful reply carrying fewer than 32 bytes (an EVK dispatcher with an unset module; an ERC-1967
+    ///      proxy whose implementation slot points at a code-less address) still reads as 0, and so does the
+    ///      unregistered-controller-asset early return above. Both produce the same over-report and both remain
+    ///      fail-open, so this function deliberately carries two policies. The distinction is evidence, not
+    ///      severity: an exhausted stipend is the one failure whose gas cost the callee cannot fake, so it is the
+    ///      one that can be classified from outside. Closing the others needs a different mechanism than a gas
+    ///      threshold, and is tracked separately rather than smuggled in here.
     ///
     ///      Why the whole read must fail rather than just this leg: the over-report is not local to this vault.
     ///      In Euler's core topology the controller vault holds the debt with `balanceOf == 0`, so suppressing

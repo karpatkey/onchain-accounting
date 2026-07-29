@@ -91,6 +91,46 @@ contract MockCoreEVault {
     }
 }
 
+/// @notice A vault whose `debtOf` does real work and THEN reverts — expensive, but finite and legitimate.
+/// @dev The shape a proxy/dispatcher hop or an upgraded vault produces. It is the far side of the classifier
+///      from a gas bomb, and the two must land on opposite verdicts: this one has ANSWERED (with a revert), so
+///      the supply leg must survive. `MockEVault`'s bare dispatch-fallthrough revert is the cheapest possible
+///      case and brackets the classifier only where it cannot plausibly bind; this brackets it where it can.
+contract MockExpensiveRevertVault {
+    string public name = "EVK Vault eUSDC-slow";
+    address private _asset;
+    address public EVC;
+    mapping(address => uint256) public balanceOf;
+    uint256 private immutable BURN;
+
+    constructor(address asset_, uint256 burn_) {
+        _asset = asset_;
+        BURN = burn_;
+    }
+
+    function asset() external view returns (address) {
+        return _asset;
+    }
+
+    function convertToAssets(uint256 shares) external pure returns (uint256) {
+        return shares;
+    }
+
+    function setBalance(address account, uint256 shares) external {
+        balanceOf[account] = shares;
+    }
+
+    function debtOf(address) external view returns (uint256) {
+        uint256 start = gasleft();
+        while (start - gasleft() < BURN) {
+            assembly {
+                mstore(0x00, keccak256(0x00, 0x20))
+            }
+        }
+        revert("no debtOf on this vault");
+    }
+}
+
 /// @notice A core-eVault shape whose `debtOf` consumes every unit of gas it is forwarded instead of answering.
 /// @dev The failure `_safeDebt` must NOT read as "no debt". A vault can reach this by being upgraded, by an
 ///      unbounded internal loop, or by being hostile — the instance set is governed, but a vault's code is not
@@ -124,6 +164,7 @@ contract MockDebtGasBombVault {
         assembly {
             for {} 1 {} { mstore(0x00, keccak256(0x00, 0x20)) }
         }
+        return 0; // unreachable; present only to silence solc 6321 on every build
     }
 }
 
@@ -1066,5 +1107,25 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
     /// @dev External wrapper so `vm.expectRevert` applies to the adapter call rather than to this test frame.
     function callPositions(bytes32[] memory ins) external view returns (INAVCalculator.PositionBalance[] memory) {
         return adapter.getAdapterPositionsForInstances(alice, ins, address(0));
+    }
+
+    /// @notice A `debtOf` that reverts only after real work still fails OPEN — the supply leg survives.
+    /// @dev The regression this change is most likely to cause, and the side the other tests do not bracket.
+    ///      They pin fail-CLOSED against a gas bomb and fail-OPEN against the cheapest possible revert; the
+    ///      realistic middle — a legitimate revert that costs 5,000,000 gas because it went through a dispatcher
+    ///      or an upgraded vault — is where a future tightening of `SLACK_DIVISOR` or of the `forwarded` floor
+    ///      would misclassify, converting every EulerEarn instance into a reverting one with a fully green suite.
+    ///      That is exactly the live mainnet configuration, so it is pinned here rather than left to inference.
+    function test_debtOf_expensiveButGenuineRevert_stillFailsOpen() public {
+        MockExpensiveRevertVault slow = new MockExpensiveRevertVault(address(usdc), 5_000_000);
+        slow.setBalance(alice, 1_000_000);
+
+        bytes32[] memory ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(address(slow))));
+
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(alice, ins, address(0));
+
+        assertEq(pos.length, 1, "an expensive but genuine revert must still yield the supply leg");
+        assertFalse(pos[0].isDebt, "and it is the credit leg");
     }
 }

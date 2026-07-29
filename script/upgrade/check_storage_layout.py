@@ -41,7 +41,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -233,7 +232,9 @@ def main() -> int:
 
     print(f"baseline: {len(base)} entries   current: {len(new)} entries")
     if added:
-        print(f"\nappended above the baseline's highest slot ({max(int(e['slot']) for e in base)}):")
+        # Deliberately "added", not "appended": since the position rule was removed, a new variable may
+        # legitimately sit mid-layout in slots freed by a shrunk gap.
+        print(f"\nadded (new variables; position is not itself a violation):")
         for e in added:
             print(f"  + slot {e['slot']:>4} +{e['offset']:<2} {e['label']:<34} {e['type']}")
 
@@ -250,7 +251,7 @@ def main() -> int:
         return 1
 
     print("\nCOMPATIBLE: every baseline variable keeps its slot, offset and type"
-          + (f"; {len(added)} appended." if added else "; nothing added."))
+          + (f"; {len(added)} added." if added else "; nothing added."))
     # The token the Solidity gate demands. Printed ONLY on a passing run, and keyed to the baseline file, so
     # it cannot be guessed as a constant and a copy parked in `.env` stops working the moment the baseline
     # changes. It attests "the check ran against this baseline", never "the source is compatible".

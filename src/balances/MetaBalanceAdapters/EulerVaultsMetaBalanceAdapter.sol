@@ -304,9 +304,14 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     ///        **This 8 is derived, not owned here, and no test pins it.** It falls straight out of
     ///        `GasStipendLib.SLACK_DIVISOR = 8`: `(63/64)^8 = 0.8816 >= 7/8 > (63/64)^9 = 0.8679`. Change the
     ///        divisor in that file — which this adapter does not own, and which the bracket test below proves is
-    ///        a live possibility in both directions — and this number moves with it, to ~18 frames at divisor 4
-    ///        and ~3 at divisor 16, with nothing here going red to say so. Re-derive rather than trust it if
-    ///        `SLACK_DIVISOR` has changed.
+    ///        a live possibility in both directions — and this number moves with it, with nothing here going red
+    ///        to say so.
+    ///
+    ///        The general form, so a later reader can CHECK the number rather than inherit it:
+    ///        `d_max = floor( ln((D-1)/D) / ln(63/64) )` for `SLACK_DIVISOR = D`. That gives 18 at `D = 4`,
+    ///        8 at `D = 8`, and 4 at `D = 16`. Re-derive rather than trust it if `SLACK_DIVISOR` has changed —
+    ///        an earlier revision of this line asserted 3 at `D = 16`, off by one, precisely because it stated
+    ///        the endpoints without the formula that produces them.
     ///
     ///        Past 8 the debt reads 0 while the supply leg survives: the unoffset-collateral over-report, at 9
     ///        frames and beyond. There is no intervening regime. An earlier revision of this note claimed 9 was
@@ -314,10 +319,14 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     ///        the forwarded stipend rather than the frame, i.e. of the silent-drop band this adapter's guard was
     ///        corrected to close, and it disappeared with it. Measured invariant across frame size.
     ///      - **Cost.** A genuine revert is misread as starvation only when it costs a large fraction of the
-    ///        frame — `frame <= (8/7) * revert_cost`, about 1.14x. A real EulerEarn dispatch failure costs
-    ///        single-digit thousands, two orders of magnitude below the frame its own prologue needs, so the band
-    ///        is empty in practice. The counter-intuitive part is the direction: a MORE expensive genuine revert
-    ///        is MORE likely to be called starved, not less.
+    ///        frame the probe is standing in — `probe_frame <= (8/7) * revert_cost`, about 1.14x. A real
+    ///        EulerEarn dispatch failure costs single-digit thousands, so a 5,000-gas revert needs the probe to
+    ///        hold under ~5,700 to be misread. The prologue ahead of it (`asset()`, the registry fetch,
+    ///        `convertToAssets`, `balanceOf`) already costs ~19,500, so the whole call would have to have been
+    ///        entered with roughly 25,000 gas — three orders of magnitude under what any real NAV read runs at,
+    ///        and under the per-instance stipend the base hands down. Empty in practice, then, but bounded by
+    ///        the ARITHMETIC above rather than by that being self-evident. The counter-intuitive part is the
+    ///        direction: a MORE expensive genuine revert is MORE likely to be called starved, not less.
     ///
     ///      **Starvation is not the only route to unoffset collateral here, and the others keep the old policy.**
     ///      A successful reply carrying fewer than 32 bytes (an EVK dispatcher with an unset module; an ERC-1967

@@ -38,6 +38,14 @@ contract StaticCallHarness {
         return StaticCallLib.probeWord(second, secondData);
     }
 
+    function probeMetered(address target, bytes memory data)
+        external
+        view
+        returns (bool ok, bool hasWord, uint256 word, bool starved, uint256 budget, uint256 consumed)
+    {
+        return StaticCallLib.probeWordMetered(target, data);
+    }
+
     /// @notice Gas consumed by one {StaticCallLib.safeUint}, measured from inside the calling frame.
     function gasForUint(address target, bytes memory data) external view returns (uint256 used) {
         uint256 before = gasleft();
@@ -364,5 +372,84 @@ contract StaticCallLibTest is Test {
         assertTrue(ok, "staticcall to a code-less address succeeds");
         assertFalse(hasWord, "an empty reply carries no word");
         assertEq(word, 0, "residue from the previous probe must not surface");
+    }
+
+    // ---------------------------------------------------------------------------------------------------------
+    // probeWordMetered — the accounting-read helper. It keeps properties 2 and 3 above (the fixed 32-byte
+    // output window, and mask-don't-decode) and deliberately drops property 1: it forwards 63/64 of the frame
+    // rather than a fixed ceiling, and reports whether the callee ate it.
+    // ---------------------------------------------------------------------------------------------------------
+
+    /// @notice A starved callee is reported `starved`, separately from `ok`.
+    /// @dev The distinction the helper exists for: {safeUint} folds "reverted" and "ran out of gas" into one
+    ///      `false`, and they deserve opposite treatment at an accounting call site.
+    function test_probeWordMetered_starvedCallee_reportsStarvedNotJustFailure() public {
+        replier.stageBurnGas();
+        (bool ok, bool hasWord,, bool starved,,) =
+            harness.probeMetered{gas: 2_000_000}(address(replier), abi.encodeWithSignature("anything()"));
+        assertFalse(ok, "a starved callee did not answer");
+        assertFalse(hasWord, "and carries no word");
+        assertTrue(starved, "and must be distinguishable from a revert");
+    }
+
+    /// @notice The reported `budget` is the calling FRAME, not the 63/64 slice that was forwarded.
+    /// @dev Pins the OPERANDS, which is a weaker property than it first looks, and the distinction is worth
+    ///      stating because an earlier version of this docstring claimed the stronger one. `budget`/`consumed`
+    ///      are surfaced to a consumer in `EulerVaultsMetaBalanceAdapter.DebtReadGasExhausted`, so a reader
+    ///      diagnosing a starved instance needs them to describe the frame rather than a slice of it. Mutating
+    ///      the library to report `stipend` here turns this red.
+    ///
+    ///      It does NOT pin the classification. Measured, not argued: changing the library to
+    ///      `exhausted(stipend, consumed)` — the actual silent-drop regression — leaves this test and every
+    ///      other test in this file GREEN, because a callee that burns its whole stipend is classified starved
+    ///      either way. Only `EulerVaultsMetaBalanceAdapter.test_debtOf_burnInsideTheReopenedBand_keepsItsLeg`
+    ///      catches that, because the band it opens is reachable only through the nesting the adapter provides
+    ///      and cannot be observed from a single library frame. Do not treat this file as covering it.
+    ///
+    ///      The ratio arithmetic, for the operand property: a callee that burns everything it was given
+    ///      consumes the whole stipend, so `consumed/budget` is ~63/64 = 0.984 when `budget` is the frame and
+    ///      ~1.0 when it is the stipend. Testing below 0.99 separates the two.
+    function test_probeWordMetered_budgetIsTheFrameNotTheForwardedStipend() public {
+        replier.stageBurnGas();
+        (,,, bool starved, uint256 budget, uint256 consumed) =
+            harness.probeMetered{gas: 2_000_000}(address(replier), abi.encodeWithSignature("anything()"));
+        assertTrue(starved, "control: the callee must actually have been starved");
+        assertLt(consumed, budget, "the frame always exceeds what the call could consume");
+        assertLt(consumed * 1000, budget * 990, "budget must be the FRAME (ratio ~0.984), not the stipend (~1.0)");
+    }
+
+    /// @notice A cheap genuine revert is NOT starvation, however loudly it fails.
+    /// @dev The EulerEarn case, and the reason `starved` cannot simply be `!ok`. If this goes red the live
+    ///      mainnet configuration — aggregators with no `debtOf` — starts reverting instead of failing open.
+    function test_probeWordMetered_cheapRevert_isNotStarved() public {
+        replier.stageRevert(0);
+        (bool ok,,, bool starved,,) =
+            harness.probeMetered{gas: 2_000_000}(address(replier), abi.encodeWithSignature("anything()"));
+        assertFalse(ok, "a reverting callee reports failure");
+        assertFalse(starved, "but it ANSWERED, so it must not be called starved");
+    }
+
+    /// @notice The success path is unchanged from {probeWord}: a full word is returned and nothing is starved.
+    function test_probeWordMetered_successfulWord_isReturnedAndNotStarved() public {
+        replier.stageReturn(abi.encode(uint256(0xC0FFEE)));
+        (bool ok, bool hasWord, uint256 word, bool starved,,) =
+            harness.probeMetered{gas: 2_000_000}(address(replier), abi.encodeWithSignature("anything()"));
+        assertTrue(ok, "a well-formed reply succeeds");
+        assertTrue(hasWord, "and carries a full word");
+        assertEq(word, 0xC0FFEE, "which is the value");
+        assertFalse(starved, "a successful call is never starved");
+    }
+
+    /// @notice A short successful reply yields no word and is not starvation either.
+    /// @dev Pins the deliberate second policy: this route to a missing debt leg stays fail-open, because a
+    ///      callee's returndata size is not evidence of anything the way its gas cost is.
+    function test_probeWordMetered_shortReply_hasNoWordAndIsNotStarved() public {
+        replier.stageReturn(abi.encodePacked(uint128(1)));
+        (bool ok, bool hasWord, uint256 word, bool starved,,) =
+            harness.probeMetered{gas: 2_000_000}(address(replier), abi.encodeWithSignature("anything()"));
+        assertTrue(ok, "a short reply still succeeds");
+        assertFalse(hasWord, "but carries no full word");
+        assertEq(word, 0, "and yields no value");
+        assertFalse(starved, "and is not starvation");
     }
 }

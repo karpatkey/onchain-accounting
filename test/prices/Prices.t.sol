@@ -303,11 +303,38 @@ contract PricesTest is Test {
     ///      reports `answer = 1`, so `PriceFeedLib.checkSequencerUptime` returns at the `answer != 0` arm — two
     ///      branches ABOVE the grace-period arm the old name claimed. Its own comment already said so. The grace
     ///      period is now covered by the three `_gracePeriod_*` tests below.
+    ///
+    ///      This fixture does NOT pin the arm on its own: `Mock_PriceOracleChainlink` hard-codes `startedAt = 0`,
+    ///      so it satisfies the NEXT arm too and whole-arm deletion goes unnoticed. See
+    ///      `test_checkL2SequencerUptime_sequencerDown_withNonZeroStartedAt` below, which is what kills that
+    ///      mutant. Kept because it pins the blanking mutation (`if (answer != 0) { }`), which the other does not.
     function test_checkL2SequencerUptime_sequencerDown_answerNonZero() public {
         managerL2 = new PricesHarness(address(disabledUptimeFeed));
 
         bool stale = managerL2.checkL2SequencerUptime();
         assertTrue(stale, "answer != 0 must read as down");
+    }
+
+    /// @notice A down sequencer with a REAL `startedAt` — the only shape that isolates the `answer != 0` arm.
+    /// @dev    Every other `answer != 0` fixture in the repo also reports `startedAt == 0`, so all of them are
+    ///         caught by the `startedAt == 0` arm one line below and none can tell the two apart. Deleting
+    ///         `if (answer != 0) stale = true;` outright left the whole suite green before this test existed.
+    ///
+    ///         Not academic: a real Chainlink L2 uptime feed reports `answer = 1` with a non-zero `startedAt`, and
+    ///         `startedAt` is when the CURRENT status began — so a sequencer that has been down longer than the
+    ///         grace period has `elapsed > gracePeriod`. Without the first arm that falls through to the
+    ///         grace-period branch and reads **not stale**: prices accepted while the sequencer is down, which is
+    ///         the over-report direction. The `2 hours` here is deliberately past the 1-hour grace period so the
+    ///         test fails if the arm is removed rather than being rescued by the grace window.
+    function test_checkL2SequencerUptime_sequencerDown_withNonZeroStartedAt() public {
+        vm.warp(block.timestamp + 3 hours); // headroom so `- 2 hours` cannot underflow
+        Mock_ChainlinkL2SequencerUptimeFeedAt feed =
+            new Mock_ChainlinkL2SequencerUptimeFeedAt(block.timestamp - 2 hours);
+        feed.setAnswer(1); // sequencer DOWN, and down for longer than the grace period
+        managerL2 = new PricesHarness(address(feed));
+        assertEq(managerL2.chainlinkL2SequencerGracePeriod(), 1 hours, "fixture assumes a 1h grace period");
+
+        assertTrue(managerL2.checkL2SequencerUptime(), "a down sequencer must read stale regardless of elapsed time");
     }
 
     /// @notice The far side of the boundary: elapsed is exactly `gracePeriod + 1`, so the sequencer reads healthy.

@@ -144,6 +144,7 @@ contract Mock_ChainlinkL2SequencerUptimeFeedUninitialized is Mock_PriceOracleCha
 ///         under test; set `startedAt` above `block.timestamp` to exercise the future-timestamp clamp.
 contract Mock_ChainlinkL2SequencerUptimeFeedAt is Mock_PriceOracleChainlink {
     uint256 public startedAtOverride;
+    int256 public answerOverride;
 
     constructor(uint256 startedAt_) Mock_PriceOracleChainlink("L2 sequencer at fixed startedAt", 0, 0) {
         startedAtOverride = startedAt_;
@@ -153,13 +154,25 @@ contract Mock_ChainlinkL2SequencerUptimeFeedAt is Mock_PriceOracleChainlink {
         startedAtOverride = startedAt_;
     }
 
+    /// @notice Report the sequencer as DOWN (`answer != 0`) while keeping a real `startedAt`.
+    /// @dev    Needed because every other `answer != 0` fixture in this file also reports `startedAt == 0`
+    ///         (`Mock_PriceOracleChainlink` hard-codes it, and `…FeedDown` returns all-zero but the answer). That
+    ///         made the `answer != 0` and `startedAt == 0` arms of `PriceFeedLib.checkSequencerUptime`
+    ///         indistinguishable: deleting the first left every test green, because the fixture satisfied the
+    ///         second too. A REAL Chainlink L2 uptime feed reports `answer = 1` with a non-zero `startedAt`, so
+    ///         that mutant is not academic — without the first arm a long-down sequencer computes
+    ///         `elapsed > gracePeriod` and reads healthy.
+    function setAnswer(int256 answer_) external {
+        answerOverride = answer_;
+    }
+
     function latestRoundData()
         external
         view
         override
         returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
     {
-        return (0, 0, startedAtOverride, startedAtOverride, 0);
+        return (0, answerOverride, startedAtOverride, startedAtOverride, 0);
     }
 }
 

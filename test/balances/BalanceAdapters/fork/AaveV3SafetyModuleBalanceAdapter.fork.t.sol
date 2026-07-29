@@ -150,18 +150,35 @@ contract AaveV3SafetyModuleBalanceAdapterForkTest is BalanceAdapterTestBase {
 
     // ─── Reward freeze behaviour (only when distributionEnd is in the future) ─
 
-    /// @dev `getTotalRewardsBalance` stops growing once `distributionEnd` has passed. We want to assert that,
-    ///      but the test only makes sense when `distributionEnd` is still in the future at FORK_BLOCK; if it's
-    ///      already past (which can happen as the SM ages), the test is a no-op.
+    /// @dev `getTotalRewardsBalance` stops growing once `distributionEnd` has passed, and this asserts that at
+    ///      every pinned block rather than only at some of them.
+    ///
+    ///      It used to open with `if (distributionEnd <= block.timestamp) return;`, on the stated grounds that
+    ///      the property "only makes sense when distributionEnd is still in the future". That guard has been
+    ///      firing: at FORK_BLOCK stkGHO's `distributionEnd` is 1749123599 (2025-06-05) against a block
+    ///      timestamp of 1777637363 (2026-04-29), so the single assertion below was never reached and the
+    ///      reward-freeze behaviour of a mainnet-deployed adapter had no coverage at all. A pinned test that
+    ///      degrades to a no-op as the chain ages is indistinguishable from a passing one, which is exactly how
+    ///      that went unnoticed.
+    ///
+    ///      The premise was also wrong: the property holds on BOTH sides of `distributionEnd`, so no skip is
+    ///      needed. Anchor the first read at `max(distributionEnd, block.timestamp)` — never warping backwards,
+    ///      which on a fork can push `block.timestamp` behind a stored `lastUpdateTimestamp` and underflow
+    ///      Aave's accrual arithmetic — and the second 100 days later. Both reads are then strictly at or after
+    ///      the end of distribution, where the balance must be frozen.
     function test_rewards_freezeAfterDistributionEnd() public {
         uint256 distributionEnd = STK_GHO.distributionEnd();
-        if (distributionEnd <= block.timestamp) return; // distribution already concluded; nothing to test
+        uint256 anchor = distributionEnd > block.timestamp ? distributionEnd : block.timestamp;
 
-        vm.warp(distributionEnd);
+        vm.warp(anchor);
         (uint256 atEnd,) = adapter.getAdapterBalanceForAsset(STK_GHO_HOLDER, AAVE);
-        vm.warp(distributionEnd + 100 days);
+        vm.warp(anchor + 100 days);
         (uint256 afterEnd,) = adapter.getAdapterBalanceForAsset(STK_GHO_HOLDER, AAVE);
+
         assertEq(afterEnd, atEnd, "no further reward accrual past distribution end");
+        // The assertion above is satisfiable by a holder with no rewards at all, which would make it vacuous in
+        // a second, quieter way. Pin that the fixture actually has a reward balance to freeze.
+        assertGt(atEnd, 0, "stkGHO fixture must hold a non-zero AAVE reward balance");
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────

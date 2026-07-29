@@ -240,14 +240,28 @@ contract NAVCalculatorInvariantTest is SuperTest {
             assertTrue(nav.isAssetRegistered(asset), "All position assets should be registered");
         }
 
-        // Verify all registered assets can be queried
+        // Verify all registered assets can be queried.
+        //
+        // Both assertions in this loop used to be tautologies and checked nothing: `decimals <= 255` is always
+        // true for a `uint8`, and `bytes(symbol).length >= 0` is always true for a `uint256` length. They read
+        // like bounds checks, which is why they survived review.
+        //
+        // Assert instead what the registry actually guarantees, and only that. `NAVRegistryLib.registerAsset`
+        // does NOT bound decimals and does NOT require a non-empty symbol — it copies whatever the token's
+        // `decimals()` / `symbol()` returned — so a non-empty-symbol assertion here would be inventing an
+        // invariant the code does not hold. What IS guaranteed is that the array and the index agree, and that
+        // the record is reachable by its own address; that is what "can be queried" was reaching for.
         INAVCalculator.Asset[] memory registeredAssets = nav.getRegisteredAssets();
         for (uint256 i = 0; i < registeredAssets.length; i++) {
-            // Asset struct already contains decimals and symbol
-            uint8 decimals = registeredAssets[i].decimals;
-            assertTrue(decimals <= 255, "Decimals should be valid");
+            address registered = registeredAssets[i].asset;
+            assertTrue(registered != address(0), "a registered record must name an asset");
+            assertTrue(nav.isAssetRegistered(registered), "every array entry must be reachable by address");
 
-            assertTrue(bytes(registeredAssets[i].symbol).length >= 0, "symbol queryable");
+            // The bound the pricing path really enforces: `_priceConversion` reverts `InvalidAssetDecimals`
+            // when `assetDecimals + assetPriceDecimals < NAV_DECIMALS`, so an asset whose decimals alone
+            // cannot reach NAV_DECIMALS is only priceable via its feed's decimals. Assert the registry never
+            // holds a value that would overflow that sum instead of asserting a uint8 fits in a uint8.
+            assertLe(uint256(registeredAssets[i].decimals), 77, "decimals must stay inside the 10**x exponent range");
         }
     }
 

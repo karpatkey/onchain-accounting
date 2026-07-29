@@ -166,8 +166,26 @@ contract AaveV3SafetyModuleBalanceAdapterForkTest is BalanceAdapterTestBase {
     ///      which on a fork can push `block.timestamp` behind a stored `lastUpdateTimestamp` and underflow
     ///      Aave's accrual arithmetic — and the second 100 days later. Both reads are then strictly at or after
     ///      the end of distribution, where the balance must be frozen.
+    ///      **Scope, stated rather than implied.** At this pinned block the fixture's unclaimed AAVE reward
+    ///      balance is 0 — measured on mainnet: the holder has 9,648e18 stkGHO but `getTotalRewardsBalance`
+    ///      returns 0, because the distribution ended in June 2025 and the rewards were claimed. So this cannot
+    ///      demonstrate accrual STOPPING; there is nothing left to stop. What it does check is the weaker but
+    ///      still real property that the adapter does not INVENT reward accrual past distribution end, which is
+    ///      what a regression in the accrual read would look like.
+    ///
+    ///      An earlier revision of this test asserted `atEnd > 0` to guard against exactly the vacuity of
+    ///      `0 == 0`. That assertion was false against the chain and CI caught it. The honest guard is not a
+    ///      claim about rewards the fixture does not have, but the two facts that make the zero MEANINGFUL: the
+    ///      holder really does hold a stake (so the adapter is reading a live position, not an empty account),
+    ///      and the distribution really has ended (so zero is the expected answer rather than a broken read).
+    ///      If either stops holding, this test's premise has changed and it should be re-derived, not patched.
     function test_rewards_freezeAfterDistributionEnd() public {
         uint256 distributionEnd = STK_GHO.distributionEnd();
+
+        // The two facts that make a zero reward balance meaningful rather than vacuous.
+        assertGt(STK_GHO.balanceOf(STK_GHO_HOLDER), 0, "fixture must hold a live stkGHO stake");
+        assertLe(distributionEnd, block.timestamp, "premise: distribution has already ended at this pin");
+
         uint256 anchor = distributionEnd > block.timestamp ? distributionEnd : block.timestamp;
 
         vm.warp(anchor);
@@ -176,9 +194,6 @@ contract AaveV3SafetyModuleBalanceAdapterForkTest is BalanceAdapterTestBase {
         (uint256 afterEnd,) = adapter.getAdapterBalanceForAsset(STK_GHO_HOLDER, AAVE);
 
         assertEq(afterEnd, atEnd, "no further reward accrual past distribution end");
-        // The assertion above is satisfiable by a holder with no rewards at all, which would make it vacuous in
-        // a second, quieter way. Pin that the fixture actually has a reward balance to freeze.
-        assertGt(atEnd, 0, "stkGHO fixture must hold a non-zero AAVE reward balance");
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────

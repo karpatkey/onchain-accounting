@@ -48,6 +48,27 @@ contract BalancesHarness is Balances {
         return out;
     }
 
+    /// @notice Single-asset sibling of the stub above, mirroring `INAVCalculator.getRegisteredAsset`.
+    /// @dev Required, not optional: `MetaBalanceAdapter._getAssetInfo` calls this, so every meta-adapter test that
+    ///      passes this harness as its NAVCalculator resolves assets through here. Without it the call hits a
+    ///      missing selector and reverts, the meta-adapter's per-instance `try`/`catch` swallows that, and the
+    ///      instance silently emits ZERO legs — which surfaces as "expected N legs, got 0" across the Aave V3 and
+    ///      Morpho suites rather than as anything pointing at the harness.
+    ///
+    ///      Kept consistent with `getRegisteredAssets()` above by construction: same `_testRegistered` /
+    ///      `_testRegisteredList` backing, same `("", 18)` metadata. If one is changed, change both — an adapter
+    ///      that resolved differently through the two would be a test-only divergence with no production analogue.
+    function getRegisteredAsset(address asset)
+        external
+        view
+        returns (INAVCalculator.Asset memory assetInfo, bool found)
+    {
+        if (!_testRegistered[asset]) {
+            return (assetInfo, false);
+        }
+        return (INAVCalculator.Asset({asset: asset, symbol: "", decimals: 18}), true);
+    }
+
     function getAssetCount() external view returns (uint256) {
         return _testRegisteredList.length;
     }

@@ -155,6 +155,45 @@ def archived(tag: str, chain_id: int) -> dict | None:
     return json.loads(p.read_text()) if p.is_file() else None
 
 
+def previous_generation_feeds(chain_id: int, tag: str) -> tuple[set[str], list[str]]:
+    """Custom-feed addresses belonging to the OLD NAV generation, as (addresses, sources).
+
+    Two independent sources, unioned, because either can be absent:
+      * `archive/<tag>/<chainId>.json` — the pre-clear deployment record, present only if the reset
+        was run through `reset_deployment_records.py --apply`.
+      * `snapshots/pre/<chainId>.json` — the Custom-type feeds actually registered on the old NAV.
+
+    This exists because "the record holds an address" is NOT evidence a feed was redeployed. Every
+    `_deploy*` in `03_DeployPriceFeeds` opens with a skip-if-deployed guard that returns early
+    (32 of them, `03:233-237` and alike), so a surviving `customPriceFeeds` record makes `03` a
+    silent no-op on every feed while still exiting 0 — leaving all of them bound to the OLD proxy
+    through their `immutable NAV` (ADR 0019). When the old proxy is eventually decommissioned,
+    `NavBaseUsdLib`'s catch drops every custom-priced asset to $0 at once.
+    """
+    old: set[str] = set()
+    sources: list[str] = []
+    arch = archived(tag, chain_id)
+    if arch:
+        vals = {lower(v) for v in (arch.get("customPriceFeeds") or {}).values() if c.is_address(v)}
+        if vals:
+            old |= vals
+            sources.append(f"archive/{tag}/{chain_id}.json")
+    snap = c.SNAPSHOT_DIR / "pre" / f"{chain_id}.json"
+    if snap.is_file():
+        doc = json.loads(snap.read_text())
+        vals = set()
+        for a in doc.get("assets", []) or []:
+            for f in (a.get("priceFeeds") or []) + (a.get("monitorFeeds") or []):
+                # Only Custom feeds are ours to redeploy; Chainlink/Redstone addresses are third-party
+                # and legitimately unchanged, so including them would be a false positive waiting.
+                if f.get("priceType") == "Custom" and c.is_address(f.get("priceFeed")):
+                    vals.add(lower(f["priceFeed"]))
+        if vals:
+            old |= vals
+            sources.append(f"snapshots/pre/{chain_id}.json")
+    return old, sources
+
+
 class Chk:
     """Accumulates findings for one chain. `ok` is the whole point: no finding means it passed."""
 
@@ -334,6 +373,38 @@ def step_1_4(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     k.require(len(feeds) == exp["customFeeds"],
               f"{len(feeds)} custom price feed(s) in the record, config expects "
               f"{exp['customFeeds']}")
+
+    # Every recorded address must be NEW, not merely non-zero. This is the check that catches a
+    # partial or skipped reset: `03` skips any feed whose record survived, exits 0, and leaves it
+    # bound to the old proxy. Name and count checks cannot see that — the names and count are
+    # IDENTICAL to the previous generation, which is exactly what makes the failure quiet.
+    old, sources = previous_generation_feeds(k.chain_id, tag)
+    if old:
+        stale = sorted(n for n, a in feeds.items() if lower(a) in old)
+        k.require(not stale,
+                  f"{len(stale)} feed(s) still hold their PREVIOUS-GENERATION address "
+                  f"{stale[:6]} (per {', '.join(sources)}) — 03 skip-if-deployed'd them, so they "
+                  f"remain bound to the OLD proxy via their immutable NAV. Clear the record "
+                  f"(step 1.1) and re-run 03")
+    if old:
+        # `old` being non-empty proves only that the feeds are not generation-1 stale. On a SECOND redeploy,
+        # feeds left bound to the generation-2 proxy are absent from `old`, so nothing is flagged -- and the
+        # warn below is skipped precisely because `old` is non-empty, so the operator gets a silent clean pass
+        # on this axis. Reachable by default: reset_deployment_records refuses to reuse a non-empty archive
+        # tag, so a second redeploy must pass a new --tag, while this tool still defaults to `pre-redeploy`.
+        snap_proxy = (base.get(k.chain_id) or {}).get("proxy")
+        rec_proxy = rec.get("NAVCalculatorProxy")
+        if c.is_address(snap_proxy) and c.is_address(rec_proxy) and lower(snap_proxy) == lower(rec_proxy):
+            k.warn.append(
+                f"the previous-generation feed set was derived from sources whose proxy ({snap_proxy}) is "
+                f"still the one in the record, so this only shows the feeds are not stale by ONE generation. "
+                f"If this is a second redeploy, refresh the snapshot/--archive-tag; the NAV() pointer check "
+                f"below is the evidence that actually binds")
+    else:
+        k.warn.append(f"no previous-generation feed addresses available for chain {k.chain_id} "
+                      f"(no archive/{tag} record and no Custom feeds in the pre-snapshot), so "
+                      f"'these feeds were actually redeployed' cannot be shown here — the NAV() "
+                      f"pointer check below is the only remaining evidence")
     if not url or not feeds:
         return
     proxy = rec.get("NAVCalculatorProxy")

@@ -7,7 +7,6 @@ import {IBalanceAdapter} from "../IBalanceAdapter.sol";
 import {LabelLib} from "src/balances/LabelLib.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
@@ -237,12 +236,28 @@ contract ERC20DefaultBalanceAdapter is BalanceAdapterBase {
         return arr;
     }
 
-    /// @notice Gets asset information from NAVCalculator by iterating through registered assets
+    /// @notice Gets asset information from NAVCalculator. O(1).
     /// @param asset The asset address to look up
     /// @return assetInfo The Asset struct containing asset address, symbol, and decimals
+    /// @dev **`_rows` calls this once per HELD asset**, so its cost is paid per token in the wallet — and this
+    ///      adapter is the unremovable singleton registered on every chain, which makes it the largest instance of
+    ///      the fetch-per-token pathology in the repo, not a lesser one.
+    ///
+    ///      It used to fetch the WHOLE registry per call
+    ///      (`RegisteredAssetLib.find(NAV_CALCULATOR.getRegisteredAssets(), asset)`), measured at
+    ///      **60,879,087 gas at 104 registered assets** — ~585k per asset and super-linear, because each call
+    ///      allocates an N-element array that is never freed so memory expansion grows with the square of the held
+    ///      count. `PriceFeedLib` forwards only 63/64 of `gasleft()` with no fixed ceiling, so a treasury Safe
+    ///      holding most of the registered set either exceeds the node's `eth_call` cap and returns no NAV at all,
+    ///      or trips `AdapterGasExhausted` and reverts the whole read. An availability defect, not a cost one.
+    ///
+    ///      Now one `getRegisteredAsset` call: a mapping load plus one array read, flat in the registry size.
+    ///      The revert-on-absent behaviour is deliberately UNCHANGED — unlike the meta family, this adapter's
+    ///      caller has already filtered to its own supported-asset list, so an unregistered asset here is a real
+    ///      inconsistency rather than an ordinary skip.
     function _getAssetInfo(address asset) internal view returns (INAVCalculator.Asset memory assetInfo) {
         bool found;
-        (assetInfo, found) = RegisteredAssetLib.find(NAV_CALCULATOR.getRegisteredAssets(), asset);
+        (assetInfo, found) = NAV_CALCULATOR.getRegisteredAsset(asset);
         if (!found) revert AssetNotFound();
     }
 

@@ -76,6 +76,22 @@ contract Mock_WrongShape {
     }
 }
 
+/// @notice Returns exactly 96 bytes with a VALID-looking head0 of 0x60 — inside the old accept window.
+/// @dev A canonical `(uint256[][], uint256[], uint256)` is never shorter than 160 bytes: three head words plus
+///      one length word for each dynamic member, even when both are empty. The head alone is 96, so a
+///      `size >= 96` floor accepted 64 bytes' worth of replies that the ABI decoder would have rejected — and
+///      `head0 == 0x60` does not exclude them. This mock sits squarely in that window.
+contract Mock_HeadOnly {
+    fallback() external {
+        assembly {
+            mstore(0x00, 0x60) // head0 — passes the shape gate
+            mstore(0x20, 0x80)
+            mstore(0x40, 777000000000000000000) // would be published as totalTVL
+            return(0x00, 0x60) // 96 bytes: head only, no tail at all
+        }
+    }
+}
+
 /// @notice Succeeds and returns NOTHING — the ERC-1967-proxy-over-codeless-impl shape.
 contract Mock_EmptyReply {
     fallback() external {
@@ -246,6 +262,21 @@ contract ezETH_CustomPriceFeedTest is Test {
 
         (uint256 price, bool stale) = oracle.getLatestPrice();
         assertEq(price, 0, "a reply of the wrong SHAPE must not become a price");
+        assertTrue(stale, "and must mark the feed stale");
+    }
+
+    /// @notice A head-only 96-byte reply is rejected — the head is not the length floor.
+    /// @dev The 96..159-byte window: shorter than any canonical encoding of this signature, yet it passed both
+    ///      `size >= 96` and `head0 == 0x60`. Without the 160 floor the feed publishes a live 777e18-derived
+    ///      rate from a reply that carries no array data at all. Found in review.
+    function test_rate_headOnlyReply_isRejected() public {
+        ezEth.mint(address(this), 100e18);
+        Mock_HeadOnly headOnly = new Mock_HeadOnly();
+        ezETH_CustomPriceFeed oracle =
+            new ezETH_CustomPriceFeed(address(ezEth), address(headOnly), address(nav), address(weth));
+
+        (uint256 price, bool stale) = oracle.getLatestPrice();
+        assertEq(price, 0, "a reply shorter than the canonical minimum must not become a price");
         assertTrue(stale, "and must mark the feed stale");
     }
 }

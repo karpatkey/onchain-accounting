@@ -2,7 +2,7 @@
 pragma solidity ^0.8;
 
 import {Test} from "forge-std/Test.sol";
-import {ERC4626RedeemLib} from "src/balances/ERC4626RedeemLib.sol";
+import {ERC4626RedeemLib, RedeemValueGasExhausted} from "src/balances/ERC4626RedeemLib.sol";
 import {MorphoVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/MorphoVaultsMetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
@@ -104,6 +104,19 @@ contract RedeemLibHarness {
             return (1, 0);
         }
     }
+
+    /// @notice As {valueBounded}, but hands back the revert SELECTOR so a test can pin which error fired.
+    function valueBoundedSel(address vault, uint256 shares, uint256 budget)
+        external
+        view
+        returns (uint8 status, bytes4 selector)
+    {
+        try RedeemLibHarness(address(this)).value{gas: budget}(vault, shares) returns (uint256) {
+            return (0, bytes4(0));
+        } catch (bytes memory err) {
+            return (1, err.length >= 4 ? bytes4(err) : bytes4(0));
+        }
+    }
 }
 
 /// @title ERC4626RedeemLib — a failed fee-net read must not become a gross one
@@ -151,10 +164,12 @@ contract ERC4626RedeemLibTest is Test {
     }
 
     /// @notice The case that made this a NAV bug rather than a style point: `previewRedeem` running out of gas.
-    /// @dev The old fallback was funded by EIP-150. `previewRedeem` burns 63/64 of the frame inside `SINK`, the
-    ///      remaining ~1/64 comes back to `redeemValue`, and `convertToAssets` is cheap enough to complete on it —
-    ///      so starvation reliably selected the INFLATED branch, precisely when the read was least trustworthy.
-    ///      This test asserts the frame still returns (it is not simply OOG-ing) and that what it returns is 0.
+    /// @dev Two behaviours have lived here. Round 0's fallback was funded by EIP-150: `previewRedeem` burns
+    ///      63/64 of the frame inside `SINK`, ~1/64 returns, and `convertToAssets` completes on it — so
+    ///      starvation reliably selected the INFLATED branch. Round 0 then made it return 0, which silently
+    ///      DELETED a position that was never valued. Round 1 makes it RAISE, which is what this asserts.
+    ///      The docstring previously still described the return-0 behaviour, which would have led a maintainer
+    ///      to "fix" the assertion back to the defect. Found in review.
     function test_redeemValue_previewStarves_raisesInsteadOfDeletingThePosition() public {
         vault.setMode(Mock_FeeVault.Mode.Starve);
 
@@ -163,8 +178,10 @@ contract ERC4626RedeemLibTest is Test {
         uint256 budget = 2_000_000;
         assertGt(budget / 64, 25_000, "1/64 residue must be able to fund a cheap read");
 
-        (uint8 status,) = harness.valueBounded(address(vault), SHARES, budget);
+        (uint8 status, bytes4 sel) = harness.valueBoundedSel(address(vault), SHARES, budget);
         assertEq(status, 1, "a starved preview must RAISE, not report a value");
+        // Not just "some revert": pin the SELECTOR, so an unrelated revert cannot masquerade as the guard.
+        assertEq(sel, RedeemValueGasExhausted.selector, "must raise RedeemValueGasExhausted specifically");
     }
 
     /// @notice Starvation is distinguishable from a plain revert, so only one of them is loud.

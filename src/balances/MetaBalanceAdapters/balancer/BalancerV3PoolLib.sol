@@ -26,10 +26,22 @@ library BalancerV3PoolLib {
     ///      registry lookup downstream and the leg is skipped, which under-reports.
     ///
     ///      The ERC4626 predicate is now "asset() yielded a non-zero address", and {poolBalanceOfIndexed} uses
-    ///      the SAME predicate. That matters: the two functions must agree about which pool tokens are wrappers,
-    ///      or a token could be reported under its raw identity while its amount was `previewRedeem`-converted.
-    ///      They previously used two different tests (`data.length >= 32` here and there), which agreed only by
-    ///      luck.
+    ///      the SAME predicate, where the two previously used different tests (`data.length >= 32` here,
+    ///      `ok && data.length >= 32` there) that agreed only by luck.
+    ///
+    ///      **One predicate is not one evaluation, and the difference is not closed here.** The two functions
+    ///      still run {StaticCallLib.safeAddr} independently, at different points in the frame, so a token
+    ///      whose `asset()` sits near the 100_000 cap can be classified differently by each. Review raised this
+    ///      in both directions; the resolvable reading is that `PROBE_GAS` is a FIXED cap and remaining gas
+    ///      decreases monotonically through the read, so the later call ({poolBalanceOfIndexed}) can only ever
+    ///      be MORE starved than the earlier one. The reachable divergence is therefore "identity unwrapped,
+    ///      amount not" — wrapper shares reported against the underlying asset, which under-reports, since a
+    ///      wrapper share is worth at least one underlying. The inverse, which would over-report, requires the
+    ///      later call to succeed where the earlier failed and is not reachable by that monotonicity.
+    ///
+    ///      This predates the change — the same two-call structure and the same clamp existed before — so it
+    ///      is recorded rather than fixed. Closing it properly means threading the resolved token down from
+    ///      {poolTokens} instead of re-probing, which changes this library's signature and both adapters.
     function poolTokens(IStablePool pool) internal view returns (address[] memory tokens) {
         IStablePool.StablePoolImmutableData memory immutableData = pool.getStablePoolImmutableData();
         tokens = new address[](immutableData.tokens.length);
@@ -41,7 +53,10 @@ library BalancerV3PoolLib {
     }
 
     /// @notice `token.asset()` when `token` looks like an ERC4626 wrapper, else `address(0)`.
-    /// @dev The single ERC4626 test this library uses, so {poolTokens} and {poolBalanceOfIndexed} cannot disagree.
+    /// @dev The single ERC4626 test this library uses. It gives {poolTokens} and {poolBalanceOfIndexed} the same
+    ///      PREDICATE — it does not give them the same EVALUATION, and the difference is not cosmetic: each
+    ///      calls this independently, at a different point in the frame, against a fixed {StaticCallLib.PROBE_GAS}
+    ///      cap. See {poolTokens} for which way that can diverge and why it under-reports rather than over-reports.
     ///      `address(0)` means "treat as a plain token": a revert, a code-less address, a short reply, or a word
     ///      that masks to zero all land there, and all of them mean the same thing to both callers.
     function _wrapperAsset(address token) private view returns (address) {

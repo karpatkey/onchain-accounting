@@ -29,6 +29,16 @@ contract ezETH_CustomPriceFeed is BaseCustomPriceFeed {
         RESTAKE_MANAGER = IRestakeManager(OracleArgumentChecks.assertNonZeroAddress(restakeManager_));
     }
 
+    /// @notice Smallest byte length a canonical `(uint256[][], uint256[], uint256)` reply can have: three head
+    ///         words plus one length word for EACH dynamic member, even when both are empty.
+    /// @dev 96 (the head alone) is NOT the floor, and using it left a 64-byte window in which a reply the ABI
+    ///      decoder would have rejected was published as a live rate. Found in review.
+    uint256 private constant MIN_REPLY_BYTES = 160;
+
+    /// @notice Head word 0 for this signature: the offset of the first dynamic member, immediately after the
+    ///         three-word head. solc's encoder emits this unconditionally, which makes it an exact discriminator.
+    uint256 private constant HEAD0_OFFSET = 0x60;
+
     /// @inheritdoc BaseCustomPriceFeed
     /// @dev Reads ONLY the third return value of `calculateTVLs()` — `totalTVL` — and never decodes the two
     ///      arrays in front of it.
@@ -82,13 +92,15 @@ contract ezETH_CustomPriceFeed is BaseCustomPriceFeed {
             head0 := mload(out) // head word 0 — the first dynamic member's offset
             totalTVL := mload(add(out, 0x40)) // head word 2 — see the note above on ABI head layout
         }
-        // Length alone is not shape. Dropping the typed decode also dropped its structural validation, so a
-        // reply of >= 96 bytes whose head is NOT this signature's would have been published as a live rate.
+        // Length alone is not shape, and the head alone is not the length floor. Dropping the typed decode
+        // dropped BOTH of its structural checks, and re-establishing only one of them left a 96..159-byte
+        // window — shorter than any canonical encoding of this signature — in which a malformed reply was
+        // published as a live rate.
         // For `(uint256[][], uint256[], uint256)` the head is exactly three words, so solc's encoder emits
         // `0x60` as word 0 unconditionally — a cheap, exact discriminator. If Renzo ever upgrades
         // `calculateTVLs()` to a different return shape (it is an ERC-1967 proxy), this reads STALE, which is
         // the safe direction for a credit asset, rather than publishing whatever sits at byte offset 64.
-        if (!ok || size < 96 || head0 != 0x60) return 0;
+        if (!ok || size < MIN_REPLY_BYTES || head0 != HEAD0_OFFSET) return 0;
 
         uint256 supply = IERC20(UNDERLYING).totalSupply();
         if (supply == 0) return 0;

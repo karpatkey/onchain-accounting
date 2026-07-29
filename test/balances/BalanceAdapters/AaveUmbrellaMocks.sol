@@ -24,6 +24,22 @@ contract MockErc4626Wrapper {
         return (shares * rate) / 1e18;
     }
 
+    /// @notice Switches `previewRedeem` between healthy, reverting and gas-burning.
+    /// @dev Without this the Umbrella suite could not reach EITHER of `redeemValue`'s failure branches, so the
+    ///      caller with the WIDEST blast radius — a plain adapter with no per-stake-token isolation — had no
+    ///      test on either path. Found in review.
+    enum PreviewMode {
+        Ok,
+        Revert,
+        Starve
+    }
+
+    PreviewMode public previewMode;
+
+    function setPreviewMode(PreviewMode m) external {
+        previewMode = m;
+    }
+
     /// @notice Fee-less redemption preview, equal to {convertToAssets}.
     /// @dev `previewRedeem` is MANDATORY in ERC4626 and this mock lacked it, so it modelled a wrapper that
     ///      cannot exist — Aave's real `StataTokenV2` waTokens implement it. The omission mattered because
@@ -32,6 +48,12 @@ contract MockErc4626Wrapper {
     ///      over-reported. Fee-less here, so both accessors agree and the balance math under test is unchanged;
     ///      the fee-charging case is covered in `test/balances/ERC4626RedeemLib.t.sol`.
     function previewRedeem(uint256 shares) external view returns (uint256) {
+        if (previewMode == PreviewMode.Revert) revert("preview unavailable");
+        if (previewMode == PreviewMode.Starve) {
+            assembly {
+                for {} 1 {} { mstore(0x00, keccak256(0x00, 0x20)) }
+            }
+        }
         return (shares * rate) / 1e18;
     }
 }

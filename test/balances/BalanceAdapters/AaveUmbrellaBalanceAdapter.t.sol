@@ -9,6 +9,7 @@ import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
+import {GasStipendLib} from "src/utils/GasStipendLib.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
 import {
     MockErc4626Wrapper,
@@ -413,5 +414,114 @@ contract AaveUmbrellaBalanceMathTest is BalanceAdapterTestBase {
             if (assets[i] == needle) return amounts[i];
         }
         return type(uint256).max; // sentinel: not found → fails the equality assertion
+    }
+
+    // ─── redeemValue's failure paths, through the widest-blast-radius caller ──
+    //
+    // Both review gates flagged that these were untestable: the wrapper mock's `previewRedeem` always
+    // succeeded, and the ERC4626RedeemLib suite wires only MorphoVaultsMetaBalanceAdapter. So the caller the
+    // PR itself identifies as the widest blast radius — a PLAIN adapter with no per-stake-token isolation,
+    // where `_sharesToUnderlying` runs inline in a loop over `getAllAssets()` — had no assertion on either
+    // branch.
+
+    /// @notice An unreadable `previewRedeem` on the wa-wrapper drops that stake token's leg and no other.
+    /// @dev The "reports 0, caller treats it as no leg" branch. The GHO stake token takes a different path
+    ///      (one hop, no wrapper), so it must be entirely unaffected — that is what proves the omission is
+    ///      scoped to the failing token rather than the adapter.
+    function test_unreadablePreview_dropsOnlyThatStakeTokensLeg() public {
+        waUsdc.setPreviewMode(MockErc4626Wrapper.PreviewMode.Revert);
+
+        INAVCalculator.PositionBalance[] memory pos = oracle.getAdapterPositions(alice, address(0));
+
+        uint256 usdcAmt;
+        uint256 ghoAmt;
+        for (uint256 i; i < pos.length; ++i) {
+            if (pos[i].balanceAsset.asset == address(usdc)) usdcAmt += pos[i].amount;
+            if (pos[i].balanceAsset.asset == address(gho)) ghoAmt += pos[i].amount;
+        }
+        assertEq(usdcAmt, EXP_USDC_REWARD, "only the wrapper-hop STAKING leg is dropped; the reward leg stays");
+        assertEq(ghoAmt, EXP_GHO_TOTAL, "the other stake token must be untouched");
+    }
+
+    /// @notice An unreadable preview must never fall through to a fee-inclusive or pre-hop figure.
+    /// @dev The over-report this guards. `_sharesToUnderlying` computes `convertToAssets(shares)` BEFORE the
+    ///      wrapper hop, so a regression that returned that pre-hop value would report waUSDC-denominated
+    ///      units (1100e6) under USDC's registered-asset record.
+    function test_unreadablePreview_doesNotFallThroughToThePreHopAmount() public {
+        waUsdc.setPreviewMode(MockErc4626Wrapper.PreviewMode.Revert);
+        (uint256 amount,) = oracle.getAdapterBalanceForAsset(alice, address(usdc));
+        assertEq(amount, EXP_USDC_REWARD, "must not report the pre-hop waUSDC amount as USDC");
+        assertTrue(amount != 1100e6, "1100e6 is the pre-hop figure - reporting it would over-report");
+    }
+
+    /// @notice A STARVED preview takes the whole adapter out LOUDLY, not silently.
+    /// @dev This adapter has no per-stake-token isolation, so the blast radius is the whole adapter — that is
+    ///      architectural, and acceptable only because it is loud. Measured the way `PriceFeedLib` measures it:
+    ///      a starve consumes ~63/64 of the forwarded stipend against a 7/8 threshold, so `GasStipendLib`
+    ///      scores it exhausted and the read fails visibly rather than returning a short list.
+    function test_starvedPreview_isClassifiedExhaustedAtTheAdapterBoundary() public {
+        waUsdc.setPreviewMode(MockErc4626Wrapper.PreviewMode.Starve);
+
+        uint256 available = 4_000_000;
+        uint256 stipend = GasStipendLib.stipendFrom(available);
+        uint256 before = gasleft();
+        try oracle.getAdapterPositions{gas: stipend}(alice, address(0)) returns (
+            INAVCalculator.PositionBalance[] memory
+        ) {
+            fail("a starved preview must not return a partial answer");
+        } catch {
+            uint256 consumed = before - gasleft();
+            assertTrue(
+                GasStipendLib.exhausted(stipend, consumed),
+                "PriceFeedLib's heuristic must score this exhausted, not benign"
+            );
+        }
+    }
+
+    /// @notice A stake token whose `getStakerCooldown` SUCCEEDS with zero bytes does not take the adapter down.
+    /// @dev The same decode-past-the-catch shape `ERC4626RedeemLib` was rewritten for, three lines away in the
+    ///      same call chain: a high-level call expecting return data emits no `extcodesize` check, so an empty
+    ///      reply made the struct decode revert in the caller's frame, past the `catch`. With no
+    ///      per-stake-token isolation that dropped every Umbrella leg. Found in review.
+    function test_emptyCooldownReply_degradesToAllLockedRatherThanRevertingTheAdapter() public {
+        MockEmptyCooldownStakeToken broken = new MockEmptyCooldownStakeToken(address(gho), 1.2e18);
+        MockUmbrellaRewardsController c2 = new MockUmbrellaRewardsController();
+        c2.addStakeToken(address(broken));
+        AaveUmbrellaBalanceAdapter o2 = new AaveUmbrellaBalanceAdapter(address(c2), address(balances));
+        broken.setBalance(alice, 2000e18);
+
+        INAVCalculator.PositionBalance[] memory pos = o2.getAdapterPositions(alice, address(0));
+        assertEq(pos.length, 1, "the position must still be reported");
+        assertEq(pos[0].amount, 2400e18, "at its full amount");
+        assertTrue(pos[0].isLocked, "and degrade to all-locked, which is classification only");
+    }
+}
+
+/// @notice A stake token that answers `getStakerCooldown` with ZERO bytes rather than reverting.
+/// @dev `try`/`catch` does not intercept this: the call SUCCEEDS and the struct decode reverts in the caller.
+contract MockEmptyCooldownStakeToken {
+    address public immutable asset;
+    uint256 public immutable rate;
+    string public symbol = "stkBROKEN";
+
+    mapping(address => uint256) public balanceOf;
+
+    constructor(address asset_, uint256 rate_) {
+        asset = asset_;
+        rate = rate_;
+    }
+
+    function setBalance(address account, uint256 shares) external {
+        balanceOf[account] = shares;
+    }
+
+    function convertToAssets(uint256 shares) external view returns (uint256) {
+        return (shares * rate) / 1e18;
+    }
+
+    function getStakerCooldown(address) external pure {
+        assembly {
+            return(0x00, 0x00)
+        }
     }
 }

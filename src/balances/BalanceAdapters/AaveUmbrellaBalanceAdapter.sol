@@ -69,6 +69,10 @@ contract AaveUmbrellaBalanceAdapter is BalanceAdapterBase {
     // the safe direction. Leaving the constant behind as dead code would have implied a bound that no longer
     // applies to anything.
 
+    /// @notice Gas forwarded to the cooldown-snapshot probe. Classification-only, so a starved read degrades
+    ///         to "all locked" and can never move a reported amount — which is why a fixed cap is safe here.
+    uint256 private constant COOLDOWN_PROBE_GAS = 100_000;
+
     bytes32 private constant PROTOCOL_BRAND = ProtocolIds.AAVE;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.AAVE_V3;
     bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.AAVE_V3_UMBRELLA;
@@ -373,22 +377,45 @@ contract AaveUmbrellaBalanceAdapter is BalanceAdapterBase {
             return (0, 0, false);
         }
 
-        IUmbrellaStakeToken.CooldownSnapshot memory s;
-        try IUmbrellaStakeToken(stakeToken).getStakerCooldown(account) returns (
-            IUmbrellaStakeToken.CooldownSnapshot memory snap
-        ) {
-            s = snap;
-        } catch {
-            return (balShares, 0, false);
+        // Raw bounded staticcall, NOT `try`/`catch`. This is the same shape `ERC4626RedeemLib` was rewritten
+        // for, in the same call chain: a high-level call expecting return data emits no `extcodesize` check, so
+        // a stake token whose `getStakerCooldown` SUCCEEDS with zero bytes makes the struct decode revert in
+        // THIS frame, past the `catch`. And this adapter has no per-stake-token isolation — the revert would
+        // propagate out of `getAdapterPositions`, `PriceFeedLib` would score it benign, and every Umbrella
+        // staking, cooldown and rewards leg would vanish from the NAV with no signal. The interface's own doc
+        // promises callers "must tolerate a call/decode failure"; `try`/`catch` did not deliver that.
+        //
+        // A fixed cap is acceptable HERE, unlike in `ERC4626RedeemLib`: this read is classification-only. It
+        // splits an already-computed `balShares` into locked/unlocked legs and cannot change any amount, so a
+        // starved probe degrades to "all locked" — cosmetic, and never a number.
+        uint256 cdAmount;
+        uint256 cdEnd;
+        uint256 cdWindow;
+        {
+            bytes memory cd = abi.encodeWithSelector(IUmbrellaStakeToken.getStakerCooldown.selector, account);
+            bool ok;
+            uint256 size;
+            assembly ("memory-safe") {
+                let out := mload(0x40)
+                mstore(out, 0)
+                mstore(add(out, 0x20), 0)
+                mstore(add(out, 0x40), 0)
+                ok := staticcall(COOLDOWN_PROBE_GAS, stakeToken, add(cd, 0x20), mload(cd), out, 0x60)
+                size := returndatasize()
+                cdAmount := mload(out)
+                cdEnd := mload(add(out, 0x20))
+                cdWindow := mload(add(out, 0x40))
+            }
+            // The snapshot is three static fields, so a canonical reply is exactly three words.
+            if (!ok || size < 0x60) return (balShares, 0, false);
         }
-        if (s.amount == 0) {
+        if (cdAmount == 0) {
             return (balShares, 0, false); // no active cooldown
         }
 
-        cooldownShares = uint256(s.amount) < balShares ? uint256(s.amount) : balShares;
+        cooldownShares = cdAmount < balShares ? cdAmount : balShares;
         freeShares = balShares - cooldownShares;
-        inWindow =
-            block.timestamp >= s.endOfCooldown && block.timestamp <= uint256(s.endOfCooldown) + s.withdrawalWindow;
+        inWindow = block.timestamp >= cdEnd && block.timestamp <= cdEnd + cdWindow;
     }
 
     /// @dev Pull `(rewardTokens[], amounts[])` from the controller, then for each reward token

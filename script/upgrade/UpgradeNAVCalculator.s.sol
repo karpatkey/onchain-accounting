@@ -5,12 +5,17 @@ import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
 import {LibraryPins} from "../utils/LibraryPins.sol";
 import {SafeTxBuilder} from "../utils/SafeTxBuilder.sol";
 import {NAVCalculator} from "../../src/nav/NAVCalculator.sol";
+import {PriceFeedLib} from "../../src/prices/PriceFeedLib.sol";
+import {NAVRegistryLib} from "../../src/nav/NAVRegistryLib.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {console2} from "forge-std/console2.sol";
 
 /// @title UpgradeNAVCalculator
 /// @notice Upgrades NAVCalculator implementation via Safe multisig
 contract UpgradeNAVCalculator is BaseDeployScript {
+    /// @dev Same constant `01_DeployImplementations` uses; the pins are CREATE2 addresses from this factory.
+    address internal constant CANONICAL_CREATE2_DEPLOYER = address(0x4e59b44847b379578588920cA78FbF26c0B4956C);
+
     /// @notice Refuses to broadcast a NAVCalculator implementation that is not usable on THIS chain.
     /// @dev    This script does `new NAVCalculator()` inside a broadcast and then repoints a LIVE proxy at the
     ///         result, so an impl linked against the wrong library addresses is worse here than in the numbered
@@ -24,17 +29,60 @@ contract UpgradeNAVCalculator is BaseDeployScript {
     ///           - on a fresh chain, or after a pin regen that has not been deployed there yet, the pinned address
     ///             holds nothing and the first library call reverts — after the impl was broadcast and recorded.
     ///
-    ///         Hence two kinds of assertion. The linkage pair mirrors `01_DeployImplementations` (and the CI guard
-    ///         in `test/LibraryPinConsistency.t.sol`): the bytecode about to be broadcast must actually embed both
-    ///         pins. `01`'s other two assertions — that each library's own CREATE2 address equals its pin — do not
-    ///         transfer, because this script deploys via plain `new` (CREATE) and deploys no libraries at all. What
-    ///         replaces them is the check `01` does not need: the pinned addresses must hold code ON THIS CHAIN,
-    ///         since linked-but-empty is a DELEGATECALL into nothing.
+    ///         Hence three kinds of assertion, all six of which must hold. `01_DeployImplementations` carries the
+    ///         first two families; the third is specific to upgrading.
     ///
     ///         Addresses come from `LibraryPins`, never hardcoded, so a pin regeneration propagates here with no
     ///         edit to this file.
     /// @param  implBytecode The creation bytecode this script is about to broadcast.
     function _assertPinnedLibrariesUsable(bytes memory implBytecode) internal view {
+        _assertLibrarySourceMatchesPins();
+        _assertImplLinkedAndLibrariesPresent(implBytecode);
+    }
+
+    /// @notice The pins must still correspond to the library source in THIS tree.
+    /// @dev    Transferred verbatim from `01_DeployImplementations`. An earlier revision of this script omitted
+    ///         these two on the grounds that it "deploys via plain `new` and deploys no libraries at all" — that
+    ///         reasoning was wrong, and reviewers were right to reject it. These assertions are pure functions of
+    ///         `type(PriceFeedLib).creationCode`, the canonical CREATE2 deployer and the salt; they say nothing
+    ///         about who deploys what. What they answer is whether the pinned address still corresponds to the
+    ///         library source here — and that is the ONLY one of the six checks that can catch a stale pin.
+    ///
+    ///         The other two families are structurally blind to it. `contains(implBytecode, PIN)` reads
+    ///         foundry.toml's `libraries` back out of the bytecode foundry.toml just produced, so it detects
+    ///         foundry.toml <-> LibraryPins disagreement and nothing else; it can never detect "both agree, and
+    ///         both are stale". And `PIN.code.length > 0` is satisfied BY CONSTRUCTION in that case — the old
+    ///         library is deployed at the old pin on all 24 chains, which is precisely why it is the old pin.
+    ///
+    ///         Without this, a library source change with no pin regeneration passes every other check: the impl
+    ///         links the old pin, the old library answers there, and the live proxy is repointed at an
+    ///         implementation DELEGATECALLing pre-change library code while the deployment record and the Safe TX
+    ///         description both assert the new implementation shipped.
+    ///
+    ///         This goes red on any branch with a pin regeneration in flight. That is correct, not a nuisance:
+    ///         upgrading a live proxy from such a tree is exactly the thing to refuse.
+    function _assertLibrarySourceMatchesPins() internal view {
+        require(
+            computeCreate2Address(
+                CANONICAL_CREATE2_DEPLOYER, generateSalt("PriceFeedLib", 1), type(PriceFeedLib).creationCode
+            ) == LibraryPins.PRICE_FEED_LIB,
+            "PriceFeedLib CREATE2 addr != foundry.toml pin (lib bytecode drift; regenerate the pin)"
+        );
+        require(
+            computeCreate2Address(
+                CANONICAL_CREATE2_DEPLOYER, generateSalt("NavRegistryLib", 1), type(NAVRegistryLib).creationCode
+            ) == LibraryPins.NAV_REGISTRY_LIB,
+            "NAVRegistryLib CREATE2 addr != foundry.toml pin (lib bytecode drift; regenerate the pin)"
+        );
+    }
+
+    /// @notice The bytecode about to be broadcast must embed both pins, and both must hold code on this chain.
+    /// @dev    The linkage pair mirrors `01_DeployImplementations` and the CI guard in
+    ///         `test/LibraryPinConsistency.t.sol`. The code-presence pair is what `01` does not need and this
+    ///         script does: `01` CREATE2-deploys the libraries itself, whereas this script deploys none, so
+    ///         linked-but-empty here is a DELEGATECALL into nothing on the first library call — after the impl was
+    ///         broadcast and the Safe TX written.
+    function _assertImplLinkedAndLibrariesPresent(bytes memory implBytecode) internal view {
         require(
             LibraryPins.contains(implBytecode, LibraryPins.PRICE_FEED_LIB),
             "NAVCalculator impl not linked against pinned PriceFeedLib (foundry.toml `libraries` drift)"
@@ -51,6 +99,19 @@ contract UpgradeNAVCalculator is BaseDeployScript {
             LibraryPins.NAV_REGISTRY_LIB.code.length > 0,
             "pinned NAVRegistryLib has no code on this chain (deploy the libraries here before upgrading)"
         );
+    }
+
+    /// @notice Deploys the new implementation, guard first. The ONLY path in this script that broadcasts.
+    /// @dev    A separate function so the guard and the broadcast cannot drift apart: the coverage gap reviewers
+    ///         found in the first revision was that deleting the guard CALL — not blanking its body — left every
+    ///         test green. `test_guardedDeploy_reverts_whenPinnedLibrariesAbsent` fails if this call is removed or
+    ///         moved below the broadcast, because `new NAVCalculator()` succeeds happily with absent libraries
+    ///         (a DELEGATECALL into nothing only reverts on first use, long after this script is done).
+    function _deployGuardedNavImplementation() internal returns (NAVCalculator impl) {
+        _assertPinnedLibrariesUsable(type(NAVCalculator).creationCode);
+        vm.startBroadcast();
+        impl = new NAVCalculator();
+        vm.stopBroadcast();
     }
 
     function run() public override {
@@ -73,10 +134,7 @@ contract UpgradeNAVCalculator is BaseDeployScript {
 
         // Step 1: Deploy new implementation
         console2.log("\nStep 1: Deploying new implementation...");
-        _assertPinnedLibrariesUsable(type(NAVCalculator).creationCode);
-        vm.startBroadcast();
-        NAVCalculator newImplementation = new NAVCalculator();
-        vm.stopBroadcast();
+        NAVCalculator newImplementation = _deployGuardedNavImplementation();
 
         console2.log("New implementation deployed at:", address(newImplementation));
 

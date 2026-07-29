@@ -58,8 +58,9 @@ contract DeployImplementations is BaseDeployScript {
         // `62311fb7` and `a8d5dd73`, not from the start. `01` had none at all, so it was the only NUMBERED PROD NAV
         // deploy script that could broadcast library-linked bytecode unchecked. It was not the only script that
         // could: `script/upgrade/UpgradeNAVCalculator` did `new NAVCalculator()` inside a broadcast with no pin
-        // check and then repointed a LIVE proxy at it — it now carries `_assertPinnedLibrariesUsable`, the two
-        // linkage assertions below plus a code-presence check the plain-`new` path needs. Still unguarded:
+        // check and then repointed a LIVE proxy at it — it now carries `_assertPinnedLibrariesUsable`: both
+        // CREATE2-address assertions and both linkage assertions below, plus a code-presence pair the plain-`new`
+        // path needs (it deploys no libraries, so linked-but-empty is a DELEGATECALL into nothing). Still unguarded:
         // `UpgradeBridgeEscrow` and `05_DeployBridgeAdapters` broadcast `InvoiceDataLib`-linked bytecode, and `01`
         // still broadcasts the `InvoiceDataLib`-linked `BridgeEscrow` impl below — that library is not pinned at
         // all, so there is no pin for any of them to assert against.

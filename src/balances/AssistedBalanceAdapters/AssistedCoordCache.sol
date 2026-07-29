@@ -15,11 +15,14 @@ import "src/errors.sol";
 /// @notice One cached coordinate ran out of the gas the valuation fan-out forwarded it, so the account's reported
 ///         total is missing that coordinate — and, because the residue left to the loop cannot fund the ones after
 ///         it, very likely every coordinate behind it too.
-/// @dev The sibling of `INAVCalculator.InstanceGasExhausted`, one family over. Deliberately declared HERE rather
+/// @dev The sibling of `INAVCalculator.InstanceGasExhausted`, one family over. Reports `_coordId` — the
+///      concrete adapter's human-facing tokenId / requestId / positionTicket — rather than the internal
+///      `keccak256(coord)` dedup key, matching every other `Coordinate*` error in `src/errors.sol`. That hook
+///      exists precisely so an operator can act on the error without reversing a hash. Deliberately declared HERE rather
 ///      than in `src/errors.sol`: both pinned libraries (`PriceFeedLib`, `NAVRegistryLib`) plain-import that file,
 ///      so adding to it would put this symbol inside both CREATE2 compilation closures for no benefit — nothing
 ///      outside this family raises or catches it. Keeping it file-local keeps this change provably pin-neutral.
-error CoordinateGasExhausted(address adapter, bytes32 coordKey, uint256 stipend, uint256 consumed);
+error CoordinateGasExhausted(address adapter, uint256 coordId, uint256 stipend, uint256 consumed);
 
 /// @title AssistedCoordCache
 /// @author KPK
@@ -261,7 +264,7 @@ abstract contract AssistedCoordCache is IAssistedBalanceAdapter {
             } catch {
                 uint256 consumed = available - gasleft();
                 if (GasStipendLib.exhausted(stipend, consumed)) {
-                    revert CoordinateGasExhausted(address(this), keccak256(list[i]), stipend, consumed);
+                    revert CoordinateGasExhausted(address(this), _coordId(list[i]), stipend, consumed);
                 }
             }
         }

@@ -61,7 +61,7 @@ contract ezETH_CustomPriceFeed is BaseCustomPriceFeed {
     ///      arrays — genuinely large, and growing with the operator set — can no longer be charged to this
     ///      frame's memory expansion. Assigning `(bool, bytes memory)` would have `returndatacopy`d all of it.
     ///
-    ///      The `>= 96` check is what replaces the decoder's own bounds check, and it is the reason no value can
+    ///      The `>= MIN_REPLY_BYTES` check is what replaces the decoder's own bounds check, and it is the reason no value can
     ///      be invented from a short reply: the output window is written before the call and read only when the
     ///      callee actually produced three words.
     ///

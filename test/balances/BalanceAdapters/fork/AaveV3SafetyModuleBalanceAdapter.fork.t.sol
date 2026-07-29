@@ -186,7 +186,10 @@ contract AaveV3SafetyModuleBalanceAdapterForkTest is BalanceAdapterTestBase {
         assertGt(STK_GHO.balanceOf(STK_GHO_HOLDER), 0, "fixture must hold a live stkGHO stake");
         assertLe(distributionEnd, block.timestamp, "premise: distribution has already ended at this pin");
 
-        uint256 anchor = distributionEnd > block.timestamp ? distributionEnd : block.timestamp;
+        // No ternary: the assertion above already pins `distributionEnd <= block.timestamp`, so the other
+        // branch was provably dead. If that premise ever stops holding, the assertion fails loudly and this
+        // test is re-derived rather than silently taking a different path. Dead branch removed in review.
+        uint256 anchor = block.timestamp;
 
         vm.warp(anchor);
         (uint256 atEnd,) = adapter.getAdapterBalanceForAsset(STK_GHO_HOLDER, AAVE);

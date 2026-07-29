@@ -478,6 +478,32 @@ contract AaveUmbrellaBalanceMathTest is BalanceAdapterTestBase {
         }
     }
 
+    /// @notice Dirty padding above the declared field widths must not revert the adapter.
+    /// @dev The raw cooldown read replaced a decode of NARROWER types (uint192/uint32/uint32) and so inherited
+    ///      the job of range-checking them. Without the mask, `endOfCooldown + withdrawalWindow` runs checked
+    ///      arithmetic on unmasked words and panics with Panic(0x11) in the caller's frame — past every
+    ///      `catch`, and with no per-stake-token isolation that drops every Umbrella leg from the NAV. Exactly
+    ///      the uncatchable-revert class the read was rewritten to remove, reintroduced by the rewrite. Found
+    ///      in review with a PoC.
+    function test_dirtyCooldownPadding_doesNotRevertTheAdapter() public {
+        MockDirtyCooldownStakeToken dirty = new MockDirtyCooldownStakeToken(address(gho), 1.2e18);
+        MockUmbrellaRewardsController c3 = new MockUmbrellaRewardsController();
+        c3.addStakeToken(address(dirty));
+        AaveUmbrellaBalanceAdapter o3 = new AaveUmbrellaBalanceAdapter(address(c3), address(balances));
+        dirty.setBalance(alice, 2000e18);
+
+        INAVCalculator.PositionBalance[] memory pos = o3.getAdapterPositions(alice, address(0));
+
+        uint256 total;
+        for (uint256 i; i < pos.length; ++i) {
+            total += pos[i].amount;
+        }
+        assertGt(pos.length, 0, "the position must still be reported, not lost to a panic");
+        // The masked window is 0xffffffff, so the cooldown is long past and the split is real rather than a
+        // degradation — what matters is that the full principal survives either way.
+        assertApproxEqAbs(total, 2400e18, 1, "the full principal must be reported");
+    }
+
     /// @notice A stake token whose `getStakerCooldown` SUCCEEDS with zero bytes does not take the adapter down.
     /// @dev The same decode-past-the-catch shape `ERC4626RedeemLib` was rewritten for, three lines away in the
     ///      same call chain: a high-level call expecting return data emits no `extcodesize` check, so an empty
@@ -494,6 +520,42 @@ contract AaveUmbrellaBalanceMathTest is BalanceAdapterTestBase {
         assertEq(pos.length, 1, "the position must still be reported");
         assertEq(pos[0].amount, 2400e18, "at its full amount");
         assertTrue(pos[0].isLocked, "and degrade to all-locked, which is classification only");
+    }
+}
+
+/// @notice A stake token whose cooldown snapshot has DIRTY padding above the declared field widths.
+/// @dev `CooldownSnapshot` is `(uint192, uint32, uint32)`, so the ABI decoder range-checked every field. A raw
+///      read that skips the mask inherits words the decoder would have rejected — and the window arithmetic is
+///      CHECKED, so `endOfCooldown + withdrawalWindow` panics with Panic(0x11) in the CALLER's frame, past every
+///      `catch`. `amount = 1` clears the no-cooldown early return and `endOfCooldown = 1` keeps the `&&` from
+///      short-circuiting, so the add is actually reached.
+contract MockDirtyCooldownStakeToken {
+    address public immutable asset;
+    uint256 public immutable rate;
+    string public symbol = "stkDIRTY";
+
+    mapping(address => uint256) public balanceOf;
+
+    constructor(address asset_, uint256 rate_) {
+        asset = asset_;
+        rate = rate_;
+    }
+
+    function setBalance(address account, uint256 shares) external {
+        balanceOf[account] = shares;
+    }
+
+    function convertToAssets(uint256 shares) external view returns (uint256) {
+        return (shares * rate) / 1e18;
+    }
+
+    function getStakerCooldown(address) external pure {
+        assembly {
+            mstore(0x00, 1) // amount: non-zero, so the no-cooldown early return is not taken
+            mstore(0x20, 1) // endOfCooldown: <= block.timestamp, so `&&` does not short-circuit
+            mstore(0x40, not(0)) // withdrawalWindow: dirty above bit 32
+            return(0x00, 0x60)
+        }
     }
 }
 

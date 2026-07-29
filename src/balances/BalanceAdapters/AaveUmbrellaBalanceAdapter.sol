@@ -69,10 +69,6 @@ contract AaveUmbrellaBalanceAdapter is BalanceAdapterBase {
     // the safe direction. Leaving the constant behind as dead code would have implied a bound that no longer
     // applies to anything.
 
-    /// @notice Gas forwarded to the cooldown-snapshot probe. Classification-only, so a starved read degrades
-    ///         to "all locked" and can never move a reported amount — which is why a fixed cap is safe here.
-    uint256 private constant COOLDOWN_PROBE_GAS = 100_000;
-
     bytes32 private constant PROTOCOL_BRAND = ProtocolIds.AAVE;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.AAVE_V3;
     bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.AAVE_V3_UMBRELLA;
@@ -363,8 +359,12 @@ contract AaveUmbrellaBalanceAdapter is BalanceAdapterBase {
     /// @dev Splits an account's stake-token shares into a free (live-stake) portion and an unstaking (cooldown)
     ///      portion, and reports whether the cooldown is inside its claim window. Reads Umbrella's per-user cooldown
     ///      snapshot (`getStakerCooldown` → `(amount, endOfCooldown, withdrawalWindow)`; the window is snapshotted per
-    ///      cooldown, so it is read from the struct, not a global getter). Any read failure degrades gracefully to
-    ///      "entire balance is free, no cooldown leg".
+    ///      cooldown, so it is read from the struct, not a global getter).
+    ///
+    ///      A read failure returns `(balShares, 0, false)`. Note what the CALLER then produces: `unlockedShares`
+    ///      is 0, so `lockedShares == balShares` and the whole principal is emitted as one LOCKED leg. An
+    ///      earlier version of this line said the balance degrades to "free", which is the opposite of what
+    ///      ships — `freeShares` is in fact discarded by the only caller. Corrected in review.
     /// @return freeShares Shares not committed to a cooldown (live stake).
     /// @return cooldownShares Shares committed to the active cooldown (= min(cooldown amount, balance)).
     /// @return inWindow True iff the cooldown has elapsed and is still within its withdrawal window (claimable now).
@@ -392,6 +392,12 @@ contract AaveUmbrellaBalanceAdapter is BalanceAdapterBase {
         uint256 cdEnd;
         uint256 cdWindow;
         {
+            // The repo-wide probe budget, not a second local copy of the same number — this file deleted its
+            // own `PROBE_GAS` for exactly that reason and reintroducing an identical constant four lines below
+            // that explanation was the inconsistency review flagged. A FIXED cap is safe here specifically
+            // because this read is classification-only: `cdAmount` can only ever narrow `cooldownShares`, and
+            // the leg total is `balShares` for every value of it, so no probe outcome can move an amount.
+            uint256 probeGas = StaticCallLib.PROBE_GAS;
             bytes memory cd = abi.encodeWithSelector(IUmbrellaStakeToken.getStakerCooldown.selector, account);
             bool ok;
             uint256 size;
@@ -400,11 +406,19 @@ contract AaveUmbrellaBalanceAdapter is BalanceAdapterBase {
                 mstore(out, 0)
                 mstore(add(out, 0x20), 0)
                 mstore(add(out, 0x40), 0)
-                ok := staticcall(COOLDOWN_PROBE_GAS, stakeToken, add(cd, 0x20), mload(cd), out, 0x60)
+                ok := staticcall(probeGas, stakeToken, add(cd, 0x20), mload(cd), out, 0x60)
                 size := returndatasize()
-                cdAmount := mload(out)
-                cdEnd := mload(add(out, 0x20))
-                cdWindow := mload(add(out, 0x40))
+                // MASK to the declared widths. Taking the raw read without the mask discards exactly the
+                // validation the `uint192`/`uint32` decoder performed, and the arithmetic below is CHECKED:
+                // a reply of (1, 1, 2**256-1) makes `cdEnd + cdWindow` panic with Panic(0x11) in THIS frame,
+                // past every `catch` — reinstating the uncatchable revert this read was rewritten to remove.
+                // `shl`/`shr` for the 192-bit field rather than a 48-digit hex literal, which is easy to
+                // miscount. Masking also bounds `cdEnd + cdWindow` by 2**33, so the checked add cannot
+                // overflow at all. This is the same "mask, do not trust the word" rule {_safeAsset} states
+                // for addresses further down this file. Found in review.
+                cdAmount := shr(64, shl(64, mload(out)))
+                cdEnd := and(mload(add(out, 0x20)), 0xffffffff)
+                cdWindow := and(mload(add(out, 0x40)), 0xffffffff)
             }
             // The snapshot is three static fields, so a canonical reply is exactly three words.
             if (!ok || size < 0x60) return (balShares, 0, false);

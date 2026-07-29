@@ -190,6 +190,11 @@ library FluidVaultLib {
         if (account == address(0)) return (0, 0);
 
         uint256[] memory nftIds = IFluidVaultResolver(resolver).positionsNftIdOfUser(account);
+        // Allocated ONCE and reused. Inside the loop this made memory grow by 416 bytes per NFT, and memory
+        // is priced quadratically — which is the cost the bounded window was introduced to avoid in the first
+        // place, reintroduced by where it was allocated. The window is fully overwritten by each staticcall
+        // (or left as the zeros checked by `size < 384`), so reuse cannot leak one NFT's reply into another's.
+        bytes memory ret = new bytes(READ_WINDOW);
         for (uint256 i = 0; i < nftIds.length; i++) {
             uint256 nftId = nftIds[i];
             if (IFluidVaultResolver(resolver).vaultByNftId(nftId) != vault) continue;
@@ -198,7 +203,6 @@ library FluidVaultLib {
             uint256 available = gasleft();
             uint256 stipend = GasStipendLib.stipendFrom(available);
             bytes memory cd = abi.encodeWithSelector(IFluidVaultResolver.positionByNftId.selector, nftId);
-            bytes memory ret = new bytes(READ_WINDOW);
             bool ok;
             uint256 size;
             assembly ("memory-safe") {

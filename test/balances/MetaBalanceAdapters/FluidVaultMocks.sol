@@ -62,6 +62,15 @@ contract MockFluidVaultResolver {
         _posMode[nftId] = m;
     }
 
+    /// @notice Makes `vaultByNftId` answer with a word carrying dirty bits above 160 for `nftId`.
+    /// @dev The ONLY way to reach the in-frame address decode that sits inside the hardened loop but outside
+    ///      its starved/unreadable classification. Nothing else in this mock can produce it.
+    mapping(uint256 => bool) private _dirtyVaultWord;
+
+    function setDirtyVaultWord(uint256 nftId, bool v) external {
+        _dirtyVaultWord[nftId] = v;
+    }
+
     function pushNft(address user, uint256 nftId, address vault, uint256 supply, uint256 borrow, bool isLiquidated)
         external
     {
@@ -103,6 +112,12 @@ contract MockFluidVaultResolver {
     }
 
     function vaultByNftId(uint256 nftId) external view returns (address) {
+        if (_dirtyVaultWord[nftId]) {
+            assembly {
+                mstore(0x00, not(0)) // every bit set: a valid word, not a valid address
+                return(0x00, 0x20)
+            }
+        }
         return _posByNftId[nftId].vault;
     }
 

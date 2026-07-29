@@ -122,4 +122,25 @@ contract FluidVaultLibAggregateTest is Test {
         assertEq(status, 0, "a cheap revert must not be scored exhausted");
         assertEq(collateral, 100e18, "and must leave the healthy NFT reported");
     }
+
+    /// @notice A dirty `vaultByNftId` word skips that NFT — it must not drop the whole vault.
+    /// @dev `vaultByNftId` sits INSIDE this loop but OUTSIDE the starved/unreadable classification, because it
+    ///      was a typed call whose `address` decode ran in the library's own frame. A word with dirty bits above
+    ///      160 therefore reverted past the `size < 384` gate, past `GasStipendLib.exhausted`, and past every
+    ///      guard this loop added — reaching `MetaBalanceAdapter`'s per-instance catch, which scores a cheap
+    ///      revert benign and substitutes an empty leg array. The ENTIRE vault instance vanished: collateral AND
+    ///      debt. For a net-debt vault that RAISES reported NAV, which is the over-report the two-way split
+    ///      exists to prevent, reachable through the one call the split did not cover.
+    ///
+    ///      Asserting the sibling's DEBT is the load-bearing half: an assertion on collateral alone would pass
+    ///      just as well if the whole vault were dropped and something else supplied the number.
+    function test_dirtyVaultWord_skipsThatNftAndKeepsTheVault() public {
+        _push(1, 100e18, 1000e6);
+        _push(2, 7e18, 70e6);
+        resolver.setDirtyVaultWord(2, true);
+
+        (uint256 collateral, uint256 debt) = lib.aggregate(VAULT, address(resolver), ALICE);
+        assertEq(collateral, 100e18, "the healthy NFT's collateral must survive");
+        assertEq(debt, 1000e6, "and its DEBT - losing it with the vault would raise reported NAV");
+    }
 }

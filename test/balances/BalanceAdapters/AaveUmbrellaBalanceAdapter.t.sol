@@ -500,17 +500,19 @@ contract AaveUmbrellaBalanceMathTest is BalanceAdapterTestBase {
     }
 
     /// @notice A REVERTING cooldown read must not have its revert payload read as cooldown data.
-    /// @dev PINS the `!ok` arm. `require(false, "no cooldown ABI")` returns an `Error(string)` payload of 100
-    ///      bytes, which is >= 0x60 — so the size gate does NOT catch it and `!ok` is the only thing that does.
-    ///      Without it the staticcall's output window holds the revert payload, whose first word is a large
-    ///      non-zero value that would be read as `cdAmount`, inferring a cooldown from an error. The existing
-    ///      cooldown tests never reach this because `setCooldown` enables the ABI.
+    /// @dev PINS the `!ok` arm. The EVM copies returndata into the output window on revert too, and an
+    ///      `Error(string)` payload is 100 bytes — >= 0x60 — so the SIZE gate does not catch a reverting read
+    ///      and `!ok` is the only thing that does. A first attempt used `require(false, ...)` and did NOT pin
+    ///      the arm: that payload's words yield `inWindow == false`, so both arms agreed and the mutation
+    ///      survived. This fixture crafts the revert payload so they disagree — dropping `!ok` makes the
+    ///      adapter infer a live cooldown FROM A REVERT and emit an unlocked leg. Reaching an arm is not
+    ///      pinning it, and the difference is only visible under mutation.
     function test_revertingCooldownRead_payloadIsNotReadAsCooldownData() public {
-        MockUmbrellaStakeToken noAbi = new MockUmbrellaStakeToken(address(gho), 1.2e18, "stkNOABI");
+        MockRevertingCooldownPayloadStakeToken noAbi = new MockRevertingCooldownPayloadStakeToken(address(gho), 1.2e18);
         MockUmbrellaRewardsController c5 = new MockUmbrellaRewardsController();
         c5.addStakeToken(address(noAbi));
         AaveUmbrellaBalanceAdapter o5 = new AaveUmbrellaBalanceAdapter(address(c5), address(balances));
-        noAbi.setBalance(alice, 2000e18); // cooldownAbiEnabled stays false -> getStakerCooldown reverts
+        noAbi.setBalance(alice, 2000e18);
 
         INAVCalculator.PositionBalance[] memory pos = o5.getAdapterPositions(alice, address(0));
 
@@ -596,6 +598,44 @@ contract MockDirtyCooldownStakeToken {
             mstore(0x20, 1) // endOfCooldown: <= block.timestamp, so `&&` does not short-circuit
             mstore(0x40, not(0)) // withdrawalWindow: dirty above bit 32
             return(0x00, 0x60)
+        }
+    }
+}
+
+/// @notice REVERTS with a 96-byte payload whose words would read as a live, in-window cooldown.
+/// @dev Pins the `!ok` arm, which a plain `require(false, "...")` cannot. The EVM copies returndata into the
+///      output window on revert as well as on success, so `size` is whatever the payload is — and an
+///      `Error(string)` payload is 100 bytes, comfortably >= 0x60. The size gate therefore does NOT catch a
+///      reverting read; `!ok` is the only thing that does. But `Error(string)`'s words happen to yield
+///      `inWindow == false`, so with that payload both arms agree and the mutation survives. This one crafts
+///      the payload so the arms DISAGREE: word 0 is a full-stake amount and word 1 is `block.timestamp`, so
+///      dropping `!ok` makes the adapter infer a live cooldown FROM A REVERT and emit an unlocked leg.
+contract MockRevertingCooldownPayloadStakeToken {
+    address public immutable asset;
+    uint256 public immutable rate;
+    string public symbol = "stkREVPAY";
+
+    mapping(address => uint256) public balanceOf;
+
+    constructor(address asset_, uint256 rate_) {
+        asset = asset_;
+        rate = rate_;
+    }
+
+    function setBalance(address account, uint256 shares) external {
+        balanceOf[account] = shares;
+    }
+
+    function convertToAssets(uint256 shares) external view returns (uint256) {
+        return (shares * rate) / 1e18;
+    }
+
+    function getStakerCooldown(address) external view {
+        assembly {
+            mstore(0x00, 2000000000000000000000) // amount: the whole stake
+            mstore(0x20, timestamp()) // endOfCooldown == now
+            mstore(0x40, 0) // withdrawalWindow 0 -> inWindow reduces to `now == cdEnd`
+            revert(0x00, 0x60) // REVERTS, but with a full three-word payload
         }
     }
 }

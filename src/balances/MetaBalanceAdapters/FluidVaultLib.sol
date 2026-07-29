@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {GasStipendLib} from "src/utils/GasStipendLib.sol";
+import {StaticCallLib} from "src/utils/StaticCallLib.sol";
 
 /// @notice Minimal Fluid T1 vault interface — just the static `constantsView` getter we use to
 ///         read the vault's collateral/debt tokens.
@@ -197,7 +198,22 @@ library FluidVaultLib {
         bytes memory ret = new bytes(READ_WINDOW);
         for (uint256 i = 0; i < nftIds.length; i++) {
             uint256 nftId = nftIds[i];
-            if (IFluidVaultResolver(resolver).vaultByNftId(nftId) != vault) continue;
+            // Read through the shared masking reader, NOT `IFluidVaultResolver(resolver).vaultByNftId(nftId)`.
+            // The typed form decodes an `address` in THIS frame, so a reply whose word carries dirty bits above
+            // 160 reverts here — past the `size < 384` gate below, past the `GasStipendLib.exhausted`
+            // classifier, past every guard this loop added. That revert reaches `MetaBalanceAdapter`'s
+            // per-instance catch, which scores a cheap revert benign and substitutes an empty leg array, so the
+            // ENTIRE vault instance disappears: `sum(supply)` AND `sum(borrow)` together. For a net-debt vault
+            // that RAISES reported NAV — the exact over-report the two-way split above exists to prevent,
+            // reachable through the one call in the loop the split does not cover. Found in review.
+            //
+            // `safeAddr` masks rather than reverting, so an unusable reply yields an address that simply does
+            // not match `vault` and the NFT is skipped — one NFT omitted, the same smallest-omission policy the
+            // genuinely-unreadable branch below already uses, and an UNDER-report rather than an over-report.
+            (, address nftVault) = StaticCallLib.safeAddr(
+                resolver, abi.encodeWithSelector(IFluidVaultResolver.vaultByNftId.selector, nftId)
+            );
+            if (nftVault != vault) continue;
 
             // One sample, used both to derive the stipend and to measure against it — see GasStipendLib.exhausted.
             uint256 available = gasleft();

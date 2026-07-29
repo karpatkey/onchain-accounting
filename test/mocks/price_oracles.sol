@@ -133,15 +133,17 @@ contract Mock_ChainlinkL2SequencerUptimeFeedUninitialized is Mock_PriceOracleCha
     }
 }
 
-/// @notice Sequencer-up feed with an ABSOLUTE, settable `startedAt`, so a test can place the reported restart at
-///         an exact distance from `block.timestamp`.
+/// @notice Sequencer uptime feed with an ABSOLUTE, settable `startedAt`, so a test can place the reported status
+///         change at an exact distance from `block.timestamp`. `answer` DEFAULTS to 0 (sequencer up) and is
+///         settable via {setAnswer}.
 /// @dev    Exists because the other up-feed mocks compute `startedAt` RELATIVE to `block.timestamp` at call time
 ///         (`Mock_ChainlinkL2SequencerUptimeFeed` returns `block.timestamp - 1 hours - 1`;
 ///         `Mock_ChainlinkL2SequencerUptimeFeedWithinGracePeriod` returns `block.timestamp`). A relative offset
 ///         cannot be warped — the gap is whatever the mock hard-codes no matter what the test does to the clock —
 ///         so with those two alone the elapsed time is pinned at exactly 0 or exactly `gracePeriod + 1` and the
-///         boundary itself is unreachable. `answer` is 0 (sequencer up) so the grace-period arm is the branch
-///         under test; set `startedAt` above `block.timestamp` to exercise the future-timestamp clamp.
+///         boundary itself is unreachable. With the default `answer = 0` the grace-period arm is the branch under
+///         test; set `startedAt` above `block.timestamp` to exercise the future-timestamp clamp, or {setAnswer} a
+///         non-zero value to reach the sequencer-down arm with a REAL `startedAt`.
 contract Mock_ChainlinkL2SequencerUptimeFeedAt is Mock_PriceOracleChainlink {
     uint256 public startedAtOverride;
     int256 public answerOverride;

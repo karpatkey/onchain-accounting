@@ -307,7 +307,15 @@ contract PricesTest is Test {
     ///      This fixture does NOT pin the arm on its own: `Mock_PriceOracleChainlink` hard-codes `startedAt = 0`,
     ///      so it satisfies the NEXT arm too and whole-arm deletion goes unnoticed. See
     ///      `test_checkL2SequencerUptime_sequencerDown_withNonZeroStartedAt` below, which is what kills that
-    ///      mutant. Kept because it pins the blanking mutation (`if (answer != 0) { }`), which the other does not.
+    ///      mutant.
+    ///
+    ///      **This test is strictly subsumed by that one.** An earlier revision of this comment claimed it was
+    ///      kept because it uniquely pins the blanking mutation `if (answer != 0) { }`; that is wrong, and review
+    ///      caught it. Under blanking the condition still MATCHES, so the `else if` chain is skipped entirely and
+    ///      `stale` stays false for both fixtures — the sibling kills that mutant too. In general: for this test
+    ///      to fail, arm 1 must not fire, and with arms 2-3 intact the sibling then reaches
+    ///      `elapsed = 2h > 1h` and also reads not-stale. Kept as the plain `answer != 0` regression, not because
+    ///      it adds mutation-kill strength.
     function test_checkL2SequencerUptime_sequencerDown_answerNonZero() public {
         managerL2 = new PricesHarness(address(disabledUptimeFeed));
 

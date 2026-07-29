@@ -1147,6 +1147,6 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
 
         // Near side: too little frame to tell this revert from starvation, so it fails closed.
         vm.expectPartialRevert(INAVCalculator.InstanceGasExhausted.selector);
-        this.callPositions{gas: 5_150_000}(ins);
+        this.callPositions{gas: 5_400_000}(ins);
     }
 }

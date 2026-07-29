@@ -49,7 +49,11 @@ contract ConvexCurveLPStakingMetaForkTest is BalanceAdapterTestBase {
     ConvexCurveLPStakingMetaBalanceAdapter public meta;
 
     // Real holder with staked LP in crvUSD/USDC rewarder at FORK_BLOCK
-    address public constant CRVUSD_USDC_STAKER = 0x989AEb4d175e16225E39E87d0D97A3360524AD80;
+    // Re-fixtured: 0x989AEb4d… is Convex's VOTER PROXY - it is the aggregate staker on the Curve GAUGE side
+    // (the gauge stakes it reads exactly equal these rewarders' totalSupply), so it holds ZERO in every
+    // rewarder and each test below took its zero-balance early return and asserted nothing. This is a real
+    // end-user staker: 1,681,886.4 staked with 440.0 CRV earned at FORK_BLOCK.
+    address public constant CRVUSD_USDC_STAKER = 0x65efCF2cce562DCBf07e805eEbeDeF21Dbd8Ea3D;
 
     function setUp() public override {
         super.setUp();
@@ -91,7 +95,7 @@ contract ConvexCurveLPStakingMetaForkTest is BalanceAdapterTestBase {
         // Meta-adapter resolves LP from pid(); if it can produce Staking legs, LP was resolved.
         // Use CRVUSD_USDC_STAKER who has staked LP.
         uint256 staked = _staked(REWARDER_CRVUSD_USDC, CRVUSD_USDC_STAKER);
-        if (staked == 0) return;
+        assertGt(staked, 0, "fixture holds no Convex stake at FORK_BLOCK - re-fixture, do not skip");
 
         INAVCalculator.PositionBalance[] memory pos =
             meta.getAdapterPositionsForInstances(CRVUSD_USDC_STAKER, _single(REWARDER_CRVUSD_USDC), address(0));
@@ -104,7 +108,7 @@ contract ConvexCurveLPStakingMetaForkTest is BalanceAdapterTestBase {
 
     function test_crvUsdUsdc_stakedDecomposesProRata() public view {
         uint256 staked = _staked(REWARDER_CRVUSD_USDC, CRVUSD_USDC_STAKER);
-        if (staked == 0) return;
+        assertGt(staked, 0, "fixture holds no Convex stake at FORK_BLOCK - re-fixture, do not skip");
 
         INAVCalculator.PositionBalance[] memory pos =
             meta.getAdapterPositionsForInstances(CRVUSD_USDC_STAKER, _single(REWARDER_CRVUSD_USDC), address(0));
@@ -118,13 +122,13 @@ contract ConvexCurveLPStakingMetaForkTest is BalanceAdapterTestBase {
 
     function test_crvEarned_reportedExactly() public view {
         uint256 staked = _staked(REWARDER_CRVUSD_USDC, CRVUSD_USDC_STAKER);
-        if (staked == 0) return;
+        assertGt(staked, 0, "fixture holds no Convex stake at FORK_BLOCK - re-fixture, do not skip");
 
         // Read CRV earned directly from the rewarder for comparison
         (bool ok, bytes memory data) =
             REWARDER_CRVUSD_USDC.staticcall(abi.encodeWithSignature("earned(address)", CRVUSD_USDC_STAKER));
         uint256 crvExpected = (ok && data.length >= 32) ? abi.decode(data, (uint256)) : 0;
-        if (crvExpected == 0) return;
+        assertGt(crvExpected, 0, "fixture has no CRV earned at FORK_BLOCK - re-fixture, do not skip");
 
         INAVCalculator.PositionBalance[] memory pos =
             meta.getAdapterPositionsForInstances(CRVUSD_USDC_STAKER, _single(REWARDER_CRVUSD_USDC), address(0));
@@ -138,7 +142,7 @@ contract ConvexCurveLPStakingMetaForkTest is BalanceAdapterTestBase {
 
     function test_cvxDerived_fromCrv() public view {
         uint256 staked = _staked(REWARDER_CRVUSD_USDC, CRVUSD_USDC_STAKER);
-        if (staked == 0) return;
+        assertGt(staked, 0, "fixture holds no Convex stake at FORK_BLOCK - re-fixture, do not skip");
 
         INAVCalculator.PositionBalance[] memory pos =
             meta.getAdapterPositionsForInstances(CRVUSD_USDC_STAKER, _single(REWARDER_CRVUSD_USDC), address(0));
@@ -149,7 +153,7 @@ contract ConvexCurveLPStakingMetaForkTest is BalanceAdapterTestBase {
             if (pos[i].balanceAsset.asset == CRV) crvAmt += pos[i].amount;
             if (pos[i].balanceAsset.asset == CVX) cvxAmt += pos[i].amount;
         }
-        if (crvAmt == 0) return; // no CRV → no CVX expected
+        assertGt(crvAmt, 0, "no CRV leg - CVX is derived from it, so this cannot be skipped");
         assertGt(cvxAmt, 0, "CVX derived and > 0 when CRV earned");
     }
 
@@ -174,7 +178,7 @@ contract ConvexCurveLPStakingMetaForkTest is BalanceAdapterTestBase {
 
     function test_positionId_isRewarder() public view {
         uint256 staked = _staked(REWARDER_CRVUSD_USDC, CRVUSD_USDC_STAKER);
-        if (staked == 0) return;
+        assertGt(staked, 0, "fixture holds no Convex stake at FORK_BLOCK - re-fixture, do not skip");
 
         INAVCalculator.PositionBalance[] memory pos =
             meta.getAdapterPositionsForInstances(CRVUSD_USDC_STAKER, _single(REWARDER_CRVUSD_USDC), address(0));

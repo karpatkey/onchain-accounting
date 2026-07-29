@@ -35,6 +35,18 @@ contract SilentFallbackNav {
     fallback() external {}
 }
 
+/// @notice Returns SUCCESS with 96 bytes — too short to be an answer, but comfortably above a 64-byte floor.
+/// @dev Exists to make the specific value 192 load-bearing. A mutation run showed the suite still passed with
+///      the floor weakened to 64, because the only other short-return mock returns ZERO bytes and so is caught
+///      by any floor at all. Without this mock the constant was pinned by a comment, not by a test.
+contract ShortReturnNav {
+    fallback() external {
+        assembly {
+            return(0, 96)
+        }
+    }
+}
+
 /// @notice A NAVCalculator with a real registry, so "empty" and "populated but missing" are distinguishable.
 /// @dev The success mock returns a hard-coded `(a, false)` regardless of argument, which cannot tell those two
 ///      apart — the distinction the empty-registry test exists to make.
@@ -141,6 +153,16 @@ contract MetaAdapterNavVersionGuardTest is Test {
 
         (, bool found) = populated.getRegisteredAsset(address(0));
         assertFalse(found, "probe key must be absent, or the test proves nothing");
+    }
+
+    /// @notice A short-but-non-empty answer is rejected. This is what makes the value 192 load-bearing.
+    /// @dev Fails if the floor is weakened to anything <= 96 — verified by mutation, which is how the gap this
+    ///      test fills was found: with only the zero-byte mock, dropping the floor from 192 to 64 changed no
+    ///      test outcome, so the constant was documented rather than pinned.
+    function test_shortButNonEmptyReturndataIsRejected() public {
+        ShortReturnNav nav = new ShortReturnNav();
+        vm.expectRevert(abi.encodeWithSelector(MetaBalanceAdapter.NAVCalculatorTooOld.selector, address(nav)));
+        new ProbeMetaAdapter(address(nav));
     }
 
     /// @notice The 192-byte floor in the guard is justified by measurement, not by arithmetic in a comment.

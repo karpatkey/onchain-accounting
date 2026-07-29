@@ -12,10 +12,16 @@ import {PriceFeedNotSet} from "src/errors.sol";
 /// @dev Only implements the minimal interface methods needed by adapters (ERC20DefaultBalanceAdapter)
 contract Mock_NAVCalculator is INAVCalculator {
     /// @notice Registered assets with their metadata
+    /// @dev Field order mirrors `INAVCalculator.Asset` exactly, and that is load-bearing rather than cosmetic:
+    ///      `{address, string, uint8}` cannot pack, so it occupies THREE storage slots per asset, where the
+    ///      tidier `{address, uint8, string}` packs the address and decimals together and occupies two. Any test
+    ///      measuring what a `getRegisteredAssets()` fetch costs — the label leaves that resolve a symbol through
+    ///      the registry scale linearly in it — would understate the real contract by one cold SLOAD per
+    ///      registered asset if this mock packed more tightly than the thing it stands in for.
     struct AssetInfo {
         address asset;
-        uint8 decimals;
         string symbol;
+        uint8 decimals;
     }
 
     AssetInfo[] private _assets;
@@ -74,6 +80,22 @@ contract Mock_NAVCalculator is INAVCalculator {
             result[i] = Asset({asset: _assets[i].asset, symbol: _assets[i].symbol, decimals: _assets[i].decimals});
         }
         return result;
+    }
+
+    /// @inheritdoc INAVCalculator
+    /// @dev Must be a WORKING implementation, not a `revert("Not implemented in mock")` stub like the unused
+    ///      members below: `MetaBalanceAdapter._getAssetInfo` routes through this, so every meta-adapter unit test
+    ///      resolves its assets here. Linear-scans because the mock has no index map — the real contract is O(1)
+    ///      via `_assetIndex`, and the difference does not matter at mock scale.
+    function getRegisteredAsset(address asset) external view override returns (Asset memory assetInfo, bool found) {
+        if (!_isRegistered[asset]) return (assetInfo, false);
+        for (uint256 i = 0; i < _assets.length; i++) {
+            if (_assets[i].asset == asset) {
+                return
+                    (Asset({asset: _assets[i].asset, symbol: _assets[i].symbol, decimals: _assets[i].decimals}), true);
+            }
+        }
+        return (assetInfo, false);
     }
 
     /// @inheritdoc INAVCalculator
@@ -151,6 +173,15 @@ contract Mock_NAVCalculator is INAVCalculator {
 
     // Stub implementations for other INAVCalculator methods (not used by adapters)
     function getAccountNav(address, address) external pure override returns (NAV memory) {
+        revert("Not implemented in mock");
+    }
+
+    function getAccountNavForAdapters(address, address, address[] calldata)
+        external
+        pure
+        override
+        returns (PartialNAV memory)
+    {
         revert("Not implemented in mock");
     }
 

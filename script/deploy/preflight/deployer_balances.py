@@ -38,6 +38,18 @@ GAS_PER_ASSET = 350_000       # registerAsset / addPriceFeed
 GAS_PER_META_INSTANCE = 120_000
 GAS_CONFIG_BASE = 800_000
 
+# A quoted `eth_gasPrice` below this is not a usable price, and the resulting estimate collapses
+# toward zero — gnosis quotes single-digit thousands of wei, which makes a ~37M-gas deploy "cost"
+# a fraction of a millionth of an xDAI, so `balance >= need` holds for any balance at all. (Observed
+# on gnosis, scroll, and intermittently plasma; the quotes move, so no specific figure is pinned
+# here — run the script for the current ones.) The estimate is NOT inflated in response: cheap
+# rollups legitimately quote ~0.001 gwei, so any floor generous enough to cover gnosis over-states
+# optimism/base/scroll by two to four orders of magnitude — a 1 gwei floor was measured reporting
+# TOP UP on 11 of 24 amply-funded chains, and a false alarm on 11 chains is its own failure. So the
+# chain is reported as UNPRICEABLE rather than priced or passed. See hemi in WORKAROUNDS for the
+# same species with a known fix.
+GAS_PRICE_IMPLAUSIBLE_WEI = 1_000_000  # 0.001 gwei
+
 WORKAROUNDS = {
     999: "big blocks: enable via Hyperliquid evmUserModify (usingBigBlocks=true) before 01_2/02_2, "
          "disable after — the ~12.5M-gas impl deploy does not fit HyperEVM's ~3M small blocks",
@@ -97,16 +109,25 @@ def one(chain_id: int, gas_units: dict) -> dict:
         return row
     try:
         bal = int(c.rpc(url, "eth_getBalance", [deployer.lower(), "latest"]), 16)
-        price = int(c.rpc(url, "eth_gasPrice", []), 16)
+        quoted = int(c.rpc(url, "eth_gasPrice", []), 16)
     except Exception as e:  # noqa: BLE001
         row["error"] = str(e)
         return row
+    price = quoted
+    priceable = quoted >= GAS_PRICE_IMPLAUSIBLE_WEI
     # 2x headroom on gas price: these deploys span many blocks and base fee moves.
     need = gas * price * 2
     row.update(balanceWei=bal, gasPriceWei=price, needWei=need,
                balanceEth=bal / 1e18, needEth=need / 1e18,
                shortfallEth=max(0.0, (need - bal) / 1e18),
-               sufficient=bal >= need)
+               priceable=priceable,
+               # `sufficient` is a THIRD state, not a boolean. On an unpriceable chain `need`
+               # computes to ~0 from an unusable quote, so `bal >= need` is true for every possible
+               # balance — the test is a tautology and its `True` carries no information. Reporting
+               # that as OK is the same defect as a checker that returns 0 without checking, so it
+               # reports None and the chain is listed separately. Nobody should later read a green
+               # row here as evidence the chain was funded.
+               sufficient=(bal >= need) if priceable else None)
     return row
 
 
@@ -119,23 +140,34 @@ def main() -> int:
     c.load_env()
 
     gas_units = json.load(open(args.gas_units)) if args.gas_units else {}
-    chains = args.chains or c.deployed_chain_ids()
+    chains, scope_src = c.resolve_chains(args.chains)
+    print(f"scope: {len(chains)} chain(s) from {scope_src}")
     with ThreadPoolExecutor(max_workers=6) as pool:
         rows = list(pool.map(lambda cid: one(cid, gas_units), chains))
     rows.sort(key=lambda r: r["chainId"])
 
     print(f"{'chain':>8} {'name':16} {'native':>12} {'need':>12} {'shortfall':>11}  status")
-    topup = []
+    topup, unpriceable, errored = [], [], []
     for r in rows:
         if r.get("error"):
+            errored.append(r)
             print(f"{r['chainId']:>8} {r['name']:16} {'—':>12} {'—':>12} {'—':>11}  "
                   f"RPC ERROR: {r['error'][:70]}")
             continue
         sym = c.chain_config(r["chainId"]).get("nativeTokenSymbol", "")
-        status = "OK" if r["sufficient"] else "TOP UP"
+        if r["sufficient"] is None:
+            status = (f"UNPRICEABLE — node quotes {r['gasPriceWei']} wei "
+                      f"({r['gasPriceWei'] / 1e9:.7f} gwei); the estimate is meaningless here, so "
+                      f"this is NOT a pass")
+        else:
+            status = "OK" if r["sufficient"] else "TOP UP"
         print(f"{r['chainId']:>8} {r['name']:16} {r['balanceEth']:>12.5f} {r['needEth']:>12.5f} "
               f"{r['shortfallEth']:>11.5f}  {status} ({sym})")
-        if not r["sufficient"]:
+        if r["sufficient"] is None:
+            unpriceable.append({"chainId": r["chainId"], "name": r["name"], "nativeSymbol": sym,
+                                "gasPriceWei": r["gasPriceWei"],
+                                "haveEth": round(r["balanceEth"], 6)})
+        elif not r["sufficient"]:
             topup.append({"chainId": r["chainId"], "name": r["name"],
                           "nativeSymbol": sym, "deployer": r["deployer"],
                           "shortfallEth": round(r["shortfallEth"], 6),
@@ -148,15 +180,31 @@ def main() -> int:
             print(f"  {t['name']:16} send >= {t['shortfallEth']:.5f} {t['nativeSymbol']} "
                   f"to {t['deployer']}")
     else:
-        print("  none — every chain is funded for the estimated gas")
+        print("  none — every priced chain is funded for the estimated gas")
+
+    if unpriceable:
+        print("\n--- NOT PRICED (these chains were not checked, and are not OK) ---")
+        for u in unpriceable:
+            print(f"  {u['name']:16} holds {u['haveEth']:.5f} {u['nativeSymbol']}; node quotes "
+                  f"{u['gasPriceWei']} wei, too low to size a deploy from")
 
     print("\n--- chain-specific workarounds ---")
     for cid, note in WORKAROUNDS.items():
         print(f"  {cid} {c.chain_config(cid).get('name','?')}: {note}")
 
     if args.json:
-        json.dump({"rows": rows, "topup": topup}, open(args.json, "w"), indent=1)
+        json.dump({"rows": rows, "topup": topup, "unpriceable": unpriceable},
+                  open(args.json, "w"), indent=1)
         print(f"\nwrote {args.json}")
+
+    # Exit non-zero on anything unresolved. An unpriceable or unreachable chain counts: this script
+    # exists to answer "is the deployer funded everywhere", and it cannot answer that for a chain it
+    # could not price or could not reach.
+    if topup or unpriceable or errored:
+        print(f"\n{len(topup)} chain(s) short, {len(unpriceable)} unpriceable, "
+              f"{len(errored)} unreachable — not clear to deploy.")
+        return 1
+    print(f"\nAll {len(rows)} chain(s) priced and funded.")
     return 0
 
 

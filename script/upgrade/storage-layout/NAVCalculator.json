@@ -1,0 +1,126 @@
+{
+ "contract": "src/nav/NAVCalculator.sol:NAVCalculator",
+ "note": "Committed storage-layout baseline for the UUPS implementation behind NAVCalculatorProxy, compared by script/upgrade/check_storage_layout.py before any upgrade. `type` is a CANONICAL STRUCTURAL SIGNATURE resolved through forge's `types` dictionary, not forge's raw type string: it carries struct interiors (member label/slot/offset, recursively) and fixed-array lengths, and contains no astIds. Raw type strings were tried first and were unsound in both directions - they hide a struct's interior entirely, and their `)N_storage` suffix means an astId for a struct but an array LENGTH for an array, so one regex could not treat both correctly.",
+ "storage": [
+  {
+   "slot": "0",
+   "offset": 0,
+   "label": "chainlinkL2SequencerGracePeriod",
+   "type": "{uint256;b=32;e=inplace}"
+  },
+  {
+   "slot": "1",
+   "offset": 0,
+   "label": "chainlinkL2SequencerUptimeFeed",
+   "type": "{contract AggregatorV3Interface;b=20;e=inplace}"
+  },
+  {
+   "slot": "2",
+   "offset": 0,
+   "label": "_priceOracles",
+   "type": "{mapping(address => struct IPrices.PriceFeedConfig[]);b=32;e=mapping;key=t_address;val={struct IPrices.PriceFeedConfig[];b=32;e=dynamic_array;base={struct IPrices.PriceFeedConfig;b=64;e=inplace;m[priceFeed@0+0]={address;b=20;e=inplace};m[decimals@0+20]={uint8;b=1;e=inplace};m[priceType@0+21]={enum IPrices.PriceType;b=1;e=inplace};m[chainlinkHeartbeat@1+0]={uint256;b=32;e=inplace}}}}"
+  },
+  {
+   "slot": "3",
+   "offset": 0,
+   "label": "_monitorFeeds",
+   "type": "{mapping(address => struct IPrices.PriceFeedConfig[]);b=32;e=mapping;key=t_address;val={struct IPrices.PriceFeedConfig[];b=32;e=dynamic_array;base={struct IPrices.PriceFeedConfig;b=64;e=inplace;m[priceFeed@0+0]={address;b=20;e=inplace};m[decimals@0+20]={uint8;b=1;e=inplace};m[priceType@0+21]={enum IPrices.PriceType;b=1;e=inplace};m[chainlinkHeartbeat@1+0]={uint256;b=32;e=inplace}}}}"
+  },
+  {
+   "slot": "4",
+   "offset": 0,
+   "label": "_assetPricing",
+   "type": "{mapping(address => struct IPrices.AssetPricing);b=32;e=mapping;key=t_address;val={struct IPrices.AssetPricing;b=32;e=inplace;m[divergenceToleranceBps@0+0]={uint32;b=4;e=inplace};m[pegToleranceBps@0+4]={uint32;b=4;e=inplace}}}"
+  },
+  {
+   "slot": "5",
+   "offset": 0,
+   "label": "__pricesGap",
+   "type": "{uint256[48];b=1536;e=inplace;base={uint256;b=32;e=inplace}}",
+   "fixedArrayLen": 48,
+   "fixedArrayBase": "{uint256;b=32;e=inplace}"
+  },
+  {
+   "slot": "53",
+   "offset": 0,
+   "label": "_nativeTokenSymbol",
+   "type": "{string;b=32;e=bytes}"
+  },
+  {
+   "slot": "54",
+   "offset": 0,
+   "label": "_balanceAdapters",
+   "type": "{mapping(address => struct EnumerableMap.AddressToUintMap);b=32;e=mapping;key=t_address;val={struct EnumerableMap.AddressToUintMap;b=96;e=inplace;m[_inner@0+0]={struct EnumerableMap.Bytes32ToBytes32Map;b=96;e=inplace;m[_keys@0+0]={struct EnumerableSet.Bytes32Set;b=64;e=inplace;m[_inner@0+0]={struct EnumerableSet.Set;b=64;e=inplace;m[_values@0+0]={bytes32[];b=32;e=dynamic_array;base={bytes32;b=32;e=inplace}};m[_positions@1+0]={mapping(bytes32 => uint256);b=32;e=mapping;key=t_bytes32;val={uint256;b=32;e=inplace}}}};m[_values@2+0]={mapping(bytes32 => bytes32);b=32;e=mapping;key=t_bytes32;val={bytes32;b=32;e=inplace}}}}}"
+  },
+  {
+   "slot": "55",
+   "offset": 0,
+   "label": "balanceAdapterTotalCount",
+   "type": "{uint256;b=32;e=inplace}"
+  },
+  {
+   "slot": "56",
+   "offset": 0,
+   "label": "_globalAdapters",
+   "type": "{address[];b=32;e=dynamic_array;base={address;b=20;e=inplace}}"
+  },
+  {
+   "slot": "57",
+   "offset": 0,
+   "label": "_adapterTypes",
+   "type": "{mapping(address => enum IBalances.AdapterType);b=32;e=mapping;key=t_address;val={enum IBalances.AdapterType;b=1;e=inplace}}"
+  },
+  {
+   "slot": "58",
+   "offset": 0,
+   "label": "_isAdapterRegistered",
+   "type": "{mapping(address => bool);b=32;e=mapping;key=t_address;val={bool;b=1;e=inplace}}"
+  },
+  {
+   "slot": "59",
+   "offset": 0,
+   "label": "erc20DefaultBalanceAdapter",
+   "type": "{address;b=20;e=inplace}"
+  },
+  {
+   "slot": "60",
+   "offset": 0,
+   "label": "_metaInstances",
+   "type": "{mapping(address => bytes32[]);b=32;e=mapping;key=t_address;val={bytes32[];b=32;e=dynamic_array;base={bytes32;b=32;e=inplace}}}"
+  },
+  {
+   "slot": "61",
+   "offset": 0,
+   "label": "_metaInstanceTotal",
+   "type": "{uint256;b=32;e=inplace}"
+  },
+  {
+   "slot": "62",
+   "offset": 0,
+   "label": "__balancesGap",
+   "type": "{uint256[48];b=1536;e=inplace;base={uint256;b=32;e=inplace}}",
+   "fixedArrayLen": 48,
+   "fixedArrayBase": "{uint256;b=32;e=inplace}"
+  },
+  {
+   "slot": "110",
+   "offset": 0,
+   "label": "_registeredAssets",
+   "type": "{struct INAVCalculator.Asset[];b=32;e=dynamic_array;base={struct INAVCalculator.Asset;b=96;e=inplace;m[asset@0+0]={address;b=20;e=inplace};m[symbol@1+0]={string;b=32;e=bytes};m[decimals@2+0]={uint8;b=1;e=inplace}}}"
+  },
+  {
+   "slot": "111",
+   "offset": 0,
+   "label": "_assetIndex",
+   "type": "{mapping(address => uint256);b=32;e=mapping;key=t_address;val={uint256;b=32;e=inplace}}"
+  },
+  {
+   "slot": "112",
+   "offset": 0,
+   "label": "_gap",
+   "type": "{uint256[50];b=1600;e=inplace;base={uint256;b=32;e=inplace}}",
+   "fixedArrayLen": 50,
+   "fixedArrayBase": "{uint256;b=32;e=inplace}"
+  }
+ ]
+}

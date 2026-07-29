@@ -5,7 +5,7 @@ import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.sol";
 import {MorphoMarketsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/MorphoMarketsMetaBalanceAdapter.sol";
 import {MockMorpho} from "test/balances/MetaBalanceAdapters/MorphoMocks.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
-import {Id, MarketParams} from "morpho-blue/src/interfaces/IMorpho.sol";
+import {Id, Market, MarketParams} from "morpho-blue/src/interfaces/IMorpho.sol";
 import {MarketParamsLib} from "morpho-blue/src/libraries/MarketParamsLib.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
@@ -225,7 +225,7 @@ contract MorphoMarketsMetaUnitTest is BalanceAdapterTestBase {
     ///      `MockMorpho` cannot show this: it `require`s a known id, so it reverts and the `catch` arm hides the
     ///      path. This test therefore uses a getter-shaped mock that mirrors real Morpho.
     ///
-    ///      Load-bearing: drop the `loanToken != address(0)` gate and the first assertion sees 2 labels, not 1.
+    ///      Load-bearing: drop the existence gate and the first assertion sees 2 labels, not 1.
     function test_positionLabels_unknownMarketId_collapsesToCategory() public {
         MockMorphoZeroGetter zeroMorpho = new MockMorphoZeroGetter();
         MorphoMarketsMetaBalanceAdapter a = new MorphoMarketsMetaBalanceAdapter(address(zeroMorpho), address(balances));
@@ -241,6 +241,60 @@ contract MorphoMarketsMetaUnitTest is BalanceAdapterTestBase {
         assertEq(known.length, 2);
         assertEq(known[0], "Market");
     }
+
+    /// @notice Params alone do not make a market: an id with a full `MarketParams` but `lastUpdate == 0` must
+    ///         still collapse to the category.
+    /// @dev This is the case that separates the enforced invariant from the practical one, and the reason the
+    ///      gate reads `market(id).lastUpdate` rather than `loanToken != address(0)`. `createMarket` validates
+    ///      only `isIrmEnabled`, `isLltvEnabled` and `lastUpdate == 0` — it never rejects a zero `loanToken` — so
+    ///      "every real market has a loanToken" is a property of the markets that happen to exist, not one the
+    ///      protocol guarantees. Stamping `lastUpdate` is what creation actually does.
+    ///
+    ///      Mutation check: restore the `loanToken != address(0)` gate and this returns 2 labels.
+    function test_positionLabels_paramsWithoutCreation_collapsesToCategory() public {
+        MockMorphoZeroGetter zeroMorpho = new MockMorphoZeroGetter();
+        MorphoMarketsMetaBalanceAdapter a = new MorphoMarketsMetaBalanceAdapter(address(zeroMorpho), address(balances));
+
+        zeroMorpho.setParamsWithoutCreating(bytes32(uint256(7)), address(weth), address(usdc));
+
+        string[] memory out = a.positionLabels(abi.encode(bytes32(uint256(7))));
+        assertEq(out.length, 1, "params without creation must not render a token pair");
+        assertEq(out[0], "Market");
+    }
+
+    /// @notice A reverting existence read must degrade to the category, not propagate out of `positionLabels`.
+    /// @dev The boundary is easy to get wrong and the mistake is silent in review: the body of a `try` executes in
+    ///      the CALLER's frame, so an external call placed inside the success arm of another `try` is not covered
+    ///      by that `try`'s `catch`. Written that way, a Morpho deployment not answering `market(Id)` would revert
+    ///      this view instead of dropping one leaf. Each read gets its own boundary; this pins that.
+    function test_positionLabels_revertingExistenceRead_failsOpen() public {
+        MockMorphoNoMarketGetter broken = new MockMorphoNoMarketGetter();
+        MorphoMarketsMetaBalanceAdapter a = new MorphoMarketsMetaBalanceAdapter(address(broken), address(balances));
+
+        string[] memory out = a.positionLabels(abi.encode(bytes32(uint256(1))));
+        assertEq(out.length, 1, "a reverting existence read must degrade, not revert the view");
+        assertEq(out[0], "Market");
+    }
+}
+
+/// @notice Morpho-shaped mock that answers `idToMarketParams` but reverts on `market(Id)`.
+/// @dev Stands in for a deployment whose existence getter is unavailable. The adapter must treat that as "cannot
+///      confirm the market exists" and drop the leaf, never as a reason to revert a display-only view.
+contract MockMorphoNoMarketGetter {
+    MarketParams private _params;
+
+    constructor() {
+        _params.collateralToken = address(1);
+        _params.loanToken = address(2);
+    }
+
+    function idToMarketParams(Id) external view returns (MarketParams memory) {
+        return _params;
+    }
+
+    function market(Id) external pure returns (Market memory) {
+        revert("no market getter");
+    }
 }
 
 /// @notice Morpho mock whose `idToMarketParams` behaves like the REAL one: a plain mapping getter that returns an
@@ -250,12 +304,29 @@ contract MorphoMarketsMetaUnitTest is BalanceAdapterTestBase {
 contract MockMorphoZeroGetter {
     mapping(bytes32 => MarketParams) private _params;
 
+    /// @dev Mirrors `createMarket`: stamping `lastUpdate` is what makes a market EXIST, and the adapter's label
+    ///      path keys existence off that rather than off the params, so a mock that filled in params without it
+    ///      would model a market Morpho cannot actually produce.
+    mapping(bytes32 => uint128) private _lastUpdate;
+
     function setMarket(bytes32 id, address collateralToken, address loanToken) external {
+        _params[id].collateralToken = collateralToken;
+        _params[id].loanToken = loanToken;
+        _lastUpdate[id] = 1;
+    }
+
+    /// @notice Params for a market that was never created — the all-zero-struct shape a plain mapping getter
+    ///         returns, WITHOUT stamping `lastUpdate`. The combination Morpho itself permits but never creates.
+    function setParamsWithoutCreating(bytes32 id, address collateralToken, address loanToken) external {
         _params[id].collateralToken = collateralToken;
         _params[id].loanToken = loanToken;
     }
 
     function idToMarketParams(Id id) external view returns (MarketParams memory) {
         return _params[Id.unwrap(id)];
+    }
+
+    function market(Id id) external view returns (Market memory m) {
+        m.lastUpdate = _lastUpdate[Id.unwrap(id)];
     }
 }

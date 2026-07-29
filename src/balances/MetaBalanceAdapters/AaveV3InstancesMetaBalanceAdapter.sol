@@ -70,10 +70,22 @@ contract AaveV3InstancesMetaBalanceAdapter is MetaBalanceAdapter {
         address pool = abi.decode(pid, (address));
 
         // A borrow this adapter cannot report must never leave the account's supplies standing alone: the
-        // position would count as pure credit and NAV be over-reported by the whole borrow. Checked across ALL
-        // reserves and independently of `assetFilter` — a filtered view showing a supply while hiding an
-        // unreportable borrow over-reports the same way. Under-reporting the whole instance is the safe
-        // direction.
+        // position would count as pure credit, overstated by the whole borrow. Checked across ALL reserves and
+        // independently of `assetFilter`, and that asymmetry is deliberate — the two cases differ in kind:
+        //
+        //   - Unregistered reserve — nobody can price that borrow, on any path, so emitting the supplies alone
+        //     states a figure no consumer is able to offset. Dropping the whole instance is the safe direction,
+        //     and that is what the guard below does.
+        //   - Excluded by `assetFilter` — the borrow is perfectly priceable and merely outside the caller's
+        //     query. A per-asset read is a PROJECTION, not a sub-portfolio valuation: ask for asset X and you
+        //     get the legs denominated in X. Omitting the Borrowed leg is the requested answer, not a failure.
+        //
+        // Scope, so this is not mistaken for a live NAV hazard: no NAV figure is ever computed with a filter.
+        // `getAccountNav`, `getAccountNavForAdapters` and `getAccountNavVerbose` take no filter and reach
+        // `PriceFeedLib.computeNav` with `address(0)`. The only non-zero-filter entrypoints are
+        // `NAVCalculator.getAccountPositionsForAsset` / `…ForAssetVerbose`, which return `Position[]`. The
+        // residual risk is a CONSUMER summing a filtered position list as if it were a net position — a
+        // contract stated on those entrypoints, not something this adapter fixes by hiding a requested leg.
         if (_hasUnreportableDebt(dp, pool, account)) {
             return new INAVCalculator.PositionBalance[](0);
         }

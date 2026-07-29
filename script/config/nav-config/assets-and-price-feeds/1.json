@@ -232,14 +232,20 @@
   "stETH": {
     "address": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
     "divergenceToleranceBps": 250,
+    "$comment": "Finding #1: stETH was the only ETH-LST whose PRIMARY was a market feed, while wstETH and eETH - the same underlying claim - are priced fundamental. During a stETH discount the two disagreed by the full discount and irregularPriceAssets flagged wstETH but not stETH, which reads backwards. Primary is now the fundamental unit-rate feed; the market stETH/ETH cross-rate is retained as a monitor so divergenceBps becomes meaningful for stETH for the first time. Heartbeat stays 86400 to match wstETH/weETH/eETH; it is looser than WETH's 3600 base, which is safe because NavBaseUsdLib inherits the base's own staleness verdict regardless, so a looser derived heartbeat cannot over-report.",
     "priceFeeds": [
       {
         "type": "Custom",
-        "feed": "stETH",
+        "feed": "stETHFundamental",
         "heartbeat": 86400
       }
     ],
     "monitorFeeds": [
+      {
+        "type": "Custom",
+        "feed": "stETHCrossRate",
+        "heartbeat": 86400
+      },
       {
         "type": "Chainlink",
         "address": "0xCfE54B5cD566aB89272946F602D76Ea879CAb4a8",

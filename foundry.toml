@@ -104,8 +104,16 @@ libraries = []
 code_size_limit = 393216
 
 # Linter runs on `forge build`; issues are printed and fail the build when deny includes warnings.
+#
+# `no_match_test = "upgrade"` used to sit here. It was DELETED rather than relocated: `no_match_test` is a
+# test-filter key with no meaning under `[lint]`, so forge ignored it and printed
+# `Warning: Found unknown 'no_match_test' config key in section 'lint'` on every single build.
+# Deleting it is behaviour-preserving, because it was already inert. Moving it to `[profile.default]` — where
+# it would be valid — would have STARTED skipping `test_upgrade` and `test_upgrade_notAuthorized`
+# (test/nav/NAVCalculator.upgrade.t.sol), silently dropping the only coverage of the UUPS upgrade path and its
+# authorization check. That is a coverage regression disguised as a config tidy-up, so if the intent is ever
+# to skip those tests it should be a deliberate, reviewed change and not a resurrection of this line.
 [lint]
-no_match_test = "upgrade"
 
 [profile.coverage]
 # Exclude script folder from coverage reports (regex pattern)

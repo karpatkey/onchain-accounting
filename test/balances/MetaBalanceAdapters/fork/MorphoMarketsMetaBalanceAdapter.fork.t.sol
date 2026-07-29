@@ -87,6 +87,30 @@ contract MorphoMarketsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         vm.stopPrank();
     }
 
+    /// @notice The existence gate against a REAL Morpho deployment: a live market renders its pair, an
+    ///         unallocated id collapses to the category.
+    /// @dev The gate reads `MORPHO.market(id).lastUpdate`, and every in-repo test of it runs against a mock. That
+    ///      leaves the one thing a mock cannot establish unchecked — that the real deployment answers this
+    ///      selector at all, with a decodable `Market`. `Id` is a UDVT over `bytes32`, so `market(Id)` and the
+    ///      deployed `mapping(Id => Market) public market` auto-getter must resolve to the same selector; if they
+    ///      ever did not, the `try` would swallow it and every Morpho leaf would silently degrade to `["Market"]`
+    ///      on-chain while the unit suite stayed green.
+    function test_positionLabels_existenceGate_againstRealMorpho() public view {
+        string[] memory live = adapter.positionLabels(abi.encode(MARKET_ID));
+        assertEq(live.length, 2, "a real market must render its token pair");
+        assertEq(live[0], "Market");
+        // Pinned to the exact pair rather than to "non-empty": once `live.length == 2` holds, a length check
+        // cannot fail — `_labels` emits a second segment only for a non-empty leaf, and the most degraded leaf
+        // this path can produce is still "?/?". Asserting the value instead catches a symbol-read regression
+        // against the live deployment AND the collateral-before-loan ordering, neither covered elsewhere here.
+        assertEq(live[1], "apyUSD/apxUSD", "collateral/loan symbols, read from the real tokens");
+
+        // An id no `createMarket` ever wrote: params come back all-zero AND `lastUpdate` is 0.
+        string[] memory absent = adapter.positionLabels(abi.encode(bytes32(uint256(keccak256("no such market")))));
+        assertEq(absent.length, 1, "an unallocated id must not render a token pair");
+        assertEq(absent[0], "Market");
+    }
+
     function test_threeLegs_present() public view {
         bytes32[] memory instances = new bytes32[](1);
         instances[0] = MARKET_ID;

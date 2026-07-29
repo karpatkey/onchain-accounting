@@ -96,7 +96,7 @@ contract BalancerV2PoolsMetaBalanceAdapter is MetaBalanceAdapter {
         if (!ok) return new string[](0);
         // External self-call so a revert in the Vault pool-token read (bad/removed poolId) fails open to the
         // category-only label — a faulty label must never revert the (verbose-only) labels read.
-        try this.poolTokenSymbols(poolId) returns (string memory leaf) {
+        try this.poolTokenSymbols{gas: LABEL_LEAF_GAS}(poolId) returns (string memory leaf) {
             return _labels("AMM Liquidity Pool", leaf);
         } catch {
             return _labels("AMM Liquidity Pool", "");

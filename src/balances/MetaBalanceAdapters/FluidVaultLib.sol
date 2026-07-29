@@ -53,6 +53,14 @@ interface IFluidVaultResolver {
     }
 }
 
+/// @notice One of the account's NFT positions in `vault` could not be read, so the vault's collateral/debt
+///         aggregate would be incomplete by an unknown amount in an unknown direction.
+/// @dev Declared file-local rather than in `src/errors.sol` on purpose: both pinned libraries (`PriceFeedLib`,
+///      `NAVRegistryLib`) plain-import that file, so adding to it would pull this symbol into both CREATE2
+///      compilation closures for no benefit — only this library raises it, and only `MetaBalanceAdapter`'s
+///      existing per-instance `catch` consumes it.
+error FluidPositionUnreadable(address vault, uint256 nftId);
+
 /// @title FluidVaultLib
 /// @author KPK
 /// @notice Shared read math for the Fluid T1 vaults meta-adapter. Resolves a vault's collateral/debt tokens and
@@ -138,6 +146,31 @@ library FluidVaultLib {
     }
 
     /// @notice Walks the account's Fluid NFTs through the resolver and sums collateral/debt for `vault`.
+    /// @dev **An aggregate is either complete or it is not reported.** A per-NFT read that cannot be completed
+    ///      raises {FluidPositionUnreadable} rather than being skipped, because skipping it moves the total in an
+    ///      UNKNOWN direction. Each NFT contributes a supply and a borrow together, so dropping one changes the
+    ///      vault's reported equity by `supply - borrow` — negative for an underwater position, which RAISES the
+    ///      reported NAV. "Skip and carry on" is only conservative when the dropped term has a known sign, and
+    ///      here it does not.
+    ///
+    ///      Skipping was also self-propagating in a way that made it invisible. The read is a fail-open
+    ///      `staticcall`, so a frame that runs out of gas mid-loop fails this read, `continue`s, then fails every
+    ///      remaining read for the same reason — and `aggregate` still RETURNED, with a partial total and no
+    ///      indication that it was partial. `MetaBalanceAdapter`'s per-instance classifier never fired because
+    ///      nothing had failed from where it stands.
+    ///
+    ///      Raising restores that classifier, and deliberately does NOT re-implement it. The caller
+    ///      (`MetaBalanceAdapter._positionsForInstances`) already measures gas across its own `try` boundary and
+    ///      splits the two cases for us, which is why there is no {GasStipendLib} call in this library:
+    ///        - **starved** — the staticcall burned ~63/64 of the instance's stipend before this reverts, so the
+    ///          caller scores it exhausted and raises `InstanceGasExhausted`, naming the vault. Loud, and
+    ///          recoverable by supplying more gas. This is the "make truncation visible" half.
+    ///        - **genuinely unreadable** — a short or reverting reply costs almost nothing, so the caller scores
+    ///          it a benign revert and drops just this vault's legs. Conservative, and isolated to the one
+    ///          instance exactly as before. This is the half that must NOT become loud, or one malformed NFT
+    ///          would fail the whole account's NAV read.
+    ///      One `revert` therefore yields both behaviours; adding a second classifier here would be a threshold
+    ///      that could drift from the shared one.
     /// @return collateralTotal Total collateral (collateral-token decimals).
     /// @return debtTotal Total debt (debt-token decimals).
     function aggregate(address vault, address resolver, address account)
@@ -154,9 +187,13 @@ library FluidVaultLib {
 
             (bool ok, bytes memory ret) =
                 resolver.staticcall(abi.encodeWithSelector(IFluidVaultResolver.positionByNftId.selector, nftId));
-            if (!ok || ret.length < 384) continue;
+            // NOT `continue`. See the note above: an omitted NFT moves the total in an unknown direction, and
+            // the omission was unobservable because this function still returned.
+            if (!ok || ret.length < 384) revert FluidPositionUnreadable(vault, nftId);
 
             (uint256 supply, uint256 borrow, bool isLiquidated) = _readUserPositionPrefix(ret);
+            // `isLiquidated` is a protocol ANSWER, not a failed read: Fluid has zeroed the position, so both its
+            // terms are genuinely 0 and skipping it omits nothing. This stays a `continue`.
             if (isLiquidated) continue;
             collateralTotal += supply;
             debtTotal += borrow;

@@ -343,8 +343,7 @@ contract PricesTest is Test {
     function test_checkL2SequencerUptime_gracePeriod_exactlyAtBoundary_stale() public {
         uint256 grace = 1 hours;
         vm.warp(block.timestamp + grace + 1); // headroom so `block.timestamp - grace` cannot underflow
-        Mock_ChainlinkL2SequencerUptimeFeedAt feed =
-            new Mock_ChainlinkL2SequencerUptimeFeedAt(block.timestamp - grace);
+        Mock_ChainlinkL2SequencerUptimeFeedAt feed = new Mock_ChainlinkL2SequencerUptimeFeedAt(block.timestamp - grace);
         managerL2 = new PricesHarness(address(feed));
         assertEq(managerL2.chainlinkL2SequencerGracePeriod(), grace, "fixture assumes a 1h grace period");
 
@@ -388,9 +387,7 @@ contract PricesTest is Test {
 
         manager.setPriceFeed(buidl, address(eightDec), type(uint256).max, IPrices.PriceType.Chainlink);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(IPrices.PriceFeedDecimalsMismatch.selector, buidl, uint8(8), uint8(18))
-        );
+        vm.expectRevert(abi.encodeWithSelector(IPrices.PriceFeedDecimalsMismatch.selector, buidl, uint8(8), uint8(18)));
         manager.setPriceFeed(buidl, address(eighteenDec), type(uint256).max, IPrices.PriceType.Chainlink);
     }
 
@@ -441,9 +438,7 @@ contract PricesTest is Test {
         Mock_PriceOracleChainlink mon = new Mock_PriceOracleChainlink("mon", 100, 8);
         manager.addMonitorFeed(buidl, address(mon), 1 days, IPrices.PriceType.Chainlink);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(IPrices.MonitorFeedAlreadyRegistered.selector, buidl, address(mon))
-        );
+        vm.expectRevert(abi.encodeWithSelector(IPrices.MonitorFeedAlreadyRegistered.selector, buidl, address(mon)));
         manager.addMonitorFeed(buidl, address(mon), 1 days, IPrices.PriceType.Chainlink);
     }
 

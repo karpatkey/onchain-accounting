@@ -11,9 +11,8 @@ contract MockPricingSource {
     bool public reverts;
 
     function set(uint32 divergenceToleranceBps, uint32 pegToleranceBps) external {
-        pricing = IPrices.AssetPricing({
-            divergenceToleranceBps: divergenceToleranceBps, pegToleranceBps: pegToleranceBps
-        });
+        pricing =
+            IPrices.AssetPricing({divergenceToleranceBps: divergenceToleranceBps, pegToleranceBps: pegToleranceBps});
     }
 
     function setReverts(bool value) external {

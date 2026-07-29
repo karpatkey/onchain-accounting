@@ -55,18 +55,31 @@ Do not start until **all** of these hold.
 | #186 | per-leaf gas bound on `positionLabels` |
 | #189 | Morpho existence invariant + a tighter `protocolName` ceiling |
 | #190 | enough runner memory for the `via_ir` build (see 0.8) |
+| #191 | the library-pin assertions in `01` (see 1.2) |
+| #187 | paginated NAV read over a caller-supplied adapter set |
 
-`main` is at **`dc5810eb`** (#191, the pin assertions in `01`, landed 2026-07-29 — see 1.2). What
-still has to land, **in this order**, before 0.3 can be computed:
+`main` is at **`89274d50`**. What still has to land, **in this order**, before 0.3 can be computed:
 
-| open | why it blocks the pin regen |
+| open | relationship to the pin regen |
 | --- | --- |
-| #187 paginated NAV read | touches `INAVCalculator.sol`, which is in **both** libraries' compilation closure — so it moves **both** pins |
-| the O(1) registry-getter PR (`_getAssetInfo`, not yet opened) | same file, same reason |
+| the O(1) registry-getter PR (`_getAssetInfo`, not yet opened) | its effect on each pin must be **measured, not predicted** — see below |
 | **#185, the regen itself (0.3)** | must be computed last, against the final tree |
 
-Pins move only when a file in *that library's* compilation closure changes — not on any `src/` edit —
-but `INAVCalculator.sol` is imported by both, so both of the above move both pins.
+**Both pinned values will be regenerated, but for two independent reasons — do not attribute either to
+the other.**
+
+- **`PriceFeedLib` moved because #187 edited `src/prices/PriceFeedLib.sol` directly.**
+- **`NAVRegistryLib` was already drifted on `main`** before #187 existed, independently of anything in
+  flight. Measured across four trees — `main` before #187, and #187 at `66490d6a`, `94dc81be` and
+  `0d68fcf4` — its computed value was `0x7Fc30f7a1A3b89040f1CA74CbE71814B4A4dAF04` at **every** one.
+  #187 did not move it. (That figure is cited as evidence of *invariance across four trees*, not as a
+  value to pin: it is a CI reading, and per 0.3 those are not a reliable source for the pin itself.)
+
+This matters because both `LibraryPinConsistency` tests are red simultaneously, which invites the
+conclusion that one in-flight PR moved both. It did not. An earlier revision of this section asserted
+that `INAVCalculator.sol` sits in both libraries' compilation closure and therefore any PR touching it
+moves both pins; #187 touched that file and `NAVRegistryLib` did not move, so **that reasoning is
+wrong and has been removed**. Do not predict a pin movement from the import graph — measure it.
 
 ### 0.2 Bump `DeploySalts.NAV_PROXY` — **CONFIRMED REQUIRED, already done (6 → 7)**
 
@@ -130,9 +143,17 @@ This is a hard gate, not a nicety: `01_2` asserts the computed CREATE2 addresses
 against both (`01_2_DeployNAVImplementation.s.sol:46-68`). A wrong pin reverts `01_2` on every chain
 before it broadcasts anything.
 
-Iterate to a fixpoint against CI's computed (LEFT) value; a 2-cycle has been observed. Always
-`forge clean` first — an incremental `out/` yields a wrong address that looks authoritative. See
-`reference_pricefeedlib_pin_drift` for the full history.
+Iterate to a fixpoint; a 2-cycle has been observed. Always `forge clean` first — an incremental `out/`
+yields a wrong address that looks authoritative.
+
+> **A CI reading is NOT a reliable measurement of a pin value.** Two runs of the same branch 25
+> minutes apart, with a one-markdown-file diff and **zero `.sol` changed**, produced two different
+> computed `PriceFeedLib` addresses (`0x00a3AFAC…` and `0xD477d7e2…`), both runs' `headSha` confirmed
+> via the API. Cause not yet settled — `via_ir` non-determinism or a CI cache effect; the regen
+> session is running back-to-back local clean builds to pin it down. Until that is resolved, **the
+> regen's own local clean-build measurement is the only source this runbook or `LibraryPins.sol`
+> should take a value from.** No pin address is quoted anywhere in this runbook as authoritative for
+> that reason. See `reference_pricefeedlib_pin_drift` for the full history.
 
 ### 0.4 Submodules at the recorded commits — **root cause fixed, keep the check**
 

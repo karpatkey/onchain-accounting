@@ -45,9 +45,17 @@ contract UpgradeNAVCalculatorHarness is UpgradeNAVCalculator {
         return _deployGuardedNavImplementation();
     }
 
-    /// @dev The harness inherits the real `run()`, which would deploy an implementation and write a Safe TX
-    ///      repointing a live proxy. Nothing in `script/test/` should be broadcast-capable, and
-    ///      `forge script <this file>:UpgradeNAVCalculatorHarness --broadcast` would otherwise do exactly that.
+    /// @dev `forge script` calls `setUp()` before ANY entry point, including a `--sig` target, and this test
+    ///      never calls it (it constructs the harness directly). Reverting here therefore closes every script
+    ///      path at once — which the `run()` override alone did not: `deployGuardedNavImplementation()` is
+    ///      externally reachable, and once the pins match it would deploy a real implementation from a test
+    ///      file. That deploy saves no address, writes no Safe TX and repoints no proxy, so it was never a
+    ///      live-proxy upgrade — but nothing under `script/test/` should be broadcast-capable at all.
+    function setUp() public pure override {
+        revert("harness: not a deploy script");
+    }
+
+    /// @dev Belt-and-braces now that `setUp()` is the primary barrier.
     function run() public pure override {
         revert("harness: not a deploy script");
     }
@@ -262,8 +270,13 @@ contract UpgradeNAVCalculatorPinsTest is Test {
         }
     }
 
-    /// @notice Nothing in `script/test/` should be able to broadcast a live-proxy upgrade.
-    function test_harnessCannotRunTheDeployScript() public {
+    /// @notice Nothing under `script/test/` should be reachable by `forge script` at all. `setUp()` is the
+    ///         barrier that closes every path, including a `--sig` target such as
+    ///         `deployGuardedNavImplementation()`, which is externally reachable and would otherwise deploy a
+    ///         real implementation once the pins match. `run()` is neutralised too.
+    function test_harnessIsNotRunnableAsADeployScript() public {
+        vm.expectRevert("harness: not a deploy script");
+        harness.setUp();
         vm.expectRevert("harness: not a deploy script");
         harness.run();
     }

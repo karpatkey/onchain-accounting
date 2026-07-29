@@ -79,7 +79,11 @@ def canonical(type_key: str, types: dict, depth: int = 0) -> str:
         # Unresolvable: fall back to the raw key rather than silently treating it as equal to anything else.
         return f"<unresolved:{type_key}>"
     if depth >= _MAX_DEPTH:
-        return f"{t.get('label')}|depth-capped"
+        # Fail CLOSED. Returning a label-only signature here made two different types compare EQUAL as long
+        # as their labels matched, and struct labels are stable under interior edits - so a struct nested at
+        # or below the cap could be rewritten wholesale and the comparison would not notice. The sentinel is
+        # unique per call so it can never satisfy an equality test, and compare() reports it explicitly.
+        return f"<depth-capped:{type_key}>"
     parts = [str(t.get("label")), f"b={t.get('numberOfBytes')}", f"e={t.get('encoding')}"]
     if "base" in t:
         parts.append("base=" + canonical(t["base"], types, depth + 1))
@@ -130,6 +134,11 @@ def load_baseline() -> list[dict]:
     return json.loads(BASELINE.read_text())["storage"]
 
 
+def _is_gap(label: str) -> bool:
+    """True for the reserved-space convention used here: `_gap`, `__gap`, `__pricesGap`, `__balancesGap`."""
+    return label.startswith("_") and label.lstrip("_").lower().endswith("gap")
+
+
 def compare(base: list[dict], new: list[dict], notes: list[str] | None = None) -> list[str]:
     """Return incompatibility messages; empty means compatible. `notes` collects benign observations."""
     problems: list[str] = []
@@ -154,11 +163,20 @@ def compare(base: list[dict], new: list[dict], notes: list[str] | None = None) -
             # here — and it cannot misread anything: the array's own slots are untouched, and if a freed
             # slot were already occupied by something else, that something would report MOVED above.
             # A LENGTHENED array is not exempt: it would overrun whatever follows it.
+            # The exemption is for a RESERVED GAP, and reserved-ness is not a shape - it is a promise that
+            # the slots were never written. An earlier version keyed only on "fixed array of the same base
+            # got shorter", which an audit showed also excuses shrinking a LIVE array: the freed slots held
+            # the array's own tail elements, which have no label of their own and so report nothing, and a
+            # new variable placed there silently aliases the old element instead of reading zero. Proven on
+            # a real proxy: `address[8] operators` -> `address[4]` plus a new `treasury` made `treasury`
+            # read `operators[4]`, while every checked variable stayed correct. Gap naming is the only
+            # signal available that the space was reserved rather than used.
             shrunk = (
                 e.get("fixedArrayLen") is not None
                 and got.get("fixedArrayLen") is not None
                 and e.get("fixedArrayBase") == got.get("fixedArrayBase")
                 and got["fixedArrayLen"] < e["fixedArrayLen"]
+                and _is_gap(e["label"])
             )
             if shrunk:
                 notes.append(
@@ -169,6 +187,13 @@ def compare(base: list[dict], new: list[dict], notes: list[str] | None = None) -
                 problems.append(
                     f"RETYPED: `{e['label']}` at slot {e['slot']} was `{e['type']}`, now `{got['type']}`. "
                     f"Same slot, different interpretation of the bytes already in it.")
+
+    for e in list(base) + list(new):
+        if "<depth-capped:" in str(e.get("type", "")):
+            problems.append(
+                f"UNRESOLVABLE: `{e['label']}` at slot {e['slot']} nests deeper than the {_MAX_DEPTH}-level "
+                f"expansion cap, so its interior cannot be compared. Raise _MAX_DEPTH rather than ignoring "
+                f"this - an uncomparable type must not read as an unchanged one.")
 
     # There is deliberately NO "new variable below the highest baseline slot" rule.
     #
@@ -205,7 +230,20 @@ def main() -> int:
         # Compare FIRST. Rewriting the baseline is how a real incompatibility gets laundered into a
         # clean run, and the previous version did it unconditionally, printed nothing about what it was
         # erasing, and exited 0 — so the tree kept no trace that a violation had ever been detected.
-        problems = compare(load_baseline(), new) if BASELINE.is_file() else []
+        # A MISSING baseline is not "no problems". Comparing against nothing made the refusal below
+        # unreachable, so deleting the file was a complete bypass: --regenerate then exited 0, skipped the
+        # disclosure line, and the next plain run reported COMPATIBLE over an incompatible layout. The
+        # resulting git diff looks identical either way, so the console was the only place it showed.
+        if not BASELINE.is_file():
+            if not args.force:
+                print(f"REFUSING TO REGENERATE: {BASELINE.relative_to(REPO)} does not exist, so there is "
+                      f"nothing to compare against and no way to tell a first-time baseline from a deleted "
+                      f"one.\n\nRestore it (`git checkout -- {BASELINE.relative_to(REPO)}`) and re-run, or "
+                      f"pass --force if this genuinely is a new contract's first baseline.")
+                return 1
+            problems = []
+        else:
+            problems = compare(load_baseline(), new)
         if problems and not args.force:
             print(f"REFUSING TO REGENERATE: {len(problems)} incompatibility(ies) would be erased.\n")
             for pr in problems:
@@ -252,12 +290,10 @@ def main() -> int:
 
     print("\nCOMPATIBLE: every baseline variable keeps its slot, offset and type"
           + (f"; {len(added)} added." if added else "; nothing added."))
-    # The token the Solidity gate demands. Printed ONLY on a passing run, and keyed to the baseline file, so
-    # it cannot be guessed as a constant and a copy parked in `.env` stops working the moment the baseline
-    # changes. It attests "the check ran against this baseline", never "the source is compatible".
-    from eth_utils import keccak
-    token = "0x" + keccak(BASELINE.read_bytes()).hex()
-    print(f"\nPass this to the upgrade script:\n  STORAGE_LAYOUT_VERIFIED={token}")
+    # Deliberately no token is printed. The upgrade script RUNS this check (vm.ffi) rather than accepting
+    # an attestation that it was run, because every attestation design tried here was defeated: a literal `1`
+    # and a baseline-file hash were both parkable in a gitignored `.env`, satisfying the gate forever on
+    # trees the check had never seen. Reintroducing a printed token would recreate that.
     return 0
 
 

@@ -386,6 +386,20 @@ def step_1_4(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
                   f"{stale[:6]} (per {', '.join(sources)}) — 03 skip-if-deployed'd them, so they "
                   f"remain bound to the OLD proxy via their immutable NAV. Clear the record "
                   f"(step 1.1) and re-run 03")
+    if old:
+        # `old` being non-empty proves only that the feeds are not generation-1 stale. On a SECOND redeploy,
+        # feeds left bound to the generation-2 proxy are absent from `old`, so nothing is flagged -- and the
+        # warn below is skipped precisely because `old` is non-empty, so the operator gets a silent clean pass
+        # on this axis. Reachable by default: reset_deployment_records refuses to reuse a non-empty archive
+        # tag, so a second redeploy must pass a new --tag, while this tool still defaults to `pre-redeploy`.
+        snap_proxy = (base.get(k.chain_id) or {}).get("proxy")
+        rec_proxy = rec.get("NAVCalculatorProxy")
+        if c.is_address(snap_proxy) and c.is_address(rec_proxy) and lower(snap_proxy) == lower(rec_proxy):
+            k.warn.append(
+                f"the previous-generation feed set was derived from sources whose proxy ({snap_proxy}) is "
+                f"still the one in the record, so this only shows the feeds are not stale by ONE generation. "
+                f"If this is a second redeploy, refresh the snapshot/--archive-tag; the NAV() pointer check "
+                f"below is the evidence that actually binds")
     else:
         k.warn.append(f"no previous-generation feed addresses available for chain {k.chain_id} "
                       f"(no archive/{tag} record and no Custom feeds in the pre-snapshot), so "

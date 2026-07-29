@@ -1,9 +1,9 @@
 # NAV stack — from-scratch redeploy runbook
 
 Ordered, per-chain command sequence for the full redeploy of the NAV stack onto a **new proxy**, with
-the precondition and post-condition of every step. Written 2026-07-27, revised 2026-07-28 against
-`main` @ `2077c82e` — the hardening wave (PRs #161–#183) is **complete**, so the only remaining
-prerequisite is the two-library pin regen (0.3).
+the precondition and post-condition of every step. Written 2026-07-27, revised 2026-07-29 against
+`main` @ `dc5810eb` — the hardening wave is complete and a short merge train still runs ahead of the
+two-library pin regen (0.1, 0.3).
 
 Companion tooling lives in [`preflight/`](preflight/README.md). Everything there is read-only except
 `rehearse_fork.sh`, which only ever broadcasts to a loopback anvil.
@@ -42,9 +42,7 @@ Configured totals, reconciled from config **and** confirmed against the live NAV
 
 Do not start until **all** of these hold.
 
-### 0.1 The hardening wave — **COMPLETE, no longer blocking**
-
-Every item on this list has merged; `main` is at **`2077c82e`** and no wave PR remains open.
+### 0.1 The hardening wave — landed; a short merge train still runs ahead of 0.3
 
 | landed | what it was |
 | --- | --- |
@@ -54,10 +52,34 @@ Every item on this list has merged; `main` is at **`2077c82e`** and no wave PR r
 | #178 | adapter gas caps (`PriceFeedLib._getAdapterPositions`, `NAVCalculator._safeStringArray`, the caller-side `registerAsset` codesize guard) |
 | #181, #183 | `foundry.lock` drift + its CI guard (see 0.4) |
 | #182 | meta-instance gas starvation |
+| #186 | per-leaf gas bound on `positionLabels` |
+| #189 | Morpho existence invariant + a tighter `protocolName` ceiling |
+| #190 | enough runner memory for the `via_ir` build (see 0.8) |
+| #191 | the library-pin assertions in `01` (see 1.2) |
+| #187 | paginated NAV read over a caller-supplied adapter set |
 
-**The only remaining prerequisite is 0.3, the two-library pin regen.** It is deliberately last so it
-is computed against the fully merged tree — which now includes this branch's `DeploySalts.NAV_PROXY`
-bump (0.2), merged in #180 ahead of it for exactly that reason.
+`main` is at **`89274d50`**. What still has to land, **in this order**, before 0.3 can be computed:
+
+| open | relationship to the pin regen |
+| --- | --- |
+| the O(1) registry-getter PR (`_getAssetInfo`, not yet opened) | its effect on each pin must be **measured, not predicted** — see below |
+| **#185, the regen itself (0.3)** | must be computed last, against the final tree |
+
+**Both pinned values will be regenerated, but for two independent reasons — do not attribute either to
+the other.**
+
+- **`PriceFeedLib` moved because #187 edited `src/prices/PriceFeedLib.sol` directly.**
+- **`NAVRegistryLib` was already drifted on `main`** before #187 existed, independently of anything in
+  flight. Measured across four trees — `main` before #187, and #187 at `66490d6a`, `94dc81be` and
+  `0d68fcf4` — its computed value was `0x7Fc30f7a1A3b89040f1CA74CbE71814B4A4dAF04` at **every** one.
+  #187 did not move it. (That figure is cited as evidence of *invariance across four trees*, not as a
+  value to pin: it is a CI reading, and per 0.3 those are not a reliable source for the pin itself.)
+
+This matters because both `LibraryPinConsistency` tests are red simultaneously, which invites the
+conclusion that one in-flight PR moved both. It did not. An earlier revision of this section asserted
+that `INAVCalculator.sol` sits in both libraries' compilation closure and therefore any PR touching it
+moves both pins; #187 touched that file and `NAVRegistryLib` did not move, so **that reasoning is
+wrong and has been removed**. Do not predict a pin movement from the import graph — measure it.
 
 ### 0.2 Bump `DeploySalts.NAV_PROXY` — **CONFIRMED REQUIRED, already done (6 → 7)**
 
@@ -121,9 +143,17 @@ This is a hard gate, not a nicety: `01_2` asserts the computed CREATE2 addresses
 against both (`01_2_DeployNAVImplementation.s.sol:46-68`). A wrong pin reverts `01_2` on every chain
 before it broadcasts anything.
 
-Iterate to a fixpoint against CI's computed (LEFT) value; a 2-cycle has been observed. Always
-`forge clean` first — an incremental `out/` yields a wrong address that looks authoritative. See
-`reference_pricefeedlib_pin_drift` for the full history.
+Iterate to a fixpoint; a 2-cycle has been observed. Always `forge clean` first — an incremental `out/`
+yields a wrong address that looks authoritative.
+
+> **A CI reading is NOT a reliable measurement of a pin value.** Two runs of the same branch 25
+> minutes apart, with a one-markdown-file diff and **zero `.sol` changed**, produced two different
+> computed `PriceFeedLib` addresses (`0x00a3AFAC…` and `0xD477d7e2…`), both runs' `headSha` confirmed
+> via the API. Cause not yet settled — `via_ir` non-determinism or a CI cache effect; the regen
+> session is running back-to-back local clean builds to pin it down. Until that is resolved, **the
+> regen's own local clean-build measurement is the only source this runbook or `LibraryPins.sol`
+> should take a value from.** No pin address is quoted anywhere in this runbook as authoritative for
+> that reason. See `reference_pricefeedlib_pin_drift` for the full history.
 
 ### 0.4 Submodules at the recorded commits — **root cause fixed, keep the check**
 
@@ -174,8 +204,20 @@ replaced with real ones before broadcasting.
 python3 script/deploy/preflight/deployer_balances.py --json topup.json
 ```
 
-As of 2026-07-27 only **linea (59144)** is short: ~0.0036 ETH to
-`0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72`. Re-check on the day.
+Re-measured **2026-07-29, after the linea top-up landed**: every priced chain is funded, linea
+included (0.03066 ETH against an estimated 0.02800). Re-check on the day — linea had already been
+topped up once on 2026-07-27 without clearing, so measure rather than assume.
+
+**Some chains report `UNPRICEABLE`, which is a third state and not a pass.** Gnosis, scroll and
+intermittently plasma quote an `eth_gasPrice` far below any usable price (gnosis ~5–10k wei, scroll
+~120k), so `need` computes to roughly zero and `balance >= need` is true for *any* balance. The test
+is a tautology and its `True` means nothing, so the script reports `sufficient = None`, lists those
+chains under `NOT PRICED`, and exits non-zero. The estimate is deliberately **not** inflated to
+compensate: a floor generous enough to cover gnosis over-states the cheap rollups by three to four
+orders of magnitude, and a 1 gwei floor was measured reporting `TOP UP` on 11 of 24 amply-funded
+chains. Funding on those chains has been confirmed sufficient out of band; the state exists so nobody
+later reads a green row as evidence the chain was checked. Hemi's fee floor (1.8) is the same species
+with a known workaround.
 
 ### 0.7 Capture the pre-deploy production state — **irreplaceable, do it before anything else**
 
@@ -237,6 +279,21 @@ BROADCAST="--rpc-url $RPC --broadcast --account my-deployer --password-file <pwf
 > feeds against the old NAV and register adapters on the old proxy. Nothing errors.
 > (The per-adapter writes in `03`/`04` are NOT gated — they always write.)
 
+> **Gate every step on its post-condition, not on its exit code.** Each step below states one, and
+> `verify_step.py` asserts them:
+>
+> ```bash
+> python3 script/deploy/preflight/verify_step.py 1.2            # the whole 24-chain scope
+> python3 script/deploy/preflight/verify_step.py 1.6 1 100      # named chains
+> python3 script/deploy/preflight/verify_step.py all 1          # every step, one chain
+> ```
+>
+> It exits non-zero on the first real problem and treats an **unreachable** chain as a failure, not a
+> pass, so "no problem found" cannot come from a chain that was never read. It reads only the
+> deployment records and the chains — no `forge build` — so it works *between* steps; code identity is
+> `bytecode_audit.py`'s job (2.2), not this one's. Do not advance to the next step until the current
+> one reports `PASS` on every chain in scope.
+
 ### 1.1 Clear the deployment record — otherwise 03 and 04 are silent no-ops
 
 `03_DeployPriceFeeds` and `04_DeployBalanceAdapters` are skip-if-already-deployed. Every feed's
@@ -265,7 +322,10 @@ pointer. The pre-clear record is archived to `preflight/archive/pre-redeploy/<CI
 "old addresses" input for the before/after audits.
 
 - **Precondition:** `git status` clean; snapshot 0.7 captured.
-- **Post-condition:** `jq '.NAVCalculatorProxy, .balanceAdapters.ERC20Default' script/config/deployments/$CID.json` → `""`.
+- **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.1` — every key in the NAV
+  stack blank, the bridge keys still populated, and a rollback archive present for every chain
+  (without it, `--restore` has nothing to put back). Or by hand:
+  `jq '.NAVCalculatorProxy, .balanceAdapters.ERC20Default' script/config/deployments/$CID.json` → `""`.
 
 ### 1.2 `01_2_DeployNAVImplementation` — libraries + NAV implementation
 
@@ -290,9 +350,11 @@ PERSIST_DEPLOYMENTS=1 forge script script/deploy/01_2_DeployNAVImplementation.s.
 `01_2` deploys exactly the NAV subset and fails fast on a bad pin.
 
 - **Precondition:** pins regenerated (0.3); record cleared (1.1).
-- **Post-condition:** `PriceFeedLib`, `NavRegistryLib`, `NAVCalculatorImplementation` populated in
-  `deployments/$CID.json` and **identical on every chain** (CREATE2). The four `require`s in `01_2`
-  passed, which is the pin check.
+- **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.2` — all three addresses
+  populated, each with code on-chain, the two recorded library addresses equal to the pins (which is
+  what the impl is linked against), the two canonical pin copies agreeing with each other, and all
+  three **identical on every chain**, since CREATE2 means they must be. The four `require`s in `01_2`
+  passing is the pin check on the deploy side; this is the same check from the outside.
 
 ### 1.3 `02_2_DeployNAVProxy` — the new proxy + ERC20Default
 
@@ -306,13 +368,18 @@ admin. `initialize()` mints the fresh `ERC20DefaultBalanceAdapter` via
 `NAVRegistryLib.deployDefaultAdapter` (`NAVCalculator.sol:78`) and `02_2` records it.
 
 - **Precondition:** 1.2 done; `DeploySalts.NAV_PROXY` bumped if 0.2 said so.
-- **Post-condition:**
+- **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.3` — the proxy differs from
+  the pre-deploy one and is identical on all 24 chains, its EIP-1967 implementation slot equals the
+  recorded impl, `version()` is 1, `erc20DefaultBalanceAdapter()` is a *fresh* address that also
+  matches the record (it is minted inside `initialize()`, so an unchanged one means the proxy is the
+  old one), and `admin`/`manager` hold `DEFAULT_ADMIN_ROLE` + `MANAGER` while `securityCouncil` holds
+  neither — step 07 is excluded from this deploy, so a handoff here would be a mistake, not progress.
+  Or by hand:
   ```bash
   cast call $PROXY 'erc20DefaultBalanceAdapter()(address)' --rpc-url $RPC   # != 0x41967559D0a20Ad102F6e27b7723b1963390aD75
   cast call $PROXY 'version()(uint64)' --rpc-url $RPC                       # 1
   cast call $PROXY 'hasRole(bytes32,address)(bool)' 0x00…00 $DEPLOYER --rpc-url $RPC  # true
   ```
-  The new proxy address must differ from `0x80eD5cc6…` and be identical on all 24 chains.
 
 > **There is no `initialAssets` argument.** `initialize(admin_, chainlinkL2SequencerUptimeFeed_,
 > nativeTokenSymbol_)` hardcodes the ERC20Default seed to `[NATIVE_ADDRESS]`
@@ -342,8 +409,10 @@ address, held as `INAVCalculator public immutable NAV` (ADR 0019) — which is p
 proxy invalidates every existing feed.
 
 - **Precondition:** 1.1 cleared `customPriceFeeds.*`; 1.3 wrote the NEW `NAVCalculatorProxy`.
-- **Post-condition:** feed count in `deployments/$CID.json .customPriceFeeds` matches the table
-  above, and every address differs from the archived pre-clear record.
+- **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.4` — the feed count matches
+  the table above, every feed has code, and every feed's `NAV()` immutable points at the **new** proxy.
+  That last one is the check that matters: a feed is otherwise indistinguishable from a correct one
+  while still pricing against the abandoned NAV.
 
 ### 1.5 `RegisterAssets` — assets + feeds on the new NAV
 
@@ -364,8 +433,10 @@ checkout.
 - **Precondition:** **1.4 done** — Custom feeds resolve through
   `deployments/<id>.json .customPriceFeeds.<name>`, and without them 20 of mainnet's 43 assets are
   silently skipped (see the authoritative order at the top of section 1).
-- **Post-condition:** `cast call $PROXY 'getAssetCount()(uint256)'` equals the configured asset count
-  (43 / 11 / 11 / 6 / 11 / 5 / 6 for chains 1 / 42161 / 8453 / 10 / 100 / 137 / 56).
+- **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.5` — `getAssetCount()` equals
+  the configured count (43 / 11 / 11 / 6 / 11 / 5 / 6 for chains 1 / 42161 / 8453 / 10 / 100 / 137 /
+  56) **and** the registered address set equals the configured one, so one asset silently substituted
+  for another cannot pass on the count alone.
 
 ### 1.6 `04_DeployBalanceAdapters` — adapters + assistants
 
@@ -377,8 +448,11 @@ Deploys plain + meta adapters via plain `new` (CREATE), then the delegatecall as
 `immutable ADAPTER` must point at the **new** assisted adapters.
 
 - **Precondition:** 1.1 cleared `balanceAdapters.*` **and** the three `*Assistant` keys.
-- **Post-condition:** adapter count per chain = 27 / 8 / 7 / 4 / 3 / 2 / 1 for
-  1 / 42161 / 8453 / 100 / 10 / 137 / 56 (ERC20Default included).
+- **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.6` — adapter count per chain
+  = 27 / 8 / 7 / 4 / 3 / 2 / 1 for 1 / 42161 / 8453 / 100 / 10 / 137 / 56 (ERC20Default included),
+  every adapter has code, and **each assistant's `ADAPTER()` resolves to its paired assisted adapter**.
+  Run it on chains 1 and 100: against the live stack it reproduces all four orphaned pairings from
+  2.1, so a clean report here is the proof the swap was rebuilt rather than inherited.
 
 ### 1.7 `06_Configure` — register adapters, reconcile meta instances
 
@@ -395,9 +469,10 @@ configuration` (`06:37`) and skips the entire bridge block. The deferred bridge 
 touched at all by this step, not merely touched idempotently.
 
 - **Precondition:** 1.5 and 1.6 done.
-- **Post-condition:** `getAdapterCount()` matches 1.6, and the summed `getMetaInstances()` over all
-  registered adapters equals the configured set — **110 across the 7 configured chains**
-  (66 / 16 / 16 / 4 / 4 / 4 / 0).
+- **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.7` — `getAdapterCount()`
+  matches 1.6, every recorded adapter reports `isAdapterRegistered`, nothing is registered that is not
+  in the record, and each meta adapter's `getMetaInstances()` **set equals** its configured coordinate
+  set, summing to **110 across the 7 configured chains** (66 / 16 / 16 / 4 / 4 / 4 / 0).
 
 > **Watch for the silent skip.** `06` does `if (deployed == address(0)) continue;` (`06:113` for
 > meta, same shape for plain), so an adapter that failed to deploy is skipped **without an error**.
@@ -406,7 +481,10 @@ touched at all by this step, not merely touched idempotently.
 
 > **Operator check during re-registration (from #172).** Verify each registered instance resolves as
 > intended rather than silently masking a misconfiguration. In particular, Aave V3 exposes two
-> DataProviders; registering both double-counts positions.
+> DataProviders; registering both double-counts positions. `verify_step.py 1.7` compares instance
+> **sets**, not counts, so a wrong-but-same-sized instance set fails — but it compares against
+> *config*, so it cannot tell you the config itself named the wrong DataProvider. That judgement stays
+> human.
 
 ### 1.8 Chain-specific workarounds
 
@@ -509,11 +587,18 @@ deployer.
 ```bash
 forge clean && forge build
 python3 script/deploy/preflight/bytecode_audit.py --self-test
-python3 script/deploy/preflight/bytecode_audit.py --json post-deploy-bytecode.json
+python3 script/deploy/preflight/bytecode_audit.py --require-current --json post-deploy-bytecode.json
+python3 script/deploy/preflight/verify_step.py all          # every step's post-condition, all 24
 ```
 
 Every address in every `deployments/<chainId>.json` must report `CURRENT`. Any `STALE` is an address
 still running code this build does not produce — i.e. something was missed.
+
+**`--require-current` is what makes this a gate.** Without it the audit prints its findings and exits
+0 regardless, which is right for the *pre*-deploy run — where 155 `STALE` out of 231 was the expected
+answer, not a failure — and wrong here. With it, any non-`CURRENT` address *or any unreachable chain*
+exits 1: a chain that was never read has not passed. Pair it with `verify_step.py all`, which asserts
+the shape (counts, sets, pointers, roles) that identical bytecode alone does not guarantee.
 
 ### 2.3 Before/after NAV comparison
 
@@ -587,13 +672,25 @@ to the new proxy. The old stack keeps answering until they do; nothing needs unr
 > deployed, skipping`. In the fork rehearsal, `RegisterAssets`, `04` and `06` all reported success
 > having done nothing, purely because `01_2` had reverted upstream. Always verify the
 > post-condition counts, never the exit code. `rehearse_fork.sh` now treats those phrases as
-> failures.
+> failures, and `verify_step.py <step>` asserts the post-conditions themselves.
+>
+> **The preflight tools have the same failure mode, and it was real.** They defaulted their chain
+> scope to `chainlib.deployed_chain_ids()`, which infers scope from a populated `NAVCalculatorProxy` —
+> the very key step 1.1 blanks on all 24 chains. Post-1.1 that returns `[]`, so
+> `preflight_config.py` reported `0 error(s) across 0 chain(s)` and exited 0, and
+> `reset_deployment_records.py --restore <tag>` with no chain arguments restored **nothing** and
+> exited 0 — the rollback failing silently at the one moment it is needed. Scope now comes from
+> `chainlib.resolve_chains`, which prefers the committed `snapshots/pre/index.json` (a file the deploy
+> cannot invalidate) and **exits 2 rather than resolving to an empty list**. Every tool prints the
+> scope it resolved and where from; read that line.
 
 | symptom | cause | fix |
 | --- | --- | --- |
 | `01_2` reverts `… CREATE2 addr != foundry.toml pin` | library bytecode drifted from the pin | regenerate both pins against the final tree (0.3); never from an incremental build |
 | `01` "succeeds" but the NAV reverts on `initialize` | historical: `01` had no pin assertions and deployed the libraries at the *computed* addresses while the impl links the *pinned* ones. `01` now asserts the pins, so this fails fast instead | if it still happens, the pins are stale — regenerate, do not work around |
-| a step exits 0 having done nothing | unmet precondition, handled by an early `return` | check the post-condition, not the exit code |
+| a step exits 0 having done nothing | unmet precondition, handled by an early `return` | `verify_step.py <step>`; check the post-condition, not the exit code |
+| a preflight tool reports `0 … across 0 chain(s)` | its chain scope resolved to empty | it now exits 2 instead; if you see this on an old checkout, pass the chain ids explicitly |
+| `--restore` prints `restored 0 record(s)` | same empty-scope bug, on the rollback path | pass the chain ids explicitly, and check `archive/<tag>/` actually holds the records |
 | `01_2` reverts `NAVCalculator impl not linked against pinned …` | `foundry.toml [libraries]` drifted from `LibraryPins` | make them agree, rebuild |
 | `02_2` reverts inside `AtomicNAVProxyDeployer` | proxy address unchanged → code already there → `upgradeToAndCall` with no admin | bump `DeploySalts.NAV_PROXY` (0.2), then re-pin (0.3) |
 | `03`/`04` log "Already deployed at:" and deploy nothing | the record was not cleared | run 1.1, re-run |
@@ -602,6 +699,7 @@ to the new proxy. The old stack keeps answering until they do; nothing needs unr
 | `RegisterAssets` `MemoryOOG` on mainnet | default memory limit | `FOUNDRY_PROFILE=slow` |
 | `RegisterAssets` logs `[skip] primary feed unresolved (deploy it first)` | it ran before `03`, so Custom feeds are not in the record | run `03` first; re-run `RegisterAssets` (idempotent) and confirm `getAssetCount()` |
 | `vm.writeJson: failed to open .../safe-transactions/<id>-register-assets.json` | the directory does not exist; on-chain writes already succeeded | `mkdir -p safe-transactions`, re-run |
-| addresses differ per chain that should be identical | a chain ran with a different build or submodule set | 0.4, then rebuild and redeploy that chain |
+| addresses differ per chain that should be identical | a chain ran with a different build or submodule set | 0.4, then rebuild and redeploy that chain — `verify_step.py 1.2`/`1.3` compares across chains and names the odd one out |
+| an assistant's `ADAPTER()` is not its paired adapter | the `*Assistant` key was not cleared, so `04` skipped the redeploy | clear it (1.1), re-run 1.6, re-check with `verify_step.py 1.6` |
 | hyperevm impl deploy "exceeds block gas limit" | small blocks | enable big blocks (1.8) |
 | hemi tx rejected on price | fee floor | raise `--with-gas-price` (1.8) |

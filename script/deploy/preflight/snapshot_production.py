@@ -320,7 +320,8 @@ def main() -> int:
     out_dir = Path(args.out) if "/" in args.out else c.SNAPSHOT_DIR / args.out
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    chains = args.chains or c.deployed_chain_ids()
+    chains, scope_src = c.resolve_chains(args.chains)
+    print(f"scope: {len(chains)} chain(s) from {scope_src}")
 
     def one(cid: int):
         url, note, rejected = c.probe_rpc(cid)
@@ -357,12 +358,41 @@ def main() -> int:
                 "excludedFromDefaultAdapter": snap.get("excludedFromDefaultAdapter"),
                 "accountCount": len(snap["accounts"]), "errorCount": nerr,
             })
-    index.sort(key=lambda r: r["chainId"])
+    # MERGE into any existing index rather than replacing it. Overwriting means a targeted re-run --
+    # `snapshot_production.py 100` to fill one gap, which the README documents -- would shrink the
+    # index to a single chain. Combined with the index being cross-checked against the declared
+    # scope, that silently narrowed everything downstream. A capture must only ever ADD knowledge.
+    idx_path = out_dir / "index.json"
+    merged: dict[int, dict] = {}
+    prior_failures: dict[int, dict] = {}
+    if idx_path.is_file():
+        try:
+            prior = json.loads(idx_path.read_text())
+            merged = {int(e["chainId"]): e for e in prior.get("chains", []) if e.get("chainId")}
+            prior_failures = {int(e["chainId"]): e for e in prior.get("failures", [])
+                              if e.get("chainId")}
+        except Exception as e:  # noqa: BLE001 — a corrupt index must not silently become an empty one
+            print(f"ERROR: {idx_path} exists but could not be parsed ({e}). Refusing to overwrite it "
+                  f"— move it aside deliberately if you meant to start fresh.")
+            return 2
+    replaced = sorted(set(merged) & {r["chainId"] for r in index})
+    for r in index:
+        merged[r["chainId"]] = r
+        prior_failures.pop(r["chainId"], None)      # captured now, no longer a failure
+    for f in failures:
+        prior_failures[f["chainId"]] = f
 
-    (out_dir / "index.json").write_text(
-        json.dumps({"chains": index, "failures": failures}, indent=1) + "\n")
-    print(f"\nwrote {len(index)} snapshots to {out_dir}"
+    chains_out = [merged[k] for k in sorted(merged)]
+    failures_out = [prior_failures[k] for k in sorted(prior_failures)]
+    idx_path.write_text(
+        json.dumps({"chains": chains_out, "failures": failures_out}, indent=1) + "\n")
+    carried = len(chains_out) - len(index)
+    print(f"\nwrote {len(index)} snapshot(s) to {out_dir}"
+          + (f"; refreshed {len(replaced)} existing" if replaced else "")
+          + (f"; carried {carried} chain(s) forward from the previous index" if carried > 0 else "")
           + (f"; {len(failures)} chain(s) not captured" if failures else ""))
+    print(f"index.json now covers {len(chains_out)} chain(s)"
+          + (f", {len(failures_out)} outstanding failure(s)" if failures_out else ""))
     return 1 if failures else 0
 
 

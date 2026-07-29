@@ -1648,6 +1648,21 @@ library PriceFeedLib {
         AddressCheckLib.requireContract(priceFeed, "priceFeed");
         if (priceType == IPrices.PriceType.Custom) {
             if (!priceFeed.supportsInterface(type(ICustomPriceFeed).interfaceId)) revert IPrices.InvalidPriceOracle();
+            // A custom feed prices exactly ONE asset (1:1 contract-to-asset, see PRICE_ADAPTERS.md) and reports which
+            // one via `underlyingAssetSupported()`. Nothing else in the system reads that value, so without this check
+            // registering feed A for asset B succeeds silently and every B position is then priced at A's price
+            // forever — a plausible-looking number, `stale = false`, `irregular = false`, no on-chain trace. Feeds are
+            // resolved by STRING KEY from config (`nav-config[asset].priceFeeds[].feed` →
+            // `deployments.customPriceFeeds[<name>]`) across near-identical names (`ezETH`/`ezETHCrossRate`,
+            // `NXM`/`wNXM`, `weETH_L2`/`weETHCrossRate`), which is exactly where the two get crossed. The feed already
+            // knows the answer; ask it.
+            //
+            // Deliberately a direct high-level call, not `try`/`catch`: a feed that claims `ICustomPriceFeed` via
+            // `supportsInterface` (checked above) but cannot answer `underlyingAssetSupported()` is broken, and
+            // failing the registration is the safe direction. Matches the AggregatorV3 branch below, which likewise
+            // lets a malformed feed revert rather than swallowing it.
+            address feedAsset = ICustomPriceFeed(priceFeed).underlyingAssetSupported();
+            if (feedAsset != token) revert IPrices.CustomFeedAssetMismatch(token, priceFeed, feedAsset);
         } else if (
             priceType == IPrices.PriceType.Chainlink || priceType == IPrices.PriceType.Redstone
                 || priceType == IPrices.PriceType.API3

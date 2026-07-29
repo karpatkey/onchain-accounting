@@ -15,7 +15,10 @@ import {
 } from "test/mocks/price_oracles.sol";
 
 contract Mock_CustomPriceFeedZeroUpdatedAt is Mock_CustomPriceFeed {
-    constructor() Mock_CustomPriceFeed("zero_upd", address(0x1234), 100_000_000, 8) {}
+    /// @param asset_ The asset this feed prices. Registration enforces
+    ///        `underlyingAssetSupported() == asset` (IPrices.CustomFeedAssetMismatch), so it must be the asset the
+    ///        test registers this feed for.
+    constructor(address asset_) Mock_CustomPriceFeed("zero_upd", asset_, 100_000_000, 8) {}
 
     function latestRoundData() external pure override returns (uint80, int256, uint256, uint256, uint80) {
         return (0, 0, 0, 0, 0); // updatedAt = 0 → sentinel: treated as block.timestamp-1
@@ -206,6 +209,56 @@ contract PricesTest is Test {
     function test_RevertIf_CheckCustomOracleSupport_InvalidOracleTypeCM() public {
         vm.expectRevert();
         manager.checkPriceOracleSupport(address(usdc), address(oracleaBuidl), IPrices.PriceType.Custom);
+    }
+
+    // ============================================
+    // Custom feed / asset binding (CustomFeedAssetMismatch)
+    // ============================================
+    // A custom feed prices exactly ONE asset and reports which via underlyingAssetSupported(). Registering feed A for
+    // asset B used to succeed silently and price every B position at A's price forever — plausible number,
+    // stale=false, no on-chain trace. Feeds are resolved by STRING KEY from config across near-identical names
+    // (ezETH/ezETHCrossRate, NXM/wNXM, weETH_L2/weETHCrossRate), which is exactly where the two get crossed.
+
+    /// @notice Registering a custom feed for an asset it does not price must revert, naming both assets.
+    function test_RevertIf_setPriceFeed_customFeedPricesDifferentAsset() public {
+        // oracleusdc reports underlyingAssetSupported() == usdc; register it for buidl instead.
+        vm.expectRevert(
+            abi.encodeWithSelector(IPrices.CustomFeedAssetMismatch.selector, buidl, address(oracleusdc), usdc)
+        );
+        manager.setPriceFeed(buidl, address(oracleusdc), type(uint256).max, IPrices.PriceType.Custom);
+    }
+
+    /// @notice The read-only validator rejects the same mismatch, so MANAGER tooling can pre-flight a registration
+    ///         without sending a transaction.
+    function test_RevertIf_checkPriceOracleSupport_customFeedPricesDifferentAsset() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(IPrices.CustomFeedAssetMismatch.selector, buidl, address(oracleusdc), usdc)
+        );
+        manager.checkPriceOracleSupport(buidl, address(oracleusdc), IPrices.PriceType.Custom);
+    }
+
+    /// @notice A feed that reports the zero address as its underlying is rejected rather than silently accepted. This
+    ///         is the shape a stub/placeholder feed has, and it previously registered cleanly for any asset.
+    function test_RevertIf_setPriceFeed_customFeedReportsZeroUnderlying() public {
+        Mock_CustomPriceFeed zeroUnderlying = new Mock_CustomPriceFeed("no-asset", address(0), 100_000_000, 8);
+        vm.expectRevert(
+            abi.encodeWithSelector(IPrices.CustomFeedAssetMismatch.selector, usdc, address(zeroUnderlying), address(0))
+        );
+        manager.setPriceFeed(usdc, address(zeroUnderlying), type(uint256).max, IPrices.PriceType.Custom);
+    }
+
+    /// @notice Positive control: the matching feed still registers, and the guard is not merely rejecting everything.
+    function test_setPriceFeed_customFeedMatchingAssetSucceeds() public {
+        manager.setPriceFeed(usdc, address(oracleusdc), type(uint256).max, IPrices.PriceType.Custom);
+        assertEq(manager.getPriceFeedCount(usdc), 1, "matching custom feed registers");
+        assertEq(manager.getPriceFeedAt(usdc, 0).priceFeed, address(oracleusdc));
+    }
+
+    /// @notice The guard is scoped to Custom feeds — an AggregatorV3 feed has no `underlyingAssetSupported()` and must
+    ///         still register for any asset (Chainlink feeds are not asset-bound in our config model).
+    function test_setPriceFeed_chainlinkFeedIsNotAssetBound() public {
+        manager.setPriceFeed(usdc, address(oracleaBuidl), type(uint256).max, IPrices.PriceType.Chainlink);
+        assertEq(manager.getPriceFeedCount(usdc), 1, "Chainlink feeds are not bound to a single asset");
     }
 
     // ============================================
@@ -435,7 +488,7 @@ contract PricesTest is Test {
         // Treated as block.timestamp-1 so it passes the staleness gate (survives) but
         // loses to any feed that reports a real on-chain update timestamp.
         vm.warp(1000);
-        Mock_CustomPriceFeedZeroUpdatedAt customZero = new Mock_CustomPriceFeedZeroUpdatedAt();
+        Mock_CustomPriceFeedZeroUpdatedAt customZero = new Mock_CustomPriceFeedZeroUpdatedAt(buidl);
         PricesHarness h = new PricesHarness(address(0));
         h.setPriceFeed(buidl, address(customZero), type(uint256).max, IPrices.PriceType.Custom);
 

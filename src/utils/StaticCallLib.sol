@@ -19,8 +19,10 @@ import {GasStipendLib} from "src/utils/GasStipendLib.sol";
 ///
 ///      **Three properties make the "never reverts" claim actually hold** for {safeUint}, {safeAddr},
 ///      {safeAddrStrict} and {probeWord}, and all three are load-bearing. **{probeWordMetered} is deliberately
-///      NOT one of these helpers** — it neither bounds gas the same way nor never-reverts-by-construction; see
-///      its own docblock before routing anything through it:
+///      NOT one of these helpers**: it keeps properties 2 and 3 but drops property 1, forwarding 63/64 of the
+///      frame instead of a fixed ceiling. It still does not revert *itself* — nothing in its body can — but it
+///      is the one helper whose contract asks the CALLER to revert, on `starved`, so a read routed through it
+///      is no longer one that cannot fail. Read its own docblock before routing anything through it:
 ///
 ///      1. **Bounded gas** ({PROBE_GAS}). Without a stipend a callee that loops forever consumes 63/64 of
 ///         whatever the caller had, so one malformed instance starves every read that follows it — a fail-open

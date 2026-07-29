@@ -375,7 +375,9 @@ contract StaticCallLibTest is Test {
     }
 
     // ---------------------------------------------------------------------------------------------------------
-    // probeWordMetered — the accounting-read helper, which does NOT share the three properties above.
+    // probeWordMetered — the accounting-read helper. It keeps properties 2 and 3 above (the fixed 32-byte
+    // output window, and mask-don't-decode) and deliberately drops property 1: it forwards 63/64 of the frame
+    // rather than a fixed ceiling, and reports whether the callee ate it.
     // ---------------------------------------------------------------------------------------------------------
 
     /// @notice A starved callee is reported `starved`, separately from `ok`.

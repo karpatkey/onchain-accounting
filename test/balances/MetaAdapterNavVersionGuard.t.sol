@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import {Test} from "forge-std/Test.sol";
 import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {NotAContract} from "src/errors.sol";
 
 /// @notice A NAVCalculator that predates `getRegisteredAsset` — it serves the array getter and nothing else.
 /// @dev Stands in for a proxy running an implementation from before that getter existed. No fallback, so the
@@ -23,6 +24,30 @@ contract NewNav {
 
     function getRegisteredAsset(address) external pure returns (INAVCalculator.Asset memory a, bool found) {
         return (a, false);
+    }
+}
+
+/// @notice Success, zero returndata for ANY selector — the shape that defeated the first version of the guard.
+/// @dev Not a strawman: a Safe with no fallback handler, a permissive router, and several proxy patterns all
+///      answer an unknown selector this way. `staticcall` reports success, so a guard that checks only the
+///      success flag accepts it and pins it forever.
+contract SilentFallbackNav {
+    fallback() external {}
+}
+
+/// @notice A NAVCalculator with a real registry, so "empty" and "populated but missing" are distinguishable.
+/// @dev The success mock returns a hard-coded `(a, false)` regardless of argument, which cannot tell those two
+///      apart — the distinction the empty-registry test exists to make.
+contract RegistryNav {
+    mapping(address => bool) internal _registered;
+
+    function register(address asset) external {
+        _registered[asset] = true;
+    }
+
+    function getRegisteredAsset(address asset) external view returns (INAVCalculator.Asset memory a, bool found) {
+        found = _registered[asset];
+        if (found) a.asset = asset;
     }
 }
 
@@ -72,32 +97,57 @@ contract ProbeMetaAdapter is MetaBalanceAdapter {
 ///      does when it is NOT rejected.
 contract MetaAdapterNavVersionGuardTest is Test {
     function test_deployingAgainstAnOldNavCalculatorReverts() public {
-        OldNav old = new OldNav();
-        vm.expectRevert(abi.encodeWithSelector(MetaBalanceAdapter.NAVCalculatorTooOld.selector, address(old)));
-        new ProbeMetaAdapter(address(old));
+        OldNav nav = new OldNav();
+        vm.expectRevert(abi.encodeWithSelector(MetaBalanceAdapter.NAVCalculatorTooOld.selector, address(nav)));
+        new ProbeMetaAdapter(address(nav));
     }
 
     function test_deployingAgainstACapableNavCalculatorSucceeds() public {
-        NewNav nu = new NewNav();
-        ProbeMetaAdapter a = new ProbeMetaAdapter(address(nu));
-        assertEq(address(a.NAV_CALCULATOR()), address(nu), "a capable NAVCalculator is accepted and pinned");
+        NewNav nav = new NewNav();
+        ProbeMetaAdapter meta = new ProbeMetaAdapter(address(nav));
+        assertEq(address(meta.NAV_CALCULATOR()), address(nav));
+    }
+
+    /// @notice Success with EMPTY returndata must be rejected. This is the case the first version of the guard
+    ///         let through, and letting it through reinstated the exact over-report the guard exists to prevent.
+    /// @dev Fails if the `ret.length < 64` clause is removed — that mutation was run to confirm it, since a
+    ///      `staticcall` to this mock returns `ok == true` and the success flag alone therefore proves nothing.
+    function test_successWithEmptyReturndataIsRejected() public {
+        SilentFallbackNav nav = new SilentFallbackNav();
+        vm.expectRevert(abi.encodeWithSelector(MetaBalanceAdapter.NAVCalculatorTooOld.selector, address(nav)));
+        new ProbeMetaAdapter(address(nav));
     }
 
     /// @notice The guard must not reject a NAVCalculator whose registry is EMPTY. The probe passes `address(0)`,
-    ///         which resolves to `(zeroed, false)` — a legitimate answer, not a failure.
-    /// @dev Worth its own test because the obvious way to write this guard — probing with a real asset, or treating
-    ///      a `false` result as failure — would reject every fresh deployment, where the NAV proxy exists but no
-    ///      assets are registered yet. That is the ordinary state during `01_2` → `04`.
+    ///         which is never a registered asset, so "not found" is the healthy answer and must not read as
+    ///         "cannot serve".
+    /// @dev Uses a registry-backed mock, deliberately: the plain success mock returns a hard-coded `(a, false)`
+    ///      whatever it is asked, so it cannot distinguish an empty registry from a populated one that lacks the
+    ///      probe key — and an earlier version of this test, built on that mock, was a byte-identical duplicate
+    ///      of the success case above. Both states are asserted here so the case is not vacuous.
     function test_anEmptyRegistryIsNotTreatedAsAnOldNavCalculator() public {
-        NewNav nu = new NewNav(); // getRegisteredAsset returns found == false for everything
-        ProbeMetaAdapter a = new ProbeMetaAdapter(address(nu));
-        assertEq(address(a.NAV_CALCULATOR()), address(nu), "found == false is an answer, not an absence");
+        RegistryNav empty = new RegistryNav();
+        ProbeMetaAdapter a = new ProbeMetaAdapter(address(empty));
+        assertEq(address(a.NAV_CALCULATOR()), address(empty), "empty registry rejected");
+
+        RegistryNav populated = new RegistryNav();
+        populated.register(address(0xBEEF));
+        ProbeMetaAdapter b = new ProbeMetaAdapter(address(populated));
+        assertEq(address(b.NAV_CALCULATOR()), address(populated), "populated registry rejected");
+
+        (, bool found) = populated.getRegisteredAsset(address(0));
+        assertFalse(found, "probe key must be absent, or the test proves nothing");
     }
 
-    /// @notice A non-contract is still rejected by the pre-existing `AddressCheckLib` check, and that error is kept
-    ///         distinct from the version error so an operator can tell a typo from a stale implementation.
+    /// @notice A non-contract is rejected by `AddressCheckLib`, NOT by the probe, and the two errors are kept
+    ///         distinct so an operator can tell a typo from a stale implementation.
+    /// @dev Asserts the SPECIFIC error. A bare `vm.expectRevert()` — which is what this test used to do — passes
+    ///      on any revert including `NAVCalculatorTooOld`, so it asserted the opposite of the distinctness it
+    ///      claimed. That distinction is load-bearing here: a `staticcall` to a codeless account returns
+    ///      SUCCESS, so the probe alone cannot reject an EOA and `requireContract` is what does the work.
     function test_nonContractStillRejectedDistinctly() public {
-        vm.expectRevert();
-        new ProbeMetaAdapter(address(0xdead));
+        address notAContract = address(0xdead);
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "NAVCalculator"));
+        new ProbeMetaAdapter(notAContract);
     }
 }

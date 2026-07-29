@@ -116,13 +116,47 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     ///      inside the constructor. `address(0)` is a deliberately inert probe argument: on a NAVCalculator that
     ///      has the getter it resolves to `(zeroed, false)` without reverting, so a healthy deploy always passes.
     ///
+    ///      **WHAT THIS GUARD DOES NOT COVER.** It runs once, at construction, so it establishes the pairing was
+    ///      sound *at deploy time* and nothing more. Three limits, stated because the routes above are easy to
+    ///      read as all being closed by it:
+    ///
+    ///      1. **A post-construction rollback is not detectable here.** Meta-adapters are immutable and
+    ///         NAVCalculator is UUPS-upgradeable, so downgrading the implementation after adapters exist leaves
+    ///         this guard long since passed and every later `getAdapterPositions` silently returning zero legs.
+    ///         Of the three routes above, this one **survives the guard**; the other two do not. Catching it would
+    ///         need a read-time probe on the hot path, which is not affordable — the fan-out already runs under a
+    ///         per-instance gas stipend.
+    ///      2. **Already-deployed adapters are never re-probed.** `04_DeployBalanceAdapters._deployIfEnabled` is
+    ///         skip-if-deployed and `06_Configure` re-registers straight from the deployments JSON without any
+    ///         version check, so re-running the deploy scripts over an existing fleet does not exercise this
+    ///         constructor at all. It binds the *next* adapter deployed, not the ones already out there. (The
+    ///         24-chain redeploy clears the records at runbook step 1.1, so every adapter there IS freshly
+    ///         constructed and does pass through this guard.)
+    ///      3. **Pointing at the NAVCalculator implementation instead of its proxy passes.** The implementation
+    ///         genuinely serves the selector; it simply has empty storage, so every lookup returns
+    ///         `found == false` and the adapter reports zero legs just as silently. The probe cannot tell the two
+    ///         apart, and requiring a non-zero EIP-1967 slot would reject the plain (non-proxy) NAVCalculators
+    ///         that unit tests construct against. `verify_step.py 1.3` comparing the recorded implementation
+    ///         against the proxy's EIP-1967 slot is the check that catches this one.
+    ///
     ///      Costs zero NAVCalculator bytecode — the budget under pressure is that contract's (181 bytes under
     ///      EIP-170), not the adapters', which carry 14-19 KB of margin each.
     constructor(address navCalculator_) {
         AddressCheckLib.requireContract(navCalculator_, "NAVCalculator");
-        (bool servesGetter,) =
+        (bool ok, bytes memory ret) =
             navCalculator_.staticcall(abi.encodeWithSelector(INAVCalculator.getRegisteredAsset.selector, address(0)));
-        if (!servesGetter) revert NAVCalculatorTooOld(navCalculator_);
+        // Success alone proves NOTHING, and an earlier version of this guard checked only that. A staticcall
+        // returning success with EMPTY returndata satisfies `ok` — so a NAV-shaped contract with a bare
+        // `fallback() external {}` passed the probe and was pinned, after which every `_getAssetInfo` failed on
+        // return-data decode inside the per-instance catch, `consumed` stayed tiny so it was not re-raised as
+        // exhaustion, and the adapter silently reported zero legs. That is precisely the over-report this guard
+        // exists to prevent, reinstated by the guard's own weakness (proven by executed PoC in review).
+        //
+        // A capable NAVCalculator returns `(Asset memory, bool)`: a 32-byte head offset for the struct plus a
+        // 32-byte bool, so 64 bytes is the floor. Checking the length is what turns "it did not revert" into
+        // "it answered". Note a staticcall to a CODELESS account also returns success with no data, which is why
+        // `requireContract` above is load-bearing rather than merely tidy.
+        if (!ok || ret.length < 64) revert NAVCalculatorTooOld(navCalculator_);
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 

@@ -55,7 +55,7 @@ contract DeployImplementations is BaseDeployScript {
     ///         different mutation from blanking its body, and only the first reaches the production path. While
     ///         these assertions sat inline in `run()`, a `revert()` placed as its FIRST statement failed no test
     ///         and its marker never appeared anywhere in the suite's output — nothing reached this script at all.
-    function _guardedDeploy(ImplPlan memory plan) internal {
+    function _guardedDeploy(ImplPlan memory plan) internal virtual {
         _assertPinnedLibrariesUsable(plan);
 
         // EOA deploy: broadcast the four CREATE2 deploys (PriceFeedLib, NAVRegistryLib, NAVCalculator impl,
@@ -201,7 +201,7 @@ contract DeployImplementations is BaseDeployScript {
     }
 
     /// @dev Saves implementation addresses to config and logs the deployment summary.
-    function _saveAndLog(ImplPlan memory plan) internal {
+    function _saveAndLog(ImplPlan memory plan) internal virtual {
         saveDeployedAddress("PriceFeedLib", plan.priceFeedLib);
         saveDeployedAddress("NavRegistryLib", plan.navRegistryLib);
         saveDeployedAddress("NAVCalculatorImplementation", plan.navImpl);

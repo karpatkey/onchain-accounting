@@ -39,6 +39,12 @@ contract DeployImplementationsHarness is DeployImplementations, PinHarnessBehavi
         _assertPinnedLibrariesUsable(_computeImplPlan());
     }
 
+    /// @notice The PRODUCTION seam bodies, reached past the override. Explicit base qualification, so this reports
+    ///         what a real run would use no matter what `setPinOverrides` holds.
+    function productionPins() external view returns (address priceFeedLib, address navRegistryLib) {
+        return (DeployImplementations._priceFeedLibPin(), DeployImplementations._navRegistryLibPin());
+    }
+
     /// @notice Same guard, with the plan's addresses AND bytecode injectable.
     /// @dev    The pin seam alone cannot reach the linkage pair, in either pin state, which is why this exists.
     ///         Assertions 3-4 are only evaluated once 1-2 pass, and 1-2 force the injected pins to equal the
@@ -99,6 +105,11 @@ contract DeployNAVImplementationHarness is DeployNAVImplementation, PinHarnessBe
         _assertPinnedLibrariesUsable(_computeImplPlan());
     }
 
+    /// @notice See `DeployImplementationsHarness.productionPins`.
+    function productionPins() external view returns (address priceFeedLib, address navRegistryLib) {
+        return (DeployNAVImplementation._priceFeedLibPin(), DeployNAVImplementation._navRegistryLibPin());
+    }
+
     /// @notice See `DeployImplementationsHarness.assertPinnedLibrariesUsableWith`.
     function assertPinnedLibrariesUsableWith(address priceFeedLib, address navRegistryLib, bytes memory implBytecode)
         external
@@ -150,6 +161,55 @@ contract MockCreate2Factory {
             return(0x00, 0x20)
         }
     }
+}
+
+/// @notice Records whether `run()` reached `_guardedDeploy`, WITHOUT broadcasting anything.
+/// @dev    Closes the last untested call site in the chain. Rule 2 below — "blanking a guard body and deleting its
+///         call are different mutations, and only the second reaches production" — was applied at the
+///         `_assertPinnedLibrariesUsable` <- `_guardedDeploy` frame and not at the `_guardedDeploy` <- `run()`
+///         frame one level up. Nothing executed the production `run()` body, so refactoring it back to an inline
+///         `vm.startBroadcast(); _deployIfNeeded(plan); vm.stopBroadcast();` — dropping the guard while KEEPING
+///         the broadcast — left the whole file green. That is the PR's own defect class, one frame higher.
+///
+///         `run()` is the `forge script` entry point, so covering it terminates the chain rather than moving the
+///         gap up again.
+///
+///         Why this harness may safely have a non-reverting `setUp()` when every other one here must revert: the
+///         barrier exists because `run()` would otherwise broadcast. Here `_guardedDeploy` is replaced by a
+///         recorder that contains no `vm.startBroadcast`, and `_saveAndLog` is a no-op, so driving this contract
+///         with `forge script --broadcast` performs no deploy, writes no deployment record and repoints nothing.
+///         It is strictly more inert than the reverting harnesses, not less.
+///
+///         `setUp()` seeds `chainConfig` instead of overriding `validateAddresses()`, so `BaseDeployScript` — used
+///         by every deploy script — needs no new `virtual`.
+abstract contract RunWiringRecorder {
+    bool public guardedDeployCalled;
+}
+
+contract DeployImplementationsRunWiringHarness is DeployImplementations, RunWiringRecorder {
+    function setUp() public override {
+        chainConfig.admin = address(0xA11CE);
+        chainConfig.manager = address(0xB0B);
+    }
+
+    function _guardedDeploy(ImplPlan memory) internal override {
+        guardedDeployCalled = true;
+    }
+
+    function _saveAndLog(ImplPlan memory) internal override {}
+}
+
+contract DeployNAVImplementationRunWiringHarness is DeployNAVImplementation, RunWiringRecorder {
+    function setUp() public override {
+        chainConfig.admin = address(0xA11CE);
+        chainConfig.manager = address(0xB0B);
+    }
+
+    function _guardedDeploy(ImplPlan memory) internal override {
+        guardedDeployCalled = true;
+    }
+
+    function _saveAndLog(ImplPlan memory) internal override {}
 }
 
 /// @dev Deploys with the guard neutralised, so "the guard rejects correctly" stays distinguishable from "the
@@ -365,6 +425,86 @@ contract DeployImplementationsPinsTest is Test {
         assertGt(pfl.code.length, 0, "PriceFeedLib not deployed");
         assertGt(nrl.code.length, 0, "NAVRegistryLib not deployed");
         assertGt(impl.code.length, 0, "NAVCalculator implementation not deployed");
+    }
+
+    // ---------------------------------------------------------------
+    // The frame above: run() must go through the guarded wrapper.
+    // ---------------------------------------------------------------
+
+    /// @notice Kills the mutation that inlines the broadcast into `run()`, dropping the guard but keeping the
+    ///         deploy — a stale pin broadcast unchecked to 24 chains, with a green suite.
+    /// @dev    Pure DELETION of `_guardedDeploy(plan)` from `run()` is fail-safe, because the guard call and the
+    ///         only broadcast are co-located inside it: delete the call and nothing deploys. That is why an earlier
+    ///         review round refuted this as a finding. But the mutation that matters is not deletion, it is the
+    ///         refactor back to `vm.startBroadcast(); _deployIfNeeded(plan); vm.stopBroadcast();` — exactly the
+    ///         shape this PR replaced. Nothing executed the production `run()` body, so that refactor was
+    ///         invisible. It is not invisible now.
+    function test_01_run_goesThroughTheGuardedWrapper() public {
+        DeployImplementationsRunWiringHarness h = new DeployImplementationsRunWiringHarness();
+        assertFalse(h.guardedDeployCalled(), "fixture");
+
+        h.run();
+
+        assertTrue(h.guardedDeployCalled(), "run() must reach _guardedDeploy, not broadcast on its own");
+    }
+
+    function test_01_2_run_goesThroughTheGuardedWrapper() public {
+        DeployNAVImplementationRunWiringHarness h = new DeployNAVImplementationRunWiringHarness();
+        assertFalse(h.guardedDeployCalled(), "fixture");
+
+        h.run();
+
+        assertTrue(h.guardedDeployCalled(), "run() must reach _guardedDeploy, not broadcast on its own");
+    }
+
+    // ---------------------------------------------------------------
+    // The production seams themselves.
+    // ---------------------------------------------------------------
+
+    /// @notice Each production seam returns ITS OWN library's pin. Kills a swap in any pin state.
+    /// @dev    This is the test that actually closes the gap. `test_sourceMatch_tracksRealPinState` below
+    ///         exercises the seams but does NOT kill a swap on a drifting tree: assertion 1 compares the computed
+    ///         PriceFeedLib address against whatever the seam returns, and on a drifted tree BOTH the correct pin
+    ///         and the swapped one differ from it, so the same revert fires either way. I confirmed that by
+    ///         mutation — swapping the seams left the whole file green — after believing the tracking test was
+    ///         sufficient. Comparing the seams directly is pin-state-independent.
+    ///
+    ///         It does restate the production bodies, which is normally the shape to avoid. It earns its place by
+    ///         pinning a MAPPING rather than a value: which seam returns which constant. That is exactly the
+    ///         copy-paste class of error, and this PR already made one of them — the `bridgeImpl` 4-tuple landed
+    ///         on `01_2`'s harness, which has no such member.
+    function test_pinSeamsReturnTheirOwnLibrarysPin() public view {
+        (address pfl, address nrl) = impls.productionPins();
+        assertEq(pfl, LibraryPins.PRICE_FEED_LIB, "01: price-feed seam must return the PriceFeedLib pin");
+        assertEq(nrl, LibraryPins.NAV_REGISTRY_LIB, "01: registry seam must return the NAVRegistryLib pin");
+
+        (address pfl2, address nrl2) = navImpl.productionPins();
+        assertEq(pfl2, LibraryPins.PRICE_FEED_LIB, "01_2: price-feed seam must return the PriceFeedLib pin");
+        assertEq(nrl2, LibraryPins.NAV_REGISTRY_LIB, "01_2: registry seam must return the NAVRegistryLib pin");
+    }
+
+    /// @notice Against the REAL pins — no overrides — the guard must track the tree's actual state: red during
+    ///         PR #185's regeneration, green after.
+    /// @dev    Every other test in this file injects overrides or blanks the guard, so the `super.` branch of the
+    ///         pin seams was otherwise dead in the suite. Mirrors `UpgradeNAVCalculatorPins.t.sol`'s
+    ///         `test_sourceMatch_tracksRealPinState`, which the first revision of this file omitted. Per-library
+    ///         message selection because a one-library drift is the ordinary case — pins move only when a file in
+    ///         THAT library's compilation closure changes. See the test above for what this one does NOT catch.
+    function test_sourceMatch_tracksRealPinState() public {
+        bool priceFeedMatches = _computedPriceFeedPin() == LibraryPins.PRICE_FEED_LIB;
+        bool navRegistryMatches = _computedNavRegistryPin() == LibraryPins.NAV_REGISTRY_LIB;
+
+        if (priceFeedMatches && navRegistryMatches) {
+            // Pins regenerated: the source-match pair passes, and the linkage pair passes because the impl
+            // bytecode embeds those same addresses. The whole guard is satisfied.
+            impls.assertPinnedLibrariesUsable();
+        } else if (!priceFeedMatches) {
+            vm.expectRevert("PriceFeedLib CREATE2 addr != foundry.toml pin (lib bytecode drift; regenerate the pin)");
+            impls.assertPinnedLibrariesUsable();
+        } else {
+            vm.expectRevert("NAVRegistryLib CREATE2 addr != foundry.toml pin (lib bytecode drift; regenerate the pin)");
+            impls.assertPinnedLibrariesUsable();
+        }
     }
 
     // ---------------------------------------------------------------

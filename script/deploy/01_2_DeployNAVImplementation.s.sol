@@ -97,7 +97,7 @@ contract DeployNAVImplementation is BaseDeployScript {
     ///         `UpgradeNAVCalculator`, a test can prove the call EXISTS but not that it precedes the broadcast;
     ///         `forge script` simulates the whole run and broadcasts nothing when it reverts, so the ordering is
     ///         defence in depth rather than the load-bearing property.
-    function _guardedDeploy(ImplPlan memory plan) internal {
+    function _guardedDeploy(ImplPlan memory plan) internal virtual {
         _assertPinnedLibrariesUsable(plan);
 
         // EOA deploy: broadcast the three CREATE2 deploys (PriceFeedLib, NAVRegistryLib, NAVCalculator impl) directly
@@ -167,7 +167,7 @@ contract DeployNAVImplementation is BaseDeployScript {
         }
     }
 
-    function _saveAndLog(ImplPlan memory plan) internal {
+    function _saveAndLog(ImplPlan memory plan) internal virtual {
         saveDeployedAddress("PriceFeedLib", plan.priceFeedLib);
         saveDeployedAddress("NavRegistryLib", plan.navRegistryLib);
         saveDeployedAddress("NAVCalculatorImplementation", plan.navImpl);

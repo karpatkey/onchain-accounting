@@ -78,11 +78,93 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     // Constructor
     //
 
+    /// @notice The NAVCalculator behind `navCalculator_` cannot serve `getRegisteredAsset`, so it predates the
+    ///         O(1) registry lookup this adapter family depends on.
+    /// @dev Deployment-time, not read-time, and that is the whole point — see the constructor.
+    /// @param navCalculator The proxy that failed the probe.
+    error NAVCalculatorTooOld(address navCalculator);
+
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
     /// @dev No `protocolName_`: the display name is derived from `_protocolId()` (see `protocolName()`), so there is
     ///      no deployment-time string to supply, mis-spell, or let drift between two adapters of one protocol.
+    ///
+    ///      Pins the NAVCalculator and **refuses to deploy against one that cannot answer
+    ///      `getRegisteredAsset(address)`**.
+    ///
+    ///      This guard exists because the alternative failure is silent and raises NAV. Meta-adapters are
+    ///      IMMUTABLE with this proxy pinned here; NAVCalculator is UUPS-UPGRADEABLE. An adapter built on this base
+    ///      and pointed at a proxy running an implementation from before that getter existed would hit a missing
+    ///      selector on every `_eligible` call. The proxy reverts cheaply with empty returndata, that revert lands
+    ///      in the per-instance `catch` in {_positionsForInstances}, and because `consumed` is small
+    ///      `GasStipendLib.exhausted` reads false — so it is NOT re-raised as {InstanceGasExhausted}. The instance
+    ///      is recorded as an empty leg list and `getAdapterPositions` **returns successfully**.
+    ///
+    ///      Dropped legs that included a DEBT leg raise reported NAV, and nothing downstream can tell the answer
+    ///      was partial: `underlyingAssetsSupported()` and `positionIds()` both keep answering correctly, because
+    ///      neither passes through `_eligible`. That is precisely the failure the per-instance `try`/`catch` is
+    ///      documented as never being allowed to absorb, reached by a route the gas classifier is structurally
+    ///      blind to — the cause is a missing selector, not exhaustion, so there is no gas signature to detect.
+    ///
+    ///      **Reachable, and one route is on record as having happened.** `script/deploy/REDEPLOY_RUNBOOK.md` §3
+    ///      records `01_2` (the NAV implementation) reverting while `04` (adapters) proceeded: *"RegisterAssets, 04
+    ///      and 06 all reported success having done nothing."* The others are a partial rollout across chains where
+    ///      one chain's implementation was not upgraded, and an implementation rollback after adapters are
+    ///      deployed. `verify_step.py` steps 1.6/1.7 check adapter counts, names, code presence and registration —
+    ///      none of which is a functional read, so none of which would notice.
+    ///
+    ///      A `staticcall` rather than a typed call so a missing selector is a `false` return instead of a revert
+    ///      inside the constructor. `address(0)` is a deliberately inert probe argument: on a NAVCalculator that
+    ///      has the getter it resolves to `(zeroed, false)` without reverting, so a healthy deploy always passes.
+    ///
+    ///      **WHAT THIS GUARD DOES NOT COVER.** It runs once, at construction, so it establishes the pairing was
+    ///      sound *at deploy time* and nothing more. Three limits, stated because the routes above are easy to
+    ///      read as all being closed by it:
+    ///
+    ///      1. **A post-construction rollback is not detectable here.** Meta-adapters are immutable and
+    ///         NAVCalculator is UUPS-upgradeable, so downgrading the implementation after adapters exist leaves
+    ///         this guard long since passed and every later `getAdapterPositions` silently returning zero legs.
+    ///         Of the three routes above, this one **survives the guard**; the other two do not. Catching it would
+    ///         need a read-time probe on the hot path, which is not affordable — the fan-out already runs under a
+    ///         per-instance gas stipend.
+    ///      2. **Already-deployed adapters are never re-probed.** `04_DeployBalanceAdapters._deployIfEnabled` is
+    ///         skip-if-deployed and `06_Configure` re-registers straight from the deployments JSON without any
+    ///         version check, so re-running the deploy scripts over an existing fleet does not exercise this
+    ///         constructor at all. It binds the *next* adapter deployed, not the ones already out there. (The
+    ///         24-chain redeploy clears the records at runbook step 1.1, so every adapter there IS freshly
+    ///         constructed and does pass through this guard.)
+    ///      3. **Pointing at the NAVCalculator implementation instead of its proxy passes.** The implementation
+    ///         genuinely serves the selector; it simply has empty storage, so every lookup returns
+    ///         `found == false` and the adapter reports zero legs just as silently. The probe cannot tell the two
+    ///         apart, and requiring a non-zero EIP-1967 slot would reject the plain (non-proxy) NAVCalculators
+    ///         that unit tests construct against. `verify_step.py 1.3` comparing the recorded implementation
+    ///         against the proxy's EIP-1967 slot is the check that catches this one.
+    ///
+    ///      Costs zero NAVCalculator bytecode — the budget under pressure is that contract's (181 bytes under
+    ///      EIP-170), not the adapters', which carry 14-19 KB of margin each.
     constructor(address navCalculator_) {
         AddressCheckLib.requireContract(navCalculator_, "NAVCalculator");
+        (bool ok, bytes memory ret) =
+            navCalculator_.staticcall(abi.encodeWithSelector(INAVCalculator.getRegisteredAsset.selector, address(0)));
+        // Success alone proves NOTHING, and an earlier version of this guard checked only that. A staticcall
+        // returning success with EMPTY returndata satisfies `ok` — so a NAV-shaped contract with a bare
+        // `fallback() external {}` passed the probe and was pinned, after which every `_getAssetInfo` failed on
+        // return-data decode inside the per-instance catch, `consumed` stayed tiny so it was not re-raised as
+        // exhaustion, and the adapter silently reported zero legs. That is precisely the over-report this guard
+        // exists to prevent, reinstated by the guard's own weakness (proven by executed PoC in review).
+        //
+        // The floor is 192 bytes, and the arithmetic is worth spelling out because a first pass put it at 64.
+        // `Asset` is `(address, string, uint8)` — DYNAMIC, because of the string — so `returns (Asset, bool)`
+        // encodes as: 2 head words (offset-to-Asset, bool) + 3 words for Asset's own head (address,
+        // offset-to-string, uint8) + 1 word for the string length. Six words = 192 bytes, with an EMPTY symbol,
+        // which is exactly what the `address(0)` probe elicits since `found == false` zeroes the struct. 64
+        // would have admitted anything from 64 to 191 bytes — still far short of a real answer.
+        // `test_capableNavReturndataIsAtLeastTheFloor` measures this against a real encoder rather than trusting
+        // the arithmetic, so adding a field to `Asset` fails a test instead of silently loosening the guard.
+        //
+        // Checking the length is what turns "it did not revert" into "it answered". Note a staticcall to a
+        // CODELESS account also returns success with no data, which is why `requireContract` above is
+        // load-bearing rather than merely tidy.
+        if (!ok || ret.length < 192) revert NAVCalculatorTooOld(navCalculator_);
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 

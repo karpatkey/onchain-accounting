@@ -8,6 +8,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
 import {Mock_CustomPriceFeed} from "test/mocks/price_oracles.sol";
 import {MetaBalanceAdapter} from "src/balances/MetaBalanceAdapter.sol";
+import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 
 /// @notice Minimal concrete meta-adapter that does nothing but expose `_getAssetInfo`, so the resolution path the
 ///         fix actually changed can be exercised directly.
@@ -173,6 +174,65 @@ contract NAVCalculatorRegisteredAssetGetterTest is SuperTest {
     }
 
     // -----------------------------------------------------------------------
+    // Equivalence with the path this replaced
+    // -----------------------------------------------------------------------
+
+    /// @notice **The property this PR actually needs to be true**, and the one nothing else guards: the O(1) getter
+    ///         must agree with the linear scan it replaced, for every reachable registry state — same `found`, same
+    ///         `asset`, same `symbol`, same `decimals`.
+    /// @dev A perf change that quietly altered a RESULT would be far worse than the gas it saved: `_eligible` gates
+    ///      every emitted leg, so a `found` that flipped false would make legs vanish silently, and one that
+    ///      flipped true would value an unregistered asset.
+    ///
+    ///      Fuzzed over randomised register/unregister sequences rather than fixed cases, because the interesting
+    ///      states are the ones swap-and-pop produces after many mutations, not the ones anyone thinks to write
+    ///      down. Also asserts the REVERSE direction — every entry in the array is reachable through the index and
+    ///      the index points back at that same entry — which catches an orphaned or cross-wired index that a
+    ///      forward-only check would miss.
+    /// @param seed Drives which assets get unregistered.
+    /// @param probe An arbitrary address to resolve, so misses are covered as densely as hits.
+    function testFuzz_agreesWithTheLinearScanItReplaced(uint256 seed, address probe) public {
+        // Mutate the registry: unregister a pseudo-random subset, exercising swap-and-pop repeatedly.
+        vm.startPrank(navCalculatorManager);
+        for (uint256 i = 0; i < _extra.length; i++) {
+            if (uint256(keccak256(abi.encode(seed, i))) % 3 == 0) {
+                (, bool stillThere) = nav.getRegisteredAsset(_extra[i]);
+                if (stillThere) nav.unregisterAsset(_extra[i]);
+            }
+        }
+        vm.stopPrank();
+
+        INAVCalculator.Asset[] memory snapshot = nav.getRegisteredAssets();
+
+        // Forward: the getter agrees with the scan, on the fuzzed probe and on every registered asset.
+        _assertAgrees(snapshot, probe);
+        _assertAgrees(snapshot, address(usdc));
+        _assertAgrees(snapshot, nav.NATIVE_ADDRESS());
+        for (uint256 i = 0; i < _extra.length; i++) {
+            _assertAgrees(snapshot, _extra[i]);
+        }
+
+        // Reverse: every array entry is reachable through the index AND resolves to itself. A forward-only check
+        // passes happily against an index that has orphaned or cross-wired an entry.
+        for (uint256 i = 0; i < snapshot.length; i++) {
+            (INAVCalculator.Asset memory viaIndex, bool found) = nav.getRegisteredAsset(snapshot[i].asset);
+            assertTrue(found, "every array entry must be reachable through the index");
+            assertEq(viaIndex.asset, snapshot[i].asset, "and the index must point back at that same entry");
+        }
+    }
+
+    /// @notice Asserts the O(1) getter and `RegisteredAssetLib.find` return identical results for one asset.
+    function _assertAgrees(INAVCalculator.Asset[] memory snapshot, address asset) internal view {
+        (INAVCalculator.Asset memory viaIndex, bool foundIndex) = nav.getRegisteredAsset(asset);
+        (INAVCalculator.Asset memory viaScan, bool foundScan) = RegisteredAssetLib.find(snapshot, asset);
+
+        assertEq(foundIndex, foundScan, "found must agree with the linear scan");
+        assertEq(viaIndex.asset, viaScan.asset, "asset must agree");
+        assertEq(viaIndex.decimals, viaScan.decimals, "decimals must agree");
+        assertEq(viaIndex.symbol, viaScan.symbol, "symbol must agree");
+    }
+
+    // -----------------------------------------------------------------------
     // The regression guard
     // -----------------------------------------------------------------------
 
@@ -237,15 +297,35 @@ contract NAVCalculatorRegisteredAssetGetterTest is SuperTest {
 
         assertLt(costAtFull, costAtHalf * 2, "halving the registry must not materially change lookup cost");
         assertLt(costAtHalf, costAtFull * 2, "nor should growing it");
+
+        // Free, and much stronger than the gas comparison above: that loop removed 50 entries, and every
+        // swap-and-pop moves the then-LAST entry into an earlier slot — starting with the very asset being
+        // measured here. So this subject has been relocated repeatedly, and the index must have been rewritten
+        // correctly every time. Assert it still resolves to ITSELF, not merely that it is still cheap.
+        (INAVCalculator.Asset memory a, bool found) = nav.getRegisteredAsset(_extra[_extra.length - 1]);
+        assertTrue(found, "subject survives 50 swap-and-pops");
+        assertEq(a.asset, _extra[_extra.length - 1], "and still resolves to itself, not to an entry it displaced");
     }
 
-    /// @notice A miss must be as cheap as a hit. Under the old scan a miss was the WORST case — it walked the
-    ///         entire array before concluding nothing — and `_eligible` takes that path for every unregistered
+    /// @notice A miss must not scale with registry size. Under the old scan a miss was the WORST case — it walked
+    ///         the entire array before concluding nothing — and `_eligible` takes that path for every unregistered
     ///         token an adapter touches, which on a wide pool is most of them.
-    function test_missIsNotTheWorstCase() public {
-        uint256 hitCost = _warmCost(_extra[_extra.length - 1]);
-        uint256 missCost = _warmCost(makeAddr("absent"));
+    /// @dev Deliberately NOT "a miss is cheaper than a hit". That version cannot fail for ANY implementation of this
+    ///      getter: a miss returns early on one `SLOAD` where a hit additionally does an array read and a string
+    ///      copy, so it is structurally cheaper and the assertion proves nothing the signature does not already.
+    ///      Size-independence is the property that actually distinguishes a mapping load from a scan.
+    function test_missDoesNotScaleWithRegistrySize() public {
+        uint256 missAtFull = _warmCost(makeAddr("absent"));
 
-        assertLt(missCost, hitCost * 2, "a miss must not cost more than a hit (full-scan fallback?)");
+        vm.startPrank(navCalculatorManager);
+        for (uint256 i = 0; i < EXTRA_ASSETS / 2; i++) {
+            nav.unregisterAsset(_extra[i]);
+        }
+        vm.stopPrank();
+
+        uint256 missAtHalf = _warmCost(makeAddr("absent"));
+
+        assertLt(missAtFull, missAtHalf * 2, "a miss must not scale with how many assets are registered");
+        assertLt(missAtHalf, missAtFull * 2, "nor shrink with it");
     }
 }

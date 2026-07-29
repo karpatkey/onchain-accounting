@@ -38,6 +38,32 @@ contract BalancesHarnessForFork is Balances {
         return _registeredAssets;
     }
 
+    /// @notice Single-asset sibling of the getter above, mirroring `INAVCalculator.getRegisteredAsset`.
+    /// @dev **This is the THIRD stand-in that must carry this getter**, and it is the one that is easy to miss.
+    ///      `MetaBalanceAdapter._getAssetInfo` calls it, and this harness is the NAV for every meta-adapter FORK
+    ///      suite (reached via `BalanceAdapterTestBase._deployBalancesForAdapter`). Its two siblings —
+    ///      `BalancesHarness` (test/balances/Balances.t.sol) and `Mock_NAVCalculator` (test/mocks/nav_calculator.sol)
+    ///      — cover the non-fork suites.
+    ///
+    ///      Omitting it fails in a way a non-fork run cannot see: the call hits a missing selector, the
+    ///      meta-adapter's per-instance `try`/`catch` swallows the revert, and every instance emits ZERO legs while
+    ///      the adapter still returns successfully. That surfaced as 28 red meta fork tests reporting things like
+    ///      "expected one collateral + one borrow leg: 0 != 2" — nothing pointing at the harness. **If you add a
+    ///      method to the adapters' view of INAVCalculator, run `FOUNDRY_PROFILE=slow forge test --match-path
+    ///      "test/balances/MetaBalanceAdapters/fork/*.sol"` before believing a green non-fork suite.**
+    ///
+    ///      Body is a deliberate mirror of the production one (`NAVCalculator.getRegisteredAsset`): this harness
+    ///      already keeps the same 1-based `_assetIndex`, so the two cannot drift in behaviour.
+    function getRegisteredAsset(address asset)
+        external
+        view
+        returns (INAVCalculator.Asset memory assetInfo, bool found)
+    {
+        uint256 idx = _assetIndex[asset];
+        if (idx == 0) return (assetInfo, false);
+        return (_registeredAssets[idx - 1], true);
+    }
+
     function getAssetCount() external view returns (uint256) {
         return _registeredAssets.length;
     }

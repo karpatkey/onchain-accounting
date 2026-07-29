@@ -133,6 +133,36 @@ contract Mock_ChainlinkL2SequencerUptimeFeedUninitialized is Mock_PriceOracleCha
     }
 }
 
+/// @notice Sequencer-up feed with an ABSOLUTE, settable `startedAt`, so a test can place the reported restart at
+///         an exact distance from `block.timestamp`.
+/// @dev    Exists because the other up-feed mocks compute `startedAt` RELATIVE to `block.timestamp` at call time
+///         (`Mock_ChainlinkL2SequencerUptimeFeed` returns `block.timestamp - 1 hours - 1`;
+///         `Mock_ChainlinkL2SequencerUptimeFeedWithinGracePeriod` returns `block.timestamp`). A relative offset
+///         cannot be warped — the gap is whatever the mock hard-codes no matter what the test does to the clock —
+///         so with those two alone the elapsed time is pinned at exactly 0 or exactly `gracePeriod + 1` and the
+///         boundary itself is unreachable. `answer` is 0 (sequencer up) so the grace-period arm is the branch
+///         under test; set `startedAt` above `block.timestamp` to exercise the future-timestamp clamp.
+contract Mock_ChainlinkL2SequencerUptimeFeedAt is Mock_PriceOracleChainlink {
+    uint256 public startedAtOverride;
+
+    constructor(uint256 startedAt_) Mock_PriceOracleChainlink("L2 sequencer at fixed startedAt", 0, 0) {
+        startedAtOverride = startedAt_;
+    }
+
+    function setStartedAt(uint256 startedAt_) external {
+        startedAtOverride = startedAt_;
+    }
+
+    function latestRoundData()
+        external
+        view
+        override
+        returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
+    {
+        return (0, 0, startedAtOverride, startedAtOverride, 0);
+    }
+}
+
 contract Mock_ChainlinkL2SequencerUptimeFeedDown is Mock_PriceOracleChainlink {
     constructor() Mock_PriceOracleChainlink("L2 sequencer down", 0, 0) {}
 

@@ -8,6 +8,7 @@ import {Prices} from "src/prices/Prices.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {
     Mock_ChainlinkL2SequencerUptimeFeed,
+    Mock_ChainlinkL2SequencerUptimeFeedAt,
     Mock_ChainlinkL2SequencerUptimeFeedUninitialized,
     Mock_CustomPriceFeed,
     Mock_PriceOracleChainlink,
@@ -53,6 +54,24 @@ contract PricesHarness is Prices {
 
     function removePriceFeedByAddr(address token, address feed) public {
         _removePriceFeed(token, feed);
+    }
+
+    // --- monitor-feed surface, added so the registration guards in PriceFeedLib are reachable from a test ---
+
+    function setDivergenceTolerance(address token, uint32 bps) public {
+        _setDivergenceTolerance(token, bps);
+    }
+
+    function addMonitorFeed(address token, address feed, uint256 heartbeat, IPrices.PriceType feedType) public {
+        _addMonitorFeed(token, feed, heartbeat, feedType);
+    }
+
+    function removeMonitorFeedAt(address token, uint256 index) public {
+        _removeMonitorFeedAt(token, index);
+    }
+
+    function removeMonitorFeedByAddr(address token, address feed) public {
+        _removeMonitorFeed(token, feed);
     }
 }
 
@@ -280,21 +299,67 @@ contract PricesTest is Test {
         assertFalse(stale); // Should return false when no feed is set
     }
 
-    function test_checkL2SequencerUptime_withinGracePeriod() public {
-        // Create manager with uptime feed
+    /// @dev Renamed from `test_checkL2SequencerUptime_withinGracePeriod`, which is not what it tests. The feed here
+    ///      reports `answer = 1`, so `PriceFeedLib.checkSequencerUptime` returns at the `answer != 0` arm — two
+    ///      branches ABOVE the grace-period arm the old name claimed. Its own comment already said so. The grace
+    ///      period is now covered by the three `_gracePeriod_*` tests below.
+    function test_checkL2SequencerUptime_sequencerDown_answerNonZero() public {
         managerL2 = new PricesHarness(address(disabledUptimeFeed));
 
-        // The uptime feed is disabled (answer = 1), so sequencer is down
         bool stale = managerL2.checkL2SequencerUptime();
-        assertTrue(stale);
+        assertTrue(stale, "answer != 0 must read as down");
     }
 
-    function test_checkL2SequencerUptime_initializedUpAfterGracePeriod() public {
+    /// @notice The far side of the boundary: elapsed is exactly `gracePeriod + 1`, so the sequencer reads healthy.
+    /// @dev    **The `vm.warp` is load-bearing — do not remove it.** `Mock_ChainlinkL2SequencerUptimeFeed` returns
+    ///         `block.timestamp > 1 hours ? block.timestamp - 1 hours - 1 : 1`, and forge starts the clock at
+    ///         `block.timestamp == 1`. Without the warp the ternary takes its SECOND arm, `startedAt` is 1, elapsed
+    ///         is 0, and this feed lands *inside* the grace window — the opposite of what the test asserts. The
+    ///         warp is what pushes the clock past an hour so the first arm applies. (An earlier reading of this
+    ///         file called the warp inert on the grounds that the mock is time-relative; that is true of the first
+    ///         arm and false of the branch selection, and the test fails without it.)
+    function test_checkL2SequencerUptime_gracePeriod_oneSecondPast_notStale() public {
         managerL2 = new PricesHarness(address(enabledUptimeFeed));
-        vm.warp(block.timestamp + 2 hours + 1);
+        assertEq(managerL2.chainlinkL2SequencerGracePeriod(), 1 hours, "fixture assumes a 1h grace period");
+
+        vm.warp(block.timestamp + 2 hours + 1); // see @dev — selects the mock's `block.timestamp - 1h - 1` arm
 
         bool stale = managerL2.checkL2SequencerUptime();
-        assertFalse(stale);
+        assertFalse(stale, "gracePeriod + 1 elapsed must NOT be stale");
+    }
+
+    /// @notice Deep inside the window: the sequencer came back this very block.
+    /// @dev Together with the two tests below this pins `if (elapsed <= gracePeriod) stale = true`, the arm that
+    ///      no test reached before — neutralising that line left the entire suite green.
+    function test_checkL2SequencerUptime_gracePeriod_justRestarted_stale() public {
+        Mock_ChainlinkL2SequencerUptimeFeedAt feed = new Mock_ChainlinkL2SequencerUptimeFeedAt(block.timestamp);
+        managerL2 = new PricesHarness(address(feed));
+
+        assertTrue(managerL2.checkL2SequencerUptime(), "0 elapsed must be stale");
+    }
+
+    /// @notice The boundary itself. The comparison is `<=`, so elapsed EXACTLY equal to the grace period is stale.
+    /// @dev This is the point a `<=`-to-`<` mutation moves, and the only elapsed value that distinguishes them.
+    function test_checkL2SequencerUptime_gracePeriod_exactlyAtBoundary_stale() public {
+        uint256 grace = 1 hours;
+        vm.warp(block.timestamp + grace + 1); // headroom so `block.timestamp - grace` cannot underflow
+        Mock_ChainlinkL2SequencerUptimeFeedAt feed =
+            new Mock_ChainlinkL2SequencerUptimeFeedAt(block.timestamp - grace);
+        managerL2 = new PricesHarness(address(feed));
+        assertEq(managerL2.chainlinkL2SequencerGracePeriod(), grace, "fixture assumes a 1h grace period");
+
+        assertTrue(managerL2.checkL2SequencerUptime(), "elapsed == gracePeriod must be stale (comparison is <=)");
+    }
+
+    /// @notice A feed reporting a restart in the FUTURE is clamped to now, not allowed to underflow or to read as
+    ///         long-elapsed.
+    /// @dev Covers the `startedAt > block.timestamp ? block.timestamp : startedAt` clamp, which shares the arm.
+    function test_checkL2SequencerUptime_gracePeriod_futureStartedAt_clampedAndStale() public {
+        Mock_ChainlinkL2SequencerUptimeFeedAt feed =
+            new Mock_ChainlinkL2SequencerUptimeFeedAt(block.timestamp + 30 days);
+        managerL2 = new PricesHarness(address(feed));
+
+        assertTrue(managerL2.checkL2SequencerUptime(), "future startedAt must clamp to now and read as stale");
     }
 
     function test_checkL2SequencerUptime_uninitializedStartedAtZero() public {
@@ -302,6 +367,133 @@ contract PricesTest is Test {
 
         bool stale = managerL2.checkL2SequencerUptime();
         assertTrue(stale);
+    }
+
+    // =========================================================================
+    // Feed-registry guard arms
+    //
+    // Every one of these reverts was asserted by nothing: neutralising the arm left the whole non-fork suite
+    // green. They all sit on the registration path that `06_Configure` and `script/manage/RegisterAssets.s.sol`
+    // drive on every chain, which is the reason they are worth having tests rather than deleting.
+    //
+    // Each test uses a SELECTOR-specific `expectRevert`, deliberately: several of these guards sit one line
+    // above another guard that would also revert on the same input, so a bare `expectRevert()` would pass with
+    // the arm removed and prove nothing. (`ETHPlus_CustomPriceFeed.t.sol` is the same lesson.)
+    // =========================================================================
+
+    /// @dev Second feed for an asset must agree with the first on decimals.
+    function test_addFeed_revertsOnDecimalsMismatchWithFirstFeed() public {
+        Mock_PriceOracleChainlink eightDec = new Mock_PriceOracleChainlink("eight", 100, 8);
+        Mock_PriceOracleChainlink eighteenDec = new Mock_PriceOracleChainlink("eighteen", 100, 18);
+
+        manager.setPriceFeed(buidl, address(eightDec), type(uint256).max, IPrices.PriceType.Chainlink);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IPrices.PriceFeedDecimalsMismatch.selector, buidl, uint8(8), uint8(18))
+        );
+        manager.setPriceFeed(buidl, address(eighteenDec), type(uint256).max, IPrices.PriceType.Chainlink);
+    }
+
+    /// @dev Two feeds are registered so that removing this guard reaches an array access rather than the
+    ///      `CannotRemoveLastFeed` arm below it — the failure must be attributable to THIS check.
+    function test_removeFeedAt_revertsOnIndexOutOfBounds() public {
+        Mock_PriceOracleChainlink a = new Mock_PriceOracleChainlink("a", 100, 8);
+        Mock_PriceOracleChainlink b = new Mock_PriceOracleChainlink("b", 200, 8);
+        manager.setPriceFeed(buidl, address(a), type(uint256).max, IPrices.PriceType.Chainlink);
+        manager.setPriceFeed(buidl, address(b), type(uint256).max, IPrices.PriceType.Chainlink);
+        assertEq(manager.getPriceFeedCount(buidl), 2, "fixture");
+
+        vm.expectRevert(abi.encodeWithSelector(IPrices.PriceFeedIndexOutOfBounds.selector, buidl, uint256(2)));
+        manager.removePriceFeedAt(buidl, 2);
+    }
+
+    function test_getPriceFeedAt_revertsOnIndexOutOfBounds() public {
+        Mock_PriceOracleChainlink a = new Mock_PriceOracleChainlink("a", 100, 8);
+        manager.setPriceFeed(buidl, address(a), type(uint256).max, IPrices.PriceType.Chainlink);
+
+        vm.expectRevert(abi.encodeWithSelector(IPrices.PriceFeedIndexOutOfBounds.selector, buidl, uint256(1)));
+        manager.getPriceFeedAt(buidl, 1);
+    }
+
+    function test_removeMonitorFeedAt_revertsOnIndexOutOfBounds() public {
+        _seedPrimaryAndTolerance();
+        Mock_PriceOracleChainlink mon = new Mock_PriceOracleChainlink("mon", 100, 8);
+        manager.addMonitorFeed(buidl, address(mon), 1 days, IPrices.PriceType.Chainlink);
+        assertEq(manager.getMonitorFeedCount(buidl), 1, "fixture");
+
+        vm.expectRevert(abi.encodeWithSelector(IPrices.PriceFeedIndexOutOfBounds.selector, buidl, uint256(1)));
+        manager.removeMonitorFeedAt(buidl, 1);
+    }
+
+    /// @dev Monitors must be USD-comparable to the primary, so they must report NAV_DECIMALS (8).
+    function test_addMonitorFeed_revertsOnDecimalsMismatch() public {
+        _seedPrimaryAndTolerance();
+        Mock_PriceOracleChainlink eighteenDec = new Mock_PriceOracleChainlink("eighteen", 100, 18);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IPrices.MonitorFeedDecimalsMismatch.selector, buidl, uint8(8), uint8(18))
+        );
+        manager.addMonitorFeed(buidl, address(eighteenDec), 1 days, IPrices.PriceType.Chainlink);
+    }
+
+    function test_addMonitorFeed_revertsOnDuplicate() public {
+        _seedPrimaryAndTolerance();
+        Mock_PriceOracleChainlink mon = new Mock_PriceOracleChainlink("mon", 100, 8);
+        manager.addMonitorFeed(buidl, address(mon), 1 days, IPrices.PriceType.Chainlink);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IPrices.MonitorFeedAlreadyRegistered.selector, buidl, address(mon))
+        );
+        manager.addMonitorFeed(buidl, address(mon), 1 days, IPrices.PriceType.Chainlink);
+    }
+
+    /// @dev The fall-through at the end of `removeMonitorFeed`: the loop finds nothing and the function reverts.
+    function test_removeMonitorFeed_revertsWhenNotRegistered() public {
+        _seedPrimaryAndTolerance();
+        Mock_PriceOracleChainlink registered = new Mock_PriceOracleChainlink("registered", 100, 8);
+        Mock_PriceOracleChainlink stranger = new Mock_PriceOracleChainlink("stranger", 100, 8);
+        manager.addMonitorFeed(buidl, address(registered), 1 days, IPrices.PriceType.Chainlink);
+
+        vm.expectRevert(abi.encodeWithSelector(IPrices.MonitorFeedNotFound.selector, buidl, address(stranger)));
+        manager.removeMonitorFeedByAddr(buidl, address(stranger));
+    }
+
+    /// @notice `InvalidPriceOracleType` is defensive code that no input can reach today — this pins WHY.
+    /// @dev    `PriceType` has exactly four members and `_validateFeedSupportInternal` handles all four
+    ///         (`Custom`, and `Chainlink`/`Redstone`/`API3` together), so the trailing `else` is unreachable from
+    ///         Solidity. It is not reachable by hand-rolled calldata either: an out-of-range enum byte is
+    ///         rejected by solc's bounds check during ABI decoding, in the entry frame, long before the library
+    ///         is consulted. That is what this asserts. If a fifth `PriceType` is ever added without a branch,
+    ///         this test keeps passing but the `else` stops being dead — so treat this as documentation of the
+    ///         current shape, not as coverage of the arm.
+    function test_invalidPriceOracleType_isUnreachable_enumBoundsCheckFiresFirst() public {
+        Mock_PriceOracleChainlink feed = new Mock_PriceOracleChainlink("feed", 100, 8);
+
+        // 4 is one past `PriceType.Custom` (3), the highest declared member.
+        bytes memory callData = abi.encodeWithSignature(
+            "setPriceFeed(address,address,uint256,uint8)", buidl, address(feed), type(uint256).max, uint8(4)
+        );
+
+        // Asserted on the raw return rather than with `vm.expectRevert`: a low-level `.call` catches the revert
+        // and returns `false`, so the cheatcode would not see one. Reading the returndata is the point — it is
+        // what distinguishes "rejected while decoding" from "reached the library".
+        //
+        // The expected payload is EMPTY, not `Panic(0x21)`. Solidity's ABI decoder validates an enum argument
+        // with a bare `revert(0, 0)`; `Panic(0x21)` is what an explicit in-code conversion (`PriceType(x)`)
+        // produces, which is a different path and not the one calldata takes. `InvalidPriceOracleType()` would
+        // be 4 bytes of selector, so an empty payload is positive evidence the trailing `else` was never reached.
+        (bool ok, bytes memory ret) = address(manager).call(callData);
+
+        assertFalse(ok, "an out-of-range PriceType must be rejected");
+        assertEq(ret.length, 0, "must fail in the ABI enum bounds check (empty revert), not with a named error");
+    }
+
+    /// @dev `addMonitorFeed` refuses to run at all until a divergence tolerance exists, so every monitor-feed
+    ///      test needs a primary feed and a tolerance in place before it can reach the arm it is aiming at.
+    function _seedPrimaryAndTolerance() internal {
+        Mock_PriceOracleChainlink primary = new Mock_PriceOracleChainlink("primary", 100, 8);
+        manager.setPriceFeed(buidl, address(primary), type(uint256).max, IPrices.PriceType.Chainlink);
+        manager.setDivergenceTolerance(buidl, 500);
     }
 
     // ============================================

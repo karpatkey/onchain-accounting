@@ -310,16 +310,21 @@ contract BalancesTest is Test {
         balances.checkBalanceAdapterSupport(address(0));
     }
 
+    /// @dev A contract WITH code that answers neither ERC165 nor `IBalanceAdapter` — the realistic mistake, since
+    ///      "I pasted the token address instead of the adapter address" is what actually happens. This and
+    ///      `test_RevertIf_InvalidAdapterNoCode` were previously byte-identical: both passed the same
+    ///      `makeAddr("invalid")` EOA, so despite its name no ERC20 was involved in either, and the
+    ///      code-present input class was untested. `checkBalanceAdapterSupport` routes both through OZ's
+    ///      `ERC165Checker`, which is exactly why both classes are worth naming separately.
     function test_RevertIf_InvalidAdapterERC20() public {
-        // This test checks that a non-IBalanceAdapter address fails
-        address invalidAdapter = makeAddr("invalid");
         vm.expectRevert(IBalances.InvalidBalanceAdapter.selector);
-        balances.checkBalanceAdapterSupport(invalidAdapter);
+        balances.checkBalanceAdapterSupport(address(usdc));
     }
 
-    function test_RevertIf_InvalidAdapterCustom() public {
-        // Test that a non-IBalanceAdapter address fails
+    /// @dev The other input class: an address with no code at all.
+    function test_RevertIf_InvalidAdapterNoCode() public {
         address invalidAdapter = makeAddr("invalid");
+        assertEq(invalidAdapter.code.length, 0, "fixture must have no code for this test to mean anything");
         vm.expectRevert(IBalances.InvalidBalanceAdapter.selector);
         balances.checkBalanceAdapterSupport(invalidAdapter);
     }

@@ -18,6 +18,20 @@ Tests for core deployment functionality:
 - ✅ Initialization protection
 
 ### Test02_DeployProxies.t.sol
+
+> **⚠️ Known coverage hole — `Test02a_DeployProxies` does not run locally.**
+> Its `setUp()` reverts `RpcUrlNotSet()` without an RPC URL in the environment, and forge reports the whole
+> contract as a single failing "test". **All 19 test functions in it are therefore skipped**, not run and passed.
+> CI supplies the URL (see `getAlchemyUrl`, which prefers the `*_URL` env vars) so they do execute there — but on
+> a developer machine a local `forge test --no-match-path "*fork*"` reports **three** failures, not the two
+> by-design `LibraryPinConsistency` ones, and the third is this.
+>
+> Consequences, stated so nobody re-derives them:
+> - A local green run is not evidence these 19 tests pass. Check CI.
+> - The mutation sweep that produced `AUDIT-mutation-sweep.md` could not reach any guard these tests cover; that
+>   is recorded there as an explicit hole in the sweep rather than a clean result.
+> - If you are counting expected local failures while working through the hardening wave, the count is 3.
+
 Tests for the `02_DeployProxies` deploy script:
 - ✅ CREATE2 determinism (canonical deployer yields the same proxy address regardless of caller)
 - ✅ AtomicProxyDeployer behavior
@@ -47,6 +61,26 @@ implementation it deploys:
 
 Every negative test is written to fail if its `require` is removed; the drift tests assert that the guard *tracks*
 the pin state, so they stay meaningful both during a pin regeneration and after it.
+
+### DeployImplementationsPins.t.sol
+Tests the library-pin guards in `01_DeployImplementations` and `01_2_DeployNAVImplementation`, which broadcast the
+implementations the 24-chain deploy runs on:
+- ✅ each source-vs-pin assertion, tripped individually through an injected pin, so both stay covered after the
+  pin regeneration lands (they are the only checks that catch a pin gone stale against current source)
+- ✅ the impl bytecode is linked against the pins (skipped when the tree's pins already match source, since the
+  computed and configured pins are then the same address and there is no divergence to detect)
+- ✅ **the deploy path actually goes through the guard** — fails if the guard call is deleted, which blanking the
+  guard body does not catch. This is the family that was missing: the assertions existed and were correct, but a
+  `revert()` as the first statement of either `run()` failed no test at all
+- ✅ the deploy wrapper can still succeed when the guard permits, so "the guard rejects correctly" stays
+  distinguishable from "the deploy path always reverts"
+- ✅ the harnesses are inert as scripts (`setUp()` reverts, which `forge script` calls before any `--sig` target)
+
+### BaseDeployScriptTolerances.t.sol
+Tests `BaseDeployScript._requireTolerancesPlannable`, the guard shared by `RegisterAssets` and
+`MigrateToMonitorFeeds` that refuses to plan a batch containing a call certain to revert on-chain. It previously
+had **no test at all** — blanking its body and deleting its call sites were equally invisible. Each of its three
+arms is asserted with its exact revert string, plus both tolerance boundaries and a positive control.
 
 ### ConfigReaderTest.t.sol
 Tests for configuration system:

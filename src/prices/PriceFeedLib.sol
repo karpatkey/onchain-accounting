@@ -625,6 +625,17 @@ library PriceFeedLib {
     ///      Consequently **nothing in this function may become adapter-set-dependent beyond scanning
     ///      `allAdapters`.** Anything derived from "the whole registry" rather than from the adapters passed in
     ///      would silently change meaning for a slice.
+    ///
+    /// @dev **STACK BUDGET — this function sits AT the `via_ir` stack limit. Adding a local, a parameter, or an
+    ///      inlined call here will overflow it.** Five storage pointers (`priceOracles`, `monitorFeeds`,
+    ///      `assetPricing`, `assetIndex`, `registeredAssets`) plus `sequencerDown` and the `nav` return struct stay
+    ///      live for the whole body, and the optimizer inlines the position-gathering helpers, so their loop
+    ///      counters land in this frame too. The failure mode is a compile error — `Variable ... is 1 too deep in
+    ///      the stack` — NOT a test failure, and because `via_ir` allocates across the whole compilation unit it can
+    ///      appear in CI while a warm local build passes. **Reproduce with `forge clean` first;** a warm cache hides
+    ///      it. If you must add something here, free a slot the way {_sumPositionValues} did: move a block of locals
+    ///      into a `private` helper so they are live in that frame instead of this one. Packing the storage pointers
+    ///      into a struct is NOT an option — Solidity cannot hold storage references in a memory struct.
     function computeNav(
         mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
         mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
@@ -678,7 +689,23 @@ library PriceFeedLib {
         nav.stalePriceAssets = _buildStaleAssets(assetIndex, registeredAssets, priceFeeds);
         nav.irregularPriceAssets = _buildIrregularAssets(assetIndex, registeredAssets, priceFeeds);
 
-        int256 totalValue = 0;
+        nav.value = _sumPositionValues(assetIndex, registeredAssets, allPositions, priceFeeds, quoteInfo);
+    }
+
+    /// @notice Sums every position's quote-denominated value. Extracted from {computeNav} to keep that function
+    ///         inside the `via_ir` stack limit — see the stack-budget note on {computeNav}. The loop's four
+    ///         per-iteration locals (`pos`, `asset`, `feed`, `canonicalDecimals`) plus the accumulator and the
+    ///         counter live in THIS frame instead of being live across `computeNav`'s deepest point, where five
+    ///         storage pointers and the inlined position-gathering counters are already resident.
+    /// @dev Keep this a separate function. Folding the loop back into {computeNav} reintroduces the overflow, and it
+    ///      surfaces only as a `via_ir` "Variable is 1 too deep in the stack" error at compile time.
+    function _sumPositionValues(
+        mapping(address => uint256) storage assetIndex,
+        INAVCalculator.Asset[] storage registeredAssets,
+        INAVCalculator.PositionBalance[] memory allPositions,
+        PriceFeedCache[] memory priceFeeds,
+        QuoteAssetInfo memory quoteInfo
+    ) private view returns (int256 totalValue) {
         uint256 positionsLength = allPositions.length;
         for (uint256 i = 0; i < positionsLength; i++) {
             INAVCalculator.PositionBalance memory pos = allPositions[i];
@@ -696,7 +723,6 @@ library PriceFeedLib {
                 quoteInfo.assetDecimals
             );
         }
-        nav.value = totalValue;
     }
 
     /// @notice Computes enriched positions for an account, optionally filtered by a single asset

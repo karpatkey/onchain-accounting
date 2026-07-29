@@ -135,8 +135,23 @@ contract GearboxV3CreditAccountsMetaBalanceAdapter is MetaBalanceAdapter {
 
     /// @notice True iff a non-zero debt on `cm` can actually be emitted as a leg: its `underlying()` is readable
     ///         and that asset is registered on the NAV.
-    /// @dev Deliberately ignores `assetFilter`, unlike {_appendBorrow}: a filtered view showing collateral
-    ///      while hiding an unreportable debt over-reports just as an unfiltered one would.
+    /// @dev Deliberately ignores `assetFilter`, unlike {_appendBorrow}, and the asymmetry is the point — the
+    ///      two cases look alike and differ in kind:
+    ///
+    ///        - **Unreadable or unregistered `underlying()`** — nobody can price that debt, on any path, so
+    ///          emitting the collateral basket alone states a figure no consumer is able to offset. Dropping the
+    ///          whole credit account is the safe direction, and that is what this gate produces.
+    ///        - **Excluded by `assetFilter`** ({_appendBorrow}) — the debt is perfectly priceable and merely
+    ///          outside the caller's query. A per-asset read is a PROJECTION, not a sub-portfolio valuation: ask
+    ///          for asset X and you get the legs denominated in X. Omitting the Borrowed leg there is the
+    ///          requested answer, not a failure to report.
+    ///
+    ///      Scope, so this is not mistaken for a live NAV hazard: no NAV figure is ever computed with a filter.
+    ///      `getAccountNav`, `getAccountNavForAdapters` and `getAccountNavVerbose` take no filter and reach
+    ///      `PriceFeedLib.computeNav` with `address(0)`. The only non-zero-filter entrypoints are
+    ///      `NAVCalculator.getAccountPositionsForAsset` / `…ForAssetVerbose`, which return `Position[]`. The
+    ///      residual risk is a CONSUMER summing a filtered position list as if it were a net position — a
+    ///      contract stated on those entrypoints, not something this adapter fixes by hiding a requested leg.
     function _debtReportable(address cm) private view returns (bool) {
         address underlying;
         try ICreditManagerV3(cm).underlying() returns (address u) {

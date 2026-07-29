@@ -58,9 +58,23 @@ contract MorphoMarketsMetaBalanceAdapter is MetaBalanceAdapter {
         Position memory pos = MORPHO.position(marketId, account);
 
         // A debt this adapter cannot report must never leave the collateral standing alone: the position would
-        // count as pure credit and NAV be over-reported by the whole borrow. Checked on registration only, NOT
-        // the assetFilter — a filtered view showing collateral while hiding an unreportable debt over-reports
-        // the same way. Under-reporting the whole position is the safe direction.
+        // count as pure credit, overstated by the whole borrow. Checked on REGISTRATION only, and deliberately
+        // NOT on `assetFilter`. The two look alike and are different in kind:
+        //
+        //   - Unregistered loan token — nobody can price that debt, on any path, so emitting the collateral
+        //     alone states a figure no consumer is able to offset. Dropping the whole position is the safe
+        //     direction, and that is what the guard below does.
+        //   - Excluded by `assetFilter` — the debt is perfectly priceable and merely outside the caller's query.
+        //     A per-asset read is a PROJECTION, not a sub-portfolio valuation: ask for asset X and you get the
+        //     legs denominated in X. Omitting the borrow leg there is the requested answer, not a failed report.
+        //
+        // Scope, so this is not mistaken for a live NAV hazard: no NAV figure is ever computed with a filter.
+        // `getAccountNav`, `getAccountNavForAdapters` and `getAccountNavVerbose` take no filter and reach
+        // `PriceFeedLib.computeNav` with `address(0)`. The only non-zero-filter entrypoints are
+        // `NAVCalculator.getAccountPositionsForAsset` / `…ForAssetVerbose`, which return `Position[]`. The
+        // residual risk is therefore a CONSUMER summing a filtered position list as if it were a net position,
+        // which is a contract stated on those entrypoints — not something this adapter can or should fix by
+        // suppressing legs the caller asked to see.
         if (!loanReg && pos.borrowShares != 0) {
             // Gate on the REALISED borrow, not the raw share count: dust shares left by a repay-by-assets, or a
             // degenerate market whose totalBorrowAssets was driven to 0 by a bad-debt seizure while shares

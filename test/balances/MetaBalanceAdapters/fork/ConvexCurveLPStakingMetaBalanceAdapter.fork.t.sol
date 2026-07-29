@@ -44,12 +44,15 @@ contract ConvexCurveLPStakingMetaForkTest is BalanceAdapterTestBase {
     address public constant USDT = 0xdAC17F958D2ee523a2206206994597C13D831ec7;
     address public constant RLUSD = 0x8292Bb45bf1Ee4d140127049757C2E0fF06317eD;
 
-    uint256 public constant FORK_BLOCK = 22_500_000;
+    uint256 public constant FORK_BLOCK = 25_600_000;
 
     ConvexCurveLPStakingMetaBalanceAdapter public meta;
 
-    // Real holder with staked LP in crvUSD/USDC rewarder at FORK_BLOCK
-    address public constant CRVUSD_USDC_STAKER = 0x989AEb4d175e16225E39E87d0D97A3360524AD80;
+    // Real holder with staked LP in the crvUSD/USDC rewarder at FORK_BLOCK. Position verified live on
+    // mainnet across 25,000,000 → 25,630,000 (~47,478 LP, ~637 CRV earned at the pin), so it is a
+    // long-lived fixture rather than a transient one. If it ever exits, `test_fixture_isLive` fails
+    // LOUDLY — see the note on that test for why this file no longer skips instead.
+    address public constant CRVUSD_USDC_STAKER = 0xBf623bA2566BBD0BF8A5eB7ba15cAF16D7CF1b75;
 
     function setUp() public override {
         super.setUp();
@@ -91,7 +94,7 @@ contract ConvexCurveLPStakingMetaForkTest is BalanceAdapterTestBase {
         // Meta-adapter resolves LP from pid(); if it can produce Staking legs, LP was resolved.
         // Use CRVUSD_USDC_STAKER who has staked LP.
         uint256 staked = _staked(REWARDER_CRVUSD_USDC, CRVUSD_USDC_STAKER);
-        if (staked == 0) return;
+        assertGt(staked, 0, "fixture staker must hold staked LP at FORK_BLOCK");
 
         INAVCalculator.PositionBalance[] memory pos =
             meta.getAdapterPositionsForInstances(CRVUSD_USDC_STAKER, _single(REWARDER_CRVUSD_USDC), address(0));
@@ -104,7 +107,7 @@ contract ConvexCurveLPStakingMetaForkTest is BalanceAdapterTestBase {
 
     function test_crvUsdUsdc_stakedDecomposesProRata() public view {
         uint256 staked = _staked(REWARDER_CRVUSD_USDC, CRVUSD_USDC_STAKER);
-        if (staked == 0) return;
+        assertGt(staked, 0, "fixture staker must hold staked LP at FORK_BLOCK");
 
         INAVCalculator.PositionBalance[] memory pos =
             meta.getAdapterPositionsForInstances(CRVUSD_USDC_STAKER, _single(REWARDER_CRVUSD_USDC), address(0));
@@ -118,13 +121,13 @@ contract ConvexCurveLPStakingMetaForkTest is BalanceAdapterTestBase {
 
     function test_crvEarned_reportedExactly() public view {
         uint256 staked = _staked(REWARDER_CRVUSD_USDC, CRVUSD_USDC_STAKER);
-        if (staked == 0) return;
+        assertGt(staked, 0, "fixture staker must hold staked LP at FORK_BLOCK");
 
         // Read CRV earned directly from the rewarder for comparison
         (bool ok, bytes memory data) =
             REWARDER_CRVUSD_USDC.staticcall(abi.encodeWithSignature("earned(address)", CRVUSD_USDC_STAKER));
         uint256 crvExpected = (ok && data.length >= 32) ? abi.decode(data, (uint256)) : 0;
-        if (crvExpected == 0) return;
+        assertGt(crvExpected, 0, "fixture staker must have earned CRV at FORK_BLOCK");
 
         INAVCalculator.PositionBalance[] memory pos =
             meta.getAdapterPositionsForInstances(CRVUSD_USDC_STAKER, _single(REWARDER_CRVUSD_USDC), address(0));
@@ -138,7 +141,7 @@ contract ConvexCurveLPStakingMetaForkTest is BalanceAdapterTestBase {
 
     function test_cvxDerived_fromCrv() public view {
         uint256 staked = _staked(REWARDER_CRVUSD_USDC, CRVUSD_USDC_STAKER);
-        if (staked == 0) return;
+        assertGt(staked, 0, "fixture staker must hold staked LP at FORK_BLOCK");
 
         INAVCalculator.PositionBalance[] memory pos =
             meta.getAdapterPositionsForInstances(CRVUSD_USDC_STAKER, _single(REWARDER_CRVUSD_USDC), address(0));
@@ -149,7 +152,7 @@ contract ConvexCurveLPStakingMetaForkTest is BalanceAdapterTestBase {
             if (pos[i].balanceAsset.asset == CRV) crvAmt += pos[i].amount;
             if (pos[i].balanceAsset.asset == CVX) cvxAmt += pos[i].amount;
         }
-        if (crvAmt == 0) return; // no CRV → no CVX expected
+        assertGt(crvAmt, 0, "adapter must report the earned CRV, which the CVX leg is derived from");
         assertGt(cvxAmt, 0, "CVX derived and > 0 when CRV earned");
     }
 
@@ -165,16 +168,40 @@ contract ConvexCurveLPStakingMetaForkTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory pos =
             meta.getAdapterPositionsForInstances(CRVUSD_USDC_STAKER, _instances(rs), address(0));
 
-        // At minimum the crvUSD/USDC rewarder should have results for this staker
-        // Other rewarders may return 0 for this specific staker — that's fine
-        assertGe(pos.length, 0); // at least no revert
+        // This used to be `assertGe(pos.length, 0)`, which is a tautology — `pos.length` is a uint256, so it
+        // could never fail, and the "at least no revert" property it claimed to check is supplied by the call
+        // itself. Assert what the fan-out actually has to do: reach the one rewarder this staker uses, and
+        // report exactly the legs a single-instance read reports for it, with the other three contributing
+        // nothing rather than reverting or duplicating.
+        assertGt(pos.length, 0, "the fan-out must surface the staker's crvUSD/USDC legs");
+
+        INAVCalculator.PositionBalance[] memory single =
+            meta.getAdapterPositionsForInstances(CRVUSD_USDC_STAKER, _single(REWARDER_CRVUSD_USDC), address(0));
+        assertEq(pos.length, single.length, "the three empty rewarders must add no legs");
+        for (uint256 i; i < pos.length; ++i) {
+            assertEq(pos[i].positionId, abi.encode(REWARDER_CRVUSD_USDC), "every leg belongs to the one rewarder");
+        }
+    }
+
+    /// @notice The fixture itself, asserted once and loudly.
+    /// @dev This file previously guarded every test with `if (staked == 0) return;`. At its old pinned block the
+    ///      staker held nothing, so all five staked-gated tests took the early return and the sixth was a
+    ///      tautology — the whole file asserted NOTHING while reporting green, for a meta-adapter that is
+    ///      deployed on mainnet with a governed instance set. A pinned fixture going stale must fail, not skip:
+    ///      a skip is indistinguishable from a pass, and that is precisely how the coverage was lost.
+    function test_fixture_isLive() public view {
+        assertGt(_staked(REWARDER_CRVUSD_USDC, CRVUSD_USDC_STAKER), 0, "staked LP fixture is stale");
+        (bool ok, bytes memory data) =
+            REWARDER_CRVUSD_USDC.staticcall(abi.encodeWithSignature("earned(address)", CRVUSD_USDC_STAKER));
+        assertTrue(ok && data.length >= 32, "rewarder must answer earned()");
+        assertGt(abi.decode(data, (uint256)), 0, "earned-CRV fixture is stale");
     }
 
     // ─── Identity ─────────────────────────────────────────────────────────────
 
     function test_positionId_isRewarder() public view {
         uint256 staked = _staked(REWARDER_CRVUSD_USDC, CRVUSD_USDC_STAKER);
-        if (staked == 0) return;
+        assertGt(staked, 0, "fixture staker must hold staked LP at FORK_BLOCK");
 
         INAVCalculator.PositionBalance[] memory pos =
             meta.getAdapterPositionsForInstances(CRVUSD_USDC_STAKER, _single(REWARDER_CRVUSD_USDC), address(0));

@@ -282,13 +282,32 @@ wiring hole, and worth separating from 2.1: 2.1 has the property covered elsewhe
 `src/prices/PriceFeedLib.sol:454-461`:
 
 ```solidity
-if (answer != 0)            stale = true;      // covered — disabledUptimeFeed / sequencerUptimeFeedDown
-else if (startedAt == 0)    stale = true;      // covered — uninitializedUptimeFeed
+if (answer != 0)            stale = true;      // "covered" — disabledUptimeFeed / sequencerUptimeFeedDown
+else if (startedAt == 0)    stale = true;      // "covered" — uninitializedUptimeFeed
 else {
     uint256 effectiveStartedAt = startedAt > block.timestamp ? block.timestamp : startedAt;
     if (block.timestamp - effectiveStartedAt <= gracePeriod) stale = true;   // <-- line 460
 }
 ```
+
+> **CORRECTION — both "covered" annotations above were wrong, and in the same way.** The original sweep found the
+> grace-period arm unreached and reported the other two as covered. They were covered only against the *blanking*
+> mutation. Against *arm removal* — the canonical branch-deletion operator, and the one this report treats as
+> decisive — each was rescued by the arm beneath it:
+>
+> - **Arm 1** (`answer != 0`): its fixtures all report `startedAt == 0` as well, so removing the arm dropped
+>   through to arm 2, which still set `stale`. Found in review round 3; fixed with a settable-answer mock and a
+>   fixture carrying a real `startedAt`.
+> - **Arm 2** (`startedAt == 0`): its one fixture runs at `block.timestamp == 1`, so removing the arm dropped
+>   through to arm 3, where `elapsed = 1 <= gracePeriod` still set `stale`. Found in review round 7; fixed by
+>   warping past the grace period.
+>
+> The general shape, which is the reusable part: **in an `if / else if / else` chain, every arm's removal is
+> masked by the arm beneath it unless the fixture is chosen so the lower arms would answer differently.** A
+> three-arm chain needs three fixtures selected against three different lower arms — one per arm is not enough,
+> and "there is a test that reaches this arm" is not the same as "this arm is pinned". All three arms of this
+> guard needed a distinct fixture, and all three were initially wrong in the same direction: under-reporting
+> staleness, which is the over-report direction for NAV.
 
 Three things line up here, and the third is the one that makes this more than a coverage note:
 

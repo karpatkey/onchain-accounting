@@ -396,11 +396,28 @@ contract PricesTest is Test {
         assertTrue(managerL2.checkL2SequencerUptime(), "future startedAt must clamp to now and read as stale");
     }
 
+    /// @notice The `startedAt == 0` arm — an uninitialised or freshly-deployed aggregator.
+    /// @dev    **The `vm.warp` is load-bearing.** Without it this test is rescued by the arm BELOW it, exactly as
+    ///         `..._answerNonZero` was rescued by this one. Forge starts the clock at `block.timestamp == 1`, so
+    ///         with the arm deleted control falls into the grace-period branch, `effectiveStartedAt` clamps to 0,
+    ///         `elapsed = 1 <= 3600`, and `stale` is still set — the mutant survives and the suite stays green.
+    ///         Warping past the grace period makes `elapsed = 7201 > 3600`, so deleting the arm flips `stale` to
+    ///         false and this test goes red.
+    ///
+    ///         Third arm of a three-arm chain, and the third to need its own fixture for the same reason: in
+    ///         `if (a) … else if (b) … else …`, every arm's removal is masked by the arm beneath it unless the
+    ///         fixture is chosen so the lower arms would answer differently. Arm 1 needed a non-zero `startedAt`,
+    ///         arm 3 needed a settable one, and arm 2 needs a clock past the grace period.
+    ///
+    ///         Production relevance: with the arm gone, a live feed reporting `answer == 0, startedAt == 0` gives
+    ///         `elapsed == block.timestamp`, far past any grace period, so the sequencer reads healthy and prices
+    ///         are accepted — the over-report direction.
     function test_checkL2SequencerUptime_uninitializedStartedAtZero() public {
+        vm.warp(block.timestamp + 2 hours); // see @dev — past the 1h grace period, so arm 3 cannot rescue this
         managerL2 = new PricesHarness(address(uninitializedUptimeFeed));
 
         bool stale = managerL2.checkL2SequencerUptime();
-        assertTrue(stale);
+        assertTrue(stale, "startedAt == 0 must read as stale even long past the grace period");
     }
 
     // =========================================================================

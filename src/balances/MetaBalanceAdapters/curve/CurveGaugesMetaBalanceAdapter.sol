@@ -119,6 +119,11 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
                 } else if (assetFilter == address(0) || assetFilter == lpToken) {
                     // Undecomposable: the staked balance is still real, so report it in LP terms. Valued only
                     // if the LP token is a registered asset — the operator's call, and visible either way.
+                    // Emits only if the LP token is a REGISTERED asset. Operator note: registering it also
+                    // makes ERC20Default report the account's WALLET-held LP, which `CurvePoolsMeta` already
+                    // decomposes into coin legs for a governed pool - i.e. registering to light this net up
+                    // double-counts the wallet LP. Prefer registering it only where the pool is NOT a governed
+                    // CurvePoolsMeta instance.
                     (INAVCalculator.Asset memory lpInfo, bool lpFound) = _getAssetInfo(lpToken);
                     if (lpFound) tmp[n++] = _leg(lpInfo, stakedLp, false, pid, PositionKind.Staking);
                 }

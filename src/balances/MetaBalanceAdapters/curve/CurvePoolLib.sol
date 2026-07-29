@@ -59,8 +59,10 @@ library CurvePoolLib {
     ///      "the pool IS the LP token". For 3pool that is false: its LP is the separate 3Crv, and `balanceOf`
     ///      on the pool itself reverts, so every wallet-LP decomposition for 3pool read zero and reported
     ///      nothing. The registry answers this direction too (`get_lp_token(3pool)` -> 3Crv) and, as in
-    ///      `getPool`, its answer is validated — accepted only if it is a different address that behaves like
-    ///      an ERC20 — so a bad answer degrades to the previous behaviour instead of mis-attributing balances.
+    ///      `getPool`, its answer is round-tripped — a different address that behaves like an ERC20 AND whose
+    ///      `get_pool_from_lp_token` maps back to this pool — so a bad answer degrades to the previous
+    ///      behaviour instead of mis-attributing balances. The ERC20 sniff alone is far too weak: any ERC20
+    ///      that is not the pool would pass it.
     function getLpToken(address pool) internal view returns (address) {
         (bool ok, bytes memory data) = pool.staticcall(abi.encodeWithSignature("lp_token()"));
         if (ok && data.length == 32) {
@@ -72,7 +74,10 @@ library CurvePoolLib {
         // pools do not, and only the registry knows their LP.
         if (!_isErc20(pool)) {
             address fromRegistry = _lpTokenFromRegistry(pool);
-            if (fromRegistry != address(0) && fromRegistry != pool && _isErc20(fromRegistry)) return fromRegistry;
+            if (
+                fromRegistry != address(0) && fromRegistry != pool && _isErc20(fromRegistry)
+                    && _poolFromRegistry(fromRegistry) == pool
+            ) return fromRegistry;
         }
 
         return pool; // pool IS the LP token (classic StableSwap, TriCryptoNG)
@@ -114,10 +119,19 @@ library CurvePoolLib {
     ///         registry maps LP token -> pool for exactly the legacy generation the heuristics miss:
     ///         `get_pool_from_lp_token(3Crv)` returns `0xbEbc4478…` (the real 3pool) on mainnet.
     ///
-    ///         The registry's answer is VALIDATED rather than trusted: it is accepted only if it responds to
-    ///         `coins()`. That keeps the trust local — a wrong or hostile registry answer would otherwise
-    ///         drive the pro-rata decomposition against another pool's balances, which is the one direction
-    ///         (over-report) this family must never take. Every step is a guarded staticcall, so a chain with
+    ///         The registry's answer is VALIDATED rather than trusted, and the validation must establish
+    ///         CORRESPONDENCE, not plausibility. An earlier revision accepted any answer that merely responded
+    ///         to `coins()` and claimed that was sufficient; it was not. `coins()` is a "looks like a Curve
+    ///         pool" sniff that says nothing about whether that pool backs THIS lpToken, and a reviewer proved
+    ///         it: pointing `get_registry()` at a 30-line contract implementing only `coins`/`balances`
+    ///         inflated a Staking leg 12,213x (833.74 USDC reported as 10,182,786.55), because `totalSupply`
+    ///         still came from the real LP while `balances` came from the impostor. So the answer is now
+    ///         round-tripped through the registry's other direction — `get_lp_token(pool) == lpToken` — which
+    ///         forces any wrong answer to be at least self-consistent and rejects that PoC outright.
+    ///
+    ///         This is a trust-surface point, not just a bug fix: without the round-trip, a globally mutable
+    ///         Curve-DAO pointer would decide which contract's balances back the accounting, in a family whose
+    ///         invariant is under-report-never-over-report. Every step is a guarded staticcall, so a chain with
     ///         no AddressProvider, an older one whose `get_registry()` returns zero (Base today), or an LP the
     ///         registry does not know, all degrade to the previous behaviour rather than reverting.
     function getPool(address lpToken) internal view returns (address) {
@@ -133,7 +147,10 @@ library CurvePoolLib {
 
         // Legacy StableSwap (CurveTokenV1/V2): neither coins() nor minter(). Ask the Curve registry.
         address fromRegistry = _poolFromRegistry(lpToken);
-        if (fromRegistry != address(0) && _hasCoinMethod(fromRegistry)) return fromRegistry;
+        if (fromRegistry != address(0) && _hasCoinMethod(fromRegistry) && _lpTokenFromRegistry(fromRegistry) == lpToken)
+        {
+            return fromRegistry;
+        }
 
         return address(0); // Cannot resolve — consumers report the LP token itself rather than nothing
     }

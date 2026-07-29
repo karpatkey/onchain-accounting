@@ -117,6 +117,11 @@ contract ConvexCurveLPStakingMetaBalanceAdapter is MetaBalanceAdapter {
                         tmp[n++] = _leg(info, amount, false, pid, PositionKind.Staking);
                     }
                 } else if (assetFilter == address(0) || assetFilter == lpToken) {
+                    // Emits only if the LP token is a REGISTERED asset. Operator note: registering it also
+                    // makes ERC20Default report the account's WALLET-held LP, which `CurvePoolsMeta` already
+                    // decomposes into coin legs for a governed pool - i.e. registering to light this net up
+                    // double-counts the wallet LP. Prefer registering it only where the pool is NOT a governed
+                    // CurvePoolsMeta instance.
                     (INAVCalculator.Asset memory lpInfo, bool lpFound) = _getAssetInfo(lpToken);
                     if (lpFound) tmp[n++] = _leg(lpInfo, stakedLp, false, pid, PositionKind.Staking);
                 }

@@ -21,7 +21,7 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 ///
 /// Gauges under test (same underlying pools):
 ///   - crvUSD/USDC gauge (0x95f00391cB5EebCd190EB58728B4CE23DbFa6ac1)
-///   - weETH/WETH gauge (0xca8C7cc4a38a8481f52ad43de9a97c03f2c5bEBd)
+///   - weETH/WETH gauge (0x053df3e4D0CeD9a3Bf0494F97E83CE1f13BdC0E2 - 0xca8C7cc4… has NO CODE and is not a gauge)
 ///   - 3pool gauge (0xbFcF63294aD7105dEa65aA58F8AE5BE2D9d0952A)
 ///
 /// Pinned to a block where the test accounts hold verified positions.
@@ -188,8 +188,18 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory pos =
             gaugesMeta.getAdapterPositionsForInstances(THREEPOOL_GAUGE_STAKER, _gauge(THREEPOOL_GAUGE), address(0));
 
+        // Must assert DECOMPOSITION, not merely "a Staking leg exists". This PR gave that weaker condition a
+        // second route - the LP-token fallback leg - so a reviewer showed the weaker assertion passes on the
+        // UNFIXED library (registry disabled + 3Crv registered => one 3Crv leg). Requiring three legs, none of
+        // them the LP token, fails on both unfixed shapes: zero legs (3Crv unregistered) and one LP leg.
         uint256 stakedLegs = _countKind(pos, PositionKind.Staking);
-        assertGt(stakedLegs, 0, "3pool staking principal dropped - getPool(3Crv) resolved to address(0)");
+        assertEq(stakedLegs, 3, "3pool did not decompose into its three coins - getPool(3Crv) unresolved?");
+        for (uint256 i; i < pos.length; ++i) {
+            if (pos[i].positionKind != PositionKind.Staking) continue;
+            assertTrue(
+                pos[i].balanceAsset.asset != THREEPOOL_LP, "reported the LP token itself - decomposition did not happen"
+            );
+        }
     }
 
     /// @notice weETH/WETH gauge — staked LP decomposes.
@@ -205,6 +215,8 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
     }
 
     /// @notice Asset filter correctly restricts output to the requested token.
+    /// @dev The length assertion is load-bearing: without it an empty result satisfies the loop vacuously,
+    ///      which is the same class of defect this file was cleaned of.
     function test_crvUsdUsdc_gauge_assetFilter() public view {
         uint256 staked = _gaugeBalance(CRVUSD_USDC_GAUGE, CRVUSD_USDC_STAKER);
         assertGt(staked, 0, "fixture holds no gauge stake at FORK_BLOCK - re-fixture, do not skip");
@@ -234,7 +246,7 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
     /// @notice Emitted positions carry a non-empty leaf label built from on-chain symbols.
     function test_positionLabels_crvUsdUsdc_gauge() public view {
         uint256 staked = _gaugeBalance(CRVUSD_USDC_GAUGE, CRVUSD_USDC_STAKER);
-        // Graceful skip: this pinned gauge staker currently holds 0 (position exited), so a hard non-zero
+        // (Historical note, no longer accurate: this used to say "graceful skip" for gauge staker currently holds 0 (position exited), so a hard non-zero
         // assert would red CI on a stale pin. Pinned holders are refreshed via the integration-snapshot
         // process, not by failing here. (Copilot PR #127.)
         assertGt(staked, 0, "fixture holds no gauge stake at FORK_BLOCK - re-fixture, do not skip");
@@ -250,7 +262,7 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
 
     function test_positionLabels_threepool() public view {
         uint256 walletLp = _lpBalance(THREEPOOL_LP, THREEPOOL_HOLDER);
-        // Graceful skip: this pinned 3pool holder currently holds 0 LP (exited), so a hard non-zero assert
+        // (Historical note, no longer accurate: this used to say "graceful skip" for 3pool holder currently holds 0 LP (exited), so a hard non-zero assert
         // would red CI on a stale pin. Pinned holders are refreshed via the integration-snapshot process,
         // not by failing here. (Copilot PR #127.)
         assertGt(walletLp, 0, "fixture holds no LP at FORK_BLOCK - re-fixture, do not skip");
@@ -330,7 +342,8 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
             // Find coin index in pool
             for (uint256 j; j < 8; ++j) {
                 (bool cok, bytes memory cd) = pool.staticcall(abi.encodeWithSignature("coins(uint256)", j));
-                if (!cok || cd.length < 32) break;
+                if (!cok || cd.length < 32) break; // uint256-indexed pools only; int128 pools never reach here
+
                 address c = abi.decode(cd, (address));
                 if (c == address(0)) break;
                 if (c == coin) {

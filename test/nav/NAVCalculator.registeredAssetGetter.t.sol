@@ -196,8 +196,13 @@ contract NAVCalculatorRegisteredAssetGetterTest is SuperTest {
         vm.startPrank(navCalculatorManager);
         for (uint256 i = 0; i < _extra.length; i++) {
             if (uint256(keccak256(abi.encode(seed, i))) % 3 == 0) {
-                (, bool stillThere) = nav.getRegisteredAsset(_extra[i]);
-                if (stillThere) nav.unregisterAsset(_extra[i]);
+                // Guarded with `isAssetRegistered`, NOT with `getRegisteredAsset`. Using the function under test
+                // to drive the mutation loop would make this self-referential in a way that weakens it silently:
+                // were `getRegisteredAsset` to report `found == false` for a registered asset, nothing would be
+                // unregistered, the registry would stay fully populated, and the fuzz would never exercise
+                // swap-and-pop at all — while still PASSING, because the equivalence comparison below holds
+                // trivially in an unmutated registry. `isAssetRegistered` is an independent read.
+                if (nav.isAssetRegistered(_extra[i])) nav.unregisterAsset(_extra[i]);
             }
         }
         vm.stopPrank();

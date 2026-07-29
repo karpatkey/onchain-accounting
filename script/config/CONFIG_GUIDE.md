@@ -47,7 +47,7 @@ Two concerns are kept separate:
 
 ## contracts-deployment-config/custom-price-feeds/<chainId>.json — Custom price feeds to deploy
 
-Deployable custom price feed adapters (e.g. sDAI, wstETH), keyed by feed name, each with `enabled` and `constructor` params. Read by `03_DeployPriceFeeds.s.sol`, which deploys every feed where `enabled: true` and writes the address to `deployments/<chainId>.json .customPriceFeeds.<feedName>`.
+Deployable custom price feed adapters (e.g. sUSDS, wstETH), keyed by feed name, each with `enabled` and `constructor` params. Read by `03_DeployPriceFeeds.s.sol`, which deploys every feed where `enabled: true` and writes the address to `deployments/<chainId>.json .customPriceFeeds.<feedName>`.
 
 ```json
 {

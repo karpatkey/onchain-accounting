@@ -74,8 +74,8 @@ were rejected and why.
 one at a time against a throttled endpoint it takes over 15 minutes, batched it takes ~70 seconds.
 
 **The bytecode audit matches by code, not by name.** Deployment-record keys are operator shorthand
-(`AaveV3InstancesMeta`, `sDAI`) that does not map mechanically onto artifact names
-(`AaveV3InstancesMetaBalanceAdapter`, `sDAI_CustomPriceFeed`). Rather than maintain a name table, the
+(`AaveV3InstancesMeta`, `osGNO`) that does not map mechanically onto artifact names
+(`AaveV3InstancesMetaBalanceAdapter`, `osToken_CustomPriceFeed`). Rather than maintain a name table, the
 audit indexes every artifact by its immutable-masked runtime code and looks the on-chain code up. Run
 `--self-test` first: it verifies on real artifacts that masking recovers a contract whose immutables
 differ, that a byte flipped outside the immutable ranges does *not* match, and that garbage and

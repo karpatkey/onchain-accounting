@@ -122,7 +122,7 @@ Internal API (used by NAVCalculator):
 - `_removePriceFeed(asset, priceFeed)` — locates feed by address, calls `_removePriceFeedAt`. Reverts with `PriceFeedNotFound` if not registered.
 - `_removeAllPriceFeeds(asset)` — `delete _priceOracles[asset]`, used by `unregisterAsset` only.
 - `_priceFeedCount(asset)` — returns array length.
-- `checkPriceOracleSupport(asset, priceFeed, priceType)` — public; ERC165 check for Custom; for Chainlink/Redstone/API3: rejects `ICustomPriceFeed`-shaped feeds and calls `latestRoundData()` as a sanity check.
+- `checkPriceOracleSupport(asset, priceFeed, priceType)` — public; for Custom: ERC165 check **plus an asset-binding check** — the feed's own `underlyingAssetSupported()` must equal `asset`, else it reverts `CustomFeedAssetMismatch(asset, feed, feedAsset)`; for Chainlink/Redstone/API3: rejects `ICustomPriceFeed`-shaped feeds and calls `latestRoundData()` as a sanity check. The same validator backs `registerAsset`, `addPriceFeed` and `addMonitorFeed`, so the binding is enforced everywhere a Custom feed can be attached to an asset — this view is the transaction-free way to pre-flight it.
 
 External view API:
 
@@ -143,7 +143,7 @@ Every custom feed must implement this interface (and ERC165).
 | `getLatestPrice()` | Returns `(uint256 price, bool stale)`. Price is in `decimals()` precision. Return `(0, true)` on any failure or uncertainty. |
 | `latestRoundData()` | Returns `(roundId, answer, startedAt, updatedAt, answeredInRound)` — same shape as Chainlink's `AggregatorV3Interface`. **`Prices.sol` calls this** to obtain `updatedAt` for the heartbeat gate and freshness ranking among surviving Custom feeds. See §5.1 for what to return. |
 | `decimals()` | Returns the number of decimals the price is expressed in. Pinned at construction. |
-| `underlyingAssetSupported()` | Returns the asset address this feed prices. Single asset per feed (1:1 contract-to-asset). |
+| `underlyingAssetSupported()` | Returns the asset address this feed prices. Single asset per feed (1:1 contract-to-asset). **Enforced on-chain at registration:** `registerAsset` / `addPriceFeed` / `addMonitorFeed` all read this and revert `CustomFeedAssetMismatch` unless it equals the asset being registered, so a feed cannot be attached to an asset it does not price. Back it with an `immutable` pinned in the constructor. |
 | `supportsInterface(bytes4)` | Must return `true` for `type(ICustomPriceFeed).interfaceId` and `IERC165`. |
 
 ### 5.0 `BaseCustomPriceFeed` — the "rate × NAV-base/USD" skeleton

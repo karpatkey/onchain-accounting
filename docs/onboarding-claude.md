@@ -88,7 +88,7 @@ Read [`src/balances/BALANCE_ADAPTERS.md`](../src/balances/BALANCE_ADAPTERS.md) f
 
 Two flavors:
 - **Chainlink** — registered with `priceType = Chainlink` and a heartbeat for staleness. Most assets use this.
-- **Custom** — a contract implementing `ICustomPriceFeed` that derives a price (e.g., `sXDAI_CustomPriceFeed` combines xDAI/USD with the vault's ERC-4626 share rate; `wstETH_CustomPriceFeed` reads stETH-per-token rate × stETH/ETH × ETH/USD). Used for receipt tokens, LP tokens, and synthetic rates. All custom feeds live under `src/prices/protocols/`.
+- **Custom** — a contract implementing `ICustomPriceFeed` that derives a price (e.g., `sXDAI_CustomPriceFeed` combines xDAI/USD with the vault's ERC-4626 share rate; `wstETH_CustomPriceFeed` reads the on-chain `stEthPerToken()` rate × ETH/USD, holding stETH/ETH at 1.0 — no market leg). Used for receipt tokens, LP tokens, and synthetic rates. All custom feeds live under `src/prices/protocols/`.
 
 L2 deployments check `chainlinkL2SequencerUptimeFeed`; if down or in grace period, prices are flagged stale.
 

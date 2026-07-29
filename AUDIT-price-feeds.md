@@ -479,7 +479,9 @@ positive control that a matching feed still registers, and a control that Chainl
 one in `test/prices/DivergenceMonitor.t.sol` (monitor path — the likelier crossing in practice, since every
 `*CrossRate` instance is a monitor and their config keys sit adjacent to the primaries').
 
-## #1 — SPECIFIED, not applied. And my "config-only" claim was wrong.
+## #1 — IMPLEMENTED in this PR (via Route A below). My original "config-only" claim was wrong.
+
+**Shipped as commits `b50218e2` (config) + `bbd2b490` (the `03` change Route A requires).** The text below is the original specification, kept because it records why Route A was chosen and what it costs; read it as the rationale for what landed, not as pending work.
 
 I said this was config-only with no tree movement. That was too strong: **it needs a small `03_DeployPriceFeeds.s.sol`
 change either way**, because there is no existing deploy path that produces a unit-rate feed for a second asset. Since

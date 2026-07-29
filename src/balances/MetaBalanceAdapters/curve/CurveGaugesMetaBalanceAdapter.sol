@@ -188,10 +188,21 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
 
         // Merge: coins + CRV (if Minter set) + extra rewards
         uint256 crvSlot = CURVE_MINTER != address(0) ? 1 : 0;
-        // Declare the LP token exactly when _instancePositions could emit it as a fallback leg. Without this
-        // the advertised asset set contradicts what the adapter emits, and NAVRegistryLib.getAdaptersForAsset
-        // routes per-asset queries by this list — so getAccountBalanceForAsset(LP) would miss a principal that
-        // getAccountNav() includes.
+        // Declare the LP token when _instancePositions could emit it as a fallback leg, so the advertised set
+        // does not contradict what the adapter emits.
+        //
+        // An earlier version of this comment justified it by claiming per-asset reads route through this list
+        // and would otherwise miss the principal. That was wrong twice over and a reviewer measured it: the
+        // filtered read is getAccountPositionsForAsset -> PriceFeedLib.computeAccountPositions, which iterates
+        // EVERY adapter and pushes assetFilter down into getAdapterPositions - it never consults
+        // underlyingAssetsSupported(); and the function that comment named does not exist anywhere in the repo.
+        // The real reason is narrower and worth stating accurately: underlyingAssetsSupported() is a public
+        // IBalances view consumed by off-chain tooling, and an adapter that emits an asset it does not declare
+        // is lying to that consumer.
+        // Mirrors the emission condition for every reachable case. Not a total parity claim: positions also
+        // requires totalSupply > 0 before enumerating coins, so an LP answering neither totalSupply() nor
+        // total_supply() while its pool still enumerates coins would emit the fallback without it being
+        // declared here. No such pool is known; the wording is hedged rather than the branch duplicated.
         uint256 lpSlot = (coins.length == 0 && lpToken != address(0)) ? 1 : 0;
         address[] memory all = new address[](coins.length + crvSlot + extraN + lpSlot);
         for (uint256 i; i < coins.length; ++i) {

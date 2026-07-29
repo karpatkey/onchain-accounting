@@ -16,7 +16,7 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 ///       self-LP (pool IS the LP token), uint256 coins indices
 ///   - weETH/WETH TriCrypto-style 2-token pool (actual: ngPool)
 ///       self-LP, two ETH-denominated coins
-///   - 3pool (DAI/USDC/USDT, 0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7)
+///   - 3pool (DAI/USDC/USDT, 0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7) - uint256-indexed, LP is 3Crv
 ///       classic StableSwap with int128-indexed coins
 ///
 /// Gauges under test (same underlying pools):
@@ -139,8 +139,12 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
         _assertAllSupplied(pos);
     }
 
-    /// @notice 3pool — classic StableSwap, int128 coin indices.
-    function test_threepool_walletLp_decomposes_int128() public view {
+    /// @notice 3pool — classic StableSwap, separate LP token (3Crv).
+    /// @dev Renamed: this was `…_int128` and the header called 3pool "int128-indexed", but measured at the
+    ///      pinned block 3pool answers `coins(uint256,0)` = DAI and REVERTS on `coins(int128,0)`, so this test
+    ///      exercises the uint256 branch exclusively. The int128 fallback is covered by
+    ///      CurvePoolsMetaBalanceAdapter.t.sol via MockLegacyStableSwapPool - just not here.
+    function test_threepool_walletLp_decomposes() public view {
         uint256 walletLp = _lpBalance(THREEPOOL_LP, THREEPOOL_HOLDER);
         assertGt(walletLp, 0, "fixture holds no LP at FORK_BLOCK - re-fixture, do not skip");
 
@@ -255,7 +259,7 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
         uint256 staked = _gaugeBalance(CRVUSD_USDC_GAUGE, CRVUSD_USDC_STAKER);
         // Historical note: this used to take a graceful skip when gauge staker currently holds 0 (position exited), so a hard non-zero
         // assert would red CI on a stale pin. Pinned holders are refreshed via the integration-snapshot
-        // process, not by failing here. (Copilot PR #127.)
+        // process, failing here is now how a stale fixture is surfaced. (Copilot PR #127.)
         assertGt(staked, 0, "fixture holds no gauge stake at FORK_BLOCK - re-fixture, do not skip");
 
         INAVCalculator.PositionBalance[] memory pos =
@@ -271,7 +275,7 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
         uint256 walletLp = _lpBalance(THREEPOOL_LP, THREEPOOL_HOLDER);
         // Historical note: this used to take a graceful skip when 3pool holder currently holds 0 LP (exited), so a hard non-zero assert
         // would red CI on a stale pin. Pinned holders are refreshed via the integration-snapshot process,
-        // not by failing here. (Copilot PR #127.)
+        // failing here is now how a stale fixture is surfaced. (Copilot PR #127.)
         assertGt(walletLp, 0, "fixture holds no LP at FORK_BLOCK - re-fixture, do not skip");
 
         INAVCalculator.PositionBalance[] memory pos =
@@ -355,7 +359,9 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
                 if (c == address(0)) break;
                 if (c == coin) {
                     (bool bok, bytes memory bd) = pool.staticcall(abi.encodeWithSignature("balances(uint256)", j));
-                    if (!bok || bd.length < 32) break;
+                    // The coin already matched, so this is the leg's only amount check. Breaking here would
+                    // skip it silently - the same vacuity class this helper was hardened against, one level in.
+                    assertTrue(bok && bd.length >= 32, "matched coin has no balances() - cannot verify pro-rata");
                     uint256 poolBal = abi.decode(bd, (uint256));
                     uint256 expected = (poolBal * walletLp) / ts;
                     assertEq(pos[i].amount, expected, "pro-rata amount matches");

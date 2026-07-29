@@ -233,8 +233,13 @@ contract ConvexCurveLPStakingMetaBalanceAdapter is MetaBalanceAdapter {
             }
         }
 
-        // Declare the LP token exactly when _instancePositions could emit it as a fallback leg — otherwise the
-        // advertised asset set contradicts what the adapter emits, and per-asset routing misses that principal.
+        // Declare the LP token when _instancePositions could emit it as a fallback leg, so the advertised set
+        // does not contradict what the adapter emits. (Not for per-asset routing: the filtered read iterates
+        // every adapter and never consults underlyingAssetsSupported() - see the sibling Curve adapter.)
+        // Mirrors the emission condition for every reachable case. Not a total parity claim: positions also
+        // requires totalSupply > 0 before enumerating coins, so an LP answering neither totalSupply() nor
+        // total_supply() while its pool still enumerates coins would emit the fallback without it being
+        // declared here. No such pool is known; the wording is hedged rather than the branch duplicated.
         uint256 lpSlot = (coins.length == 0 && lpToken != address(0)) ? 1 : 0;
         address[] memory all = new address[](coins.length + rn + lpSlot);
         for (uint256 i; i < coins.length; ++i) {

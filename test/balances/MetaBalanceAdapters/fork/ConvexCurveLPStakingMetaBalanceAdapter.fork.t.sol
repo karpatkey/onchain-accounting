@@ -171,7 +171,7 @@ contract ConvexCurveLPStakingMetaForkTest is BalanceAdapterTestBase {
 
         // At minimum the crvUSD/USDC rewarder should have results for this staker
         // Other rewarders may return 0 for this specific staker — that's fine
-        assertGt(pos.length, 0, "fan-out produced no positions across the four rewarders"); // at least no revert
+        assertGt(pos.length, 0, "fan-out produced no positions across the four rewarders");
     }
 
     // ─── Identity ─────────────────────────────────────────────────────────────

@@ -63,6 +63,12 @@ library CurvePoolLib {
     ///      `get_pool_from_lp_token` maps back to this pool. As in `getPool`, that establishes SELF-CONSISTENCY
     ///      only — both answers come from the same registry — so it catches a broken or stale registry, not a
     ///      hostile one. The ERC20 sniff alone would be far weaker still: any ERC20 that is not the pool passes it.
+    ///
+    ///      Scope, measured rather than assumed: this reads AddressProvider id 0 (MainRegistry), which carries
+    ///      the legacy generation (compound, y, sUSD… all resolve) but NOT factory-NG or crypto-registry pools
+    ///      — `get_lp_token` returns 0 for crvUSD/USDC and for tricrypto2. Those keep the old self-LP answer.
+    ///      For tricrypto2 that is still an under-report of wallet LP; safe direction, narrower fix than the
+    ///      phrase "the same generation" suggests.
     function getLpToken(address pool) internal view returns (address) {
         (bool ok, bytes memory data) = pool.staticcall(abi.encodeWithSignature("lp_token()"));
         if (ok && data.length == 32) {
@@ -95,10 +101,15 @@ library CurvePoolLib {
         return _firstAddress(data);
     }
 
-    /// @dev Cheap supply sniff: does it answer `totalSupply()` OR `total_supply()`? Both selectors are needed
-    ///      for the same reason this library documents at the top — StableSwap-NG exposes supply as the public
-    ///      storage variable `total_supply()`, so checking only `totalSupply()` would misclassify that whole
-    ///      generation as "not an ERC20".
+    /// @dev Cheap supply sniff: does it answer `totalSupply()` OR `total_supply()`?
+    ///
+    ///      Correcting an earlier justification here, which a reviewer measured and disproved: it claimed the
+    ///      second selector was needed for StableSwap-NG. It is not. All four governed NG pools answer
+    ///      `totalSupply()` and REVERT on `total_supply()` (crvUSD/USDC, crvUSD/USDT, weETH/WETH, RLUSD/USDC,
+    ///      checked at block 22,500,000). `total_supply()` belongs to the CryptoSwap / TwoCrypto / TriCryptoNG
+    ///      era. The second selector is kept because it costs nothing on the common path — the first call
+    ///      short-circuits — and because this gate is NEGATIVE (`if (!_isErc20(pool))`), so accepting more
+    ///      shapes means consulting the registry less often, which is the conservative direction.
     function _isErc20(address target) private view returns (bool) {
         (bool ok, bytes memory data) = target.staticcall(abi.encodeWithSignature("totalSupply()"));
         if (ok && data.length == 32) return true;

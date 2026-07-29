@@ -117,7 +117,12 @@ contract ConvexCurveLPStakingMetaBalanceAdapter is MetaBalanceAdapter {
                         tmp[n++] = _leg(info, amount, false, pid, PositionKind.Staking);
                     }
                 } else if (assetFilter == address(0) || assetFilter == lpToken) {
-                    // Emits only if the LP token is a REGISTERED asset. Operator note: registering it also
+                    // Emits ONLY if the LP token is a registered asset. Stated plainly because an earlier
+                    // comment here claimed the failure was "visible either way", which is false: with the LP
+                    // unregistered (the current state for 3Crv) this branch emits nothing and the principal is
+                    // still silently dropped. What actually fixes 3Crv is the registry resolution in
+                    // CurvePoolLib.getPool; this branch is the residual net for LPs the registry cannot resolve
+                    // either, and it only pays off if the operator registers the LP. Operator note: registering it also
                     // makes ERC20Default report the account's WALLET-held LP, which `CurvePoolsMeta` already
                     // decomposes into coin legs for a governed pool - i.e. registering to light this net up
                     // double-counts the wallet LP. Prefer registering it only where the pool is NOT a governed
@@ -228,13 +233,17 @@ contract ConvexCurveLPStakingMetaBalanceAdapter is MetaBalanceAdapter {
             }
         }
 
-        address[] memory all = new address[](coins.length + rn);
+        // Declare the LP token exactly when _instancePositions could emit it as a fallback leg — otherwise the
+        // advertised asset set contradicts what the adapter emits, and per-asset routing misses that principal.
+        uint256 lpSlot = (coins.length == 0 && lpToken != address(0)) ? 1 : 0;
+        address[] memory all = new address[](coins.length + rn + lpSlot);
         for (uint256 i; i < coins.length; ++i) {
             all[i] = coins[i];
         }
         for (uint256 i; i < rn; ++i) {
             all[coins.length + i] = rewards[i];
         }
+        if (lpSlot > 0) all[all.length - 1] = lpToken;
         return all;
     }
 

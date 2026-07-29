@@ -60,9 +60,9 @@ library CurvePoolLib {
     ///      on the pool itself reverts, so every wallet-LP decomposition for 3pool read zero and reported
     ///      nothing. The registry answers this direction too (`get_lp_token(3pool)` -> 3Crv) and, as in
     ///      `getPool`, its answer is round-tripped — a different address that behaves like an ERC20 AND whose
-    ///      `get_pool_from_lp_token` maps back to this pool — so a bad answer degrades to the previous
-    ///      behaviour instead of mis-attributing balances. The ERC20 sniff alone is far too weak: any ERC20
-    ///      that is not the pool would pass it.
+    ///      `get_pool_from_lp_token` maps back to this pool. As in `getPool`, that establishes SELF-CONSISTENCY
+    ///      only — both answers come from the same registry — so it catches a broken or stale registry, not a
+    ///      hostile one. The ERC20 sniff alone would be far weaker still: any ERC20 that is not the pool passes it.
     function getLpToken(address pool) internal view returns (address) {
         (bool ok, bytes memory data) = pool.staticcall(abi.encodeWithSignature("lp_token()"));
         if (ok && data.length == 32) {
@@ -95,10 +95,14 @@ library CurvePoolLib {
         return _firstAddress(data);
     }
 
-    /// @dev Cheap ERC20 sniff: does it answer `totalSupply()`? Enough to tell a Curve pool that is its own LP
-    ///      from one that is not.
+    /// @dev Cheap supply sniff: does it answer `totalSupply()` OR `total_supply()`? Both selectors are needed
+    ///      for the same reason this library documents at the top — StableSwap-NG exposes supply as the public
+    ///      storage variable `total_supply()`, so checking only `totalSupply()` would misclassify that whole
+    ///      generation as "not an ERC20".
     function _isErc20(address target) private view returns (bool) {
         (bool ok, bytes memory data) = target.staticcall(abi.encodeWithSignature("totalSupply()"));
+        if (ok && data.length == 32) return true;
+        (ok, data) = target.staticcall(abi.encodeWithSignature("total_supply()"));
         return ok && data.length == 32;
     }
 
@@ -126,12 +130,21 @@ library CurvePoolLib {
     ///         it: pointing `get_registry()` at a 30-line contract implementing only `coins`/`balances`
     ///         inflated a Staking leg 12,213x (833.74 USDC reported as 10,182,786.55), because `totalSupply`
     ///         still came from the real LP while `balances` came from the impostor. So the answer is now
-    ///         round-tripped through the registry's other direction — `get_lp_token(pool) == lpToken` — which
-    ///         forces any wrong answer to be at least self-consistent and rejects that PoC outright.
+    ///         round-tripped through the registry's other direction — `get_lp_token(pool) == lpToken`.
     ///
-    ///         This is a trust-surface point, not just a bug fix: without the round-trip, a globally mutable
-    ///         Curve-DAO pointer would decide which contract's balances back the accounting, in a family whose
-    ///         invariant is under-report-never-over-report. Every step is a guarded staticcall, so a chain with
+    ///         BE PRECISE ABOUT WHAT THAT BUYS, because an earlier revision of this comment overclaimed and a
+    ///         reviewer was right to reject it a second time. Both questions are answered by the SAME contract,
+    ///         fetched through the SAME mutable `get_registry()` pointer. The round-trip therefore proves only
+    ///         SELF-CONSISTENCY: it rejects a registry that is broken, stale or half-populated, and it rejects
+    ///         the specific PoC that inflated a leg 12,213x with a stub implementing only `coins`/`balances`.
+    ///         It does NOT defend against a hostile-but-consistent registry, and it cannot: legacy StableSwap
+    ///         pools expose no on-chain backlink to their LP, which is the entire reason the registry is
+    ///         consulted. There is nothing else to cross-check against.
+    ///
+    ///         So the trust boundary is explicit and unavoidable: whoever controls Curve's AddressProvider
+    ///         admin can choose which pool backs a legacy LP's accounting. That is the same DAO that controls
+    ///         the gauges and pools already governed into these adapters, but it IS a wider surface than
+    ///         before, and it is stated here rather than implied. Every step is a guarded staticcall, so a chain with
     ///         no AddressProvider, an older one whose `get_registry()` returns zero (Base today), or an LP the
     ///         registry does not know, all degrade to the previous behaviour rather than reverting.
     function getPool(address lpToken) internal view returns (address) {

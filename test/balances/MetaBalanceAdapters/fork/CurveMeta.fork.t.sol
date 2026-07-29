@@ -193,6 +193,10 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
         // UNFIXED library (registry disabled + 3Crv registered => one 3Crv leg). Requiring three legs, none of
         // them the LP token, fails on both unfixed shapes: zero legs (3Crv unregistered) and one LP leg.
         uint256 stakedLegs = _countKind(pos, PositionKind.Staking);
+        // assertEq(3) is the real discriminator, mutation-verified: removing the registry fallback fails it
+        // 0 != 3. The LP-token check below is defence in depth and is currently UNREACHABLE - 3Crv is not among
+        // the assets registered in setUp, so the fallback leg could not be emitted in this fixture even if the
+        // library regressed. It becomes live the day 3Crv is registered; it is kept for that, not relied on now.
         assertEq(stakedLegs, 3, "3pool did not decompose into its three coins - getPool(3Crv) unresolved?");
         for (uint256 i; i < pos.length; ++i) {
             if (pos[i].positionKind != PositionKind.Staking) continue;
@@ -215,14 +219,17 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
     }
 
     /// @notice Asset filter correctly restricts output to the requested token.
-    /// @dev The length assertion is load-bearing: without it an empty result satisfies the loop vacuously,
-    ///      which is the same class of defect this file was cleaned of.
+    /// @dev The length assertion below is load-bearing: without it an empty result satisfies the loop
+    ///      vacuously, which is the same class of defect this file was cleaned of. An earlier revision of this
+    ///      comment claimed the assertion existed when it did not - the reviewer was right to call that out.
     function test_crvUsdUsdc_gauge_assetFilter() public view {
         uint256 staked = _gaugeBalance(CRVUSD_USDC_GAUGE, CRVUSD_USDC_STAKER);
         assertGt(staked, 0, "fixture holds no gauge stake at FORK_BLOCK - re-fixture, do not skip");
 
         INAVCalculator.PositionBalance[] memory pos =
             gaugesMeta.getAdapterPositionsForInstances(CRVUSD_USDC_STAKER, _gauge(CRVUSD_USDC_GAUGE), USDC);
+
+        assertGt(pos.length, 0, "filtered read returned nothing - the loop below would pass vacuously");
 
         for (uint256 i; i < pos.length; ++i) {
             assertEq(pos[i].balanceAsset.asset, USDC);
@@ -246,7 +253,7 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
     /// @notice Emitted positions carry a non-empty leaf label built from on-chain symbols.
     function test_positionLabels_crvUsdUsdc_gauge() public view {
         uint256 staked = _gaugeBalance(CRVUSD_USDC_GAUGE, CRVUSD_USDC_STAKER);
-        // (Historical note, no longer accurate: this used to say "graceful skip" for gauge staker currently holds 0 (position exited), so a hard non-zero
+        // Historical note: this used to take a graceful skip when gauge staker currently holds 0 (position exited), so a hard non-zero
         // assert would red CI on a stale pin. Pinned holders are refreshed via the integration-snapshot
         // process, not by failing here. (Copilot PR #127.)
         assertGt(staked, 0, "fixture holds no gauge stake at FORK_BLOCK - re-fixture, do not skip");
@@ -262,7 +269,7 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
 
     function test_positionLabels_threepool() public view {
         uint256 walletLp = _lpBalance(THREEPOOL_LP, THREEPOOL_HOLDER);
-        // (Historical note, no longer accurate: this used to say "graceful skip" for 3pool holder currently holds 0 LP (exited), so a hard non-zero assert
+        // Historical note: this used to take a graceful skip when 3pool holder currently holds 0 LP (exited), so a hard non-zero assert
         // would red CI on a stale pin. Pinned holders are refreshed via the integration-snapshot process,
         // not by failing here. (Copilot PR #127.)
         assertGt(walletLp, 0, "fixture holds no LP at FORK_BLOCK - re-fixture, do not skip");

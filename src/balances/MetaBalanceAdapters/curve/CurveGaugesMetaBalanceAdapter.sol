@@ -117,9 +117,13 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
                         tmp[n++] = _leg(assetInfo, amount, false, pid, PositionKind.Staking);
                     }
                 } else if (assetFilter == address(0) || assetFilter == lpToken) {
-                    // Undecomposable: the staked balance is still real, so report it in LP terms. Valued only
-                    // if the LP token is a registered asset — the operator's call, and visible either way.
-                    // Emits only if the LP token is a REGISTERED asset. Operator note: registering it also
+                    // Undecomposable: the staked balance is still real, so report it in LP terms.
+                    // Emits ONLY if the LP token is a registered asset. Stated plainly because an earlier
+                    // comment here claimed the failure was "visible either way", which is false: with the LP
+                    // unregistered (the current state for 3Crv) this branch emits nothing and the principal is
+                    // still silently dropped. What actually fixes 3Crv is the registry resolution in
+                    // CurvePoolLib.getPool; this branch is the residual net for LPs the registry cannot resolve
+                    // either, and it only pays off if the operator registers the LP. Operator note: registering it also
                     // makes ERC20Default report the account's WALLET-held LP, which `CurvePoolsMeta` already
                     // decomposes into coin legs for a governed pool - i.e. registering to light this net up
                     // double-counts the wallet LP. Prefer registering it only where the pool is NOT a governed
@@ -184,7 +188,12 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
 
         // Merge: coins + CRV (if Minter set) + extra rewards
         uint256 crvSlot = CURVE_MINTER != address(0) ? 1 : 0;
-        address[] memory all = new address[](coins.length + crvSlot + extraN);
+        // Declare the LP token exactly when _instancePositions could emit it as a fallback leg. Without this
+        // the advertised asset set contradicts what the adapter emits, and NAVRegistryLib.getAdaptersForAsset
+        // routes per-asset queries by this list — so getAccountBalanceForAsset(LP) would miss a principal that
+        // getAccountNav() includes.
+        uint256 lpSlot = (coins.length == 0 && lpToken != address(0)) ? 1 : 0;
+        address[] memory all = new address[](coins.length + crvSlot + extraN + lpSlot);
         for (uint256 i; i < coins.length; ++i) {
             all[i] = coins[i];
         }
@@ -192,6 +201,7 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
         for (uint256 i; i < extraN; ++i) {
             all[coins.length + crvSlot + i] = extraTmp[i];
         }
+        if (lpSlot > 0) all[all.length - 1] = lpToken;
         return all;
     }
 

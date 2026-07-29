@@ -67,10 +67,11 @@ contract DeployImplementations is BaseDeployScript {
         //
         // Copied rather than hoisted into `BaseDeployScript` for ONE reason only: in the shared base they would go red
         // on every branch whenever a pin regen is in flight, and would fire for `06_Configure`, `RegisterAssets` and
-        // the `verify` scripts, which deploy nothing. The `upgrade` scripts are NOT such a case — they DO extend
-        // `BaseDeployScript` and DO deploy library-linked bytecode, so hoisting would have covered them; they need a
-        // different check anyway (they deploy via plain `new`, so assertions 1-2 do not apply — what they need is the
-        // linkage assertions plus "the pinned address has code on THIS chain").
+        // the `verify` scripts, which deploy nothing. `UpgradeNAVCalculator` now carries its own copy: all four of
+        // these assertions PLUS a code-presence pair. An earlier draft of that script argued assertions 1-2 did not
+        // apply to it because it deploys via plain `new` and deploys no libraries — that was wrong. Assertions 1-2
+        // are pure functions of the library creation code, the canonical deployer and the salt; they say nothing
+        // about who deploys what, and they are the only ones that catch a pin gone stale against current source.
         //
         // This checks the OUTCOME — does the bytecode about to be broadcast map to the pins? — rather than trying to
         // enumerate the causes of a bad build. That distinction is why it supersedes the profile/env guard attempted in

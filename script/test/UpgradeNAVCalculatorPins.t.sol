@@ -8,10 +8,27 @@ import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {PriceFeedLib} from "src/prices/PriceFeedLib.sol";
 import {NAVRegistryLib} from "src/nav/NAVRegistryLib.sol";
 
-/// @dev Exposes the script's internals so each failure mode can be tripped individually, and so the guarded
-///      deploy path itself can be driven. Calling `run()` instead would need chain config, a deployments entry
-///      and a Safe-TX file write; `_deployGuardedNavImplementation` is the part that must not be bypassable.
+/// @dev Exposes the script's internals so each assertion can be tripped individually, and lets a test inject a
+///      deliberately wrong pin. Without that injection the two source-vs-pin assertions are only exercisable
+///      through ambient tree state — covered today only because the pins are drifting, and uncovered the moment
+///      PR #185 regenerates them.
 contract UpgradeNAVCalculatorHarness is UpgradeNAVCalculator {
+    address internal _priceFeedPinOverride;
+    address internal _navRegistryPinOverride;
+
+    function setPinOverrides(address priceFeedPin, address navRegistryPin) external {
+        _priceFeedPinOverride = priceFeedPin;
+        _navRegistryPinOverride = navRegistryPin;
+    }
+
+    function _priceFeedLibPin() internal view override returns (address) {
+        return _priceFeedPinOverride == address(0) ? super._priceFeedLibPin() : _priceFeedPinOverride;
+    }
+
+    function _navRegistryLibPin() internal view override returns (address) {
+        return _navRegistryPinOverride == address(0) ? super._navRegistryLibPin() : _navRegistryPinOverride;
+    }
+
     function assertLibrarySourceMatchesPins() external view {
         _assertLibrarySourceMatchesPins();
     }
@@ -20,19 +37,32 @@ contract UpgradeNAVCalculatorHarness is UpgradeNAVCalculator {
         _assertImplLinkedAndLibrariesPresent(implBytecode);
     }
 
+    function assertPinnedLibrariesUsable(bytes memory implBytecode) external view {
+        _assertPinnedLibrariesUsable(implBytecode);
+    }
+
     function deployGuardedNavImplementation() external returns (NAVCalculator) {
         return _deployGuardedNavImplementation();
+    }
+
+    /// @dev The harness inherits the real `run()`, which would deploy an implementation and write a Safe TX
+    ///      repointing a live proxy. Nothing in `script/test/` should be broadcast-capable, and
+    ///      `forge script <this file>:UpgradeNAVCalculatorHarness --broadcast` would otherwise do exactly that.
+    function run() public pure override {
+        revert("harness: not a deploy script");
     }
 }
 
 /// @title UpgradeNAVCalculatorPinsTest
 /// @notice The upgrade script repoints a LIVE proxy at whatever `new NAVCalculator()` produced, so it must refuse
-///         to broadcast an implementation that is not usable on the target chain. Three failure families, all
-///         silent in production: a pin that no longer matches the library source in this tree, bytecode linked
-///         against something other than the pins, and pinned addresses holding no code on this chain.
-/// @dev    Every negative test must fail if its `require` is removed, and the wiring test must fail if the guard
-///         CALL is removed from `_deployGuardedNavImplementation` — blanking the guard body is the weaker mutation
-///         and does not reach the call site.
+///         to broadcast an implementation that is not usable on the target chain. Three failure families: a pin
+///         that no longer matches the library source in this tree, bytecode linked against something other than
+///         the pins, and pinned addresses holding no code on this chain.
+/// @dev    Two rules this suite is built around, both learned from review rounds on this PR:
+///         1. Every assertion must be individually trippable — and NOT only in the pin state the tree happens to
+///            be in. The source-vs-pin pair is tested through injected pins so it stays covered after PR #185.
+///         2. The guard's WIRING needs its own mutation: blanking the guard body and deleting its call are
+///            different mutations, and only the second one reaches the production path.
 contract UpgradeNAVCalculatorPinsTest is Test {
     UpgradeNAVCalculatorHarness internal harness;
 
@@ -41,12 +71,15 @@ contract UpgradeNAVCalculatorPinsTest is Test {
     /// @dev Any non-empty runtime code; the guard only checks `code.length > 0`.
     bytes internal constant STUB_CODE = hex"600160005260206000f3";
 
+    /// @dev Stand-ins for "a pin that does not match the library source". Arbitrary, and deliberately not the
+    ///      real pins so these tests mean the same thing before and after a pin regeneration.
+    address internal constant WRONG_PRICE_FEED_PIN = address(0xDeaD00000000000000000000000000000000BEEf);
+    address internal constant WRONG_REGISTRY_PIN = address(0xbEef00000000000000000000000000000000Dead);
+
     function setUp() public {
         harness = new UpgradeNAVCalculatorHarness();
     }
 
-    /// @dev In a non-fork run the pinned addresses start empty, which IS the fresh-chain case. Etch explicitly
-    ///      rather than relying on that, so these tests cannot silently invert if ever run against a fork.
     function _deployPinnedLibraries() internal {
         vm.etch(LibraryPins.PRICE_FEED_LIB, STUB_CODE);
         vm.etch(LibraryPins.NAV_REGISTRY_LIB, STUB_CODE);
@@ -57,46 +90,105 @@ contract UpgradeNAVCalculatorPinsTest is Test {
         vm.etch(LibraryPins.NAV_REGISTRY_LIB, "");
     }
 
-    /// @dev True when this tree's library source still maps to the pins. False during a pin regeneration (PR #185),
-    ///      when `LibraryPinConsistency` is red by design — the tests below must be meaningful in BOTH states, so
-    ///      they assert that the guard tracks this condition rather than asserting a particular value of it.
-    function _pinsMatchCurrentSource() internal pure returns (bool) {
-        // Same salt routine as ConfigReader.computeSalt and the same deployer the pins are derived from.
-        bool priceFeed = vm.computeCreate2Address(
+    /// @dev The address the guard recomputes for each library from current source. Derived independently of the
+    ///      guard (different helper, different argument order) so it cannot agree with a broken guard by
+    ///      construction.
+    function _computedPriceFeedPin() internal pure returns (address) {
+        return vm.computeCreate2Address(
             keccak256(abi.encodePacked("PriceFeedLib", uint256(1))),
             keccak256(type(PriceFeedLib).creationCode),
             CANONICAL_CREATE2_DEPLOYER
-        ) == LibraryPins.PRICE_FEED_LIB;
-        bool registry = vm.computeCreate2Address(
+        );
+    }
+
+    function _computedNavRegistryPin() internal pure returns (address) {
+        return vm.computeCreate2Address(
             keccak256(abi.encodePacked("NavRegistryLib", uint256(1))),
             keccak256(type(NAVRegistryLib).creationCode),
             CANONICAL_CREATE2_DEPLOYER
-        ) == LibraryPins.NAV_REGISTRY_LIB;
-        return priceFeed && registry;
+        );
+    }
+
+    function _priceFeedPinMatches() internal pure returns (bool) {
+        return _computedPriceFeedPin() == LibraryPins.PRICE_FEED_LIB;
+    }
+
+    function _navRegistryPinMatches() internal pure returns (bool) {
+        return _computedNavRegistryPin() == LibraryPins.NAV_REGISTRY_LIB;
     }
 
     // ---------------------------------------------------------------
-    // Family 1: the pins must still match the library source in this tree
+    // Family 1: the pins must still match the library source in this tree.
+    // Injected pins, so each assertion is trippable in ANY pin state.
     // ---------------------------------------------------------------
 
-    /// @notice The stale-pin case the first revision of this guard missed entirely: linkage and code-presence both
-    ///         pass on a stale pin (the impl embeds the old pin, and the old library is deployed there), so this is
-    ///         the only check that catches a library source change with no pin regeneration.
-    function test_librarySourceCheck_tracksPinDrift() public {
-        if (_pinsMatchCurrentSource()) {
-            harness.assertLibrarySourceMatchesPins(); // must not revert
-        } else {
+    function test_sourceMatch_revertsOnWrongPriceFeedPin() public {
+        harness.setPinOverrides(WRONG_PRICE_FEED_PIN, _computedNavRegistryPin());
+        vm.expectRevert("PriceFeedLib CREATE2 addr != foundry.toml pin (lib bytecode drift; regenerate the pin)");
+        harness.assertLibrarySourceMatchesPins();
+    }
+
+    /// @notice The assertion reviewers proved had NO coverage: the PriceFeedLib check fires first and masked it,
+    ///         so deleting this `require` left all ten tests green. Pinning PriceFeedLib to its correct computed
+    ///         value forces execution past the first check, whatever state the real pins are in.
+    function test_sourceMatch_revertsOnWrongNavRegistryPin() public {
+        harness.setPinOverrides(_computedPriceFeedPin(), WRONG_REGISTRY_PIN);
+        vm.expectRevert("NAVRegistryLib CREATE2 addr != foundry.toml pin (lib bytecode drift; regenerate the pin)");
+        harness.assertLibrarySourceMatchesPins();
+    }
+
+    /// @notice The positive direction, so the pair is not satisfied by rejecting everything.
+    function test_sourceMatch_passesWhenBothPinsMatchSource() public {
+        harness.setPinOverrides(_computedPriceFeedPin(), _computedNavRegistryPin());
+        harness.assertLibrarySourceMatchesPins();
+    }
+
+    /// @notice Against the REAL pins, the guard must track the tree's actual state — red during PR #185's
+    ///         regeneration, green after. Per-library message selection: `_pinsMatch...` is checked per library
+    ///         because a one-library drift is the ordinary case (pins move only when a file in THAT library's
+    ///         compilation closure changes), and the guard reports whichever library drifted.
+    function test_sourceMatch_tracksRealPinState() public {
+        if (_priceFeedPinMatches() && _navRegistryPinMatches()) {
+            harness.assertLibrarySourceMatchesPins();
+        } else if (!_priceFeedPinMatches()) {
             vm.expectRevert("PriceFeedLib CREATE2 addr != foundry.toml pin (lib bytecode drift; regenerate the pin)");
+            harness.assertLibrarySourceMatchesPins();
+        } else {
+            vm.expectRevert("NAVRegistryLib CREATE2 addr != foundry.toml pin (lib bytecode drift; regenerate the pin)");
             harness.assertLibrarySourceMatchesPins();
         }
     }
 
-    /// @notice Locks the asymmetry that motivated the fix: on a drifting tree the two weaker families still pass,
-    ///         so they cannot substitute for the source check.
-    function test_weakerFamiliesArePassedByAStalePin() public {
-        _deployPinnedLibraries();
-        harness.assertImplLinkedAndLibrariesPresent(type(NAVCalculator).creationCode);
-        // No assertion on _pinsMatchCurrentSource() here: the point is that this call succeeds either way.
+    /// @notice Locks the asymmetry that motivated adding family 1 at all: on a stale pin the OTHER two families
+    ///         still pass, so they can never substitute for the source check. Synthetic rather than ambient, so
+    ///         it asserts the same thing before and after a pin regeneration.
+    function test_weakerFamiliesPassOnASyntheticallyStalePin() public {
+        harness.setPinOverrides(WRONG_PRICE_FEED_PIN, WRONG_REGISTRY_PIN);
+        vm.etch(WRONG_PRICE_FEED_PIN, STUB_CODE);
+        vm.etch(WRONG_REGISTRY_PIN, STUB_CODE);
+        bytes memory linkedToStalePins = abi.encodePacked(hex"60806040", WRONG_PRICE_FEED_PIN, WRONG_REGISTRY_PIN);
+
+        // Families 2 and 3 are satisfied by a pin that does not match the library source at all...
+        harness.assertImplLinkedAndLibrariesPresent(linkedToStalePins);
+
+        // ...while family 1 is the one that rejects it.
+        vm.expectRevert("PriceFeedLib CREATE2 addr != foundry.toml pin (lib bytecode drift; regenerate the pin)");
+        harness.assertLibrarySourceMatchesPins();
+    }
+
+    /// @notice The composite guard must actually invoke the source-match family. Constructed so ONLY family 1
+    ///         can object: the injected pins are etched (family 3 passes) and the synthetic bytecode embeds them
+    ///         (family 2 passes), while those pins do not match the library source (family 1 fails).
+    /// @dev    Unhooking `_assertLibrarySourceMatchesPins()` from `_assertPinnedLibrariesUsable` makes this call
+    ///         succeed and this test fail — in ANY pin state. The deploy-path wiring test cannot cover that once
+    ///         PR #185 lands, because a matching tree makes its true branch assert success instead.
+    function test_composite_invokesTheSourceMatchFamily() public {
+        harness.setPinOverrides(WRONG_PRICE_FEED_PIN, WRONG_REGISTRY_PIN);
+        vm.etch(WRONG_PRICE_FEED_PIN, STUB_CODE);
+        vm.etch(WRONG_REGISTRY_PIN, STUB_CODE);
+        bytes memory linkedToStalePins = abi.encodePacked(hex"60806040", WRONG_PRICE_FEED_PIN, WRONG_REGISTRY_PIN);
+        vm.expectRevert("PriceFeedLib CREATE2 addr != foundry.toml pin (lib bytecode drift; regenerate the pin)");
+        harness.assertPinnedLibrariesUsable(linkedToStalePins);
     }
 
     // ---------------------------------------------------------------
@@ -146,26 +238,34 @@ contract UpgradeNAVCalculatorPinsTest is Test {
     // ---------------------------------------------------------------
 
     /// @notice The mutation that matters. `new NAVCalculator()` succeeds happily with the libraries absent — a
-    ///         DELEGATECALL into nothing only reverts on first use — so if the guard call is deleted from
-    ///         `_deployGuardedNavImplementation`, or moved below the broadcast, this deploy SUCCEEDS and the test
-    ///         fails. That is the regression the whole PR exists to prevent.
-    function test_guardedDeploy_reverts_whenPinnedLibrariesAbsent() public {
+    ///         DELEGATECALL into nothing only reverts on first use — so deleting the guard call from
+    ///         `_deployGuardedNavImplementation` makes this deploy SUCCEED and this test fail.
+    /// @dev    Which of the six assertions objects first depends on the tree's pin state, so this asserts only
+    ///         that the guard is REACHED and refuses. It cannot prove the call precedes the broadcast: relocating
+    ///         it below `new` reverts the same external call. `forge script` simulates the whole run and
+    ///         broadcasts nothing when it reverts, so ordering is defence in depth, not the load-bearing property.
+    function test_guardedDeploy_revertsWhenTheGuardRejects() public {
         _clearPinnedLibraries();
         vm.expectRevert();
         harness.deployGuardedNavImplementation();
     }
 
-    /// @notice The other direction, so the guard is not satisfied by refusing everything. During a pin
-    ///         regeneration the source check is the first objection, so the deploy must refuse then too.
+    /// @notice The other direction, so the wiring is not satisfied by refusing everything.
     function test_guardedDeploy_succeedsOnlyWhenEverythingHolds() public {
         _deployPinnedLibraries();
-        if (_pinsMatchCurrentSource()) {
+        if (_priceFeedPinMatches() && _navRegistryPinMatches()) {
             NAVCalculator impl = harness.deployGuardedNavImplementation();
             assertGt(address(impl).code.length, 0, "implementation not deployed");
         } else {
-            vm.expectRevert("PriceFeedLib CREATE2 addr != foundry.toml pin (lib bytecode drift; regenerate the pin)");
+            vm.expectRevert();
             harness.deployGuardedNavImplementation();
         }
+    }
+
+    /// @notice Nothing in `script/test/` should be able to broadcast a live-proxy upgrade.
+    function test_harnessCannotRunTheDeployScript() public {
+        vm.expectRevert("harness: not a deploy script");
+        harness.run();
     }
 
     /// @notice Guards the guard: the real implementation bytecode must embed both pins, so the positive tests

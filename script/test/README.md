@@ -27,11 +27,15 @@ Tests for the `02_DeployProxies` deploy script:
 ### UpgradeNAVCalculatorPins.t.sol
 Tests the library-pin guard in `script/upgrade/UpgradeNAVCalculator`, which repoints a **live** proxy at the
 implementation it deploys:
-- ✅ the pins still match the library source in this tree (the only check that catches a stale pin)
+- ✅ each source-vs-pin assertion, tripped individually through an injected pin, so both stay covered after the
+  pin regeneration lands (they are the only checks that catch a pin gone stale against current source)
 - ✅ the impl bytecode is linked against both pins (each pin isolated in its own test)
 - ✅ both pinned addresses hold code on this chain (each isolated)
-- ✅ the deploy path actually goes through the guard — fails if the guard call is deleted or moved below the
-  broadcast, which blanking the guard body does not catch
+- ✅ the deploy path actually goes through the guard — fails if the guard call is deleted, which blanking the
+  guard body does not catch. (The suite can prove the call exists, not that it precedes the broadcast: relocating
+  it below `new` reverts the same external call. `forge script` broadcasts nothing when the run reverts.)
+- ✅ the composite guard invokes the source-match family, constructed so only that family can object
+- ✅ the harness cannot be used to broadcast a live-proxy upgrade from `script/test/`
 - ✅ the two weaker families still pass on a stale pin, so they cannot substitute for the source check
 
 Every negative test is written to fail if its `require` is removed; the drift tests assert that the guard *tracks*

@@ -40,7 +40,6 @@ contract BalanceAdapterFuzzTest is Test {
         assets[0] = address(usdc);
         assets[1] = address(dai);
         customAdapter.setUnderlyingAssetsSupported(assets);
-        customAdapter.setPositionMetadata("Test Protocol", "Test Position");
 
         balances.addBalanceAdapterDirect(address(0), address(customAdapter), IBalances.AdapterType.Custom);
 

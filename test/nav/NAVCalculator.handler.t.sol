@@ -188,7 +188,7 @@ contract NAVCalculatorHandler is Test {
         // For simplicity, we'll use a try-catch approach
         try Mock_ERC20(asset).decimals() returns (uint8 decimals) {
             // Get price to calculate safe amount bound
-            (int256 price,,) = nav.latestPrice(asset);
+            (int256 price,,,) = nav.latestPrice(asset);
 
             // Bound amount to avoid overflow in amount * usdRate calculation
             // Need to ensure amount * price doesn't overflow uint256
@@ -371,8 +371,8 @@ contract NAVCalculatorHandlerTest is SuperTest {
         for (uint256 i = 0; i < testCount; i++) {
             address asset = registered[i].asset;
 
-            (int256 price1, uint8 decimals1, bool stale1) = nav.latestPrice(asset);
-            (int256 price2, uint8 decimals2, bool stale2) = nav.latestPrice(asset);
+            (int256 price1, uint8 decimals1, bool stale1,) = nav.latestPrice(asset);
+            (int256 price2, uint8 decimals2, bool stale2,) = nav.latestPrice(asset);
 
             assertEq(price1, price2, "Price should be consistent within block");
             assertEq(decimals1, decimals2, "Decimals should be consistent");

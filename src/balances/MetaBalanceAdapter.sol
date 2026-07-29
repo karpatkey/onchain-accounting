@@ -5,10 +5,13 @@ import {IBalanceAdapter} from "./IBalanceAdapter.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {IMetaBalanceAdapter} from "./IMetaBalanceAdapter.sol";
 import {IPositionDescribable} from "./IPositionDescribable.sol";
+import {IPositionEnumerable} from "./IPositionEnumerable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {LabelLib} from "./LabelLib.sol";
+import {ProtocolNames} from "src/utils/ProtocolNames.sol";
 import {RegisteredAssetLib} from "./RegisteredAssetLib.sol";
+import {GasStipendLib} from "src/utils/GasStipendLib.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {InvalidArgumentsWithContext} from "src/errors.sol";
 
@@ -22,13 +25,10 @@ import {InvalidArgumentsWithContext} from "src/errors.sol";
 /// @dev The instance set lives on NAVCalculator (ADR 0010). The adapter reads its own set via
 ///      `NAV_CALCULATOR.getMetaInstances(address(this))` and holds no instance state or admin functions of its
 ///      own — it stays immutable. `getAdapterPositionsForInstances` is also exposed for explicit/off-chain queries.
-abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribable {
+abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribable, IPositionEnumerable {
     //
     // State
     //
-
-    /// @notice Human-readable protocol name for IPositionDescribable (e.g. "Morpho"). Set once at construction.
-    string internal _protocolName;
 
     /// @notice NAVCalculator reference, used for the registered-asset registry.
     INAVCalculator public immutable NAV_CALCULATOR;
@@ -37,11 +37,11 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     // Constructor
     //
 
-    /// @param protocolName_ Human-readable protocol name for verbose reads (e.g. "Morpho").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(string memory protocolName_, address navCalculator_) {
+    /// @dev No `protocolName_`: the display name is derived from `_protocolId()` (see `protocolName()`), so there is
+    ///      no deployment-time string to supply, mis-spell, or let drift between two adapters of one protocol.
+    constructor(address navCalculator_) {
         AddressCheckLib.requireContract(navCalculator_, "NAVCalculator");
-        _protocolName = protocolName_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 
@@ -50,9 +50,71 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     //
 
     /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) external pure virtual override returns (bool) {
+    /// @dev `public` rather than `external` so an adapter advertising a further interface can override and
+    ///      `super`-chain — Solidity cannot reach an `external` function through `super`, which would force the
+    ///      override to re-declare this whole list and silently drift from it. Matches the same fix on
+    ///      {BalanceAdapterBase} and the {AssistedCoordCache} precedent. {IPositionEnumerable} is in the list
+    ///      because this base implements it for every meta-adapter (see `positionIds`).
+    function supportsInterface(bytes4 interfaceId) public pure virtual override returns (bool) {
         return interfaceId == type(IMetaBalanceAdapter).interfaceId || interfaceId == type(IBalanceAdapter).interfaceId
-            || interfaceId == type(IPositionDescribable).interfaceId || interfaceId == type(IERC165).interfaceId;
+            || interfaceId == type(IPositionDescribable).interfaceId
+            || interfaceId == type(IPositionEnumerable).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
+
+    //
+    // IPositionEnumerable
+    //
+
+    /// @inheritdoc IPositionEnumerable
+    /// @dev Implemented once here for the whole meta family: the shape set of a meta-adapter *is* its governed
+    ///      instance set, which lives on the NAVCalculator (ADR 0010), so this reads
+    ///      `getMetaInstances(address(this))` and maps each coordinate through {_instancePositionId}.
+    ///      Adding or removing an instance is a MANAGER config TX, so this tracks configuration with no adapter
+    ///      state and no admin surface — the adapter stays immutable.
+    ///
+    ///      **This is what makes {_instancePositionId} load-bearing.** {IPositionEnumerable} requires each
+    ///      returned id to be byte-identical to the `PositionBalance.positionId` the adapter actually emits, so
+    ///      every concrete adapter MUST ensure this hook agrees with what its `_instancePositions` passes to
+    ///      {_leg}. An adapter that derives its positionId from something other than the raw coordinate — Aave
+    ///      V3, whose coordinate is a ProtocolDataProvider but whose positionId is the Pool resolved from it —
+    ///      must override the hook. See the hook's own docs.
+    ///
+    ///      Returns the ids in `getMetaInstances` order, but no ordering is promised and consumers must not rely
+    ///      on it: this is not index-aligned with `getAdapterPositions`, which omits instances an account has no
+    ///      position in and may emit several legs sharing one id. Join on the bytes.
+    ///
+    ///      A listed shape means the instance is configured, NOT that the account holds anything in it, nor that
+    ///      the instance's assets are registered for pricing.
+    ///
+    ///      **Per-instance revert isolation, like every other fan-out on this base.** {IPositionEnumerable}
+    ///      requires this function not to revert, and deriving a positionId is not inherently safe: the default
+    ///      hook reverts on a malformed coordinate, and Aave V3's override reads the chain to resolve its Pool.
+    ///      Without isolation one bad coordinate — which `addMetaInstances` does not prevent, since it never
+    ///      checks the coordinate is a contract — would drop the enumeration for every OTHER instance too, and do
+    ///      it silently: an adapter that reverts here is indistinguishable, through the consumer's fail-open
+    ///      staticcall, from one with nothing configured. That is the exact ambiguity this interface exists to
+    ///      remove. A failing instance is therefore dropped and the rest still enumerate — under-report, never
+    ///      over-report, the same direction the position fan-out degrades in.
+    ///
+    ///      Declared `public`, not `external`, for the same reason `supportsInterface` above is: a fork adapter
+    ///      that needs to extend or narrow the enumeration can then `super.positionIds()` instead of copying this
+    ///      body — a copy would silently keep the old behaviour if this one changes (as it just did, gaining the
+    ///      isolation), which is exactly the drift this interface exists to prevent.
+    function positionIds() public view virtual override returns (bytes[] memory ids) {
+        bytes32[] memory instances = NAV_CALCULATOR.getMetaInstances(address(this));
+        bytes[] memory buf = new bytes[](instances.length);
+        uint256 n;
+        for (uint256 i; i < instances.length; ++i) {
+            try this.instancePositionId(instances[i]) returns (bytes memory id) {
+                buf[n++] = id;
+            } catch {
+                // Coordinate could not be resolved — drop this shape, keep the others.
+            }
+        }
+        ids = new bytes[](n);
+        for (uint256 i; i < n; ++i) {
+            ids[i] = buf[i];
+        }
     }
 
     //
@@ -60,8 +122,12 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     //
 
     /// @inheritdoc IPositionDescribable
-    function protocolName() external view virtual override returns (string memory) {
-        return _protocolName;
+    /// @dev Derived from the adapter's own `_protocolId()`, so "same protocolId ⇒ same protocolName" holds **by
+    ///      construction** for every meta adapter: the name is a pure function of the typed identity the adapter
+    ///      already declares, not a separate constructor argument that could disagree with it. This is what a
+    ///      display name being a *product* name (the Aave Umbrella bug) is now structurally unable to be.
+    function protocolName() external pure virtual override returns (string memory) {
+        return ProtocolNames.forProtocolId(_protocolId());
     }
 
     /// @inheritdoc IPositionDescribable
@@ -139,7 +205,38 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     // Internal fan-out
     //
 
-    /// @notice Aggregates positions across `instances`, isolating a faulty instance so it cannot zero out the batch.
+    /// @notice Aggregates positions across `instances`, isolating a faulty instance so it cannot zero out the
+    ///         batch — but NOT isolating one that ran out of gas.
+    /// @dev The isolation is deliberate and stays: an instance whose protocol read reverts has answered, and one
+    ///      bad instance must not cost the account the other instances' legs. Gas exhaustion is not that. It
+    ///      means the instance did not answer, and recording it as an empty leg list drops whatever it held —
+    ///      a dropped *debt* leg RAISES the reported NAV — while this function still returns SUCCESSFULLY, so
+    ///      nothing downstream can tell the answer was partial. That is the one failure the per-instance
+    ///      `try`/`catch` must not absorb, so it reverts {InstanceGasExhausted} instead.
+    ///
+    ///      The classification is {GasStipendLib}'s, shared with the adapter-level guard in
+    ///      `PriceFeedLib._getAdapterPositions` rather than restated here, because these two are the same
+    ///      question asked one frame apart and a threshold that drifts between them re-opens the hole.
+    ///
+    ///      Note what this deliberately does NOT do: unlike the adapter-level guard, it does not honour an
+    ///      {InstanceGasExhausted} selector arriving in the revert data. That guard can afford to, because the
+    ///      thing it is listening to is a meta-adapter it has ERC165-checked. Here the revert data comes from a
+    ///      protocol this adapter merely reads, so treating a selector in it as a trusted signal would let a
+    ///      third-party contract decide that a NAV read must fail. Gas consumed is the only evidence available
+    ///      at this boundary that the callee cannot choose.
+    ///
+    ///      It also cannot see an instance that swallows its OWN out-of-gas — a `_instancePositions`
+    ///      implementation whose protocol read is itself wrapped in `try`/`catch` returns normally with a leg
+    ///      missing, and nothing here fires. See {GasStipendLib}.
+    ///
+    ///      **The cost of raising, taken knowingly.** Several protocols let anyone grow a per-account list — a
+    ///      withdrawal request names its own owner — so a third party can push one instance's read past what the
+    ///      fan-out can hand it and make that account's NAV read FAIL, where before it returned a number that was
+    ///      quietly missing a leg. That is the intended direction: a read that cannot see everything must not
+    ///      answer as though it did. It is also recoverable in a way the silent version never was, because the
+    ///      stipend is a share of the caller's own budget rather than a fixed ceiling — more gas, up to whatever
+    ///      the node's `eth_call` cap allows, gets the read through. Past that cap the remedy is the MANAGER's:
+    ///      remove the instance.
     function _positionsForInstances(address account, bytes32[] memory instances, address assetFilter)
         internal
         view
@@ -148,12 +245,19 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
         INAVCalculator.PositionBalance[][] memory perInstance = new INAVCalculator.PositionBalance[][](instances.length);
         uint256 total = 0;
         for (uint256 i = 0; i < instances.length; i++) {
-            try this.instancePositions(account, instances[i], assetFilter) returns (
+            // One sample, used both to derive the stipend and to measure against it — see GasStipendLib.exhausted.
+            uint256 available = gasleft();
+            uint256 stipend = GasStipendLib.stipendFrom(available);
+            try this.instancePositions{gas: stipend}(account, instances[i], assetFilter) returns (
                 INAVCalculator.PositionBalance[] memory p
             ) {
                 perInstance[i] = p;
                 total += p.length;
             } catch {
+                uint256 consumed = available - gasleft();
+                if (GasStipendLib.exhausted(stipend, consumed)) {
+                    revert INAVCalculator.InstanceGasExhausted(address(this), instances[i], stipend, consumed);
+                }
                 perInstance[i] = new INAVCalculator.PositionBalance[](0);
             }
         }
@@ -206,6 +310,17 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     /// @notice External wrapper around the concrete per-instance asset enumeration.
     function instanceAssets(bytes32 instance) external view returns (address[] memory) {
         return _instanceAssets(instance);
+    }
+
+    /// @notice External wrapper around the concrete per-instance positionId derivation.
+    /// @dev Called via `this.` inside `positionIds` so a single bad coordinate is isolated, exactly as
+    ///      `instancePositions` isolates the position fan-out. {_instancePositionId} is not inherently safe to call
+    ///      in a loop: the base default reverts via `_toAddress` on a coordinate with dirty high bits, and an
+    ///      override may read the chain — Aave V3's resolves the Pool through two external calls, so a codeless,
+    ///      reverting or undecodable coordinate reverts here too (none of which `try`/`catch` would catch if it
+    ///      were called inline).
+    function instancePositionId(bytes32 instance) external view returns (bytes memory) {
+        return _instancePositionId(instance);
     }
 
     //
@@ -299,10 +414,18 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     /// @notice Returns the positionId bytes for a given instance coordinate.
     /// @dev Default: encodes the instance as an address (address-keyed protocols).
     ///      Override when the coordinate is a raw bytes32 (e.g. Morpho market IDs, Balancer V2 poolIds).
-    ///      Adapters whose positionId is not the default-encoded instance coordinate do NOT use this hook —
-    ///      they compute positionId inline in _instancePositions, e.g. Aave V3: abi.encode(pool) — the instance Pool
-    ///      resolved from the DataProvider coordinate (one positionId per instance; reserves are distinguished by
-    ///      balanceAsset + positionKind).
+    ///
+    ///      **This hook must agree with what the adapter emits — it is not merely a convenience.** {positionIds}
+    ///      maps the governed instance set through it to satisfy {IPositionEnumerable}'s byte-identity
+    ///      guarantee, so `_instancePositionId(instance)` MUST equal the `positionId` that `_instancePositions`
+    ///      passes to {_leg} for that instance. Computing the positionId inline while leaving this hook on its
+    ///      default is a silent break: the enumeration would advertise ids no position ever carries and the
+    ///      configuration-view join would return nothing, with every test still green.
+    ///
+    ///      An adapter whose positionId is derived from the coordinate rather than being it — Aave V3, whose
+    ///      coordinate is a ProtocolDataProvider but whose positionId is the Pool resolved from it — therefore
+    ///      overrides this hook and calls it from `_instancePositions` instead of re-deriving inline. (One
+    ///      positionId per instance; reserves are distinguished by balanceAsset + positionKind.)
     function _instancePositionId(bytes32 instance) internal view virtual returns (bytes memory) {
         return abi.encode(_toAddress(instance));
     }
@@ -353,18 +476,58 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
         (assetInfo, eligible) = _getAssetInfo(token);
     }
 
+    /// @notice Decodes an address-keyed `positionId`, accepting ONLY exactly one clean address word.
+    /// @dev The single entry point every address-keyed `positionLabels` in this family must use, because the obvious
+    ///      spelling — `if (pid.length < 32) …; abi.decode(pid, (address))` — is wrong in two ways at once, and
+    ///      `positionLabels` is a display-only view reachable from a configuration tool that probes with whatever
+    ///      word it has:
+    ///
+    ///      1. **It reverts.** Solidity's ABI decoder validates an `address`, so a 32-byte word whose upper 96 bits
+    ///         are dirty (a `bytes32` market/pool id copied from a sibling adapter is the ordinary source) reverts
+    ///         instead of degrading. Hence the raw-word decode and an explicit range check.
+    ///      2. **It over-claims.** `abi.decode` silently ignores trailing bytes, so a `< 32` guard lets a foreign
+    ///         MULTI-word coordinate through and labels it from its first word — a confident, wrong breadcrumb for a
+    ///         position the adapter never emitted. Every address-keyed positionId in this family is exactly
+    ///         `abi.encode(address)`, so the accept window is `== 32`, not `>= 32`.
+    ///
+    ///      A dirty word is rejected rather than masked down to its low 160 bits: those bits can name a real
+    ///      instance by coincidence, and a wrong label is worse than an absent one.
+    /// @return addr The decoded address; `address(0)` when `!ok`.
+    /// @return ok True only for a positionId that is exactly one word with clear upper 96 bits.
+    function _pidAddress(bytes calldata pid) internal pure returns (address addr, bool ok) {
+        if (pid.length != 32) return (address(0), false);
+        uint256 raw = abi.decode(pid, (uint256));
+        if (raw >> 160 != 0) return (address(0), false);
+        return (address(uint160(raw)), true);
+    }
+
+    /// @notice Decodes a `bytes32`-keyed `positionId` (Morpho marketIds, Balancer V2 poolIds), accepting ONLY
+    ///         exactly one word.
+    /// @dev The {_pidAddress} sibling for the raw-`bytes32` coordinate. There is no range check to make — every
+    ///      256-bit value is a valid `bytes32`, and `abi.decode(_, (bytes32))` cannot revert on a full word — so
+    ///      this exists purely for reason 2 above: `< 32` would label a foreign multi-word coordinate from its
+    ///      first word. Kept as a named helper rather than an inline `!= 32` so the two coordinate shapes stay
+    ///      visibly symmetric and a reader does not have to re-derive why one has a range check and the other
+    ///      does not.
+    /// @return word The decoded word; `bytes32(0)` when `!ok`.
+    /// @return ok True only for a positionId that is exactly one word.
+    function _pidWord(bytes calldata pid) internal pure returns (bytes32 word, bool ok) {
+        if (pid.length != 32) return (bytes32(0), false);
+        return (abi.decode(pid, (bytes32)), true);
+    }
+
     /// @notice Builds the `positionLabels` `[category, leaf]` for an address-keyed `positionId`, reading the
     ///         instance's on-chain `name()` (or `symbol()` when `useSymbol`) live and fail-open to "" — the
     ///         single-address label shape shared by the vault/market/lending meta-adapters (Morpho, Euler, Fluid,
-    ///         Gearbox markets, Compound comets). Returns an empty array for a short/malformed positionId; the
-    ///         empty-leaf collapse is handled by {_labels}.
+    ///         Gearbox markets, Compound comets). Returns an empty array for a malformed positionId (see
+    ///         {_pidAddress}); the empty-leaf collapse is handled by {_labels}.
     function _addressLabels(bytes calldata pid, string memory category, bool useSymbol)
         internal
         view
         returns (string[] memory)
     {
-        if (pid.length < 32) return new string[](0);
-        address addr = abi.decode(pid, (address));
+        (address addr, bool ok) = _pidAddress(pid);
+        if (!ok) return new string[](0);
         string memory leaf = useSymbol ? LabelLib.symbol(addr, "") : LabelLib.name(addr, "");
         return _labels(category, leaf);
     }

@@ -237,17 +237,19 @@ PositionBalance({
 #### `KelpWithdrawalQueue` — rsETH exit queue
 
 ```solidity
-// Static positionId = abi.encode(withdrawalManager). Up to two legs (claimable + locked)
-// that SHARE this positionId and are told apart by isLocked; the payout asset is in balanceAsset.
+// Static positionId = abi.encode(withdrawalManager), shared by all of the account's requests.
+// One leg PER open request per asset (told apart by isLocked); the payout asset is in balanceAsset,
+// and the request's userNonce rides in positionInstanceId.
 PositionBalance({
-    balanceAsset:  Asset({ asset: 0xae7a…2Ca0, symbol: "stETH", decimals: 18 }),
-    balanceAdapter: 0x<KelpWithdrawalQueueAdapter>,
-    amount:        2e18,                   // 2 stETH still pending (locked leg)
-    isDebt:        false,
-    protocolSubId: keccak256("kelp-withdrawal"),
-    positionId:    abi.encode(0x<LRTWithdrawalManager>),  // Kelp LRTWithdrawalManager (static anchor)
-    positionKind:  PositionKind.Supplied,
-    isLocked:      true                    // pending; a claimable (isLocked=false) leg would share this positionId
+    balanceAsset:       Asset({ asset: 0xae7a…2Ca0, symbol: "stETH", decimals: 18 }),
+    balanceAdapter:     0x<KelpWithdrawalQueueAdapter>,
+    amount:             2e18,                   // 2 stETH still pending (this request)
+    isDebt:             false,
+    protocolSubId:      keccak256("kelp-withdrawal"),
+    positionId:         abi.encode(0x<LRTWithdrawalManager>),  // Kelp LRTWithdrawalManager (static anchor)
+    positionKind:       PositionKind.Supplied,
+    isLocked:           true,                   // pending; a claimable (isLocked=false) request is its own leg
+    positionInstanceId: bytes32(uint256(42))    // ephemeral userNonce (per-request only)
 })
 ```
 
@@ -271,6 +273,8 @@ PositionBalance({
 
 #### `MerklRewardsAssisted` — unclaimed Merkl allocation
 
+> Note: no Merkl adapter is deployed on `main` today — the former `MerklRewardsAssistedBalanceAdapter` was removed and a re-add is pending. The schema below is retained for the returning adapter.
+
 ```solidity
 // One leg per reward token; proof-cached balance (may lag until next proof update).
 PositionBalance({
@@ -287,17 +291,18 @@ PositionBalance({
 #### `StaderWithdrawalQueue` — ETHx → ETH queue
 
 ```solidity
-// Static positionId = abi.encode(userWithdrawalManager). Up to two legs (claimable + locked)
-// that share this positionId; denominated in WETH.
+// Static positionId = abi.encode(userWithdrawalManager), shared by all of the account's requests.
+// One leg PER open request (told apart by isLocked); denominated in WETH, request id in positionInstanceId.
 PositionBalance({
-    balanceAsset:  Asset({ asset: 0xC02a…6Cc2, symbol: "WETH", decimals: 18 }),
-    balanceAdapter: 0x<StaderWithdrawalQueueAdapter>,
-    amount:        5e17,                   // 0.5 WETH still pending (locked leg)
-    isDebt:        false,
-    protocolSubId: keccak256("stader-withdrawal"),
-    positionId:    abi.encode(0x<StaderUserWithdrawalManager>),  // Stader UserWithdrawalManager (static anchor)
-    positionKind:  PositionKind.Supplied,
-    isLocked:      true                    // not finalized; a claimable (false) leg would share this positionId
+    balanceAsset:       Asset({ asset: 0xC02a…6Cc2, symbol: "WETH", decimals: 18 }),
+    balanceAdapter:     0x<StaderWithdrawalQueueAdapter>,
+    amount:             5e17,                   // 0.5 WETH still pending (this request)
+    isDebt:             false,
+    protocolSubId:      keccak256("stader-withdrawal"),
+    positionId:         abi.encode(0x<StaderUserWithdrawalManager>),  // Stader UserWithdrawalManager (static anchor)
+    positionKind:       PositionKind.Supplied,
+    isLocked:           true,                   // not finalized; a finalized request is its own leg with isLocked=false
+    positionInstanceId: bytes32(uint256(7001))  // ephemeral Stader request id (per-request only)
 })
 ```
 
@@ -597,6 +602,20 @@ The tables below show what the call returns for a representative account positio
 (the ordered hierarchy below `protocolName`, leaf last) — computed lazily from `positionId`, so
 meta-adapters derive it on-chain from live state and per-instance adapters return a fixed array.
 
+> **`protocolName()` names the protocol, never the product.** Every adapter sharing a `protocolId` returns the
+> same string: Aave V3's lending instances, Safety Module and Umbrella are all `"Aave V3"`; Morpho's vaults and
+> markets are both `"Morpho"`; Balancer's pools and gauges are both `"Balancer V3"`. The product is carried by
+> `positionLabels()` (`["Umbrella Module"]`, `["Safety Module"]`, `["Market", "wstETH/USDC"]`) and by the typed
+> `protocolSubId`. This matters because a consumer enumerating *configured adapters* — as opposed to reading an
+> account's positions — never sees the typed taxonomy (`protocolBrand`/`protocolId`/`protocolSubId` are
+> `private constant` and only ride on returned `PositionBalance` structs), so the display name is the only
+> protocol identity it has; an adapter returning its product name splits itself out into a phantom sibling
+> protocol. Canonical strings live in `src/utils/ProtocolNames.sol`. Meta-adapters **derive** the name from their
+> own protocol id (`ProtocolNames.forProtocolId(_protocolId())`), so for that family the invariant is structural
+> rather than asserted; the hardcoded plain/assisted adapters are pinned to the same table by
+> `test/ProtocolNameConsistency.t.sol`. Clients must still never use these strings for identity, indexing, or
+> reconciliation — that is what `protocolSubId` / `positionId` are for.
+
 Assumed prices: USDC/DAI/GHO/USDS/crvUSD = $1 · WETH/ETH = $2 500 · wstETH = $2 900 ·
 stETH = $2 480 · AAVE = $200 · CRV = $0.50 · CVX = $3 · BAL = $3 · COMP = $50
 
@@ -642,8 +661,8 @@ Scenario: 1 000 USDC staked in stkwaEthUSDC.v1 with 5 USDC rewards pending.
 
 | asset | amount | value (USD) | positionKind | protocolName      | labels        |
 |-------|--------|-------------|--------------|-------------------|-----------------------|
-| USDC  | 1 000  | +1 000      | `Staking`    | `"Aave Umbrella"` | `["Umbrella Module"]` |
-| USDC  | 5      | +5          | `Rewards`    | `"Aave Umbrella"` | `["Umbrella Module"]` |
+| USDC  | 1 000  | +1 000      | `Staking`    | `"Aave V3"`       | `["Umbrella Module"]` |
+| USDC  | 5      | +5          | `Rewards`    | `"Aave V3"`       | `["Umbrella Module"]` |
 | **NAV** | | **+1 005** | | | |
 
 #### `Cap` — cUSD + stcUSD
@@ -678,7 +697,7 @@ ERC721 request id in the typed `positionInstanceId`.
 
 #### `MerklRewardsAssisted` — unclaimed rewards
 
-Scenario: 250 CRV unclaimed in Merkl distributor.
+Scenario: 250 CRV unclaimed in Merkl distributor. (Schema shown for the pending re-add — no Merkl adapter is live on `main` today.)
 
 | asset | amount | value (USD) | positionKind | protocolName | labels |
 |-------|--------|-------------|--------------|--------------|---------------|
@@ -756,8 +775,8 @@ Scenario: 1 WETH collateral, 500 USDC debt in a Fluid T1 vault.
 
 | asset | amount | value (USD) | positionKind | protocolName | labels     |
 |-------|--------|-------------|--------------|--------------|-------------------|
-| WETH  | 1.0    | +2 500      | `Collateral` | `"Fluid"`    | `["Vault", "ETH-USDC vault"]` |
-| USDC  | 500    | −500        | `Borrowed`   | `"Fluid"`    | `["Vault", "ETH-USDC vault"]` |
+| WETH  | 1.0    | +2 500      | `Collateral` | `"Fluid"`    | `["Vault", "WETH/USDC #21"]` |
+| USDC  | 500    | −500        | `Borrowed`   | `"Fluid"`    | `["Vault", "WETH/USDC #21"]` |
 | **NAV** | | **+2 000** | | | |
 
 #### `CompoundV3CometsMeta`
@@ -777,9 +796,32 @@ Scenario: 2 ETH staked, 0.5 ETH equivalent minted as osETH (debt).
 
 | asset | amount | value (USD) | positionKind | protocolName      | labels        |
 |-------|--------|-------------|--------------|-------------------|----------------------|
-| ETH   | 2.0    | +5 000      | `Staking`    | `"StakeWise V3"`  | `["Vault"]` |
-| ETH   | 0.5    | −1 250      | `Borrowed`   | `"StakeWise V3"`  | `["Vault"]` |
+| ETH   | 2.0    | +5 000      | `Staking`    | `"StakeWise V3"`  | `["Vault", "ETH 0xac0f906e…"]` |
+| ETH   | 0.5    | −1 250      | `Borrowed`   | `"StakeWise V3"`  | `["Vault", "ETH 0xac0f906e…"]` |
 | **NAV** | | **+3 750** | | | |
+
+The leaf has three shapes, all reads live and fail-open:
+
+1. the vault's ERC20 `name()` — `["Vault", "Stakers Union GNO"]`. Only StakeWise's `…Erc20Vault` implementation
+   variants are ERC20s and answer it (58 of 239 mainnet and 18 of 106 Gnosis registered vaults, as of 2026-07-26);
+2. otherwise `"<underlying symbol> <vault address>"` — `["Vault", "GNO 0x4b4406ed8659d03423490d8b62a1639206da0a7a"]`.
+   All five instances configured today land here. The symbol comes from the NAVCalculator asset registry, not an
+   ERC20 `symbol()` read, because on mainnet the underlying is the ETH sentinel `0xEeee…EEeE`, which has no code; if
+   the underlying is unregistered the leaf is the bare address;
+3. and `["Vault"]` — category only — for a **malformed coordinate**: a positionId shorter than 32 bytes yields `[]`,
+   and one whose 32-byte word has non-zero upper 96 bits (i.e. not a valid address) degrades to the category. Both
+   are fail-open paths, not error signals; `positionLabels` never reverts.
+
+Tier 2 is a coordinate rendering rather than a name, and that is deliberate: the non-ERC20 vault variants expose no
+human-readable identity on chain at all. `name()`, `symbol()`, `contractURI()` and `metadataIpfsHash()` all revert on
+them; `vaultId()` is `keccak256(<implementation type string>)`, a *type* hash that collides across vaults and whose
+pre-image is recoverable nowhere on chain — not even from the implementation bytecode, since the compiler folds the
+literal into the hash; `version()` collides; `admin()` / `mevEscrow()` / `feeRecipient()` are addresses and mutable;
+and `VaultsRegistry` stores only `vaults(address) → bool`. The vault names shown in StakeWise's own UI come from
+off-chain IPFS metadata, so a consumer wanting those must enrich off-chain from the vault address.
+
+The label is descriptive, never an identifier — operator names collide (three separate Gnosis vaults are all named
+`"SEED"`). Key on `positionId`.
 
 #### `BalancerV3PoolsMeta`
 
@@ -934,7 +976,7 @@ schemas are in the next section and in the per-adapter table above.)
 | `stakewise-v3-vaults` | `STAKEWISE_V3_VAULTS` | `StakeWiseV3VaultsMetaBalanceAdapter` — StakeWise V3 vault stake + osToken debt |
 | `nexus-mutual-staking-pools` | `NEXUS_MUTUAL_STAKING_POOLS` | `NexusMutualStakingPoolsAssistedBalanceAdapter` — Nexus Mutual StakingNFT stake + rewards |
 | `cap` | `CAP` | `CapBalanceAdapter` — Cap cUSD (held) and stcUSD (staked) |
-| `merkl` | `MERKL` | `MerklRewardsAssistedBalanceAdapter` — unclaimed (claimable) Merkl reward tokens |
+| `merkl` | `MERKL` | Reserved Merkl-rewards slug — no live adapter on `main` (the former `MerklRewardsAssistedBalanceAdapter` was removed; re-add pending). Would emit unclaimed (claimable) Merkl reward tokens |
 | `lido-withdrawal` | `LIDO_WITHDRAWAL` | `LidoWithdrawalQueueBalanceAdapter` — ETH owed from the Lido stETH withdrawal queue |
 | `stader-withdrawal` | `STADER_WITHDRAWAL` | `StaderWithdrawalQueueBalanceAdapter` — ETH owed from the Stader ETHx withdrawal queue |
 | `kelp-withdrawal` | `KELP_WITHDRAWAL` | `KelpWithdrawalQueueBalanceAdapter` — assets owed from the Kelp rsETH exit queue |
@@ -1038,8 +1080,7 @@ bytes32 key = keccak256(abi.encode(
     protocolSubId,
     positionId,
     balanceAsset.asset,
-    positionKind,
-    isLocked
+    positionKind
 ));
 ```
 
@@ -1050,8 +1091,8 @@ import { keccak256, AbiCoder } from "ethers";
 
 const abi = AbiCoder.defaultAbiCoder();
 const key = keccak256(abi.encode(
-    ["uint256", "bytes32", "bytes", "address", "uint8", "bool"],
-    [chainId, position.protocolSubId, position.positionId, position.balanceAsset.asset, position.positionKind, position.isLocked]
+    ["uint256", "bytes32", "bytes", "address", "uint8"],
+    [chainId, position.protocolSubId, position.positionId, position.balanceAsset.asset, position.positionKind]
 ));
 ```
 
@@ -1085,7 +1126,9 @@ collapse those legs and under-count. Consumers needing per-item granularity read
 
 ## Adapter reference — positionId decode and legs
 
-The table below and the TypeScript examples cover every adapter in the codebase. All
+The summary table below and the TypeScript examples cover the primary balance adapters; the
+exhaustive per-adapter matrix (including the withdrawal / cooldown and assisted adapters) is the
+*Complete per-adapter schema* section further down. All
 decodes use `AbiCoder.defaultAbiCoder()` from ethers.js. Protocol ID constants come from
 `ProtocolIds.sol` (`keccak256(toUtf8Bytes("<slug>"))`).
 
@@ -1116,11 +1159,10 @@ decodes use `AbiCoder.defaultAbiCoder()` from ethers.js. Protocol ID constants c
 | `UniswapV3PoolsMeta` / `PancakeSwapV3PoolsMeta` | `uniswap-v3` / `pancakeswap-v3` | `Supplied`, `Fees` |
 | `UniswapV2PoolsMeta` / `PancakeSwapV2PoolsMeta` | `uniswap-v2` / `pancakeswap-v2` | `Supplied` |
 | `Cap` | `cap` | `Supplied` (cUSD), `Staking` (stcUSD) |
-| `MerklRewardsAssisted` | `merkl` | `Rewards` |
 | `NexusMutualStakingPoolsAssistedBalanceAdapter` | `nexus-mutual-staking-pools` | `Staking`, `Rewards` |
 | `LidoWithdrawalQueue` | `lido-withdrawal` | `Supplied` (one leg per request; `isLocked` = pending; request id in `positionInstanceId`) |
-| `StaderWithdrawalQueue` | `stader-withdrawal` | `Supplied` (claimable + locked legs via `isLocked`) |
-| `KelpWithdrawalQueue` | `kelp-withdrawal` | `Supplied` (claimable + locked legs via `isLocked`, per asset) |
+| `StaderWithdrawalQueue` | `stader-withdrawal` | `Supplied` (one leg per request; `isLocked` = pending; request id in `positionInstanceId`) |
+| `KelpWithdrawalQueue` | `kelp-withdrawal` | `Supplied` (one leg per request per asset; `isLocked` = pending; `userNonce` in `positionInstanceId`) |
 
 ---
 
@@ -1457,9 +1499,11 @@ legs, and a worked example — for every balance adapter on `main`.
 - **Full breadcrumb** = `[protocolName(), ...positionLabels(positionId)]`; the **leaf** is the last element.
 - **`protocolSubId`** column is the `keccak256` slug (constants in [`src/utils/ProtocolIds.sol`](../../src/utils/ProtocolIds.sol)).
 - **Leaf source:** `const` = hardcoded literal · `derived` = read live from chain · `gov` = constructor arg.
-  No leaf is governance-fed today; for meta-adapters only `protocolName()` (the breadcrumb root, marked ¹)
-  is a constructor arg, the category is a `const` literal, and the leaf is `derived` on-chain. Meta-adapters
-  use a `_labels(category, leaf)` helper that **drops an empty leaf**, so a failed read degrades to `[category]`.
+  Nothing is governance-fed today. For meta-adapters the breadcrumb root `protocolName()` is **derived from
+  the adapter's own `_protocolId()`** (`ProtocolNames.forProtocolId`) — not a constructor argument and not
+  configurable per deployment — the category is a `const` literal, and the leaf is `derived` on-chain.
+  Meta-adapters use a `_labels(category, leaf)` helper that **drops an empty leaf**, so a failed read
+  degrades to `[category]`.
 - Labels are returned by `positionLabels(positionId)`; the ephemeral per-item id (request / NFT / ticket)
   is **not** a label — it is the typed `PositionBalance.positionInstanceId`.
 
@@ -1468,7 +1512,7 @@ legs, and a worked example — for every balance adapter on `main`.
 | Adapter | `protocolSubId` | `protocolName()` | `positionLabels()` → (source) | `positionId` schema | `PositionKind` legs | Example breadcrumb |
 |---|---|---|---|---|---|---|
 | `ERC20DefaultBalanceAdapter` | `wallet` | `"Wallet"` | `[<symbol>]` (derived); `["native"]`; `[]` on revert | `abi.encode(address asset)` | Wallet | `["Wallet","USDC"]` |
-| `AaveUmbrellaBalanceAdapter` | `aave-v3-umbrella` | `"Aave Umbrella"` | `["Umbrella Module"]` (const) | `abi.encode(address stakeToken)` | Staking / Rewards | `["Aave Umbrella","Umbrella Module"]` |
+| `AaveUmbrellaBalanceAdapter` | `aave-v3-umbrella` | `"Aave V3"` | `["Umbrella Module"]` (const) | `abi.encode(address stakeToken)` | Staking / Rewards | `["Aave V3","Umbrella Module"]` |
 | `AaveV3SafetyModuleBalanceAdapter` | `aave-v3-safety-module` | `"Aave V3"` | `["Safety Module"]` (const) | `abi.encode(address stakeToken)` | Staking / Rewards | `["Aave V3","Safety Module"]` |
 | `CapBalanceAdapter` (cUSD) | `cap` | `"Cap"` | `["Stablecoin","cUSD"]` (const) | `abi.encode(address CUSD)` | Supplied | `["Cap","Stablecoin","cUSD"]` |
 | `CapBalanceAdapter` (stcUSD) | `cap` | `"Cap"` | `["Savings","stcUSD"]` (const) | `abi.encode(address STCUSD)` | Staking | `["Cap","Savings","stcUSD"]` |
@@ -1480,22 +1524,23 @@ legs, and a worked example — for every balance adapter on `main`.
 
 #### Meta-adapters (`src/balances/MetaBalanceAdapters/`)
 
-`protocolName()` is a constructor arg (¹). Default `positionId` = base `_instancePositionId` (instance
-address widened → `abi.encode(address instance)`); overrides are flagged.
+`protocolName()` is derived from `_protocolId()` — identical for every adapter sharing a protocol id, and
+the same on every chain. Default `positionId` = base `_instancePositionId` (instance address widened →
+`abi.encode(address instance)`); overrides are flagged.
 
-| Adapter | `protocolSubId` | `protocolName()`¹ | `positionLabels()` → (source) | `positionId` schema | `PositionKind` legs | Example breadcrumb |
+| Adapter | `protocolSubId` | `protocolName()` | `positionLabels()` → (source) | `positionId` schema | `PositionKind` legs | Example breadcrumb |
 |---|---|---|---|---|---|---|
 | `AaveV3InstancesMetaBalanceAdapter` | `aave-v3-lending` | `"Aave V3"` | `["Market", <getMarketId()>]` (derived) | `abi.encode(address pool)` (computed inline) | Collateral/Supplied / Borrowed | `["Aave V3","Market","Aave Ethereum Market"]` |
 | `CompoundV3CometsMetaBalanceAdapter` | `compound-v3-comets` | `"Compound V3"` | `["Market", <comet.name()>]` (derived) | `abi.encode(address comet)` | Supplied/Borrowed / Collateral / Rewards | `["Compound V3","Market","cUSDCv3"]` |
 | `ConvexCurveLPStakingMetaBalanceAdapter` | `convex-curve-lp-staking` | `"Convex"` | `["Staking", "Curve LP", "<coins>"]` (derived) | `abi.encode(address rewarder)` | Staking / Rewards | `["Convex","Staking","Curve LP","DAI/USDC/USDT"]` |
 | `EulerVaultsMetaBalanceAdapter` | `euler-vaults` | `"Euler"` | `["Vault", <vault.name()>]` (derived) | `abi.encode(address vault)` | Collateral/Supplied / Borrowed | `["Euler","Vault","eUSDC"]` |
 | `FluidFTokensMetaBalanceAdapter` | `fluid-ftokens` | `"Fluid"` | `["Lending", <fToken.symbol()>]` (derived) | `abi.encode(address fToken)` | Supplied | `["Fluid","Lending","fUSDC"]` |
-| `FluidVaultsMetaBalanceAdapter` | `fluid-vaults` | `"Fluid"` | `["Vault", <vault.name()>]` (derived) | `abi.encode(address vault)` | Collateral / Borrowed | `["Fluid","Vault","Fluid T1 USDC"]` |
+| `FluidVaultsMetaBalanceAdapter` | `fluid-vaults` | `"Fluid"` | `["Vault", "<collateral>/<debt> #<vaultId>"]` (derived) | `abi.encode(address vault)` | Collateral / Borrowed | `["Fluid","Vault","wstETH/USDC #4"]` |
 | `GearboxV3MarketsMetaBalanceAdapter` | `gearbox-v3-markets` | `"Gearbox"` | `["Market", <market.name()>]` (derived) | `abi.encode(address market)` | Supplied | `["Gearbox","Market","dDAI"]` |
 | `GearboxV3CreditAccountsMetaBalanceAdapter` | `gearbox-v3-credit-accounts` | `"Gearbox"` | `["Credit Account", <creditManager.name() / underlying symbol>]` (derived) | `abi.encode(address creditAccount)` | Collateral / Borrowed | `["Gearbox","Credit Account","USDC v3"]` |
 | `MorphoMarketsMetaBalanceAdapter` | `morpho-markets` | `"Morpho"` | `["Market", "<coll>/<loan>"]` (derived) | **override** `abi.encode(bytes32 marketId)` (raw) | Collateral / Supplied / Borrowed | `["Morpho","Market","wETH/USDC"]` |
 | `MorphoVaultsMetaBalanceAdapter` | `morpho-vaults` | `"Morpho"` | `["Vault", <vault.name()>]` (derived) | `abi.encode(address vault)` | Supplied | `["Morpho","Vault","Morpho DAI"]` |
-| `StakeWiseV3VaultsMetaBalanceAdapter` | `stakewise-v3-vaults` | `"StakeWise V3"` | `["Vault"]` (category only) | `abi.encode(address vault)` | Staking / Borrowed (osToken) | `["StakeWise V3","Vault"]` |
+| `StakeWiseV3VaultsMetaBalanceAdapter` | `stakewise-v3-vaults` | `"StakeWise V3"` | `["Vault", <vault.name()>]`, falling back to `["Vault", "<underlying symbol> <vault address>"]` (derived; only the `…Erc20Vault` variants answer `name()`) | `abi.encode(address vault)` | Staking / Borrowed (osToken) | `["StakeWise V3","Vault","Stakers Union GNO"]` / `["StakeWise V3","Vault","GNO 0x4b4406ed…"]` |
 | `BalancerV2PoolsMetaBalanceAdapter` | `balancer-v2-pools` | `"Balancer V2"` | `["AMM Liquidity Pool", <BPT.name()>]` (derived) | **override** `abi.encode(bytes32 poolId)` (raw) | Supplied | `["Balancer V2","AMM Liquidity Pool","50WETH-50USDC"]` |
 | `BalancerV2GaugesMetaBalanceAdapter` | `balancer-v2-gauges` | `"Balancer V2"` | `["Staking Gauge", <gauge.symbol()>]` (derived) | `abi.encode(address gauge)` | Staking / Rewards | `["Balancer V2","Staking Gauge","…-gauge"]` |
 | `BalancerV3PoolsMetaBalanceAdapter` | `balancer-v3-pools` | `"Balancer V3"` | `["AMM Liquidity Pool", <pool.name()>]` (derived) | `abi.encode(address pool)` | Supplied | `["Balancer V3","AMM Liquidity Pool","Balancer 50 WETH 50 USDC"]` |
@@ -1503,18 +1548,19 @@ address widened → `abi.encode(address instance)`); overrides are flagged.
 | `CurvePoolsMetaBalanceAdapter` | `curve-pools` | `"Curve"` | `["AMM Liquidity Pool", "<coins>"]` (derived) | `abi.encode(address pool)` | Supplied | `["Curve","AMM Liquidity Pool","USDC/USDT/DAI"]` |
 | `CurveGaugesMetaBalanceAdapter` | `curve-gauges` | `"Curve"` | `["Staking Gauge", "<coins>"]` (derived) | `abi.encode(address gauge)` | Staking / Rewards | `["Curve","Staking Gauge","USDC/USDT/DAI"]` |
 | `UniswapV2PoolsMetaBalanceAdapter` | `uniswap-v2` | `"Uniswap V2"` | `["AMM Liquidity Pool", "<sym0>/<sym1>"]` (derived) | `abi.encode(address pair)` | Supplied | `["Uniswap V2","AMM Liquidity Pool","WETH/USDC"]` |
+| `UniswapV3PoolsMetaBalanceAdapter` | `uniswap-v3` | `"Uniswap V3"` | `["AMM Liquidity Pool", "<sym0>/<sym1> <fee>%"]` (derived) | `abi.encode(address pool)` | Supplied / Fees | `["Uniswap V3","AMM Liquidity Pool","USDC/WETH 0.05%"]` |
 | `PancakeSwapV2PoolsMetaBalanceAdapter` | `pancakeswap-v2` | `"PancakeSwap V2"` | `["AMM Liquidity Pool", "<sym0>/<sym1>"]` (derived, inherited) | `abi.encode(address pair)` | Supplied | `["PancakeSwap V2","AMM Liquidity Pool","WBNB/BUSD"]` |
+| `PancakeSwapV3PoolsMetaBalanceAdapter` | `pancakeswap-v3` | `"PancakeSwap V3"` | `["AMM Liquidity Pool", "<sym0>/<sym1> <fee>%"]` (derived, inherited) | `abi.encode(address pool)` | Supplied / Fees | `["PancakeSwap V3","AMM Liquidity Pool","CAKE/WBNB 0.25%"]` |
 
 #### Assisted adapters (`src/balances/AssistedBalanceAdapters/`)
 
 | Adapter | `protocolSubId` | `protocolName()` | `positionLabels()` → (source) | `positionId` schema | `PositionKind` legs | Example breadcrumb |
 |---|---|---|---|---|---|---|
-| `MerklRewardsAssistedBalanceAdapter` | `merkl` | `"Merkl"` (const) | `["Claimable Rewards"]` (const) | `abi.encode(address DISTRIBUTOR)` | Rewards | `["Merkl","Claimable Rewards"]` |
 | `EtherFiWithdrawalQueueAssistedBalanceAdapter` | `etherfi-withdrawal` | `"ether.fi"` (const) | `["Withdrawal Queue", "eETH"]` (const) | `abi.encode(address withdrawRequestNFT)` | Supplied — one leg **per request** (cached NFT tokenId in `positionInstanceId`; each `isLocked` = pending), shared positionId | `["ether.fi","Withdrawal Queue","eETH"]` |
 | `StakeWiseV3ExitQueueAssistedBalanceAdapter` | `stakewise-v3-exit` | `"StakeWise V3"` (const) | `["Exit Queue", <receiptSymbol>]` (derived) | `abi.encode(address vault)` (per vault) | Supplied — **per request (ticket)** with the `positionTicket` in `positionInstanceId`, up to two legs (claimable + still-queued) sharing the per-vault positionId | `["StakeWise V3","Exit Queue","osETH"]` |
 | `NexusMutualStakingPoolsAssistedBalanceAdapter` | `nexus-mutual-staking-pools` | `"Nexus Mutual"` (const) | `["Staking Pools", "Pool #<id>"]` (derived) | `abi.encode(address stakingPool)` | Staking / Rewards | `["Nexus Mutual","Staking Pools","Pool #5"]` |
-| `UniswapV3PoolsMetaBalanceAdapter` | `uniswap-v3` | `"Uniswap V3"` (gov) | `["AMM Liquidity Pool", "<sym0>/<sym1> <fee>%"]` (derived) | `abi.encode(address pool)` | Supplied / Fees | `["Uniswap V3","AMM Liquidity Pool","USDC/WETH 0.05%"]` |
-| `PancakeSwapV3PoolsMetaBalanceAdapter` | `pancakeswap-v3` | `"PancakeSwap V3"` (gov) | `["AMM Liquidity Pool", "<sym0>/<sym1> <fee>%"]` (derived, inherited) | `abi.encode(address pool)` | Supplied / Fees | `["PancakeSwap V3","AMM Liquidity Pool","CAKE/WBNB 0.25%"]` |
+
+(`MerklRewardsAssistedBalanceAdapter` was removed from `main` and is not listed here; the `merkl` slug is reserved for its pending re-add — see the note in the `protocolSubId` table above.)
 
 #### What each `positionId` value is
 
@@ -1571,6 +1617,45 @@ asset lives in `balanceAsset.asset`. No adapter emits an empty `positionId`.
 
 ---
 
+## Enumerating shapes without an account — `IPositionEnumerable`
+
+Everything above assumes you are reading an **account's** positions. A **configuration view** — a registry
+page listing what the NAVCalculator is set up to account for — has no account, so no `positionId` to pass to
+`positionLabels`. Adapters answer that in one of exactly three ways:
+
+| Adapter shape | `positionLabels("")` | `IPositionEnumerable` |
+|---|---|---|
+| **Single-shape** (breadcrumb independent of `positionId`) | the full constant breadcrumb | not implemented — the probe already answered |
+| **Enumerable** (bounded shape set: pinned at construction, or a governed instance set) | `[]` | **implemented** — `positionIds()` lists the shapes |
+| **Per-account** (shapes fed in by the position owner) | `[]` | not implemented — no account-independent answer exists |
+
+```solidity
+interface IPositionEnumerable {
+    function positionIds() external view returns (bytes[] memory);
+}
+```
+
+The ERC-165 bit is what separates rows 2 and 3, which give the same `[]`. Do **not** try to infer the shape
+from the `IAssistedBalanceAdapter` marker: it means "coordinates are fed externally", and two of the three
+assisted adapters answer the empty probe with a *constant* breadcrumb.
+
+**The binding guarantee — and the reason this section lives in the identity doc:** each returned id is
+byte-identical to the `PositionBalance.positionId` the adapter emits for that shape. That is what lets a
+configuration view be **joined** to real positions, and it makes the enumeration reconcilable using the same
+`positionId` column described above. Two rules follow:
+
+- **Join on the bytes, never the index.** `positionIds()` is not index-aligned with `getAdapterPositions`,
+  which omits shapes the account has no position in; ordering is unspecified.
+- **A listed shape is capability, not coverage** — not a holding, and not proof the assets are registered
+  for pricing.
+
+Meta-adapters get this from `MetaBalanceAdapter` for free: their shape set *is* the governed instance set, so
+`positionIds()` enumerates `getMetaInstances(adapter)` through `_instancePositionId`. Which is why that hook
+must return exactly what the adapter emits — `AaveV3InstancesMetaBalanceAdapter` overrides it because its
+coordinate is a ProtocolDataProvider while its positionId is the resolved Pool.
+
+---
+
 ## Adding a new adapter
 
 When implementing a new balance adapter:
@@ -1592,8 +1677,10 @@ When implementing a new balance adapter:
    - Uncollected LP/protocol fees → `Fees`
    - ERC20 wallet balance → `Wallet`
 4. Provide human-readable labels by implementing both `IPositionDescribable` methods:
-   - `protocolName()` — static `pure` string for per-instance adapters; the same constant (constructor
-     arg) for meta-adapters
+   - `protocolName()` — for per-instance adapters, return the `src/utils/ProtocolNames.sol` constant for
+     your protocol id. Meta-adapters do **not** implement it: `MetaBalanceAdapter` derives it from
+     `_protocolId()`. Either way, adapters sharing a `protocolId` report the same name — it names the
+     PROTOCOL, never the product (the product goes in `positionLabels()`).
    - `positionLabels(bytes positionId)` — return a `string[]` hierarchy below the protocol, leaf last,
      derived from `positionId`. Derive on-chain for meta-adapters (read token symbols, vault/pool names)
      via the `_labels(category, leaf)` helper; a fixed array for per-instance adapters. Labels are NOT

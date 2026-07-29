@@ -12,6 +12,54 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 ///      UUPS-upgradeable and use AccessControl (MANAGER for mutations, DEFAULT_ADMIN_ROLE for upgrades).
 /// @author KPK
 interface INAVCalculator is IBalances {
+    /// @notice A balance adapter consumed the gas stipend the NAV read forwarded to it without answering.
+    /// @dev Deliberately NOT folded into the read's fail-open path. A revert means "this adapter has nothing to
+    ///      report"; running out of gas means "this adapter's answer is unknown", and reporting an unknown answer
+    ///      as an empty one drops the adapter's legs — a dropped debt leg RAISES the reported NAV.
+    ///
+    ///      Declared here rather than alongside the shared errors so it reaches consumers: it is raised inside a
+    ///      DELEGATECALLed library, and an error a contract never names itself does not appear in that contract's
+    ///      ABI. Callers generate against this interface and the NAVCalculator implementing it, so a revert they
+    ///      can actually decode has to be part of it.
+    ///
+    ///      `adapter` names the adapter that was running, which is not always the adapter at fault: the stipend is
+    ///      a share of what the READ still holds, so an under-funded call starves whichever adapter happens to be
+    ///      reached last. `stipend` and `consumed` are what separate the two cases. A large `stipend` fully
+    ///      consumed means that adapter is genuinely runaway; a small `stipend` means the read itself was short of
+    ///      gas and the fix is to supply more.
+    /// @param adapter The adapter that was executing when its gas ran out.
+    /// @param stipend The budget the classification was measured against: 63/64 of what the read held just before
+    ///        the call. It is NOT precisely what the EVM forwarded — the same 63/64 rule is applied again at the
+    ///        CALL itself, to a figure already reduced by building the calldata — so on a genuine exhaustion
+    ///        `consumed` lands a few tens of gas ABOVE it. Read the two as a ratio, not as a balance.
+    /// @param consumed Gas the call actually cost this frame, including the call overhead.
+    error AdapterGasExhausted(address adapter, uint256 stipend, uint256 consumed);
+
+    /// @notice One governed instance of a meta-adapter consumed its gas stipend without answering.
+    /// @dev The {AdapterGasExhausted} sibling, one frame in. A meta-adapter isolates each instance behind its own
+    ///      `try`/`catch` so a single faulty instance cannot zero out the batch, and that isolation has the same
+    ///      blind spot: an instance that runs out of gas is indistinguishable from one that reverted, and recording
+    ///      it as "no positions" drops its legs while the meta-adapter still RETURNS SUCCESSFULLY — so the caller
+    ///      sees a complete-looking answer. A dropped debt leg raises the reported NAV.
+    ///
+    ///      Raised rather than swallowed. `PriceFeedLib` keys on this selector explicitly rather than re-deriving
+    ///      exhaustion from gas, so a cheap early raise here cannot be re-scored as a benign revert one frame out.
+    ///
+    ///      `instance` is where the budget ran out, which is NOT the same as where it went. The fan-out gives each
+    ///      instance a share of whatever its predecessors left, so a single runaway instance early in the governed
+    ///      set can leave the NEXT one too little and get it named instead. Read the pair together: a large
+    ///      `stipend` fully consumed means that instance is genuinely runaway; a small `stipend` means it was
+    ///      starved by something before it, or the read was under-funded to begin with. Removing the named instance
+    ///      is the wrong first move when `stipend` is small.
+    /// @param adapter The meta-adapter that was fanning out. Overwritten by `PriceFeedLib` with the address it
+    ///        actually called, so it is trustworthy even when the rest of the payload is not.
+    /// @param instance The governed instance coordinate whose read ran out of gas — see the caveat above.
+    /// @param stipend The budget the classification was measured against: 63/64 of what the fan-out held just
+    ///        before the call. As with {AdapterGasExhausted} it is NOT precisely what the EVM forwarded — the same
+    ///        rule is applied again at the CALL — so `consumed` lands slightly above it. A ratio, not a balance.
+    /// @param consumed Gas the instance call actually cost, including the fan-out's call overhead.
+    error InstanceGasExhausted(address adapter, bytes32 instance, uint256 stipend, uint256 consumed);
+
     //
     // Structs
     //
@@ -125,6 +173,14 @@ interface INAVCalculator is IBalances {
         // Ephemeral per-item coordinate copied from PositionBalance (NFT id / request id / ticket as bytes32).
         // bytes32(0) when none. Display/granularity only — excluded from the stable identity key. See PositionBalance.
         bytes32 positionInstanceId;
+        // True if the asset's primary price diverged from its monitor feeds beyond the configured tolerance (or,
+        // for stablecoins, from the $1 peg). A pricing-quality signal, NOT a validity/staleness flag: `price` and
+        // `value` are still populated from the primary. Consumers (e.g. the sub/redeem processor) decide how to react.
+        // APPENDED (not inserted mid-struct) so an in-place UUPS upgrade doesn't shift existing fields' ABI offsets.
+        bool irregular;
+        // True if the quote (unit-of-account) asset's own primary diverged from its monitors — the divergence
+        // counterpart to `quoteAssetStale`. Always false for a USD quote.
+        bool quoteAssetIrregular;
     }
 
     /// @notice Position enriched with human-readable display labels.
@@ -153,6 +209,9 @@ interface INAVCalculator is IBalances {
     /// @param quoteAsset Quote currency; address(0) denotes USD.
     /// @param timestamp Block timestamp of the reading.
     /// @param stalePriceAssets Assets whose prices were stale at query time.
+    /// @param irregularPriceAssets Assets whose primary price diverged from their monitor feeds beyond tolerance
+    ///        (or, for stablecoins, from the $1 peg) at query time. A pricing-quality signal, not a staleness flag —
+    ///        `value` is still computed from the primary prices. Consumers decide how to react.
     /// @param sequencerDown True if the L2 sequencer was down or in grace period (L2 only).
     /// @param quoteAssetStale True if the quote asset's own price feed was stale. When true the value field
     ///        is in USD (fallback) even though quoteAsset is non-zero — callers must check this flag before
@@ -165,6 +224,11 @@ interface INAVCalculator is IBalances {
         Asset[] stalePriceAssets;
         bool sequencerDown;
         bool quoteAssetStale;
+        // APPENDED (not inserted mid-struct) so an in-place UUPS upgrade doesn't shift existing fields' ABI offsets.
+        Asset[] irregularPriceAssets;
+        // True if the quote (unit-of-account) asset's own primary diverged from its monitors beyond tolerance —
+        // the divergence counterpart to `quoteAssetStale`. Always false for a USD quote (no quote feed).
+        bool quoteAssetIrregular;
     }
 
     /// @notice Price data for the freshest non-stale feed selected for an asset.
@@ -174,13 +238,30 @@ interface INAVCalculator is IBalances {
     /// @param priceType Feed type (Chainlink, Custom, Redstone, or API3).
     /// @param price Current price (e.g. USD per unit); 0 when stale.
     /// @param decimals Decimals of the selected feed's output.
-    /// @param chainlinkHeartbeat Staleness window of the selected feed in seconds.
-    /// @param updatedAt Last update timestamp from latestRoundData (AggregatorV3-shaped feeds only; 0 for Custom).
+    /// @param chainlinkHeartbeat Staleness window (seconds) of the reported feed. For Chainlink/Redstone/API3 this is
+    ///        the selected feed's configured heartbeat. For Custom feeds it is the GOVERNING leg's heartbeat — the
+    ///        underlying Chainlink leg closest to its own staleness limit — paired with `updatedAt` below. A Custom
+    ///        feed that successfully reports no trackable Chainlink leg gives 0; if its freshness read REVERTS this
+    ///        field retains the registered config heartbeat (only `updatedAt` falls back to 0), so a non-zero value
+    ///        here does not by itself imply a successful read. See ICustomPriceFeed.governingFeedFreshness.
+    /// @param updatedAt Last-update timestamp of the reported feed. For Chainlink/Redstone/API3 this is the selected
+    ///        feed's `latestRoundData().updatedAt`. For Custom feeds it is the GOVERNING leg's `updatedAt` — a real,
+    ///        matched pair with `chainlinkHeartbeat` above. 0 when the feed has no push timestamp or the read reverts.
+    /// @dev ADVISORY PAIR — `updatedAt`/`chainlinkHeartbeat` describe only the reported oracle leg's push freshness.
+    ///      `stale` (and `sequencerDown`) is the AUTHORITATIVE staleness verdict: it also folds in the rate answer's
+    ///      validity, the L2 sequencer state, and the feed's own configured heartbeat gate — none of which the pair
+    ///      can express, so the pair can read "fresh" (age < heartbeat) while `stale` is true. Consumers MUST gate on
+    ///      `stale`; never recompute a fresh/stale decision from `(updatedAt, chainlinkHeartbeat)` alone.
     /// @param stale True if all feeds are stale or the L2 sequencer is down.
     /// @param sequencerDown True if L2 sequencer is down (L2 only).
     /// @param healthyFeedCount Number of registered feeds that passed all staleness gates on this read.
     ///        A value below the total registered feed count signals partial redundancy collapse and
     ///        should trigger off-chain alerting.
+    /// @param irregular True if the primary price diverged from the worst-case (furthest) healthy monitor feed
+    ///        beyond the configured divergence tolerance, or (stablecoins) from the $1 peg beyond the peg tolerance.
+    /// @param divergenceBps Worst-case basis-point gap between the primary price and any single healthy monitor
+    ///        price (0 when there are no healthy monitors or the primary is stale).
+    /// @param monitorFeedCount Number of healthy monitor feeds that contributed to the divergence computation.
     struct PriceFeedData {
         address priceFeed;
         IPrices.PriceType priceType;
@@ -191,6 +272,9 @@ interface INAVCalculator is IBalances {
         bool stale;
         bool sequencerDown;
         uint256 healthyFeedCount;
+        bool irregular;
+        uint256 divergenceBps;
+        uint256 monitorFeedCount;
     }
 
     //
@@ -245,6 +329,28 @@ interface INAVCalculator is IBalances {
     function addPriceFeed(address asset, address priceFeed, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
         external;
 
+    /// @notice Adds a monitor (divergence-only) feed for an asset. Monitor feeds NEVER price the NAV; they are read
+    ///         only to detect divergence between the primary price and the worst-case (furthest) healthy monitor price.
+    /// @dev Requires the asset's divergence tolerance to be set first (>0), else reverts DivergenceToleranceRequired.
+    ///      Monitor feeds must report NAV_DECIMALS decimals (else MonitorFeedDecimalsMismatch). Reverts
+    ///      MonitorFeedAlreadyRegistered on a duplicate.
+    /// @param asset Registered asset address.
+    /// @param priceFeed Monitor feed address (cannot be zero).
+    /// @param priceType Chainlink, Custom, Redstone, or API3.
+    /// @param chainlinkHeartbeat Staleness window in seconds (must be non-zero).
+    function addMonitorFeed(address asset, address priceFeed, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
+        external;
+
+    /// @notice Sets the asset's divergence tolerance in basis points (must be in (0, 10000]).
+    /// @param asset Registered asset address.
+    /// @param divergenceToleranceBps Max worst-case primary-vs-any-single-monitor gap before the asset is flagged irregular.
+    function setDivergenceTolerance(address asset, uint32 divergenceToleranceBps) external;
+
+    /// @notice Sets the asset's stablecoin peg tolerance in basis points (in [0, 10000]; 0 disables the peg guard).
+    /// @param asset Registered asset address.
+    /// @param pegToleranceBps Max deviation of the primary price from $1 before the asset is flagged irregular.
+    function setPegTolerance(address asset, uint32 pegToleranceBps) external;
+
     /// @notice Registers one or more **non-meta** balance adapters in the global registry in a single call.
     /// @dev Reverts with InvalidArguments if the list is empty or contains a zero address, DuplicateBalanceAdapter
     ///      if any adapter is already registered, InvalidBalanceAdapter if any adapter does not implement
@@ -272,6 +378,16 @@ interface INAVCalculator is IBalances {
     /// @param asset Registered asset address.
     /// @param priceFeed Feed address to remove.
     function removePriceFeed(address asset, address priceFeed) external;
+
+    /// @notice Removes the monitor feed at the given index. Monitor feeds are optional, so the last one may be removed.
+    /// @param asset Registered asset address.
+    /// @param index Index into the asset's monitor feed array.
+    function removeMonitorFeedAt(address asset, uint256 index) external;
+
+    /// @notice Removes the monitor feed with the given address. Reverts MonitorFeedNotFound if absent.
+    /// @param asset Registered asset address.
+    /// @param priceFeed Monitor feed address to remove.
+    function removeMonitorFeed(address asset, address priceFeed) external;
 
     /// @notice Removes one or more balance adapters from the global registry in a single call.
     /// @dev Reverts with InvalidArguments if the list is empty. The batch is all-or-nothing — if any adapter is
@@ -408,15 +524,56 @@ interface INAVCalculator is IBalances {
     /// @return USD decimals.
     function usdDecimals() external view returns (uint8);
 
-    /// @notice Returns detailed price feed data for an asset.
+    /// @notice Returns detailed price feed data for an asset (primary feed + divergence signal vs its monitors).
     /// @param underlyingAsset Registered asset address.
-    /// @return priceFeedData PriceFeedData struct (feed, type, price, decimals, heartbeat, updatedAt, stale, sequencerDown, healthyFeedCount).
+    /// @return priceFeedData PriceFeedData struct (feed, type, price, decimals, heartbeat, updatedAt, stale,
+    ///         sequencerDown, healthyFeedCount, irregular, divergenceBps, monitorFeedCount).
     function getPriceData(address underlyingAsset) external view returns (PriceFeedData memory priceFeedData);
 
-    /// @notice Returns health status: sequencer down flag and list of assets with stale prices.
+    /// @notice Same as {getPriceData} but WITHOUT the monitor-divergence computation (irregular/divergenceBps/
+    ///         monitorFeedCount stay 0/false). For hot callers that only need price/staleness (e.g. custom feeds
+    ///         reading the NAV-sourced base/USD term) so a base asset's monitor reads + sort aren't repaid per call.
+    /// @param underlyingAsset Registered asset address.
+    /// @return priceFeedData PriceFeedData struct with the divergence fields left at their defaults.
+    function getPriceDataNoDivergence(address underlyingAsset)
+        external
+        view
+        returns (PriceFeedData memory priceFeedData);
+
+    /// @notice Returns the divergence between an asset's primary price and its monitor feeds.
+    /// @param underlyingAsset Registered asset address.
+    /// @return primaryPrice The primary feed's price, normalized to NAV_DECIMALS (0 if the primary is stale).
+    /// @return monitorMedian The median of the healthy monitor prices, NAV_DECIMALS (0 if no healthy monitors).
+    /// @return divergenceBps Worst-case basis-point gap between the primary and any single healthy monitor — the
+    ///         value `irregular` is thresholded on (0 if no monitors / primary stale).
+    /// @return irregular True if divergenceBps exceeds the divergence tolerance, or (stablecoins) the primary
+    ///         deviates from $1 beyond the peg tolerance.
+    /// @return monitorFeedCount Number of healthy monitor feeds that contributed.
+    /// @return primaryStale True if the primary feed is stale (divergence undefined).
+    /// @return primaryAboveMonitors True if the primary sits above the monitor median (a premium); false if
+    ///         below/equal — for a claim asset, below is the depeg direction. Meaningful only when
+    ///         monitorFeedCount > 0.
+    function getPriceDivergence(address underlyingAsset)
+        external
+        view
+        returns (
+            int256 primaryPrice,
+            int256 monitorMedian,
+            uint256 divergenceBps,
+            bool irregular,
+            uint256 monitorFeedCount,
+            bool primaryStale,
+            bool primaryAboveMonitors
+        );
+
+    /// @notice Returns health status: sequencer down flag and lists of stale-price and irregular-price assets.
     /// @return sequencerDown True if L2 sequencer is down or in grace period (false on L1).
     /// @return stalePriceAssets Addresses of assets with stale prices.
-    function healthCheck() external view returns (bool sequencerDown, address[] memory stalePriceAssets);
+    /// @return irregularPriceAssets Addresses of assets flagged irregular (primary diverged from monitors / peg).
+    function healthCheck()
+        external
+        view
+        returns (bool sequencerDown, address[] memory stalePriceAssets, address[] memory irregularPriceAssets);
 
     /// @notice Returns whether the account has any non-zero balance across adapters and registered assets.
     /// @param account Account address.

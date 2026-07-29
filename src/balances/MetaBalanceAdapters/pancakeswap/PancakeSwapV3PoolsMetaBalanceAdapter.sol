@@ -35,10 +35,9 @@ interface IPancakeV3Pool {
 ///      (docs/decisions/0008-uniswap-v3-math-libs-gpl-license.md).
 contract PancakeSwapV3PoolsMetaBalanceAdapter is UniswapV3PoolsMetaBalanceAdapter {
     /// @param positionManager_ The PancakeSwap V3 NonfungiblePositionManager (per-chain canonical NPM).
-    /// @param protocolName_    Human-readable protocol name (e.g. "PancakeSwap V3").
     /// @param navCalculator_   The NAVCalculator contract for asset-registry access.
-    constructor(address positionManager_, string memory protocolName_, address navCalculator_)
-        UniswapV3PoolsMetaBalanceAdapter(positionManager_, protocolName_, navCalculator_)
+    constructor(address positionManager_, address navCalculator_)
+        UniswapV3PoolsMetaBalanceAdapter(positionManager_, navCalculator_)
     {}
 
     /// @inheritdoc UniswapV3PoolsMetaBalanceAdapter

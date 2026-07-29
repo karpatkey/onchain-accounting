@@ -12,9 +12,9 @@ The verification quality depends on this. Skipping it lets bugs hide where the a
 
 **A. Read the adapter source thoroughly.**
 - Class hierarchy: is it a direct `IBalanceAdapter` implementer or a subclass? If subclass, list every `override` — each override is a verification surface the parent's test does NOT cover. List every purely-inherited method — those are transitively covered.
-  - `PancakeSwapV2PoolsMetaBalanceAdapter is UniswapV2PoolsMetaBalanceAdapter` → thin subclass: constructor + `_protocolId()` / `_protocolSubId()` overrides returning the `pancakeswap-v2` slug; no math change. Verification: balance logic inherited from Uni V2, skip.
+  - `PancakeSwapV2PoolsMetaBalanceAdapter is UniswapV2PoolsMetaBalanceAdapter` → thin subclass: constructor + `_protocolBrand()` / `_protocolId()` / `_protocolSubId()` overrides returning the `pancakeswap` brand + `pancakeswap-v2` slug; no math change. Verification: balance logic inherited from Uni V2, skip.
   - `PancakeSwapV3PoolsMetaBalanceAdapter is UniswapV3PoolsMetaBalanceAdapter` → the adapter reads the pool's live `slot0()` (the in-range split is priced off `sqrtPriceX96`/`tick`; full unclaimed fees; ADR 0017), so the subclass overrides `_slot0()` to decode PancakeSwap V3's `uint32 feeProtocol` ABI (Uniswap's is `uint8`) **and** the identity hooks (`_protocolBrand()` / `_protocolId()` / `_protocolSubId()` — the `pancakeswap` brand and `pancakeswap-v3` slug). Verification: test the `_slot0()` override (feeProtocol decode) plus the slug overrides.
-  - `SparkLendBalanceAdapter is IBalanceAdapter, IPositionDescribable` → a standalone implementer (not an Aave subclass); check the source for the leg-emission branches and treat accordingly.
+  - `SparkLendBalanceAdapter is BalanceAdapterBase` (the shared `IBalanceAdapter, IPositionDescribable` base) → a standalone implementer, not an Aave subclass; check the source for the leg-emission branches and treat accordingly.
 - Math branches: enumerate every `if` that affects the returned amount. Each branch needs a test case OR a documented reason it can't be exercised on a real chain. Uni V2 example: `feeTo == 0`, `feeTo != 0 && kLast == 0`, `feeTo != 0 && kLast != 0 && rootK > rootKLast`.
 - Immutable constructor args: pin in setUp + assert in a `test_immutables_*` smoke test (catches deployment-config drift).
 - Multi-leg `getAdapterPositions`: enumerate the `positionKind` values the adapter can emit (`Wallet`, `Supplied`, `Borrowed`, `Collateral`, `Staking`, `Rewards`, `Fees` — the `PositionKind` enum in `src/utils/PositionKind.sol`). One leg = one assertion.
@@ -72,7 +72,7 @@ Multiple cases per protocol are allowed when one account doesn't cover all paths
 
 | Field | Meaning |
 |---|---|
-| `protocol` | Display name matching the `protocol` field in the adapter's per-chain deploy config under `script/config/contracts-deployment-config/` (e.g. `PancakeSwap V3`, `Uniswap V2`) |
+| `protocol` | Display name matching what the adapter's `protocolName()` returns (e.g. `PancakeSwap V3`, `Uniswap V2`). This is a label for the case file only — it is **not** read from deploy config: the `protocol` key there has been removed, and the name now comes from `ProtocolNames.forProtocolId(_protocolId())` for meta adapters or a bytecode literal for plain/assisted ones |
 | `chain.id`, `chain.name` | Chain the test runs against |
 | `holder.address` | The cherry-picked account |
 | `holder.type` | `EOA` / `Contract` / `EIP-7702 delegated EOA` / `Safe` / `Treasury` — for context |

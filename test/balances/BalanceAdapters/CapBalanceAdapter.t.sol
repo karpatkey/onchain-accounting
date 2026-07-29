@@ -6,6 +6,8 @@ import {Test} from "forge-std/Test.sol";
 import {CapBalanceAdapter} from "src/balances/BalanceAdapters/CapBalanceAdapter.sol";
 import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
+import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
+import {IPositionEnumerable} from "src/balances/IPositionEnumerable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
@@ -111,7 +113,129 @@ contract CapBalanceAdapterTest is Test {
     function test_supportsInterface() public view {
         assertTrue(adapter.supportsInterface(type(IBalanceAdapter).interfaceId));
         assertTrue(adapter.supportsInterface(type(IERC165).interfaceId));
+        assertTrue(adapter.supportsInterface(type(IPositionDescribable).interfaceId));
         assertFalse(adapter.supportsInterface(bytes4(0xdeadbeef)));
+    }
+
+    /// @dev The ERC165 bit is the whole point of the interface being optional: a configuration view uses it to
+    ///      decide whether to call `positionIds()` at all. Asserted separately from the base set because it is
+    ///      contributed by Cap's own `super`-chaining override, not by {BalanceAdapterBase}.
+    function test_supportsInterface_advertisesPositionEnumerable() public view {
+        assertTrue(adapter.supportsInterface(type(IPositionEnumerable).interfaceId));
+    }
+
+    // ============================================
+    // IPositionEnumerable
+    // ============================================
+
+    /// @dev Cap's two shapes, reported account-independently — this is what a configuration view could not get
+    ///      before, because Cap derives its breadcrumb per positionId and so answers `positionLabels("")` with [].
+    ///      Asserted as a SET: {IPositionEnumerable} disclaims ordering, so pinning "index 0 is cUSD" would
+    ///      assert more than the interface promises and fail a reordered-but-correct implementation.
+    function test_positionIds_returnsBothShapes() public view {
+        bytes[] memory ids = adapter.positionIds();
+        assertEq(ids.length, 2, "Cap has exactly two shapes");
+        assertTrue(_contains(ids, abi.encode(address(mockCUsd))), "the cUSD shape is advertised");
+        assertTrue(_contains(ids, abi.encode(address(mockStcUsd))), "the stcUSD shape is advertised");
+    }
+
+    /// @dev Each enumerated shape must resolve to its breadcrumb — the pairing a configuration view renders.
+    ///      Together with the probe returning [] (asserted elsewhere in this file) this is the before/after:
+    ///      the labels always existed, they were simply unreachable without already knowing a positionId.
+    ///      Driven off the token addresses rather than off `ids[0]`/`ids[1]` so it stays order-independent.
+    function test_positionIds_eachShapeResolvesItsLabels() public view {
+        string[] memory cusd = adapter.positionLabels(abi.encode(address(mockCUsd)));
+        assertEq(cusd.length, 2);
+        assertEq(cusd[0], "Stablecoin");
+        assertEq(cusd[1], "cUSD");
+
+        string[] memory stcusd = adapter.positionLabels(abi.encode(address(mockStcUsd)));
+        assertEq(stcusd.length, 2);
+        assertEq(stcusd[0], "Savings");
+        assertEq(stcusd[1], "stcUSD");
+    }
+
+    /// @dev **The load-bearing assertion of the whole interface.** {IPositionEnumerable} requires each returned id
+    ///      to be byte-identical to the `PositionBalance.positionId` the adapter emits for that shape, because
+    ///      that is what lets a consumer JOIN the configuration view against real positions. An implementation
+    ///      that returned ids which merely *label* correctly while differing from the emitted bytes would satisfy
+    ///      every other test in this file and still silently break that join — which is exactly the trap
+    ///      `AaveV3InstancesMetaBalanceAdapter` sits in (its instance coordinate is a DataProvider, but it emits
+    ///      the resolved Pool; both label identically, so only a byte comparison catches it).
+    ///
+    ///      The join is by VALUE, not by index — see `test_positionIds_joinIsByValueNotByIndex` for why an
+    ///      index-wise comparison would be wrong here even though both arrays happen to line up when, as below,
+    ///      every leg is funded.
+    function test_positionIds_matchTheEmittedPositionIdsExactly() public {
+        mockCUsd.setBalance(alice, 100e18);
+        mockStcUsd.setBalance(alice, 50e18);
+
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(0));
+        assertEq(positions.length, 2, "both legs must be live for this comparison to be meaningful");
+
+        bytes[] memory ids = adapter.positionIds();
+        assertEq(ids.length, positions.length, "one advertised shape per emitted leg");
+        // Both directions: every emitted positionId is advertised, and every advertised shape was emitted.
+        for (uint256 i; i < positions.length; ++i) {
+            assertTrue(_contains(ids, positions[i].positionId), "emitted positionId must be an advertised shape");
+        }
+        for (uint256 i; i < ids.length; ++i) {
+            assertTrue(_emits(positions, ids[i]), "advertised shape must be an emitted positionId");
+        }
+    }
+
+    /// @dev **Why the join above is by value.** `getAdapterPositions` compacts out any leg with a zero balance,
+    ///      so the emitted array is not index-aligned with `positionIds()`. With only stcUSD funded, the single
+    ///      emitted position pairs with the SECOND advertised shape — an index-wise assertion would compare it
+    ///      against the cUSD shape and fail on a perfectly correct implementation.
+    ///
+    ///      This is the trap a consumer (or the next adapter author copying this file) would otherwise fall into,
+    ///      and it is exactly what {IPositionEnumerable}'s "ordering is not significant" clause is protecting.
+    function test_positionIds_joinIsByValueNotByIndex() public {
+        mockStcUsd.setBalance(alice, 50e18);
+        // cUSD deliberately left at zero.
+
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(0));
+        assertEq(positions.length, 1, "only the funded leg is emitted");
+
+        bytes[] memory ids = adapter.positionIds();
+        assertEq(ids.length, 2, "both shapes are still advertised");
+
+        // The value join holds...
+        assertTrue(_contains(ids, positions[0].positionId), "emitted positionId is an advertised shape");
+        assertEq(positions[0].positionId, abi.encode(address(mockStcUsd)), "and it is the stcUSD shape");
+        // ...while zipping the two arrays is impossible: they are different lengths. Stated this way rather than
+        // as `ids[0] != positions[0].positionId`, which would itself assume an enumeration order.
+        assertTrue(ids.length != positions.length, "advertised and emitted arrays are not index-alignable");
+    }
+
+    /// @dev Shapes describe what the adapter CAN report, not what anyone holds: with no balances at all,
+    ///      `getAdapterPositions` emits nothing while `positionIds()` still advertises both shapes. A
+    ///      configuration view must render the same rows whether or not an account is funded.
+    function test_positionIds_areAccountIndependent() public view {
+        assertEq(adapter.getAdapterPositions(alice, address(0)).length, 0, "no balances -> no positions");
+        assertEq(adapter.positionIds().length, 2, "shapes are advertised regardless");
+    }
+
+    /// @dev Set membership over `bytes`, compared by hash — the join {IPositionEnumerable} specifies. Used
+    ///      instead of index-wise `assertEq` because the interface disclaims ordering.
+    function _contains(bytes[] memory haystack, bytes memory needle) private pure returns (bool) {
+        for (uint256 i; i < haystack.length; ++i) {
+            if (keccak256(haystack[i]) == keccak256(needle)) return true;
+        }
+        return false;
+    }
+
+    /// @dev The reverse direction: is `needle` among the positionIds actually emitted?
+    function _emits(INAVCalculator.PositionBalance[] memory positions, bytes memory needle)
+        private
+        pure
+        returns (bool)
+    {
+        for (uint256 i; i < positions.length; ++i) {
+            if (keccak256(positions[i].positionId) == keccak256(needle)) return true;
+        }
+        return false;
     }
 
     // ============================================
@@ -243,5 +367,65 @@ contract CapBalanceAdapterTest is Test {
         assertEq(labels0[1], "cUSD");
         assertEq(labels1[0], "Savings");
         assertEq(labels1[1], "stcUSD");
+    }
+
+    /// @dev Configuration-view probe. Unlike the positionId-independent adapters, Cap derives the breadcrumb from
+    ///      the positionId and has TWO shapes (cUSD and stcUSD), so `positionLabels("")` returns [] rather than
+    ///      guessing one of them. The shapes are still reachable against real positionIds (asserted above).
+    ///
+    ///      An empty probe is NOT self-describing: on its own it cannot be told apart from a broken adapter,
+    ///      because nothing else in the base interface set — {IBalanceAdapter, IPositionDescribable, IERC165} —
+    ///      marks the [] as "by design", and the `IAssistedBalanceAdapter` marker does not discriminate either
+    ///      (it means "coordinates are fed externally", and two of the three assisted adapters answer this same
+    ///      probe with a constant non-empty breadcrumb).
+    ///
+    ///      That indistinguishability is what {IPositionEnumerable} closes, and Cap now implements it: the ERC-165
+    ///      bit is the signal that this [] was a real answer, and `positionIds()` lists the two shapes the probe
+    ///      cannot. See the IPositionEnumerable section above.
+    function test_positionLabels_emptyProbe_returnsEmptyForAMultiShapeAdapter() public view {
+        assertEq(adapter.positionLabels("").length, 0);
+        // Sub-32-byte input hits the `positionId.length < 32` guard, so it returns [] without reaching the decode.
+        // Malformed input more generally is covered by the next test.
+        assertEq(adapter.positionLabels(hex"0102030405060708090a0b0c").length, 0);
+    }
+
+    /// @dev A 32-byte word with dirty high bits clears the length guard but is not an address. It must degrade to
+    ///      [] like any other unrecognised token, not revert: `positionLabels` is display-only, and a
+    ///      configuration view can probe with an arbitrary word (e.g. a bytes32 market/pool id copied from another
+    ///      adapter). On the NAV path the verbose reads wrap this in a fail-open staticcall and Cap's own
+    ///      positionIds are always clean, so the exposure is the configuration view.
+    ///
+    ///      The `dirtyCUsd` case is what makes this load-bearing beyond "does not revert": its low 160 bits ARE
+    ///      `CUSD`, so an implementation that merely masked instead of rejecting would return
+    ///      `["Stablecoin", "cUSD"]` — labelling a foreign coordinate as a real Cap leg. Only the `raw >> 160`
+    ///      check gives []. The clean-word tail pins that the guard did not blank the view outright.
+    function test_positionLabels_dirty32ByteWord_returnsEmptyRatherThanReverting() public view {
+        assertEq(adapter.positionLabels(abi.encode(type(uint256).max)).length, 0);
+
+        uint256 dirtyCUsd = uint256(uint160(address(mockCUsd))) | (uint256(1) << 160);
+        assertEq(adapter.positionLabels(abi.encode(dirtyCUsd)).length, 0);
+
+        uint256 dirtyStcUsd = uint256(uint160(address(mockStcUsd))) | (uint256(1) << 255);
+        assertEq(adapter.positionLabels(abi.encode(dirtyStcUsd)).length, 0);
+
+        // The clean words still resolve to their legs.
+        string[] memory clean = adapter.positionLabels(abi.encode(address(mockCUsd)));
+        assertEq(clean.length, 2);
+        assertEq(clean[0], "Stablecoin");
+        assertEq(clean[1], "cUSD");
+    }
+
+    /// @dev Pins the `== 32` boundary. `abi.decode` ignores trailing bytes, so a `>= 32` guard would label a foreign
+    ///      multi-word coordinate whose first word is `CUSD`/`STCUSD` as a real Cap leg — the dirty-word over-claim
+    ///      again, via an input any adapter encoding an `(address, uint256)` pair produces. Both `positionIds()`
+    ///      entries are exactly one word, so anything else is foreign by construction.
+    ///
+    ///      Load-bearing: relax the guard to `>= 32` and the 64-byte case returns `["Stablecoin", "cUSD"]`.
+    function test_positionLabels_overlongPositionId_returnsEmpty() public view {
+        assertEq(adapter.positionLabels(abi.encode(address(mockCUsd), uint256(42))).length, 0);
+        assertEq(adapter.positionLabels(abi.encode(address(mockStcUsd), uint256(1))).length, 0);
+        assertEq(adapter.positionLabels(abi.encodePacked(abi.encode(address(mockCUsd)), hex"01")).length, 0);
+
+        assertEq(adapter.positionLabels(abi.encode(address(mockCUsd))).length, 2);
     }
 }

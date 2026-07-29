@@ -16,11 +16,8 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @dev Per-instance identity is encoded as `abi.encode(address(vault))`. Supports ERC4626-compliant Morpho vaults
 ///      (V1 and V2). Does not include Merkl or Universal Rewards Distributor rewards.
 contract MorphoVaultsMetaBalanceAdapter is MetaBalanceAdapter {
-    /// @param protocolName_ Human-readable protocol name (e.g. "Morpho").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(string memory protocolName_, address navCalculator_)
-        MetaBalanceAdapter(protocolName_, navCalculator_)
-    {}
+    constructor(address navCalculator_) MetaBalanceAdapter(navCalculator_) {}
 
     /// @inheritdoc MetaBalanceAdapter
     /// @dev Returns an empty array (rather than reverting) when the vault asset is unregistered or the balance is
@@ -65,7 +62,7 @@ contract MorphoVaultsMetaBalanceAdapter is MetaBalanceAdapter {
 
     /// @inheritdoc MetaBalanceAdapter
     /// @dev Returns `["Vault", <name>]` using the vault's ERC4626 `name()`; an unreadable name collapses to just
-    ///      `["Vault"]` (empty-leaf convention in {_labels}). Returns an empty array for a short positionId.
+    ///      `["Vault"]` (empty-leaf convention in {_labels}). Returns an empty array for a malformed positionId (see {_pidAddress}).
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
         return _addressLabels(pid, "Vault", false);
     }

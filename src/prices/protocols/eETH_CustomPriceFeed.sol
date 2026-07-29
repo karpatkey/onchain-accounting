@@ -1,166 +1,24 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.0;
 
-import {ICustomPriceFeed} from "src/prices/ICustomPriceFeed.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
-import {OracleArgumentChecks} from "src/utils/OracleArgumentChecks.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
-// forge-lint: disable-next-line(unaliased-plain-import)
-import "src/errors.sol";
+import {BaseCustomPriceFeed} from "src/prices/BaseCustomPriceFeed.sol";
 
-/// @title eETH Custom Price Oracle
-/// @notice Returns the USD price of eETH by deriving eETH/ETH from weETH data and combining with ETH/USD.
-/// @dev The price is computed as `price = (eETH/ETH) * (ETH/USD)`, where:
-///      - `eETH/ETH = (weETH/ETH) ÷ (eETH/weETH)`
-///      - `weETH/ETH` comes from Chainlink weETH/ETH oracle (18 decimals)
-///      - `eETH/weETH` comes from weETH contract's `getRate()` function (18 decimals, eETH per weETH)
-///      - `ETH/USD` comes from Chainlink oracle (8 decimals)
+/// @title eETH Custom Price Oracle (pure fundamental)
+/// @notice Returns the USD price of eETH as `1.0 × (ETH/USD)` — eETH is a ~1:1 rebasing claim on staked ETH, so its
+///         fundamental (redeemable) value tracks ETH one-for-one and is priced directly off the NAV's ETH/USD.
+/// @dev Pure-fundamental `BaseCustomPriceFeed` subclass with a constant unit rate (`1e18`). Any market divergence is
+///      surfaced by a market MONITOR feed via NAVCalculator's divergence check, not by moving this primary price.
 /// @author KPK
-/* solhint-disable var-name-mixedcase, contract-name-camelcase */
-contract eETH_CustomPriceFeed is ICustomPriceFeed {
-    //
-    // Libraries
-    //
-    using SafeCast for int256;
-    using Math for uint256;
+/* solhint-disable contract-name-camelcase */
+contract eETH_CustomPriceFeed is BaseCustomPriceFeed {
+    /// @param eEth_ The eETH token address.
+    /// @param nav_ The NAVCalculator proxy to read the base asset's (ETH/USD) price from.
+    /// @param baseAsset_ The base asset (e.g. WETH) whose NAV-selected USD price is the eETH price.
+    constructor(address eEth_, address nav_, address baseAsset_) BaseCustomPriceFeed(eEth_, nav_, baseAsset_) {}
 
-    //
-    // State
-    //
-
-    /// @notice eETH token address.
-    address public immutable EETH;
-
-    /// @notice weETH token address (used to get the eETH/weETH rate via getRate()).
-    address public immutable WEETH;
-
-    /// @notice Chainlink oracle for weETH to ETH exchange rate.
-    AggregatorV3Interface public immutable WEETH_TO_ETH_CHAINLINK;
-
-    /// @notice Chainlink oracle for ETH to USD.
-    AggregatorV3Interface public immutable ETH_TO_USD_CHAINLINK_ORACLE;
-
-    /// @notice The heartbeat interval for the weETH/ETH Chainlink oracle.
-    uint256 public immutable WEETH_TO_ETH_HEARTBEAT;
-
-    /// @notice The heartbeat interval for the ETH/USD Chainlink oracle.
-    uint256 public immutable ETH_TO_USD_CHAINLINK_HEARTBEAT;
-
-    /// @notice Number of decimals the returned price is represented with.
-    uint8 private immutable _decimals;
-
-    //
-    // Constructor
-    //
-
-    /// @param eEth_ The address of the eETH token.
-    /// @param weEth_ The address of the weETH token (used to get the eETH/weETH rate).
-    /// @param weEthToEthChainlink_ The address of the weETH to ETH Chainlink oracle.
-    /// @param ethToUsdChainlinkOracle_ The address of the ETH to USD Chainlink oracle.
-    /// @param weEthToEthHeartbeat_ The time in seconds after which the weETH/ETH price is considered stale.
-    /// @param ethToUsdChainlinkHeartbeat_ The time in seconds after which the ETH/USD price is considered stale.
-    constructor(
-        address eEth_,
-        address weEth_,
-        address weEthToEthChainlink_,
-        address ethToUsdChainlinkOracle_,
-        uint256 weEthToEthHeartbeat_,
-        uint256 ethToUsdChainlinkHeartbeat_
-    ) {
-        EETH = OracleArgumentChecks.assertERC20Address(eEth_);
-        WEETH = OracleArgumentChecks.assertERC20Address(weEth_);
-        WEETH_TO_ETH_CHAINLINK = OracleArgumentChecks.assertChainlinkOracle(weEthToEthChainlink_);
-        ETH_TO_USD_CHAINLINK_ORACLE = OracleArgumentChecks.assertChainlinkOracle(ethToUsdChainlinkOracle_);
-        WEETH_TO_ETH_HEARTBEAT = OracleArgumentChecks.assertNotZeroNumber(weEthToEthHeartbeat_);
-        ETH_TO_USD_CHAINLINK_HEARTBEAT = OracleArgumentChecks.assertNotZeroNumber(ethToUsdChainlinkHeartbeat_);
-        _decimals = ETH_TO_USD_CHAINLINK_ORACLE.decimals();
+    /// @inheritdoc BaseCustomPriceFeed
+    /// @dev eETH/ETH ≡ 1.0, so the 18-decimal rate is the unit 1e18.
+    function _rate() internal pure override returns (uint256) {
+        return 1e18;
     }
-
-    //
-    // ICustomPriceFeed
-    //
-
-    function _compute()
-        private
-        view
-        returns (
-            uint256 price,
-            bool stale,
-            uint80 roundId,
-            uint256 startedAt,
-            uint256 updatedAt,
-            uint80 answeredInRound
-        )
-    {
-        (uint80 r1, int256 weEthToEthRate, uint256 s1, uint256 u1, uint80 ar1) =
-            WEETH_TO_ETH_CHAINLINK.latestRoundData();
-        (uint80 r2, int256 ethToUsdPrice, uint256 s2, uint256 u2, uint80 ar2) =
-            ETH_TO_USD_CHAINLINK_ORACLE.latestRoundData();
-
-        if (u1 <= u2) {
-            (roundId, startedAt, updatedAt, answeredInRound) = (r1, s1, u1, ar1);
-        } else {
-            (roundId, startedAt, updatedAt, answeredInRound) = (r2, s2, u2, ar2);
-        }
-
-        if (weEthToEthRate <= 0 || ethToUsdPrice <= 0) {
-            return (0, true, roundId, startedAt, updatedAt, answeredInRound);
-        }
-
-        uint256 effectiveWeEthUpdatedAt = u1 > block.timestamp ? block.timestamp : u1;
-        uint256 effectiveEthUpdatedAt = u2 > block.timestamp ? block.timestamp : u2;
-        if (
-            block.timestamp - effectiveWeEthUpdatedAt >= WEETH_TO_ETH_HEARTBEAT
-                || block.timestamp - effectiveEthUpdatedAt >= ETH_TO_USD_CHAINLINK_HEARTBEAT
-        ) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
-
-        uint256 weEthToEEthRate = IweETH(WEETH).getRate();
-        if (weEthToEEthRate == 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
-
-        // eETH/ETH = weETH/ETH ÷ eETH/weETH (both 18 dec → result 18 dec)
-        uint256 eEthToEthRate = weEthToEthRate.toUint256().mulDiv(1e18, weEthToEEthRate, Math.Rounding.Floor);
-
-        // eETH/ETH (18 dec) * ETH/USD (8 dec) / 1e18 = 8 dec
-        price = eEthToEthRate.mulDiv(ethToUsdPrice.toUint256(), 1e18, Math.Rounding.Floor);
-    }
-
-    /// @inheritdoc ICustomPriceFeed
-    function getLatestPrice() external view override returns (uint256 price, bool stale) {
-        (price, stale,,,,) = _compute();
-    }
-
-    /// @inheritdoc ICustomPriceFeed
-    function underlyingAssetSupported() external view override returns (address) {
-        return EETH;
-    }
-
-    /// @inheritdoc ICustomPriceFeed
-    function decimals() external view override returns (uint8) {
-        return _decimals;
-    }
-
-    /// @inheritdoc ICustomPriceFeed
-    function latestRoundData()
-        external
-        view
-        override
-        returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
-    {
-        uint256 price;
-        bool stale;
-        (price, stale, roundId, startedAt, updatedAt, answeredInRound) = _compute();
-        answer = stale ? int256(0) : int256(price);
-    }
-
-    /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(ICustomPriceFeed).interfaceId || interfaceId == type(IERC165).interfaceId;
-    }
-}
-
-interface IweETH {
-    /// @notice Get amount of eETH per weETH (18 decimals). Used as divisor to derive eETH/ETH from weETH/ETH.
-    function getRate() external view returns (uint256);
 }

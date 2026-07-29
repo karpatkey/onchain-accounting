@@ -6,17 +6,17 @@
 
 ### Inheritance + per-chain scope (Phase 0)
 
-- **Inheritance:** none — `LidoWithdrawalQueueBalanceAdapter` implements `IBalanceAdapter` + `IPositionDescribable` directly. No base contract, no overrides.
+- **Inheritance:** extends `SingleAssetBalanceAdapterBase` (`src/balances/SingleAssetBalanceAdapterBase.sol`), which pins the single `UNDERLYING_TOKEN` and provides the no-position getter triad (`underlyingAssetsSupported` / `getAdapterBalanceForAsset` / `getAdapterBalances`) off one `_owedAmount(account)` hook. The adapter overrides `_owedAmount` (→ `_ethOwed`) and implements the NAV `getAdapterPositions` path plus the `IPositionDescribable` hooks (`protocolName` / `positionLabels`) directly.
 - **Per-chain scope:** Lido's `WithdrawalQueueERC721` is **mainnet-only**. So `chains/1.json` is the only chain config with `LidoWithdrawalQueue`. A single mainnet fork test is sufficient; no per-chain branches.
 - **Denomination — native ETH, not stETH:** when a user requests an unstake, stETH is locked and an ERC721 request id is minted; the claim pays out **native ETH** (the stETH is burned). The adapter denominates the position in ETH and NAV prices it via **ETH/USD**, so a stETH depeg can't mis-value a claim that settles in full ETH. While queued, the value is invisible to wallet/receipt-token oracles — this adapter is the only thing that surfaces it.
-- **Gas bound (anti-DoS):** Lido's queue is **not** `ERC721Enumerable` (no `tokenOfOwnerByIndex`), and `getWithdrawalRequests` returns the *entire* id set. The adapter reads `balanceOf` (O(1)) first and **skips** (returns 0) any account with more than `MAX_REQUESTS_PROBED = 256` open requests, so an attacker can't inflate the id list (by transferring withdrawal NFTs in) to OOG the NAV read — an OOG is **not** caught by NAVCalculator's try/catch. A real account never approaches the cap.
+- **No adapter-level cap (honest full read):** Lido's queue is **not** `ERC721Enumerable` (no `tokenOfOwnerByIndex`), and `getWithdrawalRequests` returns the *entire* id set. The adapter reads `balanceOf` (O(1)) first only to short-circuit the common zero case, then reads and sums the **full** request set — there is no cap. A third party can inflate an account's list (arbitrary `_owner` on `requestWithdrawals`, or transferring withdrawal NFTs in), but every such request is real, claimable ETH donated to that account, so summing it all is the honest, over-report-safe answer; capping would silently *under-report* a real balance. The only residual is gas: a griefed list makes that account's own NAV read expensive, which under NAVCalculator's fail-open try/catch degrades to an omitted leg or a fail-safe revert **for that account only**, never a mis-valuation of any other account (same reasoning as the Stader sibling — `docs/operations/stader-withdrawal-queue-griefing.md`; Lido is unbounded).
 
 ### Math branches (`_ethOwed`)
 
 Two branches, summed across the account's open (un-claimed) requests:
 
 - **finalized** request → `getClaimableEther` (exact). Finalization can lock in *less* than `amountOfStETH` after a negative rebase, so `amountOfStETH` would overstate NAV. Resolved per-request (single-element arrays) because `findCheckpointHints` reverts (`RequestIdsNotSorted`) on an unsorted batch, and `getWithdrawalRequests` returns the owner's `EnumerableSet` order (not guaranteed sorted — a claim does swap-and-pop).
-- **not yet finalized** → `amountOfStETH` (the redemption rate isn't fixed until finalization; never invent one). Equals the ETH paid in the normal case.
+- **not yet finalized** → `_cappedOwed(amountOfStETH, amountOfShares)`, the conservative min of the request-time `amountOfStETH` and the live share value (`getPooledEthByShares`): a negative rebase between request and finalization caps the eventual payout, so `amountOfStETH` alone could overstate NAV. In the normal case (no negative rebase) this equals `amountOfStETH`, the ETH paid on claim. The redemption rate isn't fixed until finalization; never invent one. (Fail-open: if the stETH read reverts, it falls back to `amountOfStETH`.)
 - `isClaimed` requests are skipped.
 
 Registration gating is asymmetric (same as sGHO / Aave Umbrella): `getAdapterPositions` drops the leg if native ETH isn't registered on NAVCalculator (registered-asset intersection — the "discard if no price" policy), whereas the balance methods (`getAdapterBalanceForAsset` / `getAdapterBalances`) do **not** consult the registry and still return the value.
@@ -28,7 +28,7 @@ Registration gating is asymmetric (same as sGHO / Aave Umbrella): `getAdapterPos
 - finalized-unclaimed holder `0xF74B44b0…` (`getClaimableEther = 4.871995… ETH`) @ block `25_200_000`.
 - plus empty / unknown-holder / unsupported-asset / asset-filter-mismatch / interface / immutables.
 
-The unit test (`test/balances/BalanceAdapters/LidoWithdrawalQueueBalanceAdapter.t.sol`) covers the mock-only edges: constructor reverts, multi-request summing, the **negative-rebase divergence** (finalized claimable < amountOfStETH), unsorted finalized batch, skips-claimed, the cap boundary (exactly-at-cap sums / above-cap → 0), and unregistered underlying.
+The unit test (`test/balances/BalanceAdapters/LidoWithdrawalQueueBalanceAdapter.t.sol`) covers the mock-only edges: constructor reverts, multi-request summing, the **negative-rebase divergence** (finalized claimable < amountOfStETH), unsorted finalized batch, skips-claimed, summing a large (griefed) list in full with no cap, and unregistered underlying.
 
 All kept as regression nets.
 
@@ -40,14 +40,14 @@ All kept as regression nets.
 ## 4. Adapter formula recap
 
 ```
-count = WITHDRAWAL_QUEUE.balanceOf(account)          # O(1); skip (return 0) if count == 0 or count > 256
+count = WITHDRAWAL_QUEUE.balanceOf(account)          # O(1); skip (return 0) if count == 0. No cap: the full set is read.
 ids   = WITHDRAWAL_QUEUE.getWithdrawalRequests(account)
 # static positionId, shared by every per-request leg (ADR 0016):
 pid = abi.encode(address(WITHDRAWAL_QUEUE))
 for each request id:
     if isClaimed:                           skip
     elif isFinalized and lastCheckpoint!=0: amount = getClaimableEther([id], findCheckpointHints([id],1,lastCheckpoint)); locked = false
-    else (not finalized):                   amount = amountOfStETH;                                                       locked = true
+    else (not finalized):                   amount = _cappedOwed(amountOfStETH, amountOfShares);                          locked = true
     if amount == 0: skip
     emit PositionBalance(ETH, amount, isDebt=false, Supplied, positionId=pid, isLocked=locked, positionInstanceId=bytes32(id))
 # getAdapterBalanceForAsset / getAdapterBalances instead sum every leg's amount into one total
@@ -130,7 +130,7 @@ bash script/development/app/sync-app-env.sh 1
 
 The position renders under **Lido** as a single **Supplied** group denominated in ETH (the per-request legs all share one static positionId, so the dashboard groups them together). Both holders are arbitrary on-chain stakers (not tracked NAV accounts) chosen to exercise the two branches; their NAV *totals* also include unrelated wallet positions (e.g. wallet stETH/USDC), so cross-check the **Lido leg** specifically, not the account total.
 
-**Per-NFT-id drill-down (display only).** The adapter emits one ETH leg per open request (each finalized → claimable/`isLocked=false`, pending → locked/`isLocked=true`, all sharing one static positionId), and the dashboard renders **always-shown sub-rows** beneath the grouped position — one per withdrawal-request NFT, with its id, ETH amount, price, USD value, %, and a Pending/Claimable badge. This is re-derived client-side directly from the WithdrawalQueue (app hook `app/src/hooks/use-lido-withdrawals.ts`, rendered in `protocol-group.tsx`) and does **not** change NAV or the adapter's emitted identity — it's a reconciliation aid. Each request's ETH amount is valued the **same way the adapter sums it** — `getClaimableEther` for finalized requests, `amountOfStETH` for pending — so the rows are genuine ETH amounts (correct even on a negative-rebase haircut) and the USD values, split by ETH-owed share, sum exactly back to the grouped position's total. The hook mirrors the adapter's 256-request cap. For `0x9074212F…` the group shows `↳ #127178 (1000 ETH, Pending)` + `↳ #127179 (995.928786744414475126 ETH, Pending)`.
+**Per-NFT-id drill-down (display only).** The adapter emits one ETH leg per open request (each finalized → claimable/`isLocked=false`, pending → locked/`isLocked=true`, all sharing one static positionId), and the dashboard renders **always-shown sub-rows** beneath the grouped position — one per withdrawal-request NFT, with its id, ETH amount, price, USD value, %, and a Pending/Claimable badge. This is re-derived client-side directly from the WithdrawalQueue (app hook `app/src/hooks/use-lido-withdrawals.ts`, rendered in `protocol-group.tsx`) and does **not** change NAV or the adapter's emitted identity — it's a reconciliation aid. Each request's ETH amount is valued the **same way the adapter sums it** — `getClaimableEther` for finalized requests, `_cappedOwed(amountOfStETH, amountOfShares)` (the min of the live share value and the request-time `amountOfStETH`) for pending — so the rows are genuine ETH amounts (correct even on a negative-rebase haircut) and the USD values, split by ETH-owed share, sum exactly back to the grouped position's total. The hook caps its own read at 256 requests (to avoid oversized/slow reads on its refetch interval; the adapter itself is uncapped). For `0x9074212F…` the group shows `↳ #127178 (1000 ETH, Pending)` + `↳ #127179 (995.928786744414475126 ETH, Pending)`.
 
 > ⚠ **Freshness:** `amountOfStETH` is fixed at request time, so the PRIMARY (pending) leg is stable. The SECONDARY (finalized) request can be claimed by its owner at any time, which would zero its leg. Re-confirm both holders on-chain right before a live cross-check if material time has passed since `25_294_574`.
 
@@ -138,10 +138,10 @@ The position renders under **Lido** as a single **Supplied** group denominated i
 
 | Aspect | Status |
 |---|---|
-| Un-finalized requests valued via `amountOfStETH` + summed across the account | ✅ (PRIMARY, exact) |
+| Un-finalized requests valued via `_cappedOwed(amountOfStETH, amountOfShares)` (min of live share value and request-time amount) + summed across the account | ✅ (PRIMARY, exact) |
 | Finalized requests valued via `getClaimableEther` (per-request checkpoint hint) | ✅ (SECONDARY, exact) |
 | Negative-rebase divergence (`getClaimableEther < amountOfStETH`) | ✅ (unit test, mocks) |
-| Claimed requests skipped; above-cap accounts skipped (anti-DoS) | ✅ (unit test) |
+| Claimed requests skipped; large (griefed) lists summed in full — no cap | ✅ (unit test) |
 | Identity: `protocolId == lido` / `protocolSubId == lido-withdrawal`, `positionId == abi.encode(withdrawalQueue)`, `Supplied`, per-request `isLocked` flag + distinct `positionInstanceId`, ETH-denominated | ✅ |
 | Mainnet-only scope (queue not on other chains) | ✅ |
 

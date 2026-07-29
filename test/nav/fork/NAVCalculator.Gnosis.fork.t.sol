@@ -94,14 +94,14 @@ contract GnosisForkNAVCalculatorTest is NAVCalculatorForkHarness {
     }
 
     function setupRegisterAssets() internal override {
-        savingsXdaiPrice = new sXDAI_CustomPriceFeed(savingsXDaiContract, daiToUsdChainlink, heartbeat);
-        // wstETH/USD = (ETH/USD) * (wstETH/ETH) / 10^18
+        savingsXdaiPrice = new sXDAI_CustomPriceFeed(savingsXDaiContract, address(nav), wxdai);
+        // wstETH/USD = (wstETH/ETH rate) * (NAV base WETH/USD) / 10^18
         wstEthPriceFeed = new CrossRateCustomPriceFeed(
             wsteth,
             wstEthEthChainlink, // Y/X = wstETH/ETH (rate feed)
-            ethUsdChainlink, // X/USD = ETH/USD
             heartbeat,
-            heartbeat
+            address(nav), // base/USD sourced from the NAV's selector
+            weth // base asset = WETH (priced on the NAV via ETH/USD Chainlink)
         );
 
         // Only register assets that have a matching price feed (custom or Chainlink from above).

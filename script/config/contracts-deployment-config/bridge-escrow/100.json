@@ -1,0 +1,8 @@
+{
+  "$comment": "BridgeEscrow post-deploy config for Gnosis (100). See 1.json for field semantics. Gnosis has NO native Circle USDC (CCTP is N/A) and no Across spoke pool; it is reachable via Stargate, via CCIP (this repo bakes the Gnosis CCIP selector into CcipBridgeAdapter), and via the Gnosis omnibridge (ETH<->Gnosis only). The USD stablecoin here is bridged USDC.e (0x2a22…); it is registered under its own logical symbol `USDCe`, NOT aliased to `USDC`, so no mainnet-USDC<->Gnosis lane is implied. Confirm the exact symbol/asset a given adapter's Gnosis pool delivers before enabling a live Gnosis USD lane.",
+  "accounts": [],
+  "assets": {
+    "WETH": "0x6A023CCd1ff6F2045C3309768eAd9E68F978f6e1",
+    "USDCe": "0x2a22f9c3b484c3629090FeED35F17Ff8F88f76F0"
+  }
+}

@@ -20,6 +20,10 @@ contract Mock_CustomPriceFeedZeroUpdatedAt is Mock_CustomPriceFeed {
     function latestRoundData() external pure override returns (uint80, int256, uint256, uint256, uint80) {
         return (0, 0, 0, 0, 0); // updatedAt = 0 → sentinel: treated as block.timestamp-1
     }
+
+    function governingFeedFreshness() external pure override returns (uint256, uint256) {
+        return (0, 0); // no trackable oracle → no governing pair
+    }
 }
 
 contract PricesHarness is Prices {
@@ -90,12 +94,12 @@ contract PricesTest is Test {
         manager.setPriceFeed(buidl, address(oracleaBuidl), type(uint256).max, IPrices.PriceType.Chainlink);
 
         vm.startPrank(alice);
-        (int256 value, uint8 decimals, bool stale) = manager.latestPrice(usdc);
+        (int256 value, uint8 decimals, bool stale,) = manager.latestPrice(usdc);
         assertEq(value, 100_000_000);
         assertEq(decimals, 8);
         assertFalse(stale);
 
-        (value, decimals, stale) = manager.latestPrice(buidl);
+        (value, decimals, stale,) = manager.latestPrice(buidl);
         assertEq(value, 1000);
         assertEq(decimals, 8);
         assertFalse(stale);
@@ -109,12 +113,12 @@ contract PricesTest is Test {
         manager.setPriceFeed(buidl, address(oracleaBuidl), type(uint256).max, IPrices.PriceType.Chainlink);
 
         vm.startPrank(alice);
-        (int256 value, uint8 decimals, bool stale) = manager.latestPrice(usdc);
+        (int256 value, uint8 decimals, bool stale,) = manager.latestPrice(usdc);
         assertEq(value, 100_000_000);
         assertEq(decimals, 8);
         assertTrue(stale);
 
-        (value, decimals, stale) = manager.latestPrice(buidl);
+        (value, decimals, stale,) = manager.latestPrice(buidl);
         assertEq(value, 1000);
         assertEq(decimals, 8);
         assertTrue(stale);
@@ -132,14 +136,14 @@ contract PricesTest is Test {
 
         vm.startPrank(alice);
         // Custom feed: mock always returns stale=false from getLatestPrice() — not stale by heartbeat.
-        (int256 value, uint8 decimals, bool stale) = manager.latestPrice(usdc);
+        (int256 value, uint8 decimals, bool stale,) = manager.latestPrice(usdc);
         assertEq(value, 100_000_000);
         assertEq(decimals, 8);
         assertFalse(stale);
 
         // Chainlink feed: updatedAt is stale after warp past heartbeat=1.
         // New multi-feed behaviour: all feeds stale → price=0 (not the stale value).
-        (value, decimals, stale) = manager.latestPrice(buidl);
+        (value, decimals, stale,) = manager.latestPrice(buidl);
         assertEq(value, 0);
         assertEq(decimals, 8);
         assertTrue(stale);
@@ -156,12 +160,12 @@ contract PricesTest is Test {
 
         vm.startPrank(alice);
         // New multi-feed behaviour: all feeds stale → price=0 (not the stale value).
-        (int256 value, uint8 decimals, bool stale) = manager.latestPrice(usdc);
+        (int256 value, uint8 decimals, bool stale,) = manager.latestPrice(usdc);
         assertEq(value, 0);
         assertEq(decimals, 8);
         assertTrue(stale); // stale: getLatestPrice() returns stale=true
 
-        (value, decimals, stale) = manager.latestPrice(buidl);
+        (value, decimals, stale,) = manager.latestPrice(buidl);
         assertEq(value, 1000);
         assertEq(decimals, 8);
         assertFalse(stale);
@@ -387,7 +391,7 @@ contract PricesTest is Test {
         h.setPriceFeed(buidl, address(oracle2), type(uint256).max, IPrices.PriceType.Chainlink);
         h.setPriceFeed(buidl, address(oracle3), type(uint256).max, IPrices.PriceType.Chainlink);
 
-        (int256 price,, bool stale) = h.latestPrice(buidl);
+        (int256 price,, bool stale,) = h.latestPrice(buidl);
         assertEq(price, 333); // oracle3 freshest (updatedAt=300)
         assertFalse(stale);
     }
@@ -404,7 +408,7 @@ contract PricesTest is Test {
         h.setPriceFeed(buidl, address(oracle1), 250, IPrices.PriceType.Chainlink); // 400-100=300 > 250 → stale
         h.setPriceFeed(buidl, address(oracle2), 250, IPrices.PriceType.Chainlink); // 400-200=200 < 250 → fresh
 
-        (int256 price,, bool stale) = h.latestPrice(buidl);
+        (int256 price,, bool stale,) = h.latestPrice(buidl);
         assertEq(price, 222);
         assertFalse(stale);
     }
@@ -420,7 +424,7 @@ contract PricesTest is Test {
         h.setPriceFeed(buidl, address(oracle1), 50, IPrices.PriceType.Chainlink); // 400-100=300 > 50 → stale
         h.setPriceFeed(buidl, address(oracle2), 50, IPrices.PriceType.Chainlink); // 400-200=200 > 50 → stale
 
-        (int256 price, uint8 decimals, bool stale) = h.latestPrice(buidl);
+        (int256 price, uint8 decimals, bool stale,) = h.latestPrice(buidl);
         assertEq(price, 0); // all stale → zero
         assertEq(decimals, 8); // first feed's decimals for unit consistency
         assertTrue(stale);
@@ -435,7 +439,7 @@ contract PricesTest is Test {
         PricesHarness h = new PricesHarness(address(0));
         h.setPriceFeed(buidl, address(customZero), type(uint256).max, IPrices.PriceType.Custom);
 
-        (int256 price,, bool stale) = h.latestPrice(buidl);
+        (int256 price,, bool stale,) = h.latestPrice(buidl);
         assertEq(price, 100_000_000); // survives — effective time = block.timestamp-1, not 0
         assertFalse(stale);
     }
@@ -478,7 +482,7 @@ contract PricesTest is Test {
         Mock_PriceOracleChainlink api3Feed = new Mock_PriceOracleChainlink("ETH/USD API3", 3000e18, 18);
         manager.setPriceFeed(buidl, address(api3Feed), type(uint256).max, IPrices.PriceType.API3);
 
-        (int256 price, uint8 decimals, bool stale) = manager.latestPrice(buidl);
+        (int256 price, uint8 decimals, bool stale,) = manager.latestPrice(buidl);
         assertEq(price, 3000e8, "18-dec API3 price must be scaled to 8-dec");
         assertEq(decimals, 8);
         assertFalse(stale);
@@ -503,7 +507,7 @@ contract PricesTest is Test {
         // normalOracle: updatedAt=100 → effectiveTime=min(100,100)=100
         // futureOracle: updatedAt=300 > block.timestamp=100 → effectiveTime=min(300,100)=100 (clamped)
         // Both tie at 100; index 0 (normalOracle) wins the tie.
-        (int256 price,, bool stale) = h.latestPrice(buidl);
+        (int256 price,, bool stale,) = h.latestPrice(buidl);
         assertFalse(stale);
         assertEq(price, 111); // normalOracle wins; futureOracle clamped, no longer beats it
     }

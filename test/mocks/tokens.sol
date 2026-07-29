@@ -22,3 +22,26 @@ contract Mock_ERC20 is ERC20 {
         return _decimals;
     }
 }
+
+/// @notice Minimal ERC-4626 mock with a linear, configurable per-share rate and a distinct underlying asset, so
+///         tests can exercise vaults whose share decimals differ from the underlying's decimals (a decimals offset).
+///         `convertToAssets` returns amounts denominated in the underlying asset's decimals, matching real ERC-4626.
+contract Mock_ERC4626 is Mock_ERC20 {
+    /// @notice The underlying asset (exposes `asset()` for callers).
+    address public asset;
+
+    /// @notice Assets (in the underlying's decimals) returned for one whole share (`10**shareDecimals`).
+    uint256 public assetsForOneShare;
+
+    constructor(string memory symbol, uint8 shareDecimals, address asset_, uint256 assetsForOneShare_)
+        Mock_ERC20(symbol, shareDecimals)
+    {
+        asset = asset_;
+        assetsForOneShare = assetsForOneShare_;
+    }
+
+    /// @notice Linear in shares: `convertToAssets(10**shareDecimals) == assetsForOneShare`.
+    function convertToAssets(uint256 shares) external view returns (uint256) {
+        return shares * assetsForOneShare / (10 ** decimals());
+    }
+}

@@ -80,6 +80,10 @@ contract Mock_RevertingPriceOracle is ICustomPriceFeed {
         return (0, 0, 0, 0, 0);
     }
 
+    function governingFeedFreshness() external pure override returns (uint256, uint256) {
+        revert("Price oracle revert");
+    }
+
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
         return interfaceId == type(ICustomPriceFeed).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
@@ -103,6 +107,10 @@ contract Mock_MalformedPriceOracle is ICustomPriceFeed {
 
     function latestRoundData() external pure override returns (uint80, int256, uint256, uint256, uint80) {
         return (0, 0, 0, 0, 0);
+    }
+
+    function governingFeedFreshness() external pure override returns (uint256, uint256) {
+        return (0, 0);
     }
 
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
@@ -330,8 +338,71 @@ contract NAVCalculatorErrorTest is SuperTest {
         INAVCalculator.NAV memory navResult = nav.getAccountNav(safe, address(0));
         assertTrue(navResult.timestamp >= 0, "nav returned");
 
-        (,, bool stale) = nav.latestPrice(address(token));
+        (,, bool stale,) = nav.latestPrice(address(token));
         assertTrue(stale, "Zero price should be marked as stale");
+    }
+
+    // ============================================
+    // Asset Registration Argument Validation
+    // ============================================
+
+    /// @notice A code-less `asset` must be rejected with an error that NAMES the problem, not an opaque empty
+    ///         revert and not the same selector every other bad argument produces.
+    /// @dev `NAVRegistryLib.registerAsset` probes `IERC20Metadata(asset).decimals()` behind a `try`/`catch` that
+    ///      reads as though it covered this. It does not: a high-level call to a code-less address reverts at the
+    ///      `extcodesize` precheck, raised in the CALLING frame before the call, so `catch` never sees it and the
+    ///      revert reaches the MANAGER with empty returndata. Delete the guard in `NAVCalculator.registerAsset`
+    ///      and this fails on the revert DATA — the call still reverts, but with nothing in it.
+    ///
+    ///      The paired test below is what makes this one mean anything: the two inputs are different operator
+    ///      mistakes and must not produce the same selector. Swap `NotAContract` here for the `InvalidArguments`
+    ///      the rest of this function uses and the pair stops distinguishing them.
+    function test_RevertWhen_registerAsset_codelessAsset() public {
+        address codeless = makeAddr("codelessAsset");
+        assertEq(codeless.code.length, 0, "the asset under test must have no code");
+
+        vm.prank(navCalculatorManager);
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "asset"));
+        nav.registerAsset(codeless, address(usdcAdapter), IPrices.PriceType.Custom, type(uint256).max);
+    }
+
+    /// @notice A code-less `priceFeed` must be rejected by name too — the same mistake on the sibling argument.
+    /// @dev The asset guard alone leaves this open: for the AggregatorV3-shaped types the validator falls through
+    ///      to a high-level `latestRoundData()` on `priceFeed`, whose `extcodesize` precheck fires in the calling
+    ///      frame and reverts with empty returndata. The zero-address check above does not cover it — an EOA or a
+    ///      mistyped address is non-zero and code-less. Remove the guard and this fails on the revert DATA.
+    function test_RevertWhen_registerAsset_codelessPriceFeed() public {
+        Mock_ERC20 realToken = new Mock_ERC20("REAL", 18);
+        address codelessFeed = makeAddr("codelessFeed");
+        assertEq(codelessFeed.code.length, 0, "the feed under test must have no code");
+
+        vm.prank(navCalculatorManager);
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "priceFeed"));
+        nav.registerAsset(address(realToken), codelessFeed, IPrices.PriceType.Chainlink, 86_400);
+    }
+
+    /// @notice `addPriceFeed` and `addMonitorFeed` reach the same validator and must answer the same way.
+    function test_RevertWhen_addFeeds_codelessPriceFeed() public {
+        address codelessFeed = makeAddr("codelessFeed2");
+
+        vm.prank(navCalculatorManager);
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "priceFeed"));
+        nav.addPriceFeed(address(usdc), codelessFeed, IPrices.PriceType.Chainlink, 86_400);
+
+        vm.prank(navCalculatorManager);
+        vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "priceFeed"));
+        nav.addMonitorFeed(address(usdc), codelessFeed, IPrices.PriceType.Chainlink, 86_400);
+    }
+
+    /// @notice A contract that HAS code but is not ERC20-compatible is a DIFFERENT mistake and keeps its own
+    ///         error, raised by the library's `try`/`catch`.
+    function test_RevertWhen_registerAsset_nonErc20Contract() public {
+        address notAToken = address(revertingAdapter);
+        assertGt(notAToken.code.length, 0, "the control must have code");
+
+        vm.prank(navCalculatorManager);
+        vm.expectRevert(InvalidArguments.selector);
+        nav.registerAsset(notAToken, address(usdcAdapter), IPrices.PriceType.Custom, type(uint256).max);
     }
 
     // ============================================

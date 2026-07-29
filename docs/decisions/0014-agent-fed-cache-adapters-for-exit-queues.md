@@ -1,8 +1,10 @@
 # 0014 — Agent-fed cache adapters for non-enumerable withdrawal/exit queues (ether.fi, StakeWise V3)
 
-**Status:** accepted
+**Status:** accepted (feeding model refined by [ADR 0018](0018-assistant-fed-assisted-balance-adapters.md))
 
 > Companion to [ADR 0007](0007-merkl-trust-minimized-cache.md) (Merkl). This generalises the owner-gated, on-chain-verified cache pattern to withdrawal/exit queues whose positions cannot be enumerated from a `view`, and specifies two concrete adapters.
+>
+> **Later refinement (shipped):** the **agent-fed / `ASSISTANT_ROLE`** feeding model described below was replaced by a **permissionless, `msg.sender`-keyed** cache fed on-chain by a delegatecall `BalanceAdapterAssistant` ([ADR 0015](0015-assisted-balance-adapter-family.md) family + [ADR 0018](0018-assistant-fed-assisted-balance-adapters.md)). The coordinate-cache / value-live / re-verify-ownership / **under-report-only** reasoning here still stands; only the *who-may-feed* mechanism changed (no roles, no admin/assistant). See ADR 0018 for the shipped design.
 
 ## Context
 

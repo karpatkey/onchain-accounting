@@ -67,7 +67,7 @@ contract PancakeSwapV3PoolsMetaBalanceAdapterTest is Test {
             })
         );
 
-        meta = new PancakeSwapV3PoolsMetaBalanceAdapter(address(npm), "PancakeSwap V3", address(nav));
+        meta = new PancakeSwapV3PoolsMetaBalanceAdapter(address(npm), address(nav));
     }
 
     function _instance() internal view returns (bytes32[] memory ins) {
@@ -87,8 +87,7 @@ contract PancakeSwapV3PoolsMetaBalanceAdapterTest is Test {
     /// @notice The base's `_slot0` (uint8 feeProtocol) reverts on the same wide field — proving the override is load-
     ///         bearing, not cosmetic. A Uniswap adapter pointed at a PancakeSwap pool drops the instance.
     function test_baseSlot0_revertsOnWideFeeProtocol() public {
-        UniswapV3PoolsMetaBalanceAdapter uni =
-            new UniswapV3PoolsMetaBalanceAdapter(address(npm), "Uniswap V3", address(nav));
+        UniswapV3PoolsMetaBalanceAdapter uni = new UniswapV3PoolsMetaBalanceAdapter(address(npm), address(nav));
         // Framework isolates the reverting instance → empty result (rather than bubbling the ABI-decode revert).
         INAVCalculator.PositionBalance[] memory p = uni.getAdapterPositionsForInstances(alice, _instance(), address(0));
         assertEq(p.length, 0, "uint8 decode of a uint32 feeProtocol reverts; instance isolated to empty");
@@ -124,5 +123,26 @@ contract PancakeSwapV3PoolsMetaBalanceAdapterTest is Test {
         }
         assertTrue(found, "USDC fee leg present");
         assertEq(usdcFee, 2 * 1_000_000 + 7, "fee = feeGrowthInside-delta + tokensOwed0");
+    }
+
+    /// @dev Pins that THIS adapter routes its positionId through the shared guard. `positionLabels` is display-only
+    ///      and must never revert, and must never label a coordinate the adapter never emitted; both were reachable
+    ///      before (`abi.decode(pid, (address))` reverts on dirty upper bits, and a `< 32` guard labels a foreign
+    ///      multi-word coordinate from its first word). The accept window itself is pinned exhaustively in
+    ///      `test/balances/MetaBalanceAdapterPidGuards.t.sol` — this case exists because that harness cannot catch
+    ///      an adapter re-inlining the old idiom, which is a one-line regression.
+    ///
+    ///      The clean-coordinate assertion keeps the rejections load-bearing: a shape-valid but unknown coordinate
+    ///      still resolves to the category-only label, so a view that rejected everything would fail here.
+    function test_positionLabels_malformedPositionId_returnsEmpty() public view {
+        address coord = address(0xBEEF);
+
+        assertGt(meta.positionLabels(abi.encode(coord)).length, 0, "one clean word is the accepted shape");
+
+        assertEq(meta.positionLabels("").length, 0, "empty");
+        assertEq(meta.positionLabels(hex"0102030405060708090a0b0c").length, 0, "truncated");
+        uint256 dirty = uint256(uint160(coord)) | (uint256(1) << 255);
+        assertEq(meta.positionLabels(abi.encode(dirty)).length, 0, "dirty upper bits");
+        assertEq(meta.positionLabels(abi.encode(coord, uint256(1))).length, 0, "over-long");
     }
 }

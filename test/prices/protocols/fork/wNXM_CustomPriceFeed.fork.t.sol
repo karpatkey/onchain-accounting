@@ -3,11 +3,15 @@ pragma solidity ^0.8.0;
 
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {NXM_CustomPriceFeed} from "src/prices/protocols/NXM_CustomPriceFeed.sol";
+import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+
+interface IRammInternalPrice {
+    function getInternalPrice() external view returns (uint256);
+}
 
 /// @title wNXM fork tests
-/// @notice wNXM reuses NXM_CustomPriceFeed: it is the 1:1 wrapper a Nexus member can unwrap to NXM, so it is
-///         priced at the same RAMM book value as NXM. Verifies the wNXM instance reports wNXM as its
-///         underlying and returns the identical book price as a same-block NXM instance.
+/// @notice wNXM reuses NXM_CustomPriceFeed: the 1:1 wrapper a Nexus member can unwrap to NXM, priced at the
+///         same RAMM book value as NXM. Verifies wNXM reports wNXM as underlying and matches a same-block NXM.
 contract wNXM_CustomPriceFeedForkTest is TestEnvConfigurator {
     NXM_CustomPriceFeed wnxmPriceOracle;
     NXM_CustomPriceFeed nxmPriceOracle;
@@ -15,23 +19,29 @@ contract wNXM_CustomPriceFeedForkTest is TestEnvConfigurator {
     address constant NXM = 0xd7c49CEE7E9188cCa6AD8FF264C1DA2e69D4Cf3B;
     address constant WNXM = 0x0d438F3b5175Bebc262bF23753C1E53d03432bDE;
     address constant RAMM = 0xcafea54f03E1Cc036653444e581A10a43B2487CD;
-    address constant ETH_TO_USD_CHAINLINK = 0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419;
-    uint256 constant HEARTBEAT = 3600;
-    uint256 constant FORK_BLOCK = 25_345_348;
+    address constant NAV = 0x42aC265991163Af2b0B9E59a222d31d201E39f91;
+    address constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+    uint256 constant FORK_BLOCK = 25_491_000;
 
     function setUp() public {
         uint256 fork = createForkWithCadence(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
+        _useNewNavImpl(NAV);
 
-        wnxmPriceOracle = new NXM_CustomPriceFeed(WNXM, RAMM, ETH_TO_USD_CHAINLINK, HEARTBEAT);
-        nxmPriceOracle = new NXM_CustomPriceFeed(NXM, RAMM, ETH_TO_USD_CHAINLINK, HEARTBEAT);
+        wnxmPriceOracle = new NXM_CustomPriceFeed(WNXM, RAMM, NAV, WETH);
+        nxmPriceOracle = new NXM_CustomPriceFeed(NXM, RAMM, NAV, WETH);
     }
 
+    /// @dev In-EVM ground truth: RAMM.getInternalPrice() (ETH/NXM, 18 dec) * NAV base/USD (8 dec) / 1e18.
     function test_getLatestPrice() public view {
+        INAVCalculator.PriceFeedData memory pd = INAVCalculator(NAV).getPriceData(WETH);
+        uint256 base8 = uint256(pd.price);
+        uint256 rate = IRammInternalPrice(RAMM).getInternalPrice();
+        uint256 expected = (rate * base8) / 1e18;
+
         (uint256 price, bool stale) = wnxmPriceOracle.getLatestPrice();
-        // Same RAMM book value as NXM: RAMM.getInternalPrice() [ETH/NXM] * ETH/USD / 1e18
-        assertEq(price, 4_666_288_516, "wNXM priced at NXM book value");
+        assertEq(price, expected, "wNXM priced at NXM book value = RAMM.getInternalPrice() * NAV(ETH/USD) / 1e18");
         assertEq(stale, false);
     }
 
@@ -39,13 +49,6 @@ contract wNXM_CustomPriceFeedForkTest is TestEnvConfigurator {
         (uint256 wnxmPrice,) = wnxmPriceOracle.getLatestPrice();
         (uint256 nxmPrice,) = nxmPriceOracle.getLatestPrice();
         assertEq(wnxmPrice, nxmPrice, "wNXM and NXM share the same RAMM book price");
-    }
-
-    function test_getLatestPriceStale() public {
-        vm.warp(block.timestamp + HEARTBEAT + 1);
-        (uint256 price, bool stale) = wnxmPriceOracle.getLatestPrice();
-        assertEq(price, 0, "Stale price returns 0 (I-1)");
-        assertEq(stale, true, "Price should be marked as stale");
     }
 
     function test_underlyingAssetSupported() public view {

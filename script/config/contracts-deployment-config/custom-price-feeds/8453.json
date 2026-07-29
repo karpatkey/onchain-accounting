@@ -4,9 +4,8 @@
     "constructor": {
       "wstEth": "0xc1CBa3fCea344f92D9239c08C0568f6F2F0ee452",
       "wstEthToEthChainlink": "0x43a5C292A453A3bF3606fa856197f09D7B74251a",
-      "ethToUsdChainlinkOracle": "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70",
       "wstEthToEthHeartbeat": "86400",
-      "ethToUsdChainlinkHeartbeat": "1200"
+      "baseAsset": "0x4200000000000000000000000000000000000006"
     }
   },
   "weETH_L2": {
@@ -14,9 +13,8 @@
     "constructor": {
       "weEth": "0x04C0599Ae5A44757c0af6F9eC3b93da8976c150A",
       "weEthToEethChainlink": "0x35e9D7001819Ea3B39Da906aE6b06A62cfe2c181",
-      "ethToUsdChainlinkOracle": "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70",
       "weEthToEethHeartbeat": "86400",
-      "ethToUsdChainlinkHeartbeat": "1200"
+      "baseAsset": "0x4200000000000000000000000000000000000006"
     }
   },
   "cbETH_L2": {
@@ -24,9 +22,18 @@
     "constructor": {
       "cbEth": "0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22",
       "cbEthToEthChainlink": "0x806b4Ac04501c29769051e42783cF04dCE41440b",
-      "ethToUsdChainlinkOracle": "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70",
       "cbEthToEthHeartbeat": "86400",
-      "ethToUsdChainlinkHeartbeat": "1200"
+      "baseAsset": "0x4200000000000000000000000000000000000006"
+    }
+  },
+  "weETHCrossRate": {
+    "$comment": "weETH redundancy monitor (CrossRate): weETH/USD = ETH/USD x weETH/ETH. yToXFeed is the Chainlink weETH/ETH MARKET feed, independent of the fundamental weETH_L2 primary.",
+    "enabled": true,
+    "constructor": {
+      "underlyingAsset": "0x04C0599Ae5A44757c0af6F9eC3b93da8976c150A",
+      "yToXFeed": "0xFC1415403EbB0c693f9a7844b92aD2Ff24775C65",
+      "yToXHeartbeat": "86400",
+      "baseAsset": "0x4200000000000000000000000000000000000006"
     }
   }
 }

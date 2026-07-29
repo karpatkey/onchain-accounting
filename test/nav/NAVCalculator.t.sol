@@ -9,6 +9,7 @@ import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {aa} from "test/helpers/AdapterArray.sol";
+import {Mock_CustomBalanceAdapter} from "test/mocks/balance_adapters.sol";
 
 contract NAVCalculatorHarness is NAVCalculator {
     constructor(address admin, address chainlinkUptimeFeed, string memory nativeTokenSymbol) {
@@ -98,10 +99,6 @@ contract NAVCalculatorTest is SuperTest {
         }
 
         // Set position metadata
-        mockBalanceAdapter.setPositionMetadata(
-            bytes(protocol).length > 0 ? protocol : "Mock Protocol",
-            bytes(position).length > 0 ? position : "Mock Position"
-        );
     }
 
     /// @notice Convenience overload for single asset
@@ -122,7 +119,7 @@ contract NAVCalculatorTest is SuperTest {
         for (uint256 i = 0; i < positions.length; i++) {
             if (positions[i].balanceAsset.asset == asset) {
                 // Check if this matches the balance adapter index by checking metadata
-                // We'll need to match by protocol/positionDetail or use a different approach
+                // Match by protocolId or another discriminator if a test needs a specific adapter.
                 // For now, return first match - tests should be more specific
                 return (positions[i], true);
             }
@@ -632,7 +629,10 @@ contract NAVCalculatorTest is SuperTest {
         INAVCalculator.PriceFeedData memory priceFeed = nav.getPriceData(address(usdc));
 
         assertEq(uint8(priceFeed.priceType), uint8(IPrices.PriceType.Custom));
-        assertEq(priceFeed.updatedAt, 0); // Custom adapter should have 0 updatedAt
+        // Custom feeds report their GOVERNING leg's (updatedAt, heartbeat) pair via governingFeedFreshness().
+        // The mock reports (block.timestamp, 3600); this OVERRIDES the registered config heartbeat.
+        assertEq(priceFeed.updatedAt, block.timestamp);
+        assertEq(priceFeed.chainlinkHeartbeat, 3600);
     }
 
     function test_getPriceData_stalePrice() public {
@@ -1089,6 +1089,107 @@ contract NAVCalculatorTest is SuperTest {
         assertTrue(found, "mock adapter position not found");
     }
 
+    /// @notice A `protocolName()` whose payload is in-bounds but NOT padded to a 32-byte boundary must render.
+    /// @dev This is the regression the old `ceil32` bound caused. A canonical ABI `string` return is
+    ///      `[offset=0x20][length][payload]`; solc pads the payload to a word when IT encodes, but a memory-source
+    ///      `abi.decode` bounds on the RAW declared length and reads exactly that many bytes. The removed bound
+    ///      required `ret.length >= 64 + ceil32(strLen)`, so it rejected the band
+    ///      `64 + strLen <= ret.length < 64 + ceil32(strLen)` — replies that declare a length whose payload is
+    ///      *delivered* unpadded. Note the axis is the delivered `ret.length`, NOT whether `strLen` itself is a
+    ///      multiple of 32: a 5-byte name padded to `ret.length = 96` passed the old bound fine. Since solc always
+    ///      pads, no compiler-generated adapter was ever in that band — hence the assembly mock below.
+    ///      `strLen = 5`, `ret.length = 69`: rejected before, renders now.
+    function test_getAccountPositionsVerbose_unpaddedProtocolName_renders() public {
+        RawProtocolNameAdapter adapter = _registerRawNameAdapter();
+        // offset 0x20, length 5, exactly 5 bytes of payload => returndatasize 69, not a multiple of 32.
+        adapter.stageProtocolName(abi.encodePacked(uint256(0x20), uint256(5), bytes("Aave5")));
+
+        INAVCalculator.VerbosePosition[] memory verbose = nav.getAccountPositionsVerbose(safe, address(0));
+        assertEq(_nameFor(verbose, address(adapter)), "Aave5", "an unpadded protocolName must render, not degrade");
+    }
+
+    /// @dev The boundary in the other direction: an exact multiple of 32 was the only shape the old bound accepted,
+    ///      and it must keep working.
+    function test_getAccountPositionsVerbose_paddedProtocolName_stillRenders() public {
+        RawProtocolNameAdapter adapter = _registerRawNameAdapter();
+        adapter.stageProtocolName(abi.encode(string("Aave V3")));
+
+        INAVCalculator.VerbosePosition[] memory verbose = nav.getAccountPositionsVerbose(safe, address(0));
+        assertEq(_nameFor(verbose, address(adapter)), "Aave V3", "a canonical protocolName must still render");
+    }
+
+    /// @dev Fail-open is preserved: a payload SHORTER than its declared length is still rejected, because that is
+    ///      the one case `abi.decode` itself would revert on. Removing the ceil32 bound must not remove this.
+    function test_getAccountPositionsVerbose_truncatedProtocolName_degrades() public {
+        RawProtocolNameAdapter adapter = _registerRawNameAdapter();
+        // Declares 100 bytes but carries 5 => strLen (100) > ret.length - 64 (5).
+        adapter.stageProtocolName(abi.encodePacked(uint256(0x20), uint256(100), bytes("short")));
+
+        INAVCalculator.VerbosePosition[] memory verbose = nav.getAccountPositionsVerbose(safe, address(0));
+        assertEq(_nameFor(verbose, address(adapter)), "", "a truncated payload must still degrade to \"\"");
+    }
+
+    /// @dev The shape that pins the `- 64` term, and the ONLY one that does. The four shapes above give identical
+    ///      verdicts under the strictly weaker `strLen > ret.length`, so a regression dropping `- 64` would keep
+    ///      them all green. Here the declared length overruns the delivered payload by 1..63 bytes
+    ///      (`ret.length - 64 < strLen <= ret.length`), which is exactly the band where `abi.decode` reverts:
+    ///      `strLen = 80`, `ret.length = 100`, so the correct guard rejects (80 > 36) while `strLen > ret.length`
+    ///      would accept (80 <= 100) and let the decode revert — propagating out of the try/catch-free
+    ///      `_safeString` and taking down the entire verbose read for the account. Degrading to "" is the
+    ///      fail-open contract; reverting is the bug.
+    function test_getAccountPositionsVerbose_overrunProtocolName_degrades() public {
+        RawProtocolNameAdapter adapter = _registerRawNameAdapter();
+        // 32 (offset) + 32 (length) + 36 (payload) = 100 bytes of returndata declaring an 80-byte body.
+        adapter.stageProtocolName(abi.encodePacked(uint256(0x20), uint256(80), new bytes(36)));
+
+        INAVCalculator.VerbosePosition[] memory verbose = nav.getAccountPositionsVerbose(safe, address(0));
+        assertEq(_nameFor(verbose, address(adapter)), "", "a declared length overrunning the payload must degrade");
+    }
+
+    /// @dev And the other malformed shapes stay rejected rather than reverting the verbose read.
+    function test_getAccountPositionsVerbose_malformedProtocolName_degrades() public {
+        RawProtocolNameAdapter adapter = _registerRawNameAdapter();
+
+        // bytes32-shaped (MKR-era): a single word, so shorter than the two-word head.
+        adapter.stageProtocolName(abi.encodePacked(bytes32("Aave V3")));
+        assertEq(_nameFor(nav.getAccountPositionsVerbose(safe, address(0)), address(adapter)), "", "bytes32 shape");
+
+        // Empty returndata (proxy to a code-less implementation).
+        adapter.stageProtocolName("");
+        assertEq(_nameFor(nav.getAccountPositionsVerbose(safe, address(0)), address(adapter)), "", "empty returndata");
+
+        // Non-canonical head offset.
+        adapter.stageProtocolName(abi.encodePacked(uint256(0x40), uint256(7), bytes("Aave V3")));
+        assertEq(_nameFor(nav.getAccountPositionsVerbose(safe, address(0)), address(adapter)), "", "bad offset");
+
+        // Absurd declared length.
+        adapter.stageProtocolName(abi.encodePacked(uint256(0x20), type(uint256).max, bytes("x")));
+        assertEq(_nameFor(nav.getAccountPositionsVerbose(safe, address(0)), address(adapter)), "", "absurd length");
+    }
+
+    /// @dev Registers an adapter reporting one USDC position for `safe`, so `_toVerbose` reaches its protocolName.
+    function _registerRawNameAdapter() private returns (RawProtocolNameAdapter adapter) {
+        adapter = new RawProtocolNameAdapter();
+        adapter.setBalances(nav);
+        adapter.setUnderlyingAssetsSupported(aa(address(usdc)));
+        adapter.setBalance(address(usdc), safe, 5 * 10 ** usdc.decimals(), false);
+
+        vm.prank(navCalculatorManager);
+        nav.addBalanceAdapters(aa(address(adapter)));
+    }
+
+    /// @dev The `protocolName` the verbose read resolved for `adapter`.
+    function _nameFor(INAVCalculator.VerbosePosition[] memory verbose, address adapter)
+        private
+        pure
+        returns (string memory)
+    {
+        for (uint256 i = 0; i < verbose.length; i++) {
+            if (verbose[i].position.balanceAdapter == adapter) return verbose[i].protocolName;
+        }
+        return "<adapter position not found>";
+    }
+
     function test_getAccountPositionsForAssetVerbose() public {
         usdc.mint(safe, 10 ** usdc.decimals());
         dai.mint(safe, 10 ** dai.decimals());
@@ -1218,7 +1319,6 @@ contract NAVCalculatorTest is SuperTest {
         address[] memory assets = new address[](1);
         assets[0] = address(usdc);
         stakingBalanceAdapter.setUnderlyingAssetsSupported(assets);
-        stakingBalanceAdapter.setPositionMetadata("Staking", "Staked USDC");
         vm.startPrank(navCalculatorManager);
         nav.addBalanceAdapters(aa(address(stakingBalanceAdapter)));
         vm.stopPrank();
@@ -1252,7 +1352,6 @@ contract NAVCalculatorTest is SuperTest {
         address[] memory assets = new address[](1);
         assets[0] = address(usdc);
         stakingBalanceAdapter.setUnderlyingAssetsSupported(assets);
-        stakingBalanceAdapter.setPositionMetadata("Debt", "Borrowed USDC");
         vm.startPrank(navCalculatorManager);
         nav.addBalanceAdapters(aa(address(stakingBalanceAdapter)));
 
@@ -1362,7 +1461,7 @@ contract NAVCalculatorTest is SuperTest {
 
         // Verify latestPrice still works correctly without sequencer check
         usdc.mint(safe, 10 ** usdc.decimals());
-        (int256 price, uint8 decimals, bool priceStale) = nav.latestPrice(address(usdc));
+        (int256 price, uint8 decimals, bool priceStale,) = nav.latestPrice(address(usdc));
         assertEq(price, 1e8);
         assertEq(decimals, 8);
         assertFalse(priceStale);
@@ -1470,7 +1569,7 @@ contract NAVCalculatorTest is SuperTest {
         // Convert ETH value back to USD using the rate
         // ethValue is in ETH with 18 decimals, we need to convert back
         // Get ETH price
-        (int256 ethPrice, uint8 ethPriceDecimals,) = nav.latestPrice(nav.NATIVE_ADDRESS());
+        (int256 ethPrice, uint8 ethPriceDecimals,,) = nav.latestPrice(nav.NATIVE_ADDRESS());
         // Convert: ethValue * ethPrice / 10^(18 + ethPriceDecimals - 8)
         int256 convertedBack = (ethValue * int256(ethPrice)) / int256(10 ** (18 + ethPriceDecimals - 8));
 
@@ -1733,7 +1832,7 @@ contract NAVCalculatorTest is SuperTest {
         INAVCalculator.Position[] memory usdPositions = nav.getAccountPositions(safe, address(0));
         INAVCalculator.Position memory usdPos = usdPositions[0];
         assertEq(usdPos.balanceAsset.asset, address(usdc));
-        (int256 priceInUsd, uint8 usdPriceDecimals,) = nav.latestPrice(address(usdc));
+        (int256 priceInUsd, uint8 usdPriceDecimals,,) = nav.latestPrice(address(usdc));
         assertEq(usdPos.price, priceInUsd);
         assertEq(usdPos.priceDecimals, usdPriceDecimals);
 
@@ -1753,7 +1852,7 @@ contract NAVCalculatorTest is SuperTest {
 
         INAVCalculator.Position[] memory ethPositions = nav.getAccountPositions(safe, nav.NATIVE_ADDRESS());
         INAVCalculator.Position memory ethPos = ethPositions[0];
-        (int256 priceInEth, uint8 ethPriceDecimals,) = nav.latestPrice(nav.NATIVE_ADDRESS());
+        (int256 priceInEth, uint8 ethPriceDecimals,,) = nav.latestPrice(nav.NATIVE_ADDRESS());
         assertGe(priceInEth, 0, "price non-negative");
         assertLe(ethPriceDecimals, 255, "decimals valid");
 
@@ -1782,13 +1881,18 @@ contract NAVCalculatorTest is SuperTest {
     function test_getAccountNav_healthCheckConsistency() public {
         usdc.mint(safe, 10 ** usdc.decimals());
 
-        (bool sequencerDown, address[] memory stalePriceAssets) = nav.healthCheck();
+        (bool sequencerDown, address[] memory stalePriceAssets, address[] memory irregularPriceAssets) =
+            nav.healthCheck();
         INAVCalculator.NAV memory r = nav.getAccountNav(safe, address(0));
 
         assertEq(r.sequencerDown, sequencerDown);
         assertEq(r.stalePriceAssets.length, stalePriceAssets.length);
         for (uint256 i = 0; i < r.stalePriceAssets.length; i++) {
             assertEq(r.stalePriceAssets[i].asset, stalePriceAssets[i]);
+        }
+        assertEq(r.irregularPriceAssets.length, irregularPriceAssets.length);
+        for (uint256 i = 0; i < r.irregularPriceAssets.length; i++) {
+            assertEq(r.irregularPriceAssets[i].asset, irregularPriceAssets[i]);
         }
     }
 
@@ -2144,5 +2248,23 @@ contract NAVCalculatorTest is SuperTest {
 
         // Should be very cheap (just helper call + early return)
         assertTrue(gasUsed < 100000, "Empty account should be very cheap");
+    }
+}
+
+/// @notice A balance adapter whose `protocolName()` answers with caller-staged RAW bytes.
+/// @dev A normal Solidity mock cannot express a non-canonical ABI encoding — its return value is well-formed by
+///      construction — so the unpadded shape has to be emitted from assembly.
+contract RawProtocolNameAdapter is Mock_CustomBalanceAdapter {
+    bytes private _raw;
+
+    function stageProtocolName(bytes memory raw) external {
+        _raw = raw;
+    }
+
+    function protocolName() external view returns (string memory) {
+        bytes memory r = _raw;
+        assembly {
+            return(add(r, 0x20), mload(r))
+        }
     }
 }

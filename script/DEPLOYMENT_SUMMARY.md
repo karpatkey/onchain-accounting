@@ -2,11 +2,11 @@
 
 > **⚠️ Deployment is now EOA-only.** A single **deployer EOA** runs every step (`forge script … --broadcast`); no Safe executes any deploy/config transaction. The deployer holds `DEFAULT_ADMIN_ROLE` + `MANAGER` through deploy/config, and the final step `07_TransferAdminToSecurityCouncil.s.sol` hands those roles to the **security-council Safe** (`addresses.securityCouncil`) and renounces the deployer's. The council Safe is the end-state admin and drives post-deploy **upgrades** via `script/upgrade/*` (which still emit Safe-TX batches). **`script/deploy/README.md` is the authoritative, up-to-date procedure** — the Safe-TX-bundle steps described in some sections below are historical and superseded for deployment/configuration (`SafeTxBuilder` is retained only for the council's governance/upgrade scripts).
 
-> **Status — deployed across 24 chains.** The Onchain Accounting System (NAV) is live: **5 chains fully configured** (custom price feeds + balance adapters) and **19 with the NAV implementation + proxy** only. Deployed addresses live in `script/config/deployments/{chainId}.json` (the only place addresses live; broadcast logs are not committed) and are mirrored in [`script/deploy/DEPLOYED_ADDRESSES.md`](deploy/DEPLOYED_ADDRESSES.md). The `PriceFeedLib` / `NAVRegistryLib` library pins are build config (not per-chain deployed addresses).
+> **Status — deployed across 24 chains.** The Onchain Accounting System (NAV) is live: **7 chains fully configured** (custom price feeds + balance adapters) and **17 with the NAV implementation + proxy** only. Deployed addresses live in `script/config/deployments/{chainId}.json` (the only place addresses live; broadcast logs are not committed) and are mirrored in [`script/deploy/DEPLOYED_ADDRESSES.md`](deploy/DEPLOYED_ADDRESSES.md). The `PriceFeedLib` / `NAVRegistryLib` library pins are build config (not per-chain deployed addresses).
 >
 > **Chains (24):**
-> - **Full** (feeds + adapters): Ethereum (1), Optimism (10), Arbitrum (42161), Base (8453), Gnosis (100).
-> - **Implementation + proxy:** BSC (56), Polygon (137), Berachain (80094), HyperEVM (999), Ink (57073), Linea (59144), opBNB (204), Sonic (146), Unichain (130), Scroll (534352), X Layer (196), Celo (42220), Avalanche (43114), Mantle (5000), World Chain (480), Monad (143), Plasma (9745), Hemi (43111), 0G (16661).
+> - **Full** (feeds + adapters): Ethereum (1), Optimism (10), Arbitrum (42161), Base (8453), Gnosis (100), BSC (56), Polygon (137).
+> - **Implementation + proxy:** Berachain (80094), Ink (57073), Linea (59144), opBNB (204), Sonic (146), Unichain (130), Scroll (534352), X Layer (196), Celo (42220), Avalanche (43114), Mantle (5000), World Chain (480), Monad (143), Plasma (9745), Hemi (43111), 0G (16661), HyperEVM (999).
 > - Polygon zkEVM is intentionally **excluded** (the network is being sunset).
 
 ## ✅ What Has Been Implemented
@@ -17,7 +17,7 @@ This deployment system uses an **EOA deployer** (`--broadcast`) with **CREATE2 d
 
 #### 1. **Create2Deployer** (`src/deployment/Create2Deployer.sol`)
 - Stateless CREATE2 deployment contract for Safe delegatecall (when Safe delegatecalls it, `address(this)` = Safe, so Safe becomes the deployer)
-- **Not used by the current EOA-only flow** — the impl/library/proxy layer (`01`/`02`) is deployed via the canonical CREATE2 deployer (`0x4e59...`) broadcast from the deployer EOA, while adapters (`03`–`05`) use plain `new ...` (CREATE). This contract is referenced only by tests and retained for Safe-delegatecall scenarios.
+- **Not used by the current EOA-only flow** — the impl/library/proxy layer (`01`/`02`) is deployed via the canonical CREATE2 deployer (`0x4e59...`) broadcast from the deployer EOA, while price-feed and balance adapters (`03`/`04`) use plain `new ...` (CREATE) and bridge adapters (`05`) use the canonical CREATE2 deployer for same-address determinism. This contract is referenced only by tests and retained for Safe-delegatecall scenarios.
 
 #### 2. **Utility Contracts** (`script/utils/`)
 - **BaseDeployScript.sol** - Base contract with common deployment utilities
@@ -37,7 +37,7 @@ This deployment system uses an **EOA deployer** (`--broadcast`) with **CREATE2 d
 | `03_DeployPriceFeeds.s.sol` | Deploy custom price feed adapters; register assets/feeds (per-chain, config-driven) | Adapter addresses in config |
 | `04_DeployBalanceAdapters.s.sol` | Deploy balance adapters incl. meta-adapters (per-chain, config-driven) | Adapter addresses in config |
 | `05_DeployBridgeAdapters.s.sol` | Deploy bridge adapters (CCIP, Across, Stargate, CCTP, Gnosis, Superchain; per-chain) | Adapter addresses in config |
-| `06_Configure.s.sol` | **EOA broadcast** (deployer holds admin+MANAGER): `addBalanceAdapters` for each deployed plain adapter + `addMetaBalanceAdapter` then `addMetaInstances`/`removeMetaInstances` for meta-adapters + authorize bridge adapters. Idempotent / re-runnable. | On-chain config txs |
+| `06_Configure.s.sol` | **EOA broadcast** (deployer holds admin+MANAGER): `addBalanceAdapters` for each deployed plain adapter + `addMetaBalanceAdapter` then `addMetaInstances`/`removeMetaInstances` for meta-adapters + authorize bridge adapters + authorize bridge accounts (`authorizeAccount`) + register bridge assets (`registerAsset`) from `bridge-escrow/<chainId>.json`. Idempotent / re-runnable. | On-chain config txs |
 | `07_TransferAdminToSecurityCouncil.s.sol` | **EOA broadcast, run LAST**: grant DEFAULT_ADMIN + MANAGER to `addresses.securityCouncil` (Safe) on both proxies, revoke/renounce the deployer's roles. | On-chain role handoff |
 
 ### Upgrade Scripts (`script/upgrade/`)
@@ -123,7 +123,7 @@ Follow these steps **one by one**. Do not skip steps; later steps depend on earl
 
 In the **project root**, create or edit `.env` (copy from `.env.sample` if needed). Set:
 
-- **`ALCHEMY_API_KEY`** — Used for RPC on all chains (chain config has `"rpc": "$ALCHEMY"`; scripts use `--rpc-url "https://{network}.g.alchemy.com/v2/$ALCHEMY_API_KEY"`).
+- **`ALCHEMY_API_KEY`** — Used for RPC on the Alchemy-served chains (their chain config has `"rpc": "$ALCHEMY"`; scripts use `--rpc-url "https://{network}.g.alchemy.com/v2/$ALCHEMY_API_KEY"`). Two chains are **not** on Alchemy — Hemi (43111) and 0G (16661) — and instead resolve `"$QUICKNODE_HEMI"` / `"$QUICKNODE_0G"` from `.env` (see `_alchemyNetworkForChainId` in `script/utils/ConfigReader.sol`).
 - **`DEPLOYER_NAME`** — Foundry keystore account name for the deployer EOA. Import once with `cast wallet import $DEPLOYER_NAME --interactive`; key stored at `~/.foundry/keystores/$DEPLOYER_NAME`. Pass as `--account $DEPLOYER_NAME` to `forge script`.
 - **Explorer API key** for verification. `verify-all.sh` uses a single `ETHERSCAN_API_KEY` for all chains (Etherscan V2). The per-explorer keys below are only needed if you run `forge verify-contract` manually against a non-Etherscan explorer:
   - Mainnet: `ETHERSCAN_API_KEY`
@@ -319,7 +319,7 @@ script/verify/verify-all.sh
 - Storage gaps for future expansion
 
 ### ✅ Multi-Chain Support
-- Deployed on **24 chains** (see the Chains list at the top); fully configured on Ethereum, Optimism, Arbitrum, Base, Gnosis
+- Deployed on **24 chains** (see the Chains list at the top); fully configured on Ethereum, Optimism, Arbitrum, Base, Gnosis, BSC, Polygon
 - Chain-specific adapter deployments
 - Easy to add new chains
 
@@ -358,9 +358,17 @@ script/verify/verify-all.sh
 - `StaderWithdrawalQueueBalanceAdapter` - Stader pending unstake requests
 - `KelpWithdrawalQueueBalanceAdapter` - Kelp DAO rsETH exit queue (multi-asset; payout assets discovered via `lrtConfig().getSupportedAssetList()`)
 - `LidoWithdrawalQueueBalanceAdapter` - Lido stETH withdrawal queue (`WithdrawalQueueERC721`; sums open requests, reported as native ETH — the asset paid on claim)
+- `EthenaCooldownBalanceAdapter` - USDe owed to an account during the sUSDe unstaking cooldown (reads the per-account `UserCooldown` slot on `StakedUSDeV2`; mainnet only)
 - `UniswapV2PoolsMetaBalanceAdapter`, `UniswapV3PoolsMetaBalanceAdapter` - Uni V2 pairs / V3 pools (V3 NFTs enumerated on-chain)
 - `PancakeSwapV2PoolsMetaBalanceAdapter`, `PancakeSwapV3PoolsMetaBalanceAdapter` - PancakeSwap variants
-- `MerklRewardsAssistedBalanceAdapter` - Merkl unclaimed rewards (proof-verified mutable cache, ADR 0007)
+
+### Assisted Balance Adapters (externally-fed; ADR 0015/0018)
+
+Permissionless assistant-fed adapters that cache position *coordinates only* (never amounts), value live on-chain, and re-verify ownership per read (under-report only). Each is paired with a delegatecall `…Assistant`.
+
+- `NexusMutualStakingPoolsAssistedBalanceAdapter` - Nexus Mutual staking-pool NFT positions (per-account `tokenId` cache)
+- `EtherFiWithdrawalQueueAssistedBalanceAdapter` - ether.fi withdrawal-queue requests
+- `StakeWiseV3ExitQueueAssistedBalanceAdapter` - StakeWise V3 exit-queue tickets
 
 ### Bridge Adapters
 - CCIP (Chainlink)
@@ -374,7 +382,7 @@ script/verify/verify-all.sh
 
 ### Deployment Records (`script/config/deployments/`)
 
-The per-chain `script/config/deployments/{chainId}.json` file is the **single source of truth for deployed addresses** — broadcast logs are no longer committed. There is one file per deployed chain (24 total): the 5 fully-configured chains carry feeds + adapters, the other 19 carry the canonical layer only. (An empty `1101.json` stub is also present for Polygon zkEVM, which is intentionally excluded — a file's presence does not imply a deployment.)
+The per-chain `script/config/deployments/{chainId}.json` file is the **single source of truth for deployed addresses** — broadcast logs are no longer committed. There is one file per deployed chain (24 total): the 7 fully-configured chains carry feeds + adapters, the other 17 carry the canonical layer only. (An empty `1101.json` stub is also present for Polygon zkEVM, which is intentionally excluded — a file's presence does not imply a deployment.)
 
 ```
 script/config/deployments/
@@ -384,11 +392,14 @@ script/config/deployments/
 ├── 42161.json      # Arbitrum
 ├── 8453.json       # Base
 ├── 100.json        # Gnosis
+├── 56.json         # BSC
+├── 137.json        # Polygon
 # Implementation + proxy:
-├── 56.json   137.json   80094.json  999.json    57073.json
-├── 59144.json 204.json  146.json    130.json    534352.json
-├── 196.json   42220.json 43114.json 5000.json   480.json
-└── 143.json   9745.json  43111.json 16661.json
+├── 80094.json 57073.json 59144.json  204.json
+├── 146.json   130.json   534352.json 196.json
+├── 42220.json 43114.json 5000.json   480.json
+├── 143.json   9745.json  43111.json  16661.json
+└── 999.json        # HyperEVM (deployed via Hyperliquid big blocks)
 ```
 
 ### Safe Transactions (`safe-transactions/`)
@@ -439,7 +450,7 @@ Note: Proxy deploy + init is done via EOA in `02_DeployProxies.s.sol` (no Safe T
 2. **Deploy implementations** - Run `01_DeployImplementations.s.sol` once with `--broadcast --account` to deploy via the deployer EOA.
 3. **Deploy and initialize proxies** - Run `02_DeployProxies.s.sol` **per chain** with `--broadcast --account` (deploys placeholder + proxies and initializes them via EOA; atomic by default).
 4. **Deploy adapters** - Run scripts 03–05 with adapters enabled in the `contracts-deployment-config/` files; broadcast to deploy adapter contracts.
-5. **Configure adapters** - Run `06_Configure.s.sol` with `--broadcast --account` (deployer EOA holds admin+MANAGER): adds balance adapters, sets meta-instances, authorizes bridge adapters. Idempotent.
+5. **Configure adapters** - Run `06_Configure.s.sol` with `--broadcast --account` (deployer EOA holds admin+MANAGER): adds balance adapters, sets meta-instances, authorizes bridge adapters, authorizes bridge accounts, and registers bridge assets (the last two from `bridge-escrow/<chainId>.json` — required for `depositAndBridge` to work). Idempotent.
 6. **Verify** - Run `VerifyEtherscan.s.sol` (or `script/verify/verify-all.sh`) to check and submit `forge verify-contract` for each deployed contract.
 7. **Transfer admin** - Run `07_TransferAdminToSecurityCouncil.s.sol` last: hands DEFAULT_ADMIN + MANAGER to the council Safe and renounces the deployer's roles.
 
@@ -451,7 +462,7 @@ Note: Proxy deploy + init is done via EOA in `02_DeployProxies.s.sol` (no Safe T
    - Optional for NAVCalculator: set `chainlinkSequencerFeed` (L2 sequencer feed; can be zero on L1) and `nativeTokenSymbol` (e.g. `"ETH"`, `"xDAI"`).
 
 2. **Env**  
-   - `.env` with `ALCHEMY_API_KEY` (used for RPC on all chains), `DEPLOYER_NAME`, and explorer API key(s) for verification.  
+   - `.env` with `ALCHEMY_API_KEY` (RPC for the Alchemy-served chains; Hemi/0G use `QUICKNODE_HEMI`/`QUICKNODE_0G` instead), `DEPLOYER_NAME`, and explorer API key(s) for verification.  
    - `DEPLOYER_NAME` is the Foundry keystore account name (import once with `cast wallet import $DEPLOYER_NAME --interactive`); used for implementations (01) and **02_DeployProxies** (proxies + init via EOA).
 
 3. **Order of operations**  

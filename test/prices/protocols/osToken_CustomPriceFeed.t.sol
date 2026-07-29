@@ -6,7 +6,7 @@ import {osToken_CustomPriceFeed} from "src/prices/protocols/osToken_CustomPriceF
 import {ICustomPriceFeed} from "src/prices/ICustomPriceFeed.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
-import {Mock_PriceOracleChainlink} from "test/mocks/price_oracles.sol";
+import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 
 /// @notice Minimal StakeWise OsTokenVaultController mock — returns a settable osToken→underlying rate.
 contract Mock_OsTokenVaultController {
@@ -27,30 +27,33 @@ contract Mock_OsTokenVaultController {
 
 /// @title osToken_CustomPriceFeed unit tests (no fork)
 /// @notice Exercises the generic osToken price math (`convertToAssets(1e18) * underlying/USD / 1e18`), staleness,
-///         and the ICustomPriceFeed surface, using mock controller + mock Chainlink feed.
+///         and the ICustomPriceFeed surface, using a mock controller + a Mock_NAVCalculator for the base/USD price.
+/// @dev Base/USD (ETH/USD) now comes from the NAV; the constructor takes `(osToken, controller, nav, baseAsset)`.
 contract osToken_CustomPriceFeedTest is Test {
     Mock_ERC20 osToken;
+    Mock_ERC20 weth; // underlying / base asset priced by the NAV
     Mock_OsTokenVaultController controller;
-    Mock_PriceOracleChainlink underlyingUsd;
+    Mock_NAVCalculator nav;
     osToken_CustomPriceFeed oracle;
 
-    uint256 constant HEARTBEAT = 3600;
     uint256 constant RATE = 1.072e18; // 1 osETH = 1.072 ETH
-    uint256 constant USD = 3000e8; // ETH/USD = $3000 (8 decimals)
+    int256 constant USD = 3000e8; // ETH/USD = $3000 (8 decimals)
 
     function setUp() public {
-        vm.warp(1_000_000); // non-zero base time so staleness subtraction doesn't underflow
+        vm.warp(1_000_000); // non-zero base time
         osToken = new Mock_ERC20("osETH", 18);
+        weth = new Mock_ERC20("WETH", 18);
         controller = new Mock_OsTokenVaultController(RATE);
-        underlyingUsd = new Mock_PriceOracleChainlink("ETH/USD", USD, 8);
-        oracle = new osToken_CustomPriceFeed(address(osToken), address(controller), address(underlyingUsd), HEARTBEAT);
+        nav = new Mock_NAVCalculator();
+        nav.setAssetPrice(address(weth), USD, 8);
+        oracle = new osToken_CustomPriceFeed(address(osToken), address(controller), address(nav), address(weth));
     }
 
     function test_price() public view {
         (uint256 price, bool stale) = oracle.getLatestPrice();
         assertFalse(stale);
         // 1.072e18 * 3000e8 / 1e18 = 3216e8 = $3216 (8 decimals)
-        assertEq(price, RATE * USD / 1e18);
+        assertEq(price, RATE * uint256(USD) / 1e18);
         assertEq(price, 3216e8);
     }
 
@@ -63,11 +66,11 @@ contract osToken_CustomPriceFeedTest is Test {
 
     function test_latestRoundData_matchesPrice() public view {
         (, int256 answer,,,) = oracle.latestRoundData();
-        assertEq(uint256(answer), RATE * USD / 1e18);
+        assertEq(uint256(answer), RATE * uint256(USD) / 1e18);
     }
 
-    function test_stale_whenFeedStale() public {
-        underlyingUsd.setUpdatedAt(block.timestamp - HEARTBEAT); // exactly heartbeat old → stale
+    function test_stale_whenBaseStale() public {
+        nav.setAssetStale(address(weth), true);
         (uint256 price, bool stale) = oracle.getLatestPrice();
         assertTrue(stale);
         assertEq(price, 0);
@@ -76,10 +79,8 @@ contract osToken_CustomPriceFeedTest is Test {
     }
 
     function test_stale_whenUsdNonPositive() public {
-        Mock_PriceOracleChainlink zeroFeed = new Mock_PriceOracleChainlink("ETH/USD", 0, 8);
-        osToken_CustomPriceFeed o =
-            new osToken_CustomPriceFeed(address(osToken), address(controller), address(zeroFeed), HEARTBEAT);
-        (uint256 price, bool stale) = o.getLatestPrice();
+        nav.setAssetPrice(address(weth), 0, 8); // base price 0 → NavBaseUsdLib reports stale
+        (uint256 price, bool stale) = oracle.getLatestPrice();
         assertTrue(stale);
         assertEq(price, 0);
     }
@@ -92,16 +93,28 @@ contract osToken_CustomPriceFeedTest is Test {
     }
 
     function test_invalidConstructorArgs() public {
+        // zero osToken
         vm.expectRevert();
-        new osToken_CustomPriceFeed(address(0), address(controller), address(underlyingUsd), HEARTBEAT);
+        new osToken_CustomPriceFeed(address(0), address(controller), address(nav), address(weth));
 
+        // zero controller (not a contract)
         vm.expectRevert();
-        new osToken_CustomPriceFeed(address(osToken), address(0), address(underlyingUsd), HEARTBEAT);
+        new osToken_CustomPriceFeed(address(osToken), address(0), address(nav), address(weth));
 
+        // controller not a contract
         vm.expectRevert();
-        new osToken_CustomPriceFeed(address(osToken), address(controller), address(0), HEARTBEAT);
+        new osToken_CustomPriceFeed(address(osToken), address(0xdead), address(nav), address(weth));
 
+        // zero nav (not a contract)
         vm.expectRevert();
-        new osToken_CustomPriceFeed(address(osToken), address(controller), address(underlyingUsd), 0);
+        new osToken_CustomPriceFeed(address(osToken), address(controller), address(0), address(weth));
+
+        // zero base asset
+        vm.expectRevert();
+        new osToken_CustomPriceFeed(address(osToken), address(controller), address(nav), address(0));
+
+        // base asset not an ERC20 (nav has no totalSupply)
+        vm.expectRevert();
+        new osToken_CustomPriceFeed(address(osToken), address(controller), address(nav), address(nav));
     }
 }

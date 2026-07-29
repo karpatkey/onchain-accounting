@@ -4,12 +4,16 @@ pragma solidity ^0.8;
 import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import {ERC165Checker} from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {IPrices} from "./IPrices.sol";
 import {ICustomPriceFeed} from "./ICustomPriceFeed.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
+import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
+import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
+import {GasStipendLib} from "src/utils/GasStipendLib.sol";
 
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
@@ -42,6 +46,9 @@ library PriceFeedLib {
         int256 price;
         uint8 decimals;
         bool stale;
+        // True if the primary price diverged from the asset's monitor feeds beyond tolerance (or, for stablecoins,
+        // from the $1 peg). Pricing-quality signal only; `price` is still the primary and is used for valuation.
+        bool irregular;
     }
 
     /// @notice Quote-asset info (struct + price data); address(0) = USD.
@@ -164,6 +171,269 @@ library PriceFeedLib {
     }
 
     // -------------------------------------------------------------------------
+    // Divergence monitoring (primary vs monitor feeds)
+    // -------------------------------------------------------------------------
+
+    /// @notice Computes the divergence between an asset's primary price and its monitor feeds.
+    /// @dev External wrapper over `_selectFeedCore` (primary) + `_monitorDivergence` (monitors). Read-only.
+    /// @return primaryPrice The primary feed's price normalized to NAV_DECIMALS (0 if the primary is stale).
+    /// @return monitorMedian Median of the healthy monitor prices, NAV_DECIMALS (0 if no healthy monitors).
+    /// @return divergenceBps Worst-case |primary - monitor| * 1e4 / primary over the healthy monitors — the value
+    ///         the `irregular` flag is thresholded on (0 if no monitors / primary stale).
+    /// @return irregular True if divergenceBps exceeds the divergence tolerance, or (stablecoins) the primary
+    ///         deviates from $1 beyond the peg tolerance.
+    /// @return monitorFeedCount Number of healthy monitor feeds that contributed.
+    /// @return primaryStale True if the primary feed is stale or the L2 sequencer is down.
+    /// @return primaryAboveMonitors True if the primary is above the monitor median (a premium); false if
+    ///         below/equal (for claim assets, below = the depeg direction). Meaningful only when monitorFeedCount > 0.
+    /// @param sequencerDown Whether the L2 sequencer is currently down/in grace (false on L1); folded into
+    ///        `primaryStale` so divergence is suppressed on an unusable price — parity with buildPriceData /
+    ///        healthCheck.
+    function computeDivergence(
+        mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
+        mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
+        mapping(address => IPrices.AssetPricing) storage assetPricing,
+        address asset,
+        bool sequencerDown
+    )
+        external
+        view
+        returns (
+            int256 primaryPrice,
+            int256 monitorMedian,
+            uint256 divergenceBps,
+            bool irregular,
+            uint256 monitorFeedCount,
+            bool primaryStale,
+            bool primaryAboveMonitors
+        )
+    {
+        (int256 price, uint8 decimals, bool stale,,) = _selectFeedCore(priceOracles, asset);
+        // Treat the primary as stale during L2 sequencer downtime (parity with buildPriceData / healthCheck): the
+        // price is unusable, so report primaryPrice=0, primaryStale=true and suppress the divergence/irregular flags.
+        (primaryPrice, primaryStale, monitorMedian, divergenceBps, irregular, monitorFeedCount, primaryAboveMonitors) =
+            _divergenceFor(monitorFeeds, assetPricing, asset, price, decimals, stale, sequencerDown);
+    }
+
+    /// @notice `irregular` flag for a primary that the caller has ALREADY selected (raw `price` in the feed's own
+    ///         `decimals`). Lets a hot view that already ran feed selection (Prices.latestPrice) obtain the
+    ///         divergence signal WITHOUT a second `_selectFeedCore` pass + re-read of the primary feed. Returns false
+    ///         (no monitor reads) when the asset has no divergence checks. `sequencerDown` folds into staleness so
+    ///         divergence is suppressed on an unusable price — parity with buildPriceData / computeDivergence.
+    function irregularForSelected(
+        mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
+        mapping(address => IPrices.AssetPricing) storage assetPricing,
+        address asset,
+        int256 price,
+        uint8 decimals,
+        bool feedStale,
+        bool sequencerDown
+    ) internal view returns (bool irregular) {
+        if (!_hasDivergenceChecks(monitorFeeds, assetPricing, asset)) return false;
+        (,,,, irregular,,) =
+            _divergenceFor(monitorFeeds, assetPricing, asset, price, decimals, feedStale, sequencerDown);
+    }
+
+    /// @notice Shared divergence prologue used by every read path (getPriceData / latestPrice /
+    ///         NAV.irregularPriceAssets / healthCheck / Position.irregular). Folds sequencer-down into staleness,
+    ///         scales the primary to 8-dec (0 when stale), then runs `_monitorDivergence`. Centralizing it keeps the
+    ///         normalization + staleness folding identical across all call sites (the parity the comments demand).
+    function _divergenceFor(
+        mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
+        mapping(address => IPrices.AssetPricing) storage assetPricing,
+        address asset,
+        int256 price,
+        uint8 decimals,
+        bool stale,
+        bool sequencerDown
+    )
+        private
+        view
+        returns (
+            int256 primaryPrice8,
+            bool primaryStale,
+            int256 monitorMedian,
+            uint256 divergenceBps,
+            bool irregular,
+            uint256 monitorFeedCount,
+            bool primaryAboveMonitors
+        )
+    {
+        primaryStale = stale || sequencerDown;
+        primaryPrice8 = primaryStale ? int256(0) : _scaleTo8(price, decimals);
+        (monitorMedian, divergenceBps, irregular, monitorFeedCount, primaryAboveMonitors) =
+            _monitorDivergence(monitorFeeds, assetPricing, asset, primaryPrice8, primaryStale);
+    }
+
+    /// @notice Core divergence computation given an already-selected (8-dec) primary price.
+    /// @dev Reads every monitor feed for `asset`, skips stale/reverting ones (same per-feed gate as selection), and
+    ///      flags `irregular` on inter-feed divergence (all types) or absolute peg deviation (stablecoins only).
+    ///      The inter-feed flag is driven by the WORST single-monitor deviation (max), not an average — so a real
+    ///      split can't be masked by two monitors straddling the primary. `monitorMedian` (central tendency) and
+    ///      `primaryAboveMonitors` (sign vs the median) are exposed for the consumer, not used by the flag itself.
+    ///      Never reverts.
+    /// @return monitorMedian Median of the healthy monitor prices (NAV_DECIMALS); 0 if none.
+    /// @return divergenceBps Worst-case |primary - monitor| / primary over the healthy monitors, in bps.
+    /// @return irregular True if divergenceBps exceeds the divergence tolerance, or the peg guard fired.
+    /// @return healthyMonitorCount Number of healthy monitors that contributed.
+    /// @return primaryAboveMonitors True if the primary is above the monitor median (premium); false if below/equal
+    ///         (for claim assets, below = the depeg direction). Meaningful only when healthyMonitorCount > 0.
+    function _monitorDivergence(
+        mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
+        mapping(address => IPrices.AssetPricing) storage assetPricing,
+        address asset,
+        int256 primaryPrice8,
+        bool primaryStale
+    )
+        private
+        view
+        returns (
+            int256 monitorMedian,
+            uint256 divergenceBps,
+            bool irregular,
+            uint256 healthyMonitorCount,
+            bool primaryAboveMonitors
+        )
+    {
+        IPrices.PriceFeedConfig[] storage monitors = monitorFeeds[asset];
+        uint256 len = monitors.length;
+        int256[] memory prices = new int256[](len);
+        uint256 n;
+        for (uint256 i; i < len; ++i) {
+            (int256 mp, bool ok) = _readFeedPrice(monitors[i]);
+            if (!ok) continue;
+            prices[n++] = mp;
+        }
+
+        IPrices.AssetPricing storage ap = assetPricing[asset];
+
+        // Inter-feed divergence (all asset types): primary vs the WORST single monitor; median + sign exposed.
+        // `healthyMonitorCount` (surfaced as `monitorFeedCount`) is set ONLY inside this guard, so it counts monitors
+        // that actually CONTRIBUTED to the divergence check — it stays 0 when the check was suppressed (stale /
+        // sequencer-down / unusable primary), rather than reporting count>0 alongside divergenceBps=0.
+        if (n > 0 && !primaryStale && primaryPrice8 > 0) {
+            healthyMonitorCount = n;
+            _sortInPlace(prices, n);
+            // Midpoint via the sorted difference (prices ascending) so the two-element sum can't overflow int256.
+            monitorMedian = (n % 2 == 1) ? prices[n / 2] : prices[n / 2 - 1] + (prices[n / 2] - prices[n / 2 - 1]) / 2;
+            primaryAboveMonitors = primaryPrice8 > monitorMedian;
+
+            uint256 worst;
+            for (uint256 i; i < n; ++i) {
+                int256 d = primaryPrice8 - prices[i];
+                if (d < 0) d = -d;
+                // mulDiv (512-bit intermediate) so an extreme monitor price can't overflow uint256 and revert the read.
+                uint256 bps = Math.mulDiv(uint256(d), 10_000, uint256(primaryPrice8));
+                if (bps > worst) worst = bps;
+            }
+            divergenceBps = worst;
+            if (ap.divergenceToleranceBps > 0 && worst > ap.divergenceToleranceBps) irregular = true;
+        }
+
+        // Absolute peg guard: primary vs $1 (= 10**NAV_DECIMALS). Enabled per-asset by a non-zero peg tolerance
+        // (set only on assets whose fundamental value is $1, i.e. stablecoins). Independent of monitors.
+        if (ap.pegToleranceBps > 0 && !primaryStale && primaryPrice8 > 0) {
+            int256 one = int256(10 ** uint256(NAV_DECIMALS));
+            int256 pegDiff = primaryPrice8 - one;
+            if (pegDiff < 0) pegDiff = -pegDiff;
+            uint256 pegBps = Math.mulDiv(uint256(pegDiff), 10_000, uint256(one));
+            if (pegBps > ap.pegToleranceBps) irregular = true;
+        }
+    }
+
+    /// @notice In-place insertion sort of the first `n` elements of `a` (n is a monitor count — a handful).
+    function _sortInPlace(int256[] memory a, uint256 n) private pure {
+        for (uint256 i = 1; i < n; ++i) {
+            int256 key = a[i];
+            uint256 j = i;
+            while (j > 0 && a[j - 1] > key) {
+                a[j] = a[j - 1];
+                --j;
+            }
+            a[j] = key;
+        }
+    }
+
+    /// @notice True if an asset has anything to check for divergence: at least one monitor feed, or a non-zero peg
+    ///         tolerance. When false, `irregular` is always false and the divergence computation (incl. price
+    ///         normalization) can be skipped entirely.
+    function _hasDivergenceChecks(
+        mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
+        mapping(address => IPrices.AssetPricing) storage assetPricing,
+        address asset
+    ) internal view returns (bool) {
+        return monitorFeeds[asset].length > 0 || assetPricing[asset].pegToleranceBps > 0;
+    }
+
+    /// @notice Reads a single feed's price applying the same validity + heartbeat gate as `_selectFeedCore`, and
+    ///         normalizes the result to NAV_DECIMALS. Returns ok=false when the feed is stale, reverting, or
+    ///         reports a non-positive/zero price. Used by the monitor-divergence loop.
+    function _readFeedPrice(IPrices.PriceFeedConfig storage cfg) private view returns (int256 price8, bool ok) {
+        int256 rawPrice;
+        uint256 updatedAt;
+
+        if (cfg.priceType == IPrices.PriceType.Custom) {
+            uint256 customPrice;
+            bool internalStale;
+            try ICustomPriceFeed(cfg.priceFeed).getLatestPrice() returns (uint256 p, bool s) {
+                customPrice = p;
+                internalStale = s;
+            } catch {
+                return (0, false);
+            }
+            if (internalStale || customPrice == 0) return (0, false);
+            if (customPrice > uint256(type(int256).max)) return (0, false);
+            rawPrice = int256(customPrice);
+            uint256 lrdUpdatedAt;
+            try ICustomPriceFeed(cfg.priceFeed).latestRoundData() returns (uint80, int256, uint256, uint256 u, uint80) {
+                lrdUpdatedAt = u;
+            } catch {} // reverted: treat as no-timestamp oracle; sentinel applied below
+            updatedAt = lrdUpdatedAt == 0 ? (block.timestamp > 0 ? block.timestamp - 1 : 0) : lrdUpdatedAt;
+        } else {
+            int256 answer;
+            uint256 lrdUpdatedAt;
+            try AggregatorV3Interface(cfg.priceFeed).latestRoundData() returns (
+                uint80, int256 a, uint256, uint256 u, uint80
+            ) {
+                answer = a;
+                lrdUpdatedAt = u;
+            } catch {
+                return (0, false);
+            }
+            if (answer <= 0) return (0, false);
+            rawPrice = answer;
+            if (cfg.priceType == IPrices.PriceType.API3) {
+                rawPrice = rawPrice / 1e10; // 18-dec → 8-dec
+                if (rawPrice == 0) return (0, false);
+            }
+            updatedAt = lrdUpdatedAt;
+        }
+
+        uint256 effectiveTime = updatedAt > block.timestamp ? block.timestamp : updatedAt;
+        if (block.timestamp - effectiveTime >= cfg.chainlinkHeartbeat) return (0, false);
+
+        return (_scaleTo8(rawPrice, cfg.decimals), true);
+    }
+
+    /// @notice Scales a price from `decimals` to NAV_DECIMALS. NEVER reverts: a pathological `decimals` (or a price
+    ///         so large the scale-up would overflow) yields 0 — an unusable price that downstream treats as
+    ///         no-divergence — rather than an arithmetic panic, preserving the read paths' never-revert invariant.
+    ///         (Unlike monitor feeds, primary feeds are not decimals-capped at registration, so a misconfigured
+    ///         primary could otherwise reach here with an out-of-range exponent.)
+    function _scaleTo8(int256 price, uint8 decimals) private pure returns (int256) {
+        if (decimals == NAV_DECIMALS) return price;
+        if (decimals > NAV_DECIMALS) {
+            uint256 exp = uint256(decimals) - NAV_DECIMALS;
+            // 10 ** exp overflows uint256 (exp >= 78) or the int256 cast (exp == 77) beyond this bound → unusable.
+            if (exp > MAX_DECIMAL_EXPONENT_INT256) return 0;
+            return price / int256(10 ** exp);
+        }
+        int256 factor = int256(10 ** (uint256(NAV_DECIMALS) - uint256(decimals))); // exp <= 8 → factor <= 1e8
+        if (price > type(int256).max / factor || price < type(int256).min / factor) return 0; // would overflow
+        return price * factor;
+    }
+
+    // -------------------------------------------------------------------------
     // L2 sequencer uptime
     // -------------------------------------------------------------------------
 
@@ -207,8 +477,11 @@ library PriceFeedLib {
     /// @return priceFeedData The assembled price-feed view.
     function buildPriceData(
         mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
+        mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
+        mapping(address => IPrices.AssetPricing) storage assetPricing,
         address asset,
-        bool sequencerDown
+        bool sequencerDown,
+        bool withDivergence
     ) external view returns (INAVCalculator.PriceFeedData memory priceFeedData) {
         (int256 price, uint8 decimals, bool stale, uint256 winnerIdx, uint256 healthyFeedCount) =
             _selectFeedCore(priceOracles, asset);
@@ -226,8 +499,22 @@ library PriceFeedLib {
         priceFeedData.stale = stale || sequencerDown;
         priceFeedData.healthyFeedCount = healthyFeedCount;
 
-        // Fetch updatedAt for AggregatorV3-shaped feeds (Chainlink, Redstone, API3).
-        if (config.priceType != IPrices.PriceType.Custom) {
+        // Report the freshness pair (updatedAt, chainlinkHeartbeat) of the selected feed.
+        if (config.priceType == IPrices.PriceType.Custom) {
+            // Custom feeds are composites whose staleness is per-underlying-leg, so a single (updatedAt, heartbeat)
+            // can't be read off latestRoundData (which returns the worst-case/min timestamp with no companion
+            // heartbeat). Instead report the "governing leg" — the underlying Chainlink leg closest to its own
+            // staleness limit — so the pair is a real, matched pair from one oracle (a single-leg custom feed reports
+            // that leg). This OVERRIDES the config heartbeat set above. See ICustomPriceFeed.governingFeedFreshness.
+            try ICustomPriceFeed(config.priceFeed).governingFeedFreshness() returns (
+                uint256 govUpdatedAt, uint256 govHeartbeat
+            ) {
+                priceFeedData.updatedAt = govUpdatedAt;
+                priceFeedData.chainlinkHeartbeat = govHeartbeat;
+            } catch {} // updatedAt stays 0 / heartbeat stays the registered config value if the feed reverts
+        } else {
+            // AggregatorV3-shaped feeds (Chainlink, Redstone, API3): report the selected feed's own updatedAt against
+            // its configured heartbeat (already set above). A revert leaves updatedAt at 0.
             try AggregatorV3Interface(config.priceFeed).latestRoundData() returns (
                 uint80, int256, uint256, uint256 roundUpdatedAt, uint80
             ) {
@@ -236,6 +523,19 @@ library PriceFeedLib {
         }
 
         priceFeedData.sequencerDown = sequencerDown;
+
+        // Divergence signal vs the asset's monitor feeds. Primary is treated as stale when the feed is stale or
+        // the sequencer is down (either way the primary price is untrustworthy, so divergence is undefined). Skipped
+        // (fields stay 0/false) when `withDivergence` is false (callers that only need the price — e.g. the
+        // NAV-sourced base/USD term for custom feeds — avoid the monitor reads + sort) or the asset has no monitors
+        // and no peg tolerance.
+        if (withDivergence && _hasDivergenceChecks(monitorFeeds, assetPricing, asset)) {
+            (,,, uint256 divergenceBps, bool irregular, uint256 monitorFeedCount,) =
+                _divergenceFor(monitorFeeds, assetPricing, asset, price, decimals, stale, sequencerDown);
+            priceFeedData.irregular = irregular;
+            priceFeedData.divergenceBps = divergenceBps;
+            priceFeedData.monitorFeedCount = monitorFeedCount;
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -254,6 +554,8 @@ library PriceFeedLib {
     ///      `computeNavAndPositions` (and vice versa)** or `getAccountNav` and `getAccountNavVerbose` will diverge.
     function computeNav(
         mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
+        mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
+        mapping(address => IPrices.AssetPricing) storage assetPricing,
         mapping(address => uint256) storage assetIndex,
         INAVCalculator.Asset[] storage registeredAssets,
         address[] memory allAdapters,
@@ -268,10 +570,22 @@ library PriceFeedLib {
             _getQuoteAssetInfo(priceOracles, assetIndex, registeredAssets, quoteAsset, nativeTokenSymbol);
         nav.quoteAsset = quoteInfo.assetStruct;
         nav.quoteAssetStale = quoteInfo.stale;
+        nav.quoteAssetIrregular = quoteAsset == address(0)
+            ? false
+            : irregularForSelected(
+                monitorFeeds,
+                assetPricing,
+                quoteAsset,
+                quoteInfo.price,
+                quoteInfo.priceDecimals,
+                quoteInfo.stale,
+                sequencerDown
+            );
 
         uint256 assetCount = registeredAssets.length;
         if (assetCount == 0) {
             nav.stalePriceAssets = new INAVCalculator.Asset[](0);
+            nav.irregularPriceAssets = new INAVCalculator.Asset[](0);
             return nav; // value 0, sequencerDown false (no assets registered)
         }
 
@@ -281,12 +595,15 @@ library PriceFeedLib {
         nav.sequencerDown = sequencerDown;
         if (allPositions.length == 0) {
             nav.stalePriceAssets = new INAVCalculator.Asset[](0);
+            nav.irregularPriceAssets = new INAVCalculator.Asset[](0);
             return nav; // value 0
         }
 
         address[] memory assetsWithPositions = _extractUniqueAssets(allPositions);
-        PriceFeedCache[] memory priceFeeds = _buildPriceFeedCache(priceOracles, assetsWithPositions);
+        PriceFeedCache[] memory priceFeeds =
+            _buildPriceFeedCache(priceOracles, monitorFeeds, assetPricing, assetsWithPositions, sequencerDown);
         nav.stalePriceAssets = _buildStaleAssets(assetIndex, registeredAssets, priceFeeds);
+        nav.irregularPriceAssets = _buildIrregularAssets(assetIndex, registeredAssets, priceFeeds);
 
         int256 totalValue = 0;
         uint256 positionsLength = allPositions.length;
@@ -314,6 +631,8 @@ library PriceFeedLib {
     /// @dev The caller validates the quote asset and (when set) the asset filter before calling.
     function computeAccountPositions(
         mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
+        mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
+        mapping(address => IPrices.AssetPricing) storage assetPricing,
         mapping(address => uint256) storage assetIndex,
         INAVCalculator.Asset[] storage registeredAssets,
         address[] memory allAdapters,
@@ -321,6 +640,7 @@ library PriceFeedLib {
         address account,
         address assetFilter,
         address quoteAsset,
+        bool sequencerDown,
         string memory nativeTokenSymbol
     ) external view returns (INAVCalculator.Position[] memory positions) {
         uint256 assetCount = registeredAssets.length;
@@ -339,9 +659,21 @@ library PriceFeedLib {
             assetsWithPositions[0] = assetFilter;
         }
 
-        PriceFeedCache[] memory priceFeeds = _buildPriceFeedCache(priceOracles, assetsWithPositions);
+        PriceFeedCache[] memory priceFeeds =
+            _buildPriceFeedCache(priceOracles, monitorFeeds, assetPricing, assetsWithPositions, sequencerDown);
         QuoteAssetInfo memory quoteInfo =
             _getQuoteAssetInfo(priceOracles, assetIndex, registeredAssets, quoteAsset, nativeTokenSymbol);
+        bool quoteAssetIrregular = quoteAsset == address(0)
+            ? false
+            : irregularForSelected(
+                monitorFeeds,
+                assetPricing,
+                quoteAsset,
+                quoteInfo.price,
+                quoteInfo.priceDecimals,
+                quoteInfo.stale,
+                sequencerDown
+            );
 
         uint256 length = positionBalances.length;
         positions = new INAVCalculator.Position[](length);
@@ -361,6 +693,7 @@ library PriceFeedLib {
                 registered.decimals,
                 registered.symbol
             );
+            positions[i].quoteAssetIrregular = quoteAssetIrregular;
         }
     }
 
@@ -373,6 +706,8 @@ library PriceFeedLib {
     ///      no-Position[] path used by `getAccountNav`); see the note on `computeNav`. **Keep the two in sync.**
     function computeNavAndPositions(
         mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
+        mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
+        mapping(address => IPrices.AssetPricing) storage assetPricing,
         mapping(address => uint256) storage assetIndex,
         INAVCalculator.Asset[] storage registeredAssets,
         address[] memory allAdapters,
@@ -387,10 +722,23 @@ library PriceFeedLib {
             _getQuoteAssetInfo(priceOracles, assetIndex, registeredAssets, quoteAsset, nativeTokenSymbol);
         nav.quoteAsset = quoteInfo.assetStruct;
         nav.quoteAssetStale = quoteInfo.stale;
+        bool quoteAssetIrregular = quoteAsset == address(0)
+            ? false
+            : irregularForSelected(
+                monitorFeeds,
+                assetPricing,
+                quoteAsset,
+                quoteInfo.price,
+                quoteInfo.priceDecimals,
+                quoteInfo.stale,
+                sequencerDown
+            );
+        nav.quoteAssetIrregular = quoteAssetIrregular;
 
         uint256 assetCount = registeredAssets.length;
         if (assetCount == 0) {
             nav.stalePriceAssets = new INAVCalculator.Asset[](0);
+            nav.irregularPriceAssets = new INAVCalculator.Asset[](0);
             positions = new INAVCalculator.Position[](0);
             return (nav, positions); // value 0, sequencerDown false (no assets registered)
         }
@@ -401,17 +749,38 @@ library PriceFeedLib {
         nav.sequencerDown = sequencerDown;
         if (allPositions.length == 0) {
             nav.stalePriceAssets = new INAVCalculator.Asset[](0);
+            nav.irregularPriceAssets = new INAVCalculator.Asset[](0);
             positions = new INAVCalculator.Position[](0);
             return (nav, positions); // value 0
         }
 
         address[] memory assetsWithPositions = _extractUniqueAssets(allPositions);
-        PriceFeedCache[] memory priceFeeds = _buildPriceFeedCache(priceOracles, assetsWithPositions);
+        PriceFeedCache[] memory priceFeeds =
+            _buildPriceFeedCache(priceOracles, monitorFeeds, assetPricing, assetsWithPositions, sequencerDown);
         nav.stalePriceAssets = _buildStaleAssets(assetIndex, registeredAssets, priceFeeds);
+        nav.irregularPriceAssets = _buildIrregularAssets(assetIndex, registeredAssets, priceFeeds);
 
+        (positions, nav.value) =
+            _enrichAll(allPositions, priceFeeds, quoteInfo, quoteAssetIrregular, assetIndex, registeredAssets);
+    }
+
+    /// @dev Enrichment loop for `computeNavAndPositions`, extracted purely to stay under the `via_ir` stack limit.
+    ///      That function keeps five storage pointers plus the quote-asset info live across its whole body, and
+    ///      the inlined `_buildStaleAssets` / `_buildIrregularAssets` loops contribute their own counters; folding
+    ///      this loop's locals (`i`, `balance`, `registered`, `feed`, `length`, `totalValue`) in on top put it one
+    ///      slot over ("Variable _mpos_1 is 1 too deep in the stack"). Behaviour is byte-for-byte the same as the
+    ///      inline loop — do not re-inline it. Note the limit is reached only in a WHOLE-PROJECT compile, so an
+    ///      incremental `forge build` will not reproduce a regression here; use `forge clean && forge build`.
+    function _enrichAll(
+        INAVCalculator.PositionBalance[] memory allPositions,
+        PriceFeedCache[] memory priceFeeds,
+        QuoteAssetInfo memory quoteInfo,
+        bool quoteAssetIrregular,
+        mapping(address => uint256) storage assetIndex,
+        INAVCalculator.Asset[] storage registeredAssets
+    ) private view returns (INAVCalculator.Position[] memory positions, int256 totalValue) {
         uint256 length = allPositions.length;
         positions = new INAVCalculator.Position[](length);
-        int256 totalValue = 0;
         for (uint256 i = 0; i < length; i++) {
             INAVCalculator.PositionBalance memory balance = allPositions[i];
             INAVCalculator.Asset memory registered =
@@ -428,13 +797,14 @@ library PriceFeedLib {
                 registered.decimals,
                 registered.symbol
             );
+            positions[i].quoteAssetIrregular = quoteAssetIrregular;
             totalValue += positions[i].value;
         }
-        nav.value = totalValue;
     }
 
-    /// @notice True if the account holds any non-zero position. Mirrors NAVCalculator.hasPositions (fail-open via
-    ///         the per-adapter try/catch in `_getPositionBalances`).
+    /// @notice True if the account holds any non-zero position. Mirrors NAVCalculator.hasPositions, and inherits
+    ///         `_getAdapterPositions`'s policy: a reverting adapter is skipped, one that exhausts its gas
+    ///         stipend reverts the scan rather than being read as "no positions".
     function hasPositions(
         address[] memory allAdapters,
         uint256 metaInstanceTotal,
@@ -442,6 +812,10 @@ library PriceFeedLib {
         uint256 assetCount,
         address account
     ) external view returns (bool) {
+        // Nothing can be counted with an empty registry — `_isCounted` discards every row — so skip the fan-out
+        // entirely, as the NAV entrypoints already do. Without this the scan still runs, and a starved adapter
+        // makes this revert where `computeNav` answers 0 on the same state.
+        if (assetCount == 0) return false;
         INAVCalculator.PositionBalance[] memory positions =
             _getPositionBalances(allAdapters, assetIndex, account, address(0));
         for (uint256 i = 0; i < positions.length; i++) {
@@ -459,6 +833,8 @@ library PriceFeedLib {
         uint256 assetCount,
         address account
     ) external view returns (address[] memory) {
+        // See `hasPositions`: an empty registry cannot yield a counted row, so do not fan out for one.
+        if (assetCount == 0) return new address[](0);
         return _extractUniqueAssets(_getPositionBalances(allAdapters, assetIndex, account, address(0)));
     }
 
@@ -466,25 +842,36 @@ library PriceFeedLib {
     ///         NAVCalculator.healthCheck; `sequencerDown` is computed by the caller and echoed back.
     function healthCheck(
         mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
+        mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
+        mapping(address => IPrices.AssetPricing) storage assetPricing,
         INAVCalculator.Asset[] storage registeredAssets,
         bool sequencerDown
-    ) external view returns (bool, address[] memory stalePriceAssets) {
+    ) external view returns (bool, address[] memory stalePriceAssets, address[] memory irregularPriceAssets) {
         uint256 totalAssets = registeredAssets.length;
         if (totalAssets == 0) {
-            return (sequencerDown, new address[](0));
+            return (sequencerDown, new address[](0), new address[](0));
         }
 
         address[] memory staleAssetsTemp = new address[](totalAssets);
+        address[] memory irregularAssetsTemp = new address[](totalAssets);
         uint256 staleCount = 0;
+        uint256 irregularCount = 0;
         for (uint256 i = 0; i < totalAssets; i++) {
             address assetAddr = registeredAssets[i].asset;
             // _selectFeedCore reverts PriceFeedNotSet(assetAddr) when the asset has no feeds (same selector as the
             // former explicit _requirePriceFeedExists guard), so no separate length check is needed here.
-            (,, bool stale,,) = _selectFeedCore(priceOracles, assetAddr);
+            (int256 price, uint8 decimals, bool stale,,) = _selectFeedCore(priceOracles, assetAddr);
             if (stale) staleAssetsTemp[staleCount++] = assetAddr;
+
+            if (_hasDivergenceChecks(monitorFeeds, assetPricing, assetAddr)) {
+                (,,,, bool irregular,,) =
+                    _divergenceFor(monitorFeeds, assetPricing, assetAddr, price, decimals, stale, sequencerDown);
+                if (irregular) irregularAssetsTemp[irregularCount++] = assetAddr;
+            }
         }
         stalePriceAssets = ArrayLib.copySliceAddress(staleAssetsTemp, staleCount);
-        return (sequencerDown, stalePriceAssets);
+        irregularPriceAssets = ArrayLib.copySliceAddress(irregularAssetsTemp, irregularCount);
+        return (sequencerDown, stalePriceAssets, irregularPriceAssets);
     }
 
     /// @notice Values explicit (asset, amount) pairs in a quote currency. Mirrors NAVCalculator.calculateValue.
@@ -539,7 +926,8 @@ library PriceFeedLib {
     // -------------------------------------------------------------------------
 
     /// @notice Gathers an account's registered-asset positions across all adapters (single-leg + meta), filtered
-    ///         by `assetFilter` (address(0) = all). A reverting adapter is skipped (fail-open). Mirrors the former
+    ///         by `assetFilter` (address(0) = all). A reverting adapter is skipped; one that exhausts its gas
+    ///         stipend reverts the whole read (see {_getAdapterPositions}). Mirrors the former
     ///         NAVCalculator._getPositionBalances. Each adapter is queried once and its rows retained, then a
     ///         counting pass sizes the output to the EXACT number of surviving rows (registered asset + matching
     ///         filter) — not a fixed `2·(adapters+instances)·assetCount` heuristic, which a multi-leg adapter
@@ -609,19 +997,144 @@ library PriceFeedLib {
         return true;
     }
 
-    /// @notice Calls an adapter's getAdapterPositions in a try/catch (fail-open: returns empty on revert). Meta
-    ///         adapters read their NAV-configured instance set themselves, so the call path is uniform.
+    /// @notice Bytes of revert data copied when an adapter's call fails: the exact ABI size of
+    ///         {InstanceGasExhausted} (selector + four words).
+    /// @dev A bound, not a size hint. The parameterless `catch` below copies nothing on its own, and switching to
+    ///      `catch (bytes memory)` to read the selector would `returndatacopy` the WHOLE revert payload — which a
+    ///      hostile adapter sizes, and which has been measured on this repo in the hundreds of millions of gas.
+    ///      Reading the selector straight out of the returndata buffer and copying only this many bytes keeps the
+    ///      cost flat. A forged payload is therefore truncated to a well-formed error, never propagated whole.
+    uint256 private constant INSTANCE_EXHAUSTED_BYTES = 4 + 32 * 4;
+
+    /// @notice Calls an adapter's `getAdapterPositions`, failing open on a revert but NOT on gas exhaustion.
+    /// @dev The two failure modes look identical to `catch` and must not be treated identically:
+    ///
+    ///      - **A revert** means the adapter answered: it has nothing to report. Returning an empty list is the
+    ///        long-standing fail-open behaviour, so one misconfigured adapter cannot take down the whole read.
+    ///      - **Running out of gas** means the adapter did NOT answer. Reporting that as an empty list drops its
+    ///        legs, and a dropped *debt* leg RAISES the reported NAV — a silent over-report, produced by the read
+    ///        itself rather than by any adapter. It is also self-propagating: whatever an adapter burns is gone
+    ///        from the budget the adapters after it need, so one runaway adapter starves the rest and each of
+    ///        them disappears the same silent way.
+    ///
+    ///      So exhaustion reverts with {AdapterGasExhausted}. The stipend is exactly what the EVM would forward
+    ///      anyway (63/64 of what this frame holds) — deliberately NOT a smaller fixed ceiling. A fixed ceiling
+    ///      would make exhaustion unrecoverable: `ERC20DefaultBalanceAdapter`'s cost grows with the asset
+    ///      registry, and per-account adapters can be inflated by anyone who can add entries to the account's
+    ///      list at a protocol (a withdrawal-queue request names its own owner), so a ceiling turns ordinary
+    ///      registry growth and cheap third-party griefing alike into a permanent outage that no caller can
+    ///      escape and only a redeploy can lift. Keyed to the caller's own budget instead, the same situations
+    ///      surface as "this read needs more gas", which the caller can act on.
+    ///
+    ///      A meta-adapter raises {InstanceGasExhausted} when one of its governed instances runs out of gas, and
+    ///      that selector is honoured HERE regardless of what the gas figures say. It has to be: the meta-adapter
+    ///      may raise it having spent very little — an early instance starves, the fan-out stops — and the gas
+    ///      test would then read a deliberate exhaustion signal as a benign revert and fail open, dropping the
+    ///      WHOLE meta-adapter rather than the one instance. An explicit signal beats a heuristic wherever one
+    ///      exists, and the specific error is re-raised rather than replaced with {AdapterGasExhausted}, so the
+    ///      failing instance stays named. See {_reraiseIfInstanceExhausted} for what that signal must satisfy.
+    ///
+    ///      **Scope, stated plainly. Apart from that signal this guard only ever sees a FAILED call, so anything
+    ///      an adapter absorbs internally is invisible to it. Two things sit outside:**
+    ///      - An adapter that fails open in its own frame and returns SUCCESSFULLY. The most common shape, and
+    ///        the one present on every chain: `ERC20DefaultBalanceAdapter` reads each asset with an unstipended
+    ///        `staticcall` and records 0 on failure, so a single token whose `balanceOf` loops takes 63/64 of
+    ///        that adapter's budget, drops its own wallet balance from the NAV, and still returns normally. No
+    ///        classifier upstream is reached, because nothing failed from where this function is standing. The
+    ///        meta-adapter position fan-out used to behave this way too and now raises instead — but its
+    ///        `positionIds` and `_assetsForInstances` siblings still absorb a starved instance silently.
+    ///      - The `returndatacopy` and ABI decode of the adapter's reply are charged to THIS frame, outside the
+    ///        stipend, because a typed `try … returns (…[] memory)` copies whatever arrives. The stipend bounds
+    ///        it only indirectly, through what the callee could afford to build. The outcome is a loud
+    ///        out-of-gas rather than a wrong number, so this is availability, not correctness.
+    ///
+    ///      Nor is any fixed fraction exact: deep enough nesting always leaves enough unspent to slip under the
+    ///      threshold. This narrows the silent window; it does not close it.
     function _getAdapterPositions(address adapter, address account, address assetFilter)
         private
         view
         returns (INAVCalculator.PositionBalance[] memory)
     {
-        try IBalanceAdapter(adapter).getAdapterPositions(account, assetFilter) returns (
+        // One sample, used both to derive the stipend and to measure against it — see GasStipendLib.exhausted.
+        uint256 available = gasleft();
+        uint256 stipend = GasStipendLib.stipendFrom(available);
+
+        try IBalanceAdapter(adapter).getAdapterPositions{gas: stipend}(account, assetFilter) returns (
             INAVCalculator.PositionBalance[] memory pos
         ) {
             return pos;
         } catch {
+            // FIRST, before any bookkeeping of our own: `consumed` must measure what the CALL cost, which is what
+            // {GasStipendLib.exhausted} is defined against and what the error reports. Reading it after the
+            // selector work below would fold this frame's own gas into the figure.
+            uint256 consumed = available - gasleft();
+
+            _reraiseIfInstanceExhausted(adapter);
+
+            if (GasStipendLib.exhausted(stipend, consumed)) {
+                revert INAVCalculator.AdapterGasExhausted(adapter, stipend, consumed);
+            }
             return new INAVCalculator.PositionBalance[](0);
+        }
+    }
+
+    /// @notice Re-raises a meta-adapter's {InstanceGasExhausted}, still resident in the returndata buffer, so a
+    ///         starved INSTANCE is not re-scored by the gas heuristic and failed open.
+    /// @dev Needed because the heuristic cannot see this case: a meta-adapter that stops on its FIRST starved
+    ///      instance has spent almost nothing, so `consumed` is small and the failure would be read as a benign
+    ///      revert — dropping the whole adapter rather than surfacing the one instance.
+    ///
+    ///      Honouring a callee-chosen selector is a decision to let a callee force a revert, so it is gated
+    ///      hard, cheapest check first, and every gate must pass:
+    ///      1. **Exactly** {INSTANCE_EXHAUSTED_BYTES} of revert data. A shorter payload carrying the selector
+    ///         would otherwise be re-raised as-is and could not be decoded against the error's signature; a
+    ///         longer one is not something the error can produce.
+    ///      2. The selector matches.
+    ///      3. The adapter answers ERC165 for {IMetaBalanceAdapter}. Only a meta-adapter has instances, so only
+    ///         a meta-adapter can mean anything by this signal. This runs last because it is the only gate that
+    ///         costs a call, and by then the two cheap gates have already excluded ordinary reverts — so the
+    ///         normal fail-open path never pays for it.
+    ///
+    ///      The `adapter` word is then OVERWRITTEN with the address actually called, rather than trusted from
+    ///      the payload. The callee wrote those bytes; left alone, a misbehaving adapter could name an innocent
+    ///      one and send an operator to remove the wrong thing. `instance`, `stipend` and `consumed` are still
+    ///      the callee's own account of itself and can only be read as such.
+    ///
+    ///      What this does NOT bound is a registered adapter deliberately forging the selector to turn its own
+    ///      failure into a whole-read revert. That is adapter-controlled, not account-controlled — a registered
+    ///      adapter can already stop a read by burning gas — and no third-party path reaches this buffer: a
+    ///      meta-adapter's per-instance `catch` swallows an inner protocol's revert before it can surface here,
+    ///      and the plain adapters read constructor-pinned addresses.
+    /// @param adapter The adapter whose call just failed, used to overwrite the payload's first word.
+    function _reraiseIfInstanceExhausted(address adapter) private view {
+        uint256 size = INSTANCE_EXHAUSTED_BYTES;
+        if (_returndatasize() != size) return;
+
+        // Save the payload BEFORE anything else can touch the returndata buffer. The ERC165 probe below is an
+        // external call, and a call REPLACES this frame's returndata — read it after and you get the probe's
+        // answer, not the adapter's error. Allocated properly rather than scribbled above the free pointer,
+        // because the probe's own calldata is allocated there.
+        bytes memory payload = new bytes(size);
+        bytes4 want = INAVCalculator.InstanceGasExhausted.selector;
+        bool matches;
+        assembly ("memory-safe") {
+            returndatacopy(add(payload, 0x20), 0x00, size)
+            matches := eq(shr(224, mload(add(payload, 0x20))), shr(224, want))
+        }
+        if (!matches) return;
+        if (!adapter.supportsInterface(type(IMetaBalanceAdapter).interfaceId)) return;
+
+        assembly ("memory-safe") {
+            // Word 0 is the callee's claim about which adapter failed; replace it with the one actually called.
+            mstore(add(payload, 0x24), adapter)
+            revert(add(payload, 0x20), size)
+        }
+    }
+
+    /// @notice `returndatasize()` as a Solidity value, so the gates above read as plain control flow.
+    function _returndatasize() private pure returns (uint256 size) {
+        assembly ("memory-safe") {
+            size := returndatasize()
         }
     }
 
@@ -639,10 +1152,15 @@ library PriceFeedLib {
         return ArrayLib.deduplicateAddresses(allAssets);
     }
 
-    /// @notice Builds the selected-feed price cache for a list of assets.
+    /// @notice Builds the selected-feed price cache (incl. the per-asset divergence `irregular` flag) for a list
+    ///         of assets. Divergence treats the primary as stale exactly when its feed is stale; the NAV-level
+    ///         sequencer-down flag is surfaced separately on the NAV struct.
     function _buildPriceFeedCache(
         mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
-        address[] memory assets
+        mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
+        mapping(address => IPrices.AssetPricing) storage assetPricing,
+        address[] memory assets,
+        bool sequencerDown
     ) private view returns (PriceFeedCache[] memory priceFeeds) {
         uint256 length = assets.length;
         priceFeeds = new PriceFeedCache[](length);
@@ -658,11 +1176,23 @@ library PriceFeedLib {
                 // decimals = NAV_DECIMALS (not 0): _priceConversion reverts InvalidAssetDecimals when
                 // assetDecimals + priceDecimals < NAV_DECIMALS, so a 0 here would re-introduce a DoS for
                 // low-decimal assets (e.g. USDC). NAV_DECIMALS guarantees the guard passes; price 0 → value 0.
-                priceFeeds[i] = PriceFeedCache({asset: asset, price: 0, decimals: NAV_DECIMALS, stale: true});
+                priceFeeds[i] =
+                    PriceFeedCache({asset: asset, price: 0, decimals: NAV_DECIMALS, stale: true, irregular: false});
                 continue;
             }
             (int256 price, uint8 decimals, bool stale,,) = _selectFeedCore(priceOracles, asset);
-            priceFeeds[i] = PriceFeedCache({asset: asset, price: price, decimals: decimals, stale: stale});
+            // Only run the divergence check (and the price normalization it needs) when the asset actually has
+            // monitors or a peg tolerance — otherwise `irregular` is definitionally false, and skipping avoids
+            // `_scaleTo8` overflowing on a pathological high-decimals feed before the value path's own guard fires.
+            // Fold the NAV-level `sequencerDown` into staleness so `NAV.irregularPriceAssets` / `Position.irregular`
+            // stay consistent with getPriceData / healthCheck on L2 during sequencer downtime.
+            bool irregular = false;
+            if (_hasDivergenceChecks(monitorFeeds, assetPricing, asset)) {
+                (,,,, irregular,,) =
+                    _divergenceFor(monitorFeeds, assetPricing, asset, price, decimals, stale, sequencerDown);
+            }
+            priceFeeds[i] =
+                PriceFeedCache({asset: asset, price: price, decimals: decimals, stale: stale, irregular: irregular});
         }
     }
 
@@ -698,6 +1228,28 @@ library PriceFeedLib {
         staleAssets = new INAVCalculator.Asset[](staleLength);
         for (uint256 i = 0; i < staleLength; i++) {
             staleAssets[i] = _getRegisteredAsset(assetIndex, registeredAssets, staleAddrs[i]);
+        }
+    }
+
+    /// @notice Builds the irregular-price Asset[] from the cache (peer to {_buildStaleAssets}). The `irregular`
+    ///         flag was computed once per asset in {_buildPriceFeedCache} from the monitor-divergence check.
+    function _buildIrregularAssets(
+        mapping(address => uint256) storage assetIndex,
+        INAVCalculator.Asset[] storage registeredAssets,
+        PriceFeedCache[] memory priceFeeds
+    ) private view returns (INAVCalculator.Asset[] memory irregularAssets) {
+        uint256 feedsLength = priceFeeds.length;
+        address[] memory temp = new address[](feedsLength);
+        uint256 count = 0;
+        for (uint256 i = 0; i < feedsLength; i++) {
+            if (priceFeeds[i].irregular) temp[count++] = priceFeeds[i].asset;
+        }
+        address[] memory irregularAddrs = ArrayLib.copySliceAddress(temp, count);
+
+        uint256 irregularLength = irregularAddrs.length;
+        irregularAssets = new INAVCalculator.Asset[](irregularLength);
+        for (uint256 i = 0; i < irregularLength; i++) {
+            irregularAssets[i] = _getRegisteredAsset(assetIndex, registeredAssets, irregularAddrs[i]);
         }
     }
 
@@ -783,6 +1335,7 @@ library PriceFeedLib {
         position.price = priceFeed.price;
         position.priceDecimals = priceFeed.decimals;
         position.stale = priceFeed.stale;
+        position.irregular = priceFeed.irregular;
         position.quoteAssetStale = quoteAssetStale;
     }
 
@@ -832,6 +1385,36 @@ library PriceFeedLib {
     }
 
     /// @notice Adds a price feed for an asset. Reverts on duplicates or decimal mismatch.
+    /// @notice Resolves a feed's on-chain decimals by type — shared by addFeed/addMonitorFeed. API3 dAPIs must be
+    ///         18-dec at source (the read path scales them to 8); Custom/Chainlink/Redstone report their own.
+    function _resolveFeedDecimals(address priceFeed, IPrices.PriceType priceType) private view returns (uint8 dec) {
+        if (priceType == IPrices.PriceType.Custom) {
+            dec = ICustomPriceFeed(priceFeed).decimals();
+        } else if (priceType == IPrices.PriceType.API3) {
+            if (AggregatorV3Interface(priceFeed).decimals() != 18) revert IPrices.InvalidPriceOracle();
+            dec = 8;
+        } else {
+            dec = AggregatorV3Interface(priceFeed).decimals();
+        }
+    }
+
+    /// @notice Swap-and-pop the feed at `index` from `arr` — shared array mutation for price- and monitor-feed
+    ///         removals (which differ only in the events they emit, so the caller emits). Returns the removed feed,
+    ///         the feed moved into the hole (address(0) if none), the index it moved FROM, and whether a move happened.
+    function _swapPopFeed(IPrices.PriceFeedConfig[] storage arr, uint256 index)
+        private
+        returns (address removedFeed, address movedFeed, uint256 movedFrom, bool didMove)
+    {
+        movedFrom = arr.length - 1;
+        removedFeed = arr[index].priceFeed;
+        if (index != movedFrom) {
+            movedFeed = arr[movedFrom].priceFeed;
+            arr[index] = arr[movedFrom];
+            didMove = true;
+        }
+        arr.pop();
+    }
+
     function addFeed(
         mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
         address asset,
@@ -849,16 +1432,7 @@ library PriceFeedLib {
             if (configs[i].priceFeed == priceFeed) revert IPrices.PriceFeedAlreadyRegistered(asset, priceFeed);
         }
 
-        uint8 dec;
-        if (priceType == IPrices.PriceType.Custom) {
-            dec = ICustomPriceFeed(priceFeed).decimals();
-        } else if (priceType == IPrices.PriceType.API3) {
-            uint8 sourceDec = AggregatorV3Interface(priceFeed).decimals();
-            if (sourceDec != 18) revert IPrices.InvalidPriceOracle();
-            dec = 8;
-        } else {
-            dec = AggregatorV3Interface(priceFeed).decimals();
-        }
+        uint8 dec = _resolveFeedDecimals(priceFeed, priceType);
 
         if (len > 0 && configs[0].decimals != dec) {
             revert IPrices.PriceFeedDecimalsMismatch(asset, configs[0].decimals, dec);
@@ -880,20 +1454,12 @@ library PriceFeedLib {
         uint256 index
     ) external {
         IPrices.PriceFeedConfig[] storage configs = priceOracles[asset];
-        uint256 len = configs.length;
 
-        if (index >= len) revert IPrices.PriceFeedIndexOutOfBounds(asset, index);
-        if (len == 1) revert IPrices.CannotRemoveLastFeed(asset);
+        if (index >= configs.length) revert IPrices.PriceFeedIndexOutOfBounds(asset, index);
+        if (configs.length == 1) revert IPrices.CannotRemoveLastFeed(asset);
 
-        address removedFeed = configs[index].priceFeed;
-
-        if (index != len - 1) {
-            address movedFeed = configs[len - 1].priceFeed;
-            configs[index] = configs[len - 1];
-            emit IPrices.PriceFeedIndexChanged(asset, movedFeed, len - 1, index);
-        }
-        configs.pop();
-
+        (address removedFeed, address movedFeed, uint256 movedFrom, bool didMove) = _swapPopFeed(configs, index);
+        if (didMove) emit IPrices.PriceFeedIndexChanged(asset, movedFeed, movedFrom, index);
         emit IPrices.PriceFeedRemoved(asset, removedFeed, index);
     }
 
@@ -908,14 +1474,9 @@ library PriceFeedLib {
 
         for (uint256 i; i < len; ++i) {
             if (configs[i].priceFeed == priceFeed) {
-                // inline removeFeedAt to avoid a second delegatecall
                 if (len == 1) revert IPrices.CannotRemoveLastFeed(asset);
-                if (i != len - 1) {
-                    address movedFeed = configs[len - 1].priceFeed;
-                    configs[i] = configs[len - 1];
-                    emit IPrices.PriceFeedIndexChanged(asset, movedFeed, len - 1, i);
-                }
-                configs.pop();
+                (, address movedFeed, uint256 movedFrom, bool didMove) = _swapPopFeed(configs, i);
+                if (didMove) emit IPrices.PriceFeedIndexChanged(asset, movedFeed, movedFrom, i);
                 emit IPrices.PriceFeedRemoved(asset, priceFeed, i);
                 return;
             }
@@ -925,11 +1486,93 @@ library PriceFeedLib {
     }
 
     // -------------------------------------------------------------------------
+    // Monitor feed registration / deregistration
+    // -------------------------------------------------------------------------
+
+    /// @notice Adds a monitor (divergence-only) feed for an asset. Requires the divergence tolerance to be set
+    ///         first (>0) and the feed to report NAV_DECIMALS decimals. Reverts on duplicates.
+    function addMonitorFeed(
+        mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
+        mapping(address => IPrices.AssetPricing) storage assetPricing,
+        address asset,
+        address priceFeed,
+        uint256 heartbeat,
+        IPrices.PriceType priceType
+    ) external {
+        _validateFeedSupportInternal(asset, priceFeed, priceType);
+
+        if (heartbeat == 0) revert IPrices.InvalidPriceOracle();
+        if (assetPricing[asset].divergenceToleranceBps == 0) revert IPrices.DivergenceToleranceRequired(asset);
+
+        uint8 dec = _resolveFeedDecimals(priceFeed, priceType);
+        // Monitors must be USD-comparable to the primary (always NAV_DECIMALS).
+        if (dec != NAV_DECIMALS) revert IPrices.MonitorFeedDecimalsMismatch(asset, NAV_DECIMALS, dec);
+
+        IPrices.PriceFeedConfig[] storage monitors = monitorFeeds[asset];
+        uint256 len = monitors.length;
+        for (uint256 i; i < len; ++i) {
+            if (monitors[i].priceFeed == priceFeed) revert IPrices.MonitorFeedAlreadyRegistered(asset, priceFeed);
+        }
+
+        monitors.push(
+            IPrices.PriceFeedConfig({
+                priceFeed: priceFeed, priceType: priceType, decimals: dec, chainlinkHeartbeat: heartbeat
+            })
+        );
+
+        emit IPrices.MonitorFeedAdded(asset, priceFeed, heartbeat, priceType, len);
+    }
+
+    /// @notice Removes the monitor feed at `index` for an asset. Monitor feeds are optional — the last one may be
+    ///         removed (no CannotRemoveLastFeed guard).
+    function removeMonitorFeedAt(
+        mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
+        address asset,
+        uint256 index
+    ) external {
+        IPrices.PriceFeedConfig[] storage monitors = monitorFeeds[asset];
+
+        if (index >= monitors.length) revert IPrices.PriceFeedIndexOutOfBounds(asset, index);
+
+        (address removedFeed, address movedFeed, uint256 movedFrom, bool didMove) = _swapPopFeed(monitors, index);
+        if (didMove) emit IPrices.MonitorFeedIndexChanged(asset, movedFeed, movedFrom, index);
+        emit IPrices.MonitorFeedRemoved(asset, removedFeed, index);
+    }
+
+    /// @notice Removes the monitor feed with address `priceFeed` for an asset. Reverts if not found.
+    function removeMonitorFeed(
+        mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
+        address asset,
+        address priceFeed
+    ) external {
+        IPrices.PriceFeedConfig[] storage monitors = monitorFeeds[asset];
+        uint256 len = monitors.length;
+
+        for (uint256 i; i < len; ++i) {
+            if (monitors[i].priceFeed == priceFeed) {
+                (, address movedFeed, uint256 movedFrom, bool didMove) = _swapPopFeed(monitors, i);
+                if (didMove) emit IPrices.MonitorFeedIndexChanged(asset, movedFeed, movedFrom, i);
+                emit IPrices.MonitorFeedRemoved(asset, priceFeed, i);
+                return;
+            }
+        }
+
+        revert IPrices.MonitorFeedNotFound(asset, priceFeed);
+    }
+
+    // -------------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------------
 
     function _validateFeedSupportInternal(address token, address priceFeed, IPrices.PriceType priceType) private view {
         if (priceFeed == address(0) || token == address(0)) revert IPrices.InvalidPriceOracle();
+        // A code-less `priceFeed` must fail by name, here, for the same reason the asset is checked at the
+        // NAVCalculator call site: the AggregatorV3 branch below ends in a HIGH-LEVEL `latestRoundData()`, whose
+        // `extcodesize` precheck fires in this frame before the call and reverts with empty returndata — no
+        // selector for the MANAGER to read. The zero-address check above does not cover it; an EOA or a mistyped
+        // address is non-zero and code-less. Placed in the shared validator rather than at each entry point so
+        // `registerAsset`, `addPriceFeed` and `addMonitorFeed` all answer the same way.
+        AddressCheckLib.requireContract(priceFeed, "priceFeed");
         if (priceType == IPrices.PriceType.Custom) {
             if (!priceFeed.supportsInterface(type(ICustomPriceFeed).interfaceId)) revert IPrices.InvalidPriceOracle();
         } else if (

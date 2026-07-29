@@ -14,6 +14,7 @@ import {IPrices} from "../../src/prices/IPrices.sol";
 ///      - `contracts-deployment-config/balance-adapters/<id>.json`    — PLAIN adapters to DEPLOY: `.<name>.{enabled,constructor}`.
 ///      - `contracts-deployment-config/meta-balance-adapters/<id>.json` — META adapters to DEPLOY: `.<name>.{enabled,constructor}`.
 ///      - `contracts-deployment-config/bridge-adapters/<id>.json`     — bridge adapters: `.<name>.{enabled,initialize,remoteChains}`.
+///      - `contracts-deployment-config/bridge-escrow/<id>.json`       — BridgeEscrow post-deploy config: `.accounts[]` (authorizeAccount) + `.assets.<symbol>` (registerAsset).
 ///      - `nav-config/assets-and-price-feeds/<id>.json`               — assets to REGISTER: `.<SYMBOL>.{address,priceFeeds[]}`.
 ///      - `nav-config/balance-adapters/<id>.json`                     — PLAIN adapters to ADD on NAV: `.<name>.{enabled}`.
 ///      - `nav-config/meta-balance-adapters/<id>.json`                — META adapters to ADD: `.<name>.{enabled,instances|instancesRaw}`.
@@ -110,6 +111,17 @@ library ConfigReader {
             abi.encodePacked(
                 vm.projectRoot(),
                 "/script/config/contracts-deployment-config/bridge-adapters/",
+                vm.toString(chainId),
+                ".json"
+            )
+        );
+    }
+
+    function _deployBridgeEscrowPath(Vm vm, uint256 chainId) private view returns (string memory) {
+        return string(
+            abi.encodePacked(
+                vm.projectRoot(),
+                "/script/config/contracts-deployment-config/bridge-escrow/",
                 vm.toString(chainId),
                 ".json"
             )
@@ -492,7 +504,11 @@ library ConfigReader {
         view
         returns (IPrices.PriceType pt, bool valid)
     {
-        string memory t = readAssetFeedType(vm, chainId, symbol, i);
+        return _priceTypeFromString(readAssetFeedType(vm, chainId, symbol, i));
+    }
+
+    /// @notice Shared `type` string → PriceType mapping. `valid` is false for an empty/unrecognized type.
+    function _priceTypeFromString(string memory t) private pure returns (IPrices.PriceType pt, bool valid) {
         if (_equals(t, "Chainlink")) return (IPrices.PriceType.Chainlink, true);
         if (_equals(t, "Custom")) return (IPrices.PriceType.Custom, true);
         if (_equals(t, "Redstone")) return (IPrices.PriceType.Redstone, true);
@@ -506,6 +522,36 @@ library ConfigReader {
         string memory jsonPath = string(abi.encodePacked(".", symbol, ".address"));
         if (vm.keyExists(json, jsonPath)) return json.readString(jsonPath);
         return "";
+    }
+
+    // -------------------------------------------------------------------------
+    // BridgeEscrow post-deploy config (contracts-deployment-config/bridge-escrow/<id>.json)
+    // `.accounts` = addresses to authorize (authorizeAccount); `.assets` = logical bridge symbol -> local
+    // token address (registerAsset). Both empty/absent → the reader returns an empty result (no-op step).
+    // -------------------------------------------------------------------------
+
+    /// @notice Addresses to authorize on BridgeEscrow (`.accounts`). Empty if the file or key is absent.
+    function readBridgeEscrowAccounts(Vm vm, uint256 chainId) internal view returns (address[] memory) {
+        string memory json = _readOrEmpty(vm, _deployBridgeEscrowPath(vm, chainId));
+        if (vm.keyExists(json, ".accounts")) return vm.parseJsonAddressArray(json, ".accounts");
+        return new address[](0);
+    }
+
+    /// @notice Logical bridge-asset symbols to register (the keys of `.assets`, excluding `$`-metadata). Empty if absent.
+    function readBridgeEscrowAssetSymbols(Vm vm, uint256 chainId) internal view returns (string[] memory) {
+        string memory json = _readOrEmpty(vm, _deployBridgeEscrowPath(vm, chainId));
+        if (!vm.keyExists(json, ".assets")) return new string[](0);
+        return _filterDollar(vm.parseJsonKeys(json, ".assets"));
+    }
+
+    /// @notice Local token address for a logical bridge symbol (`.assets.<symbol>`). Zero if absent/placeholder.
+    function readBridgeEscrowAssetAddress(Vm vm, uint256 chainId, string memory symbol)
+        internal
+        view
+        returns (address)
+    {
+        string memory json = _readOrEmpty(vm, _deployBridgeEscrowPath(vm, chainId));
+        return _readAddrOrZero(vm, json, string(abi.encodePacked(".assets.", symbol)));
     }
 
     /// @notice Number of price feeds configured for an asset (length of its `priceFeeds[]`).
@@ -585,6 +631,120 @@ library ConfigReader {
         returns (string memory)
     {
         return string(abi.encodePacked(".", symbol, ".priceFeeds[", vm.toString(i), "].", field));
+    }
+
+    // -------------------------------------------------------------------------
+    // Monitor feeds + divergence/peg tolerances (assets-and-price-feeds)
+    // -------------------------------------------------------------------------
+
+    /// @notice Number of monitor (divergence-only) feeds configured for an asset (length of its `monitorFeeds[]`).
+    function assetMonitorFeedCount(Vm vm, uint256 chainId, string memory symbol) internal view returns (uint256 n) {
+        string memory json = _readOrEmpty(vm, _navAssetsPath(vm, chainId));
+        while (vm.keyExists(json, _monitorPath(vm, symbol, n, "type"))) {
+            ++n;
+        }
+    }
+
+    /// @notice Reads monitor feed `i`'s type string ("" if absent).
+    function readAssetMonitorFeedType(Vm vm, uint256 chainId, string memory symbol, uint256 i)
+        internal
+        view
+        returns (string memory)
+    {
+        string memory json = _readOrEmpty(vm, _navAssetsPath(vm, chainId));
+        string memory p = _monitorPath(vm, symbol, i, "type");
+        return vm.keyExists(json, p) ? json.readString(p) : "";
+    }
+
+    /// @notice Maps monitor feed `i`'s type to the on-chain PriceType enum (shares the priceFeeds mapping table).
+    function readAssetMonitorFeedPriceType(Vm vm, uint256 chainId, string memory symbol, uint256 i)
+        internal
+        view
+        returns (IPrices.PriceType pt, bool valid)
+    {
+        return _priceTypeFromString(readAssetMonitorFeedType(vm, chainId, symbol, i));
+    }
+
+    /// @notice Reads monitor feed `i`'s heartbeat (seconds, as string; default "3600"). Accepts number or quoted.
+    function readAssetMonitorFeedHeartbeat(Vm vm, uint256 chainId, string memory symbol, uint256 i)
+        internal
+        view
+        returns (string memory)
+    {
+        string memory json = _readOrEmpty(vm, _navAssetsPath(vm, chainId));
+        string memory p = _monitorPath(vm, symbol, i, "heartbeat");
+        if (!vm.keyExists(json, p)) return "3600";
+        try vm.parseJsonUint(json, p) returns (uint256 v) {
+            return vm.toString(v);
+        } catch {
+            return json.readString(p);
+        }
+    }
+
+    /// @notice Resolves monitor feed `i`'s on-chain address (static `address`, or a `Custom` feed resolved from
+    ///         `deployments/<id>.json .customPriceFeeds.<feed>`). "" if unresolved.
+    function readAssetMonitorFeedAddress(Vm vm, uint256 chainId, string memory symbol, uint256 i)
+        internal
+        view
+        returns (string memory)
+    {
+        string memory json = _readOrEmpty(vm, _navAssetsPath(vm, chainId));
+        string memory addrPath = _monitorPath(vm, symbol, i, "address");
+        if (vm.keyExists(json, addrPath)) return json.readString(addrPath);
+        string memory feedPath = _monitorPath(vm, symbol, i, "feed");
+        if (vm.keyExists(json, feedPath)) {
+            address dep = readDeployedAdapterAddress(vm, chainId, "customPriceFeeds", json.readString(feedPath));
+            if (dep != address(0)) return vm.toString(dep);
+        }
+        return "";
+    }
+
+    /// @notice Reads monitor feed `i`'s Custom-feed name (the `feed` field). "" if absent (static `address` form).
+    function readAssetMonitorFeedName(Vm vm, uint256 chainId, string memory symbol, uint256 i)
+        internal
+        view
+        returns (string memory)
+    {
+        string memory json = _readOrEmpty(vm, _navAssetsPath(vm, chainId));
+        string memory p = _monitorPath(vm, symbol, i, "feed");
+        return vm.keyExists(json, p) ? json.readString(p) : "";
+    }
+
+    /// @notice Reads an asset's `divergenceToleranceBps` (0 if absent).
+    function readAssetDivergenceToleranceBps(Vm vm, uint256 chainId, string memory symbol)
+        internal
+        view
+        returns (uint256)
+    {
+        return _readUintOrZero(vm, chainId, symbol, "divergenceToleranceBps");
+    }
+
+    /// @notice Reads an asset's `pegToleranceBps` (0 if absent → peg guard disabled).
+    function readAssetPegToleranceBps(Vm vm, uint256 chainId, string memory symbol) internal view returns (uint256) {
+        return _readUintOrZero(vm, chainId, symbol, "pegToleranceBps");
+    }
+
+    function _readUintOrZero(Vm vm, uint256 chainId, string memory symbol, string memory field)
+        private
+        view
+        returns (uint256)
+    {
+        string memory json = _readOrEmpty(vm, _navAssetsPath(vm, chainId));
+        string memory p = string(abi.encodePacked(".", symbol, ".", field));
+        if (!vm.keyExists(json, p)) return 0;
+        try vm.parseJsonUint(json, p) returns (uint256 v) {
+            return v;
+        } catch {
+            return vm.parseUint(json.readString(p));
+        }
+    }
+
+    function _monitorPath(Vm vm, string memory symbol, uint256 i, string memory field)
+        private
+        view
+        returns (string memory)
+    {
+        return string(abi.encodePacked(".", symbol, ".monitorFeeds[", vm.toString(i), "].", field));
     }
 
     // -------------------------------------------------------------------------

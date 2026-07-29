@@ -2,54 +2,43 @@
   "AaveV3InstancesMeta": {
     "enabled": true,
     "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aave V3 instance. Supersedes AaveV3_Arbitrum, disabled below.",
-    "constructor": {
-      "protocol": "Aave V3"
-    }
+    "constructor": {}
   },
   "MorphoVaultsMeta": {
     "enabled": true,
     "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Morpho ERC4626 vault. Supersedes MorphoVault_* adapters, disabled below.",
-    "constructor": {
-      "protocol": "Morpho"
-    }
+    "constructor": {}
   },
   "MorphoMarketsMeta": {
     "enabled": true,
     "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Morpho Blue market. Supersedes MorphoMarket_* adapters, disabled below.",
     "constructor": {
-      "morpho": "0x6c247b1F6182318877311737BaC0844bAa518F5e",
-      "protocol": "Morpho"
+      "morpho": "0x6c247b1F6182318877311737BaC0844bAa518F5e"
     }
   },
   "BalancerV3PoolsMeta": {
     "enabled": true,
     "$comment": "Meta-adapter (ADR 0010): wallet-held Balancer V3 LP. Supersedes BalancerV3_GHO_USDC_USDT pool legs, disabled below.",
-    "constructor": {
-      "protocol": "Balancer V3"
-    }
+    "constructor": {}
   },
   "BalancerV3GaugesMeta": {
     "enabled": true,
     "$comment": "Meta-adapter (ADR 0010): gauge-staked Balancer V3 LP + rewards. Supersedes BalancerV3_GHO_USDC_USDT gauge legs, disabled below.",
     "constructor": {
-      "balancerMinter": "0xc3ccacE87f6d3A81724075ADcb5ddd85a8A1bB68",
-      "protocol": "Balancer V3"
+      "balancerMinter": "0xc3ccacE87f6d3A81724075ADcb5ddd85a8A1bB68"
     }
   },
   "FluidFTokensMeta": {
     "enabled": true,
     "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Fluid fToken. Supersedes Fluid_fToken_* adapters, disabled below.",
-    "constructor": {
-      "protocol": "Fluid"
-    }
+    "constructor": {}
   },
   "CompoundV3CometsMeta": {
     "enabled": true,
     "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Compound V3 comet. Supersedes CompoundV3_* adapters, disabled below.",
     "constructor": {
       "compoundRewards": "0x88730d254A2f7e6AC8388c3198aFd694bA9f7fae",
-      "rewardToken": "0x354A6dA3fcde098F8389cad84b0182725c6C91dE",
-      "protocol": "Compound V3"
+      "rewardToken": "0x354A6dA3fcde098F8389cad84b0182725c6C91dE"
     }
   }
 }

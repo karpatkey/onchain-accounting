@@ -61,11 +61,8 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
     /// @param minter_        Curve Minter (0xd061D61a4d941c39E5453435B6345Dc261C2fcE0 on mainnet,
     ///                       address(0) on L2 to disable CRV tracking).
     /// @param crvToken_      CRV token address (0xD533...034cd52 on mainnet, address(0) to skip).
-    /// @param protocolName_  Human-readable name (e.g. "Curve").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(address minter_, address crvToken_, string memory protocolName_, address navCalculator_)
-        MetaBalanceAdapter(protocolName_, navCalculator_)
-    {
+    constructor(address minter_, address crvToken_, address navCalculator_) MetaBalanceAdapter(navCalculator_) {
         CURVE_MINTER = minter_;
         CRV_TOKEN = crvToken_;
     }
@@ -187,8 +184,9 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
     /// @inheritdoc MetaBalanceAdapter
     /// @dev Returns `["Staking Gauge", "TOKEN0/TOKEN1/…"]`; leaf derived on-chain from coin symbols ("" on failure).
     function positionLabels(bytes calldata pid) external view virtual override returns (string[] memory) {
-        if (pid.length < 32) return new string[](0);
-        string memory leaf = _leaf(pid);
+        (address gauge, bool ok) = _pidAddress(pid);
+        if (!ok) return new string[](0);
+        string memory leaf = _leaf(gauge);
         return _labels("Staking Gauge", leaf);
     }
 
@@ -208,8 +206,7 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @notice Derives the "TOKEN0/TOKEN1/…" leaf from the gauge's pool coins ("" on failure).
-    function _leaf(bytes calldata pid) private view returns (string memory) {
-        address gauge = abi.decode(pid, (address));
+    function _leaf(address gauge) private view returns (string memory) {
         address lpToken = CurvePoolLib.gaugeLpToken(gauge);
         if (lpToken == address(0)) return "";
         address pool = CurvePoolLib.getPool(lpToken);

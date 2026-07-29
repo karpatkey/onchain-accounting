@@ -43,7 +43,7 @@ A GitHub Actions workflow (`.github/workflows/refresh-integration-snapshot.yml`)
 
 - The JSON can drift quietly between bumps if no one runs the script. Mitigation: weekly cron in CI.
 - Debank's "current" view and our "fork at block N" can diverge on volatile assets in the seconds between `cast block-number` and the Debank query. The 1% default tolerance is calibrated for normal market moves; protocols with poor Debank coverage or peg-stressed stables may need temporary tolerance adjustments.
-- Forge's `vm.writeJson` has unreliable JSONPath array-index handling, which is why the forge script *prints* `SNAPSHOT|…` lines that the shell wrapper applies via `jq` rather than writing JSON in-process. This is an extra hop but portable across Foundry versions.
+- Forge's `vm.writeJson` has unreliable JSONPath array-index handling, which is why the snapshot test *prints* `SNAPSHOT|…` lines that the shell wrapper applies via `jq` rather than writing JSON in-process. This is an extra hop but portable across Foundry versions.
 - Single test method per chain (`test_accountNavs`) loops over accounts. On failure, the method logs a `[NAV-MISMATCH]` line carrying the account label and chainId before reverting with a generic message, so failures are still attributable from the logs — but you don't get the "X passed, Y failed per account" view that one-method-per-account would. Acceptable trade-off for the JSON-driven shape.
 
 ## Alternatives considered

@@ -56,7 +56,7 @@ contract BalancerV2PoolsMetaBalanceAdapterTest is Test {
         vault.setPool(poolId, tokens, balances);
         pool.setTotalSupply(1000e18);
 
-        adapter = new BalancerV2PoolsMetaBalanceAdapter(address(vault), "Balancer V2", address(nav));
+        adapter = new BalancerV2PoolsMetaBalanceAdapter(address(vault), address(nav));
     }
 
     function _instances() internal view returns (bytes32[] memory ins) {
@@ -173,5 +173,30 @@ contract BalancerV2PoolsMetaBalanceAdapterTest is Test {
         assertEq(assets.length, 2);
         assertEq(assets[0], address(tokenX));
         assertEq(assets[1], address(tokenY));
+    }
+
+    /// @dev `positionLabels` is display-only and must never revert, and must never label a coordinate this adapter
+    ///      never emitted. Both were reachable before: `abi.decode(pid, (address))` reverts on a word with dirty
+    ///      upper 96 bits, and a `pid.length < 32` guard let a foreign MULTI-word coordinate through to be labelled
+    ///      from its first word. The decode now goes through `MetaBalanceAdapter._pidWord`, whose own accept window is
+    ///      pinned exhaustively in `test/balances/MetaBalanceAdapterPidGuards.t.sol`; this case pins that THIS
+    ///      adapter routes through it.
+    ///
+    ///      The clean-coordinate assertion is what keeps the rest load-bearing. A shape-valid but unknown
+    ///      coordinate still resolves to the category-only label (the fail-open leaf collapse), so a view that
+    ///      rejected everything would fail here rather than pass the rejections trivially.
+
+    function test_positionLabels_malformedPositionId_returnsEmpty() public view {
+        // High bits deliberately SET. A Balancer V2 poolId packs the pool ADDRESS into its top 20 bytes, so every
+        // real coordinate has `raw >> 160 != 0` — which is why this adapter uses `_pidWord` rather than the
+        // range-checked `_pidAddress`. A small word here would let a regression that swapped the two helpers pass.
+        bytes32 coord = bytes32(uint256(uint160(0xBA12222222228d8Ba445958a75a0704d566BF2C8)) << 96);
+        assertTrue(uint256(coord) >> 160 != 0, "a real Balancer V2 poolId has bits above 160");
+
+        assertGt(adapter.positionLabels(abi.encode(coord)).length, 0, "one full word is the accepted shape");
+
+        assertEq(adapter.positionLabels("").length, 0, "empty");
+        assertEq(adapter.positionLabels(hex"0102030405060708090a0b0c").length, 0, "truncated");
+        assertEq(adapter.positionLabels(abi.encode(coord, uint256(1))).length, 0, "over-long");
     }
 }

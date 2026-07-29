@@ -51,14 +51,12 @@ contract BalanceAdapterInvariantTest is Test {
         assets1[0] = address(usdc);
         assets1[1] = address(dai);
         customAdapter1.setUnderlyingAssetsSupported(assets1);
-        customAdapter1.setPositionMetadata("Protocol 1", "Position 1");
 
         customAdapter2 = new Mock_CustomBalanceAdapter();
         customAdapter2.setBalances(balances);
         address[] memory assets2 = new address[](1);
         assets2[0] = address(weth);
         customAdapter2.setUnderlyingAssetsSupported(assets2);
-        customAdapter2.setPositionMetadata("Protocol 2", "Position 2");
 
         // Add custom adapters
         balances.addBalanceAdapterDirect(address(0), address(customAdapter1), IBalances.AdapterType.Custom);

@@ -27,7 +27,7 @@ contract UniswapV2PoolsMetaParityForkTest is BalanceAdapterTestBase {
         deal(PAIR, alice, 1e15); // synthetic LP balance
 
         balances = _deployBalancesForAdapter(_assets());
-        meta = new UniswapV2PoolsMetaBalanceAdapter("Uniswap V2", address(balances));
+        meta = new UniswapV2PoolsMetaBalanceAdapter(address(balances));
     }
 
     function _setupFork() internal override {

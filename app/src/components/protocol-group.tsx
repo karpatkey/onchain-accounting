@@ -302,33 +302,6 @@ function PositionRow({
   )
 }
 
-/// Extract a pool / market / vault display name from an adapter's positionDetail JSON.
-/// positionDetail follows the convention defined in `script/config/adapter-identities.json`
-/// — JSON-shaped, with a discriminator key whose name varies per protocol:
-///   - `pool`   — Uniswap V2/V3, PancakeSwap V2/V3, Balancer V3, Curve
-///   - `market` — Aave V3/V2, Compound V3, Spark, Morpho Markets
-///   - `vault`  — Morpho Vaults, ERC-4626 wrappers, StakeWise V3 Vaults
-///   - `name`   — Uniswap V3 in `chains/*.json` uses `"name": "WBTC/WETH 0.3%"` as the canonical
-///                label, and several other adapters mirror this. Check this last to prefer the
-///                protocol-specific key when both are present.
-///   - `product`, `gauge`, `feed` — long-tail fallbacks for protocol-specific shapes.
-/// The closing `}` may or may not be present (the adapter appends a `type` suffix at emit time;
-/// gracefully handle either form).
-function extractPoolLabel(positionDetail: string): string | null {
-  if (!positionDetail) return null
-  let text = positionDetail.trim()
-  if (!text.endsWith('}')) text += '}'
-  try {
-    const obj = JSON.parse(text) as Record<string, unknown>
-    const candidate = (obj.pool ?? obj.market ?? obj.vault ?? obj.name ?? obj.product ?? obj.gauge ?? obj.feed) as
-      | string
-      | undefined
-    return typeof candidate === 'string' && candidate.length > 0 ? candidate : null
-  } catch {
-    return null
-  }
-}
-
 /// Aave instances expose canonical getMarketId() strings that don't match Aave's UI branding. Alias
 /// them to the familiar names for display only — the on-chain positionLabels leaf stays canonical.
 const MARKET_ALIASES: Record<string, string> = {
@@ -336,11 +309,10 @@ const MARKET_ALIASES: Record<string, string> = {
   'Aave V3 Lido Ethereum': 'Prime Market',
 }
 
-/// If a pool label carries a trailing "(<market>)" — e.g. Aave's "WETH position (Aave Ethereum Market)" —
-/// return the market name aliased for display ("Core" / "Prime"); otherwise null. Lets us sub-group an
+/// If a position's `poolLabel` carries a trailing "(<market>)" — e.g. Aave's "WETH position (Aave Ethereum
+/// Market)" — return the market name aliased for display ("Core" / "Prime"); otherwise null. Lets us sub-group an
 /// oracle's positions by market so instances that share a reserve symbol (Aave Core vs Prime) render apart.
-function extractMarket(positionDetail: string): string | null {
-  const label = extractPoolLabel(positionDetail)
+function marketFromLabel(label: string | null): string | null {
   if (!label) return null
   const m = label.match(/\(([^()]+)\)\s*$/)
   if (!m) return null
@@ -359,24 +331,7 @@ function groupByOracle(positions: OnchainPosition[]): Map<string, OnchainPositio
   return groups
 }
 
-/// Extract the `type` discriminator from a positionDetail JSON — `Supply` / `Borrow` /
-/// `Collateral` / `Staking` / `Rewards` / `Fees` per `src/utils/PositionType.sol`. Adapters
-/// that don't multi-leg their output simply omit `type` from positionDetail, in which case
-/// we keep the entry in a single un-typed bucket and render flat (no inner sub-header).
-function extractType(positionDetail: string): string | null {
-  if (!positionDetail) return null
-  let text = positionDetail.trim()
-  if (!text.endsWith('}')) text += '}'
-  try {
-    const obj = JSON.parse(text) as Record<string, unknown>
-    const t = obj.type as string | undefined
-    return typeof t === 'string' && t.length > 0 ? t : null
-  } catch {
-    return null
-  }
-}
-
-/// Group a pool's positions by the `type` discriminator in `positionDetail`, preserving the
+/// Group a pool's positions by the `type` discriminator (`pos.type`, from PositionKind), preserving the
 /// adapter's emission order (which is meaningful — Uniswap V3 emits Supply legs before Fees
 /// legs; Curve/Aura emit Supply → Staking → Rewards). Untyped entries collapse to a single
 /// `null` bucket.
@@ -384,7 +339,7 @@ function groupByType(positions: OnchainPosition[]): Array<{ type: string | null;
   const groups: Array<{ type: string | null; positions: OnchainPosition[] }> = []
   const indexByType = new Map<string | null, number>()
   for (const pos of positions) {
-    const type = extractType(pos.positionDetail)
+    const type = pos.type
     const idx = indexByType.get(type)
     if (idx !== undefined) {
       groups[idx].positions.push(pos)
@@ -407,7 +362,7 @@ function groupBySubLabel(
   for (const pos of positions) {
     // null label = no market/pool name (e.g. plain wallet holdings) → render flat with no sub-header,
     // rather than a meaningless "Pool 0x…" fallback.
-    const label = extractMarket(pos.positionDetail) ?? extractPoolLabel(pos.positionDetail)
+    const label = marketFromLabel(pos.poolLabel) ?? pos.poolLabel
     // Map key only; '' is a safe sentinel for the null (no-label) bucket since real market/pool labels are
     // always non-empty. The stored `label` stays null so no sub-header renders for that bucket.
     const key = label ?? ''
@@ -448,7 +403,7 @@ function groupByVault(
     if (i !== undefined) out[i].positions.push(pos)
     else {
       idx.set(key, out.length)
-      out.push({ key, label: extractPoolLabel(pos.positionDetail), positions: [pos] })
+      out.push({ key, label: pos.poolLabel, positions: [pos] })
     }
   }
   return out
@@ -637,8 +592,8 @@ function VaultSections({
               </td>
             </tr>
             {v.positions.map((pos) => {
-              // Parse the type once and reuse for both the key and the kind label (extractType does a JSON.parse).
-              const t = extractType(pos.positionDetail)
+              // Reuse the typed kind for both the group key and the kind label.
+              const t = pos.type
               return (
                 <PositionRow
                   key={`vault-${v.key}-${pos.positionId}-${pos.underlyingAsset.asset}-${t ?? (pos.isDebt ? 'borrow' : 'supply')}`}

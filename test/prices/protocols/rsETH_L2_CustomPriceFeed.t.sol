@@ -3,43 +3,62 @@ pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
 import {rsETH_L2_CustomPriceFeed} from "src/prices/protocols/rsETH_L2_CustomPriceFeed.sol";
+import {Mock_ERC20} from "test/mocks/tokens.sol";
+import {Mock_PriceOracleChainlink} from "test/mocks/price_oracles.sol";
+import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 
 /// @title rsETH_L2_CustomPriceFeed unit tests (no fork)
+/// @dev Base/USD (ETH/USD) now comes from the NAV via a Mock_NAVCalculator; the constructor takes
+///      `(rsEth, rsEthToEthFeed, heartbeat, nav, baseAsset)`. Price math is exercised in the fork test.
 contract rsETH_L2_CustomPriceFeedTest is Test {
-    address rsEthAddress;
-    address rsEthToEthChainlink;
-    address ethToUsdChainlink;
-    uint256 rsEthToEthHeartbeat;
-    uint256 ethToUsdHeartbeat;
+    Mock_ERC20 rsEth;
+    Mock_PriceOracleChainlink rsEthToEth;
+    Mock_ERC20 weth;
+    Mock_NAVCalculator nav;
+    uint256 constant HEARTBEAT = 86_400;
 
     function setUp() public {
-        rsEthAddress = address(0x4186BFC76E2E237523CBC30FD220FE055156b41F);
-        rsEthToEthChainlink = address(0x3A917e6B5732dFCc4A45257e3930979fAE6a3737);
-        ethToUsdChainlink = address(0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612);
-        rsEthToEthHeartbeat = 86_400;
-        ethToUsdHeartbeat = 86_400;
+        rsEth = new Mock_ERC20("rsETH", 18);
+        rsEthToEth = new Mock_PriceOracleChainlink("rsETH/ETH", 1.03e18, 18);
+        weth = new Mock_ERC20("WETH", 18);
+        nav = new Mock_NAVCalculator();
+        nav.setAssetPrice(address(weth), 3000e8, 8); // ETH/USD = $3000
+    }
+
+    function test_constructor_valid() public {
+        rsETH_L2_CustomPriceFeed oracle =
+            new rsETH_L2_CustomPriceFeed(address(rsEth), address(rsEthToEth), HEARTBEAT, address(nav), address(weth));
+        assertEq(oracle.decimals(), 8, "decimals == NAV_DECIMALS");
+        assertEq(oracle.underlyingAssetSupported(), address(rsEth));
     }
 
     function test_invalidConstructorArgs() public {
+        // zero underlying
         vm.expectRevert();
-        new rsETH_L2_CustomPriceFeed(
-            address(0), rsEthToEthChainlink, ethToUsdChainlink, rsEthToEthHeartbeat, ethToUsdHeartbeat
-        );
+        new rsETH_L2_CustomPriceFeed(address(0), address(rsEthToEth), HEARTBEAT, address(nav), address(weth));
 
+        // zero rate feed
         vm.expectRevert();
-        new rsETH_L2_CustomPriceFeed(
-            rsEthAddress, address(0), ethToUsdChainlink, rsEthToEthHeartbeat, ethToUsdHeartbeat
-        );
+        new rsETH_L2_CustomPriceFeed(address(rsEth), address(0), HEARTBEAT, address(nav), address(weth));
 
+        // rate feed not a Chainlink aggregator
         vm.expectRevert();
-        new rsETH_L2_CustomPriceFeed(
-            rsEthAddress, rsEthToEthChainlink, address(0), rsEthToEthHeartbeat, ethToUsdHeartbeat
-        );
+        new rsETH_L2_CustomPriceFeed(address(rsEth), address(rsEth), HEARTBEAT, address(nav), address(weth));
 
+        // zero rate heartbeat
         vm.expectRevert();
-        new rsETH_L2_CustomPriceFeed(rsEthAddress, rsEthToEthChainlink, ethToUsdChainlink, 0, ethToUsdHeartbeat);
+        new rsETH_L2_CustomPriceFeed(address(rsEth), address(rsEthToEth), 0, address(nav), address(weth));
 
+        // zero nav (not a contract)
         vm.expectRevert();
-        new rsETH_L2_CustomPriceFeed(rsEthAddress, rsEthToEthChainlink, ethToUsdChainlink, rsEthToEthHeartbeat, 0);
+        new rsETH_L2_CustomPriceFeed(address(rsEth), address(rsEthToEth), HEARTBEAT, address(0), address(weth));
+
+        // zero base asset
+        vm.expectRevert();
+        new rsETH_L2_CustomPriceFeed(address(rsEth), address(rsEthToEth), HEARTBEAT, address(nav), address(0));
+
+        // base asset not an ERC20 (nav has no totalSupply)
+        vm.expectRevert();
+        new rsETH_L2_CustomPriceFeed(address(rsEth), address(rsEthToEth), HEARTBEAT, address(nav), address(nav));
     }
 }

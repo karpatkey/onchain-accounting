@@ -39,7 +39,7 @@ Relevant facts established during the review:
 4. **The unbounded (constant-product) case is not live.** `UniswapV2PoolsMeta` is **not configured on any
    chain** (no entry in any `meta-balance-adapters/<chainId>.json`); `PancakeSwapV2PoolsMeta` is
    `enabled:false` (BSC); `BalancerV2PoolsMeta`/`BalancerV2GaugesMeta` are `enabled:false` (mainnet).
-   The live AMM-LP adapters are all **stable / correlated**: `CurvePoolsMeta` (StableSwap-NG — crvUSD/USDC,
+   The live **reserve-share** AMM-LP adapters are all **stable / correlated**: `CurvePoolsMeta` (StableSwap-NG — crvUSD/USDC,
    crvUSD/USDT, weETH/WETH, RLUSD/USDC) + `CurveGaugesMeta` / `ConvexCurveLPStakingMeta` (same pools) +
    `BalancerV3PoolsMeta` / gauges (stable GHO pools). Amplification holds these near peg, so the imbalance
    deviation is small; the `√` over-report applies to the constant-product pools, which are not enabled.

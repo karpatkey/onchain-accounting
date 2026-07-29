@@ -36,7 +36,7 @@ contract CompoundV3CometsMetaParityForkTest is BalanceAdapterTestBase {
         assetsList[3] = COMP;
         balances = _deployBalancesForAdapter(assetsList);
 
-        meta = new CompoundV3CometsMetaBalanceAdapter(COMPOUND_REWARDS, COMP, "Compound V3", address(balances));
+        meta = new CompoundV3CometsMetaBalanceAdapter(COMPOUND_REWARDS, COMP, address(balances));
     }
 
     function _instance() internal pure returns (bytes32[] memory ins) {

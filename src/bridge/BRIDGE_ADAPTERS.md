@@ -107,7 +107,7 @@ The checksum is an **integrity + replay** key, not an authenticator (all inputs 
 
 ### 5.1 Roles and access
 
-- **DEFAULT_ADMIN_ROLE:** Authorize/revoke accounts and adapters, register/unregister assets are MANAGER (see below), pause, `emergencyWithdraw` (recipient-restricted to an authorized account, while paused), authorize UUPS upgrades.
+- **DEFAULT_ADMIN_ROLE:** Authorize/revoke accounts and adapters, pause/unpause, `emergencyWithdraw` (recipient-restricted to an authorized account, while paused), and authorize UUPS upgrades. (Asset register/unregister is MANAGER, not admin — see below.)
 - **MANAGER:** `cancelInvoice`, `markInvoiceCompleted`, `registerAsset`/`unregisterAsset`. **MANAGER cannot call `releaseByInvoiceId`** — release is adapter-only.
 
 ### 5.2 Core flows
@@ -214,7 +214,7 @@ Adapters are **non-upgradeable**: deployed via the canonical CREATE2 deployer (`
 
 ## 10. How to Configure an Adapter in BridgeEscrow
 
-> Per-chain bridge-adapter deploy config (`enabled`, `initialize` args) lives in `script/config/contracts-deployment-config/bridge-adapters/<chainId>.json`, read by `05_DeployBridgeAdapters.s.sol`.
+> Per-chain bridge-adapter deploy config (`enabled`, `initialize` args) lives in `script/config/contracts-deployment-config/bridge-adapters/<chainId>.json`, read by `05_DeployBridgeAdapters.s.sol`. In the numbered deploy flow, steps 2 (authorize adapter + wire trusted remotes) and 4 (register assets) below, plus account authorization, are done by `06_Configure.s.sol` from `bridge-adapters/<chainId>.json` (`remoteChains`) and `bridge-escrow/<chainId>.json` (`accounts[]` → `authorizeAccount`, `assets.<symbol>` → `registerAsset`) — the manual steps here describe the underlying calls.
 
 1. **Deploy the adapter** and run `initialize(...)`.
 2. **Authorize on the escrow:** `BridgeEscrow.authorizeAdapter(adapter)` (admin) — enables `depositAndBridge` and lets the adapter call `releaseByInvoiceId`.

@@ -41,6 +41,7 @@ import {OETH_CustomPriceFeed} from "../../src/prices/protocols/OETH_CustomPriceF
 import {ezETH_CrossRateCustomPriceFeed} from "../../src/prices/protocols/ezETH_CrossRateCustomPriceFeed.sol";
 import {ETHx_CrossRateCustomPriceFeed} from "../../src/prices/protocols/ETHx_CrossRateCustomPriceFeed.sol";
 import {osETH_CrossRateCustomPriceFeed} from "../../src/prices/protocols/osETH_CrossRateCustomPriceFeed.sol";
+import {CrossRateCustomPriceFeed} from "../../src/prices/protocols/CrossRateCustomPriceFeed.sol";
 import {ankrETH_CustomPriceFeed} from "../../src/prices/protocols/ankrETH_CustomPriceFeed.sol";
 import {NXM_CustomPriceFeed} from "../../src/prices/protocols/NXM_CustomPriceFeed.sol";
 
@@ -201,6 +202,10 @@ contract DeployPriceFeeds is BaseDeployScript {
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "osETHCrossRate")) {
             _deployOsEthCrossRate();
         }
+        // rETH cross-rate MONITOR (rETH/USD = ETH/USD x rETH/ETH market feed); independent of the fundamental primary.
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "rETHCrossRate")) {
+            _deployCrossRateMonitor("rETHCrossRate");
+        }
 
         // Deploy OETH CrossRate Price Oracle (OETH/USD = ETH/USD x OETH/ETH)
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "OETH")) {
@@ -234,13 +239,11 @@ contract DeployPriceFeeds is BaseDeployScript {
         // Read constructor parameters from the custom-price-feeds deploy config
         address sDai = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sDAI", "sDai"));
         address dsrManager = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sDAI", "dsrManager"));
-        address daiOracle =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sDAI", "daiToUsdChainlinkOracle"));
-        uint256 daiHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "sDAI", "daiToUsdChainlinkHeartbeat"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sDAI", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
         // Deploy
-        sDAI_CustomPriceFeed sdaiAdapter = new sDAI_CustomPriceFeed(sDai, dsrManager, daiOracle, daiHeartbeat);
+        sDAI_CustomPriceFeed sdaiAdapter = new sDAI_CustomPriceFeed(sDai, dsrManager, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "sDAI", address(sdaiAdapter));
         console2.log("sDAI_CustomPriceFeed deployed at:", address(sdaiAdapter));
     }
@@ -257,16 +260,13 @@ contract DeployPriceFeeds is BaseDeployScript {
         address ldo = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "LDO", "ldo"));
         address ldoEthOracle =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "LDO", "ldoToEthChainlinkAddress"));
-        address ethUsdOracle =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "LDO", "ethToUsdChainlinkAddress"));
         uint256 ldoEthHeartbeat =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "LDO", "ldoToEthChainlinkHeartbeat"));
-        uint256 ethUsdHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "LDO", "ethToUsdChainlinkHeartbeat"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "LDO", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
         // Deploy
-        LDO_CustomPriceFeed ldoAdapter =
-            new LDO_CustomPriceFeed(ldo, ldoEthOracle, ethUsdOracle, ldoEthHeartbeat, ethUsdHeartbeat);
+        LDO_CustomPriceFeed ldoAdapter = new LDO_CustomPriceFeed(ldo, ldoEthOracle, ldoEthHeartbeat, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "LDO", address(ldoAdapter));
         console2.log("LDO_CustomPriceFeed deployed at:", address(ldoAdapter));
     }
@@ -281,13 +281,11 @@ contract DeployPriceFeeds is BaseDeployScript {
 
         // Read constructor parameters from the custom-price-feeds deploy config
         address sUsds = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sUSDS", "sUsds"));
-        address usdsUsdOracle =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sUSDS", "usdsToUsdChainlinkAddress"));
-        uint256 usdsUsdHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "sUSDS", "usdsToUsdChainlinkHeartbeat"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sUSDS", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
         // Deploy
-        sUSDS_CustomPriceFeed susdsAdapter = new sUSDS_CustomPriceFeed(sUsds, usdsUsdOracle, usdsUsdHeartbeat);
+        sUSDS_CustomPriceFeed susdsAdapter = new sUSDS_CustomPriceFeed(sUsds, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "sUSDS", address(susdsAdapter));
         console2.log("sUSDS_CustomPriceFeed deployed at:", address(susdsAdapter));
     }
@@ -300,12 +298,10 @@ contract DeployPriceFeeds is BaseDeployScript {
         }
 
         address sUsde = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sUSDe", "sUsde"));
-        address usdeUsdOracle =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sUSDe", "usdeToUsdChainlinkAddress"));
-        uint256 usdeUsdHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "sUSDe", "usdeToUsdChainlinkHeartbeat"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sUSDe", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
-        sUSDe_CustomPriceFeed susdeAdapter = new sUSDe_CustomPriceFeed(sUsde, usdeUsdOracle, usdeUsdHeartbeat);
+        sUSDe_CustomPriceFeed susdeAdapter = new sUSDe_CustomPriceFeed(sUsde, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "sUSDe", address(susdeAdapter));
         console2.log("sUSDe_CustomPriceFeed deployed at:", address(susdeAdapter));
     }
@@ -319,15 +315,11 @@ contract DeployPriceFeeds is BaseDeployScript {
 
         address syrupUsdc =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "syrupUSDC", "syrupUsdc"));
-        address usdcUsdOracle = vm.parseAddress(
-            ConfigReader.readPriceFeedParam(vm, currentChainId, "syrupUSDC", "usdcToUsdChainlinkAddress")
-        );
-        uint256 usdcUsdHeartbeat = vm.parseUint(
-            ConfigReader.readPriceFeedParam(vm, currentChainId, "syrupUSDC", "usdcToUsdChainlinkHeartbeat")
-        );
+        address baseAsset =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "syrupUSDC", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
-        syrupUSDC_CustomPriceFeed syrupUsdcAdapter =
-            new syrupUSDC_CustomPriceFeed(syrupUsdc, usdcUsdOracle, usdcUsdHeartbeat);
+        syrupUSDC_CustomPriceFeed syrupUsdcAdapter = new syrupUSDC_CustomPriceFeed(syrupUsdc, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "syrupUSDC", address(syrupUsdcAdapter));
         console2.log("syrupUSDC_CustomPriceFeed deployed at:", address(syrupUsdcAdapter));
     }
@@ -340,12 +332,10 @@ contract DeployPriceFeeds is BaseDeployScript {
         }
 
         address rwiv = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "RWIV", "rwiv"));
-        address usdcUsdOracle =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "RWIV", "usdcToUsdChainlinkAddress"));
-        uint256 usdcUsdHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "RWIV", "usdcToUsdChainlinkHeartbeat"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "RWIV", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
-        RWIV_CustomPriceFeed rwivAdapter = new RWIV_CustomPriceFeed(rwiv, usdcUsdOracle, usdcUsdHeartbeat);
+        RWIV_CustomPriceFeed rwivAdapter = new RWIV_CustomPriceFeed(rwiv, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "RWIV", address(rwivAdapter));
         console2.log("RWIV_CustomPriceFeed deployed at:", address(rwivAdapter));
     }
@@ -358,12 +348,10 @@ contract DeployPriceFeeds is BaseDeployScript {
         }
 
         address sgho = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sGHO", "sgho"));
-        address ghoUsdOracle =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sGHO", "ghoToUsdChainlinkAddress"));
-        uint256 ghoUsdHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "sGHO", "ghoToUsdChainlinkHeartbeat"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sGHO", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
-        sGHO_CustomPriceFeed sghoAdapter = new sGHO_CustomPriceFeed(sgho, ghoUsdOracle, ghoUsdHeartbeat);
+        sGHO_CustomPriceFeed sghoAdapter = new sGHO_CustomPriceFeed(sgho, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "sGHO", address(sghoAdapter));
         console2.log("sGHO_CustomPriceFeed deployed at:", address(sghoAdapter));
     }
@@ -378,13 +366,10 @@ contract DeployPriceFeeds is BaseDeployScript {
         address ethx = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ETHx", "ethx"));
         address stakePoolsManager =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ETHx", "stakePoolsManager"));
-        address ethUsdOracle =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ETHx", "ethToUsdChainlinkOracle"));
-        uint256 ethUsdHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "ETHx", "ethToUsdChainlinkHeartbeat"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ETHx", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
-        ETHx_CustomPriceFeed ethxAdapter =
-            new ETHx_CustomPriceFeed(ethx, stakePoolsManager, ethUsdOracle, ethUsdHeartbeat);
+        ETHx_CustomPriceFeed ethxAdapter = new ETHx_CustomPriceFeed(ethx, stakePoolsManager, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "ETHx", address(ethxAdapter));
         console2.log("ETHx_CustomPriceFeed deployed at:", address(ethxAdapter));
     }
@@ -397,17 +382,10 @@ contract DeployPriceFeeds is BaseDeployScript {
         }
 
         address wstEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "wstETH", "wstEth"));
-        address stEthToEthOracle =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "wstETH", "stEthToEthChainlinkOracle"));
-        address ethUsdOracle =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "wstETH", "ethToUsdChainlinkOracle"));
-        uint256 stEthToEthHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "wstETH", "stEthToEthChainlinkHeartbeat"));
-        uint256 ethUsdHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "wstETH", "ethToUsdChainlinkHeartbeat"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "wstETH", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
-        wstETH_CustomPriceFeed wstEthAdapter =
-            new wstETH_CustomPriceFeed(wstEth, stEthToEthOracle, ethUsdOracle, stEthToEthHeartbeat, ethUsdHeartbeat);
+        wstETH_CustomPriceFeed wstEthAdapter = new wstETH_CustomPriceFeed(wstEth, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "wstETH", address(wstEthAdapter));
         console2.log("wstETH_CustomPriceFeed deployed at:", address(wstEthAdapter));
     }
@@ -421,15 +399,14 @@ contract DeployPriceFeeds is BaseDeployScript {
 
         // CrossRate: Y/USD = (X/USD) * (Y/X). For stETH: Y = stETH, X = ETH.
         address stEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "stETH", "underlyingAsset"));
-        address ethUsdFeed = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "stETH", "xToUsdFeed"));
         address stEthEthFeed = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "stETH", "yToXFeed"));
-        uint256 ethUsdHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "stETH", "xToUsdHeartbeat"));
         uint256 stEthEthHeartbeat =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "stETH", "yToXHeartbeat"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "stETH", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
         stETH_CustomPriceFeed stEthAdapter =
-            new stETH_CustomPriceFeed(stEth, stEthEthFeed, ethUsdFeed, stEthEthHeartbeat, ethUsdHeartbeat);
+            new stETH_CustomPriceFeed(stEth, stEthEthFeed, stEthEthHeartbeat, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "stETH", address(stEthAdapter));
         console2.log("stETH_CustomPriceFeed deployed at:", address(stEthAdapter));
     }
@@ -443,15 +420,14 @@ contract DeployPriceFeeds is BaseDeployScript {
 
         // CrossRate: Y/USD = (X/USD) * (Y/X). For lsETH: Y = lsETH, X = ETH.
         address lsEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "lsETH", "underlyingAsset"));
-        address ethUsdFeed = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "lsETH", "xToUsdFeed"));
         address lsEthEthFeed = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "lsETH", "yToXFeed"));
-        uint256 ethUsdHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "lsETH", "xToUsdHeartbeat"));
         uint256 lsEthEthHeartbeat =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "lsETH", "yToXHeartbeat"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "lsETH", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
         lsETH_CustomPriceFeed lsEthAdapter =
-            new lsETH_CustomPriceFeed(lsEth, lsEthEthFeed, ethUsdFeed, lsEthEthHeartbeat, ethUsdHeartbeat);
+            new lsETH_CustomPriceFeed(lsEth, lsEthEthFeed, lsEthEthHeartbeat, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "lsETH", address(lsEthAdapter));
         console2.log("lsETH_CustomPriceFeed deployed at:", address(lsEthAdapter));
     }
@@ -464,12 +440,10 @@ contract DeployPriceFeeds is BaseDeployScript {
         }
 
         address rEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "rETH", "rEth"));
-        address ethUsdOracle =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "rETH", "ethToUsdChainlinkOracle"));
-        uint256 ethUsdHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "rETH", "ethToUsdChainlinkHeartbeat"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "rETH", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
-        rETH_CustomPriceFeed rEthAdapter = new rETH_CustomPriceFeed(rEth, ethUsdOracle, ethUsdHeartbeat);
+        rETH_CustomPriceFeed rEthAdapter = new rETH_CustomPriceFeed(rEth, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "rETH", address(rEthAdapter));
         console2.log("rETH_CustomPriceFeed deployed at:", address(rEthAdapter));
     }
@@ -485,15 +459,10 @@ contract DeployPriceFeeds is BaseDeployScript {
         address osToken = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "osToken"));
         address osTokenVaultController =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "osTokenVaultController"));
-        address underlyingUsdOracle = vm.parseAddress(
-            ConfigReader.readPriceFeedParam(vm, currentChainId, name, "underlyingToUsdChainlinkOracle")
-        );
-        uint256 heartbeat = vm.parseUint(
-            ConfigReader.readPriceFeedParam(vm, currentChainId, name, "underlyingToUsdChainlinkHeartbeat")
-        );
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
-        osToken_CustomPriceFeed adapter =
-            new osToken_CustomPriceFeed(osToken, osTokenVaultController, underlyingUsdOracle, heartbeat);
+        osToken_CustomPriceFeed adapter = new osToken_CustomPriceFeed(osToken, osTokenVaultController, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", name, address(adapter));
         console2.log("osToken_CustomPriceFeed deployed at:", address(adapter));
     }
@@ -507,15 +476,13 @@ contract DeployPriceFeeds is BaseDeployScript {
 
         // CrossRate: Y/USD = (X/USD) * (Y/X). For OETH: Y = OETH, X = ETH.
         address oeth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "OETH", "underlyingAsset"));
-        address ethUsdFeed = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "OETH", "xToUsdFeed"));
         address oethEthFeed = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "OETH", "yToXFeed"));
-        uint256 ethUsdHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "OETH", "xToUsdHeartbeat"));
         uint256 oethEthHeartbeat =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "OETH", "yToXHeartbeat"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "OETH", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
-        OETH_CustomPriceFeed oethAdapter =
-            new OETH_CustomPriceFeed(oeth, oethEthFeed, ethUsdFeed, oethEthHeartbeat, ethUsdHeartbeat);
+        OETH_CustomPriceFeed oethAdapter = new OETH_CustomPriceFeed(oeth, oethEthFeed, oethEthHeartbeat, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "OETH", address(oethAdapter));
         console2.log("OETH_CustomPriceFeed deployed at:", address(oethAdapter));
     }
@@ -528,12 +495,10 @@ contract DeployPriceFeeds is BaseDeployScript {
         }
 
         address ankrEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ankrETH", "ankrEth"));
-        address ethUsdOracle =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ankrETH", "ethToUsdChainlinkOracle"));
-        uint256 ethUsdHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "ankrETH", "ethToUsdChainlinkHeartbeat"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ankrETH", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
-        ankrETH_CustomPriceFeed ankrEthAdapter = new ankrETH_CustomPriceFeed(ankrEth, ethUsdOracle, ethUsdHeartbeat);
+        ankrETH_CustomPriceFeed ankrEthAdapter = new ankrETH_CustomPriceFeed(ankrEth, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "ankrETH", address(ankrEthAdapter));
         console2.log("ankrETH_CustomPriceFeed deployed at:", address(ankrEthAdapter));
     }
@@ -549,12 +514,10 @@ contract DeployPriceFeeds is BaseDeployScript {
 
         address token = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "token"));
         address ramm = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "ramm"));
-        address ethUsdOracle =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "ethToUsdChainlinkOracle"));
-        uint256 ethUsdHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "ethToUsdChainlinkHeartbeat"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
-        NXM_CustomPriceFeed nxmAdapter = new NXM_CustomPriceFeed(token, ramm, ethUsdOracle, ethUsdHeartbeat);
+        NXM_CustomPriceFeed nxmAdapter = new NXM_CustomPriceFeed(token, ramm, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", name, address(nxmAdapter));
         console2.log("NXM_CustomPriceFeed deployed at:", address(nxmAdapter));
     }
@@ -567,12 +530,10 @@ contract DeployPriceFeeds is BaseDeployScript {
         }
 
         address cbEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "cbETH", "cbEth"));
-        address ethUsdOracle =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "cbETH", "ethToUsdChainlinkOracle"));
-        uint256 ethUsdHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "cbETH", "ethToUsdChainlinkHeartbeat"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "cbETH", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
-        cbETH_CustomPriceFeed cbEthAdapter = new cbETH_CustomPriceFeed(cbEth, ethUsdOracle, ethUsdHeartbeat);
+        cbETH_CustomPriceFeed cbEthAdapter = new cbETH_CustomPriceFeed(cbEth, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "cbETH", address(cbEthAdapter));
         console2.log("cbETH_CustomPriceFeed deployed at:", address(cbEthAdapter));
     }
@@ -585,17 +546,10 @@ contract DeployPriceFeeds is BaseDeployScript {
         }
 
         address weEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "weETH", "weEth"));
-        address weEthToEthOracle =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "weETH", "weEthToEthChainlinkOracle"));
-        address ethUsdOracle =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "weETH", "ethToUsdChainlinkOracle"));
-        uint256 weEthToEthHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "weETH", "weEthToEthChainlinkHeartbeat"));
-        uint256 ethUsdHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "weETH", "ethToUsdChainlinkHeartbeat"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "weETH", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
-        weETH_CustomPriceFeed weEthAdapter =
-            new weETH_CustomPriceFeed(weEth, weEthToEthOracle, ethUsdOracle, weEthToEthHeartbeat, ethUsdHeartbeat);
+        weETH_CustomPriceFeed weEthAdapter = new weETH_CustomPriceFeed(weEth, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "weETH", address(weEthAdapter));
         console2.log("weETH_CustomPriceFeed deployed at:", address(weEthAdapter));
     }
@@ -610,13 +564,10 @@ contract DeployPriceFeeds is BaseDeployScript {
         address rsEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "rsETH", "rsEth"));
         address rateProvider =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "rsETH", "rateProvider"));
-        address ethUsdOracle =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "rsETH", "ethToUsdChainlinkOracle"));
-        uint256 ethUsdHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "rsETH", "ethToUsdChainlinkHeartbeat"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "rsETH", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
-        rsETH_CustomPriceFeed rsEthAdapter =
-            new rsETH_CustomPriceFeed(rsEth, rateProvider, ethUsdOracle, ethUsdHeartbeat);
+        rsETH_CustomPriceFeed rsEthAdapter = new rsETH_CustomPriceFeed(rsEth, rateProvider, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "rsETH", address(rsEthAdapter));
         console2.log("rsETH_CustomPriceFeed deployed at:", address(rsEthAdapter));
     }
@@ -629,18 +580,10 @@ contract DeployPriceFeeds is BaseDeployScript {
         }
 
         address eEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "eETH", "eEth"));
-        address weEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "eETH", "weEth"));
-        address weEthToEthOracle =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "eETH", "weEthToEthChainlinkOracle"));
-        address ethUsdOracle =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "eETH", "ethToUsdChainlinkOracle"));
-        uint256 weEthToEthHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "eETH", "weEthToEthChainlinkHeartbeat"));
-        uint256 ethUsdHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "eETH", "ethToUsdChainlinkHeartbeat"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "eETH", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
-        eETH_CustomPriceFeed eEthAdapter =
-            new eETH_CustomPriceFeed(eEth, weEth, weEthToEthOracle, ethUsdOracle, weEthToEthHeartbeat, ethUsdHeartbeat);
+        eETH_CustomPriceFeed eEthAdapter = new eETH_CustomPriceFeed(eEth, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "eETH", address(eEthAdapter));
         console2.log("eETH_CustomPriceFeed deployed at:", address(eEthAdapter));
     }
@@ -655,19 +598,39 @@ contract DeployPriceFeeds is BaseDeployScript {
         address ezEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ezETH", "ezEth"));
         address restakeManager =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ezETH", "restakeManager"));
-        address ethUsdOracle =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ezETH", "ethToUsdChainlinkOracle"));
-        uint256 ethUsdHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "ezETH", "ethToUsdChainlinkHeartbeat"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ezETH", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
-        ezETH_CustomPriceFeed ezEthAdapter =
-            new ezETH_CustomPriceFeed(ezEth, restakeManager, ethUsdOracle, ethUsdHeartbeat);
+        ezETH_CustomPriceFeed ezEthAdapter = new ezETH_CustomPriceFeed(ezEth, restakeManager, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "ezETH", address(ezEthAdapter));
         console2.log("ezETH_CustomPriceFeed deployed at:", address(ezEthAdapter));
     }
 
     // CrossRate redundancy feeds: Y/USD = (X/USD) * (Y/X), X = ETH. The Y/ETH leg is a Redstone market feed,
     // independent of the asset's primary on-chain-rate feed. Registered as priceFeeds[1] (freshest-wins).
+
+    /// @notice Deploys a generic CrossRate divergence-MONITOR feed (Y/USD = (Y/ETH market) x (ETH/USD)) from its
+    ///         config entry `{underlyingAsset, yToXFeed, yToXHeartbeat, baseAsset}`. Used for LSTs whose fundamental
+    ///         primary has no direct USD market feed to diverge from — the yToXFeed is an INDEPENDENT market Y/ETH
+    ///         feed. Wired as a Custom monitorFeed; never prices the NAV.
+    function _deployCrossRateMonitor(string memory name) internal {
+        address deployed = _readAdapterDeployed("priceFeeds", name);
+        if (deployed != address(0)) {
+            console2.log("CrossRate monitor already deployed:", name, deployed);
+            return;
+        }
+        address underlying =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "underlyingAsset"));
+        address yToXFeed = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "yToXFeed"));
+        uint256 yToXHeartbeat = vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "yToXHeartbeat"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
+
+        CrossRateCustomPriceFeed adapter =
+            new CrossRateCustomPriceFeed(underlying, yToXFeed, yToXHeartbeat, nav, baseAsset);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", name, address(adapter));
+        console2.log("CrossRateCustomPriceFeed deployed:", name, address(adapter));
+    }
 
     function _deployEzEthCrossRate() internal {
         address deployed = _readAdapterDeployed("priceFeeds", "ezETHCrossRate");
@@ -677,17 +640,16 @@ contract DeployPriceFeeds is BaseDeployScript {
         }
         address ezEth =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ezETHCrossRate", "underlyingAsset"));
-        address ethUsdFeed =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ezETHCrossRate", "xToUsdFeed"));
         address ezEthEthFeed =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ezETHCrossRate", "yToXFeed"));
-        uint256 ethUsdHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "ezETHCrossRate", "xToUsdHeartbeat"));
         uint256 ezEthEthHeartbeat =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "ezETHCrossRate", "yToXHeartbeat"));
+        address baseAsset =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ezETHCrossRate", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
         ezETH_CrossRateCustomPriceFeed adapter =
-            new ezETH_CrossRateCustomPriceFeed(ezEth, ezEthEthFeed, ethUsdFeed, ezEthEthHeartbeat, ethUsdHeartbeat);
+            new ezETH_CrossRateCustomPriceFeed(ezEth, ezEthEthFeed, ezEthEthHeartbeat, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "ezETHCrossRate", address(adapter));
         console2.log("ezETH_CrossRateCustomPriceFeed deployed at:", address(adapter));
     }
@@ -700,17 +662,16 @@ contract DeployPriceFeeds is BaseDeployScript {
         }
         address ethx =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ETHxCrossRate", "underlyingAsset"));
-        address ethUsdFeed =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ETHxCrossRate", "xToUsdFeed"));
         address ethxEthFeed =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ETHxCrossRate", "yToXFeed"));
-        uint256 ethUsdHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "ETHxCrossRate", "xToUsdHeartbeat"));
         uint256 ethxEthHeartbeat =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "ETHxCrossRate", "yToXHeartbeat"));
+        address baseAsset =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ETHxCrossRate", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
         ETHx_CrossRateCustomPriceFeed adapter =
-            new ETHx_CrossRateCustomPriceFeed(ethx, ethxEthFeed, ethUsdFeed, ethxEthHeartbeat, ethUsdHeartbeat);
+            new ETHx_CrossRateCustomPriceFeed(ethx, ethxEthFeed, ethxEthHeartbeat, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "ETHxCrossRate", address(adapter));
         console2.log("ETHx_CrossRateCustomPriceFeed deployed at:", address(adapter));
     }
@@ -723,17 +684,16 @@ contract DeployPriceFeeds is BaseDeployScript {
         }
         address osEth =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "osETHCrossRate", "underlyingAsset"));
-        address ethUsdFeed =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "osETHCrossRate", "xToUsdFeed"));
         address osEthEthFeed =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "osETHCrossRate", "yToXFeed"));
-        uint256 ethUsdHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "osETHCrossRate", "xToUsdHeartbeat"));
         uint256 osEthEthHeartbeat =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "osETHCrossRate", "yToXHeartbeat"));
+        address baseAsset =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "osETHCrossRate", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
         osETH_CrossRateCustomPriceFeed adapter =
-            new osETH_CrossRateCustomPriceFeed(osEth, osEthEthFeed, ethUsdFeed, osEthEthHeartbeat, ethUsdHeartbeat);
+            new osETH_CrossRateCustomPriceFeed(osEth, osEthEthFeed, osEthEthHeartbeat, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "osETHCrossRate", address(adapter));
         console2.log("osETH_CrossRateCustomPriceFeed deployed at:", address(adapter));
     }
@@ -784,6 +744,16 @@ contract DeployPriceFeeds is BaseDeployScript {
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "syrupUSDC_L2")) {
             _deploySyrupUsdcL2();
         }
+        // CrossRate MONITORS (X/USD = ETH/USD x X/ETH market feed): independent of each L2 asset's fundamental primary.
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "weETHCrossRate")) {
+            _deployCrossRateMonitor("weETHCrossRate");
+        }
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "ezETHCrossRate")) {
+            _deployCrossRateMonitor("ezETHCrossRate");
+        }
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "rsETHCrossRate")) {
+            _deployCrossRateMonitor("rsETHCrossRate");
+        }
 
         vm.stopBroadcast();
     }
@@ -811,6 +781,10 @@ contract DeployPriceFeeds is BaseDeployScript {
         }
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "cbETH_L2")) {
             _deployCbEthL2();
+        }
+        // weETH cross-rate MONITOR (weETH/USD = ETH/USD x weETH/ETH market feed); independent of the fundamental primary.
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "weETHCrossRate")) {
+            _deployCrossRateMonitor("weETHCrossRate");
         }
 
         vm.stopBroadcast();
@@ -848,12 +822,10 @@ contract DeployPriceFeeds is BaseDeployScript {
         }
 
         address sXdai = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sXDAI", "sXdai"));
-        address xDaiUsdOracle =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sXDAI", "xDaiToUsdChainlinkOracle"));
-        uint256 xDaiUsdHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "sXDAI", "xDaiToUsdChainlinkHeartbeat"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sXDAI", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
-        sXDAI_CustomPriceFeed sxdaiAdapter = new sXDAI_CustomPriceFeed(sXdai, xDaiUsdOracle, xDaiUsdHeartbeat);
+        sXDAI_CustomPriceFeed sxdaiAdapter = new sXDAI_CustomPriceFeed(sXdai, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "sXDAI", address(sxdaiAdapter));
         console2.log("sXDAI_CustomPriceFeed deployed at:", address(sxdaiAdapter));
     }
@@ -872,18 +844,14 @@ contract DeployPriceFeeds is BaseDeployScript {
         address wstEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "wstETH_L2", "wstEth"));
         address wstEthToEthChainlink =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "wstETH_L2", "wstEthToEthChainlink"));
-        address ethUsdOracle = vm.parseAddress(
-            ConfigReader.readPriceFeedParam(vm, currentChainId, "wstETH_L2", "ethToUsdChainlinkOracle")
-        );
         uint256 wstEthToEthHeartbeat =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "wstETH_L2", "wstEthToEthHeartbeat"));
-        uint256 ethUsdHeartbeat = vm.parseUint(
-            ConfigReader.readPriceFeedParam(vm, currentChainId, "wstETH_L2", "ethToUsdChainlinkHeartbeat")
-        );
+        address baseAsset =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "wstETH_L2", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
-        wstETH_L2_CustomPriceFeed adapter = new wstETH_L2_CustomPriceFeed(
-            wstEth, wstEthToEthChainlink, ethUsdOracle, wstEthToEthHeartbeat, ethUsdHeartbeat
-        );
+        wstETH_L2_CustomPriceFeed adapter =
+            new wstETH_L2_CustomPriceFeed(wstEth, wstEthToEthChainlink, wstEthToEthHeartbeat, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "wstETH_L2", address(adapter));
         console2.log("wstETH_L2_CustomPriceFeed deployed at:", address(adapter));
     }
@@ -898,16 +866,14 @@ contract DeployPriceFeeds is BaseDeployScript {
         address weEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "weETH_L2", "weEth"));
         address weEthToEethChainlink =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "weETH_L2", "weEthToEethChainlink"));
-        address ethUsdOracle =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "weETH_L2", "ethToUsdChainlinkOracle"));
         uint256 weEthToEethHeartbeat =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "weETH_L2", "weEthToEethHeartbeat"));
-        uint256 ethUsdHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "weETH_L2", "ethToUsdChainlinkHeartbeat"));
+        address baseAsset =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "weETH_L2", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
-        weETH_L2_CustomPriceFeed adapter = new weETH_L2_CustomPriceFeed(
-            weEth, weEthToEethChainlink, ethUsdOracle, weEthToEethHeartbeat, ethUsdHeartbeat
-        );
+        weETH_L2_CustomPriceFeed adapter =
+            new weETH_L2_CustomPriceFeed(weEth, weEthToEethChainlink, weEthToEethHeartbeat, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "weETH_L2", address(adapter));
         console2.log("weETH_L2_CustomPriceFeed deployed at:", address(adapter));
     }
@@ -922,16 +888,14 @@ contract DeployPriceFeeds is BaseDeployScript {
         address cbEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "cbETH_L2", "cbEth"));
         address cbEthToEthChainlink =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "cbETH_L2", "cbEthToEthChainlink"));
-        address ethUsdOracle =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "cbETH_L2", "ethToUsdChainlinkOracle"));
         uint256 cbEthToEthHeartbeat =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "cbETH_L2", "cbEthToEthHeartbeat"));
-        uint256 ethUsdHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "cbETH_L2", "ethToUsdChainlinkHeartbeat"));
+        address baseAsset =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "cbETH_L2", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
-        cbETH_L2_CustomPriceFeed adapter = new cbETH_L2_CustomPriceFeed(
-            cbEth, cbEthToEthChainlink, ethUsdOracle, cbEthToEthHeartbeat, ethUsdHeartbeat
-        );
+        cbETH_L2_CustomPriceFeed adapter =
+            new cbETH_L2_CustomPriceFeed(cbEth, cbEthToEthChainlink, cbEthToEthHeartbeat, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "cbETH_L2", address(adapter));
         console2.log("cbETH_L2_CustomPriceFeed deployed at:", address(adapter));
     }
@@ -946,16 +910,14 @@ contract DeployPriceFeeds is BaseDeployScript {
         address rsEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "rsETH_L2", "rsEth"));
         address rsEthToEthChainlink =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "rsETH_L2", "rsEthToEthChainlink"));
-        address ethUsdOracle =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "rsETH_L2", "ethToUsdChainlinkOracle"));
         uint256 rsEthToEthHeartbeat =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "rsETH_L2", "rsEthToEthHeartbeat"));
-        uint256 ethUsdHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "rsETH_L2", "ethToUsdChainlinkHeartbeat"));
+        address baseAsset =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "rsETH_L2", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
-        rsETH_L2_CustomPriceFeed adapter = new rsETH_L2_CustomPriceFeed(
-            rsEth, rsEthToEthChainlink, ethUsdOracle, rsEthToEthHeartbeat, ethUsdHeartbeat
-        );
+        rsETH_L2_CustomPriceFeed adapter =
+            new rsETH_L2_CustomPriceFeed(rsEth, rsEthToEthChainlink, rsEthToEthHeartbeat, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "rsETH_L2", address(adapter));
         console2.log("rsETH_L2_CustomPriceFeed deployed at:", address(adapter));
     }
@@ -970,13 +932,11 @@ contract DeployPriceFeeds is BaseDeployScript {
         address ezEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ezETH_L2", "ezEth"));
         address xRenzoDeposit =
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ezETH_L2", "xRenzoDeposit"));
-        address ethUsdOracle =
-            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ezETH_L2", "ethToUsdChainlinkOracle"));
-        uint256 ethUsdHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "ezETH_L2", "ethToUsdChainlinkHeartbeat"));
+        address baseAsset =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "ezETH_L2", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
-        ezETH_L2_CustomPriceFeed adapter =
-            new ezETH_L2_CustomPriceFeed(ezEth, xRenzoDeposit, ethUsdOracle, ethUsdHeartbeat);
+        ezETH_L2_CustomPriceFeed adapter = new ezETH_L2_CustomPriceFeed(ezEth, xRenzoDeposit, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "ezETH_L2", address(adapter));
         console2.log("ezETH_L2_CustomPriceFeed deployed at:", address(adapter));
     }
@@ -993,18 +953,15 @@ contract DeployPriceFeeds is BaseDeployScript {
         address syrupUsdcToUsdcChainlink = vm.parseAddress(
             ConfigReader.readPriceFeedParam(vm, currentChainId, "syrupUSDC_L2", "syrupUsdcToUsdcChainlink")
         );
-        address usdcUsdOracle = vm.parseAddress(
-            ConfigReader.readPriceFeedParam(vm, currentChainId, "syrupUSDC_L2", "usdcToUsdChainlinkOracle")
-        );
         uint256 syrupUsdcToUsdcHeartbeat = vm.parseUint(
             ConfigReader.readPriceFeedParam(vm, currentChainId, "syrupUSDC_L2", "syrupUsdcToUsdcHeartbeat")
         );
-        uint256 usdcUsdHeartbeat = vm.parseUint(
-            ConfigReader.readPriceFeedParam(vm, currentChainId, "syrupUSDC_L2", "usdcToUsdChainlinkHeartbeat")
-        );
+        address baseAsset =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "syrupUSDC_L2", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
         syrupUSDC_L2_CustomPriceFeed adapter = new syrupUSDC_L2_CustomPriceFeed(
-            syrupUsdc, syrupUsdcToUsdcChainlink, usdcUsdOracle, syrupUsdcToUsdcHeartbeat, usdcUsdHeartbeat
+            syrupUsdc, syrupUsdcToUsdcChainlink, syrupUsdcToUsdcHeartbeat, nav, baseAsset
         );
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "syrupUSDC_L2", address(adapter));
         console2.log("syrupUSDC_L2_CustomPriceFeed deployed at:", address(adapter));

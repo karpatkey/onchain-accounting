@@ -147,6 +147,57 @@ contract ConfigReaderTest is TestEnvConfigurator {
         assertTrue(bytes(router).length > 0, "Router parameter should be set");
     }
 
+    /// @notice BridgeEscrow config (contracts-deployment-config/bridge-escrow/1.json): accounts empty by default,
+    ///         assets keyed by logical symbol resolve to the expected mainnet token addresses.
+    function test_ReadBridgeEscrowConfig_Mainnet() public view {
+        address[] memory accounts = ConfigReader.readBridgeEscrowAccounts(vm, 1);
+        assertEq(accounts.length, 0, "mainnet bridge accounts should be empty by default (filled per deployment)");
+
+        string[] memory symbols = ConfigReader.readBridgeEscrowAssetSymbols(vm, 1);
+        assertEq(symbols.length, 2, "mainnet should register 2 bridge assets");
+
+        assertEq(
+            ConfigReader.readBridgeEscrowAssetAddress(vm, 1, "USDC"),
+            0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48,
+            "mainnet USDC address mismatch"
+        );
+        assertEq(
+            ConfigReader.readBridgeEscrowAssetAddress(vm, 1, "WETH"),
+            0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2,
+            "mainnet WETH address mismatch"
+        );
+    }
+
+    /// @notice Every deployed chain's bridge-escrow config parses, lists at least one asset, and each listed symbol
+    ///         resolves to a non-zero local token address (an empty/placeholder address would be silently skipped at
+    ///         registration, so catch it here). Accounts may be empty (filled per deployment).
+    function test_BridgeEscrowConfigResolvesForAllChains() public view {
+        uint256[] memory chainIds = _supportedChainIds();
+        for (uint256 c = 0; c < chainIds.length; c++) {
+            uint256 chainId = chainIds[c];
+            string[] memory symbols = ConfigReader.readBridgeEscrowAssetSymbols(vm, chainId);
+            assertGt(symbols.length, 0, string(abi.encodePacked("no bridge assets for chain ", vm.toString(chainId))));
+            for (uint256 i = 0; i < symbols.length; i++) {
+                assertTrue(
+                    ConfigReader.readBridgeEscrowAssetAddress(vm, chainId, symbols[i]) != address(0),
+                    string(
+                        abi.encodePacked(
+                            "bridge asset '", symbols[i], "' resolves to zero on chain ", vm.toString(chainId)
+                        )
+                    )
+                );
+            }
+        }
+    }
+
+    /// @notice A chain with no bridge-escrow config file (e.g. 56, which has bridge-adapters but no bridge-escrow)
+    ///         yields empty accounts + empty symbols rather than reverting — so the 06 step is a safe no-op there.
+    function test_ReadBridgeEscrowConfig_MissingFileIsEmpty() public view {
+        assertEq(ConfigReader.readBridgeEscrowAccounts(vm, 56).length, 0, "missing file -> no accounts");
+        assertEq(ConfigReader.readBridgeEscrowAssetSymbols(vm, 56).length, 0, "missing file -> no symbols");
+        assertEq(ConfigReader.readBridgeEscrowAssetAddress(vm, 56, "USDC"), address(0), "missing file -> zero address");
+    }
+
     /// @notice readAdapterUintArray parses BOTH the numeric (`[1,10]`) and quoted (`["1","10"]`) array forms, and
     ///         honors the lookup precedence root → `.initialize.` → `.constructor.`. Uses a throwaway chain-id fixture
     ///         file so the test is independent of how the real per-chain configs happen to author `remoteChains`.
@@ -365,12 +416,12 @@ contract ConfigReaderTest is TestEnvConfigurator {
             ConfigReader.readAdapterParam(vm, 1, "deployBalanceAdapters", "MorphoBlue_USDC", "morpho");
         string memory marketId =
             ConfigReader.readAdapterParam(vm, 1, "deployBalanceAdapters", "MorphoBlue_USDC", "marketId");
-        string memory protocol =
-            ConfigReader.readAdapterParam(vm, 1, "deployBalanceAdapters", "MorphoBlue_USDC", "protocol");
+        string memory underlying =
+            ConfigReader.readAdapterParam(vm, 1, "deployBalanceAdapters", "MorphoBlue_USDC", "underlyingToken");
 
         assertEq(bytes(morpho).length, 0, "missing adapter param should return empty string");
         assertEq(bytes(marketId).length, 0, "missing adapter param should return empty string");
-        assertEq(bytes(protocol).length, 0, "missing adapter param should return empty string");
+        assertEq(bytes(underlying).length, 0, "missing adapter param should return empty string");
     }
 
     /// @notice All chains that carry config files (broader than `_supportedChainIds`, which is deployed-proxy chains).

@@ -68,7 +68,7 @@ export function PositionsTable({ data }: PositionsTableProps) {
                   {pos.protocol || '—'}
                 </Td>
                 <Td className="text-sm text-neutral-700">
-                  {pos.positionDetail || '—'}
+                  {pos.poolLabel || '—'}
                 </Td>
                 <Td className="text-right tabular-nums text-sm">
                   {formatAmount(pos.amount, pos.underlyingAsset.decimals, '')}

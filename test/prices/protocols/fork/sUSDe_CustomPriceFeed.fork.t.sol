@@ -3,43 +3,44 @@ pragma solidity ^0.8.0;
 
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {sUSDe_CustomPriceFeed} from "src/prices/protocols/sUSDe_CustomPriceFeed.sol";
+import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
 contract sUSDe_CustomPriceFeedForkTest is TestEnvConfigurator {
-    sUSDe_CustomPriceFeed sUsdePriceOracle;
+    sUSDe_CustomPriceFeed oracle;
 
     address constant S_USDE = 0x9D39A5DE30e57443BfF2A8307A4256c8797A3497;
-    address constant USDE_TO_USD_CHAINLINK = 0xa569d910839Ae8865Da8F8e70FfFb0cBA869F961;
-    uint256 constant HEARTBEAT = 82_800;
-    uint256 constant FORK_BLOCK = 24_486_042;
+    address constant NAV = 0x42aC265991163Af2b0B9E59a222d31d201E39f91;
+    address constant USDE = 0x4c9EDD5852cd905f086C759E8383e09bff1E68B3;
+    uint256 constant FORK_BLOCK = 25_491_000;
 
     function setUp() public {
         uint256 fork = createForkWithCadence(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
+        _useNewNavImpl(NAV);
 
-        sUsdePriceOracle = new sUSDe_CustomPriceFeed(S_USDE, USDE_TO_USD_CHAINLINK, HEARTBEAT);
+        oracle = new sUSDe_CustomPriceFeed(S_USDE, NAV, USDE);
     }
 
+    /// @dev In-EVM ground truth: convertToAssets(unit) * NAV(base/USD, 8 dec) / unit.
     function test_getLatestPrice() public view {
-        (uint256 price, bool stale) = sUsdePriceOracle.getLatestPrice();
-        // convertToAssets(1e18) * USDe/USD / 1e18
-        // = 1220890733787148734 * 99916413 / 1e18 = 121987022
-        assertEq(price, 121_987_022, "Price should match calculated value");
+        INAVCalculator.PriceFeedData memory pd = INAVCalculator(NAV).getPriceData(USDE);
+        uint256 base8 = uint256(pd.price);
+        uint256 unit = 10 ** IERC4626(S_USDE).decimals();
+        uint256 assetsPerShare = IERC4626(S_USDE).convertToAssets(unit);
+        uint256 expected = (assetsPerShare * base8) / unit;
+
+        (uint256 price, bool stale) = oracle.getLatestPrice();
+        assertEq(price, expected, "price == convertToAssets(unit) * NAV(base/USD) / unit");
         assertEq(stale, false);
     }
 
-    function test_getLatestPriceStale() public {
-        vm.warp(block.timestamp + HEARTBEAT + 1);
-        (uint256 price, bool stale) = sUsdePriceOracle.getLatestPrice();
-        assertEq(price, 0, "Stale price returns 0 (I-1)");
-        assertEq(stale, true, "Price should be marked as stale");
-    }
-
     function test_decimals() public view {
-        assertEq(sUsdePriceOracle.decimals(), 8, "Decimals should match USDe/USD oracle");
+        assertEq(oracle.decimals(), 8, "Decimals should match NAV base/USD (8)");
     }
 
     function test_underlyingAssetSupported() public view {
-        assertEq(sUsdePriceOracle.underlyingAssetSupported(), S_USDE, "Underlying asset should match sUSDe token");
+        assertEq(oracle.underlyingAssetSupported(), S_USDE, "Underlying asset should match the vault share token");
     }
 }

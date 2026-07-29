@@ -9,6 +9,7 @@ This guide explains all configuration files needed for multi-chain deployments o
 3. [contracts-deployment-config/custom-price-feeds/{chainId}.json](#contracts-deployment-configcustom-price-feedschainidjson)
 4. [contracts-deployment-config/balance-adapters & meta-balance-adapters/{chainId}.json](#contracts-deployment-configbalance-adapters--meta-balance-adapterschainidjson)
    - [contracts-deployment-config/bridge-adapters/{chainId}.json](#contracts-deployment-configbridge-adapterschainidjson)
+   - [contracts-deployment-config/bridge-escrow/{chainId}.json](#contracts-deployment-configbridge-escrowchainidjson)
 5. [nav-config/assets-and-price-feeds/{chainId}.json](#nav-configassets-and-price-feedschainidjson)
 6. [nav-config/balance-adapters & meta-balance-adapters/{chainId}.json](#nav-configbalance-adapters--meta-balance-adapterschainidjson)
 7. [deployments/{chainId}.json](#deploymentschainidjson)
@@ -41,7 +42,8 @@ script/config/
 │   ├── custom-price-feeds/<chainId>.json          # Custom price feeds to deploy: { "<feedName>": { enabled, constructor } }
 │   ├── balance-adapters/<chainId>.json            # PLAIN adapters to deploy: { "<AdapterName>": { enabled, constructor } }
 │   ├── meta-balance-adapters/<chainId>.json       # META adapters to deploy: { "<AdapterName>": { enabled, constructor } }
-│   └── bridge-adapters/<chainId>.json             # Bridge adapters to deploy: { "<AdapterName>": { enabled, initialize } } — read by 05
+│   ├── bridge-adapters/<chainId>.json             # Bridge adapters to deploy: { "<AdapterName>": { enabled, initialize } } — read by 05
+│   └── bridge-escrow/<chainId>.json               # BridgeEscrow post-deploy config: { accounts[], assets{SYMBOL:addr} } — read by 06
 ├── nav-config/
 │   ├── assets-and-price-feeds/<chainId>.json      # Assets to register: { "<SYMBOL>": { address, priceFeeds[] } }
 │   ├── balance-adapters/<chainId>.json            # PLAIN adapters to add on NAV: { "<AdapterName>": { enabled } }
@@ -122,12 +124,11 @@ An asset wires in a deployed feed by name via a `"type":"Custom","feed":"<feedNa
 {
   "sDAI": {
     "enabled": true,
-    "$comment": "sDAI (Savings DAI) price adapter — derives sDAI/USD from the DSR rate + DAI/USD.",
+    "$comment": "sDAI (Savings DAI) price adapter — derives sDAI/USD from the DSR rate + the base asset (DAI) priced via the NAV.",
     "constructor": {
       "sDai": "0x83F20F44975D03b1b09e64809B757c47f942BEeA",
       "dsrManager": "0x373238337Bfe1146fb49989fc222523f83081dDb",
-      "daiToUsdChainlinkOracle": "0xAed0c38402a5d19df6E4c03F4E2DceD6e29c1ee9",
-      "daiToUsdChainlinkHeartbeat": "3600"
+      "baseAsset": "0x6B175474E89094C44Da98b954EedeAC495271d0F"
     }
   },
   "wstETH": {
@@ -135,17 +136,17 @@ An asset wires in a deployed feed by name via a `"type":"Custom","feed":"<feedNa
     "constructor": {
       "wstEth": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
       "stEthToEthChainlinkOracle": "0x86392dC19c0b719886221c78AB11eb8Cf5c52812",
-      "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
       "stEthToEthChainlinkHeartbeat": "86400",
-      "ethToUsdChainlinkHeartbeat": "3600"
+      "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }
   }
 }
 ```
 
 Each key under `constructor` must be an actual argument of the feed adapter's Solidity constructor — the
-deploy script reads them **by name** (`03_DeployPriceFeeds.s.sol` calls `readPriceFeedParam(name, "<arg>")`
-for each one), so the names must match exactly and an unrecognized key is silently ignored. There is **no**
+deploy script reads them **by name** (`03_DeployPriceFeeds.s.sol` calls
+`ConfigReader.readPriceFeedParam(vm, chainId, name, "<arg>")` for each one), so the names must match exactly
+and an unrecognized key is silently ignored. There is **no**
 `description` argument; for a human-readable note use the entry-level `$comment` field (ignored by the
 reader), not a fake `constructor` key.
 
@@ -169,12 +170,20 @@ A meta-adapter is a single deployed contract; its **instance set is NOT here** �
 
 ```json
 {
-  "ERC20Default": {
+  "SparkLend": {
     "enabled": true,
-    "constructor": {}
+    "constructor": {
+      "dataProvider": "0xFc21d6d146E6086B8359705C8b28512a983db0cb"
+    }
   }
 }
 ```
+
+> Only the constructor args `04_DeployBalanceAdapters.s.sol` reads are required per adapter (for `SparkLend`, just `dataProvider`). There is **no display-name field**: meta adapters derive `protocolName()` from their own `_protocolId()` (`ProtocolNames.forProtocolId`), and the plain/assisted adapters hardcode it, so the former `protocol` key has been removed from every config.
+>
+> That key was **not** inert before removal — `04` read it and passed it as each meta adapter's `protocolName_` constructor argument. Dropping it changed the constructor signature, so every deployed meta adapter needs a redeploy plus re-registration before it reports a derived name; a config-only diff is not enough. Note some ADRs still describe `protocol` as a live per-adapter field — they are historical records of the decision at the time, not current schema.
+>
+> The built-in `ERC20DefaultBalanceAdapter` is deployed inside `NAVCalculator.initialize()` (step `02`) and wired via `includeAssetInDefaultAdapter` / `excludeAssetFromDefaultAdapter`, **not** through these config files — don't list it here.
 
 ### Template — `meta-balance-adapters/{chainId}.json` (meta)
 
@@ -182,11 +191,11 @@ A meta-adapter is a single deployed contract; its **instance set is NOT here** �
 {
   "AaveV3InstancesMeta": {
     "enabled": true,
-    "constructor": { "protocol": "Aave V3" }
+    "constructor": {}
   },
   "MorphoMarketsMeta": {
     "enabled": true,
-    "constructor": { "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb", "protocol": "Morpho" }
+    "constructor": { "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb" }
   }
 }
 ```
@@ -196,7 +205,7 @@ A meta-adapter is a single deployed contract; its **instance set is NOT here** �
 | Field | Type | Description |
 |-------|------|-------------|
 | `enabled` | bool | Deploy this adapter on this chain? |
-| `constructor` | object | Constructor parameters for the adapter, keyed by parameter name (e.g. `protocol`, plus any protocol-specific args like `morpho`). `navCalculator` is injected by the deploy script and is not listed here. |
+| `constructor` | object | Constructor parameters for the adapter, keyed by parameter name (protocol-specific args like `morpho`, `vaultResolver`, `positionManager`). `navCalculator` is injected by the deploy script and is not listed here. Meta adapters take **no** display-name argument — see `src/utils/ProtocolNames.sol`. |
 
 ---
 
@@ -218,7 +227,8 @@ As of [ADR 0012](../../docs/decisions/0012-bridge-provable-release-rearchitectur
       "router": "0x...",
       "feeToken": "0x...",
       "version": "1.0.0"
-    }
+    },
+    "remoteChains": [10, 42161, 8453]
   },
   "CCTP": {
     "enabled": true,
@@ -229,7 +239,8 @@ As of [ADR 0012](../../docs/decisions/0012-bridge-provable-release-rearchitectur
       "messageTransmitter": "0x0a992d191DEeC32aFe36203Ad87D7d289a738F81",
       "version": "1.0.0",
       "cctpDomain": 0
-    }
+    },
+    "remoteChains": [10, 42161, 8453]
   }
 }
 ```
@@ -243,6 +254,31 @@ As of [ADR 0012](../../docs/decisions/0012-bridge-provable-release-rearchitectur
 | `remoteChains` | uint[] | Standard chain ids this adapter bridges to/from. `06_Configure.s.sol` reads it to wire `setTrustedRemoteAdapter` per remote chain (provenance allowlist). |
 
 There is **no `callbackSelector` field** as of [ADR 0012](../../docs/decisions/0012-bridge-provable-release-rearchitecture.md): the escrow no longer dispatches callbacks. Each adapter is the direct protocol receiver and authenticates inbound messages; trusted source senders are wired by `06_Configure.s.sol` from the `remoteChains` array above (keyed by the remote's standard chain id). (See "Bridge adapters: provenance" below.)
+
+---
+
+## contracts-deployment-config/bridge-escrow/{chainId}.json
+
+**BridgeEscrow post-deploy configuration** — which accounts may bridge and which assets are registered. Read by `06_Configure.s.sol`. This is **required for a functioning deposit path**: `02_DeployProxies.s.sol` initializes the escrow with an empty account set and no registered assets, so without this step `depositAndBridge` reverts (`NotAuthorized`, and the symbol lookup fails). `06` applies it **before** `07`, while the deployer still holds `DEFAULT_ADMIN_ROLE` (accounts) and `MANAGER_ROLE` (assets). Idempotent: skips accounts already authorized and assets already mapped to the same address.
+
+### Template
+
+```json
+{
+  "accounts": [],
+  "assets": {
+    "USDC": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    "WETH": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+  }
+}
+```
+
+### Field descriptions
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `accounts` | address[] | Addresses authorized on the escrow via `authorizeAccount` (DEFAULT_ADMIN_ROLE). An account must be authorized on BOTH ends of every lane it uses (source to call `depositAndBridge`, destination to receive the release), at the same address on each chain. Filled per deployment — the deployer EOA for a smoke test, the fund Safes for production. |
+| `assets` | object | Logical **bridge symbol → local token address**, registered via `registerAsset` (MANAGER_ROLE). The symbol is part of the cross-chain invoice identity, so **both ends of a lane must register the same logical symbol** mapped to each chain's local token. Keys are logical symbols (≤ 6 chars), not necessarily the token's on-chain symbol — e.g. use a consistent `"USDC"` across chains even where the local token is `USDC.e`. Top-level keys are symbols — no chainId wrapper; `$`-prefixed keys are ignored. |
 
 ---
 
@@ -308,7 +344,7 @@ There is **no `callbackSelector` field** as of [ADR 0012](../../docs/decisions/0
 
 ```json
 {
-  "ERC20Default": { "enabled": true },
+  "AaveV3SafetyModule": { "enabled": true },
   "SparkLend": { "enabled": true }
 }
 ```
@@ -344,13 +380,14 @@ There is **no `callbackSelector` field** as of [ADR 0012](../../docs/decisions/0
 
 ## deployments/{chainId}.json
 
-**The single source of truth for deployed addresses.** Written by deploy scripts; the only place addresses are persisted (note the filename is `{chainId}.json`, not `{chainId}-addresses.json`). Top-level proxy/impl keys plus maps for `customPriceFeeds`, `balanceAdapters`, and `bridgeAdapters`.
+**The single source of truth for deployed addresses.** Written by deploy scripts; the only place addresses are persisted (note the filename is `{chainId}.json`, not `{chainId}-addresses.json`). Top-level library and proxy/impl address keys plus maps for `customPriceFeeds`, `balanceAdapters`, and `bridgeAdapters`. There is no `chainId` key inside — the filename *is* the chain.
 
 ### Template
 
 ```json
 {
-  "chainId": 1,
+  "PriceFeedLib": "0x...",
+  "NavRegistryLib": "0x...",
   "NAVCalculatorImplementation": "0x...",
   "NAVCalculatorProxy": "0x...",
   "BridgeEscrowImplementation": "0x...",
@@ -634,7 +671,7 @@ Source-sender authentication is wired by `06_Configure.s.sol` from each adapter'
 
 See `src/bridge/BRIDGE_ADAPTERS.md` §7 for the full per-protocol detail.
 
-**CCTP domain mapping:** The CCTP adapter maps chain IDs to Circle's CCTP domain IDs (used for `depositForBurn` and receive path). Each chain that has CCTP can include `cctpDomain` in the CCTP entry's `initialize` block (`CCTP.initialize`) for reference — that entry now lives in `contracts-deployment-config/bridge-adapters/{chainId}.json`, not the chain config. The on-chain mapping is set via `CctpBridgeAdapter.setDomainMapping(chainId, domain)` (admin); deploy scripts do not call this — configure it after deployment (e.g. manage script or Safe tx). Official domain IDs (see [Circle CCTP contract addresses](https://developers.circle.com/cctp/references/contract-addresses)): Ethereum = 0, OP Mainnet = 2, Arbitrum = 3, Base = 6.
+**CCTP domain mapping:** The CCTP adapter maps chain IDs to Circle's CCTP domain IDs (used for `depositForBurn` and receive path). Each chain that has CCTP can include `cctpDomain` in the CCTP entry's `initialize` block (`CCTP.initialize`) for reference — that entry now lives in `contracts-deployment-config/bridge-adapters/{chainId}.json`, not the chain config, and is ignored by the reader (`initialize` takes no `cctpDomain` arg). The default EVM chain↔domain mappings are pinned in the adapter at `initialize` time (via `_setChainDomain` — Ethereum 0, OP Mainnet 2, Arbitrum 3, Base 6, and more), so no post-deploy step is needed for those chains; `CctpBridgeAdapter.setDomainMapping(chainId, domain)` (admin) only adds or overrides mappings beyond that preconfigured set. Official domain IDs (see [Circle CCTP contract addresses](https://developers.circle.com/cctp/references/contract-addresses)): Ethereum = 0, OP Mainnet = 2, Arbitrum = 3, Base = 6.
 
 The script `script/manage/AuthorizeBridgeAdapters.s.sol` authorizes each enabled adapter with `authorizeAdapter(adapter)` only (no callback variant). Trusted source senders are configured separately via `BridgeAdapter.setTrustedRemoteAdapter` (admin), not by the authorization script.
 
@@ -712,7 +749,6 @@ After deployment, addresses are saved to `deployments/{chainId}.json`.
     "AaveV3InstancesMeta": {
       "address": "0x222...",
       "constructor": {
-        "protocol": "Aave V3",
         "navCalculator": "0xdef..."
       },
       "instances": [

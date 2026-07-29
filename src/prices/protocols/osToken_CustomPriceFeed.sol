@@ -6,9 +6,9 @@ import {NotAContract} from "src/errors.sol";
 
 /// @title osToken Custom Price Oracle
 /// @notice USD price of a StakeWise osToken (osETH, osGNO, …) = `OsTokenVaultController.convertToAssets(1e18)`
-///         (underlying per osToken, 18 dec) × Chainlink <underlying>/USD.
-/// @dev Shared skeleton (staleness, decimals, latestRoundData, the `rate × base / 1e18` math) lives in
-///      BaseCustomPriceFeed; the base feed here is the <underlying>/USD oracle and `_rate()` is the
+///         (underlying per osToken, 18 dec) × the NAV's <underlying>/USD price.
+/// @dev Shared skeleton (base/USD via the NAV, staleness, decimals, latestRoundData, the `rate × base / 1e18` math)
+///      lives in BaseCustomPriceFeed; the base asset here is the <underlying> priced by the NAV and `_rate()` is the
 ///      osToken→underlying conversion rate.
 /// @author KPK
 /* solhint-disable contract-name-camelcase */
@@ -18,14 +18,11 @@ contract osToken_CustomPriceFeed is BaseCustomPriceFeed {
 
     /// @param osToken_ The osToken address (osETH, osGNO, …).
     /// @param osTokenVaultController_ The StakeWise OsTokenVaultController for this osToken.
-    /// @param underlyingToUsdChainlinkOracle_ The Chainlink <underlying>/USD oracle (ETH/USD, GNO/USD, …).
-    /// @param underlyingToUsdChainlinkHeartbeat_ Seconds after which the Chainlink price is considered stale.
-    constructor(
-        address osToken_,
-        address osTokenVaultController_,
-        address underlyingToUsdChainlinkOracle_,
-        uint256 underlyingToUsdChainlinkHeartbeat_
-    ) BaseCustomPriceFeed(osToken_, underlyingToUsdChainlinkOracle_, underlyingToUsdChainlinkHeartbeat_) {
+    /// @param nav_ The NAVCalculator proxy to read the base asset's USD price from.
+    /// @param baseAsset_ The base asset (the underlying, e.g. WETH/GNO) whose NAV-selected USD price scales the rate.
+    constructor(address osToken_, address osTokenVaultController_, address nav_, address baseAsset_)
+        BaseCustomPriceFeed(osToken_, nav_, baseAsset_)
+    {
         if (osTokenVaultController_.code.length == 0) revert NotAContract("OsTokenVaultController");
         OS_TOKEN_VAULT_CONTROLLER = IOsTokenVaultController(osTokenVaultController_);
     }

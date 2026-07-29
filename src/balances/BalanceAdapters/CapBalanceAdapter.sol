@@ -5,6 +5,8 @@ import {BalanceAdapterBase} from "../BalanceAdapterBase.sol";
 import {IBalanceAdapter} from "../IBalanceAdapter.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
+import {IPositionEnumerable} from "../IPositionEnumerable.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -42,7 +44,7 @@ interface IStcUsd {
 ///      - stcUSD: ERC20.balanceOf → ERC4626 `convertToAssets` → cUSD → `getBurnAmount` → USDC. `["Savings", "stcUSD"]`.
 ///      The aggregate balance getters (`getAdapterBalances`/`getAdapterBalanceForAsset`) still report the combined
 ///      USDC total for the USDC asset; only the NAV `getAdapterPositions` path splits the legs.
-contract CapBalanceAdapter is BalanceAdapterBase {
+contract CapBalanceAdapter is BalanceAdapterBase, IPositionEnumerable {
     //
     // State
     //
@@ -99,10 +101,22 @@ contract CapBalanceAdapter is BalanceAdapterBase {
 
     /// @inheritdoc IPositionDescribable
     /// @dev Branches on the positionId token: `["Stablecoin", "cUSD"]` for the cUSD leg,
-    ///      `["Savings", "stcUSD"]` for the staked stcUSD leg. Empty array for anything else.
+    ///      `["Savings", "stcUSD"]` for the staked stcUSD leg. Empty array for anything else — including any
+    ///      malformed positionId, since this is a display-only view that must never revert and a configuration
+    ///      view may probe it with an arbitrary word.
     function positionLabels(bytes calldata positionId) external view override returns (string[] memory) {
-        if (positionId.length < 32) return new string[](0);
-        address token = abi.decode(positionId, (address));
+        // Exactly one word. Both ids this adapter emits (and both {positionIds} advertises) are `abi.encode(token)`,
+        // so a shorter buffer is unusable and a LONGER one is a foreign multi-word coordinate whose first word could
+        // coincide with CUSD/STCUSD — `abi.decode` ignores the tail, so `>= 32` would label it as a Cap leg.
+        if (positionId.length != 32) return new string[](0);
+        // Decode as a raw word, not `abi.decode(positionId, (address))`: Solidity's decoder REVERTS on an address
+        // whose upper 96 bits are dirty, which would turn a foreign positionId (e.g. a bytes32 pool/market id
+        // copied from another adapter) into a revert. A dirty word is a non-Cap coordinate, so it takes the same
+        // `[]` exit as any other unrecognised token — deliberately NOT truncated to its low 160 bits, which could
+        // spell CUSD/STCUSD by coincidence and mislabel a foreign id as a Cap leg.
+        uint256 raw = abi.decode(positionId, (uint256));
+        if (raw >> 160 != 0) return new string[](0);
+        address token = address(uint160(raw));
         string[] memory out = new string[](2);
         if (token == address(STCUSD)) {
             out[0] = "Savings";
@@ -115,6 +129,41 @@ contract CapBalanceAdapter is BalanceAdapterBase {
             return out;
         }
         return new string[](0);
+    }
+
+    //
+    // IPositionEnumerable
+    //
+
+    /// @inheritdoc IPositionEnumerable
+    /// @dev Cap's two shapes: the held synthetic dollar (cUSD) and the staked savings token (stcUSD). Both are
+    ///      pinned at construction, so the set is fixed for the life of this immutable adapter — there is no
+    ///      governed instance list and nothing account-dependent.
+    ///
+    ///      These are the SAME bytes `getAdapterPositions` puts in `PositionBalance.positionId` for each leg
+    ///      (`abi.encode(address(CUSD))` / `abi.encode(address(STCUSD))`), which is what makes the configuration
+    ///      view joinable against real positions — the guarantee {IPositionEnumerable} requires.
+    ///
+    ///      **Join on the bytes, not on the index.** No ordering is promised, and this array is deliberately NOT
+    ///      index-aligned with `getAdapterPositions`: that function omits a leg whose balance is zero, so an
+    ///      account holding only stcUSD emits one position that pairs with the SECOND entry here. These shapes
+    ///      are reported unconditionally because they describe what the adapter CAN report, not what anyone
+    ///      holds — and, for the same reason, listing them does not imply USDC is registered on the
+    ///      NAVCalculator (without that registration `getAdapterPositions` emits nothing for any account).
+    function positionIds() external view override returns (bytes[] memory ids) {
+        ids = new bytes[](2);
+        ids[0] = abi.encode(address(CUSD));
+        ids[1] = abi.encode(address(STCUSD));
+    }
+
+    /// @inheritdoc IERC165
+    /// @dev Adds {IPositionEnumerable} to the base set. `super`-chains rather than restating the base list, which
+    ///      is why {BalanceAdapterBase}'s `supportsInterface` is `public` — an `external` one cannot be reached
+    ///      through `super`. Stays `pure`: the answer is a compile-time comparison, and a `pure` base cannot be
+    ///      widened to `view` by an override anyway. Kept `virtual` so the chain the base just opened does not
+    ///      dead-end here, matching the concrete bridge adapters that super-chain the same way.
+    function supportsInterface(bytes4 interfaceId) public pure virtual override returns (bool) {
+        return interfaceId == type(IPositionEnumerable).interfaceId || super.supportsInterface(interfaceId);
     }
 
     //

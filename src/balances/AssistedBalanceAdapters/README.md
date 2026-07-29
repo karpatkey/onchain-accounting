@@ -11,7 +11,7 @@ Reference for the **assisted** balance-adapter family and the **assistant** feed
 Most balance adapters derive a position purely from on-chain state (`balanceOf`, a lending pool read, an enumerable set). A few **cannot**: the coordinate needed to value the position isn't discoverable from a `view` call —
 
 - non-enumerable NFTs (Nexus Mutual `StakingNFT`, ether.fi `WithdrawRequestNFT`),
-- withdrawal/exit-queue tickets keyed by per-account coordinates the protocol doesn't index (StakeWise V3 exit positions, Stader withdrawal requests),
+- withdrawal/exit-queue tickets keyed by per-account coordinates the protocol doesn't index (StakeWise V3 exit positions),
 - off-chain merkle allocations (Merkl).
 
 For these, a **trusted party feeds the position's coordinate** (a tokenId / requestId / tuple / proof) so the position becomes queryable. This is the third balance-adapter family, peer to plain `BalanceAdapter`s and meta-adapters.
@@ -33,7 +33,7 @@ The family is fed by an on-chain **assistant** contract the owner **delegatecall
 
 - **Permissionless** — the cache mutators key on `msg.sender`, so a caller can only touch its own set.
 - Cache base: **`AssistedCoordCache`** (§4). Submit shape: incremental `submit`/`remove`, atomic with the protocol deposit/claim.
-- Members: **Nexus, StakeWise, ether.fi, Stader** (§6).
+- Members: **Nexus, StakeWise, ether.fi** (§6).
 
 > **Historical note.** An earlier **agent-fed** variant existed — an off-chain agent holding `ASSISTANT_ROLE` fed a role-gated base (`AssistantFedBalanceAdapter`) with full-set `submitTokenIds`; its only member was Merkl. That variant (base + marker + Merkl adapter) has been **removed pending a rewrite** of the Merkl adapter — retrievable from git history. Until it returns, the assisted family is exactly the permissionless assistant-fed variant described here.
 
@@ -90,7 +90,7 @@ event AccountCleared(address indexed account);
 | `_removable(account, bytes)` | may this coordinate be dropped? (see per-member policy below) |
 | `_valueCoord(account, bytes, underlying)` | decode, re-verify ownership live, return the priced legs (may revert — it's isolated) |
 
-Plus the adapter exposes a **typed** `submit`/`remove` that `abi.encode`s its coordinate and routes to `_submitCoord`/`_removeCoord`, and a typed read helper (`tokenIdsOf` / `requestIdsOf` / `positionsOf`) that decodes `_cachedCoords`.
+Plus the adapter exposes a **typed** `submit`/`remove` that `abi.encode`s its coordinate and routes to `_submitCoord`/`_removeCoord`, and a typed read helper (`tokenIdsOf` for Nexus/ether.fi, `positionsOf` for StakeWise) that decodes `_cachedCoords`.
 
 ### 4.6 Marker interface
 
@@ -162,7 +162,7 @@ Because both run as the Safe, the `submit`/`remove` calls carry `msg.sender = Sa
 | **StakeWiseV3ExitQueue** | `abi.encode(vault, positionTicket, timestamp)` | up to 2: claimable + locked `Supplied`, ETH | claimed/consumed → owed 0 | `enterExitQueue(vault, shares)` (receiver forced to the Safe) → submit; `claimExitedAssets(vault, ticket, ts, idx)` → remove (best-effort) |
 | **EtherFiWithdrawalQueue** | `abi.encode(requestId)` | 1 `Supplied`, native ETH (`isLocked = !finalized`) | no longer owned — `claimWithdraw` **burns** the NFT | `requestWithdraw(amount)` (approves eETH, recipient = Safe) → submit; `claimWithdraw(tokenId)` (claim burns) → remove (best-effort) |
 
-Each adapter shares a static per-adapter `positionId` (e.g. the WithdrawRequestNFT / manager / vault address, or Nexus's staking-pool address) and rides the per-item coordinate id in `positionInstanceId`. Each is paired with a `…Assistant` in `assistants/`.
+Each adapter shares a per-position `positionId` (e.g. the WithdrawRequestNFT address for ether.fi, the vault address for StakeWise, or Nexus's staking-pool address) and rides the per-item coordinate id in `positionInstanceId`. Each is paired with a `…Assistant` in `assistants/`.
 
 > **Not a member: Stader.** Stader's withdrawal queue is a **plain** `BalanceAdapter` (`src/balances/BalanceAdapters/StaderWithdrawalQueueBalanceAdapter.sol`), not an assisted one: it enumerates an account's live requests on-chain via `getRequestIdsByUser` (claim-pruned, protocol-capped), so it needs no assistant. See ADR 0018 "Consequences" for the rationale.
 

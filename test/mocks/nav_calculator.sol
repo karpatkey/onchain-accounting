@@ -128,8 +128,17 @@ contract Mock_NAVCalculator is INAVCalculator {
         return new address[](0);
     }
 
-    function getMetaInstances(address) external pure override returns (bytes32[] memory) {
-        return new bytes32[](0);
+    /// @dev Backing store for `getMetaInstances`. Defaults to empty for every adapter, so callers that never set
+    ///      it see the previous hardcoded-empty behaviour; `setMetaInstances` lets a test stand in for the
+    ///      governed instance set that `MetaBalanceAdapter.positionIds()` enumerates.
+    mapping(address => bytes32[]) private _metaInstances;
+
+    function setMetaInstances(address adapter, bytes32[] memory instances) external {
+        _metaInstances[adapter] = instances;
+    }
+
+    function getMetaInstances(address adapter) external view override returns (bytes32[] memory) {
+        return _metaInstances[adapter];
     }
 
     function addMetaInstances(address, bytes32[] calldata) external pure override {
@@ -161,6 +170,35 @@ contract Mock_NAVCalculator is INAVCalculator {
         revert("Not implemented in mock");
     }
 
+    function addMonitorFeed(address, address, IPrices.PriceType, uint256) external pure override {
+        revert("Not implemented in mock");
+    }
+
+    function setDivergenceTolerance(address, uint32) external pure override {
+        revert("Not implemented in mock");
+    }
+
+    function setPegTolerance(address, uint32) external pure override {
+        revert("Not implemented in mock");
+    }
+
+    function removeMonitorFeedAt(address, uint256) external pure override {
+        revert("Not implemented in mock");
+    }
+
+    function removeMonitorFeed(address, address) external pure override {
+        revert("Not implemented in mock");
+    }
+
+    function getPriceDivergence(address)
+        external
+        pure
+        override
+        returns (int256, int256, uint256, bool, uint256, bool, bool)
+    {
+        revert("Not implemented in mock");
+    }
+
     function addBalanceAdapters(address[] calldata) external pure override {
         revert("Not implemented in mock");
     }
@@ -181,7 +219,7 @@ contract Mock_NAVCalculator is INAVCalculator {
         revert("Not implemented in mock");
     }
 
-    function healthCheck() external pure override returns (bool, address[] memory) {
+    function healthCheck() external pure override returns (bool, address[] memory, address[] memory) {
         revert("Not implemented in mock");
     }
 
@@ -207,7 +245,41 @@ contract Mock_NAVCalculator is INAVCalculator {
         d.price = price;
         d.decimals = decimals;
         d.stale = false;
+        d.updatedAt = block.timestamp;
         _priceData[asset] = d;
+    }
+
+    /// @notice Set an asset's price data with an explicit stale flag (updatedAt defaults to block.timestamp).
+    ///         Used by the custom-price-feed unit tests to register a base asset (e.g. WETH) with an ETH/USD price
+    ///         and to exercise the "base stale" branch (stale=true).
+    function setAssetPrice(address asset, int256 price, uint8 decimals, bool stale) external {
+        PriceFeedData memory d;
+        d.price = price;
+        d.decimals = decimals;
+        d.stale = stale;
+        d.updatedAt = block.timestamp;
+        _priceData[asset] = d;
+    }
+
+    /// @notice Flip the stale flag on an already-registered asset's price data (keeps price/decimals/updatedAt).
+    function setAssetStale(address asset, bool stale) external {
+        _priceData[asset].stale = stale;
+    }
+
+    /// @notice Set an asset's leg freshness (updatedAt + configured heartbeat) explicitly. Used by custom-feed unit
+    ///         tests to exercise `ICustomPriceFeed.governingFeedFreshness` via `NavBaseUsdLib.baseFreshness`, which
+    ///         reads `getPriceDataNoDivergence(baseAsset).{updatedAt, chainlinkHeartbeat}`.
+    function setAssetFreshness(address asset, uint256 updatedAt, uint256 heartbeat) external {
+        _priceData[asset].updatedAt = updatedAt;
+        _priceData[asset].chainlinkHeartbeat = heartbeat;
+    }
+
+    /// @notice Emulate the NAV's L2 sequencer state. Only sets the raw `sequencerDown` flag; the `stale` fold
+    ///         (`stale = feedStale || sequencerDown`, per `PriceFeedLib.buildPriceData`) is applied at read time in
+    ///         `getPriceData`, so toggling this back to `false` cleanly emulates a sequencer RECOVERY on an otherwise
+    ///         -fresh feed (the stored feed-stale intent is preserved, not clobbered).
+    function setSequencerDown(address asset, bool down) external {
+        _priceData[asset].sequencerDown = down;
     }
 
     /// @notice Make getPriceData(asset) REVERT, emulating the real NAVCalculator's PriceFeedNotSet for a registered
@@ -216,9 +288,27 @@ contract Mock_NAVCalculator is INAVCalculator {
         _priceReverts[asset] = reverts_;
     }
 
-    function getPriceData(address asset) external view override returns (PriceFeedData memory) {
+    function getPriceData(address asset) external view override returns (PriceFeedData memory pd) {
         if (_priceReverts[asset]) revert PriceFeedNotSet(asset);
-        return _priceData[asset];
+        pd = _priceData[asset];
+        // Faithfully mirror PriceFeedLib: a stale FEED selection returns price 0 (`_selectFeedCore` only sets
+        // stale=true via the all-feeds-stale branch, which returns price 0). Sequencer-down alone does NOT zero the
+        // price — `buildPriceData` only ORs it into `stale`. So zero the price from the STORED feed-stale first, then
+        // fold sequencer-down into the returned flag. This keeps the mock from producing the (stale=true, price>0)
+        // state the real engine can never emit — which `NavBaseUsdLib`'s `pd.price <= 0` guard relies on.
+        if (pd.stale) pd.price = 0;
+        pd.stale = pd.stale || pd.sequencerDown;
+    }
+
+    function getPriceDataNoDivergence(address asset) external view override returns (PriceFeedData memory pd) {
+        if (_priceReverts[asset]) revert PriceFeedNotSet(asset);
+        pd = _priceData[asset];
+        if (pd.stale) pd.price = 0;
+        pd.stale = pd.stale || pd.sequencerDown;
+        // No-divergence variant: leave the divergence signal at defaults (mirrors buildPriceData(..., false)).
+        pd.irregular = false;
+        pd.divergenceBps = 0;
+        pd.monitorFeedCount = 0;
     }
 
     function getAccountPositionsForAsset(address, address, address) external pure override returns (Position[] memory) {

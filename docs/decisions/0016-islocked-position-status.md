@@ -47,7 +47,7 @@ the app.
 
 The status is always computed **on-chain** from live reads. Enumerable / single-record
 protocols (Lido, Stader, Kelp, Aave SM, Umbrella, Ethena) discover their legs on-chain. The
-two assisted adapters (StakeWise V3, ether.fi) receive only the *coordinate* from the agent
+two assisted adapters (StakeWise V3, ether.fi) receive only the *coordinate* from the assistant
 (ticket / tokenId — not enumerable on-chain); amounts and `isLocked` are still derived live, so
 the assistant can only under-report.
 

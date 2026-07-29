@@ -5,6 +5,7 @@ import {MetaBalanceAdapter} from "../MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {LabelLib} from "src/balances/LabelLib.sol";
+import {StaticCallLib} from "src/utils/StaticCallLib.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
@@ -42,11 +43,8 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      external oracles (the basket includes leveraged positions) — not a manipulation-resistant mark; acceptable
 ///      under the asynchronous NAV-consumer model (see ADR 0017), same as the AMM-LP adapters.
 contract GearboxV3CreditAccountsMetaBalanceAdapter is MetaBalanceAdapter {
-    /// @param protocolName_ Human-readable protocol name (e.g. "Gearbox").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(string memory protocolName_, address navCalculator_)
-        MetaBalanceAdapter(protocolName_, navCalculator_)
-    {}
+    constructor(address navCalculator_) MetaBalanceAdapter(navCalculator_) {}
 
     /// @inheritdoc MetaBalanceAdapter
     /// @dev `instance` is the credit account address. Returns an empty array (never reverts) when: the credit
@@ -71,6 +69,13 @@ contract GearboxV3CreditAccountsMetaBalanceAdapter is MetaBalanceAdapter {
         // pure-long account: collateral, no borrow).
         (bool debtOk, uint256 debt) = _debtOf(cm, ca);
         if (!debtOk) return new INAVCalculator.PositionBalance[](0);
+
+        // Same reasoning one step further: a debt that is READ but cannot be REPORTED — `underlying()`
+        // unreadable, or the underlying not a registered NAV asset — is dropped by `_appendBorrow` while the
+        // collateral legs below are still emitted, which overstates equity exactly as an unreadable debt would.
+        // Checked on registration only, not the assetFilter: a filtered view showing collateral while hiding an
+        // unreportable debt over-reports the same way.
+        if (debt > 0 && !_debtReportable(cm)) return new INAVCalculator.PositionBalance[](0);
 
         // Upper bound: one Collateral leg per enabled token + one Borrowed leg. Over-allocate and resize (a tighter
         // count would mean re-reading balances/registry twice). `enabledMask` is bounded by the manager's allowed-token
@@ -126,6 +131,21 @@ contract GearboxV3CreditAccountsMetaBalanceAdapter is MetaBalanceAdapter {
             temp[n++] = _leg(info, bal, false, abi.encode(ca), PositionKind.Collateral);
         }
         return n;
+    }
+
+    /// @notice True iff a non-zero debt on `cm` can actually be emitted as a leg: its `underlying()` is readable
+    ///         and that asset is registered on the NAV.
+    /// @dev Deliberately ignores `assetFilter`, unlike {_appendBorrow}: a filtered view showing collateral
+    ///      while hiding an unreportable debt over-reports just as an unfiltered one would.
+    function _debtReportable(address cm) private view returns (bool) {
+        address underlying;
+        try ICreditManagerV3(cm).underlying() returns (address u) {
+            underlying = u;
+        } catch {
+            return false;
+        }
+        (, bool found) = _getAssetInfo(underlying);
+        return found;
     }
 
     /// @dev Appends the single `Borrowed` leg (the total owed in the pool's underlying) if `debt > 0` and the
@@ -195,22 +215,40 @@ contract GearboxV3CreditAccountsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @dev Returns `["Credit Account", <leaf>]` where the leaf is the credit manager's `name()` (e.g.
     ///      "Trade WETH Tier 1"). If `name()` is missing/empty, falls back to the underlying asset symbol
     ///      (e.g. "USDC") via `underlying()` — the same accessor the position read uses. Leaf is "" (→ just
-    ///      `["Credit Account"]`) only if both are unreadable. Returns an empty array for a short positionId.
+    ///      `["Credit Account"]`) only if both are unreadable. Returns an empty array for a malformed positionId (see {_pidAddress}).
+    ///
+    ///      **All THREE reads** go through the shared hardened readers rather than `try`/`catch`. `_creditManagerOf`
+    ///      guards the *credit account's* codesize but returns whatever `creditManager()` answered, so `cm` itself may
+    ///      be code-less — a high-level call to it reverts via `extcodesize` in this frame, past any `catch`. And a
+    ///      `cm` that answers any of these selectors successfully but with undecodable returndata reverts in this
+    ///      frame too. All of it would take down a display-only view; see {LabelLib} and {StaticCallLib}.
+    ///
+    ///      The tier-2 `symbol()` hop matters as much as the first two, and is easy to overlook: the chain is only as
+    ///      fail-open as its last link, and `u` is *manager-chosen* (see the inline note below). Hardening `name()`
+    ///      and `underlying()` while leaving the symbol read on `try`/`catch` would have left the whole function
+    ///      revert-able and gas-unbounded through a one-line gap.
+    ///
+    ///      Note the deliberate asymmetry inside this file: `underlying()` is read through {StaticCallLib.safeAddr}
+    ///      here, but still through `try`/`catch` on the NAV path (`_debtReportable`, `_instanceAssets`,
+    ///      `_appendBorrow`). Those callers already treat a failed read as "drop the leg", so their failure mode is a
+    ///      caught revert, not an over-report — and putting a gas cap on a NAV-path read is a separate decision from
+    ///      a label fix.
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
-        if (pid.length < 32) return new string[](0);
-        address ca = abi.decode(pid, (address));
+        (address ca, bool ok) = _pidAddress(pid);
+        if (!ok) return new string[](0);
         address cm = _creditManagerOf(ca);
         if (cm == address(0)) return _labels("Credit Account", "");
 
-        string memory leaf;
-        try ICreditManagerV3(cm).name() returns (string memory n) {
-            leaf = n;
-        } catch {}
+        string memory leaf = LabelLib.readString(cm, ICreditManagerV3.name.selector, "");
 
         if (bytes(leaf).length == 0) {
-            try ICreditManagerV3(cm).underlying() returns (address u) {
-                if (u != address(0)) leaf = LabelLib.symbol(u, "");
-            } catch {}
+            (, address u) = StaticCallLib.safeAddr(cm, abi.encodeWithSelector(ICreditManagerV3.underlying.selector));
+            // `u` is whatever the (already untrusted) credit manager returned from `underlying()`, and `safeAddr`
+            // masks that word rather than rejecting it — so this hop's target is fully manager-chosen and must be
+            // read just as defensively as the two above. `LabelLib.symbol` is exactly that: PR #165 replaced its
+            // `try`/`catch` with the same capped raw staticcall and head validation this file used to hand-roll,
+            // which is why the local copy is gone.
+            if (u != address(0)) leaf = LabelLib.symbol(u, "");
         }
         return _labels("Credit Account", leaf);
     }
@@ -234,17 +272,25 @@ contract GearboxV3CreditAccountsMetaBalanceAdapter is MetaBalanceAdapter {
     // Internal — Gearbox reads (all try/catch'd by callers or here, so a non-Gearbox/stale instance degrades to empty)
     //
 
-    /// @dev Resolves the CreditManager that owns a credit account; `address(0)` if `ca` is not a Gearbox credit
-    ///      account (the `creditManager()` call reverts).
+    /// @dev Resolves the CreditManager that owns a credit account; `address(0)` if `ca` does not answer with one
+    ///      clean address word — not a Gearbox credit account, or not a well-behaved contract at all.
+    /// @dev Read through {StaticCallLib.safeAddrStrict} rather than `try ICreditAccountV3(ca).creditManager()`.
+    ///      `ca` is caller-supplied — `positionLabels` accepts any clean address word by design — and the typed
+    ///      form fails open for only ONE of the three ways that read can go wrong:
+    ///        - code-less `ca`: the compiler's `extcodesize` check reverts BEFORE the call, outside `catch`. The
+    ///          `ca.code.length` guard this replaces existed for exactly that, and is now redundant.
+    ///        - the call reverts: `catch` handles it. This was the only covered case.
+    ///        - the call SUCCEEDS with returndata that will not decode as an address — zero bytes, a short reply,
+    ///          or a full word with dirty upper 96 bits. The decode is emitted after the call, so its revert is
+    ///          outside `catch` too. The mundane instance is any ordinary contract with a no-op
+    ///          `fallback() external {}` — a plain receiver or a default-fallback proxy — which succeeds and
+    ///          returns nothing. That reverted this display-only view.
+    ///      The STRICT form is deliberate: masking a dirty word could name a real CreditManager, and `address(0)`
+    ///      here is a MEANINGFUL sentinel the callers branch on (drop the account / collapse the label), so
+    ///      inventing an address from garbage would change the answer rather than lose it. The probe is also gas-
+    ///      bounded, which the typed call was not.
     function _creditManagerOf(address ca) private view returns (address cm) {
-        // Codesize guard: a high-level call to a codeless address reverts via extcodesize, which try/catch does
-        // NOT catch — keep this fail-open (it backs both the position read and the verbose-only label).
-        if (ca.code.length == 0) return address(0);
-        try ICreditAccountV3(ca).creditManager() returns (address m) {
-            cm = m;
-        } catch {
-            cm = address(0);
-        }
+        (, cm,) = StaticCallLib.safeAddrStrict(ca, abi.encodeWithSelector(ICreditAccountV3.creditManager.selector));
     }
 
     /// @dev Reads `(enabledTokensMask, borrower)` from the manager's `creditAccountInfo`. `(0, address(0))` on revert
@@ -273,6 +319,10 @@ contract GearboxV3CreditAccountsMetaBalanceAdapter is MetaBalanceAdapter {
             return (false, 0);
         }
     }
+
+    //
+    // Internal — fail-open label reads (display-only; must never revert)
+    //
 
     /// @dev Population count (number of set bits) of `x`, via Kernighan's algorithm. Used to size the per-account leg
     ///      buffer to the enabled-token count.

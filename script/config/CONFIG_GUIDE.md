@@ -28,7 +28,8 @@ script/config/
 │   ├── custom-price-feeds/<chainId>.json         #   { "<feedName>": { "enabled", "constructor": {…} } }
 │   ├── balance-adapters/<chainId>.json           #   PLAIN adapters to deploy: { "<AdapterName>": { "enabled", "constructor": {…} } }
 │   ├── meta-balance-adapters/<chainId>.json      #   META adapters to deploy: { "<AdapterName>": { "enabled", "constructor": {…} } }  (NO instances)
-│   └── bridge-adapters/<chainId>.json            #   { "<AdapterName>": { "enabled", "initialize": {…}, "remoteChains":[…] } } — read by 05/06
+│   ├── bridge-adapters/<chainId>.json            #   { "<AdapterName>": { "enabled", "initialize": {…}, "remoteChains":[…] } } — read by 05/06
+│   └── bridge-escrow/<chainId>.json              #   { "accounts":[…], "assets": { "<SYMBOL>": "0x…" } } — read by 06 (authorizeAccount + registerAsset)
 └── nav-config/                                   # WHAT TO REGISTER/ADD ON NAV — read by RegisterAssets + 06_Configure
     ├── assets-and-price-feeds/<chainId>.json     #   { "<SYMBOL>": { "address", "priceFeeds": [ {type, address|feed, heartbeat} ] } }
     ├── balance-adapters/<chainId>.json           #   PLAIN adapters to add: { "<AdapterName>": { "enabled" } }
@@ -42,7 +43,7 @@ Two concerns are kept separate:
 
 **Names are the join key.** A balance adapter's key (e.g. `AaveV3InstancesMeta`) is the same string in its `contracts-deployment-config/` deploy file (`balance-adapters/<id>.json` for plain, `meta-balance-adapters/<id>.json` for meta), in the matching `nav-config/` file, and in `deployments/<id>.json` — they must match exactly so the deploy address can be resolved at registration time. Likewise a custom feed name (e.g. `wstETH`) joins its `contracts-deployment-config/custom-price-feeds/<id>.json` entry, an asset's `"feed":"<name>"` reference, and `deployments/<id>.json .customPriceFeeds.<name>`.
 
-> Deployed addresses are **never** stored in any of these files — they live only in `script/config/deployments/<chainId>.json`. Bridge adapters are configured in `contracts-deployment-config/bridge-adapters/<chainId>.json` (keyed by adapter name → `enabled` + `initialize` args + a `remoteChains` array; read by `05_DeployBridgeAdapters.s.sol` for deploy and `06_Configure.s.sol` for the `trustedRemoteAdapter` wiring). The bridge adapters are deployed via the canonical CREATE2 deployer (ADR 0012, D7), so each adapter's address is **identical on every chain** — `05` asserts the deployed address equals the predicted deterministic address and reverts otherwise. `remoteChains` lists the remote chain ids (standard chain ids, NOT protocol selectors/domains/eids — the adapters translate internally) whose sibling adapter this adapter should trust; `06` calls `setTrustedRemoteAdapter(remoteChainId, bytes32(uint256(uint160(adapter))))` for each (the sibling shares this adapter's CREATE2 address). The legacy `callbackSelector` field is obsolete (ADR 0012 D1 removed the escrow fallback dispatcher); it is ignored if present.
+> Deployed addresses are **never** stored in any of these files — they live only in `script/config/deployments/<chainId>.json`. Bridge adapters are configured in `contracts-deployment-config/bridge-adapters/<chainId>.json` (keyed by adapter name → `enabled` + `initialize` args + a `remoteChains` array; read by `05_DeployBridgeAdapters.s.sol` for deploy and `06_Configure.s.sol` for the `trustedRemoteAdapter` wiring). BridgeEscrow's post-deploy state (which accounts may bridge, which assets are registered) is configured in `contracts-deployment-config/bridge-escrow/<chainId>.json` (`accounts[]` → `authorizeAccount`; `assets.<SYMBOL>` → `registerAsset`; both read by `06_Configure.s.sol`, required for a functioning deposit path since `02` initializes the escrow empty). The bridge adapters are deployed via the canonical CREATE2 deployer (ADR 0012, D7), so each adapter's address is **identical on every chain** — `05` asserts the deployed address equals the predicted deterministic address and reverts otherwise. `remoteChains` lists the remote chain ids (standard chain ids, NOT protocol selectors/domains/eids — the adapters translate internally) whose sibling adapter this adapter should trust; `06` calls `setTrustedRemoteAdapter(remoteChainId, bytes32(uint256(uint160(adapter))))` for each (the sibling shares this adapter's CREATE2 address). The legacy `callbackSelector` field is obsolete (ADR 0012 D1 removed the escrow fallback dispatcher); it is ignored if present.
 
 ## contracts-deployment-config/custom-price-feeds/<chainId>.json — Custom price feeds to deploy
 
@@ -55,9 +56,8 @@ Deployable custom price feed adapters (e.g. sDAI, wstETH), keyed by feed name, e
     "constructor": {
       "wstEth": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
       "stEthToEthChainlinkOracle": "0x86392dC19c0b719886221c78AB11eb8Cf5c52812",
-      "ethToUsdChainlinkOracle": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
       "stEthToEthChainlinkHeartbeat": "86400",
-      "ethToUsdChainlinkHeartbeat": "3600"
+      "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }
   }
 }
@@ -73,43 +73,50 @@ There is no `deployed` field here — deployed addresses are written to `deploym
 
 ## nav-config/assets-and-price-feeds/<chainId>.json — Assets to register on NAV
 
-Lists every asset of interest, keyed by symbol (e.g. `"WETH"`, `"wstETH"`), with its token `address` and an ordered `priceFeeds[]` list. The **list of symbols to process** is derived from this file's keys via `ConfigReader.getAssetSymbols(vm, chainId)` — no hardcoded list; add a symbol by adding its object to this JSON. The **first** feed in `priceFeeds[]` is used by `registerAsset`; any remaining feeds are added via `addPriceFeed` (ADR 0009 redundancy).
+Lists every asset of interest, keyed by symbol (e.g. `"WETH"`, `"wstETH"`), with its token `address`, a **single-primary** `priceFeeds[]`, and (optionally) a `monitorFeeds[]` list plus divergence/peg tolerances. The **list of symbols to process** is derived from this file's keys via `ConfigReader.getAssetSymbols(vm, chainId)` — no hardcoded list; add a symbol by adding its object to this JSON.
+
+The NAV **prices each asset off its single primary feed** (`priceFeeds[0]`, registered via `registerAsset`) — there is no pricing fallback. Any additional feeds go in `monitorFeeds[]`: they NEVER price the NAV, they are read only to detect divergence. When the primary diverges from **any single** healthy monitor by more than `divergenceToleranceBps` (worst-case, not an average), or (when `pegToleranceBps` is set) the primary deviates from $1 by more than that, NAVCalculator flags the asset `irregular` (a signal, not a revert). `getPriceDivergence` also exposes the monitor median and whether the primary sits above or below it. See the divergence design in `PriceFeedLib` / `INAVCalculator.PriceFeedData`.
 
 Example structure (top-level keys are symbols — no chainId wrapper):
 
 ```json
 {
-  "WETH": {
-    "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
-    "priceFeeds": [
-      {
-        "type": "Chainlink",
-        "address": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
-        "heartbeat": 3600
-      }
-    ]
-  },
   "wstETH": {
     "address": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
+    "divergenceToleranceBps": 250,
     "priceFeeds": [
-      {
-        "type": "Custom",
-        "feed": "wstETH",
-        "heartbeat": 86400
-      }
+      { "type": "Custom", "feed": "wstETH", "heartbeat": 86400 }
+    ],
+    "monitorFeeds": [
+      { "type": "Redstone", "address": "0xe4aE88743c3834d0c492eAbC47384c84BcADC6a6", "heartbeat": 86400 }
+    ]
+  },
+  "USDC": {
+    "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    "pegToleranceBps": 100,
+    "divergenceToleranceBps": 50,
+    "priceFeeds": [
+      { "type": "Chainlink", "address": "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6", "heartbeat": 82800 }
+    ],
+    "monitorFeeds": [
+      { "type": "API3", "address": "0xD3C586Eec1C6C3eC41D276a23944dea080eDCf7f", "heartbeat": 86400 }
     ]
   }
 }
 ```
 
 - **address**: Token contract address.
-- **priceFeeds**: Ordered array of feed entries. The first registers the asset (`registerAsset`); the rest are added via `addPriceFeed`. An asset with no oracle uses an empty `priceFeeds: []`. Each entry has:
-  - **type**: `"Chainlink"` (direct Chainlink feed), `"Custom"` (custom price feed adapter), `"Redstone"` (Redstone Classic push feed), or `"API3"` (`Api3ReaderProxyV1` push feed).
-  - **address**: Feed contract address (Chainlink aggregator, Redstone/API3 proxy). Used by all types **except** `Custom`.
-  - **feed**: For `Custom` only — the name of a `contracts-deployment-config/custom-price-feeds/<chainId>.json` entry; its on-chain address is resolved post-deploy from `deployments/<chainId>.json .customPriceFeeds.<name>`.
-  - **heartbeat**: Staleness heartbeat in seconds (e.g. 3600, 86400). Optional; defaults to 3600 in code.
+- **priceFeeds**: The **single** primary feed (array with exactly one entry), used by `registerAsset` to price the asset. An asset with no oracle uses an empty `priceFeeds: []`. Entry fields (`type` / `address` / `feed` / `heartbeat`) are as below.
+- **monitorFeeds**: Optional ordered array of divergence-only feeds (same entry fields). Registered via `addMonitorFeed`; every entry must report 8 decimals (USD-comparable to the primary). Requires `divergenceToleranceBps` to be set. These are the former ADR-0009 redundancy feeds — they no longer price the NAV, they only feed the divergence check.
+- **divergenceToleranceBps**: Basis-point threshold for the **worst-case** deviation between the primary and any single healthy monitor (not an average — a real split can't be masked). Required when `monitorFeeds` is non-empty (must be in `(0, 10000]`). Calibrate by comparison type: **fundamental-vs-market** (a Custom-feed primary watched by a market monitor, e.g. wstETH/weETH/ezETH) uses **250 bps** (real spread expected); **market-vs-market** (a Chainlink primary vs a second market feed, e.g. ETH/USDC/WBTC Chainlink-vs-API3/Redstone) uses **50 bps** (same quantity, ~30× calm-market noise).
+- **pegToleranceBps**: Basis-point threshold for the absolute $1 peg guard. Set only on USD-$1 stablecoins; omit (or 0) to disable. Typical: 100. Independent of monitors. Note: this reads the *primary* — if the primary is a Chainlink feed with a `minAnswer` floor it can be blind to a real depeg, so the monitor-divergence check is the primary depeg signal; give stablecoins an independent monitor where a second USD feed exists.
+- Feed entry fields:
+  - **type**: `"Chainlink"`, `"Custom"`, `"Redstone"`, or `"API3"`.
+  - **address**: Feed contract address. Used by all types **except** `Custom`.
+  - **feed**: For `Custom` only — the name of a `contracts-deployment-config/custom-price-feeds/<chainId>.json` entry; resolved post-deploy from `deployments/<chainId>.json .customPriceFeeds.<name>`.
+  - **heartbeat**: Staleness heartbeat in seconds. Optional; defaults to 3600 in code.
 
-Iterate assets via `ConfigReader.getAssetSymbols(vm, chainId)`, then read each feed with `assetFeedCount` + `readAssetFeedType` / `readAssetFeedAddress` / `readAssetFeedHeartbeat` / `readAssetFeedName`.
+Iterate assets via `ConfigReader.getAssetSymbols(vm, chainId)`, then read the primary with `assetFeedCount` + `readAssetFeedType`/`readAssetFeedAddress`/`readAssetFeedHeartbeat`/`readAssetFeedName`, the monitors with `assetMonitorFeedCount` + `readAssetMonitorFeed*`, and tolerances with `readAssetDivergenceToleranceBps` / `readAssetPegToleranceBps`.
 
 **Registering assets:** Use `script/manage/RegisterAssets.s.sol` to report which tokens are already registered, which are skipped (no oracle or missing address), and which should be registered. It writes a Safe transaction batch to `safe-transactions/{chainId}-register-assets.json`. Run with `--rpc-url` so already-registered assets are excluded from the batch.
 
@@ -387,12 +394,12 @@ Example — bytes32-keyed meta-adapter (`MorphoMarketsMeta`), in `nav-config/met
 
 ## Adding a New Chain
 
-Add a per-chain `{newChainId}.json` file in **each** of the eight concern folders (plus the deployments state file):
+Add a per-chain `{newChainId}.json` file in **each** of the nine concern folders (plus the deployments state file):
 
 1. Create `script/config/chains/{newChainId}.json` — copy an existing chain config as a template; it carries only metadata and `addresses`.
 2. Create `script/config/contracts-deployment-config/custom-price-feeds/{newChainId}.json` with the chain's custom price feeds to deploy (`enabled` + `constructor`).
 3. Create `script/config/contracts-deployment-config/balance-adapters/{newChainId}.json` (plain adapters to deploy) and `script/config/contracts-deployment-config/meta-balance-adapters/{newChainId}.json` (meta adapters to deploy), each with `enabled` + `constructor`; set `enabled: true` for desired adapters.
-   Also create `script/config/contracts-deployment-config/bridge-adapters/{newChainId}.json` with the chain's bridge adapters to deploy (`enabled` + `initialize` args + a `remoteChains` array of the remote chain ids whose sibling adapter to trust; standard chain ids, not protocol selectors/domains/eids).
+   Also create `script/config/contracts-deployment-config/bridge-adapters/{newChainId}.json` with the chain's bridge adapters to deploy (`enabled` + `initialize` args + a `remoteChains` array of the remote chain ids whose sibling adapter to trust; standard chain ids, not protocol selectors/domains/eids), and `script/config/contracts-deployment-config/bridge-escrow/{newChainId}.json` with the escrow's post-deploy config (`accounts[]` to authorize + `assets.<SYMBOL>` logical-symbol→local-token map to register).
 4. Create `script/config/nav-config/assets-and-price-feeds/{newChainId}.json` with the chain's assets (`address` + `priceFeeds[]`).
 5. Create `script/config/nav-config/balance-adapters/{newChainId}.json` (plain adapters to register) and `script/config/nav-config/meta-balance-adapters/{newChainId}.json` (meta adapters to register, with `instances`/`instancesRaw`).
 6. Create an empty state file `script/config/deployments/{newChainId}.json` (deployed addresses are written here by the scripts).

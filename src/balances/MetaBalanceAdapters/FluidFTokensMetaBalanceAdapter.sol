@@ -16,11 +16,8 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         `abi.encode(address(fToken))`. See ADR 0010.
 /// @dev Reports one Supply leg per fToken (convertToAssets(balanceOf)) in its underlying.
 contract FluidFTokensMetaBalanceAdapter is MetaBalanceAdapter {
-    /// @param protocolName_ Human-readable protocol name (e.g. "Fluid").
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(string memory protocolName_, address navCalculator_)
-        MetaBalanceAdapter(protocolName_, navCalculator_)
-    {}
+    constructor(address navCalculator_) MetaBalanceAdapter(navCalculator_) {}
 
     /// @inheritdoc MetaBalanceAdapter
     /// @dev `instance` is the fToken (ERC4626) address. Emits one `Supplied` leg in the fToken's underlying.
@@ -53,8 +50,8 @@ contract FluidFTokensMetaBalanceAdapter is MetaBalanceAdapter {
     }
 
     /// @inheritdoc MetaBalanceAdapter
-    /// @dev Returns `["Lending", <fToken symbol>]` (leaf "" if unreadable). Returns an empty array for a short
-    ///      positionId.
+    /// @dev Returns `["Lending", <fToken symbol>]` (leaf "" if unreadable). Returns an empty array for a malformed
+    ///      positionId (see {_pidAddress}).
     function positionLabels(bytes calldata pid) external view override returns (string[] memory) {
         return _addressLabels(pid, "Lending", true);
     }

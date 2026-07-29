@@ -162,7 +162,6 @@ class LegMatch:
     protocol: str           # NAV protocol display name — from the protocolName field
     debank_id: str          # DeBank short id (e.g. "compound3"); "" for nav_only
     position_id: str        # NAV positionId (bytes hex, new) or hex addr string (legacy)
-    position_detail: dict   # NAV positionDetail JSON object (legacy; empty dict in new format)
     leg_kind: str           # e.g. "Supply", "Borrow", "Rewards", "Fees", "Staking"
     symbol: str
     is_debt: bool
@@ -407,14 +406,13 @@ def build_item_tokens(item: dict) -> str:
 
 
 def _leg_kind(pos: dict) -> str:
-    """Derive human-readable leg kind from positionKind (new) or positionDetail.type (legacy).
+    """Derive human-readable leg kind from the typed positionKind.
 
     New format: positionKind is a uint8 ordinal of the PositionKind enum in
     src/utils/PositionKind.sol — 0=Wallet, 1=Supplied, 2=Borrowed, 3=Collateral, 4=Staking,
     5=Rewards, 6=Fees — rendered here to the shorter labels "Wallet"/"Supply"/"Borrow"/
     "Collateral"/"Staking"/"Rewards"/"Fees" (so the enum's Supplied/Borrowed surface as
-    Supply/Borrow, matching the legacy strings below). An unmapped ordinal yields "Unknown(<n>)".
-    Legacy format: positionDetail.type is a string — "Supply"/"Borrow"/"Collateral"/"Staking"/etc.
+    Supply/Borrow, consistent with the isDebt-based fallback). An unmapped ordinal yields "Unknown(<n>)".
     """
     # New format: positionKind uint8
     if "positionKind" in pos:
@@ -426,12 +424,6 @@ def _leg_kind(pos: dict) -> str:
             return kind_map.get(n, f"Unknown({n})")
         except (ValueError, TypeError):
             pass
-    # Legacy format: positionDetail.type
-    det = pos.get("positionDetail", {})
-    if isinstance(det, dict):
-        t = det.get("type", "").strip()
-        if t:
-            return t
     return "Borrow" if pos.get("isDebt") else "Supply"
 
 
@@ -622,7 +614,6 @@ def render_unified_table(
                         protocol=_nav_protocol(best_pos),
                         debank_id=short_id,
                         position_id=best_pos.get("positionId", ""),
-                        position_detail=best_pos.get("positionDetail", {}),
                         leg_kind=_leg_kind(best_pos),
                         symbol=best_pos.get("symbol", "?"),
                         is_debt=bool(best_pos.get("isDebt", False)),
@@ -712,7 +703,6 @@ def render_unified_table(
                         protocol=_nav_protocol(p),
                         debank_id=short_id,
                         position_id=p.get("positionId", ""),
-                        position_detail=p.get("positionDetail", {}),
                         leg_kind=_leg_kind(p),
                         symbol=p.get("symbol", "?"),
                         is_debt=bool(p.get("isDebt", False)),
@@ -746,7 +736,6 @@ def render_unified_table(
                         protocol=_nav_protocol(p),
                         debank_id=short_id,
                         position_id=p.get("positionId", ""),
-                        position_detail=p.get("positionDetail", {}),
                         leg_kind=_leg_kind(p),
                         symbol=p.get("symbol", "?"),
                         is_debt=bool(p.get("isDebt", False)),
@@ -784,7 +773,6 @@ def render_unified_table(
                             protocol=_nav_protocol(p),
                             debank_id=short_id,
                             position_id=p.get("positionId", ""),
-                            position_detail=p.get("positionDetail", {}),
                             leg_kind=_leg_kind(p),
                             symbol=p.get("symbol", "?"),
                             is_debt=bool(p.get("isDebt", False)),
@@ -1162,12 +1150,8 @@ def render_unified_table(
             is_debt = pos.get("isDebt", False)
             sign = "−" if is_debt else ""
             proto = _nav_protocol(pos)
-            det = pos.get("positionDetail", {})
-            det_product = det.get("product", "") if isinstance(det, dict) else str(det)
-            det_type = det.get("type", "") if isinstance(det, dict) else ""
             nav_type_s = "price feed" if proto == "wallet" else "adapter"
-            nav_detail_parts = [p for p in [proto, det_product, det_type] if p]
-            nav_detail_s = " / ".join(nav_detail_parts) if nav_detail_parts else proto
+            nav_detail_s = proto
             lines.append(
                 f"| {nav_type_s} | {nav_detail_s} | {sym} | {fmt_amt(amount)} "
                 f"| {sign}{fmt_usd(abs(usd))} |"
@@ -1179,7 +1163,6 @@ def render_unified_table(
                     protocol=proto,
                     debank_id="",
                     position_id=pos.get("positionId", ""),
-                    position_detail=pos.get("positionDetail", {}),
                     leg_kind=_leg_kind(pos),
                     symbol=pos.get("symbol", "?"),
                     is_debt=is_debt,

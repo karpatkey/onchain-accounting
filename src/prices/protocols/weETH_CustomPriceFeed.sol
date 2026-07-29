@@ -1,29 +1,32 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.0;
 
-import {TwoFeedChainlinkPriceFeed} from "src/prices/TwoFeedChainlinkPriceFeed.sol";
+import {BaseCustomPriceFeed} from "src/prices/BaseCustomPriceFeed.sol";
 
-/// @title weETH Custom Price Oracle
-/// @notice Returns the USD price of weETH as `(weETH/ETH) × (ETH/USD)` from two Chainlink feeds.
-/// @dev Thin {TwoFeedChainlinkPriceFeed} subclass — the dual-feed compose/staleness math and `ICustomPriceFeed`
-///      surface live in the base; this only pins the weETH/ETH feed, the ETH/USD feed, and their heartbeats.
+/// @title weETH Custom Price Oracle (pure fundamental)
+/// @notice Returns the USD price of weETH from its on-chain exchange rate and the NAV's ETH/USD price:
+///         `price = weETH.getRate() × (ETH/USD)`, treating eETH/ETH ≡ 1.0 (eETH is a ~1:1 rebasing claim on ETH).
+/// @dev Pure-fundamental `BaseCustomPriceFeed` subclass — no market leg. `getRate()` (eETH per 1 weETH, 18 decimals)
+///      is the 18-decimal "base-token units per UNDERLYING" the base expects, since 1 eETH ≈ 1 ETH. Any market
+///      divergence is surfaced by a market MONITOR feed (e.g. Redstone weETH/USD) via NAVCalculator's divergence
+///      check, NOT by moving this primary price. (The L2 variant instead reads a Chainlink weETH/eETH exchange-rate
+///      feed, since weETH is bridged and has no on-chain rate there.)
 /// @author KPK
 /* solhint-disable contract-name-camelcase */
-contract weETH_CustomPriceFeed is TwoFeedChainlinkPriceFeed {
+contract weETH_CustomPriceFeed is BaseCustomPriceFeed {
     /// @param weEth_ The weETH token address.
-    /// @param weEthToEthChainlink_ The weETH/ETH Chainlink feed.
-    /// @param ethToUsdChainlinkOracle_ The ETH/USD Chainlink feed.
-    /// @param weEthToEthHeartbeat_ Staleness threshold (seconds) for the weETH/ETH feed.
-    /// @param ethToUsdChainlinkHeartbeat_ Staleness threshold (seconds) for the ETH/USD feed.
-    constructor(
-        address weEth_,
-        address weEthToEthChainlink_,
-        address ethToUsdChainlinkOracle_,
-        uint256 weEthToEthHeartbeat_,
-        uint256 ethToUsdChainlinkHeartbeat_
-    )
-        TwoFeedChainlinkPriceFeed(
-            weEth_, weEthToEthChainlink_, ethToUsdChainlinkOracle_, weEthToEthHeartbeat_, ethToUsdChainlinkHeartbeat_
-        )
-    {}
+    /// @param nav_ The NAVCalculator proxy to read the base asset's (ETH/USD) price from.
+    /// @param baseAsset_ The base asset (e.g. WETH) whose NAV-selected USD price scales the rate.
+    constructor(address weEth_, address nav_, address baseAsset_) BaseCustomPriceFeed(weEth_, nav_, baseAsset_) {}
+
+    /// @inheritdoc BaseCustomPriceFeed
+    /// @dev ETH per weETH ≡ eETH per weETH (eETH/ETH ≡ 1.0). Returns 0 to mark stale (base handles it).
+    function _rate() internal view override returns (uint256) {
+        return IweETH(UNDERLYING).getRate();
+    }
+}
+
+interface IweETH {
+    /// @notice Amount of eETH for 1 weETH (18 decimals).
+    function getRate() external view returns (uint256);
 }

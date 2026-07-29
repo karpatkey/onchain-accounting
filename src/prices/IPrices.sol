@@ -13,6 +13,18 @@ interface IPrices {
         Custom // 3 — custom ICustomPriceFeed adapter (internal staleness logic)
     }
 
+    /// @notice Per-asset pricing metadata governing divergence detection between the primary feed and its
+    /// monitor feeds. Packs into a single storage slot (uint32 + uint32 = 8 bytes).
+    /// @param divergenceToleranceBps Max allowed basis-point gap between the primary price and the worst-case
+    /// (furthest) healthy monitor price before the asset is flagged `irregular`. Must be non-zero when monitors exist.
+    /// @param pegToleranceBps Absolute peg-deviation guard: max allowed basis-point deviation of the primary price
+    /// from $1 before the asset is flagged `irregular`. Non-zero enables the guard (set it only on assets whose
+    /// fundamental value is $1, i.e. stablecoins); zero disables it.
+    struct AssetPricing {
+        uint32 divergenceToleranceBps;
+        uint32 pegToleranceBps;
+    }
+
     /// @notice Struct representing a price feed configuration.
     /// @param priceFeed The address of the price feed contract (e.g. Chainlink aggregator or custom price feed).
     /// @param decimals The number of decimal places the price feed uses.
@@ -63,6 +75,49 @@ interface IPrices {
     /// @param underlyingAsset The address of the token.
     event PriceFeedUnset(address indexed underlyingAsset);
 
+    /// @notice Emitted when a monitor (divergence-only) feed is added for a token.
+    /// @param underlyingAsset The address of the token.
+    /// @param priceFeed The address of the monitor feed.
+    /// @param chainlinkHeartbeat The heartbeat interval in seconds.
+    /// @param priceType The type of the monitor feed.
+    /// @param index The index of the new monitor feed in the asset's monitor array.
+    event MonitorFeedAdded(
+        address indexed underlyingAsset,
+        address indexed priceFeed,
+        uint256 chainlinkHeartbeat,
+        PriceType priceType,
+        uint256 index
+    );
+
+    /// @notice Emitted when a monitor feed is removed for a token.
+    /// @param underlyingAsset The address of the token.
+    /// @param priceFeed The address of the removed monitor feed.
+    /// @param index The former index of the removed monitor feed.
+    event MonitorFeedRemoved(address indexed underlyingAsset, address indexed priceFeed, uint256 index);
+
+    /// @notice Emitted when swap-and-pop relocates the last monitor feed into a vacated slot.
+    /// @param underlyingAsset The address of the token.
+    /// @param priceFeed The address of the monitor feed that was moved.
+    /// @param fromIndex The former index (len-1 before the pop).
+    /// @param toIndex The new index (the slot vacated by the removed monitor feed).
+    event MonitorFeedIndexChanged(
+        address indexed underlyingAsset, address indexed priceFeed, uint256 fromIndex, uint256 toIndex
+    );
+
+    /// @notice Emitted when all monitor feeds and pricing metadata are cleared for a token (asset unregistration).
+    /// @param underlyingAsset The address of the token.
+    event MonitorFeedsUnset(address indexed underlyingAsset);
+
+    /// @notice Emitted when an asset's divergence tolerance is set.
+    /// @param underlyingAsset The address of the token.
+    /// @param divergenceToleranceBps The new tolerance in basis points.
+    event DivergenceToleranceSet(address indexed underlyingAsset, uint32 divergenceToleranceBps);
+
+    /// @notice Emitted when an asset's peg tolerance is set (stablecoins).
+    /// @param underlyingAsset The address of the token.
+    /// @param pegToleranceBps The new peg tolerance in basis points.
+    event PegToleranceSet(address indexed underlyingAsset, uint32 pegToleranceBps);
+
     //
     // Errors
     //
@@ -92,6 +147,23 @@ interface IPrices {
     /// @notice Error when a new feed's decimals do not match the decimals of existing feeds for the asset
     error PriceFeedDecimalsMismatch(address asset, uint8 existingDecimals, uint8 newDecimals);
 
+    /// @notice Error when a monitor feed's decimals are not NAV_DECIMALS (monitors must be USD-comparable to the
+    /// primary, which is always NAV_DECIMALS).
+    error MonitorFeedDecimalsMismatch(address asset, uint8 expectedDecimals, uint8 actualDecimals);
+
+    /// @notice Error when a monitor feed is already registered for an asset.
+    error MonitorFeedAlreadyRegistered(address asset, address feed);
+
+    /// @notice Error when a monitor feed address is not found in an asset's monitor list.
+    error MonitorFeedNotFound(address asset, address feed);
+
+    /// @notice Error when adding a monitor feed before the asset's divergence tolerance has been set (>0).
+    error DivergenceToleranceRequired(address asset);
+
+    /// @notice Error when a tolerance value is out of range. Divergence tolerance must be in (0, 10000];
+    ///         peg tolerance must be in [0, 10000] (0 is allowed and disables the peg guard).
+    error InvalidTolerance(uint32 toleranceBps);
+
     /// @notice Returns the latest price for a given token while checking if the price is stale.
     /// @dev Reverts PriceFeedNotSet if the asset has no registered feeds. When at least one feed is registered
     /// but all are stale, returns price 0 with stale = true rather than reverting.
@@ -99,7 +171,13 @@ interface IPrices {
     /// @return price The latest price of the token (int256; positive for all valid prices, 0 when stale).
     /// @return decimals The amount of decimal places the price is represented with.
     /// @return stale True if all registered feeds are stale, the L2 sequencer is down, or within grace period.
-    function latestPrice(address underlyingAsset) external view returns (int256 price, uint8 decimals, bool stale);
+    /// @return irregular True if the primary price diverged from its monitor feeds beyond the divergence tolerance,
+    /// or (stablecoins) from the $1 peg beyond the peg tolerance. A pricing-quality signal, not a validity flag;
+    /// `price` is still populated. Always false when `stale` (divergence is undefined for an unusable price).
+    function latestPrice(address underlyingAsset)
+        external
+        view
+        returns (int256 price, uint8 decimals, bool stale, bool irregular);
 
     /// @notice Checks the L2 sequencer uptime feed, returning True when it is signaling staleness (the sequencer
     /// is down or still within the grace period). If 'chainlinkL2SequencerUptimeFeed' is the zero address (e.g. on
@@ -132,4 +210,19 @@ interface IPrices {
     /// @param index Index into the feed array (reverts with PriceFeedIndexOutOfBounds if out of range).
     /// @return config The PriceFeedConfig at that index.
     function getPriceFeedAt(address asset, uint256 index) external view returns (PriceFeedConfig memory config);
+
+    /// @notice Returns all monitor (divergence-only) feed configurations for an asset.
+    /// @param asset The address of the asset.
+    /// @return configs Array of monitor PriceFeedConfig (empty if none registered).
+    function getMonitorFeeds(address asset) external view returns (PriceFeedConfig[] memory configs);
+
+    /// @notice Returns the number of registered monitor feeds for an asset.
+    /// @param asset The address of the asset.
+    /// @return count Number of monitor feeds.
+    function getMonitorFeedCount(address asset) external view returns (uint256 count);
+
+    /// @notice Returns the per-asset pricing metadata (divergence/peg tolerances).
+    /// @param asset The address of the asset.
+    /// @return pricing The AssetPricing struct (zero-valued if never set: tolerances 0).
+    function getAssetPricing(address asset) external view returns (AssetPricing memory pricing);
 }

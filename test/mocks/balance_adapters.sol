@@ -12,8 +12,6 @@ contract Mock_CustomBalanceAdapter is IBalanceAdapter {
     mapping(address => mapping(address => uint256)) public amounts;
     mapping(address => mapping(address => bool)) public isDebt;
     address[] public underlyingAassetsSupported;
-    string internal _protocol;
-    string internal _positionDetail;
     IBalances public balances;
 
     constructor() {}
@@ -39,11 +37,6 @@ contract Mock_CustomBalanceAdapter is IBalanceAdapter {
 
     function underlyingAssetsSupported() external view returns (address[] memory) {
         return underlyingAassetsSupported;
-    }
-
-    function setPositionMetadata(string memory protocol, string memory positionDetail) external {
-        _protocol = protocol;
-        _positionDetail = positionDetail;
     }
 
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {

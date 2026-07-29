@@ -7,12 +7,13 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /// @title ezETH Custom Price Oracle
-/// @notice USD price of Renzo's ezETH = (RestakeManager TVL / ezETH supply) (ETH per ezETH, 18 dec) × Chainlink ETH/USD.
-/// @dev Shared skeleton (staleness, decimals, latestRoundData, the `rate × ETH/USD / 1e18` math) lives in
-///      BaseCustomPriceFeed; `_rate()` derives the ezETH/ETH rate from Renzo and returns 0 (→ stale) if
+/// @notice USD price of Renzo's ezETH = (RestakeManager TVL / ezETH supply) (ETH per ezETH, 18 dec) × the NAV's
+///         ETH/USD price.
+/// @dev Shared skeleton (base/USD via the NAV, staleness, decimals, latestRoundData, the `rate × base/USD / 1e18`
+///      math) lives in BaseCustomPriceFeed; `_rate()` derives the ezETH/ETH rate from Renzo and returns 0 (→ stale) if
 ///      `calculateTVLs()` reverts or supply is 0.
 /// @dev Staleness gap: calculateTVLs() reads Renzo's internal oracles, whose freshness is not independently
-///      checked here. Only the ETH/USD Chainlink heartbeat is verified. This is an architectural constraint of
+///      checked here. Only the NAV base/USD staleness is verified. This is an architectural constraint of
 ///      Renzo on mainnet; the L2 adapter (ezETH_L2_CustomPriceFeed) avoids this by using xRenzoDeposit.getRate() directly.
 /// @author KPK
 /* solhint-disable contract-name-camelcase */
@@ -22,12 +23,9 @@ contract ezETH_CustomPriceFeed is BaseCustomPriceFeed {
     /// @notice Renzo RestakeManager (exposes calculateTVLs()).
     IRestakeManager public immutable RESTAKE_MANAGER;
 
-    constructor(
-        address ezEth_,
-        address restakeManager_,
-        address ethToUsdChainlinkOracle_,
-        uint256 ethToUsdChainlinkHeartbeat_
-    ) BaseCustomPriceFeed(ezEth_, ethToUsdChainlinkOracle_, ethToUsdChainlinkHeartbeat_) {
+    constructor(address ezEth_, address restakeManager_, address nav_, address baseAsset_)
+        BaseCustomPriceFeed(ezEth_, nav_, baseAsset_)
+    {
         RESTAKE_MANAGER = IRestakeManager(OracleArgumentChecks.assertNonZeroAddress(restakeManager_));
     }
 

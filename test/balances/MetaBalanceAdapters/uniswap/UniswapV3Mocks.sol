@@ -238,3 +238,50 @@ contract MockToken {
         decimals = decimals_;
     }
 }
+
+/// @notice A "pool" whose `fee()` answers with a full word that does not fit `uint24`.
+/// @dev The typed mocks declare `uint24 public fee`, so they structurally cannot produce this — only a hand-rolled
+///      return can. Without the `rawFee > type(uint24).max` check, `uint24(rawFee)` truncates a 256-bit word into a
+///      bogus fee and the adapter renders a confident percentage for it.
+contract MockOversizedFeePool {
+    address public token0;
+    address public token1;
+
+    constructor(address t0, address t1) {
+        token0 = t0;
+        token1 = t1;
+    }
+
+    function fee() external pure returns (uint256) {
+        return uint256(type(uint24).max) + 1;
+    }
+}
+
+/// @notice A "pool" whose `token0()` answers with a full word whose upper 96 bits are dirty — not an address.
+/// @dev Reaches the `bad0` branch of `safeAddrStrict`. Masking instead of rejecting would name a different token.
+contract MockDirtyToken0Pool {
+    function fee() external pure returns (uint24) {
+        return 3000;
+    }
+
+    function token0() external pure returns (uint256) {
+        return type(uint256).max;
+    }
+
+    function token1() external pure returns (address) {
+        return address(0x1234);
+    }
+}
+
+/// @notice A pool whose `fee()` never returns — the gas-starvation case for the label probe.
+/// @dev Loops on `keccak256` rather than an empty `while(true)`: an empty loop is a candidate for compiler
+///      elimination, and hashing guarantees real gas is consumed per iteration.
+contract MockLoopingFeePool {
+    function fee() external pure returns (uint24) {
+        uint256 i;
+        while (true) {
+            i = uint256(keccak256(abi.encode(i)));
+        }
+        return uint24(i);
+    }
+}

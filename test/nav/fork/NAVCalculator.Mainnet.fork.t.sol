@@ -49,6 +49,8 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
     address public morphoBlue = address(0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb);
     bytes32 public marketIdSusdsUsdt = 0x3274643db77a064abd3bc851de77556a4ad2e2f502f4f0c80845fa8f909ecf0b; // sUSDS/USDT
 
+    address public usds = address(0xdC035D45d973E3EC169d2276DDab16f1e407384F); // Sky USDS (sUSDS base asset)
+
     // sUSDS price (USDS/USD Chainlink feed)
     address public usdsUsdChainlink = address(0xfF30586cD0F29eD462364C7e81375FC0C71219b1);
     uint256 public susdsHeartbeat = 82_800;
@@ -127,12 +129,14 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
     }
 
     function setupRegisterAssets() internal override {
-        sdaiPriceOracle = new sDAI_CustomPriceFeed(sdai, dsrManager, ChainlinkPriceFeeds.daiUsdEthMainnet(), heartbeat);
-        susdsPriceOracle = new sUSDS_CustomPriceFeed(susds, usdsUsdChainlink, susdsHeartbeat);
+        sdaiPriceOracle = new sDAI_CustomPriceFeed(sdai, dsrManager, address(nav), dai);
+        susdsPriceOracle = new sUSDS_CustomPriceFeed(susds, address(nav), usds);
 
         nav.registerAsset(usdc, ChainlinkPriceFeeds.usdcUsdEthMainnet(), IPrices.PriceType.Chainlink, heartbeat);
         nav.registerAsset(usdt, ChainlinkPriceFeeds.usdtUsdEthMainnet(), IPrices.PriceType.Chainlink, heartbeat);
         nav.registerAsset(dai, ChainlinkPriceFeeds.daiUsdEthMainnet(), IPrices.PriceType.Chainlink, heartbeat);
+        // USDS is the base asset the sUSDS custom feed reads from the NAV (base/USD selector).
+        nav.registerAsset(usds, usdsUsdChainlink, IPrices.PriceType.Chainlink, susdsHeartbeat);
         nav.registerAsset(sdai, address(sdaiPriceOracle), IPrices.PriceType.Custom, heartbeat);
         nav.registerAsset(susds, address(susdsPriceOracle), IPrices.PriceType.Custom, susdsHeartbeat);
         nav.registerAsset(aave, ChainlinkPriceFeeds.aaveUsdEthMainnet(), IPrices.PriceType.Chainlink, heartbeat);
@@ -144,12 +148,11 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
     }
 
     function setupBalanceAdapter() internal override {
-        AaveV3InstancesMetaBalanceAdapter aaveMeta = new AaveV3InstancesMetaBalanceAdapter("Aave V3", address(nav));
+        AaveV3InstancesMetaBalanceAdapter aaveMeta = new AaveV3InstancesMetaBalanceAdapter(address(nav));
         aaveAdapter = aaveMeta;
         AaveV3SafetyModuleBalanceAdapter smAdapter = new AaveV3SafetyModuleBalanceAdapter(address(nav));
-        compoundV3Comet =
-            new CompoundV3CometsMetaBalanceAdapter(compoundRewardContract, compound, "Compound V3", address(nav));
-        morphoBlueAdapter = new MorphoMarketsMetaBalanceAdapter(morphoBlue, "Morpho", address(nav));
+        compoundV3Comet = new CompoundV3CometsMetaBalanceAdapter(compoundRewardContract, compound, address(nav));
+        morphoBlueAdapter = new MorphoMarketsMetaBalanceAdapter(morphoBlue, address(nav));
 
         // Non-meta adapters register via the plain batch path.
         nav.addBalanceAdapters(aa(address(smAdapter)));

@@ -1,47 +1,29 @@
 {
   "lib/aave-v3-core": {
-    "tag": {
-      "name": "v1.19.4",
-      "rev": "b74526a7bc67a3a117a1963fc871b3eb8cea8435"
-    }
+    "rev": "b74526a7bc67a3a117a1963fc871b3eb8cea8435"
   },
   "lib/chainlink-brownie-contracts": {
-    "tag": {
-      "name": "1.3.0",
-      "rev": "5cb41fbc9b525338b6098da5ea7dd0b7e92f89e4"
-    }
+    "rev": "67887b84d3add02a25ef4145fc014e2f549509da"
   },
   "lib/comet": {
     "rev": "ed6ebcd84ac00906e8e725716891d482f4bef8b9"
   },
   "lib/forge-std": {
-    "tag": {
-      "name": "v1.12.0",
-      "rev": "7117c90c8cf6c68e5acce4f09a6b24715cea4de6"
-    }
+    "rev": "887e87251562513a7b5ab1ea517c039fe6ee0984"
   },
   "lib/gmx-contracts": {
     "rev": "fe55c4ba8911ae2378b50bfb9bece5ee50cf2af8"
   },
   "lib/morpho-blue": {
-    "tag": {
-      "name": "v1.0.0",
-      "rev": "55d2d99304fb3fb930c688462ae2ccabb1d533ad"
-    }
+    "rev": "48b2a62d9d911a27f886fb7909ad57e29f7dacc9"
   },
   "lib/openzeppelin-contracts-upgradeable": {
-    "tag": {
-      "name": "v5.5.0",
-      "rev": "aa677e9d28ed78fc427ec47ba2baef2030c58e7c"
-    }
+    "rev": "1334fc174b5c5664483ead3bf910084c8861a194"
   },
   "lib/openzeppelin-foundry-upgrades": {
-    "tag": {
-      "name": "v0.4.0",
-      "rev": "cbce1e00305e943aa1661d43f41e5ac72c662b07"
-    }
+    "rev": "cfd861bc18ef4737e82eae6ec75304e27af699ef"
   },
   "lib/optimism": {
-    "rev": "096942479b8a2434bb63458e661cf467ed5d41ba"
-  },
+    "rev": "f707883038d527cbf1e9f8ea513fe33255deadbc"
+  }
 }

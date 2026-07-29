@@ -3,30 +3,45 @@ pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
 import {sGHO_CustomPriceFeed} from "src/prices/protocols/sGHO_CustomPriceFeed.sol";
+import {Mock_ERC20, Mock_ERC4626} from "test/mocks/tokens.sol";
+import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 
 /// @title sGHO_CustomPriceFeed unit tests (no fork)
+/// @dev Base/USD (GHO/USD) now comes from the NAV via a Mock_NAVCalculator; the constructor takes
+///      `(sGho, nav, baseAsset)`. Vault-rate math is exercised in the fork test.
 contract sGHO_CustomPriceFeedTest is Test {
-    address sghoAddress;
-    address ghoToUsdChainlink;
-    uint256 heartbeat;
+    Mock_ERC4626 sgho;
+    Mock_ERC20 gho;
+    Mock_NAVCalculator nav;
 
     function setUp() public {
-        sghoAddress = address(0xE1753F2e00940cC31213dd92013cF019DFE4ca1d);
-        ghoToUsdChainlink = address(0x3f12643D3f6f874d39C2a4c9f2Cd6f2DbAC877FC);
-        heartbeat = 86_400;
+        gho = new Mock_ERC20("GHO", 18);
+        sgho = new Mock_ERC4626("sGHO", 18, address(gho), 1e18);
+        nav = new Mock_NAVCalculator();
+        nav.setAssetPrice(address(gho), 1e8, 8); // GHO/USD = $1
+    }
+
+    function test_constructor_valid() public {
+        sGHO_CustomPriceFeed oracle = new sGHO_CustomPriceFeed(address(sgho), address(nav), address(gho));
+        assertEq(oracle.decimals(), 8, "decimals == NAV_DECIMALS");
+        assertEq(oracle.underlyingAssetSupported(), address(sgho));
     }
 
     function test_invalidConstructorArgs() public {
+        // zero vault
         vm.expectRevert();
-        new sGHO_CustomPriceFeed(address(0), ghoToUsdChainlink, heartbeat);
+        new sGHO_CustomPriceFeed(address(0), address(nav), address(gho));
 
+        // zero nav (not a contract)
         vm.expectRevert();
-        new sGHO_CustomPriceFeed(sghoAddress, address(0), heartbeat);
+        new sGHO_CustomPriceFeed(address(sgho), address(0), address(gho));
 
+        // zero base asset
         vm.expectRevert();
-        new sGHO_CustomPriceFeed(sghoAddress, ghoToUsdChainlink, 0);
+        new sGHO_CustomPriceFeed(address(sgho), address(nav), address(0));
 
+        // base asset not an ERC20 (nav has no totalSupply)
         vm.expectRevert();
-        new sGHO_CustomPriceFeed(sghoAddress, sghoAddress, heartbeat);
+        new sGHO_CustomPriceFeed(address(sgho), address(nav), address(nav));
     }
 }

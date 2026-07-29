@@ -72,7 +72,6 @@ import {
 } from "src/balances/MetaBalanceAdapters/pancakeswap/PancakeSwapV3PoolsMetaBalanceAdapter.sol";
 
 // Price feed adapters (Mainnet)
-import {sDAI_CustomPriceFeed} from "src/prices/protocols/sDAI_CustomPriceFeed.sol";
 import {LDO_CustomPriceFeed} from "src/prices/protocols/LDO_CustomPriceFeed.sol";
 import {sUSDS_CustomPriceFeed} from "src/prices/protocols/sUSDS_CustomPriceFeed.sol";
 import {sUSDe_CustomPriceFeed} from "src/prices/protocols/sUSDe_CustomPriceFeed.sol";
@@ -219,14 +218,14 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
 
     function _deployAllPriceFeeds() internal {
         if (_chainId == 1) {
-            _tryDeployPriceFeed("sDAI", _deploySdai);
             _tryDeployPriceFeed("LDO", _deployLdo);
             _tryDeployPriceFeed("sUSDS", _deploySusds);
             _tryDeployPriceFeed("sUSDe", _deploySUsde);
             _tryDeployPriceFeed("sGHO", _deploySgho);
             _tryDeployPriceFeed("syrupUSDC", _deploySyrupUsdc);
             _tryDeployPriceFeed("wstETH", _deployWstEth);
-            _tryDeployPriceFeed("stETH", _deployStEth);
+            _tryDeployPriceFeed("stETHFundamental", _deployStEthFundamental);
+            _tryDeployPriceFeed("stETHCrossRate", _deployStEthCrossRate);
             _tryDeployPriceFeed("rETH", _deployREth);
             _tryDeployPriceFeed("cbETH", _deployCbEth);
             _tryDeployPriceFeed("weETH", _deployWeEth);
@@ -264,13 +263,6 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         address addr = deployer();
         _ephemeralPriceFeeds[name] = addr;
         console2.log("[priceFeed]", name, addr);
-    }
-
-    function _deploySdai() internal returns (address) {
-        address sDai = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "sDAI", "sDai"));
-        address dsrManager = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "sDAI", "dsrManager"));
-        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "sDAI", "baseAsset"));
-        return address(new sDAI_CustomPriceFeed(sDai, dsrManager, address(nav), baseAsset));
     }
 
     function _deployLdo() internal returns (address) {
@@ -313,12 +305,14 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return address(new wstETH_CustomPriceFeed(wstEth, address(nav), baseAsset));
     }
 
-    function _deployStEth() internal returns (address) {
-        // stETH/USD = (stETH/ETH) x (ETH/USD), via the dedicated stETH_CustomPriceFeed (a CrossRate subclass).
-        address underlying = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "underlyingAsset"));
-        address yToX = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "yToXFeed"));
-        uint256 yToXHb = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "yToXHeartbeat"));
-        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "stETH", "baseAsset"));
+    /// @notice stETH divergence MONITOR: the former market primary, demoted. Still the dedicated
+    ///         stETH_CustomPriceFeed (a CrossRate subclass); only the config key moved to "stETHCrossRate".
+    function _deployStEthCrossRate() internal returns (address) {
+        string memory k = "stETHCrossRate";
+        address underlying = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, k, "underlyingAsset"));
+        address yToX = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, k, "yToXFeed"));
+        uint256 yToXHb = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, k, "yToXHeartbeat"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, k, "baseAsset"));
         return address(new stETH_CustomPriceFeed(underlying, yToX, yToXHb, address(nav), baseAsset));
     }
 
@@ -394,10 +388,20 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return address(new rsETH_CustomPriceFeed(rsEth, rateProvider, address(nav), baseAsset));
     }
 
+    /// @notice Unit-rate `eETH_CustomPriceFeed` (`_rate()` == 1e18) for a given config key. Two assets use this
+    ///         shape: eETH itself, and stETH's fundamental primary (stETH/ETH held at 1.0, as for wstETH/eETH).
+    function _deployUnitRateFeed(string memory name) internal returns (address) {
+        address token = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, name, "eEth"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, name, "baseAsset"));
+        return address(new eETH_CustomPriceFeed(token, address(nav), baseAsset));
+    }
+
     function _deployEEth() internal returns (address) {
-        address eEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "eETH", "eEth"));
-        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "eETH", "baseAsset"));
-        return address(new eETH_CustomPriceFeed(eEth, address(nav), baseAsset));
+        return _deployUnitRateFeed("eETH");
+    }
+
+    function _deployStEthFundamental() internal returns (address) {
+        return _deployUnitRateFeed("stETHFundamental");
     }
 
     function _deployEzEth() internal returns (address) {

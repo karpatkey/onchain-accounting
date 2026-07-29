@@ -11,7 +11,6 @@ import {
     CompoundV3CometsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/CompoundV3CometsMetaBalanceAdapter.sol";
 import {MorphoMarketsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/MorphoMarketsMetaBalanceAdapter.sol";
-import {sDAI_CustomPriceFeed} from "src/prices/protocols/sDAI_CustomPriceFeed.sol";
 import {sUSDS_CustomPriceFeed} from "src/prices/protocols/sUSDS_CustomPriceFeed.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
@@ -29,7 +28,6 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
     address public usdc = address(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48);
     address public usdt = address(0xdAC17F958D2ee523a2206206994597C13D831ec7);
     address public dai = address(0x6B175474E89094C44Da98b954EedeAC495271d0F);
-    address public sdai = address(0x83F20F44975D03b1b09e64809B757c47f942BEeA);
     address public susds = address(0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD); // Sky Savings USDS
     address public compound = address(0xc00e94Cb662C3520282E6f5717214004A7f26888);
     address public gho = address(0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f);
@@ -57,7 +55,6 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
     sUSDS_CustomPriceFeed public susdsPriceOracle;
 
     // Maker DSR
-    address public dsrManager = address(0x373238337Bfe1146fb49989fc222523f83081dDb);
 
     /// @dev Pinned to a known-good block. Forking at latest is fragile: when a Chainlink feed
     ///      (or its proxy) gets replaced, the bare `latestRoundData()` call starts reverting
@@ -129,7 +126,6 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
     }
 
     function setupRegisterAssets() internal override {
-        sdaiPriceOracle = new sDAI_CustomPriceFeed(sdai, dsrManager, address(nav), dai);
         susdsPriceOracle = new sUSDS_CustomPriceFeed(susds, address(nav), usds);
 
         nav.registerAsset(usdc, ChainlinkPriceFeeds.usdcUsdEthMainnet(), IPrices.PriceType.Chainlink, heartbeat);
@@ -137,7 +133,6 @@ contract MainnetForkNAVCalculatorTest is NAVCalculatorForkHarness {
         nav.registerAsset(dai, ChainlinkPriceFeeds.daiUsdEthMainnet(), IPrices.PriceType.Chainlink, heartbeat);
         // USDS is the base asset the sUSDS custom feed reads from the NAV (base/USD selector).
         nav.registerAsset(usds, usdsUsdChainlink, IPrices.PriceType.Chainlink, susdsHeartbeat);
-        nav.registerAsset(sdai, address(sdaiPriceOracle), IPrices.PriceType.Custom, heartbeat);
         nav.registerAsset(susds, address(susdsPriceOracle), IPrices.PriceType.Custom, susdsHeartbeat);
         nav.registerAsset(aave, ChainlinkPriceFeeds.aaveUsdEthMainnet(), IPrices.PriceType.Chainlink, heartbeat);
         nav.registerAsset(compound, ChainlinkPriceFeeds.compUsdEthMainnet(), IPrices.PriceType.Chainlink, heartbeat);

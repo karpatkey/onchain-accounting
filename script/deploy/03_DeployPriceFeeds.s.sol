@@ -6,7 +6,6 @@ import {ConfigReader} from "../utils/ConfigReader.sol";
 import {console2} from "forge-std/console2.sol";
 
 // Import price adapters
-import {sDAI_CustomPriceFeed} from "../../src/prices/protocols/sDAI_CustomPriceFeed.sol";
 import {LDO_CustomPriceFeed} from "../../src/prices/protocols/LDO_CustomPriceFeed.sol";
 import {sUSDS_CustomPriceFeed} from "../../src/prices/protocols/sUSDS_CustomPriceFeed.sol";
 import {sUSDe_CustomPriceFeed} from "../../src/prices/protocols/sUSDe_CustomPriceFeed.sol";
@@ -35,7 +34,6 @@ import {syrupUSDC_L2_CustomPriceFeed} from "../../src/prices/protocols/syrupUSDC
 
 import {ETHPlus_CustomPriceFeed} from "../../src/prices/protocols/ETHPlus_CustomPriceFeed.sol";
 
-import {stETH_CustomPriceFeed} from "../../src/prices/protocols/stETH_CustomPriceFeed.sol";
 import {lsETH_CustomPriceFeed} from "../../src/prices/protocols/lsETH_CustomPriceFeed.sol";
 import {OETH_CustomPriceFeed} from "../../src/prices/protocols/OETH_CustomPriceFeed.sol";
 import {ezETH_CrossRateCustomPriceFeed} from "../../src/prices/protocols/ezETH_CrossRateCustomPriceFeed.sol";
@@ -94,11 +92,6 @@ contract DeployPriceFeeds is BaseDeployScript {
 
         vm.startBroadcast();
 
-        // Deploy sDAI Price Oracle
-        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "sDAI")) {
-            _deploySdai();
-        }
-
         // Deploy LDO Price Oracle
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "LDO")) {
             _deployLdo();
@@ -134,9 +127,17 @@ contract DeployPriceFeeds is BaseDeployScript {
             _deployWstEth();
         }
 
-        // Deploy stETH CrossRate Price Oracle (stETH/USD = ETH/USD x stETH/ETH)
-        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "stETH")) {
-            _deployStEth();
+        // stETH PRIMARY, pure fundamental: stETH/ETH held at 1.0, so it is a unit-rate eETH_CustomPriceFeed.
+        // Matches how wstETH (stEthPerToken x ETH/USD) and eETH (1.0 x ETH/USD) are priced; stETH was previously the
+        // only ETH-LST whose primary was a MARKET feed, which made the same claim worth two different numbers.
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "stETHFundamental")) {
+            _deployEEth("stETHFundamental");
+        }
+
+        // stETH divergence MONITOR: the former market primary (stETH/USD = ETH/USD x stETH/ETH), demoted. Its config
+        // block is unchanged, and its shape already matches what the generic CrossRate monitor deployer reads.
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "stETHCrossRate")) {
+            _deployCrossRateMonitor("stETHCrossRate");
         }
 
         // Deploy lsETH CrossRate Price Oracle (lsETH/USD = ETH/USD x lsETH/ETH)
@@ -166,7 +167,7 @@ contract DeployPriceFeeds is BaseDeployScript {
 
         // Deploy eETH Price Oracle
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "eETH")) {
-            _deployEEth();
+            _deployEEth("eETH");
         }
 
         // Deploy ezETH Price Oracle
@@ -226,26 +227,6 @@ contract DeployPriceFeeds is BaseDeployScript {
         }
 
         vm.stopBroadcast();
-    }
-
-    function _deploySdai() internal {
-        // Check if already deployed
-        address deployed = _readAdapterDeployed("priceFeeds", "sDAI");
-        if (deployed != address(0)) {
-            console2.log("sDAI_CustomPriceFeed already deployed at:", deployed);
-            return;
-        }
-
-        // Read constructor parameters from the custom-price-feeds deploy config
-        address sDai = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sDAI", "sDai"));
-        address dsrManager = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sDAI", "dsrManager"));
-        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sDAI", "baseAsset"));
-        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
-
-        // Deploy
-        sDAI_CustomPriceFeed sdaiAdapter = new sDAI_CustomPriceFeed(sDai, dsrManager, nav, baseAsset);
-        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "sDAI", address(sdaiAdapter));
-        console2.log("sDAI_CustomPriceFeed deployed at:", address(sdaiAdapter));
     }
 
     function _deployLdo() internal {
@@ -388,27 +369,6 @@ contract DeployPriceFeeds is BaseDeployScript {
         wstETH_CustomPriceFeed wstEthAdapter = new wstETH_CustomPriceFeed(wstEth, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "wstETH", address(wstEthAdapter));
         console2.log("wstETH_CustomPriceFeed deployed at:", address(wstEthAdapter));
-    }
-
-    function _deployStEth() internal {
-        address deployed = _readAdapterDeployed("priceFeeds", "stETH");
-        if (deployed != address(0)) {
-            console2.log("stETH_CustomPriceFeed already deployed at:", deployed);
-            return;
-        }
-
-        // CrossRate: Y/USD = (X/USD) * (Y/X). For stETH: Y = stETH, X = ETH.
-        address stEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "stETH", "underlyingAsset"));
-        address stEthEthFeed = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "stETH", "yToXFeed"));
-        uint256 stEthEthHeartbeat =
-            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, "stETH", "yToXHeartbeat"));
-        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "stETH", "baseAsset"));
-        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
-
-        stETH_CustomPriceFeed stEthAdapter =
-            new stETH_CustomPriceFeed(stEth, stEthEthFeed, stEthEthHeartbeat, nav, baseAsset);
-        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "stETH", address(stEthAdapter));
-        console2.log("stETH_CustomPriceFeed deployed at:", address(stEthAdapter));
     }
 
     function _deployLsEth() internal {
@@ -572,20 +532,31 @@ contract DeployPriceFeeds is BaseDeployScript {
         console2.log("rsETH_CustomPriceFeed deployed at:", address(rsEthAdapter));
     }
 
-    function _deployEEth() internal {
-        address deployed = _readAdapterDeployed("priceFeeds", "eETH");
+    /// @notice Deploys a UNIT-RATE `eETH_CustomPriceFeed` (`_rate()` is a constant 1e18, so the price is
+    ///         `1.0 x base/USD`) for the given config key. Parameterised by key because two assets use this shape:
+    ///         `eETH` itself, and `stETHFundamental` — stETH's primary, where stETH/ETH is held at 1.0 (Lido's
+    ///         redemption invariant), matching how wstETH and eETH are priced. The contract name on the explorer
+    ///         therefore reads `eETH` for both; that is deliberate, and it reuses already-reviewed bytecode rather
+    ///         than adding a near-identical leaf to the audit surface.
+    /// @dev ALL THREE key-dependent roles are parameterised, matching {_deployNxm} / {_deployOsToken}: the
+    ///      idempotency probe, the config reads, and the deployment-record write. Parameterising only the reads
+    ///      would write the second instance under the first one's key — silently repointing `eETH`'s own feed at a
+    ///      stETH-bound contract — and the probe would then skip the deploy entirely once `eETH` exists.
+    /// @param name The `custom-price-feeds/<chainId>.json` key (`"eETH"` or `"stETHFundamental"`).
+    function _deployEEth(string memory name) internal {
+        address deployed = _readAdapterDeployed("priceFeeds", name);
         if (deployed != address(0)) {
-            console2.log("eETH_CustomPriceFeed already deployed at:", deployed);
+            console2.log("eETH_CustomPriceFeed already deployed:", name, deployed);
             return;
         }
 
-        address eEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "eETH", "eEth"));
-        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "eETH", "baseAsset"));
+        address eEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "eEth"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "baseAsset"));
         address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
 
         eETH_CustomPriceFeed eEthAdapter = new eETH_CustomPriceFeed(eEth, nav, baseAsset);
-        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "eETH", address(eEthAdapter));
-        console2.log("eETH_CustomPriceFeed deployed at:", address(eEthAdapter));
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", name, address(eEthAdapter));
+        console2.log("eETH_CustomPriceFeed deployed:", name, address(eEthAdapter));
     }
 
     function _deployEzEth() internal {

@@ -54,36 +54,27 @@ library CurvePoolLib {
     ///         For most classic pools, pool IS the LP token.
     ///         For TriCryptoNG, pool is also self-LP (no lp_token() method).
     ///         For StableSwap-NG factory pools, lp_token() returns a separate ERC20.
-    /// @dev The mirror image of `getPool`'s legacy gap, and it bites the same generation. 3pool
-    ///      (`0xbEbc4478…`) exposes NO `lp_token()` — verified on mainnet, it reverts — so this fell through to
-    ///      "the pool IS the LP token". For 3pool that is false: its LP is the separate 3Crv, and `balanceOf`
-    ///      on the pool itself reverts, so every wallet-LP decomposition for 3pool read zero and reported
-    ///      nothing. The registry answers this direction too (`get_lp_token(3pool)` -> 3Crv) and, as in
-    ///      `getPool`, its answer is round-tripped — a different address that behaves like an ERC20 AND whose
-    ///      `get_pool_from_lp_token` maps back to this pool. As in `getPool`, that establishes SELF-CONSISTENCY
-    ///      only — both answers come from the same registry — so it catches a broken or stale registry, not a
-    ///      hostile one. The ERC20 sniff alone would be far weaker still: any ERC20 that is not the pool passes it.
+    /// @dev KNOWN, DELIBERATE UNDER-REPORT — legacy StableSwap pools are not resolved here.
+    ///      3pool (`0xbEbc4478…`) exposes no `lp_token()` (verified on mainnet: it reverts), so this falls
+    ///      through to "the pool IS the LP token". For 3pool that is false — its LP is the separate 3Crv, and
+    ///      `balanceOf` on the pool also reverts — so wallet-LP decomposition for such pools reports NOTHING.
     ///
-    ///      Scope, measured rather than assumed: this reads AddressProvider id 0 (MainRegistry), which carries
-    ///      the legacy generation (compound, y, sUSD… all resolve) but NOT factory-NG or crypto-registry pools
-    ///      — `get_lp_token` returns 0 for crvUSD/USDC and for tricrypto2. Those keep the old self-LP answer.
-    ///      For tricrypto2 that is still an under-report of wallet LP; safe direction, narrower fix than the
-    ///      phrase "the same generation" suggests.
+    ///      A registry fallback for this direction was written, measured working, and then REMOVED from the PR
+    ///      that fixed `getPool`. Reason, recorded so the next owner does not repeat it: `getLpToken` has a
+    ///      THIRD consumer, `CurvePoolsMetaBalanceAdapter`, which that PR did not touch. Resolving the LP flips
+    ///      it from emitting nothing to emitting full `Supplied` coin legs, which re-arms an `ERC20Default`
+    ///      double-count for any operator who had worked around this very under-report by registering the LP
+    ///      token as an asset. Under-reporting here is the SAFE direction; that would have been an over-report,
+    ///      which this adapter family must never produce.
+    ///
+    ///      The fix belongs in its own PR that reviews all three consumers together — see the successor brief
+    ///      in the PR that introduced this note. `_lpTokenFromRegistry` is retained below because `getPool`'s
+    ///      round-trip validation depends on it.
     function getLpToken(address pool) internal view returns (address) {
         (bool ok, bytes memory data) = pool.staticcall(abi.encodeWithSignature("lp_token()"));
         if (ok && data.length == 32) {
             address token = _firstAddress(data);
             if (token != address(0) && token != pool) return token;
-        }
-
-        // No lp_token(). Before assuming self-LP, check the pool actually behaves like one; legacy StableSwap
-        // pools do not, and only the registry knows their LP.
-        if (!_isErc20(pool)) {
-            address fromRegistry = _lpTokenFromRegistry(pool);
-            if (
-                fromRegistry != address(0) && fromRegistry != pool && _isErc20(fromRegistry)
-                    && _poolFromRegistry(fromRegistry) == pool
-            ) return fromRegistry;
         }
 
         return pool; // pool IS the LP token (classic StableSwap, TriCryptoNG)
@@ -99,22 +90,6 @@ library CurvePoolLib {
         (ok, data) = registry.staticcall(abi.encodeWithSignature("get_lp_token(address)", pool));
         if (!ok || data.length != 32) return address(0);
         return _firstAddress(data);
-    }
-
-    /// @dev Cheap supply sniff: does it answer `totalSupply()` OR `total_supply()`?
-    ///
-    ///      Correcting an earlier justification here, which a reviewer measured and disproved: it claimed the
-    ///      second selector was needed for StableSwap-NG. It is not. All four governed NG pools answer
-    ///      `totalSupply()` and REVERT on `total_supply()` (crvUSD/USDC, crvUSD/USDT, weETH/WETH, RLUSD/USDC,
-    ///      checked at block 22,500,000). `total_supply()` belongs to the CryptoSwap / TwoCrypto / TriCryptoNG
-    ///      era. The second selector is kept because it costs nothing on the common path — the first call
-    ///      short-circuits — and because this gate is NEGATIVE (`if (!_isErc20(pool))`), so accepting more
-    ///      shapes means consulting the registry less often, which is the conservative direction.
-    function _isErc20(address target) private view returns (bool) {
-        (bool ok, bytes memory data) = target.staticcall(abi.encodeWithSignature("totalSupply()"));
-        if (ok && data.length == 32) return true;
-        (ok, data) = target.staticcall(abi.encodeWithSignature("total_supply()"));
-        return ok && data.length == 32;
     }
 
     /// @notice Derives the pool address from an LP token.

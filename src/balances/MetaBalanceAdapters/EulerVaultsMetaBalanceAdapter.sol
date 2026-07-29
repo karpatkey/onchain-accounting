@@ -7,6 +7,7 @@ import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {StaticCallLib} from "src/utils/StaticCallLib.sol";
+import {GasStipendLib} from "src/utils/GasStipendLib.sol";
 
 /// @notice Minimal Euler V2 vault accessors beyond ERC4626. `debtOf` exists only on core eVaults (EVK); `EVC()` is
 ///         exposed by both core eVaults and EulerEarn vaults. A vault lacking either (or a non-Euler ERC4626)
@@ -59,6 +60,13 @@ interface IEVC {
 ///      factory off-chain to *propose* instances; governance approves each into the allowlist. See
 ///      BALANCE_ADAPTERS.md §6.1.
 contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
+    /// @notice Thrown when the `debtOf` read ran out of the gas it was given rather than answering.
+    /// @dev Declared here rather than on `INAVCalculator` because it is not the error a consumer sees: the base
+    ///      fan-out catches it and re-raises `INAVCalculator.InstanceGasExhausted`, which is the wave-wide signal
+    ///      for this condition. Its purpose is to make the instance revert instead of returning a leg-shaped
+    ///      answer with the debt missing. See {_safeDebt}.
+    error DebtReadGasExhausted(address vault, address account, uint256 stipend, uint256 consumed);
+
     /// @dev Gas stipend for the `getCollaterals` probe ({_isEnabledCollateral}) — the one fail-open read here that
     ///      is still hand-rolled, because it decodes an `address[]` with a bounded prefix scan rather than a single
     ///      word or a string, so neither shared reader fits it. A raw staticcall assigning `(bool, bytes memory)`
@@ -73,19 +81,24 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     ///      ever exceeded it would silently classify every collateral-enabled supply as `Supplied`. That is the safe
     ///      direction, and the fork test pins the live cost, but it is the reason this is generous rather than tight.
     ///
-    ///      `debtOf` ({_safeDebt}) and `EVC()` ({_safeEvc}) no longer use this constant: they are single-word reads
-    ///      and now go through {StaticCallLib}, whose stipend is 100_000 — the value LabelLib and every other
-    ///      hardened reader in the repo already uses. That LOWERS their ceiling from 150_000, so both are measured
-    ///      against mainnet rather than assumed: `EVC()` costs 15,318 gas cold, and `debtOf` on a live core-eVault
-    ///      borrow costs 32,125 cold with a binary-searched minimum viable stipend of 29,543 — 3.4x headroom.
+    ///      `debtOf` ({_safeDebt}) and `EVC()` ({_safeEvc}) no longer use this constant, and no longer share a
+    ///      policy with each other either — the difference is what each read's absence costs:
+    ///
+    ///      - `EVC()` is CLASSIFICATION. Losing it degrades a `Collateral` leg to `Supplied`, which moves a
+    ///        position between keys and changes no number, so it keeps the fixed {StaticCallLib.PROBE_GAS}
+    ///        ceiling of 100_000. Measured at 15,318 gas cold on mainnet.
+    ///      - `debtOf` is ACCOUNTING. Losing it removes a debt leg and RAISES the reported NAV, so it takes a
+    ///        frame-derived stipend and fails closed on exhaustion — see {_safeDebt}. Measured at 32,125 gas cold
+    ///        on a live core-eVault borrow, binary-searched minimum viable stipend 29,543.
     ///
     ///      Be precise about `debtOf`'s failure shape, because the obvious reassurance is WRONG. It is tempting to
     ///      say a starved `debtOf` merely reads 0 alongside a surviving supply leg, so the two vanish together.
     ///      That holds only when the same vault carries both. In Euler's canonical core topology the account
     ///      borrows from a CONTROLLER vault while its collateral sits in other vaults, so on the controller
     ///      `balanceOf(account) == 0` and a starved `debtOf` emits no legs at all — while the sibling vaults still
-    ///      report their collateral in full. That is unoffset collateral, which OVER-reports NAV. The 3.4x
-    ///      measured headroom is what makes this acceptable, not the shape of the failure.
+    ///      report their collateral in full. That is unoffset collateral, which OVER-reports NAV. Headroom is not
+    ///      what makes that acceptable — nothing about a measured margin bounds a hostile or upgraded vault — so
+    ///      the read no longer relies on it being unreachable.
     uint256 private constant PROBE_GAS = 150_000;
 
     /// @dev Upper bound on the collateral-list length {_supplyKind} will scan. The EVC caps an account's collateral
@@ -225,8 +238,38 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     ///
     ///      Not reachable on the configured mainnet instances today (both are EulerEarn aggregators whose `debtOf`
     ///      genuinely reverts), but the instance set is governed config and adding a core eVault would open it.
+    ///
+    ///      **Fail-open on a revert, FAIL-CLOSED on an exhausted stipend**, which is why this does not use
+    ///      {StaticCallLib.safeUint}: that helper's `ok` folds the two together, and they are opposite events. A
+    ///      vault that reverts has answered "I have no `debtOf`" — EulerEarn's case, and reading 0 is correct. A
+    ///      vault that ran out of gas has answered nothing, and reading 0 there is how a real borrow becomes a
+    ///      higher NAV. Reverting instead makes the instance fail rather than return a number missing a leg.
+    ///
+    ///      The stipend is a share of THIS frame rather than {StaticCallLib.PROBE_GAS}, and that is the half that
+    ///      actually closes the hole. A fixed local ceiling is unrecoverable — it binds identically at every
+    ///      budget, so no amount of extra gas gets the read through — and, worse, it is invisible: 100_000 spent
+    ///      inside a multi-megagas instance stipend looks like a cheap revert to the base fan-out's gas-based
+    ///      classifier, which then drops the instance silently. A frame-derived stipend makes a starved read
+    ///      consume enough of the instance's budget that {MetaBalanceAdapter._positionsForInstances} classifies
+    ///      it and raises `InstanceGasExhausted`, so the failure leaves the adapter instead of being absorbed one
+    ///      frame below the guard built to catch it. That guard's docstring names this exact blind spot — an
+    ///      instance that swallows its own out-of-gas — and this is how this adapter stops being an instance that
+    ///      does.
+    ///
+    ///      {DebtReadGasExhausted} is therefore the MECHANISM rather than the signal a consumer sees: its job is
+    ///      to make the instance revert at all. The base re-labels it as `InstanceGasExhausted`, which is the
+    ///      error already carried on `INAVCalculator` for exactly this condition.
+    ///
+    ///      Why the whole read must fail rather than just this leg: the over-report is not local to this vault.
+    ///      In Euler's core topology the controller vault holds the debt with `balanceOf == 0`, so suppressing
+    ///      its debt leg removes the instance's ONLY leg while sibling vaults keep reporting collateral in full.
+    ///      Nothing inside this instance can offset that; only refusing to answer can.
     function _safeDebt(address vaultAddr, address account) private view returns (uint256) {
-        (, uint256 debt) = StaticCallLib.safeUint(vaultAddr, abi.encodeCall(IEulerEVault.debtOf, (account)));
+        uint256 stipend = GasStipendLib.stipendFrom(gasleft());
+        (bool ok, bool hasWord, uint256 debt, bool starved, uint256 consumed) =
+            StaticCallLib.probeWordMetered(vaultAddr, abi.encodeCall(IEulerEVault.debtOf, (account)), stipend);
+        if (starved) revert DebtReadGasExhausted(vaultAddr, account, stipend, consumed);
+        if (!ok || !hasWord) return 0;
         return debt;
     }
 

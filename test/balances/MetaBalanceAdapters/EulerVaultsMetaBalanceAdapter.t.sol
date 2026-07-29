@@ -91,6 +91,42 @@ contract MockCoreEVault {
     }
 }
 
+/// @notice A core-eVault shape whose `debtOf` consumes every unit of gas it is forwarded instead of answering.
+/// @dev The failure `_safeDebt` must NOT read as "no debt". A vault can reach this by being upgraded, by an
+///      unbounded internal loop, or by being hostile — the instance set is governed, but a vault's code is not
+///      frozen by being registered. `balanceOf` is settable so the test can build the topology that actually
+///      over-reports: a controller vault holding only debt, whose siblings hold the collateral.
+contract MockDebtGasBombVault {
+    string public name = "EVK Vault eUSDC-bomb";
+    address private _asset;
+    address public EVC;
+    mapping(address => uint256) public balanceOf;
+
+    constructor(address asset_) {
+        _asset = asset_;
+    }
+
+    function asset() external view returns (address) {
+        return _asset;
+    }
+
+    function convertToAssets(uint256 shares) external pure returns (uint256) {
+        return shares;
+    }
+
+    function setBalance(address account, uint256 shares) external {
+        balanceOf[account] = shares;
+    }
+
+    function debtOf(address) external pure returns (uint256) {
+        // Hash one word forever: grows no memory, so it spends the stipend steadily rather than
+        // out-of-gassing early on memory expansion.
+        assembly {
+            for {} 1 {} { mstore(0x00, keccak256(0x00, 0x20)) }
+        }
+    }
+}
+
 contract MockToken {
     string public symbol;
     uint8 public decimals;
@@ -967,5 +1003,68 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
         uint256 dirty = uint256(uint160(coord)) | (uint256(1) << 255);
         assertEq(adapter.positionLabels(abi.encode(dirty)).length, 0, "dirty upper bits");
         assertEq(adapter.positionLabels(abi.encode(coord, uint256(1))).length, 0, "over-long");
+    }
+
+    // ---------------------------------------------------------------------------------------------------------
+    // debtOf: fail-open on a revert, fail-CLOSED on an exhausted stipend
+    // ---------------------------------------------------------------------------------------------------------
+
+    /// @notice A `debtOf` that burns its stipend must make the read FAIL, not report a supply leg with the debt
+    ///         silently missing.
+    /// @dev The over-report this closes. Reading a starved `debtOf` as 0 leaves the supply leg standing alone,
+    ///      so the position is counted as pure credit and NAV rises by the whole borrow. The failure has to
+    ///      leave the adapter: the base fan-out classifies it by gas consumed and re-raises
+    ///      `InstanceGasExhausted`, which is why the stipend is frame-derived rather than a fixed 100_000 — a
+    ///      fixed ceiling is spent inside the instance's much larger budget and reads as a cheap revert, so the
+    ///      instance would be dropped silently instead.
+    function test_debtOf_gasBomb_revertsInsteadOfDroppingTheDebtLeg() public {
+        MockDebtGasBombVault bomb = new MockDebtGasBombVault(address(usdc));
+        bomb.setBalance(alice, 1_000_000);
+
+        bytes32[] memory ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(address(bomb))));
+
+        // Selector only: the stipend/consumed operands are whatever the enclosing frame happened to hold, so
+        // pinning them would pin the test runner's budget rather than the behaviour.
+        vm.expectPartialRevert(INAVCalculator.InstanceGasExhausted.selector);
+        this.callPositions(ins);
+    }
+
+    /// @notice The controller topology: a vault holding ONLY debt must not answer "no legs" when its `debtOf`
+    ///         was starved.
+    /// @dev The reason a per-vault view of this is not enough. On a controller `balanceOf == 0`, so a starved
+    ///      `debtOf` produces an instance with no legs at all — indistinguishable from an account with no
+    ///      position there — while the sibling vaults holding the collateral report it in full. Nothing inside
+    ///      this instance can offset that, so refusing to answer is the only safe outcome.
+    function test_debtOf_gasBomb_controllerWithNoSupply_stillReverts() public {
+        MockDebtGasBombVault controller = new MockDebtGasBombVault(address(usdc));
+        // No balance: the account's collateral sits in other vaults, as it does in Euler's core model.
+
+        bytes32[] memory ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(address(controller))));
+
+        vm.expectPartialRevert(INAVCalculator.InstanceGasExhausted.selector);
+        this.callPositions(ins);
+    }
+
+    /// @notice A vault whose `debtOf` genuinely REVERTS still fails open — the EulerEarn case, unchanged.
+    /// @dev The distinction the whole change rests on. An aggregator that does not implement `debtOf` has
+    ///      answered, and reading 0 is correct; both configured mainnet instances are exactly this. If this
+    ///      degrades to a revert the change has broken the live configuration rather than hardened it.
+    function test_debtOf_genuineRevert_stillFailsOpen() public {
+        // `MockEVault` (vaultA) implements no `debtOf` at all, so the call reverts on a missing selector.
+        bytes32[] memory ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(address(vaultA))));
+
+        vaultA.setBalance(alice, 1_000_000);
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(alice, ins, address(0));
+        assertEq(pos.length, 1, "an aggregator with no debtOf still reports its supply leg");
+        assertTrue(pos[0].positionKind == PositionKind.Supplied || pos[0].positionKind == PositionKind.Collateral);
+        assertFalse(pos[0].isDebt, "and it is a credit leg, not a debt one");
+    }
+
+    /// @dev External wrapper so `vm.expectRevert` applies to the adapter call rather than to this test frame.
+    function callPositions(bytes32[] memory ins) external view returns (INAVCalculator.PositionBalance[] memory) {
+        return adapter.getAdapterPositionsForInstances(alice, ins, address(0));
     }
 }

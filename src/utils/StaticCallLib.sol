@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
+import {GasStipendLib} from "src/utils/GasStipendLib.sol";
+
 /// @title StaticCallLib
 /// @author KPK
 /// @notice Best-effort view-call helpers for reading from possibly-noncompliant external contracts: a staticcall
@@ -143,5 +145,59 @@ library StaticCallLib {
         // payload produces ≥ 32 bytes of returndata, which the EVM copies into the output window exactly as a
         // successful reply would. Without `ok`, that revert payload's first word would be handed back as a value.
         if (hasWord) word = raw;
+    }
+
+    /// @notice As {probeWord}, but with a CALLER-SUPPLIED stipend, and it reports whether a failed call ran out
+    ///         of that stipend rather than answering.
+    /// @dev Exists because {probeWord}'s two properties — a fixed {PROBE_GAS} ceiling and a `false` that folds
+    ///      "reverted" together with "ran out of gas" — are wrong for a read whose absence changes a NAV number
+    ///      rather than a label.
+    ///
+    ///      **Why the stipend is the caller's.** {PROBE_GAS} is local and fixed, so a starved read cannot be
+    ///      rescued by handing the whole call more gas — the ceiling binds first, identically, at every budget.
+    ///      That is tolerable for a cosmetic read and not for an accounting one: it makes the failure permanent
+    ///      rather than a matter of asking for more. A caller passing `GasStipendLib.stipendFrom(gasleft())` gets
+    ///      the same recoverable shape the rest of the read path already has.
+    ///
+    ///      **Why `starved` is separate from `ok`.** A revert and an exhausted stipend are indistinguishable in
+    ///      the success flag alone, and they deserve opposite treatment: a contract that genuinely does not
+    ///      implement the selector has ANSWERED, and failing open is right; one that ran out of gas has not, and
+    ///      recording its absence as a zero is how a missing debt leg becomes a higher NAV.
+    ///
+    ///      The classification is {GasStipendLib}'s, deliberately shared rather than restated — a threshold that
+    ///      drifts between the guards asking this question re-opens the hole between them.
+    ///
+    ///      It is measured against what was ACTUALLY forwarded, not against `stipend`. EIP-150 hands the callee
+    ///      `min(stipend, 63/64 of what remains)`, so in a frame too poor to forward the full stipend a callee
+    ///      that burns everything it got would consume far less than `stipend` and read as a cheap revert. That
+    ///      false negative is precisely the nested-starvation case, so the floor is computed here.
+    /// @param stipend Gas ceiling for the call. Pass `GasStipendLib.stipendFrom(gasleft())` for the recoverable
+    ///        shape; a fixed value only where the read's absence is cosmetic.
+    /// @return ok The raw staticcall success flag.
+    /// @return hasWord True when the call succeeded AND returned at least one full word.
+    /// @return word The first 32 bytes of returndata, or 0 when `!hasWord`.
+    /// @return starved True ONLY when the call failed AND consumed essentially everything it was forwarded.
+    /// @return consumed Gas the call cost this frame — reportable in the caller's error.
+    function probeWordMetered(address target, bytes memory data, uint256 stipend)
+        internal
+        view
+        returns (bool ok, bool hasWord, uint256 word, bool starved, uint256 consumed)
+    {
+        uint256 available = gasleft();
+        uint256 size;
+        uint256 raw;
+        assembly ("memory-safe") {
+            ok := staticcall(stipend, target, add(data, 0x20), mload(data), 0x00, 0x20)
+            size := returndatasize()
+            raw := mload(0x00)
+        }
+        consumed = available - gasleft();
+        hasWord = ok && size >= 32;
+        if (hasWord) word = raw;
+        if (!ok) {
+            uint256 forwarded = available - available / 64;
+            if (stipend < forwarded) forwarded = stipend;
+            starved = GasStipendLib.exhausted(forwarded, consumed);
+        }
     }
 }

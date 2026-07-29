@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
+import {GasStipendLib} from "src/utils/GasStipendLib.sol";
+
 /// @notice Minimal Fluid T1 vault interface — just the static `constantsView` getter we use to
 ///         read the vault's collateral/debt tokens.
 interface IFluidVaultT1 {
@@ -53,13 +55,13 @@ interface IFluidVaultResolver {
     }
 }
 
-/// @notice One of the account's NFT positions in `vault` could not be read, so the vault's collateral/debt
-///         aggregate would be incomplete by an unknown amount in an unknown direction.
+/// @notice One of the account's NFT positions in `vault` ran out of the gas its read was given, so the vault's
+///         aggregate would be incomplete and nothing downstream could tell.
 /// @dev Declared file-local rather than in `src/errors.sol` on purpose: both pinned libraries (`PriceFeedLib`,
 ///      `NAVRegistryLib`) plain-import that file, so adding to it would pull this symbol into both CREATE2
 ///      compilation closures for no benefit — only this library raises it, and only `MetaBalanceAdapter`'s
 ///      existing per-instance `catch` consumes it.
-error FluidPositionUnreadable(address vault, uint256 nftId);
+error FluidPositionGasExhausted(address vault, uint256 nftId, uint256 stipend, uint256 consumed);
 
 /// @title FluidVaultLib
 /// @author KPK
@@ -73,6 +75,10 @@ error FluidPositionUnreadable(address vault, uint256 nftId);
 library FluidVaultLib {
     /// @notice Fluid's vault-variant discriminator for a T1 vault (Smart vaults return 20000/30000/40000).
     uint256 internal constant VAULT_TYPE_T1 = 10000;
+
+    /// @notice Bytes copied from `positionByNftId`'s reply. Covers the `>= 384` static prefix
+    ///         {_readUserPositionPrefix} reads, with one word of slack; the rest is discarded by the EVM.
+    uint256 internal constant READ_WINDOW = 416;
 
     /// @notice Reads a T1 vault's `(collateral, debt)` tokens from its `constantsView()`.
     /// @dev Gated on the resolver's `getVaultType` as defence in depth. The T1 `ConstantViews` decode is
@@ -146,31 +152,34 @@ library FluidVaultLib {
     }
 
     /// @notice Walks the account's Fluid NFTs through the resolver and sums collateral/debt for `vault`.
-    /// @dev **An aggregate is either complete or it is not reported.** A per-NFT read that cannot be completed
-    ///      raises {FluidPositionUnreadable} rather than being skipped, because skipping it moves the total in an
-    ///      UNKNOWN direction. Each NFT contributes a supply and a borrow together, so dropping one changes the
-    ///      vault's reported equity by `supply - borrow` — negative for an underwater position, which RAISES the
-    ///      reported NAV. "Skip and carry on" is only conservative when the dropped term has a known sign, and
-    ///      here it does not.
+    /// @dev **The two ways a per-NFT read can fail get opposite answers, because they deserve them.**
     ///
-    ///      Skipping was also self-propagating in a way that made it invisible. The read is a fail-open
-    ///      `staticcall`, so a frame that runs out of gas mid-loop fails this read, `continue`s, then fails every
-    ///      remaining read for the same reason — and `aggregate` still RETURNED, with a partial total and no
-    ///      indication that it was partial. `MetaBalanceAdapter`'s per-instance classifier never fired because
-    ///      nothing had failed from where it stands.
+    ///      An earlier revision raised on BOTH, with the reasoning that the caller
+    ///      (`MetaBalanceAdapter._positionsForInstances`) already classifies gas across its own `try` boundary,
+    ///      so one `revert` would yield both behaviours. That was wrong, and the way it was wrong is worth
+    ///      keeping: the caller classifies correctly, but its benign-revert BEHAVIOUR is to drop the whole
+    ///      instance. So a single unreadable NFT stopped omitting one NFT's `supply_i - borrow_i` and started
+    ///      omitting the vault's entire `sum(supply) - sum(borrow)` — the same unknown-direction omission, at
+    ///      larger magnitude, and for a net-debt vault that RAISES reported NAV. It also could not be seen: the
+    ///      per-instance catch consumed it and `_positionsForInstances` returned normally. Both review gates
+    ///      found this independently.
     ///
-    ///      Raising restores that classifier, and deliberately does NOT re-implement it. The caller
-    ///      (`MetaBalanceAdapter._positionsForInstances`) already measures gas across its own `try` boundary and
-    ///      splits the two cases for us, which is why there is no {GasStipendLib} call in this library:
-    ///        - **starved** — the staticcall burned ~63/64 of the instance's stipend before this reverts, so the
-    ///          caller scores it exhausted and raises `InstanceGasExhausted`, naming the vault. Loud, and
-    ///          recoverable by supplying more gas. This is the "make truncation visible" half.
-    ///        - **genuinely unreadable** — a short or reverting reply costs almost nothing, so the caller scores
-    ///          it a benign revert and drops just this vault's legs. Conservative, and isolated to the one
-    ///          instance exactly as before. This is the half that must NOT become loud, or one malformed NFT
-    ///          would fail the whole account's NAV read.
-    ///      One `revert` therefore yields both behaviours; adding a second classifier here would be a threshold
-    ///      that could drift from the shared one.
+    ///        - **Starved** — the read did not answer, and neither will the ones after it, because the ~1/64
+    ///          residue cannot fund them. `aggregate` would otherwise RETURN a partial total with nothing
+    ///          downstream able to tell. Raises {FluidPositionGasExhausted}, which the caller scores exhausted
+    ///          and re-raises as `InstanceGasExhausted`, naming the vault. Loud, and recoverable with more gas.
+    ///        - **Genuinely unreadable** — a revert or a short reply. The resolver HAS answered about this one
+    ///          NFT. Omit just it, as before. Still an unknown-direction omission, but the smallest one
+    ///          available; escalating it to the whole vault trades a small silent error for a large one, and
+    ///          failing the account's whole read over one malformed NFT is worse than either.
+    ///
+    ///      The classification is {GasStipendLib}'s, called rather than restated, so it cannot drift from the
+    ///      threshold `MetaBalanceAdapter` and `PriceFeedLib` use.
+    ///
+    ///      The reply is read into a bounded 416-byte window rather than `(bool, bytes memory)`. Assigning that
+    ///      pair makes solc `returndatacopy` the ENTIRE reply — `positionByNftId` returns a large struct pair —
+    ///      and the caller pays that quadratically, OUTSIDE the stipend. 416 covers the `>= 384` prefix this
+    ///      reads with a word to spare; bytes past it are discarded by the EVM, never copied.
     /// @return collateralTotal Total collateral (collateral-token decimals).
     /// @return debtTotal Total debt (debt-token decimals).
     function aggregate(address vault, address resolver, address account)
@@ -185,11 +194,27 @@ library FluidVaultLib {
             uint256 nftId = nftIds[i];
             if (IFluidVaultResolver(resolver).vaultByNftId(nftId) != vault) continue;
 
-            (bool ok, bytes memory ret) =
-                resolver.staticcall(abi.encodeWithSelector(IFluidVaultResolver.positionByNftId.selector, nftId));
-            // NOT `continue`. See the note above: an omitted NFT moves the total in an unknown direction, and
-            // the omission was unobservable because this function still returned.
-            if (!ok || ret.length < 384) revert FluidPositionUnreadable(vault, nftId);
+            // One sample, used both to derive the stipend and to measure against it — see GasStipendLib.exhausted.
+            uint256 available = gasleft();
+            uint256 stipend = GasStipendLib.stipendFrom(available);
+            bytes memory cd = abi.encodeWithSelector(IFluidVaultResolver.positionByNftId.selector, nftId);
+            bytes memory ret = new bytes(READ_WINDOW);
+            bool ok;
+            uint256 size;
+            assembly ("memory-safe") {
+                ok := staticcall(stipend, resolver, add(cd, 0x20), mload(cd), add(ret, 0x20), READ_WINDOW)
+                size := returndatasize()
+            }
+            if (!ok || size < 384) {
+                uint256 consumed = available - gasleft();
+                // Starved: this NFT did not answer, and neither will the ones after it — the residue cannot fund
+                // them. Raise, so the caller's classifier turns it into a loud, retryable InstanceGasExhausted.
+                if (GasStipendLib.exhausted(stipend, consumed)) {
+                    revert FluidPositionGasExhausted(vault, nftId, stipend, consumed);
+                }
+                // Genuinely unreadable: the resolver has answered for this one NFT. Omit just it.
+                continue;
+            }
 
             (uint256 supply, uint256 borrow, bool isLiquidated) = _readUserPositionPrefix(ret);
             // `isLiquidated` is a protocol ANSWER, not a failed read: Fluid has zeroed the position, so both its

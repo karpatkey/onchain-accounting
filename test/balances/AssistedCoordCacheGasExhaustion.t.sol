@@ -170,11 +170,18 @@ contract AssistedCoordCacheGasExhaustionTest is Test {
         assertEq(p[0].amount, adapter.LEG_AMOUNT());
     }
 
-    /// @notice Two healthy coordinates both report — the stipend does not starve an ordinary read.
+    /// @notice TWO healthy coordinates both report — the stipend does not starve an ordinary read.
+    /// @dev The first draft submitted `(1, 1)`. Coordinates dedupe on `keccak256(coord)`, so that cached ONE
+    ///      entry and asserted a single-iteration loop — while the thing this commit introduces is a
+    ///      per-iteration `{gas: stipend}` derivation, which only has a second iteration to get wrong. A
+    ///      regression that mis-derived the stipend from iteration 2 onwards would have left it green. Any id
+    ///      outside {2, 3} is healthy in the mock, so `(1, 4)` gives a genuine two-element loop.
+    ///      Caught in review; it is the same vacuous-test class this PR exists to sweep for.
     function test_healthyCoordinates_unaffectedByTheStipend() public {
-        _submit(_ids(1, 1)); // second submit is an idempotent no-op (same coord)
+        _submit(_ids(1, 4));
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(ACCOUNT, address(0));
-        assertEq(p.length, 1);
+        assertEq(p.length, 2, "both healthy coordinates must report");
+        assertEq(p[0].amount + p[1].amount, adapter.LEG_AMOUNT() * 2, "and both must carry their full leg");
     }
 
     // ─── The failure that must NOT be absorbed ────────────────────────────────

@@ -62,6 +62,7 @@ contract ezETH_CustomPriceFeed is BaseCustomPriceFeed {
     function _rate() internal view override returns (uint256) {
         bool ok;
         uint256 size;
+        uint256 head0;
         uint256 totalTVL;
         address restakeManager = address(RESTAKE_MANAGER);
         bytes4 selector = IRestakeManager.calculateTVLs.selector;
@@ -78,9 +79,16 @@ contract ezETH_CustomPriceFeed is BaseCustomPriceFeed {
             mstore(0x00, selector)
             ok := staticcall(gas(), restakeManager, 0x00, 0x04, out, 0x60)
             size := returndatasize()
+            head0 := mload(out) // head word 0 — the first dynamic member's offset
             totalTVL := mload(add(out, 0x40)) // head word 2 — see the note above on ABI head layout
         }
-        if (!ok || size < 96) return 0;
+        // Length alone is not shape. Dropping the typed decode also dropped its structural validation, so a
+        // reply of >= 96 bytes whose head is NOT this signature's would have been published as a live rate.
+        // For `(uint256[][], uint256[], uint256)` the head is exactly three words, so solc's encoder emits
+        // `0x60` as word 0 unconditionally — a cheap, exact discriminator. If Renzo ever upgrades
+        // `calculateTVLs()` to a different return shape (it is an ERC-1967 proxy), this reads STALE, which is
+        // the safe direction for a credit asset, rather than publishing whatever sits at byte offset 64.
+        if (!ok || size < 96 || head0 != 0x60) return 0;
 
         uint256 supply = IERC20(UNDERLYING).totalSupply();
         if (supply == 0) return 0;

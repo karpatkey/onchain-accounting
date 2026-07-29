@@ -61,6 +61,21 @@ contract Mock_PartialThirdWord {
     }
 }
 
+/// @notice Returns a full 96 bytes whose head is NOT this signature's — the return-shape-change case.
+/// @dev Length is not shape. Head word 0 is a plausible TVL number rather than the `0x60` offset solc emits
+///      for `(uint256[][], uint256[], uint256)`, so word 2 is not `totalTVL`. Models Renzo upgrading
+///      `calculateTVLs()` behind its proxy to a differently-shaped tuple.
+contract Mock_WrongShape {
+    fallback() external {
+        assembly {
+            mstore(0x00, 1000000000000000000000000) // head0: not 0x60
+            mstore(0x20, 2)
+            mstore(0x40, 999999999999999999999999999) // would be published as totalTVL
+            return(0x00, 0x60)
+        }
+    }
+}
+
 /// @notice Succeeds and returns NOTHING — the ERC-1967-proxy-over-codeless-impl shape.
 contract Mock_EmptyReply {
     fallback() external {
@@ -214,5 +229,23 @@ contract ezETH_CustomPriceFeedTest is Test {
         (uint256 price, bool stale) = oracle.getLatestPrice();
         assertEq(price, 0, "a spliced third word must not become a price");
         assertTrue(stale, "an 80-byte reply must mark the feed stale");
+    }
+
+    /// @notice A 96-byte reply whose ABI head is not this signature's reads STALE, not as a price.
+    /// @dev What the raw read gave up when it replaced the typed decode: the decoder validated the two array
+    ///      head offsets, and `returndatasize() >= 96` alone does not. Without the `head0 != 0x60` gate this
+    ///      publishes a live, non-stale, fabricated rate from whatever sits at byte offset 64 — for an
+    ///      IMMUTABLE feed with no upgrade path. `RESTAKE_MANAGER` is a constructor-pinned Renzo proxy, so the
+    ///      realistic trigger is a Renzo implementation upgrade changing the return shape, not an attacker.
+    ///      Stale is the safe direction for a credit asset. Found in review.
+    function test_rate_wrongReturnShape_isStaleNotFabricated() public {
+        ezEth.mint(address(this), 100e18);
+        Mock_WrongShape wrong = new Mock_WrongShape();
+        ezETH_CustomPriceFeed oracle =
+            new ezETH_CustomPriceFeed(address(ezEth), address(wrong), address(nav), address(weth));
+
+        (uint256 price, bool stale) = oracle.getLatestPrice();
+        assertEq(price, 0, "a reply of the wrong SHAPE must not become a price");
+        assertTrue(stale, "and must mark the feed stale");
     }
 }

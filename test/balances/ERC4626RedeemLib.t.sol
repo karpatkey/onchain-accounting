@@ -67,6 +67,25 @@ contract Mock_FeeVault is Mock_ERC20 {
     }
 }
 
+/// @notice Succeeds and returns NOTHING — an ERC-1967 proxy over a code-less implementation.
+contract Mock_EmptyPreview {
+    fallback() external {
+        assembly {
+            return(0x00, 0x00)
+        }
+    }
+}
+
+/// @notice Succeeds with fewer than 32 bytes.
+contract Mock_ShortPreview {
+    fallback() external {
+        assembly {
+            mstore(0x00, not(0))
+            return(0x00, 0x10)
+        }
+    }
+}
+
 /// @notice External wrapper so the internal library can be called under an explicit `{gas: …}` budget.
 contract RedeemLibHarness {
     function value(address vault, uint256 shares) external view returns (uint256) {
@@ -136,28 +155,55 @@ contract ERC4626RedeemLibTest is Test {
     ///      remaining ~1/64 comes back to `redeemValue`, and `convertToAssets` is cheap enough to complete on it —
     ///      so starvation reliably selected the INFLATED branch, precisely when the read was least trustworthy.
     ///      This test asserts the frame still returns (it is not simply OOG-ing) and that what it returns is 0.
-    function test_redeemValue_previewStarves_reportsZeroNotGross() public {
+    function test_redeemValue_previewStarves_raisesInsteadOfDeletingThePosition() public {
         vault.setMode(Mock_FeeVault.Mode.Starve);
 
-        // Budget chosen so 1/64 of it comfortably funds `convertToAssets` (~2.5k gas), which is what makes the
-        // starved fallback reachable at all. Assert that premise rather than assuming it.
+        // Budget chosen so 1/64 of it comfortably funds `convertToAssets` (~2.5k gas) — the residue that made
+        // the old gross fallback reachable. Assert that premise rather than assuming it.
         uint256 budget = 2_000_000;
-        assertGt(budget / 64, 25_000, "1/64 residue must be able to fund the gross read");
+        assertGt(budget / 64, 25_000, "1/64 residue must be able to fund a cheap read");
 
-        (uint8 status, uint256 v) = harness.valueBounded(address(vault), SHARES, budget);
-        assertEq(status, 0, "the frame must survive the starved sub-call, else this proves nothing");
-        assertEq(v, 0, "a starved preview must contribute nothing");
-        assertTrue(v != GROSS, "starvation must not select the gross figure");
+        (uint8 status,) = harness.valueBounded(address(vault), SHARES, budget);
+        assertEq(status, 1, "a starved preview must RAISE, not report a value");
     }
 
-    /// @notice A code-less vault is out of contract for this library — pinned so the boundary stays deliberate.
-    /// @dev `try`/`catch` does NOT intercept Solidity's `extcodesize` precheck, so this reverts rather than
-    ///      returning 0. That is acceptable only because both call sites high-level-call the vault (`asset()`,
-    ///      `balanceOf`) before reaching here. If a caller ever reaches `redeemValue` with an unvalidated
-    ///      address, this test is the one that should start failing.
-    function test_redeemValue_codelessVault_revertsRatherThanReturningZero() public {
-        vm.expectRevert();
-        harness.value(address(0xDEAD), SHARES);
+    /// @notice Starvation is distinguishable from a plain revert, so only one of them is loud.
+    /// @dev The pair is the point. Returning 0 for BOTH would silently delete a position that was never
+    ///      valued — the absorb-your-own-out-of-gas hole this PR closes in `AssistedCoordCache._collect` and
+    ///      `FluidVaultLib.aggregate`, which this library was the last site of. Raising for BOTH would fail an
+    ///      entire account's NAV read over one unreadable vault. Found in review.
+    function test_redeemValue_previewReverts_isNotMisreadAsStarvation() public {
+        vault.setMode(Mock_FeeVault.Mode.Revert);
+        (uint8 status, uint256 v) = harness.valueBounded(address(vault), SHARES, 2_000_000);
+        assertEq(status, 0, "a cheap revert must not be scored as exhaustion");
+        assertEq(v, 0, "and must report no leg");
+    }
+
+    /// @notice A code-less vault reports no leg instead of reverting.
+    /// @dev This inverts an earlier revision, which asserted a REVERT here and justified it with Solidity's
+    ///      `extcodesize` precheck. Two things were wrong. The mechanism: a high-level call expecting return
+    ///      data emits no `extcodesize` check — the returndata-size check subsumes it — so the call SUCCEEDS
+    ///      with zero bytes and the `uint256` decode reverts in the CALLER's frame, past the `catch`. And the
+    ///      justification: `AaveUmbrellaBalanceAdapter` reaches this through a WRAPPER address that is only
+    ///      ever probed with low-level staticcalls, never high-level called, and `_sharesToUnderlying` runs
+    ///      inline inside `getAdapterPositions` with no per-stake-token isolation — so that revert dropped
+    ///      every Umbrella staking, cooldown and rewards leg from the NAV, silently. Found in review.
+    function test_redeemValue_codelessVault_reportsNoLegRatherThanReverting() public {
+        assertEq(harness.value(address(0xDEAD), SHARES), 0, "a code-less vault must degrade, not revert");
+    }
+
+    /// @notice A vault that SUCCEEDS with empty returndata degrades too — the ERC-1967 shape.
+    /// @dev The trigger the sibling ezETH fix calls "not hypothetical": a proxy whose implementation slot
+    ///      points at a code-less address. The delegatecall succeeds and returns nothing.
+    function test_redeemValue_emptyReturndata_reportsNoLeg() public {
+        Mock_EmptyPreview e = new Mock_EmptyPreview();
+        assertEq(harness.value(address(e), SHARES), 0, "empty returndata must report no leg");
+    }
+
+    /// @notice A short-but-successful reply is not spliced into a value.
+    function test_redeemValue_shortReply_reportsNoLeg() public {
+        Mock_ShortPreview sp = new Mock_ShortPreview();
+        assertEq(harness.value(address(sp), SHARES), 0, "a 16-byte reply must report no leg");
     }
 
     // ─── The wiring ───────────────────────────────────────────────────────────

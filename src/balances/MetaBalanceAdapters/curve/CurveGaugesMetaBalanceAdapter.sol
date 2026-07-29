@@ -87,29 +87,40 @@ contract CurveGaugesMetaBalanceAdapter is MetaBalanceAdapter {
         uint256 n;
 
         // ── 1. Staking legs: staked LP decomposed into underlying tokens ───────
+        //
+        // If the pool cannot be resolved, or exposes no supply/coins to decompose against, report the staked
+        // LP token ITSELF rather than nothing. Every one of those exits used to drop the entire staking
+        // principal silently — a real 3pool-gauge staker reported zero staking legs, because 3Crv resolves
+        // through none of CurvePoolLib.getPool's heuristics (fixed there; this is the residual safety net for
+        // any LP the registry also cannot resolve). Reverting instead is not an option that helps: the base's
+        // per-instance catch absorbs every non-gas revert and substitutes empty legs, so it would produce the
+        // same silent zero by another route. The fallback leg is what makes the failure visible to the caller.
         if (stakedLp > 0) {
             address lpToken = CurvePoolLib.gaugeLpToken(gauge);
             if (lpToken != address(0)) {
                 address pool = CurvePoolLib.getPool(lpToken);
-                if (pool != address(0)) {
-                    uint256 totalSupply = CurvePoolLib.getTotalSupply(lpToken);
-                    if (totalSupply > 0) {
-                        address[] memory coins = CurvePoolLib.getCoins(pool);
+                uint256 totalSupply = pool != address(0) ? CurvePoolLib.getTotalSupply(lpToken) : 0;
+                address[] memory coins = totalSupply > 0 ? CurvePoolLib.getCoins(pool) : new address[](0);
 
-                        for (uint256 i; i < coins.length; ++i) {
-                            address coin = coins[i];
-                            if (assetFilter != address(0) && coin != assetFilter) continue;
+                if (coins.length > 0) {
+                    for (uint256 i; i < coins.length; ++i) {
+                        address coin = coins[i];
+                        if (assetFilter != address(0) && coin != assetFilter) continue;
 
-                            (INAVCalculator.Asset memory assetInfo, bool found) = _getAssetInfo(coin);
-                            if (!found) continue;
+                        (INAVCalculator.Asset memory assetInfo, bool found) = _getAssetInfo(coin);
+                        if (!found) continue;
 
-                            uint256 poolBal = CurvePoolLib.getPoolBalance(pool, i);
-                            uint256 amount = CurvePoolLib.proRataAmount(poolBal, stakedLp, totalSupply);
-                            if (amount == 0) continue;
+                        uint256 poolBal = CurvePoolLib.getPoolBalance(pool, i);
+                        uint256 amount = CurvePoolLib.proRataAmount(poolBal, stakedLp, totalSupply);
+                        if (amount == 0) continue;
 
-                            tmp[n++] = _leg(assetInfo, amount, false, pid, PositionKind.Staking);
-                        }
+                        tmp[n++] = _leg(assetInfo, amount, false, pid, PositionKind.Staking);
                     }
+                } else if (assetFilter == address(0) || assetFilter == lpToken) {
+                    // Undecomposable: the staked balance is still real, so report it in LP terms. Valued only
+                    // if the LP token is a registered asset — the operator's call, and visible either way.
+                    (INAVCalculator.Asset memory lpInfo, bool lpFound) = _getAssetInfo(lpToken);
+                    if (lpFound) tmp[n++] = _leg(lpInfo, stakedLp, false, pid, PositionKind.Staking);
                 }
             }
         }

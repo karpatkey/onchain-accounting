@@ -43,24 +43,83 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 library CurvePoolLib {
     uint256 internal constant MAX_COINS = 8;
 
+    /// @dev Curve's AddressProvider. Deterministically deployed to this same address on every Curve
+    ///      network — verified identical code on mainnet, Arbitrum and Optimism. Read through guarded
+    ///      staticcalls, so a chain without it simply falls through.
+    address internal constant CURVE_ADDRESS_PROVIDER = 0x0000000022D53366457F9d5E68Ec105046FC4383;
+
     // ─── LP Token / Pool resolution ───────────────────────────────────────────
 
     /// @notice Derives the LP token from a pool address.
     ///         For most classic pools, pool IS the LP token.
     ///         For TriCryptoNG, pool is also self-LP (no lp_token() method).
     ///         For StableSwap-NG factory pools, lp_token() returns a separate ERC20.
+    /// @dev The mirror image of `getPool`'s legacy gap, and it bites the same generation. 3pool
+    ///      (`0xbEbc4478…`) exposes NO `lp_token()` — verified on mainnet, it reverts — so this fell through to
+    ///      "the pool IS the LP token". For 3pool that is false: its LP is the separate 3Crv, and `balanceOf`
+    ///      on the pool itself reverts, so every wallet-LP decomposition for 3pool read zero and reported
+    ///      nothing. The registry answers this direction too (`get_lp_token(3pool)` -> 3Crv) and, as in
+    ///      `getPool`, its answer is validated — accepted only if it is a different address that behaves like
+    ///      an ERC20 — so a bad answer degrades to the previous behaviour instead of mis-attributing balances.
     function getLpToken(address pool) internal view returns (address) {
         (bool ok, bytes memory data) = pool.staticcall(abi.encodeWithSignature("lp_token()"));
         if (ok && data.length == 32) {
             address token = _firstAddress(data);
             if (token != address(0) && token != pool) return token;
         }
+
+        // No lp_token(). Before assuming self-LP, check the pool actually behaves like one; legacy StableSwap
+        // pools do not, and only the registry knows their LP.
+        if (!_isErc20(pool)) {
+            address fromRegistry = _lpTokenFromRegistry(pool);
+            if (fromRegistry != address(0) && fromRegistry != pool && _isErc20(fromRegistry)) return fromRegistry;
+        }
+
         return pool; // pool IS the LP token (classic StableSwap, TriCryptoNG)
     }
 
+    /// @dev Curve's AddressProvider -> MainRegistry -> `get_lp_token`. Returns address(0) on any failure.
+    function _lpTokenFromRegistry(address pool) private view returns (address) {
+        (bool ok, bytes memory data) = CURVE_ADDRESS_PROVIDER.staticcall(abi.encodeWithSignature("get_registry()"));
+        if (!ok || data.length != 32) return address(0);
+        address registry = _firstAddress(data);
+        if (registry == address(0)) return address(0);
+
+        (ok, data) = registry.staticcall(abi.encodeWithSignature("get_lp_token(address)", pool));
+        if (!ok || data.length != 32) return address(0);
+        return _firstAddress(data);
+    }
+
+    /// @dev Cheap ERC20 sniff: does it answer `totalSupply()`? Enough to tell a Curve pool that is its own LP
+    ///      from one that is not.
+    function _isErc20(address target) private view returns (bool) {
+        (bool ok, bytes memory data) = target.staticcall(abi.encodeWithSignature("totalSupply()"));
+        return ok && data.length == 32;
+    }
+
     /// @notice Derives the pool address from an LP token.
-    ///         Handles both the self-LP case and the minter() pattern for NG pools.
-    ///         Returns address(0) if the pool cannot be determined (rare edge case).
+    ///         Handles the self-LP case, the minter() pattern for NG pools, and the original StableSwap
+    ///         generation whose LP tokens expose neither.
+    ///         Returns address(0) if the pool cannot be determined.
+    /// @dev    The third step exists because the first two miss the OLDEST pools, not the newest. 3Crv
+    ///         (`0x6c3F90f0…`, the 3pool LP) is a CurveTokenV1: verified on mainnet, `coins(uint256)`,
+    ///         `coins(int128)` and `minter()` ALL revert on it, while `symbol()` answers "3Crv". So both
+    ///         heuristics fail and this returned `address(0)` — and every consumer gates its entire staking
+    ///         decomposition on `pool != address(0)`, so a real staker in a 3pool gauge or a Convex 3pool
+    ///         rewarder reported NO staking legs at all. An under-report, so the direction was safe, but a
+    ///         silent one.
+    ///
+    ///         The Curve AddressProvider answers it. It lives at the same deterministic address on every
+    ///         Curve deployment (verified: identical code on mainnet, Arbitrum and Optimism), and its
+    ///         registry maps LP token -> pool for exactly the legacy generation the heuristics miss:
+    ///         `get_pool_from_lp_token(3Crv)` returns `0xbEbc4478…` (the real 3pool) on mainnet.
+    ///
+    ///         The registry's answer is VALIDATED rather than trusted: it is accepted only if it responds to
+    ///         `coins()`. That keeps the trust local — a wrong or hostile registry answer would otherwise
+    ///         drive the pro-rata decomposition against another pool's balances, which is the one direction
+    ///         (over-report) this family must never take. Every step is a guarded staticcall, so a chain with
+    ///         no AddressProvider, an older one whose `get_registry()` returns zero (Base today), or an LP the
+    ///         registry does not know, all degrade to the previous behaviour rather than reverting.
     function getPool(address lpToken) internal view returns (address) {
         // Fast path: check if lpToken has coins() — then it IS the pool
         if (_hasCoinMethod(lpToken)) return lpToken;
@@ -72,7 +131,24 @@ library CurvePoolLib {
             if (minter != address(0)) return minter;
         }
 
-        return address(0); // Cannot resolve — gauge/pools meta will skip LP decomposition
+        // Legacy StableSwap (CurveTokenV1/V2): neither coins() nor minter(). Ask the Curve registry.
+        address fromRegistry = _poolFromRegistry(lpToken);
+        if (fromRegistry != address(0) && _hasCoinMethod(fromRegistry)) return fromRegistry;
+
+        return address(0); // Cannot resolve — consumers report the LP token itself rather than nothing
+    }
+
+    /// @dev Curve's AddressProvider -> MainRegistry -> `get_pool_from_lp_token`. Returns address(0) on any
+    ///      failure at any hop; never reverts.
+    function _poolFromRegistry(address lpToken) private view returns (address) {
+        (bool ok, bytes memory data) = CURVE_ADDRESS_PROVIDER.staticcall(abi.encodeWithSignature("get_registry()"));
+        if (!ok || data.length != 32) return address(0);
+        address registry = _firstAddress(data);
+        if (registry == address(0)) return address(0);
+
+        (ok, data) = registry.staticcall(abi.encodeWithSignature("get_pool_from_lp_token(address)", lpToken));
+        if (!ok || data.length != 32) return address(0);
+        return _firstAddress(data);
     }
 
     // ─── Coin / balance enumeration ───────────────────────────────────────────

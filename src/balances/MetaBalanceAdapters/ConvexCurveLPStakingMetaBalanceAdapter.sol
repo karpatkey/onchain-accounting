@@ -93,25 +93,32 @@ contract ConvexCurveLPStakingMetaBalanceAdapter is MetaBalanceAdapter {
         bytes memory pid = _instancePositionId(instance);
 
         // ── 1. Staking legs: staked LP → underlying Curve pool tokens ─────────
+        //
+        // Undecomposable LP falls back to reporting the LP token itself — see the same reasoning in
+        // CurveGaugesMetaBalanceAdapter. A Convex 3pool rewarder reported zero staking legs because 3Crv
+        // resolves through none of CurvePoolLib.getPool's heuristics; that is fixed in the library, and this
+        // keeps the principal visible for any LP the Curve registry also cannot resolve.
         if (stakedLp > 0) {
             address lpToken = _lpTokenOf(rewarder);
             if (lpToken != address(0)) {
                 address pool = CurvePoolLib.getPool(lpToken);
-                if (pool != address(0)) {
-                    uint256 totalSupply = CurvePoolLib.getTotalSupply(lpToken);
-                    if (totalSupply > 0) {
-                        address[] memory coins = CurvePoolLib.getCoins(pool);
-                        for (uint256 i; i < coins.length; ++i) {
-                            address coin = coins[i];
-                            if (assetFilter != address(0) && coin != assetFilter) continue;
-                            (INAVCalculator.Asset memory info, bool found) = _getAssetInfo(coin);
-                            if (!found) continue;
-                            uint256 poolBal = CurvePoolLib.getPoolBalance(pool, i);
-                            uint256 amount = CurvePoolLib.proRataAmount(poolBal, stakedLp, totalSupply);
-                            if (amount == 0) continue;
-                            tmp[n++] = _leg(info, amount, false, pid, PositionKind.Staking);
-                        }
+                uint256 totalSupply = pool != address(0) ? CurvePoolLib.getTotalSupply(lpToken) : 0;
+                address[] memory coins = totalSupply > 0 ? CurvePoolLib.getCoins(pool) : new address[](0);
+
+                if (coins.length > 0) {
+                    for (uint256 i; i < coins.length; ++i) {
+                        address coin = coins[i];
+                        if (assetFilter != address(0) && coin != assetFilter) continue;
+                        (INAVCalculator.Asset memory info, bool found) = _getAssetInfo(coin);
+                        if (!found) continue;
+                        uint256 poolBal = CurvePoolLib.getPoolBalance(pool, i);
+                        uint256 amount = CurvePoolLib.proRataAmount(poolBal, stakedLp, totalSupply);
+                        if (amount == 0) continue;
+                        tmp[n++] = _leg(info, amount, false, pid, PositionKind.Staking);
                     }
+                } else if (assetFilter == address(0) || assetFilter == lpToken) {
+                    (INAVCalculator.Asset memory lpInfo, bool lpFound) = _getAssetInfo(lpToken);
+                    if (lpFound) tmp[n++] = _leg(lpInfo, stakedLp, false, pid, PositionKind.Staking);
                 }
             }
         }

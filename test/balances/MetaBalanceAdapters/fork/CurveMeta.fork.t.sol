@@ -34,8 +34,14 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
     // crvUSD/USDC StableSwap-NG pool (pool IS LP token, uint256 indices)
     address public constant CRVUSD_USDC_POOL = 0x4DEcE678ceceb27446b35C672dC7d61F30bAD69E;
     address public constant CRVUSD_USDC_GAUGE = 0x95f00391cB5EebCd190EB58728B4CE23DbFa6ac1;
-    // Account known to hold gauge-staked LP and claimable rewards at FORK_BLOCK
-    address public constant CRVUSD_USDC_STAKER = 0xc9332cbf6fee06A6b8cf87e56Bd2E77e08C0C13c;
+    // Account known to hold gauge-staked LP and claimable rewards at FORK_BLOCK.
+    // Re-fixtured: the previous holder (0xc9332cbf…) reads ZERO for both gauge stake and wallet LP at this
+    // block, so every test using it took its zero-balance early return and asserted nothing. Verified on
+    // mainnet at FORK_BLOCK: gauge stake 16,591,881.2 LP.
+    address public constant CRVUSD_USDC_STAKER = 0x989AEb4d175e16225E39E87d0D97A3360524AD80;
+    // The gauge itself is the largest holder of the pool's LP token at FORK_BLOCK (19,279,874.4), which is what
+    // the wallet-LP decomposition test needs: a real, non-zero LP balance to decompose.
+    address public constant CRVUSD_USDC_LP_HOLDER = 0x95f00391cB5EebCd190EB58728B4CE23DbFa6ac1;
 
     // crvUSD/USDT StableSwap-NG pool
     address public constant CRVUSD_USDT_POOL = 0x390f3595bCa2Df7d23783dFd126427CCeb997BF4;
@@ -48,14 +54,24 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
     // weETH/WETH NG pool (self-LP, uint256 indices)
     address public constant WEETH_WETH_POOL = 0xDB74dfDD3BB46bE8Ce6C33dC9D82777BCFc3dEd5;
     address public constant WEETH_WETH_GAUGE = 0x053df3e4D0CeD9a3Bf0494F97E83CE1f13BdC0E2;
-    // Account with weETH/WETH staked LP
-    address public constant WEETH_WETH_STAKER = 0x6cF2A2Cb4F1D3A4aeb56DB52E9b5B69F8bDB83c5;
+    // Account with weETH/WETH staked LP. Re-fixtured: the previous holder (0x6cF2A2Cb…) reads ZERO at this
+    // block. Verified gauge stake at FORK_BLOCK: 5,568.3 LP.
+    address public constant WEETH_WETH_STAKER = 0x989AEb4d175e16225E39E87d0D97A3360524AD80;
+    // The gauge is the pool-LP holder used by the wallet-LP decomposition test (6,415.2 LP).
+    address public constant WEETH_WETH_LP_HOLDER = 0x053df3e4D0CeD9a3Bf0494F97E83CE1f13BdC0E2;
 
     // 3pool — classic StableSwap, int128 coin indices
     address public constant THREEPOOL = 0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7;
     address public constant THREEPOOL_GAUGE = 0xbFcF63294aD7105dEa65aA58F8AE5BE2D9d0952A;
-    // Account holding 3pool LP tokens in wallet
-    address public constant THREEPOOL_HOLDER = 0x43b4FdFD4Ff969587185cDB6f0BD875c5Fc83f8c;
+    // 3pool is NOT its own LP token - `balanceOf` on the pool REVERTS. 3Crv is a separate CurveTokenV1, which
+    // is why the wallet-LP tests here could never have read a non-zero balance from the pool address.
+    address public constant THREEPOOL_LP = 0x6c3F90f043a72FA612cbac8115EE7e52BDe6E490;
+    // Account holding 3pool LP tokens in wallet. Re-fixtured: the previous holder reads ZERO at this block.
+    address public constant THREEPOOL_HOLDER = 0x00000000009726632680FB29d3F7A9734E3010E2;
+    // Account with a real 3pool GAUGE stake at FORK_BLOCK: 1,756.5 3Crv. This is the fixture that exercises
+    // the getPool regression — 3Crv resolves through none of the heuristics, so before the registry fallback
+    // this account's entire staking principal was dropped.
+    address public constant THREEPOOL_GAUGE_STAKER = 0x52f541764E6e90eeBc5c21Ff570De0e2D63766B6;
 
     // Tokens
     address public constant CRV = 0xD533a949740bb3306d119CC777fa900bA034cd52;
@@ -97,11 +113,14 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
 
     /// @notice crvUSD/USDC pool — StableSwap-NG, uint256 coins, self-LP.
     function test_crvUsdUsdc_walletLp_decomposes() public view {
-        uint256 walletLp = _lpBalance(CRVUSD_USDC_POOL, CRVUSD_USDC_STAKER);
-        if (walletLp == 0) return; // holder redeemed — test is vacuous but not a failure
+        uint256 walletLp = _lpBalance(CRVUSD_USDC_POOL, CRVUSD_USDC_LP_HOLDER);
+        // A zero fixture is a FAILURE, not a skip. Every one of these guards used to be `if (… == 0) return;`,
+        // which is how nine of this file's ten tests silently asserted nothing: all four pinned holders read
+        // zero at FORK_BLOCK. If this fires, re-fixture the holder — do not restore the early return.
+        assertGt(walletLp, 0, "fixture holds no LP at FORK_BLOCK - re-fixture, do not skip");
 
         INAVCalculator.PositionBalance[] memory pos =
-            poolsMeta.getAdapterPositionsForInstances(CRVUSD_USDC_STAKER, _pool(CRVUSD_USDC_POOL), address(0));
+            poolsMeta.getAdapterPositionsForInstances(CRVUSD_USDC_LP_HOLDER, _pool(CRVUSD_USDC_POOL), address(0));
 
         assertGt(pos.length, 0, "at least one underlying coin leg");
         _assertAllSupplied(pos);
@@ -110,11 +129,11 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
 
     /// @notice weETH/WETH pool — 2-token NG pool, uint256 coins.
     function test_weethWeth_walletLp_decomposes() public view {
-        uint256 walletLp = _lpBalance(WEETH_WETH_POOL, WEETH_WETH_STAKER);
-        if (walletLp == 0) return;
+        uint256 walletLp = _lpBalance(WEETH_WETH_POOL, WEETH_WETH_LP_HOLDER);
+        assertGt(walletLp, 0, "fixture holds no LP at FORK_BLOCK - re-fixture, do not skip");
 
         INAVCalculator.PositionBalance[] memory pos =
-            poolsMeta.getAdapterPositionsForInstances(WEETH_WETH_STAKER, _pool(WEETH_WETH_POOL), address(0));
+            poolsMeta.getAdapterPositionsForInstances(WEETH_WETH_LP_HOLDER, _pool(WEETH_WETH_POOL), address(0));
 
         assertGt(pos.length, 0);
         _assertAllSupplied(pos);
@@ -122,8 +141,8 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
 
     /// @notice 3pool — classic StableSwap, int128 coin indices.
     function test_threepool_walletLp_decomposes_int128() public view {
-        uint256 walletLp = _lpBalance(THREEPOOL, THREEPOOL_HOLDER);
-        if (walletLp == 0) return;
+        uint256 walletLp = _lpBalance(THREEPOOL_LP, THREEPOOL_HOLDER);
+        assertGt(walletLp, 0, "fixture holds no LP at FORK_BLOCK - re-fixture, do not skip");
 
         INAVCalculator.PositionBalance[] memory pos =
             poolsMeta.getAdapterPositionsForInstances(THREEPOOL_HOLDER, _pool(THREEPOOL), address(0));
@@ -145,7 +164,7 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
     /// @notice crvUSD/USDC gauge — staked LP decomposes + CRV lower bound.
     function test_crvUsdUsdc_gauge_stakedAndRewards() public view {
         uint256 staked = _gaugeBalance(CRVUSD_USDC_GAUGE, CRVUSD_USDC_STAKER);
-        if (staked == 0) return;
+        assertGt(staked, 0, "fixture holds no gauge stake at FORK_BLOCK - re-fixture, do not skip");
 
         INAVCalculator.PositionBalance[] memory pos =
             gaugesMeta.getAdapterPositionsForInstances(CRVUSD_USDC_STAKER, _gauge(CRVUSD_USDC_GAUGE), address(0));
@@ -155,10 +174,28 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
         assertGt(stakedCount, 0, "staked LP decomposes into underlying coins");
     }
 
+    /// @notice The regression this PR exists for: a real 3pool gauge staker.
+    /// @dev 3Crv exposes neither `coins()` nor `minter()` — verified on mainnet, all three probes revert while
+    ///      `symbol()` answers "3Crv" — so `CurvePoolLib.getPool` returned `address(0)`, and this adapter gates
+    ///      its ENTIRE staking decomposition on `pool != address(0)`. Before the registry fallback this account,
+    ///      holding 1,756.5 3Crv in the gauge, reported zero Staking legs: the principal vanished while the
+    ///      Rewards legs still emitted, so the position looked live and merely empty. Nothing caught it because
+    ///      every test on this path was itself vacuous.
+    function test_threepool_gauge_stakedPrincipalIsReported() public view {
+        uint256 staked = _gaugeBalance(THREEPOOL_GAUGE, THREEPOOL_GAUGE_STAKER);
+        assertGt(staked, 0, "fixture holds no gauge stake at FORK_BLOCK - re-fixture, do not skip");
+
+        INAVCalculator.PositionBalance[] memory pos =
+            gaugesMeta.getAdapterPositionsForInstances(THREEPOOL_GAUGE_STAKER, _gauge(THREEPOOL_GAUGE), address(0));
+
+        uint256 stakedLegs = _countKind(pos, PositionKind.Staking);
+        assertGt(stakedLegs, 0, "3pool staking principal dropped - getPool(3Crv) resolved to address(0)");
+    }
+
     /// @notice weETH/WETH gauge — staked LP decomposes.
     function test_weethWeth_gauge_staked() public view {
         uint256 staked = _gaugeBalance(WEETH_WETH_GAUGE, WEETH_WETH_STAKER);
-        if (staked == 0) return;
+        assertGt(staked, 0, "fixture holds no gauge stake at FORK_BLOCK - re-fixture, do not skip");
 
         INAVCalculator.PositionBalance[] memory pos =
             gaugesMeta.getAdapterPositionsForInstances(WEETH_WETH_STAKER, _gauge(WEETH_WETH_GAUGE), address(0));
@@ -170,7 +207,7 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
     /// @notice Asset filter correctly restricts output to the requested token.
     function test_crvUsdUsdc_gauge_assetFilter() public view {
         uint256 staked = _gaugeBalance(CRVUSD_USDC_GAUGE, CRVUSD_USDC_STAKER);
-        if (staked == 0) return;
+        assertGt(staked, 0, "fixture holds no gauge stake at FORK_BLOCK - re-fixture, do not skip");
 
         INAVCalculator.PositionBalance[] memory pos =
             gaugesMeta.getAdapterPositionsForInstances(CRVUSD_USDC_STAKER, _gauge(CRVUSD_USDC_GAUGE), USDC);
@@ -183,7 +220,7 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
     /// @notice protocolId and positionId are correct on-chain.
     function test_gauge_identity() public view {
         uint256 staked = _gaugeBalance(CRVUSD_USDC_GAUGE, CRVUSD_USDC_STAKER);
-        if (staked == 0) return;
+        assertGt(staked, 0, "fixture holds no gauge stake at FORK_BLOCK - re-fixture, do not skip");
 
         INAVCalculator.PositionBalance[] memory pos =
             gaugesMeta.getAdapterPositionsForInstances(CRVUSD_USDC_STAKER, _gauge(CRVUSD_USDC_GAUGE), address(0));
@@ -200,7 +237,7 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
         // Graceful skip: this pinned gauge staker currently holds 0 (position exited), so a hard non-zero
         // assert would red CI on a stale pin. Pinned holders are refreshed via the integration-snapshot
         // process, not by failing here. (Copilot PR #127.)
-        if (staked == 0) return;
+        assertGt(staked, 0, "fixture holds no gauge stake at FORK_BLOCK - re-fixture, do not skip");
 
         INAVCalculator.PositionBalance[] memory pos =
             gaugesMeta.getAdapterPositionsForInstances(CRVUSD_USDC_STAKER, _gauge(CRVUSD_USDC_GAUGE), address(0));
@@ -212,11 +249,11 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
     }
 
     function test_positionLabels_threepool() public view {
-        uint256 walletLp = _lpBalance(THREEPOOL, THREEPOOL_HOLDER);
+        uint256 walletLp = _lpBalance(THREEPOOL_LP, THREEPOOL_HOLDER);
         // Graceful skip: this pinned 3pool holder currently holds 0 LP (exited), so a hard non-zero assert
         // would red CI on a stale pin. Pinned holders are refreshed via the integration-snapshot process,
         // not by failing here. (Copilot PR #127.)
-        if (walletLp == 0) return;
+        assertGt(walletLp, 0, "fixture holds no LP at FORK_BLOCK - re-fixture, do not skip");
 
         INAVCalculator.PositionBalance[] memory pos =
             poolsMeta.getAdapterPositionsForInstances(THREEPOOL_HOLDER, _pool(THREEPOOL), address(0));
@@ -280,10 +317,13 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
         internal
         view
     {
+        // Same vacuous class as the callers' old zero-balance skips, one level down: these used to `return`,
+        // so a pool that stopped answering `totalSupply()` silently turned every caller's pro-rata check into
+        // a no-op while the test still reported green. Assert instead.
         (bool ok, bytes memory data) = pool.staticcall(abi.encodeWithSignature("totalSupply()"));
-        if (!ok || data.length < 32) return; // can't verify without totalSupply
+        assertTrue(ok && data.length >= 32, "pool does not answer totalSupply - cannot verify pro-rata");
         uint256 ts = abi.decode(data, (uint256));
-        if (ts == 0) return;
+        assertGt(ts, 0, "pool totalSupply is zero - cannot verify pro-rata");
 
         for (uint256 i; i < pos.length; ++i) {
             address coin = pos[i].balanceAsset.asset;

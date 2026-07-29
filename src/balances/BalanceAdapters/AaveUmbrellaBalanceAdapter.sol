@@ -9,6 +9,7 @@ import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 import {ERC4626RedeemLib} from "src/balances/ERC4626RedeemLib.sol";
+import {StaticCallLib} from "src/utils/StaticCallLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -446,19 +447,33 @@ contract AaveUmbrellaBalanceAdapter is BalanceAdapterBase {
     ///      returning the bare reserve; non-aToken reward tokens (e.g. plain GHO for stkGHO.v1)
     ///      and tokens with permissive fallbacks return as-is.
     function _resolveRewardBareReserve(address rewardToken) internal view returns (address) {
-        (bool ok, bytes memory ret) =
-            rewardToken.staticcall{gas: PROBE_GAS}(abi.encodeWithSignature("UNDERLYING_ASSET_ADDRESS()"));
-        if (!ok || ret.length < 32) return rewardToken;
-        address bare = abi.decode(ret, (address));
+        (, address bare) =
+            StaticCallLib.safeAddr(rewardToken, abi.encodeWithSignature("UNDERLYING_ASSET_ADDRESS()"));
         return bare == address(0) ? rewardToken : bare;
     }
 
-    /// @dev `IERC4626.asset()` via low-level staticcall with bounded gas. Returns address(0) when
-    ///      the call reverts, returns no data, or returns less than a full word.
+    /// @dev `IERC4626.asset()` via {StaticCallLib.safeAddr}. Returns address(0) when the call reverts, the
+    ///      target has no code, the reply is short, or the returned word masks to zero.
+    ///
+    ///      Routed through the shared reader rather than a hand-rolled `staticcall` + `abi.decode` for three
+    ///      reasons, in increasing order of how much they matter:
+    ///        1. `abi.decode(ret, (address))` emits a range validator that REVERTS on a word with dirty bits
+    ///           above 160, in THIS frame, past any `catch` — so a reward or stake token answering with a
+    ///           `bytes32`-shaped word took the whole adapter out of the NAV read. `safeAddr` masks instead.
+    ///        2. Assigning `(bool, bytes memory)` from a raw staticcall makes solc `returndatacopy` the ENTIRE
+    ///           reply into fresh memory, and the caller pays that quadratically, OUTSIDE the gas stipend. A
+    ///           token returning ~200KB is cheap for the callee and expensive here. `safeAddr` writes through a
+    ///           fixed 32-byte output window, so reply size cannot influence this contract's gas at all.
+    ///        3. It is one reader instead of a fourth local copy.
+    ///
+    ///      This raises the ceiling on these two probes from this file's `PROBE_GAS` (30_000) to
+    ///      `StaticCallLib.PROBE_GAS` (100_000). Deliberate, and the safe direction: the failure mode of too
+    ///      tight a cap is a spurious `address(0)` that silently drops a real position, while the thing a
+    ///      generous cap exposes, an expensive hostile callee, is bounded by the cap AND by the output window,
+    ///      which the 30_000 version was not.
     function _safeAsset(address token) internal view returns (address) {
-        (bool ok, bytes memory ret) = token.staticcall{gas: PROBE_GAS}(abi.encodeWithSignature("asset()"));
-        if (!ok || ret.length < 32) return address(0);
-        return abi.decode(ret, (address));
+        (, address underlyingAsset) = StaticCallLib.safeAddr(token, abi.encodeWithSignature("asset()"));
+        return underlyingAsset;
     }
 
     //

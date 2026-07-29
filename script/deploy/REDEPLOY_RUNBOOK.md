@@ -35,7 +35,9 @@ feed count is **pending #199**, see the note under 1.4.
 | 56 bsc | 0 | 0 | 0 | 0 | 6 |
 
 ("plain" excludes `ERC20Default`, which every chain gets automatically. Chain 56's only meta adapter,
-`PancakeSwapV2PoolsMeta`, is `enabled: false` in nav-config, so BSC registers `ERC20Default` only.)
+`PancakeSwapV2PoolsMeta`, is `enabled: false` in nav-config, so BSC registers `ERC20Default` only. The
+`meta adapters` and `meta instances` columns above are a summary of the table immediately below, which
+is where they are derived and which is the authoritative one if the two ever disagree.)
 
 #### Meta instances: **110**, reconciled from config and confirmed on-chain (2026-07-29)
 
@@ -601,7 +603,9 @@ touched at all by this step, not merely touched idempotently.
 - **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.7` — `getAdapterCount()`
   matches 1.6, every recorded adapter reports `isAdapterRegistered`, nothing is registered that is not
   in the record, and each meta adapter's `getMetaInstances()` **set equals** its configured coordinate
-  set, summing to **110 across the 7 configured chains** (66 / 16 / 16 / 4 / 4 / 4 / 0).
+  set, summing to the total in the meta-instance table at the top of this document (**110** as
+  reconciled 2026-07-29). The per-chain breakdown lives in that table only — it is not repeated here,
+  so there is one place to correct if config changes.
 
 > **Watch for the silent skip.** `06` does `if (deployed == address(0)) continue;` (`06:113` for
 > meta, same shape for plain), so an adapter that failed to deploy is skipped **without an error**.

@@ -10,6 +10,7 @@ import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IBalances} from "src/balances/IBalances.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {aa} from "test/helpers/AdapterArray.sol";
+import {NAV_DECIMALS, MAX_DECIMAL_EXPONENT_INT256} from "src/constants.sol";
 
 /// @title NAVCalculator Invariant Tests
 /// @notice Tests critical system invariants for NAVCalculator
@@ -257,11 +258,21 @@ contract NAVCalculatorInvariantTest is SuperTest {
             assertTrue(registered != address(0), "a registered record must name an asset");
             assertTrue(nav.isAssetRegistered(registered), "every array entry must be reachable by address");
 
-            // The bound the pricing path really enforces: `_priceConversion` reverts `InvalidAssetDecimals`
-            // when `assetDecimals + assetPriceDecimals < NAV_DECIMALS`, so an asset whose decimals alone
-            // cannot reach NAV_DECIMALS is only priceable via its feed's decimals. Assert the registry never
-            // holds a value that would overflow that sum instead of asserting a uint8 fits in a uint8.
-            assertLe(uint256(registeredAssets[i].decimals), 77, "decimals must stay inside the 10**x exponent range");
+            // Assert the predicate `PriceFeedLib._priceConversion` ACTUALLY enforces, not a proxy for it. Its two
+            // guards are both on the EXPONENT `assetDecimals + assetPriceDecimals - NAV_DECIMALS`:
+            //   - it reverts `InvalidAssetDecimals` when that sum is below NAV_DECIMALS (underflow), and
+            //   - it reverts `InvalidDecimalExponent` when the resulting exponent exceeds the 10**x bound.
+            // An earlier revision of this line asserted `decimals <= 77` instead. That was wrong twice over: it
+            // checked `assetDecimals` in ISOLATION, when neither guard is a function of it alone, and 77 is
+            // off-by-one against `MAX_DECIMAL_EXPONENT_INT256 = 76`. It could therefore pass for an asset whose
+            // pricing path reverts — a check that looks like a bound and is not one, which is the exact defect
+            // this loop was being fixed for. Caught in review by Copilot.
+            (, uint8 priceDecimals,,) = nav.latestPrice(registered);
+            uint256 sum = uint256(registeredAssets[i].decimals) + uint256(priceDecimals);
+            assertGe(sum, NAV_DECIMALS, "asset+feed decimals must reach NAV_DECIMALS or _priceConversion reverts");
+            assertLe(
+                sum - NAV_DECIMALS, MAX_DECIMAL_EXPONENT_INT256, "exponent must stay inside the int256 10**x bound"
+            );
         }
     }
 

@@ -766,10 +766,27 @@ interface INAVCalculator is IBalances {
         returns (Position[] memory positions);
 
     /// @notice Returns positions for an account filtered by a single asset.
+    /// @dev    **This is a filtered VIEW, not a net position. Do not sum it.** You asked for asset `X`, so you get
+    ///         the legs denominated in `X` — a projection of the portfolio onto one asset, deliberately. Summing
+    ///         `value` across the result (or netting credit against debt within it) produces a number that is not
+    ///         this account's exposure to anything: the legs that offset these — collateral in another asset
+    ///         backing a debt in `X`, or the reverse — are outside the filter by construction and are simply
+    ///         absent, not netted. A vault borrowing `X` against `Y` shows here as debt in `X` with no sign of the
+    ///         `Y` that secures it.
+    ///
+    ///         This is a documentation contract, not a defect, and the design is what makes it safe: **no NAV
+    ///         number in this interface is ever computed with an asset filter.** {getAccountNav},
+    ///         {getAccountNavForAdapters} and {getAccountNavVerbose} take no `asset` parameter at all, and the only
+    ///         entry points that pass a non-zero filter into the position engine are this function and
+    ///         {getAccountPositionsForAssetVerbose} — both of which return `Position[]`, never a `NAV`. So the
+    ///         hazard lives entirely in what a CALLER does with the array, which is why it is stated here.
+    ///
+    ///         For a net figure, use {getAccountNav} (whole portfolio) or {getAccountNavForAdapters} (a validated
+    ///         adapter slice, which partitions rather than projects and whose slices therefore do sum).
     /// @param account Account address.
     /// @param asset Asset to filter by (must be registered).
     /// @param quoteAsset Quote currency; address(0) for USD.
-    /// @return positions Array of enriched Position structs for the asset.
+    /// @return positions Array of enriched Position structs for the asset. A filtered view — see the note above.
     function getAccountPositionsForAsset(address account, address asset, address quoteAsset)
         external
         view
@@ -785,10 +802,16 @@ interface INAVCalculator is IBalances {
         returns (VerbosePosition[] memory);
 
     /// @notice Returns positions filtered by a single asset, with human-readable labels.
+    /// @dev    **This is a filtered VIEW, not a net position. Do not sum it.** Identical projection semantics to
+    ///         {getAccountPositionsForAsset} — this is that function's result passed through label enrichment, from
+    ///         the same `_computePositions` call with the same filter — so the whole note there applies verbatim,
+    ///         including the reason it is safe: no NAV in this interface is computed with an asset filter. See
+    ///         {getAccountPositionsForAsset}.
     /// @param account Account address.
     /// @param asset Asset to filter by (must be registered).
     /// @param quoteAsset Quote currency; address(0) for USD.
-    /// @return Array of VerbosePosition structs for the asset (enriched Position plus protocolName and display labels).
+    /// @return Array of VerbosePosition structs for the asset (enriched Position plus protocolName and display
+    ///         labels). A filtered view — see the note above.
     function getAccountPositionsForAssetVerbose(address account, address asset, address quoteAsset)
         external
         view

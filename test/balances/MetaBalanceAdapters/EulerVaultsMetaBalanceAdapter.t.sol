@@ -91,6 +91,83 @@ contract MockCoreEVault {
     }
 }
 
+/// @notice A vault whose `debtOf` does real work and THEN reverts — expensive, but finite and legitimate.
+/// @dev The shape a proxy/dispatcher hop or an upgraded vault produces. It is the far side of the classifier
+///      from a gas bomb, and the two must land on opposite verdicts: this one has ANSWERED (with a revert), so
+///      the supply leg must survive. `MockEVault`'s bare dispatch-fallthrough revert is the cheapest possible
+///      case and brackets the classifier only where it cannot plausibly bind; this brackets it where it can.
+contract MockExpensiveRevertVault {
+    string public name = "EVK Vault eUSDC-slow";
+    address private _asset;
+    address public EVC;
+    mapping(address => uint256) public balanceOf;
+    uint256 private immutable BURN;
+
+    constructor(address asset_, uint256 burn_) {
+        _asset = asset_;
+        BURN = burn_;
+    }
+
+    function asset() external view returns (address) {
+        return _asset;
+    }
+
+    function convertToAssets(uint256 shares) external pure returns (uint256) {
+        return shares;
+    }
+
+    function setBalance(address account, uint256 shares) external {
+        balanceOf[account] = shares;
+    }
+
+    function debtOf(address) external view returns (uint256) {
+        uint256 start = gasleft();
+        while (start - gasleft() < BURN) {
+            assembly {
+                mstore(0x00, keccak256(0x00, 0x20))
+            }
+        }
+        revert("no debtOf on this vault");
+    }
+}
+
+/// @notice A core-eVault shape whose `debtOf` consumes every unit of gas it is forwarded instead of answering.
+/// @dev The failure `_safeDebt` must NOT read as "no debt". A vault can reach this by being upgraded, by an
+///      unbounded internal loop, or by being hostile — the instance set is governed, but a vault's code is not
+///      frozen by being registered. `balanceOf` is settable so the test can build the topology that actually
+///      over-reports: a controller vault holding only debt, whose siblings hold the collateral.
+contract MockDebtGasBombVault {
+    string public name = "EVK Vault eUSDC-bomb";
+    address private _asset;
+    address public EVC;
+    mapping(address => uint256) public balanceOf;
+
+    constructor(address asset_) {
+        _asset = asset_;
+    }
+
+    function asset() external view returns (address) {
+        return _asset;
+    }
+
+    function convertToAssets(uint256 shares) external pure returns (uint256) {
+        return shares;
+    }
+
+    function setBalance(address account, uint256 shares) external {
+        balanceOf[account] = shares;
+    }
+
+    function debtOf(address) external pure returns (uint256) {
+        // Hash one word forever: grows no memory, so it spends the stipend steadily rather than
+        // out-of-gassing early on memory expansion.
+        assembly {
+            for {} 1 {} { mstore(0x00, keccak256(0x00, 0x20)) }
+        }
+        return 0; // unreachable; present only to silence solc 6321 on every build
+    }
+}
+
 contract MockToken {
     string public symbol;
     uint8 public decimals;
@@ -967,5 +1044,178 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
         uint256 dirty = uint256(uint160(coord)) | (uint256(1) << 255);
         assertEq(adapter.positionLabels(abi.encode(dirty)).length, 0, "dirty upper bits");
         assertEq(adapter.positionLabels(abi.encode(coord, uint256(1))).length, 0, "over-long");
+    }
+
+    // ---------------------------------------------------------------------------------------------------------
+    // debtOf: fail-open on a revert, fail-CLOSED on an exhausted stipend
+    // ---------------------------------------------------------------------------------------------------------
+
+    /// @notice A `debtOf` that burns its stipend must make the read FAIL, not report a supply leg with the debt
+    ///         silently missing.
+    /// @dev The over-report this closes. Reading a starved `debtOf` as 0 leaves the supply leg standing alone,
+    ///      so the position is counted as pure credit and NAV rises by the whole borrow. The failure has to
+    ///      leave the adapter: the base fan-out classifies it by gas consumed and re-raises
+    ///      `InstanceGasExhausted`, which is why the stipend is frame-derived rather than a fixed 100_000 — a
+    ///      fixed ceiling is spent inside the instance's much larger budget and reads as a cheap revert, so the
+    ///      instance would be dropped silently instead.
+    function test_debtOf_gasBomb_revertsInsteadOfDroppingTheDebtLeg() public {
+        MockDebtGasBombVault bomb = new MockDebtGasBombVault(address(usdc));
+        bomb.setBalance(alice, 1_000_000);
+
+        bytes32[] memory ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(address(bomb))));
+
+        // Selector only: the budget/consumed operands are whatever the enclosing frame happened to hold, so
+        // pinning them would pin the test runner's budget rather than the behaviour. The frame IS capped
+        // though — uncapped, this burns the whole configured `gas_limit`, which is 1 GiB by default and 16 GiB
+        // under FOUNDRY_PROFILE=slow. The verdict is invariant across 60,000 to 550,000,000, so the cap costs
+        // the test nothing and saves ~16x the runtime whenever the suite is run under that profile.
+        vm.expectPartialRevert(INAVCalculator.InstanceGasExhausted.selector);
+        this.callPositions{gas: 30_000_000}(ins);
+    }
+
+    /// @notice The controller topology: a vault holding ONLY debt must not answer "no legs" when its `debtOf`
+    ///         was starved.
+    /// @dev The reason a per-vault view of this is not enough. On a controller `balanceOf == 0`, so a starved
+    ///      `debtOf` produces an instance with no legs at all — indistinguishable from an account with no
+    ///      position there — while the sibling vaults holding the collateral report it in full. Nothing inside
+    ///      this instance can offset that, so refusing to answer is the only safe outcome.
+    function test_debtOf_gasBomb_controllerWithNoSupply_stillReverts() public {
+        MockDebtGasBombVault controller = new MockDebtGasBombVault(address(usdc));
+        // No balance: the account's collateral sits in other vaults, as it does in Euler's core model.
+
+        bytes32[] memory ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(address(controller))));
+
+        vm.expectPartialRevert(INAVCalculator.InstanceGasExhausted.selector);
+        this.callPositions{gas: 30_000_000}(ins);
+    }
+
+    /// @notice A vault whose `debtOf` genuinely REVERTS still fails open — the EulerEarn case, unchanged.
+    /// @dev The distinction the whole change rests on. An aggregator that does not implement `debtOf` has
+    ///      answered, and reading 0 is correct; both configured mainnet instances are exactly this. If this
+    ///      degrades to a revert the change has broken the live configuration rather than hardened it.
+    function test_debtOf_genuineRevert_stillFailsOpen() public {
+        // `MockEVault` (vaultA) implements no `debtOf` at all, so the call reverts on a missing selector.
+        bytes32[] memory ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(address(vaultA))));
+
+        vaultA.setBalance(alice, 1_000_000);
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(alice, ins, address(0));
+        assertEq(pos.length, 1, "an aggregator with no debtOf still reports its supply leg");
+        assertTrue(pos[0].positionKind == PositionKind.Supplied || pos[0].positionKind == PositionKind.Collateral);
+        assertFalse(pos[0].isDebt, "and it is a credit leg, not a debt one");
+    }
+
+    /// @dev External wrapper so `vm.expectRevert` applies to the adapter call rather than to this test frame.
+    function callPositions(bytes32[] memory ins) external view returns (INAVCalculator.PositionBalance[] memory) {
+        return adapter.getAdapterPositionsForInstances(alice, ins, address(0));
+    }
+
+    /// @notice A burn inside the band the frame-vs-stipend regression reopens must keep its leg.
+    /// @dev The only assertion in this suite that fails if `StaticCallLib.probeWordMetered` goes back to
+    ///      classifying against the forwarded stipend instead of the frame — the one-token regression this
+    ///      adapter's guard was corrected for. Everything else here survives it: the gas-bomb pair cannot see it
+    ///      because an infinite bomb lands at ~0.984 of the frame, past both thresholds; the cheap-revert test
+    ///      never approaches either; and the bracket below cannot, because the regression shifts the flip frame
+    ///      by only ~1.6% and both of its budgets straddle that too.
+    ///
+    ///      The burn is chosen to sit INSIDE the band the regression reopens. Classifying against the stipend
+    ///      tests `7/8 * (63/64) * frame = 0.861 * frame` while `MetaBalanceAdapter` raises at `0.875 * frame`;
+    ///      a callee consuming between the two trips the inner guard, and the base then reads the resulting
+    ///      revert as an ordinary one and drops the whole instance silently. At frame 8,000,000 that band is
+    ///      ~6,666,000-6,769,000 of burn and ~103,000 wide. 6,700,000 is inside it: this returns one leg with
+    ///      the fix and ZERO legs without, which is both the over-report the guard exists to close and a fresh
+    ///      silent loss of a leg that would otherwise have survived.
+    ///
+    ///      **What it observes, precisely — the name matters here.** WITH the fix no raise happens at all: at
+    ///      frame 8,000,000 the probe's budget is ~7,734,000 and the threshold ~6,767,000, so a 6,700,000 burn
+    ///      is correctly read as a genuine revert and `_safeDebt` returns 0. What this pins is the ABSENCE of a
+    ///      spurious raise in that range. It is not evidence that a real raise propagates — the two gas-bomb
+    ///      tests above cover that, by asserting `InstanceGasExhausted` actually arrives. Anyone later moving
+    ///      the inner threshold UP will see this stay green and must not read it as propagation coverage.
+    function test_debtOf_burnInsideTheReopenedBand_keepsItsLeg() public {
+        MockExpensiveRevertVault slow = new MockExpensiveRevertVault(address(usdc), 6_700_000);
+        slow.setBalance(alice, 1_000_000);
+
+        bytes32[] memory ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(address(slow))));
+
+        INAVCalculator.PositionBalance[] memory pos = this.callPositions{gas: 8_000_000}(ins);
+
+        assertEq(pos.length, 1, "a burn in this range is a genuine revert, and its leg must survive");
+        assertFalse(pos[0].isDebt, "and the surviving leg is the credit one");
+    }
+
+    /// @notice A `debtOf` that reverts only after real work brackets the classifier from BOTH sides.
+    /// @dev Two assertions straddling a measured boundary, and the VALUES are the test — both were re-derived
+    ///      after the classification threshold changed, because a bracket that no longer brackets passes
+    ///      silently.
+    ///
+    ///      The far side is the property that matters in production: an expensive but GENUINE revert — a
+    ///      dispatcher hop, or a vault made dearer by an upgrade — must still yield the supply leg. That is the
+    ///      path the live EulerEarn configuration takes.
+    ///
+    ///      The near side pins that the same vault fails CLOSED once the frame is too small to tell its revert
+    ///      from starvation. That false positive is documented in {EulerVaultsMetaBalanceAdapter._safeDebt}; it
+    ///      is correct given the evidence available, and pinning it is what makes the pair a bracket rather than
+    ///      two independent assertions.
+    ///
+    ///      **Why these numbers.** With a 5,000,000-gas burn the flip sits at a frame of ~5,915,000. To
+    ///      re-derive it at a different burn, use `flip ~= (8/7 * burn + 18,600) * (64/63)^2`: the `8/7` is the
+    ///      `7/8` threshold inverted, the ~18,600 is what back-solving the measured flip gives for everything
+    ///      fixed ahead of the burn — the prologue (`asset()`, the registry fetch, `convertToAssets`,
+    ///      `balanceOf`) measured at ~19,500 on its own, net of small call-frame effects — and the two
+    ///      `64/63` factors are the EIP-150 reserves
+    ///      withheld at `getAdapterPositionsForInstances` and again at `try this.instancePositions{gas: ...}`.
+    ///      Do NOT model the gap as a fixed additive constant — those reserves SCALE with the frame, so a
+    ///      constant fits only near burn = 5,000,000 and diverges in opposite directions either side of it
+    ///      (~150,000 low at burn 1,000,000, ~177,000 high at burn 10,000,000). Getting that wrong de-calibrates
+    ///      the sensitivity property below, which is the only reason these two numbers are what they are.
+    ///      5,600,000 is ~5% below
+    ///      it and 6,300,000 ~6% above: far enough that solc or forge gas drift cannot cross either, close
+    ///      enough that a change to the threshold does. That second half is not automatic and was got wrong
+    ///      once — an earlier pair of 5,400,000/8,000,000 straddled the flip and still passed, but a
+    ///      `SLACK_DIVISOR` move from 8 to 4 shifts the flip to ~6,870,000 and BOTH of those assertions survive
+    ///      it. 6,300,000 lies below that, so the same change turns this red. A bracket has to sit inside the
+    ///      interval the regression would move the boundary across, not merely on both sides of it today.
+    ///
+    ///      **Which mutation each side catches — measured, and NOT what an earlier revision of this docstring
+    ///      claimed.** It asserted that a return to a fixed `StaticCallLib.PROBE_GAS` ceiling classifies this
+    ///      vault as starved and destroys the far side with `0 != 1`. That reasoning silently assumed
+    ///      classification against the forwarded STIPEND; against the frame, 100_000 spent inside a multi-megagas
+    ///      frame is nowhere near `7/8`, so a fixed ceiling makes the read fail OPEN, not closed. The claim
+    ///      described the code as it stood before the frame-vs-stipend correction, and survived a review round.
+    ///
+    ///      What the four mutations actually do:
+    ///
+    ///      | mutation | red | signature |
+    ///      |---|---|---|
+    ///      | discard the flag (plain `safeUint`) | both gas bombs, this test's NEAR side | did not revert |
+    ///      | fixed `PROBE_GAS` ceiling, named error kept | the same three | did not revert — INDISTINGUISHABLE |
+    ///      | classify against the forwarded stipend | `burnInsideTheReopenedBand` alone | `0 != 1` |
+    ///      | `starved = !ok` | `genuineRevert`, this test's FAR side, `burnInsideTheReopenedBand` | `0 != 1` |
+    ///
+    ///      So the two halves of this bracket pin DIFFERENT properties, which is the reason it is one test. The
+    ///      near side pins propagation, alongside the gas bombs. The far side pins fail-open on a genuine revert,
+    ///      alongside `genuineRevert_stillFailsOpen` — and that pair is what would go red if a change broke every
+    ///      EulerEarn instance on mainnet, since a live aggregator's `debtOf` reverts cheaply and must keep
+    ///      reading 0. A fixed ceiling leaves both of them green, which is precisely why attributing that harm
+    ///      to it was wrong.
+    function test_debtOf_expensiveButGenuineRevert_bracketsTheClassifier() public {
+        MockExpensiveRevertVault slow = new MockExpensiveRevertVault(address(usdc), 5_000_000);
+        slow.setBalance(alice, 1_000_000);
+
+        bytes32[] memory ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(address(slow))));
+
+        // Far side of the boundary (~5,917,000): the revert is genuine and is read as one.
+        INAVCalculator.PositionBalance[] memory pos = this.callPositions{gas: 6_300_000}(ins);
+        assertEq(pos.length, 1, "an expensive but genuine revert must still yield the supply leg");
+        assertFalse(pos[0].isDebt, "and it is the credit leg");
+
+        // Near side: too little frame to tell this revert from starvation, so it fails closed.
+        vm.expectPartialRevert(INAVCalculator.InstanceGasExhausted.selector);
+        this.callPositions{gas: 5_600_000}(ins);
     }
 }

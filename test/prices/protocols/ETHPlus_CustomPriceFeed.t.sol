@@ -3,16 +3,67 @@ pragma solidity ^0.8.0;
 
 import {Test} from "forge-std/Test.sol";
 import {ETHPlus_CustomPriceFeed} from "src/prices/protocols/ETHPlus_CustomPriceFeed.sol";
+import {Mock_ERC20} from "test/mocks/tokens.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
+import "src/errors.sol";
 
 /// @title ETHPlus_CustomPriceFeed unit tests (no fork)
+/// @dev The constructor runs two checks in order — `assertERC20Address(ethPlus_)` then
+///      `assertNotZeroNumber(reserveProtocolHeartbeat_)` — and **both revert the same `InvalidArguments()`**.
+///      That makes the two indistinguishable by error alone, so the only way to prove the second one runs is to
+///      build an input the first one ACCEPTS. The previous version of this file did the opposite: its
+///      zero-heartbeat case passed `address(0x1)`, which has no code, so `assertERC20Address` rejected it first
+///      and the heartbeat check was never reached. With a bare `vm.expectRevert()` accepting any revert, both
+///      tests passed for the same reason, and deleting `assertNotZeroNumber` entirely left them green.
 contract ETHPlus_CustomPriceFeedTest is Test {
-    function test_invalidConstructorArgs_zeroAddress() public {
-        vm.expectRevert();
-        new ETHPlus_CustomPriceFeed(address(0), 86400);
+    Mock_ERC20 internal ethPlus;
+
+    function setUp() public {
+        ethPlus = new Mock_ERC20("ETH+", 18);
     }
 
-    function test_invalidConstructorArgs_zeroHeartbeat() public {
-        vm.expectRevert();
-        new ETHPlus_CustomPriceFeed(address(0x1), 0);
+    // --- the address guard, isolated: the heartbeat is valid, so only `assertERC20Address` can object ---
+
+    function test_constructor_revertsOnZeroAddress() public {
+        vm.expectRevert(InvalidArguments.selector);
+        new ETHPlus_CustomPriceFeed(address(0), 86_400);
+    }
+
+    /// @dev Asserts the ACTUAL behaviour, which is not `InvalidArguments`: a code-less address reverts with an
+    ///      EMPTY payload. `OracleArgumentChecks.assertERC20Address` probes `totalSupply()` inside a `try`, but a
+    ///      high-level call to a code-less address is rejected by solc's `extcodesize` precheck in the CALLER's
+    ///      frame, before the call — so the `catch` that would raise `InvalidArguments` is never entered and the
+    ///      revert carries no selector for an operator to read.
+    ///
+    ///      Noted rather than fixed: it is the same hazard `PriceFeedLib._validateFeedSupportInternal` already
+    ///      guards against explicitly (`AddressCheckLib.requireContract(priceFeed, "priceFeed")`, added so a
+    ///      code-less feed "must fail by name"), and `assertERC20Address` has no equivalent. Changing shared
+    ///      argument-checking used by every price feed is outside this PR's scope; the empty-payload assertion
+    ///      here pins today's behaviour so a later fix has to come past this test rather than sliding under it.
+    function test_constructor_revertsWithoutDataOnCodelessAddress() public {
+        address noCode = address(0x1);
+        assertEq(noCode.code.length, 0, "fixture must have no code for this test to mean anything");
+
+        try new ETHPlus_CustomPriceFeed(noCode, 86_400) returns (ETHPlus_CustomPriceFeed) {
+            fail();
+        } catch (bytes memory reason) {
+            assertEq(reason.length, 0, "code-less address currently reverts with no data (extcodesize precheck)");
+        }
+    }
+
+    // --- the heartbeat guard, isolated: the address is a real ERC20, so only `assertNotZeroNumber` can object ---
+
+    /// @dev Deleting `assertNotZeroNumber(reserveProtocolHeartbeat_)` makes this construction SUCCEED and this
+    ///      test fail. That is the mutation the old file could not catch.
+    function test_constructor_revertsOnZeroHeartbeat() public {
+        vm.expectRevert(InvalidArguments.selector);
+        new ETHPlus_CustomPriceFeed(address(ethPlus), 0);
+    }
+
+    /// @notice The positive control, so "reverts on a zero heartbeat" stays distinguishable from "always reverts".
+    function test_constructor_acceptsValidArgs() public {
+        ETHPlus_CustomPriceFeed feed = new ETHPlus_CustomPriceFeed(address(ethPlus), 86_400);
+        assertEq(feed.RESERVE_PROTOCOL_HEARTBEAT(), 86_400, "heartbeat not stored");
+        assertEq(feed.ETHPLUS(), address(ethPlus), "underlying not stored");
     }
 }

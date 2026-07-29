@@ -92,9 +92,13 @@ contract ProbeMetaAdapter is MetaBalanceAdapter {
 ///         `catch` sees a small `consumed` so `GasStipendLib.exhausted` is false and it is not re-raised as
 ///         `InstanceGasExhausted`, the instance is recorded as zero legs, and `getAdapterPositions` RETURNS
 ///         SUCCESSFULLY. Dropped debt legs raise reported NAV.
-/// @dev The tests below are ordered to make the argument, not just to cover lines: first that the old pairing is
-///      rejected at deploy time, then — the part that justifies the guard — a demonstration of what the old pairing
-///      does when it is NOT rejected.
+/// @dev The tests below are ordered to make the argument, not just to cover lines: the old pairing is rejected,
+///      the capable one is not, and the two shapes that defeated earlier versions of the guard — success with no
+///      answer, and a non-contract — are each pinned to their own error. An earlier revision of this comment
+///      promised "a demonstration of what the old pairing does when it is NOT rejected"; no such test existed,
+///      and a doc claiming coverage that is absent is worse than no doc, because it stops the next reader
+///      looking. What replaced it is `test_successWithEmptyReturndataIsRejected`, which pins the case that
+///      actually reached the silent zero-leg over-report in review.
 contract MetaAdapterNavVersionGuardTest is Test {
     function test_deployingAgainstAnOldNavCalculatorReverts() public {
         OldNav nav = new OldNav();
@@ -137,6 +141,19 @@ contract MetaAdapterNavVersionGuardTest is Test {
 
         (, bool found) = populated.getRegisteredAsset(address(0));
         assertFalse(found, "probe key must be absent, or the test proves nothing");
+    }
+
+    /// @notice The 192-byte floor in the guard is justified by measurement, not by arithmetic in a comment.
+    /// @dev `returns (Asset memory, bool)` with `Asset = (address, string, uint8)` encodes to six words when the
+    ///      symbol is empty, which is what the `address(0)` probe elicits. If `Asset` ever gains a field this
+    ///      test fails, forcing the floor to be revisited rather than silently becoming loose. A first pass put
+    ///      the floor at 64, which would have admitted 64..191 bytes.
+    function test_capableNavReturndataIsAtLeastTheFloor() public {
+        NewNav nav = new NewNav();
+        (bool ok, bytes memory ret) =
+            address(nav).staticcall(abi.encodeWithSelector(INAVCalculator.getRegisteredAsset.selector, address(0)));
+        assertTrue(ok, "capable NAV must answer");
+        assertEq(ret.length, 192, "floor in MetaBalanceAdapter must match the real minimum encoding");
     }
 
     /// @notice A non-contract is rejected by `AddressCheckLib`, NOT by the probe, and the two errors are kept

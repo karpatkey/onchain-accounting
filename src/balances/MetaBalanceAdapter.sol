@@ -152,11 +152,19 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
         // exhaustion, and the adapter silently reported zero legs. That is precisely the over-report this guard
         // exists to prevent, reinstated by the guard's own weakness (proven by executed PoC in review).
         //
-        // A capable NAVCalculator returns `(Asset memory, bool)`: a 32-byte head offset for the struct plus a
-        // 32-byte bool, so 64 bytes is the floor. Checking the length is what turns "it did not revert" into
-        // "it answered". Note a staticcall to a CODELESS account also returns success with no data, which is why
-        // `requireContract` above is load-bearing rather than merely tidy.
-        if (!ok || ret.length < 64) revert NAVCalculatorTooOld(navCalculator_);
+        // The floor is 192 bytes, and the arithmetic is worth spelling out because a first pass put it at 64.
+        // `Asset` is `(address, string, uint8)` — DYNAMIC, because of the string — so `returns (Asset, bool)`
+        // encodes as: 2 head words (offset-to-Asset, bool) + 3 words for Asset's own head (address,
+        // offset-to-string, uint8) + 1 word for the string length. Six words = 192 bytes, with an EMPTY symbol,
+        // which is exactly what the `address(0)` probe elicits since `found == false` zeroes the struct. 64
+        // would have admitted anything from 64 to 191 bytes — still far short of a real answer.
+        // `test_capableNavReturndataIsAtLeastTheFloor` measures this against a real encoder rather than trusting
+        // the arithmetic, so adding a field to `Asset` fails a test instead of silently loosening the guard.
+        //
+        // Checking the length is what turns "it did not revert" into "it answered". Note a staticcall to a
+        // CODELESS account also returns success with no data, which is why `requireContract` above is
+        // load-bearing rather than merely tidy.
+        if (!ok || ret.length < 192) revert NAVCalculatorTooOld(navCalculator_);
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
     }
 

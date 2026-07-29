@@ -590,8 +590,34 @@ interface INAVCalculator is IBalances {
     function isAssetRegistered(address asset) external view returns (bool);
 
     /// @notice Returns all registered assets with metadata.
+    /// @dev **O(N), and it is the wrong tool for resolving ONE asset** — use {getRegisteredAsset} for that. This
+    ///      copies the entire registry across the ABI boundary, so a caller that resolves M tokens by calling this
+    ///      M times pays M full fetches. That pattern measured **6,274,562 gas for a single 50-token Balancer
+    ///      instance at 43 registered assets** (18.4M at 100), and it is super-linear rather than linear because
+    ///      each call allocates a fresh N-element array that is never freed, so memory expansion grows with the
+    ///      square of the token count. At that scale it exhausts the per-adapter gas stipend and turns a NAV read
+    ///      into a REVERT.
     /// @return assets Array of Asset (address, symbol, decimals).
     function getRegisteredAssets() external view returns (Asset[] memory assets);
+
+    /// @notice Resolves ONE asset's registry metadata in O(1), without reverting when it is absent.
+    /// @dev The single-asset counterpart to {getRegisteredAssets}, added because balance adapters resolve tokens
+    ///      one at a time and the array getter makes that quadratic (see its docs for the measured figures).
+    ///      Backed by the 1-based `_assetIndex` map the registry already maintains on register/unregister, so this
+    ///      is a mapping load plus one array read — flat in the number of registered assets.
+    ///
+    ///      **Non-reverting by design, and that is the whole reason this is a new function rather than a widened
+    ///      visibility on the existing internal lookup.** NAVCalculator's `_getRegisteredAsset` reverts
+    ///      `AssetNotFound` for an unregistered asset, which is right for its callers but wrong here: "not
+    ///      registered" is an ORDINARY, expected outcome on an adapter's emission path — the adapter simply skips
+    ///      that leg. A reverting getter would turn every unregistered token an adapter happens to encounter into
+    ///      a failed instance read, converting a skipped leg into a dropped position.
+    /// @param asset The asset to resolve.
+    /// @return assetInfo The registry entry. Zeroed (`address(0)`, `""`, `0`) when `found` is false — **check
+    ///         `found`, do not infer absence from a zero `assetInfo.asset`**, since the two are only equivalent
+    ///         while nothing zero-addressed can be registered.
+    /// @return found True if `asset` is registered.
+    function getRegisteredAsset(address asset) external view returns (Asset memory assetInfo, bool found);
 
     /// @notice Returns the number of registered assets.
     /// @return Number of registered assets.

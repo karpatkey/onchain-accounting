@@ -11,9 +11,12 @@ import {StaticCallLib} from "src/utils/StaticCallLib.sol";
 /// @notice Minimal Euler V2 vault accessors beyond ERC4626. `debtOf` exists only on core eVaults (EVK); `EVC()` is
 ///         exposed by both core eVaults and EulerEarn vaults. A vault lacking either (or a non-Euler ERC4626)
 ///         degrades gracefully — but NOT via try/catch, which does not intercept a return-data decode failure or a
-///         call to a code-less address. Both are read through bounded fail-open staticcalls
-///         ({EulerVaultsMetaBalanceAdapter._safeDebt} / {EulerVaultsMetaBalanceAdapter._safeEvc}); see
-///         {EulerVaultsMetaBalanceAdapter._supplyKind} for why.
+///         call to a code-less address. Both are read through low-level staticcalls rather than `try`, for that
+///         reason; their POLICIES differ and the difference is deliberate. `EVC()` is bounded and fail-open
+///         ({EulerVaultsMetaBalanceAdapter._safeEvc}) because losing it only re-keys a leg. `debtOf` takes a share
+///         of the calling frame and fails CLOSED on exhaustion
+///         ({EulerVaultsMetaBalanceAdapter._safeDebt}) because losing it changes a number. See
+///         {EulerVaultsMetaBalanceAdapter._supplyKind} for the shared reasoning and {_safeDebt} for the split.
 interface IEulerEVault {
     /// @return The account's current debt in the vault's underlying asset (interest-accrued), 0 if none.
     function debtOf(address account) external view returns (uint256);
@@ -60,10 +63,15 @@ interface IEVC {
 ///      BALANCE_ADAPTERS.md §6.1.
 contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @notice Thrown when the `debtOf` read ran out of the gas it was given rather than answering.
-    /// @dev Declared here rather than on `INAVCalculator` because it is not the error a consumer sees: the base
-    ///      fan-out catches it and re-raises `INAVCalculator.InstanceGasExhausted`, which is the wave-wide signal
-    ///      for this condition. Its purpose is to make the instance revert instead of returning a leg-shaped
-    ///      answer with the debt missing. See {_safeDebt}.
+    /// @dev Declared here rather than on `INAVCalculator` because on the path that matters it is not the error a
+    ///      consumer sees: `MetaBalanceAdapter._positionsForInstances` catches it and re-raises
+    ///      `INAVCalculator.InstanceGasExhausted`, the wave-wide signal for this condition. Its purpose is to make
+    ///      the instance revert instead of returning a leg-shaped answer with the debt missing.
+    ///
+    ///      One caller does receive it raw: `MetaBalanceAdapter.instancePositions` is `external` and probes a
+    ///      single instance without that `catch`, so a configuration or reconciliation tool calling it directly
+    ///      gets this selector rather than `InstanceGasExhausted`. Such a tool needs this ABI to tell "ran out of
+    ///      gas" from an unknown failure. See {_safeDebt}.
     error DebtReadGasExhausted(address vault, address account, uint256 budget, uint256 consumed);
 
     /// @dev Gas stipend for the `getCollaterals` probe ({_isEnabledCollateral}) — the one fail-open read here that
@@ -110,7 +118,11 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
 
     /// @inheritdoc MetaBalanceAdapter
     /// @dev Returns an empty array (rather than reverting) when the vault asset is unregistered or the account has
-    ///      neither a supply nor a debt position, so a single vault never zeroes out the rest of the configured set.
+    ///      neither a supply nor a debt position, so a vault in either of those states does not disturb the rest of
+    ///      the configured set. That isolation is NOT total, and the exception is deliberate: a `debtOf` read that
+    ///      runs out of gas reverts {DebtReadGasExhausted} (see {_safeDebt}), which the base re-raises as
+    ///      `InstanceGasExhausted` and `PriceFeedLib` propagates — so that one vault does take down the whole
+    ///      account read. Answering with a number that is missing a debt leg is the worse outcome.
     function _instancePositions(address account, bytes32 instance, address assetFilter)
         internal
         view
@@ -140,9 +152,10 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
 
         uint256 supplied = vault.convertToAssets(vault.balanceOf(account));
 
-        // Debt leg: only core eVaults (EVK) implement debtOf; EulerEarn aggregators do not, so the read must not
-        // drop the supply leg. Read through the same bounded fail-open helper as the EVC probes — try/catch is NOT
-        // sufficient here either, for exactly the reasons documented on {_supplyKind}.
+        // Debt leg: only core eVaults (EVK) implement debtOf; EulerEarn aggregators do not, so a REVERT must not
+        // drop the supply leg. Read low-level rather than through try/catch for the reasons documented on
+        // {_supplyKind} — but through a different helper from the EVC probes, and under a different policy: a
+        // frame-derived stipend that fails CLOSED on exhaustion. See {_safeDebt}.
         uint256 debt = _safeDebt(vaultAddr, account);
 
         uint256 n = (supplied > 0 ? 1 : 0) + (debt > 0 ? 1 : 0);
@@ -204,8 +217,16 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     ///
     ///      One consequence of that split is worth stating: `_safeDebt` runs BEFORE the classification probes and
     ///      no longer has a ceiling, so a vault that makes it expensive leaves less for `_safeEvc` and
-    ///      `_isEnabledCollateral` further down. Those degrade to `Supplied`, which changes no number — the
-    ///      ordering costs classification fidelity, never an amount.
+    ///      `_isEnabledCollateral` further down. Ordinarily those simply degrade to `Supplied`, which re-keys a
+    ///      leg and changes no amount.
+    ///
+    ///      That is the ordinary case, not a guarantee. `_isEnabledCollateral` assigns `(bool, bytes memory)`
+    ///      from its raw staticcall, so the caller pays an uncapped `returndatacopy`; against an EVC returning a
+    ///      very large `address[]` (the shape `test_supplyKind_returndataBomb_boundedAndFailsOpen` pins) that
+    ///      copy can exceed what an expensive `debtOf` left behind and out-of-gas `_instancePositions` outright.
+    ///      The base then classifies the instance as exhausted and the account read reverts. Loud rather than
+    ///      wrong, and it needs both a costly `debtOf` and a hostile EVC on the same governed vault — but it is
+    ///      a revert, not a re-key, so do not read the paragraph above as "this ordering can only cost fidelity".
     ///
     ///      `vaultAddr` is MANAGER-governed and its guard is defensive only — `_instancePositions` already reverts
     ///      on a code-less vault at `asset()`, long before this is reached. The live exposure is `evc`, which is
@@ -279,6 +300,13 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     ///      - **Depth.** Starvation is classified loud through 8 callee frames below the probe, counting frames
     ///        on the composed path. Real EVK dispatcher/module hops are 2-4, so this is ample against accidents —
     ///        but the depth is the CALLEE's, so it does not bound a vault choosing it.
+    ///
+    ///        **This 8 is derived, not owned here, and no test pins it.** It falls straight out of
+    ///        `GasStipendLib.SLACK_DIVISOR = 8`: `(63/64)^8 = 0.8816 >= 7/8 > (63/64)^9 = 0.8679`. Change the
+    ///        divisor in that file — which this adapter does not own, and which the bracket test below proves is
+    ///        a live possibility in both directions — and this number moves with it, to ~18 frames at divisor 4
+    ///        and ~3 at divisor 16, with nothing here going red to say so. Re-derive rather than trust it if
+    ///        `SLACK_DIVISOR` has changed.
     ///
     ///        Past 8 the debt reads 0 while the supply leg survives: the unoffset-collateral over-report, at 9
     ///        frames and beyond. There is no intervening regime. An earlier revision of this note claimed 9 was

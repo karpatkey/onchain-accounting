@@ -17,11 +17,17 @@ import {GasStipendLib} from "src/utils/GasStipendLib.sol";
 ///      into each caller (no separate deployment, no DELEGATECALL), so this is a maintainability change, not a
 ///      size one.
 ///
-///      **Three properties make the "never reverts" claim actually hold**, and all three are load-bearing:
+///      **Three properties make the "never reverts" claim actually hold** for {safeUint}, {safeAddr},
+///      {safeAddrStrict} and {probeWord}, and all three are load-bearing. **{probeWordMetered} is deliberately
+///      NOT one of these helpers** — it neither bounds gas the same way nor never-reverts-by-construction; see
+///      its own docblock before routing anything through it:
 ///
 ///      1. **Bounded gas** ({PROBE_GAS}). Without a stipend a callee that loops forever consumes 63/64 of
 ///         whatever the caller had, so one malformed instance starves every read that follows it — a fail-open
-///         that silently drops later positions rather than a single value.
+///         that silently drops later positions rather than a single value. {probeWordMetered} forwards exactly
+///         that 63/64, on purpose: it is for a read whose absence changes a NAV number, where a fixed ceiling is
+///         unrecoverable and the starvation must be made visible rather than absorbed. Its caller is expected to
+///         REVERT on `starved`. Do not reach for it merely because it is the one that reports starvation.
 ///      2. **A fixed 32-byte output area.** Assigning `(bool ok, bytes memory ret)` from a raw staticcall makes
 ///         solc `returndatacopy` the *entire* reply into freshly allocated memory — revert payloads included —
 ///         and the quadratic cost of that copy is paid by the *caller*, on top of whatever the callee already

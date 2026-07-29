@@ -1065,10 +1065,13 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
         bytes32[] memory ins = new bytes32[](1);
         ins[0] = bytes32(uint256(uint160(address(bomb))));
 
-        // Selector only: the stipend/consumed operands are whatever the enclosing frame happened to hold, so
-        // pinning them would pin the test runner's budget rather than the behaviour.
+        // Selector only: the budget/consumed operands are whatever the enclosing frame happened to hold, so
+        // pinning them would pin the test runner's budget rather than the behaviour. The frame IS capped
+        // though — uncapped, this burns the whole configured `gas_limit`, which is 1 GiB by default and 16 GiB
+        // under FOUNDRY_PROFILE=slow. The verdict is invariant across 60,000 to 550,000,000, so the cap costs
+        // the test nothing and saves ~16x the runtime whenever the suite is run under that profile.
         vm.expectPartialRevert(INAVCalculator.InstanceGasExhausted.selector);
-        this.callPositions(ins);
+        this.callPositions{gas: 30_000_000}(ins);
     }
 
     /// @notice The controller topology: a vault holding ONLY debt must not answer "no legs" when its `debtOf`
@@ -1085,7 +1088,7 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
         ins[0] = bytes32(uint256(uint160(address(controller))));
 
         vm.expectPartialRevert(INAVCalculator.InstanceGasExhausted.selector);
-        this.callPositions(ins);
+        this.callPositions{gas: 30_000_000}(ins);
     }
 
     /// @notice A vault whose `debtOf` genuinely REVERTS still fails open — the EulerEarn case, unchanged.
@@ -1109,7 +1112,7 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
         return adapter.getAdapterPositionsForInstances(alice, ins, address(0));
     }
 
-    /// @notice A raise from the inner guard must REACH the base's classifier, never vanish into its `catch`.
+    /// @notice A burn inside the band the frame-vs-stipend regression reopens must keep its leg.
     /// @dev The only assertion in this suite that fails if `StaticCallLib.probeWordMetered` goes back to
     ///      classifying against the forwarded stipend instead of the frame — the one-token regression this
     ///      adapter's guard was corrected for. Everything else here survives it: the gas-bomb pair cannot see it
@@ -1124,7 +1127,14 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
     ///      ~6,666,000-6,769,000 of burn and ~103,000 wide. 6,700,000 is inside it: this returns one leg with
     ///      the fix and ZERO legs without, which is both the over-report the guard exists to close and a fresh
     ///      silent loss of a leg that would otherwise have survived.
-    function test_debtOf_starvationRaise_reachesTheClassifier_neverVanishes() public {
+    ///
+    ///      **What it observes, precisely — the name matters here.** WITH the fix no raise happens at all: at
+    ///      frame 8,000,000 the probe's budget is ~7,734,000 and the threshold ~6,767,000, so a 6,700,000 burn
+    ///      is correctly read as a genuine revert and `_safeDebt` returns 0. What this pins is the ABSENCE of a
+    ///      spurious raise in that range. It is not evidence that a real raise propagates — the two gas-bomb
+    ///      tests above cover that, by asserting `InstanceGasExhausted` actually arrives. Anyone later moving
+    ///      the inner threshold UP will see this stay green and must not read it as propagation coverage.
+    function test_debtOf_burnInsideTheReopenedBand_keepsItsLeg() public {
         MockExpensiveRevertVault slow = new MockExpensiveRevertVault(address(usdc), 6_700_000);
         slow.setBalance(alice, 1_000_000);
 
@@ -1133,7 +1143,7 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
 
         INAVCalculator.PositionBalance[] memory pos = this.callPositions{gas: 8_000_000}(ins);
 
-        assertEq(pos.length, 1, "a raise here must reach the base's classifier, never vanish into its catch");
+        assertEq(pos.length, 1, "a burn in this range is a genuine revert, and its leg must survive");
         assertFalse(pos[0].isDebt, "and the surviving leg is the credit one");
     }
 
@@ -1152,9 +1162,11 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
     ///      two independent assertions.
     ///
     ///      **Why these numbers.** With a 5,000,000-gas burn the flip sits at a frame of ~5,915,000. To
-    ///      re-derive it at a different burn, use `flip ~= (8/7 * burn + 16,000) * (64/63)^2`: the `8/7` is the
-    ///      `7/8` threshold inverted, the ~16,000 is the fixed prologue (`asset()`, the registry fetch,
-    ///      `convertToAssets`, `balanceOf`) at ~19,500 gas, and the two `64/63` factors are the EIP-150 reserves
+    ///      re-derive it at a different burn, use `flip ~= (8/7 * burn + 18,600) * (64/63)^2`: the `8/7` is the
+    ///      `7/8` threshold inverted, the ~18,600 is what back-solving the measured flip gives for everything
+    ///      fixed ahead of the burn — the prologue (`asset()`, the registry fetch, `convertToAssets`,
+    ///      `balanceOf`) measured at ~19,500 on its own, net of small call-frame effects — and the two
+    ///      `64/63` factors are the EIP-150 reserves
     ///      withheld at `getAdapterPositionsForInstances` and again at `try this.instancePositions{gas: ...}`.
     ///      Do NOT model the gap as a fixed additive constant — those reserves SCALE with the frame, so a
     ///      constant fits only near burn = 5,000,000 and diverges in opposite directions either side of it

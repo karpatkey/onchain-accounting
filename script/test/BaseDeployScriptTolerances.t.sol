@@ -19,8 +19,24 @@ contract MockPricingSource {
         reverts = value;
     }
 
+    /// @notice Reply with fewer than 64 bytes, so the guard's `data.length < 64` arm is reachable.
+    /// @dev Without this the mock always returns exactly 64 bytes and only the `!ok` half of that fall-through is
+    ///      ever taken — the length half would be dead. A short reply is what a wrong-ABI or partially-migrated
+    ///      proxy actually produces.
+    function setShortReturn(bool value) external {
+        shortReturn = value;
+    }
+
+    bool public shortReturn;
+
     function getAssetPricing(address) external view returns (IPrices.AssetPricing memory) {
         require(!reverts, "pricing unavailable");
+        if (shortReturn) {
+            assembly {
+                mstore(0x00, 1)
+                return(0x00, 0x20) // 32 bytes < the 64 the decoder needs
+            }
+        }
         return pricing;
     }
 }
@@ -100,6 +116,18 @@ contract BaseDeployScriptTolerancesTest is Test {
     function test_revertsWhenTheOnChainReadFails() public {
         navProxy.set(500, 0);
         navProxy.setReverts(true);
+
+        vm.expectRevert(bytes("WETH: adds monitorFeeds but no divergence tolerance (config or on-chain)"));
+        harness.requireTolerancesPlannable(address(navProxy), ASSET, SYMBOL, 1, 0, 0, true);
+    }
+
+    /// @notice The other half of the same fall-through: the call SUCCEEDS but returns too few bytes to decode.
+    /// @dev `_onChainDivergenceToleranceBps` bails on `!ok || data.length < 64`. The test above covers `!ok`;
+    ///      this covers the length arm, which a wrong-ABI or partially-migrated proxy would produce. It must fail
+    ///      safe — read as "no tolerance" and block — rather than decode garbage.
+    function test_revertsWhenTheOnChainReadReturnsTooFewBytes() public {
+        navProxy.set(500, 0);
+        navProxy.setShortReturn(true);
 
         vm.expectRevert(bytes("WETH: adds monitorFeeds but no divergence tolerance (config or on-chain)"));
         harness.requireTolerancesPlannable(address(navProxy), ASSET, SYMBOL, 1, 0, 0, true);

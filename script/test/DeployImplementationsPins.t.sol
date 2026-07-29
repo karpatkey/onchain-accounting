@@ -39,6 +39,32 @@ contract DeployImplementationsHarness is DeployImplementations, PinHarnessBehavi
         _assertPinnedLibrariesUsable(_computeImplPlan());
     }
 
+    /// @notice Same guard, with the plan's addresses AND bytecode injectable.
+    /// @dev    The pin seam alone cannot reach the linkage pair, in either pin state, which is why this exists.
+    ///         Assertions 3-4 are only evaluated once 1-2 pass, and 1-2 force the injected pins to equal the
+    ///         CREATE2 addresses computed from current source. On a drifted tree those differ from what the impl
+    ///         bytecode embeds, so assertion 3 always fires first and 4 is unreachable; on a regenerated tree they
+    ///         are exactly what it embeds, so 3 and 4 both pass and neither can be made to fail. Injecting the
+    ///         bytecode breaks that coupling and makes each linkage assertion trippable in ANY pin state — which
+    ///         is what this file's own rule 1 demands. Mirrors
+    ///         `UpgradeNAVCalculatorHarness.assertImplLinkedAndLibrariesPresent(bytes)`.
+    function assertPinnedLibrariesUsableWith(address priceFeedLib, address navRegistryLib, bytes memory implBytecode)
+        external
+        view
+    {
+        ImplPlan memory plan = _computeImplPlan();
+        plan.priceFeedLib = priceFeedLib;
+        plan.navRegistryLib = navRegistryLib;
+        plan.navImplBytecode = implBytecode;
+        _assertPinnedLibrariesUsable(plan);
+    }
+
+    /// @notice The CREATE2 addresses this script would deploy to, so a test can assert the deploy happened.
+    function computedAddresses() external pure returns (address priceFeedLib, address navRegistryLib, address navImpl) {
+        ImplPlan memory plan = _computeImplPlan();
+        return (plan.priceFeedLib, plan.navRegistryLib, plan.navImpl);
+    }
+
     function guardedDeploy() external {
         _guardedDeploy(_computeImplPlan());
     }
@@ -65,6 +91,24 @@ contract DeployNAVImplementationHarness is DeployNAVImplementation, PinHarnessBe
         _assertPinnedLibrariesUsable(_computeImplPlan());
     }
 
+    /// @notice See `DeployImplementationsHarness.assertPinnedLibrariesUsableWith`.
+    function assertPinnedLibrariesUsableWith(address priceFeedLib, address navRegistryLib, bytes memory implBytecode)
+        external
+        view
+    {
+        ImplPlan memory plan = _computeImplPlan();
+        plan.priceFeedLib = priceFeedLib;
+        plan.navRegistryLib = navRegistryLib;
+        plan.navImplBytecode = implBytecode;
+        _assertPinnedLibrariesUsable(plan);
+    }
+
+    /// @notice The CREATE2 addresses this script would deploy to, so a test can assert the deploy happened.
+    function computedAddresses() external pure returns (address priceFeedLib, address navRegistryLib, address navImpl) {
+        ImplPlan memory plan = _computeImplPlan();
+        return (plan.priceFeedLib, plan.navRegistryLib, plan.navImpl);
+    }
+
     function guardedDeploy() external {
         _guardedDeploy(_computeImplPlan());
     }
@@ -75,6 +119,25 @@ contract DeployNAVImplementationHarness is DeployNAVImplementation, PinHarnessBe
 
     function run() public pure override {
         revert("harness: not a deploy script");
+    }
+}
+
+/// @notice Minimal stand-in for the canonical CREATE2 factory at `0x4e59…`, which holds no code in a bare test EVM.
+/// @dev    Without it, `_deployIfNeeded`'s raw `.call` to a code-less address returns `ok == true` and deploys
+///         NOTHING, so `require(ok, …)` passes and a positive control could not distinguish "the deploy wrapper
+///         works" from "the deploy wrapper silently did nothing". Calldata layout is Arachnid's: 32-byte salt
+///         followed by init code.
+contract MockCreate2Factory {
+    fallback() external payable {
+        assembly {
+            let len := sub(calldatasize(), 32)
+            let ptr := mload(0x40)
+            calldatacopy(ptr, 32, len)
+            let deployed := create2(0, ptr, len, calldataload(0))
+            if iszero(deployed) { revert(0, 0) }
+            mstore(0x00, deployed)
+            return(0x00, 0x20)
+        }
     }
 }
 
@@ -135,11 +198,6 @@ contract DeployImplementationsPinsTest is Test {
         );
     }
 
-    function _pinsMatchSource() internal pure returns (bool) {
-        return _computedPriceFeedPin() == LibraryPins.PRICE_FEED_LIB
-            && _computedNavRegistryPin() == LibraryPins.NAV_REGISTRY_LIB;
-    }
-
     // ---------------------------------------------------------------
     // Family 1 — the pins must still match the library source in this tree.
     // Injected pins, so each assertion is trippable in ANY pin state.
@@ -173,26 +231,62 @@ contract DeployImplementationsPinsTest is Test {
 
     // ---------------------------------------------------------------
     // Family 2 — the impl bytecode must be linked against both pins.
-    // Reachable only once the source-match pair is satisfied, which is why each test injects the COMPUTED pin for
-    // the library it is not testing and a plausible-but-wrong one for the library it is.
+    //
+    // These inject the BYTECODE as well as the pins. An earlier revision injected only the pins and relied on the
+    // tree's own drift to make the linkage check fire; two review gates independently showed that could not work:
+    // assertions 3-4 are reached only once 1-2 pass, and 1-2 force the injected pins to equal the CREATE2
+    // addresses computed from current source. On a drifted tree those differ from what the bytecode embeds, so
+    // assertion 3 always fired first and assertion 4 was UNREACHABLE; on a regenerated tree they are exactly what
+    // it embeds, so both would pass and the tests self-skipped into vacuity. Deleting assertion 4 from either
+    // script left the whole suite green — the same defect class this PR exists to close.
+    //
+    // Injecting a matched (pin, plan-address) pair satisfies 1-2 by construction in ANY pin state, so the
+    // synthetic bytecode alone decides 3 and 4. The `vm.skip` is gone with it.
     // ---------------------------------------------------------------
 
-    /// @dev Injecting the computed PriceFeedLib pin satisfies source-match for it; the impl bytecode embeds
-    ///      whatever foundry.toml says, so when the computed pin differs from the foundry.toml pin the linkage
-    ///      check is what objects. Skipped when the tree's pins already match source, since then the computed and
-    ///      configured pins are the same address and there is no divergence to detect.
-    function test_01_linkage_revertsWhenImplNotLinkedAgainstThePin() public {
-        vm.skip(_pinsMatchSource());
-        impls.setPinOverrides(_computedPriceFeedPin(), _computedNavRegistryPin());
+    /// @dev Bytecode embeds the registry pin but NOT the price-feed pin, so only assertion 3 can object.
+    function test_01_linkage_revertsWhenImplNotLinkedAgainstPriceFeedLib() public {
+        impls.setPinOverrides(WRONG_PRICE_FEED_PIN, WRONG_REGISTRY_PIN);
+        bytes memory unlinked = abi.encodePacked(hex"60806040", WRONG_REGISTRY_PIN);
         vm.expectRevert("NAVCalculator impl not linked against pinned PriceFeedLib (foundry.toml `libraries` drift)");
-        impls.assertPinnedLibrariesUsable();
+        impls.assertPinnedLibrariesUsableWith(WRONG_PRICE_FEED_PIN, WRONG_REGISTRY_PIN, unlinked);
     }
 
-    function test_01_2_linkage_revertsWhenImplNotLinkedAgainstThePin() public {
-        vm.skip(_pinsMatchSource());
-        navImpl.setPinOverrides(_computedPriceFeedPin(), _computedNavRegistryPin());
+    /// @notice The assertion that had no coverage in any pin state, in either script.
+    /// @dev Bytecode embeds the price-feed pin but NOT the registry pin, so assertion 3 passes and only 4 objects.
+    ///      This is what stops a 24-chain broadcast of an impl that would DELEGATECALL empty code on the registry
+    ///      library and revert on `initialize()`.
+    function test_01_linkage_revertsWhenImplNotLinkedAgainstNavRegistryLib() public {
+        impls.setPinOverrides(WRONG_PRICE_FEED_PIN, WRONG_REGISTRY_PIN);
+        bytes memory unlinked = abi.encodePacked(hex"60806040", WRONG_PRICE_FEED_PIN);
+        vm.expectRevert("NAVCalculator impl not linked against pinned NAVRegistryLib (foundry.toml `libraries` drift)");
+        impls.assertPinnedLibrariesUsableWith(WRONG_PRICE_FEED_PIN, WRONG_REGISTRY_PIN, unlinked);
+    }
+
+    function test_01_2_linkage_revertsWhenImplNotLinkedAgainstPriceFeedLib() public {
+        navImpl.setPinOverrides(WRONG_PRICE_FEED_PIN, WRONG_REGISTRY_PIN);
+        bytes memory unlinked = abi.encodePacked(hex"60806040", WRONG_REGISTRY_PIN);
         vm.expectRevert("NAVCalculator impl not linked against pinned PriceFeedLib (foundry.toml `libraries` drift)");
-        navImpl.assertPinnedLibrariesUsable();
+        navImpl.assertPinnedLibrariesUsableWith(WRONG_PRICE_FEED_PIN, WRONG_REGISTRY_PIN, unlinked);
+    }
+
+    function test_01_2_linkage_revertsWhenImplNotLinkedAgainstNavRegistryLib() public {
+        navImpl.setPinOverrides(WRONG_PRICE_FEED_PIN, WRONG_REGISTRY_PIN);
+        bytes memory unlinked = abi.encodePacked(hex"60806040", WRONG_PRICE_FEED_PIN);
+        vm.expectRevert("NAVCalculator impl not linked against pinned NAVRegistryLib (foundry.toml `libraries` drift)");
+        navImpl.assertPinnedLibrariesUsableWith(WRONG_PRICE_FEED_PIN, WRONG_REGISTRY_PIN, unlinked);
+    }
+
+    /// @notice The positive direction for the linkage pair, so neither test above is satisfied by a guard that
+    ///         rejects every bytecode. Bytecode embeds BOTH pins; all four assertions pass.
+    function test_linkage_passesWhenBothPinsAreEmbedded() public {
+        bytes memory linked = abi.encodePacked(hex"60806040", WRONG_PRICE_FEED_PIN, WRONG_REGISTRY_PIN);
+
+        impls.setPinOverrides(WRONG_PRICE_FEED_PIN, WRONG_REGISTRY_PIN);
+        impls.assertPinnedLibrariesUsableWith(WRONG_PRICE_FEED_PIN, WRONG_REGISTRY_PIN, linked);
+
+        navImpl.setPinOverrides(WRONG_PRICE_FEED_PIN, WRONG_REGISTRY_PIN);
+        navImpl.assertPinnedLibrariesUsableWith(WRONG_PRICE_FEED_PIN, WRONG_REGISTRY_PIN, linked);
     }
 
     // ---------------------------------------------------------------
@@ -216,14 +310,36 @@ contract DeployImplementationsPinsTest is Test {
     /// @notice The other direction, so the wiring is not satisfied by a deploy path that refuses everything.
     /// @dev    A reviewer mutation on PR #194 showed nothing else catches this: `require(false)` inside the
     ///         deploy wrapper left every test green, because every test that reached the deploy expected a revert.
+    ///
+    ///         The factory has to be etched first. `_deployIfNeeded` reaches the canonical CREATE2 deployer with a
+    ///         raw `.call`, and a call to a CODE-LESS address returns `ok == true` — so on a bare test EVM
+    ///         `require(ok, …)` passes while nothing is deployed, and a control that only checked "did not revert"
+    ///         would pass identically if the wrapper deployed nothing at all. Asserting the computed addresses
+    ///         hold code is what turns this from "did not revert" into "did the thing".
     function test_01_guardedDeploy_succeedsWhenTheGuardIsSatisfied() public {
+        vm.etch(CANONICAL_CREATE2_DEPLOYER, address(new MockCreate2Factory()).code);
         UnguardedDeployImplementationsHarness unguarded = new UnguardedDeployImplementationsHarness();
+        (address pfl, address nrl, address impl) = unguarded.computedAddresses();
+        assertEq(pfl.code.length, 0, "fixture: nothing deployed yet");
+
         unguarded.guardedDeploy();
+
+        assertGt(pfl.code.length, 0, "PriceFeedLib not deployed");
+        assertGt(nrl.code.length, 0, "NAVRegistryLib not deployed");
+        assertGt(impl.code.length, 0, "NAVCalculator implementation not deployed");
     }
 
     function test_01_2_guardedDeploy_succeedsWhenTheGuardIsSatisfied() public {
+        vm.etch(CANONICAL_CREATE2_DEPLOYER, address(new MockCreate2Factory()).code);
         UnguardedDeployNAVImplementationHarness unguarded = new UnguardedDeployNAVImplementationHarness();
+        (address pfl, address nrl, address impl) = unguarded.computedAddresses();
+        assertEq(pfl.code.length, 0, "fixture: nothing deployed yet");
+
         unguarded.guardedDeploy();
+
+        assertGt(pfl.code.length, 0, "PriceFeedLib not deployed");
+        assertGt(nrl.code.length, 0, "NAVRegistryLib not deployed");
+        assertGt(impl.code.length, 0, "NAVCalculator implementation not deployed");
     }
 
     // ---------------------------------------------------------------
@@ -235,6 +351,19 @@ contract DeployImplementationsPinsTest is Test {
     ///      paths. `DeployImplementationsPinsTest` is itself a `forge script` entry point and its own `setUp()`
     ///      cannot revert (`forge test` needs it) — a generic property of any test contract that constructs a
     ///      broadcasting helper.
+    ///
+    ///      **Blast radius of that residual path, since it differs in shape from the one
+    ///      `UpgradeNAVCalculatorPins.t.sol` documents.** There, the residual deploy is a plain
+    ///      `new NAVCalculator()` at a nonce-dependent address. Here it is CREATE2 through the canonical deployer
+    ///      at the exact deterministic addresses the 24-chain deployment pins, with the guard neutralised in the
+    ///      `Unguarded*` variants. Running
+    ///      `forge script <this file>:DeployImplementationsPinsTest --sig "<a deploying test>" --broadcast` would
+    ///      therefore broadcast up to four real CREATE2 deploys (PriceFeedLib, NAVRegistryLib, the NAVCalculator
+    ///      impl and — for `01` — the BridgeEscrow impl). What it does NOT do: `guardedDeploy()` never calls
+    ///      `_saveAndLog`, so `script/config/deployments/<chainId>.json` is untouched, no Safe TX is written and
+    ///      no proxy is repointed. On a stale-pin tree the impl's creation code embeds the old pins, so it lands
+    ///      on an address a later regeneration would not reuse. The libraries land as orphans at their computed
+    ///      addresses. It also requires deliberately invoking a `.t.sol` file as a broadcast script.
     function test_harnessIsNotRunnableAsAScript() public {
         vm.expectRevert("harness: not a deploy script");
         impls.setUp();

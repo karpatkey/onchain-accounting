@@ -10,7 +10,6 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {LabelLib} from "./LabelLib.sol";
 import {ProtocolNames} from "src/utils/ProtocolNames.sol";
-import {RegisteredAssetLib} from "./RegisteredAssetLib.sol";
 import {GasStipendLib} from "src/utils/GasStipendLib.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {InvalidArgumentsWithContext} from "src/errors.sol";
@@ -488,24 +487,30 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
         }
     }
 
-    /// @notice Looks up an asset's registry metadata.
+    /// @notice Looks up an asset's registry metadata. O(1).
     /// @return asset The Asset struct (zeroed if not found).
     /// @return found True if the asset is registered in NAVCalculator.
-    /// @dev Each call re-fetches the full registry via `NAV_CALCULATOR.getRegisteredAssets()`, so a read that
-    ///      touches N tokens does N registry fetches. Threading a single pre-fetched registry snapshot down from
-    ///      `PriceFeedLib`/`NAVCalculator` through `getAdapterPositions` (a 3-arg overload carrying
-    ///      `INAVCalculator.Asset[] memory registeredAssets`) to eliminate that N×M re-fetch was implemented and
-    ///      then **deliberately reverted**. Reasons: (1) NAV is consumed off-chain/asynchronously (ADR 0017), so
-    ///      the gas saved on the populated path has no real-world value — there is no atomic on-chain consumer
-    ///      paying for it; and (2) eagerly fetching + ABI-copying the registry into every adapter call **regressed
-    ///      the empty-account path** from <100k to ~166k gas (the team's `gasOptimization_emptyAccount` guard),
-    ///      because adapters that early-return for empty accounts previously never fetched the registry at all.
-    ///      Net: a measurable regression on the common cheap path for a saving that does not matter. See
-    ///      `BALANCE_ADAPTERS.md` §"Rejected: registry fetch-once threading". Do not re-thread the registry unless
-    ///      NAV becomes a synchronous on-chain consumer.
+    /// @dev One `getRegisteredAsset` call — a mapping load plus one array read, flat in the size of the asset
+    ///      registry. `_eligible` runs this before every emitted leg, so its cost is paid `tokens × instances`
+    ///      times per read and is the single hottest lookup in this family.
+    ///
+    ///      **It used to fetch the WHOLE registry per call** (`RegisteredAssetLib.find(NAV_CALCULATOR
+    ///      .getRegisteredAssets(), asset)`), which measured **6,274,562 gas for one 50-token Balancer instance at
+    ///      43 registered assets** and 18.4M at 100 — super-linear, because each call allocated an N-element array
+    ///      that is never freed, so memory expansion grew with the square of the token count. Past a point that
+    ///      exhausts the per-adapter stipend and the NAV read REVERTS. So this was an availability defect, not an
+    ///      optimisation.
+    ///
+    ///      **That distinction is why `BALANCE_ADAPTERS.md` §6.4 does not forbid this change, despite reading as
+    ///      if it might.** §6.4 rejected a genuinely different design — threading a pre-fetched registry snapshot
+    ///      down from `PriceFeedLib`/`NAVCalculator` through a 3-arg `getAdapterPositions` — on two grounds: the
+    ///      gas had no payer (ADR 0017: NAV is consumed off-chain), and eagerly fetching the registry for every
+    ///      adapter call regressed the EMPTY-ACCOUNT path from <100k to ~166k, because adapters that early-return
+    ///      never fetched at all. Neither ground reaches this change: the call sites and call COUNT are unchanged,
+    ///      nothing is fetched eagerly, so an adapter that early-returns still fetches nothing — and the first
+    ///      ground is superseded by evidence, since a read that reverts is not a cost question.
     function _getAssetInfo(address asset) internal view returns (INAVCalculator.Asset memory, bool found) {
-        // Shared registry lookup (RegisteredAssetLib.find) — one find implementation across the layer.
-        return RegisteredAssetLib.find(NAV_CALCULATOR.getRegisteredAssets(), asset);
+        return NAV_CALCULATOR.getRegisteredAsset(asset);
     }
 
     /// @notice The filter-then-registry gate every per-instance read applies before emitting a leg: a token is

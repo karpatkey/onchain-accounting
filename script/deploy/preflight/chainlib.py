@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -100,12 +101,112 @@ def all_chain_ids() -> list[int]:
 
 
 def deployed_chain_ids() -> list[int]:
-    """Chains with a live NAVCalculatorProxy — the actual redeploy scope (24 as of 2026-07-27)."""
+    """Chains whose deployment record currently holds a NAVCalculatorProxy.
+
+    NOT a safe default for a tool's chain scope — see `resolve_chains`. This reads *live* record
+    state, and runbook step 1.1 (`reset_deployment_records.py --apply`) sets `NAVCalculatorProxy` to
+    `""` on every chain, at which point this returns `[]`.
+    """
     out = []
     for cid in all_chain_ids():
         if deployment(cid).get("NAVCalculatorProxy"):
             out.append(cid)
     return out
+
+
+SCOPE_FILE = PREFLIGHT_DIR / "redeploy_scope.json"
+
+
+def snapshot_scope(tag: str = "pre") -> list[int]:
+    """The chains present in `snapshots/<tag>/index.json`.
+
+    NOT a scope authority — `snapshot_production.py` rebuilds this index, and a chain that failed
+    capture is absent from it. Used only to cross-check the declared scope and report gaps.
+    """
+    idx = SNAPSHOT_DIR / tag / "index.json"
+    if not idx.is_file():
+        return []
+    doc = json.loads(idx.read_text())
+    return sorted({int(e["chainId"]) for e in doc.get("chains", []) if e.get("chainId")})
+
+
+def declared_scope() -> list[int]:
+    """The hand-maintained scope from `redeploy_scope.json`. No tool writes that file."""
+    if not SCOPE_FILE.is_file():
+        return []
+    doc = json.loads(SCOPE_FILE.read_text())
+    return sorted({int(x) for x in doc.get("chains", [])})
+
+
+def redeploy_scope() -> tuple[list[int], str, list[str]]:
+    """The chains in the redeploy scope, as (chain_ids, source, complaints).
+
+    The scope is DECLARED, not inferred. Every derived candidate is rewritten by something in the
+    deploy: `deployments/<id>.json .NAVCalculatorProxy` is blanked by runbook step 1.1, and
+    `snapshots/pre/index.json` is rebuilt from whichever chains the last `snapshot_production.py` run
+    covered — so a chain that failed capture, or a documented per-chain re-snapshot, silently shrinks
+    it. A scope that quietly gets smaller is the same defect as a checker that quietly passes, so the
+    declared list wins and every disagreement with derived state is reported rather than absorbed.
+    """
+    complaints: list[str] = []
+    ids = declared_scope()
+    if ids:
+        missing_record = [c for c in ids if not (DEPLOY_DIR / f"{c}.json").is_file()]
+        if missing_record:
+            complaints.append(
+                f"declared scope names {missing_record} with no script/config/deployments/<id>.json")
+        snap = set(snapshot_scope("pre"))
+        if snap:
+            gaps = [c for c in ids if c not in snap]
+            if gaps:
+                complaints.append(
+                    f"{len(gaps)} declared chain(s) {gaps} are NOT in snapshots/pre/index.json — the "
+                    f"pre-deploy capture is incomplete for them, so the before/after comparison and "
+                    f"any 'address actually moved' check cannot be made there")
+            extra = sorted(snap - set(ids))
+            if extra:
+                complaints.append(
+                    f"snapshots/pre/index.json holds {extra}, absent from the declared scope")
+        return ids, str(SCOPE_FILE.relative_to(REPO)), complaints
+
+    complaints.append(f"{SCOPE_FILE} is missing — falling back to derived state, which the deploy "
+                      f"itself rewrites. Restore the file before trusting any scope.")
+    ids = sorted(set(snapshot_scope("pre")) | set(deployed_chain_ids()))
+    return ids, "fallback: snapshots/pre/index.json + populated NAVCalculatorProxy", complaints
+
+
+def resolve_chains(explicit: list[int] | None) -> tuple[list[int], str]:
+    """Resolve a tool's chain scope, exiting non-zero rather than silently checking nothing.
+
+    Every preflight tool used to default to `deployed_chain_ids()`, which reads the deployment
+    records — the very files step 1.1 blanks. An empty list then flows straight through the tool's
+    main loop: `preflight_config.py` reports `0 error(s) across 0 chain(s)` and exits 0, and
+    `reset_deployment_records.py --restore <tag>` restores nothing and exits 0, so the rollback path
+    fails silently at the exact moment it is needed. Since the whole point of this suite is that a
+    clean exit must mean work happened, an unresolvable scope has to be fatal, not empty.
+    """
+    if explicit:
+        declared = set(declared_scope())
+        chosen = sorted(set(explicit))
+        note = "command line"
+        if declared:
+            omitted = sorted(declared - set(chosen))
+            if omitted:
+                # Not an error — a per-chain run is legitimate — but it must be visible, because the
+                # whole point of a scope banner is that nobody mistakes a subset for the whole.
+                note += f" (SUBSET: {len(omitted)} declared chain(s) not covered: {omitted})"
+        return chosen, note
+    ids, src, complaints = redeploy_scope()
+    for c_ in complaints:
+        print(f"SCOPE WARNING: {c_}", file=sys.stderr)
+    if not ids:
+        print("ERROR: could not resolve any chain to operate on.\n"
+              f"  {SCOPE_FILE} is missing or empty, and neither snapshots/pre/index.json nor a\n"
+              "  populated NAVCalculatorProxy in script/config/deployments/*.json yielded a chain\n"
+              "  list. Restore redeploy_scope.json, or pass the chain ids explicitly.",
+              file=sys.stderr)
+        sys.exit(2)
+    return ids, src
 
 
 def chain_config(chain_id: int) -> dict:

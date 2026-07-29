@@ -1109,23 +1109,45 @@ contract EulerVaultsMetaBalanceAdapterTest is Test {
         return adapter.getAdapterPositionsForInstances(alice, ins, address(0));
     }
 
-    /// @notice A `debtOf` that reverts only after real work still fails OPEN — the supply leg survives.
-    /// @dev The regression this change is most likely to cause, and the side the other tests do not bracket.
-    ///      They pin fail-CLOSED against a gas bomb and fail-OPEN against the cheapest possible revert; the
-    ///      realistic middle — a legitimate revert that costs 5,000,000 gas because it went through a dispatcher
-    ///      or an upgraded vault — is where a future tightening of `SLACK_DIVISOR` or of the `forwarded` floor
-    ///      would misclassify, converting every EulerEarn instance into a reverting one with a fully green suite.
-    ///      That is exactly the live mainnet configuration, so it is pinned here rather than left to inference.
-    function test_debtOf_expensiveButGenuineRevert_stillFailsOpen() public {
+    /// @notice A `debtOf` that reverts only after real work brackets the classifier from BOTH sides.
+    /// @dev Two assertions, deliberately, because one of them alone pins almost nothing.
+    ///
+    ///      The far side is the property that matters in production: an expensive but GENUINE revert — a
+    ///      dispatcher hop, or a vault made dearer by an upgrade — must still yield the supply leg. That is the
+    ///      live EulerEarn configuration's path, and the regression it guards is a return to a fixed local
+    ///      ceiling: under `StaticCallLib.PROBE_GAS` this same vault consumes the whole 100_000 and is classified
+    ///      starved, so a read that must succeed instead reverts and this test fails `0 != 1`.
+    ///
+    ///      All four `debtOf` tests go red under that mutation, but for two different reasons, and only this one
+    ///      names the harm: the gas-bomb pair fails because a real starvation stops PROPAGATING (the instance is
+    ///      dropped silently instead of raising), while this one fails because a LEGITIMATE read is destroyed.
+    ///      A fix that restored propagation without restoring the frame-derived stipend would satisfy the pair
+    ///      and still break every EulerEarn instance.
+    ///
+    ///      The near side pins WHERE the boundary sits. Below roughly `1.16 * revert_cost` of frame, a genuine
+    ///      revert is indistinguishable from starvation and is — correctly, given the evidence available —
+    ///      called starved. That false positive is documented in {EulerVaultsMetaBalanceAdapter._safeDebt}; here
+    ///      it is pinned, so any change to `GasStipendLib.SLACK_DIVISOR` or to the `forwarded` floor moves the
+    ///      boundary and turns this red.
+    ///
+    ///      Both budgets are capped explicitly. Run at the runner's default ~1e9 frame this test sits roughly
+    ///      184x away from the boundary and cannot detect a threshold change at all — it would then be
+    ///      behaviourally identical to the cheap-revert test above, while its docstring claimed otherwise.
+    function test_debtOf_expensiveButGenuineRevert_bracketsTheClassifier() public {
         MockExpensiveRevertVault slow = new MockExpensiveRevertVault(address(usdc), 5_000_000);
         slow.setBalance(alice, 1_000_000);
 
         bytes32[] memory ins = new bytes32[](1);
         ins[0] = bytes32(uint256(uint160(address(slow))));
 
-        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositionsForInstances(alice, ins, address(0));
-
+        // Far side of the boundary: the revert is genuine and is read as one.
+        INAVCalculator.PositionBalance[] memory pos = this.callPositions{gas: 8_000_000}(ins);
         assertEq(pos.length, 1, "an expensive but genuine revert must still yield the supply leg");
         assertFalse(pos[0].isDebt, "and it is the credit leg");
+
+        // Near side: too little frame to tell this revert from starvation, so it fails closed.
+        vm.expectPartialRevert(INAVCalculator.InstanceGasExhausted.selector);
+        this.callPositions{gas: 5_400_000}(ins);
     }
+
 }

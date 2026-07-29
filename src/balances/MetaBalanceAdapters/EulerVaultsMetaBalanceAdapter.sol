@@ -277,9 +277,18 @@ contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     ///
     ///      Two bounds follow from that, both measured rather than assumed:
     ///
-    ///      - **Depth.** Starvation is classified loud through 8 callee frames below the probe and goes silent at
-    ///        9 (see {StaticCallLib.probeWordMetered}). Real EVK dispatcher/module hops are 2-4, so this is ample
-    ///        against accidents — but the depth is the CALLEE's, so it does not bound a vault choosing it.
+    ///      - **Depth.** Starvation is classified loud through 8 callee frames below the probe. Real EVK
+    ///        dispatcher/module hops are 2-4, so this is ample against accidents — but the depth is the CALLEE's,
+    ///        so it does not bound a vault choosing it. (This counts FRAMES on the composed path;
+    ///        {StaticCallLib.probeWordMetered} states the same bound as `d = 8` counted from its own direct
+    ///        callee, and the two coincide only because the base's `try this.instancePositions{gas: …}` adds one
+    ///        further 63/64 hop. If that hop ever changes, only one of the two figures moves.)
+    ///
+    ///        What happens past it is not one failure but two. At 9 frames this function still raises
+    ///        {DebtReadGasExhausted} and the base's gas classifier swallows it, so the instance is dropped whole
+    ///        — the supply leg goes with the debt leg, which under-reports and is the safe direction. Only at 10
+    ///        and beyond does the debt read as 0 while the supply leg survives, which is the over-report this
+    ///        guard exists to close.
     ///      - **Cost.** A genuine revert is misread as starvation only when it costs a large fraction of the
     ///        frame — roughly `gasleft <= 1.16 * revert_cost`. A real EulerEarn dispatch failure costs single-digit
     ///        thousands, so the band sits far below a viable frame and is empty in practice. The counter-intuitive

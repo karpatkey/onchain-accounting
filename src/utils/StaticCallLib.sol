@@ -172,15 +172,23 @@ library StaticCallLib {
     ///      that burns everything it got would consume far less than `stipend` and read as a cheap revert. That
     ///      false negative is precisely the nested-starvation case, so the floor is computed here.
     ///
-    ///      **The guarantee has a depth, and it is 8.** Every nesting level leaves another 1/64 reserve behind,
-    ///      so a callee `d` frames down burns at most `(63/64)^d` of the stipend measured here. `GasStipendLib`'s
-    ///      `SLACK_DIVISOR` of 8 accepts anything at or above `7/8`, and `(63/64)^d >= 7/8` holds up to
-    ///      `d ~= 8.48`: a starved callee is classified LOUD through depth 8 and goes SILENT at depth 9,
-    ///      invariant across the whole gas range rather than only at some budgets. Nothing in this repo nests
-    ///      anywhere near that, so it does not bound the reads routed here today — but it is the ceiling on what
-    ///      this can promise, and it is stated numerically because {GasStipendLib} asserts it only qualitatively
-    ///      ("covers nesting far past anything in this repo"). A future reader stacking fan-outs needs the number,
-    ///      not the reassurance.
+    ///      **The guarantee has a depth, and for THIS function it is `d = 8`.** Index `d` as nesting levels
+    ///      below the direct callee, so the callee this staticcall reaches is `d = 0`. Every level leaves another
+    ///      1/64 reserve behind, so a callee at depth `d` burns at most `(63/64)^d` of what was forwarded here.
+    ///      `GasStipendLib`'s `SLACK_DIVISOR` of 8 accepts anything at or above `7/8`, and `(63/64)^d >= 7/8`
+    ///      holds to `d ~= 8.48`: `starved` is set LOUD through `d = 8` and goes SILENT at `d = 9`, invariant
+    ///      across the whole gas range rather than only at some budgets. Measured ratios track the model to five
+    ///      digits (`d = 8` -> 0.881646 against a theoretical 0.881630; `d = 9` -> 0.867875, below 7/8).
+    ///
+    ///      **Mind the frame of reference when comparing this to a caller's own depth figure.** `d` is counted
+    ///      from the direct callee, so `d = 8` is NINE frames below this staticcall. A caller that counts frames
+    ///      instead, and that is itself reached through a further 63/64 hop, will correctly quote 8 for what is
+    ///      `d = 7` here — the two numbers coincide only because that one extra hop cancels the difference. They
+    ///      are separate measurements of one composed path, not the same measurement.
+    ///
+    ///      Nothing in this repo nests near either figure, so it does not bound the reads routed here today. It
+    ///      is stated numerically because {GasStipendLib} asserts it only qualitatively ("covers nesting far past
+    ///      anything in this repo"), and a future reader stacking fan-outs needs the number, not the reassurance.
     /// @param stipend Gas ceiling for the call. Pass `GasStipendLib.stipendFrom(gasleft())` for the recoverable
     ///        shape; a fixed value only where the read's absence is cosmetic.
     /// @return ok The raw staticcall success flag.

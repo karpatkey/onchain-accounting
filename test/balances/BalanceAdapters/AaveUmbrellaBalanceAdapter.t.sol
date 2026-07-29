@@ -478,6 +478,47 @@ contract AaveUmbrellaBalanceMathTest is BalanceAdapterTestBase {
         }
     }
 
+    /// @notice A truncated cooldown reply must not be read as a live cooldown.
+    /// @dev PINS the `size < 0x60` arm, which the zero-byte test only REACHED. Review found both arms of
+    ///      `if (!ok || size < 0x60)` unpinned by mutation: with a zero-length reply the window is zeroed, so
+    ///      `cdAmount == 0` short-circuits and deleting the gate produces an identical answer. This fixture
+    ///      answers differently on the arm beneath — word 0 is a full-stake cooldown amount and word 1 is
+    ///      `block.timestamp`, so without the gate the adapter infers an in-window cooldown from two words and
+    ///      emits an UNLOCKED leg. Reaching an arm is not pinning it.
+    function test_truncatedCooldownReply_isRejectedNotReadAsLive() public {
+        MockTruncatedCooldownStakeToken trunc = new MockTruncatedCooldownStakeToken(address(gho), 1.2e18);
+        MockUmbrellaRewardsController c4 = new MockUmbrellaRewardsController();
+        c4.addStakeToken(address(trunc));
+        AaveUmbrellaBalanceAdapter o4 = new AaveUmbrellaBalanceAdapter(address(c4), address(balances));
+        trunc.setBalance(alice, 2000e18);
+
+        INAVCalculator.PositionBalance[] memory pos = o4.getAdapterPositions(alice, address(0));
+
+        assertEq(pos.length, 1, "a truncated reply must yield ONE leg, not a locked/unlocked split");
+        assertTrue(pos[0].isLocked, "and it must be the locked leg");
+        assertEq(pos[0].amount, 2400e18, "carrying the full principal");
+    }
+
+    /// @notice A REVERTING cooldown read must not have its revert payload read as cooldown data.
+    /// @dev PINS the `!ok` arm. `require(false, "no cooldown ABI")` returns an `Error(string)` payload of 100
+    ///      bytes, which is >= 0x60 — so the size gate does NOT catch it and `!ok` is the only thing that does.
+    ///      Without it the staticcall's output window holds the revert payload, whose first word is a large
+    ///      non-zero value that would be read as `cdAmount`, inferring a cooldown from an error. The existing
+    ///      cooldown tests never reach this because `setCooldown` enables the ABI.
+    function test_revertingCooldownRead_payloadIsNotReadAsCooldownData() public {
+        MockUmbrellaStakeToken noAbi = new MockUmbrellaStakeToken(address(gho), 1.2e18, "stkNOABI");
+        MockUmbrellaRewardsController c5 = new MockUmbrellaRewardsController();
+        c5.addStakeToken(address(noAbi));
+        AaveUmbrellaBalanceAdapter o5 = new AaveUmbrellaBalanceAdapter(address(c5), address(balances));
+        noAbi.setBalance(alice, 2000e18); // cooldownAbiEnabled stays false -> getStakerCooldown reverts
+
+        INAVCalculator.PositionBalance[] memory pos = o5.getAdapterPositions(alice, address(0));
+
+        assertEq(pos.length, 1, "a reverting cooldown read must yield ONE locked leg");
+        assertTrue(pos[0].isLocked);
+        assertEq(pos[0].amount, 2400e18, "carrying the full principal");
+    }
+
     /// @notice Dirty padding above the declared field widths must not revert the adapter.
     /// @dev The raw cooldown read replaced a decode of NARROWER types (uint192/uint32/uint32) and so inherited
     ///      the job of range-checking them. Without the mask, `endOfCooldown + withdrawalWindow` runs checked
@@ -555,6 +596,43 @@ contract MockDirtyCooldownStakeToken {
             mstore(0x20, 1) // endOfCooldown: <= block.timestamp, so `&&` does not short-circuit
             mstore(0x40, not(0)) // withdrawalWindow: dirty above bit 32
             return(0x00, 0x60)
+        }
+    }
+}
+
+/// @notice Returns 64 bytes — two words, one short of the snapshot — with a cooldown that would read as LIVE.
+/// @dev Built so the `size < 0x60` arm answers DIFFERENTLY from the arm beneath it, which the zero-byte mock
+///      does not: with a zero-length reply the window is still zeroed, so `cdAmount == 0` short-circuits and
+///      removing the gate changes nothing. Here word 0 is a real cooldown amount and word 1 is
+///      `block.timestamp`, so WITHOUT the gate the adapter infers a live, in-window cooldown from a truncated
+///      reply and splits the principal into an unlocked leg. WITH the gate it reports one locked leg. The leg
+///      shape is the observable difference. `cdWindow` is word 2, which a 64-byte reply never writes, so it
+///      stays the zeroed 0 and `inWindow` reduces to `block.timestamp == cdEnd` — hence returning `timestamp()`.
+contract MockTruncatedCooldownStakeToken {
+    address public immutable asset;
+    uint256 public immutable rate;
+    string public symbol = "stkTRUNC";
+
+    mapping(address => uint256) public balanceOf;
+
+    constructor(address asset_, uint256 rate_) {
+        asset = asset_;
+        rate = rate_;
+    }
+
+    function setBalance(address account, uint256 shares) external {
+        balanceOf[account] = shares;
+    }
+
+    function convertToAssets(uint256 shares) external view returns (uint256) {
+        return (shares * rate) / 1e18;
+    }
+
+    function getStakerCooldown(address) external view {
+        assembly {
+            mstore(0x00, 2000000000000000000000) // amount: the whole stake, so the split is total
+            mstore(0x20, timestamp()) // endOfCooldown == now, so `inWindow` is true with a zero window
+            return(0x00, 0x40) // 64 bytes — one word short
         }
     }
 }

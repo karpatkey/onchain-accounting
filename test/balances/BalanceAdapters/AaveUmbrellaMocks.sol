@@ -23,6 +23,17 @@ contract MockErc4626Wrapper {
     function convertToAssets(uint256 shares) external view returns (uint256) {
         return (shares * rate) / 1e18;
     }
+
+    /// @notice Fee-less redemption preview, equal to {convertToAssets}.
+    /// @dev `previewRedeem` is MANDATORY in ERC4626 and this mock lacked it, so it modelled a wrapper that
+    ///      cannot exist — Aave's real `StataTokenV2` waTokens implement it. The omission mattered because
+    ///      `_sharesToUnderlying` values the wrapper hop through `ERC4626RedeemLib.redeemValue`, which prefers
+    ///      the fee-aware accessor precisely so a wrapper fee (possible via Aave governance) is not
+    ///      over-reported. Fee-less here, so both accessors agree and the balance math under test is unchanged;
+    ///      the fee-charging case is covered in `test/balances/ERC4626RedeemLib.t.sol`.
+    function previewRedeem(uint256 shares) external view returns (uint256) {
+        return (shares * rate) / 1e18;
+    }
 }
 
 /// @notice Umbrella stake token (ERC4626 vault): balanceOf + convertToAssets + asset(). `asset` may be a

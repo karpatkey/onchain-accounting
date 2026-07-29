@@ -42,8 +42,10 @@ contract MorphoVaultsMetaBalanceAdapter is MetaBalanceAdapter {
             return new INAVCalculator.PositionBalance[](0);
         }
 
-        // Fee-aware share→asset value: previewRedeem (net of any EIP-4626 §4.3 exit fee) with a convertToAssets
-        // fallback when preview reverts (e.g. paused). See {ERC4626RedeemLib}.
+        // Fee-aware share→asset value: previewRedeem, net of any EIP-4626 §4.3 exit fee. Reports 0 — dropping
+        // the position via the `amount == 0` return below — if that read cannot be completed, rather than
+        // substituting `convertToAssets`, which ignores the fee and so can only value the position UPWARD.
+        // See {ERC4626RedeemLib.redeemValue}.
         uint256 amount = ERC4626RedeemLib.redeemValue(address(vault), vault.balanceOf(account));
         if (amount == 0) {
             return new INAVCalculator.PositionBalance[](0);

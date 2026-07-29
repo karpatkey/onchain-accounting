@@ -331,7 +331,9 @@ contract AaveUmbrellaBalanceAdapter is BalanceAdapterBase {
     }
 
     /// @dev Translate a specific stake-token share amount into the bare reserve via at most one ERC4626
-    ///      wrapper hop. Returns 0 when `shares` is 0 (skips the hops).
+    ///      wrapper hop. Returns 0 when `shares` is 0 (skips the hops), and also when the wrapper hop's
+    ///      fee-net `previewRedeem` cannot be read — see {ERC4626RedeemLib.redeemValue} for why that is a 0
+    ///      and not a fee-inclusive estimate.
     function _sharesToUnderlying(address stakeToken, uint256 shares) internal view returns (uint256) {
         if (shares == 0) return 0;
         uint256 amount = IUmbrellaStakeToken(stakeToken).convertToAssets(shares);
@@ -342,8 +344,9 @@ contract AaveUmbrellaBalanceAdapter is BalanceAdapterBase {
 
         // If the first-level asset is itself a real ERC4626 wrapper (waToken), walk one more hop to the bare
         // reserve. Use previewRedeem so a redemption fee on the wrapper (possible via Aave governance) is not
-        // over-reported (convertToAssets ignores it per EIP-4626 §4.3); fall back to convertToAssets if the
-        // wrapper reverts on preview. For a fee-less wrapper (current state) the two are equal.
+        // over-reported (convertToAssets ignores it per EIP-4626 §4.3). If preview cannot be read the hop
+        // reports 0 and the caller skips the leg — it does NOT fall back to convertToAssets, which would report
+        // the fee-inclusive figure and inflate the position. See {ERC4626RedeemLib.redeemValue}.
         if (_isErc4626Wrapper(firstLevel)) {
             return ERC4626RedeemLib.redeemValue(firstLevel, amount);
         }

@@ -193,19 +193,32 @@ contract NAVCalculatorRegisteredAssetGetterTest is SuperTest {
     /// @param probe An arbitrary address to resolve, so misses are covered as densely as hits.
     function testFuzz_agreesWithTheLinearScanItReplaced(uint256 seed, address probe) public {
         // Mutate the registry: unregister a pseudo-random subset, exercising swap-and-pop repeatedly.
+        //
+        // NO contract read gates this loop, and that is the third iteration of this decision. Guarding on
+        // `getRegisteredAsset` was self-referential. Guarding on `isAssetRegistered` LOOKED independent and is not:
+        // it is `return _assetIndex[asset] != 0` (NAVCalculator.sol:739), the identical single SLOAD that produces
+        // `found` in the function under test, so any `_assetIndex` fault making a registered asset read as index 0
+        // silences BOTH — nothing gets unregistered, the registry stays as `setUp` left it, and the fuzz never
+        // exercises one swap-and-pop while still reporting PASS.
+        //
+        // No guard is needed: each index is visited exactly once and every `_extra[i]` is registered in `setUp`, so
+        // `unregisterAsset` can never be called twice on the same asset. Non-degeneracy is then asserted directly
+        // from a LOCAL tally rather than inferred from a contract read — which is the only formulation that cannot
+        // be silenced by the storage the test is meant to be checking.
+        uint256 removed;
         vm.startPrank(navCalculatorManager);
         for (uint256 i = 0; i < _extra.length; i++) {
             if (uint256(keccak256(abi.encode(seed, i))) % 3 == 0) {
-                // Guarded with `isAssetRegistered`, NOT with `getRegisteredAsset`. Using the function under test
-                // to drive the mutation loop would make this self-referential in a way that weakens it silently:
-                // were `getRegisteredAsset` to report `found == false` for a registered asset, nothing would be
-                // unregistered, the registry would stay fully populated, and the fuzz would never exercise
-                // swap-and-pop at all — while still PASSING, because the equivalence comparison below holds
-                // trivially in an unmutated registry. `isAssetRegistered` is an independent read.
-                if (nav.isAssetRegistered(_extra[i])) nav.unregisterAsset(_extra[i]);
+                nav.unregisterAsset(_extra[i]);
+                removed++;
             }
         }
         vm.stopPrank();
+
+        // The load-bearing non-degeneracy assertion. With 100 assets at ~1/3 each, `removed == 0` has probability
+        // (2/3)^100 ~ 2.5e-18, so this is not a flake risk — it is the guarantee that the swap-and-pop states this
+        // fuzz exists to explore were actually reached on this run.
+        assertGt(removed, 0, "fuzz degenerated: no asset was unregistered, so swap-and-pop was never exercised");
 
         INAVCalculator.Asset[] memory snapshot = nav.getRegisteredAssets();
 

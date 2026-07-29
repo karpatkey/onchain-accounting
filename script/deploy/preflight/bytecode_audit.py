@@ -13,8 +13,8 @@ must have those ranges zeroed before comparing.
 
 WHY MATCHING IS BY BYTECODE, NOT BY NAME
 ----------------------------------------
-Deployment-record keys are operator-facing shorthand ("AaveV3InstancesMeta", "sDAI") and do not map
-mechanically onto artifact names ("AaveV3InstancesMetaBalanceAdapter", "sDAI_CustomPriceFeed"). Any
+Deployment-record keys are operator-facing shorthand ("AaveV3InstancesMeta", "osGNO") and do not map
+mechanically onto artifact names ("AaveV3InstancesMetaBalanceAdapter", "osToken_CustomPriceFeed"). Any
 name table is a second thing to keep in sync and a second thing to get wrong. So the audit indexes
 EVERY artifact under out/ by its immutable-zeroed runtime code and looks the on-chain code up in that
 index. The question it answers is the one that matters — "is this exact code in the current build?" —

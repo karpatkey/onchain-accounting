@@ -151,6 +151,13 @@ interface IPrices {
     /// primary, which is always NAV_DECIMALS).
     error MonitorFeedDecimalsMismatch(address asset, uint8 expectedDecimals, uint8 actualDecimals);
 
+    /// @notice Error when a `Custom` feed is being registered for an asset it does not price — i.e. the feed's own
+    /// {ICustomPriceFeed-underlyingAssetSupported} does not equal the asset being registered.
+    /// @param asset The asset the feed is being registered for.
+    /// @param feed The custom feed address.
+    /// @param feedAsset The asset the feed actually prices, per its own `underlyingAssetSupported()`.
+    error CustomFeedAssetMismatch(address asset, address feed, address feedAsset);
+
     /// @notice Error when a monitor feed is already registered for an asset.
     error MonitorFeedAlreadyRegistered(address asset, address feed);
 
@@ -189,7 +196,9 @@ interface IPrices {
     /// on success. Reverts InvalidPriceOracle when the asset or feed address is zero, the feed fails the
     /// ICustomPriceFeed/AggregatorV3 interface check for its type, or (for Chainlink/Redstone/API3) its
     /// latestRoundData reports a non-positive answer, a zero updatedAt, or a future timestamp; reverts
-    /// InvalidPriceOracleType for an unsupported price type.
+    /// InvalidPriceOracleType for an unsupported price type. For `Custom` feeds it additionally reverts
+    /// CustomFeedAssetMismatch when the feed's own `underlyingAssetSupported()` is not `underlyingAsset` — a custom
+    /// feed prices exactly one asset and must be registered for that asset.
     /// @param underlyingAsset The address of the token.
     /// @param priceFeed The address of the price feed.
     /// @param priceType The type of the price feed.

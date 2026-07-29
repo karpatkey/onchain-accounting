@@ -67,13 +67,20 @@ Tests the library-pin guards in `01_DeployImplementations` and `01_2_DeployNAVIm
 implementations the 24-chain deploy runs on:
 - ✅ each source-vs-pin assertion, tripped individually through an injected pin, so both stay covered after the
   pin regeneration lands (they are the only checks that catch a pin gone stale against current source)
-- ✅ the impl bytecode is linked against the pins (skipped when the tree's pins already match source, since the
-  computed and configured pins are then the same address and there is no divergence to detect)
+- ✅ each impl-linkage assertion — PriceFeedLib and NAVRegistryLib, per script — tripped individually and
+  **unconditionally, in any pin state**. These inject the bytecode as well as the pins: a matched
+  (pin, plan-address) pair satisfies the source-vs-pin pair by construction, so synthetic bytecode alone decides
+  the linkage pair. An earlier revision injected only the pins and `vm.skip`-ed when the tree's pins matched
+  source; two review gates showed that could not work — the NAVRegistryLib assertion was unreachable on a drifted
+  tree and both tests self-skipped into vacuity on a regenerated one. There is no `vm.skip` in this file
 - ✅ **the deploy path actually goes through the guard** — fails if the guard call is deleted, which blanking the
   guard body does not catch. This is the family that was missing: the assertions existed and were correct, but a
   `revert()` as the first statement of either `run()` failed no test at all
 - ✅ the deploy wrapper can still succeed when the guard permits, so "the guard rejects correctly" stays
-  distinguishable from "the deploy path always reverts"
+  distinguishable from "the deploy path always reverts" — and it asserts the deploy actually *landed*, via a
+  `MockCreate2Factory` etched at the canonical `0x4e59…` (a raw call to a code-less address returns `ok == true`,
+  so without it the control could not tell a working wrapper from one that silently deployed nothing). All four
+  of `01`'s broadcasts are asserted, including the BridgeEscrow implementation `02_DeployProxies` depends on
 - ✅ the harnesses are inert as scripts (`setUp()` reverts, which `forge script` calls before any `--sig` target)
 
 ### BaseDeployScriptTolerances.t.sol

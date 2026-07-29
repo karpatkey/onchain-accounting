@@ -60,9 +60,17 @@ contract DeployImplementationsHarness is DeployImplementations, PinHarnessBehavi
     }
 
     /// @notice The CREATE2 addresses this script would deploy to, so a test can assert the deploy happened.
-    function computedAddresses() external pure returns (address priceFeedLib, address navRegistryLib, address navImpl) {
+    /// @dev    `bridgeImpl` is `01`'s FOURTH broadcast; `01_2`'s harness returns only three because it has no
+    ///         equivalent. Omitting it left `02_DeployProxies`' dependency on the BridgeEscrow implementation
+    ///         unasserted — deleting the whole `if (plan.bridgeImpl.code.length == 0)` block from `01` used to
+    ///         leave this file entirely green, and nothing else in the repo reaches script `01`.
+    function computedAddresses()
+        external
+        pure
+        returns (address priceFeedLib, address navRegistryLib, address navImpl, address bridgeImpl)
+    {
         ImplPlan memory plan = _computeImplPlan();
-        return (plan.priceFeedLib, plan.navRegistryLib, plan.navImpl);
+        return (plan.priceFeedLib, plan.navRegistryLib, plan.navImpl, plan.bridgeImpl);
     }
 
     function guardedDeploy() external {
@@ -104,6 +112,11 @@ contract DeployNAVImplementationHarness is DeployNAVImplementation, PinHarnessBe
     }
 
     /// @notice The CREATE2 addresses this script would deploy to, so a test can assert the deploy happened.
+    /// @dev    `bridgeImpl` is `01`'s FOURTH broadcast and is returned separately rather than folded into the
+    ///         3-tuple, because `01_2` has no equivalent. Omitting it left `02_DeployProxies`' dependency on the
+    ///         BridgeEscrow implementation unasserted: deleting the whole `if (plan.bridgeImpl.code.length == 0)`
+    ///         block from `01` used to leave this file entirely green.
+    /// @notice `01_2` deploys three contracts; `01`'s harness returns a fourth. See its docstring.
     function computedAddresses() external pure returns (address priceFeedLib, address navRegistryLib, address navImpl) {
         ImplPlan memory plan = _computeImplPlan();
         return (plan.priceFeedLib, plan.navRegistryLib, plan.navImpl);
@@ -319,7 +332,7 @@ contract DeployImplementationsPinsTest is Test {
     function test_01_guardedDeploy_succeedsWhenTheGuardIsSatisfied() public {
         vm.etch(CANONICAL_CREATE2_DEPLOYER, address(new MockCreate2Factory()).code);
         UnguardedDeployImplementationsHarness unguarded = new UnguardedDeployImplementationsHarness();
-        (address pfl, address nrl, address impl) = unguarded.computedAddresses();
+        (address pfl, address nrl, address impl, address bridge) = unguarded.computedAddresses();
         assertEq(pfl.code.length, 0, "fixture: nothing deployed yet");
 
         unguarded.guardedDeploy();
@@ -327,6 +340,9 @@ contract DeployImplementationsPinsTest is Test {
         assertGt(pfl.code.length, 0, "PriceFeedLib not deployed");
         assertGt(nrl.code.length, 0, "NAVRegistryLib not deployed");
         assertGt(impl.code.length, 0, "NAVCalculator implementation not deployed");
+        // `01`'s fourth broadcast. `02_DeployProxies` hard-depends on this implementation existing, and nothing
+        // else in the repo reaches script `01`, so without this assertion that deploy has no coverage at all.
+        assertGt(bridge.code.length, 0, "BridgeEscrow implementation not deployed");
     }
 
     function test_01_2_guardedDeploy_succeedsWhenTheGuardIsSatisfied() public {

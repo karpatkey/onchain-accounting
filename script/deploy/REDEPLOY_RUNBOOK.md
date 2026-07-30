@@ -632,11 +632,31 @@ touched at all by this step, not merely touched idempotently.
 
 ## 2. After the deploy
 
-### 2.1 Owners must re-feed the assisted coordinate caches — **4 caches on 2 chains**
+### 2.1 Owners must FEED the assisted coordinate caches — **4 caches on 2 chains**
+
+> **This step ADDS value that has never been reported. It does not restore value the deploy dropped.**
+> Measured on mainnet 2026-07-30: all three chain-1 assisted adapters have emitted **zero logs, ever**
+> — checked with no topic filter, so the result does not depend on matching an event signature — and
+> `coordsOf()` is empty for all nine chain-1 integration accounts. The caches have never been fed since
+> PR #141 deployed them, so **production NAV already omits these positions today, and has all along.**
+>
+> Two consequences, both important:
+>
+> - **This step is NOT deploy-blocking.** There is no window of understated NAV created by the
+>   cutover, because the value is not being reported before it either. Feeding can follow at the
+>   owners' pace.
+> - **Do not describe it as a regression, and do not go hunting one.** A before/after comparison that
+>   shows these positions at $0 on *both* sides is the **correct** result, not a missed fault — §2.3's
+>   comparison matched for exactly this reason. Anyone told to "restore what the deploy dropped" will
+>   look for a bug that does not exist.
+>
+> Not measured separately: **gnosis**. Its pair follows the same pattern and was recorded as an orphan
+> on 2026-07-27, but no log check was run against chain 100 — treat it as unverified rather than proven
+> empty.
 
 `AssistedCoordCache` keys its coordinate cache by account
 (`mapping(address account => bytes[] coords)`, `AssistedCoordCache.sol:41`), so a redeployed assisted
-adapter starts **empty** and under-reports those positions until the owner Safe re-submits. The
+adapter starts **empty** and reports nothing for those positions until the owner Safe submits. The
 assistants hold an `immutable ADAPTER`, so they are redeployed too and the Safe must delegatecall the
 **new** assistant addresses.
 
@@ -692,13 +712,37 @@ cast call $PROXY 'isAdapterRegistered(address)(bool)' $ADAP --rpc-url $RPC   # m
 jq -r '.balanceAdapters.StakeWiseV3ExitQueueAssisted' script/config/deployments/$CID.json  # must equal $ADAP
 ```
 
-**2.1b Owners re-feed the coordinate caches — 4 caches on 2 chains.**
+**2.1b Owners feed the coordinate caches — 4 caches on 2 chains.**
 
 Hand the owners the **new** assistant addresses from `deployments/{1,100}.json` and confirm each cache
 is non-empty afterwards. All four must be done; the gnosis one is the easy miss because the assisted
 family is usually described as mainnet-only.
 
-**Until a cache is re-fed those positions UNDER-report — they do not report wrongly.** That is the
+> **The first feed is a live test of a code path that has NEVER executed.** The assistants have never
+> been invoked — zero logs on every adapter — so the delegatecall route (owner Safe → `…Assistant` →
+> `msg.sender == Safe` seen by the adapter) has never run against a live registered adapter. A direct
+> call reverts `NotDelegateCall`, and the whole point of the pattern is that the adapter sees the Safe
+> rather than the assistant, which is exactly the property no production transaction has yet
+> demonstrated.
+>
+> So do the first one **deliberately: one adapter, a small submission, verified before continuing** —
+> not four caches in a bulk batch. Confirm with `coordsOf` that the coordinate landed under the **Safe's**
+> address (not the assistant's, which would mean the delegatecall degraded to a plain call), and that the
+> NAV's reported position moves as expected, before feeding the rest. This is a cheap precaution now and
+> an expensive discovery if skipped.
+
+> **Observability is asymmetric — a green DeBank tolerance check does NOT clear this step.** In chain-1
+> `supportedDeBankProtocols` (`test/integration/accounts.json`): `etherfi` and `stakewise` are present,
+> so a gap in those two would surface as drift in §2.3 / the integration snapshots. **No Nexus id is in
+> the allowlist at all** — verified — so a Nexus gap is invisible on *both* sides of any comparison, and
+> a passing tolerance check proves nothing whatsoever about it.
+>
+> Nexus is also the one that looks fine by coincidence: wallet **NXM/wNXM are registered priced assets**
+> and reconcile normally, which masks an absent *staked* leg of roughly **$3.35M**. Read that figure as
+> **unrealised coverage** — value the system does not currently report and could — rather than as value
+> gone missing. Nothing is lost; it has simply never been counted.
+
+**Until a cache is fed those positions UNDER-report — they do not report wrongly.** That is the
 family invariant (ADR 0015): the adapter caches position *coordinates only*, values every position
 from live on-chain reads, and re-verifies ownership on every read, so a missing coordinate can only
 omit value, never invent it. Consequence for triage: a NAV that is *low* after the cutover points at
@@ -706,7 +750,7 @@ an un-fed cache and is safe to sit with while owners catch up; a NAV that is *hi
 bug entirely and must not be attributed to this step.
 
 ```bash
-# per (chain, adapter): returns [] until the owner has re-submitted, then the coordinate blobs.
+# per (chain, adapter): returns [] until the owner has submitted, then the coordinate blobs.
 # `coordsOf` is the only cache view getter (AssistedCoordCache.sol:81) — there is no count getter.
 cast call $ADAPTER 'coordsOf(address)(bytes[])' $OWNER_SAFE --rpc-url $RPC
 ```

@@ -190,13 +190,21 @@ Each of these is a hardening fix doing its job. None is a regression.
 
 **Expect FEWER legs or positions, from a deliberately suppressed unreportable leg:**
 
-- **Assisted-adapter caches start EMPTY.** `AssistedCoordCache` keys coordinates per account, so a
-  redeployed assisted adapter reports nothing until the owner Safe re-feeds it through the **new**
-  assistant. Four caches on two chains: mainnet `EtherFiWithdrawalQueueAssisted`,
-  `NexusMutualStakingPoolsAssisted`, `StakeWiseV3ExitQueueAssisted`, and **gnosis
-  `StakeWiseV3ExitQueueAssisted`** (the easy miss — the family is usually described as mainnet-only).
-  **This is the single largest expected reduction.** Under-report only, by the ADR 0015 invariant:
+- **Assisted-adapter caches start EMPTY — but expect NO reduction, because the live ones are empty
+  too.** `AssistedCoordCache` keys coordinates per account, so a redeployed assisted adapter reports
+  nothing until the owner Safe feeds it through the **new** assistant. Four caches on two chains:
+  mainnet `EtherFiWithdrawalQueueAssisted`, `NexusMutualStakingPoolsAssisted`,
+  `StakeWiseV3ExitQueueAssisted`, and **gnosis `StakeWiseV3ExitQueueAssisted`** (the easy miss — the
+  family is usually described as mainnet-only). Under-report only, by the ADR 0015 invariant:
   coordinates cached, values read live, ownership re-verified per read.
+  > **CORRECTED 2026-07-30 — this was previously called "the single largest expected reduction". It is
+  > not a reduction at all.** Measured on mainnet: all three chain-1 assisted adapters have emitted
+  > **zero logs, ever** (no topic filter, so ABI-independent) and `coordsOf()` is empty for all nine
+  > chain-1 accounts. The live caches have never been fed since PR #141 deployed them, so these
+  > positions read **$0 on both sides** and the correct expectation is **no change**. Seeing $0 after
+  > the redeploy is not the fix working and not a regression — it is the status quo. Feeding the new
+  > caches would *begin* reporting value that has never been counted (runbook §2.1). Gnosis was not
+  > separately log-checked.
 - **Morpho existence gate** (#189) suppresses an instance that cannot be proven to exist.
 - **Per-instance gas starvation now raises `InstanceGasExhausted`** (#182) instead of silently
   recording zero legs. A starved instance becomes a *visible failure* rather than a missing leg — if

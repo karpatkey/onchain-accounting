@@ -4,6 +4,10 @@ Written 2026-07-30 against `main` @ `f72dd48a` (twelve PRs merged in the wave). 
 no memory of the wave. It is deliberately self-contained: everything you need to decide **pass or
 fail** is here, because a rehearsal run with a wrong pass/fail rule is worse than no rehearsal.
 
+> **The rehearsal has since been RUN, on `main` @ `7efcc8af` (post-#185), and it FAILED at step 1.4.
+> Read **§9** (last section) before running anything — it holds two blockers, one of which stops the
+> redeploy outright. §9 supersedes anything below it that disagrees.**
+
 Companions, both authoritative and not duplicated here:
 [`../REDEPLOY_RUNBOOK.md`](../REDEPLOY_RUNBOOK.md) (the ordered procedure) and
 [`README.md`](README.md) (the tooling).
@@ -24,12 +28,13 @@ before the redeploy, as a DeBank-compared final validation.
 
 | item | state |
 |---|---|
-| **#185** two-library pin regen | green, **deliberately held** pending a measurement of whether `dynamic_test_linking` moves deployable bytecode |
-| **#203** Curve `getPool`/`getLpToken` | in bounded mutation verification; merges after #185 |
-| this rehearsal | runs **after #185 lands**, because the rehearsal must exercise the pinned tree |
+| **#185** two-library pin regen | **MERGED** 2026-07-30; `main` is `7efcc8af`. Pins are `PriceFeedLib 0x8b7e4fA9…7dc1` / `NavRegistryLib 0x5f5D054E…fd90` |
+| **#203** Curve `getPool`/`getLpToken` | **MERGED**, in `7efcc8af` |
+| this rehearsal | **RUN** on `7efcc8af`, **FAILED at 1.4** — see §9 |
 
 If #185 has not landed, `01_2` will revert on its pin assertions and the rehearsal cannot pass. That
-revert is correct behaviour, not a bug — see §5.
+revert is correct behaviour, not a bug — see §5. It has landed, and the assertions passed: §9 records
+the CREATE2 addresses observed, which is stronger evidence than any CI check can produce.
 
 ---
 
@@ -95,6 +100,34 @@ This cost the fleet several hours. Read it before trusting any measurement.
 **Do not transcribe a pin value into any document.** Read pins from #185's output at deploy time. Do
 not touch `foundry.toml` or `script/utils/LibraryPins.sol` — #185 owns that regeneration and must
 compute it against the final merged tree.
+
+### An EOA `eth_call` cannot validate a feed for contract use
+
+This cost the redeploy a run, and it is the most transferable lesson in this document. `cast call`
+sends `from` == the EOA, so **`msg.sender == tx.origin`** in the callee. Chainlink's read access
+controllers grant access on exactly that condition:
+
+```solidity
+accessList[_user] || _user == tx.origin    // SimpleReadAccessController
+```
+
+So an access-gated feed answers a `cast call` perfectly and reverts `No access` for every contract —
+which is every production reader. `cast call --from <contract address>` does **not** help: it sets
+`tx.origin` to the same value, so the escape hatch still fires. Verifying a feed by reading
+`description()` / `decimals()` / `latestRoundData()` from the shell proves nothing about whether the
+NAV can read it.
+
+To actually check a candidate feed:
+
+```bash
+cast call $FEED "typeAndVersion()(string)" --rpc-url $R   # "AccessControlled..." is the tell
+cast call $FEED "checkEnabled()(bool)"     --rpc-url $R   # answers at all => access-controlled
+cast call $FEED "hasAccess(address,bytes)(bool)" $SOME_CONTRACT 0x --rpc-url $R   # must be true
+```
+
+`hasAccess` is the decisive one, because the address you pass is not `tx.origin`, so it reports the
+real production answer. A gated feed is unusable regardless of who deploys it, unless Chainlink
+allowlists the reader contract — which requires its address in advance.
 
 ### Closure membership is necessary but NOT sufficient
 
@@ -183,6 +216,9 @@ Each of these is a hardening fix doing its job. None is a regression.
   gone with no replacement (Chainlink has no ETHx/USD feed at all). `ETHxCrossRate` survives with its
   rate feed migrated to Chainlink `0xC499ec76e2F5ac15e127A352Bc40cF24FC472401`. ETHx's **primary** was
   never involved — it reads Stader's on-chain rate — so `nav.value` should not move for it.
+  > **WRONG — this is BLOCKER 1 in §9.** That Chainlink address is access-gated and **no contract can
+  > read it**, so `03` reverts and `ETHxCrossRate` cannot be deployed at all. Do not treat an ETHx
+  > monitor change as a benign §4.3 difference until §9 is resolved.
 - Every custom feed is at a **new address** by construction: each holds an `immutable NAV` (ADR 0019),
   so a new proxy invalidates all of them.
 - **Custom-feed asset guard** (#199) — a feed can no longer be registered against the wrong asset.
@@ -223,8 +259,22 @@ forge clean && forge build        # local clean build only (see §3)
 
 mkdir -p safe-transactions        # else RegisterAssets aborts AFTER broadcasting
 
-script/deploy/preflight/rehearse_fork.sh 1        # mainnet fork; asserts the proxy address moved
+ANVIL_PORT=8600 script/deploy/preflight/rehearse_fork.sh 1   # mainnet fork; asserts the proxy moved
 ```
+
+**Pick a port outside 8546–8550.** A five-chain local dev stack occupies that whole range on this box,
+including a **mainnet** fork on 8546 — the script's own default — so the collision is guaranteed, not
+unlucky. Before PR #214 the failure was silent and total: `anvil --port 8546` fails to bind and dies,
+but the readiness probe was `cast block-number` against that port, which answers from the *incumbent*,
+so the rehearsal deployed the whole NAV stack into a fork it did not own and then reported that fork's
+post-conditions as its own. #214 makes the script refuse an occupied port and verify its own anvil pid
+before trusting the probe — the guard keys on **ownership**, not reachability. Pass `ANVIL_PORT`
+anyway; do not rely on the default being free.
+
+#214 also adds `$REHEARSAL_HOOK`, invoked with `(chainId, rpc)` after the post-conditions and before
+`cleanup`. Use it for anything that must read the rehearsed stack — above all the §4 NAV comparison,
+which needs the fork still up **and** the deployment record still holding fork addresses, a window
+`cleanup` closes on both sides.
 
 `rehearse_fork.sh` treats the config tree as disposable **and you must let it**. It forks as the real
 chain id, so the deploy scripts rewrite `script/config/deployments/<id>.json` wholesale with anvil
@@ -253,10 +303,31 @@ Four traps that have each already cost a run:
   addresses; the record keeps the old ones and 1.4–1.7 build against the old NAV. Nothing errors.
 - **Use `01_2`, never `01`.** `01` also deploys a `BridgeEscrow` impl — wasted gas and it rewrites
   bridge state for a deferred stack.
-- **1.1 must precede 1.4.** Each of `03`'s 32 `_deploy*` helpers is skip-if-deployed and returns early
-  without reverting, so a surviving `customPriceFeeds` record makes `03` a silent no-op leaving all 40
-  feeds bound to the **old** proxy. `verify_step.py 1.4` enforces it by requiring every recorded feed
-  address to be *new*, not merely non-zero.
+- **1.1 must precede 1.4 — and must be RE-RUN after any failed `03`.** Each of `03`'s 32 `_deploy*`
+  helpers is skip-if-deployed and returns early without reverting, so a surviving `customPriceFeeds`
+  record makes `03` a silent no-op leaving all 40 feeds bound to the **old** proxy. `verify_step.py
+  1.4` enforces it by requiring every recorded feed address to be *new*, not merely non-zero.
+
+  This is **not only a first-run ordering rule.** It is also the recovery procedure, because a `03`
+  that reverts still writes addresses it never deployed:
+
+  > **A reverting `03` broadcasts nothing but still pollutes `deployments/<id>.json`.** `03` reverts
+  > during *simulation*, so no transaction is sent and no `broadcast/03_*/` directory appears — but
+  > `vm.writeJson` is a filesystem side effect and is **not** rolled back. The record acquires feed
+  > addresses that exist nowhere on chain. Worse, `04` then consumes the **same EOA nonce sequence**
+  > and lands real adapters on exactly those addresses: measured on the 2026-07-30 run, all 18
+  > phantom `customPriceFeeds` entries collided with a real `balanceAdapters` entry, e.g.
+  > `customPriceFeeds.LDO == balanceAdapters.AaveV3InstancesMeta`. That is a record asserting a price
+  > feed lives where a balance adapter actually is.
+  >
+  > Because `03` is skip-if-deployed, the natural next action — fix the config and retry — **silently
+  > skips all eighteen feeds**, and the deploy then looks like it succeeded while shipping eighteen
+  > wrong feed addresses.
+  >
+  > **So: after ANY failed `03`, re-run step 1.1 (`reset_deployment_records.py --apply`) before
+  > retrying. Unconditionally.** `verify_step.py 1.4` does catch the polluted state (`NAV()
+  > unreadable` on every phantom address) — that is the gate working, and it is the reason to gate
+  > every step rather than trusting exit codes.
 - **1.4 must precede 1.5.** `RegisterAssets` resolves Custom feeds from the record; run first it skips
   **20 of mainnet's 43 assets** with `[skip] primary feed unresolved`.
 
@@ -320,3 +391,86 @@ the diff against `snapshots/pre/` classified against §4.3 and §4.4, and any re
 attribute. **A residual you cannot attribute to a named entry in §4.3 is a fail**, not a curiosity.
 
 Then stop. The deploy is the user's to authorise.
+
+---
+
+## 9. The 2026-07-30 run — what it found
+
+Run against `main` @ `7efcc8af` (post-#185) on a mainnet fork at block 25642902, `ANVIL_PORT=8600`.
+**Exit 1.** Nothing touched a live proxy; every broadcast went to loopback anvil.
+
+| step | time | gas | status |
+|---|---|---|---|
+| `01_2_DeployNAVImplementation` | 6s | 17,503,955 | OK |
+| `02_2_DeployNAVProxy` | 4s | 2,369,608 | OK |
+| `03_DeployPriceFeeds` | 30s | 0 | **FAIL — blocker** |
+| `RegisterAssets` | 6s | 0 | FAIL (downstream of `03`) |
+| `04_DeployBalanceAdapters` | 16s | 64,430,119 | OK |
+| `06_Configure` | 9s | 7,240,775 | OK |
+
+`verify_step.py` 1.2, 1.3, 1.6, 1.7 clean; 1.4 (21 failures) and 1.5 (3) fail entirely downstream of
+`03`. Note `03` at 30s against the expected 239s — the §6 smell test worked.
+
+### BLOCKER 1 — a gated Chainlink feed stops the redeploy
+
+`03` reverts `NotChainlinkOracle()` (`src/utils/OracleArgumentChecks.sol:59`) after deploying 18 of 40
+feeds, while constructing `ETHxCrossRate`. Its `yToXFeed`
+`0xC499ec76e2F5ac15e127A352Bc40cF24FC472401` — set 2026-07-27 for the Redstone ETHx sunset — is an
+**`AccessControlledOCR2Aggregator 1.0.0` with `checkEnabled() == true`**, and `hasAccess()` is false
+for every address tried. Access exists only via Chainlink's `_user == tx.origin` escape hatch, so **an
+EOA `eth_call` succeeds and every contract read reverts `No access`** — permanently, on every NAV read,
+not merely in the constructor probe. Confirmed live on mainnet, not only on the fork.
+
+Not a proxy-vs-aggregator mix-up: `FeedRegistry.getFeed(ETHx, ETH)` returns that **same** address, so
+there is no ungated Chainlink ETHx/ETH route. The superseded Redstone feed
+`0xc799194cAa24E2874Efa89b4Bf5c92a530B047FF` has no access control and *is* contract-readable, but is
+being sunset — which is what prompted the migration.
+
+**Scope of the defect is narrow.** All 91 feed addresses in mainnet config, plus every feed address on
+10 / 56 / 100 / 137 / 8453 / 42161, were swept for `checkEnabled()`: **this is the only gated feed
+anywhere.** So this is one bad address, not a class.
+
+**The decision is the user's** and the redeploy cannot proceed until it is made — drop the ETHx
+cross-rate monitor (ETHx's primary is unaffected; it reads Stader's on-chain rate), or obtain a
+Chainlink allowlisting for the feed contract, which needs its address in advance. See the §3 subsection
+on why an EOA `eth_call` could never have caught this.
+
+### BLOCKER 2 — a reverting `03` corrupts the deployment record
+
+Documented in full at §5's step-1.1 trap, which is now written as a **post-failure recovery
+requirement**: after any failed `03`, re-run 1.1 before retrying, unconditionally.
+
+### Unresolved — re-measure deliberately on the re-run
+
+Two instruments disagreed about the same fork state. The rehearsal's own assertions read
+`getAdapterCount()` = **27** with the meta loop summing **66/66** (PASS); `snapshot_production.py`,
+moments later on the same live fork, read `getAllAdapters()` = **24** and **58** instances, with
+`EulerVaultsMeta`, `StakeWiseV3VaultsMeta` and `UniswapV3PoolsMeta` absent from the returned array
+(all three present in the record, so `04` deployed them). Cause not established; anvil was torn down
+before it could be probed, and the run was invalid downstream of `03` anyway.
+
+**If real it is a §4.4 STOP condition** (adapter/meta-instance counts below the configured totals).
+Resolve it on the re-run with the fork held open via `$REHEARSAL_HOOK` — do not let it be rationalised
+away, and do not trust either count until they agree.
+
+### The §4 NAV comparison did NOT run
+
+Only 1 of 43 assets registered, so there is no valid pre-versus-rehearsed diff. **The redeploy's
+central question — is this the same portfolio? — is still unanswered**, and it is the first priority of
+the re-run. Everything else is secondary.
+
+### What the run did confirm
+
+- **Both regenerated pins are correct against deployable bytecode.** The libraries CREATE2-deployed to
+  exactly `0x8b7e4fA91490ADe5D52F1755c9e1D91618cd7dc1` and
+  `0x5f5D054E021A53E1DEF54B3Bda3c939ccD14fd90` from a clean local build, with `01_2`'s four pin
+  assertions passing. That is an actual deployment landing on the pinned address — strictly stronger
+  than any CI check, which can only ever show a test reading a constant back.
+- **The proxy moves**: new proxy `0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214` ≠ live
+  `0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d`, so `DeploySalts.NAV_PROXY = 7` is good. Fresh
+  `ERC20Default` `0x4Bc39Dce61245F5A63189d1FA03E6D76646f1EE6`, matching on-chain.
+- **All three assistant `ADAPTER()` pointers paired correctly** — the fix for the four live orphans.
+- `preflight_config.py`: 0 errors across 24 chains, totals exactly as §6 (33 / 110 / 12 / 40 / 93).
+- The disposable-config rail restored `script/config` and `broadcast/` byte-exactly; `deployments/1.json`
+  verified identical to `HEAD` by hash afterwards. **Always check this** — 18 phantom addresses in a
+  deployments record is the worst thing that could leak out of a rehearsal.

@@ -187,10 +187,15 @@ done
 
 # ─── 1.5. Capture Merkl proofs per chain at the new fork blocks ───────────────
 # For each (account × chain), query the Merkl API for unclaimed reward entries and write
-# them to test/integration/merkl-proofs.json. The integration test consumes this fixture
-# in setUp (see IntegrationFromConfigBase.fork.sol::_seedMerklProofs) and submits each
-# proof against the deployed MerklRewardsAssisted adapter; failed submissions are tolerated and
-# logged (NAV silently treats them as 0).
+# them to test/integration/merkl-proofs.json.
+#
+# ⚠️ NOTHING CONSUMES THIS FIXTURE TODAY. `_seedMerklProofs` was removed with the old Merkl adapter in #141 and has
+# not been restored — IntegrationFromConfigBase.fork.sol contains no Merkl code, and the re-added
+# MerklRewardsAttestedBalanceAdapter ships `enabled:false` on every chain. This step is kept so the fixture stays in
+# sync with the fork blocks (it must be captured AT bump time or not at all — see below), but the integration
+# baselines contain no Merkl positions. Re-wiring the harness is a tracked follow-up, coupled to per-chain enablement.
+# Once re-wired, the consumer submits each proof against the deployed adapter via `submitProofs`; failed submissions
+# are tolerated and logged (NAV treats them as 0).
 #
 # Why this is here, after the fork-block bump and before the NAV snapshot: proofs from
 # the Merkl API are valid against `Distributor.getMerkleRoot()` at the *current* moment.

@@ -276,17 +276,29 @@ PositionBalance({
 > Note: the Merkl adapter (`MerklRewardsAttestedBalanceAdapter`, the `attested` family — [ADR 0022](../decisions/0022-attested-balance-adapter-family.md)) is being re-added and is not yet deployed on `main`. The schema below describes it.
 
 ```solidity
-// One leg per reward token; proof-cached balance (may lag until next proof update).
+// One leg per cached CAMPAIGN SHARE of a reward token (not one per token): the token's unclaimed total is split
+// pro-rata across its campaign shares, each leg tagged with its campaign coordinate in `positionInstanceId`.
+// A token submitted with an empty breakdown yields ONE untagged leg carrying the whole amount
+// (positionInstanceId = bytes32(0)). Proof-cached balance (may lag until the next proof update).
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xD533…cd52, symbol: "CRV", decimals: 18 }),
     balanceAdapter: 0x<MerklRewardsAdapter>,
-    amount:        250e18,                 // 250 CRV unclaimed
+    amount:        150e18,                 // this campaign's pro-rata share of 250 CRV unclaimed
     isDebt:        false,
     protocolSubId: keccak256("merkl"),
     positionId:    abi.encode(0x3Ef3…D9Ae),  // Merkl Distributor (reward token is in balanceAsset)
-    positionKind:  PositionKind.Rewards
+    positionKind:  PositionKind.Rewards,
+    positionInstanceId: keccak256(abi.encode(campaignId, subCampaignId))  // ephemeral, NOT in the stable key
 })
 ```
+
+> **Consumers: SUM Merkl legs, do not dedupe them.** Because `positionInstanceId` is excluded from the stable
+> reconciliation key, every campaign leg of one reward token shares an *identical* key while carrying a different
+> amount — up to 32 rows per token. A consumer that treats a repeated key as duplicate data and keeps one row will
+> under-report that token's rewards by up to 32×. Worse, campaign coordinates are **not** proof-bound (the merkle
+> proof commits only to the per-token total, and the contract only checks that the shares sum to it), so a submitter
+> can supply duplicate or fabricated `campaignId`s: campaign attribution is display-grade, not audit-grade. The
+> per-token total — the sum of a token's legs — is the proof-backed figure.
 
 #### `StaderWithdrawalQueue` — ETHx → ETH queue
 

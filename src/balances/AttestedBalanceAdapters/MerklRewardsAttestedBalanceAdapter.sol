@@ -53,8 +53,11 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
     ///                         total, aggregated across all campaigns; this is what the proof attests).
     /// @param root             Distributor merkle root the proof was verified against. Reads return 0 when this
     ///                         root no longer matches `Distributor.getMerkleRoot()` (conservative stale handling).
-    /// @param submittedAt      Timestamp of the most recent successful submission. Doubles as a freshness signal
-    ///                         and a "first-time entry" check (zero ⇒ never submitted).
+    ///                         Also the entry's **presence sentinel**: a stored entry always has `root != 0` (the
+    ///                         `UninitializedRoot` check rejects a zero root), so `root == 0` ⇔ nothing cached.
+    /// @param submittedAt      Timestamp of the most recent successful submission — a freshness signal for operators
+    ///                         only. Deliberately NOT used as the presence check: that would rest on
+    ///                         `block.timestamp != 0` rather than on an invariant this contract enforces.
     struct CachedAllocation {
         uint256 cumulativeAmount;
         bytes32 root;
@@ -114,10 +117,22 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
     uint256 public constant MAX_CAMPAIGNS_PER_TOKEN = 32;
 
     /// @notice Upper bound on distinct reward tokens cached per user. Bounds the read-side fan-out (the position/
-    ///         balance loops iterate `_userTokens[user]`) so a NAV read is deterministically gas-bounded, mirroring
-    ///         the sibling assisted adapters' per-account caps. A real portfolio's Merkl reward-token footprint is a
-    ///         handful; enforced fail-loud when a *new* token is first cached (a refresh of an existing token is
-    ///         unaffected). Every cached token is proof-verified, so this can never be pushed past a user's real set.
+    ///         balance loops iterate `_userTokens[user]`), mirroring the sibling assisted adapters' per-account caps.
+    ///         A real portfolio's Merkl reward-token footprint is a handful; enforced fail-loud when a *new* token is
+    ///         first cached (a refresh of an existing token is unaffected). Every cached token is proof-verified, so
+    ///         the cache can never hold a token the user does not really hold.
+    /// @dev    **This cap alone is NOT the read bound.** The position read emits one leg per cached *campaign share*,
+    ///         so the leg upper bound is `MAX_TOKENS_PER_USER * MAX_CAMPAIGNS_PER_TOKEN` = 8192 — and the campaign
+    ///         multiplier is the factor that is NOT proof-bound (only the shares' SUM is checked), so a third party
+    ///         holding a user's public per-token proof can inflate a real token's leg count 32x. Do not size a read
+    ///         budget off 256. See the note on {MAX_CAMPAIGNS_PER_TOKEN} and ADR 0022.
+    ///
+    ///         Two consequences the cap does not by itself solve, both tracked rather than fixed here: (1) under
+    ///         upsert semantics `_userTokens` accumulates every token ever proven — stale entries are only removed by
+    ///         a permissionless, stale-gated `clearAllocation`, so an account farming Merkl across many root epochs
+    ///         drifts toward the cap unless the feeder also garbage-collects; (2) reaching the cap makes a submit
+    ///         carrying a NEW token revert `TooManyTokens`, and because a submit is atomic over its whole list, that
+    ///         reverts the refresh of the account's OTHER tokens too.
     uint256 public constant MAX_TOKENS_PER_USER = 256;
 
     /// @notice Merkl Distributor (Angle Labs). Same address on every supported EVM chain.
@@ -260,7 +275,7 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
     ///      and the per-user enumeration list bounded. Not required for correctness (such entries already read as 0).
     function clearAllocation(address user, address token) external {
         if (user == address(0) || token == address(0)) revert InvalidArguments();
-        if (allocations[user][token].submittedAt == 0) revert NothingToClear();
+        if (allocations[user][token].root == bytes32(0)) revert NothingToClear();
         if (_unclaimed(user, token) != 0) revert AllocationStillLive(user, token);
         delete allocations[user][token];
         delete _campaigns[user][token];
@@ -316,7 +331,7 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
     /// @dev Advertises {IAttestedBalanceAdapter} (its family marker) + {IBalanceAdapter} + {IPositionDescribable} +
     ///      {IERC165}. It is attested, NOT a coordinate-cache {IAssistedBalanceAdapter} member, so that marker is not
     ///      advertised.
-    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
+    function supportsInterface(bytes4 interfaceId) public pure virtual override returns (bool) {
         return interfaceId == type(IAttestedBalanceAdapter).interfaceId
             || interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IPositionDescribable).interfaceId
             || interfaceId == type(IERC165).interfaceId;
@@ -405,6 +420,14 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
         } else {
             tokensToProcess = _userTokens[account];
         }
+
+        // Nothing cached for this account (the overwhelmingly common case, since this adapter is registered globally
+        // and queried for every account): return before the self-call, so an empty cache does not pay for the extra
+        // frame OR for `buildPositionsSelf`'s whole-registry `getRegisteredAssets()` copy. Mirrors the sibling plain
+        // adapters, which all early-return before that fetch (e.g. StaderWithdrawalQueueBalanceAdapter's empty-id
+        // check, LidoWithdrawalQueue's `balanceOf == 0`). The registry copy is super-linear in registered assets, and
+        // it is charged against the per-adapter stipend `PriceFeedLib._getAdapterPositions` forwards.
+        if (tokensToProcess.length == 0) return new INAVCalculator.PositionBalance[](0);
 
         // Build via an external self-staticcall so the row-building frame's only params are `(account, tokens)` —
         // keeping `getAdapterPositions`'s `assetFilter` param (stack-bottom for its whole body) off the build loop's
@@ -546,7 +569,14 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
             if (sumShares != cumulativeAmount) revert CampaignSumMismatch(token, sumShares, cumulativeAmount);
         }
 
-        if (a.submittedAt == 0) {
+        // "Is this a NEW (user, token)?" — keyed on `root`, NOT on `submittedAt`. This branch is the only thing
+        // standing between the contract and a DUPLICATE entry in `_userTokens`, which would make `buildPositionsSelf`
+        // run `_appendTokenLegs` twice for one token and report its unclaimed amount twice — an OVER-report, the one
+        // direction this family forbids. `root` is a sentinel the contract enforces itself (`UninitializedRoot` above
+        // rejects a zero root, so any stored entry has `root != 0`), whereas `submittedAt != 0` rests on
+        // `block.timestamp != 0` — true on every live chain, but an incidental property of the environment rather
+        // than an invariant of this code, and therefore the wrong thing to hang an over-report guard on.
+        if (a.root == bytes32(0)) {
             uint256 n = _userTokens[user].length;
             if (n >= MAX_TOKENS_PER_USER) revert TooManyTokens(user, n);
             _userTokens[user].push(token);
@@ -599,11 +629,24 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
     //
 
     /// @dev Returns the unclaimed reward amount for `(account, asset)`, or 0 if the cache is stale or fully claimed.
-    ///      Never reverts. Stale handling: if cached `root != Distributor.getMerkleRoot()`, treat as 0 — never
-    ///      assume cumulative monotonicity to extrapolate; require a fresh proof against the new root.
+    ///      Stale handling: if cached `root != Distributor.getMerkleRoot()`, treat as 0 — never assume cumulative
+    ///      monotonicity to extrapolate; require a fresh proof against the new root.
+    ///
+    ///      **Not revert-free, deliberately.** The two Distributor reads below are unguarded and their returndata is
+    ///      ABI-decoded, so this reverts if the Distributor ever returns something undecodable (it is an upgradeable
+    ///      proxy under Angle governance: a `Claim` struct reshape breaks the decode) — and note that in this repo a
+    ///      bare `try`/`catch` would not catch the decode half anyway. Consequences if it ever fires: on the NAV path
+    ///      `PriceFeedLib._getAdapterPositions` fails open on a plain revert, so this adapter's whole leg set drops
+    ///      out of NAV (an under-report, the safe direction, but silent).
+    ///
+    ///      It is deliberately NOT made fail-open-to-0, because `clearAllocation`/`clearAccount` gate on this value:
+    ///      a `_unclaimed` that returned 0 on a failed read would let anyone clear another account's LIVE entries
+    ///      during a Distributor hiccup, converting a read-availability problem into the permissionless-suppression
+    ///      vector the stale-gate exists to close. Reading the Distributor honestly, and failing loudly when it
+    ///      cannot be read, is the property worth keeping here.
     function _unclaimed(address account, address asset) internal view returns (uint256) {
         CachedAllocation memory a = allocations[account][asset];
-        if (a.submittedAt == 0) return 0;
+        if (a.root == bytes32(0)) return 0;
         bytes32 currentRoot = IMerklDistributor(DISTRIBUTOR).getMerkleRoot();
         if (a.root != currentRoot) return 0;
         (uint208 claimedAmt,,) = IMerklDistributor(DISTRIBUTOR).claimed(account, asset);

@@ -1098,4 +1098,133 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         _submitWithCampaigns(alice, address(arb), total, shares); // Σ shares == total
         assertEq(adapter.getAdapterPositions(alice, address(0)).length, max, "one leg per share at the cap");
     }
+
+    // ============================================
+    // MAX_TOKENS_PER_USER — the per-account slot cap
+    // ============================================
+
+    /// @dev Fills `alice`'s token cache to exactly `MAX_TOKENS_PER_USER`, one synthetic token per single-leaf root.
+    ///      Each submit rotates the mock root to that token's own leaf, so earlier entries go stale — which is the
+    ///      point: a stale entry still OCCUPIES its slot (only the stale-gated `clearAllocation` frees one), so the
+    ///      cap is reached by accumulation across roots, not only by a large simultaneous footprint.
+    ///      Synthetic (non-contract) token addresses are fine here: the adapter never calls the reward token, and the
+    ///      cap is enforced purely on `_userTokens` length.
+    function _fillTokenCache(address user, uint256 count) internal {
+        for (uint256 i; i < count; ++i) {
+            address token = address(uint160(0xDEAD0000 + i));
+            bytes32 leaf = _leaf(user, token, 1 ether);
+            distributor.setRoot(leaf);
+            _submitOne(user, token, 1 ether, new bytes32[](0));
+        }
+    }
+
+    /// @dev A NEW token beyond `MAX_TOKENS_PER_USER` reverts fail-loud. This is the cap ADR 0022's read-gas argument
+    ///      rests on, and it was previously untested — a `>=` vs `>` slip here would silently ship an off-by-one.
+    function test_submit_revertsWhenTooManyTokens() public {
+        uint256 max = adapter.MAX_TOKENS_PER_USER();
+        _fillTokenCache(alice, max);
+        assertEq(adapter.userTokens(alice).length, max, "cache filled to the cap");
+
+        address oneTooMany = address(uint160(0xBEEF0001));
+        bytes32 leaf = _leaf(alice, oneTooMany, 1 ether);
+        distributor.setRoot(leaf);
+        vm.expectRevert(abi.encodeWithSelector(MerklRewardsAttestedBalanceAdapter.TooManyTokens.selector, alice, max));
+        _submitOne(alice, oneTooMany, 1 ether, new bytes32[](0));
+    }
+
+    /// @dev Exactly `MAX_TOKENS_PER_USER` is accepted (boundary), and at the cap a REFRESH of an already-cached token
+    ///      still lands — the cap gates new slots only. Also pins the blast radius the cap creates: because a submit
+    ///      is atomic over its whole list, one new-token entry at the cap reverts the refresh of the others too.
+    function test_submit_atCapRefreshesExistingButRejectsNew() public {
+        uint256 max = adapter.MAX_TOKENS_PER_USER();
+        _fillTokenCache(alice, max);
+
+        // Refresh of an existing token at the cap: no new slot, so it succeeds.
+        address existing = address(uint160(0xDEAD0000));
+        bytes32 refreshLeaf = _leaf(alice, existing, 5 ether);
+        distributor.setRoot(refreshLeaf);
+        _submitOne(alice, existing, 5 ether, new bytes32[](0));
+        (uint256 amt,,) = adapter.allocations(alice, existing);
+        assertEq(amt, 5 ether, "refresh at the cap lands");
+        assertEq(adapter.userTokens(alice).length, max, "refresh consumes no slot");
+
+        // A two-entry submit whose SECOND entry is a new token at the cap reverts atomically — the first entry's
+        // refresh is rolled back with it. This is the keeper-wedge shape: nothing gets refreshed.
+        address newToken = address(uint160(0xBEEF0002));
+        bytes32[2] memory leaves;
+        leaves[0] = _leaf(alice, existing, 9 ether);
+        leaves[1] = _leaf(alice, newToken, 1 ether);
+        (bytes32 root, bytes32[] memory p0) = _buildTree2(leaves, 0);
+        (, bytes32[] memory p1) = _buildTree2(leaves, 1);
+        distributor.setRoot(root);
+
+        MerklRewardsAttestedBalanceAdapter.Allocation[] memory allocs =
+            new MerklRewardsAttestedBalanceAdapter.Allocation[](2);
+        allocs[0] = MerklRewardsAttestedBalanceAdapter.Allocation({
+            token: existing,
+            cumulativeAmount: 9 ether,
+            proof: p0,
+            campaigns: new MerklRewardsAttestedBalanceAdapter.CampaignShare[](0)
+        });
+        allocs[1] = MerklRewardsAttestedBalanceAdapter.Allocation({
+            token: newToken,
+            cumulativeAmount: 1 ether,
+            proof: p1,
+            campaigns: new MerklRewardsAttestedBalanceAdapter.CampaignShare[](0)
+        });
+        vm.expectRevert(abi.encodeWithSelector(MerklRewardsAttestedBalanceAdapter.TooManyTokens.selector, alice, max));
+        adapter.submitProofs(alice, allocs);
+
+        (uint256 after_,,) = adapter.allocations(alice, existing);
+        assertEq(after_, 5 ether, "the whole submit rolled back: the co-listed refresh did NOT land");
+    }
+
+    /// @dev The `_userTokens` no-duplicate invariant, which is the ONLY double-count mechanism in this contract: a
+    ///      token present twice in the enumeration list would make `buildPositionsSelf` value it twice and OVER-report
+    ///      NAV — the one direction the family forbids. Re-submitting the same `(user, token)` many times, across a
+    ///      root rotation, must never grow the list. The presence sentinel is `root != 0`, enforced by the contract's
+    ///      own `UninitializedRoot` check, rather than `submittedAt != 0`, which would rest on `block.timestamp != 0`.
+    function test_submit_repeatedSubmitsNeverDuplicateUserTokens() public {
+        uint256 amount = 100 ether;
+        for (uint256 i; i < 5; ++i) {
+            amount += 1 ether; // monotonic, so the AmountRegression guard is not what is being tested
+            bytes32 leaf = _leaf(alice, address(arb), amount);
+            distributor.setRoot(leaf); // rotate the root each time
+            _submitOne(alice, address(arb), amount, new bytes32[](0));
+            assertEq(adapter.userTokens(alice).length, 1, "re-submit must never push a second slot");
+        }
+
+        // And the read values it exactly once — no double count.
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositions(alice, address(0));
+        assertEq(pos.length, 1, "one untagged leg, counted once");
+        assertEq(pos[0].amount, amount, "reported once, not twice");
+        (uint256 bal,) = adapter.getAdapterBalanceForAsset(alice, address(arb));
+        assertEq(bal, amount);
+    }
+
+    /// @dev A `block.timestamp == 0` chain/test environment must not break the presence sentinel. With `submittedAt`
+    ///      as the sentinel this pushed a duplicate slot on the second submit (over-report); keyed on `root` it cannot.
+    function test_submit_atZeroTimestampStillNeverDuplicates() public {
+        vm.warp(0);
+        bytes32 leaf = _leaf(alice, address(arb), 100 ether);
+        distributor.setRoot(leaf);
+        _submitOne(alice, address(arb), 100 ether, new bytes32[](0));
+        _submitOne(alice, address(arb), 100 ether, new bytes32[](0)); // same root, same amount — a pure refresh
+        assertEq(adapter.userTokens(alice).length, 1, "no duplicate slot even with submittedAt == 0");
+
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositions(alice, address(0));
+        assertEq(pos.length, 1, "valued once");
+        assertEq(pos[0].amount, 100 ether);
+    }
+
+    /// @dev An account with nothing cached returns an empty set WITHOUT paying for the row-building self-call or the
+    ///      whole-registry `getRegisteredAssets()` copy inside it. Pinned by gas because the early return is a
+    ///      performance guard, and this adapter is queried for EVERY account on every NAV read.
+    function test_getAdapterPositions_emptyCacheIsCheap() public view {
+        uint256 before = gasleft();
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositions(alice, address(0));
+        uint256 used = before - gasleft();
+        assertEq(pos.length, 0);
+        assertLt(used, 20_000, "empty cache must short-circuit before the registry fetch");
+    }
 }

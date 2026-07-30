@@ -27,9 +27,9 @@ The single source of truth is [`test/integration/accounts.json`](../../test/inte
 │    submissions in step 2 are tolerated (NAV treats them as 0).       │
 ├──────────────────────────────────────────────────────────────────────┤
 │ 2. forge build once (warm cache) → forge test per chain (PARALLEL)   │
-│    → deploys NAV stack (incl. MerklRewards) at the new               │
-│    fork, replays fixture proofs into the cache, reads NAV per        │
-│    enabled account, emits SNAPSHOT|... lines applied via jq          │
+│    → deploys NAV stack at the new fork, reads NAV per enabled        │
+│    account, emits SNAPSHOT|... lines applied via jq                  │
+│    (NOT MerklRewards — see the note below)                           │
 ├──────────────────────────────────────────────────────────────────────┤
 │ 3. (optional) /v1/user/all_complex_protocol_list (1×/account) +      │
 │    /v1/user/token_list (1× per chain×account), filtered to NAV's     │
@@ -41,7 +41,19 @@ The single source of truth is [`test/integration/accounts.json`](../../test/inte
 
 > **Why a separate Merkl-proof step.** Merkl's API only serves proofs against the *currently published* root. Forge tests pinned at a historical block can only verify a proof if that block's `Distributor.getMerkleRoot()` matches the API's current root — true right after a bump (when `forkBlock = cast block-number`), false a few hours later (Merkl rotates roots ~every 8h). Capturing proofs at bump time is the only window where this alignment holds reliably. After step 1.5, `merkl-proofs.json` is the source of truth that the integration test consumes deterministically — **the Merkl API is not queried during test runs, and you do not need to re-fetch proofs when re-running tests against the same pinned fork block.** The proofs remain valid for a given fork block forever, because `Distributor.getMerkleRoot()` is frozen at that block.
 >
-> **Root-mismatch detection.** The fixture stores `expectedRoot` — the root captured from the Distributor at the fork block. `_seedMerklProofs` compares this against the live root at test time; if they differ, it logs a prominent warning and all `submitProof` calls will fail (Merkl rewards silently zero). The fix is always the same: re-run `refresh-integration-snapshot.sh` to re-capture proofs against the current root.
+> **⚠️ Merkl is NOT currently seeded into the integration harness.** `_seedMerklProofs` was removed together with the
+> old Merkl adapter in #141 and has not been restored: `test/integration/IntegrationFromConfigBase.fork.sol` contains
+> no Merkl code, and the Merkl adapter ships `enabled:false` in every chain's deploy config. So step 1.5 still
+> captures `merkl-proofs.json`, but **nothing consumes it** — the committed integration baselines (`nav-positions-<chainId>.json`,
+> expected NAVs) contain no Merkl positions, and the JSON-driven integration tests assert nothing about Merkl while
+> reporting green. Do not read a green integration run as coverage of this adapter; its regression net is the
+> dedicated unit + fork suites under `test/balances/AttestedBalanceAdapters/`, including a real captured mainnet proof.
+> Re-wiring the harness is tracked as a follow-up, coupled to enabling the adapter per chain.
+>
+> **Root-mismatch detection (applies once seeding is re-wired).** The fixture stores `expectedRoot` — the root captured
+> from the Distributor at the fork block. The seeding step is meant to compare this against the live root at test time;
+> if they differ, every `submitProofs` call fails (Merkl rewards silently zero). The fix is always the same: re-run
+> `refresh-integration-snapshot.sh` to re-capture proofs against the current root.
 
 Step 2 is the bottleneck (deploying a full NAV stack on a fork takes ~1–3 min per chain). Running all five chains in parallel reduces wall time from `sum(chains)` to `max(chains)` — typically Mainnet, since it has the most adapters. A single `forge build` runs before the parallel forge invocations so they share a warm cache without racing on `out/`. Each chain's stdout is captured to a per-chain log file in a temp directory; SNAPSHOT lines are applied to `accounts.json` in chain-id order after all forks finish, so output is deterministic and there's no jq-write race.
 

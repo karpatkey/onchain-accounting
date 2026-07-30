@@ -1218,7 +1218,26 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         }
     }
 
+    /// @notice Writes the per-chain nav-positions snapshot — ONLY when explicitly opted in.
+    /// @dev **Gated because the target is a COMMITTED expected-value fixture.** `test_emitSnapshots` is a
+    ///      normally-registered test, so before this gate every `forge test` run that touched an integration
+    ///      contract rewrote `test/integration/nav-positions-<chainId>.json` in place. All six of those files are
+    ///      tracked, so a session that ran the fork suite and then committed silently picked up a snapshot
+    ///      mutation it never authored — into a file whose whole purpose is to be a stable reference. The
+    ///      failure mode is silent: the run passes, `git status` is dirty afterwards rather than before, and the
+    ///      diff looks like a legitimate refresh.
+    ///
+    ///      ADR 0003 recorded this as "a cheap, harmless side path". The cost analysis was right and the
+    ///      harmlessness was not: emitting `SNAPSHOT|…` lines to stdout genuinely is free of side effects, but
+    ///      the file write is not, and the two were bundled into one ungated test.
+    ///
+    ///      Gate rather than remove, because the refresh workflow needs exactly this code path:
+    ///      `refresh-integration-snapshot.sh` invokes it via `--match-test test_emitSnapshots` (a `forge script`
+    ///      cannot be used — it hangs on Mainnet, see docs/howto/refresh-integration-test-blocks.md). The script
+    ///      sets `REFRESH_NAV_POSITIONS=1`; nothing else does, so a normal run now leaves the tree as it found
+    ///      it. Follows the existing `PERSIST_DEPLOYMENTS` convention for an opt-in write.
     function _emitNavPositionsForCurrentChain() internal {
+        if (!vm.envOr("REFRESH_NAV_POSITIONS", false)) return;
         vm.writeFile(
             string.concat("test/integration/nav-positions-", vm.toString(_chainId), ".json"),
             string.concat(

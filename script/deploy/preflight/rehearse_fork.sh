@@ -96,8 +96,20 @@ echo "deployer=$DEPLOYER  live proxy=$LIVE_PROXY  live ERC20Default=$LIVE_DEFAUL
 # --- anvil -------------------------------------------------------------------
 # `--gas-limit` and `--disable-block-gas-limit` are mutually exclusive in anvil; the explicit limit is
 # what we want, since the NAV impl deploy alone is ~12.5M gas.
+# Fork-request resilience is NOT optional here. anvil PANICS rather than retrying when an upstream
+# state read fails mid-run — observed twice on 2026-07-30:
+#   "pre-execution changes failed: Internal(Other(Database(GetStorage(0x…, error sending request …
+#    connection reset))))" inside Backend::do_mine_block, killing anvil during 03's broadcast phase
+# and taking the whole rehearsal with it (every later step then fails "Connection refused"). A rehearsal
+# is a long sequence of state-heavy calls against a shared, rate-limited endpoint, so one reset is
+# likely; the defaults do not survive it. Raise the fork-request timeout and retry budget.
 ANVIL_ARGS=(--fork-url "$FORK_URL" --port "$PORT" --auto-impersonate --silent
-            --gas-limit 60000000)
+            --gas-limit 60000000
+            --retries "${ANVIL_RETRIES:-12}" --timeout "${ANVIL_TIMEOUT:-45000}"
+            --fork-retry-backoff "${ANVIL_BACKOFF:-2}")
+# Pinning the fork block also makes retries CHEAP as well as reproducible: foundry caches fork state per
+# (chain, block) under ~/.foundry/cache/rpc, so a second attempt re-reads far fewer slots upstream —
+# which is the difference between a retry that survives a flaky endpoint and one that trips it again.
 [[ -n "$FORK_BLOCK" ]] && ANVIL_ARGS+=(--fork-block-number "$FORK_BLOCK")
 anvil "${ANVIL_ARGS[@]}" > "$WORK/anvil.log" 2>&1 &
 ANVIL_PID=$!
@@ -157,6 +169,16 @@ python3 script/deploy/preflight/reset_deployment_records.py --apply \
 rm -rf "script/deploy/preflight/archive/rehearsal-$$"
 echo "cleared deployments/${CHAIN_ID}.json (original archived in $WORK)"
 
+# --- per-step foundry profile ------------------------------------------------
+# The RUNBOOK requires step 1.5 (RegisterAssets) to run under FOUNDRY_PROFILE=slow on mainnet, and this
+# script was ignoring that — every step ran on the default profile. It is not a throughput preference:
+# `[profile.slow]` raises gas_limit AND memory_limit from the default 1 GiB to 16 GiB precisely because
+# registering the full asset set in one call frame accumulates quadratic EVM memory-expansion cost
+# (foundry.toml:108-117). Measured on mainnet 2026-07-30: with all 25 custom feeds resolving, mainnet's
+# 43 assets plan 86 actions and the script dies `EvmError: MemoryOOG` after wiring 19 of them, having
+# registered 1 asset. So the rehearsal reported a blocker that the documented procedure does not have.
+declare -A STEP_PROFILE=( [RegisterAssets]=slow )
+
 # --- run a step --------------------------------------------------------------
 run_step() {
   local label="$1"; shift
@@ -164,7 +186,15 @@ run_step() {
   echo "--- $label"
   local t0 t1 rc gas
   t0=$(date +%s)
-  PERSIST_DEPLOYMENTS=1 forge script "$@" \
+  # Build the env prefix rather than inlining FOUNDRY_PROFILE=: an EMPTY FOUNDRY_PROFILE is not the same
+  # as an unset one, and forge would look for a profile named "".
+  local -a envp=(PERSIST_DEPLOYMENTS=1)
+  local profile="${STEP_PROFILE[$label]:-}"
+  if [[ -n "$profile" ]]; then
+    envp+=(FOUNDRY_PROFILE="$profile")
+    echo "    (FOUNDRY_PROFILE=$profile — required by the runbook for this step)"
+  fi
+  env "${envp[@]}" forge script "$@" \
     --rpc-url "$RPC" --broadcast --unlocked --sender "$DEPLOYER" --slow \
     > "$log" 2>&1
   rc=$?

@@ -24,21 +24,48 @@ import {ConfigReader} from "script/utils/ConfigReader.sol";
 contract LibraryPinConsistencyTest is Test {
     address internal constant CANONICAL_CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
-    /// @notice Every pin check above is only as good as the artifact it reads. This asserts the artifact was built
+    /// @dev These assertions are only meaningful under a profile that actually carries foundry.toml's
+    ///      `libraries` pins. `dev` and `lite` deliberately clear that array (forge auto-deploys and
+    ///      auto-links the two libraries instead) and `lite` also drops the optimizer, so their library
+    ///      bytecode CANNOT match the pins — three red tests that invite a pin regeneration which would
+    ///      break every default-profile build and deploy.
+    ///
+    ///      Deliberately an ALLOWLIST of pin-bearing profiles rather than a denylist of pin-clearing
+    ///      ones: an unrecognised profile skips (safe, loses coverage) instead of going red (unsafe,
+    ///      invites the repin). `default` is CI's unit job; `slow` overrides only threads/gas/memory and
+    ///      inherits the pins, so both must assert. Add any future pin-bearing profile here.
+    ///
+    ///      Note this cannot key on the observable condition — "is NAVCalculator linked to the pin?" —
+    ///      because that is exactly what test_navCalculator_creationCodeLinkedAgainstPins asserts, so
+    ///      such a check would make that test skip itself in precisely the case it exists to catch.
+    ///
+    ///      The freshness assertion carries this too, and deliberately: it exists to make the three pin
+    ///      assertions trustworthy, so when they skip it has nothing left to underwrite. Gating it also
+    ///      keeps it away from `lite`, whose `extra_output = []` / `ast = false` build is not a tree the
+    ///      pins are ever derived from.
+    modifier onlyPinnedProfile() {
+        bytes32 profile = keccak256(bytes(vm.envOr("FOUNDRY_PROFILE", string("default"))));
+        bool pinBearing = profile == keccak256("default") || profile == keccak256("slow") || profile == keccak256("");
+        vm.skip(!pinBearing);
+        _;
+    }
+
+    /// @notice Every pin check below is only as good as the artifact it reads. This asserts the artifact was built
     ///         from THIS source tree, so a stale `out/` cannot produce a stale pin reading that passes.
     /// @dev    The gap this closes, and why a timestamp check would not close it.
     ///
-    ///         With `dynamic_test_linking` enabled, `type(X).creationCode` compiles to a call to forge's VM address
-    ///         — it becomes `vm.getCode`, a read of the artifact from disk at RUNTIME. So the pin value is not "what
-    ///         this compilation unit would produce", it is *whatever artifact happens to be on disk when the test
-    ///         runs*. The two expressions do not diverge under the flag; they are the same read. What can separate
-    ///         them from the truth is STALENESS, and staleness alone.
+    ///         The exposure is CI's job split, not any one config flag: the Unit job does not build. It downloads
+    ///         the Build job's artifacts, and those come off a repo-wide cache keyed only by repository, which has
+    ///         been observed serving stale bytecode. Everything this file asserts about pins is then a statement
+    ///         about that download rather than about this tree — stale artifact in, stale address out, test green.
     ///
-    ///         That is not hypothetical. CI's Unit job does not build — it downloads the Build job's artifacts, and
-    ///         those come off a repo-wide cache keyed only by repository, which has been observed serving stale
-    ///         bytecode. Stale artifact in, stale address out, test green. It mechanically explains the
-    ///         `0xeA694009` PriceFeedLib value seen on the branch that sets the flag, against `0x8b7e4fA9` at
-    ///         build scope.
+    ///         `type(X).creationCode` is embedded at COMPILE time (foundry.toml deliberately does not set
+    ///         `dynamic_test_linking` — see the comment there for the measurement that removed it), so the pin value
+    ///         is baked into this test contract's own bytecode. That does not close the gap, it only moves it: under
+    ///         a downloaded `out/`, THIS contract is one of the stale artifacts, and its embedded constant is
+    ///         whatever the cache served. Were the flag ever reinstated, `creationCode` would become a `vm.getCode`
+    ///         read of the artifact at RUNTIME and the same staleness would arrive by a shorter path. The assertion
+    ///         below holds in both regimes because it interrogates the artifact directly and never the linkage.
     ///
     ///         **Content-hash, not mtime, and that choice is load-bearing.** Artifacts restored from a cache are
     ///         WRITTEN at restore time, so their mtimes are newer than the checkout that produced the sources — a
@@ -53,7 +80,12 @@ contract LibraryPinConsistencyTest is Test {
     ///         Deliberately checks BOTH pinned libraries and ALL of their recorded sources, `lib/` included: a
     ///         submodule bump changes library bytecode and therefore the pin just as a `src/` edit does, and this
     ///         repo has a recorded history of `foundry.lock` disagreeing with its gitlinks.
-    function test_pinnedLibraryArtifactsWereBuiltFromThisTree() public view {
+    ///
+    ///         Declared residual gap: this interrogates the two LIBRARY artifacts, so it detects the whole-directory
+    ///         staleness that a cache restore actually produces. A hypothetically PARTIAL `out/` — both libraries
+    ///         fresh, this test contract's own artifact stale — would still pass while the compile-time-embedded
+    ///         constant is stale. Not worth a third assertion: no known mechanism restores `out/` per-file.
+    function test_pinnedLibraryArtifactsWereBuiltFromThisTree() public onlyPinnedProfile {
         _assertArtifactBuiltFromTree("out/PriceFeedLib.sol/PriceFeedLib.json", "PriceFeedLib");
         _assertArtifactBuiltFromTree("out/NAVRegistryLib.sol/NAVRegistryLib.json", "NAVRegistryLib");
     }
@@ -90,14 +122,14 @@ contract LibraryPinConsistencyTest is Test {
         }
     }
 
-    function test_priceFeedLib_pinMatchesCurrentBytecode() public pure {
+    function test_priceFeedLib_pinMatchesCurrentBytecode() public onlyPinnedProfile {
         bytes32 salt = ConfigReader.computeSalt("PriceFeedLib", 1);
         address computed =
             vm.computeCreate2Address(salt, keccak256(type(PriceFeedLib).creationCode), CANONICAL_CREATE2_DEPLOYER);
         assertEq(computed, LibraryPins.PRICE_FEED_LIB, "PriceFeedLib pin drift: regenerate LibraryPins + foundry.toml");
     }
 
-    function test_navRegistryLib_pinMatchesCurrentBytecode() public pure {
+    function test_navRegistryLib_pinMatchesCurrentBytecode() public onlyPinnedProfile {
         bytes32 salt = ConfigReader.computeSalt("NavRegistryLib", 1);
         address computed =
             vm.computeCreate2Address(salt, keccak256(type(NAVRegistryLib).creationCode), CANONICAL_CREATE2_DEPLOYER);
@@ -111,7 +143,7 @@ contract LibraryPinConsistencyTest is Test {
     ///         catches a foundry.toml pin edit that drifts from LibraryPins — which the per-library CREATE2
     ///         checks cannot, since they compare the computed address only against LibraryPins — and confirms
     ///         NAVCalculator is actually wired to the pinned libraries.
-    function test_navCalculator_creationCodeLinkedAgainstPins() public pure {
+    function test_navCalculator_creationCodeLinkedAgainstPins() public onlyPinnedProfile {
         bytes memory code = type(NAVCalculator).creationCode;
         assertTrue(
             LibraryPins.contains(code, LibraryPins.PRICE_FEED_LIB),

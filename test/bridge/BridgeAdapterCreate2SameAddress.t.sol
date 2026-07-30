@@ -37,7 +37,7 @@ contract BridgeAdapterCreate2SameAddressTest is Test {
         bytes creationCode;
     }
 
-    function _specs() internal pure returns (Spec[6] memory specs) {
+    function _specs() internal view returns (Spec[6] memory specs) {
         specs[0] = Spec("CcipBridgeAdapter", DeploySalts.CCIP_ADAPTER, type(CcipBridgeAdapter).creationCode);
         specs[1] = Spec("AcrossBridgeAdapter", DeploySalts.ACROSS_ADAPTER, type(AcrossBridgeAdapter).creationCode);
         specs[2] = Spec("StargateBridgeAdapter", DeploySalts.STARGATE_ADAPTER, type(StargateBridgeAdapter).creationCode);
@@ -79,7 +79,7 @@ contract BridgeAdapterCreate2SameAddressTest is Test {
     }
 
     /// @notice No two adapters share a deterministic address (no salt/bytecode collision).
-    function test_adapterAddresses_areDistinct() public pure {
+    function test_adapterAddresses_areDistinct() public view {
         Spec[6] memory specs = _specs();
         address[6] memory addrs;
         for (uint256 i = 0; i < specs.length; i++) {
@@ -108,7 +108,7 @@ contract BridgeAdapterCreate2SameAddressTest is Test {
     /// @notice The `trustedRemoteAdapter` value 06_Configure wires for a same-address sibling is
     ///         `bytes32(uint256(uint160(adapter)))`, and the adapters decode it back via `_toBytes32`/`uint160`. Lock
     ///         that the widen→narrow round-trip is lossless for each adapter's deterministic address.
-    function test_trustedRemoteEncoding_roundTrips() public pure {
+    function test_trustedRemoteEncoding_roundTrips() public view {
         Spec[6] memory specs = _specs();
         for (uint256 i = 0; i < specs.length; i++) {
             address adapter = _predict(specs[i].name, specs[i].version, specs[i].creationCode);

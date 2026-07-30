@@ -463,6 +463,7 @@
     }
   },
   "UniswapV3_WETH_COW_3000": {
+    "$comment": "PERMANENTLY DISABLED — COW is unpriceable. There is no COW price feed on ANY chain and none is planned, so this is a permanent coverage gap, not a pending task: do NOT flip enabled to true expecting a feed to arrive. If it were enabled, NAVCalculator's per-asset registry filter would silently drop the COW leg of this LP and value the position on its WETH side only — understating it by roughly half — which is strictly worse than not reporting the position at all. Leaving it disabled means NAV reports no COW position anywhere, so DeBank's COW value lands in the comparison report's 'Untracked by design' section (attributed) rather than as unexplained drift. The full rationale, including COW as a wallet/reward token and the Sablier lockups, is in test/integration/accounts.json chains.1.$untracked_by_design. Mainnet COW exposure is material — roughly $1.6M across Sablier lockups, two wallet balances and this pool's COW leg — so the omission is large but declared.",
     "enabled": false,
     "constructor": {
       "pool": "0xFbB81382CCe6b9cE58F8645353F70d9DB1bB69af",

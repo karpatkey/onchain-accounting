@@ -63,7 +63,7 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
 
     /// @notice Test that different EOAs deploy proxies to the same addresses
     /// @dev Proxy bytecode uses placeholder impl (same on all chains), not real NAV/Bridge impl.
-    function test_DifferentEOAsDeploySameAddresses() public pure {
+    function test_DifferentEOAsDeploySameAddresses() public view {
         address placeholder = _getPlaceholderAddress();
         bytes32 saltNavProxy = ConfigReader.computeSalt("NAVCalculatorProxy", DeploySalts.NAV_PROXY);
         bytes memory navProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
@@ -163,7 +163,7 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
     /// @dev This verifies that using the canonical CREATE2 deployer with the same inputs
     ///      produces the same addresses on mainnet, Arbitrum, Base, Gnosis Chain, and Optimism.
     ///      This is the key benefit of using the canonical deployer - true cross-chain determinism.
-    function test_ProxyAddressesSameAcrossAllNetworks() public pure {
+    function test_ProxyAddressesSameAcrossAllNetworks() public view {
         // List of chain IDs to test
         uint256[] memory chainIds = new uint256[](5);
         chainIds[0] = 1; // Ethereum mainnet
@@ -243,7 +243,7 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
 
     /// @notice Test that different deployers (different CREATE2 deployer contract addresses) yield diverging proxy addresses.
     /// @dev CREATE2 address = f(deployer, salt, bytecodeHash). Same salt+bytecode with different deployer => different address.
-    function test_DifferentDeployersLeadToDivergingProxyAddresses() public pure {
+    function test_DifferentDeployersLeadToDivergingProxyAddresses() public view {
         address placeholder = _getPlaceholderAddress();
         bytes32 saltNavProxy = ConfigReader.computeSalt("NAVCalculatorProxy", DeploySalts.NAV_PROXY);
         bytes memory navProxyBytecode = abi.encodePacked(type(UUPSProxy).creationCode, abi.encode(placeholder, ""));
@@ -277,7 +277,7 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
 
     /// @notice Test that AtomicProxyDeployer uses the same address formula as the script (canonical CREATE2 + same salts).
     /// @dev Verifies ConfigReader.computeSalt matches AtomicProxyDeployer's salt formula so script and AtomicProxyDeployer yield identical proxy addresses.
-    function test_AtomicProxyDeployerProducesSameAddressesAsScript() public pure {
+    function test_AtomicProxyDeployerProducesSameAddressesAsScript() public view {
         // Salts must match AtomicProxyDeployer (keccak256(abi.encodePacked(name, version)) with version from DeploySalts)
         assertEq(
             ConfigReader.computeSalt("ProxyPlaceholderImpl", DeploySalts.PLACEHOLDER_IMPL),
@@ -753,7 +753,7 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
     }
 
     /// @notice Placeholder impl address used in proxy bytecode (same as 02a: ProxyPlaceholderImpl, UUPSPlaceholder)
-    function _getPlaceholderAddress() internal pure returns (address) {
+    function _getPlaceholderAddress() internal view returns (address) {
         bytes32 salt = ConfigReader.computeSalt("ProxyPlaceholderImpl", DeploySalts.PLACEHOLDER_IMPL);
         return _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, salt, type(UUPSPlaceholder).creationCode);
     }

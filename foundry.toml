@@ -7,6 +7,11 @@ fs_permissions = [
   { access = "read-write", path = "out" },
   { access = "read-write", path = "safe-transactions" },
   { access = "read-write", path = "test/integration" },
+  # READ-ONLY, and only so LibraryPinConsistencyTest can hash the sources an artifact in `out/`
+  # records having been compiled from. A cheatcode permission, never passed to solc, so it cannot
+  # affect emitted bytecode or the `libraries` pins below.
+  { access = "read", path = "src" },
+  { access = "read", path = "lib" },
 ]
 ffi = true
 ast = true
@@ -18,6 +23,25 @@ extra_output = ["storageLayout"]
 optimizer = true
 optimizer_runs = 200
 via_ir = true
+
+# `dynamic_test_linking = true` was here and was REMOVED after measuring it. Do not reinstate it without
+# re-measuring, because it buys nothing and costs correctness:
+#
+#   - Measured cost, both loops, each arm with its own cold baseline (toggling the flag invalidates the
+#     cache, so a warm-vs-cold comparison measures only the toggle): a harness-only edit under
+#     `--match-contract NavBacktest` + `FOUNDRY_PROFILE=slow` recompiled 1 file in 88s with the flag and
+#     1 file in 85s without; under full-suite scope it recompiled NOTHING in 8s with and NOTHING in 6s
+#     without. Ordinary incremental compilation already delivers what the flag advertises. Only the cold
+#     build differed (479s vs 594s), and cold builds are not the iteration loop.
+#   - Under the flag, `type(X).creationCode` compiles to a `vm.getCode` call — a read of the build
+#     artifact from disk AT TEST TIME. So `LibraryPinConsistency` stops attesting the tree and starts
+#     attesting whatever `out/` happens to hold. That is not theoretical: this PR's CI reported
+#     `PriceFeedLib = 0xeA694009…` instead of main's `0x8b7e4fA9…`, because CI's unit job downloads the
+#     build job's artifacts rather than building, and those come off a repo-wide sticky cache keyed only
+#     by repository. Stale artifact in, stale pin out, guard green.
+#   - It also routes `new` in test sources through `vm.deployCode`, FILE-scoped rather than
+#     test-contract-scoped, which makes constructor-revert payloads a property of the harness instead of
+#     the contract. See `test/prices/protocols/ETHPlus_CustomPriceFeed.t.sol`.
 
 # Pin the compiler, EVM target AND strip the appended source-metadata hash so the external-library
 # bytecode — and therefore the deterministic CREATE2 addresses the `libraries` array below pins — are
@@ -73,6 +97,31 @@ ignored_warnings_from = ["lib"]
 # Prod and CI use the default profile (pinned, deterministic addresses).
 [profile.dev]
 libraries = []
+
+# Fast local dev / unit-test profile. Inherits [profile.default] and disables
+# every axis that slows compilation or ties bytecode to a specific pin:
+# optimizer, build_info, ast, extra_output, and the pinned `libraries` array.
+# PriceFeedLib / NAVRegistryLib are auto-deployed + auto-linked by forge instead.
+#
+# via_ir=true (with optimizer=false) is REQUIRED: legacy codegen hits
+# "Stack too deep" at src/prices/PriceFeedLib.sol:491. via_ir without the
+# optimizer skips the expensive Yul optimization pipeline but uses the
+# IR-based codegen that avoids the stack limit.
+#
+# IMPORTANT: this profile is NOT bytecode-compatible with [profile.default].
+# Library CREATE2 addresses, optimizer output, and via_ir codegen all differ, so
+# any artifact produced here is invalid for deploys and for the LibraryPinConsistency
+# test (which re-derives pins from default-profile bytecode). Use it only for local
+# iteration and unit tests. CI keeps the default profile. Unoptimized NAVCalculator
+# exceeds EIP-170's 24576-byte limit, so bump code_size_limit to give it headroom.
+[profile.lite]
+via_ir = true   # required: legacy codegen hits stack-too-deep in PriceFeedLib
+optimizer = false
+build_info = false
+ast = false
+extra_output = []
+libraries = []
+code_size_limit = 393216
 
 # Linter runs on `forge build`; issues are printed and fail the build when deny includes warnings.
 #

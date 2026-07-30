@@ -30,6 +30,13 @@
       "yToXFeed": "0x86392dC19c0b719886221c78AB11eb8Cf5c52812",
       "yToXHeartbeat": "86400",
       "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+    },
+    "rateFeedGuard": {
+      "$comment": "Pair identity + plausibility band for the rate feed named by `param`. Enforced pre-deploy by RateFeedGuard and asserted in the fork tests. description() verified live on-chain 2026-07-30.",
+      "param": "yToXFeed",
+      "description": "STETH / ETH",
+      "minRate1e18": "900000000000000000",
+      "maxRate1e18": "1500000000000000000"
     }
   },
   "lsETH": {
@@ -40,6 +47,13 @@
       "yToXFeed": "0xE858728eB31a25C4AcCcE17d01B68dCFC3A0ED2C",
       "yToXHeartbeat": "86400",
       "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+    },
+    "rateFeedGuard": {
+      "$comment": "Pair identity + plausibility band for the rate feed named by `param`. Enforced pre-deploy by RateFeedGuard and asserted in the fork tests. description() verified live on-chain 2026-07-30.",
+      "param": "yToXFeed",
+      "description": "LsETH / ETH Exchange Rate",
+      "minRate1e18": "900000000000000000",
+      "maxRate1e18": "1500000000000000000"
     }
   },
   "rETH": {
@@ -140,6 +154,13 @@
       "yToXFeed": "0x703118C4CbccCBF2AB31913e0f8075fbbb15f563",
       "yToXHeartbeat": "86400",
       "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+    },
+    "rateFeedGuard": {
+      "$comment": "Pair identity + plausibility band for the rate feed named by `param`. Enforced pre-deploy by RateFeedGuard and asserted in the fork tests. description() verified live on-chain 2026-07-30.",
+      "param": "yToXFeed",
+      "description": "OETH / ETH",
+      "minRate1e18": "900000000000000000",
+      "maxRate1e18": "1500000000000000000"
     }
   },
   "LDO": {
@@ -150,6 +171,13 @@
       "ldoToEthChainlinkAddress": "0x4e844125952D32AcdF339BE976c98E22F6F318dB",
       "ldoToEthChainlinkHeartbeat": "86400",
       "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+    },
+    "rateFeedGuard": {
+      "$comment": "Pair identity + plausibility band for the rate feed named by `param`. Enforced pre-deploy by RateFeedGuard and asserted in the fork tests. description() verified live on-chain 2026-07-30.",
+      "param": "ldoToEthChainlinkAddress",
+      "description": "LDO / ETH",
+      "minRate1e18": "10000000000000",
+      "maxRate1e18": "10000000000000000"
     }
   },
   "ankrETH": {
@@ -186,26 +214,47 @@
       "yToXFeed": "0x701e83Bd1B84D02c10587f0De9Dfad5A22419DF7",
       "yToXHeartbeat": "86400",
       "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+    },
+    "rateFeedGuard": {
+      "$comment": "Pair identity + plausibility band for the rate feed named by `param`. Enforced pre-deploy by RateFeedGuard and asserted in the fork tests. description() verified live on-chain 2026-07-30.",
+      "param": "yToXFeed",
+      "description": "RedStone Price Feed for ezETH_FUNDAMENTAL",
+      "minRate1e18": "900000000000000000",
+      "maxRate1e18": "1500000000000000000"
     }
   },
   "ETHxCrossRate": {
     "enabled": true,
-    "$comment": "ETHx redundancy feed (ETHx_CrossRateCustomPriceFeed). CrossRate: ETHx/USD = ETH/USD x ETHx/ETH, with ETH/USD read from the NAV (ADR 0019). yToXFeed MIGRATED 2026-07-27 from the Redstone Classic Push ETHx/ETH feed (0xc799194cAa24E2874Efa89b4Bf5c92a530B047FF) to the CHAINLINK ETHx/ETH feed (0xC499ec76e2F5ac15e127A352Bc40cF24FC472401) because Redstone is sunsetting all its ETHx feeds. Chainlink feed verified on-chain: description() == \"ETHx / ETH\", decimals 18, answer 1.093319e18 vs Stader getExchangeRate 1.093906e18 = 5.4 bps apart (well inside ETHx's 250 bps divergence tolerance). There is NO Chainlink ETHx/USD feed (FeedRegistry.getFeed reverts \"Feed not found\"), so the ETH-quoted cross-rate is the only Chainlink route. The 18 decimals need no config change: TwoFeedChainlinkPriceFeed captures 10**rateFeed.decimals() in its constructor (TwoFeedChainlinkPriceFeed.sol:72), so the rate decimals cancel into NAV_DECIMALS. Independent of the primary ETHx feed (Stader on-chain rate); serves as ETHx's monitor feed.",
+    "$comment": "ETHx redundancy feed (ETHx_CrossRateCustomPriceFeed). CrossRate: ETHx/USD = ETH/USD x ETHx/ETH, with ETH/USD read from the NAV (ADR 0019). yToXFeed MIGRATED 2026-07-27 from the Redstone Classic Push ETHx/ETH feed (0xc799194cAa24E2874Efa89b4Bf5c92a530B047FF) to Chainlink because Redstone is sunsetting all its ETHx feeds. CORRECTED 2026-07-30: that migration pointed at 0xC499ec76e2F5ac15e127A352Bc40cF24FC472401, which is the raw ACCESS-CONTROLLED AGGREGATOR, not its EACAggregatorProxy. It passes every inspection a config review would run - description() == \"ETHx / ETH\", decimals 18, and latestRoundData() answers a cast call - yet NO CONTRACT can read it: Chainlink's SimpleReadAccessController grants access only when _user == tx.origin, so a direct EOA eth_call succeeds while every contract is denied (measured: checkEnabled() == true, hasAccess(<contract>,\"\") == false, hasAccess(<EOA>,\"\") == true). OracleArgumentChecks.assertChainlinkOracle probes latestRoundData() in a try, is denied, and the constructor reverts NotChainlinkOracle() - so _deployEthxCrossRate() (03_DeployPriceFeeds.s.sol:211 -> :639; ETHx uses that NAMED deploy function, not the generic _deployCrossRateMonitor) reverted during 03_DeployPriceFeeds simulation, and because vm.writeJson side effects are NOT rolled back on revert that run left phantom customPriceFeeds addresses in deployments/1.json which 04 then collided with. yToXFeed is now the PROXY 0xC5f8c4aB091Be1A899214c0C3636ca33DcA0C547, sourced from Chainlink's reference-data-directory (name \"ETHx / ETH\", proxyAddress 0xC5f8c4aB..., contractAddress 0xC499ec76..., decimals 18) and independently corroborated on-chain by the aggregator's AddedAccess(0xc5f8c4ab...) event at block 20270750. Proven with four checks: aggregator() == 0xC499ec76... (proves the proxy sits above exactly the aggregator that was configured, not a same-named different feed), description() == \"ETHx / ETH\", decimals() == 18, and CONSTRUCTIBLE FROM A CONTRACT on a fork (the property that was actually missing - a passing cast call proves nothing here, which is how the bad address passed review). Note description() was CORRECT on the bad address, so a description-based pair assertion would NOT have caught this. There is NO Chainlink ETHx/USD feed (FeedRegistry.getFeed reverts \"Feed not found\"), so the ETH-quoted cross-rate is the only Chainlink route. The 18 decimals need no config change: TwoFeedChainlinkPriceFeed captures 10**rateFeed.decimals() in its constructor, so the rate decimals cancel into NAV_DECIMALS. Independent of the primary ETHx feed (Stader on-chain rate) in both source and methodology; serves as ETHx's monitor feed.",
     "constructor": {
       "underlyingAsset": "0xA35b1B31Ce002FBF2058D22F30f95D405200A15b",
-      "yToXFeed": "0xC499ec76e2F5ac15e127A352Bc40cF24FC472401",
+      "yToXFeed": "0xC5f8c4aB091Be1A899214c0C3636ca33DcA0C547",
       "yToXHeartbeat": "86400",
       "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+    },
+    "rateFeedGuard": {
+      "$comment": "Pair identity + plausibility band for the rate feed named by `param`. Enforced pre-deploy by RateFeedGuard and asserted in the fork tests. description() verified live on-chain 2026-07-30.",
+      "param": "yToXFeed",
+      "description": "ETHx / ETH",
+      "minRate1e18": "900000000000000000",
+      "maxRate1e18": "1500000000000000000"
     }
   },
   "osETHCrossRate": {
     "enabled": true,
-    "$comment": "osETH redundancy feed (osETH_CrossRateCustomPriceFeed). CrossRate: osETH/USD = ETH/USD x osETH/ETH. yToXFeed is the Redstone Classic Push osETH/ETH market feed (verified 99.34% vs StakeWise osTokenVaultController rate). Independent of the primary osETH feed (StakeWise on-chain rate); added as priceFeeds[1] for freshest-wins redundancy.",
+    "$comment": "osETH redundancy feed (osETH_CrossRateCustomPriceFeed). CrossRate: osETH/USD = ETH/USD x osETH/ETH. yToXFeed is the Redstone Classic Push osETH/ETH market feed (verified 99.34% vs StakeWise osTokenVaultController rate). Independent of the primary osETH feed (StakeWise on-chain rate) in both source and methodology, so it can register a market depeg. Registered as a monitorFeed (divergence-only, 250 bps tolerance); it never prices the NAV. It was originally added as priceFeeds[1] for freshest-wins redundancy, but PR #151 replaced that with the primary-plus-monitors model.",
     "constructor": {
       "underlyingAsset": "0xf1C9acDc66974dFB6dEcB12aA385b9cD01190E38",
       "yToXFeed": "0x66ac817f997Efd114EDFcccdce99F3268557B32C",
       "yToXHeartbeat": "86400",
       "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+    },
+    "rateFeedGuard": {
+      "$comment": "Pair identity + plausibility band for the rate feed named by `param`. Enforced pre-deploy by RateFeedGuard and asserted in the fork tests. description() verified live on-chain 2026-07-30.",
+      "param": "yToXFeed",
+      "description": "RedStone Price Feed for osETH/ETH",
+      "minRate1e18": "900000000000000000",
+      "maxRate1e18": "1500000000000000000"
     }
   },
   "rETHCrossRate": {
@@ -216,6 +265,13 @@
       "yToXFeed": "0x536218f9E9Eb48863970252233c8F271f554C2d0",
       "yToXHeartbeat": "86400",
       "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+    },
+    "rateFeedGuard": {
+      "$comment": "Pair identity + plausibility band for the rate feed named by `param`. Enforced pre-deploy by RateFeedGuard and asserted in the fork tests. description() verified live on-chain 2026-07-30.",
+      "param": "yToXFeed",
+      "description": "RETH / ETH",
+      "minRate1e18": "900000000000000000",
+      "maxRate1e18": "1500000000000000000"
     }
   }
 }

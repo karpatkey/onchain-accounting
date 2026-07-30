@@ -4,12 +4,19 @@ pragma solidity ^0.8;
 import {CrossRateCustomPriceFeed} from "src/prices/protocols/CrossRateCustomPriceFeed.sol";
 
 /// @title osETH Cross-Rate Custom Price Oracle
-/// @notice Returns the USD price of osETH as `(osETH/ETH) × (ETH/USD)` from two Chainlink-ABI feeds.
+/// @notice Returns the USD price of osETH as `(osETH/ETH) × (ETH/USD)`, the rate from a Chainlink-ABI feed and the
+///         `ETH/USD` leg from the NAV's own selector (ADR 0019).
 /// @dev Thin {CrossRateCustomPriceFeed} subclass — the cross-rate compose/staleness math lives in the base; this
-///      only pins osETH's feeds and gives the deployment its own named contract. This is the **redundancy** feed for
-///      osETH: registered alongside the primary osToken feed (StakeWise `osTokenVaultController` rate × ETH/USD) and
-///      independent of it — the `osETH/ETH` rate here comes from a Redstone Classic Push market feed, not from
-///      StakeWise's on-chain rate — so `Prices`'s freshest-wins selector has a genuinely separate source to fall back to.
+///      only pins osETH's feeds and gives the deployment its own named contract.
+///
+///      **Registered as a `monitorFeed`, NOT as a price feed.** It never prices the NAV: monitors are read only to
+///      compute `divergenceBps` against the primary osToken feed (StakeWise `osTokenVaultController` rate), which
+///      carries a 250 bps divergence tolerance. PR #151 replaced freshest-wins redundancy for this instance with the
+///      primary-plus-monitors model, so this feed is not a fallback source and cannot win a selection.
+///
+///      The `osETH/ETH` rate leg is the Redstone Classic Push osETH/ETH **market** feed (`0x66ac817f…`, verified at
+///      99.34% of the StakeWise `osTokenVaultController` rate) — independent of the primary in both source and
+///      methodology, so unlike ezETH's monitor this one can register a market depeg.
 /// @author KPK
 /* solhint-disable contract-name-camelcase */
 contract osETH_CrossRateCustomPriceFeed is CrossRateCustomPriceFeed {

@@ -30,6 +30,13 @@
       "yToXFeed": "0x86392dC19c0b719886221c78AB11eb8Cf5c52812",
       "yToXHeartbeat": "86400",
       "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+    },
+    "rateFeedGuard": {
+      "$comment": "Pair identity + plausibility band for the rate feed named by `param`. Enforced pre-deploy by RateFeedGuard and asserted in the fork tests. description() verified live on-chain 2026-07-30.",
+      "param": "yToXFeed",
+      "description": "STETH / ETH",
+      "minRate1e18": "900000000000000000",
+      "maxRate1e18": "1500000000000000000"
     }
   },
   "lsETH": {
@@ -40,6 +47,13 @@
       "yToXFeed": "0xE858728eB31a25C4AcCcE17d01B68dCFC3A0ED2C",
       "yToXHeartbeat": "86400",
       "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+    },
+    "rateFeedGuard": {
+      "$comment": "Pair identity + plausibility band for the rate feed named by `param`. Enforced pre-deploy by RateFeedGuard and asserted in the fork tests. description() verified live on-chain 2026-07-30.",
+      "param": "yToXFeed",
+      "description": "LsETH / ETH Exchange Rate",
+      "minRate1e18": "900000000000000000",
+      "maxRate1e18": "1500000000000000000"
     }
   },
   "rETH": {
@@ -140,6 +154,13 @@
       "yToXFeed": "0x703118C4CbccCBF2AB31913e0f8075fbbb15f563",
       "yToXHeartbeat": "86400",
       "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+    },
+    "rateFeedGuard": {
+      "$comment": "Pair identity + plausibility band for the rate feed named by `param`. Enforced pre-deploy by RateFeedGuard and asserted in the fork tests. description() verified live on-chain 2026-07-30.",
+      "param": "yToXFeed",
+      "description": "OETH / ETH",
+      "minRate1e18": "900000000000000000",
+      "maxRate1e18": "1500000000000000000"
     }
   },
   "LDO": {
@@ -150,6 +171,13 @@
       "ldoToEthChainlinkAddress": "0x4e844125952D32AcdF339BE976c98E22F6F318dB",
       "ldoToEthChainlinkHeartbeat": "86400",
       "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+    },
+    "rateFeedGuard": {
+      "$comment": "Pair identity + plausibility band for the rate feed named by `param`. Enforced pre-deploy by RateFeedGuard and asserted in the fork tests. description() verified live on-chain 2026-07-30.",
+      "param": "ldoToEthChainlinkAddress",
+      "description": "LDO / ETH",
+      "minRate1e18": "10000000000000",
+      "maxRate1e18": "10000000000000000"
     }
   },
   "ankrETH": {
@@ -186,6 +214,13 @@
       "yToXFeed": "0x701e83Bd1B84D02c10587f0De9Dfad5A22419DF7",
       "yToXHeartbeat": "86400",
       "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+    },
+    "rateFeedGuard": {
+      "$comment": "Pair identity + plausibility band for the rate feed named by `param`. Enforced pre-deploy by RateFeedGuard and asserted in the fork tests. description() verified live on-chain 2026-07-30.",
+      "param": "yToXFeed",
+      "description": "RedStone Price Feed for ezETH_FUNDAMENTAL",
+      "minRate1e18": "900000000000000000",
+      "maxRate1e18": "1500000000000000000"
     }
   },
   "ETHxCrossRate": {
@@ -196,6 +231,13 @@
       "yToXFeed": "0xC5f8c4aB091Be1A899214c0C3636ca33DcA0C547",
       "yToXHeartbeat": "86400",
       "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+    },
+    "rateFeedGuard": {
+      "$comment": "Pair identity + plausibility band for the rate feed named by `param`. Enforced pre-deploy by RateFeedGuard and asserted in the fork tests. description() verified live on-chain 2026-07-30.",
+      "param": "yToXFeed",
+      "description": "ETHx / ETH",
+      "minRate1e18": "900000000000000000",
+      "maxRate1e18": "1500000000000000000"
     }
   },
   "osETHCrossRate": {
@@ -206,6 +248,13 @@
       "yToXFeed": "0x66ac817f997Efd114EDFcccdce99F3268557B32C",
       "yToXHeartbeat": "86400",
       "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+    },
+    "rateFeedGuard": {
+      "$comment": "Pair identity + plausibility band for the rate feed named by `param`. Enforced pre-deploy by RateFeedGuard and asserted in the fork tests. description() verified live on-chain 2026-07-30.",
+      "param": "yToXFeed",
+      "description": "RedStone Price Feed for osETH/ETH",
+      "minRate1e18": "900000000000000000",
+      "maxRate1e18": "1500000000000000000"
     }
   },
   "rETHCrossRate": {
@@ -216,6 +265,13 @@
       "yToXFeed": "0x536218f9E9Eb48863970252233c8F271f554C2d0",
       "yToXHeartbeat": "86400",
       "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+    },
+    "rateFeedGuard": {
+      "$comment": "Pair identity + plausibility band for the rate feed named by `param`. Enforced pre-deploy by RateFeedGuard and asserted in the fork tests. description() verified live on-chain 2026-07-30.",
+      "param": "yToXFeed",
+      "description": "RETH / ETH",
+      "minRate1e18": "900000000000000000",
+      "maxRate1e18": "1500000000000000000"
     }
   }
 }

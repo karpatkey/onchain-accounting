@@ -71,9 +71,8 @@ contract lsETH_CustomPriceFeedForkTest is TestEnvConfigurator {
         configuredBase = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, CHAIN_ID, FEED_NAME, "baseAsset"));
         configuredHeartbeat = vm.parseUint(ConfigReader.readPriceFeedParam(vm, CHAIN_ID, FEED_NAME, "yToXHeartbeat"));
 
-        oracle = new lsETH_CustomPriceFeed(
-            configuredAsset, configuredRateFeed, configuredHeartbeat, NAV, configuredBase
-        );
+        oracle =
+            new lsETH_CustomPriceFeed(configuredAsset, configuredRateFeed, configuredHeartbeat, NAV, configuredBase);
     }
 
     /// @notice The configured rate-feed address really is the lsETH/ETH pair, and its rate is plausible.

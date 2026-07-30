@@ -55,6 +55,19 @@ if [[ -n "$DIRTY" ]]; then
   exit 2
 fi
 
+# --- port rail ---------------------------------------------------------------
+# The readiness probe below is `cast block-number` against $RPC, which cannot tell OUR anvil from
+# someone else's. If the port is already taken, `anvil --port` fails to bind and dies, the probe
+# succeeds anyway against the incumbent, and the whole rehearsal then deploys into — and reports
+# assertions about — a node it does not own. Observed: a 5-chain local dev stack holding 8546-8550,
+# including a mainnet fork on the default port. So refuse a busy port outright.
+if ss -ltn 2>/dev/null | grep -qE "127\.0\.0\.1:${PORT}\b|0\.0\.0\.0:${PORT}\b|:::${PORT}\b"; then
+  echo "REFUSING: port ${PORT} is already listening — something else owns it:"
+  ss -ltnp 2>/dev/null | grep -E ":${PORT}\b" | sed 's/^/  /'
+  echo "Pick a free port with ANVIL_PORT=<port> $0 $*"
+  exit 2
+fi
+
 mkdir -p "$WORK"
 : > "$WORK/steps.tsv"
 echo -e "step\tseconds\tgas\tstatus" >> "$WORK/steps.tsv"
@@ -124,10 +137,14 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 for _ in $(seq 1 60); do
+  # Liveness of OUR pid, checked first: a dead $ANVIL_PID with a healthy $RPC means the port belongs
+  # to someone else, which is the one outcome that must never read as success.
+  kill -0 "$ANVIL_PID" 2>/dev/null || { echo "our anvil (pid $ANVIL_PID) exited; see $WORK/anvil.log"; tail -5 "$WORK/anvil.log" | sed 's/^/  /'; exit 1; }
   cast block-number --rpc-url "$RPC" >/dev/null 2>&1 && break
   sleep 1
 done
 cast block-number --rpc-url "$RPC" >/dev/null 2>&1 || { echo "anvil never came up; see $WORK/anvil.log"; exit 1; }
+kill -0 "$ANVIL_PID" 2>/dev/null || { echo "our anvil died but $RPC still answers — the port is not ours"; exit 1; }
 echo "anvil up at $RPC, fork block $(cast block-number --rpc-url "$RPC")"
 
 cast rpc anvil_setBalance "$DEPLOYER" 0x21e19e0c9bab2400000 --rpc-url "$RPC" >/dev/null
@@ -254,6 +271,19 @@ if [[ -n "$NEW_PROXY" ]]; then
 fi
 
 cp "script/config/deployments/${CHAIN_ID}.json" "$WORK/deployments-${CHAIN_ID}.result.json"
+
+# --- optional post-hook ------------------------------------------------------
+# The NAV comparison against `snapshots/pre/` needs a window that exists ONLY here: the fork still
+# running AND the deployment record still holding the fork's addresses. `cleanup` below closes both
+# (it kills anvil and `git checkout --`s the record), so anything wanting to read the rehearsed stack
+# has to run at this point. $REHEARSAL_HOOK is invoked with (chainId, rpc); its exit status is
+# reported but deliberately does NOT fail the rehearsal, since the sequence itself already passed.
+if [[ -n "${REHEARSAL_HOOK:-}" ]]; then
+  echo
+  echo "=== post-hook: $REHEARSAL_HOOK ==="
+  "$REHEARSAL_HOOK" "$CHAIN_ID" "$RPC" || echo "  post-hook exited $? (does not fail the rehearsal)"
+fi
+
 cleanup
 
 echo

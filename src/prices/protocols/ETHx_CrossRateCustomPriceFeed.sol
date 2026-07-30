@@ -15,25 +15,27 @@ import {CrossRateCustomPriceFeed} from "src/prices/protocols/CrossRateCustomPric
 ///      primary-plus-monitors model, so this feed is not a fallback source and cannot win a selection.
 ///
 ///      **The `ETHx/ETH` rate leg is CHAINLINK, not RedStone.** It was migrated on 2026-07-27 from the Redstone
-///      Classic Push ETHx/ETH feed to Chainlink's ETHx/ETH feed (`0xC499ec76…`, `description() == "ETHx / ETH"`,
-///      18-dec) because RedStone is sunsetting all its ETHx feeds. There is no Chainlink ETHx/USD feed, so the
-///      ETH-quoted cross-rate is the only Chainlink route. The 18 decimals need no config change — the base captures
-///      `10 ** RATE_FEED.decimals()` in its constructor, so the rate decimals cancel into `NAV_DECIMALS`. The
-///      methodology is a genuine market quote, independent of Stader's on-chain rate.
+///      Classic Push ETHx/ETH feed to Chainlink because RedStone is sunsetting all its ETHx feeds. There is no
+///      Chainlink ETHx/USD feed, so the ETH-quoted cross-rate is the only Chainlink route. The 18 decimals need no
+///      config change — the base captures `10 ** RATE_FEED.decimals()` in its constructor, so the rate decimals cancel
+///      into `NAV_DECIMALS`. A genuine market quote, independent of Stader's on-chain rate in source and methodology,
+///      so this monitor CAN register a market depeg.
 ///
-///      **⚠️ OPEN BLOCKER — this feed cannot currently be CONSTRUCTED.** The configured `0xC499ec76…` is the raw
-///      access-controlled aggregator, not its `EACAggregatorProxy`. Chainlink's `SimpleReadAccessController` grants
-///      access when `_user == tx.origin`, so a direct EOA `eth_call` succeeds (which is why `cast call` and a config
-///      review both pass) while **every contract is denied**: measured on mainnet, `checkEnabled() == true` and
+///      **The configured feed MUST be the `EACAggregatorProxy` `0xC5f8c4aB…`, never the aggregator it wraps.** Until
+///      2026-07-30 the config pointed at `0xC499ec76…`, the raw access-controlled aggregator underneath that proxy,
+///      which made this feed **impossible to construct**. Chainlink's `SimpleReadAccessController` grants access when
+///      `_user == tx.origin`, so a direct EOA `eth_call` succeeds — which is why both `cast call` and a config review
+///      passed it — while **every contract is denied**: measured on mainnet, `checkEnabled() == true` and
 ///      `hasAccess(<contract>, "") == false`. {OracleArgumentChecks-assertChainlinkOracle} probes `latestRoundData()`
-///      in a `try`, the call is denied, and this constructor reverts `NotChainlinkOracle()`. So the monitor is not
-///      merely blind — it cannot be deployed, and `_deployEthxCrossRate()` (`03_DeployPriceFeeds.s.sol:211` → `:639`)
-///      reverts during `03_DeployPriceFeeds` simulation. That is the NAMED deploy function, not the generic
-///      `_deployCrossRateMonitor` at `:598` — ETHx does not use the generic helper.
-///      "Right pair" and "readable on-chain" are independent properties: this feed's
-///      `description()` is correctly `"ETHx / ETH"`, so a description-based pair assertion would NOT have caught it.
-///      The fix is a config change (point at the proxy whose `aggregator()` returns `0xC499ec76…`, sourced not
-///      guessed) and is tracked separately — see `PRICE_ADAPTERS.md` §7 for the four required proof checks.
+///      in a `try`, was denied, and this constructor reverted `NotChainlinkOracle()`, so `_deployEthxCrossRate()`
+///      (`03_DeployPriceFeeds.s.sol:211` → `:639` — the NAMED deploy function; ETHx does not use the generic
+///      `_deployCrossRateMonitor` at `:598`) reverted during simulation, leaving phantom `customPriceFeeds` addresses
+///      in `deployments/1.json` because `vm.writeJson` side effects are not rolled back.
+///
+///      **The durable lesson: "right pair" and "readable on-chain" are independent properties.** The bad address's
+///      `description()` was correctly `"ETHx / ETH"`, so a description-based pair assertion would NOT have caught it —
+///      only construction from a contract context did. `test/prices/protocols/fork/ETHx_RateFeedProxy.fork.t.sol`
+///      guards the config address and pins the regression; see `PRICE_ADAPTERS.md` §7 for the four proof checks.
 /// @author KPK
 /* solhint-disable contract-name-camelcase */
 contract ETHx_CrossRateCustomPriceFeed is CrossRateCustomPriceFeed {

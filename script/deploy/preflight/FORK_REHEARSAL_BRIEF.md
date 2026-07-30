@@ -295,6 +295,66 @@ under `/tmp/nav-rehearsal-<id>/config-after/`.
 
 **Never blanket-delete `broadcast/`** — it holds committed records from the real PR #141 migrations.
 
+### anvil PANICS on an upstream state-read failure — learn the signature
+
+The dangerous part is that the **symptom is a wall of misleading errors, not the real cause**. anvil dies,
+and every subsequent step then reports a connection failure against a node that no longer exists, while
+the post-conditions cheerfully assert nonsense about it. Two of this wave's rehearsal attempts died this
+way and the first read as a deploy failure.
+
+The real cause looks like this, in `$WORK/anvil.log` — **and nowhere else**:
+
+```
+The application panicked (crashed).
+Message:  pre-execution changes failed: Internal(Other(Database(GetStorage(0x…, 8133,
+          error sending request for url (https://eth-mainnet.g.alchemy.com/v2/…)
+          - Error #2: connection reset))))
+          … in anvil::eth::backend::mem::Backend<N>::do_mine_block
+```
+
+The downstream noise looks like this, and means only "anvil is gone":
+
+```
+Error: Failed to send transaction after 4 attempts … (http://127.0.0.1:<port>/)
+  - Error #2: Connection refused (os error 111)
+```
+
+**So: whenever a step fails with `Connection refused` on the loopback RPC, read `anvil.log` FIRST.** Do
+not debug the deploy script; it is almost certainly a victim. #214's pid check catches the startup variant
+immediately, but a mid-run panic can only be recognised, not prevented.
+
+A rehearsal is a long sequence of state-heavy calls against a shared, rate-limited endpoint, so one reset
+is likely. Mitigations, all in #214 and all overridable: **raise `--retries` and `--timeout`** (plus
+`--fork-retry-backoff`), and **pin the fork block** — foundry caches fork state per `(chain, block)` under
+`~/.foundry/cache/rpc`, so a pinned retry re-reads far fewer slots upstream, which is the difference
+between a retry that survives a flaky endpoint and one that trips it again.
+
+### Verify the restore by HASH — do not assume it, even when nothing looks wrong
+
+`cleanup` restoring `script/config` is the single most consequential thing this script does, because
+`deployments/<id>.json` is the only record of what production runs. An earlier attempt left **eighteen
+phantom `customPriceFeeds` addresses** in it (§5's step-1.1 trap), so the cost of a missed restore is
+concrete, not theoretical.
+
+```bash
+git status --porcelain --untracked-files=all              # must be empty (untracked included)
+sha256sum script/config/deployments/1.json
+git show origin/main:script/config/deployments/1.json | sha256sum   # must match
+```
+
+**A near-miss worth recording in plain terms.** During one attempt this brief's author edited
+`rehearse_fork.sh` *while it was still executing*. Bash reads a script incrementally by **byte offset**,
+so inserting lines ahead of the interpreter can make it misread the remainder — including the `cleanup`
+trap that performs this restore. It happened to survive; the restore was verified **by hash rather than by
+assumption**, which is the only reason "it survived" is a known fact rather than a hopeful one.
+
+Two rules out of that, in order of importance:
+
+1. **Never edit a shell script while a run of it is in flight.** Copy it, or wait.
+2. **Verify the restore by hash every time**, precisely because a corrupted-cleanup failure would leave
+   the tree looking normal at a glance. Checking only when something looks wrong is checking exactly when
+   the check is least needed.
+
 ### Step order — this is authoritative
 
 ```
@@ -302,10 +362,47 @@ under `/tmp/nav-rehearsal-<id>/config-after/`.
 1.2  01_2_DeployNAVImplementation    libs + impl             PERSIST_DEPLOYMENTS=1
 1.3  02_2_DeployNAVProxy             new proxy + ERC20Default PERSIST_DEPLOYMENTS=1
 1.4  03_DeployPriceFeeds             40 custom feeds          <- BEFORE RegisterAssets
-1.5  RegisterAssets                  assets + feeds          FOUNDRY_PROFILE=slow on mainnet
+1.5  RegisterAssets                  assets + feeds          FOUNDRY_PROFILE=slow  <- REQUIRED, see below
 1.6  04_DeployBalanceAdapters        adapters + assistants
 1.7  06_Configure                    register + reconcile
 ```
+
+### `FOUNDRY_PROFILE=slow` on step 1.5 is a REQUIREMENT, not a throughput preference
+
+**`slow` does not mean "go slower to be safe". It raises `gas_limit` AND `memory_limit` from the default
+1 GiB to 16 GiB** (`foundry.toml:108-117`). `RegisterAssets` needs that because it registers the whole
+asset set inside **one call frame**, and EVM memory-expansion cost is **quadratic** — mainnet's 43 assets
+plan 86 actions and the frame simply outgrows a 1 GiB budget.
+
+Without it, measured on mainnet 2026-07-30: **`EvmError: MemoryOOG` after wiring 19 of 43 assets**, with
+1 asset registered. With it: 79s, 43/43.
+
+> **The hazard is the misreading, not the flag.** Someone who reads `slow` as a rate limit will drop it
+> to save time on a chain that "does not need throttling", and get a failure that looks like a contract
+> bug — an EVM-level error deep in a script that worked yesterday. Two of this wave's four rehearsal
+> failures were misattributed exactly this way before being run down.
+
+**This was NOT knowledge lost to session notes — and that is the uncomfortable part.** The requirement is
+in `REDEPLOY_RUNBOOK.md` **twice**, since 2026-07-27: at §1.5's command line, in the sentence
+"`FOUNDRY_PROFILE=slow` (16 GiB) is required on mainnet — 43 assets otherwise `MemoryOOG`", and again in
+the troubleshooting table. It was also in this brief's own step table above. It still cost a run, because
+**`rehearse_fork.sh` — the automation that claims to run the runbook's sequence — did not implement it**
+and ran every step on the default profile.
+
+So the transferable lesson is not "write it down". It was written down three times. It is:
+
+> **A documented requirement that the automation does not implement is more dangerous than an
+> undocumented one**, because everyone reasonably assumes the script runs the procedure. Documentation
+> and automation drifting apart is invisible until the exact conditions that need the requirement occur.
+
+Two things close that gap, and only the first is done: the script now applies the profile per step
+(#214), and — still worth doing — a step could **assert the profile it is running under** rather than
+trusting the caller, so the drift cannot recur silently.
+
+Note also **why it stayed hidden until now**: with the ETHx blocker in place, `03` never produced the
+full feed set, so `RegisterAssets` skipped most assets and never built a frame big enough to trip the
+limit. **Fixing one blocker made the next one reachable for the first time** — expect that shape, and do
+not read a newly-surfaced failure as a regression.
 
 Four traps that have each already cost a run:
 
@@ -478,7 +575,11 @@ on why an EOA `eth_call` could never have caught this.
 Documented in full at §5's step-1.1 trap, which is now written as a **post-failure recovery
 requirement**: after any failed `03`, re-run 1.1 before retrying, unconditionally.
 
-### Unresolved — re-measure deliberately on the re-run
+### Unresolved at the time — SINCE RESOLVED, see §10.3
+
+> **It was an instrument defect, not a chain fact:** `snapshot_production.py` read `latest - 3`, and on a
+> fork those three blocks hold the tail of the deploy. Fixed in #221. Kept here because the *reasoning*
+> that cracked it is the reusable part.
 
 Two instruments disagreed about the same fork state. The rehearsal's own assertions read
 `getAdapterCount()` = **27** with the meta loop summing **66/66** (PASS); `snapshot_production.py`,
@@ -491,7 +592,7 @@ before it could be probed, and the run was invalid downstream of `03` anyway.
 Resolve it on the re-run with the fork held open via `$REHEARSAL_HOOK` — do not let it be rationalised
 away, and do not trust either count until they agree.
 
-### The §4 NAV comparison did NOT run
+### The §4 NAV comparison did NOT run — IT HAS SINCE RUN, and PASSED. See §10.1
 
 Only 1 of 43 assets registered, so there is no valid pre-versus-rehearsed diff. **The redeploy's
 central question — is this the same portfolio? — is still unanswered**, and it is the first priority of

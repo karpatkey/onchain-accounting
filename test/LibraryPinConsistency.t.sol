@@ -24,14 +24,35 @@ import {ConfigReader} from "script/utils/ConfigReader.sol";
 contract LibraryPinConsistencyTest is Test {
     address internal constant CANONICAL_CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
-    function test_priceFeedLib_pinMatchesCurrentBytecode() public pure {
+    /// @dev These assertions are only meaningful under a profile that actually carries foundry.toml's
+    ///      `libraries` pins. `dev` and `lite` deliberately clear that array (forge auto-deploys and
+    ///      auto-links the two libraries instead) and `lite` also drops the optimizer, so their library
+    ///      bytecode CANNOT match the pins — three red tests that invite a pin regeneration which would
+    ///      break every default-profile build and deploy.
+    ///
+    ///      Deliberately an ALLOWLIST of pin-bearing profiles rather than a denylist of pin-clearing
+    ///      ones: an unrecognised profile skips (safe, loses coverage) instead of going red (unsafe,
+    ///      invites the repin). `default` is CI's unit job; `slow` overrides only threads/gas/memory and
+    ///      inherits the pins, so both must assert. Add any future pin-bearing profile here.
+    ///
+    ///      Note this cannot key on the observable condition — "is NAVCalculator linked to the pin?" —
+    ///      because that is exactly what test_navCalculator_creationCodeLinkedAgainstPins asserts, so
+    ///      such a check would make that test skip itself in precisely the case it exists to catch.
+    modifier onlyPinnedProfile() {
+        bytes32 profile = keccak256(bytes(vm.envOr("FOUNDRY_PROFILE", string("default"))));
+        bool pinBearing = profile == keccak256("default") || profile == keccak256("slow") || profile == keccak256("");
+        vm.skip(!pinBearing);
+        _;
+    }
+
+    function test_priceFeedLib_pinMatchesCurrentBytecode() public onlyPinnedProfile {
         bytes32 salt = ConfigReader.computeSalt("PriceFeedLib", 1);
         address computed =
             vm.computeCreate2Address(salt, keccak256(type(PriceFeedLib).creationCode), CANONICAL_CREATE2_DEPLOYER);
         assertEq(computed, LibraryPins.PRICE_FEED_LIB, "PriceFeedLib pin drift: regenerate LibraryPins + foundry.toml");
     }
 
-    function test_navRegistryLib_pinMatchesCurrentBytecode() public pure {
+    function test_navRegistryLib_pinMatchesCurrentBytecode() public onlyPinnedProfile {
         bytes32 salt = ConfigReader.computeSalt("NavRegistryLib", 1);
         address computed =
             vm.computeCreate2Address(salt, keccak256(type(NAVRegistryLib).creationCode), CANONICAL_CREATE2_DEPLOYER);
@@ -45,7 +66,7 @@ contract LibraryPinConsistencyTest is Test {
     ///         catches a foundry.toml pin edit that drifts from LibraryPins — which the per-library CREATE2
     ///         checks cannot, since they compare the computed address only against LibraryPins — and confirms
     ///         NAVCalculator is actually wired to the pinned libraries.
-    function test_navCalculator_creationCodeLinkedAgainstPins() public pure {
+    function test_navCalculator_creationCodeLinkedAgainstPins() public onlyPinnedProfile {
         bytes memory code = type(NAVCalculator).creationCode;
         assertTrue(
             LibraryPins.contains(code, LibraryPins.PRICE_FEED_LIB),

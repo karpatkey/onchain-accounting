@@ -695,8 +695,7 @@ library PriceFeedLib {
             _buildPriceFeedCache(priceOracles, monitorFeeds, assetPricing, assetsWithPositions, sequencerDown);
         nav.stalePriceAssets = _buildStaleAssets(assetIndex, registeredAssets, priceFeeds);
         nav.irregularPriceAssets = _buildIrregularAssets(assetIndex, registeredAssets, priceFeeds);
-        nav.monitorsUnhealthyPriceAssets =
-            _buildMonitorsUnhealthyAssets(assetIndex, registeredAssets, priceFeeds);
+        nav.monitorsUnhealthyPriceAssets = _buildMonitorsUnhealthyAssets(assetIndex, registeredAssets, priceFeeds);
 
         nav.value = _sumPositionValues(assetIndex, registeredAssets, allPositions, priceFeeds, quoteInfo);
     }
@@ -869,8 +868,7 @@ library PriceFeedLib {
             _buildPriceFeedCache(priceOracles, monitorFeeds, assetPricing, assetsWithPositions, sequencerDown);
         nav.stalePriceAssets = _buildStaleAssets(assetIndex, registeredAssets, priceFeeds);
         nav.irregularPriceAssets = _buildIrregularAssets(assetIndex, registeredAssets, priceFeeds);
-        nav.monitorsUnhealthyPriceAssets =
-            _buildMonitorsUnhealthyAssets(assetIndex, registeredAssets, priceFeeds);
+        nav.monitorsUnhealthyPriceAssets = _buildMonitorsUnhealthyAssets(assetIndex, registeredAssets, priceFeeds);
 
         (positions, nav.value) =
             _enrichAll(allPositions, priceFeeds, quoteInfo, quoteAssetIrregular, assetIndex, registeredAssets);
@@ -1317,8 +1315,7 @@ library PriceFeedLib {
                 // Monitors exist, none answered, and the primary is usable — so the divergence check was skipped for
                 // want of monitor data. The primary-usable conjunct is what keeps this disjoint from
                 // `stalePriceAssets`: when the primary is stale the count is also 0, but the monitors are not why.
-                monitorsUnhealthy =
-                    healthyMonitors == 0 && !stale && !sequencerDown && monitorFeeds[asset].length > 0;
+                monitorsUnhealthy = healthyMonitors == 0 && !stale && !sequencerDown && monitorFeeds[asset].length > 0;
             }
             priceFeeds[i] = PriceFeedCache({
                 asset: asset,

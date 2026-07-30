@@ -305,7 +305,10 @@ contract DivergenceMonitorTest is SuperTest {
         vm.stopPrank();
 
         INAVCalculator.NAV memory r = _navWithWethPosition();
-        assertTrue(_contains(r.monitorsUnhealthyPriceAssets, address(weth)), "weth must be listed: its only monitor is unreadable");
+        assertTrue(
+            _contains(r.monitorsUnhealthyPriceAssets, address(weth)),
+            "weth must be listed: its only monitor is unreadable"
+        );
         assertFalse(_contains(r.irregularPriceAssets, address(weth)), "must NOT be irregular: the check never ran");
         // The monitor IS configured — so this is not the 'no monitors' case.
         assertEq(nav.getMonitorFeedCount(address(weth)), 1, "monitor is configured, just unreadable");
@@ -390,7 +393,8 @@ contract DivergenceMonitorTest is SuperTest {
         vm.stopPrank();
         weth.mint(address(safe), 1 ether);
 
-        INAVCalculator.PartialNAV memory p = nav.getAccountNavForAdapters(address(safe), address(0), nav.getAllAdapters());
+        INAVCalculator.PartialNAV memory p =
+            nav.getAccountNavForAdapters(address(safe), address(0), nav.getAllAdapters());
         assertTrue(
             _contains(p.monitorsUnhealthyPriceAssets, address(weth)),
             "PartialNAV must carry monitorsUnhealthyPriceAssets"

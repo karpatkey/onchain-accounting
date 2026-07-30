@@ -150,17 +150,52 @@ contract AaveV3SafetyModuleBalanceAdapterForkTest is BalanceAdapterTestBase {
 
     // ─── Reward freeze behaviour (only when distributionEnd is in the future) ─
 
-    /// @dev `getTotalRewardsBalance` stops growing once `distributionEnd` has passed. We want to assert that,
-    ///      but the test only makes sense when `distributionEnd` is still in the future at FORK_BLOCK; if it's
-    ///      already past (which can happen as the SM ages), the test is a no-op.
+    /// @dev `getTotalRewardsBalance` stops growing once `distributionEnd` has passed, and this asserts that at
+    ///      every pinned block rather than only at some of them.
+    ///
+    ///      It used to open with `if (distributionEnd <= block.timestamp) return;`, on the stated grounds that
+    ///      the property "only makes sense when distributionEnd is still in the future". That guard has been
+    ///      firing: at FORK_BLOCK stkGHO's `distributionEnd` is 1749123599 (2025-06-05) against a block
+    ///      timestamp of 1777637363 (2026-04-29), so the single assertion below was never reached and the
+    ///      reward-freeze behaviour of a mainnet-deployed adapter had no coverage at all. A pinned test that
+    ///      degrades to a no-op as the chain ages is indistinguishable from a passing one, which is exactly how
+    ///      that went unnoticed.
+    ///
+    ///      The premise was also wrong: the property holds on BOTH sides of `distributionEnd`, so no skip is
+    ///      needed. Anchor the first read at `max(distributionEnd, block.timestamp)` — never warping backwards,
+    ///      which on a fork can push `block.timestamp` behind a stored `lastUpdateTimestamp` and underflow
+    ///      Aave's accrual arithmetic — and the second 100 days later. Both reads are then strictly at or after
+    ///      the end of distribution, where the balance must be frozen.
+    ///      **Scope, stated rather than implied.** At this pinned block the fixture's unclaimed AAVE reward
+    ///      balance is 0 — measured on mainnet: the holder has 9,648e18 stkGHO but `getTotalRewardsBalance`
+    ///      returns 0, because the distribution ended in June 2025 and the rewards were claimed. So this cannot
+    ///      demonstrate accrual STOPPING; there is nothing left to stop. What it does check is the weaker but
+    ///      still real property that the adapter does not INVENT reward accrual past distribution end, which is
+    ///      what a regression in the accrual read would look like.
+    ///
+    ///      An earlier revision of this test asserted `atEnd > 0` to guard against exactly the vacuity of
+    ///      `0 == 0`. That assertion was false against the chain and CI caught it. The honest guard is not a
+    ///      claim about rewards the fixture does not have, but the two facts that make the zero MEANINGFUL: the
+    ///      holder really does hold a stake (so the adapter is reading a live position, not an empty account),
+    ///      and the distribution really has ended (so zero is the expected answer rather than a broken read).
+    ///      If either stops holding, this test's premise has changed and it should be re-derived, not patched.
     function test_rewards_freezeAfterDistributionEnd() public {
         uint256 distributionEnd = STK_GHO.distributionEnd();
-        if (distributionEnd <= block.timestamp) return; // distribution already concluded; nothing to test
 
-        vm.warp(distributionEnd);
+        // The two facts that make a zero reward balance meaningful rather than vacuous.
+        assertGt(STK_GHO.balanceOf(STK_GHO_HOLDER), 0, "fixture must hold a live stkGHO stake");
+        assertLe(distributionEnd, block.timestamp, "premise: distribution has already ended at this pin");
+
+        // No ternary: the assertion above already pins `distributionEnd <= block.timestamp`, so the other
+        // branch was provably dead. If that premise ever stops holding, the assertion fails loudly and this
+        // test is re-derived rather than silently taking a different path. Dead branch removed in review.
+        uint256 anchor = block.timestamp;
+
+        vm.warp(anchor);
         (uint256 atEnd,) = adapter.getAdapterBalanceForAsset(STK_GHO_HOLDER, AAVE);
-        vm.warp(distributionEnd + 100 days);
+        vm.warp(anchor + 100 days);
         (uint256 afterEnd,) = adapter.getAdapterBalanceForAsset(STK_GHO_HOLDER, AAVE);
+
         assertEq(afterEnd, atEnd, "no further reward accrual past distribution end");
     }
 

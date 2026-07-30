@@ -32,6 +32,7 @@ Onchain accounting infrastructure for portfolio NAV: **balances** (per-protocol 
 | Add a new price feed | `docs/howto/add-price-feed.md`, then `src/prices/PRICE_ADAPTERS.md` for interface + existing feeds |
 | Add a new chain | `docs/howto/add-chain.md`, then `script/config/CONFIG_GUIDE.md` and `script/deploy/README.md` |
 | Refresh integration-test fork blocks or add a test account | `docs/howto/refresh-integration-test-blocks.md` (single source of truth: `test/integration/accounts.json`) |
+| Read a NAV too large for one `eth_call` | `docs/howto/read-nav-in-slices.md` (`getAccountNavForAdapters`; the caller contract — same block, cover `getAllAdapters()` once, **union the health flags**) |
 | Add a new bridge adapter | `src/bridge/BRIDGE_ADAPTERS.md` (full design + how-to in one file) |
 | Change deployment scripts | `script/DEPLOYMENT_SUMMARY.md` and `script/deploy/README.md` |
 | Understand why a design is the way it is | `docs/decisions/` (numbered ADRs) |

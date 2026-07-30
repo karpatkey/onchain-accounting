@@ -226,7 +226,8 @@ def main() -> int:
     args = ap.parse_args()
     c.load_env()
 
-    chains = args.chains or c.deployed_chain_ids()
+    chains, scope_src = c.resolve_chains(args.chains)
+    print(f"scope: {len(chains)} chain(s) from {scope_src}")
     report, n_err, n_warn = {}, 0, 0
     totals = Counter()
 

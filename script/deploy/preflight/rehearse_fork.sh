@@ -6,8 +6,9 @@
 # `RegisterAssets` MUST come after `03`: it resolves each Custom feed from
 # `deployments/<id>.json .customPriceFeeds.<name>` (RegisterAssets.s.sol:19), so run earlier it logs
 # `[skip] primary feed unresolved (deploy it first)` and skipped 20 of mainnet's 43 assets when this
-# rehearsal first ran in the original plan's order. `01` is deliberately NOT run — it has no library
-# pin assertions (unlike 01_2) and also deploys a BridgeEscrow implementation nobody wants.
+# rehearsal first ran in the original plan's order. `01` is deliberately NOT run: it deploys a
+# BridgeEscrow implementation nobody wants. (It no longer lacks the library pin assertions — those were
+# added to it in the PR that supersedes #188 — so that is no longer a reason to skip it.)
 #
 # Asserts the things that are easy to get silently wrong:
 #   * `initialize()` minted a FRESH ERC20Default (a new proxy is the entire reason for this deploy)
@@ -185,7 +186,7 @@ run_step() {
 
 FAILED=0
 # THE RUNBOOK ORDER. `03` before `RegisterAssets` is load-bearing, not cosmetic — see the header.
-# `01` is intentionally absent (no pin assertions, plus an unwanted BridgeEscrow impl).
+# `01` is intentionally absent (it deploys an unwanted BridgeEscrow impl; it now HAS the pin assertions).
 run_step 01_2_DeployNAVImplementation script/deploy/01_2_DeployNAVImplementation.s.sol || FAILED=1
 run_step 02_2_DeployNAVProxy        script/deploy/02_2_DeployNAVProxy.s.sol        || FAILED=1
 run_step 03_DeployPriceFeeds        script/deploy/03_DeployPriceFeeds.s.sol        || FAILED=1

@@ -1,0 +1,32 @@
+{
+  "note": "THE authoritative chain scope for the from-scratch NAV redeploy. Hand-maintained and committed; no tool writes this file. Every other candidate for this role is derived state that something in the deploy rewrites: `deployments/<id>.json .NAVCalculatorProxy` is blanked by runbook step 1.1, and `snapshots/pre/index.json` is rebuilt from whichever chains the last snapshot_production.py run covered. A scope that shrinks silently reintroduces the exact defect this tooling exists to prevent, so the scope is declared, not inferred. Adding or removing a chain from the redeploy is an edit here, reviewed like any other change.",
+  "excluded": {
+    "1101": "Polygon zkEVM — deployment record is empty; the NAV was never deployed there."
+  },
+  "chains": [
+    1,
+    10,
+    56,
+    100,
+    130,
+    137,
+    143,
+    146,
+    196,
+    204,
+    480,
+    999,
+    5000,
+    8453,
+    9745,
+    16661,
+    42161,
+    42220,
+    43111,
+    43114,
+    57073,
+    59144,
+    80094,
+    534352
+  ]
+}

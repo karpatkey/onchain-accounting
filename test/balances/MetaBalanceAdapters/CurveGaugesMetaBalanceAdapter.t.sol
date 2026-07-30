@@ -271,6 +271,27 @@ contract CurveGaugesMetaBalanceAdapterTest is Test {
         assertEq(assets.length, 4);
     }
 
+    /// @notice The LP fallback path: when the pool yields no coins, the adapter emits the LP token itself, so
+    ///         `_instanceAssets` must DECLARE it — and must not write an `address(0)` into the advertised set.
+    /// @dev    Closes a gap a reviewer named precisely: the index arithmetic that appends the LP slot was
+    ///         verified by hand, and nothing in the suite would have caught an off-by-one. By the rule that
+    ///         reaching an arm is not pinning it, a hand-checked arm with no fixture is not covered at all.
+    ///         `MockCurveToken` answers `totalSupply()` but has no `coins()`, so `getPool` cannot resolve it
+    ///         (the mainnet registry is absent in a unit test), which is exactly the undecomposable shape.
+    function test_instanceAssets_declaresLpToken_whenPoolYieldsNoCoins() public {
+        MockCurveToken orphanLp = new MockCurveToken("orphanLP", 18);
+        MockCurveGauge orphanGauge = new MockCurveGauge(address(orphanLp));
+
+        address[] memory assets = meta.underlyingAssetsSupportedForInstances(_instance(address(orphanGauge)));
+
+        bool sawLp;
+        for (uint256 i; i < assets.length; ++i) {
+            assertTrue(assets[i] != address(0), "advertised set contains a zero address");
+            if (assets[i] == address(orphanLp)) sawLp = true;
+        }
+        assertTrue(sawLp, "LP token emitted by the fallback leg but never declared");
+    }
+
     // ─── helpers ──────────────────────────────────────────────────────────────
 
     function _countKind(INAVCalculator.PositionBalance[] memory pos, PositionKind kind)

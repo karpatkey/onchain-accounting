@@ -9,6 +9,7 @@ import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 import {ERC4626RedeemLib} from "src/balances/ERC4626RedeemLib.sol";
+import {StaticCallLib} from "src/utils/StaticCallLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -38,10 +39,12 @@ import {ProtocolNames} from "src/utils/ProtocolNames.sol";
 ///      as already-bare (e.g. plain GHO for stkGHO.v1).
 ///
 ///      Each external probe (`asset()`, `convertToAssets(uint256)`, `UNDERLYING_ASSET_ADDRESS()`)
-///      is performed via a low-level staticcall with a tight gas budget (`PROBE_GAS`) so a
-///      misbehaving fallback on a non-ERC4626 token (e.g. legacy WETH9, USDC's transparent proxy)
-///      cannot drain the parent call's gas. Probe failures are interpreted as "this token is not a
-///      wrapper / not an aToken" and the walk falls back to the safe default.
+///      goes through {StaticCallLib}, which bounds both the callee's gas and — via a fixed 32-byte
+///      output window — how much returndata this contract can be made to copy, so a misbehaving
+///      fallback on a non-ERC4626 token (e.g. legacy WETH9, USDC's transparent proxy) cannot drain
+///      the parent call's gas. It also masks a dirty address word rather than reverting on it, which
+///      a local `abi.decode` did not. Probe failures are interpreted as "this token is not a wrapper
+///      / not an aToken" and the walk falls back to the safe default.
 ///
 ///      No stake-token, waToken, aToken, or reserve addresses are hardcoded in this adapter — only
 ///      the trust-anchor `RewardsController` is pinned via constructor argument. Aave governance
@@ -60,11 +63,11 @@ import {ProtocolNames} from "src/utils/ProtocolNames.sol";
 ///      (`isLocked=false` — a cooldown elapsed and inside the withdrawal window), both under
 ///      `positionId = abi.encode(stakeToken)` — read from `getStakerCooldown`. Total value is unchanged.
 contract AaveUmbrellaBalanceAdapter is BalanceAdapterBase {
-    /// @dev Gas forwarded to single-word probes (`asset()`, `convertToAssets(uint256)`,
-    ///      `UNDERLYING_ASSET_ADDRESS()`). 30k covers a normal SLOAD-and-return path comfortably
-    ///      while preventing a misbehaving fallback (cf. WETH9 dispatching unknown selectors to
-    ///      `deposit()`, USDC's proxy chain) from burning the caller's remaining gas budget.
-    uint256 private constant PROBE_GAS = 30_000;
+    // The local `PROBE_GAS = 30_000` that used to sit here is gone: every single-word probe now routes through
+    // {StaticCallLib}, which carries the repo-wide `PROBE_GAS` (100_000) plus a fixed 32-byte output window that
+    // the hand-rolled `(bool, bytes memory)` form did not have. See {_safeAsset} for why the higher ceiling is
+    // the safe direction. Leaving the constant behind as dead code would have implied a bound that no longer
+    // applies to anything.
 
     bytes32 private constant PROTOCOL_BRAND = ProtocolIds.AAVE;
     bytes32 private constant PROTOCOL_ID = ProtocolIds.AAVE_V3;
@@ -331,7 +334,9 @@ contract AaveUmbrellaBalanceAdapter is BalanceAdapterBase {
     }
 
     /// @dev Translate a specific stake-token share amount into the bare reserve via at most one ERC4626
-    ///      wrapper hop. Returns 0 when `shares` is 0 (skips the hops).
+    ///      wrapper hop. Returns 0 when `shares` is 0 (skips the hops), and also when the wrapper hop's
+    ///      fee-net `previewRedeem` cannot be read — see {ERC4626RedeemLib.redeemValue} for why that is a 0
+    ///      and not a fee-inclusive estimate.
     function _sharesToUnderlying(address stakeToken, uint256 shares) internal view returns (uint256) {
         if (shares == 0) return 0;
         uint256 amount = IUmbrellaStakeToken(stakeToken).convertToAssets(shares);
@@ -342,8 +347,9 @@ contract AaveUmbrellaBalanceAdapter is BalanceAdapterBase {
 
         // If the first-level asset is itself a real ERC4626 wrapper (waToken), walk one more hop to the bare
         // reserve. Use previewRedeem so a redemption fee on the wrapper (possible via Aave governance) is not
-        // over-reported (convertToAssets ignores it per EIP-4626 §4.3); fall back to convertToAssets if the
-        // wrapper reverts on preview. For a fee-less wrapper (current state) the two are equal.
+        // over-reported (convertToAssets ignores it per EIP-4626 §4.3). If preview cannot be read the hop
+        // reports 0 and the caller skips the leg — it does NOT fall back to convertToAssets, which would report
+        // the fee-inclusive figure and inflate the position. See {ERC4626RedeemLib.redeemValue}.
         if (_isErc4626Wrapper(firstLevel)) {
             return ERC4626RedeemLib.redeemValue(firstLevel, amount);
         }
@@ -353,8 +359,12 @@ contract AaveUmbrellaBalanceAdapter is BalanceAdapterBase {
     /// @dev Splits an account's stake-token shares into a free (live-stake) portion and an unstaking (cooldown)
     ///      portion, and reports whether the cooldown is inside its claim window. Reads Umbrella's per-user cooldown
     ///      snapshot (`getStakerCooldown` → `(amount, endOfCooldown, withdrawalWindow)`; the window is snapshotted per
-    ///      cooldown, so it is read from the struct, not a global getter). Any read failure degrades gracefully to
-    ///      "entire balance is free, no cooldown leg".
+    ///      cooldown, so it is read from the struct, not a global getter).
+    ///
+    ///      A read failure returns `(balShares, 0, false)`. Note what the CALLER then produces: `unlockedShares`
+    ///      is 0, so `lockedShares == balShares` and the whole principal is emitted as one LOCKED leg. An
+    ///      earlier version of this line said the balance degrades to "free", which is the opposite of what
+    ///      ships — `freeShares` is in fact discarded by the only caller. Corrected in review.
     /// @return freeShares Shares not committed to a cooldown (live stake).
     /// @return cooldownShares Shares committed to the active cooldown (= min(cooldown amount, balance)).
     /// @return inWindow True iff the cooldown has elapsed and is still within its withdrawal window (claimable now).
@@ -367,22 +377,59 @@ contract AaveUmbrellaBalanceAdapter is BalanceAdapterBase {
             return (0, 0, false);
         }
 
-        IUmbrellaStakeToken.CooldownSnapshot memory s;
-        try IUmbrellaStakeToken(stakeToken).getStakerCooldown(account) returns (
-            IUmbrellaStakeToken.CooldownSnapshot memory snap
-        ) {
-            s = snap;
-        } catch {
-            return (balShares, 0, false);
+        // Raw bounded staticcall, NOT `try`/`catch`. This is the same shape `ERC4626RedeemLib` was rewritten
+        // for, in the same call chain: a high-level call expecting return data emits no `extcodesize` check, so
+        // a stake token whose `getStakerCooldown` SUCCEEDS with zero bytes makes the struct decode revert in
+        // THIS frame, past the `catch`. And this adapter has no per-stake-token isolation — the revert would
+        // propagate out of `getAdapterPositions`, `PriceFeedLib` would score it benign, and every Umbrella
+        // staking, cooldown and rewards leg would vanish from the NAV with no signal. The interface's own doc
+        // promises callers "must tolerate a call/decode failure"; `try`/`catch` did not deliver that.
+        //
+        // A fixed cap is acceptable HERE, unlike in `ERC4626RedeemLib`: this read is classification-only. It
+        // splits an already-computed `balShares` into locked/unlocked legs and cannot change any amount, so a
+        // starved probe degrades to "all locked" — cosmetic, and never a number.
+        uint256 cdAmount;
+        uint256 cdEnd;
+        uint256 cdWindow;
+        {
+            // The repo-wide probe budget, not a second local copy of the same number — this file deleted its
+            // own `PROBE_GAS` for exactly that reason and reintroducing an identical constant four lines below
+            // that explanation was the inconsistency review flagged. A FIXED cap is safe here specifically
+            // because this read is classification-only: `cdAmount` can only ever narrow `cooldownShares`, and
+            // the leg total is `balShares` for every value of it, so no probe outcome can move an amount.
+            uint256 probeGas = StaticCallLib.PROBE_GAS;
+            bytes memory cd = abi.encodeWithSelector(IUmbrellaStakeToken.getStakerCooldown.selector, account);
+            bool ok;
+            uint256 size;
+            assembly ("memory-safe") {
+                let out := mload(0x40)
+                mstore(out, 0)
+                mstore(add(out, 0x20), 0)
+                mstore(add(out, 0x40), 0)
+                ok := staticcall(probeGas, stakeToken, add(cd, 0x20), mload(cd), out, 0x60)
+                size := returndatasize()
+                // MASK to the declared widths. Taking the raw read without the mask discards exactly the
+                // validation the `uint192`/`uint32` decoder performed, and the arithmetic below is CHECKED:
+                // a reply of (1, 1, 2**256-1) makes `cdEnd + cdWindow` panic with Panic(0x11) in THIS frame,
+                // past every `catch` — reinstating the uncatchable revert this read was rewritten to remove.
+                // `shl`/`shr` for the 192-bit field rather than a 48-digit hex literal, which is easy to
+                // miscount. Masking also bounds `cdEnd + cdWindow` by 2**33, so the checked add cannot
+                // overflow at all. This is the same "mask, do not trust the word" rule {_safeAsset} states
+                // for addresses further down this file. Found in review.
+                cdAmount := shr(64, shl(64, mload(out)))
+                cdEnd := and(mload(add(out, 0x20)), 0xffffffff)
+                cdWindow := and(mload(add(out, 0x40)), 0xffffffff)
+            }
+            // The snapshot is three static fields, so a canonical reply is exactly three words.
+            if (!ok || size < 0x60) return (balShares, 0, false);
         }
-        if (s.amount == 0) {
+        if (cdAmount == 0) {
             return (balShares, 0, false); // no active cooldown
         }
 
-        cooldownShares = uint256(s.amount) < balShares ? uint256(s.amount) : balShares;
+        cooldownShares = cdAmount < balShares ? cdAmount : balShares;
         freeShares = balShares - cooldownShares;
-        inWindow =
-            block.timestamp >= s.endOfCooldown && block.timestamp <= uint256(s.endOfCooldown) + s.withdrawalWindow;
+        inWindow = block.timestamp >= cdEnd && block.timestamp <= cdEnd + cdWindow;
     }
 
     /// @dev Pull `(rewardTokens[], amounts[])` from the controller, then for each reward token
@@ -409,53 +456,85 @@ contract AaveUmbrellaBalanceAdapter is BalanceAdapterBase {
     //
 
     /// @dev Resolve a stake token's bare reserve by following at most one ERC4626 wrapper hop.
-    ///      Returns address(0) when the chain doesn't terminate at a non-ERC4626 token within one
-    ///      hop, or when `stakeToken.asset()` itself is unreachable.
+    ///      Returns address(0) only when `stakeToken.asset()` itself is unreachable.
+    ///
+    ///      **One `asset()` read per hop, reused.** This used to read `firstLevel.asset()` TWICE — once inside
+    ///      `_isErc4626Wrapper`, then again to take the result — and treat a zero from the second read as
+    ///      "unresolvable", dropping the stake token's entire set of legs (staking, cooldown and rewards) with
+    ///      no way for a caller to distinguish that from "this account holds nothing here". Two reads of the same
+    ///      view can only disagree for a reason that is not about the token: the second one starving. A fixed
+    ///      `{gas: …}` ceiling cannot be escaped by a caller supplying more gas, so that drop was both silent and
+    ///      unrecoverable. {_wrapperAsset} performs the read once and hands back the value the test was based on,
+    ///      which removes the disagreeing window rather than papering over it.
+    ///
+    ///      The remaining `address(0)` — `stakeToken.asset()` unreadable — is genuinely "this is not an Umbrella
+    ///      stake token", and the callers' `continue` is correct for it.
     function _resolveBareReserve(address stakeToken) internal view returns (address) {
         address firstLevel = _safeAsset(stakeToken);
         if (firstLevel == address(0)) return address(0);
-        // If the first-level asset is itself a wrapper, the bare reserve is the wrapper's `asset()`.
-        // Otherwise the first-level asset IS the bare reserve.
-        if (_isErc4626Wrapper(firstLevel)) {
-            address bare = _safeAsset(firstLevel);
-            return bare == address(0) ? address(0) : bare;
-        }
-        return firstLevel;
+        // If the first-level asset is itself a wrapper, the bare reserve is the wrapper's `asset()` — the very
+        // value the wrapper test just read. Otherwise the first-level asset IS the bare reserve.
+        address bare = _wrapperAsset(firstLevel);
+        return bare == address(0) ? firstLevel : bare;
     }
 
-    /// @dev Detect whether `token` looks like an ERC4626 wrapper. The probe combines two checks:
-    ///        - `asset()` succeeds and returns a non-zero address.
-    ///        - `convertToAssets(0)` succeeds and returns exactly 0 (the canonical ERC4626 invariant).
-    ///      A token whose fallback returns garbage / empty data on unknown selectors fails one or
-    ///      both checks and is correctly classified as non-wrapper.
-    function _isErc4626Wrapper(address token) internal view returns (bool) {
-        // asset() must return a non-zero address.
+    /// @dev `token.asset()` when `token` looks like an ERC4626 wrapper, else `address(0)`. The probe combines:
+    ///        - `asset()` succeeds and returns a non-zero address;
+    ///        - `convertToAssets(0)` returns a full word that is exactly 0 (the canonical ERC4626 invariant).
+    ///      A token whose fallback returns garbage / empty data on unknown selectors fails one or both and is
+    ///      correctly classified as non-wrapper.
+    ///
+    ///      `convertToAssets(0)` is gated on {StaticCallLib.probeWord}'s `hasWord`, NOT on `safeUint`'s `ok`.
+    ///      The distinction is load-bearing precisely here, and is the trap {StaticCallLib} documents: `ok` is
+    ///      the raw staticcall flag and stays true for a callee that returns NOTHING, so `safeUint` would hand
+    ///      back `(true, 0)` — and 0 is this test's success condition. Every code-less address and every silent
+    ///      fallback would have been promoted to "ERC4626 wrapper".
+    function _wrapperAsset(address token) internal view returns (address) {
         address inner = _safeAsset(token);
-        if (inner == address(0)) return false;
-        // convertToAssets(0) must succeed and return exactly 0.
-        (bool ok, bytes memory ret) =
-            token.staticcall{gas: PROBE_GAS}(abi.encodeWithSignature("convertToAssets(uint256)", uint256(0)));
-        if (!ok || ret.length < 32) return false;
-        return abi.decode(ret, (uint256)) == 0;
+        if (inner == address(0)) return address(0);
+        (, bool hasWord, uint256 converted) =
+            StaticCallLib.probeWord(token, abi.encodeWithSignature("convertToAssets(uint256)", uint256(0)));
+        if (!hasWord || converted != 0) return address(0);
+        return inner;
+    }
+
+    /// @dev Detect whether `token` looks like an ERC4626 wrapper. Thin wrapper over {_wrapperAsset} so there is
+    ///      exactly one implementation of the test and it cannot drift from the value {_resolveBareReserve} uses.
+    function _isErc4626Wrapper(address token) internal view returns (bool) {
+        return _wrapperAsset(token) != address(0);
     }
 
     /// @dev Resolve a reward token's bare reserve. aTokens expose `UNDERLYING_ASSET_ADDRESS()`
     ///      returning the bare reserve; non-aToken reward tokens (e.g. plain GHO for stkGHO.v1)
     ///      and tokens with permissive fallbacks return as-is.
     function _resolveRewardBareReserve(address rewardToken) internal view returns (address) {
-        (bool ok, bytes memory ret) =
-            rewardToken.staticcall{gas: PROBE_GAS}(abi.encodeWithSignature("UNDERLYING_ASSET_ADDRESS()"));
-        if (!ok || ret.length < 32) return rewardToken;
-        address bare = abi.decode(ret, (address));
+        (, address bare) = StaticCallLib.safeAddr(rewardToken, abi.encodeWithSignature("UNDERLYING_ASSET_ADDRESS()"));
         return bare == address(0) ? rewardToken : bare;
     }
 
-    /// @dev `IERC4626.asset()` via low-level staticcall with bounded gas. Returns address(0) when
-    ///      the call reverts, returns no data, or returns less than a full word.
+    /// @dev `IERC4626.asset()` via {StaticCallLib.safeAddr}. Returns address(0) when the call reverts, the
+    ///      target has no code, the reply is short, or the returned word masks to zero.
+    ///
+    ///      Routed through the shared reader rather than a hand-rolled `staticcall` + `abi.decode` for three
+    ///      reasons, in increasing order of how much they matter:
+    ///        1. `abi.decode(ret, (address))` emits a range validator that REVERTS on a word with dirty bits
+    ///           above 160, in THIS frame, past any `catch` — so a reward or stake token answering with a
+    ///           `bytes32`-shaped word took the whole adapter out of the NAV read. `safeAddr` masks instead.
+    ///        2. Assigning `(bool, bytes memory)` from a raw staticcall makes solc `returndatacopy` the ENTIRE
+    ///           reply into fresh memory, and the caller pays that quadratically, OUTSIDE the gas stipend. A
+    ///           token returning ~200KB is cheap for the callee and expensive here. `safeAddr` writes through a
+    ///           fixed 32-byte output window, so reply size cannot influence this contract's gas at all.
+    ///        3. It is one reader instead of a fourth local copy.
+    ///
+    ///      This raises the ceiling on these probes from this file's former `PROBE_GAS` (30_000) to
+    ///      `StaticCallLib.PROBE_GAS` (100_000), and that local constant is now gone. Deliberate, and the safe
+    ///      direction: the failure mode of too tight a cap is a spurious `address(0)` that silently drops a real
+    ///      position — the very defect {_resolveBareReserve} was fixed for — while the thing a generous cap
+    ///      exposes, an expensive hostile callee, is bounded by the cap AND by the output window, which the
+    ///      30_000 version was not.
     function _safeAsset(address token) internal view returns (address) {
-        (bool ok, bytes memory ret) = token.staticcall{gas: PROBE_GAS}(abi.encodeWithSignature("asset()"));
-        if (!ok || ret.length < 32) return address(0);
-        return abi.decode(ret, (address));
+        (, address underlyingAsset) = StaticCallLib.safeAddr(token, abi.encodeWithSignature("asset()"));
+        return underlyingAsset;
     }
 
     //

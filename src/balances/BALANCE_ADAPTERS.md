@@ -331,16 +331,49 @@ All members extend the single cache base **`AssistedCoordCache`** (`AssistedBala
 
 > Full family reference — invariant, cache design, assistant/delegatecall model, error taxonomy, and how to add a new member: [`AssistedBalanceAdapters/README.md`](AssistedBalanceAdapters/README.md). (A proof-verified Merkl rewards adapter was removed in PR #141 with the legacy `ASSISTANT_ROLE` base and **re-added permissionless as its own `attested` family** — `MerklRewardsBalanceAdapter` in `AttestedBalanceAdapters/`, see the `MerklRewards` row below, [ADR 0022](../../docs/decisions/0022-attested-balance-adapter-family.md), and ADR 0007's 2026-07 amendment. It is a standalone proof-verified *amount*-cache — NOT a coordinate-cache member of this assisted family.)
 
-### 6.4 Rejected: registry fetch-once threading
+### 6.4 Registry lookups: what is O(1) today, and what was rejected
 
-When NAV reads positions it calls `getAdapterPositions(account, address(0))` on every registered adapter, and each adapter that needs to validate a token against the asset registry re-fetches the **whole** registry (`NAVCalculator.getRegisteredAssets()`) per token via `RegisteredAssetLib.find` (see `MetaBalanceAdapter._getAssetInfo`). A read that touches *N* tokens across *M* adapters therefore does *N×M* registry fetches — superficially wasteful.
+`MetaBalanceAdapter._getAssetInfo` resolves one token's registry metadata through
+**`INAVCalculator.getRegisteredAsset(address)`** — a 1-based `_assetIndex` mapping load plus one array read, flat in
+the number of registered assets. `_eligible` runs it before every emitted leg, so it is the hottest lookup in this
+family and it needs to be O(1).
 
-We implemented and then **deliberately reverted** the obvious optimisation — fetch the registry once in `PriceFeedLib`/`NAVCalculator` and thread the `INAVCalculator.Asset[]` snapshot down through a 3-arg `getAdapterPositions(account, assetFilter, registeredAssets)` overload to every adapter, eliminating the re-fetch. Two reasons:
+**It used to fetch the whole registry per call** (`RegisteredAssetLib.find(NAV_CALCULATOR.getRegisteredAssets(), asset)`).
+That measured:
 
-1. **The gas saving has no consumer.** NAV is read off-chain/asynchronously by the sub/redeem layer ([ADR 0017](../../docs/decisions/0017-lp-valuation-instantaneous-amounts.md)); there is no atomic on-chain caller paying for the populated-path gas, so collapsing *N×M* fetches optimises a cost nobody bears.
-2. **It regressed the cheap path.** Eagerly fetching and ABI-copying the registry into *every* adapter call pushed the empty-account read from **<100k to ~166k gas** (the team's `gasOptimization_emptyAccount` guard) — because adapters that early-return for an empty account previously never fetched the registry at all. The optimisation thus made the common cheap path *worse* in exchange for a saving that does not matter.
+| registered assets | one 50-token Balancer instance |
+|---|---|
+| 43 (mainnet today) | **6,274,562 gas** |
+| 100 | **18,459,988 gas** |
 
-Conclusion: keep each adapter fetching the registry lazily, only on the path that actually needs it. Re-thread the registry **only if NAV ever becomes a synchronous on-chain consumer** of a mint/redeem flow — at which point the gas does matter and the trade-off flips.
+Super-linear rather than linear, because each call allocated a fresh N-element array that is never freed, so memory
+expansion grows with the square of the token count. Past a point that exhausts the per-adapter gas stipend and the
+NAV read **reverts** — so this was an *availability* defect, not a missed optimisation. That distinction is what
+separates it from the design rejected below.
+
+#### Still rejected: threading a pre-fetched registry snapshot
+
+A different fix — fetch the registry once in `PriceFeedLib`/`NAVCalculator` and thread the `INAVCalculator.Asset[]`
+snapshot down through a 3-arg `getAdapterPositions(account, assetFilter, registeredAssets)` overload — was
+implemented and **deliberately reverted**. It stays rejected, on the ground that still holds:
+
+- **It regressed the cheap path.** Eagerly fetching and ABI-copying the registry into *every* adapter call pushed the
+  empty-account read from **<100k to ~166k gas** (the `gasOptimization_emptyAccount` guard), because adapters that
+  early-return for an empty account previously never fetched the registry at all.
+
+The other original ground — that NAV is read off-chain/asynchronously
+([ADR 0017](../../docs/decisions/0017-lp-valuation-instantaneous-amounts.md)) so the gas has no payer — was a
+reasonable argument about *cost*, and it is simply not the argument that applies once a read **reverts**.
+
+**Why the O(1) getter is not a re-run of that rejection:** the call sites and the call *count* are unchanged, and
+nothing is fetched eagerly, so an adapter that early-returns for an empty account still fetches nothing. Only the
+payload shrank — one asset instead of all of them. The empty-account guard is unaffected.
+
+`getRegisteredAssets()` remains for callers that genuinely want the whole registry; its NatSpec now carries the
+figures above so nobody reaches for it to resolve a single asset. Guarded by
+`test/nav/NAVCalculator.registeredAssetGetter.t.sol`, which asserts the O(1) *shape* (cost independent of registry
+size and of position within it) rather than absolute gas, plus a deterministic regression test: a NAVCalculator
+stand-in whose array getter reverts, so any implementation that reaches for it fails outright.
 
 ---
 

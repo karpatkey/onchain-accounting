@@ -122,12 +122,11 @@ An asset wires in a deployed feed by name via a `"type":"Custom","feed":"<feedNa
 
 ```json
 {
-  "sDAI": {
+  "sUSDS": {
     "enabled": true,
-    "$comment": "sDAI (Savings DAI) price adapter — derives sDAI/USD from the DSR rate + the base asset (DAI) priced via the NAV.",
+    "$comment": "sUSDS (Sky Savings USDS) price adapter — derives sUSDS/USD from the ERC-4626 vault rate + the base asset (USDS) priced via the NAV.",
     "constructor": {
-      "sDai": "0x83F20F44975D03b1b09e64809B757c47f942BEeA",
-      "dsrManager": "0x373238337Bfe1146fb49989fc222523f83081dDb",
+      "sUsds": "0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD",
       "baseAsset": "0x6B175474E89094C44Da98b954EedeAC495271d0F"
     }
   },
@@ -302,10 +301,10 @@ There is **no `callbackSelector` field** as of [ADR 0012](../../docs/decisions/0
       { "type": "Chainlink", "address": "0x37be050e75C7F0a80F0E8abBFC2c4Ff826728cAa", "heartbeat": 86400 }
     ]
   },
-  "sDAI": {
-    "address": "0x83F20F44975D03b1b09e64809B757c47f942BEeA",
+  "sUSDS": {
+    "address": "0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD",
     "priceFeeds": [
-      { "type": "Custom", "feed": "sDAI", "heartbeat": 86400 }
+      { "type": "Custom", "feed": "sUSDS", "heartbeat": 82800 }
     ]
   }
 }
@@ -393,7 +392,7 @@ There is **no `callbackSelector` field** as of [ADR 0012](../../docs/decisions/0
   "BridgeEscrowImplementation": "0x...",
   "BridgeEscrowProxy": "0x...",
   "customPriceFeeds": {
-    "sDAI": "0x111..."
+    "sUSDS": "0x111..."
   },
   "balanceAdapters": {
     "ERC20Default": "0x...",
@@ -492,11 +491,11 @@ The long template below is **deprecated** (single global dev-input is not used).
   },
   "adapters": {
     "price": {
-      "sDAI": {
+      "sUSDS": {
         "enabled": true,
-        "chains": ["1", "100"],
+        "chains": ["1"],
         "constructor": {
-          "description": "sDAI (Savings DAI) price adapter"
+          "description": "sUSDS (Sky Savings USDS) price adapter"
         }
       },
       "LDO": {
@@ -737,7 +736,7 @@ After deployment, addresses are saved to `deployments/{chainId}.json`.
     }
   },
   "priceAdapters": {
-    "sDAI": {
+    "sUSDS": {
       "address": "0x111...",
       "verified": {
         "etherscan": true,

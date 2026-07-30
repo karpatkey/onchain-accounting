@@ -241,20 +241,13 @@ contract BalanceAdapterGasTest is Test {
         // Typically very cheap as no positions need to be processed
     }
 
-    /// @notice Establish baseline for single asset
-    function test_gasBenchmark_baseline_singleAsset() public {
-        Mock_ERC20 usdc = new Mock_ERC20("USDC", 6);
-        balances.addSupportedAssetForTest(address(usdc));
-        usdc.mint(alice, 1000 * 10 ** 6);
-
-        uint256 gasBefore = gasleft();
-        (uint256 amount,) = erc20DefaultBalanceAdapter.getAdapterBalanceForAsset(alice, address(usdc));
-        uint256 gasUsed = gasBefore - gasleft();
-
-        assertGt(amount, 0, "Should have positive balance");
-        assertGt(gasUsed, 0, "gas measured");
-        // Typically cheap as only one asset needs to be processed
-    }
+    // `test_gasBenchmark_baseline_singleAsset` used to sit here. It was byte-identical to
+    // `test_gasBenchmark_getAdapterBalanceForAsset` above — same mint, same call, same two assertions — so it
+    // measured the same thing twice and compared the two figures to nothing. The single-asset baseline IS
+    // `test_gasBenchmark_getAdapterBalanceForAsset`; a second copy of it under a different name reported no
+    // number the first did not. Deleted rather than given an assertion, because pinning a warm gas figure is
+    // its own hazard: it makes the suite fail on unrelated codegen drift while still proving nothing about the
+    // cost that matters (the cold, worst-case one).
 
     /// @notice Establish baseline for underlyingAssetsSupported
     function test_gasBenchmark_baseline_underlyingAssetsSupported() public {

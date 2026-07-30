@@ -394,6 +394,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         partialNav.irregularPriceAssets = n.irregularPriceAssets;
         partialNav.quoteAssetIrregular = n.quoteAssetIrregular;
         partialNav.adaptersCovered = covered;
+        partialNav.monitorsUnhealthyPriceAssets = n.monitorsUnhealthyPriceAssets;
     }
 
     /// @inheritdoc INAVCalculator

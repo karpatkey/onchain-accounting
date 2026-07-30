@@ -49,6 +49,11 @@ library PriceFeedLib {
         // True if the primary price diverged from the asset's monitor feeds beyond tolerance (or, for stablecoins,
         // from the $1 peg). Pricing-quality signal only; `price` is still the primary and is used for valuation.
         bool irregular;
+        // True if the asset HAS monitors configured but none of them was readable, so the divergence check did not
+        // run and `irregular` above is false for want of data rather than for want of divergence. NOT set for an
+        // asset with no monitors configured, nor when the primary itself is stale — see
+        // {INAVCalculator.NAV.monitorsUnhealthyPriceAssets}.
+        bool monitorsUnhealthy;
     }
 
     /// @notice Quote-asset info (struct + price data); address(0) = USD.
@@ -670,6 +675,7 @@ library PriceFeedLib {
         if (assetCount == 0) {
             nav.stalePriceAssets = new INAVCalculator.Asset[](0);
             nav.irregularPriceAssets = new INAVCalculator.Asset[](0);
+            nav.monitorsUnhealthyPriceAssets = new INAVCalculator.Asset[](0);
             return nav; // value 0, sequencerDown false (no assets registered)
         }
 
@@ -680,6 +686,7 @@ library PriceFeedLib {
         if (allPositions.length == 0) {
             nav.stalePriceAssets = new INAVCalculator.Asset[](0);
             nav.irregularPriceAssets = new INAVCalculator.Asset[](0);
+            nav.monitorsUnhealthyPriceAssets = new INAVCalculator.Asset[](0);
             return nav; // value 0
         }
 
@@ -688,6 +695,8 @@ library PriceFeedLib {
             _buildPriceFeedCache(priceOracles, monitorFeeds, assetPricing, assetsWithPositions, sequencerDown);
         nav.stalePriceAssets = _buildStaleAssets(assetIndex, registeredAssets, priceFeeds);
         nav.irregularPriceAssets = _buildIrregularAssets(assetIndex, registeredAssets, priceFeeds);
+        nav.monitorsUnhealthyPriceAssets =
+            _buildMonitorsUnhealthyAssets(assetIndex, registeredAssets, priceFeeds);
 
         nav.value = _sumPositionValues(assetIndex, registeredAssets, allPositions, priceFeeds, quoteInfo);
     }
@@ -838,6 +847,7 @@ library PriceFeedLib {
         if (assetCount == 0) {
             nav.stalePriceAssets = new INAVCalculator.Asset[](0);
             nav.irregularPriceAssets = new INAVCalculator.Asset[](0);
+            nav.monitorsUnhealthyPriceAssets = new INAVCalculator.Asset[](0);
             positions = new INAVCalculator.Position[](0);
             return (nav, positions); // value 0, sequencerDown false (no assets registered)
         }
@@ -849,6 +859,7 @@ library PriceFeedLib {
         if (allPositions.length == 0) {
             nav.stalePriceAssets = new INAVCalculator.Asset[](0);
             nav.irregularPriceAssets = new INAVCalculator.Asset[](0);
+            nav.monitorsUnhealthyPriceAssets = new INAVCalculator.Asset[](0);
             positions = new INAVCalculator.Position[](0);
             return (nav, positions); // value 0
         }
@@ -858,6 +869,8 @@ library PriceFeedLib {
             _buildPriceFeedCache(priceOracles, monitorFeeds, assetPricing, assetsWithPositions, sequencerDown);
         nav.stalePriceAssets = _buildStaleAssets(assetIndex, registeredAssets, priceFeeds);
         nav.irregularPriceAssets = _buildIrregularAssets(assetIndex, registeredAssets, priceFeeds);
+        nav.monitorsUnhealthyPriceAssets =
+            _buildMonitorsUnhealthyAssets(assetIndex, registeredAssets, priceFeeds);
 
         (positions, nav.value) =
             _enrichAll(allPositions, priceFeeds, quoteInfo, quoteAssetIrregular, assetIndex, registeredAssets);
@@ -1275,8 +1288,16 @@ library PriceFeedLib {
                 // decimals = NAV_DECIMALS (not 0): _priceConversion reverts InvalidAssetDecimals when
                 // assetDecimals + priceDecimals < NAV_DECIMALS, so a 0 here would re-introduce a DoS for
                 // low-decimal assets (e.g. USDC). NAV_DECIMALS guarantees the guard passes; price 0 → value 0.
-                priceFeeds[i] =
-                    PriceFeedCache({asset: asset, price: 0, decimals: NAV_DECIMALS, stale: true, irregular: false});
+                // monitorsUnhealthy stays false: a feedless asset is reported via `stalePriceAssets`, and its monitor
+                // health is not the reason its price is unusable.
+                priceFeeds[i] = PriceFeedCache({
+                    asset: asset,
+                    price: 0,
+                    decimals: NAV_DECIMALS,
+                    stale: true,
+                    irregular: false,
+                    monitorsUnhealthy: false
+                });
                 continue;
             }
             (int256 price, uint8 decimals, bool stale,,) = _selectFeedCore(priceOracles, asset);
@@ -1286,12 +1307,27 @@ library PriceFeedLib {
             // Fold the NAV-level `sequencerDown` into staleness so `NAV.irregularPriceAssets` / `Position.irregular`
             // stay consistent with getPriceData / healthCheck on L2 during sequencer downtime.
             bool irregular = false;
+            bool monitorsUnhealthy = false;
             if (_hasDivergenceChecks(monitorFeeds, assetPricing, asset)) {
-                (,,,, irregular,,) =
+                // `healthyMonitors` is the count {_monitorDivergence} already computed for its own guard — taken from
+                // the return rather than re-derived, so this costs no extra feed reads on the hot path.
+                uint256 healthyMonitors;
+                (,,,, irregular, healthyMonitors,) =
                     _divergenceFor(monitorFeeds, assetPricing, asset, price, decimals, stale, sequencerDown);
+                // Monitors exist, none answered, and the primary is usable — so the divergence check was skipped for
+                // want of monitor data. The primary-usable conjunct is what keeps this disjoint from
+                // `stalePriceAssets`: when the primary is stale the count is also 0, but the monitors are not why.
+                monitorsUnhealthy =
+                    healthyMonitors == 0 && !stale && !sequencerDown && monitorFeeds[asset].length > 0;
             }
-            priceFeeds[i] =
-                PriceFeedCache({asset: asset, price: price, decimals: decimals, stale: stale, irregular: irregular});
+            priceFeeds[i] = PriceFeedCache({
+                asset: asset,
+                price: price,
+                decimals: decimals,
+                stale: stale,
+                irregular: irregular,
+                monitorsUnhealthy: monitorsUnhealthy
+            });
         }
     }
 
@@ -1349,6 +1385,32 @@ library PriceFeedLib {
         irregularAssets = new INAVCalculator.Asset[](irregularLength);
         for (uint256 i = 0; i < irregularLength; i++) {
             irregularAssets[i] = _getRegisteredAsset(assetIndex, registeredAssets, irregularAddrs[i]);
+        }
+    }
+
+    /// @notice Collects the assets whose monitors are all unreadable — configured, but none of them answered — from
+    ///         the per-asset flag computed once in {_buildPriceFeedCache}.
+    /// @dev Sibling of {_buildIrregularAssets}, deliberately kept separate rather than folded into it behind a
+    ///      selector flag: the two lists mean opposite things (one says a check FIRED, the other says a check did NOT
+    ///      RUN) and a caller that confuses them draws the wrong conclusion. Lives here in the library, so its bytes
+    ///      do not count against {NAVCalculator}'s EIP-170 ceiling.
+    function _buildMonitorsUnhealthyAssets(
+        mapping(address => uint256) storage assetIndex,
+        INAVCalculator.Asset[] storage registeredAssets,
+        PriceFeedCache[] memory priceFeeds
+    ) private view returns (INAVCalculator.Asset[] memory unhealthyAssets) {
+        uint256 feedsLength = priceFeeds.length;
+        address[] memory temp = new address[](feedsLength);
+        uint256 count = 0;
+        for (uint256 i = 0; i < feedsLength; i++) {
+            if (priceFeeds[i].monitorsUnhealthy) temp[count++] = priceFeeds[i].asset;
+        }
+        address[] memory addrs = ArrayLib.copySliceAddress(temp, count);
+
+        uint256 length = addrs.length;
+        unhealthyAssets = new INAVCalculator.Asset[](length);
+        for (uint256 i = 0; i < length; i++) {
+            unhealthyAssets[i] = _getRegisteredAsset(assetIndex, registeredAssets, addrs[i]);
         }
     }
 

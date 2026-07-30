@@ -101,14 +101,24 @@ So no upgrade, no config transaction and no admin call can repoint a live proxy 
 ERC20Default. An implementation upgrade would ship every other fix in this wave and leave the wallet
 adapter — the one adapter that every chain and every account uses — running the **old** bytecode.
 
-**Its bytecode did change in this wave, so this is not hypothetical.** Measured against `06d28d0f`
-(2026-07-22), the tree the live stack was deployed from:
+**Its bytecode did change in this wave, so this is not hypothetical.** Counts from
+`git diff --numstat 2bc8ba73..origin/main` — `2bc8ba73` is #159, the commit deployed to all 24 chains
+on 2026-07-25, and the same baseline the published contract-delta changelog measures against:
 
 | file | change | how it reaches ERC20Default |
 | --- | --- | --- |
-| `ERC20DefaultBalanceAdapter.sol` | +43 / −11 (54 changed lines) | directly |
-| `BalanceAdapterBase.sol` | +8 / −3 (11 changed lines) | its base contract |
+| `ERC20DefaultBalanceAdapter.sol` | +43 / −11 | directly |
+| `BalanceAdapterBase.sol` | +8 / −3 | its base contract |
 | `LabelLib.sol` | +154 / −23 | **inlined** — see below |
+
+> **Quote these as `--numstat` pairs and nothing else.** `git diff --stat` renders a bar graph beside a
+> single *total-changed-lines* figure, so reading a count off it yields 54 and 11 for the first two rows
+> — the sums, presented as though they were insertions. That reading has already been passed between
+> documents once. When the count itself is the claim, `--numstat` is the instrument.
+>
+> The figures are also **baseline-insensitive across the plausible candidates**: identical from
+> `2bc8ba73` (2026-07-25) and from `06d28d0f` (2026-07-22), so a disagreement over which commit is
+> "the deployed tree" cannot explain a difference in them.
 
 `LabelLib` is the one that catches people out. Its readers are `internal` (`name` `:88`, `symbol`
 `:94`, `readString` `:108`), so they are **compiled into every caller** and there is no library
@@ -140,6 +150,12 @@ NAV address is invalidated by construction:
 None of it is optional, and none of it fails loudly: a step skipped here leaves the new proxy quietly
 **under-reporting**, not erroring. That asymmetry is also why "just upgrade the implementation" keeps
 looking attractive — it is genuinely far smaller. It is also wrong.
+
+> **If another document says 39 or 40 feeds, it predates two merges — it is not a disagreement to
+> split.** 39 was correct until #199 (merged 2026-07-29), 40 until #224 (merged 2026-07-30). The merged
+> tree is **41**, re-measured with `preflight_config.py` on `e4307cb3`: mainnet 26, arbitrum 8, base 4,
+> gnosis 3. The full derivation is under 1.4. The **110** meta instances and the cutover off
+> `0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d` are unaffected and agree everywhere.
 
 The old stack is **abandoned in place**, not decommissioned. It keeps answering on
 `0x80eD5cc6…` until consumers move, so the cutover is a coordination item rather than an outage —

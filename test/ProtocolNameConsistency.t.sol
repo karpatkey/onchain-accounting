@@ -26,7 +26,9 @@ import {
 import {
     StakeWiseV3ExitQueueAssistedBalanceAdapter
 } from "src/balances/AssistedBalanceAdapters/StakeWiseV3ExitQueueAssistedBalanceAdapter.sol";
-import {MerklRewardsBalanceAdapter} from "src/balances/AttestedBalanceAdapters/MerklRewardsBalanceAdapter.sol";
+import {
+    MerklRewardsAttestedBalanceAdapter
+} from "src/balances/AttestedBalanceAdapters/MerklRewardsAttestedBalanceAdapter.sol";
 import {
     AaveV3InstancesMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/AaveV3InstancesMetaBalanceAdapter.sol";
@@ -252,7 +254,11 @@ contract ProtocolNameConsistencyTest is Test {
             ProtocolNames.WALLET,
             "ERC20Default"
         );
-        assertEq(new MerklRewardsBalanceAdapter(stub, address(nav)).protocolName(), ProtocolNames.MERKL, "MerklRewards");
+        assertEq(
+            new MerklRewardsAttestedBalanceAdapter(stub, address(nav)).protocolName(),
+            ProtocolNames.MERKL,
+            "MerklRewards"
+        );
     }
 
     /// @notice The three `ProtocolIds.AAVE_V3` products — lending instances, Safety Module, Umbrella — must all

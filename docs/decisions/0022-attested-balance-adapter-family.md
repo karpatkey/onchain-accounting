@@ -25,7 +25,7 @@ Introduce a fourth balance-adapter family, peer to plain `BalanceAdapter`s, meta
 
 These adapters are documented exceptions to the immutability rule (like the assisted family; cf. ADR 0005) — narrowly-scoped mutable cache state, no admin-injected amounts, no upgrade path.
 
-**First member:** `MerklRewardsBalanceAdapter` (`src/balances/AttestedBalanceAdapters/`), constructor `(distributor, navCalculator)`, permissionless `submitProofs(user, Allocation[])` / `submitProofsBatch`. See ADR 0007.
+**First member:** `MerklRewardsAttestedBalanceAdapter` (`src/balances/AttestedBalanceAdapters/`), constructor `(distributor, navCalculator)`, permissionless `submitProofs(user, Allocation[])` / `submitProofsBatch`. See ADR 0007.
 
 ## Attested vs assisted (why they are separate families)
 

@@ -273,7 +273,7 @@ PositionBalance({
 
 #### `MerklRewards` — unclaimed Merkl allocation
 
-> Note: the Merkl adapter (`MerklRewardsBalanceAdapter`, the `attested` family — [ADR 0022](../decisions/0022-attested-balance-adapter-family.md)) is being re-added and is not yet deployed on `main`. The schema below describes it.
+> Note: the Merkl adapter (`MerklRewardsAttestedBalanceAdapter`, the `attested` family — [ADR 0022](../decisions/0022-attested-balance-adapter-family.md)) is being re-added and is not yet deployed on `main`. The schema below describes it.
 
 ```solidity
 // One leg per reward token; proof-cached balance (may lag until next proof update).
@@ -976,7 +976,7 @@ schemas are in the next section and in the per-adapter table above.)
 | `stakewise-v3-vaults` | `STAKEWISE_V3_VAULTS` | `StakeWiseV3VaultsMetaBalanceAdapter` — StakeWise V3 vault stake + osToken debt |
 | `nexus-mutual-staking-pools` | `NEXUS_MUTUAL_STAKING_POOLS` | `NexusMutualStakingPoolsAssistedBalanceAdapter` — Nexus Mutual StakingNFT stake + rewards |
 | `cap` | `CAP` | `CapBalanceAdapter` — Cap cUSD (held) and stcUSD (staked) |
-| `merkl` | `MERKL` | Merkl-rewards slug — `MerklRewardsBalanceAdapter` (`attested` family, ADR 0022); re-add in progress, not yet deployed on `main`. Emits unclaimed (claimable) Merkl reward tokens |
+| `merkl` | `MERKL` | Merkl-rewards slug — `MerklRewardsAttestedBalanceAdapter` (`attested` family, ADR 0022); re-add in progress, not yet deployed on `main`. Emits unclaimed (claimable) Merkl reward tokens |
 | `lido-withdrawal` | `LIDO_WITHDRAWAL` | `LidoWithdrawalQueueBalanceAdapter` — ETH owed from the Lido stETH withdrawal queue |
 | `stader-withdrawal` | `STADER_WITHDRAWAL` | `StaderWithdrawalQueueBalanceAdapter` — ETH owed from the Stader ETHx withdrawal queue |
 | `kelp-withdrawal` | `KELP_WITHDRAWAL` | `KelpWithdrawalQueueBalanceAdapter` — assets owed from the Kelp rsETH exit queue |
@@ -1560,7 +1560,7 @@ the same on every chain. Default `positionId` = base `_instancePositionId` (inst
 | `StakeWiseV3ExitQueueAssistedBalanceAdapter` | `stakewise-v3-exit` | `"StakeWise V3"` (const) | `["Exit Queue", <receiptSymbol>]` (derived) | `abi.encode(address vault)` (per vault) | Supplied — **per request (ticket)** with the `positionTicket` in `positionInstanceId`, up to two legs (claimable + still-queued) sharing the per-vault positionId | `["StakeWise V3","Exit Queue","osETH"]` |
 | `NexusMutualStakingPoolsAssistedBalanceAdapter` | `nexus-mutual-staking-pools` | `"Nexus Mutual"` (const) | `["Staking Pools", "Pool #<id>"]` (derived) | `abi.encode(address stakingPool)` | Staking / Rewards | `["Nexus Mutual","Staking Pools","Pool #5"]` |
 
-(`MerklRewardsBalanceAdapter` (attested family, ADR 0022) is being re-added and is not yet on `main`; the `merkl` slug is reserved for it — see the note in the `protocolSubId` table above.)
+(`MerklRewardsAttestedBalanceAdapter` (attested family, ADR 0022) is being re-added and is not yet on `main`; the `merkl` slug is reserved for it — see the note in the `protocolSubId` table above.)
 
 #### What each `positionId` value is
 

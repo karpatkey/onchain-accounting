@@ -4,9 +4,9 @@ pragma solidity ^0.8.0;
 import {NotAContract} from "src/errors.sol";
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.sol";
 import {
-    MerklRewardsBalanceAdapter,
+    MerklRewardsAttestedBalanceAdapter,
     IMerklDistributor
-} from "src/balances/AttestedBalanceAdapters/MerklRewardsBalanceAdapter.sol";
+} from "src/balances/AttestedBalanceAdapters/MerklRewardsAttestedBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IAttestedBalanceAdapter} from "src/balances/IAttestedBalanceAdapter.sol";
@@ -52,16 +52,16 @@ contract MockMerklDistributor is IMerklDistributor {
     }
 }
 
-/// @title MerklRewardsBalanceAdapterTest
-/// @notice Unit tests for MerklRewardsBalanceAdapter. Builds toy 1-, 2-, and 4-leaf merkle trees in-memory using the
+/// @title MerklRewardsAttestedBalanceAdapterTest
+/// @notice Unit tests for MerklRewardsAttestedBalanceAdapter. Builds toy 1-, 2-, and 4-leaf merkle trees in-memory using the
 ///         same hashing rule as Merkl's Distributor (sorted-pair, `keccak256(abi.encode(a, b))`).
 /// @dev    The adapter is PERMISSIONLESS: `submitProofs`/`submitProofsBatch` take no roles and are callable by anyone
 ///         (integrity comes from live-root proof verification). Submit is UPSERT semantics: each `(token, proof)`
 ///         entry adds/refreshes just that `(user, token)` and never drops a token it omits — so a third party can't
 ///         suppress a live entry (removal is only via the stale-gated `clearAllocation`/`clearAccount`). Across-submit
 ///         monotonicity (`AmountRegression`) is enforced. Batching a user's tokens in one call is a convenience.
-contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
-    MerklRewardsBalanceAdapter public adapter;
+contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
+    MerklRewardsAttestedBalanceAdapter public adapter;
     MockMerklDistributor public distributor;
 
     address public stranger = makeAddr("stranger");
@@ -80,7 +80,7 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
         morpho = _createAndRegisterToken("MORPHO", 18);
 
         // Permissionless: no admin/assistant roles.
-        adapter = new MerklRewardsBalanceAdapter(address(distributor), address(balances));
+        adapter = new MerklRewardsAttestedBalanceAdapter(address(distributor), address(balances));
     }
 
     // ============================================
@@ -134,12 +134,13 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
     /// @dev Wrap a single (token, amount, proof) into a submit. Submit is UPSERT semantics — this adds/refreshes just
     ///      this one (user, token) and leaves any other cached tokens untouched. Permissionless — any caller works.
     function _submitOne(address user, address token, uint256 amount, bytes32[] memory proof) internal {
-        MerklRewardsBalanceAdapter.Allocation[] memory allocs = new MerklRewardsBalanceAdapter.Allocation[](1);
-        allocs[0] = MerklRewardsBalanceAdapter.Allocation({
+        MerklRewardsAttestedBalanceAdapter.Allocation[] memory allocs =
+            new MerklRewardsAttestedBalanceAdapter.Allocation[](1);
+        allocs[0] = MerklRewardsAttestedBalanceAdapter.Allocation({
             token: token,
             cumulativeAmount: amount,
             proof: proof,
-            campaigns: new MerklRewardsBalanceAdapter.CampaignShare[](0)
+            campaigns: new MerklRewardsAttestedBalanceAdapter.CampaignShare[](0)
         });
         adapter.submitProofs(user, allocs);
     }
@@ -149,14 +150,14 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
     function _submitMany(address user, address[] memory tokens, uint256[] memory amounts, bytes32[][] memory proofs)
         internal
     {
-        MerklRewardsBalanceAdapter.Allocation[] memory allocs =
-            new MerklRewardsBalanceAdapter.Allocation[](tokens.length);
+        MerklRewardsAttestedBalanceAdapter.Allocation[] memory allocs =
+            new MerklRewardsAttestedBalanceAdapter.Allocation[](tokens.length);
         for (uint256 i; i < tokens.length; ++i) {
-            allocs[i] = MerklRewardsBalanceAdapter.Allocation({
+            allocs[i] = MerklRewardsAttestedBalanceAdapter.Allocation({
                 token: tokens[i],
                 cumulativeAmount: amounts[i],
                 proof: proofs[i],
-                campaigns: new MerklRewardsBalanceAdapter.CampaignShare[](0)
+                campaigns: new MerklRewardsAttestedBalanceAdapter.CampaignShare[](0)
             });
         }
         adapter.submitProofs(user, allocs);
@@ -168,22 +169,22 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_constructor_revertsOnZeroDistributor() public {
         vm.expectRevert(InvalidArguments.selector);
-        new MerklRewardsBalanceAdapter(address(0), address(balances));
+        new MerklRewardsAttestedBalanceAdapter(address(0), address(balances));
     }
 
     function test_constructor_revertsOnZeroNavCalculator() public {
         vm.expectRevert(InvalidArguments.selector);
-        new MerklRewardsBalanceAdapter(address(distributor), address(0));
+        new MerklRewardsAttestedBalanceAdapter(address(distributor), address(0));
     }
 
     function test_constructor_revertsOnNonContractDistributor() public {
         vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "Distributor"));
-        new MerklRewardsBalanceAdapter(makeAddr("eoa"), address(balances));
+        new MerklRewardsAttestedBalanceAdapter(makeAddr("eoa"), address(balances));
     }
 
     function test_constructor_revertsOnNonContractNavCalculator() public {
         vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "NAVCalculator"));
-        new MerklRewardsBalanceAdapter(address(distributor), makeAddr("eoa"));
+        new MerklRewardsAttestedBalanceAdapter(address(distributor), makeAddr("eoa"));
     }
 
     function test_constructor_setsImmutableState() public view {
@@ -228,12 +229,13 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
         bytes32 leaf = _leaf(alice, address(arb), 100 ether);
         distributor.setRoot(leaf);
 
-        MerklRewardsBalanceAdapter.Allocation[] memory allocs = new MerklRewardsBalanceAdapter.Allocation[](1);
-        allocs[0] = MerklRewardsBalanceAdapter.Allocation({
+        MerklRewardsAttestedBalanceAdapter.Allocation[] memory allocs =
+            new MerklRewardsAttestedBalanceAdapter.Allocation[](1);
+        allocs[0] = MerklRewardsAttestedBalanceAdapter.Allocation({
             token: address(arb),
             cumulativeAmount: 100 ether,
             proof: new bytes32[](0),
-            campaigns: new MerklRewardsBalanceAdapter.CampaignShare[](0)
+            campaigns: new MerklRewardsAttestedBalanceAdapter.CampaignShare[](0)
         });
         vm.prank(stranger);
         adapter.submitProofs(alice, allocs);
@@ -248,14 +250,15 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
         bytes32 leaf = _leaf(alice, address(arb), 100 ether);
         distributor.setRoot(leaf);
 
-        MerklRewardsBalanceAdapter.Allocation[] memory allocs = new MerklRewardsBalanceAdapter.Allocation[](1);
-        allocs[0] = MerklRewardsBalanceAdapter.Allocation({
+        MerklRewardsAttestedBalanceAdapter.Allocation[] memory allocs =
+            new MerklRewardsAttestedBalanceAdapter.Allocation[](1);
+        allocs[0] = MerklRewardsAttestedBalanceAdapter.Allocation({
             token: address(arb),
             cumulativeAmount: 999 ether, // fabricated — not the leaf amount
             proof: new bytes32[](0),
-            campaigns: new MerklRewardsBalanceAdapter.CampaignShare[](0)
+            campaigns: new MerklRewardsAttestedBalanceAdapter.CampaignShare[](0)
         });
-        vm.expectRevert(MerklRewardsBalanceAdapter.InvalidProof.selector);
+        vm.expectRevert(MerklRewardsAttestedBalanceAdapter.InvalidProof.selector);
         vm.prank(stranger);
         adapter.submitProofs(alice, allocs);
     }
@@ -338,7 +341,7 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
         distributor.setRoot(leaf);
 
         vm.expectEmit(true, true, false, true, address(adapter));
-        emit MerklRewardsBalanceAdapter.AllocationCached(
+        emit MerklRewardsAttestedBalanceAdapter.AllocationCached(
             alice, address(arb), 100 ether, leaf, uint64(block.timestamp), 0
         );
         _submitOne(alice, address(arb), 100 ether, new bytes32[](0));
@@ -385,7 +388,7 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
 
         // Attacker submits an EMPTY list for alice — a no-op, not a wipe.
         vm.prank(makeAddr("attacker"));
-        adapter.submitProofs(alice, new MerklRewardsBalanceAdapter.Allocation[](0));
+        adapter.submitProofs(alice, new MerklRewardsAttestedBalanceAdapter.Allocation[](0));
 
         assertEq(adapter.userTokens(alice).length, 1, "empty submit must not drop live entries");
         (uint256 amt,,) = adapter.allocations(alice, address(arb));
@@ -435,21 +438,21 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_submitProofs_revertsOnUninitializedRoot() public {
         // root == 0
-        vm.expectRevert(MerklRewardsBalanceAdapter.UninitializedRoot.selector);
+        vm.expectRevert(MerklRewardsAttestedBalanceAdapter.UninitializedRoot.selector);
         _submitOne(alice, address(arb), 100 ether, new bytes32[](0));
     }
 
     function test_submitProofs_revertsOnInvalidProof_wrongAmount() public {
         bytes32 leaf = _leaf(alice, address(arb), 100 ether);
         distributor.setRoot(leaf);
-        vm.expectRevert(MerklRewardsBalanceAdapter.InvalidProof.selector);
+        vm.expectRevert(MerklRewardsAttestedBalanceAdapter.InvalidProof.selector);
         _submitOne(alice, address(arb), 999 ether, new bytes32[](0));
     }
 
     function test_submitProofs_revertsOnInvalidProof_wrongUser() public {
         bytes32 leaf = _leaf(alice, address(arb), 100 ether);
         distributor.setRoot(leaf);
-        vm.expectRevert(MerklRewardsBalanceAdapter.InvalidProof.selector);
+        vm.expectRevert(MerklRewardsAttestedBalanceAdapter.InvalidProof.selector);
         _submitOne(bob, address(arb), 100 ether, new bytes32[](0));
     }
 
@@ -464,7 +467,7 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
         // Corrupt the sibling
         proof[0] = bytes32(uint256(proof[0]) ^ uint256(1));
 
-        vm.expectRevert(MerklRewardsBalanceAdapter.InvalidProof.selector);
+        vm.expectRevert(MerklRewardsAttestedBalanceAdapter.InvalidProof.selector);
         _submitOne(alice, address(arb), 100 ether, proof);
     }
 
@@ -480,20 +483,21 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
         distributor.setRoot(root);
 
         // Same token twice, decreasing: the second entry trips AmountRegression.
-        MerklRewardsBalanceAdapter.Allocation[] memory allocs = new MerklRewardsBalanceAdapter.Allocation[](2);
-        allocs[0] = MerklRewardsBalanceAdapter.Allocation({
+        MerklRewardsAttestedBalanceAdapter.Allocation[] memory allocs =
+            new MerklRewardsAttestedBalanceAdapter.Allocation[](2);
+        allocs[0] = MerklRewardsAttestedBalanceAdapter.Allocation({
             token: address(arb),
             cumulativeAmount: 100 ether,
             proof: p0,
-            campaigns: new MerklRewardsBalanceAdapter.CampaignShare[](0)
+            campaigns: new MerklRewardsAttestedBalanceAdapter.CampaignShare[](0)
         });
-        allocs[1] = MerklRewardsBalanceAdapter.Allocation({
+        allocs[1] = MerklRewardsAttestedBalanceAdapter.Allocation({
             token: address(arb),
             cumulativeAmount: 50 ether,
             proof: p1,
-            campaigns: new MerklRewardsBalanceAdapter.CampaignShare[](0)
+            campaigns: new MerklRewardsAttestedBalanceAdapter.CampaignShare[](0)
         });
-        vm.expectRevert(MerklRewardsBalanceAdapter.AmountRegression.selector);
+        vm.expectRevert(MerklRewardsAttestedBalanceAdapter.AmountRegression.selector);
         adapter.submitProofs(alice, allocs);
     }
 
@@ -511,7 +515,7 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
         distributor.setRoot(leaf2);
 
         // Direct resubmit is rejected — 50 < cached 100.
-        vm.expectRevert(MerklRewardsBalanceAdapter.AmountRegression.selector);
+        vm.expectRevert(MerklRewardsAttestedBalanceAdapter.AmountRegression.selector);
         _submitOne(alice, address(arb), 50 ether, new bytes32[](0));
 
         // The cached entry is stale (cached root != live root) → reads 0 → clearable; then the lower value lands.
@@ -536,30 +540,31 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
         distributor.setRoot(root);
 
         address[] memory users = new address[](2);
-        MerklRewardsBalanceAdapter.Allocation[][] memory allocs = new MerklRewardsBalanceAdapter.Allocation[][](2);
+        MerklRewardsAttestedBalanceAdapter.Allocation[][] memory allocs =
+            new MerklRewardsAttestedBalanceAdapter.Allocation[][](2);
 
         // alice: ARB (leaf 0) + OP (leaf 2)
         users[0] = alice;
-        allocs[0] = new MerklRewardsBalanceAdapter.Allocation[](2);
+        allocs[0] = new MerklRewardsAttestedBalanceAdapter.Allocation[](2);
         (, bytes32[] memory aArb) = _buildTree4(leaves, 0);
         (, bytes32[] memory aOp) = _buildTree4(leaves, 2);
-        allocs[0][0] = MerklRewardsBalanceAdapter.Allocation(
-            address(arb), 100 ether, aArb, new MerklRewardsBalanceAdapter.CampaignShare[](0)
+        allocs[0][0] = MerklRewardsAttestedBalanceAdapter.Allocation(
+            address(arb), 100 ether, aArb, new MerklRewardsAttestedBalanceAdapter.CampaignShare[](0)
         );
-        allocs[0][1] = MerklRewardsBalanceAdapter.Allocation(
-            address(op), 50 ether, aOp, new MerklRewardsBalanceAdapter.CampaignShare[](0)
+        allocs[0][1] = MerklRewardsAttestedBalanceAdapter.Allocation(
+            address(op), 50 ether, aOp, new MerklRewardsAttestedBalanceAdapter.CampaignShare[](0)
         );
 
         // bob: ARB (leaf 1) + OP (leaf 3)
         users[1] = bob;
-        allocs[1] = new MerklRewardsBalanceAdapter.Allocation[](2);
+        allocs[1] = new MerklRewardsAttestedBalanceAdapter.Allocation[](2);
         (, bytes32[] memory bArb) = _buildTree4(leaves, 1);
         (, bytes32[] memory bOp) = _buildTree4(leaves, 3);
-        allocs[1][0] = MerklRewardsBalanceAdapter.Allocation(
-            address(arb), 200 ether, bArb, new MerklRewardsBalanceAdapter.CampaignShare[](0)
+        allocs[1][0] = MerklRewardsAttestedBalanceAdapter.Allocation(
+            address(arb), 200 ether, bArb, new MerklRewardsAttestedBalanceAdapter.CampaignShare[](0)
         );
-        allocs[1][1] = MerklRewardsBalanceAdapter.Allocation(
-            address(op), 75 ether, bOp, new MerklRewardsBalanceAdapter.CampaignShare[](0)
+        allocs[1][1] = MerklRewardsAttestedBalanceAdapter.Allocation(
+            address(op), 75 ether, bOp, new MerklRewardsAttestedBalanceAdapter.CampaignShare[](0)
         );
 
         adapter.submitProofsBatch(users, allocs);
@@ -570,7 +575,8 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_submitProofsBatch_revertsOnLengthMismatch() public {
         address[] memory users = new address[](2);
-        MerklRewardsBalanceAdapter.Allocation[][] memory allocs = new MerklRewardsBalanceAdapter.Allocation[][](1); // mismatch
+        MerklRewardsAttestedBalanceAdapter.Allocation[][] memory allocs =
+            new MerklRewardsAttestedBalanceAdapter.Allocation[][](1); // mismatch
 
         vm.expectRevert(InvalidArguments.selector);
         adapter.submitProofsBatch(users, allocs);
@@ -621,14 +627,14 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
     function test_clearAllocation_revertsWhenLive() public {
         _seedAllocation(alice, address(arb), 100 ether);
         vm.expectRevert(
-            abi.encodeWithSelector(MerklRewardsBalanceAdapter.AllocationStillLive.selector, alice, address(arb))
+            abi.encodeWithSelector(MerklRewardsAttestedBalanceAdapter.AllocationStillLive.selector, alice, address(arb))
         );
         adapter.clearAllocation(alice, address(arb));
     }
 
     /// @notice Clearing a (user, token) with nothing cached reverts NothingToClear.
     function test_clearAllocation_revertsNothingToClear() public {
-        vm.expectRevert(MerklRewardsBalanceAdapter.NothingToClear.selector);
+        vm.expectRevert(MerklRewardsAttestedBalanceAdapter.NothingToClear.selector);
         adapter.clearAllocation(alice, address(arb));
     }
 
@@ -714,7 +720,7 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
         distributor.setClaimed(alice, address(op), uint208(50 ether), uint48(block.timestamp), bytes32(0));
 
         vm.expectRevert(
-            abi.encodeWithSelector(MerklRewardsBalanceAdapter.AllocationStillLive.selector, alice, address(arb))
+            abi.encodeWithSelector(MerklRewardsAttestedBalanceAdapter.AllocationStillLive.selector, alice, address(arb))
         );
         adapter.clearAccount(alice);
 
@@ -731,7 +737,7 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
         distributor.setRoot(keccak256("rotated root"));
 
         vm.expectEmit(true, false, false, false, address(adapter));
-        emit MerklRewardsBalanceAdapter.AccountCleared(alice);
+        emit MerklRewardsAttestedBalanceAdapter.AccountCleared(alice);
         adapter.clearAccount(alice);
 
         assertEq(adapter.userTokens(alice).length, 0);
@@ -751,7 +757,7 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
 
     /// @notice Bulk-clearing a never-cached account reverts NothingToClear.
     function test_clearAccount_revertsNothingToClear() public {
-        vm.expectRevert(MerklRewardsBalanceAdapter.NothingToClear.selector);
+        vm.expectRevert(MerklRewardsAttestedBalanceAdapter.NothingToClear.selector);
         adapter.clearAccount(alice);
     }
 
@@ -966,12 +972,13 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
         address user,
         address token,
         uint256 tokenCumulative,
-        MerklRewardsBalanceAdapter.CampaignShare[] memory shares
+        MerklRewardsAttestedBalanceAdapter.CampaignShare[] memory shares
     ) internal {
         bytes32 leaf = _leaf(user, token, tokenCumulative);
         distributor.setRoot(leaf);
-        MerklRewardsBalanceAdapter.Allocation[] memory allocs = new MerklRewardsBalanceAdapter.Allocation[](1);
-        allocs[0] = MerklRewardsBalanceAdapter.Allocation({
+        MerklRewardsAttestedBalanceAdapter.Allocation[] memory allocs =
+            new MerklRewardsAttestedBalanceAdapter.Allocation[](1);
+        allocs[0] = MerklRewardsAttestedBalanceAdapter.Allocation({
             token: token, cumulativeAmount: tokenCumulative, proof: new bytes32[](0), campaigns: shares
         });
         adapter.submitProofs(user, allocs);
@@ -980,8 +987,9 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
     function test_positionInstanceId_carriesCampaignPair() public {
         bytes32 cid = keccak256("merkl-campaign-1");
         bytes32 sub = keccak256("merkl-subcampaign-1");
-        MerklRewardsBalanceAdapter.CampaignShare[] memory shares = new MerklRewardsBalanceAdapter.CampaignShare[](1);
-        shares[0] = MerklRewardsBalanceAdapter.CampaignShare({
+        MerklRewardsAttestedBalanceAdapter.CampaignShare[] memory shares =
+            new MerklRewardsAttestedBalanceAdapter.CampaignShare[](1);
+        shares[0] = MerklRewardsAttestedBalanceAdapter.CampaignShare({
             campaignId: cid, subCampaignId: sub, cumulativeAmount: 100 ether
         });
         _submitWithCampaigns(alice, address(arb), 100 ether, shares);
@@ -1007,11 +1015,12 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
     function test_multipleCampaigns_splitProRataByShare() public {
         bytes32 cidA = keccak256("campaign-A");
         bytes32 cidB = keccak256("campaign-B");
-        MerklRewardsBalanceAdapter.CampaignShare[] memory shares = new MerklRewardsBalanceAdapter.CampaignShare[](2);
-        shares[0] = MerklRewardsBalanceAdapter.CampaignShare({
+        MerklRewardsAttestedBalanceAdapter.CampaignShare[] memory shares =
+            new MerklRewardsAttestedBalanceAdapter.CampaignShare[](2);
+        shares[0] = MerklRewardsAttestedBalanceAdapter.CampaignShare({
             campaignId: cidA, subCampaignId: ZERO, cumulativeAmount: 60 ether
         });
-        shares[1] = MerklRewardsBalanceAdapter.CampaignShare({
+        shares[1] = MerklRewardsAttestedBalanceAdapter.CampaignShare({
             campaignId: cidB, subCampaignId: ZERO, cumulativeAmount: 40 ether
         });
         _submitWithCampaigns(alice, address(arb), 100 ether, shares); // Σ shares == 100 ether == token total
@@ -1029,20 +1038,22 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
     function test_submit_revertsWhenCampaignSharesDontSumToTotal() public {
         bytes32 leaf = _leaf(alice, address(arb), 100 ether);
         distributor.setRoot(leaf);
-        MerklRewardsBalanceAdapter.CampaignShare[] memory shares = new MerklRewardsBalanceAdapter.CampaignShare[](2);
-        shares[0] = MerklRewardsBalanceAdapter.CampaignShare({
+        MerklRewardsAttestedBalanceAdapter.CampaignShare[] memory shares =
+            new MerklRewardsAttestedBalanceAdapter.CampaignShare[](2);
+        shares[0] = MerklRewardsAttestedBalanceAdapter.CampaignShare({
             campaignId: keccak256("a"), subCampaignId: ZERO, cumulativeAmount: 60 ether
         });
-        shares[1] = MerklRewardsBalanceAdapter.CampaignShare({
+        shares[1] = MerklRewardsAttestedBalanceAdapter.CampaignShare({
             campaignId: keccak256("b"), subCampaignId: ZERO, cumulativeAmount: 30 ether
         }); // sum 90 != 100
-        MerklRewardsBalanceAdapter.Allocation[] memory allocs = new MerklRewardsBalanceAdapter.Allocation[](1);
-        allocs[0] = MerklRewardsBalanceAdapter.Allocation({
+        MerklRewardsAttestedBalanceAdapter.Allocation[] memory allocs =
+            new MerklRewardsAttestedBalanceAdapter.Allocation[](1);
+        allocs[0] = MerklRewardsAttestedBalanceAdapter.Allocation({
             token: address(arb), cumulativeAmount: 100 ether, proof: new bytes32[](0), campaigns: shares
         });
         vm.expectRevert(
             abi.encodeWithSelector(
-                MerklRewardsBalanceAdapter.CampaignSumMismatch.selector, address(arb), 90 ether, 100 ether
+                MerklRewardsAttestedBalanceAdapter.CampaignSumMismatch.selector, address(arb), 90 ether, 100 ether
             )
         );
         adapter.submitProofs(alice, allocs);
@@ -1054,19 +1065,21 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
         uint256 over = adapter.MAX_CAMPAIGNS_PER_TOKEN() + 1;
         bytes32 leaf = _leaf(alice, address(arb), 100 ether);
         distributor.setRoot(leaf);
-        MerklRewardsBalanceAdapter.CampaignShare[] memory shares = new MerklRewardsBalanceAdapter.CampaignShare[](over);
+        MerklRewardsAttestedBalanceAdapter.CampaignShare[] memory shares =
+            new MerklRewardsAttestedBalanceAdapter.CampaignShare[](over);
         for (uint256 i; i < over; ++i) {
-            shares[i] = MerklRewardsBalanceAdapter.CampaignShare({
+            shares[i] = MerklRewardsAttestedBalanceAdapter.CampaignShare({
                 campaignId: keccak256(abi.encode("c", i)), subCampaignId: ZERO, cumulativeAmount: 1 ether
             });
         }
-        MerklRewardsBalanceAdapter.Allocation[] memory allocs = new MerklRewardsBalanceAdapter.Allocation[](1);
-        allocs[0] = MerklRewardsBalanceAdapter.Allocation({
+        MerklRewardsAttestedBalanceAdapter.Allocation[] memory allocs =
+            new MerklRewardsAttestedBalanceAdapter.Allocation[](1);
+        allocs[0] = MerklRewardsAttestedBalanceAdapter.Allocation({
             token: address(arb), cumulativeAmount: 100 ether, proof: new bytes32[](0), campaigns: shares
         });
         // The count check fires before the sum check, so a mismatched sum is irrelevant here.
         vm.expectRevert(
-            abi.encodeWithSelector(MerklRewardsBalanceAdapter.TooManyCampaigns.selector, address(arb), over)
+            abi.encodeWithSelector(MerklRewardsAttestedBalanceAdapter.TooManyCampaigns.selector, address(arb), over)
         );
         adapter.submitProofs(alice, allocs);
     }
@@ -1075,9 +1088,10 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
     function test_submit_acceptsExactlyMaxCampaigns() public {
         uint256 max = adapter.MAX_CAMPAIGNS_PER_TOKEN();
         uint256 total = max * 1 ether;
-        MerklRewardsBalanceAdapter.CampaignShare[] memory shares = new MerklRewardsBalanceAdapter.CampaignShare[](max);
+        MerklRewardsAttestedBalanceAdapter.CampaignShare[] memory shares =
+            new MerklRewardsAttestedBalanceAdapter.CampaignShare[](max);
         for (uint256 i; i < max; ++i) {
-            shares[i] = MerklRewardsBalanceAdapter.CampaignShare({
+            shares[i] = MerklRewardsAttestedBalanceAdapter.CampaignShare({
                 campaignId: keccak256(abi.encode("c", i)), subCampaignId: ZERO, cumulativeAmount: 1 ether
             });
         }

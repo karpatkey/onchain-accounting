@@ -59,7 +59,9 @@ import {FluidVaultsMetaBalanceAdapter} from "../../src/balances/MetaBalanceAdapt
 import {
     StaderWithdrawalQueueBalanceAdapter
 } from "../../src/balances/BalanceAdapters/StaderWithdrawalQueueBalanceAdapter.sol";
-import {MerklRewardsBalanceAdapter} from "../../src/balances/AttestedBalanceAdapters/MerklRewardsBalanceAdapter.sol";
+import {
+    MerklRewardsAttestedBalanceAdapter
+} from "../../src/balances/AttestedBalanceAdapters/MerklRewardsAttestedBalanceAdapter.sol";
 import {
     KelpWithdrawalQueueBalanceAdapter
 } from "../../src/balances/BalanceAdapters/KelpWithdrawalQueueBalanceAdapter.sol";
@@ -689,7 +691,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address distributor = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "distributor")
         );
-        MerklRewardsBalanceAdapter adapter = new MerklRewardsBalanceAdapter(distributor, navCalculator);
+        MerklRewardsAttestedBalanceAdapter adapter = new MerklRewardsAttestedBalanceAdapter(distributor, navCalculator);
         return address(adapter);
     }
 

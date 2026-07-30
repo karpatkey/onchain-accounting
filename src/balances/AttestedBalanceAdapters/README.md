@@ -32,7 +32,7 @@ admin-injected amounts, no upgrade path.
 
 ## Members
 
-- **`MerklRewardsBalanceAdapter`** — Merkl (Angle Labs) unclaimed rewards. `submitProofs(user, Allocation[])` /
+- **`MerklRewardsAttestedBalanceAdapter`** — Merkl (Angle Labs) unclaimed rewards. `submitProofs(user, Allocation[])` /
   `submitProofsBatch` upsert per-`(user, token)` merkle-proof-verified cumulative allocations; a NAV read reports
   `unclaimed = cachedCumulative − Distributor.claimed(user, token)` (0 if the cached root ≠ `Distributor.getMerkleRoot()`).
   Constructor `(distributor, navCalculator)`. Protocol-specific rationale:

@@ -80,7 +80,7 @@ Numbered ADRs. Read when you want the *why* behind a design choice.
 
 | Doc | When to use |
 |---|---|
-| [`operations/merkl-proof-submitter.md`](operations/merkl-proof-submitter.md) | Periodic operator loop that fetches Merkl proofs and pushes them to the `MerklRewardsBalanceAdapter` cache so unclaimed rewards stay valued in NAV. |
+| [`operations/merkl-proof-submitter.md`](operations/merkl-proof-submitter.md) | Periodic operator loop that fetches Merkl proofs and pushes them to the `MerklRewardsAttestedBalanceAdapter` cache so unclaimed rewards stay valued in NAV. |
 | [`operations/etherfi-withdrawals-submitter.md`](operations/etherfi-withdrawals-submitter.md) | Operator bot that discovers an account's ether.fi `WithdrawRequestNFT` tokenIds and submits them to the `EtherFiWithdrawalQueueAssistedBalanceAdapter` id cache (ids only — the adapter values them live). |
 | [`operations/stakewise-exit-submitter.md`](operations/stakewise-exit-submitter.md) | Operator bot that discovers an account's StakeWise V3 exit-queue positions (`(vault, positionTicket, timestamp)`) and submits them to the `StakeWiseV3ExitQueueAssistedBalanceAdapter` cache (coordinates only — the adapter values them live). |
 | [`operations/stader-withdrawal-queue-griefing.md`](operations/stader-withdrawal-queue-griefing.md) | Operator's note on the `StaderWithdrawalQueueBalanceAdapter` griefing/gas surface — anyone can plant self-funded, victim-claimable withdrawal requests up to Stader's per-account cap; why the absence of an adapter-level cap is acceptable. |

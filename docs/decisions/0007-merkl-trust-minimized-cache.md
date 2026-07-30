@@ -42,7 +42,7 @@ adds/refreshes, never drops an omitted entry — and caches a **proof-verified a
 not derivable on-chain). Its "under-report only" guarantee rests on **proof-verification + stale-root→0** (return 0
 whenever the cached root ≠ the live root), not on `msg.sender`-keying or live ownership re-verification. The family's
 one universal mutator is a stale-gated `clearAccount(address)` (reverts while any element is live). Merkl
-(`MerklRewardsBalanceAdapter`, `src/balances/AttestedBalanceAdapters/`) is the first attested member — an
+(`MerklRewardsAttestedBalanceAdapter`, `src/balances/AttestedBalanceAdapters/`) is the first attested member — an
 `IAttestedBalanceAdapter` + `IPositionDescribable` adapter (the documented mutable exception), permissionless. The
 fully-on-chain alternative was researched and ruled out: Merkl commits only a root + IPFS pointer on-chain and computes
 allocations off-chain, so no `view` (and no on-chain recomputation) can produce an unclaimed amount without
@@ -115,8 +115,8 @@ Ship `MerklRewardsAssistedBalanceAdapter` (`src/balances/AssistedBalanceAdapters
 
 > The refs below are the **current** (post-amendment) locations — the `attested` family (see [ADR 0022](0022-attested-balance-adapter-family.md)). The original ship lived under `AssistedBalanceAdapters/` with an `admin`/`assistant` ctor; both are superseded (see the amendment at the top).
 
-- Adapter: `src/balances/AttestedBalanceAdapters/MerklRewardsBalanceAdapter.sol`
-- Tests: `test/balances/AttestedBalanceAdapters/MerklRewardsBalanceAdapter.t.sol` (unit, including synthetic merkle trees), `test/balances/AttestedBalanceAdapters/fork/MerklRewardsBalanceAdapter.fork.t.sol` (Mainnet integration sanity)
+- Adapter: `src/balances/AttestedBalanceAdapters/MerklRewardsAttestedBalanceAdapter.sol`
+- Tests: `test/balances/AttestedBalanceAdapters/MerklRewardsAttestedBalanceAdapter.t.sol` (unit, including synthetic merkle trees), `test/balances/AttestedBalanceAdapters/fork/MerklRewardsAttestedBalanceAdapter.fork.t.sol` (Mainnet integration sanity)
 - Merkl Distributor source (verified leaf encoding, `_verifyProof`, `getMerkleRoot`): https://github.com/AngleProtocol/merkl-contracts/blob/main/contracts/Distributor.sol
 - Merkl API (proof source for the bot): `https://api.merkl.xyz/v4/users/{address}/rewards?chainId={cid}`
 - Deploy schema: `script/config/contracts-deployment-config/balance-adapters/<id>.json` `MerklRewards.constructor` (`distributor`, plus `protocol`/`positionId` identity metadata); `navCalculator` is supplied by the deploy script. Permissionless — **no** `admin`/`assistant` args (that was the superseded role-gated ship).

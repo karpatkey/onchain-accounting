@@ -43,7 +43,7 @@ import {ProtocolNames} from "src/utils/ProtocolNames.sol";
 ///      assistant contract, and each write is an upsert (never drops an omitted entry). Integrity is the per-write
 ///      merkle-proof check ("attestation"), not `msg.sender`-keying or live-ownership re-verification; the
 ///      "under-report only" guarantee rests on proof-verification + stale-root→0.
-contract MerklRewardsBalanceAdapter is IAttestedBalanceAdapter, IPositionDescribable {
+contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositionDescribable {
     //
     // Type Definitions
     //

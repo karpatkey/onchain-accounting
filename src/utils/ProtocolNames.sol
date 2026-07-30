@@ -102,7 +102,7 @@ library ProtocolNames {
     // Rewards
     // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-    /// @dev `ProtocolIds.MERKL` — the attested Merkl rewards adapter (`MerklRewardsBalanceAdapter`).
+    /// @dev `ProtocolIds.MERKL` — the attested Merkl rewards adapter (`MerklRewardsAttestedBalanceAdapter`).
     string internal constant MERKL = "Merkl";
 
     // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────

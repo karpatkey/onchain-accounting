@@ -478,8 +478,7 @@ contract ProtocolNameConsistencyTest is Test {
             Vm.DirEntry[] memory artifacts = vm.readDir(dirs[i].path);
             for (uint256 j = 0; j < artifacts.length; j++) {
                 if (!_endsWith(artifacts[j].path, "MetaBalanceAdapter.json")) continue;
-                if (_endsWith(artifacts[j].path, "/MetaBalanceAdapter.json")) continue; // abstract base
-                if (_endsWith(artifacts[j].path, "/IMetaBalanceAdapter.json")) continue; // interface
+                if (!_isLiveConcreteArtifact(artifacts[j].path)) continue; // interface, abstract base, or stale
                 count++;
             }
         }
@@ -500,11 +499,34 @@ contract ProtocolNameConsistencyTest is Test {
             for (uint256 j = 0; j < artifacts.length; j++) {
                 if (!_endsWith(artifacts[j].path, "BalanceAdapter.json")) continue;
                 if (_endsWith(artifacts[j].path, "MetaBalanceAdapter.json")) continue; // the meta family
-                if (_endsWith(artifacts[j].path, "/IBalanceAdapter.json")) continue; // interface
-                if (_endsWith(artifacts[j].path, "/IAssistedBalanceAdapter.json")) continue; // marker interface
+                if (!_isLiveConcreteArtifact(artifacts[j].path)) continue; // interface, abstract base, or stale
                 count++;
             }
         }
+    }
+
+    /// @dev True when `artifactPath` is a CONCRETE contract that is still part of the tree. Two independent
+    ///      checks, because the census has two distinct ways of over-counting and neither subsumes the other.
+    /// @dev **1. Kind, not spelling.** Interfaces and abstract contracts have no creation bytecode, so an empty
+    ///      `bytecode.object` identifies them by what they ARE. This replaces the hand-maintained
+    ///      `/IBalanceAdapter.json` / `/IAssistedBalanceAdapter.json` / `/IMetaBalanceAdapter.json` /
+    ///      `/MetaBalanceAdapter.json` exclusions, which were a filename rule: every future interface, marker
+    ///      interface or abstract base is handled without editing this list, and a stale artifact of a DELETED
+    ///      interface or base — which no such list could name in advance — is handled too.
+    /// @dev **2. The source must still exist.** The artifact records the file it was compiled from, and a stale
+    ///      artifact's file is gone. This is the case that actually broke `main`: the artifact directory `out/` is
+    ///      restored in CI from a cache keyed on the repository alone, with no tree or lockfile component, so it
+    ///      accumulates artifacts of adapters deleted long ago and `forge build` never prunes them. Every deleted
+    ///      `*BalanceAdapter.sol` in this repo's history is a latent +1 on a census that only reads `out/`.
+    /// @dev Fails LOUD, not silent: if the artifact does not record a source path, it is COUNTED rather than
+    ///      skipped, so an unrecognised artifact shape trips the census instead of quietly shrinking it. The
+    ///      whole point of this test is that an unexplained count is a signal.
+    function _isLiveConcreteArtifact(string memory artifactPath) internal view returns (bool) {
+        string memory json = vm.readFile(artifactPath);
+        if (bytes(vm.parseJsonString(json, ".bytecode.object")).length <= 2) return false; // "0x" or empty
+        if (!vm.keyExists(json, ".ast.absolutePath")) return true; // undeterminable: count it, do not hide it
+        string memory sourcePath = vm.parseJsonString(json, ".ast.absolutePath");
+        return vm.exists(string.concat(vm.projectRoot(), "/", sourcePath));
     }
 
     function _endsWith(string memory value, string memory suffix) internal pure returns (bool) {

@@ -242,7 +242,7 @@
   },
   "osETHCrossRate": {
     "enabled": true,
-    "$comment": "osETH redundancy feed (osETH_CrossRateCustomPriceFeed). CrossRate: osETH/USD = ETH/USD x osETH/ETH. yToXFeed is the Redstone Classic Push osETH/ETH market feed (verified 99.34% vs StakeWise osTokenVaultController rate). Independent of the primary osETH feed (StakeWise on-chain rate); added as priceFeeds[1] for freshest-wins redundancy.",
+    "$comment": "osETH redundancy feed (osETH_CrossRateCustomPriceFeed). CrossRate: osETH/USD = ETH/USD x osETH/ETH. yToXFeed is the Redstone Classic Push osETH/ETH market feed (verified 99.34% vs StakeWise osTokenVaultController rate). Independent of the primary osETH feed (StakeWise on-chain rate) in both source and methodology, so it can register a market depeg. Registered as a monitorFeed (divergence-only, 250 bps tolerance); it never prices the NAV. It was originally added as priceFeeds[1] for freshest-wins redundancy, but PR #151 replaced that with the primary-plus-monitors model.",
     "constructor": {
       "underlyingAsset": "0xf1C9acDc66974dFB6dEcB12aA385b9cD01190E38",
       "yToXFeed": "0x66ac817f997Efd114EDFcccdce99F3268557B32C",

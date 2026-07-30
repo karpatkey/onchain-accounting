@@ -305,7 +305,19 @@ dead code, and do not wire them up without the corresponding held position.
 is not a registered asset, and nothing about it was worth recording. Gnosis still holds an asset **named** `sDAI` —
 priced by `sXDAI_Price` — so the asset survives while the contract does not.)
 
-**Redundancy `*CrossRate` feeds.** `ETHx_CrossRate_Price`, `ezETH_CrossRate_Price`, and `osETH_CrossRate_Price` are thin `CrossRateCustomPriceFeed` subclasses registered *alongside* their primary feed (`ETHx_Price` / `ezETH_Price` / `osToken_Price`). Each sources the `asset/ETH` rate from an independent Redstone Classic Push market feed rather than the protocol's on-chain rate, giving the freshest-wins selector a genuinely separate fallback source.
+**Monitor `*CrossRate` feeds.** `ETHx_CrossRate_Price`, `ezETH_CrossRate_Price`, and `osETH_CrossRate_Price` are thin `CrossRateCustomPriceFeed` subclasses registered as **`monitorFeeds`** for `ETHx` / `ezETH` / `osETH` — they **never price the NAV**. Each is read only to compute `divergenceBps` against its asset's primary on-chain-rate feed (`ETHx_Price` / `ezETH_Price` / `osToken_Price`), all three under a 250 bps divergence tolerance. PR #151 replaced freshest-wins redundancy for these instances with the primary-plus-monitors model, so none of them is a fallback source and none can win a feed selection.
+
+Their rate legs are **not** uniform, and two of the three have been re-sourced since this section was first written — check `custom-price-feeds/1.json` rather than assuming:
+
+| Instance | `asset/ETH` rate leg | Methodology | Detects a market depeg? |
+|---|---|---|---|
+| `ETHx_CrossRate_Price` | **Chainlink** ETHx/ETH (`0xC499ec76…`, 18-dec) — migrated 2026-07-27 off RedStone, which is sunsetting its ETHx feeds | market | **Yes** — independent of Stader's rate in source *and* methodology |
+| `osETH_CrossRate_Price` | Redstone Classic Push osETH/ETH (`0x66ac817f…`) | market | **Yes** |
+| `ezETH_CrossRate_Price` | RedStone multi-feed **`ezETH_FUNDAMENTAL`** (`0x701e83Bd…`, 8-dec) — migrated 2026-07-22 after RedStone sunset the Classic Push ezETH/ETH market feed | **fundamental** | **No** — see below |
+
+`ezETH`'s monitor is the exception worth knowing: its rate leg is now *fundamental*, so it compares one fundamental rate (RedStone's) against another (Renzo's `RestakeManager`). The **source** is independent; the **methodology** is not. Two fundamental sources agreeing says nothing about market price, so ezETH's 250 bps tolerance cannot fire on the depeg it exists to catch. This is a known open gap, recorded here rather than fixed — closing it requires a market-priced ezETH source to exist.
+
+Note also that since [ADR 0019](../../docs/decisions/0019-nav-sourced-base-price.md) the `ETH/USD` leg of all three comes from the NAV's own selector, not a second hardcoded Chainlink feed — so the base term cancels against the primary's, and a divergence reading reduces to rate-vs-rate.
 
 `_L2_` variants exist for assets where the canonical rate lives on L1. They typically read a Chainlink-secured rate feed on the L2 (rather than calling the L1 rate-provider directly) and inherit the L2 sequencer check via `Prices`.
 

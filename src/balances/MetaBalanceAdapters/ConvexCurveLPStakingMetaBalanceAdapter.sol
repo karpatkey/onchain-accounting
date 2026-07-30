@@ -122,11 +122,24 @@ contract ConvexCurveLPStakingMetaBalanceAdapter is MetaBalanceAdapter {
                     // unregistered (the current state for 3Crv) this branch emits nothing and the principal is
                     // still silently dropped. What actually fixes 3Crv is the registry resolution in
                     // CurvePoolLib.getPool; this branch is the residual net for LPs the registry cannot resolve
-                    // either, and it only pays off if the operator registers the LP. Operator note: registering it also
-                    // makes ERC20Default report the account's WALLET-held LP, which `CurvePoolsMeta` already
-                    // decomposes into coin legs for a governed pool - i.e. registering to light this net up
-                    // double-counts the wallet LP. Prefer registering it only where the pool is NOT a governed
-                    // CurvePoolsMeta instance.
+                    // either, and it only pays off if the operator registers the LP.
+                    //
+                    // An earlier version of this comment closed by advising against registering the LP where the
+                    // pool is a governed CurvePoolsMeta instance, on the grounds that it double-counts the wallet
+                    // LP against ERC20Default. That advice is REMOVED because it was wrong twice and, being
+                    // operator-facing, would have reintroduced the very bug this branch exists to fix:
+                    //
+                    //   1. It cannot double-count THIS leg. This leg reports `stakedLp`, the balance the CONVEX
+                    //      REWARDER holds, whereas ERC20Default and CurvePoolsMeta both read `balanceOf(account)`.
+                    //      Staked LP is not wallet LP; the two quantities are disjoint by construction.
+                    //   2. For every LP that can REACH this arm the wallet-side double-count is absent too. This
+                    //      arm requires `coins.length == 0`, and CurvePoolsMeta returns an empty array on exactly
+                    //      that condition, so the two can never both emit for one pool. Measured for 3pool at
+                    //      block 22,500,000 and asserted by `assertEq(pos.length, 0)` in
+                    //      `test_threepool_walletLp_decomposes`.
+                    //
+                    // Following the old advice would leave the LP unregistered, this branch dark, and a real
+                    // staked principal reporting zero - the silent under-report the PR set out to remove.
                     (INAVCalculator.Asset memory lpInfo, bool lpFound) = _getAssetInfo(lpToken);
                     if (lpFound) tmp[n++] = _leg(lpInfo, stakedLp, false, pid, PositionKind.Staking);
                 }

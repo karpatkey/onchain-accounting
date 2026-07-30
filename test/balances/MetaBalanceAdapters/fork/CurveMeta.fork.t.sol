@@ -17,7 +17,10 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 ///   - weETH/WETH TriCrypto-style 2-token pool (actual: ngPool)
 ///       self-LP, two ETH-denominated coins
 ///   - 3pool (DAI/USDC/USDT, 0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7) - uint256-indexed, LP is 3Crv
-///       classic StableSwap with int128-indexed coins
+///       classic StableSwap, but measured at the pinned block it answers `coins(uint256,0)` and REVERTS on
+///       `coins(int128,0)` - so nothing in THIS file exercises the int128 branch (see
+///       test_threepool_walletLp_decomposes). An earlier version of this line called it "int128-indexed", which
+///       is what the renamed test's @dev retracts; the two lines contradicted each other.
 ///
 /// Gauges under test (same underlying pools):
 ///   - crvUSD/USDC gauge (0x95f00391cB5EebCd190EB58728B4CE23DbFa6ac1)
@@ -143,7 +146,10 @@ contract CurveMetaForkTest is BalanceAdapterTestBase {
     /// @dev Renamed: this was `…_int128` and the header called 3pool "int128-indexed", but measured at the
     ///      pinned block 3pool answers `coins(uint256,0)` = DAI and REVERTS on `coins(int128,0)`, so this test
     ///      exercises the uint256 branch exclusively. The int128 fallback is covered by
-    ///      CurvePoolsMetaBalanceAdapter.t.sol via MockLegacyStableSwapPool - just not here.
+    ///      `CurvePoolsMetaBalanceAdapter.t.sol::test_int128Pool_coinsAndBalances_readCorrectly`, which builds a
+    ///      `MockCurvePoolInt128` - just not here. An earlier version of this line pointed at
+    ///      "MockLegacyStableSwapPool", a symbol that exists nowhere in the repo; the substance held but the
+    ///      pointer was dead, which is the same defect class this diff retracts twice elsewhere.
     function test_threepool_walletLp_decomposes() public view {
         uint256 walletLp = _lpBalance(THREEPOOL_LP, THREEPOOL_HOLDER);
         assertGt(walletLp, 0, "fixture holds no LP at FORK_BLOCK - re-fixture, do not skip");

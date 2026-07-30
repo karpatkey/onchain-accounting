@@ -99,6 +99,13 @@ library ProtocolNames {
     string internal constant NEXUS_MUTUAL = "Nexus Mutual";
 
     // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+    // Rewards
+    // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+    /// @dev `ProtocolIds.MERKL` — the attested Merkl rewards adapter (`MerklRewardsBalanceAdapter`).
+    string internal constant MERKL = "Merkl";
+
+    // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
     // protocolId → display name
     // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -144,6 +151,8 @@ library ProtocolNames {
         if (protocolId == ProtocolIds.ETHERFI) return ETHERFI;
         if (protocolId == ProtocolIds.ETHENA) return ETHENA;
         if (protocolId == ProtocolIds.NEXUS_MUTUAL) return NEXUS_MUTUAL;
+
+        if (protocolId == ProtocolIds.MERKL) return MERKL;
 
         if (protocolId == ProtocolIds.WALLET) return WALLET;
 

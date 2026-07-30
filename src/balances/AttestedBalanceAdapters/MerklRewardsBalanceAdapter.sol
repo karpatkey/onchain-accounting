@@ -14,6 +14,7 @@ import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 import "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
+import {ProtocolNames} from "src/utils/ProtocolNames.sol";
 
 /// @title Merkl Rewards Balance Adapter (permissionless, proof-verified cache)
 /// @author KPK
@@ -316,7 +317,7 @@ contract MerklRewardsBalanceAdapter is IAttestedBalanceAdapter, IPositionDescrib
     }
 
     function protocolName() external pure returns (string memory) {
-        return "Merkl";
+        return ProtocolNames.MERKL;
     }
 
     /// @inheritdoc IPositionDescribable

@@ -26,6 +26,7 @@ import {
 import {
     StakeWiseV3ExitQueueAssistedBalanceAdapter
 } from "src/balances/AssistedBalanceAdapters/StakeWiseV3ExitQueueAssistedBalanceAdapter.sol";
+import {MerklRewardsBalanceAdapter} from "src/balances/AttestedBalanceAdapters/MerklRewardsBalanceAdapter.sol";
 import {
     AaveV3InstancesMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/AaveV3InstancesMetaBalanceAdapter.sol";
@@ -149,7 +150,7 @@ contract StaderWithdrawalManagerStub {
 ///
 ///      The invariant has two halves and they need different instruments:
 ///
-///        1. **Hardcoded names** (12 adapters) — a string literal in the adapter, so the name is in the bytecode.
+///        1. **Hardcoded names** (13 adapters) — a string literal in the adapter, so the name is in the bytecode.
 ///           Every one is deployed here and pinned to its `ProtocolNames` constant
 ///           (`test_hardcodedAdapters_matchCanonicalNames`). That is what makes "use the constant, not a literal" a
 ///           checked rule rather than an aspiration: a literal that drifts from its constant fails here even for
@@ -180,7 +181,7 @@ contract ProtocolNameConsistencyTest is Test {
     ///      `test_hardcodedAdapters_matchCanonicalNames`. This family is where the Umbrella bug actually happened,
     ///      and deriving the name fixed only the meta family — so without this census the exact defect this file
     ///      exists to prevent stays re-introducible here.
-    uint256 internal constant HARDCODED_ADAPTER_COUNT = 12;
+    uint256 internal constant HARDCODED_ADAPTER_COUNT = 13;
 
     BalancesHarness internal nav;
     address internal stub;
@@ -195,8 +196,8 @@ contract ProtocolNameConsistencyTest is Test {
     // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
     /// @notice Every adapter that hardcodes its display name must report exactly its `ProtocolNames` constant.
-    /// @dev Covers all 12, including the single-member protocols (Kelp, Lido, Cap, Spark, Ethena, Stader, ether.fi,
-    ///      Nexus Mutual, Wallet) that no shared-protocol-id comparison can reach. Deploying each adapter — rather
+    /// @dev Covers all 13, including the single-member protocols (Kelp, Lido, Cap, Spark, Ethena, Stader, ether.fi,
+    ///      Nexus Mutual, Merkl, Wallet) that no shared-protocol-id comparison can reach. Deploying each adapter — rather
     ///      than restating its literal — is what keeps this non-tautological: the assertion reads the string out of
     ///      compiled bytecode.
     function test_hardcodedAdapters_matchCanonicalNames() public {
@@ -251,6 +252,7 @@ contract ProtocolNameConsistencyTest is Test {
             ProtocolNames.WALLET,
             "ERC20Default"
         );
+        assertEq(new MerklRewardsBalanceAdapter(stub, address(nav)).protocolName(), ProtocolNames.MERKL, "MerklRewards");
     }
 
     /// @notice The three `ProtocolIds.AAVE_V3` products — lending instances, Safety Module, Umbrella — must all
@@ -434,7 +436,7 @@ contract ProtocolNameConsistencyTest is Test {
 
     /// @notice A new plain or assisted adapter must not be able to slip past `test_hardcodedAdapters_matchCanonicalNames`.
     /// @dev The mirror of `test_metaAdapterCensus` for the family whose display name is a hardcoded literal. That
-    ///      test asserts the twelve names it explicitly lists, so it cannot notice a THIRTEENTH adapter — and a
+    ///      test asserts the thirteen names it explicitly lists, so it cannot notice a FOURTEENTH adapter — and a
     ///      hardcoded name is exactly what went wrong with Umbrella ("Aave Umbrella" for `ProtocolIds.AAVE_V3`).
     ///      Deriving the name closed that hole for meta adapters only; this census closes the reporting gap for the
     ///      family that still writes the string by hand, so a new adapter naming a PRODUCT, or naming a protocol
@@ -486,8 +488,9 @@ contract ProtocolNameConsistencyTest is Test {
     }
 
     /// @dev Counts concrete plain + assisted adapter CONTRACT artifacts — everything whose name ends in
-    ///      `BalanceAdapter` but NOT in `MetaBalanceAdapter` — excluding the two interfaces. `AssistedCoordCache`
-    ///      is naturally excluded by the name rule, as is the `MetaBalanceAdapter` base.
+    ///      `BalanceAdapter` but NOT in `MetaBalanceAdapter` — excluding the three interfaces (`IBalanceAdapter`,
+    ///      `IAssistedBalanceAdapter`, `IAttestedBalanceAdapter`). `AssistedCoordCache` is naturally excluded by the
+    ///      name rule, as is the `MetaBalanceAdapter` base.
     function _countHardcodedAdapterContracts(string memory relDir) internal view returns (uint256 count) {
         Vm.DirEntry[] memory dirs = vm.readDir(string.concat(vm.projectRoot(), "/", relDir));
         for (uint256 i = 0; i < dirs.length; i++) {
@@ -501,7 +504,8 @@ contract ProtocolNameConsistencyTest is Test {
                 if (!_endsWith(artifacts[j].path, "BalanceAdapter.json")) continue;
                 if (_endsWith(artifacts[j].path, "MetaBalanceAdapter.json")) continue; // the meta family
                 if (_endsWith(artifacts[j].path, "/IBalanceAdapter.json")) continue; // interface
-                if (_endsWith(artifacts[j].path, "/IAssistedBalanceAdapter.json")) continue; // marker interface
+                if (_endsWith(artifacts[j].path, "/IAssistedBalanceAdapter.json")) continue; // assisted marker interface
+                if (_endsWith(artifacts[j].path, "/IAttestedBalanceAdapter.json")) continue; // attested marker interface
                 count++;
             }
         }
@@ -519,7 +523,7 @@ contract ProtocolNameConsistencyTest is Test {
 
     /// @notice Distinct protocols must not collide on one display name — otherwise a consumer grouping by name
     ///         would merge two genuinely different protocols, the mirror image of the Umbrella bug.
-    /// @dev **Known limitation — this list is hand-maintained.** It covers all 24 `ProtocolNames` constants today,
+    /// @dev **Known limitation — this list is hand-maintained.** It covers all 25 `ProtocolNames` constants today,
     ///      but nothing forces it to stay complete: adding a constant without adding it here passes silently, so a
     ///      duplicate introduced by copy-pasting a neighbour (say `AAVE_V4 = "Aave V3"`) would never be compared
     ///      against anything and this test would report green on exactly the collision it exists to find. There is
@@ -529,7 +533,7 @@ contract ProtocolNameConsistencyTest is Test {
     ///      `PROTOCOL_NAME_COUNT` pinned to the array's own length would be a tautology, not a guard. So: when you
     ///      add a `ProtocolNames` constant, add it to this array by hand. Revisit once `foundry.toml` is free.
     function test_distinctProtocolsHaveDistinctNames() public pure {
-        string[24] memory names = [
+        string[25] memory names = [
             ProtocolNames.WALLET,
             ProtocolNames.AAVE_V3,
             ProtocolNames.SPARK,
@@ -553,7 +557,8 @@ contract ProtocolNameConsistencyTest is Test {
             ProtocolNames.STADER,
             ProtocolNames.ETHERFI,
             ProtocolNames.ETHENA,
-            ProtocolNames.NEXUS_MUTUAL
+            ProtocolNames.NEXUS_MUTUAL,
+            ProtocolNames.MERKL
         ];
 
         for (uint256 i = 0; i < names.length; i++) {

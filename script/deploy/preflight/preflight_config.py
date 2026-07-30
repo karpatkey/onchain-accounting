@@ -14,11 +14,16 @@ reverting — a run "succeeds", writes nothing, and leaves a half-configured NAV
   * A `Custom` price feed named in `nav-config/assets-and-price-feeds` resolves through
     `deployments/<id>.json .customPriceFeeds.<name>`; if the feed is not in the deploy config it is
     never built and asset registration gets address(0).
+  * A NAV-sourced custom feed (ADR 0019) inherits its BASE asset's feed timestamp rather than having a
+    clock of its own, so registering it with a heartbeat TIGHTER than its base's manufactures a stale
+    verdict while the base is fresh — a $0 valuation that reads like an oracle outage rather than a
+    config error. Nothing on-chain enforces the pairing. See `heartbeat_findings`.
 
 usage:
   python3 preflight_config.py                 # all chains with a deployed proxy
   python3 preflight_config.py 1 8453
   python3 preflight_config.py --json report.json
+  python3 preflight_config.py --self-test     # prove the heartbeat guard itself, incl. by mutation
 """
 from __future__ import annotations
 
@@ -53,6 +58,119 @@ def enabled_keys(d: dict) -> list[str]:
 
 def is_bytes32(s) -> bool:
     return isinstance(s, str) and s.startswith("0x") and len(s) == 66
+
+
+def nav_sourced_base(feed_entry: dict) -> str | None:
+    """The `baseAsset` constructor arg of a NAV-sourced custom feed, or None if it has none.
+
+    Presence of `baseAsset` is what makes a feed NAV-sourced under ADR 0019: it reads base/USD from
+    `NAVCalculator.getPriceDataNoDivergence(baseAsset)` via `NavBaseUsdLib`, and therefore inherits the
+    base feed's timestamp instead of having a clock of its own. A custom feed with no `baseAsset` is not
+    NAV-sourced and the heartbeat invariant below does not apply to it.
+    """
+    ctor = feed_entry.get("constructor", feed_entry)
+    return ctor.get("baseAsset") or feed_entry.get("baseAsset")
+
+
+def heartbeat_findings(chain_id: int, assets: dict, dep_feeds: dict) -> list[tuple[str, str]]:
+    """The derived-vs-base heartbeat invariant, for every NAV-sourced custom feed on one chain.
+
+    THE INVARIANT — for a NAV-sourced derived feed, the heartbeat registered on the DERIVED entry must
+    be **>= the heartbeat registered for its BASE asset**:
+
+      * A NAV-sourced feed has no independent clock. `NavBaseUsdLib.baseUsd` returns the base's
+        `pd.updatedAt`, and `BaseCustomPriceFeed._compute` / `ERC4626VaultRatePriceFeed._compute` pass
+        it straight out of `latestRoundData()`. `TwoFeedChainlinkPriceFeed._compute` reports
+        `min(rateUpdatedAt, baseUpdatedAt)` (TwoFeedChainlinkPriceFeed.sol:97) — the older of its rate
+        leg and the base — so the base's timestamp still surfaces whenever the base is the older leg.
+      * `PriceFeedLib._selectFeedCore` then gates that inherited timestamp against the heartbeat of the
+        entry it is reading (`block.timestamp - effectiveTime >= cfg.chainlinkHeartbeat` →
+        PriceFeedLib.sol:147), i.e. the heartbeat registered for the DERIVED asset.
+
+    ASSERT `>=`, NEVER `==` — the asymmetry is the entire point:
+
+      * a LOOSER derived heartbeat cannot over-report, because the derived feed inherits the base's own
+        staleness verdict regardless. wstETH/stETH/lsETH/weETH/eETH/OETH/LDO at 86400 against WETH's
+        3600 are CORRECT and must not be flagged.
+      * a TIGHTER one cannot make a price fresher. It can only manufacture a stale verdict while the
+        base is fresh, which values the asset at $0 and lists it in `stalePriceAssets`.
+
+    The failure mode is silent and MISATTRIBUTING — a $0 valuation plus a `stalePriceAssets` entry looks
+    like an oracle outage, so the investigation goes to Chainlink rather than to config. Measured
+    instance: sUSDS registered at 82800 against USDS's 86400 (fixed by #211). The USDS/USD publisher's
+    real cadence is ~82824s median / 82872s max over 58 days, so USDS's 86400 carried 3600s of margin
+    while sUSDS had effectively none: 59 of 61 intervals overshot, and sUSDS was worth $0 for ~23s a day
+    on 97% of days while USDS itself never went stale.
+
+    Nothing in the contracts enforces this — it is hand-maintained per chain, which is why it belongs in
+    a pre-deploy gate that runs before a live NAV can be affected.
+    """
+    f: list[tuple[str, str]] = []
+    by_addr = {v["address"].lower(): k for k, v in assets.items()
+               if isinstance(v, dict) and isinstance(v.get("address"), str)}
+
+    def primary_heartbeat(sym: str) -> int | None:
+        """The widest heartbeat among an asset's PRIMARY feeds.
+
+        Monitors are excluded because they never price: `getPriceDataNoDivergence` selects over the
+        primary mapping only. `max` is the conservative choice — the base is fresh if ANY of its primary
+        feeds passes its own gate, so the derived entry must tolerate the widest of them.
+        """
+        entry = assets.get(sym) or {}
+        hbs = [fd.get("heartbeat") for fd in (entry.get("priceFeeds") or [])
+               if isinstance(fd.get("heartbeat"), int)]
+        return max(hbs) if hbs else None
+
+    def base_is_itself_derived(sym: str) -> bool:
+        return any(fd.get("type") == "Custom" and nav_sourced_base(dep_feeds.get(fd.get("feed", ""), {}))
+                   for fd in (assets.get(sym) or {}).get("priceFeeds") or [])
+
+    for sym, entry in assets.items():
+        if sym.startswith("$") or not isinstance(entry, dict):
+            continue
+        for kind in ("priceFeeds", "monitorFeeds"):
+            for i, fd in enumerate(entry.get(kind) or []):
+                if fd.get("type") != "Custom":
+                    continue
+                fentry = dep_feeds.get(fd.get("feed", ""))
+                if not fentry:
+                    continue  # already reported as a missing/disabled Custom feed by check_chain
+                base = nav_sourced_base(fentry)
+                if not base:
+                    continue  # not NAV-sourced — no inherited timestamp, invariant does not apply
+                derived_hb = fd.get("heartbeat")
+                if not isinstance(derived_hb, int):
+                    continue  # already reported as a missing heartbeat by check_chain
+                base_sym = by_addr.get(base.lower())
+                if base_sym is None:
+                    f.append((ERROR, f"asset '{sym}' {kind}[{i}] Custom '{fd['feed']}' has baseAsset "
+                                     f"{base} which is NOT a registered asset on this chain — "
+                                     f"`NavBaseUsdLib.baseUsd` catches the revert and the feed is "
+                                     f"permanently stale, valuing '{sym}' at $0"))
+                    continue
+                base_hb = primary_heartbeat(base_sym)
+                if base_hb is None:
+                    f.append((WARN, f"asset '{sym}' {kind}[{i}] Custom '{fd['feed']}' derives from "
+                                    f"'{base_sym}', which has no primary heartbeat to compare against"))
+                    continue
+                if base_is_itself_derived(base_sym):
+                    f.append((WARN, f"asset '{sym}' {kind}[{i}] Custom '{fd['feed']}' derives from "
+                                    f"'{base_sym}', whose own primary is ALSO a NAV-sourced custom feed "
+                                    f"— the base's timestamp is itself inherited, so this single-level "
+                                    f"heartbeat comparison is not conclusive. ADR 0019's circularity "
+                                    f"invariant says a base must be priced by direct feeds only"))
+                if derived_hb < base_hb:
+                    consequence = (f"values '{sym}' at $0 and lists it in stalePriceAssets while "
+                                   f"'{base_sym}' itself is still fresh"
+                                   if kind == "priceFeeds" else
+                                   f"silently drops this monitor, so '{sym}' loses the divergence/"
+                                   f"irregular signal it is there to provide")
+                    f.append((ERROR, f"heartbeat inversion: asset '{sym}' {kind}[{i}] Custom "
+                                     f"'{fd['feed']}' has heartbeat {derived_hb} < its base "
+                                     f"'{base_sym}' heartbeat {base_hb}. A NAV-sourced feed inherits "
+                                     f"its base's timestamp (ADR 0019), so a tighter window cannot "
+                                     f"make the price fresher — it only {consequence}"))
+    return f
 
 
 def check_chain(chain_id: int) -> list[tuple[str, str]]:
@@ -187,6 +305,9 @@ def check_chain(chain_id: int) -> list[tuple[str, str]]:
             f.append((WARN, f"asset '{sym}' sets divergenceToleranceBps="
                             f"{entry['divergenceToleranceBps']} but has NO monitor feeds — it gets no "
                             f"divergence/irregular signal until a monitor is added"))
+    # The derived-vs-base heartbeat invariant — see heartbeat_findings for the full derivation.
+    f += heartbeat_findings(chain_id, assets, dep_feeds)
+
     for fname, entry in dep_feeds.items():
         if entry.get("enabled") is not True:
             continue
@@ -219,12 +340,109 @@ def counts(chain_id: int) -> dict:
     }
 
 
+def self_test() -> int:
+    """Prove the heartbeat guard: synthetic cases for each arm, then mutation against the real config.
+
+    The mutation runs on an in-memory deep copy, never on disk. A guard that edited a tracked config to
+    prove itself could leave that edit behind on any early exit, and `script/config` is the record of
+    what production runs — the same reason `rehearse_fork.sh` treats it as disposable-but-restored.
+    """
+    failures: list[str] = []
+
+    def check(label: str, cond: bool) -> None:
+        print(f"  {'PASS' if cond else 'FAIL'}  {label}")
+        if not cond:
+            failures.append(label)
+
+    def errs(findings):
+        return [m for s, m in findings if s == ERROR]
+
+    WETH = "0x" + "1" * 40
+    DERIVED = "0x" + "2" * 40
+    OTHER = "0x" + "3" * 40
+
+    def scenario(derived_hb, base_hb, kind="priceFeeds", base_ctor=None):
+        assets = {
+            "WETH": {"address": WETH, "priceFeeds": [{"type": "Chainlink", "address": OTHER,
+                                                      "heartbeat": base_hb}]},
+            "DER": {"address": DERIVED, kind: [{"type": "Custom", "feed": "der",
+                                               "heartbeat": derived_hb}]},
+        }
+        if base_ctor is not None:
+            assets["WETH"]["priceFeeds"] = [{"type": "Custom", "feed": "basefeed",
+                                             "heartbeat": base_hb}]
+        feeds = {"der": {"enabled": True, "constructor": {"baseAsset": WETH}},
+                 "basefeed": {"enabled": True, "constructor": {"baseAsset": base_ctor or OTHER}}}
+        return heartbeat_findings(1, assets, feeds)
+
+    print("synthetic cases:")
+    # The asymmetry: this is the case that must NOT be flagged, and the one most likely to be got wrong.
+    check("looser derived heartbeat (86400 vs base 3600) is ACCEPTED",
+          errs(scenario(86400, 3600)) == [])
+    check("equal heartbeats (3600 vs 3600) are ACCEPTED", errs(scenario(3600, 3600)) == [])
+    check("tighter derived heartbeat (1800 vs base 3600) is an ERROR",
+          len(errs(scenario(1800, 3600))) == 1)
+    check("tighter by ONE second (3599 vs 3600) is an ERROR",
+          len(errs(scenario(3599, 3600))) == 1)
+    check("the real measured shape (82800 vs 86400) is an ERROR",
+          len(errs(scenario(82800, 86400))) == 1)
+    check("a tighter MONITOR heartbeat is also an ERROR",
+          len(errs(scenario(1800, 3600, kind="monitorFeeds"))) == 1)
+    check("a non-NAV-sourced custom feed (no baseAsset) is EXCLUDED",
+          heartbeat_findings(1, {"DER": {"address": DERIVED,
+                                        "priceFeeds": [{"type": "Custom", "feed": "der",
+                                                        "heartbeat": 60}]}},
+                             {"der": {"enabled": True, "constructor": {}}}) == [])
+    check("an unregistered baseAsset is an ERROR",
+          len(errs(heartbeat_findings(1, {"DER": {"address": DERIVED,
+                                                 "priceFeeds": [{"type": "Custom", "feed": "der",
+                                                                 "heartbeat": 60}]}},
+                                     {"der": {"enabled": True,
+                                              "constructor": {"baseAsset": WETH}}}))) == 1)
+    check("a base whose own primary is NAV-sourced yields a WARN (ADR 0019 circularity)",
+          any(s == WARN for s, _ in scenario(86400, 3600, base_ctor=OTHER)))
+    check("a direct (non-Custom) feed entry is ignored",
+          heartbeat_findings(1, {"A": {"address": DERIVED,
+                                      "priceFeeds": [{"type": "Chainlink", "address": OTHER,
+                                                      "heartbeat": 1}]}}, {}) == [])
+
+    print("mutation against the real mainnet config:")
+    import copy
+    real_assets = cfg("assets-and-price-feeds", 1)
+    real_feeds = dcfg("custom-price-feeds", 1)
+    if not real_assets or not real_feeds:
+        check("mainnet config readable", False)
+    else:
+        # wstETH is chosen because it is legitimately LOOSER than its WETH base (86400 vs 3600): it must
+        # be clean before the mutation and must fail after, which pins the direction of the comparison
+        # as well as its existence. Picking an already-violating asset would prove neither.
+        before = [m for m in errs(heartbeat_findings(1, real_assets, real_feeds)) if "'wstETH'" in m]
+        mutated = copy.deepcopy(real_assets)
+        mutated["wstETH"]["priceFeeds"][0]["heartbeat"] = 1800
+        after = [m for m in errs(heartbeat_findings(1, mutated, real_feeds)) if "'wstETH'" in m]
+        check("wstETH is clean in the real config (looser than base, correctly not flagged)",
+              before == [])
+        check("lowering wstETH's heartbeat to 1800 (< WETH's 3600) makes the guard BITE",
+              len(after) == 1)
+        check("the real config on disk was not modified",
+              cfg("assets-and-price-feeds", 1)["wstETH"]["priceFeeds"][0]["heartbeat"]
+              == real_assets["wstETH"]["priceFeeds"][0]["heartbeat"] != 1800)
+
+    print(f"\nself-test: {'all checks passed' if not failures else str(len(failures)) + ' FAILED'}")
+    return 1 if failures else 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("chains", nargs="*", type=int)
     ap.add_argument("--json", help="also write the full report to this path")
+    ap.add_argument("--self-test", action="store_true",
+                    help="prove the heartbeat guard (synthetic arms + real-config mutation) and exit")
     args = ap.parse_args()
     c.load_env()
+
+    if args.self_test:
+        return self_test()
 
     chains, scope_src = c.resolve_chains(args.chains)
     print(f"scope: {len(chains)} chain(s) from {scope_src}")

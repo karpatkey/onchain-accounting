@@ -4,9 +4,11 @@ Written 2026-07-30 against `main` @ `f72dd48a` (twelve PRs merged in the wave). 
 no memory of the wave. It is deliberately self-contained: everything you need to decide **pass or
 fail** is here, because a rehearsal run with a wrong pass/fail rule is worse than no rehearsal.
 
-> **The rehearsal has since been RUN, on `main` @ `7efcc8af` (post-#185), and it FAILED at step 1.4.
-> Read **§9** (last section) before running anything — it holds two blockers, one of which stops the
-> redeploy outright. §9 supersedes anything below it that disagrees.**
+> **The rehearsal has been RUN. §9 records the first attempt, which FAILED at step 1.4 and found two
+> blockers. §10 records the run that PASSED — every step, every post-condition, and the §4 NAV
+> comparison, which answers the redeploy's central question: it is the same portfolio.
+> Read §9 and §10 (last two sections) before running anything; they supersede anything above that
+> disagrees, including a pass/fail rule in §4.1 that turned out to be wrong.**
 
 Companions, both authoritative and not duplicated here:
 [`../REDEPLOY_RUNBOOK.md`](../REDEPLOY_RUNBOOK.md) (the ordered procedure) and
@@ -30,7 +32,8 @@ before the redeploy, as a DeBank-compared final validation.
 |---|---|
 | **#185** two-library pin regen | **MERGED** 2026-07-30; `main` is `7efcc8af`. Pins are `PriceFeedLib 0x8b7e4fA9…7dc1` / `NavRegistryLib 0x5f5D054E…fd90` |
 | **#203** Curve `getPool`/`getLpToken` | **MERGED**, in `7efcc8af` |
-| this rehearsal | **RUN** on `7efcc8af`, **FAILED at 1.4** — see §9 |
+| **#220** ETHx rate-leg proxy | fixes the §9 BLOCKER 1; the rehearsal that PASSED included it |
+| this rehearsal | **PASSED** on `7efcc8af` + #220 — see §10. (First attempt failed at 1.4; §9.) |
 
 If #185 has not landed, `01_2` will revert on its pin assertions and the rehearsal cannot pass. That
 revert is correct behaviour, not a bug — see §5. It has landed, and the assertions passed: §9 records
@@ -156,7 +159,14 @@ The rehearsal's output is compared against the committed pre-deploy snapshot in
 Every adapter-hardening fix in this wave was written to that rule. It gives you a decisive test:
 
 - A **lower** NAV than the snapshot, explainable by one of the entries in §4.3, is a pass.
-- A **higher** NAV is never acceptable and never explained by the fixes below. If NAV goes up, stop.
+- A **higher** NAV must be *attributed* before it is accepted. **CORRECTED 2026-07-30 — the original
+  rule here read "a higher NAV is never acceptable; if NAV goes up, stop", and that is unworkable.** It
+  contradicts §4.2 one paragraph below, which concedes the two captures are at different blocks and that
+  every priced position drifts — and drift is bidirectional. Applied literally it fails every correct
+  rehearsal that is not same-block: the passing run of 2026-07-30 had two rises, both benign. The
+  operative test is **attribution, not direction**: a delta must be explained by (a) price drift on an
+  *unchanged* position set, or (b) a change in the account's real holdings, verified on-chain at both
+  block heights. An **unattributable** rise is the stop condition. Worked examples in §10.
 - A **structural** difference (position count, `protocolId`/`protocolSubId`/`positionId`,
   `positionKind`, `isDebt`) that is not in §4.3 means the redeploy is wrong.
 
@@ -169,7 +179,7 @@ The snapshot and the rehearsal are at different blocks, so **every priced positi
 | position count, `protocolId`, `protocolSubId`, `positionId`, `positionKind`, `isDebt` | **exact** |
 | labels, `protocolName` | exact **except** §4.3 |
 | `amount` | drift expected; direction matters (see §4.1) |
-| `nav.value` | drift expected; a rise is a stop condition |
+| `nav.value` | drift expected; an **unattributable** delta in either direction is the stop condition (§4.1) |
 | `stale`, `irregular`, `sequencerDown` | may differ with feed conditions, not with the redeploy |
 
 `diff_snapshots.py` does this comparison. Addresses are expected to move; shape is not.
@@ -502,3 +512,101 @@ the re-run. Everything else is secondary.
 - The disposable-config rail restored `script/config` and `broadcast/` byte-exactly; `deployments/1.json`
   verified identical to `HEAD` by hash afterwards. **Always check this** — 18 phantom addresses in a
   deployments record is the worst thing that could leak out of a rehearsal.
+
+---
+
+## 10. The run that PASSED — 2026-07-30, and the answer to the central question
+
+Fourth attempt, `ANVIL_PORT=8600`, fork **pinned at mainnet block 25645948**, against `main` @ `7efcc8af`
+plus #220 (ETHx rate-leg proxy) and the two tooling PRs below. **`REHEARSAL_EXIT=0`.** Nothing touched a
+live proxy; every broadcast went to loopback anvil.
+
+| step | time | gas | status |
+|---|---|---|---|
+| `01_2_DeployNAVImplementation` | 5s | 17,503,955 | OK |
+| `02_2_DeployNAVProxy` | 5s | 2,369,608 | OK |
+| `03_DeployPriceFeeds` | 63s | 19,605,815 | OK |
+| `RegisterAssets` | 79s | 22,846,969 | OK |
+| `04_DeployBalanceAdapters` | 20s | 64,430,104 | OK |
+| `06_Configure` | 11s | 7,310,219 | OK |
+
+Every post-condition PASS. **`verify_step.py` 1.2 – 1.7 all exit 0.** 27 adapters, **43/43 assets**,
+**66/66 meta instances**, all three assistant `ADAPTER()` pointers paired. New proxy
+`0x54EaD2A1…6214`, fresh `ERC20Default` `0x4Bc39Dce…1eE6`. Both library pins CREATE2-landed on
+`0x8b7e4fA9…7dc1` / `0x5f5D054E…fd90` for the third independent time.
+
+### 10.1 Is it the same portfolio? YES
+
+`snapshots/pre/` (block 25625439) versus the rehearsed stack (block 25646118) — 2.9 days apart:
+
+- **Debt legs identical on all nine accounts** (2 / 1 / 1 / 1 preserved). No debt leg lost — the §4.4
+  condition that matters most.
+- **No `positionId` changed anywhere.** Aave V3 was *permitted* to differ (#172) and did not.
+- **27 / 27 adapters, 66 / 66 meta instances, 43 / 43 assets.**
+- Position counts identical on 7 of 9 accounts; the two that moved are explained below.
+- NAV within ±0.8% on seven accounts; two rises, both attributed.
+
+Nine `DIFF` lines, every one attributed — **no residual**:
+
+| difference | classification |
+|---|---|
+| proxy / implementation / `ERC20Default` moved | §4.2 expected by construction |
+| `ETHx` monitors 2 → 1 (Redstone dropped, Custom kept) | §4.3 Redstone ETHx sunset. The surviving Custom monitor **is** `ETHxCrossRate` — the ETHx fix working end to end |
+| `stETH` gains a Custom monitor | §4.3 `stETHCrossRate` demoted to monitor (#199) |
+| StakeWise labels `('Vault',)` → `('Vault','ETH 0x…')` | §4.3 symbol+address leaves (#163/#176) |
+| `Aave Umbrella` → `Aave V3` protocolName | §4.3 `protocolName()` derived from `_protocolId()` |
+| ACCOUNT_11 LOST wallet wstETH, GAINED `lido-withdrawal` | **real activity**, verified on-chain |
+| ACCOUNT_9 GAINED wallet USDC + WETH + `lido-withdrawal` | **real activity**, verified on-chain |
+| ACCOUNT_1 nav +2.41%, ACCOUNT_9 +1.13% | attributed — see below |
+
+### 10.2 How the deltas were attributed — the method, not the numbers
+
+Two rises had to be explained rather than tolerated, and the §4.1 rule as originally written would have
+called both a STOP. Both were resolved by measurement:
+
+**Position-set changes are real portfolio activity, checked against live mainnet archive state at *both*
+block heights** — never inferred from plausibility:
+
+| | @pre 25625439 | @fork 25645948 |
+|---|---|---|
+| ACCOUNT_11 Lido withdrawal requests | 0 | 1 |
+| ACCOUNT_11 wstETH wallet | 311.36 | 0 |
+| ACCOUNT_9 Lido withdrawal requests | 0 | 1 |
+| ACCOUNT_9 USDC wallet | 0 | 277,438.21 |
+| ACCOUNT_9 WETH wallet | 0 | 75.63 |
+
+ACCOUNT_11 unstaked: wallet wstETH left, a withdrawal request appeared. The new stack reports what the
+account actually holds.
+
+**ACCOUNT_1's +2.41% on an IDENTICAL position set is the one worth copying.** The tempting explanation
+was the deliberate stETH primary-feed change (§4.3), which *would* raise a reported value. It was tested
+and **ruled out**: every price moved ≤ 0.04% and the account holds no stETH at all — it is entirely
+stablecoins. The movement was in *amounts* — GHO Supplied +61.7%, USDT Supplied −54.5%, USDC Supplied
++6.5% — i.e. real lending activity. **Attributing a delta to the mechanism you expect, without checking
+whether that mechanism is even in play, is the easy error here.** Compare prices and amounts separately.
+
+### 10.3 §9's blockers — both closed, plus two instrument defects found on the way
+
+- **BLOCKER 1 (ETHx) — FIXED** by #220 repointing the rate leg to the `EACAggregatorProxy`
+  `0xC5f8c4aB091Be1A899214c0C3636ca33DcA0C547`. Verified independently of its CI: `aggregator()` returns
+  the old raw address, `description() == "ETHx / ETH"`, `decimals() == 18`, and — decisively — the gated
+  aggregator's allowlist contains **the proxy** (`hasAccess` true) and not arbitrary contracts, which is
+  the mechanism by which a contract read now succeeds. `03` then constructed all 25 mainnet feeds
+  including `ETHx_CrossRateCustomPriceFeed`. **The class is closed:** a sweep of all 83 configured
+  Chainlink-shaped addresses across the four chains found 63 proxies, 19 RedStone feeds and exactly one
+  raw access-controlled aggregator — ETHx.
+- **BLOCKER 2 (record pollution) — unchanged and still true.** §5's step-1.1 rule stands.
+- **`RegisterAssets` MemoryOOG was NOT a product defect** — this script ran every step on the default
+  profile while the runbook requires `FOUNDRY_PROFILE=slow` for step 1.5 (16 GiB vs 1 GiB limits). It
+  only surfaced once the ETHx fix let all 86 actions actually be planned. Fixed in #214.
+- **The 27-vs-24 discrepancy was an instrument defect, now root-caused.** `snapshot_production.py` read
+  `latest - 3`; on a fork with `--slow` the last three blocks *are* the tail of the deploy, so it silently
+  omitted the final three registrations with `errors: []`. It manufactured the exact evidence for a §4.4
+  STOP against a correct deploy. What cracked it was a source fact, not more measurement:
+  `getAllAdapters()` and `getAdapterCount()` read the same storage array, so they cannot disagree about
+  one block — which turned "which number is right?" into "which block?". Fixed in #221.
+- **anvil panics on an upstream state-read failure** (`do_mine_block`, connection reset) and took two
+  attempts down. Retry/timeout/backoff raised in #214; pin the fork block, which also makes retries cheap
+  via foundry's per-(chain, block) cache.
+
+**The deploy remains unauthorised.** This run cleared the gate that was blocking it; that is not permission.

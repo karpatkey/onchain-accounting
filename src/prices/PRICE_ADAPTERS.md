@@ -311,11 +311,31 @@ Their rate legs are **not** uniform, and two of the three have been re-sourced s
 
 | Instance | `asset/ETH` rate leg | Methodology | Detects a market depeg? |
 |---|---|---|---|
-| `ETHx_CrossRate_Price` | **Chainlink** ETHx/ETH (`0xC499ec76…`, 18-dec) — migrated 2026-07-27 off RedStone, which is sunsetting its ETHx feeds | market | **Yes** — independent of Stader's rate in source *and* methodology |
+| `ETHx_CrossRate_Price` | **Chainlink** ETHx/ETH (`0xC499ec76…`, 18-dec) — migrated 2026-07-27 off RedStone, which is sunsetting its ETHx feeds | market | **No — cannot currently be deployed.** Methodology is right; the configured address is unreadable from a contract. See below. |
 | `osETH_CrossRate_Price` | Redstone Classic Push osETH/ETH (`0x66ac817f…`) | market | **Yes** |
 | `ezETH_CrossRate_Price` | RedStone multi-feed **`ezETH_FUNDAMENTAL`** (`0x701e83Bd…`, 8-dec) — migrated 2026-07-22 after RedStone sunset the Classic Push ezETH/ETH market feed | **fundamental** | **No** — see below |
 
 `ezETH`'s monitor is the exception worth knowing: its rate leg is now *fundamental*, so it compares one fundamental rate (RedStone's) against another (Renzo's `RestakeManager`). The **source** is independent; the **methodology** is not. Two fundamental sources agreeing says nothing about market price, so ezETH's 250 bps tolerance cannot fire on the depeg it exists to catch. This is a known open gap, recorded here rather than fixed — closing it requires a market-priced ezETH source to exist.
+
+> ### ⚠️ OPEN BLOCKER — `ETHx_CrossRate_Price` cannot be constructed today
+>
+> **"Right pair" and "readable on-chain" are independent properties.** `0xC499ec76…` satisfies every check a config review would run — `description()` is `"ETHx / ETH"`, `decimals()` is 18, and `latestRoundData()` answers a `cast call` — yet **no contract can read it**. It is the raw access-controlled aggregator that sits *underneath* the `EACAggregatorProxy`, not the proxy itself.
+>
+> Chainlink's `SimpleReadAccessController` grants access when `_user == tx.origin`, which holds for a direct EOA `eth_call` and fails for every contract. Measured on mainnet:
+>
+> | Probe | Result |
+> |---|---|
+> | `checkEnabled()` | `true` |
+> | `hasAccess(<any contract>, "")` | **`false`** |
+> | `hasAccess(<EOA / zero addr>, "")` | `true` |
+>
+> Consequence: `OracleArgumentChecks.assertChainlinkOracle` probes `latestRoundData()` inside a `try`, the call is denied, and the constructor reverts **`NotChainlinkOracle()`**. So the monitor is not merely blind — it **cannot be deployed at all**, and `_deployCrossRateMonitor("ETHxCrossRate")` reverts during `03_DeployPriceFeeds` simulation. That revert is believed to be the root cause of a live deploy blocker: because `vm.writeJson` side effects are **not** rolled back on revert, a failed run left phantom `customPriceFeeds` addresses in `deployments/1.json` that `04` then collided with.
+>
+> **The discriminator is access control, NOT `aggregator()`.** A reverting `aggregator()` proves nothing — every RedStone feed reverts it too (they are not `EACAggregatorProxy`) and all of them are perfectly contract-readable. Probed across every mainnet rate leg, **`0xC499ec76…` is the only one with an access controller at all**; `stETH/ETH`, `rETH/ETH`, `lsETH/ETH`, `osETH/ETH`, `OETH/ETH` and both ezETH feeds have no `checkEnabled()` and are unconditionally readable.
+>
+> **For whoever fixes this:** the replacement must be the `EACAggregatorProxy` whose `aggregator()` returns `0xC499ec76e2F5ac15e127A352Bc40cF24FC472401`. **Source it, do not guess it**, then prove all four: (1) `aggregator()` equals that address, (2) `description()` is `"ETHx / ETH"`, (3) `decimals()` is 18, and (4) it is readable **from a contract context**, not only from `cast`. The address change is a config change with deploy consequences and deliberately does **not** ride in this documentation PR.
+>
+> **Note for the finding-#5 deploy-time rate-feed guard:** `description()` was **correct** here, so a description-based pair assertion would not have caught this. Only *construction from a contract* did.
 
 Note also that since [ADR 0019](../../docs/decisions/0019-nav-sourced-base-price.md) the `ETH/USD` leg of all three comes from the NAV's own selector, not a second hardcoded Chainlink feed — so the base term cancels against the primary's, and a divergence reading reduces to rate-vs-rate.
 

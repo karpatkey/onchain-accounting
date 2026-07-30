@@ -18,8 +18,20 @@ import {CrossRateCustomPriceFeed} from "src/prices/protocols/CrossRateCustomPric
 ///      Classic Push ETHx/ETH feed to Chainlink's ETHx/ETH feed (`0xC499ec76…`, `description() == "ETHx / ETH"`,
 ///      18-dec) because RedStone is sunsetting all its ETHx feeds. There is no Chainlink ETHx/USD feed, so the
 ///      ETH-quoted cross-rate is the only Chainlink route. The 18 decimals need no config change — the base captures
-///      `10 ** RATE_FEED.decimals()` in its constructor, so the rate decimals cancel into `NAV_DECIMALS`. This is a
-///      genuine market quote, independent of Stader's on-chain rate in both source and methodology.
+///      `10 ** RATE_FEED.decimals()` in its constructor, so the rate decimals cancel into `NAV_DECIMALS`. The
+///      methodology is a genuine market quote, independent of Stader's on-chain rate.
+///
+///      **⚠️ OPEN BLOCKER — this feed cannot currently be CONSTRUCTED.** The configured `0xC499ec76…` is the raw
+///      access-controlled aggregator, not its `EACAggregatorProxy`. Chainlink's `SimpleReadAccessController` grants
+///      access when `_user == tx.origin`, so a direct EOA `eth_call` succeeds (which is why `cast call` and a config
+///      review both pass) while **every contract is denied**: measured on mainnet, `checkEnabled() == true` and
+///      `hasAccess(<contract>, "") == false`. {OracleArgumentChecks-assertChainlinkOracle} probes `latestRoundData()`
+///      in a `try`, the call is denied, and this constructor reverts `NotChainlinkOracle()`. So the monitor is not
+///      merely blind — it cannot be deployed, and `_deployCrossRateMonitor("ETHxCrossRate")` reverts during
+///      `03_DeployPriceFeeds` simulation. "Right pair" and "readable on-chain" are independent properties: this feed's
+///      `description()` is correctly `"ETHx / ETH"`, so a description-based pair assertion would NOT have caught it.
+///      The fix is a config change (point at the proxy whose `aggregator()` returns `0xC499ec76…`, sourced not
+///      guessed) and is tracked separately — see `PRICE_ADAPTERS.md` §7 for the four required proof checks.
 /// @author KPK
 /* solhint-disable contract-name-camelcase */
 contract ETHx_CrossRateCustomPriceFeed is CrossRateCustomPriceFeed {

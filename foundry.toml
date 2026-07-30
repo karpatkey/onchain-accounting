@@ -19,9 +19,24 @@ optimizer = true
 optimizer_runs = 200
 via_ir = true
 
-# Test-only edits don't recompile src/ (foundry >=1.1). Tests are linked
-# dynamically; src bytecode (and therefore CREATE2 library pins) is unaffected.
-dynamic_test_linking = true
+# `dynamic_test_linking = true` was here and was REMOVED after measuring it. Do not reinstate it without
+# re-measuring, because it buys nothing and costs correctness:
+#
+#   - Measured cost, both loops, each arm with its own cold baseline (toggling the flag invalidates the
+#     cache, so a warm-vs-cold comparison measures only the toggle): a harness-only edit under
+#     `--match-contract NavBacktest` + `FOUNDRY_PROFILE=slow` recompiled 1 file in 88s with the flag and
+#     1 file in 85s without; under full-suite scope it recompiled NOTHING in 8s with and NOTHING in 6s
+#     without. Ordinary incremental compilation already delivers what the flag advertises. Only the cold
+#     build differed (479s vs 594s), and cold builds are not the iteration loop.
+#   - Under the flag, `type(X).creationCode` compiles to a `vm.getCode` call — a read of the build
+#     artifact from disk AT TEST TIME. So `LibraryPinConsistency` stops attesting the tree and starts
+#     attesting whatever `out/` happens to hold. That is not theoretical: this PR's CI reported
+#     `PriceFeedLib = 0xeA694009…` instead of main's `0x8b7e4fA9…`, because CI's unit job downloads the
+#     build job's artifacts rather than building, and those come off a repo-wide sticky cache keyed only
+#     by repository. Stale artifact in, stale pin out, guard green.
+#   - It also routes `new` in test sources through `vm.deployCode`, FILE-scoped rather than
+#     test-contract-scoped, which makes constructor-revert payloads a property of the harness instead of
+#     the contract. See `test/prices/protocols/ETHPlus_CustomPriceFeed.t.sol`.
 
 # Pin the compiler, EVM target AND strip the appended source-metadata hash so the external-library
 # bytecode — and therefore the deterministic CREATE2 addresses the `libraries` array below pins — are

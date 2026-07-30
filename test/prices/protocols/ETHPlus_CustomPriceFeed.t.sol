@@ -60,30 +60,22 @@ contract ETHPlus_CustomPriceFeedTest is Test {
     ///      claiming to exercise the code-less one. `address(0xDEAD)` is genuinely code-less and outside the
     ///      precompile range, so the `extcodesize` precheck is what actually fires.
     ///
-    ///      **The revert PAYLOAD is deliberately not asserted, and that is the second correction.** An earlier
-    ///      revision asserted `reason.length == 0` on the theory that solc's `extcodesize` precheck reverts with
-    ///      no data. That is true of a plain `CREATE`, but under `dynamic_test_linking` construction is routed
-    ///      through a `vm.deployCode` cheatcode — the rewrite is FILE-scoped, so moving the `new` into a non-test
-    ///      helper in this same `.t.sol` does not escape it — and forge substitutes its own descriptive error.
-    ///      Measured: this PR's CI produced 160 bytes decoding as a bare `abi.encode(string)` (offset `0x20`,
-    ///      length `0x47`) reading `"call to non-contract address 0x…dEaD"`, with no 4-byte selector, while the
-    ///      identical code and the identical forge version produced 0 bytes locally. The difference tracks how
-    ///      the artifacts reached the runner — CI's unit job consumes artifacts downloaded from the build job —
-    ///      not anything about this contract.
+    ///      **On the payload assertion, and why the construction goes through a helper.** `reason.length == 0`
+    ///      is the strong form: it pins ANY change to how the rejection is reported, so a later fix adding a
+    ///      contract check cannot slide under it. It only works because construction is a plain `CREATE`.
     ///
-    ///      So the payload is an artefact of the harness, and asserting its length made the test a detector of
-    ///      its own environment. What the tripwire needs to pin is that the rejection is **nameless**: if
-    ///      `assertERC20Address` ever gains an `AddressCheckLib.requireContract`-style guard, the revert starts
-    ///      carrying a selector and this test must fail so the change cannot slide under it. Checking the leading
-    ///      selector against `InvalidArguments` and `NotAContract` — the two a contract check would raise —
-    ///      survives both payload shapes, since neither an empty revert nor forge's offset-prefixed string
-    ///      carries either.
+    ///      This branch briefly carried `dynamic_test_linking = true`, which routed `new` in test sources through
+    ///      a `vm.deployCode` cheatcode — FILE-scoped, so putting the `new` in a non-test helper did not escape
+    ///      it — and forge substituted its own error: CI produced 160 bytes decoding as a bare
+    ///      `abi.encode(string)` (offset `0x20`, length `0x47`) reading `"call to non-contract address 0x…dEaD"`,
+    ///      while identical code and identical forge gave 0 bytes locally. The payload had become a property of
+    ///      the harness rather than of this contract, and the assertion had to be weakened to survive it. **The
+    ///      flag was measured, found to buy nothing, and removed** (see `foundry.toml`), so the strong form is
+    ///      back. If anyone reinstates the flag, this test breaks again — that is a feature, not a nuisance.
     ///
-    ///      **This is weaker than the assertion it replaces, and deliberately so.** `reason.length == 0` pinned
-    ///      *any* payload change; this pins only the two named errors a realistic fix would introduce. The strong
-    ///      form is unavailable while `dynamic_test_linking` routes construction through a cheatcode that
-    ///      substitutes its own error. **If this branch drops that flag — which is the leading option, since the
-    ///      flag also moves the `PriceFeedLib` pin — restore `assertEq(reason.length, 0)` and delete this note.**
+    ///      The `ETHPlusDeployer` helper is kept even though a plain `CREATE` no longer needs it: reaching the
+    ///      constructor through a low-level call is what makes the revert payload readable at all, rather than
+    ///      unwinding the test frame the way `try new` does.
     function test_constructor_revertsWithoutDataOnCodelessAddress() public {
         address noCode = address(0xDEAD);
         assertEq(noCode.code.length, 0, "fixture must have no code for this test to mean anything");
@@ -94,19 +86,7 @@ contract ETHPlus_CustomPriceFeedTest is Test {
             address(deployer).call(abi.encodeCall(ETHPlusDeployer.deploy, (noCode, 86_400)));
 
         assertFalse(ok, "a code-less underlying must be rejected");
-
-        bytes4 selector;
-        if (reason.length >= 4) {
-            // High 4 bytes of the first word are the selector, if the payload carries one at all. CI's harness
-            // payload begins with an ABI offset word, so this reads 0x00000000 there — matching no error.
-            assembly {
-                selector := mload(add(reason, 0x20))
-            }
-        }
-        assertTrue(
-            selector != InvalidArguments.selector && selector != NotAContract.selector,
-            "code-less address must still fail NAMELESSLY: a named error means assertERC20Address gained a contract check, and this tripwire has done its job"
-        );
+        assertEq(reason.length, 0, "code-less address currently reverts with no data (extcodesize precheck)");
     }
 
     // --- the heartbeat guard, isolated: the address is a real ERC20, so only `assertNotZeroNumber` can object ---

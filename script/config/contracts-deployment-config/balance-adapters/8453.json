@@ -123,5 +123,11 @@
       "positionManager": "0x46A15B0b27311cedF172AB29E4f4766fbE7F4364",
       "positionId": "0xfe5291Ac7Ac2b81a40c0ba6980308212037828aF"
     }
+  },
+  "MerklRewards": {
+    "enabled": false,
+    "constructor": {
+      "distributor": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae"
+    }
   }
 }

@@ -16,5 +16,11 @@
       "exitClaimDelay": "86400",
       "positionId": "0x7d014B3C6ee446563d4e0cB6fBD8C3D0419867cB"
     }
+  },
+  "MerklRewards": {
+    "enabled": false,
+    "constructor": {
+      "distributor": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae"
+    }
   }
 }

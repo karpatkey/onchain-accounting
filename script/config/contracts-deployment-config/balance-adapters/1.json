@@ -491,5 +491,11 @@
     "constructor": {
       "pool": "0x7379e81228514a1d2a6cf7559203998e20598346"
     }
+  },
+  "MerklRewards": {
+    "enabled": false,
+    "constructor": {
+      "distributor": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae"
+    }
   }
 }

@@ -59,6 +59,7 @@ import {FluidVaultsMetaBalanceAdapter} from "../../src/balances/MetaBalanceAdapt
 import {
     StaderWithdrawalQueueBalanceAdapter
 } from "../../src/balances/BalanceAdapters/StaderWithdrawalQueueBalanceAdapter.sol";
+import {MerklRewardsBalanceAdapter} from "../../src/balances/AttestedBalanceAdapters/MerklRewardsBalanceAdapter.sol";
 import {
     KelpWithdrawalQueueBalanceAdapter
 } from "../../src/balances/BalanceAdapters/KelpWithdrawalQueueBalanceAdapter.sol";
@@ -186,6 +187,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         // --- StakeWise V3 exit-queue cache adapter (assisted; permissionless assistant-fed, ADR 0018) ---
         _deployIfEnabled("StakeWiseV3ExitQueueAssisted");
+
+        // Attested family (ADR 0022): permissionless, proof-verified cache — NO assistant contract.
+        _deployIfEnabled("MerklRewards");
 
         // --- Uniswap V2 (meta-adapter: all pairs; pair set on NAV, ADR 0010) ---
         _deployIfEnabled("UniswapV2PoolsMeta"); // Meta-adapter: all Uniswap V2 pairs (shares the PancakeSwap V2 dispatch)
@@ -453,6 +457,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
         if (_equals(adapterName, "UniswapV2PoolsMeta") || _equals(adapterName, "PancakeSwapV2PoolsMeta")) {
             return _deployUniswapV2PoolsMeta(adapterName, navCalculator);
         }
+        if (_equals(adapterName, "MerklRewards")) {
+            return _deployMerklRewards(adapterName, navCalculator);
+        }
 
         // Unknown adapter type
         console2.log("Unknown adapter type:", adapterName);
@@ -672,6 +679,17 @@ contract DeployBalanceAdapters is BaseDeployScript {
         );
         StaderWithdrawalQueueBalanceAdapter adapter =
             new StaderWithdrawalQueueBalanceAdapter(userWithdrawalManager, underlyingToken, navCalculator);
+        return address(adapter);
+    }
+
+    /// @notice Deploys the Merkl rewards adapter (attested family, ADR 0022). Constructor takes
+    ///         (distributor, navCalculator) — permissionless, proof-verified; NO assistant contract. The Merkl
+    ///         Distributor is the same address on every supported EVM chain (0x3Ef3D8bA…), read from config.
+    function _deployMerklRewards(string memory adapterName, address navCalculator) internal returns (address) {
+        address distributor = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "distributor")
+        );
+        MerklRewardsBalanceAdapter adapter = new MerklRewardsBalanceAdapter(distributor, navCalculator);
         return address(adapter);
     }
 

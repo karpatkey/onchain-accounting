@@ -194,5 +194,8 @@
   },
   "UniswapV3_ETH_sETH2": {
     "enabled": false
+  },
+  "MerklRewards": {
+    "enabled": false
   }
 }

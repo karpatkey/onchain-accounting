@@ -3,6 +3,7 @@ pragma solidity ^0.8;
 
 import {LabelLib} from "src/balances/LabelLib.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {StaticCallLib} from "src/utils/StaticCallLib.sol";
 
 /// @title CurvePoolLib
 /// @notice Shared helpers for reading Curve pool and gauge state across all pool/gauge generations.
@@ -43,24 +44,105 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 library CurvePoolLib {
     uint256 internal constant MAX_COINS = 8;
 
+    /// @dev Curve's AddressProvider. Deterministically deployed to this same address on every Curve
+    ///      network — verified identical code on mainnet, Arbitrum and Optimism. Read through guarded
+    ///      staticcalls, so a chain without it simply falls through.
+    address internal constant CURVE_ADDRESS_PROVIDER = 0x0000000022D53366457F9d5E68Ec105046FC4383;
+
+    /// @dev Encoded once because both registry helpers ask the provider the same question.
+    bytes private constant _GET_REGISTRY = abi.encodeWithSignature("get_registry()");
+
     // ─── LP Token / Pool resolution ───────────────────────────────────────────
 
     /// @notice Derives the LP token from a pool address.
     ///         For most classic pools, pool IS the LP token.
     ///         For TriCryptoNG, pool is also self-LP (no lp_token() method).
     ///         For StableSwap-NG factory pools, lp_token() returns a separate ERC20.
+    /// @dev KNOWN, DELIBERATE UNDER-REPORT — legacy StableSwap pools are not resolved here.
+    ///      3pool (`0xbEbc4478…`) exposes no `lp_token()` (verified on mainnet: it reverts), so this falls
+    ///      through to "the pool IS the LP token". For 3pool that is false — its LP is the separate 3Crv, and
+    ///      `balanceOf` on the pool also reverts — so wallet-LP decomposition for such pools reports NOTHING.
+    ///
+    ///      A registry fallback for this direction was written, measured working, and then REMOVED from the PR
+    ///      that fixed `getPool`. The reason is SCOPE, and only scope: `getLpToken` has a THIRD consumer,
+    ///      `CurvePoolsMetaBalanceAdapter`, which that PR did not touch. Resolving the LP flips it from emitting
+    ///      nothing to emitting full `Supplied` coin legs — an unreviewed behavioural change to a file outside
+    ///      that PR's diff, which belongs in a PR that reviews all three consumers together.
+    ///
+    ///      An earlier revision of this note gave a different reason: that resolving the LP would re-arm an
+    ///      `ERC20Default` double-count for an operator who had registered the LP token as an asset. That is
+    ///      recorded here as REFUTED, because it was measured and because it is the kind of claim that turns
+    ///      into operator guidance. At block 22,500,000: `getLpToken(3pool)` returns the pool, `balanceOf` on
+    ///      the pool reverts, `_balanceOf` fail-opens to 0, and `CurvePoolsMeta` therefore returns an EMPTY
+    ///      array before reaching any leg — asserted by `assertEq(pos.length, 0)` in
+    ///      `test_threepool_walletLp_decomposes`. There is no second count to double against. The hazard is a
+    ///      constraint on the SUCCESSOR PR, once the fallback actually resolves the LP; it is not a property of
+    ///      the code as it stands.
+    ///
+    ///      The fix belongs in its own PR that reviews all three consumers together — see the successor brief
+    ///      in the PR that introduced this note. `_lpTokenFromRegistry` is retained below because `getPool`'s
+    ///      round-trip validation depends on it.
     function getLpToken(address pool) internal view returns (address) {
         (bool ok, bytes memory data) = pool.staticcall(abi.encodeWithSignature("lp_token()"));
         if (ok && data.length == 32) {
             address token = _firstAddress(data);
             if (token != address(0) && token != pool) return token;
         }
+
         return pool; // pool IS the LP token (classic StableSwap, TriCryptoNG)
     }
 
+    /// @dev Curve's AddressProvider -> MainRegistry -> `get_lp_token`. Returns address(0) on any failure.
+    ///      Bounded via {StaticCallLib.safeAddr} — see {_poolFromRegistry} for why that is load-bearing here.
+    function _lpTokenFromRegistry(address pool) private view returns (address) {
+        (, address registry) = StaticCallLib.safeAddr(CURVE_ADDRESS_PROVIDER, _GET_REGISTRY);
+        if (registry == address(0)) return address(0);
+
+        (, address lpToken) = StaticCallLib.safeAddr(registry, abi.encodeWithSignature("get_lp_token(address)", pool));
+        return lpToken;
+    }
+
     /// @notice Derives the pool address from an LP token.
-    ///         Handles both the self-LP case and the minter() pattern for NG pools.
-    ///         Returns address(0) if the pool cannot be determined (rare edge case).
+    ///         Handles the self-LP case, the minter() pattern for NG pools, and the original StableSwap
+    ///         generation whose LP tokens expose neither.
+    ///         Returns address(0) if the pool cannot be determined.
+    /// @dev    The third step exists because the first two miss the OLDEST pools, not the newest. 3Crv
+    ///         (`0x6c3F90f0…`, the 3pool LP) is a CurveTokenV1: verified on mainnet, `coins(uint256)`,
+    ///         `coins(int128)` and `minter()` ALL revert on it, while `symbol()` answers "3Crv". So both
+    ///         heuristics fail and this returned `address(0)` — and every consumer gates its entire staking
+    ///         decomposition on `pool != address(0)`, so a real staker in a 3pool gauge or a Convex 3pool
+    ///         rewarder reported NO staking legs at all. An under-report, so the direction was safe, but a
+    ///         silent one.
+    ///
+    ///         The Curve AddressProvider answers it. It lives at the same deterministic address on every
+    ///         Curve deployment (verified: identical code on mainnet, Arbitrum and Optimism), and its
+    ///         registry maps LP token -> pool for exactly the legacy generation the heuristics miss:
+    ///         `get_pool_from_lp_token(3Crv)` returns `0xbEbc4478…` (the real 3pool) on mainnet.
+    ///
+    ///         The registry's answer is VALIDATED rather than trusted, and the validation must establish
+    ///         CORRESPONDENCE, not plausibility. An earlier revision accepted any answer that merely responded
+    ///         to `coins()` and claimed that was sufficient; it was not. `coins()` is a "looks like a Curve
+    ///         pool" sniff that says nothing about whether that pool backs THIS lpToken, and a reviewer proved
+    ///         it: pointing `get_registry()` at a 30-line contract implementing only `coins`/`balances`
+    ///         inflated a Staking leg 12,213x (833.74 USDC reported as 10,182,786.55), because `totalSupply`
+    ///         still came from the real LP while `balances` came from the impostor. So the answer is now
+    ///         round-tripped through the registry's other direction — `get_lp_token(pool) == lpToken`.
+    ///
+    ///         BE PRECISE ABOUT WHAT THAT BUYS, because an earlier revision of this comment overclaimed and a
+    ///         reviewer was right to reject it a second time. Both questions are answered by the SAME contract,
+    ///         fetched through the SAME mutable `get_registry()` pointer. The round-trip therefore proves only
+    ///         SELF-CONSISTENCY: it rejects a registry that is broken, stale or half-populated, and it rejects
+    ///         the specific PoC that inflated a leg 12,213x with a stub implementing only `coins`/`balances`.
+    ///         It does NOT defend against a hostile-but-consistent registry, and it cannot: legacy StableSwap
+    ///         pools expose no on-chain backlink to their LP, which is the entire reason the registry is
+    ///         consulted. There is nothing else to cross-check against.
+    ///
+    ///         So the trust boundary is explicit and unavoidable: whoever controls Curve's AddressProvider
+    ///         admin can choose which pool backs a legacy LP's accounting. That is the same DAO that controls
+    ///         the gauges and pools already governed into these adapters, but it IS a wider surface than
+    ///         before, and it is stated here rather than implied. Every step is a guarded staticcall, so a chain with
+    ///         no AddressProvider, an older one whose `get_registry()` returns zero (Base today), or an LP the
+    ///         registry does not know, all degrade to the previous behaviour rather than reverting.
     function getPool(address lpToken) internal view returns (address) {
         // Fast path: check if lpToken has coins() — then it IS the pool
         if (_hasCoinMethod(lpToken)) return lpToken;
@@ -72,7 +154,46 @@ library CurvePoolLib {
             if (minter != address(0)) return minter;
         }
 
-        return address(0); // Cannot resolve — gauge/pools meta will skip LP decomposition
+        // Legacy StableSwap (CurveTokenV1/V2): neither coins() nor minter(). Ask the Curve registry.
+        address fromRegistry = _poolFromRegistry(lpToken);
+        if (fromRegistry != address(0) && _hasCoinMethod(fromRegistry) && _lpTokenFromRegistry(fromRegistry) == lpToken)
+        {
+            return fromRegistry;
+        }
+
+        return address(0); // Cannot resolve — consumers report the LP token itself rather than nothing
+    }
+
+    /// @dev Curve's AddressProvider -> MainRegistry -> `get_pool_from_lp_token`. Returns address(0) on any
+    ///      failure at any hop; never reverts.
+    ///
+    ///      **Both hops are bounded, and that is load-bearing rather than tidiness.** The reply here is the only
+    ///      value in this library fetched through a pointer a third party can repoint: `get_registry()` is
+    ///      mutable by the AddressProvider admin, so the address of the contract answering the second hop is
+    ///      not fixed at deploy time. Hand-rolled `target.staticcall(...)` forwards 63/64 of the frame and,
+    ///      when destructured as `(bool ok, bytes memory data)`, `returndatacopy`s the WHOLE reply at the
+    ///      caller's expense. Both were measured in this worktree against a stub registry: a gas-burning
+    ///      registry turned a single-instance `CurveGaugesMeta` read from 86,771 gas into 28,710,283 and made
+    ///      the read REVERT outright below roughly a 3M budget, and a 20,000-word reply cost the caller
+    ///      1,877,102 gas for bytes it discards — a 21x amplification.
+    ///
+    ///      A hard revert is worse than the under-report this whole fallback exists to fix, because
+    ///      `MetaBalanceAdapter`'s per-instance catch deliberately re-raises gas exhaustion rather than
+    ///      substituting empty legs: one Curve gauge would make `getAccountNav` unreadable for the entire
+    ///      account, and starve every adapter after it in a `PriceFeedLib` sweep. {StaticCallLib.probeWord}
+    ///      caps the callee at {StaticCallLib.PROBE_GAS} and reads into a fixed 32-byte window, so the worst a
+    ///      repointed registry can do is fail this hop — which degrades to the previous behaviour.
+    ///
+    ///      Masking ({safeAddr}) rather than rejecting ({safeAddrStrict}) is right here: a garbage answer has
+    ///      to survive `_hasCoinMethod` AND the `get_lp_token` round-trip in {getPool} before it is used, so a
+    ///      wrong address fails validation instead of changing an answer.
+    function _poolFromRegistry(address lpToken) private view returns (address) {
+        (, address registry) = StaticCallLib.safeAddr(CURVE_ADDRESS_PROVIDER, _GET_REGISTRY);
+        if (registry == address(0)) return address(0);
+
+        (, address pool) =
+            StaticCallLib.safeAddr(registry, abi.encodeWithSignature("get_pool_from_lp_token(address)", lpToken));
+        return pool;
     }
 
     // ─── Coin / balance enumeration ───────────────────────────────────────────
@@ -187,10 +308,16 @@ library CurvePoolLib {
 
     // ─── Internal ─────────────────────────────────────────────────────────────
 
+    /// @dev Bounded, because {getPool} calls this on an address the CURVE REGISTRY chose. Leaving it unbounded
+    ///      would have made bounding the two registry hops decorative: a repointed `get_registry()` returning a
+    ///      gas-burning address still reaches here, and two unbounded probes burn 63/64 of the frame twice over.
+    ///      The fast-path call site (`_hasCoinMethod(lpToken)`, on a MANAGER-governed LP) is bounded by the same
+    ///      change; `coins(0)` is a single storage read on every real pool generation, orders of magnitude under
+    ///      {StaticCallLib.PROBE_GAS}, so no honest pool is newly excluded.
     function _hasCoinMethod(address target) private view returns (bool) {
-        (bool ok,) = target.staticcall(abi.encodeWithSignature("coins(uint256)", uint256(0)));
+        (bool ok,,) = StaticCallLib.probeWord(target, abi.encodeWithSignature("coins(uint256)", uint256(0)));
         if (ok) return true;
-        (ok,) = target.staticcall(abi.encodeWithSignature("coins(int128)", int128(0)));
+        (ok,,) = StaticCallLib.probeWord(target, abi.encodeWithSignature("coins(int128)", int128(0)));
         return ok;
     }
 

@@ -20,6 +20,18 @@ env:
   FOUNDRY_PROFILE: slow
   # Pinned Foundry version (keeps forge/via_ir bytecode + library pins reproducible — see foundry.toml).
   FOUNDRY_VERSION: v1.7.1
+  # Sole RPC source. knode is deprecated, and the chain-specific *_URL overrides it used to set are
+  # deliberately ABSENT rather than repointed: `getAlchemyUrl` prefers a *_URL env var whenever one is
+  # present and otherwise builds https://<network>.g.alchemy.com/v2/<key> from this key, so setting
+  # them to an Alchemy URL would only duplicate what the helper already does. Setting them to an empty
+  # or malformed value would be actively worse than setting none — they would still be preferred, and
+  # every RPC call would fail. This now matches foundry.yml, which has never set them.
+  #
+  # Do not reintroduce per-chain *_URL vars without measuring first: with knode at roughly a second
+  # per call, the integration suite ran 35 minutes without completing, versus 12 seconds on Alchemy.
+  ALCHEMY_API_KEY: ${{ secrets.ALCHEMY_API_KEY }}
+  # Debank is opt-in. The workflow_dispatch input or the secret being absent both turn it off.
+  DEBANK_API_KEY: ${{ (github.event_name == 'schedule' || inputs.include_debank) && secrets.DEBANK_API_KEY || '' }}
 
 jobs:
   refresh:
@@ -39,17 +51,21 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends jq curl
 
       - name: Run refresh script
-        # Tolerance violations exit 2; other failures exit 1. We want the report-PR step to
-        # still run on tolerance violations, but a hard failure (e.g., RPC down) should fail
-        # the job. Capture the exit code and decide.
+        # rc 0 = clean, 1 = partial snapshot (a chain did not regenerate), 2 = tolerance drift.
+        # Do NOT fail the job here for 1 or 2: both produce a report that is the whole point of
+        # the run, and failing at this step suppresses every step below it. Previously rc=1 did
+        # exit here, so a partial snapshot surfaced as nothing but a red cron job — which is a
+        # large part of why five consecutive reports went unread. The job still fails, at the
+        # gate step at the end, with the two cases distinguished.
         id: refresh
         env:
+          # No per-chain *_URL overrides. #208 removed them at workflow level because knode is deprecated
+          # and `getAlchemyUrl` prefers ANY `*_URL` that is present — so keeping them here would have
+          # silently reinstated at step level exactly what that PR removed, and reinstated the cost:
+          # ~1s per call, an integration suite that ran 35 minutes without completing, versus 12 seconds
+          # on Alchemy. `ALCHEMY_API_KEY` is inherited from the workflow-level `env`; it is repeated here
+          # only because this step's `env` block shadows nothing else it needs.
           ALCHEMY_API_KEY: ${{ secrets.ALCHEMY_API_KEY }}
-          MAINNET_URL: ${{ vars.KNODE_URL }}/ethereum?key=${{ secrets.KNODE_API_KEY }}
-          ARBITRUM_URL: ${{ vars.KNODE_URL }}/arbitrum?key=${{ secrets.KNODE_API_KEY }}
-          BASE_URL: ${{ vars.KNODE_URL }}/base?key=${{ secrets.KNODE_API_KEY }}
-          OP_URL: ${{ vars.KNODE_URL }}/optimism?key=${{ secrets.KNODE_API_KEY }}
-          GNOSIS_URL: ${{ vars.KNODE_URL }}/gnosis?key=${{ secrets.KNODE_API_KEY }}
           # Debank is opt-in. The workflow_dispatch input or the secret being absent both turn it off.
           DEBANK_API_KEY: ${{ (github.event_name == 'schedule' || inputs.include_debank) && secrets.DEBANK_API_KEY || '' }}
         run: |
@@ -58,17 +74,31 @@ jobs:
           rc=$?
           set -e
           echo "rc=$rc" >> "$GITHUB_OUTPUT"
-          if [[ $rc -ne 0 && $rc -ne 2 ]]; then
+          if [[ -f refresh-report.md ]]; then
+            echo "has_report=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_report=false" >> "$GITHUB_OUTPUT"
+          fi
+          # Anything outside the documented set is a genuine crash (missing jq, bad shell) and
+          # has no report to show, so fail immediately and keep the exit code intact.
+          if [[ $rc -ne 0 && $rc -ne 1 && $rc -ne 2 ]]; then
             exit $rc
           fi
 
       - name: Upload report artifact
+        if: ${{ always() && steps.refresh.outputs.has_report == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: refresh-report
           path: refresh-report.md
+          if-no-files-found: ignore
 
+      # Safe to open on a partial run: each chain is now all-or-nothing — a chain that did not
+      # regenerate has its forkBlock rolled back and its DeBank reference left untouched — so
+      # accounts.json is internally consistent even when incomplete, and the report names the
+      # chains it skipped.
       - name: Open or update PR with refreshed snapshot
+        if: ${{ steps.refresh.outputs.has_report == 'true' }}
         uses: peter-evans/create-pull-request@v6
         with:
           commit-message: "chore(integration): refresh fork blocks and Debank snapshots"
@@ -79,6 +109,16 @@ jobs:
           delete-branch: true
           add-paths: |
             test/integration/accounts.json
+
+      - name: Fail if snapshot incomplete
+        if: ${{ steps.refresh.outputs.rc == '1' }}
+        run: |
+          echo "Refresh script reported a PARTIAL snapshot — at least one chain did not"
+          echo "regenerate its NAV (zero SNAPSHOT lines, a down sequencer, stale prices, or a"
+          echo "forge failure). Those chains were rolled back and excluded from the comparison;"
+          echo "see the 'Incomplete run' banner in refresh-report.md for which ones."
+          echo "Do NOT read the drift table as a complete result."
+          exit 1
 
       - name: Fail if tolerance violations
         if: ${{ steps.refresh.outputs.rc == '2' }}

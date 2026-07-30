@@ -308,7 +308,7 @@
       }
     },
     {
-      "$comment": "Mainnet Uniswap V3 LP with 2 active positions in registered pairs: USDC/WETH 500bp (#1231724) and WETH/USDT 3000bp (#1276763). Added to exercise the UniswapV3 balance adapter on a clean, minimal account with no other protocol positions. Expected tolerance drift is large in percentage but immaterial in dollars (~$9 on a ~$40 dust account): the WETH/COW pool leg is unpriceable (COW has no mainnet feed) — see chains.1.$untracked_by_design.",
+      "$comment": "Originally added to exercise the UniswapV3 balance adapter on a clean, minimal account. IT NO LONGER DOES: measured 2026-07-30 at mainnet block 25622526, all FOUR NonfungiblePositionManager NFTs this account holds (#1204560, #1231724, #1258127, #1276763 — USDC/WETH 500bp and WETH/USDT 3000bp) have liquidity == 0 and tokensOwed == 0, so they contribute nothing and the Uniswap V3 adapter is not exercised at all. Repointing this fixture at a live UniswapV3 LP is a fixture decision, deliberately not taken here. Expected tolerance drift ~20% but immaterial in dollars (~$9 on a ~$40 dust account), and the cause is NOT Uniswap: NAV reports only four wallet legs (ETH/WETH/USDC/USDT) while filtered-DeBank adds the Convex cvxFXS position (~$8.66) — `convex` is in supportedDeBankProtocols but the cvxFXS rewarder is absent from ConvexCurveLPStakingMeta's governed instance set. An earlier revision of this comment blamed an unpriceable WETH/COW pool leg; that belongs to ACCOUNT_9_MAINNET_DIVERSIFIED, not here — this account holds no WETH/COW position. See chains.1.$untracked_by_design, which has it right.",
       "address": "0x8d27deb2405717d649346502f52b959aab4eb3af",
       "label": "ACCOUNT_12_MAINNET_UNISWAP_V3_LP",
       "enabledChains": [

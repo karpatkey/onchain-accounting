@@ -221,6 +221,14 @@ contract DeployPriceFeeds is BaseDeployScript {
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "ezETHCrossRate")) {
             _deployEzEthCrossRate();
         }
+        // ezETH's SECOND monitor, and the only one with a MARKET methodology (finding #2). ezETHCrossRate above is
+        // fundamental-vs-fundamental after its 2026-07-22 migration to RedStone's ezETH_FUNDAMENTAL feed, so it cannot
+        // detect a market depeg; this one wraps the RedStone Classic Push ezETH/ETH MARKET feed. Both are registered:
+        // divergenceBps is primary-vs-the-WORST monitor, so the market leg dominates rather than being diluted. Uses
+        // the GENERIC helper since its config block matches that shape.
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "ezETHCrossRateMarket")) {
+            _deployCrossRateMonitor("ezETHCrossRateMarket");
+        }
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "ETHxCrossRate")) {
             _deployEthxCrossRate();
         }

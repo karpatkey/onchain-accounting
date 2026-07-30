@@ -124,11 +124,17 @@
         "heartbeat": 3600
       }
     ],
+    "$comment": "Finding #2: ezETH's primary is fundamental (Renzo RestakeManager) and its only monitor, ezETHCrossRate, is ALSO fundamental after the 2026-07-22 migration to RedStone's ezETH_FUNDAMENTAL feed - so the 250 bps tolerance could not fire on a market depeg. ezETHCrossRateMarket adds a genuine MARKET leg (RedStone Classic Push ezETH/ETH). Both monitors are kept: divergenceBps is primary-vs-the-WORST-single-monitor (not the median), so the market monitor DOMINATES rather than being diluted by the fundamental one sitting near 0 bps. Its 46800 heartbeat is derived from the feed's measured 12 h cadence (max gap 43224 s + 3576 s margin), NOT copied from ezETHCrossRate's 86400; the registered value must cover the slower leg because TwoFeedChainlinkPriceFeed reports updatedAt = min(rateUpdatedAt, baseUpdatedAt), and the 12 h rate leg is slower than WETH's 3600 s ETH/USD. See custom-price-feeds/1.json.ezETHCrossRateMarket for the full measurement and the deprecated-feed rationale.",
     "monitorFeeds": [
       {
         "type": "Custom",
         "feed": "ezETHCrossRate",
         "heartbeat": 86400
+      },
+      {
+        "type": "Custom",
+        "feed": "ezETHCrossRateMarket",
+        "heartbeat": 46800
       }
     ]
   },

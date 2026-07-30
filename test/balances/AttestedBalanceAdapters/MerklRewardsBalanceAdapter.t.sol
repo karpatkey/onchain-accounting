@@ -1047,4 +1047,41 @@ contract MerklRewardsBalanceAdapterTest is BalanceAdapterTestBase {
         );
         adapter.submitProofs(alice, allocs);
     }
+
+    /// @dev The campaign cap is the one attacker-controlled read-fan-out amplifier (campaign ids are not proof-bound),
+    ///      so it must be enforced fail-loud. `MAX_CAMPAIGNS_PER_TOKEN + 1` shares for one token reverts.
+    function test_submit_revertsWhenTooManyCampaigns() public {
+        uint256 over = adapter.MAX_CAMPAIGNS_PER_TOKEN() + 1;
+        bytes32 leaf = _leaf(alice, address(arb), 100 ether);
+        distributor.setRoot(leaf);
+        MerklRewardsBalanceAdapter.CampaignShare[] memory shares = new MerklRewardsBalanceAdapter.CampaignShare[](over);
+        for (uint256 i; i < over; ++i) {
+            shares[i] = MerklRewardsBalanceAdapter.CampaignShare({
+                campaignId: keccak256(abi.encode("c", i)), subCampaignId: ZERO, cumulativeAmount: 1 ether
+            });
+        }
+        MerklRewardsBalanceAdapter.Allocation[] memory allocs = new MerklRewardsBalanceAdapter.Allocation[](1);
+        allocs[0] = MerklRewardsBalanceAdapter.Allocation({
+            token: address(arb), cumulativeAmount: 100 ether, proof: new bytes32[](0), campaigns: shares
+        });
+        // The count check fires before the sum check, so a mismatched sum is irrelevant here.
+        vm.expectRevert(
+            abi.encodeWithSelector(MerklRewardsBalanceAdapter.TooManyCampaigns.selector, address(arb), over)
+        );
+        adapter.submitProofs(alice, allocs);
+    }
+
+    /// @dev Exactly `MAX_CAMPAIGNS_PER_TOKEN` shares is accepted (boundary) and yields one leg per share.
+    function test_submit_acceptsExactlyMaxCampaigns() public {
+        uint256 max = adapter.MAX_CAMPAIGNS_PER_TOKEN();
+        uint256 total = max * 1 ether;
+        MerklRewardsBalanceAdapter.CampaignShare[] memory shares = new MerklRewardsBalanceAdapter.CampaignShare[](max);
+        for (uint256 i; i < max; ++i) {
+            shares[i] = MerklRewardsBalanceAdapter.CampaignShare({
+                campaignId: keccak256(abi.encode("c", i)), subCampaignId: ZERO, cumulativeAmount: 1 ether
+            });
+        }
+        _submitWithCampaigns(alice, address(arb), total, shares); // Σ shares == total
+        assertEq(adapter.getAdapterPositions(alice, address(0)).length, max, "one leg per share at the cap");
+    }
 }

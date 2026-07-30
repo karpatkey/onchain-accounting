@@ -103,8 +103,14 @@ contract MerklRewardsBalanceAdapter is IAttestedBalanceAdapter, IPositionDescrib
 
     /// @notice Hard cap on campaign shares cached per (user, token). Bounds the per-token read fan-out (each share is
     ///         a leg) so a pathological breakdown can't OOG a NAV read (an OOG there is NOT caught by NAVCalculator's
-    ///         try/catch). A real token has a handful of campaigns; enforced fail-loud at submit.
-    uint256 public constant MAX_CAMPAIGNS_PER_TOKEN = 64;
+    ///         try/catch). This is the *tight* cap because it is the one attacker-controlled amplifier: the merkle
+    ///         proof binds only the per-token cumulative total, NOT the individual `campaignId`s, so anyone holding a
+    ///         user's (public) per-token proof can split that proven total into up to this many fabricated campaign
+    ///         legs — a griefer can inflate a *real* token's leg count by this factor (but never add tokens the user
+    ///         doesn't really hold — the token set stays proof-bounded). Kept low to cap that amplification while still
+    ///         leaving headroom for a diversified LP earning one token across many pools. A real token has a handful of
+    ///         campaigns; enforced fail-loud at submit.
+    uint256 public constant MAX_CAMPAIGNS_PER_TOKEN = 32;
 
     /// @notice Upper bound on distinct reward tokens cached per user. Bounds the read-side fan-out (the position/
     ///         balance loops iterate `_userTokens[user]`) so a NAV read is deterministically gas-bounded, mirroring

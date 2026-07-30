@@ -61,6 +61,28 @@ library RateFeedGuard {
     error RateFeedGuardMissing(string feed, string param);
     /// @notice The `rateFeedGuard` block names a constructor parameter the instance does not have.
     error RateFeedGuardParamUnknown(string feed, string param);
+    /// @notice Pair identity was declared unverifiable without saying why.
+    error RateFeedUnverifiableReasonMissing(string feed, address rateFeed);
+
+    /// @notice Sentinel for `rateFeedGuard.description` meaning "this provider does not expose the pair".
+    /// @dev **Not every feed can be identity-checked, and pretending otherwise would be worse than not trying.**
+    ///      Measured on mainnet: RedStone's multi-feed contracts answer usefully — `0x701e83Bd` returns
+    ///      "RedStone Price Feed for ezETH_FUNDAMENTAL" — but a RedStone **Classic-Push** feed returns the
+    ///      constant string "Redstone Price Feed": no pair, no asset, identical across every Classic-Push feed on
+    ///      every pair. `0xF4a3e183` (the pre-2026-07-22 ezETH/ETH market feed) is exactly that shape.
+    ///
+    ///      For such a feed an equality assertion is not weak, it is UNIMPLEMENTABLE, and a guard that demanded
+    ///      one would force either a false string in config or a silently skipped instance. This sentinel makes
+    ///      the third option explicit: the instance stays inside the guard, the band is still enforced, and the
+    ///      config records that the pair could not be proven — together with a mandatory
+    ///      `descriptionUnverifiableReason`, so an unverifiable feed is DECLARED unverifiable rather than absent.
+    ///
+    ///      Be honest about what remains. For these feeds the band is not a secondary check, it is the ONLY
+    ///      available one, and it cannot separate two near-parity pairs: the ezETH market and fundamental feeds
+    ///      are both 8-decimal and both report ~1.08, so neither decimals nor any defensible band tells them
+    ///      apart. Coverage is therefore UNEVEN BY PROVIDER — full identity where the description names the pair,
+    ///      magnitude-only where it does not.
+    string internal constant UNVERIFIABLE = "$UNVERIFIABLE";
 
     /// @notice Validates every enabled rate-feed instance configured for `chainId`. Returns how many were checked.
     /// @dev Call this BEFORE deploying. It is view-only and costs four RPC reads per instance.
@@ -85,11 +107,18 @@ library RateFeedGuard {
         if (bytes(addrStr).length == 0) revert RateFeedGuardParamUnknown(feed, param);
         address rateFeed = vm.parseAddress(addrStr);
 
-        // 1. Pair identity. The only check that separates two feeds of the same shape and similar magnitude.
+        // 1. Pair identity — where the provider makes it possible. See {UNVERIFIABLE}.
         string memory expected = _guardField(vm, chainId, feed, "description");
-        string memory actual = IRateFeedIdentity(rateFeed).description();
-        if (keccak256(bytes(actual)) != keccak256(bytes(expected))) {
-            revert RateFeedPairMismatch(feed, rateFeed, expected, actual);
+        if (keccak256(bytes(expected)) == keccak256(bytes(UNVERIFIABLE))) {
+            // Declared unverifiable. Require a stated reason so the gap is visible in config review rather than
+            // being indistinguishable from someone forgetting the field.
+            string memory why = _guardField(vm, chainId, feed, "descriptionUnverifiableReason");
+            if (bytes(why).length == 0) revert RateFeedUnverifiableReasonMissing(feed, rateFeed);
+        } else {
+            string memory actual = IRateFeedIdentity(rateFeed).description();
+            if (keccak256(bytes(actual)) != keccak256(bytes(expected))) {
+                revert RateFeedPairMismatch(feed, rateFeed, expected, actual);
+            }
         }
 
         // 2. Plausibility band, which still bites if the description is absent, renamed, or itself wrong.

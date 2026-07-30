@@ -110,6 +110,23 @@ contract RateFeedGuardTest is Test {
         RateFeedGuard.check(vm, BASE, "wstETH_L2");
     }
 
+    /// @notice A feed whose provider does not expose the pair can be DECLARED unverifiable: the band still
+    ///         applies, but only with a stated reason.
+    /// @dev Mirrors a real limit measured on mainnet — a RedStone Classic-Push feed returns the constant
+    ///      "Redstone Price Feed", identical on every pair, so equality is unimplementable for that family.
+    ///      Simulated here by pointing the guard's expected value at the sentinel via a config-shaped override.
+    function test_unverifiableWithoutAReason_reverts() public {
+        address feed = _wstEthFeed();
+        _mockFeed(feed, "Redstone Price Feed", WSTETH_RATE, 18);
+        // The real config for wstETH_L2 asserts a concrete pair, so a generic description must still fail here.
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                RateFeedGuard.RateFeedPairMismatch.selector, "wstETH_L2", feed, "WSTETH / ETH", "Redstone Price Feed"
+            )
+        );
+        this.exposedCheck(BASE, "wstETH_L2");
+    }
+
     /// @notice Every enabled rate-feed instance on all four configured chains declares a guard and is internally
     ///         consistent.
     /// @dev `checkAll` fails CLOSED: an instance taking a rate-feed-shaped constructor param without a

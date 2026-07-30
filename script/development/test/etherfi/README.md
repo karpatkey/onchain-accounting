@@ -70,4 +70,4 @@ bash script/development/app/sync-app-env.sh 1
 The Safe then shows an "ether.fi" group with a ~0.2531 ETH withdrawal-queue leg.
 
 ## 10. Test verdict
-- Unit: **46/46 pass**. Fork: **4/4 pass** (strict delta 0 vs live read). `forge build`/`fmt` clean. Pin: balance-adapter (no prices-lib change) — CI's `LibraryPinConsistency` is the source of truth.
+- Unit: **46/46 pass**. Fork: **4/4 pass** (strict delta 0 vs live read). `forge build`/`fmt` clean. Pin: balance-adapter (no prices-lib change) — verify with a clean local full build, or CI's `Library pins (clean build)` job. Not the Unit job: it downloads artifacts from an incrementally-built, branch-shared cache, so its pin reading is a correct hash of an arbitrary compilation scope.

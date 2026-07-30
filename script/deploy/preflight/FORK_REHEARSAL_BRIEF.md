@@ -382,12 +382,17 @@ Without it, measured on mainnet 2026-07-30: **`EvmError: MemoryOOG` after wiring
 > bug — an EVM-level error deep in a script that worked yesterday. Two of this wave's four rehearsal
 > failures were misattributed exactly this way before being run down.
 
-**This was NOT knowledge lost to session notes — and that is the uncomfortable part.** The requirement is
-in `REDEPLOY_RUNBOOK.md` **twice**, since 2026-07-27: at §1.5's command line, in the sentence
-"`FOUNDRY_PROFILE=slow` (16 GiB) is required on mainnet — 43 assets otherwise `MemoryOOG`", and again in
-the troubleshooting table. It was also in this brief's own step table above. It still cost a run, because
-**`rehearse_fork.sh` — the automation that claims to run the runbook's sequence — did not implement it**
-and ran every step on the default profile.
+**This was NOT knowledge lost to session notes — and that is the uncomfortable part.** It was documented
+in **three** places before it cost a run:
+
+1. `REDEPLOY_RUNBOOK.md` §1.5's command line — `FOUNDRY_PROFILE=slow forge script … RegisterAssets`;
+2. the sentence right below it: "`FOUNDRY_PROFILE=slow` (16 GiB) is required on mainnet — 43 assets
+   otherwise `MemoryOOG`", plus a row in the runbook's troubleshooting table. Both present since the
+   runbook was created (`7199e661`, 2026-07-27);
+3. this brief's own step table above.
+
+It still cost a run, because **`rehearse_fork.sh` — the automation that claims to run the runbook's
+sequence — did not implement it** and ran every step on the default profile.
 
 So the transferable lesson is not "write it down". It was written down three times. It is:
 
@@ -395,9 +400,24 @@ So the transferable lesson is not "write it down". It was written down three tim
 > undocumented one**, because everyone reasonably assumes the script runs the procedure. Documentation
 > and automation drifting apart is invisible until the exact conditions that need the requirement occur.
 
-Two things close that gap, and only the first is done: the script now applies the profile per step
-(#214), and — still worth doing — a step could **assert the profile it is running under** rather than
-trusting the caller, so the drift cannot recur silently.
+Two things close that gap. The first is done — the script now applies the profile per step (#214). The
+second is **already written and sitting CLOSED: PR #188** added `BaseDeployScript._assertDeployProfile()`,
+so each of the 18 deploy-script subclasses refuses to run under a profile whose artifacts are not
+deploy-valid. It is **not in `main`** (`_assertDeployProfile` appears nowhere there), and it is the right
+shape: an **allowlist** (`default`, `slow`) rather than a denylist, with no bypass env var, on the
+reasoning that forgetting to extend a denylist fails silently and on-chain. Its own comment already states
+this requirement in the strongest terms available — "`slow` … **REQUIRED, not merely tolerated**: the
+redeploy runbook runs `RegisterAssets` under it, because mainnet's 43 assets otherwise `MemoryOOG`" —
+which makes four places, and still did not stop the rehearsal running without it. Reviving #188 is the
+durable fix; the design question is settled, not open.
+
+> **If #188 is revived, correct one factual drift in it first.** Its allowlist comment justifies `slow` by
+> claiming it "sets only `threads` / `compute_units_per_second`, so its bytecode is identical". On `main`,
+> `[profile.slow]` sets `threads`, **`gas_limit` and `memory_limit`** — and no
+> `compute_units_per_second` at all (`gas_limit`/`memory_limit` arrived with #169 on 2026-07-27, a day
+> before #188). **The conclusion survives** — neither is a compiler setting, so bytecode really is
+> identical — but the stated reason no longer matches the file, and a future reader checking the claim
+> against `foundry.toml` will find it wrong and may distrust the allowlist.
 
 Note also **why it stayed hidden until now**: with the ETHx blocker in place, `03` never produced the
 full feed set, so `RegisterAssets` skipped most assets and never built a frame big enough to trip the

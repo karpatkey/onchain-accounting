@@ -42,6 +42,7 @@ import {osETH_CrossRateCustomPriceFeed} from "../../src/prices/protocols/osETH_C
 import {CrossRateCustomPriceFeed} from "../../src/prices/protocols/CrossRateCustomPriceFeed.sol";
 import {ankrETH_CustomPriceFeed} from "../../src/prices/protocols/ankrETH_CustomPriceFeed.sol";
 import {NXM_CustomPriceFeed} from "../../src/prices/protocols/NXM_CustomPriceFeed.sol";
+import {RateFeedGuard} from "../utils/RateFeedGuard.sol";
 
 /// @title DeployPriceFeeds
 /// @notice Deploys custom price feed adapters for NAVCalculator
@@ -52,6 +53,18 @@ contract DeployPriceFeeds is BaseDeployScript {
 
         console2.log("\n=== Deploying Price Feeds ===");
         console2.log("Chain:", chainConfig.name);
+        console2.log("");
+
+        // Gate the deploy on rate-feed PAIR IDENTITY before anything is constructed.
+        //
+        // This runs here, not only in CI, because the event it protects against is this script: a 39-instance
+        // redeploy re-enters every hand-entered rate-feed address, and `OracleArgumentChecks.assertChainlinkOracle`
+        // in the feed constructors only proves the address is *an* aggregator — never which pair. A wrong feed of
+        // the right shape deploys clean and then under-reports silently and permanently, with no staleness or
+        // irregular signal anywhere. Reverting here costs a re-run; not reverting costs a redeploy plus
+        // re-registration on an immutable feed. See {RateFeedGuard} for why identity and band are both required.
+        uint256 guarded = RateFeedGuard.checkAll(vm, currentChainId);
+        console2.log("Rate-feed pair identity verified for instances:", guarded);
         console2.log("");
 
         // Deploy price feeds based on chain and enabled configuration
@@ -589,7 +602,11 @@ contract DeployPriceFeeds is BaseDeployScript {
     }
 
     // CrossRate redundancy feeds: Y/USD = (X/USD) * (Y/X), X = ETH. The Y/ETH leg is a Redstone market feed,
-    // independent of the asset's primary on-chain-rate feed. Registered as priceFeeds[1] (freshest-wins).
+    // independent of the asset's primary on-chain-rate feed. Registered as a `monitorFeed`, NOT as a pricing feed:
+    // it never prices the NAV, it only provides something for the primary to be checked against. An earlier
+    // version of this line said "Registered as priceFeeds[1] (freshest-wins)", which described behaviour PR #151
+    // removed — and it sat five lines above the docstring below that already says the opposite. A comment
+    // asserting the reverse of the behaviour, in the place someone goes to check the behaviour, is worse than none.
 
     /// @notice Deploys a generic CrossRate divergence-MONITOR feed (Y/USD = (Y/ETH market) x (ETH/USD)) from its
     ///         config entry `{underlyingAsset, yToXFeed, yToXHeartbeat, baseAsset}`. Used for LSTs whose fundamental

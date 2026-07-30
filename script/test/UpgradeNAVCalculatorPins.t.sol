@@ -112,7 +112,7 @@ contract UpgradeNAVCalculatorPinsTest is Test {
     /// @dev The address the guard recomputes for each library from current source. Derived independently of the
     ///      guard (different helper, different argument order) so it cannot agree with a broken guard by
     ///      construction.
-    function _computedPriceFeedPin() internal pure returns (address) {
+    function _computedPriceFeedPin() internal view returns (address) {
         return vm.computeCreate2Address(
             keccak256(abi.encodePacked("PriceFeedLib", uint256(1))),
             keccak256(type(PriceFeedLib).creationCode),
@@ -120,7 +120,7 @@ contract UpgradeNAVCalculatorPinsTest is Test {
         );
     }
 
-    function _computedNavRegistryPin() internal pure returns (address) {
+    function _computedNavRegistryPin() internal view returns (address) {
         return vm.computeCreate2Address(
             keccak256(abi.encodePacked("NavRegistryLib", uint256(1))),
             keccak256(type(NAVRegistryLib).creationCode),
@@ -128,11 +128,11 @@ contract UpgradeNAVCalculatorPinsTest is Test {
         );
     }
 
-    function _priceFeedPinMatches() internal pure returns (bool) {
+    function _priceFeedPinMatches() internal view returns (bool) {
         return _computedPriceFeedPin() == LibraryPins.PRICE_FEED_LIB;
     }
 
-    function _navRegistryPinMatches() internal pure returns (bool) {
+    function _navRegistryPinMatches() internal view returns (bool) {
         return _computedNavRegistryPin() == LibraryPins.NAV_REGISTRY_LIB;
     }
 
@@ -309,7 +309,7 @@ contract UpgradeNAVCalculatorPinsTest is Test {
 
     /// @notice Guards the guard: the real implementation bytecode must embed both pins, so the positive tests
     ///         above cannot pass for an unrelated reason.
-    function test_realImplBytecodeEmbedsBothPins() public pure {
+    function test_realImplBytecodeEmbedsBothPins() public view {
         bytes memory code = type(NAVCalculator).creationCode;
         assertTrue(LibraryPins.contains(code, LibraryPins.PRICE_FEED_LIB), "impl missing PriceFeedLib pin");
         assertTrue(LibraryPins.contains(code, LibraryPins.NAV_REGISTRY_LIB), "impl missing NAVRegistryLib pin");

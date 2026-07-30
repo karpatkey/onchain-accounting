@@ -346,6 +346,7 @@ spawn_forge() {
   contract=$(chain_to_contract "$chain_id")
   (
     FOUNDRY_PROFILE="${FOUNDRY_PROFILE:-slow}" \
+      REFRESH_NAV_POSITIONS=1 \
       forge test \
         --match-contract "$contract" \
         --match-test "test_emitSnapshots" \

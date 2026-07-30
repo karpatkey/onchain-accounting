@@ -72,7 +72,7 @@ contract DeployImplementationsHarness is DeployImplementations, PinHarnessBehavi
     ///         leave this file entirely green, and nothing else in the repo reaches script `01`.
     function computedAddresses()
         external
-        pure
+        view
         returns (address priceFeedLib, address navRegistryLib, address navImpl, address bridgeImpl)
     {
         ImplPlan memory plan = _computeImplPlan();
@@ -126,7 +126,7 @@ contract DeployNAVImplementationHarness is DeployNAVImplementation, PinHarnessBe
     /// @dev    Three, not four: `01_2`'s `ImplPlan` has no `bridgeImpl` member because this script does not deploy
     ///         the BridgeEscrow implementation. See `DeployImplementationsHarness.computedAddresses` for the
     ///         fourth address and why it is asserted there.
-    function computedAddresses() external pure returns (address priceFeedLib, address navRegistryLib, address navImpl) {
+    function computedAddresses() external view returns (address priceFeedLib, address navRegistryLib, address navImpl) {
         ImplPlan memory plan = _computeImplPlan();
         return (plan.priceFeedLib, plan.navRegistryLib, plan.navImpl);
     }
@@ -253,7 +253,7 @@ contract DeployImplementationsPinsTest is Test {
 
     /// @dev Derived independently of the guard (different helper, different argument order) so it cannot agree
     ///      with a broken guard by construction.
-    function _computedPriceFeedPin() internal pure returns (address) {
+    function _computedPriceFeedPin() internal view returns (address) {
         return vm.computeCreate2Address(
             keccak256(abi.encodePacked("PriceFeedLib", uint256(1))),
             keccak256(type(PriceFeedLib).creationCode),
@@ -261,7 +261,7 @@ contract DeployImplementationsPinsTest is Test {
         );
     }
 
-    function _computedNavRegistryPin() internal pure returns (address) {
+    function _computedNavRegistryPin() internal view returns (address) {
         return vm.computeCreate2Address(
             keccak256(abi.encodePacked("NavRegistryLib", uint256(1))),
             keccak256(type(NAVRegistryLib).creationCode),

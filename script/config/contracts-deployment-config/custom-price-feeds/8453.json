@@ -6,6 +6,13 @@
       "wstEthToEthChainlink": "0x43a5C292A453A3bF3606fa856197f09D7B74251a",
       "wstEthToEthHeartbeat": "86400",
       "baseAsset": "0x4200000000000000000000000000000000000006"
+    },
+    "rateFeedGuard": {
+      "$comment": "Pair identity + plausibility band for the rate feed named by `param`. Enforced pre-deploy by RateFeedGuard and asserted in the fork tests. description() verified live on-chain 2026-07-30.",
+      "param": "wstEthToEthChainlink",
+      "description": "WSTETH / ETH",
+      "minRate1e18": "900000000000000000",
+      "maxRate1e18": "1500000000000000000"
     }
   },
   "weETH_L2": {
@@ -15,6 +22,13 @@
       "weEthToEethChainlink": "0x35e9D7001819Ea3B39Da906aE6b06A62cfe2c181",
       "weEthToEethHeartbeat": "86400",
       "baseAsset": "0x4200000000000000000000000000000000000006"
+    },
+    "rateFeedGuard": {
+      "$comment": "Pair identity + plausibility band for the rate feed named by `param`. Enforced pre-deploy by RateFeedGuard and asserted in the fork tests. description() verified live on-chain 2026-07-30.",
+      "param": "weEthToEethChainlink",
+      "description": "weETH / eETH Exchange Rate",
+      "minRate1e18": "900000000000000000",
+      "maxRate1e18": "1500000000000000000"
     }
   },
   "cbETH_L2": {
@@ -24,6 +38,13 @@
       "cbEthToEthChainlink": "0x806b4Ac04501c29769051e42783cF04dCE41440b",
       "cbEthToEthHeartbeat": "86400",
       "baseAsset": "0x4200000000000000000000000000000000000006"
+    },
+    "rateFeedGuard": {
+      "$comment": "Pair identity + plausibility band for the rate feed named by `param`. Enforced pre-deploy by RateFeedGuard and asserted in the fork tests. description() verified live on-chain 2026-07-30.",
+      "param": "cbEthToEthChainlink",
+      "description": "CBETH / ETH",
+      "minRate1e18": "900000000000000000",
+      "maxRate1e18": "1500000000000000000"
     }
   },
   "weETHCrossRate": {
@@ -34,6 +55,13 @@
       "yToXFeed": "0xFC1415403EbB0c693f9a7844b92aD2Ff24775C65",
       "yToXHeartbeat": "86400",
       "baseAsset": "0x4200000000000000000000000000000000000006"
+    },
+    "rateFeedGuard": {
+      "$comment": "Pair identity + plausibility band for the rate feed named by `param`. Enforced pre-deploy by RateFeedGuard and asserted in the fork tests. description() verified live on-chain 2026-07-30.",
+      "param": "yToXFeed",
+      "description": "weETH / ETH",
+      "minRate1e18": "900000000000000000",
+      "maxRate1e18": "1500000000000000000"
     }
   }
 }

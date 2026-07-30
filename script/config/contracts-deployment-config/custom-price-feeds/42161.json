@@ -6,6 +6,13 @@
       "wstEthToEthChainlink": "0xb523AE262D20A936BC152e6023996e46FDC2A95D",
       "wstEthToEthHeartbeat": "86400",
       "baseAsset": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"
+    },
+    "rateFeedGuard": {
+      "$comment": "Pair identity + plausibility band for the rate feed named by `param`. Enforced pre-deploy by RateFeedGuard and asserted in the fork tests. description() verified live on-chain 2026-07-30.",
+      "param": "wstEthToEthChainlink",
+      "description": "WSTETH / ETH",
+      "minRate1e18": "900000000000000000",
+      "maxRate1e18": "1500000000000000000"
     }
   },
   "weETH_L2": {
@@ -15,6 +22,13 @@
       "weEthToEethChainlink": "0x20bAe7e1De9c596f5F7615aeaa1342Ba99294e12",
       "weEthToEethHeartbeat": "86400",
       "baseAsset": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"
+    },
+    "rateFeedGuard": {
+      "$comment": "Pair identity + plausibility band for the rate feed named by `param`. Enforced pre-deploy by RateFeedGuard and asserted in the fork tests. description() verified live on-chain 2026-07-30.",
+      "param": "weEthToEethChainlink",
+      "description": "weETH / eETH Exchange Rate",
+      "minRate1e18": "900000000000000000",
+      "maxRate1e18": "1500000000000000000"
     }
   },
   "rsETH_L2": {
@@ -24,6 +38,13 @@
       "rsEthToEthChainlink": "0x3A917e6B5732dFCc4A45257e3930979fAE6a3737",
       "rsEthToEthHeartbeat": "86400",
       "baseAsset": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"
+    },
+    "rateFeedGuard": {
+      "$comment": "Pair identity + plausibility band for the rate feed named by `param`. Enforced pre-deploy by RateFeedGuard and asserted in the fork tests. description() verified live on-chain 2026-07-30.",
+      "param": "rsEthToEthChainlink",
+      "description": "rsETH / ETH Exchange Rate",
+      "minRate1e18": "900000000000000000",
+      "maxRate1e18": "1500000000000000000"
     }
   },
   "ezETH_L2": {
@@ -41,6 +62,13 @@
       "syrupUsdcToUsdcChainlink": "0xF8722c901675C4F2F7824E256B8A6477b2c105FB",
       "syrupUsdcToUsdcHeartbeat": "86400",
       "baseAsset": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
+    },
+    "rateFeedGuard": {
+      "$comment": "Pair identity + plausibility band for the rate feed named by `param`. Enforced pre-deploy by RateFeedGuard and asserted in the fork tests. description() verified live on-chain 2026-07-30.",
+      "param": "syrupUsdcToUsdcChainlink",
+      "description": "syrupUSDC / USDC Exchange Rate",
+      "minRate1e18": "900000000000000000",
+      "maxRate1e18": "1500000000000000000"
     }
   },
   "weETHCrossRate": {
@@ -51,6 +79,13 @@
       "yToXFeed": "0xE141425bc1594b8039De6390db1cDaf4397EA22b",
       "yToXHeartbeat": "86400",
       "baseAsset": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"
+    },
+    "rateFeedGuard": {
+      "$comment": "Pair identity + plausibility band for the rate feed named by `param`. Enforced pre-deploy by RateFeedGuard and asserted in the fork tests. description() verified live on-chain 2026-07-30.",
+      "param": "yToXFeed",
+      "description": "weETH / ETH",
+      "minRate1e18": "900000000000000000",
+      "maxRate1e18": "1500000000000000000"
     }
   },
   "ezETHCrossRate": {
@@ -61,6 +96,13 @@
       "yToXFeed": "0x11E1836bFF2ce9d6A5bec9cA79dc998210f3886d",
       "yToXHeartbeat": "86400",
       "baseAsset": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"
+    },
+    "rateFeedGuard": {
+      "$comment": "Pair identity + plausibility band for the rate feed named by `param`. Enforced pre-deploy by RateFeedGuard and asserted in the fork tests. description() verified live on-chain 2026-07-30.",
+      "param": "yToXFeed",
+      "description": "ezETH / ETH",
+      "minRate1e18": "900000000000000000",
+      "maxRate1e18": "1500000000000000000"
     }
   },
   "rsETHCrossRate": {
@@ -71,6 +113,13 @@
       "yToXFeed": "0xb0EA543f9F8d4B818550365d13F66Da747e1476A",
       "yToXHeartbeat": "86400",
       "baseAsset": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"
+    },
+    "rateFeedGuard": {
+      "$comment": "Pair identity + plausibility band for the rate feed named by `param`. Enforced pre-deploy by RateFeedGuard and asserted in the fork tests. description() verified live on-chain 2026-07-30.",
+      "param": "yToXFeed",
+      "description": "RSETH / ETH",
+      "minRate1e18": "900000000000000000",
+      "maxRate1e18": "1500000000000000000"
     }
   }
 }

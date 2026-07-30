@@ -475,21 +475,6 @@ library ConfigReader {
         return isAdapterEnabled(vm, chainId, "deployPriceFeeds", adapterName);
     }
 
-    /// @notice The constructor parameter NAMES declared for a Custom price-feed instance. Empty if it has none.
-    /// @dev Added for {RateFeedGuard}'s fail-closed completeness check, which must be able to tell "this instance
-    ///      declares no rate feed" apart from "this instance declares one and forgot to guard it". Every other
-    ///      reader here fetches a param by name, which cannot answer that question.
-    function priceFeedConstructorKeys(Vm vm, uint256 chainId, string memory adapterName)
-        internal
-        view
-        returns (string[] memory)
-    {
-        string memory json = _readOrEmpty(vm, _deployPriceFeedsPath(vm, chainId));
-        string memory p = string(abi.encodePacked(".", adapterName, ".constructor"));
-        if (!vm.keyExists(json, p)) return new string[](0);
-        return _filterDollar(vm.parseJsonKeys(json, p));
-    }
-
     // -------------------------------------------------------------------------
     // Assets + per-asset price-feed list (nav-config/assets-and-price-feeds/<id>.json → .<SYMBOL>)
     // -------------------------------------------------------------------------

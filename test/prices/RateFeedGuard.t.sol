@@ -6,6 +6,10 @@ import {RateFeedGuard} from "script/utils/RateFeedGuard.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {ConfigReader} from "script/utils/ConfigReader.sol";
 
+interface IRateFeedIdentityView {
+    function description() external view returns (string memory);
+}
+
 /// @title RateFeedGuardTest
 /// @notice Proves the pre-deploy rate-feed guard actually bites, using the exact confusion the audit finding
 ///         describes.
@@ -127,6 +131,19 @@ contract RateFeedGuardTest is Test {
         this.exposedCheck(BASE, "wstETH_L2");
     }
 
+    /// @notice An access-controlled aggregator is rejected even though its description is CORRECT.
+    /// @dev The property that actually caught PR #220's ETHx misconfiguration, and neither other check could:
+    ///      the pair matched and the magnitude was plausible. Only reading from a CONTRACT frame separates a raw
+    ///      controller-gated aggregator from its readable `EACAggregatorProxy`.
+    function test_accessControlledAggregator_rejectedDespiteCorrectDescription() public {
+        address feed = _wstEthFeed();
+        vm.etch(feed, address(new AccessControlledAggregator()).code);
+        // Sanity: the description really is right, so this cannot be a pair mismatch.
+        assertEq(IRateFeedIdentityView(feed).description(), "WSTETH / ETH", "fixture must have the RIGHT pair");
+        vm.expectRevert(abi.encodeWithSelector(RateFeedGuard.RateFeedNotContractReadable.selector, "wstETH_L2", feed));
+        this.exposedCheck(BASE, "wstETH_L2");
+    }
+
     /// @notice Every enabled rate-feed instance on all four configured chains declares a guard and is internally
     ///         consistent.
     /// @dev `checkAll` fails CLOSED: an instance taking a rate-feed-shaped constructor param without a
@@ -168,5 +185,22 @@ library ConfigReaderShim {
 
     function hasGuard(Vm vm, uint256 chainId, string memory name) internal view returns (bool) {
         return bytes(ConfigReader.readPriceFeedParam(vm, chainId, name, "rateFeedGuard.param")).length != 0;
+    }
+}
+
+/// @notice Mimics a raw Chainlink aggregator behind `SimpleReadAccessController`: answers an EOA, denies a
+///         contract. This is PR #220's ETHx misconfiguration — note `description()` is CORRECT.
+contract AccessControlledAggregator {
+    function description() external pure returns (string memory) {
+        return "WSTETH / ETH";
+    }
+
+    function decimals() external pure returns (uint8) {
+        return 18;
+    }
+
+    function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80) {
+        require(msg.sender == tx.origin, "No access");
+        return (uint80(1), int256(1.24e18), block.timestamp, block.timestamp, uint80(1));
     }
 }

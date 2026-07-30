@@ -63,6 +63,20 @@ library RateFeedGuard {
     error RateFeedGuardParamUnknown(string feed, string param);
     /// @notice Pair identity was declared unverifiable without saying why.
     error RateFeedUnverifiableReasonMissing(string feed, address rateFeed);
+    /// @notice The feed answers an EOA but denies a contract, so no price feed could ever read it.
+    /// @dev The independent second axis, and the one that was actually missing. PR #220's ETHx misconfiguration
+    ///      had the configured rate leg pointing at the raw access-controlled aggregator instead of its
+    ///      `EACAggregatorProxy`. It passed every inspection a config review runs — `description()` really was
+    ///      "ETHx / ETH", decimals really were 18, and `latestRoundData()` really did answer a `cast call` — yet
+    ///      no contract could read it, because Chainlink's `SimpleReadAccessController` grants access only when
+    ///      `_user == tx.origin`. `assertChainlinkOracle` was denied and the constructor reverted.
+    ///
+    ///      So `description()` was CORRECT on the bad address: a pair assertion could not have caught it, and a
+    ///      band could not either. "Is this the right pair" and "can a contract read it" are INDEPENDENT
+    ///      properties. This guard reads from its own contract frame (the library inlines into the deploy
+    ///      script), so a controller-gated aggregator is rejected here — before construction — rather than
+    ///      surfacing as an opaque constructor revert.
+    error RateFeedNotContractReadable(string feed, address rateFeed);
 
     /// @notice Sentinel for `rateFeedGuard.description` meaning "this provider does not expose the pair".
     /// @dev **Not every feed can be identity-checked, and pretending otherwise would be worse than not trying.**
@@ -122,7 +136,14 @@ library RateFeedGuard {
         }
 
         // 2. Plausibility band, which still bites if the description is absent, renamed, or itself wrong.
-        (, int256 answer,,,) = IRateFeedIdentity(rateFeed).latestRoundData();
+        // Read from THIS (contract) frame, and treat a denial as its own failure — see
+        // {RateFeedNotContractReadable}. try/catch is required: an access-controlled aggregator REVERTS here.
+        int256 answer;
+        try IRateFeedIdentity(rateFeed).latestRoundData() returns (uint80, int256 a, uint256, uint256, uint80) {
+            answer = a;
+        } catch {
+            revert RateFeedNotContractReadable(feed, rateFeed);
+        }
         if (answer <= 0) revert RateFeedUnreadable(feed, rateFeed);
         uint256 rate1e18 = _to1e18(uint256(answer), IRateFeedIdentity(rateFeed).decimals());
         uint256 lo = vm.parseUint(_guardField(vm, chainId, feed, "minRate1e18"));
@@ -154,10 +175,43 @@ library RateFeedGuard {
     ///      `<x>To<y>Chainlink[Address]`; both are matched here so a newly-added feed cannot quietly escape the
     ///      guard by simply omitting the block.
     function _assertNoUnguardedRateFeedParam(Vm vm, uint256 chainId, string memory feed) private view {
-        string[] memory keys = ConfigReader.priceFeedConstructorKeys(vm, chainId, feed);
+        string[] memory keys = _constructorKeys(vm, chainId, feed);
         for (uint256 i; i < keys.length; ++i) {
             if (_isRateFeedParam(keys[i])) revert RateFeedGuardMissing(feed, keys[i]);
         }
+    }
+
+    /// @dev Enumerates an instance's constructor parameter NAMES. Deliberately implemented HERE rather than as a
+    ///      new function on {ConfigReader}, and the reason is not style: `test/LibraryPinConsistency.t.sol`
+    ///      imports ConfigReader directly, so under whole-program `via_ir` ANY addition to that file changes the
+    ///      pin test's own compilation unit and shifts the computed `type(PriceFeedLib).creationCode`. Measured:
+    ///      adding one view function there moved PriceFeedLib from 0x8b7e4fA9 to 0xeA694009 while touching no
+    ///      `src/` at all. Keeping this local costs one duplicated path expression and keeps the change
+    ///      pin-neutral, which is the difference between landing and blocking a verified pin regen.
+    function _constructorKeys(Vm vm, uint256 chainId, string memory feed) private view returns (string[] memory) {
+        string memory path = string(
+            abi.encodePacked(
+                vm.projectRoot(),
+                "/script/config/contracts-deployment-config/custom-price-feeds/",
+                vm.toString(chainId),
+                ".json"
+            )
+        );
+        if (!vm.exists(path)) return new string[](0);
+        string memory json = vm.readFile(path);
+        string memory p = string(abi.encodePacked(".", feed, ".constructor"));
+        if (!vm.keyExistsJson(json, p)) return new string[](0);
+        string[] memory all = vm.parseJsonKeys(json, p);
+        uint256 n;
+        for (uint256 i; i < all.length; ++i) {
+            if (bytes(all[i]).length > 0 && bytes(all[i])[0] != "$") ++n;
+        }
+        string[] memory out = new string[](n);
+        uint256 j;
+        for (uint256 i; i < all.length; ++i) {
+            if (bytes(all[i]).length > 0 && bytes(all[i])[0] != "$") out[j++] = all[i];
+        }
+        return out;
     }
 
     function _isRateFeedParam(string memory key) private pure returns (bool) {

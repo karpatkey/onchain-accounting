@@ -14,9 +14,31 @@ pragma solidity ^0.8;
 ///         reference the constants here (`LibraryPins.PRICE_FEED_LIB` / `NAV_REGISTRY_LIB`), so they pick up the
 ///         new value automatically. If a future call site hard-codes a raw address instead, grep the *constants*
 ///         (not the literal) to find it.
+/// @dev **HOW TO REGENERATE THESE, AND WHY THE METHOD MATTERS.** Both values MUST be derived from a
+///      CLEAN build — `forge clean` (or a runner that starts with no `out/`) followed by a full
+///      `forge build`. A warm tree can produce a DIFFERENT address for the same source: reusing
+///      compilation state changes the compilation scope, which changes a library's emitted bytecode
+///      and so the CREATE2 address derived from it. This was observed repeatedly in CI before the
+///      Build job stopped restoring a Foundry cache (PR #200) — three different `PriceFeedLib`
+///      values appeared across branches whose `PriceFeedLib` source was byte-identical, including
+///      one branch that changed no file under `src/` at all.
+///
+///      Two consequences worth stating explicitly, because the next person to regenerate these will
+///      not have that context:
+///        1. Measure TWICE from two independent clean builds and confirm the values agree before
+///           committing. If they disagree, stop — the pin is not computable and that is a far worse
+///           problem than a stale one.
+///        2. `01_DeployImplementations` asserts the deployed libraries land on these addresses. That
+///           assertion is only meaningful against a clean build too; validating it from a warm tree
+///           can green-light a pin that no clean build reproduces.
+///
+///      A pin moves only when a file in THAT library's own compilation closure changes, and even
+///      then only if emitted bytecode actually changes — an interface-only addition to a closure
+///      member recompiles the library without moving its address. Membership is necessary, not
+///      sufficient; measure rather than predict.
 library LibraryPins {
-    address internal constant PRICE_FEED_LIB = 0x450421a334DE63F75e1d47399d9713f755aaEfF2;
-    address internal constant NAV_REGISTRY_LIB = 0x549f6fB0EC34E18A82A320b79C968a9Ca6e7b96b;
+    address internal constant PRICE_FEED_LIB = 0x8b7e4fA91490ADe5D52F1755c9e1D91618cd7dc1;
+    address internal constant NAV_REGISTRY_LIB = 0x5f5D054E021A53E1DEF54B3Bda3c939ccD14fd90;
 
     /// @dev True if the 20-byte `needle` address appears verbatim anywhere in `haystack` — the linker embeds a
     ///      pinned library's address directly in the linked creation bytecode.

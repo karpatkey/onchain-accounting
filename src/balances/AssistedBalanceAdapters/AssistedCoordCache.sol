@@ -38,7 +38,23 @@ error CoordinateGasExhausted(address adapter, uint256 coordId, uint256 stipend, 
 /// @dev Permissionless & self-scoped: no roles; all mutators key on `msg.sender`, so a caller can only ever touch its
 ///      OWN set. The canonical feeder is a {BalanceAdapterAssistant} the owner Safe delegatecalls (so `msg.sender` is the
 ///      Safe). The family invariant holds — coordinates only, valued live, ownership re-verified per read → under-report
-///      only. Uses a `bytes[]` array + `key → idxPlus1` map for dedup and O(1) swap-pop removal. Reads isolate each
+///      only.
+///
+///      **WHAT THIS FILE CANNOT SHOW YOU — the cache is COMPLETE in production, not merely conservative.** Read on its
+///      own, this contract is a permissionless cache with no completeness guarantee whatsoever: anyone may `submit`
+///      their own coordinates, nobody is obliged to, and the assistant is the *canonical feeder* rather than a gate. So
+///      "under-report only" is the honest reading of THIS code — and it understates the deployed system. The portfolio
+///      Safes' **roles-modifier permission set allows the corresponding protocol entries only through the assistant
+///      contracts; the direct protocol entrypoint is not in the allow-list.** A position of these types therefore
+///      cannot be active without its coordinate having been fed here. Two complementary halves: *contract level* (this
+///      file) → cannot **over**-report; *roles level* (**outside this repository**) → cannot **under**-report either.
+///      Enforcement is in the Safe's roles configuration, which is not part of this repo — treat this as a pointer to
+///      it, not as an operational rule someone must remember. **Residual risk:** not a bypass by an operator (not
+///      permitted), but a **change to the roles permission set adding a path that reaches the protocol without the
+///      assistant** — after which this cache silently misses positions and nothing in this repository would detect it,
+///      because every invariant above still holds. See `AssistedBalanceAdapters/README.md` §5.0 and ADRs 0015 / 0018.
+///
+///      Uses a `bytes[]` array + `key → idxPlus1` map for dedup and O(1) swap-pop removal. Reads isolate each
 ///      coordinate behind a self-`staticcall` ({valueCoordSelf}), so a revert-prone valuation (e.g. Nexus's
 ///      `StakingViewer.getTokens`) only drops that one coordinate, never the account's whole set.
 abstract contract AssistedCoordCache is IAssistedBalanceAdapter {

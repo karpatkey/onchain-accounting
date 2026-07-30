@@ -88,7 +88,7 @@ Read [`src/balances/BALANCE_ADAPTERS.md`](../src/balances/BALANCE_ADAPTERS.md) f
 
 Two flavors:
 - **Chainlink** — registered with `priceType = Chainlink` and a heartbeat for staleness. Most assets use this.
-- **Custom** — a contract implementing `ICustomPriceFeed` that derives a price (e.g., `sXDAI_CustomPriceFeed` combines xDAI/USD with the vault's ERC-4626 share rate; `wstETH_CustomPriceFeed` reads stETH-per-token rate × stETH/ETH × ETH/USD). Used for receipt tokens, LP tokens, and synthetic rates. All custom feeds live under `src/prices/protocols/`.
+- **Custom** — a contract implementing `ICustomPriceFeed` that derives a price (e.g., `sXDAI_CustomPriceFeed` combines the vault's ERC-4626 share rate with the NAV's own xDAI/USD price; `wstETH_CustomPriceFeed` reads `stEthPerToken()` × the NAV's ETH/USD, holding stETH/ETH ≡ 1.0 — it is **pure fundamental, with no market leg**). Used for receipt tokens, LP tokens, and synthetic rates. All custom feeds live under `src/prices/protocols/`. Note that since [ADR 0019](./decisions/0019-nav-sourced-base-price.md) the `base/USD` leg of a derived feed comes from the NAV's own selector, not a hardcoded oracle.
 
 L2 deployments check `chainlinkL2SequencerUptimeFeed`; if down or in grace period, prices are flagged stale.
 

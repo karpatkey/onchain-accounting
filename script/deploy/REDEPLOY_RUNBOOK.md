@@ -84,8 +84,9 @@ number, those two move with it and this table is the thing that goes stale.
 ### Why this is a NEW PROXY and not an implementation upgrade
 
 `NAVCalculator` is UUPS-upgradeable, so the cheap reading of this wave is "upgrade the implementation
-behind `0x80eD5cc6…` and stop". **That does not work**, and the reason is a single contract:
-`ERC20DefaultBalanceAdapter` is minted *inside* `initialize()` and can never afterwards be replaced.
+behind `0x80eD5cc6…` and stop". **This is a deliberate decision not to do that**, and the reason is a
+single contract: `ERC20DefaultBalanceAdapter` is minted *inside* `initialize()`, and **nothing in the
+implementation or admin surface that exists today can replace it.**
 
 - **It is deployed by `initialize()` itself** —
   `_setErc20DefaultBalanceAdapter(NAVRegistryLib.deployDefaultAdapter(initialAssets))`
@@ -93,13 +94,32 @@ behind `0x80eD5cc6…` and stop". **That does not work**, and the reason is a si
 - **The setter is set-once.** `_setErc20DefaultBalanceAdapter` reverts `InvalidArguments()` when
   `erc20DefaultBalanceAdapter != address(0)` (`Balances.sol:93-97`). It is `internal`, it has exactly
   **one call site in all of `src/`** — the `initialize()` line above — and **no public, admin or
-  governance setter exists anywhere in the tree.**
-- **It is unremovable.** Both `NAVRegistryLib.removeBalanceAdapter` (`:181`) and
+  governance setter exists anywhere in the current tree.**
+- **It is unremovable through the registry.** Both `NAVRegistryLib.removeBalanceAdapter` (`:181`) and
   `removeBalanceAdapters` (`:245`) revert `InvalidArguments()` when handed it, explicitly and by name.
 
-So no upgrade, no config transaction and no admin call can repoint a live proxy at a new
-ERC20Default. An implementation upgrade would ship every other fix in this wave and leave the wallet
-adapter — the one adapter that every chain and every account uses — running the **old** bytecode.
+So with the code as it stands, no upgrade, no config transaction and no admin call repoints a live
+proxy at a new ERC20Default. Shipping the wave as an implementation-only upgrade would therefore
+deliver every other fix and leave the wallet adapter — the one adapter every chain and every account
+uses — running the **old** bytecode.
+
+> **State this as a decision, not an impossibility — the honest version is the more persuasive one.**
+> UUPS places no limit on what an upgrade may contain, so an implementation *could* carry bespoke
+> migration logic that repoints ERC20Default. Claiming otherwise invites the one obvious objection
+> ("then add a setter in the upgrade") and collapses the rationale into an argument. The precise claim
+> survives it, because the choice was never possible-versus-impossible. It is cost and risk:
+>
+> | the in-place route would have to | the new-proxy route |
+> | --- | --- |
+> | write migration logic that **does not exist today** — `erc20DefaultBalanceAdapter` is plain storage (`Balances.sol:56`), so an upgrade can assign it, but the set-once helper will not do it | `initialize()` does it, on a path already exercised on 24 chains |
+> | also repair three private registry structures by hand, since the helper that normally maintains them is bypassed: `_globalAdapters` (`:46` — remove old, push new), `_adapterTypes` (`:49`), `_isAdapterRegistered` (`:52`) | maintained by `_setErc20DefaultBalanceAdapter` as a unit |
+> | re-seed the inclusion list — via the constructor's un-registry-checked `initialAssets` seed, or `addSupportedAsset`, which is `OnlyNAVCalculator`-gated and demands `isAssetRegistered` | `RegisterAssets` populates it as a side effect of 1.5 |
+> | **deploy a new adapter anyway** — the adapter itself is immutable, so nothing here avoids that | same |
+> | be audited as one-off code, then either be removed by a *second* upgrade or leave a permanent setter widening the admin surface of a contract whose immutability is load-bearing | no new surface |
+> | all of it against a **live** proxy holding the production registry | against an empty proxy, with the old stack still answering as a fallback |
+>
+> Same end state, strictly more code, strictly more risk, on the harder target. **That** is why the
+> redeploy takes a new proxy — not because repointing is forbidden.
 
 **Its bytecode did change in this wave, so this is not hypothetical.** Counts from
 `git diff --numstat 2bc8ba73..origin/main` — `2bc8ba73` is #159, the commit deployed to all 24 chains
@@ -556,9 +576,10 @@ admin. `initialize()` mints the fresh `ERC20DefaultBalanceAdapter` via
 `NAVRegistryLib.deployDefaultAdapter` (`NAVCalculator.sol:86`) and `02_2` records it.
 
 **This step is the whole reason the redeploy is a new proxy rather than a UUPS upgrade** — the mint is
-set-once and unremovable, so a live proxy can never be given a new ERC20Default. See *Why this is a
-NEW PROXY and not an implementation upgrade* at the top of this document before proposing a smaller
-deploy.
+set-once and unremovable through the registry, so replacing ERC20Default on a live proxy would take
+migration logic that does not exist today, and would still end in a new adapter deployment. See *Why
+this is a NEW PROXY and not an implementation upgrade* at the top of this document, which costs that
+alternative out, before proposing a smaller deploy.
 
 - **Precondition:** 1.2 done; `DeploySalts.NAV_PROXY` bumped if 0.2 said so.
 - **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.3` — the proxy differs from

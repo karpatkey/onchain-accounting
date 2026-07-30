@@ -43,11 +43,16 @@ the CREATE2 addresses observed, which is stronger evidence than any CI check can
 
 ## 1. What the rehearsal is for
 
-The redeploy puts the whole NAV stack on a **new proxy** across 24 chains — **not** a UUPS
-implementation upgrade, because `ERC20DefaultBalanceAdapter` is minted inside `initialize()` behind a
-set-once guard and is unremovable, so a live proxy can never be given a new one. The full argument and
-its consequences are in the runbook's *Why this is a NEW PROXY and not an implementation upgrade*; §9
-below carries the empirical confirmation (new proxy + fresh `ERC20Default`).
+The redeploy puts the whole NAV stack on a **new proxy** across 24 chains, rather than shipping the
+wave as a UUPS implementation upgrade. The deciding factor is `ERC20DefaultBalanceAdapter`: it is
+minted inside `initialize()` behind a set-once guard, it is unremovable through the registry, and
+**nothing in the implementation or admin surface that exists today can replace it.** An upgrade
+*could* carry bespoke migration logic to repoint it — UUPS does not forbid that — but it would be
+one-off code needing an audit, it would hand-repair private registry state, it would still end in a
+new adapter deployment, and it would run against a live proxy. A fresh proxy reaches the same end
+state through `initialize()`. The full costing is in the runbook's *Why this is a NEW PROXY and not an
+implementation upgrade*; §9 below carries the empirical confirmation (new proxy + fresh
+`ERC20Default`).
 
 The rehearsal answers three questions that cannot be answered by reading:
 

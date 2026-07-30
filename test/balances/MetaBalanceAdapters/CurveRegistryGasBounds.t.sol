@@ -5,7 +5,12 @@ import {Test} from "forge-std/Test.sol";
 import {CurveGaugesMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/curve/CurveGaugesMetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
-import {MockCurveToken, MockCurveGauge, MockCurveMinter} from "test/balances/MetaBalanceAdapters/CurveMocks.sol";
+import {
+    MockCurveToken,
+    MockCurveGauge,
+    MockCurveMinter,
+    MockCurvePool
+} from "test/balances/MetaBalanceAdapters/CurveMocks.sol";
 
 /// @notice Burns every drop of gas forwarded to it.
 contract GasBomb {
@@ -120,6 +125,27 @@ contract CurveRegistryGasBoundsTest is Test {
         vm.mockCall(CURVE_ADDRESS_PROVIDER, abi.encodeWithSignature("get_registry()"), abi.encode(REGISTRY));
         vm.mockCall(REGISTRY, abi.encodeWithSignature("get_pool_from_lp_token(address)"), abi.encode(bomb));
         assertTrue(_readCompletes(BUDGET), "unbounded _hasCoinMethod probe: a gas-bomb pool starved the read");
+    }
+
+    /// @notice Hop 4: the `get_lp_token` ROUND-TRIP back through the registry must be bounded too.
+    /// @dev Added because a mutation proved the other four tests do not cover it. Unbounding
+    ///      `_lpTokenFromRegistry` alone left all 38 Curve unit tests green, because every other test in this
+    ///      file short-circuits before the round-trip: they hand the registry a gas-bombing POOL, and
+    ///      `_hasCoinMethod` (now bounded) rejects it, so `getPool` returns before validating.
+    ///
+    ///      Reaching the round-trip needs the registry to name a pool that genuinely ANSWERS `coins()`. So the
+    ///      registry here is a gas bomb with `get_pool_from_lp_token` mocked over it to return a real
+    ///      `MockCurvePool`; `get_lp_token` is deliberately left unmocked and therefore hits the bomb.
+    function test_gasBombLpTokenRoundTrip_readStillCompletes() public {
+        address[] memory coins = new address[](1);
+        coins[0] = address(crv);
+        MockCurvePool pool = new MockCurvePool(coins);
+
+        vm.etch(REGISTRY, address(new GasBomb()).code);
+        vm.mockCall(CURVE_ADDRESS_PROVIDER, abi.encodeWithSignature("get_registry()"), abi.encode(REGISTRY));
+        vm.mockCall(REGISTRY, abi.encodeWithSignature("get_pool_from_lp_token(address)"), abi.encode(address(pool)));
+
+        assertTrue(_readCompletes(BUDGET), "unbounded get_lp_token() round-trip: a gas bomb starved the read");
     }
 
     /// @notice A 640 KB registry answer must not be copied into the caller's frame.

@@ -20,12 +20,16 @@ env:
   FOUNDRY_PROFILE: slow
   # Pinned Foundry version (keeps forge/via_ir bytecode + library pins reproducible — see foundry.toml).
   FOUNDRY_VERSION: v1.7.1
+  # Sole RPC source. knode is deprecated, and the chain-specific *_URL overrides it used to set are
+  # deliberately ABSENT rather than repointed: `getAlchemyUrl` prefers a *_URL env var whenever one is
+  # present and otherwise builds https://<network>.g.alchemy.com/v2/<key> from this key, so setting
+  # them to an Alchemy URL would only duplicate what the helper already does. Setting them to an empty
+  # or malformed value would be actively worse than setting none — they would still be preferred, and
+  # every RPC call would fail. This now matches foundry.yml, which has never set them.
+  #
+  # Do not reintroduce per-chain *_URL vars without measuring first: with knode at roughly a second
+  # per call, the integration suite ran 35 minutes without completing, versus 12 seconds on Alchemy.
   ALCHEMY_API_KEY: ${{ secrets.ALCHEMY_API_KEY }}
-  MAINNET_URL: ${{ vars.KNODE_URL }}/ethereum?key=${{ secrets.KNODE_API_KEY }}
-  ARBITRUM_URL: ${{ vars.KNODE_URL }}/arbitrum?key=${{ secrets.KNODE_API_KEY }}
-  BASE_URL: ${{ vars.KNODE_URL }}/base?key=${{ secrets.KNODE_API_KEY }}
-  OP_URL: ${{ vars.KNODE_URL }}/optimism?key=${{ secrets.KNODE_API_KEY }}
-  GNOSIS_URL: ${{ vars.KNODE_URL }}/gnosis?key=${{ secrets.KNODE_API_KEY }}
   # Debank is opt-in. The workflow_dispatch input or the secret being absent both turn it off.
   DEBANK_API_KEY: ${{ (github.event_name == 'schedule' || inputs.include_debank) && secrets.DEBANK_API_KEY || '' }}
 

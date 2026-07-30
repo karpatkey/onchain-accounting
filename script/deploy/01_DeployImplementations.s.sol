@@ -143,7 +143,7 @@ contract DeployImplementations is BaseDeployScript {
         );
     }
 
-    function _computeImplPlan() internal pure returns (ImplPlan memory plan) {
+    function _computeImplPlan() internal view returns (ImplPlan memory plan) {
         plan.saltPriceFeedLib = generateSalt("PriceFeedLib", 1);
         plan.priceFeedLibBytecode = type(PriceFeedLib).creationCode;
         plan.priceFeedLib =

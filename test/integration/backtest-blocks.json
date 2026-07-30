@@ -1,0 +1,19 @@
+{
+  "$comment": "Canonical backtest windows. Each window defines a chain-specific block range, step, metrics, and account allowlist. Named windows let the harness select a preset. w1-1d: one-day window on mainnet (chain 1) at fork block, 25 NAV points, two accounts (ACCOUNT_1 dust exerciser + ACCOUNT_2 ETH Alpha Fund).",
+  "windows": {
+    "w1-1d": {
+      "chains": {
+        "1": {
+          "fromBlock": 25419715,
+          "toBlock": 25426915,
+          "blockStep": 300,
+          "metrics": ["nav"],
+          "accounts": [
+            "0xa57F127099421cEffEd866C1d969f8B0F4fCdbc6",
+            "0x99b9F5F24205Cb88E33b1CC72008f644Fc23768b"
+          ]
+        }
+      }
+    }
+  }
+}

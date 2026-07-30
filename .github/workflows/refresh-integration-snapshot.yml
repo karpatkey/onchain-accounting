@@ -36,7 +36,7 @@ env:
 jobs:
   refresh:
     name: Refresh
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
         with:
@@ -58,6 +58,16 @@ jobs:
         # large part of why five consecutive reports went unread. The job still fails, at the
         # gate step at the end, with the two cases distinguished.
         id: refresh
+        env:
+          # No per-chain *_URL overrides. #208 removed them at workflow level because knode is deprecated
+          # and `getAlchemyUrl` prefers ANY `*_URL` that is present — so keeping them here would have
+          # silently reinstated at step level exactly what that PR removed, and reinstated the cost:
+          # ~1s per call, an integration suite that ran 35 minutes without completing, versus 12 seconds
+          # on Alchemy. `ALCHEMY_API_KEY` is inherited from the workflow-level `env`; it is repeated here
+          # only because this step's `env` block shadows nothing else it needs.
+          ALCHEMY_API_KEY: ${{ secrets.ALCHEMY_API_KEY }}
+          # Debank is opt-in. The workflow_dispatch input or the secret being absent both turn it off.
+          DEBANK_API_KEY: ${{ (github.event_name == 'schedule' || inputs.include_debank) && secrets.DEBANK_API_KEY || '' }}
         run: |
           set +e
           script/test/refresh-integration-snapshot.sh

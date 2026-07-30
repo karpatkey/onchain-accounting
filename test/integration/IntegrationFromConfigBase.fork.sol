@@ -134,6 +134,11 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     /// @notice Tracked deployed adapter addresses (for diagnostics + addBalanceAdapter pass).
     address[] internal _deployedBalanceAdapters;
 
+    /// @notice Every ephemerally-deployed price feed address (parallel purpose to
+    ///         _ephemeralPriceFeeds, which is a name-keyed mapping and thus not iterable).
+    ///         Used by the backtest harness to vm.makePersistent the whole stack.
+    address[] internal _deployedPriceFeedAddresses;
+
     /// @notice Config names parallel to `_deployedBalanceAdapters` (used to read per-adapter config such as
     ///         a meta-adapter's `metaInstances` list after registration).
     string[] internal _deployedBalanceAdapterNames;
@@ -262,6 +267,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         }
         address addr = deployer();
         _ephemeralPriceFeeds[name] = addr;
+        _deployedPriceFeedAddresses.push(addr);
         console2.log("[priceFeed]", name, addr);
     }
 
@@ -937,6 +943,39 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return nav.getAccountNav(account, QUOTE_USD);
     }
 
+    /// @notice Marks the entire locally-deployed NAV stack persistent so it survives
+    ///         vm.rollFork sweeps (backtest harness). Covers proxy, etched libraries,
+    ///         every balance adapter, and every ephemeral price feed.
+    function _makeStackPersistent() internal {
+        address[] memory stack = _persistentStackAddresses();
+        for (uint256 i = 0; i < stack.length; i++) {
+            vm.makePersistent(stack[i]);
+        }
+    }
+
+    /// @notice Every locally-deployed or etched address the NAV read path touches, i.e. exactly the
+    ///         set that must survive a `vm.rollFork`. Kept as one enumerable list rather than a
+    ///         sequence of `makePersistent` calls so a caller can re-assert code presence after a
+    ///         roll (see `NavBacktest._assertStackPersistent`) against the same source of truth —
+    ///         otherwise an address added here but forgotten there reverts every read and the
+    ///         backtest records it as protocol instability.
+    function _persistentStackAddresses() internal view returns (address[] memory stack) {
+        uint256 fixedCount = 5;
+        stack = new address[](fixedCount + _deployedBalanceAdapters.length + _deployedPriceFeedAddresses.length);
+        stack[0] = address(nav);
+        stack[1] = Upgrades.getImplementationAddress(address(nav));
+        stack[2] = nav.erc20DefaultBalanceAdapter(); // deployed inside initialize, not in _deployedBalanceAdapters
+        stack[3] = LibraryPins.PRICE_FEED_LIB;
+        stack[4] = LibraryPins.NAV_REGISTRY_LIB;
+        uint256 next = fixedCount;
+        for (uint256 i = 0; i < _deployedBalanceAdapters.length; i++) {
+            stack[next++] = _deployedBalanceAdapters[i];
+        }
+        for (uint256 i = 0; i < _deployedPriceFeedAddresses.length; i++) {
+            stack[next++] = _deployedPriceFeedAddresses[i];
+        }
+    }
+
     /// @notice Logs NAV value (in USD, 8 decimals) and stale-price asset count for one account.
     function _logNav(string memory label, address account) internal view {
         INAVCalculator.NAV memory n = _readUsdNav(account);
@@ -1132,7 +1171,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     /// @notice Emits SNAPSHOT lines + writes nav-positions JSON without asserting.
     ///         Always passes; the shell script greps SNAPSHOT lines and applies them to
     ///         accounts.json with jq — identical to the forge-script path.
-    function test_emitSnapshots() public {
+    function test_emitSnapshots() public virtual {
         _emitNavSnapshotsForCurrentChain();
         _emitNavPositionsForCurrentChain();
     }

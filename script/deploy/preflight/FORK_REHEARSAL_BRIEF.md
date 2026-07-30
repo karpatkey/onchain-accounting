@@ -421,10 +421,38 @@ for every address tried. Access exists only via Chainlink's `_user == tx.origin`
 EOA `eth_call` succeeds and every contract read reverts `No access`** — permanently, on every NAV read,
 not merely in the constructor probe. Confirmed live on mainnet, not only on the fork.
 
-Not a proxy-vs-aggregator mix-up: `FeedRegistry.getFeed(ETHx, ETH)` returns that **same** address, so
-there is no ungated Chainlink ETHx/ETH route. The superseded Redstone feed
-`0xc799194cAa24E2874Efa89b4Bf5c92a530B047FF` has no access control and *is* contract-readable, but is
-being sunset — which is what prompted the migration.
+**Structurally it IS one layer too deep**, and the two facts below are both true — do not let either one
+talk you out of the other:
+
+- `0xC499ec76…` has **no `aggregator()` and no `phaseId()`**, so it is the raw aggregator, not the
+  `EACAggregatorProxy` consumers are meant to read. Every other configured mainnet rate leg *is* a
+  proxy: lsETH/ETH `0xE858728e…`, stETH/ETH `0x86392dC1…`, rETH/ETH `0x536218f9…`. **ETHx is the only
+  one pointing at an aggregator.** A proxy fronting this aggregator would very likely be ungated, since
+  Chainlink allowlists its own proxies.
+- **but** `FeedRegistry.getFeed(ETHx, ETH)` genuinely returns that **same** gated address — re-measured
+  2026-07-30 against live mainnet. It does **not** revert. (`getFeed(ETHx, **USD**)` is what reverts
+  `Feed not found`; the config `$comment`'s true statement is about ETHx/USD, and conflating the two in
+  either direction has now misled two sessions.) So **Chainlink's own registry offers no ungated
+  route** — which is why the earlier flat claim "there is no ungated ETHx/ETH route" was too strong: the
+  registry not offering one is not proof that no proxy exists.
+
+So the fix to look for is the `EACAggregatorProxy` whose `aggregator()` returns `0xC499ec76…`. **Do not
+guess it** — no such address appears anywhere in this repo. Prove a candidate with four checks, the last
+of which is the one that actually matters: `aggregator()` == `0xC499ec76…`, `description() ==
+"ETHx / ETH"`, `decimals() == 18`, and **readable from a contract context**, not merely from `cast` (see
+§3). If no such proxy exists, the decision below stands.
+
+**A `description()`-based pre-deploy guard would NOT have caught this**, because `description()` on the
+bad address is *correct* — `"ETHx / ETH"`, 18 decimals. What caught it was constructing the feed from a
+contract. **"Right pair" and "usable on-chain" are independent properties**, and a rate-feed guard has to
+check both.
+
+The superseded Redstone feed `0xc799194cAa24E2874Efa89b4Bf5c92a530B047FF` has no access control and *is*
+contract-readable, but is being sunset — which is what prompted the migration.
+
+**Blast radius while unresolved:** the direct Redstone ETHx/USD monitor was removed 2026-07-27 with no
+replacement, leaving `ETHxCrossRate` as ETHx's only monitor — so for as long as it is undeployable, ETHx
+has **zero** divergence checks. `preflight_config.py` reports exactly this as a WARN.
 
 **Scope of the defect is narrow.** All 91 feed addresses in mainnet config, plus every feed address on
 10 / 56 / 100 / 137 / 8453 / 42161, were swept for `checkEnabled()`: **this is the only gated feed

@@ -15,9 +15,11 @@ abstract contract TestEnvConfigurator is Test {
     uint256 private constant FORK_COUNTER_SLOT = uint256(keccak256("TestEnvConfigurator.forkCounter"));
 
     /// @notice Returns the RPC URL for the given network.
-    /// @dev Prefer chain-specific env vars (MAINNET_URL, ARBITRUM_URL, BASE_URL, OP_URL, GNOSIS_URL, BSC_URL), e.g. from CI
-    ///      (vars.KNODE_URL + /ethereum?key= + secrets.KNODE_API_KEY). If none set, builds Alchemy URL from
-    ///      ALCHEMY_API_KEY. Reverts if neither source is set.
+    /// @dev Prefers a chain-specific env var (MAINNET_URL, ARBITRUM_URL, BASE_URL, OP_URL, GNOSIS_URL, BSC_URL) whenever
+    ///      one is set, and otherwise builds the Alchemy URL from ALCHEMY_API_KEY. Reverts if neither source is set.
+    ///      CI sets ONLY ALCHEMY_API_KEY (knode is deprecated) — note that "prefers" is by presence, not validity, so a
+    ///      malformed or empty-keyed *_URL is still chosen over the Alchemy fallback and fails every call. Leave them unset
+    ///      rather than blank.
     /// @param network Alchemy network identifier (e.g. "eth-mainnet", "arb-mainnet", "base-mainnet", "opt-mainnet", "gnosis-mainnet", "bnb-mainnet")
     /// @return url The RPC URL to use for forking
     function getAlchemyUrl(string memory network) internal view returns (string memory url) {

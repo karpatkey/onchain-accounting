@@ -238,6 +238,12 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
     /// @notice Batch variant: for each user, their allocation list is **upserted** into that user's cache (each entry
     ///         adds/refreshes its `(user, token)`; omitted entries are never suppressed). `users` and `allocs` must
     ///         have the same length.
+    /// @dev **Atomic across accounts (by design):** any single entry that reverts — `InvalidProof`, `AmountRegression`
+    ///      (a proven cumulative below the cached one), `CampaignSumMismatch`, `TooManyCampaigns`, or a zero
+    ///      user/token — reverts the ENTIRE batch, so no account in the call is updated. This is deliberate
+    ///      fail-loud handling (a regression/invalid proof signals bad data worth halting on, not silently skipping),
+    ///      but it means a multi-account feeder should pre-filter regressed/invalid entries (or fall back to
+    ///      per-account `submitProofs`) so one account's bad data can't block every other account's fresh proofs.
     function submitProofsBatch(address[] calldata users, Allocation[][] calldata allocs) external {
         if (users.length != allocs.length) revert InvalidArguments();
         for (uint256 i; i < users.length; ++i) {

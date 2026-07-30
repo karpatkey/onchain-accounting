@@ -5,6 +5,9 @@ the precondition and post-condition of every step. Written 2026-07-27, revised 2
 `main` @ `dc5810eb` — the hardening wave is complete and a short merge train still runs ahead of the
 two-library pin regen (0.1, 0.3).
 
+Revised again 2026-07-30: **why** this is a new proxy rather than a UUPS implementation upgrade is now
+recorded below, with the consequences that follow from it, and the custom-feed count corrected to 41.
+
 Companion tooling lives in [`preflight/`](preflight/README.md). Everything there is read-only except
 `rehearse_fork.sh`, which only ever broadcasts to a loopback anvil.
 
@@ -20,13 +23,14 @@ Companion tooling lives in [`preflight/`](preflight/README.md). Everything there
 | 1, 10, 56, 100, 137, 8453, 42161 | + custom price feeds, balance adapters, assistants, full NAV config |
 | the other 17 | ERC20Default only |
 
-Configured totals, reconciled from config **and** confirmed against the live NAV on 2026-07-27:
-**33 meta adapters, 110 meta instances, 12 plain adapters, 40 custom price feeds, 93 assets** — the
-feed count is **pending #199**, see the note under 1.4.
+Configured totals, reconciled from config **and** confirmed against the live NAV on 2026-07-27;
+feed count re-measured 2026-07-30 against the merged tree:
+**33 meta adapters, 110 meta instances, 12 plain adapters, 41 custom price feeds, 93 assets.**
+The feed count is no longer pending anything — see the note under 1.4 for the two PRs that moved it.
 
 | chain | meta adapters | meta instances | plain | feeds | assets |
 | --- | --- | --- | --- | --- | --- |
-| 1 mainnet | 15 | 66 | 11 | 25 | 43 |
+| 1 mainnet | 15 | 66 | 11 | 26 | 43 |
 | 42161 arbitrum | 7 | 16 | 0 | 8 | 11 |
 | 8453 base | 6 | 16 | 0 | 4 | 11 |
 | 10 optimism | 2 | 4 | 0 | 0 | 6 |
@@ -76,6 +80,70 @@ adapter's on-chain `getMetaInstances()` against config as a SET on all 7 configu
 Do not re-derive this by hand on deploy day. `preflight_config.py` prints the configured total and
 `verify_step.py 1.7` asserts it per adapter against the chain; if a future config change moves the
 number, those two move with it and this table is the thing that goes stale.
+
+### Why this is a NEW PROXY and not an implementation upgrade
+
+`NAVCalculator` is UUPS-upgradeable, so the cheap reading of this wave is "upgrade the implementation
+behind `0x80eD5cc6…` and stop". **That does not work**, and the reason is a single contract:
+`ERC20DefaultBalanceAdapter` is minted *inside* `initialize()` and can never afterwards be replaced.
+
+- **It is deployed by `initialize()` itself** —
+  `_setErc20DefaultBalanceAdapter(NAVRegistryLib.deployDefaultAdapter(initialAssets))`
+  (`NAVCalculator.sol:86`), which runs once per proxy and never again.
+- **The setter is set-once.** `_setErc20DefaultBalanceAdapter` reverts `InvalidArguments()` when
+  `erc20DefaultBalanceAdapter != address(0)` (`Balances.sol:93-97`). It is `internal`, it has exactly
+  **one call site in all of `src/`** — the `initialize()` line above — and **no public, admin or
+  governance setter exists anywhere in the tree.**
+- **It is unremovable.** Both `NAVRegistryLib.removeBalanceAdapter` (`:181`) and
+  `removeBalanceAdapters` (`:245`) revert `InvalidArguments()` when handed it, explicitly and by name.
+
+So no upgrade, no config transaction and no admin call can repoint a live proxy at a new
+ERC20Default. An implementation upgrade would ship every other fix in this wave and leave the wallet
+adapter — the one adapter that every chain and every account uses — running the **old** bytecode.
+
+**Its bytecode did change in this wave, so this is not hypothetical.** Measured against `06d28d0f`
+(2026-07-22), the tree the live stack was deployed from:
+
+| file | change | how it reaches ERC20Default |
+| --- | --- | --- |
+| `ERC20DefaultBalanceAdapter.sol` | +43 / −11 (54 changed lines) | directly |
+| `BalanceAdapterBase.sol` | +8 / −3 (11 changed lines) | its base contract |
+| `LabelLib.sol` | +154 / −23 | **inlined** — see below |
+
+`LabelLib` is the one that catches people out. Its readers are `internal` (`name` `:88`, `symbol`
+`:94`, `readString` `:108`), so they are **compiled into every caller** and there is no library
+address to swap; ERC20Default calls `LabelLib.symbol` at `:213`. A `LabelLib` fix therefore reaches a
+contract **only when that contract is itself recompiled and redeployed** — which, for ERC20Default,
+means a new proxy.
+
+**The rehearsal already demonstrated the whole chain empirically** (2026-07-30, mainnet fork,
+`REHEARSAL_EXIT=0`): it produced proxy `0x54EaD2A1…`, distinct from the live
+`0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d`, carrying a **fresh** ERC20Default `0x4Bc39Dce…` in
+place of the live `0x41967559D0a20Ad102F6e27b7723b1963390aD75`. That is the mechanism working as
+described, not an anomaly to investigate.
+
+#### What a new proxy obliges — the enlargement, in one place
+
+`initialize()` leaves the new proxy holding **one** asset (`NATIVE_ADDRESS`) and **one** adapter (the
+fresh ERC20Default). Everything else starts empty, and every deployed contract that hard-codes the
+NAV address is invalidated by construction:
+
+| consequence | scale | done at |
+| --- | --- | --- |
+| every custom price feed is redeployed — each holds `INAVCalculator public immutable NAV` (ADR 0019) | **41**: mainnet 26, arbitrum 8, base 4, gnosis 3 | 1.4 |
+| every asset with its primary + monitor feeds is re-registered | **93** assets | 1.5 |
+| every plain and meta adapter is redeployed | 12 plain + 33 meta | 1.6 |
+| every meta instance is re-registered | **110** | 1.7 |
+| each assisted adapter drags its assistant, which holds `immutable ADAPTER` | **4 pairs on 2 chains** | 2.1 |
+| downstream consumers repoint off the old proxy | kpkShares, portal, agents, subgraphs | 2.7 |
+
+None of it is optional, and none of it fails loudly: a step skipped here leaves the new proxy quietly
+**under-reporting**, not erroring. That asymmetry is also why "just upgrade the implementation" keeps
+looking attractive — it is genuinely far smaller. It is also wrong.
+
+The old stack is **abandoned in place**, not decommissioned. It keeps answering on
+`0x80eD5cc6…` until consumers move, so the cutover is a coordination item rather than an outage —
+nothing on the old proxy needs unregistering (2.7).
 
 ---
 
@@ -351,7 +419,7 @@ threshold with no recorded baseline cannot detect drift.
 1.1  clear the deployment record
 1.2  01_2_DeployNAVImplementation     libraries + NAV impl        PERSIST_DEPLOYMENTS=1
 1.3  02_2_DeployNAVProxy              new proxy + ERC20Default    PERSIST_DEPLOYMENTS=1
-1.4  03_DeployPriceFeeds              40 custom feeds             <- BEFORE RegisterAssets
+1.4  03_DeployPriceFeeds              41 custom feeds             <- BEFORE RegisterAssets
 1.5  RegisterAssets                   assets + feeds on the NAV
 1.6  04_DeployBalanceAdapters         adapters + assistants
 1.7  06_Configure                     register + reconcile
@@ -469,7 +537,12 @@ PERSIST_DEPLOYMENTS=1 forge script script/deploy/02_2_DeployNAVProxy.s.sol $BROA
 One atomic transaction: placeholder + proxy + `upgradeToAndCall(impl, initialize(...))`, with roles
 granted to `addresses.admin` / `addresses.manager` and the deployer contract renouncing its own
 admin. `initialize()` mints the fresh `ERC20DefaultBalanceAdapter` via
-`NAVRegistryLib.deployDefaultAdapter` (`NAVCalculator.sol:78`) and `02_2` records it.
+`NAVRegistryLib.deployDefaultAdapter` (`NAVCalculator.sol:86`) and `02_2` records it.
+
+**This step is the whole reason the redeploy is a new proxy rather than a UUPS upgrade** — the mint is
+set-once and unremovable, so a live proxy can never be given a new ERC20Default. See *Why this is a
+NEW PROXY and not an implementation upgrade* at the top of this document before proposing a smaller
+deploy.
 
 - **Precondition:** 1.2 done; `DeploySalts.NAV_PROXY` bumped if 0.2 said so.
 - **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.3` — the proxy differs from
@@ -487,9 +560,9 @@ admin. `initialize()` mints the fresh `ERC20DefaultBalanceAdapter` via
 
 > **There is no `initialAssets` argument.** `initialize(admin_, chainlinkL2SequencerUptimeFeed_,
 > nativeTokenSymbol_)` hardcodes the ERC20Default seed to `[NATIVE_ADDRESS]`
-> (`NAVCalculator.sol:62-78`). The asset set is *not* frozen at genesis — every `registerAsset` calls
-> `addSupportedAsset` on it (`NAVCalculator.sol:133`), and
-> `excludeAssetFromDefaultAdapter`/`includeAssetInDefaultAdapter` (`:240`/`:247`) mutate it later.
+> (`NAVCalculator.sol:70-86`). The asset set is *not* frozen at genesis — every `registerAsset` calls
+> `addSupportedAsset` on it (`NAVCalculator.sol:141`), and
+> `excludeAssetFromDefaultAdapter`/`includeAssetInDefaultAdapter` (`:248`/`:255`) mutate it later.
 > Nothing needs preparing here, and `script/manage/update-erc20-default-from-chain.sh` is dead code
 > (it reads `chains/<id>.json .deployed.NAVCalculatorProxy`, a path that no longer exists, and skips
 > every chain).
@@ -502,32 +575,33 @@ admin. `initialize()` mints the fresh `ERC20DefaultBalanceAdapter` via
 *Chains 130, 143, 146, 196, 204, 480, 999, 5000, 9745, 16661, 42220, 43111, 43114, 57073, 59144,
 80094, 534352 are finished here.*
 
-### 1.4 `03_DeployPriceFeeds` — 40 custom feeds (pending #199)
+### 1.4 `03_DeployPriceFeeds` — 41 custom feeds
 
 ```bash
 forge script script/deploy/03_DeployPriceFeeds.s.sol $BROADCAST
 ```
 
-Chains 1 (25), 42161 (8), 8453 (4), 100 (3) only. Each feed's constructor takes the NAV proxy
+Chains 1 (26), 42161 (8), 8453 (4), 100 (3) only. Each feed's constructor takes the NAV proxy
 address, held as `INAVCalculator public immutable NAV` (ADR 0019) — which is precisely why a new
 proxy invalidates every existing feed.
 
-> **THE COUNT IS 40, AND IT DEPENDS ON #199 — WHICH HAS NOT MERGED.** Write it down before deploy day
-> rather than discovering it during verification, but do not treat it as true yet.
+> **THE COUNT IS 41, AND IT IS NO LONGER PENDING ANYTHING.** Both PRs it was waiting on have merged,
+> so the earlier figures of 39 and 40 are both stale. Re-measured against the merged tree 2026-07-30
+> with `preflight_config.py`: **mainnet 26, arbitrum 8, base 4, gnosis 3 = 41.**
 >
-> #199 swaps mainnet's stETH pricing: it deploys a **stETH primary** feed and demotes the existing
-> `stETHCrossRate` to a monitor, so mainnet goes 24 → **25** and the total 39 → **40**. It needs a small
-> change to `03_DeployPriceFeeds.s.sol` — `_deployEEth` parameterised by config key, the way `_deployNxm`
-> and `_deployOsToken` already are, since no existing deploy path produces a unit-rate feed for a second
-> asset — plus `_deployCrossRateMonitor("stETHCrossRate")` for the demoted monitor, whose constructor
-> block is shape-identical to `rETHCrossRate` and so needs no new script logic. Without that change `03`
-> cannot deploy the new primary and `RegisterAssets` skips stETH as `primary feed unresolved`.
+> | PR | merged | effect on the count |
+> | --- | --- | --- |
+> | **#199** (stETH primary becomes fundamental) | 2026-07-29 | deploys a **stETH primary** (`stETHFundamental`) and demotes `stETHCrossRate` to a monitor: mainnet 24 → **25** |
+> | **#224** (ezETH market monitor) | 2026-07-30 | adds `ezETHCrossRateMarket` so ezETH's depeg check can fire: mainnet 25 → **26** |
 >
-> **Until #199 lands, config produces 39 and 39 is correct.** #199 is held on a `via_ir`
-> stack-too-deep in `computeNav` that only CI caught. Check its state before the deploy and use whichever
-> number matches the merged tree — `preflight_config.py` prints the configured total, and
-> `verify_step.py 1.4` compares against it, so both follow the config automatically. The figures in this
-> runbook are the thing that goes stale, not the tooling.
+> Both have their `03_DeployPriceFeeds.s.sol` call sites in place — `_deployEEth("stETHFundamental")`
+> (`03:147`), `_deployCrossRateMonitor("stETHCrossRate")` (`03:153`) and
+> `_deployCrossRateMonitor("ezETHCrossRateMarket")` (`03:230`) — verified against the merged tree, so
+> `03` deploys all 26 mainnet entries and nothing is skipped as `primary feed unresolved`.
+>
+> Keep taking the number from the tooling rather than from here: `preflight_config.py` prints the
+> configured total and `verify_step.py 1.4` compares against it, so both follow config automatically.
+> This paragraph is the thing that goes stale — as it just did, twice.
 >
 > **The three dead feed contracts are a separate matter and change the count by ZERO.**
 > `cbETH_CustomPriceFeed`, `ETHPlus_CustomPriceFeed` and `sDAI_CustomPriceFeed` are deployed on no chain
@@ -813,8 +887,9 @@ against, and 2.6 cannot run until the new addresses are recorded.
   `Feed not found`). The **`ETHxCrossRate`** monitor survives: its underlying ETHx/ETH rate feed was
   migrated from Redstone `0xc799194c…` to **Chainlink `0xC499ec76e2F5ac15e127A352Bc40cF24FC472401`**.
   So the diff shows ETHx's `monitorFeeds` 2 → 1, and the cross-rate feed at a new address (every feed
-  is redeployed anyway). Feed counts are unchanged at 24 mainnet / 39 total, and ETHx keeps its
-  divergence/`irregular` signal at 250 bps.
+  is redeployed anyway). **This change is feed-count-neutral** — it swaps ETHx's rate leg rather than
+  adding or dropping a feed contract; the totals moved to 26 mainnet / 41 for unrelated reasons (#199
+  and #224, see 1.4). ETHx keeps its divergence/`irregular` signal at 250 bps.
   ETHx's **primary** price was never involved — `ETHx_CustomPriceFeed` reads Stader's on-chain rate
   via `stakePoolsManager` — so `nav.value` should not move.
   Verified on-chain before adopting: `description() == "ETHx / ETH"`, 18 decimals, answer

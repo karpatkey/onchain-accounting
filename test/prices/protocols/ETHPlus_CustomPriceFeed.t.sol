@@ -60,11 +60,30 @@ contract ETHPlus_CustomPriceFeedTest is Test {
     ///      claiming to exercise the code-less one. `address(0xDEAD)` is genuinely code-less and outside the
     ///      precompile range, so the `extcodesize` precheck is what actually fires.
     ///
-    ///      The construction goes through a helper rather than `try new …`. Under
-    ///      `dynamic_test_linking = true` forge rewrites `new` inside a test contract into a `vm.deployCode`
-    ///      cheatcode, whose revert is NOT catchable by Solidity `try`/`catch` — the whole test frame reverts
-    ///      instead, so the `catch` body never ran. Doing the `new` inside a plain non-test contract and
-    ///      reaching it with a low-level call keeps the revert data observable under BOTH linking modes.
+    ///      **The revert PAYLOAD is deliberately not asserted, and that is the second correction.** An earlier
+    ///      revision asserted `reason.length == 0` on the theory that solc's `extcodesize` precheck reverts with
+    ///      no data. That is true of a plain `CREATE`, but under `dynamic_test_linking` construction is routed
+    ///      through a `vm.deployCode` cheatcode — the rewrite is FILE-scoped, so moving the `new` into a non-test
+    ///      helper in this same `.t.sol` does not escape it — and forge substitutes its own descriptive error.
+    ///      Measured: this PR's CI produced 160 bytes decoding as a bare `abi.encode(string)` (offset `0x20`,
+    ///      length `0x47`) reading `"call to non-contract address 0x…dEaD"`, with no 4-byte selector, while the
+    ///      identical code and the identical forge version produced 0 bytes locally. The difference tracks how
+    ///      the artifacts reached the runner — CI's unit job consumes artifacts downloaded from the build job —
+    ///      not anything about this contract.
+    ///
+    ///      So the payload is an artefact of the harness, and asserting its length made the test a detector of
+    ///      its own environment. What the tripwire needs to pin is that the rejection is **nameless**: if
+    ///      `assertERC20Address` ever gains an `AddressCheckLib.requireContract`-style guard, the revert starts
+    ///      carrying a selector and this test must fail so the change cannot slide under it. Checking the leading
+    ///      selector against `InvalidArguments` and `NotAContract` — the two a contract check would raise —
+    ///      survives both payload shapes, since neither an empty revert nor forge's offset-prefixed string
+    ///      carries either.
+    ///
+    ///      **This is weaker than the assertion it replaces, and deliberately so.** `reason.length == 0` pinned
+    ///      *any* payload change; this pins only the two named errors a realistic fix would introduce. The strong
+    ///      form is unavailable while `dynamic_test_linking` routes construction through a cheatcode that
+    ///      substitutes its own error. **If this branch drops that flag — which is the leading option, since the
+    ///      flag also moves the `PriceFeedLib` pin — restore `assertEq(reason.length, 0)` and delete this note.**
     function test_constructor_revertsWithoutDataOnCodelessAddress() public {
         address noCode = address(0xDEAD);
         assertEq(noCode.code.length, 0, "fixture must have no code for this test to mean anything");
@@ -75,7 +94,19 @@ contract ETHPlus_CustomPriceFeedTest is Test {
             address(deployer).call(abi.encodeCall(ETHPlusDeployer.deploy, (noCode, 86_400)));
 
         assertFalse(ok, "a code-less underlying must be rejected");
-        assertEq(reason.length, 0, "code-less address currently reverts with no data (extcodesize precheck)");
+
+        bytes4 selector;
+        if (reason.length >= 4) {
+            // High 4 bytes of the first word are the selector, if the payload carries one at all. CI's harness
+            // payload begins with an ABI offset word, so this reads 0x00000000 there — matching no error.
+            assembly {
+                selector := mload(add(reason, 0x20))
+            }
+        }
+        assertTrue(
+            selector != InvalidArguments.selector && selector != NotAContract.selector,
+            "code-less address must still fail NAMELESSLY: a named error means assertERC20Address gained a contract check, and this tripwire has done its job"
+        );
     }
 
     // --- the heartbeat guard, isolated: the address is a real ERC20, so only `assertNotZeroNumber` can object ---

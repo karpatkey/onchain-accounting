@@ -52,8 +52,8 @@ questions that cannot be answered by reading:
 
 ## 2. Machine constraint — read before you compile
 
-**Whole-program `via_ir` builds peak around nine gigabytes. Two fit on this box and three do not. When
-the kernel OOMs it takes the largest process**, which during a rehearsal is the rehearsal.
+**Whole-program `via_ir` builds peak around nine gigabytes, two fit and three do not, and the kernel
+takes the largest process when it OOMs** — which during a rehearsal is the rehearsal.
 
 Before any build:
 

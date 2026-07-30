@@ -53,11 +53,11 @@ requestWithdraw(amount)   # mints WithdrawRequestNFT to Safe, then submit(reques
 claimWithdraw(tokenId)    # claims (burns NFT, ETH to Safe), then remove(tokenId)
 ```
 
-If a Safe ever acquires a `WithdrawRequestNFT` outside the assistant (e.g. a manual `requestWithdraw`), it can call the adapter's `submit(tokenId)` directly to start tracking it.
+If a Safe ever acquires a `WithdrawRequestNFT` outside the assistant, it can call the adapter's `submit(tokenId)` directly to start tracking it. In normal operation that should not arise: **the Safes' roles-modifier allow-list permits `requestWithdraw` only via the assistant**, so a direct `requestWithdraw` is not a permitted call.
 
 ## Failure modes
 
-- **Assistant not used for a withdrawal** (e.g. a Safe requests directly and forgets to `submit`): that id isn't tracked → NAV **under-reports** the account's in-flight ETH until it is submitted. Never over-reports.
+- **Assistant not used for a withdrawal.** **Not reachable in normal operation, and not a matter of operator discipline** — the roles-modifier permission set allows this protocol entry only through the assistant; the direct `LiquidityPool.requestWithdraw` path is not in the allow-list. So a withdrawal cannot be in flight without its id having been fed, and the cache is **complete by construction** rather than merely conservative. *If* the roles configuration ever changed to permit a direct call, the consequence would be bounded: that id isn't tracked → NAV **under-reports** the account's in-flight ETH until someone `submit`s it. Never over-reports. **That is the real residual risk to review — a roles-permission change adding a non-assistant path — and no tripwire in this repository would detect it.** Enforcement lives in the Safe's roles configuration, outside this repo; see ADR 0015 / ADR 0018 and `src/balances/AssistedBalanceAdapters/README.md` §5.0.
 - **Submitting a non-owned id:** `submit` **reverts** `CoordinateNotOwned`. No NAV risk (it would read as 0 anyway); the caller must submit only ids it owns.
 - **Removing a still-pending id:** `remove` **reverts** `CoordinateStillLive` — the id must be claimed (NFT burned) first. The assistant's `claimWithdraw` orders this correctly.
 - **Claimed id left in the cache:** reads as 0 (the NFT is burned → `ownerOf` reverts → dropped). GC is cosmetic (storage hygiene), not correctness.

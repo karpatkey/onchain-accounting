@@ -110,6 +110,81 @@ jobs:
             cache/
           retention-days: 1
 
+  # Deterministic library-pin assertions, on a build from CLEAN. Deliberately its own job.
+  #
+  # WHY THIS CANNOT RIDE THE `build` JOB ABOVE — the whole reason the minutes are worth spending.
+  #
+  # `build` mounts two Blacksmith sticky disks over `out/` and `cache/`, keyed on
+  # `${{ github.repository }}` and nothing else. They are therefore shared by every run of every
+  # branch, so `forge build` there is INCREMENTAL against whatever the previous run on that disk
+  # left behind — measured at "Compiling 15 files with Solc 0.8.34" against a ~540-file project.
+  # The dirty set is computed relative to the last branch that used the disk, NOT to the commit
+  # under test, which makes `build`'s compilation SCOPE nondeterministic across branches.
+  #
+  # That matters here and nowhere else in this workflow, because `type(X).creationCode` is a
+  # compile-time constant baked into the asserting test's own bytecode. Under an incremental
+  # invocation solc recompiles PriceFeedLib in a small scope in order to embed it, and emits
+  # different bytecode than a whole-program compile does — so the pin the test derives is a
+  # correct hash of the wrong compilation. Observed directly: with `out/PriceFeedLib.sol/
+  # PriceFeedLib.json` on disk implying the correct 0x8b7e4fA9…, the test simultaneously computed
+  # 0xeA694009…. Two compilations of one unchanged source, disagreeing inside a single `out/`.
+  #
+  # This is NOT staleness, and that distinction is why the fix is a job and not a test change:
+  # the sources are unchanged and the standalone artifact is right, so no freshness check can see
+  # it (PR #210's content-hash tripwire passes on exactly the runs where the pin assertion fails).
+  # The only thing that restores meaning is compiling the whole program from nothing.
+  #
+  # Hence: no stickydisk mounts, `cache: false`, and `--force`. Cost is one extra ~6-10 min
+  # compile, paid in PARALLEL with `build` (no `needs:`), so it does not extend the critical path.
+  #
+  # The pin values themselves are NOT owned by this job. They are `foundry.toml [libraries]` +
+  # `script/utils/LibraryPins.sol`, and the authoritative gate remains one clean local full build
+  # against the final tree immediately before deploying. A red run here means "regenerate the
+  # pins deliberately", never "edit the values until it goes green".
+  pins:
+    name: Library pins (clean build)
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: ${{ env.FOUNDRY_VERSION }}
+          # Same reasoning as the `build` job: a restored Foundry cache reintroduces reusable
+          # compilation state, and reuse is precisely what this job exists to avoid.
+          cache: false
+
+      # See the long note on `build`'s copy of this step. Same compile, same ~7-11 GB peak, same
+      # need — a whole-program `via_ir` compile does not fit in the runner's RAM unaided, and the
+      # failure mode is a silent SIGTERM (exit 143) with no compiler error.
+      - name: Add swap for the via_ir compile
+        run: |
+          sudo fallocate -l 8G /mnt/swapfile-ci
+          sudo chmod 600 /mnt/swapfile-ci
+          sudo mkswap /mnt/swapfile-ci
+          sudo swapon /mnt/swapfile-ci
+          free -h
+          swapon --show
+
+      # `--force` even though no sticky disk is mounted and `out/` starts empty: it states the
+      # requirement in the command rather than relying on the absence of a mount, so a future
+      # cache/mount added to this job cannot silently reintroduce the incremental scope this job
+      # exists to exclude. It costs nothing on an empty `out/`.
+      #
+      # Building the WHOLE program here (rather than letting `forge test` compile just what the
+      # matched tests need) is load-bearing, not tidiness: the authoritative pin is the one a
+      # whole-program compile produces, because that is the scope the pre-deploy local build and
+      # the real CREATE2 deployment used. A narrower scope would reproduce the very bug above.
+      - name: Build from clean (whole program)
+        run: forge build --force
+
+      # Finds everything up to date and recompiles nothing, so it asserts against the artifacts
+      # the step above produced.
+      - name: Library pin assertions
+        run: forge test --match-path "test/LibraryPinConsistency.t.sol" -vv
+
   # Unit tests (mock-only, no RPC). Default profile.
   unit:
     name: Unit tests
@@ -129,10 +204,23 @@ jobs:
         with:
           name: forge-build
 
+      # `--no-match-contract LibraryPinConsistencyTest` is NOT hiding a failing test — it is moving
+      # an assertion to the only job that can evaluate it. This job does not compile: it downloads
+      # `build`'s artifacts, and `build` compiles incrementally against a branch-shared sticky disk
+      # (full reasoning on the `pins` job above). So the pin value reachable HERE is a correct hash
+      # of an arbitrary compilation scope, and this job has produced repeated false reds on trees
+      # whose pins were provably correct — `0x8b7e4fA9…` has landed in a real CREATE2 deployment.
+      #
+      # Leaving it here was actively harmful: a check that cries wolf on correct trees taught the
+      # fleet to merge past it, which is exactly the state in which a REAL pin drift would sail
+      # through unnoticed. The assertion now runs in `pins`, from clean, where it means something.
+      #
+      # The remaining LibraryPinConsistency tests move with it — including the freshness tripwire,
+      # which is sound but pointless in a job whose artifacts are downloaded by construction.
       - name: Unit tests
         env:
           ALCHEMY_API_KEY: ${{ secrets.ALCHEMY_API_KEY }}
-        run: forge test --no-match-path "*fork*" -vvv
+        run: forge test --no-match-path "*fork*" --no-match-contract LibraryPinConsistencyTest -vvv
 
   # Per-protocol fork tests (slow profile, RPC). Excludes the NAV integration harness.
   fork:

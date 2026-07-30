@@ -27,8 +27,10 @@ import {CrossRateCustomPriceFeed} from "src/prices/protocols/CrossRateCustomPric
 ///      review both pass) while **every contract is denied**: measured on mainnet, `checkEnabled() == true` and
 ///      `hasAccess(<contract>, "") == false`. {OracleArgumentChecks-assertChainlinkOracle} probes `latestRoundData()`
 ///      in a `try`, the call is denied, and this constructor reverts `NotChainlinkOracle()`. So the monitor is not
-///      merely blind — it cannot be deployed, and `_deployCrossRateMonitor("ETHxCrossRate")` reverts during
-///      `03_DeployPriceFeeds` simulation. "Right pair" and "readable on-chain" are independent properties: this feed's
+///      merely blind — it cannot be deployed, and `_deployEthxCrossRate()` (`03_DeployPriceFeeds.s.sol:211` → `:639`)
+///      reverts during `03_DeployPriceFeeds` simulation. That is the NAMED deploy function, not the generic
+///      `_deployCrossRateMonitor` at `:598` — ETHx does not use the generic helper.
+///      "Right pair" and "readable on-chain" are independent properties: this feed's
 ///      `description()` is correctly `"ETHx / ETH"`, so a description-based pair assertion would NOT have caught it.
 ///      The fix is a config change (point at the proxy whose `aggregator()` returns `0xC499ec76…`, sourced not
 ///      guessed) and is tracked separately — see `PRICE_ADAPTERS.md` §7 for the four required proof checks.

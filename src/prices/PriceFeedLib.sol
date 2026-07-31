@@ -49,9 +49,11 @@ library PriceFeedLib {
         // True if the primary price diverged from the asset's monitor feeds beyond tolerance (or, for stablecoins,
         // from the $1 peg). Pricing-quality signal only; `price` is still the primary and is used for valuation.
         bool irregular;
-        // True if the asset HAS monitors configured but none of them was readable, so the divergence check did not
-        // run and `irregular` above is false for want of data rather than for want of divergence. NOT set for an
-        // asset with no monitors configured, nor when the primary itself is stale — see
+        // True if the asset HAS monitors configured but none of them was readable, so the MONITOR-DIVERGENCE check
+        // did not run. It says nothing about `irregular` above, which is NOT necessarily false in this state: the
+        // absolute peg guard is monitor-independent, so a stablecoin with a non-zero `pegToleranceBps` trading off $1
+        // is `irregular` AND `monitorsUnhealthy` at the same time — divergence unchecked, peg breached. NOT set for an
+        // asset with no monitors configured, nor when the primary is unusable — see
         // {INAVCalculator.NAV.monitorsUnhealthyPriceAssets}.
         bool monitorsUnhealthy;
     }
@@ -1262,9 +1264,12 @@ library PriceFeedLib {
         return ArrayLib.deduplicateAddresses(allAssets);
     }
 
-    /// @notice Builds the selected-feed price cache (incl. the per-asset divergence `irregular` flag) for a list
-    ///         of assets. Divergence treats the primary as stale exactly when its feed is stale; the NAV-level
-    ///         sequencer-down flag is surfaced separately on the NAV struct.
+    /// @notice Builds the selected-feed price cache for a list of assets — the per-asset `irregular` divergence flag
+    ///         AND the `monitorsUnhealthy` flag (monitors configured, none readable, primary usable).
+    /// @dev Divergence folds the NAV-level `sequencerDown` into the primary's staleness (see {_divergenceFor}), so
+    ///      both flags are suppressed while the sequencer is down; `sequencerDown` itself is surfaced separately on
+    ///      the NAV struct. (An earlier version of this note claimed the primary is treated as stale "exactly when
+    ///      its feed is stale", which understated the fold.)
     function _buildPriceFeedCache(
         mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
         mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
@@ -1310,12 +1315,22 @@ library PriceFeedLib {
                 // `healthyMonitors` is the count {_monitorDivergence} already computed for its own guard — taken from
                 // the return rather than re-derived, so this costs no extra feed reads on the hot path.
                 uint256 healthyMonitors;
-                (,,,, irregular, healthyMonitors,) =
+                int256 primaryPrice8;
+                (primaryPrice8,,,, irregular, healthyMonitors,) =
                     _divergenceFor(monitorFeeds, assetPricing, asset, price, decimals, stale, sequencerDown);
-                // Monitors exist, none answered, and the primary is usable — so the divergence check was skipped for
-                // want of monitor data. The primary-usable conjunct is what keeps this disjoint from
-                // `stalePriceAssets`: when the primary is stale the count is also 0, but the monitors are not why.
-                monitorsUnhealthy = healthyMonitors == 0 && !stale && !sequencerDown && monitorFeeds[asset].length > 0;
+                // Monitors exist, none answered, and the primary was usable — so the divergence check was skipped for
+                // want of MONITOR data, which is the only thing this flag is entitled to claim.
+                //
+                // `primaryPrice8 > 0` is the exact negation of the other half of {_monitorDivergence}'s own guard
+                // (`n > 0 && !primaryStale && primaryPrice8 > 0`), and it is deliberately used INSTEAD of
+                // `!stale && !sequencerDown`: it subsumes both (`primaryPrice8` is forced to 0 whenever
+                // `primaryStale`, i.e. whenever the feed is stale OR the sequencer is down) AND it additionally
+                // covers the case those two miss — {_scaleTo8} returning 0 for a NON-stale primary, which it does
+                // for a primary whose `decimals != 8` when the exponent is unusable, when `price` truncates to 0
+                // scaling down, or when scaling up would overflow. In that state `healthyMonitors` is 0 for a reason
+                // that has nothing to do with the monitors, and blaming them would send an operator to the wrong
+                // contract. Not reachable with today's uniformly-8-decimal primaries, but `addFeed` permits others.
+                monitorsUnhealthy = healthyMonitors == 0 && primaryPrice8 > 0 && monitorFeeds[asset].length > 0;
             }
             priceFeeds[i] = PriceFeedCache({
                 asset: asset,
@@ -1388,9 +1403,12 @@ library PriceFeedLib {
     /// @notice Collects the assets whose monitors are all unreadable — configured, but none of them answered — from
     ///         the per-asset flag computed once in {_buildPriceFeedCache}.
     /// @dev Sibling of {_buildIrregularAssets}, deliberately kept separate rather than folded into it behind a
-    ///      selector flag: the two lists mean opposite things (one says a check FIRED, the other says a check did NOT
-    ///      RUN) and a caller that confuses them draws the wrong conclusion. Lives here in the library, so its bytes
-    ///      do not count against {NAVCalculator}'s EIP-170 ceiling.
+    ///      selector flag: the two lists mean different things (one says a check FIRED, the other says the
+    ///      monitor-divergence check did NOT RUN) and a caller that confuses them draws the wrong conclusion. They
+    ///      are NOT mutually exclusive — an asset can appear in both, because the peg guard is monitor-independent:
+    ///      a stablecoin off $1 whose monitors are all unreadable is `irregular` (peg) AND monitors-unhealthy
+    ///      (divergence unchecked). Lives here in the library, so its bytes do not count against
+    ///      {NAVCalculator}'s EIP-170 ceiling.
     function _buildMonitorsUnhealthyAssets(
         mapping(address => uint256) storage assetIndex,
         INAVCalculator.Asset[] storage registeredAssets,

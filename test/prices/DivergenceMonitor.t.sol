@@ -382,6 +382,73 @@ contract DivergenceMonitorTest is SuperTest {
         );
     }
 
+    /// @dev `irregularPriceAssets` and `monitorsUnhealthyPriceAssets` are NOT mutually exclusive, and this pins it.
+    ///      The peg guard is monitor-independent, so a stablecoin trading off $1 whose monitors are ALL unreadable is
+    ///      simultaneously `irregular` (its peg is breached) and monitors-unhealthy (its divergence check never ran).
+    ///      Surfaced by Copilot: earlier comments claimed `irregular` was false whenever this flag was set, which is
+    ///      wrong in exactly this state — the two answer different questions and a consumer must not treat presence in
+    ///      one as absence from the other.
+    function test_pegBreachAndDeadMonitors_appearsInBothArrays() public {
+        Mock_CustomPriceFeedStaled deadMonitor =
+            new Mock_CustomPriceFeedStaled("usdc-monitor-stale", address(usdc), 100_000_000, 8);
+        vm.startPrank(navCalculatorManager);
+        nav.setDivergenceTolerance(address(usdc), 250);
+        nav.setPegTolerance(address(usdc), 100); // peg guard ON, independent of monitors
+        nav.addMonitorFeed(address(usdc), address(deadMonitor), IPrices.PriceType.Custom, type(uint256).max);
+        vm.stopPrank();
+        usdcAdapter.setPrice(103_000_000); // $1.03 -> 300 bps off peg, beyond the 100 bps tolerance
+        usdc.mint(address(safe), 1_000e6);
+
+        INAVCalculator.NAV memory r = nav.getAccountNav(address(safe), address(0));
+        assertTrue(
+            _contains(r.monitorsUnhealthyPriceAssets, address(usdc)),
+            "monitors are all unreadable: divergence check did not run"
+        );
+        assertTrue(
+            _contains(r.irregularPriceAssets, address(usdc)),
+            "peg guard is monitor-independent: it still fires, so the asset is ALSO irregular"
+        );
+    }
+
+    /// @dev The `monitorFeeds[asset].length > 0` conjunct is only load-bearing when `_hasDivergenceChecks` returns
+    ///      true via its OTHER disjunct — a non-zero `pegToleranceBps` with ZERO monitors configured. In that shape
+    ///      the `if` body DOES run, `healthyMonitors` is 0 (there is nothing to read), and without the length check
+    ///      every peg-guarded stablecoin would be reported monitors-unhealthy at once. `test_noMonitorsConfigured_*`
+    ///      does NOT cover this: with no peg tolerance the body is skipped entirely, so the conjunct is unreached.
+    function test_pegToleranceWithZeroMonitors_notListed() public {
+        vm.prank(navCalculatorManager);
+        nav.setPegTolerance(address(usdc), 100); // enables the monitor-INDEPENDENT peg guard
+        assertEq(nav.getMonitorFeedCount(address(usdc)), 0, "precondition: zero monitors, peg guard on");
+        usdc.mint(address(safe), 1_000e6);
+
+        INAVCalculator.NAV memory r = nav.getAccountNav(address(safe), address(0));
+        assertFalse(
+            _contains(r.monitorsUnhealthyPriceAssets, address(usdc)),
+            "a peg-guarded asset with NO monitors must not be reported monitors-unhealthy"
+        );
+    }
+
+    /// @dev The primary-usable conjunct must exclude a STALE primary, not just a downed sequencer. Only the sequencer
+    ///      path was covered; this is the L1 case, which is the one that actually occurs. DAI is the only asset with
+    ///      a finite heartbeat, so warping ages DAI out and leaves the others fresh.
+    function test_stalePrimaryWithSequencerUp_notListedHere() public {
+        Mock_PriceOracleChainlink deadMonitor = new Mock_PriceOracleChainlink("DAI-monitor", 100_000_000, 8);
+        vm.startPrank(navCalculatorManager);
+        nav.setDivergenceTolerance(address(dai), 100);
+        nav.addMonitorFeed(address(dai), address(deadMonitor), IPrices.PriceType.Chainlink, type(uint256).max);
+        vm.stopPrank();
+        dai.mint(address(safe), 1000e18);
+
+        vm.warp(block.timestamp + 2 days); // ages DAI's primary out; sequencer stays UP
+
+        INAVCalculator.NAV memory r = nav.getAccountNav(address(safe), address(0));
+        assertTrue(_contains(r.stalePriceAssets, address(dai)), "precondition: DAI's primary is stale");
+        assertFalse(
+            _contains(r.monitorsUnhealthyPriceAssets, address(dai)),
+            "a primary-suppressed check must not be blamed on the monitors (sequencer path is not the only one)"
+        );
+    }
+
     /// @dev The paginated read carries the same signal, restricted to the slice's assets. Without this, the accounts
     ///      that must paginate — the largest ones — would be the only ones unable to see monitor failure.
     function test_partialNav_carriesTheSignal() public {

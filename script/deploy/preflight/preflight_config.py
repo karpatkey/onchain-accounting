@@ -18,6 +18,12 @@ reverting — a run "succeeds", writes nothing, and leaves a half-configured NAV
     clock of its own, so registering it with a heartbeat TIGHTER than its base's manufactures a stale
     verdict while the base is fresh — a $0 valuation that reads like an oracle outage rather than a
     config error. Nothing on-chain enforces the pairing. See `heartbeat_findings`.
+  * A feed registered at or below its PROVIDER'S declared heartbeat has zero margin, and publication lands
+    tens of seconds past the declared target — so the asset goes stale at the end of essentially every
+    publish cycle. This is a SECOND, independent heartbeat axis (the one above compares a derived feed to
+    its base; this compares any feed to the publisher it reads). It lives in `declared_heartbeat_guard.py`
+    because it carries a committed declared-heartbeat snapshot plus an evidence-bearing allowlist, and is
+    called from `check_chain` below. Measured instances: sUSDS 59/61 cycles (#211), OETH 29/29 (#236).
 
 usage:
   python3 preflight_config.py                 # all chains with a deployed proxy
@@ -307,6 +313,20 @@ def check_chain(chain_id: int) -> list[tuple[str, str]]:
                             f"divergence/irregular signal until a monitor is added"))
     # The derived-vs-base heartbeat invariant — see heartbeat_findings for the full derivation.
     f += heartbeat_findings(chain_id, assets, dep_feeds)
+
+    # The SECOND heartbeat axis: registered vs the PROVIDER'S DECLARED cadence. Independent of the one
+    # above — that compares a derived feed to its base, this compares any feed to the publisher it reads.
+    # Lives in its own module because it carries a committed declared-heartbeat snapshot and an
+    # evidence-bearing allowlist. Import is lazy + fail-soft: a missing/broken snapshot must not take out
+    # every other config check in this file.
+    try:
+        import declared_heartbeat_guard as dhg
+
+        f += dhg.findings(chain_id)
+    except SystemExit as e:  # snapshot absent — actionable, not fatal to the rest of preflight
+        f.append((WARN, f"declared-heartbeat guard skipped: {e}"))
+    except Exception as e:  # noqa: BLE001 - never let this axis mask the others
+        f.append((WARN, f"declared-heartbeat guard errored (other checks unaffected): {e!r}"))
 
     for fname, entry in dep_feeds.items():
         if entry.get("enabled") is not True:

@@ -245,6 +245,40 @@ interface INAVCalculator is IBalances {
     /// @param quoteAssetStale True if the quote asset's own price feed was stale. When true the value field
     ///        is in USD (fallback) even though quoteAsset is non-zero — callers must check this flag before
     ///        interpreting value as being in the requested quote currency.
+    /// @param monitorsUnhealthyPriceAssets Assets that **have monitor feeds configured but where none of them was
+    ///        readable** at query time — every monitor stale, reverting, or reporting a non-positive price. For these
+    ///        the divergence check silently did not run: `divergenceBps` is 0 because the arithmetic never executed,
+    ///        not because the prices agreed, so absence from `irregularPriceAssets` says nothing about them. Without
+    ///        this list "checked and clean" and "checked by nothing that answered" are the same bytes.
+    ///
+    ///        **This is NOT the "no monitors configured" case.** That is a static configuration property, derivable
+    ///        off-chain from **`getMonitorFeedCount(asset) == 0` alone**, and it is deliberately excluded here — an
+    ///        asset with nothing configured never appears in this list however long it goes unchecked. What this
+    ///        reports is strictly a *runtime* failure of monitors that exist.
+    ///
+    ///        Do NOT additionally require `getAssetPricing(asset).divergenceToleranceBps == 0` for that derivation:
+    ///        the conjunction is UNSATISFIABLE for any asset that ever had a monitor. `_setDivergenceTolerance`
+    ///        rejects 0, so once a tolerance is set it can never be returned to zero, while `removeMonitorFeed`
+    ///        leaves the tolerance untouched — so an asset whose monitors were all REMOVED has count 0 and a
+    ///        non-zero tolerance, and an AND-recipe would silently never flag it. The tolerance only returns to 0
+    ///        via full asset unregistration (`_removeAllMonitorFeeds`), by which point the asset is gone anyway.
+    ///
+    ///        Assets whose own primary is unusable are also excluded — stale feed, sequencer down, or a primary whose
+    ///        8-decimal normalisation degenerates to zero. In all of those the check was suppressed by the PRIMARY
+    ///        rather than by the monitors, `stalePriceAssets` already reports the staleness cases, and naming the
+    ///        monitors would point an operator at the wrong contract. Stablecoins with a non-zero `pegToleranceBps`
+    ///        may appear here and still be peg-checked — the peg guard is monitor-independent — so this flags the
+    ///        loss of the *divergence* check, not necessarily of all checks.
+    ///
+    ///        **Scope: assets this account holds positions in**, like `stalePriceAssets` and `irregularPriceAssets`.
+    ///        It is built from the assets the account's positions touched, NOT from the whole registry, so absence
+    ///        means "monitors healthy **or** no position held". A consumer reconciling against the registry-wide
+    ///        per-asset view (`getPriceDivergence(asset).monitorFeedCount == 0` is the equivalent there) will see
+    ///        differences that are this scoping, not a defect. Note also that `healthCheck()` — which DOES iterate
+    ///        the whole registry — deliberately does not carry this array: `NAVCalculator` is 68 bytes from the
+    ///        EIP-170 limit, so widening that return was not affordable. `Position.irregular` on
+    ///        `getAccountPositions` likewise retains the original ambiguity, with no `NAV` struct alongside to join
+    ///        against; use `getAccountNavVerbose` (whose `VerboseNAV` embeds the `NAV`) if you need both.
     // forge-lint: disable-next-line(pascal-case-struct)
     struct NAV {
         int256 value;
@@ -257,7 +291,30 @@ interface INAVCalculator is IBalances {
         Asset[] irregularPriceAssets;
         // True if the quote (unit-of-account) asset's own primary diverged from its monitors beyond tolerance —
         // the divergence counterpart to `quoteAssetStale`. Always false for a USD quote (no quote feed).
+        //
+        // DECLARED GAP, deliberate: there is no `quoteAssetMonitorsUnhealthy` counterpart to
+        // `monitorsUnhealthyPriceAssets` below. For a non-USD quote whose own monitors have ALL gone unreadable, this
+        // flag is false for want of data — exactly the ambiguity that array exists to close — and nothing surfaces it.
+        //
+        // Why it was not added, in order of weight. (1) **Nothing in this repository's configuration exercises it**:
+        // `nav-config/assets-and-price-feeds/{1,42161,8453,100}.json` contain no quote keys, and `quoteAsset` is a
+        // CALLER-supplied parameter defaulting to USD (`address(0)`), not stored config — so the gap is reachable only
+        // by a caller that opts into a non-USD quote. (2) `NAVCalculator` has 68 bytes of EIP-170 headroom; a further
+        // struct member plus its computation plausibly exceeds that, and spending the last of the margin on an
+        // unexercised path would leave nothing for an urgent fix — after which the next change would need a new proxy
+        // rather than an upgrade.
+        //
+        // Limit of that evidence: it is a claim about THIS repository only. A downstream consumer (share layer,
+        // portal, agents, subgraphs) could pass a non-zero `quoteAsset`, which cannot be verified from here. If one
+        // does, this gap is worth the bytes and should be revisited.
+        //
+        // Mitigation meanwhile: a caller using a non-USD quote should read `getPriceDivergence(quoteAsset)` and treat
+        // `monitorFeedCount == 0` alongside a usable primary as exactly this condition.
         bool quoteAssetIrregular;
+        // APPENDED for the same reason as `irregularPriceAssets` above. This redeploy uses a NEW proxy rather than an
+        // in-place upgrade, so nothing forced the append — but moving existing consumers' ABI offsets for a change
+        // that did not need to move them is gratuitous, so the convention is honoured anyway.
+        Asset[] monitorsUnhealthyPriceAssets;
     }
 
     /// @notice One SLICE of an account's NAV: the same snapshot as {NAV} but covering only the balance adapters
@@ -347,6 +404,15 @@ interface INAVCalculator is IBalances {
     ///        signal; a slice-local read of it is a slice-local depeg picture.
     /// @param quoteAssetIrregular True if the quote asset's own primary diverged from its monitors. Invariant
     ///        across slices, always false for a USD quote. OR it across slices.
+    /// @param monitorsUnhealthyPriceAssets Assets with monitors configured but none readable at query time,
+    ///        **restricted to the assets this slice touched**. Same per-slice restriction and same
+    ///        union-and-dedupe requirement as `stalePriceAssets` and `irregularPriceAssets` — it is built from the
+    ///        same per-asset cache, so the semantics carry over unchanged. Reported on the paginated read
+    ///        deliberately: a caller paginates because the complete read does not fit one `eth_call`, i.e. for the
+    ///        largest accounts, and those are exactly the ones a monitoring consumer watches — omitting it here
+    ///        would hide the signal from the accounts that most need it. A slice-local read is a slice-local
+    ///        picture of monitor health, and a union over every slice is required before concluding an asset is
+    ///        covered. See {NAV.monitorsUnhealthyPriceAssets} for what the condition does and does not mean.
     /// @param adaptersCovered The adapters this slice actually queried — element-for-element identical to the
     ///        `adapters` argument, order included, because the call reverts rather than silently dropping, adding
     ///        or reordering one. That makes it a machine-checkable record rather than a restatement of the input:
@@ -365,8 +431,15 @@ interface INAVCalculator is IBalances {
         bool quoteAssetStale;
         Asset[] irregularPriceAssets;
         bool quoteAssetIrregular;
-        // APPENDED last, after the {NAV}-mirroring prefix — see the struct-evolution note above.
+        // Appended after the {NAV}-mirroring prefix — see the struct-evolution note above. No longer the LAST
+        // member: `monitorsUnhealthyPriceAssets` was appended after it, deliberately, so this field keeps its ABI
+        // offset. New members go after that one, not here.
         address[] adaptersCovered;
+        // Appended after `adaptersCovered` rather than beside its {NAV} siblings: keeping `adaptersCovered` at its
+        // existing offset matters more than keeping this struct's prefix a positional mirror of {NAV}, which it stops
+        // being the moment {NAV} grows. The two structs stay deliberately DISTINCT types — a partial result must not
+        // be decodable where a complete one is expected — so mirroring is a convenience, never a guarantee.
+        Asset[] monitorsUnhealthyPriceAssets;
     }
 
     /// @notice Price data for the freshest non-stale feed selected for an asset.
@@ -690,15 +763,18 @@ interface INAVCalculator is IBalances {
     ///
     ///      ### **Health flags do NOT sum. Ignoring them on ANY slice silently destroys a signal.**
     ///
-    ///      `value` is the only field that composes by addition. **`stalePriceAssets` and `irregularPriceAssets`
-    ///      are restricted to the assets THIS slice's positions touched, and `sequencerDown`, `quoteAssetStale`
-    ///      and `quoteAssetIrregular` are reported per slice. A caller that checks the flags on one slice, or on
+    ///      `value` is the only field that composes by addition. **`stalePriceAssets`, `irregularPriceAssets` and
+    ///      `monitorsUnhealthyPriceAssets` are restricted to the assets THIS slice's positions touched, and
+    ///      `sequencerDown`, `quoteAssetStale` and `quoteAssetIrregular` are reported per slice. A caller that checks the flags on one slice, or on
     ///      the last slice, or on a slice it happened to keep, silently loses every staleness, depeg and
     ///      sequencer-down signal carried by the others — and gets a NAV number that looks fine.** That failure
     ///      shape is exactly what this repo's fail-open hardening work was for; it must not be reintroduced at the
-    ///      reassembly boundary. **UNION the two asset arrays (de-duplicating: two slices holding the same stale
+    ///      reassembly boundary. **UNION the THREE asset arrays (de-duplicating: two slices holding the same stale
     ///      asset each report it) and OR the three booleans, across every slice, before treating the summed
-    ///      `value` as usable.**
+    ///      `value` as usable.** The third array, `monitorsUnhealthyPriceAssets`, was appended later than this
+    ///      instruction was first written — a reassembler that unions only two silently drops the monitor-health
+    ///      signal, which is the falsely-reassuring direction and hits precisely the large accounts that must
+    ///      paginate.
     ///
     ///      ### A meta-adapter is the atomic unit
     ///

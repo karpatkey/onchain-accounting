@@ -23,8 +23,13 @@ import "src/constants.sol";
 /// @notice NAV Calculator.
 /// @author KPK
 /// @dev EIP-170 budget: this contract runs close to the 24,576-byte runtime limit (CI's `forge build --sizes`
-///      enforces it). **As of the paginated-NAV read it is 325 bytes under** (runtime 24,251 B, measured from
-///      `out/NAVCalculator.sol/NAVCalculator.json` under the default profile — the one CI's `--sizes` uses).
+///      enforces it). **As of `NAV.monitorsUnhealthyPriceAssets` it is 68 bytes under** (runtime 24,508 B, measured
+///      from `out/NAVCalculator.sol/NAVCalculator.json` under the default profile — the one CI's `--sizes` uses).
+///      **Treat this contract as FULL.** For scale: one minimal external getter has measured at 122 B, i.e. already
+///      more than the whole remaining budget, so the next addition here needs space reclaimed first rather than
+///      found. (This figure was stale by 144 B for a while — it read "325 bytes under / 24,251 B", which predated
+///      the paginated-NAV work; the pre-`monitorsUnhealthyPriceAssets` margin was in fact 181 B. If you cite a
+///      margin, re-measure it; do not trust a number in a comment, including this one.)
 ///      Measure with a clean
 ///      `forge build --sizes` before and after anything added here, and assume nothing non-trivial fits: the next
 ///      substantive read will need the verbose label block (`_toVerbose` / `_safeString` / `_safeStringArray` /
@@ -394,6 +399,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         partialNav.irregularPriceAssets = n.irregularPriceAssets;
         partialNav.quoteAssetIrregular = n.quoteAssetIrregular;
         partialNav.adaptersCovered = covered;
+        partialNav.monitorsUnhealthyPriceAssets = n.monitorsUnhealthyPriceAssets;
     }
 
     /// @inheritdoc INAVCalculator

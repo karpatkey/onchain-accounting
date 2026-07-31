@@ -218,17 +218,47 @@ all checks green.</p>
 Earlier revisions of this document quoted <span class="addr">0x8b7e4fA9…</span> for PriceFeedLib; that value was correct for the
 tree it was measured on and is now superseded.</p>
 <div class="note redeploy">
-<p><span class="chip redeploy">Deploy held — a second regeneration is expected</span> <strong>Treat both values above as
-correct-for-now, not deploy-final.</strong> The deploy is <strong>held</strong>: rather than shipping from
-<span class="mono">6e5fa2e9</span>, a further feature goes in first — a two-axis per-asset classification,
-<code>PegKind{Pegged, Floating}</code> and <code>AccrualKind{None, Rebasing, Appreciating}</code>.</p>
-<p>That is <code>src/</code> change, so <strong>the pins will be regenerated again</strong> against whatever tree actually ships, and
-<span class="addr">0xfc6AE534…</span> should be expected to move. Whether <code>NAVRegistryLib</code> holds a second time is an
-open question and must be measured, not assumed from its having held here.</p>
+<p><span class="chip redeploy">Deploy held</span> <strong>Treat both values above as correct-for-now, not deploy-final.</strong>
+The deploy is <strong>held</strong> — not blocked — while a further feature is attempted first: a two-axis per-asset
+classification, <code>PegKind{Pegged, Floating}</code> and <code>AccrualKind{None, Rebasing, Appreciating}</code>.</p>
+<p><strong>If it lands it is a <code>src/</code> change, so the pins are regenerated again</strong> against whatever tree actually
+ships, and <span class="addr">0xfc6AE534…</span> should be expected to move. Whether <code>NAVRegistryLib</code> holds a second
+time is an open question and must be measured, not assumed from its having held here.</p>
+<p><strong>The converse is also live, and is the reason to write "correct-for-now" rather than "will move".</strong> If the
+feature cannot be delivered on-chain — see the measurement below — then <span class="mono">6e5fa2e9</span> may turn out to
+<em>be</em> the shipping tree and these two values may stand unchanged. Both outcomes are open. What does not change either way
+is the gate under <em>Sequencing</em>.</p>
 <p><span class="chip judge">Judgement</span> <strong>This is the third time a PriceFeedLib pin recorded in this document has been
-overtaken, and the pattern is now the point.</strong> Each value was correct when measured; none survived to the deploy, because the
-tree kept moving for good reasons. So the operative instruction is the one under <em>Sequencing</em> — a clean build against the
-final tree — and no pin in this document, including these two, is a substitute for running it.</p>
+overtaken, and the pattern is now the point.</strong> Each value was correct when measured; none survived to a deploy, because the
+tree kept moving for good reasons. So the operative instruction is a clean build against the final tree, and no pin in this
+document, including these two, is a substitute for running it.</p>
+</div>
+
+<div class="note blocker">
+<p><span class="chip blocker">Measurement pending — may not fit on-chain</span> <strong>Whether the
+<code>PegKind</code>/<code>AccrualKind</code> classification can be delivered on-chain at all is an open question, not a
+scheduling detail.</strong> The budget is <code>NAVCalculator</code>'s <strong>68</strong> free bytes of the EIP-170 limit (see
+<code>nav/</code> above). Measured so far:</p>
+<div class="scroll">
+<table>
+<caption>Options measured against a 68-byte budget. No option has yet been shown to fit.</caption>
+<thead><tr><th>Option</th><th>Shape</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td><b>C1</b></td><td>Enums on <code>AssetPricing</code>, read through the existing <code>getAssetPricing</code> getter, plus a MANAGER setter</td><td class="chg"><b>+367 bytes</b> — does not fit, by 299</td></tr>
+<tr><td><b>B</b></td><td>C1 plus a batch view</td><td class="chg">Cannot fit <b>by arithmetic</b> — it is a strict superset of C1</td></tr>
+<tr><td><b>A</b></td><td>Fields on the <code>Asset</code> struct</td><td class="chg">Breaks the struct's ABI against <b>27 deployed immutable adapters</b>; 13 construction sites across 9 files outside <code>src/</code> and 5 inside</td></tr>
+</tbody>
+</table>
+</div>
+<p>A final measurement of the <em>irreducible floor</em> — the smallest shape that carries the two axes at all — is in flight.
+Until it reports, the honest status is <strong>measurement-pending</strong>: no option is known to fit, and none has been ruled
+out either.</p>
+<p><strong>The alternatives, if the floor also exceeds 68 bytes,</strong> are to reclaim code size elsewhere in
+<code>NAVCalculator</code> first, or to give the classification an off-chain home. <span class="chip judge">Judgement</span>
+<strong>Option A's cost is not a byte count and should not be compared as one.</strong> +367 versus 68 is a measurement; breaking
+a struct ABI that 27 immutable, already-deployed adapters are compiled against is a coordinated redeploy of the adapter set. The
+two are not on the same scale, so "A is the one that fits" would be the wrong conclusion to draw from A's absence from the
+byte column.</p>
 </div>
 <p><strong>Why only one of the two moved, when #232 edited a file both compile.</strong> #232 changed
 <code>INAVCalculator.sol</code>, which sits in both libraries' import graph — but its changes are <em>struct field additions</em>,
@@ -673,8 +703,9 @@ mid-stream is how a value becomes stale from birth.</p>
 NavRegistryLib <span class="addr">0x5f5D054E021A53E1DEF54B3Bda3c939ccD14fd90</span> — the values now in
 <code>foundry.toml [libraries]</code> and <code>script/utils/LibraryPins.sol</code>, confirmed by a clean local build with CI's
 clean-build job agreeing. CI is corroboration, not the gate. But the deploy is <strong>held</strong> for the
-<code>PegKind</code>/<code>AccrualKind</code> work, so <span class="mono">6e5fa2e9</span> is not the tree that ships and this gate
-must be re-run against the one that does.</p>
+<code>PegKind</code>/<code>AccrualKind</code> work — which may or may not prove deliverable on-chain — so
+<span class="mono">6e5fa2e9</span> cannot yet be assumed to be the tree that ships, and this gate must be re-run against
+whichever tree is.</p>
 <p><span class="chip judge">Judgement</span> <strong>Re-run the clean build anyway if any commit lands before broadcasting, and
 treat a mismatch as "the tree moved", never as "edit the values until it goes green".</strong> Two superseded PriceFeedLib figures
 already appeared in this document's own history — <span class="addr">0x8b7e4fA9…</span> and
@@ -742,9 +773,11 @@ document reports: #231, #232, #233 and #234. All are labelled as such where they
 
 <h4>Second amendment pass — pins regenerated, deploy held</h4>
 <ul class="tight">
-<li><strong>Deploy status: <span class="chip blocker">HELD</span></strong> — not blocked, deliberately deferred so the
-<code>PegKind</code>/<code>AccrualKind</code> per-asset classification lands first. Consequence for this document: the pin values
-below are correct-for-now and a second regeneration is expected.</li>
+<li><strong>Deploy status: <span class="chip blocker">HELD</span></strong> — not blocked, deliberately deferred to attempt the
+<code>PegKind</code>/<code>AccrualKind</code> per-asset classification first. <strong>Whether that feature fits on-chain is
+measurement-pending</strong> (68 free bytes; C1 measured at +367, B excluded by arithmetic, A breaks the <code>Asset</code> ABI
+against 27 deployed adapters). Consequence for this document: the pin values below are correct-for-now, and a second
+regeneration follows only if the feature — or any other <code>src/</code> change — actually lands.</li>
 <li><strong><code>PriceFeedLib</code> pin: <span class="addr">0x8b7e4fA9…</span> →
 <span class="addr">0xfc6AE534f83A49071Eac35cCf97786Dd54b2eDf5</span></strong>, regenerated by #234 against main
 <span class="mono">6e5fa2e9</span> and verified by both a clean local build and CI's clean-build job.

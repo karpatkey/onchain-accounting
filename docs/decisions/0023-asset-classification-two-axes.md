@@ -35,34 +35,54 @@ AccrualKind  { None, Rebasing, Appreciating }  -- how value accrues
    (wstETH, sDAI, ERC-4626 shares). `None`: neither. Not cosmetic — it tells a consumer whether an
    unexplained balance delta is yield (`Rebasing`) or a genuine anomaly (`Appreciating` / `None`).
 
-3. **The axes are independent.** Six combinations occur on assets this repo already registers.
+3. **The axes are independent.** All six combinations are **reachable mechanisms**; five are occupied by
+   a currently registered asset and one is empty today (see the table below).
 
 ## Alternatives considered
 
 ### Rejected: a single flat enum `{ Stablecoin, YieldBearing, Rebasing, Standard }`
 
-The obvious first shape, and wrong, because **those categories are not mutually exclusive on assets
-already registered here.** Several assets fall into two or three at once, so the enum forces an
-arbitrary choice of which fact to keep and which to discard.
+The obvious first shape, and wrong, because **those categories are not mutually exclusive.** Several
+assets fall into two or three at once, so the enum forces an arbitrary choice of which fact to keep and
+which to discard.
 
-| Asset | `PegKind` | `AccrualKind` | Under the flat enum |
-|---|---|---|---|
-| USDC | `Pegged` | `None` | `Stablecoin` — unambiguous |
-| **aUSDC** | `Pegged` | `Rebasing` | **stablecoin AND yield-bearing AND rebasing — pick one** |
-| **sDAI** | `Pegged` | `Appreciating` | **stablecoin AND yield-bearing, NOT rebasing — pick one** |
-| WETH | `Floating` | `None` | `Standard` — unambiguous |
-| **stETH** | `Floating` | `Rebasing` | **yield-bearing AND rebasing — pick one** |
-| **wstETH** | `Floating` | `Appreciating` | **yield-bearing, NOT rebasing — inexpressible** |
+The `Occupied` column is deliberate: it separates *reachable mechanism* from *currently registered
+asset*, so the argument does not rest on a claim a reader can falsify from config.
+
+| `PegKind` | `AccrualKind` | Example | Occupied today | Under the flat enum |
+|---|---|---|---|---|
+| `Pegged` | `None` | USDC | ✅ 6 chains | `Stablecoin` — unambiguous |
+| `Pegged` | `Rebasing` | **aUSDC** *(illustrative)* | ❌ **empty — no aToken registered** | **stablecoin AND yield-bearing AND rebasing — pick one** |
+| `Pegged` | `Appreciating` | sUSDS, sDAI | ✅ mainnet, Gnosis | **stablecoin AND yield-bearing, NOT rebasing — pick one** |
+| `Floating` | `None` | WETH | ✅ 6 chains | `Standard` — unambiguous |
+| `Floating` | `Rebasing` | **stETH** | ✅ mainnet | **yield-bearing AND rebasing — pick one** |
+| `Floating` | `Appreciating` | **wstETH** | ✅ 5 chains | **yield-bearing, NOT rebasing — inexpressible** |
 
 Three of the six need an arbitrary primary choice, and the sixth cannot be expressed at all: wstETH is
 yield-bearing but not rebasing, and `YieldBearing` vs `Rebasing` gives no way to say so — they are a
 false dichotomy over the same axis.
 
-The failure mode is not imprecision, it is that **the arbitrary choice propagates silently.** Tag aUSDC
-`Rebasing` and every consumer filtering on `Stablecoin` drops it from the stablecoin total, with no
-error. Tag it `Stablecoin` and every consumer watching for rebase-driven deltas treats its yield as an
-anomaly. Each inherits a decision it did not make and cannot see. Two axes require no such choice:
-aUSDC is `Pegged` **and** `Rebasing`, and both consumers get a true answer.
+**`Pegged + Rebasing` is empty today, and that strengthens the case rather than weakening it.** aUSDC is
+listed as an illustration of the cell, not as evidence of current occupancy — no aToken is registered
+(verified against `nav-config/assets-and-price-feeds/`: 93 asset refs across chains, 43 on mainnet, and
+the only `a*` symbols are AAVE, a governance token, and ankrETH, an LST). The mechanism is real
+regardless: an aToken *is* simultaneously a stablecoin, yield-bearing and rebasing, and that is a fact
+about aTokens, not about our config.
+
+The forward-compatibility argument is the point. Under a flat enum, whoever first registers an aToken
+is forced at registration time to pick one of three labels and silently discard the other two — a
+decision made under time pressure, by one person, inherited by every downstream consumer. Under two
+axes the cell already exists and is already correct, and registering an aToken requires no new
+judgement. Registering one is a plausible near-term event, so the empty cell is a
+**forward-compatibility property, not dead weight**: it is precisely the case where a flat enum's
+failure would be introduced by a routine config change rather than caught in review.
+
+The failure mode is not imprecision, it is that **the arbitrary choice propagates silently.** Tag an
+aToken `Rebasing` and every consumer filtering on `Stablecoin` would drop it from the stablecoin total,
+with no error. Tag it `Stablecoin` and every consumer watching for rebase-driven deltas would treat its
+yield as an anomaly. Each inherits a decision it did not make and cannot see. Two axes require no such
+choice: it is `Pegged` **and** `Rebasing`, and both consumers get a true answer. The same applies today,
+not hypothetically, to sUSDS and stETH — each occupies a cell that a flat enum can only half-describe.
 
 **For a future reader:** the pressure to collapse this back to one enum will recur, because one enum is
 smaller and reads more simply. Check the table above against the then-registered asset set first. The
@@ -135,25 +155,27 @@ amounts only measurement resolves.
 
 > **PENDING — this section is deliberately unfilled; the numbers decide it, not this ADR.**
 >
-> Under measurement by a concurrent session:
+> Measured so far by a concurrent session, against the **68-byte** budget:
 >
-> - **A — fields on the `Asset` struct.** Most natural to read, worst fit for the budget. Also the
->   widest blast radius: **five construction sites across three `src/` files**, because a positional
->   struct literal breaks everywhere it is written out.
-> - **B — a separate `getAssetKinds()` view with the work in `PriceFeedLib`.** Library bytecode deploys
->   separately and does **not** count against `NAVCalculator`'s limit, so it is likeliest to fit on
->   bytes; it costs an extra call for a consumer wanting price and kind together, and it moves the
->   `PriceFeedLib` pin.
-> - **C — cheaper encodings**, e.g. packing both axes into spare bits of an existing field, or deriving
->   the values rather than storing them.
-> - **C1 — an option neither the original framing nor this ADR anticipated**, surfaced by the
->   measurement itself. It broke **exactly one positional constructor in a test helper**, against
->   option A's five `src/` construction sites.
+> - **A — fields on the `Asset` struct.** Breaks the `Asset` struct **ABI** against **27 deployed
+>   immutable adapters**, with **13 construction sites across 9 files outside `src/`** plus 5 inside.
+>   Widest blast radius of any option.
+> - **C1 — an option the original framing did not anticipate**, surfaced by measuring rather than
+>   reasoning. Cheap on blast radius — it broke **exactly one positional constructor in a test
+>   helper** — but measured **+367 bytes**, so it **does not fit**.
+> - **B — `getAssetKinds()` with the work in `PriceFeedLib`.** Library bytecode deploys separately and
+>   does not count against `NAVCalculator`'s limit, but B **is C1 plus a batch view**, so it cannot fit
+>   **by arithmetic**. It would also move the `PriceFeedLib` pin.
+> - **The irreducible floor — still being measured.** A widened struct and a widened *existing* getter:
+>   no setter, no new selector, nothing optional.
 >
-> **The option space is therefore wider than the three originally posed, and that is the point:** C1
-> was found by measuring rather than by reasoning, so any shape asserted here in advance would have
-> been asserted against an incomplete option set. Whichever option wins, it wins on measured bytes and
-> measured blast radius.
+> **If even the floor exceeds 68 bytes, the honest outcome is that this feature does not fit on-chain
+> as things stand** — and this ADR should then record that, not a shape. The two live conclusions in
+> that case are (a) reclaim space from `NAVCalculator` first and revisit, or (b) give the
+> classification an off-chain home and accept the drift risk that the
+> [Why this lives on-chain](#why-this-lives-on-chain) section argues against. **Neither is precluded
+> here.** The taxonomy above stands on its own either way: it is a decision about how to classify
+> assets, not about where the bytes live.
 
 Recording the constraint now, with the correct baseline, is the useful half: it stops the next reader
 planning against headroom that does not exist.
@@ -162,8 +184,8 @@ planning against headroom that does not exist.
 
 - **Two enums to document and keep consistent, not one** — a real cost, not a free choice. Every new
   asset needs two values decided instead of one, both documented, both verified at review, and the two
-  can be set inconsistently in ways one enum makes impossible. The judgement is that six real
-  combinations justify the second axis, not that the second axis is cheap.
+  can be set inconsistently in ways one enum makes impossible. The judgement is that five occupied cells
+  plus one reachable-and-imminent empty one justify the second axis, not that the second axis is cheap.
 - Consumers stop maintaining private token-to-category tables, and stop silently disagreeing about
   aUSDC and sDAI.
 - The classification is **quote-relative**; documentation must say so, or a reader takes

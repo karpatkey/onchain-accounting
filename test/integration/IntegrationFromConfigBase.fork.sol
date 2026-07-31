@@ -9,6 +9,7 @@ import {stdJson} from "forge-std/StdJson.sol";
 
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {ConfigReader} from "script/utils/ConfigReader.sol";
+import {UndispatchedAdapterGuard} from "test/integration/UndispatchedAdapterGuard.sol";
 // NOTE: meta adapters take no display-name argument — `MetaBalanceAdapter.protocolName()` derives it from
 // `_protocolId()`. This harness mirrors `04_DeployBalanceAdapters`, and both construct them with addresses only.
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
@@ -496,8 +497,15 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     // Balance adapter deployment
     // -----------------------------------------------------------------------
 
+    /// @dev An enabled adapter that `_deployBalanceAdapter` does not resolve is collected rather than merely
+    ///      logged, and the collected set is checked against the declaration in
+    ///      `test/integration/undispatched-adapters.json` — see {UndispatchedAdapterGuard} for why a bare
+    ///      console line was unsafe (a never-deployed adapter reports 0, which a snapshot refresh then pins as
+    ///      the expected NAV).
     function _deployAllBalanceAdapters() internal {
         string[] memory names = ConfigReader.getEnabledAdapters(vm, _chainId, "balanceAdapters");
+        string[] memory undispatched = new string[](names.length);
+        uint256 undispatchedCount;
         for (uint256 i = 0; i < names.length; i++) {
             string memory n = names[i];
             if (!ConfigReader.isAdapterEnabled(vm, _chainId, "balanceAdapters", n)) {
@@ -505,13 +513,20 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             }
             address adapter = _deployBalanceAdapter(n);
             if (adapter == address(0)) {
-                console2.log("[balanceAdapter] SKIP (unknown type):", n);
+                console2.log("[balanceAdapter] SKIP (undispatched; must be declared):", n);
+                undispatched[undispatchedCount++] = n;
                 continue;
             }
             _deployedBalanceAdapters.push(adapter);
             _deployedBalanceAdapterNames.push(n);
             console2.log("[balanceAdapter]", n, adapter);
         }
+
+        string[] memory skipped = new string[](undispatchedCount);
+        for (uint256 i = 0; i < undispatchedCount; i++) {
+            skipped[i] = undispatched[i];
+        }
+        UndispatchedAdapterGuard.check(vm, _chainId, skipped);
     }
 
     function _deployBalanceAdapter(string memory name) internal returns (address) {

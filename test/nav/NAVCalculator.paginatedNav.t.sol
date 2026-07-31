@@ -394,6 +394,66 @@ contract NAVCalculatorPaginatedNavTest is SuperTest {
         assertGt(rawHits, seen.length, "the RAW union over-counts - the de-duplication obligation is load-bearing");
     }
 
+    /// @notice Makes DAI's — and only DAI's — monitor set entirely UNREADABLE, while leaving DAI's own primary fresh.
+    /// @dev A Chainlink monitor registered with a 1-second heartbeat goes stale as soon as any time passes, so
+    ///      `_readFeedPrice` rejects it and `healthyMonitors` is 0. The 10-second warp is far inside DAI's primary
+    ///      86400s window, so the primary stays usable — which is required, since `monitorsUnhealthy` is only set for
+    ///      a USABLE primary (otherwise the suppression is the primary's fault, not the monitors').
+    function _deadMonitorsDaiOnly() internal {
+        Mock_PriceOracleChainlink deadMonitor = new Mock_PriceOracleChainlink("DAI-dead-monitor", 100_000_000, 8);
+        vm.startPrank(navCalculatorManager);
+        nav.setDivergenceTolerance(address(dai), 100);
+        nav.addMonitorFeed(address(dai), address(deadMonitor), IPrices.PriceType.Chainlink, 1);
+        vm.stopPrank();
+        vm.warp(block.timestamp + 10);
+    }
+
+    /// @notice The `monitorsUnhealthyPriceAssets` third of the flag-union contract. `stalePriceAssets` and
+    ///         `irregularPriceAssets` coverage above does not imply it: `_buildMonitorsUnhealthyAssets` is a third
+    ///         independent function in PriceFeedLib, and a change that scoped it from the asset registry rather than
+    ///         from the slice-local price-feed cache would silently alter what a slice reports as unchecked while
+    ///         every staleness and depeg assertion here still passed. This array is the one that distinguishes
+    ///         "checked and clean" from "checked by nothing that answered", so it gets its own pin.
+    function test_monitorsUnhealthyAssetsAreSliceLocalAndUnionRecoversThem() public {
+        _deadMonitorsDaiOnly();
+
+        INAVCalculator.NAV memory complete = nav.getAccountNav(safe, address(0));
+        assertEq(complete.monitorsUnhealthyPriceAssets.length, 1, "complete read sees DAI's monitors all unreadable");
+        assertEq(complete.monitorsUnhealthyPriceAssets[0].asset, address(dai));
+        assertEq(complete.irregularPriceAssets.length, 0, "and it is NOT irregular: the divergence check never ran");
+
+        // Slice-local: the adapter holding DAI reports it, the one that does not reports nothing. This is the
+        // assertion that fails if the array is ever scoped from the registry instead of the slice's own cache.
+        INAVCalculator.PartialNAV memory withDai = _slice(_arr1(address(adapterC)));
+        INAVCalculator.PartialNAV memory withoutDai = _slice(_arr1(address(adapterA)));
+        assertEq(withDai.monitorsUnhealthyPriceAssets.length, 1, "the slice holding DAI reports it");
+        assertEq(withDai.monitorsUnhealthyPriceAssets[0].asset, address(dai));
+        assertEq(withoutDai.monitorsUnhealthyPriceAssets.length, 0, "a slice not holding DAI reports nothing");
+
+        // De-duplicated union over the partition recovers exactly the complete read's set, and the RAW union
+        // over-counts — so the documented de-duplication obligation is load-bearing here too, not decoration.
+        Mock_CustomBalanceAdapter secondDaiHolder = new Mock_CustomBalanceAdapter();
+        _wire(secondDaiHolder, address(dai), 1_000e18, false);
+        vm.prank(navCalculatorManager);
+        nav.addBalanceAdapters(_arr1(address(secondDaiHolder)));
+
+        address[] memory all = nav.getAllAdapters();
+        address[] memory seen = new address[](0);
+        uint256 rawHits;
+        for (uint256 i = 0; i < all.length; i++) {
+            INAVCalculator.PartialNAV memory p = _slice(_arr1(all[i]));
+            for (uint256 j = 0; j < p.monitorsUnhealthyPriceAssets.length; j++) {
+                rawHits++;
+                if (!_contains(seen, p.monitorsUnhealthyPriceAssets[j].asset)) {
+                    seen = _append(seen, p.monitorsUnhealthyPriceAssets[j].asset);
+                }
+            }
+        }
+        assertEq(seen.length, 1, "de-duplicated union has exactly the complete read's cardinality");
+        assertEq(seen[0], address(dai), "and it is the same asset");
+        assertGt(rawHits, seen.length, "the RAW union over-counts - the de-duplication obligation is load-bearing");
+    }
+
     /// @notice A stale price does not stop a slice from being returned — it is reported alongside a value, exactly
     ///         as the complete read does. Pinned so the flag can never be mistaken for a rejection.
     function test_staleSliceStillReturnsAValue() public {

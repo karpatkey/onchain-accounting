@@ -43,8 +43,18 @@ the CREATE2 addresses observed, which is stronger evidence than any CI check can
 
 ## 1. What the rehearsal is for
 
-The redeploy puts the whole NAV stack on a **new proxy** across 24 chains. The rehearsal answers three
-questions that cannot be answered by reading:
+The redeploy puts the whole NAV stack on a **new proxy** across 24 chains, rather than shipping the
+wave as a UUPS implementation upgrade. The deciding factor is `ERC20DefaultBalanceAdapter`: it is
+minted inside `initialize()` behind a set-once guard, it is unremovable through the registry, and
+**nothing in the implementation or admin surface that exists today can replace it.** An upgrade
+*could* carry bespoke migration logic to repoint it — UUPS does not forbid that — but it would be
+one-off code needing an audit, it would hand-repair private registry state, it would still end in a
+new adapter deployment, and it would run against a live proxy. A fresh proxy reaches the same end
+state through `initialize()`. The full costing is in the runbook's *Why this is a NEW PROXY and not an
+implementation upgrade*; §9 below carries the empirical confirmation (new proxy + fresh
+`ERC20Default`).
+
+The rehearsal answers three questions that cannot be answered by reading:
 
 1. **Does the sequence run end to end on a real fork?** Several deploy scripts exit 0 having done
    nothing (`03`/`04` skip-if-deployed, `RegisterAssets` and `06` return early). The rehearsal is where
@@ -190,13 +200,21 @@ Each of these is a hardening fix doing its job. None is a regression.
 
 **Expect FEWER legs or positions, from a deliberately suppressed unreportable leg:**
 
-- **Assisted-adapter caches start EMPTY.** `AssistedCoordCache` keys coordinates per account, so a
-  redeployed assisted adapter reports nothing until the owner Safe re-feeds it through the **new**
-  assistant. Four caches on two chains: mainnet `EtherFiWithdrawalQueueAssisted`,
-  `NexusMutualStakingPoolsAssisted`, `StakeWiseV3ExitQueueAssisted`, and **gnosis
-  `StakeWiseV3ExitQueueAssisted`** (the easy miss — the family is usually described as mainnet-only).
-  **This is the single largest expected reduction.** Under-report only, by the ADR 0015 invariant:
+- **Assisted-adapter caches start EMPTY — but expect NO reduction, because the live ones are empty
+  too.** `AssistedCoordCache` keys coordinates per account, so a redeployed assisted adapter reports
+  nothing until the owner Safe feeds it through the **new** assistant. Four caches on two chains:
+  mainnet `EtherFiWithdrawalQueueAssisted`, `NexusMutualStakingPoolsAssisted`,
+  `StakeWiseV3ExitQueueAssisted`, and **gnosis `StakeWiseV3ExitQueueAssisted`** (the easy miss — the
+  family is usually described as mainnet-only). Under-report only, by the ADR 0015 invariant:
   coordinates cached, values read live, ownership re-verified per read.
+  > **CORRECTED 2026-07-30 — this was previously called "the single largest expected reduction". It is
+  > not a reduction at all.** Measured on mainnet: all three chain-1 assisted adapters have emitted
+  > **zero logs, ever** (no topic filter, so ABI-independent) and `coordsOf()` is empty for all nine
+  > chain-1 accounts. The live caches have never been fed since PR #141 deployed them, so these
+  > positions read **$0 on both sides** and the correct expectation is **no change**. Seeing $0 after
+  > the redeploy is not the fix working and not a regression — it is the status quo. Feeding the new
+  > caches would *begin* reporting value that has never been counted (runbook §2.1). Gnosis was not
+  > separately log-checked.
 - **Morpho existence gate** (#189) suppresses an instance that cannot be proven to exist.
 - **Per-instance gas starvation now raises `InstanceGasExhausted`** (#182) instead of silently
   recording zero legs. A starved instance becomes a *visible failure* rather than a missing leg — if
@@ -221,7 +239,10 @@ Each of these is a hardening fix doing its job. None is a regression.
 **Expect DIFFERENT price feeds:**
 
 - **stETH is now priced by a new primary feed** and `stETHCrossRate` is demoted to a **monitor**
-  (#199). Mainnet feed count 24 → 25, total 39 → **40**. This changes which contract prices stETH.
+  (#199, merged 2026-07-29). Mainnet feed count 24 → 25, total 39 → 40. This changes which contract
+  prices stETH.
+- **ezETH gains a market monitor** so its depeg check can fire (#224, merged 2026-07-30):
+  `ezETHCrossRateMarket`. Mainnet 25 → **26**, total 40 → **41**.
 - **ETHx monitors 2 → 1.** Redstone retired both its ETHx push feeds. The direct ETHx/USD monitor is
   gone with no replacement (Chainlink has no ETHx/USD feed at all). `ETHxCrossRate` survives with its
   rate feed migrated to Chainlink `0xC499ec76e2F5ac15e127A352Bc40cF24FC472401`. ETHx's **primary** was
@@ -234,7 +255,7 @@ Each of these is a hardening fix doing its job. None is a regression.
 - **Custom-feed asset guard** (#199) — a feed can no longer be registered against the wrong asset.
 - Three feed **contracts** are dead code and deployed nowhere: `cbETH_CustomPriceFeed`,
   `ETHPlus_CustomPriceFeed`, `sDAI_CustomPriceFeed` (the last deleted by #199). They were never among
-  the 39/40, so their absence changes no count.
+  the 39/40/41, so their absence changes no count.
 
 **Expect a different asset-filter view, documented not fixed:**
 
@@ -361,7 +382,7 @@ Two rules out of that, in order of importance:
 1.1  clear the deployment record                             reset_deployment_records.py --apply
 1.2  01_2_DeployNAVImplementation    libs + impl             PERSIST_DEPLOYMENTS=1
 1.3  02_2_DeployNAVProxy             new proxy + ERC20Default PERSIST_DEPLOYMENTS=1
-1.4  03_DeployPriceFeeds             40 custom feeds          <- BEFORE RegisterAssets
+1.4  03_DeployPriceFeeds             41 custom feeds          <- BEFORE RegisterAssets
 1.5  RegisterAssets                  assets + feeds          FOUNDRY_PROFILE=slow  <- REQUIRED, see below
 1.6  04_DeployBalanceAdapters        adapters + assistants
 1.7  06_Configure                    register + reconcile
@@ -479,7 +500,7 @@ Measured on `main` @ `f72dd48a`:
 | meta adapters | **33** | `preflight_config.py` |
 | meta instances | **110** | `preflight_config.py`; per-chain table in the runbook |
 | plain adapters | **12** (+1 `ERC20Default` per chain) | `preflight_config.py` |
-| custom price feeds | **40** | `preflight_config.py` (was 39 before #199) |
+| custom price feeds | **41** | `preflight_config.py`, re-measured 2026-07-30 (39 before #199, 40 before #224) |
 | assets | **93** | `preflight_config.py` |
 
 Per-chain meta instances: 66 / 16 / 16 / 4 / 4 / 4 / 0 for 1 / 42161 / 8453 / 10 / 100 / 137 / 56.

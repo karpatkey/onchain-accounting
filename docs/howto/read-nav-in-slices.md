@@ -111,6 +111,7 @@ This is the dangerous one.
 | `value` | **sum** | Signed; debt legs are already negative, and prices are per-asset and independent of which adapter reported the position. Exact arithmetic — but equality with the complete read assumes **no adapter was gas-starved in either read**, and when that fails **neither side is reliably the larger**. See [the precondition](#the-precondition-is-not-theoretical--read-this-before-reconciling). |
 | `stalePriceAssets` | **union, de-duplicated** | Restricted to the assets *this slice's* positions touched. An asset held only through an adapter in another slice is absent here. Two slices holding the same stale asset each report it. |
 | `irregularPriceAssets` | **union, de-duplicated** | Same restriction. This is the depeg signal. |
+| `monitorsUnhealthyPriceAssets` | **union, de-duplicated** | Same restriction. Assets with monitor feeds configured where **none was readable**, so the divergence check did not run — `irregularPriceAssets` being empty says nothing about them. Dropping this one under-reports monitor failure, the falsely-reassuring direction. |
 | `sequencerDown` | **OR** | Derived from the sequencer config, so invariant across slices — but reading it on one slice relies on that invariant rather than checking it. |
 | `quoteAssetStale` | **OR** | Invariant across slices, and *more* dangerous to skip for it: if true, **every** slice's `value` is in USD (8dp) rather than the requested quote. |
 | `quoteAssetIrregular` | **OR** | Invariant across slices; always false for a USD quote. |
@@ -229,6 +230,7 @@ let value = 0n;
 const covered: string[] = [];
 const stale = new Set<string>();
 const irregular = new Set<string>();
+const monitorsUnhealthy = new Set<string>();   // monitors configured but none readable
 let sequencerDown = false, quoteAssetStale = false, quoteAssetIrregular = false;
 let timestamp: bigint | undefined;
 
@@ -247,6 +249,7 @@ for (let i = 0; i < all.length; i += SLICE) {
   covered.push(...p.adaptersCovered);
   for (const a of p.stalePriceAssets) stale.add(a.asset);
   for (const a of p.irregularPriceAssets) irregular.add(a.asset);
+  for (const a of p.monitorsUnhealthyPriceAssets) monitorsUnhealthy.add(a.asset);
   sequencerDown ||= p.sequencerDown;
   quoteAssetStale ||= p.quoteAssetStale;
   quoteAssetIrregular ||= p.quoteAssetIrregular;

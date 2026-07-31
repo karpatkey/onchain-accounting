@@ -25,6 +25,7 @@ Every member — regardless of who feeds it — upholds one invariant:
 Consequences:
 
 - A faulty or malicious feeder can only ever **under-report, never over-report** NAV. It cannot fabricate a balance, because amounts are always read live from the protocol and a coordinate that isn't (or is no longer) owned by the account values to `0` and is discarded.
+- **In production the cache is also COMPLETE, not merely conservative** — so "under-report only" understates the actual guarantee. The portfolio Safes' **roles-modifier allow-list permits these protocol entries only through the assistant contracts**, so a position of these types cannot be active without having been fed. That half is enforced **outside this repository** (see [§5.0](#50-the-assistant-is-the-only-path--enforced-on-chain-by-the-safes-roles-modifier)) — nothing here enforces it, since `submit`/`remove` are permissionless and `msg.sender`-keyed.
 - These adapters are the documented exception to the "adapters are immutable / no mutable storage" rule — the coordinate cache is their only mutable state.
 
 ## 3. Feeding: assistant-fed
@@ -108,13 +109,24 @@ Minimal, permissionless, no role getter. (The removed legacy agent-fed marker wa
 
 An **assistant** is the on-chain feeder that keeps an adapter's cache current, atomically with the protocol action that creates/destroys the position. It is a **stateless logic module the owner Safe `delegatecall`s** — it does *not* wrap the adapter (hence "assistant", not "wrapper").
 
-### 5.0 Operational rule — use the assistant *instead of* the protocol's normal channel
+### 5.0 The assistant is the *only* path — enforced on-chain by the Safe's roles modifier
 
-> **The assistant is not an optional convenience; it replaces the direct protocol call.** These positions exist precisely because their coordinate (tokenId / requestId / tuple) is **not retrievable from on-chain state** — no `balanceOf`, no owner→tokenIds view, no enumeration. The **only** way NAV ever learns the position exists is the coordinate the assistant caches at the moment it is created. So the operator must open and close the position **through the assistant** (delegatecalled from the Safe), *not* by calling the protocol's normal entrypoint directly.
+> **This is not an operational rule the operator could forget. It is an on-chain permission.** These positions exist precisely because their coordinate (tokenId / requestId / tuple) is **not retrievable from on-chain state** — no `balanceOf`, no owner→tokenIds view, no enumeration. The **only** way NAV ever learns the position exists is the coordinate the assistant caches at the moment it is created. Accordingly, **the portfolio Safes' roles-modifier permission set allows these protocol entries only *through the assistant contracts*; the direct protocol entrypoint is not in the allow-list.**
 
-- **Open via the assistant, always.** If a Safe deposits/requests-withdraws by calling the protocol directly (the "normal channel"), the position is created on-chain but its coordinate is **never cached** — so NAV can't see it. It is silently **under-counted** until someone `submit`s the coordinate (which, being permissionless and `msg.sender`-keyed, the owner Safe can still do after the fact — but the intended, atomic path is the assistant).
-- **Close via the assistant, always.** Claiming/withdrawing through the assistant prunes the cache in the same tx. A direct close leaves a stale coordinate — harmless (it values live to `0` and is discarded on read; `remove`/`clearAccount` GC it) but it wastes read gas and the cap.
-- This is exactly why the family is **under-report-only**: bypassing the assistant can only make NAV *miss* a position, never invent one. The assistant is the trusted-but-minimized bridge for data that on-chain reads alone cannot surface.
+**The invariant this produces — the cache is COMPLETE BY CONSTRUCTION, not merely conservative.** A position of these types **cannot be active without its coordinate having been fed to the adapter**, because the transaction that would create it un-fed is not a permitted call. So the family's guarantee has **two complementary halves**, and neither alone is the full story:
+
+| Level | Property | Enforced by |
+|---|---|---|
+| **Contract** (this repo) | **Cannot over-report** — coordinates only (never amounts), valued live on-chain, ownership re-verified per read, so a bad or stale coordinate values to `0` and is dropped | `AssistedCoordCache` + each adapter's `_valueCoord` / `_ownerOf` |
+| **Roles** (outside this repo) | **Cannot under-report either** — the position cannot come into existence without being fed, so the cached set is complete | the Safe's roles-modifier allow-list |
+
+**Where enforcement lives, and why you cannot see it here.** Nothing in *this repository* enforces the roles half. `AssistedCoordCache`'s `submit`/`remove` are **permissionless** and `msg.sender`-keyed, and the assistant is *the canonical feeder* rather than a gate — so a reader of those files alone sees a permissionless cache and no completeness guarantee at all. The guarantee is one layer up, in the **Safe's roles configuration**, which is not part of this repo. Read this section as a pointer to that configuration.
+
+**Residual risk, stated accurately.** The risk is *not* "an operator bypasses the process" — that path is not permitted. It is: **a change to the roles permission set adds a path that reaches the protocol without going through the assistant.** After such a change the cache silently misses positions, and **there is no tripwire anywhere in this repository** that would detect it — the adapters would report a smaller-but-internally-consistent set, and every contract-level invariant would still hold. So roles-permission changes touching these protocols are the thing to review.
+
+- **Open via the assistant.** Enforced by roles; the direct entrypoint is not callable. Were it ever reachable, the position would be created on-chain with its coordinate **never cached**, so NAV could not see it — silently **under-counted** until someone `submit`s the coordinate (which, being permissionless and `msg.sender`-keyed, the owner Safe can still do after the fact).
+- **Close via the assistant.** Claiming/withdrawing through the assistant prunes the cache in the same tx. A direct close would leave a stale coordinate — harmless (it values live to `0` and is discarded on read; `remove`/`clearAccount` GC it) but it wastes read gas and the cap.
+- **The contract-level "under-report only" property is the defence-in-depth that survives if the roles half is ever removed**: bypassing the assistant can only make NAV *miss* a position, never invent one. That is why the two halves are stated together — the roles layer makes the cache complete, and the contract layer bounds the damage if it ever stops being so.
 
 Concretely: instead of `LiquidityPool.requestWithdraw(...)` the Safe delegatecalls `EtherFiWithdrawalQueueAssistant.requestWithdraw(...)`; instead of `vault.enterExitQueue(...)` it delegatecalls `StakeWiseV3ExitQueueAssistant.enterExitQueue(...)`; etc. The assistant forwards to the very same protocol function (same effect on funds) **and** records the coordinate — one atomic transaction, no separate bookkeeping step that could be forgotten or fall out of sync.
 

@@ -15,6 +15,15 @@ import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 ///      each read entirely from live on-chain reads; and re-verifies ownership on every read (discarding coordinates
 ///      no longer owned). A faulty or malicious feeder can therefore only **under-report, never over-report**.
 ///
+///      **The deployed guarantee is stronger, and its second half is not in this repository.** The portfolio Safes'
+///      **roles-modifier permission set allows the corresponding protocol entries only through the assistant
+///      contracts — the direct protocol entrypoint is not allow-listed** — so a position of these types cannot be
+///      active without its coordinate having been fed, making the cache **complete by construction**. Contract level
+///      (here) → cannot **over**-report; roles level (outside this repo) → cannot **under**-report either. Nothing in
+///      this repo enforces the latter (the mutators are permissionless), so do not infer it from the code; the
+///      residual risk is a roles-permission change adding a non-assistant path, which no tripwire here would catch.
+///      See ADR 0015 / ADR 0018 and `AssistedBalanceAdapters/README.md` §5.0.
+///
 ///      **Permissionless & self-scoped.** Unlike a role-gated off-chain-agent design (where one agent feeds many
 ///      accounts and submission is gated behind an `ASSISTANT_ROLE`), this family needs no
 ///      roles and no AccessControl: the submit/remove mutators derive the account from `msg.sender`, so a caller can

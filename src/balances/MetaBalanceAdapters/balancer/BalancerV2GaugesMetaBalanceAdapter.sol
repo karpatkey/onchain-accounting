@@ -137,7 +137,7 @@ contract BalancerV2GaugesMetaBalanceAdapter is MetaBalanceAdapter {
         if (!ok) return new string[](0);
         // External self-call so a revert anywhere in the gauge→lp_token→poolId→Vault-token chain fails open to
         // the category-only label — a faulty label must never revert the (verbose-only) labels read.
-        try this.gaugeTokenSymbols(gauge) returns (string memory leaf) {
+        try this.gaugeTokenSymbols{gas: LABEL_LEAF_GAS}(gauge) returns (string memory leaf) {
             return _labels("Staking Gauge", leaf);
         } catch {
             return _labels("Staking Gauge", "");

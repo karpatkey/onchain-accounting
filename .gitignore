@@ -21,3 +21,6 @@ commit.msg
 safe-transactions/
 .claude/
 pr1_body.md
+
+# Agent/tooling session scaffolding (plans, specs, run ledgers) — local only, like .claude/
+.omo/

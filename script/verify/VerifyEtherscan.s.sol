@@ -202,7 +202,7 @@ contract VerifyEtherscan is BaseDeployScript {
         );
     }
 
-    function _placeholderAddress() internal pure returns (address) {
+    function _placeholderAddress() internal view returns (address) {
         bytes32 salt = keccak256(abi.encodePacked("ProxyPlaceholderImpl", DeploySalts.PLACEHOLDER_IMPL));
         bytes memory creationCode = type(UUPSPlaceholder).creationCode;
         return address(

@@ -117,6 +117,7 @@
     }
   },
   "PancakeSwapV3_WETH_COW": {
+    "$comment": "PERMANENTLY DISABLED — COW is unpriceable. There is no COW price feed on ANY chain and none is planned, so this is a permanent coverage gap, not a pending task: do NOT flip enabled to true expecting a feed to arrive. If it were enabled, NAVCalculator's per-asset registry filter would silently drop the COW leg of this LP and value the position on its WETH side only — understating it by roughly half — which is strictly worse than not reporting the position at all. Leaving it disabled means NAV reports no COW position on Base, so DeBank's COW value lands in the comparison report's 'Untracked by design' section (attributed) rather than as unexplained drift. See also test/integration/accounts.json chains.8453.$untracked_by_design, and the identical mainnet (UniswapV3_WETH_COW_3000) and BSC (PancakeSwapV2_ETH_COW) entries.",
     "enabled": false,
     "constructor": {
       "pool": "0xfe5291Ac7Ac2b81a40c0ba6980308212037828aF",

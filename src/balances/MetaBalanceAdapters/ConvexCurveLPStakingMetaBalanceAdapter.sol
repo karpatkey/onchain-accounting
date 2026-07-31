@@ -93,25 +93,55 @@ contract ConvexCurveLPStakingMetaBalanceAdapter is MetaBalanceAdapter {
         bytes memory pid = _instancePositionId(instance);
 
         // ── 1. Staking legs: staked LP → underlying Curve pool tokens ─────────
+        //
+        // Undecomposable LP falls back to reporting the LP token itself — see the same reasoning in
+        // CurveGaugesMetaBalanceAdapter. A Convex 3pool rewarder reported zero staking legs because 3Crv
+        // resolves through none of CurvePoolLib.getPool's heuristics; that is fixed in the library, and this
+        // keeps the principal visible for any LP the Curve registry also cannot resolve.
         if (stakedLp > 0) {
             address lpToken = _lpTokenOf(rewarder);
             if (lpToken != address(0)) {
                 address pool = CurvePoolLib.getPool(lpToken);
-                if (pool != address(0)) {
-                    uint256 totalSupply = CurvePoolLib.getTotalSupply(lpToken);
-                    if (totalSupply > 0) {
-                        address[] memory coins = CurvePoolLib.getCoins(pool);
-                        for (uint256 i; i < coins.length; ++i) {
-                            address coin = coins[i];
-                            if (assetFilter != address(0) && coin != assetFilter) continue;
-                            (INAVCalculator.Asset memory info, bool found) = _getAssetInfo(coin);
-                            if (!found) continue;
-                            uint256 poolBal = CurvePoolLib.getPoolBalance(pool, i);
-                            uint256 amount = CurvePoolLib.proRataAmount(poolBal, stakedLp, totalSupply);
-                            if (amount == 0) continue;
-                            tmp[n++] = _leg(info, amount, false, pid, PositionKind.Staking);
-                        }
+                uint256 totalSupply = pool != address(0) ? CurvePoolLib.getTotalSupply(lpToken) : 0;
+                address[] memory coins = totalSupply > 0 ? CurvePoolLib.getCoins(pool) : new address[](0);
+
+                if (coins.length > 0) {
+                    for (uint256 i; i < coins.length; ++i) {
+                        address coin = coins[i];
+                        if (assetFilter != address(0) && coin != assetFilter) continue;
+                        (INAVCalculator.Asset memory info, bool found) = _getAssetInfo(coin);
+                        if (!found) continue;
+                        uint256 poolBal = CurvePoolLib.getPoolBalance(pool, i);
+                        uint256 amount = CurvePoolLib.proRataAmount(poolBal, stakedLp, totalSupply);
+                        if (amount == 0) continue;
+                        tmp[n++] = _leg(info, amount, false, pid, PositionKind.Staking);
                     }
+                } else if (assetFilter == address(0) || assetFilter == lpToken) {
+                    // Emits ONLY if the LP token is a registered asset. Stated plainly because an earlier
+                    // comment here claimed the failure was "visible either way", which is false: with the LP
+                    // unregistered (the current state for 3Crv) this branch emits nothing and the principal is
+                    // still silently dropped. What actually fixes 3Crv is the registry resolution in
+                    // CurvePoolLib.getPool; this branch is the residual net for LPs the registry cannot resolve
+                    // either, and it only pays off if the operator registers the LP.
+                    //
+                    // An earlier version of this comment closed by advising against registering the LP where the
+                    // pool is a governed CurvePoolsMeta instance, on the grounds that it double-counts the wallet
+                    // LP against ERC20Default. That advice is REMOVED because it was wrong twice and, being
+                    // operator-facing, would have reintroduced the very bug this branch exists to fix:
+                    //
+                    //   1. It cannot double-count THIS leg. This leg reports `stakedLp`, the balance the CONVEX
+                    //      REWARDER holds, whereas ERC20Default and CurvePoolsMeta both read `balanceOf(account)`.
+                    //      Staked LP is not wallet LP; the two quantities are disjoint by construction.
+                    //   2. For every LP that can REACH this arm the wallet-side double-count is absent too. This
+                    //      arm requires `coins.length == 0`, and CurvePoolsMeta returns an empty array on exactly
+                    //      that condition, so the two can never both emit for one pool. Measured for 3pool at
+                    //      block 22,500,000 and asserted by `assertEq(pos.length, 0)` in
+                    //      `test_threepool_walletLp_decomposes`.
+                    //
+                    // Following the old advice would leave the LP unregistered, this branch dark, and a real
+                    // staked principal reporting zero - the silent under-report the PR set out to remove.
+                    (INAVCalculator.Asset memory lpInfo, bool lpFound) = _getAssetInfo(lpToken);
+                    if (lpFound) tmp[n++] = _leg(lpInfo, stakedLp, false, pid, PositionKind.Staking);
                 }
             }
         }
@@ -216,13 +246,22 @@ contract ConvexCurveLPStakingMetaBalanceAdapter is MetaBalanceAdapter {
             }
         }
 
-        address[] memory all = new address[](coins.length + rn);
+        // Declare the LP token when _instancePositions could emit it as a fallback leg, so the advertised set
+        // does not contradict what the adapter emits. (Not for per-asset routing: the filtered read iterates
+        // every adapter and never consults underlyingAssetsSupported() - see the sibling Curve adapter.)
+        // Mirrors the emission condition for every reachable case. Not a total parity claim: positions also
+        // requires totalSupply > 0 before enumerating coins, so an LP answering neither totalSupply() nor
+        // total_supply() while its pool still enumerates coins would emit the fallback without it being
+        // declared here. No such pool is known; the wording is hedged rather than the branch duplicated.
+        uint256 lpSlot = (coins.length == 0 && lpToken != address(0)) ? 1 : 0;
+        address[] memory all = new address[](coins.length + rn + lpSlot);
         for (uint256 i; i < coins.length; ++i) {
             all[i] = coins[i];
         }
         for (uint256 i; i < rn; ++i) {
             all[coins.length + i] = rewards[i];
         }
+        if (lpSlot > 0) all[all.length - 1] = lpToken;
         return all;
     }
 
@@ -235,7 +274,10 @@ contract ConvexCurveLPStakingMetaBalanceAdapter is MetaBalanceAdapter {
     function positionLabels(bytes calldata pid) external view override returns (string[] memory out) {
         (address rewarder, bool ok) = _pidAddress(pid);
         if (!ok) return new string[](0);
-        string memory coins = _coins(rewarder);
+        string memory coins = "";
+        try this.rewarderCoinSymbols{gas: LABEL_LEAF_GAS}(rewarder) returns (string memory c) {
+            coins = c;
+        } catch {}
         if (bytes(coins).length == 0) {
             out = new string[](2);
             out[0] = "Staking";
@@ -265,7 +307,13 @@ contract ConvexCurveLPStakingMetaBalanceAdapter is MetaBalanceAdapter {
 
     /// @notice Derives the "TOKEN0/TOKEN1/…" coin-symbol string from the rewarder's underlying Curve pool ("" on
     ///         failure: unresolvable LP/pool/coins).
-    function _coins(address rewarder) private view returns (string memory) {
+    /// @dev The leaf is derived behind a bounded self-call rather than inline. It reads the chain through
+    ///      addresses reached from the governed coordinate — pool coins, and an ERC20 `symbol()` per coin — and
+    ///      unbounded that work can consume the budget of whatever called in, for a display string. The helper is
+    ///      `external` only so this boundary exists; it is the same shape the pool/gauge symbol readers elsewhere
+    ///      in the family already use. Exhaustion degrades to the two category segments — `["Staking", "Curve LP"]`
+    ///      — exactly as an unreadable symbol already does.
+    function rewarderCoinSymbols(address rewarder) external view returns (string memory) {
         address lpToken = _lpTokenOf(rewarder);
         if (lpToken == address(0)) return "";
         address pool = CurvePoolLib.getPool(lpToken);

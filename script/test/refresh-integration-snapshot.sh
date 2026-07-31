@@ -4,6 +4,9 @@
 #
 # Steps:
 #   1. For each chain (in parallel): bump `forkBlock` to the latest block via `cast block-number`.
+#      The pre-bump value is retained: if step 2 does not regenerate that chain's NAV, the
+#      bump is ROLLED BACK, because a new fork block beside old navUsd8dp values is what
+#      turns a missing snapshot into a phantom drift.
 #   1.5. For each (account × chain) with non-zero unclaimed Merkl rewards, fetch proofs from the
 #      Merkl API and write them to test/integration/merkl-proofs.json. Captures the active
 #      Distributor merkleRoot at the new fork block for diagnostics. The integration test
@@ -12,6 +15,10 @@
 #      new block, replays the deploy pipeline, reads NAV per enabled account, and prints
 #      SNAPSHOT lines. Each chain's stdout is captured to its own log; once all chains
 #      finish, the script parses SNAPSHOT lines and writes navUsd8dp into accounts.json.
+#      A chain is only SUCCESSFUL if it produced at least one SNAPSHOT line and every line
+#      reports a healthy NAV (`sequencerDown == false`, zero stale price assets). Anything
+#      else fails the chain: a NAV pinned from an unhealthy read becomes the expectation
+#      every later run agrees with, so the bad number goes quiet instead of getting louder.
 #   3. (Optional) If `DEBANK_API_KEY` is set: per account, fetch /v1/user/all_complex_protocol_list
 #      ONCE (covers all chains), and per (chain × account) fetch /v1/user/token_list. Sum
 #      two buckets into expected.<chainId>.debankUsd:
@@ -144,6 +151,11 @@ chain_ids=$(jq -r '.chains | keys[]' "$ACCOUNTS_JSON")
 block_dir=$(mktemp -d)
 trap 'rm -rf "$block_dir"' EXIT
 declare -A block_pid
+# Pre-bump forkBlock per chain, so a chain whose NAV never regenerates in step 2 can be
+# rolled back to the block its stale snapshots were actually computed at. Without this the
+# JSON ends up holding a NEW fork block beside OLD navUsd8dp values — the pairing that
+# manufactured ACCOUNT_8_COMPOUND_BASE's phantom 19% drift in PR #174.
+declare -A old_fork_block
 for chain_id in $chain_ids; do
   rpc=$(rpc_for_chain "$chain_id")
   if [[ -z "$rpc" ]]; then
@@ -168,6 +180,7 @@ for chain_id in $chain_ids; do
     exit 1
   fi
   old_block=$(jq -r ".chains.\"$chain_id\".forkBlock" "$ACCOUNTS_JSON")
+  old_fork_block[$chain_id]="$old_block"
   jq_inplace ".chains.\"$chain_id\".forkBlock = $new_block"
   echo "  chain $chain_id: $old_block -> $new_block"
 done
@@ -333,6 +346,7 @@ spawn_forge() {
   contract=$(chain_to_contract "$chain_id")
   (
     FOUNDRY_PROFILE="${FOUNDRY_PROFILE:-slow}" \
+      REFRESH_NAV_POSITIONS=1 \
       forge test \
         --match-contract "$contract" \
         --match-test "test_emitSnapshots" \
@@ -356,13 +370,56 @@ harvest_chain() {
     failed_chains+=("$chain_id")
     return
   fi
+  # Collect first, apply only if every snapshot for this chain is healthy. Applying a
+  # subset is not a safe middle ground: the unapplied accounts keep stale navUsd8dp while
+  # step 1 has already advanced this chain's forkBlock, which is precisely the mismatch
+  # that fabricates drift.
   local matched=0
-  while IFS='|' read -r _marker snap_chain idx _addr nav_value _seq _stale; do
+  local unhealthy=0
+  local pending=()
+  local _marker snap_chain idx _addr nav_value seq_down stale_count entry
+  while IFS='|' read -r _marker snap_chain idx _addr nav_value seq_down stale_count; do
     [[ -z "${snap_chain:-}" ]] && continue
-    jq_inplace ".accounts[$idx].expected.\"$snap_chain\".navUsd8dp = \"$nav_value\""
-    echo "  chain $snap_chain account[$idx]: navUsd8dp = $nav_value"
+    # `sequencerDown` and `stalePriceAssets.length` are the NAV's own health flags, emitted
+    # by IntegrationFromConfigBase alongside the value. They used to be parsed and dropped,
+    # which let the harness PIN a NAV computed on a down sequencer or over stale prices —
+    # a snapshot-integrity defect, not a reporting one: once baked into expected values,
+    # every later run agrees with the bad number and the suite goes quiet.
+    if [[ "${seq_down:-false}" == "true" ]]; then
+      echo "  [UNHEALTHY] chain $snap_chain account[$idx]: sequencerDown — refusing to pin this NAV" >&2
+      unhealthy=$((unhealthy+1))
+      continue
+    fi
+    if [[ -n "${stale_count:-}" && "$stale_count" =~ ^[0-9]+$ && "$stale_count" -gt 0 ]]; then
+      echo "  [UNHEALTHY] chain $snap_chain account[$idx]: $stale_count stale price asset(s) — refusing to pin this NAV" >&2
+      unhealthy=$((unhealthy+1))
+      continue
+    fi
+    pending+=("$idx|$snap_chain|$nav_value")
     matched=$((matched+1))
   done < <(grep -oE 'SNAPSHOT\|[^[:space:]]+' "$forge_dir/$chain_id.out" || true)
+
+  # A forge run can exit 0 and still emit no usable SNAPSHOT lines (test filtered out, an
+  # account loop that reverted and was swallowed, a log format drift). That used to be
+  # booked as success: every account on the chain kept its stale NAV, DeBank refreshed
+  # against the NEW fork block, and the mismatch surfaced as a tolerance violation (exit 2)
+  # rather than a partial snapshot (exit 1, which takes precedence and diagnoses itself).
+  if (( unhealthy > 0 )); then
+    echo "  [FAIL] chain $chain_id: $unhealthy unhealthy snapshot(s); applying none of this chain's $((matched+unhealthy))" >&2
+    failed_chains+=("$chain_id")
+    return
+  fi
+  if (( matched == 0 )); then
+    echo "  [FAIL] chain $chain_id: forge rc=0 but zero SNAPSHOT lines — snapshot NOT refreshed" >&2
+    failed_chains+=("$chain_id")
+    return
+  fi
+
+  for entry in "${pending[@]}"; do
+    IFS='|' read -r idx snap_chain nav_value <<< "$entry"
+    jq_inplace ".accounts[$idx].expected.\"$snap_chain\".navUsd8dp = \"$nav_value\""
+    echo "  chain $snap_chain account[$idx]: navUsd8dp = $nav_value"
+  done
   echo "  chain $chain_id: ${matched} snapshot(s) applied"
   ok_chains+=("$chain_id")
 }
@@ -409,11 +466,42 @@ for chain_id in "${queue[@]}"; do
   fi
 done
 
-if (( ${#failed_chains[@]} > 0 )); then
+# Make step 2's outcome atomic per chain. Reads failed_chains/ok_chains/old_fork_block and
+# sets `skipped_chains` plus a narrowed `chain_ids`.
+#
+# Two things have to move together with the NAV, or a missing snapshot becomes a phantom drift:
+#   - forkBlock, rolled BACK for a failed chain, so its surviving navUsd8dp stays paired with
+#     the block it was actually computed at.
+#   - the DeBank reference, which must NOT be refreshed for a failed chain. DeBank is only
+#     available at CURRENT state — there is no historical endpoint — so a fresh reference
+#     against an old-block NAV is exactly the mismatch that produced #174's fake 19%.
+# Narrowing `chain_ids` is what enforces the second. It previously was not narrowed at all,
+# while the log claimed "proceeding to step 3/4 with the chains that succeeded".
+finalize_step2_outcomes() {
+  local chain_id restore_block
+  skipped_chains=()
+  (( ${#failed_chains[@]} == 0 )) && return 0
+
   echo
   echo "  step 2 finished with ${#failed_chains[@]} failed chain(s): ${failed_chains[*]}"
-  echo "  proceeding to step 3/4 with the ${#ok_chains[@]} chains that succeeded."
-fi
+  for chain_id in "${failed_chains[@]}"; do
+    restore_block="${old_fork_block[$chain_id]:-}"
+    if [[ -n "$restore_block" ]]; then
+      jq_inplace ".chains.\"$chain_id\".forkBlock = $restore_block"
+      echo "  chain $chain_id: forkBlock rolled back to $restore_block (NAV not regenerated)"
+    fi
+  done
+
+  skipped_chains=("${failed_chains[@]}")
+  if (( ${#ok_chains[@]} > 0 )); then
+    chain_ids=$(printf '%s\n' "${ok_chains[@]}")
+  else
+    chain_ids=""
+  fi
+  echo "  proceeding to step 3/4 with the ${#ok_chains[@]} chain(s) that succeeded: ${ok_chains[*]:-none}"
+}
+
+finalize_step2_outcomes
 
 # ─── 3. Refresh DeBank reference per (chain × account) ─────────────────────────
 # Filtered comparison: sum only the DeBank protocols whose ids appear in the chain's
@@ -587,6 +675,16 @@ fi
   echo "# Refresh integration snapshot — report"
   echo
   echo "Tolerance: ${tolerance}"
+  # Name what this run did NOT cover. A report that silently omits a chain reads as
+  # "everything checked and only these drifted", which is how five weeks of these went
+  # unread — the one number that looked alarming was an artifact of an uncovered chain.
+  if (( ${#skipped_chains[@]} > 0 )); then
+    echo
+    echo "> **Incomplete run.** NAV was not regenerated for chain(s): ${skipped_chains[*]}."
+    echo "> Their \`forkBlock\` was rolled back and their DeBank reference left untouched, so"
+    echo "> they are absent from the table below rather than compared against a stale pairing."
+    echo "> This run exits 1 (partial snapshot), which takes precedence over tolerance drift."
+  fi
   if [[ -n "$debank_units_at_start" || -n "$debank_units_at_end" ]]; then
     echo
     echo "| DeBank units | Value |"
@@ -648,11 +746,16 @@ echo "Report written: $REPORT_MD"
 
 # Exit code conventions:
 #   0 — clean (every chain succeeded, no tolerance violations).
-#   1 — at least one chain in step 2 failed (RPC down, OOM, forge revert).
+#   1 — at least one chain in step 2 failed. Four ways now, not one: forge rc != 0 (RPC
+#       down, OOM, revert); forge rc == 0 but ZERO SNAPSHOT lines; any snapshot reporting
+#       `sequencerDown`; any snapshot reporting stale price assets. The last three used to
+#       be booked as success, which downgraded a partial snapshot to a tolerance violation.
 #   2 — every chain succeeded but at least one (chain × account) drifted past tolerance.
 # Step-2 failures take precedence over tolerance failures because they mean the snapshot
 # is partial (not all chains regenerated) — the tolerance comparison is over a known-good
-# subset, but the run itself didn't complete.
+# subset, but the run itself didn't complete. A failed chain now has its forkBlock rolled
+# back and is excluded from steps 3 and 4 entirely, so its stale NAV is never compared
+# against a fresh DeBank reference; the report names it as skipped.
 if (( ${#failed_chains[@]} > 0 )); then
   echo "${#failed_chains[@]} chain(s) failed in step 2: ${failed_chains[*]}"
   exit 1

@@ -6,8 +6,9 @@
 # `RegisterAssets` MUST come after `03`: it resolves each Custom feed from
 # `deployments/<id>.json .customPriceFeeds.<name>` (RegisterAssets.s.sol:19), so run earlier it logs
 # `[skip] primary feed unresolved (deploy it first)` and skipped 20 of mainnet's 43 assets when this
-# rehearsal first ran in the original plan's order. `01` is deliberately NOT run — it has no library
-# pin assertions (unlike 01_2) and also deploys a BridgeEscrow implementation nobody wants.
+# rehearsal first ran in the original plan's order. `01` is deliberately NOT run: it deploys a
+# BridgeEscrow implementation nobody wants. (It no longer lacks the library pin assertions — those were
+# added to it in the PR that supersedes #188 — so that is no longer a reason to skip it.)
 #
 # Asserts the things that are easy to get silently wrong:
 #   * `initialize()` minted a FRESH ERC20Default (a new proxy is the entire reason for this deploy)
@@ -54,6 +55,19 @@ if [[ -n "$DIRTY" ]]; then
   exit 2
 fi
 
+# --- port rail ---------------------------------------------------------------
+# The readiness probe below is `cast block-number` against $RPC, which cannot tell OUR anvil from
+# someone else's. If the port is already taken, `anvil --port` fails to bind and dies, the probe
+# succeeds anyway against the incumbent, and the whole rehearsal then deploys into — and reports
+# assertions about — a node it does not own. Observed: a 5-chain local dev stack holding 8546-8550,
+# including a mainnet fork on the default port. So refuse a busy port outright.
+if ss -ltn 2>/dev/null | grep -qE "127\.0\.0\.1:${PORT}\b|0\.0\.0\.0:${PORT}\b|:::${PORT}\b"; then
+  echo "REFUSING: port ${PORT} is already listening — something else owns it:"
+  ss -ltnp 2>/dev/null | grep -E ":${PORT}\b" | sed 's/^/  /'
+  echo "Pick a free port with ANVIL_PORT=<port> $0 $*"
+  exit 2
+fi
+
 mkdir -p "$WORK"
 : > "$WORK/steps.tsv"
 echo -e "step\tseconds\tgas\tstatus" >> "$WORK/steps.tsv"
@@ -82,8 +96,20 @@ echo "deployer=$DEPLOYER  live proxy=$LIVE_PROXY  live ERC20Default=$LIVE_DEFAUL
 # --- anvil -------------------------------------------------------------------
 # `--gas-limit` and `--disable-block-gas-limit` are mutually exclusive in anvil; the explicit limit is
 # what we want, since the NAV impl deploy alone is ~12.5M gas.
+# Fork-request resilience is NOT optional here. anvil PANICS rather than retrying when an upstream
+# state read fails mid-run — observed twice on 2026-07-30:
+#   "pre-execution changes failed: Internal(Other(Database(GetStorage(0x…, error sending request …
+#    connection reset))))" inside Backend::do_mine_block, killing anvil during 03's broadcast phase
+# and taking the whole rehearsal with it (every later step then fails "Connection refused"). A rehearsal
+# is a long sequence of state-heavy calls against a shared, rate-limited endpoint, so one reset is
+# likely; the defaults do not survive it. Raise the fork-request timeout and retry budget.
 ANVIL_ARGS=(--fork-url "$FORK_URL" --port "$PORT" --auto-impersonate --silent
-            --gas-limit 60000000)
+            --gas-limit 60000000
+            --retries "${ANVIL_RETRIES:-12}" --timeout "${ANVIL_TIMEOUT:-45000}"
+            --fork-retry-backoff "${ANVIL_BACKOFF:-2}")
+# Pinning the fork block also makes retries CHEAP as well as reproducible: foundry caches fork state per
+# (chain, block) under ~/.foundry/cache/rpc, so a second attempt re-reads far fewer slots upstream —
+# which is the difference between a retry that survives a flaky endpoint and one that trips it again.
 [[ -n "$FORK_BLOCK" ]] && ANVIL_ARGS+=(--fork-block-number "$FORK_BLOCK")
 anvil "${ANVIL_ARGS[@]}" > "$WORK/anvil.log" 2>&1 &
 ANVIL_PID=$!
@@ -123,10 +149,14 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 for _ in $(seq 1 60); do
+  # Liveness of OUR pid, checked first: a dead $ANVIL_PID with a healthy $RPC means the port belongs
+  # to someone else, which is the one outcome that must never read as success.
+  kill -0 "$ANVIL_PID" 2>/dev/null || { echo "our anvil (pid $ANVIL_PID) exited; see $WORK/anvil.log"; tail -5 "$WORK/anvil.log" | sed 's/^/  /'; exit 1; }
   cast block-number --rpc-url "$RPC" >/dev/null 2>&1 && break
   sleep 1
 done
 cast block-number --rpc-url "$RPC" >/dev/null 2>&1 || { echo "anvil never came up; see $WORK/anvil.log"; exit 1; }
+kill -0 "$ANVIL_PID" 2>/dev/null || { echo "our anvil died but $RPC still answers — the port is not ours"; exit 1; }
 echo "anvil up at $RPC, fork block $(cast block-number --rpc-url "$RPC")"
 
 cast rpc anvil_setBalance "$DEPLOYER" 0x21e19e0c9bab2400000 --rpc-url "$RPC" >/dev/null
@@ -139,6 +169,16 @@ python3 script/deploy/preflight/reset_deployment_records.py --apply \
 rm -rf "script/deploy/preflight/archive/rehearsal-$$"
 echo "cleared deployments/${CHAIN_ID}.json (original archived in $WORK)"
 
+# --- per-step foundry profile ------------------------------------------------
+# The RUNBOOK requires step 1.5 (RegisterAssets) to run under FOUNDRY_PROFILE=slow on mainnet, and this
+# script was ignoring that — every step ran on the default profile. It is not a throughput preference:
+# `[profile.slow]` raises gas_limit AND memory_limit from the default 1 GiB to 16 GiB precisely because
+# registering the full asset set in one call frame accumulates quadratic EVM memory-expansion cost
+# (foundry.toml:108-117). Measured on mainnet 2026-07-30: with all 25 custom feeds resolving, mainnet's
+# 43 assets plan 86 actions and the script dies `EvmError: MemoryOOG` after wiring 19 of them, having
+# registered 1 asset. So the rehearsal reported a blocker that the documented procedure does not have.
+declare -A STEP_PROFILE=( [RegisterAssets]=slow )
+
 # --- run a step --------------------------------------------------------------
 run_step() {
   local label="$1"; shift
@@ -146,7 +186,15 @@ run_step() {
   echo "--- $label"
   local t0 t1 rc gas
   t0=$(date +%s)
-  PERSIST_DEPLOYMENTS=1 forge script "$@" \
+  # Build the env prefix rather than inlining FOUNDRY_PROFILE=: an EMPTY FOUNDRY_PROFILE is not the same
+  # as an unset one, and forge would look for a profile named "".
+  local -a envp=(PERSIST_DEPLOYMENTS=1)
+  local profile="${STEP_PROFILE[$label]:-}"
+  if [[ -n "$profile" ]]; then
+    envp+=(FOUNDRY_PROFILE="$profile")
+    echo "    (FOUNDRY_PROFILE=$profile — required by the runbook for this step)"
+  fi
+  env "${envp[@]}" forge script "$@" \
     --rpc-url "$RPC" --broadcast --unlocked --sender "$DEPLOYER" --slow \
     > "$log" 2>&1
   rc=$?
@@ -185,7 +233,7 @@ run_step() {
 
 FAILED=0
 # THE RUNBOOK ORDER. `03` before `RegisterAssets` is load-bearing, not cosmetic — see the header.
-# `01` is intentionally absent (no pin assertions, plus an unwanted BridgeEscrow impl).
+# `01` is intentionally absent (it deploys an unwanted BridgeEscrow impl; it now HAS the pin assertions).
 run_step 01_2_DeployNAVImplementation script/deploy/01_2_DeployNAVImplementation.s.sol || FAILED=1
 run_step 02_2_DeployNAVProxy        script/deploy/02_2_DeployNAVProxy.s.sol        || FAILED=1
 run_step 03_DeployPriceFeeds        script/deploy/03_DeployPriceFeeds.s.sol        || FAILED=1
@@ -253,6 +301,19 @@ if [[ -n "$NEW_PROXY" ]]; then
 fi
 
 cp "script/config/deployments/${CHAIN_ID}.json" "$WORK/deployments-${CHAIN_ID}.result.json"
+
+# --- optional post-hook ------------------------------------------------------
+# The NAV comparison against `snapshots/pre/` needs a window that exists ONLY here: the fork still
+# running AND the deployment record still holding the fork's addresses. `cleanup` below closes both
+# (it kills anvil and `git checkout --`s the record), so anything wanting to read the rehearsed stack
+# has to run at this point. $REHEARSAL_HOOK is invoked with (chainId, rpc); its exit status is
+# reported but deliberately does NOT fail the rehearsal, since the sequence itself already passed.
+if [[ -n "${REHEARSAL_HOOK:-}" ]]; then
+  echo
+  echo "=== post-hook: $REHEARSAL_HOOK ==="
+  "$REHEARSAL_HOOK" "$CHAIN_ID" "$RPC" || echo "  post-hook exited $? (does not fail the rehearsal)"
+fi
+
 cleanup
 
 echo

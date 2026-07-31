@@ -231,7 +231,7 @@ contract DeploymentTest is TestEnvConfigurator {
     /// @notice Test that proxy deployment yields the same proxy address on every chain (CREATE2 determinism)
     /// @dev Uses the same formula as 02_DeployProxies: same deployer (canonical CREATE2) + same salt + same
     ///      bytecode (with Empty placeholder) => same proxy address on mainnet, Arbitrum, etc.
-    function test_ProxyAddressSameAcrossChains() public pure {
+    function test_ProxyAddressSameAcrossChains() public view {
         address deployer = address(0x4e59b44847b379578588920cA78FbF26c0B4956C); // Canonical CREATE2 deployer
 
         // Deploy Empty placeholder first

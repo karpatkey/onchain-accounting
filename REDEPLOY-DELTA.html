@@ -1,0 +1,844 @@
+<title>Contract delta since the deployed version — 2bc8ba73 → 0ed42e74</title>
+<style>
+  :root{
+    --bg:#fbfcfd; --surface:#f3f5f8; --raised:#ffffff; --fg:#161c24; --fg-mut:#4d5a6b;
+    --line:#dde3ea; --line-strong:#c3ccd8; --accent:#2f5d8a; --accent-soft:#e7eef6;
+    --ok:#1f6b4f; --ok-bg:#e8f3ee; --ok-line:#a9cfbe;
+    --redeploy:#8a5a17; --redeploy-bg:#fbf2e3; --redeploy-line:#dfc596;
+    --block:#9b3232; --block-bg:#fbecec; --block-line:#e0aeae;
+    --judge-bg:#eef1f6; --judge-line:#b9c4d4; --judge:#3d4f66;
+    --code-bg:#eef1f5;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#12161c; --surface:#191f27; --raised:#1e252f; --fg:#dfe5ec; --fg-mut:#96a3b4;
+      --line:#2a323d; --line-strong:#3a4552; --accent:#8fb4d9; --accent-soft:#1c2836;
+      --ok:#79c4a3; --ok-bg:#152520; --ok-line:#2f5546;
+      --redeploy:#d9ab63; --redeploy-bg:#251d10; --redeploy-line:#574323;
+      --block:#e08a8a; --block-bg:#251414; --block-line:#5a2c2c;
+      --judge-bg:#1b222c; --judge-line:#384454; --judge:#a9b7c9;
+      --code-bg:#1b222b;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#12161c; --surface:#191f27; --raised:#1e252f; --fg:#dfe5ec; --fg-mut:#96a3b4;
+    --line:#2a323d; --line-strong:#3a4552; --accent:#8fb4d9; --accent-soft:#1c2836;
+    --ok:#79c4a3; --ok-bg:#152520; --ok-line:#2f5546;
+    --redeploy:#d9ab63; --redeploy-bg:#251d10; --redeploy-line:#574323;
+    --block:#e08a8a; --block-bg:#251414; --block-line:#5a2c2c;
+    --judge-bg:#1b222c; --judge-line:#384454; --judge:#a9b7c9;
+    --code-bg:#1b222b;
+  }
+  :root[data-theme="light"]{
+    --bg:#fbfcfd; --surface:#f3f5f8; --raised:#ffffff; --fg:#161c24; --fg-mut:#4d5a6b;
+    --line:#dde3ea; --line-strong:#c3ccd8; --accent:#2f5d8a; --accent-soft:#e7eef6;
+    --ok:#1f6b4f; --ok-bg:#e8f3ee; --ok-line:#a9cfbe;
+    --redeploy:#8a5a17; --redeploy-bg:#fbf2e3; --redeploy-line:#dfc596;
+    --block:#9b3232; --block-bg:#fbecec; --block-line:#e0aeae;
+    --judge-bg:#eef1f6; --judge-line:#b9c4d4; --judge:#3d4f66;
+    --code-bg:#eef1f5;
+  }
+
+  *,*::before,*::after{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:16px/1.62 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    -webkit-text-size-adjust:100%;overflow-x:hidden}
+  .page{max-width:64rem;margin:0 auto;padding:2.5rem 1.25rem 6rem}
+  h1,h2,h3,h4{text-wrap:balance;letter-spacing:-.011em}
+  h1{font-size:clamp(1.5rem,1.15rem + 1.6vw,2.05rem);line-height:1.22;margin:0 0 .4rem}
+  h2{font-size:1.28rem;margin:3.25rem 0 .5rem;padding-bottom:.45rem;border-bottom:1px solid var(--line-strong)}
+  h3{font-size:1.03rem;margin:2rem 0 .4rem}
+  h4{font-size:.93rem;margin:1.35rem 0 .3rem;color:var(--fg-mut);text-transform:uppercase;letter-spacing:.05em}
+  p,li{max-width:68ch}
+  .lede{color:var(--fg-mut);font-size:.96rem;max-width:72ch;margin:.35rem 0 0}
+  a{color:var(--accent);text-underline-offset:2px}
+  a:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:3px}
+  code,.mono{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+    font-variant-numeric:tabular-nums;font-size:.855em}
+  code{background:var(--code-bg);padding:.09em .34em;border-radius:4px}
+  .addr{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;
+    font-size:.8rem;white-space:nowrap}
+
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);
+    border-radius:10px;background:var(--raised);margin:1.1rem 0}
+  table{border-collapse:collapse;width:100%;min-width:38rem;font-size:.885rem;font-variant-numeric:tabular-nums}
+  caption{text-align:left;padding:.7rem .9rem .1rem;color:var(--fg-mut);font-size:.8rem}
+  th,td{text-align:left;padding:.55rem .9rem;border-bottom:1px solid var(--line);vertical-align:top}
+  tbody tr:last-child td{border-bottom:none}
+  th{font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--fg-mut);font-weight:650;
+    background:var(--surface)}
+
+  .chip{display:inline-flex;align-items:center;gap:.3rem;font-size:.68rem;font-weight:700;
+    text-transform:uppercase;letter-spacing:.05em;padding:.16em .55em;border-radius:5px;
+    border:1px solid currentColor;white-space:nowrap;line-height:1.5}
+  .chip.blocker{color:var(--block);background:var(--block-bg);border-color:var(--block-line)}
+  .chip.redeploy{color:var(--redeploy);background:var(--redeploy-bg);border-color:var(--redeploy-line)}
+  .chip.info{color:var(--accent);background:var(--accent-soft);border-color:var(--line-strong)}
+  .chip.verified{color:var(--ok);background:var(--ok-bg);border-color:var(--ok-line)}
+  .chip.judge{color:var(--judge);background:var(--judge-bg);border-color:var(--judge-line)}
+
+  .grid{display:grid;gap:.85rem}
+  @media(min-width:40rem){.grid.two{grid-template-columns:1fr 1fr}}
+  .card{background:var(--raised);border:1px solid var(--line);border-radius:10px;padding:.95rem 1.1rem}
+  .card h3,.card h4{margin-top:0}
+  .note{border-left:3px solid var(--line-strong);background:var(--surface);
+    padding:.8rem 1.05rem;border-radius:0 9px 9px 0;margin:1.15rem 0}
+  .note.blocker{border-left-color:var(--block);background:var(--block-bg)}
+  .note.redeploy{border-left-color:var(--redeploy);background:var(--redeploy-bg)}
+  .note.verified{border-left-color:var(--ok);background:var(--ok-bg)}
+  .note.judge{border-left-color:var(--judge-line);background:var(--judge-bg)}
+  .note>:first-child{margin-top:0}.note>:last-child{margin-bottom:0}
+  .note p{max-width:66ch}
+
+  .kv{display:flex;flex-wrap:wrap;gap:.4rem 1.5rem;margin:.6rem 0 0;padding:0;list-style:none}
+  .kv li{display:flex;gap:.4rem;font-size:.85rem;color:var(--fg-mut);max-width:none}
+  .kv b{color:var(--fg);font-weight:600}
+
+  nav.toc{background:var(--surface);border:1px solid var(--line);border-radius:10px;
+    padding:.9rem 1.15rem;margin:1.75rem 0 2.25rem}
+  nav.toc p{margin:0 0 .45rem;font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--fg-mut);font-weight:650}
+  nav.toc ul{margin:0;padding:0;list-style:none;display:grid;gap:.28rem}
+  @media(min-width:44rem){nav.toc ul{grid-template-columns:1fr 1fr;gap:.28rem 1.5rem}}
+  nav.toc li{max-width:none;font-size:.9rem}
+
+  .chg{color:var(--redeploy);font-weight:650}
+  .unchanged{color:var(--fg-mut)}
+  ul.tight li{margin:.32rem 0}
+  hr{border:0;border-top:1px solid var(--line);margin:2.75rem 0}
+  .foot{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--line);color:var(--fg-mut);font-size:.85rem}
+</style>
+
+<div class="page">
+
+<h1>Contract delta since the deployed version</h1>
+<p class="lede">What changed in <code>src/</code> between the code running on 24 chains and current main — organised
+by contract family, with the reasoning behind each change rather than its diff.</p>
+<ul class="kv">
+  <li><b>Baseline</b> <span class="mono">2bc8ba73</span> (#159, deployed 2026-07-25)</li>
+  <li><b>Current</b> <span class="mono">0ed42e74</span></li>
+  <li><b>Scope</b> 385 commits · 63 PRs · 53 files · +4,242 / −734</li>
+</ul>
+
+<div class="note blocker">
+<p><span class="chip blocker">New proxy required</span></p>
+<p><strong>This is not an implementation upgrade. A new <code>NAVCalculator</code> proxy must be deployed, and the live one at
+<span class="addr">0x80eD5cc6…afa8d</span> is abandoned in place.</strong></p>
+<p><strong>The reason is the least obvious fact in this whole redeploy, and it is not the implementation.</strong> An
+implementation change alone would be a routine UUPS upgrade. The obstacle is <code>ERC20Default</code>: it is minted <em>inside</em>
+<code>initialize()</code> and pinned by <code>Balances._setErc20DefaultBalanceAdapter</code>, which reverts <code>InvalidArguments()</code> if the
+address is already set. There is <strong>no setter</strong> on the current implementation, and
+<code>NAVRegistryLib.removeBalanceAdapter</code>/<code>removeBalanceAdapters</code> explicitly reject the default-adapter singleton.
+<code>ERC20DefaultBalanceAdapter.sol</code> <em>did</em> change in this wave (+43 / −11, with <code>BalanceAdapterBase.sol</code> +8 / −3), and it
+inlines <code>LabelLib</code>, an <code>internal</code> library whose hardening only reaches a contract that is recompiled and redeployed. So
+the deployed <code>ERC20Default</code> is stale, and <strong>with the current implementation and existing admin surface there is no path
+that repoints it.</strong></p>
+<p><strong>Stated as a decision, not an impossibility — because the impossibility version is refutable.</strong> This is UUPS, so an
+upgrade can ship arbitrary new code, including bespoke migration logic that repoints <code>ERC20Default</code>. "Add a setter in the
+upgrade" is therefore a real option and the first objection a reviewer will raise; a document claiming it cannot be done
+invites its whole conclusion to be dismissed on that one point.</p>
+<p>The accurate claim survives the objection. Repointing means <em>writing, reviewing and auditing one-off migration logic into
+an upgrade of a live contract holding real value</em> — and at the end of it still deploying a new <code>ERC20Default</code>, since the
+stale one cannot be fixed in place either way. Set against a fresh proxy, that buys nothing and adds a bespoke,
+single-use, high-blast-radius code path to the audit surface. <span class="chip judge">Judgement</span> <strong>A new proxy is
+therefore the chosen route on cost and risk, not a forced one.</strong></p>
+<p>Both external libraries have moved as well, so new library deployments and a new implementation are required regardless —
+a moved library forces a new implementation even where the implementation's own source is unchanged, because the libraries are
+linked by pinned <code>CREATE2</code> address.</p>
+<p><span class="chip verified">Confirmed by rehearsal</span> The fork rehearsal produced exactly this: a new proxy
+<span class="addr">0x54EaD2A1…</span>, distinct from the live <span class="addr">0x80eD5cc6…</span>, with a fresh
+<code>ERC20Default</code> at <span class="addr">0x4Bc39Dce…</span>.</p>
+</div>
+
+<nav class="toc">
+<p>Contents</p>
+<ul>
+  <li><a href="#baseline">Baseline, verified — and a correction</a></li>
+  <li><a href="#notdeployed">What is <em>not</em> yet deployed</a></li>
+  <li><a href="#uniform">Why the deployed state is not one commit</a></li>
+  <li><a href="#themes">The four engineering campaigns</a></li>
+  <li><a href="#nav">Family — <code>nav/</code></a></li>
+  <li><a href="#balances">Family — <code>balances/</code></a></li>
+  <li><a href="#prices">Family — <code>prices/</code></a></li>
+  <li><a href="#bridge">Family — <code>bridge/</code> (unchanged)</a></li>
+  <li><a href="#ops">Operational consequences</a></li>
+  <li><a href="#deferred">Deferred — the attested (Merkl) family</a></li>
+  <li><a href="#method">Method, sources and confidence</a></li>
+</ul>
+</nav>
+
+<h2 id="baseline">Baseline, verified — and a correction</h2>
+
+<div class="scroll">
+<table>
+<caption>Deployment record for mainnet, <code>script/config/deployments/1.json</code>, at both revisions</caption>
+<thead><tr><th>Record</th><th>At <span class="mono">2bc8ba73</span></th><th>On main <span class="mono">0ed42e74</span></th><th>State</th></tr></thead>
+<tbody>
+<tr><td>NAVCalculatorProxy</td><td class="addr">0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d</td><td class="addr chg">New proxy — abandons the live one</td><td><span class="chip blocker">Replaced</span></td></tr>
+<tr><td>NAVCalculatorImplementation</td><td class="addr">0x1D3F6905FfAf2A776bD4D7Cfb821c4AAC75F06F6</td><td class="addr chg">0x07bd077cFB40bBDa8A67d0D33ce41b974aB0F8a8</td><td><span class="chip info">Record updated post-deploy</span></td></tr>
+<tr><td>PriceFeedLib</td><td class="addr">0x4041cC1C7Ffd69531B660acB7Bb9Fd1faa8d2e2B</td><td class="addr chg">0x450421a334DE63F75e1d47399d9713f755aaEfF2</td><td><span class="chip info">Record updated post-deploy</span></td></tr>
+<tr><td>NavRegistryLib</td><td class="addr unchanged">0x549f6fB0EC34E18A82A320b79C968a9Ca6e7b96b</td><td class="addr unchanged">0x549f6fB0EC34E18A82A320b79C968a9Ca6e7b96b</td><td><span class="chip verified">Unchanged</span></td></tr>
+<tr><td>customPriceFeeds / balanceAdapters</td><td>24 / 27</td><td>24 / 27</td><td><span class="chip verified">Unchanged</span></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note redeploy">
+<p><strong>Correction to the brief.</strong> The anchoring names <code>2bc8ba73</code> as the deployed commit <em>and</em> quotes
+implementation <span class="addr">0x07bd077c…</span> / PriceFeedLib <span class="addr">0x450421a3…</span>. Both halves are
+individually right but they do not co-occur: at <code>2bc8ba73</code> the record still held the <em>previous</em> implementation
+<span class="addr">0x1D3F6905…</span> and PriceFeedLib <span class="addr">0x4041cC1C…</span>. The newer pair was written back
+<em>after</em> that merge — which is exactly what you would expect, since the deploy runs and then its addresses are recorded.</p>
+<p>So <span class="addr">0x07bd077c…</span> and <span class="addr">0x450421a3…</span> are the right values to treat as
+<em>live on chain</em>; <code>2bc8ba73</code> is the right thing to treat as the <em>source</em> that produced them. Neither is readable
+out of the other's tree.</p>
+</div>
+
+<h3>Live libraries versus what main now produces</h3>
+
+<div class="scroll">
+<table>
+<caption><strong>Current, not final.</strong> Values as regenerated by #234 and now pinned in
+<code>foundry.toml [libraries]</code> and <code>script/utils/LibraryPins.sol</code> on main
+<span class="mono">6e5fa2e9</span> — correct for that tree, but see the note below: a second regeneration is expected before
+the deploy.</caption>
+<thead><tr><th>Library</th><th>Live</th><th>Pinned on main <span class="mono">6e5fa2e9</span></th><th>State</th></tr></thead>
+<tbody>
+<tr><td>PriceFeedLib</td><td class="addr">0x450421a334DE63F75e1d47399d9713f755aaEfF2</td><td class="addr chg">0xfc6AE534f83A49071Eac35cCf97786Dd54b2eDf5</td><td><span class="chip blocker">Moved</span></td></tr>
+<tr><td>NavRegistryLib</td><td class="addr">0x549f6fB0EC34E18A82A320b79C968a9Ca6e7b96b</td><td class="addr chg">0x5f5D054E021A53E1DEF54B3Bda3c939ccD14fd90</td><td><span class="chip blocker">Moved</span></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note verified">
+<p><span class="chip verified">Regenerated and verified — #234</span> <strong>The regeneration is done and confirmed two
+independent ways:</strong> a clean local full build, and CI's <code>Library pins (clean build)</code> job on a fresh checkout with
+all checks green.</p>
+<p><strong><code>PriceFeedLib</code> moved to <span class="addr">0xfc6AE534f83A49071Eac35cCf97786Dd54b2eDf5</span>.
+<code>NAVRegistryLib</code> did not move — <span class="addr">0x5f5D054E021A53E1DEF54B3Bda3c939ccD14fd90</span> stands.</strong>
+Earlier revisions of this document quoted <span class="addr">0x8b7e4fA9…</span> for PriceFeedLib; that value was correct for the
+tree it was measured on and is now superseded.</p>
+<div class="note redeploy">
+<p><span class="chip redeploy">Deploy held</span> <strong>Treat both values above as correct-for-now, not deploy-final.</strong>
+The deploy is <strong>held</strong> — not blocked — while a further feature is attempted first: a two-axis per-asset
+classification, <code>PegKind{Pegged, Floating}</code> and <code>AccrualKind{None, Rebasing, Appreciating}</code>.</p>
+<p><strong>If it lands it is a <code>src/</code> change, so the pins are regenerated again</strong> against whatever tree actually
+ships, and <span class="addr">0xfc6AE534…</span> should be expected to move. Whether <code>NAVRegistryLib</code> holds a second
+time is an open question and must be measured, not assumed from its having held here.</p>
+<p><strong>The converse is also live, and is the reason to write "correct-for-now" rather than "will move".</strong> If the
+feature cannot be delivered on-chain — see the measurement below — then <span class="mono">6e5fa2e9</span> may turn out to
+<em>be</em> the shipping tree and these two values may stand unchanged. Both outcomes are open. What does not change either way
+is the gate under <em>Sequencing</em>.</p>
+<p><span class="chip judge">Judgement</span> <strong>This is the third time a PriceFeedLib pin recorded in this document has been
+overtaken, and the pattern is now the point.</strong> Each value was correct when measured; none survived to a deploy, because the
+tree kept moving for good reasons. So the operative instruction is a clean build against the final tree, and no pin in this
+document, including these two, is a substitute for running it.</p>
+</div>
+
+<div class="note verified">
+<p><span class="chip verified">Settled by measurement</span> <strong>The <code>PegKind</code>/<code>AccrualKind</code>
+classification is NOT going into <code>NAVCalculator</code>. It ships as a standalone <code>AssetKindRegistry</code>, so the NAV's
+ABI is unchanged by it.</strong></p>
+<p><strong>What settled it was measuring the floor rather than the design.</strong> The theoretical minimum — an
+<em>existing</em> struct widened, read through an <em>existing</em> getter, with no setter, no new selector, and not even a working
+feature — came in at <strong>+92 bytes against 68 free</strong>. Since that shape is strictly smaller than anything shippable, no
+in-NAV variant can fit. <span class="chip judge">Judgement</span> This is a stronger result than any of the individual option
+measurements below: they show particular designs failing, whereas the floor exceeding the budget rules out the whole class
+without enumerating it.</p>
+<p><strong>The choice of a separate registry is principled, not merely forced.</strong> Peg and accrual behaviour is <em>static
+metadata</em> about an asset, not runtime state the NAV computes over — so a registry is where it belongs even with bytes to
+spare. <span class="chip judge">Judgement</span> Worth recording because "we ran out of room" and "it did not belong there"
+point at the same outcome for different reasons, and only the second survives a future size reclamation.</p>
+<p>The superseded measurements, kept because they are the evidence:</p>
+<div class="scroll">
+<table>
+<caption>Options measured against a 68-byte budget. No option has yet been shown to fit.</caption>
+<thead><tr><th>Option</th><th>Shape</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td><b>C1</b></td><td>Enums on <code>AssetPricing</code>, read through the existing <code>getAssetPricing</code> getter, plus a MANAGER setter</td><td class="chg"><b>+367 bytes</b> — does not fit, by 299</td></tr>
+<tr><td><b>B</b></td><td>C1 plus a batch view</td><td class="chg">Cannot fit <b>by arithmetic</b> — it is a strict superset of C1</td></tr>
+<tr><td><b>A</b></td><td>Fields on the <code>Asset</code> struct</td><td class="chg">Breaks the struct's ABI against <b>27 deployed immutable adapters</b>; 13 construction sites across 9 files outside <code>src/</code> and 5 inside</td></tr>
+</tbody>
+</table>
+</div>
+<p><span class="chip judge">Judgement</span> <strong>Option A's cost is not a byte count and should not be compared as
+one.</strong> +367 versus 68 is a measurement; breaking a struct ABI that 27 immutable, already-deployed adapters are compiled
+against is a coordinated redeploy of the adapter set. The two are not on the same scale, so "A is the one that fits" would have
+been the wrong conclusion to draw from A's absence from the byte column.</p>
+</div>
+
+<div class="note blocker">
+<p><span class="chip blocker">Deploy still held</span> <strong>The hold now waits on the
+<code>AssetKindRegistry</code>, so that the NAV and the registry ship as a single event</strong> rather than leaving a window in
+which the NAV is new and the classification has nowhere to live.</p>
+<p><strong>One live consequence, and it is not cosmetic: OETH reports <span class="mono">$0</span> every 24 hours until the
+deploy happens.</strong> The heartbeat fix exists in main but cannot reach production ahead of the deploy —
+<code>RATE_HEARTBEAT</code> is an <code>immutable</code> in the deployed feed, so correcting it takes a <em>new contract</em>, not a
+config change. There is no config value to edit and no transaction that repairs it in place.</p>
+<p><span class="chip judge">Judgement</span> <strong>The user has declined a live production fix, and this is recorded as a
+decision rather than an oversight.</strong> The alternative would be deploying a one-off replacement feed against the current
+proxy, days before that proxy is abandoned — new bytecode into production twice for a defect the redeploy already fixes. The
+cost of waiting is a recurring, visible, self-clearing <span class="mono">$0</span> print; the cost of not waiting is an
+unrehearsed production deployment. <strong>Do not treat the <span class="mono">$0</span> as a new bug when it appears — it is
+this, and it stops at the deploy.</strong></p>
+</div>
+<p><strong>Why only one of the two moved, when #232 edited a file both compile.</strong> #232 changed
+<code>INAVCalculator.sol</code>, which sits in both libraries' import graph — but its changes are <em>struct field additions</em>,
+and <code>NAVRegistryLib</code> emits no code for those fields. Nothing in its own compilation output changes, so its CREATE2
+address does not move. <span class="chip judge">Judgement</span> This is the #187 precedent repeating, and it is the reason a
+pin movement must be <em>measured</em> rather than predicted from the import graph: "both libraries import the changed file" is
+true here and still yields one moved pin and one held.</p>
+</div>
+
+<div class="note redeploy">
+<p><strong>A CI reading that will mislead if trusted.</strong> The Unit job reported PriceFeedLib as
+<span class="addr">0xeA694009…</span> and advised regenerating the pins. That was <em>stale-artifact noise</em>: the Unit job does
+not build, it consumes artifacts from the Build job, which draws on a repo-wide sticky cache. A clean local build on that same
+tree yielded a different value entirely.</p>
+<p><strong>Never act on that failure message.</strong> Regenerating pins against a stale artifact is the one irreversible mistake
+available here — and the reason the rule survives even now that the pins are settled is that the next reading of a stale
+artifact will look exactly as authoritative as this one did.</p>
+<p><span class="chip verified">Mechanism established — no longer open</span> An earlier revision left this marked
+<em>Open</em>, on the grounds that the original route required <code>dynamic_test_linking</code> (deleted in #156) so the
+persistence was unexplained. That is superseded by the sticky-disk finding immediately below, which accounts for it without
+<code>dynamic_test_linking</code>: the compile <em>scope</em>, not the linking mode, is what varies. Combined with #234 having
+settled the values, the pin question is closed.</p>
+</div>
+
+<div class="note verified">
+<p><span class="chip verified">Landed — #231</span> <strong>There is now a CI job that reads the pins from a clean build:
+<code>Library pins (clean build)</code>.</strong> It runs <code>forge build --force</code> with no sticky-disk mounts and
+<code>cache: false</code>, then the pin assertions, deliberately as its own job.</p>
+<p><strong>It exists because the ordinary CI pin reading is not evidence of anything.</strong> Two repo-wide sticky disks cover
+<code>out/</code> and <code>cache/</code> and are keyed only on <code>github.repository</code> — not on the branch and not on the
+commit — so the Build job's <em>compile scope</em> is set by whichever branch last touched the disk rather than by the commit
+under test. A partial-scope compile links differently, and the pin the test derives moves with it. That is the mechanism
+behind the <span class="addr">0xeA694009…</span> reading above.</p>
+<p><span class="chip verified">Proven non-vacuous</span> A guard that never fires is worth nothing, so it was made to fail on
+purpose: a throwaway commit that moved <code>PriceFeedLib</code>'s bytecode failed <em>only</em> the <code>PriceFeedLib</code> assertion
+while <code>NavRegistryLib</code> passed. That is the correct shape for a one-library drift — a job that failed both, or neither,
+would have proved it was not reading what it claims to.</p>
+<p><span class="chip judge">Judgement</span> This job does <strong>not</strong> replace the gate described under
+<em>Sequencing</em> below. It makes CI's signal trustworthy enough to act on; the authoritative pre-deploy check remains one
+clean local full build, and the pin values are still owned by <code>foundry.toml [libraries]</code> and
+<code>script/utils/LibraryPins.sol</code>.</p>
+</div>
+
+<h2 id="notdeployed">What is <em>not</em> yet deployed</h2>
+<p>The reader's practical question. Everything below exists in main and does <strong>not</strong> exist on chain.</p>
+
+<div class="grid two">
+  <div class="card">
+    <h3>The whole <code>src/</code> delta</h3>
+    <p>All 53 changed files across <code>nav/</code>, <code>balances/</code>, <code>prices/</code> and <code>utils/</code> — every fix in the four
+    campaigns below. None of it is live.</p>
+    <p><span class="chip blocker">Requires redeployment</span></p>
+  </div>
+  <div class="card">
+    <h3><code>protocolName()</code> rollout</h3>
+    <p>#162 merged 2026-07-27 but its <strong>33 meta-adapter redeploys and 110 instance re-registrations</strong> were left open,
+    so the on-chain adapters predate it.</p>
+    <p><span class="chip blocker">Requires redeployment</span></p>
+  </div>
+  <div class="card">
+    <h3>Assisted-cache contents</h3>
+    <p>All <strong>four</strong> assisted caches, across <strong>two</strong> chains, have <strong>never been fed</strong> and the assistants
+    never used, so those positions are not reported at all. Feeding them <em>adds</em> value rather than restoring it.</p>
+    <p><span class="chip blocker">Post-deploy action</span></p>
+  </div>
+  <div class="card">
+    <h3>Step-07 admin handoff</h3>
+    <p>Transfer of <code>DEFAULT_ADMIN_ROLE</code> to the security-council Safe is not part of this wave; the live NAV remains
+    EOA-admin.</p>
+    <p><span class="chip info">Out of scope</span></p>
+  </div>
+</div>
+
+<h2 id="uniform">Why the deployed state is not one commit</h2>
+<p>Treating <code>2bc8ba73</code> as a uniform baseline would make parts of this document wrong, for two independent reasons:</p>
+<ul class="tight">
+<li><strong>Records are written back after the fact</strong> — demonstrated above; the JSON at <code>2bc8ba73</code> does not describe what
+<code>2bc8ba73</code> deployed.</li>
+<li><strong>#162 merged after the 24-chain deploy with its rollout outstanding</strong>, so source that is in main was never rolled
+out to the adapters it governs.</li>
+</ul>
+
+<div class="note judge">
+<p><span class="chip judge">Judgement</span> <strong>Per-family deployment dating could not be established from the
+repository.</strong> <code>deployments/&lt;chainId&gt;.json</code> records addresses but not the commit or timestamp that produced them, so
+there is no in-repo way to date each family's on-chain code independently. The safe planning assumption: every adapter and
+feed is at most as new as the record naming it, and <em>any source merged after 2026-07-25 should be treated as not
+deployed</em> unless a specific rollout is documented. Establishing the true state requires reading deployed bytecode on chain,
+which is outside this document.</p>
+</div>
+
+<h2 id="themes">The four engineering campaigns</h2>
+<p>The 63 PRs are not 63 unrelated fixes. Nearly all of the <code>src/</code> churn belongs to one of four campaigns, and they share
+a property: each began from a defect that produced a <em>wrong number silently</em> — no revert, no staleness flag, no irregular
+flag.</p>
+
+<h3>Fail-open reads — <code>try</code>/<code>catch</code> does not catch what everyone assumed</h3>
+<p>The governing discovery: <strong>a <code>try</code>/<code>catch</code> does not intercept an ABI-decode failure of the return data.</strong> The
+decode runs in the <em>calling</em> frame, so it reverts <em>past</em> the <code>catch</code>. Worse, a high-level call expecting return data
+emits no <code>extcodesize</code> pre-check — the returndata-size check subsumes it — so a callee returning <em>zero bytes</em> makes the
+call <strong>succeed</strong> and the decode then reverts in the caller.</p>
+<p>Why that was dangerous rather than untidy: an adapter wrapped in a per-instance <code>catch</code> <em>looks</em> defended. In practice a
+malformed reply escaped it, reached the base class, and was scored a benign revert — so the <em>whole instance</em>, including
+any debt leg, became an empty array. Dropping a debt leg <strong>raises</strong> reported NAV, the one direction these adapters may
+never move.</p>
+<p>The remedy is uniform: replace typed calls to untrusted addresses with bounded low-level reads that mask rather than revert
+(<code>StaticCallLib.safeAddr</code> / <code>probeWord</code>), and fail toward omitting one leg rather than an instance.</p>
+
+<h3>Gas exhaustion — separating "cannot read" from "ran out of gas"</h3>
+<p>A fail-open read cannot distinguish those alone, and conflating them turns a starved read into a silent under-report. The
+new <code>src/utils/GasStipendLib.sol</code> centralises the policy: forward a <em>proportion</em> of the frame
+(<code>available − available/64</code>), and treat a read as starved at <code>stipend − stipend/8</code>. Proportional rather than fixed
+matters — a fixed ceiling is unrecoverable by supplying more gas.</p>
+<p>Starvation now raises named errors (<code>AdapterGasExhausted</code>, <code>InstanceGasExhausted</code>, <code>CoordinateGasExhausted</code>,
+<code>RedeemValueGasExhausted</code>), so an operator sees a loud failure rather than a plausible number.</p>
+<div class="note">
+<p><strong>The subtle result worth carrying forward:</strong> a nested guard must classify against <em>its own frame</em>, not the
+stipend it was handed. Classifying against the forwarded stipend leaves a narrow band (ratios ≈0.861 vs 0.875) where a
+starved read is scored a genuine failure and silently dropped.</p>
+</div>
+
+<h3>Position identity — a broken JOIN with a double-count hazard</h3>
+<p>Meta-adapters advertise a governed instance set via <code>positionIds()</code> and emit legs carrying a <code>positionId</code>. Those must
+agree, because downstream reconciliation joins on them. An audit of 21 adapters found exactly one divergence — Aave V3 — and
+the consequence was a <strong>NAV double-count hazard</strong>: with two Aave data providers in play, a broken join could attribute the
+same position twice. <code>IPositionEnumerable</code> was added so the governed set is enumerable on chain rather than inferred, and
+<code>ProtocolNames.sol</code> gives each adapter a stable <code>protocolName()</code>.</p>
+
+<h3>Reads that outgrew a single <code>eth_call</code></h3>
+<p>A complete NAV read reached roughly 30M gas while <code>NAVCalculator</code> approached the EIP-170 code-size ceiling. Pagination
+adds <code>getAccountNavForAdapters</code> for slice-wise reads, with the constraint that a partial result must never be mistaken for a
+whole one — so the partial type does not nest a full <code>NAV</code>. A registered-asset getter removes a full registry re-scan
+measured at super-linear cost per call.</p>
+
+<h2 id="nav">Family — <code>nav/</code></h2>
+<p class="lede">2 files · +610 / −24 · <span class="chip blocker">Requires redeployment</span></p>
+<ul class="tight">
+<li><strong>Paginated read</strong> — <code>getAccountNavForAdapters</code>, so a ~30M-gas complete read need not be served in one call.</li>
+<li><strong>Registered-asset getter</strong> — replaces a repeated full-registry scan with an indexed lookup.</li>
+<li><strong>String-read bounds</strong> — <code>_safeString</code>/<code>_safeStringArray</code> hardened against undecodable return data and unbounded
+copies; one bound had been documented against the wrong quantity (<code>abi.decode</code> bounds on the raw length, not the
+32-byte-rounded length) and was corrected.</li>
+<li><strong>Version guard</strong> — prevents registering a meta-adapter against an incompatible NAV.</li>
+<li><strong>Selector-keyed gas classification</strong> in <code>PriceFeedLib</code>, so a cheap revert is not read as starvation and a raise in
+one adapter cannot drop the whole read.</li>
+</ul>
+<div class="note redeploy">
+<p><span class="chip verified">Merged — #232, <span class="mono">269ece7b</span></span> <strong>A third health array,
+<code>Asset[] monitorsUnhealthyPriceAssets</code>, on both <code>NAV</code> and <code>PartialNAV</code>.</strong> Landed after
+<span class="mono">0ed42e74</span>, so it is outside the diff this document reports, but it is in the deploy.</p>
+<p><strong>What it closes:</strong> an asset with monitors configured but <em>none currently healthy</em> was previously
+indistinguishable from an asset that is genuinely fine. <code>_monitorDivergence</code> guards on <code>n &gt; 0</code>, so with every
+monitor unreadable the divergence arithmetic never ran and nothing was flagged — the failure of the check reported as the
+check passing. <span class="chip judge">Judgement</span> That is the same silent-wrong-number shape as the four campaigns
+above, which is why it is worth the bytes.</p>
+<p><strong>Measured, because it is close to the ceiling:</strong> <code>NAVCalculator</code> goes 24,395 → <strong>24,508</strong> bytes
+against the EIP-170 limit of 24,576 — it costs <strong>113</strong> bytes and leaves <strong>68</strong>. The margin it consumed was
+<strong>181</strong> bytes, which is the real figure; <code>NAVCalculator</code>'s own <code>@dev</code> docstring says 325 and has been
+144 bytes stale since #187. Had 325 been believed, this change would have looked comfortable rather than nearly all of the
+remaining room.</p>
+<p><strong>It moved <code>PriceFeedLib</code>'s pin — and it moved it twice, which is the trap.</strong> A measurement at
+<span class="mono">6a5d3743</span> gave <span class="addr">0x02c26e5b…</span>. That figure was real but <em>pre-review</em>: the
+super-review round's commit <span class="mono">322db811</span> then edited <code>src/prices/PriceFeedLib.sol</code>
+(+32 / −14), moving the bytecode a second time. So <span class="addr">0x02c26e5b…</span> is <strong>not</strong> the pin and must
+not be treated as one — the settled value is #234's <span class="addr">0xfc6AE534f83A49071Eac35cCf97786Dd54b2eDf5</span>,
+above.</p>
+<p><span class="chip judge">Judgement</span> <strong>This is the whole argument for the sequencing rule in one example.</strong> A
+pin measured before a review round is not wrong so much as <em>expired</em>, and nothing about the number itself tells you which
+it is. That is why the gate is a clean build against the final tree rather than a value recorded in advance — including any
+value recorded in this document.</p>
+</div>
+
+<div class="note blocker">
+<p><strong>Coupling to know at deploy time.</strong> <code>LabelLib</code> is an <code>internal</code> library, so its fixes inline into every caller —
+a change there requires redeploying each calling adapter, not the library alone.</p>
+<p><strong>And the new proxy propagates.</strong> The custom price-feed base classes declare
+<code>INAVCalculator public immutable NAV</code>, so every deployed feed embeds the proxy address at construction and cannot be
+repointed. A new proxy therefore invalidates <strong>every</strong> custom price feed. <strong>39 are deployed today; 41 must be
+deployed by this redeploy</strong> — the two bases are different numbers and the <code>prices/</code> section below breaks both down
+per chain. Provision for <strong>41</strong>. An earlier draft of this document argued the feeds did not move at all, on the
+mistaken premise that the proxy was unchanged.</p>
+</div>
+
+<h2 id="balances">Family — <code>balances/</code></h2>
+
+<h3>Meta-adapters <span class="chip blocker">Requires redeployment</span></h3>
+<p class="lede">25 files · +1,472 / −313 — the largest surface in the delta.</p>
+<ul class="tight">
+<li><strong>The per-instance catch no longer hides starvation</strong> — it previously absorbed every non-gas revert and substituted
+empty legs; it now raises <code>InstanceGasExhausted</code>.</li>
+<li><strong>Label reads bounded</strong>, so a hostile or broken <code>name()</code>/<code>symbol()</code> cannot consume the frame or revert past a
+<code>catch</code>.</li>
+<li><strong>Curve <code>getPool</code></strong> — <code>getPool(3Crv)</code> returned <code>address(0)</code> because 3Crv answers none of the heuristics, and every
+consumer gated its <em>entire</em> staking decomposition on <code>pool != address(0)</code>. A real 3pool-gauge staker therefore reported
+<strong>zero</strong> staking legs while rewards legs still emitted — a position that looked live and merely empty. Fixed with a
+validated registry fallback whose hops and pool probe are gas-bounded, since the registry pointer is third-party mutable.</li>
+<li><strong>Collateral over-report</strong> — an offset omission that inflated reported collateral.</li>
+<li><strong>Fluid, StakeWise, Euler and Aave Umbrella</strong> each received decode and gas guards in the same pattern.</li>
+</ul>
+
+<h3>Plain adapters <span class="chip blocker">Requires redeployment</span></h3>
+<p class="lede">4 files · +339 / −72</p>
+<p>Chiefly Aave Umbrella: address reads routed through <code>StaticCallLib</code>, the cooldown read rewritten as a bounded raw
+staticcall with explicit masking and a length gate, and <code>ERC4626RedeemLib</code> changed so a failed <code>previewRedeem</code> reports
+<strong>0</strong> rather than falling back to <code>convertToAssets</code>. That fallback was unconditionally <em>upward</em>: EIP-4626 requires
+<code>convertToAssets</code> to ignore redemption fees and <code>previewRedeem</code> to include them, so substituting one for the other can only
+add value a redemption would not actually pay.</p>
+
+<h3>Assisted adapters <span class="chip blocker">Requires redeployment</span></h3>
+<p class="lede">2 files · +74 / −12</p>
+<p><code>AssistedCoordCache</code> now forwards a proportional stipend per coordinate and raises <code>CoordinateGasExhausted</code> rather than
+absorbing its own out-of-gas — previously a starved valuation was indistinguishable from "the position is gone".</p>
+<div class="note blocker">
+<p><span class="chip blocker">In scope — redeploy</span> <strong>The assisted family is in scope and must be redeployed</strong>, adapters
+and assistants alike. Both are immutable, and each assistant holds its adapter's address as an <em>immutable</em>, so a new
+adapter deployment obliges a matching new assistant — they move as a pair, not independently.</p>
+<p><span class="chip blocker">Post-deploy action</span> <strong>None of the four caches has ever been fed, and the assistants have
+never been used.</strong> So <code>NexusMutualStakingPools</code>, <code>StakeWiseV3ExitQueue</code> and <code>EtherFiWithdrawalQueue</code> positions are
+<strong>not reported at all</strong> today. Note the direction carefully: feeding them <em>adds</em> value that has never been counted —
+it does not restore something the redeploy took away.</p>
+
+<p><strong>It is FOUR caches on TWO chains, not three on one — and the fourth is the one that gets missed.</strong> The family is
+habitually described as mainnet-only; the runbook calls the Gnosis pair "the easy miss" for exactly that reason. Read the new
+addresses out of <code>deployments/1.json</code> <em>and</em> <code>deployments/100.json</code>.</p>
+
+<div class="scroll">
+<table>
+<caption>Assisted adapter/assistant pairs as recorded on main. Three adapter <em>contracts</em>, four deployed
+<em>instances</em> — <code>StakeWiseV3ExitQueueAssisted</code> runs on both chains and each deployment has its own independent cache.</caption>
+<thead><tr><th>Chain</th><th>Assisted adapter</th><th>Paired assistant</th></tr></thead>
+<tbody>
+<tr><td>1 mainnet</td><td><code>EtherFiWithdrawalQueueAssisted</code><br><span class="addr">0xdCF0E047257A785d7A7Cd31d4A63eB6318aFba03</span></td><td><code>EtherFiWithdrawalQueueAssistant</code><br><span class="addr">0xd45cB5B6791156f657D682b3c70689980f4fe8D5</span></td></tr>
+<tr><td>1 mainnet</td><td><code>NexusMutualStakingPoolsAssisted</code><br><span class="addr">0x9b3ee866e030f9cfDA181e7ffd9BB0A49606ef0E</span></td><td><code>NexusMutualStakingPoolsAssistant</code><br><span class="addr">0x8a887C7Fa17dbba626497024833778354785c580</span></td></tr>
+<tr><td>1 mainnet</td><td><code>StakeWiseV3ExitQueueAssisted</code><br><span class="addr">0xcb97dA2c799cfc17463704EDb1caAd451c28A861</span></td><td><code>StakeWiseV3ExitQueueAssistant</code><br><span class="addr">0x13845Fc9DFfDf1AFb8B1Cf22eA298C01C8d7F71B</span></td></tr>
+<tr><td class="chg"><b>100 gnosis</b></td><td class="chg"><code>StakeWiseV3ExitQueueAssisted</code><br><span class="addr">0x04E39d917E0D515384B3C027658a8b2f401ECEb0</span></td><td class="chg"><code>StakeWiseV3ExitQueueAssistant</code><br><span class="addr">0xEb43828383320802dc78dCC1DEFB1f39051c6607</span></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note verified">
+<p><span class="chip verified">Checked — not a gap</span> <strong>Gnosis's assistant does exist.</strong> It was suspected missing,
+which would have been a real defect rather than a documentation error: each assistant holds its adapter's address as an
+<code>immutable</code>, so an adapter with no assistant has no way to be fed at all. It is recorded, at
+<span class="addr">0xEb43828383320802dc78dCC1DEFB1f39051c6607</span>.</p>
+<p><span class="chip judge">Judgement</span> <strong>Why it looked absent is worth recording, because the next person will look
+the same way.</strong> The four <code>*Assistant</code> entries sit at the <em>top level</em> of
+<code>deployments/&lt;chain&gt;.json</code>, not inside <code>.balanceAdapters</code> where the adapters live. Inspecting
+<code>.balanceAdapters</code> alone — the obvious move, since that is where you just found the adapter — shows the adapter with no
+assistant beside it and reads as a missing pair.</p>
+</div>
+<p><strong>Where completeness is actually enforced, which is not in this repository.</strong> The cache mutators are
+<em>permissionless</em> and <code>msg.sender</code>-keyed, so the adapter contracts cannot guarantee that every position is submitted.
+What guarantees it is the <strong>Safe's roles-modifier permissions</strong>, which only permit entering these positions <em>via the
+assistants</em> — so a position cannot be opened without its coordinate being recorded. Nothing in <code>src/</code> enforces that, and no
+amount of reading <code>AssistedCoordCache</code> will reveal it. <span class="chip judge">Judgement</span> It is stated here because a
+reader who infers the invariant from the contracts alone would conclude, wrongly, that the family can silently miss
+positions.</p>
+</div>
+
+<h2 id="prices">Family — <code>prices/</code></h2>
+<p class="lede">10 files · +506 / −194 · <span class="chip blocker">41 feeds to deploy</span></p>
+<p>Every feed moves regardless of whether its own source changed, because each embeds the NAV proxy address as an immutable
+and the proxy is being replaced.</p>
+
+<div class="note blocker">
+<p><span class="chip blocker">Two different numbers — do not conflate them</span> <strong>39 custom price feeds are deployed
+today. 41 must be deployed by this redeploy.</strong></p>
+<p>Both figures are correct about different things, and the document previously quoted only the first. A deployer who
+provisions for 39 <strong>under-provisions by two on mainnet</strong> and will not discover it until <code>RegisterAssets</code> skips the
+affected assets as <code>primary feed unresolved</code>.</p>
+</div>
+
+<div class="scroll">
+<table>
+<caption>Deployed today versus to be deployed. Left column counts non-empty <code>customPriceFeeds</code> entries in
+<code>script/config/deployments/&lt;chain&gt;.json</code>; right column counts <code>enabled: true</code> entries in
+<code>script/config/contracts-deployment-config/custom-price-feeds/&lt;chain&gt;.json</code>.</caption>
+<thead><tr><th>Chain</th><th>Deployed today</th><th>To deploy</th><th>Δ</th></tr></thead>
+<tbody>
+<tr><td>1 mainnet</td><td>24</td><td class="chg">26</td><td class="chg">+2</td></tr>
+<tr><td>42161 arbitrum</td><td>8</td><td>8</td><td class="unchanged">—</td></tr>
+<tr><td>8453 base</td><td>4</td><td>4</td><td class="unchanged">—</td></tr>
+<tr><td>100 gnosis</td><td>3</td><td>3</td><td class="unchanged">—</td></tr>
+<tr><td><b>total</b></td><td><b>39</b></td><td class="chg"><b>41</b></td><td class="chg"><b>+2</b></td></tr>
+</tbody>
+</table>
+</div>
+
+<p><strong>The mainnet +2 is three additions and one retirement, not simply "two more".</strong> Worth knowing precisely, because
+one deployed feed is <em>not</em> carried forward and would otherwise look like an omission:</p>
+<ul class="tight">
+<li><strong><code>stETHFundamental</code> — genuinely new.</strong> stETH's new PRIMARY, a pure fundamental unit-rate feed, matching how
+wstETH and eETH price the same underlying claim (finding #1). Deployed from <code>eETH_CustomPriceFeed</code>, so the contract name
+on the explorer reads <code>eETH</code> while the priced asset is stETH — expected, not a mis-deploy.</li>
+<li><strong><code>ezETHCrossRateMarket</code> — genuinely new.</strong> A <em>second</em> ezETH monitor, added alongside and never replacing
+<code>ezETHCrossRate</code> (finding #2, see the ezETH row in the findings table). Its rate feed's pair identity is
+<strong>declared unverifiable</strong> by #233 — see the deploy blocker under <em>Operational consequences</em>. It remains
+<code>enabled</code>, so it is still one of the 26.</li>
+<li><strong><code>stETHCrossRate</code> — the former <code>stETH</code> entry, re-keyed.</strong> Its constructor block is byte-for-byte the old
+one; only the key changed and its role moved from primary to monitor. So <code>customPriceFeeds.stETH</code> is retired and does not
+reappear in the new record.</li>
+</ul>
+
+<p>A dedicated audit of the 27 previously untouched feeds produced seven findings. Those now fixed — <strong>"Fixed" here means
+fixed in <code>main</code>, not live</strong>: like everything else in this document, none of it reaches production until the
+deploy, and the heartbeat rows in particular cannot be fixed any other way (see the OETH note under <em>Operational
+consequences</em>).</p>
+
+<div class="scroll">
+<table>
+<thead><tr><th>Finding</th><th>What was wrong</th><th>State</th></tr></thead>
+<tbody>
+<tr><td>ETHx rate leg</td><td>Configured against the <em>raw access-controlled aggregator</em> rather than its <code>EACAggregatorProxy</code>. It passed every desk check — <code>description()</code> was <code>"ETHx / ETH"</code>, decimals 18, <code>cast call</code> answered — yet no <em>contract</em> could read it, because <code>SimpleReadAccessController</code> grants access only when <code>_user == tx.origin</code>.</td><td><span class="chip verified">Fixed</span></td></tr>
+<tr><td>Rate-feed pair identity</td><td>Nothing asserted <em>which pair</em> a rate feed was; <code>assertChainlinkOracle</code> only probes <code>latestRoundData()</code>, and <code>description()</code> appeared nowhere in <code>test/</code> or <code>script/</code>.</td><td><span class="chip verified">Fixed</span></td></tr>
+<tr><td>sUSDS heartbeat</td><td>Gated tighter than its own base asset.</td><td><span class="chip verified">Fixed</span></td></tr>
+<tr><td>ezETH monitor</td><td>Its only monitor was itself a <em>fundamental</em> feed, so it compared one fundamental rate against another and could not detect a market depeg.</td><td><span class="chip verified">Fixed</span></td></tr>
+<tr><td>Untested feed instances</td><td>Three instances had no test at all.</td><td><span class="chip verified">Fixed</span></td></tr>
+<tr><td>Derived-base heartbeat</td><td>Base-asset heartbeat unguarded on derived feeds.</td><td><span class="chip verified">Fixed</span></td></tr>
+<tr><td>Double <code>_compute</code></td><td>Redundant recomputation on the read path.</td><td><span class="chip verified">Fixed</span></td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>The pair-identity guard, and what it can and cannot prove</h4>
+<p>A wrong feed of the <em>right shape</em> is the dangerous case: wiring Base <code>wstETH_L2</code> to the cbETH/ETH feed yields
+1.136 × ETH/USD instead of 1.240 × — a permanent silent under-report with <code>stale = false</code> and <code>irregular = false</code>.
+<code>RateFeedGuard</code> now runs inside <code>03_DeployPriceFeeds</code> <em>before</em> anything is constructed, checking two
+<strong>independent</strong> properties plus a bound:</p>
+<ul class="tight">
+<li><strong>Pair identity</strong> — exact <code>description()</code> match against a per-instance literal in deploy config.</li>
+<li><strong>Contract-readability</strong> — the feed is read from a contract frame. This is the only check that catches the ETHx
+shape, because there <code>description()</code> was <em>correct</em> on the bad address.</li>
+<li><strong>Plausibility band</strong> — per asset class, catching cross-class confusion (LDO/ETH trades at 0.000192) and forged or
+absent descriptions.</li>
+</ul>
+<p>Neither subsumes the other: the band cannot separate wstETH/ETH (1.2404) from cbETH/ETH (1.1361), and identity cannot
+detect a feed no contract can read.</p>
+
+<div class="note verified">
+<p><span class="chip verified">Verified on chain</span> <strong>All 20 live rate-feed addresses are the correct pair</strong>, checked
+across mainnet, Arbitrum, Base and Gnosis. A separate sweep of all 83 configured Chainlink-shaped addresses (63 proxies, 19
+RedStone, 1 raw aggregator) found the ETHx instance to be the <em>only</em> occurrence of that defect.</p>
+<p><span class="chip judge">Judgement</span> That is the argument for a deploy-time gate rather than a one-off correction: the
+state is clean now, and the gate is what keeps it clean across a redeploy that re-enters every address by hand.</p>
+</div>
+
+<p><strong>ADR 0019 (NAV-sourced base price)</strong> remains the governing design — custom feeds read base/USD from the NAV rather
+than composing an independent base feed, removing a mixed-feed failure mode. <span class="chip judge">Judgement</span> It is
+load-bearing for this redeploy because it ties feed correctness to the NAV proxy rather than to a second oracle path.</p>
+
+<h2 id="bridge">Family — <code>bridge/</code> (deliberately unchanged)</h2>
+<div class="note verified">
+<p><span class="chip verified">No change</span> <strong><code>git diff 2bc8ba73..0ed42e74 -- src/bridge/</code> is empty. Zero files, zero
+lines.</strong></p>
+<p>The bridge sat outside the hardening wave: it holds no NAV reference, so it has no coupling to the implementation or to
+either library, and none of the four campaigns touches it. <strong>It is therefore excluded from this redeploy</strong> —
+<code>BridgeEscrow</code> and every per-protocol bridge adapter stay at their current addresses and need no re-registration.</p>
+<p><span class="chip judge">Judgement</span> Stated positively because its absence from a redeploy plan otherwise reads as an
+oversight. It is a deliberate scope boundary.</p>
+</div>
+
+<h2 id="ops">Operational consequences</h2>
+<p>What a deployer needs, as distinct from what a reviewer needs.</p>
+
+<div class="note blocker">
+<p><span class="chip blocker">Deploy blocker — resolved</span> <strong>The ETHx rate-feed address, and the phantom writes it left
+behind.</strong></p>
+<p><code>03_DeployPriceFeeds</code> <em>reverted</em> on the ETHx instance, because the constructor's <code>assertChainlinkOracle</code> was denied
+by the access controller. The damaging part is the aftermath: <code>vm.writeJson</code> side effects are <strong>not rolled back</strong> when a
+script reverts, so the aborted run left <strong>eighteen phantom <code>customPriceFeeds</code> addresses</strong> in the deployment record for
+contracts that were never deployed — which step <code>04</code> then collided with. Fixed, but the failure mode generalises: a
+reverting deploy script can leave a partially-written record that later steps trust.</p>
+</div>
+
+<div class="note blocker">
+<p><span class="chip blocker">Deploy blocker — resolved by #233</span> <strong><code>ezETHCrossRateMarket</code> could not be
+deployed at all: <code>03_DeployPriceFeeds</code> reverted
+<code>RateFeedGuardMissing("ezETHCrossRateMarket", "yToXFeed")</code>.</strong></p>
+<p><strong>Two correct changes collided.</strong> #216 made the rate-feed guard <em>fail closed</em> — a feed with no
+<code>rateFeedGuard</code> block is refused rather than waved through — which is the right default and the whole point of the
+guard. #224 then added <code>ezETHCrossRateMarket</code> without such a block. Neither PR was wrong in isolation; the
+composition was a hard stop on the deploy.</p>
+<p><strong>Why the block could not simply be filled in.</strong> The feed is a RedStone Classic-Push feed, and its
+<code>description()</code> returns the constant string <code>"Redstone Price Feed"</code> — no pair, no asset, identical across every
+RedStone feed on every pair. An exact-match pair assertion is therefore <em>unimplementable</em> for that whole family, not
+merely unwritten. #233 declares it: <code>description: "$UNVERIFIABLE"</code> plus a recorded reason, so the pair check is dropped
+<strong>explicitly</strong> while the plausibility band and the contract-readability check still apply.</p>
+<p><span class="chip judge">Judgement</span> <strong>A declared gap and a silent one look identical in the deployed system and
+are opposites in review.</strong> The alternative — quietly exempting feeds without a guard block — would have restored #216's
+original defect for every future feed. Narrowing one axis for one documented provider limitation, in config where a reviewer
+must read it, keeps the guard closed everywhere else.</p>
+</div>
+
+<div class="note blocker">
+<p><span class="chip blocker">Required</span> <strong><code>FOUNDRY_PROFILE=slow</code> is mandatory for <code>RegisterAssets</code> — it is not a
+throughput knob.</strong></p>
+<p><code>[profile.slow]</code> raises <strong>both</strong> <code>gas_limit</code> and <code>memory_limit</code> from 1 GiB to 16 GiB, and
+registering the full asset set in one call frame accumulates quadratic EVM memory-expansion cost. Run without it and the step
+dies with <code>MemoryOOG</code> — a partial registration, which is worse than a clean failure because the NAV then prices only
+part of the book.</p>
+<p><span class="chip verified">Attribution corrected</span> <strong>The knob that actually governs this is
+<code>gas_limit</code>, not <code>memory_limit</code>.</strong> An earlier revision named <code>memory_limit</code> as the cause. That
+was not merely imprecise — it pointed at the wrong setting, so anyone raising <code>memory_limit</code> alone would have seen the
+same failure and concluded the profile was irrelevant. Established by controlled experiment, varying one at a time, and it
+matches <code>foundry.toml</code>'s own comment: memory expansion trips <code>MemoryOOG</code> "against the default 1 GiB script
+<code>gas_limit</code>".</p>
+<p><span class="chip verified">Safe for a deploy — measured</span> <strong>Neither setting is a compiler setting, and
+<code>[profile.slow]</code> was confirmed <em>bytecode-identical</em> to <code>[profile.default]</code> on both pinned
+libraries.</strong> That matters because the profile is used on a broadcasting step: if it altered compilation at all, the deploy
+would ship different code than the pins were computed against.</p>
+<p><span class="chip judge">Judgement</span> <strong>The "19 of 43" figure previously quoted here was an instrument defect, not a
+limit.</strong> <code>rehearse_fork</code> was silently ignoring <code>FOUNDRY_PROFILE=slow</code> and running the step on the default
+profile, so 19 measured the harness rather than the script. With the profile actually applied, <code>RegisterAssets</code>
+completes <strong>43 of 43</strong>. Recorded because the number was circulating as a property of the deploy, and a deployer who
+believes the ceiling is 19 will plan around a constraint that does not exist.</p>
+</div>
+
+<div class="note blocker">
+<p><span class="chip blocker">Downstream cutover — required</span> <strong>Every consumer of the NAV must repoint.</strong> A new
+proxy means anything reading <span class="addr">0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d</span> — kpkShares, the portal,
+agents, subgraphs — has to be moved to the new address. The old proxy keeps answering, which is the hazard: nothing breaks
+loudly, consumers simply keep reading a NAV that is no longer maintained. <span class="chip judge">Judgement</span> This is
+the single largest <em>external</em> consequence of the redeploy, and the only one whose completion is not visible from inside
+this repository.</p>
+</div>
+
+<div class="note blocker">
+<p><span class="chip blocker">Re-registration — required</span> <strong>A fresh proxy starts empty.</strong> <code>initialize()</code>
+establishes only <code>ERC20Default</code>, so everything else must be re-established on the new proxy: all registered assets, all
+price feeds, all plain balance adapters, all meta-adapters, and <strong>110 meta-instance registrations</strong>. This is the
+bulk of the deploy's wall-clock, and it is also where the <code>FOUNDRY_PROFILE=slow</code> requirement below bites.</p>
+<p><strong>110, not 113 — an earlier revision of this document said both.</strong> 113 counts every meta-adapter in
+<code>nav-config/meta-balance-adapters/&lt;chain&gt;.json</code> while ignoring <code>enabled</code>. The difference is exactly three
+disabled adapters carrying one instance each — mainnet <code>BalancerV2PoolsMeta</code> and <code>BalancerV2GaugesMeta</code>, and bsc
+<code>PancakeSwapV2PoolsMeta</code>. <code>ConfigReader.isAdapterEnabled</code> gates registration and a missing key reads as
+<code>false</code>, so <code>06_Configure</code> never registers any of them. 110 + 3 = 113.</p>
+</div>
+
+<div class="note redeploy">
+<p><span class="chip redeploy">Sequencing</span> <strong>Pin verification belongs immediately before deployment, against the final
+tree.</strong> The pins are a regenerated artifact; verifying them per-PR against a moving base says little, and repinning
+mid-stream is how a value becomes stale from birth.</p>
+<p><strong>#234 has done this once, and it will have to be done again.</strong> It regenerated as its own commit against main
+<span class="mono">6e5fa2e9</span>, giving PriceFeedLib <span class="addr">0xfc6AE534f83A49071Eac35cCf97786Dd54b2eDf5</span> and
+NavRegistryLib <span class="addr">0x5f5D054E021A53E1DEF54B3Bda3c939ccD14fd90</span> — the values now in
+<code>foundry.toml [libraries]</code> and <code>script/utils/LibraryPins.sol</code>, confirmed by a clean local build with CI's
+clean-build job agreeing. CI is corroboration, not the gate. But the deploy is <strong>held</strong> for the
+<code>PegKind</code>/<code>AccrualKind</code> work — which may or may not prove deliverable on-chain — so
+<span class="mono">6e5fa2e9</span> cannot yet be assumed to be the tree that ships, and this gate must be re-run against
+whichever tree is.</p>
+<p><span class="chip judge">Judgement</span> <strong>Re-run the clean build anyway if any commit lands before broadcasting, and
+treat a mismatch as "the tree moved", never as "edit the values until it goes green".</strong> Two superseded PriceFeedLib figures
+already appeared in this document's own history — <span class="addr">0x8b7e4fA9…</span> and
+<span class="addr">0x02c26e5b…</span> — both correct when measured. Neither was wrong; both expired. A written-down pin is
+evidence about a tree, not about the deploy.</p>
+</div>
+
+<div class="note redeploy">
+<p><span class="chip redeploy">Post-deploy</span> <strong>Feed all four assisted caches for the first time — on two chains,
+mainnet and Gnosis</strong> — via the assistants, which must be redeployed alongside their adapters since each holds its adapter
+address as an immutable. Also complete the <strong>#162 rollout</strong>: 33 meta-adapter redeploys and 110 instance
+re-registrations, for which this redeploy is the natural vehicle.</p>
+</div>
+
+<h2 id="deferred">Deliberately deferred — the attested (Merkl) family</h2>
+<div class="note">
+<p><span class="chip info">Out of scope — deploy later</span> <strong>PR #142, the <em>attested</em> balance-adapter family (Merkl,
+ADR 0022), is not part of this redeployment.</strong> It is a green, reviewed PR introducing an entire new adapter family; it has
+been descoped by decision, to be worked on and deployed separately.</p>
+<p>Mechanically it changes nothing in the tables above — #142 is unmerged, so <code>2bc8ba73..0ed42e74</code> never contained it and
+none of the counts include it. It is recorded here only because a document claiming to cover "everything that changed" would
+otherwise leave a reader wondering where it went.</p>
+<p><strong>Do not confuse the two families; the names are close and reversing them would be a real error:</strong></p>
+<ul class="tight">
+<li><strong>Assisted</strong> — <code>NexusMutualStakingPoolsAssisted</code>, <code>StakeWiseV3ExitQueueAssisted</code>,
+<code>EtherFiWithdrawalQueueAssisted</code> and their assistants: three adapter contracts, <strong>four deployed pairs across two
+chains</strong> (StakeWise runs on mainnet and Gnosis). <em>Merged, already deployed, and <strong>in scope</strong></em> — see the
+balances section.</li>
+<li><strong>Attested</strong> — the Merkl family under ADR 0022. <em>New, unmerged, and <strong>not in scope</strong>.</em></li>
+</ul>
+</div>
+
+<h2 id="method">Method, sources and confidence</h2>
+<p><strong>Derived from primary sources.</strong> <code>git diff 2bc8ba73..origin/main -- src/</code> for every file-level fact and line
+count; <code>script/config/deployments/1.json</code> at both revisions for the address tables; the merged-PR list
+(<code>git log --grep="Merge pull request"</code>, 63 entries) for attribution; and a local <code>forge clean &amp;&amp; forge build</code> with
+CREATE2 computed from the build artifact for the current library addresses.</p>
+
+<p><strong>Verified counts</strong> — 385 commits, 63 merged PRs, 53 files under <code>src/</code>, +4,242 / −734; all match the brief.
+<code>src/bridge/</code> confirmed empty. Three new <code>src/</code> files confirmed via <code>--diff-filter=A</code>:
+<code>utils/GasStipendLib.sol</code>, <code>utils/ProtocolNames.sol</code>, <code>balances/IPositionEnumerable.sol</code>.</p>
+
+<p><strong>Corrections to the brief</strong> — one, above: the quoted deployed addresses come from <em>current</em> main's record, not
+the record as of <code>2bc8ba73</code>.</p>
+
+<h4>Amendments after first publication</h4>
+<p>Four factual corrections, each re-derived from config rather than carried over. Recorded rather than silently overwritten,
+because two of them were wrong in a direction that would have under-provisioned the deploy:</p>
+<ul class="tight">
+<li><strong>Custom price feeds: 39 → both bases stated.</strong> 39 is what is deployed; <strong>41</strong> is what this redeploy must
+deploy. Counted from <code>deployments/&lt;chain&gt;.json</code> and the <code>enabled</code> set in
+<code>contracts-deployment-config/custom-price-feeds/&lt;chain&gt;.json</code> respectively. Quoting only 39 was the error.</li>
+<li><strong>Assisted caches: three → four, on two chains.</strong> The Gnosis <code>StakeWiseV3ExitQueue</code> pair was absent
+throughout. Its assistant was suspected missing and is <em>not</em> — verified present in
+<code>deployments/100.json</code>.</li>
+<li><strong>Meta instances: 113 → 110, consistently.</strong> The document previously carried both figures in different
+sections. 113 ignores <code>enabled</code>; three disabled adapters carry one instance each.</li>
+<li><strong>Items added that landed after <span class="mono">0ed42e74</span></strong> and are therefore outside the diff this
+document reports: #231, #232, #233 and #234. All are labelled as such where they appear.</li>
+</ul>
+<p><span class="chip judge">Judgement</span> <strong>No EIP-170 margin figure was taken from <code>NAVCalculator</code>'s
+<code>@dev</code> docstring.</strong> That docstring has been 144 bytes stale since #187 and quoting it yields a margin roughly
+180 bytes too generous — the kind of error that reads as headroom right up until a deploy fails. The real baseline was
+<strong>181</strong> bytes, not 325; the 24,508 / 68-byte figures under <code>nav/</code> are measured build output.</p>
+
+<h4>Second amendment pass — pins regenerated, deploy held</h4>
+<ul class="tight">
+<li><strong>Deploy status: <span class="chip blocker">HELD</span></strong> — not blocked, deliberately deferred, now waiting on the
+<code>AssetKindRegistry</code> so the NAV and the registry ship as one event. Consequence for this document: the pin values below
+are correct-for-now, and a second regeneration follows only if a <code>src/</code> change actually lands.</li>
+<li><strong>Asset classification resolved — it does NOT go in the NAV.</strong> Earlier revisions of this document called it
+measurement-pending, and before that implied it was landing. The floor measurement closed it: the theoretical minimum shape is
+<strong>+92 against 68 free bytes</strong>, so no in-NAV variant fits. It ships as a standalone <code>AssetKindRegistry</code>
+(static metadata, not runtime state), leaving the NAV's ABI untouched by it.</li>
+<li><strong>OETH's recurring <span class="mono">$0</span> print is expected until the deploy</strong> and cannot be fixed sooner:
+<code>RATE_HEARTBEAT</code> is an <code>immutable</code>, so it takes a new contract rather than a config change. A live production
+fix was declined deliberately — see <em>Operational consequences</em>.</li>
+<li><strong><code>PriceFeedLib</code> pin: <span class="addr">0x8b7e4fA9…</span> →
+<span class="addr">0xfc6AE534f83A49071Eac35cCf97786Dd54b2eDf5</span></strong>, regenerated by #234 against main
+<span class="mono">6e5fa2e9</span> and verified by both a clean local build and CI's clean-build job.
+<code>NAVRegistryLib</code> unchanged — whether it holds through the next regeneration is unmeasured.
+<strong><span class="addr">0x02c26e5b…</span> has been removed as an expected value</strong> — it was measured before #232's
+super-review round edited <code>PriceFeedLib.sol</code> again, so it expired rather than being wrong.</li>
+<li><strong>Slow-profile attribution corrected from <code>memory_limit</code> to <code>gas_limit</code>.</strong> An attribution error
+rather than a rounding one: acting on the old wording would have produced the same failure and discredited the requirement.
+<code>[profile.slow]</code> also confirmed bytecode-identical to <code>[profile.default]</code> on both pinned libraries.</li>
+<li><strong>"19 of 43" reclassified as an instrument defect.</strong> <code>rehearse_fork</code> ignored the profile;
+<code>RegisterAssets</code> is proven 43/43. It was being read as a property of the deploy.</li>
+<li><strong>#233 added as a resolved deploy blocker</strong> — <code>RateFeedGuardMissing</code> on
+<code>ezETHCrossRateMarket</code>, from #216's fail-closed guard meeting #224's guard-less feed. Verified that the feed remains
+<code>enabled</code>, so the 41 / mainnet-26 counts are unaffected.</li>
+<li><strong>Stale-pin note's <em>Open</em> chip resolved.</strong> It contradicted the sticky-disk mechanism explained directly
+beneath it, and #234 has since closed the question outright.</li>
+</ul>
+<p><span class="chip judge">Judgement</span> <strong>Three PriceFeedLib values have appeared in this document across its
+revisions, each correct when measured.</strong> That is not a documentation failure so much as evidence for the rule the document
+already states: a pin is a fact about a tree, and writing one down converts it into a claim about the deploy that only a clean
+build against the final tree can license.</p>
+
+<p><strong>Not established.</strong> No new ADRs were added in this range (<code>docs/decisions/</code> gained no files), so ADR 0019 and
+others cited predate the baseline and are referenced rather than introduced. Per-family on-chain deployment dating could not
+be determined from the repository; anything depending on it is marked as judgement. Behavioural claims are taken from the diff
+and PR bodies — where a rationale reflects reasoning rather than measurement it carries a
+<span class="chip judge">Judgement</span> chip.</p>
+
+<p class="foot">Generated against main <span class="mono">0ed42e74</span>; amended 2026-07-31 against
+<span class="mono">f04d2d6f</span>, then again against <span class="mono">6e5fa2e9</span> once #232, #233 and #234 had merged —
+see <em>Amendments after first publication</em> for both passes. Pin values read from
+<code>script/utils/LibraryPins.sol</code> and <code>foundry.toml [libraries]</code> on main, not from a CI reading. Documentation
+only — no contract, config or test was modified, so this document is itself pin-neutral.</p>
+
+</div>

@@ -44,4 +44,17 @@ contract Mock_ERC4626 is Mock_ERC20 {
     function convertToAssets(uint256 shares) external view returns (uint256) {
         return shares * assetsForOneShare / (10 ** decimals());
     }
+
+    /// @notice Fee-less redemption preview, equal to {convertToAssets}.
+    /// @dev `previewRedeem` is a MANDATORY part of ERC4626, and this mock did not implement it — so it modelled
+    ///      a vault that cannot exist. That gap was load-bearing rather than cosmetic: adapters value shares
+    ///      through `ERC4626RedeemLib.redeemValue`, which prefers `previewRedeem` precisely because
+    ///      `convertToAssets` is required to IGNORE any redemption fee (EIP-4626 §4.3). Against a mock missing
+    ///      the fee-aware accessor, every such test silently exercised the fallback instead of the real path.
+    ///      Equal to `convertToAssets` here because this mock charges no fee; a mock that DOES charge one, and
+    ///      therefore returns different values from the two, lives in `test/balances/ERC4626RedeemLib.t.sol`
+    ///      where the difference is the thing under test.
+    function previewRedeem(uint256 shares) external view returns (uint256) {
+        return shares * assetsForOneShare / (10 ** decimals());
+    }
 }

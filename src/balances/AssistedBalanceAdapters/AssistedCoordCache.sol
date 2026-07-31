@@ -8,8 +8,21 @@ import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
+import {GasStipendLib} from "src/utils/GasStipendLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
+
+/// @notice One cached coordinate ran out of the gas the valuation fan-out forwarded it, so the account's reported
+///         total is missing that coordinate — and, because the residue left to the loop cannot fund the ones after
+///         it, very likely every coordinate behind it too.
+/// @dev The sibling of `INAVCalculator.InstanceGasExhausted`, one family over. Reports `_coordId` — the
+///      concrete adapter's human-facing tokenId / requestId / positionTicket — rather than the internal
+///      `keccak256(coord)` dedup key, matching every other `Coordinate*` error in `src/errors.sol`. That hook
+///      exists precisely so an operator can act on the error without reversing a hash. Deliberately declared HERE rather
+///      than in `src/errors.sol`: both pinned libraries (`PriceFeedLib`, `NAVRegistryLib`) plain-import that file,
+///      so adding to it would put this symbol inside both CREATE2 compilation closures for no benefit — nothing
+///      outside this family raises or catches it. Keeping it file-local keeps this change provably pin-neutral.
+error CoordinateGasExhausted(address adapter, uint256 coordId, uint256 stipend, uint256 consumed);
 
 /// @title AssistedCoordCache
 /// @author KPK
@@ -25,7 +38,23 @@ import "src/errors.sol";
 /// @dev Permissionless & self-scoped: no roles; all mutators key on `msg.sender`, so a caller can only ever touch its
 ///      OWN set. The canonical feeder is a {BalanceAdapterAssistant} the owner Safe delegatecalls (so `msg.sender` is the
 ///      Safe). The family invariant holds — coordinates only, valued live, ownership re-verified per read → under-report
-///      only. Uses a `bytes[]` array + `key → idxPlus1` map for dedup and O(1) swap-pop removal. Reads isolate each
+///      only.
+///
+///      **WHAT THIS FILE CANNOT SHOW YOU — the cache is COMPLETE in production, not merely conservative.** Read on its
+///      own, this contract is a permissionless cache with no completeness guarantee whatsoever: anyone may `submit`
+///      their own coordinates, nobody is obliged to, and the assistant is the *canonical feeder* rather than a gate. So
+///      "under-report only" is the honest reading of THIS code — and it understates the deployed system. The portfolio
+///      Safes' **roles-modifier permission set allows the corresponding protocol entries only through the assistant
+///      contracts; the direct protocol entrypoint is not in the allow-list.** A position of these types therefore
+///      cannot be active without its coordinate having been fed here. Two complementary halves: *contract level* (this
+///      file) → cannot **over**-report; *roles level* (**outside this repository**) → cannot **under**-report either.
+///      Enforcement is in the Safe's roles configuration, which is not part of this repo — treat this as a pointer to
+///      it, not as an operational rule someone must remember. **Residual risk:** not a bypass by an operator (not
+///      permitted), but a **change to the roles permission set adding a path that reaches the protocol without the
+///      assistant** — after which this cache silently misses positions and nothing in this repository would detect it,
+///      because every invariant above still holds. See `AssistedBalanceAdapters/README.md` §5.0 and ADRs 0015 / 0018.
+///
+///      Uses a `bytes[]` array + `key → idxPlus1` map for dedup and O(1) swap-pop removal. Reads isolate each
 ///      coordinate behind a self-`staticcall` ({valueCoordSelf}), so a revert-prone valuation (e.g. Nexus's
 ///      `StakingViewer.getTokens`) only drops that one coordinate, never the account's whole set.
 abstract contract AssistedCoordCache is IAssistedBalanceAdapter {
@@ -208,6 +237,25 @@ abstract contract AssistedCoordCache is IAssistedBalanceAdapter {
     ///      reads discards only THAT coordinate and never propagates out of {getAdapterPositions} (where NAVCalculator's
     ///      per-adapter try/catch would otherwise fail-open and drop the account's ENTIRE set). Coordinates whose
     ///      valuation is internally safe pay only the extra call frame (negligible on the async NAV read path, ADR 0017).
+    ///
+    ///      **The isolation is deliberate and stays — but it must not absorb a STARVED coordinate.** A coordinate
+    ///      whose protocol read reverts has answered: it contributes nothing, and one bad NFT must not cost the
+    ///      account its other positions. Gas exhaustion is categorically different. The coordinate did not answer,
+    ///      recording it as zero legs silently deletes a real position, and — because a starved child takes 63/64
+    ///      of what the loop held — the ~1/64 residue cannot fund the coordinates AFTER it either, so one starved
+    ///      entry can quietly empty the rest of the list. `_collect` would still RETURN, so nothing downstream can
+    ///      tell the answer was partial: `PriceFeedLib._getAdapterPositions` only inspects its own catch arm, and
+    ///      this frame never reverted. That is the one failure this loop must not swallow, so it raises
+    ///      {CoordinateGasExhausted} instead.
+    ///
+    ///      The classification is {GasStipendLib}'s, not restated here — the same shared threshold
+    ///      `MetaBalanceAdapter._positionsForInstances` and `PriceFeedLib._getAdapterPositions` use, so the three
+    ///      cannot drift apart.
+    ///
+    ///      Direction note, so the severity is not overstated: this family emits credit legs only
+    ///      (`isDebt = false` throughout), so swallowing a coordinate under-reports rather than over-reports. That
+    ///      is a property of today's three members, not of this base — a future member emitting a debt leg would
+    ///      make the swallowed case an over-report, and this guard is what stops that being a silent one.
     function _collect(address account, INAVCalculator.Asset memory underlying)
         internal
         view
@@ -220,13 +268,21 @@ abstract contract AssistedCoordCache is IAssistedBalanceAdapter {
             new INAVCalculator.PositionBalance[](list.length * _maxLegsPerCoord());
         uint256 count;
         for (uint256 i; i < list.length; ++i) {
-            try this.valueCoordSelf(account, list[i], underlying) returns (
+            // One sample, used both to derive the stipend and to measure against it — see GasStipendLib.exhausted.
+            uint256 available = gasleft();
+            uint256 stipend = GasStipendLib.stipendFrom(available);
+            try this.valueCoordSelf{gas: stipend}(account, list[i], underlying) returns (
                 INAVCalculator.PositionBalance[] memory legs
             ) {
                 for (uint256 j; j < legs.length; ++j) {
                     temp[count++] = legs[j];
                 }
-            } catch {}
+            } catch {
+                uint256 consumed = available - gasleft();
+                if (GasStipendLib.exhausted(stipend, consumed)) {
+                    revert CoordinateGasExhausted(address(this), _coordId(list[i]), stipend, consumed);
+                }
+            }
         }
 
         positions = new INAVCalculator.PositionBalance[](count);

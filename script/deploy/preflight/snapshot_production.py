@@ -16,10 +16,13 @@ Per chain it records:
     enabled on that chain
 
 Snapshots are pinned to one block per chain (`eth_blockNumber` at start) so every call in a chain's
-snapshot is internally consistent.
+snapshot is internally consistent. That block is `latest` minus a small lag on hosted providers, which
+may serve `latest` from a not-yet-indexed node — but minus NOTHING on a loopback endpoint, where the lag
+would silently hide the tail of a just-finished deploy. See `block_lag()`; it is not a tuning knob, it
+already cost two rehearsals a false STOP verdict.
 
 usage:
-  python3 snapshot_production.py [--out pre|post|DIR] [--no-nav] [chainId ...]
+  python3 snapshot_production.py [--out pre|post|DIR] [--no-nav] [--block-lag N] [chainId ...]
 """
 from __future__ import annotations
 
@@ -139,12 +142,32 @@ def accounts_for_chain(chain_id: int) -> list[dict]:
     return out
 
 
-def snapshot_chain(chain_id: int, url: str, rpc_note: str, want_nav: bool) -> dict:
+def block_lag(url: str, override: int | None = None) -> int:
+    """How many blocks to step back from `latest` before reading.
+
+    A hosted provider may serve `latest` from a node that has not yet indexed it, so a few blocks of
+    slack makes a snapshot of a LIVE chain reliable. That reasoning does not transfer to a local anvil
+    fork, where there is no load balancer, no indexing lag and no reorg — and where the lag is actively
+    HARMFUL: a rehearsal snapshots immediately after the deploy, `--slow` mines one block per tx, so the
+    last few blocks ARE the tail of the deploy. Measured twice on 2026-07-30: with lag 3 the snapshot
+    read block N-3 and reported 24 adapters / 58 meta instances where the chain had 27 / 66, silently
+    (`errors: []`) omitting exactly the last three registrations — `StakeWiseV3VaultsMeta`,
+    `EulerVaultsMeta`, `UniswapV3PoolsMeta`. The adapter list was a strict PREFIX of the real one, which
+    is the signature. That looks exactly like a §4.4 STOP condition ("counts below the configured
+    totals") and would have failed a CORRECT deploy.
+
+    So: loopback endpoints read the tip, hosted ones keep the slack.
+    """
+    if override is not None:
+        return max(override, 0)
+    return 0 if url.startswith(("http://127.0.0.1", "http://localhost")) else 3
+
+
+def snapshot_chain(chain_id: int, url: str, rpc_note: str, want_nav: bool,
+                   lag: int | None = None) -> dict:
     rec = c.deployment(chain_id)
     proxy = rec["NAVCalculatorProxy"]
-    blk = c.block_number(url)
-    # Step back a few blocks: some providers serve `latest` from a node that has not yet indexed it.
-    blk = max(blk - 3, 1)
+    blk = max(c.block_number(url) - block_lag(url, lag), 1)
     block = hex(blk)
     snap: dict = {
         "chainId": chain_id,
@@ -314,13 +337,17 @@ def main() -> int:
     ap.add_argument("--jobs", type=int, default=6, help="chains snapshotted in parallel")
     ap.add_argument("--no-nav", action="store_true",
                     help="skip getAccountNavVerbose (fast structural-only snapshot)")
+    ap.add_argument("--block-lag", type=int, default=None,
+                    help="blocks to step back from latest (default: 0 for loopback, 3 for hosted "
+                         "providers -- see block_lag())")
     args = ap.parse_args()
 
     c.load_env()
     out_dir = Path(args.out) if "/" in args.out else c.SNAPSHOT_DIR / args.out
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    chains = args.chains or c.deployed_chain_ids()
+    chains, scope_src = c.resolve_chains(args.chains)
+    print(f"scope: {len(chains)} chain(s) from {scope_src}")
 
     def one(cid: int):
         url, note, rejected = c.probe_rpc(cid)
@@ -328,7 +355,7 @@ def main() -> int:
         if not url:
             return cid, name, None, note + " | " + " ; ".join(rejected)
         try:
-            return cid, name, snapshot_chain(cid, url, note, not args.no_nav), None
+            return cid, name, snapshot_chain(cid, url, note, not args.no_nav, args.block_lag), None
         except Exception as e:  # noqa: BLE001
             return cid, name, None, str(e)
 
@@ -357,12 +384,41 @@ def main() -> int:
                 "excludedFromDefaultAdapter": snap.get("excludedFromDefaultAdapter"),
                 "accountCount": len(snap["accounts"]), "errorCount": nerr,
             })
-    index.sort(key=lambda r: r["chainId"])
+    # MERGE into any existing index rather than replacing it. Overwriting means a targeted re-run --
+    # `snapshot_production.py 100` to fill one gap, which the README documents -- would shrink the
+    # index to a single chain. Combined with the index being cross-checked against the declared
+    # scope, that silently narrowed everything downstream. A capture must only ever ADD knowledge.
+    idx_path = out_dir / "index.json"
+    merged: dict[int, dict] = {}
+    prior_failures: dict[int, dict] = {}
+    if idx_path.is_file():
+        try:
+            prior = json.loads(idx_path.read_text())
+            merged = {int(e["chainId"]): e for e in prior.get("chains", []) if e.get("chainId")}
+            prior_failures = {int(e["chainId"]): e for e in prior.get("failures", [])
+                              if e.get("chainId")}
+        except Exception as e:  # noqa: BLE001 — a corrupt index must not silently become an empty one
+            print(f"ERROR: {idx_path} exists but could not be parsed ({e}). Refusing to overwrite it "
+                  f"— move it aside deliberately if you meant to start fresh.")
+            return 2
+    replaced = sorted(set(merged) & {r["chainId"] for r in index})
+    for r in index:
+        merged[r["chainId"]] = r
+        prior_failures.pop(r["chainId"], None)      # captured now, no longer a failure
+    for f in failures:
+        prior_failures[f["chainId"]] = f
 
-    (out_dir / "index.json").write_text(
-        json.dumps({"chains": index, "failures": failures}, indent=1) + "\n")
-    print(f"\nwrote {len(index)} snapshots to {out_dir}"
+    chains_out = [merged[k] for k in sorted(merged)]
+    failures_out = [prior_failures[k] for k in sorted(prior_failures)]
+    idx_path.write_text(
+        json.dumps({"chains": chains_out, "failures": failures_out}, indent=1) + "\n")
+    carried = len(chains_out) - len(index)
+    print(f"\nwrote {len(index)} snapshot(s) to {out_dir}"
+          + (f"; refreshed {len(replaced)} existing" if replaced else "")
+          + (f"; carried {carried} chain(s) forward from the previous index" if carried > 0 else "")
           + (f"; {len(failures)} chain(s) not captured" if failures else ""))
+    print(f"index.json now covers {len(chains_out)} chain(s)"
+          + (f", {len(failures_out)} outstanding failure(s)" if failures_out else ""))
     return 1 if failures else 0
 
 

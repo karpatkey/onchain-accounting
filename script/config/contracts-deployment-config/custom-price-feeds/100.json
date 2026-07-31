@@ -21,6 +21,13 @@
       "wstEthToEthChainlink": "0x0064AC007fF665CF8D0D3Af5E0AD1c26a3f853eA",
       "wstEthToEthHeartbeat": "86400",
       "baseAsset": "0x6A023CCd1ff6F2045C3309768eAd9E68F978f6e1"
+    },
+    "rateFeedGuard": {
+      "$comment": "Pair identity + plausibility band for the rate feed named by `param`. Enforced pre-deploy by RateFeedGuard and asserted in the fork tests. description() verified live on-chain 2026-07-30.",
+      "param": "wstEthToEthChainlink",
+      "description": "wstETH-ETH Exchange Rate",
+      "minRate1e18": "900000000000000000",
+      "maxRate1e18": "1500000000000000000"
     }
   }
 }

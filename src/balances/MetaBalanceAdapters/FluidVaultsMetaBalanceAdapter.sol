@@ -8,6 +8,7 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {FluidVaultLib} from "src/balances/MetaBalanceAdapters/FluidVaultLib.sol";
 import {LabelLib} from "src/balances/LabelLib.sol";
+import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 /// @title Fluid Vaults Meta Balance Adapter
@@ -66,9 +67,22 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
         uint256 count;
 
         // A debt this adapter cannot report must never leave its collateral standing alone: the position would
-        // be counted as pure credit and NAV over-reported by the whole borrow. Registration is checked WITHOUT
-        // the assetFilter — a filtered view showing the collateral while hiding an unreportable debt
-        // over-reports exactly the same way. Under-reporting the whole position is the safe direction.
+        // be counted as pure credit, overstated by the whole borrow. Registration is checked WITHOUT the
+        // assetFilter, and that asymmetry is deliberate — the two cases are different in kind:
+        //
+        //   - Unregistered debt token — nobody can price that debt, on any path, so emitting the collateral
+        //     alone states a figure no consumer is able to offset. Dropping the whole position is the safe
+        //     direction, and that is what the guard below does.
+        //   - Excluded by `assetFilter` — the debt is perfectly priceable and merely outside the caller's query.
+        //     A per-asset read is a PROJECTION, not a sub-portfolio valuation: ask for asset X and you get the
+        //     legs denominated in X. Omitting the borrow leg there is the requested answer, not a failed report.
+        //
+        // Scope, so this is not mistaken for a live NAV hazard: no NAV figure is ever computed with a filter.
+        // `getAccountNav`, `getAccountNavForAdapters` and `getAccountNavVerbose` take no filter and reach
+        // `PriceFeedLib.computeNav` with `address(0)`. The only non-zero-filter entrypoints are
+        // `NAVCalculator.getAccountPositionsForAsset` / `…ForAssetVerbose`, which return `Position[]`. The
+        // residual risk is a CONSUMER summing a filtered position list as if it were a net position — a
+        // contract stated on those entrypoints, not something this adapter fixes by hiding a requested leg.
         if (debt > 0) {
             (, bool debtRegistered) = _getAssetInfo(debtToken);
             if (!debtRegistered) return new INAVCalculator.PositionBalance[](0);
@@ -122,7 +136,7 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
         if (!ok) return new string[](0);
         // External self-call so a revert anywhere in the type-check/constantsView/symbol chain fails open to the
         // category-only label — a faulty label must never revert the (verbose-only) labels read.
-        try this.vaultPairSymbols(vault) returns (string memory leaf) {
+        try this.vaultPairSymbols{gas: LABEL_LEAF_GAS}(vault) returns (string memory leaf) {
             return _labels("Vault", leaf);
         } catch {
             return _labels("Vault", "");
@@ -140,17 +154,29 @@ contract FluidVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     function vaultPairSymbols(address vault) external view returns (string memory) {
         (address collToken, address debtToken, uint256 vaultId) = FluidVaultLib.vaultInfo(vault, VAULT_RESOLVER);
         if (collToken == address(0) || debtToken == address(0)) return "";
-        return string.concat(_assetSymbol(collToken), "/", _assetSymbol(debtToken), " #", Strings.toString(vaultId));
+        // ONE registry fetch, shared by both sides. The fetch pulls the entire registered-asset array across the
+        // call boundary, so its cost is O(registered assets) — a Fluid breadcrumb is therefore coupled to how
+        // many assets happen to be registered protocol-wide, and registering an unrelated asset is a routine
+        // config TX. Fetching once per leaf rather than once per side is what keeps that coupling linear instead
+        // of quadratic; see {LABEL_LEAF_GAS} for the headroom this leaf is sized against.
+        INAVCalculator.Asset[] memory registry = NAV_CALCULATOR.getRegisteredAssets();
+        return string.concat(
+            _symbolFrom(registry, collToken), "/", _symbolFrom(registry, debtToken), " #", Strings.toString(vaultId)
+        );
     }
 
-    /// @notice Symbol for `token`: the NAV registry's (native-aware), else a direct ERC20 `symbol()`, else "?".
-    /// @dev Deliberately not `MetaBalanceAdapter._joinTokenSymbols`, which reads `symbol()` directly and so
-    ///      cannot resolve the ERC-7528 native sentinel — several Fluid T1 vaults use it as one side and it has
-    ///      no `symbol()` to call. The registry-first lookup also means a *registered* token's symbol never
-    ///      involves an external call into that token. Falls back to "?" to match `_joinTokenSymbols` and the
-    ///      Morpho markets adapter, so an unreadable side renders "?/USDC" rather than "/USDC".
-    function _assetSymbol(address token) internal view returns (string memory) {
-        (INAVCalculator.Asset memory info, bool found) = _getAssetInfo(token);
+    /// @notice The registered symbol for `token`, falling back to its on-chain `symbol()` and then to "?".
+    /// @dev Takes the registry the caller already holds rather than fetching its own, which is what keeps the
+    ///      leaf to a single fetch regardless of how many sides it labels.
+    ///
+    ///      Registry-first, deliberately, rather than `MetaBalanceAdapter._joinTokenSymbols`: that helper reads
+    ///      `symbol()` directly and so cannot resolve the ERC-7528 native sentinel, which several Fluid T1 vaults
+    ///      use as one side and which has no `symbol()` to call. The registry record already carries the chain's
+    ///      native symbol. It also means a *registered* token's symbol costs no external call into that token.
+    ///      Falls back to "?" to match `_joinTokenSymbols` and the Morpho markets adapter, so an unreadable side
+    ///      renders "?/USDC" rather than "/USDC".
+    function _symbolFrom(INAVCalculator.Asset[] memory registry, address token) private view returns (string memory) {
+        (INAVCalculator.Asset memory info, bool found) = RegisteredAssetLib.find(registry, token);
         if (found && bytes(info.symbol).length > 0) return info.symbol;
         return LabelLib.symbol(token, "?");
     }

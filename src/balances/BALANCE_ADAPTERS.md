@@ -327,20 +327,62 @@ The interface is deliberately minimal — it only *identifies* the family; it do
 
 All members extend the single cache base **`AssistedCoordCache`** (`AssistedBalanceAdapters/`): a per-account cache where each coordinate is an opaque `abi.encode`d `bytes` blob (a bare `uint256` id, or StakeWise's `(vault, positionTicket, timestamp)` tuple), deduped by `keccak256`. It provides the `msg.sender`-keyed mutators (cap + fail-loud `CoordinateCacheFull` / `CoordinateNotOwned` custom errors), the single-underlying-asset `IBalanceAdapter` getter surface, and a per-coordinate fail-open self-`staticcall` valuation fan-out (so a revert-prone valuation — e.g. Nexus's `StakingViewer.getTokens` — isolates to that one coordinate). Concrete adapters implement `_validateCoord` / `_removable` / `_valueCoord` / `_coordId` / `_maxCoords` / `_maxLegsPerCoord` and expose a typed `submit`/`remove` that `abi.encode`s their coordinate. They **must** uphold the family invariant: cache only position *coordinates* (never amounts), value every read live on-chain, and re-verify ownership per read — so a faulty or compromised feeder can only **under-report, never over-report**.
 
+> **The production guarantee is stronger than "under-report only" — the cache is COMPLETE by construction.** That sentence states the *contract-level* half, which is all this repository enforces. The second half is enforced one layer up and is not visible in any code here: **the portfolio Safes' roles-modifier permission set allows these protocol entries only through the assistant contracts — the direct protocol entrypoint is not in the allow-list.** So a position of these types **cannot be active without its coordinate having been fed to the adapter**. Stated as the two complementary halves:
+>
+> | Level | Property | Enforced by |
+> |---|---|---|
+> | **Contract** (this repo) | cannot **over**-report | `AssistedCoordCache` + each adapter's `_valueCoord` / `_ownerOf` |
+> | **Roles** (outside this repo) | cannot **under**-report either | the Safe's roles-modifier allow-list |
+>
+> **Do not read the roles half out of the code — it is not there.** `submit`/`remove` are permissionless and `msg.sender`-keyed, and the assistant is the *canonical feeder*, not a gate, so these files alone show a permissionless cache with no completeness guarantee. **Residual risk:** not an operator bypassing the assistant (not permitted), but **a roles-permission change adding a path that reaches the protocol without it** — after which the cache silently misses positions with **no tripwire in this repo**, since every contract-level invariant still holds. Full treatment: [`AssistedBalanceAdapters/README.md`](AssistedBalanceAdapters/README.md) §5.0, [ADR 0015](../../docs/decisions/0015-assisted-balance-adapter-family.md), [ADR 0018](../../docs/decisions/0018-assistant-fed-assisted-balance-adapters.md).
+
 **Members on the base** — `NexusMutualStakingPoolsAssistedBalanceAdapter`, `EtherFiWithdrawalQueueAssistedBalanceAdapter`, and `StakeWiseV3ExitQueueAssistedBalanceAdapter` — each paired with a `…Assistant`. (Stader's withdrawal queue is **not** here — it is a plain `BalanceAdapter` that enumerates the account's live requests on-chain via `getRequestIdsByUser`, which is claim-pruned and protocol-capped; see §7.) The NFT-position adapter (Nexus Mutual) caches a per-account `tokenId` set submitted via `submit(id)`: the write **reverts** (`CoordinateNotOwned`) on any id not currently owned by the account, and reads **discard** ids that are no longer owned (so a single stale id never zeroes the account). It values each position live (Nexus stake via `StakingViewer.getTokens`), re-verifying ownership (`tokenInfo`) on every read.
 
 > Full family reference — invariant, cache design, assistant/delegatecall model, error taxonomy, and how to add a new member: [`AssistedBalanceAdapters/README.md`](AssistedBalanceAdapters/README.md). (A proof-verified Merkl rewards adapter previously lived in this family under an older `ASSISTANT_ROLE` agent-fed base; both were removed pending a rewrite of Merkl — retrievable from git history.)
 
-### 6.4 Rejected: registry fetch-once threading
+### 6.4 Registry lookups: what is O(1) today, and what was rejected
 
-When NAV reads positions it calls `getAdapterPositions(account, address(0))` on every registered adapter, and each adapter that needs to validate a token against the asset registry re-fetches the **whole** registry (`NAVCalculator.getRegisteredAssets()`) per token via `RegisteredAssetLib.find` (see `MetaBalanceAdapter._getAssetInfo`). A read that touches *N* tokens across *M* adapters therefore does *N×M* registry fetches — superficially wasteful.
+`MetaBalanceAdapter._getAssetInfo` resolves one token's registry metadata through
+**`INAVCalculator.getRegisteredAsset(address)`** — a 1-based `_assetIndex` mapping load plus one array read, flat in
+the number of registered assets. `_eligible` runs it before every emitted leg, so it is the hottest lookup in this
+family and it needs to be O(1).
 
-We implemented and then **deliberately reverted** the obvious optimisation — fetch the registry once in `PriceFeedLib`/`NAVCalculator` and thread the `INAVCalculator.Asset[]` snapshot down through a 3-arg `getAdapterPositions(account, assetFilter, registeredAssets)` overload to every adapter, eliminating the re-fetch. Two reasons:
+**It used to fetch the whole registry per call** (`RegisteredAssetLib.find(NAV_CALCULATOR.getRegisteredAssets(), asset)`).
+That measured:
 
-1. **The gas saving has no consumer.** NAV is read off-chain/asynchronously by the sub/redeem layer ([ADR 0017](../../docs/decisions/0017-lp-valuation-instantaneous-amounts.md)); there is no atomic on-chain caller paying for the populated-path gas, so collapsing *N×M* fetches optimises a cost nobody bears.
-2. **It regressed the cheap path.** Eagerly fetching and ABI-copying the registry into *every* adapter call pushed the empty-account read from **<100k to ~166k gas** (the team's `gasOptimization_emptyAccount` guard) — because adapters that early-return for an empty account previously never fetched the registry at all. The optimisation thus made the common cheap path *worse* in exchange for a saving that does not matter.
+| registered assets | one 50-token Balancer instance |
+|---|---|
+| 43 (mainnet today) | **6,274,562 gas** |
+| 100 | **18,459,988 gas** |
 
-Conclusion: keep each adapter fetching the registry lazily, only on the path that actually needs it. Re-thread the registry **only if NAV ever becomes a synchronous on-chain consumer** of a mint/redeem flow — at which point the gas does matter and the trade-off flips.
+Super-linear rather than linear, because each call allocated a fresh N-element array that is never freed, so memory
+expansion grows with the square of the token count. Past a point that exhausts the per-adapter gas stipend and the
+NAV read **reverts** — so this was an *availability* defect, not a missed optimisation. That distinction is what
+separates it from the design rejected below.
+
+#### Still rejected: threading a pre-fetched registry snapshot
+
+A different fix — fetch the registry once in `PriceFeedLib`/`NAVCalculator` and thread the `INAVCalculator.Asset[]`
+snapshot down through a 3-arg `getAdapterPositions(account, assetFilter, registeredAssets)` overload — was
+implemented and **deliberately reverted**. It stays rejected, on the ground that still holds:
+
+- **It regressed the cheap path.** Eagerly fetching and ABI-copying the registry into *every* adapter call pushed the
+  empty-account read from **<100k to ~166k gas** (the `gasOptimization_emptyAccount` guard), because adapters that
+  early-return for an empty account previously never fetched the registry at all.
+
+The other original ground — that NAV is read off-chain/asynchronously
+([ADR 0017](../../docs/decisions/0017-lp-valuation-instantaneous-amounts.md)) so the gas has no payer — was a
+reasonable argument about *cost*, and it is simply not the argument that applies once a read **reverts**.
+
+**Why the O(1) getter is not a re-run of that rejection:** the call sites and the call *count* are unchanged, and
+nothing is fetched eagerly, so an adapter that early-returns for an empty account still fetches nothing. Only the
+payload shrank — one asset instead of all of them. The empty-account guard is unaffected.
+
+`getRegisteredAssets()` remains for callers that genuinely want the whole registry; its NatSpec now carries the
+figures above so nobody reaches for it to resolve a single asset. Guarded by
+`test/nav/NAVCalculator.registeredAssetGetter.t.sol`, which asserts the O(1) *shape* (cost independent of registry
+size and of position within it) rather than absolute gas, plus a deterministic regression test: a NAVCalculator
+stand-in whose array getter reverts, so any implementation that reaches for it fails outright.
 
 ---
 

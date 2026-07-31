@@ -98,6 +98,23 @@ contract DivergenceMonitorTest is SuperTest {
         nav.addMonitorFeed(address(weth), address(monitor), IPrices.PriceType.Custom, type(uint256).max);
     }
 
+    /// @notice A Custom MONITOR feed is asset-bound too: `addMonitorFeed` runs the same validator as the primary path,
+    ///         so a monitor that prices a different asset is rejected. This is the likelier of the two crossings in
+    ///         practice — every `*CrossRate` instance is a monitor, and their config keys sit next to the primaries'.
+    function test_RevertIf_addMonitorFeed_customFeedPricesDifferentAsset() public {
+        Mock_CustomPriceFeed wrongAsset = new Mock_CustomPriceFeed("usdc-monitor", address(usdc), 100_000_000, 8);
+        vm.prank(navCalculatorManager);
+        nav.setDivergenceTolerance(address(weth), 250);
+
+        vm.prank(navCalculatorManager);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IPrices.CustomFeedAssetMismatch.selector, address(weth), address(wrongAsset), address(usdc)
+            )
+        );
+        nav.addMonitorFeed(address(weth), address(wrongAsset), IPrices.PriceType.Custom, type(uint256).max);
+    }
+
     function test_setDivergenceTolerance_rejectsOutOfRange() public {
         vm.prank(navCalculatorManager);
         vm.expectRevert(abi.encodeWithSelector(IPrices.InvalidTolerance.selector, uint32(0)));
@@ -253,5 +270,201 @@ contract DivergenceMonitorTest is SuperTest {
         assertFalse(pd.irregular, "divergence must be suppressed while the sequencer is down");
         assertEq(pd.monitorFeedCount, 0, "no monitor contributes while the primary is sequencer-stale");
         assertEq(pd.divergenceBps, 0);
+    }
+
+    // =========================================================================
+    // NAV.monitorsUnhealthyPriceAssets — monitors CONFIGURED but none readable
+    // =========================================================================
+    //
+    // The gap this closes: when every monitor for an asset is unreadable, `_monitorDivergence`'s
+    // `n > 0` guard skips the whole computation, so `divergenceBps` is 0 and `irregular` is false
+    // because the arithmetic never ran — indistinguishable, from outside, from a clean check.
+
+    /// @dev True if `list` contains `asset`. Local helper so each assertion reads as a claim about membership.
+    function _contains(INAVCalculator.Asset[] memory list, address asset) internal pure returns (bool) {
+        for (uint256 i = 0; i < list.length; i++) {
+            if (list[i].asset == asset) return true;
+        }
+        return false;
+    }
+
+    /// @dev Gives the safe a WETH position so weth is an asset-with-position in the NAV read, then reads the NAV.
+    function _navWithWethPosition() internal returns (INAVCalculator.NAV memory) {
+        weth.mint(address(safe), 1 ether);
+        return nav.getAccountNav(address(safe), address(0));
+    }
+
+    /// @dev A single configured monitor that cannot be read puts the asset in the list — and NOT in
+    ///      `irregularPriceAssets`, which is precisely the silence this array breaks.
+    function test_allMonitorsUnhealthy_assetIsListed() public {
+        Mock_CustomPriceFeedStaled deadMonitor =
+            new Mock_CustomPriceFeedStaled("WETH-monitor-stale", address(weth), 340_000_000_000, 8);
+        vm.startPrank(navCalculatorManager);
+        nav.setDivergenceTolerance(address(weth), 250);
+        nav.addMonitorFeed(address(weth), address(deadMonitor), IPrices.PriceType.Custom, type(uint256).max);
+        vm.stopPrank();
+
+        INAVCalculator.NAV memory r = _navWithWethPosition();
+        assertTrue(
+            _contains(r.monitorsUnhealthyPriceAssets, address(weth)),
+            "weth must be listed: its only monitor is unreadable"
+        );
+        assertFalse(_contains(r.irregularPriceAssets, address(weth)), "must NOT be irregular: the check never ran");
+        // The monitor IS configured — so this is not the 'no monitors' case.
+        assertEq(nav.getMonitorFeedCount(address(weth)), 1, "monitor is configured, just unreadable");
+    }
+
+    /// @dev One readable monitor is enough for the check to run, so the asset must NOT be listed.
+    function test_oneHealthyMonitor_assetNotListed() public {
+        _attachWethMonitor(325_000_000_000, 250); // in-band, healthy
+        INAVCalculator.NAV memory r = _navWithWethPosition();
+        assertFalse(_contains(r.monitorsUnhealthyPriceAssets, address(weth)), "a readable monitor means the check ran");
+    }
+
+    /// @dev THE BITE TEST. Two monitors, one readable and one not: the asset is absent from the list because the
+    ///      check still runs. Then the readable one is made unreadable (`setPrice(0)` → `_readFeedPrice` returns
+    ///      ok=false) and the asset appears — with no other state changed. Proves the array tracks live monitor
+    ///      health rather than configuration, and that it flips on exactly the transition that matters.
+    function test_makingTheLastHealthyMonitorUnhealthy_flipsTheList() public {
+        Mock_CustomPriceFeed healthy = _attachWethMonitor(325_000_000_000, 250);
+        Mock_CustomPriceFeedStaled dead =
+            new Mock_CustomPriceFeedStaled("WETH-monitor-2", address(weth), 325_000_000_000, 8);
+        vm.prank(navCalculatorManager);
+        nav.addMonitorFeed(address(weth), address(dead), IPrices.PriceType.Custom, type(uint256).max);
+        assertEq(nav.getMonitorFeedCount(address(weth)), 2, "two monitors configured");
+
+        // Before: one of the two answers, so the divergence check runs.
+        INAVCalculator.NAV memory before = _navWithWethPosition();
+        assertFalse(
+            _contains(before.monitorsUnhealthyPriceAssets, address(weth)),
+            "control: one healthy monitor of two means the asset is checked"
+        );
+        assertEq(nav.getPriceData(address(weth)).monitorFeedCount, 1, "exactly one monitor contributed");
+
+        // Kill the last healthy monitor. A zero custom price fails `_readFeedPrice`'s validity gate.
+        healthy.setPrice(0);
+
+        INAVCalculator.NAV memory after_ = nav.getAccountNav(address(safe), address(0));
+        assertTrue(
+            _contains(after_.monitorsUnhealthyPriceAssets, address(weth)),
+            "weth must appear once its last readable monitor dies"
+        );
+        assertEq(nav.getPriceData(address(weth)).monitorFeedCount, 0, "no monitor contributes any more");
+        // Configuration is untouched — only runtime health changed. This is the whole point of the field.
+        assertEq(nav.getMonitorFeedCount(address(weth)), 2, "still two monitors CONFIGURED");
+    }
+
+    /// @dev An asset with NO monitors configured must never be listed, however long it goes unchecked. This is the
+    ///      distinction the field name has to carry: 'monitors configured but none healthy' is a runtime failure,
+    ///      whereas 'no monitors configured' is a static config property derivable off-chain from
+    ///      `getMonitorFeedCount == 0` + `divergenceToleranceBps == 0`, and is a separate, unruled question.
+    function test_noMonitorsConfigured_neverListed() public {
+        INAVCalculator.NAV memory r = _navWithWethPosition(); // no monitor attached at all
+        assertEq(nav.getMonitorFeedCount(address(weth)), 0, "precondition: nothing configured");
+        assertFalse(
+            _contains(r.monitorsUnhealthyPriceAssets, address(weth)),
+            "an unmonitored asset must NOT be reported as monitors-unhealthy"
+        );
+    }
+
+    /// @dev When the PRIMARY is unusable the monitor count is also 0, but the monitors are not the reason — the
+    ///      sequencer is. Keeps this array disjoint from `stalePriceAssets`, which already reports that case.
+    function test_primaryUnusable_notListedHere() public {
+        _attachWethMonitor(325_000_000_000, 250); // a perfectly healthy monitor
+        vm.prank(admin);
+        nav.setChainlinkL2SequencerUptimeFeed(address(sequencerUptimeFeedDown));
+
+        INAVCalculator.NAV memory r = _navWithWethPosition();
+        assertTrue(r.sequencerDown, "precondition: primary is unusable");
+        assertFalse(
+            _contains(r.monitorsUnhealthyPriceAssets, address(weth)),
+            "a suppressed-by-primary check must not be blamed on the monitors"
+        );
+    }
+
+    /// @dev `irregularPriceAssets` and `monitorsUnhealthyPriceAssets` are NOT mutually exclusive, and this pins it.
+    ///      The peg guard is monitor-independent, so a stablecoin trading off $1 whose monitors are ALL unreadable is
+    ///      simultaneously `irregular` (its peg is breached) and monitors-unhealthy (its divergence check never ran).
+    ///      Surfaced by Copilot: earlier comments claimed `irregular` was false whenever this flag was set, which is
+    ///      wrong in exactly this state — the two answer different questions and a consumer must not treat presence in
+    ///      one as absence from the other.
+    function test_pegBreachAndDeadMonitors_appearsInBothArrays() public {
+        Mock_CustomPriceFeedStaled deadMonitor =
+            new Mock_CustomPriceFeedStaled("usdc-monitor-stale", address(usdc), 100_000_000, 8);
+        vm.startPrank(navCalculatorManager);
+        nav.setDivergenceTolerance(address(usdc), 250);
+        nav.setPegTolerance(address(usdc), 100); // peg guard ON, independent of monitors
+        nav.addMonitorFeed(address(usdc), address(deadMonitor), IPrices.PriceType.Custom, type(uint256).max);
+        vm.stopPrank();
+        usdcAdapter.setPrice(103_000_000); // $1.03 -> 300 bps off peg, beyond the 100 bps tolerance
+        usdc.mint(address(safe), 1_000e6);
+
+        INAVCalculator.NAV memory r = nav.getAccountNav(address(safe), address(0));
+        assertTrue(
+            _contains(r.monitorsUnhealthyPriceAssets, address(usdc)),
+            "monitors are all unreadable: divergence check did not run"
+        );
+        assertTrue(
+            _contains(r.irregularPriceAssets, address(usdc)),
+            "peg guard is monitor-independent: it still fires, so the asset is ALSO irregular"
+        );
+    }
+
+    /// @dev The `monitorFeeds[asset].length > 0` conjunct is only load-bearing when `_hasDivergenceChecks` returns
+    ///      true via its OTHER disjunct — a non-zero `pegToleranceBps` with ZERO monitors configured. In that shape
+    ///      the `if` body DOES run, `healthyMonitors` is 0 (there is nothing to read), and without the length check
+    ///      every peg-guarded stablecoin would be reported monitors-unhealthy at once. `test_noMonitorsConfigured_*`
+    ///      does NOT cover this: with no peg tolerance the body is skipped entirely, so the conjunct is unreached.
+    function test_pegToleranceWithZeroMonitors_notListed() public {
+        vm.prank(navCalculatorManager);
+        nav.setPegTolerance(address(usdc), 100); // enables the monitor-INDEPENDENT peg guard
+        assertEq(nav.getMonitorFeedCount(address(usdc)), 0, "precondition: zero monitors, peg guard on");
+        usdc.mint(address(safe), 1_000e6);
+
+        INAVCalculator.NAV memory r = nav.getAccountNav(address(safe), address(0));
+        assertFalse(
+            _contains(r.monitorsUnhealthyPriceAssets, address(usdc)),
+            "a peg-guarded asset with NO monitors must not be reported monitors-unhealthy"
+        );
+    }
+
+    /// @dev The primary-usable conjunct must exclude a STALE primary, not just a downed sequencer. Only the sequencer
+    ///      path was covered; this is the L1 case, which is the one that actually occurs. DAI is the only asset with
+    ///      a finite heartbeat, so warping ages DAI out and leaves the others fresh.
+    function test_stalePrimaryWithSequencerUp_notListedHere() public {
+        Mock_PriceOracleChainlink deadMonitor = new Mock_PriceOracleChainlink("DAI-monitor", 100_000_000, 8);
+        vm.startPrank(navCalculatorManager);
+        nav.setDivergenceTolerance(address(dai), 100);
+        nav.addMonitorFeed(address(dai), address(deadMonitor), IPrices.PriceType.Chainlink, type(uint256).max);
+        vm.stopPrank();
+        dai.mint(address(safe), 1000e18);
+
+        vm.warp(block.timestamp + 2 days); // ages DAI's primary out; sequencer stays UP
+
+        INAVCalculator.NAV memory r = nav.getAccountNav(address(safe), address(0));
+        assertTrue(_contains(r.stalePriceAssets, address(dai)), "precondition: DAI's primary is stale");
+        assertFalse(
+            _contains(r.monitorsUnhealthyPriceAssets, address(dai)),
+            "a primary-suppressed check must not be blamed on the monitors (sequencer path is not the only one)"
+        );
+    }
+
+    /// @dev The paginated read carries the same signal, restricted to the slice's assets. Without this, the accounts
+    ///      that must paginate — the largest ones — would be the only ones unable to see monitor failure.
+    function test_partialNav_carriesTheSignal() public {
+        Mock_CustomPriceFeedStaled deadMonitor =
+            new Mock_CustomPriceFeedStaled("WETH-monitor-stale", address(weth), 340_000_000_000, 8);
+        vm.startPrank(navCalculatorManager);
+        nav.setDivergenceTolerance(address(weth), 250);
+        nav.addMonitorFeed(address(weth), address(deadMonitor), IPrices.PriceType.Custom, type(uint256).max);
+        vm.stopPrank();
+        weth.mint(address(safe), 1 ether);
+
+        INAVCalculator.PartialNAV memory p =
+            nav.getAccountNavForAdapters(address(safe), address(0), nav.getAllAdapters());
+        assertTrue(
+            _contains(p.monitorsUnhealthyPriceAssets, address(weth)),
+            "PartialNAV must carry monitorsUnhealthyPriceAssets"
+        );
     }
 }

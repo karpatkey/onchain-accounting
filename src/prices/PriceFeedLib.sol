@@ -49,6 +49,13 @@ library PriceFeedLib {
         // True if the primary price diverged from the asset's monitor feeds beyond tolerance (or, for stablecoins,
         // from the $1 peg). Pricing-quality signal only; `price` is still the primary and is used for valuation.
         bool irregular;
+        // True if the asset HAS monitors configured but none of them was readable, so the MONITOR-DIVERGENCE check
+        // did not run. It says nothing about `irregular` above, which is NOT necessarily false in this state: the
+        // absolute peg guard is monitor-independent, so a stablecoin with a non-zero `pegToleranceBps` trading off $1
+        // is `irregular` AND `monitorsUnhealthy` at the same time — divergence unchecked, peg breached. NOT set for an
+        // asset with no monitors configured, nor when the primary is unusable — see
+        // {INAVCalculator.NAV.monitorsUnhealthyPriceAssets}.
+        bool monitorsUnhealthy;
     }
 
     /// @notice Quote-asset info (struct + price data); address(0) = USD.
@@ -542,6 +549,66 @@ library PriceFeedLib {
     // NAV read / compute engine (extracted from NAVCalculator to stay under EIP-170)
     // -------------------------------------------------------------------------
 
+    /// @notice Validates a caller-supplied adapter slice for the paginated NAV read and returns it as a memory
+    ///         array, ready to hand straight to {computeNav} as its `allAdapters` argument.
+    /// @dev Every rejection here is a case that would otherwise return a plausible-looking slice with a wrong
+    ///      `value`, which is strictly worse than a revert because the caller sums it and never finds out:
+    ///
+    ///      - **Empty** → a zero NAV indistinguishable from "worth nothing".
+    ///      - **Unregistered** → no positions to report, so the slice is short by whatever the caller thought that
+    ///        address covered, and `adaptersCovered` can no longer be read as a coverage record.
+    ///      - **Duplicate** → the adapter is queried and summed twice, over-reporting the slice by its full value.
+    ///
+    ///      Lives here rather than in NAVCalculator purely for EIP-170 headroom (that contract is a few hundred
+    ///      bytes from the limit), and is a separate function from {computeNav} rather than a branch inside it so
+    ///      the complete read pays nothing for the partial read's existence — neither in gas nor in the `via_ir`
+    ///      compile cost of that function's IR.
+    ///
+    ///      Both scans are over memory arrays with no external calls: O(n²) for the duplicate check and O(n·m)
+    ///      against the registry, with an adapter registry in the tens. A few thousand gas against a read costing
+    ///      tens of millions. A registration mapping or a sorted-input requirement would each be cheaper and
+    ///      neither is worth it — the sorted variant would also push a correctness obligation onto the caller,
+    ///      which is the opposite of this API's design.
+    /// @param allAdapters The FULL global adapter registry (`getAllAdapters()`), the authority every supplied
+    ///        adapter is checked against. Passing the complete list rather than a registration mapping makes
+    ///        "registered" mean exactly "in the list the complete read scans".
+    /// @param adapters The caller's slice.
+    /// @return covered `adapters` copied to memory, order preserved — both {computeNav}'s scan list and the
+    ///         `PartialNAV.adaptersCovered` receipt, so the two can never disagree.
+    function validateAdapterSlice(address[] memory allAdapters, address[] calldata adapters)
+        external
+        pure
+        returns (address[] memory covered)
+    {
+        uint256 len = adapters.length;
+        if (len == 0) revert INAVCalculator.EmptyAdapterSlice();
+
+        covered = new address[](len);
+        for (uint256 i = 0; i < len; i++) {
+            address adapter = adapters[i];
+
+            // Duplicate check against what has already been accepted, so the FIRST repeat is what gets named
+            // rather than whichever element a full pairwise sweep reached last. Scans the already-copied prefix of
+            // `covered`, which is element-for-element `adapters[0..i)`, so this is the same comparison one memory
+            // read cheaper than re-reading calldata.
+            for (uint256 j = 0; j < i; j++) {
+                if (covered[j] == adapter) revert INAVCalculator.DuplicateAdapterInSlice(adapter);
+            }
+
+            bool registered;
+            uint256 total = allAdapters.length;
+            for (uint256 k = 0; k < total; k++) {
+                if (allAdapters[k] == adapter) {
+                    registered = true;
+                    break;
+                }
+            }
+            if (!registered) revert INAVCalculator.AdapterNotRegistered(adapter);
+
+            covered[i] = adapter;
+        }
+    }
+
     /// @notice Computes the full NAV snapshot for an account in a quote currency (address(0) = USD).
     /// @dev Mirrors the former NAVCalculator.getAccountNav + _readPositionsWithQuote. The caller validates the
     ///      quote asset and computes `sequencerDown` (it depends on the caller's sequencer-feed config) before
@@ -552,6 +619,30 @@ library PriceFeedLib {
     ///      `Position[]` that `getAccountNav` does not need (the diff's via_ir note: helper extraction can cost
     ///      more than the inlined body). **Any change to the NAV math here MUST be mirrored in
     ///      `computeNavAndPositions` (and vice versa)** or `getAccountNav` and `getAccountNavVerbose` will diverge.
+    ///
+    ///      **This is also the PAGINATED read.** `NAVCalculator.getAccountNavForAdapters` calls this very function
+    ///      with a caller-supplied subset of `getAllAdapters()` in `allAdapters`, having first run that subset
+    ///      through {validateAdapterSlice}. There is deliberately no second NAV entrypoint for the partial read:
+    ///      one existed during development and was removed, because a second copy of this body roughly doubles the
+    ///      IR the `via_ir` optimizer has to chew through for the largest function in the largest library here, and
+    ///      that was enough to push CI's whole-project compile past the runner's memory (SIGTERM mid-compile, twice,
+    ///      reproducibly). Sharing this function instead costs nothing and makes the partition invariant — sum of
+    ///      slices == complete NAV — hold because it is literally the same code, not because two bodies agree.
+    ///
+    ///      Consequently **nothing in this function may become adapter-set-dependent beyond scanning
+    ///      `allAdapters`.** Anything derived from "the whole registry" rather than from the adapters passed in
+    ///      would silently change meaning for a slice.
+    ///
+    /// @dev **STACK BUDGET — this function sits AT the `via_ir` stack limit. Adding a local, a parameter, or an
+    ///      inlined call here will overflow it.** Five storage pointers (`priceOracles`, `monitorFeeds`,
+    ///      `assetPricing`, `assetIndex`, `registeredAssets`) plus `sequencerDown` and the `nav` return struct stay
+    ///      live for the whole body, and the optimizer inlines the position-gathering helpers, so their loop
+    ///      counters land in this frame too. The failure mode is a compile error — `Variable ... is 1 too deep in
+    ///      the stack` — NOT a test failure, and because `via_ir` allocates across the whole compilation unit it can
+    ///      appear in CI while a warm local build passes. **Reproduce with `forge clean` first;** a warm cache hides
+    ///      it. If you must add something here, free a slot the way {_sumPositionValues} did: move a block of locals
+    ///      into a `private` helper so they are live in that frame instead of this one. Packing the storage pointers
+    ///      into a struct is NOT an option — Solidity cannot hold storage references in a memory struct.
     function computeNav(
         mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
         mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
@@ -586,6 +677,7 @@ library PriceFeedLib {
         if (assetCount == 0) {
             nav.stalePriceAssets = new INAVCalculator.Asset[](0);
             nav.irregularPriceAssets = new INAVCalculator.Asset[](0);
+            nav.monitorsUnhealthyPriceAssets = new INAVCalculator.Asset[](0);
             return nav; // value 0, sequencerDown false (no assets registered)
         }
 
@@ -596,6 +688,7 @@ library PriceFeedLib {
         if (allPositions.length == 0) {
             nav.stalePriceAssets = new INAVCalculator.Asset[](0);
             nav.irregularPriceAssets = new INAVCalculator.Asset[](0);
+            nav.monitorsUnhealthyPriceAssets = new INAVCalculator.Asset[](0);
             return nav; // value 0
         }
 
@@ -604,8 +697,25 @@ library PriceFeedLib {
             _buildPriceFeedCache(priceOracles, monitorFeeds, assetPricing, assetsWithPositions, sequencerDown);
         nav.stalePriceAssets = _buildStaleAssets(assetIndex, registeredAssets, priceFeeds);
         nav.irregularPriceAssets = _buildIrregularAssets(assetIndex, registeredAssets, priceFeeds);
+        nav.monitorsUnhealthyPriceAssets = _buildMonitorsUnhealthyAssets(assetIndex, registeredAssets, priceFeeds);
 
-        int256 totalValue = 0;
+        nav.value = _sumPositionValues(assetIndex, registeredAssets, allPositions, priceFeeds, quoteInfo);
+    }
+
+    /// @notice Sums every position's quote-denominated value. Extracted from {computeNav} to keep that function
+    ///         inside the `via_ir` stack limit — see the stack-budget note on {computeNav}. The loop's four
+    ///         per-iteration locals (`pos`, `asset`, `feed`, `canonicalDecimals`) plus the accumulator and the
+    ///         counter live in THIS frame instead of being live across `computeNav`'s deepest point, where five
+    ///         storage pointers and the inlined position-gathering counters are already resident.
+    /// @dev Keep this a separate function. Folding the loop back into {computeNav} reintroduces the overflow, and it
+    ///      surfaces only as a `via_ir` "Variable is 1 too deep in the stack" error at compile time.
+    function _sumPositionValues(
+        mapping(address => uint256) storage assetIndex,
+        INAVCalculator.Asset[] storage registeredAssets,
+        INAVCalculator.PositionBalance[] memory allPositions,
+        PriceFeedCache[] memory priceFeeds,
+        QuoteAssetInfo memory quoteInfo
+    ) private view returns (int256 totalValue) {
         uint256 positionsLength = allPositions.length;
         for (uint256 i = 0; i < positionsLength; i++) {
             INAVCalculator.PositionBalance memory pos = allPositions[i];
@@ -623,7 +733,6 @@ library PriceFeedLib {
                 quoteInfo.assetDecimals
             );
         }
-        nav.value = totalValue;
     }
 
     /// @notice Computes enriched positions for an account, optionally filtered by a single asset
@@ -739,6 +848,7 @@ library PriceFeedLib {
         if (assetCount == 0) {
             nav.stalePriceAssets = new INAVCalculator.Asset[](0);
             nav.irregularPriceAssets = new INAVCalculator.Asset[](0);
+            nav.monitorsUnhealthyPriceAssets = new INAVCalculator.Asset[](0);
             positions = new INAVCalculator.Position[](0);
             return (nav, positions); // value 0, sequencerDown false (no assets registered)
         }
@@ -750,6 +860,7 @@ library PriceFeedLib {
         if (allPositions.length == 0) {
             nav.stalePriceAssets = new INAVCalculator.Asset[](0);
             nav.irregularPriceAssets = new INAVCalculator.Asset[](0);
+            nav.monitorsUnhealthyPriceAssets = new INAVCalculator.Asset[](0);
             positions = new INAVCalculator.Position[](0);
             return (nav, positions); // value 0
         }
@@ -759,6 +870,7 @@ library PriceFeedLib {
             _buildPriceFeedCache(priceOracles, monitorFeeds, assetPricing, assetsWithPositions, sequencerDown);
         nav.stalePriceAssets = _buildStaleAssets(assetIndex, registeredAssets, priceFeeds);
         nav.irregularPriceAssets = _buildIrregularAssets(assetIndex, registeredAssets, priceFeeds);
+        nav.monitorsUnhealthyPriceAssets = _buildMonitorsUnhealthyAssets(assetIndex, registeredAssets, priceFeeds);
 
         (positions, nav.value) =
             _enrichAll(allPositions, priceFeeds, quoteInfo, quoteAssetIrregular, assetIndex, registeredAssets);
@@ -1152,9 +1264,12 @@ library PriceFeedLib {
         return ArrayLib.deduplicateAddresses(allAssets);
     }
 
-    /// @notice Builds the selected-feed price cache (incl. the per-asset divergence `irregular` flag) for a list
-    ///         of assets. Divergence treats the primary as stale exactly when its feed is stale; the NAV-level
-    ///         sequencer-down flag is surfaced separately on the NAV struct.
+    /// @notice Builds the selected-feed price cache for a list of assets — the per-asset `irregular` divergence flag
+    ///         AND the `monitorsUnhealthy` flag (monitors configured, none readable, primary usable).
+    /// @dev Divergence folds the NAV-level `sequencerDown` into the primary's staleness (see {_divergenceFor}), so
+    ///      both flags are suppressed while the sequencer is down; `sequencerDown` itself is surfaced separately on
+    ///      the NAV struct. (An earlier version of this note claimed the primary is treated as stale "exactly when
+    ///      its feed is stale", which understated the fold.)
     function _buildPriceFeedCache(
         mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
         mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
@@ -1176,8 +1291,16 @@ library PriceFeedLib {
                 // decimals = NAV_DECIMALS (not 0): _priceConversion reverts InvalidAssetDecimals when
                 // assetDecimals + priceDecimals < NAV_DECIMALS, so a 0 here would re-introduce a DoS for
                 // low-decimal assets (e.g. USDC). NAV_DECIMALS guarantees the guard passes; price 0 → value 0.
-                priceFeeds[i] =
-                    PriceFeedCache({asset: asset, price: 0, decimals: NAV_DECIMALS, stale: true, irregular: false});
+                // monitorsUnhealthy stays false: a feedless asset is reported via `stalePriceAssets`, and its monitor
+                // health is not the reason its price is unusable.
+                priceFeeds[i] = PriceFeedCache({
+                    asset: asset,
+                    price: 0,
+                    decimals: NAV_DECIMALS,
+                    stale: true,
+                    irregular: false,
+                    monitorsUnhealthy: false
+                });
                 continue;
             }
             (int256 price, uint8 decimals, bool stale,,) = _selectFeedCore(priceOracles, asset);
@@ -1187,12 +1310,36 @@ library PriceFeedLib {
             // Fold the NAV-level `sequencerDown` into staleness so `NAV.irregularPriceAssets` / `Position.irregular`
             // stay consistent with getPriceData / healthCheck on L2 during sequencer downtime.
             bool irregular = false;
+            bool monitorsUnhealthy = false;
             if (_hasDivergenceChecks(monitorFeeds, assetPricing, asset)) {
-                (,,,, irregular,,) =
+                // `healthyMonitors` is the count {_monitorDivergence} already computed for its own guard — taken from
+                // the return rather than re-derived, so this costs no extra feed reads on the hot path.
+                uint256 healthyMonitors;
+                int256 primaryPrice8;
+                (primaryPrice8,,,, irregular, healthyMonitors,) =
                     _divergenceFor(monitorFeeds, assetPricing, asset, price, decimals, stale, sequencerDown);
+                // Monitors exist, none answered, and the primary was usable — so the divergence check was skipped for
+                // want of MONITOR data, which is the only thing this flag is entitled to claim.
+                //
+                // `primaryPrice8 > 0` is the exact negation of the other half of {_monitorDivergence}'s own guard
+                // (`n > 0 && !primaryStale && primaryPrice8 > 0`), and it is deliberately used INSTEAD of
+                // `!stale && !sequencerDown`: it subsumes both (`primaryPrice8` is forced to 0 whenever
+                // `primaryStale`, i.e. whenever the feed is stale OR the sequencer is down) AND it additionally
+                // covers the case those two miss — {_scaleTo8} returning 0 for a NON-stale primary, which it does
+                // for a primary whose `decimals != 8` when the exponent is unusable, when `price` truncates to 0
+                // scaling down, or when scaling up would overflow. In that state `healthyMonitors` is 0 for a reason
+                // that has nothing to do with the monitors, and blaming them would send an operator to the wrong
+                // contract. Not reachable with today's uniformly-8-decimal primaries, but `addFeed` permits others.
+                monitorsUnhealthy = healthyMonitors == 0 && primaryPrice8 > 0 && monitorFeeds[asset].length > 0;
             }
-            priceFeeds[i] =
-                PriceFeedCache({asset: asset, price: price, decimals: decimals, stale: stale, irregular: irregular});
+            priceFeeds[i] = PriceFeedCache({
+                asset: asset,
+                price: price,
+                decimals: decimals,
+                stale: stale,
+                irregular: irregular,
+                monitorsUnhealthy: monitorsUnhealthy
+            });
         }
     }
 
@@ -1250,6 +1397,35 @@ library PriceFeedLib {
         irregularAssets = new INAVCalculator.Asset[](irregularLength);
         for (uint256 i = 0; i < irregularLength; i++) {
             irregularAssets[i] = _getRegisteredAsset(assetIndex, registeredAssets, irregularAddrs[i]);
+        }
+    }
+
+    /// @notice Collects the assets whose monitors are all unreadable — configured, but none of them answered — from
+    ///         the per-asset flag computed once in {_buildPriceFeedCache}.
+    /// @dev Sibling of {_buildIrregularAssets}, deliberately kept separate rather than folded into it behind a
+    ///      selector flag: the two lists mean different things (one says a check FIRED, the other says the
+    ///      monitor-divergence check did NOT RUN) and a caller that confuses them draws the wrong conclusion. They
+    ///      are NOT mutually exclusive — an asset can appear in both, because the peg guard is monitor-independent:
+    ///      a stablecoin off $1 whose monitors are all unreadable is `irregular` (peg) AND monitors-unhealthy
+    ///      (divergence unchecked). Lives here in the library, so its bytes do not count against
+    ///      {NAVCalculator}'s EIP-170 ceiling.
+    function _buildMonitorsUnhealthyAssets(
+        mapping(address => uint256) storage assetIndex,
+        INAVCalculator.Asset[] storage registeredAssets,
+        PriceFeedCache[] memory priceFeeds
+    ) private view returns (INAVCalculator.Asset[] memory unhealthyAssets) {
+        uint256 feedsLength = priceFeeds.length;
+        address[] memory temp = new address[](feedsLength);
+        uint256 count = 0;
+        for (uint256 i = 0; i < feedsLength; i++) {
+            if (priceFeeds[i].monitorsUnhealthy) temp[count++] = priceFeeds[i].asset;
+        }
+        address[] memory addrs = ArrayLib.copySliceAddress(temp, count);
+
+        uint256 length = addrs.length;
+        unhealthyAssets = new INAVCalculator.Asset[](length);
+        for (uint256 i = 0; i < length; i++) {
+            unhealthyAssets[i] = _getRegisteredAsset(assetIndex, registeredAssets, addrs[i]);
         }
     }
 
@@ -1575,6 +1751,21 @@ library PriceFeedLib {
         AddressCheckLib.requireContract(priceFeed, "priceFeed");
         if (priceType == IPrices.PriceType.Custom) {
             if (!priceFeed.supportsInterface(type(ICustomPriceFeed).interfaceId)) revert IPrices.InvalidPriceOracle();
+            // A custom feed prices exactly ONE asset (1:1 contract-to-asset, see PRICE_ADAPTERS.md) and reports which
+            // one via `underlyingAssetSupported()`. Nothing else in the system reads that value, so without this check
+            // registering feed A for asset B succeeds silently and every B position is then priced at A's price
+            // forever — a plausible-looking number, `stale = false`, `irregular = false`, no on-chain trace. Feeds are
+            // resolved by STRING KEY from config (`nav-config[asset].priceFeeds[].feed` →
+            // `deployments.customPriceFeeds[<name>]`) across near-identical names (`ezETH`/`ezETHCrossRate`,
+            // `NXM`/`wNXM`, `weETH_L2`/`weETHCrossRate`), which is exactly where the two get crossed. The feed already
+            // knows the answer; ask it.
+            //
+            // Deliberately a direct high-level call, not `try`/`catch`: a feed that claims `ICustomPriceFeed` via
+            // `supportsInterface` (checked above) but cannot answer `underlyingAssetSupported()` is broken, and
+            // failing the registration is the safe direction. Matches the AggregatorV3 branch below, which likewise
+            // lets a malformed feed revert rather than swallowing it.
+            address feedAsset = ICustomPriceFeed(priceFeed).underlyingAssetSupported();
+            if (feedAsset != token) revert IPrices.CustomFeedAssetMismatch(token, priceFeed, feedAsset);
         } else if (
             priceType == IPrices.PriceType.Chainlink || priceType == IPrices.PriceType.Redstone
                 || priceType == IPrices.PriceType.API3

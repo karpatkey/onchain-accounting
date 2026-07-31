@@ -85,4 +85,4 @@ bash script/development/app/sync-app-env.sh 1
 The Safe then shows a "StakeWise V3" group with a ~1000 ETH exit-queue leg.
 
 ## 10. Test verdict
-- Unit: **43/43 pass**. Fork: **6/6 pass** (strict delta 0 vs live read, both lifecycle states). `forge build`/`fmt` clean. Pin: balance-adapter (no prices-lib change) — CI's `LibraryPinConsistency` is the source of truth.
+- Unit: **43/43 pass**. Fork: **6/6 pass** (strict delta 0 vs live read, both lifecycle states). `forge build`/`fmt` clean. Pin: balance-adapter (no prices-lib change) — verify with a clean local full build, or CI's `Library pins (clean build)` job. Not the Unit job: it downloads artifacts from an incrementally-built, branch-shared cache, so its pin reading is a correct hash of an arbitrary compilation scope.

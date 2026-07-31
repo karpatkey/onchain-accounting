@@ -38,11 +38,43 @@ contract stETH_CrossRatePriceForkTest is TestEnvConfigurator {
         assertEq(stale, false);
     }
 
+    /// @notice Past the RATE heartbeat, with the base genuinely fresh, the rate leg alone marks it stale.
+    /// @dev **What was wrong.** The previous body warped by `RATE_HEARTBEAT + 1` and asserted `stale == true`.
+    ///      That warp also pushes the NAV's base/USD feed past ITS own heartbeat, and `_compute` tests
+    ///      `baseStale` BEFORE the rate heartbeat (`if (baseStale || rate <= 0) return (0, true, ...)`), so the
+    ///      assertion was satisfied by the base leg. It passed with the rate-leg gate deleted entirely —
+    ///      coverage in appearance only, the same defect class as the hardcoded RATE_FEED this PR removes.
+    ///
+    ///      **Why the freshness is restored at the ORACLE, not at the NAV.** Mocking `getPriceData` or whatever
+    ///      `NavBaseUsdLib` calls would make the test assert that a mock returned what it was told to return —
+    ///      the tautology again, one layer in. The base Chainlink aggregator is the SYSTEM BOUNDARY, so it is
+    ///      the only thing stubbed here: `NAVCalculator`, `NavBaseUsdLib` and the ADR-0019 `sequencerDown`
+    ///      un-folding all still execute for real, and the verdict arrives the way it will in production. It
+    ///      also survives refactors — a mock pinned to today's internal call shape would silently start passing
+    ///      when the plumbing moves.
+    ///
+    ///      Mutation-verified: deleting the rate-heartbeat gate in `TwoFeedChainlinkPriceFeed._compute` makes
+    ///      this FAIL. Passing unmutated is not evidence.
     function test_getLatestPriceStale() public {
+        address baseFeed = INAVCalculator(NAV).getPriceData(BASE).priceFeed;
+        (uint80 rid, int256 ans,,, uint80 air) = AggregatorV3Interface(baseFeed).latestRoundData();
+
         vm.warp(block.timestamp + RATE_HEARTBEAT + 1);
+
+        // Keep the REAL base aggregator answering fresh at the warped timestamp. Only the rate leg is stale now.
+        vm.mockCall(
+            baseFeed,
+            abi.encodeWithSelector(AggregatorV3Interface.latestRoundData.selector),
+            abi.encode(rid, ans, block.timestamp, block.timestamp, air)
+        );
+
+        // Sanity through the CONTRACT's own path, not the mock: the NAV must agree the base is fresh, or a
+        // `stale == true` below would prove nothing about the rate leg.
+        assertEq(INAVCalculator(NAV).getPriceData(BASE).stale, false, "base must be fresh via the real NAV path");
+
         (uint256 price, bool stale) = oracle.getLatestPrice();
         assertEq(price, 0, "Stale price returns 0 (I-1)");
-        assertEq(stale, true, "Price should be marked as stale past the rate heartbeat");
+        assertEq(stale, true, "RATE leg past its heartbeat must mark it stale while the base is fresh");
     }
 
     function test_decimals() public view {

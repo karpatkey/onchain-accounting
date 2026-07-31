@@ -16,24 +16,87 @@ env:
   # Single source of truth for the pinned Foundry version (forge's via_ir codegen is version-specific, so this
   # fixes the deterministic CREATE2 library pins — see foundry.toml). Bump here only; every job references it.
   FOUNDRY_VERSION: v1.7.1
-  # Fork + integration tests resolve RPC via getAlchemyUrl() in test/TestEnvConfigurator.sol.
-  # With no chain-specific *_URL vars set, it builds https://<network>.g.alchemy.com/v2/<key>.
-  ALCHEMY_API_KEY: ${{ secrets.ALCHEMY_API_KEY }}
 
 jobs:
   # Compile once (via_ir is expensive) + EIP-170 size gate; share artifacts with all test jobs.
   build:
     name: Build
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
 
+      - name: Mount forge compilation cache
+        uses: useblacksmith/stickydisk@v1
+        with:
+          key: ${{ github.repository }}-forge-cache
+          path: ./cache
+
+      - name: Mount forge build output
+        uses: useblacksmith/stickydisk@v1
+        with:
+          key: ${{ github.repository }}-forge-out
+          path: ./out
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: ${{ env.FOUNDRY_VERSION }}
-          cache: true
+          # cache: false ONLY on this job. The restored Foundry cache lets `forge build` reuse
+          # compilation state across runs, and that reuse changes the compilation scope enough to
+          # change PriceFeedLib's emitted bytecode — and so the deterministic CREATE2 address the
+          # LibraryPinConsistency test derives from it. Three different PriceFeedLib values appeared
+          # across branches whose PriceFeedLib source was byte-identical, one of which changed no
+          # file under src/ at all; a --force probe recovered the correct value every time.
+          #
+          # This is the job that matters: it produces the `out/` every test job downloads, so a wrong
+          # value here is wrong everywhere downstream. Disabled rather than passing `forge build
+          # --force` because it names the cause instead of overriding it — with nothing restored
+          # there is no stale state to reuse. Identical compile cost either way.
+          #
+          # The test jobs keep `cache: true`: they consume this job's `out/` artifact and do not
+          # recompile, so their cache cannot affect a pin value.
+          cache: false
+
+      # DO NOT REMOVE — this is not cruft, the build does not fit in the runner without it.
+      #
+      # A whole-program `via_ir` compile of this repo peaks at 7-8 GB RSS (measured locally with
+      # `/usr/bin/time -v forge build --sizes` after `forge clean`; one run on a larger box reported 9.7 GB).
+      # This repo is INTERNAL, so `ubuntu-latest` is a standard GitHub-hosted runner: 2 vCPU / 7 GB RAM.
+      # The compile therefore needs more memory than the runner has, and every green Build on this repo has
+      # been solc landing just under a line it structurally exceeds. A branch that adds even ~1 KB of
+      # contract code in the wrong shape tips it, and the failure mode is silent and confusing: the log ends
+      # at "Compiling NNN files with Solc 0.8.34" and the step exits 143 (SIGTERM, i.e. the kernel killed
+      # solc) with no compiler error at all.
+      #
+      # The tempting "fixes" are all traps: lowering `optimizer_runs`, disabling `via_ir`, or changing
+      # `bytecode_hash` would make the build pass AND silently change library bytecode, which moves the
+      # deterministic CREATE2 pins that `foundry.toml [libraries]` and `script/utils/LibraryPins.sol` hard-code.
+      # Never trade a pin move for a green build.
+      #
+      # Swap is slower than RAM but correct, and it fixes every branch at once. A cleaner fix, if the org
+      # wants it: this org has Blacksmith runners registered (`blacksmith-4vcpu-ubuntu-2404` through
+      # `blacksmith-32vcpu-ubuntu-2404`), so `runs-on:` could point at one with enough RAM and this step
+      # could go away.
+      - name: Add swap for the via_ir compile
+        run: |
+          echo "--- before ---"
+          free -h
+          swapon --show || true
+          df -h /mnt | tail -1
+          # `ubuntu-latest` already ships an ACTIVE /swapfile, so creating one at that path fails with
+          # "fallocate failed: Text file busy" — and it is what main has been squeaking by on. Add a SECOND
+          # swap area instead of resizing the existing one (resizing means swapoff first, which needs the
+          # pages to fit in RAM and can fail on its own).
+          #
+          # It goes on /mnt, the runner's large ephemeral disk (~65 GB free), not on / (~20 GB, and shared
+          # with the compile's own out/ + cache/ artifacts).
+          sudo fallocate -l 8G /mnt/swapfile-ci
+          sudo chmod 600 /mnt/swapfile-ci
+          sudo mkswap /mnt/swapfile-ci
+          sudo swapon /mnt/swapfile-ci
+          echo "--- after ---"
+          free -h
+          swapon --show
 
       - name: Build
         run: forge build --sizes
@@ -47,11 +110,86 @@ jobs:
             cache/
           retention-days: 1
 
+  # Deterministic library-pin assertions, on a build from CLEAN. Deliberately its own job.
+  #
+  # WHY THIS CANNOT RIDE THE `build` JOB ABOVE — the whole reason the minutes are worth spending.
+  #
+  # `build` mounts two Blacksmith sticky disks over `out/` and `cache/`, keyed on
+  # `${{ github.repository }}` and nothing else. They are therefore shared by every run of every
+  # branch, so `forge build` there is INCREMENTAL against whatever the previous run on that disk
+  # left behind — measured at "Compiling 15 files with Solc 0.8.34" against a ~540-file project.
+  # The dirty set is computed relative to the last branch that used the disk, NOT to the commit
+  # under test, which makes `build`'s compilation SCOPE nondeterministic across branches.
+  #
+  # That matters here and nowhere else in this workflow, because `type(X).creationCode` is a
+  # compile-time constant baked into the asserting test's own bytecode. Under an incremental
+  # invocation solc recompiles PriceFeedLib in a small scope in order to embed it, and emits
+  # different bytecode than a whole-program compile does — so the pin the test derives is a
+  # correct hash of the wrong compilation. Observed directly: with `out/PriceFeedLib.sol/
+  # PriceFeedLib.json` on disk implying the correct 0x8b7e4fA9…, the test simultaneously computed
+  # 0xeA694009…. Two compilations of one unchanged source, disagreeing inside a single `out/`.
+  #
+  # This is NOT staleness, and that distinction is why the fix is a job and not a test change:
+  # the sources are unchanged and the standalone artifact is right, so no freshness check can see
+  # it (PR #210's content-hash tripwire passes on exactly the runs where the pin assertion fails).
+  # The only thing that restores meaning is compiling the whole program from nothing.
+  #
+  # Hence: no stickydisk mounts, `cache: false`, and `--force`. Cost is one extra ~6-10 min
+  # compile, paid in PARALLEL with `build` (no `needs:`), so it does not extend the critical path.
+  #
+  # The pin values themselves are NOT owned by this job. They are `foundry.toml [libraries]` +
+  # `script/utils/LibraryPins.sol`, and the authoritative gate remains one clean local full build
+  # against the final tree immediately before deploying. A red run here means "regenerate the
+  # pins deliberately", never "edit the values until it goes green".
+  pins:
+    name: Library pins (clean build)
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: ${{ env.FOUNDRY_VERSION }}
+          # Same reasoning as the `build` job: a restored Foundry cache reintroduces reusable
+          # compilation state, and reuse is precisely what this job exists to avoid.
+          cache: false
+
+      # See the long note on `build`'s copy of this step. Same compile, same ~7-11 GB peak, same
+      # need — a whole-program `via_ir` compile does not fit in the runner's RAM unaided, and the
+      # failure mode is a silent SIGTERM (exit 143) with no compiler error.
+      - name: Add swap for the via_ir compile
+        run: |
+          sudo fallocate -l 8G /mnt/swapfile-ci
+          sudo chmod 600 /mnt/swapfile-ci
+          sudo mkswap /mnt/swapfile-ci
+          sudo swapon /mnt/swapfile-ci
+          free -h
+          swapon --show
+
+      # `--force` even though no sticky disk is mounted and `out/` starts empty: it states the
+      # requirement in the command rather than relying on the absence of a mount, so a future
+      # cache/mount added to this job cannot silently reintroduce the incremental scope this job
+      # exists to exclude. It costs nothing on an empty `out/`.
+      #
+      # Building the WHOLE program here (rather than letting `forge test` compile just what the
+      # matched tests need) is load-bearing, not tidiness: the authoritative pin is the one a
+      # whole-program compile produces, because that is the scope the pre-deploy local build and
+      # the real CREATE2 deployment used. A narrower scope would reproduce the very bug above.
+      - name: Build from clean (whole program)
+        run: forge build --force
+
+      # Finds everything up to date and recompiles nothing, so it asserts against the artifacts
+      # the step above produced.
+      - name: Library pin assertions
+        run: forge test --match-path "test/LibraryPinConsistency.t.sol" -vv
+
   # Unit tests (mock-only, no RPC). Default profile.
   unit:
     name: Unit tests
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
         with:
@@ -66,14 +204,29 @@ jobs:
         with:
           name: forge-build
 
+      # `--no-match-contract LibraryPinConsistencyTest` is NOT hiding a failing test — it is moving
+      # an assertion to the only job that can evaluate it. This job does not compile: it downloads
+      # `build`'s artifacts, and `build` compiles incrementally against a branch-shared sticky disk
+      # (full reasoning on the `pins` job above). So the pin value reachable HERE is a correct hash
+      # of an arbitrary compilation scope, and this job has produced repeated false reds on trees
+      # whose pins were provably correct — `0x8b7e4fA9…` has landed in a real CREATE2 deployment.
+      #
+      # Leaving it here was actively harmful: a check that cries wolf on correct trees taught the
+      # fleet to merge past it, which is exactly the state in which a REAL pin drift would sail
+      # through unnoticed. The assertion now runs in `pins`, from clean, where it means something.
+      #
+      # The remaining LibraryPinConsistency tests move with it — including the freshness tripwire,
+      # which is sound but pointless in a job whose artifacts are downloaded by construction.
       - name: Unit tests
-        run: forge test --no-match-path "*fork*" -vvv
+        env:
+          ALCHEMY_API_KEY: ${{ secrets.ALCHEMY_API_KEY }}
+        run: forge test --no-match-path "*fork*" --no-match-contract LibraryPinConsistencyTest -vvv
 
   # Per-protocol fork tests (slow profile, RPC). Excludes the NAV integration harness.
   fork:
     name: Fork tests
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
         with:
@@ -91,13 +244,14 @@ jobs:
       - name: Fork tests
         env:
           FOUNDRY_PROFILE: slow
+          ALCHEMY_API_KEY: ${{ secrets.ALCHEMY_API_KEY }}
         run: forge test --match-path "*fork*" --no-match-path "test/integration/*" -vvv --threads 1
 
   # NAV integration tests (5 chains, heavy harness — own job for independent retries).
   integration:
     name: Integration tests
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
         with:
@@ -115,6 +269,7 @@ jobs:
       - name: Integration tests
         env:
           FOUNDRY_PROFILE: slow
+          ALCHEMY_API_KEY: ${{ secrets.ALCHEMY_API_KEY }}
         run: forge test --match-path "test/integration/*" -vvv --threads 1
 
   # Format check
@@ -131,7 +286,7 @@ jobs:
 
   lint:
     name: Format
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
         with:

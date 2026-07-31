@@ -153,7 +153,7 @@
       {
         "type": "Chainlink",
         "address": "0x3c786e934F23375Ca345C9b8D5aD54838796E8e7",
-        "heartbeat": 86400
+        "heartbeat": 90000
       }
     ]
   },

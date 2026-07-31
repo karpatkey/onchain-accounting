@@ -194,7 +194,7 @@
       {
         "type": "Chainlink",
         "address": "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6",
-        "heartbeat": 82800
+        "heartbeat": 86400
       }
     ],
     "monitorFeeds": [
@@ -308,7 +308,7 @@
       {
         "type": "Chainlink",
         "address": "0x3E7d1eAB13ad0104d2750B8863b489D65364e32D",
-        "heartbeat": 86400
+        "heartbeat": 90000
       }
     ],
     "monitorFeeds": [
@@ -337,7 +337,7 @@
       {
         "type": "Chainlink",
         "address": "0x3f12643D3f6f874d39C2a4c9f2Cd6f2DbAC877FC",
-        "heartbeat": 86400
+        "heartbeat": 90000
       }
     ]
   },
@@ -349,7 +349,7 @@
       {
         "type": "Chainlink",
         "address": "0xa569d910839Ae8865Da8F8e70FfFb0cBA869F961",
-        "heartbeat": 82800
+        "heartbeat": 86400
       }
     ],
     "monitorFeeds": [
@@ -367,14 +367,14 @@
       {
         "type": "Custom",
         "feed": "sUSDe",
-        "heartbeat": 82800
+        "heartbeat": 86400
       }
     ],
     "monitorFeeds": [
       {
         "type": "Chainlink",
         "address": "0xFF3BC18cCBd5999CE63E788A1c250a88626aD099",
-        "heartbeat": 86400
+        "heartbeat": 90000
       },
       {
         "type": "Redstone",
@@ -401,7 +401,7 @@
       {
         "type": "Chainlink",
         "address": "0xEEf0C605546958c1f899b6fB336C20671f9cD49F",
-        "heartbeat": 86400
+        "heartbeat": 90000
       }
     ]
   },
@@ -422,7 +422,7 @@
       {
         "type": "Custom",
         "feed": "syrupUSDC",
-        "heartbeat": 82800
+        "heartbeat": 86400
       }
     ]
   },
@@ -432,7 +432,7 @@
       {
         "type": "Custom",
         "feed": "RWIV",
-        "heartbeat": 82800
+        "heartbeat": 86400
       }
     ]
   },
@@ -442,7 +442,7 @@
       {
         "type": "Custom",
         "feed": "sGHO",
-        "heartbeat": 86400
+        "heartbeat": 90000
       }
     ]
   },
@@ -538,7 +538,7 @@
       {
         "type": "Custom",
         "feed": "OETH",
-        "heartbeat": 86400
+        "heartbeat": 90000
       }
     ]
   },

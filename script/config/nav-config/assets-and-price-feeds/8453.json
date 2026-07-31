@@ -109,7 +109,7 @@
       {
         "type": "Chainlink",
         "address": "0x7e860098F58bBFC8648a4311b374B1D669a2bc6B",
-        "heartbeat": 86400
+        "heartbeat": 90000
       }
     ],
     "monitorFeeds": [
@@ -127,7 +127,7 @@
       {
         "type": "Chainlink",
         "address": "0x42868EFcee13C0E71af89c04fF7d96f5bec479b0",
-        "heartbeat": 86400
+        "heartbeat": 90000
       }
     ]
   },
@@ -168,7 +168,7 @@
       {
         "type": "Chainlink",
         "address": "0xf19d560eB8d2ADf07BD6D13ed03e1D11215721F9",
-        "heartbeat": 86400
+        "heartbeat": 90000
       }
     ],
     "note": "Bridged Tether USDT (6 decimals) priced via Chainlink USDT/USD; peg-guarded at 100bps. No monitor feed — RedStone has no USDT/USD feed on Base (only USDC), so unlike Base's other stablecoins this is peg-guard-only."

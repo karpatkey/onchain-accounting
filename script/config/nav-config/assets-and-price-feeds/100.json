@@ -6,7 +6,7 @@
       {
         "type": "Chainlink",
         "address": "0x678df3415fc31947dA4324eC63212874be5a82f8",
-        "heartbeat": 86400
+        "heartbeat": 90000
       }
     ]
   },
@@ -28,7 +28,7 @@
       {
         "type": "Chainlink",
         "address": "0x678df3415fc31947dA4324eC63212874be5a82f8",
-        "heartbeat": 86400
+        "heartbeat": 90000
       }
     ]
   },
@@ -59,7 +59,7 @@
       {
         "type": "Chainlink",
         "address": "0x26C31ac71010aF62E6B486D1132E266D6298857D",
-        "heartbeat": 86400
+        "heartbeat": 90000
       }
     ],
     "note": "Bridged USDC; on-chain symbol() reports 'USDC.e' but JSON key avoids the dot for path-parser compatibility"
@@ -70,7 +70,7 @@
       {
         "type": "Custom",
         "feed": "sXDAI",
-        "heartbeat": 86400
+        "heartbeat": 90000
       }
     ]
   },
@@ -81,7 +81,7 @@
       {
         "type": "Chainlink",
         "address": "0x855193775eF2ABb12CF95DE3086229a14Ab8E0E3",
-        "heartbeat": 86400
+        "heartbeat": 90000
       }
     ]
   },
@@ -101,7 +101,7 @@
       {
         "type": "Chainlink",
         "address": "0xab70BCB260073d036d1660201e9d5405F5829b7a",
-        "heartbeat": 86400
+        "heartbeat": 90000
       }
     ],
     "$comment": "EURe (Monerium, 1:1 EUR-backed) priced via Chainlink EUR/USD. API3 EUR/USD on gnosis to be added as a second feed (ADR 0009) once the Api3ReaderProxyV1 address is obtained."
@@ -113,7 +113,7 @@
       {
         "type": "Chainlink",
         "address": "0x68811D7DF835B1c33e6EEae8E7C141eF48d48cc7",
-        "heartbeat": 86400
+        "heartbeat": 90000
       }
     ],
     "note": "Bridged Tether USDT (6 decimals) priced via Chainlink USDT/USD; peg-guarded at 100bps like the other Gnosis stablecoins. No monitor feed (none of the Gnosis stablecoins use one)."

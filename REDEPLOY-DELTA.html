@@ -234,11 +234,21 @@ tree kept moving for good reasons. So the operative instruction is a clean build
 document, including these two, is a substitute for running it.</p>
 </div>
 
-<div class="note blocker">
-<p><span class="chip blocker">Measurement pending — may not fit on-chain</span> <strong>Whether the
-<code>PegKind</code>/<code>AccrualKind</code> classification can be delivered on-chain at all is an open question, not a
-scheduling detail.</strong> The budget is <code>NAVCalculator</code>'s <strong>68</strong> free bytes of the EIP-170 limit (see
-<code>nav/</code> above). Measured so far:</p>
+<div class="note verified">
+<p><span class="chip verified">Settled by measurement</span> <strong>The <code>PegKind</code>/<code>AccrualKind</code>
+classification is NOT going into <code>NAVCalculator</code>. It ships as a standalone <code>AssetKindRegistry</code>, so the NAV's
+ABI is unchanged by it.</strong></p>
+<p><strong>What settled it was measuring the floor rather than the design.</strong> The theoretical minimum — an
+<em>existing</em> struct widened, read through an <em>existing</em> getter, with no setter, no new selector, and not even a working
+feature — came in at <strong>+92 bytes against 68 free</strong>. Since that shape is strictly smaller than anything shippable, no
+in-NAV variant can fit. <span class="chip judge">Judgement</span> This is a stronger result than any of the individual option
+measurements below: they show particular designs failing, whereas the floor exceeding the budget rules out the whole class
+without enumerating it.</p>
+<p><strong>The choice of a separate registry is principled, not merely forced.</strong> Peg and accrual behaviour is <em>static
+metadata</em> about an asset, not runtime state the NAV computes over — so a registry is where it belongs even with bytes to
+spare. <span class="chip judge">Judgement</span> Worth recording because "we ran out of room" and "it did not belong there"
+point at the same outcome for different reasons, and only the second survives a future size reclamation.</p>
+<p>The superseded measurements, kept because they are the evidence:</p>
 <div class="scroll">
 <table>
 <caption>Options measured against a 68-byte budget. No option has yet been shown to fit.</caption>
@@ -250,15 +260,26 @@ scheduling detail.</strong> The budget is <code>NAVCalculator</code>'s <strong>6
 </tbody>
 </table>
 </div>
-<p>A final measurement of the <em>irreducible floor</em> — the smallest shape that carries the two axes at all — is in flight.
-Until it reports, the honest status is <strong>measurement-pending</strong>: no option is known to fit, and none has been ruled
-out either.</p>
-<p><strong>The alternatives, if the floor also exceeds 68 bytes,</strong> are to reclaim code size elsewhere in
-<code>NAVCalculator</code> first, or to give the classification an off-chain home. <span class="chip judge">Judgement</span>
-<strong>Option A's cost is not a byte count and should not be compared as one.</strong> +367 versus 68 is a measurement; breaking
-a struct ABI that 27 immutable, already-deployed adapters are compiled against is a coordinated redeploy of the adapter set. The
-two are not on the same scale, so "A is the one that fits" would be the wrong conclusion to draw from A's absence from the
-byte column.</p>
+<p><span class="chip judge">Judgement</span> <strong>Option A's cost is not a byte count and should not be compared as
+one.</strong> +367 versus 68 is a measurement; breaking a struct ABI that 27 immutable, already-deployed adapters are compiled
+against is a coordinated redeploy of the adapter set. The two are not on the same scale, so "A is the one that fits" would have
+been the wrong conclusion to draw from A's absence from the byte column.</p>
+</div>
+
+<div class="note blocker">
+<p><span class="chip blocker">Deploy still held</span> <strong>The hold now waits on the
+<code>AssetKindRegistry</code>, so that the NAV and the registry ship as a single event</strong> rather than leaving a window in
+which the NAV is new and the classification has nowhere to live.</p>
+<p><strong>One live consequence, and it is not cosmetic: OETH reports <span class="mono">$0</span> every 24 hours until the
+deploy happens.</strong> The heartbeat fix exists in main but cannot reach production ahead of the deploy —
+<code>RATE_HEARTBEAT</code> is an <code>immutable</code> in the deployed feed, so correcting it takes a <em>new contract</em>, not a
+config change. There is no config value to edit and no transaction that repairs it in place.</p>
+<p><span class="chip judge">Judgement</span> <strong>The user has declined a live production fix, and this is recorded as a
+decision rather than an oversight.</strong> The alternative would be deploying a one-off replacement feed against the current
+proxy, days before that proxy is abandoned — new bytecode into production twice for a defect the redeploy already fixes. The
+cost of waiting is a recurring, visible, self-clearing <span class="mono">$0</span> print; the cost of not waiting is an
+unrehearsed production deployment. <strong>Do not treat the <span class="mono">$0</span> as a new bug when it appears — it is
+this, and it stops at the deploy.</strong></p>
 </div>
 <p><strong>Why only one of the two moved, when #232 edited a file both compile.</strong> #232 changed
 <code>INAVCalculator.sol</code>, which sits in both libraries' import graph — but its changes are <em>struct field additions</em>,
@@ -562,7 +583,10 @@ one; only the key changed and its role moved from primary to monitor. So <code>c
 reappear in the new record.</li>
 </ul>
 
-<p>A dedicated audit of the 27 previously untouched feeds produced seven findings. Those now fixed:</p>
+<p>A dedicated audit of the 27 previously untouched feeds produced seven findings. Those now fixed — <strong>"Fixed" here means
+fixed in <code>main</code>, not live</strong>: like everything else in this document, none of it reaches production until the
+deploy, and the heartbeat rows in particular cannot be fixed any other way (see the OETH note under <em>Operational
+consequences</em>).</p>
 
 <div class="scroll">
 <table>
@@ -773,11 +797,16 @@ document reports: #231, #232, #233 and #234. All are labelled as such where they
 
 <h4>Second amendment pass — pins regenerated, deploy held</h4>
 <ul class="tight">
-<li><strong>Deploy status: <span class="chip blocker">HELD</span></strong> — not blocked, deliberately deferred to attempt the
-<code>PegKind</code>/<code>AccrualKind</code> per-asset classification first. <strong>Whether that feature fits on-chain is
-measurement-pending</strong> (68 free bytes; C1 measured at +367, B excluded by arithmetic, A breaks the <code>Asset</code> ABI
-against 27 deployed adapters). Consequence for this document: the pin values below are correct-for-now, and a second
-regeneration follows only if the feature — or any other <code>src/</code> change — actually lands.</li>
+<li><strong>Deploy status: <span class="chip blocker">HELD</span></strong> — not blocked, deliberately deferred, now waiting on the
+<code>AssetKindRegistry</code> so the NAV and the registry ship as one event. Consequence for this document: the pin values below
+are correct-for-now, and a second regeneration follows only if a <code>src/</code> change actually lands.</li>
+<li><strong>Asset classification resolved — it does NOT go in the NAV.</strong> Earlier revisions of this document called it
+measurement-pending, and before that implied it was landing. The floor measurement closed it: the theoretical minimum shape is
+<strong>+92 against 68 free bytes</strong>, so no in-NAV variant fits. It ships as a standalone <code>AssetKindRegistry</code>
+(static metadata, not runtime state), leaving the NAV's ABI untouched by it.</li>
+<li><strong>OETH's recurring <span class="mono">$0</span> print is expected until the deploy</strong> and cannot be fixed sooner:
+<code>RATE_HEARTBEAT</code> is an <code>immutable</code>, so it takes a new contract rather than a config change. A live production
+fix was declined deliberately — see <em>Operational consequences</em>.</li>
 <li><strong><code>PriceFeedLib</code> pin: <span class="addr">0x8b7e4fA9…</span> →
 <span class="addr">0xfc6AE534f83A49071Eac35cCf97786Dd54b2eDf5</span></strong>, regenerated by #234 against main
 <span class="mono">6e5fa2e9</span> and verified by both a clean local build and CI's clean-build job.

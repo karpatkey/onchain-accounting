@@ -695,9 +695,7 @@ library PriceFeedLib {
         address[] memory assetsWithPositions = _extractUniqueAssets(allPositions);
         PriceFeedCache[] memory priceFeeds =
             _buildPriceFeedCache(priceOracles, monitorFeeds, assetPricing, assetsWithPositions, sequencerDown);
-        nav.stalePriceAssets = _buildStaleAssets(assetIndex, registeredAssets, priceFeeds);
-        nav.irregularPriceAssets = _buildIrregularAssets(assetIndex, registeredAssets, priceFeeds);
-        nav.monitorsUnhealthyPriceAssets = _buildMonitorsUnhealthyAssets(assetIndex, registeredAssets, priceFeeds);
+        _assignHealthArrays(nav, assetIndex, registeredAssets, priceFeeds);
 
         nav.value = _sumPositionValues(assetIndex, registeredAssets, allPositions, priceFeeds, quoteInfo);
     }
@@ -868,9 +866,7 @@ library PriceFeedLib {
         address[] memory assetsWithPositions = _extractUniqueAssets(allPositions);
         PriceFeedCache[] memory priceFeeds =
             _buildPriceFeedCache(priceOracles, monitorFeeds, assetPricing, assetsWithPositions, sequencerDown);
-        nav.stalePriceAssets = _buildStaleAssets(assetIndex, registeredAssets, priceFeeds);
-        nav.irregularPriceAssets = _buildIrregularAssets(assetIndex, registeredAssets, priceFeeds);
-        nav.monitorsUnhealthyPriceAssets = _buildMonitorsUnhealthyAssets(assetIndex, registeredAssets, priceFeeds);
+        _assignHealthArrays(nav, assetIndex, registeredAssets, priceFeeds);
 
         (positions, nav.value) =
             _enrichAll(allPositions, priceFeeds, quoteInfo, quoteAssetIrregular, assetIndex, registeredAssets);
@@ -1398,6 +1394,31 @@ library PriceFeedLib {
         for (uint256 i = 0; i < irregularLength; i++) {
             irregularAssets[i] = _getRegisteredAsset(assetIndex, registeredAssets, irregularAddrs[i]);
         }
+    }
+
+    /// @notice Builds all THREE per-asset health arrays and assigns them onto `nav`.
+    /// @dev Exists to relieve `via_ir` stack pressure in {computeNav} / {computeNavAndPositions} — the same reason
+    ///      {_enrichAll} exists, and load-bearing for the same reason. Those callers keep five storage pointers plus
+    ///      `nav` (and, in the positions variant, `positions`) live across their whole body, and THREE sequential
+    ///      builder calls each re-established `assetIndex` / `registeredAssets` / `priceFeeds` as live in the CALLER's
+    ///      frame. Collapsing them into one call is what keeps the caller inside the stack limit.
+    ///
+    ///      **Do not re-inline these three assignments.** Doing so reproduces
+    ///      `Variable _mpos_1 is 1 too deep in the stack` in `computeNavAndPositions`. Critically, that failure appears
+    ///      ONLY in a whole-project compile: Foundry hands all of `src` + `test` + `script` to a single solc
+    ///      invocation, so `via_ir` allocates stack across the entire program and the margin here depends on code with
+    ///      nothing to do with this file — adding an unrelated contract under `src/` is enough to tip it. An
+    ///      incremental `forge build` will not reproduce it, and neither will CI's Build job off a warm cache. Verify
+    ///      with `forge clean && forge build --force`.
+    function _assignHealthArrays(
+        INAVCalculator.NAV memory nav,
+        mapping(address => uint256) storage assetIndex,
+        INAVCalculator.Asset[] storage registeredAssets,
+        PriceFeedCache[] memory priceFeeds
+    ) private view {
+        nav.stalePriceAssets = _buildStaleAssets(assetIndex, registeredAssets, priceFeeds);
+        nav.irregularPriceAssets = _buildIrregularAssets(assetIndex, registeredAssets, priceFeeds);
+        nav.monitorsUnhealthyPriceAssets = _buildMonitorsUnhealthyAssets(assetIndex, registeredAssets, priceFeeds);
     }
 
     /// @notice Collects the assets whose monitors are all unreadable — configured, but none of them answered — from

@@ -1,6 +1,8 @@
 {
   "ETH": {
     "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+    "pegKind": "Floating",
+    "accrualKind": "None",
     "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
@@ -19,6 +21,8 @@
   },
   "WETH": {
     "address": "0x4200000000000000000000000000000000000006",
+    "pegKind": "Floating",
+    "accrualKind": "None",
     "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
@@ -37,6 +41,9 @@
   },
   "wstETH": {
     "address": "0xc1CBa3fCea344f92D9239c08C0568f6F2F0ee452",
+    "$kindComment": "Wrapped stETH; balance static, priced stEthPerToken x ETH/USD (per feed config). The appreciating half of the stETH pair.",
+    "pegKind": "Floating",
+    "accrualKind": "Appreciating",
     "divergenceToleranceBps": 250,
     "priceFeeds": [
       {
@@ -56,6 +63,9 @@
   },
   "weETH": {
     "address": "0x04C0599Ae5A44757c0af6F9eC3b93da8976c150A",
+    "$kindComment": "Wrapped eETH; balance static, own rate feed. The appreciating half of the eETH pair.",
+    "pegKind": "Floating",
+    "accrualKind": "Appreciating",
     "divergenceToleranceBps": 250,
     "priceFeeds": [
       {
@@ -74,6 +84,9 @@
   },
   "cbETH": {
     "address": "0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22",
+    "$kindComment": "Coinbase staked ETH; exchange rate grows, balance static.",
+    "pegKind": "Floating",
+    "accrualKind": "Appreciating",
     "divergenceToleranceBps": 250,
     "priceFeeds": [
       {
@@ -93,6 +106,8 @@
   },
   "MORPHO": {
     "address": "0xBAa5CC21fd487B8Fcc2F632f3F4E8D37262a0842",
+    "pegKind": "Floating",
+    "accrualKind": "None",
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -103,6 +118,8 @@
   },
   "USDC": {
     "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    "pegKind": "Pegged",
+    "accrualKind": "None",
     "pegToleranceBps": 100,
     "divergenceToleranceBps": 50,
     "priceFeeds": [
@@ -122,6 +139,8 @@
   },
   "GHO": {
     "address": "0x6Bb7a212910682DCFdbd5BCBb3e28FB4E8da10Ee",
+    "pegKind": "Pegged",
+    "accrualKind": "None",
     "pegToleranceBps": 100,
     "priceFeeds": [
       {
@@ -133,6 +152,8 @@
   },
   "COMP": {
     "address": "0x9e1028F5F1D5EDE59748FFcee5532509976840E0",
+    "pegKind": "Floating",
+    "accrualKind": "None",
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -143,6 +164,8 @@
   },
   "cbBTC": {
     "address": "0xcbB7C0000aB88B473b1F5aFd9ef808440eED33Bf",
+    "pegKind": "Floating",
+    "accrualKind": "None",
     "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
@@ -163,6 +186,8 @@
   },
   "USDT": {
     "address": "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2",
+    "pegKind": "Pegged",
+    "accrualKind": "None",
     "pegToleranceBps": 100,
     "priceFeeds": [
       {

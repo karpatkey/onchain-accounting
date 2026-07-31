@@ -1,6 +1,8 @@
 {
   "ETH": {
     "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+    "pegKind": "Floating",
+    "accrualKind": "None",
     "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
@@ -19,6 +21,8 @@
   },
   "WETH": {
     "address": "0x4200000000000000000000000000000000000006",
+    "pegKind": "Floating",
+    "accrualKind": "None",
     "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
@@ -37,6 +41,9 @@
   },
   "wstETH": {
     "address": "0x1F32b1c2345538c0c6f582fCB022739c4A194Ebb",
+    "$kindComment": "Wrapped stETH; balance static, priced stEthPerToken x ETH/USD (per feed config). The appreciating half of the stETH pair.",
+    "pegKind": "Floating",
+    "accrualKind": "Appreciating",
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -47,6 +54,8 @@
   },
   "USDC": {
     "address": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
+    "pegKind": "Pegged",
+    "accrualKind": "None",
     "divergenceToleranceBps": 50,
     "pegToleranceBps": 100,
     "priceFeeds": [
@@ -66,6 +75,8 @@
   },
   "USDT": {
     "address": "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58",
+    "pegKind": "Pegged",
+    "accrualKind": "None",
     "divergenceToleranceBps": 50,
     "pegToleranceBps": 100,
     "priceFeeds": [
@@ -85,6 +96,8 @@
   },
   "COMP": {
     "address": "0x7e7d4467112689329f7E06571eD0E8CbAd4910eE",
+    "pegKind": "Floating",
+    "accrualKind": "None",
     "priceFeeds": [
       {
         "type": "Chainlink",

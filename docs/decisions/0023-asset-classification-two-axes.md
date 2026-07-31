@@ -1,9 +1,9 @@
 # 0023 — Asset classification on two orthogonal axes (`PegKind` × `AccrualKind`), not one flat enum
 
-- Status: **Proposed.** The classification is decided (two axes, definitions below). The **surfacing
-  mechanism is deliberately left open** pending a byte measurement — see
-  [Surfacing mechanism](#surfacing-mechanism-pending-measurement). Do not implement against a shape
-  this ADR has not chosen.
+- Status: **Accepted.** Two axes, and the kinds are surfaced by a standalone `AssetKindRegistry` rather
+  than on `NAVCalculator` — see
+  [Surfacing mechanism](#surfacing-mechanism-a-standalone-assetkindregistry). The registry **does not
+  hold the redeploy**.
 
 ## Context
 
@@ -137,45 +137,82 @@ either fails to classify it or uses a stale row, silently. That is the drift the
 - It has **no on-chain consumer.** Nothing here branches on these values; every reader is off-chain.
   That is a real cost for a correctness benefit rather than a functional one.
 
-The decision accepts those costs for drift-resistance, on the identity taxonomy's reasoning. Revisit if
-the byte cost forces a compromise elsewhere.
+**The standalone-registry decision below answers the first two.** A separate contract spends none of
+`NAVCalculator`'s budget, and MANAGER-gated writes make a wrong classification a transaction rather than
+a redeploy — so "immutable once deployed" simply stops applying. The third stands: there is still no
+on-chain consumer, and on-chain storage is still being paid for an off-chain audience. That cost is
+accepted for the drift-resistance, on the identity taxonomy's reasoning.
 
-## Surfacing mechanism (PENDING MEASUREMENT)
+## Surfacing mechanism: a standalone `AssetKindRegistry`
 
-**Not decided. Do not infer a shape from this ADR.**
+**Decided.** The kinds are **not** surfaced on `NAVCalculator`. They live in a standalone
+`AssetKindRegistry` — one small contract per chain: `mapping(address => packed kinds)`, MANAGER-gated
+writes, and a batched `getAssetKinds(address[])` read.
 
-`NAVCalculator` has **68 bytes free** under the 24,576-byte EIP-170 limit. A docstring inside
-`NAVCalculator.sol` still claims **325**, which is stale by 144 and must not be used for planning. The
-arithmetic: the margin was 181 bytes before the last struct field, that field cost **113**, and
-181 − 113 = 68.
+### Chosen on principle, not on affordability
 
-So a field of comparable cost **does not fit**, and neither does a minimal external getter on
-`NAVCalculator` (~122 bytes). The obvious shapes are already ruled out by arithmetic; the rest differ by
-amounts only measurement resolves.
+The byte budget forced the question; it did not decide it. **This classification is static metadata, not
+runtime state.** `PegKind` and `AccrualKind` do not change block to block, do not participate in
+valuation, and nothing on the NAV read path consumes them.
 
-> **PENDING — this section is deliberately unfilled; the numbers decide it, not this ADR.**
->
-> Measured so far by a concurrent session, against the **68-byte** budget:
->
-> - **A — fields on the `Asset` struct.** Breaks the `Asset` struct **ABI** against **27 deployed
->   immutable adapters**, with **13 construction sites across 9 files outside `src/`** plus 5 inside.
->   Widest blast radius of any option.
-> - **C1 — an option the original framing did not anticipate**, surfaced by measuring rather than
->   reasoning. Cheap on blast radius — it broke **exactly one positional constructor in a test
->   helper** — but measured **+367 bytes**, so it **does not fit**.
-> - **B — `getAssetKinds()` with the work in `PriceFeedLib`.** Library bytecode deploys separately and
->   does not count against `NAVCalculator`'s limit, but B **is C1 plus a batch view**, so it cannot fit
->   **by arithmetic**. It would also move the `PriceFeedLib` pin.
-> - **The irreducible floor — still being measured.** A widened struct and a widened *existing* getter:
->   no setter, no new selector, nothing optional.
->
-> **If even the floor exceeds 68 bytes, the honest outcome is that this feature does not fit on-chain
-> as things stand** — and this ADR should then record that, not a shape. The two live conclusions in
-> that case are (a) reclaim space from `NAVCalculator` first and revisit, or (b) give the
-> classification an off-chain home and accept the drift risk that the
-> [Why this lives on-chain](#why-this-lives-on-chain) section argues against. **Neither is precluded
-> here.** The taxonomy above stands on its own either way: it is a decision about how to classify
-> assets, not about where the bytes live.
+The two properties that would justify a field *inside* the NAV read are **both absent**:
+
+- **Atomicity with the price** — needed if a consumer had to know the kind *as of the same block* as the
+  valuation. It does not; the kind is the same at every block.
+- **Derivation from live state** — needed if the value came from a contract read that could change. It
+  does not; it is a human judgement recorded once.
+
+So a consumer does two calls and caches the kinds indefinitely. That is the correct shape for data with
+these properties, independent of how many bytes were free.
+
+### What was measured, and why the floor settles it
+
+All figures from clean builds, against `NAVCalculator`'s **68 free bytes**:
+
+| Option | Shape | `NAVCalculator` cost | Verdict |
+|---|---|---|---|
+| **C3** | widened `AssetPricing` + widened *existing* `getAssetPricing` return; no setter, no signature change, no new selector | **+92** | **24 OVER** |
+| A | two fields on the `Asset` struct | +189 | OVER |
+| C1 | C3 + one MANAGER setter | +367 | OVER |
+| B | C1 + batch external view | ≥ +367 | excluded by arithmetic |
+
+**C3 is decisive because it is the theoretical floor.** It widens a struct that already exists, exposed
+through a getter that already exists, with zero new selectors and zero signature changes — and **it is
+not even a working feature, because nothing can set the values.** It still misses by 24 bytes. If the
+floor does not fit, no arrangement of these parts fits, and further search is wasted effort rather than
+unexplored option space.
+
+### Two predictions the measurement overturned
+
+Both are counterintuitive, so they are recorded rather than quietly corrected:
+
+1. **The binding constraint is any new EXTERNAL FUNCTION, not struct embedding.** The expectation was
+   that A would be worst, since `Asset` is embedded in every `Position` and NAV array. A does overflow —
+   but at **+189 it is cheaper *in `NAVCalculator`* than C1 at +367**, because it displaces cost into the
+   libraries. **The MANAGER setter alone is 275 bytes.** Dispatch and ABI surface dominate; data shape
+   does not.
+2. **"Put the work in a library, its bytes don't count" FAILS here.** C3 moved `PriceFeedLib` by
+   **+411**. The cost being paid is **external ABI surface, not work volume**, and surface cannot be
+   displaced into a library. This invalidates the reasoning that made option B look promising — B was
+   attractive on a premise that does not hold.
+
+### One assumption elsewhere that this corrects
+
+**Option A would also have moved `NAVRegistryLib`'s pin** (13,142 → 13,462). The second pin
+regeneration's working assumption — that only `PriceFeedLib` moves — would have been **wrong** under
+that option. It is not wrong under the registry, which moves neither.
+
+### Rejected: reclaim space by relocating the verbose label block
+
+The one path to fitting kinds inside `NAVCalculator` is to first move the verbose label block
+(`_toVerbose` / `_safeString` / `_safeStringArray` / `decodeStringArray`) out to a **lens contract** —
+necessarily a contract and not a library, because `decodeStringArray` must be externally callable for
+`try/catch` to reach it.
+
+Declined. It is real work, it would **hold the deploy**, and it would spend that work relocating
+*static metadata into a hot read path it has no business occupying*. Recorded here as the documented
+price should anyone later want kinds inside the NAV: the cost is a lens-contract extraction plus a
+deploy delay, and the thing bought is atomicity that — per above — nothing needs.
 
 Recording the constraint now, with the correct baseline, is the useful half: it stops the next reader
 planning against headroom that does not exist.
@@ -190,12 +227,18 @@ planning against headroom that does not exist.
   aUSDC and sDAI.
 - The classification is **quote-relative**; documentation must say so, or a reader takes
   `wstETH = Floating` for a bug.
-- `NAVCalculator` and the touched libraries **redeploy**. Whether a library pin moves depends on the
-  surfacing option: `NAVCalculator`-only edits move neither pin, while work placed in `PriceFeedLib`
-  moves that pin and needs a regeneration against a clean full build.
-- Until the surfacing mechanism is decided, **nothing here is implementable.** This ADR records the
-  classification and the rejected alternative so that reasoning is not re-litigated; it does not
-  authorise code.
+- **The registry does not hold the redeploy.** It touches no NAV struct, breaks no adapter ABI, and moves
+  **neither library pin** — so it can ship on its own schedule, before or after. This is a change from
+  the premise this work started under, where every candidate shape implied a `NAVCalculator` change and
+  therefore a coupling to the redeploy.
+- **A second call, and a cache.** Consumers wanting price and kind together make two calls instead of
+  one. Because the values are static, the kinds can be cached indefinitely and refreshed only when an
+  asset is registered — so the cost is one extra call per deployment, not per read.
+- **One more contract per chain** to deploy, verify, record in `deployments/<chainId>.json`, and hold a
+  MANAGER role on. Small, but it is a new operational surface rather than a free win.
+- The classification becomes **correctable by transaction** rather than by redeploy, which is the right
+  property for a recorded judgement — see the reconciliation in
+  [Why this lives on-chain](#why-this-lives-on-chain).
 
 ## References
 

@@ -36,4 +36,4 @@ Short, numbered records of *why* the codebase looks the way it does. Read these 
 | 0018 | [Permissionless assistant-fed assisted balance-adapter family](0018-assistant-fed-assisted-balance-adapters.md) | accepted |
 | 0019 | [Custom price feeds source their base/USD from the NAV (one price source per base asset)](0019-nav-sourced-base-price.md) | accepted |
 | 0020 | [Custom-feed `getPriceData` reports the *governing leg*'s freshness](0020-custom-feed-governing-leg-freshness.md) | accepted |
-| 0023 | [Asset classification on two orthogonal axes (`PegKind` × `AccrualKind`)](0023-asset-classification-two-axes.md) | proposed (classification decided; surfacing mechanism pending measurement) |
+| 0023 | [Asset classification on two orthogonal axes (`PegKind` × `AccrualKind`), surfaced by a standalone `AssetKindRegistry`](0023-asset-classification-two-axes.md) | accepted |

@@ -156,8 +156,30 @@ contract RateFeedGuardTest is Test {
         for (uint256 i; i < chains.length; ++i) {
             total += _countGuarded(chains[i]);
         }
-        // 20 rate-feed-bearing instances: 8 mainnet, 7 Arbitrum, 4 Base, 1 Gnosis. Each was verified on-chain.
-        assertEq(total, 20, "rate-feed instance count changed - re-verify description() on the new set");
+        // 21 rate-feed-bearing instances: 9 mainnet, 7 Arbitrum, 4 Base, 1 Gnosis. Each verified on-chain.
+        //
+        // 20 -> 21: `ezETHCrossRateMarket` (added by #224 after this guard landed, given its block here).
+        // This number is a HUMAN-IN-THE-LOOP GATE, not a fact about the world: it exists so a newly-added
+        // rate-feed instance cannot slip in without someone confirming its pair identity on-chain. Bumping it
+        // is only legitimate once that confirmation has actually happened. For this instance it has —
+        // `0xF4a3e183` measured 2026-07-31:
+        //
+        //   description()     "Redstone Price Feed"  <- the bare RedStone Classic-Push constant. Identical on
+        //                                               every Classic-Push feed on every pair, so it cannot
+        //                                               identify one; exact-match is UNIMPLEMENTABLE, not weak.
+        //   decimals()        8
+        //   latestRoundData() 108118954  ->  1.0812e18, inside the configured 0.9-1.5e18 band
+        //
+        // Hence its config declares `description: "$UNVERIFIABLE"` WITH a mandatory reason; the band and the
+        // contract-readability check still apply in full.
+        //
+        // WHEN NOT TO BUMP THIS. The distinguishing question is: did the POPULATION change, or did the COUNTING
+        // METHOD mis-measure an unchanged population? Here a real instance was added and verified, so bumping is
+        // right. The sibling census `HARDCODED_ADAPTER_COUNT` failed at 14-vs-12 on the same day and bumping
+        // there would have been WRONG — nothing had been added; the filter was matching two interface files as
+        // if they were adapters, and raising the number would have destroyed the census's ability to notice a
+        // genuine thirteenth adapter. Fix the filter when the method is broken; bump only when the set really grew.
+        assertEq(total, 21, "rate-feed instance count changed - re-verify description() on the new set");
     }
 
     function _countGuarded(uint256 chainId) internal view returns (uint256 n) {

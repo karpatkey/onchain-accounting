@@ -248,6 +248,14 @@
       "yToXFeed": "0xF4a3e183F59D2599ee3DF213ff78b1B3b1923696",
       "yToXHeartbeat": "46800",
       "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+    },
+    "rateFeedGuard": {
+      "$comment": "Pair identity is UNVERIFIABLE for this feed and that is a property of the provider, not an omission. Measured on-chain 2026-07-31: description() returns the constant \"Redstone Price Feed\" — no pair, no asset — which is identical across every RedStone Classic-Push feed on every pair, so an exact-match assertion is unimplementable for this family. decimals()=8, latestRoundData()=1.08118954 (=1.0812 normalised to 1e18). The band and the contract-readability check still apply; only the pair assertion is dropped, and it is DECLARED rather than silently skipped.",
+      "param": "yToXFeed",
+      "description": "$UNVERIFIABLE",
+      "descriptionUnverifiableReason": "RedStone Classic-Push: description() is the constant \"Redstone Price Feed\", carrying no pair information.",
+      "minRate1e18": "900000000000000000",
+      "maxRate1e18": "1500000000000000000"
     }
   },
   "osETHCrossRate": {

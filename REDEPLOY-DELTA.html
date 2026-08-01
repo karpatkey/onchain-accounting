@@ -219,7 +219,8 @@ Earlier revisions of this document quoted <span class="addr">0x8b7e4fA9…</span
 tree it was measured on and is now superseded.</p>
 <div class="note redeploy">
 <p><span class="chip redeploy">Deploy held</span> <strong>Treat both values above as correct-for-now, not deploy-final.</strong>
-The deploy is <strong>held</strong> — not blocked — while a further feature ships first: a two-axis per-asset
+The deploy is <strong>held</strong> — not blocked — while a further feature <em>lands in main</em> first (the two then deploy
+as a single event, see <em>Operational consequences</em>): a two-axis per-asset
 classification, <code>PegKind{Pegged, Floating}</code> and <code>AccrualKind{None, Rebasing, Appreciating}</code>. Its shape is
 now settled — a standalone <code>AssetKindRegistry</code>, see below — so what remains is delivery, not feasibility.</p>
 <p><strong>If it lands it is a <code>src/</code> change, so the pins are regenerated again</strong> against whatever tree actually
@@ -837,7 +838,8 @@ rather than a rounding one: acting on the old wording would have produced the sa
 <code>ezETHCrossRateMarket</code>, from #216's fail-closed guard meeting #224's guard-less feed. Verified that the feed remains
 <code>enabled</code>, so the 41 / mainnet-26 counts are unaffected.</li>
 <li><strong>Stale-pin note's <em>Open</em> chip resolved.</strong> It contradicted the sticky-disk mechanism explained directly
-beneath it. What #234 closed is the <em>mechanism</em> question, not the pin values — those move again with the
+beneath it. Keep the two questions apart: the <em>mechanism</em> was established by the sticky-disk finding (#231), and that
+stays closed; #234 settled the pin <em>values</em>, and those have since reopened — they move again with the
 <code>AssetKindRegistry</code> work, per the first bullet of this list.</li>
 </ul>
 <p><span class="chip judge">Judgement</span> <strong>Three PriceFeedLib values have appeared in this document across its

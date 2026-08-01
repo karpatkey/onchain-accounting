@@ -174,17 +174,36 @@ def registered_feeds(chain_id: str) -> list[dict]:
     Custom feeds appear via their rate leg (`yToXFeed`/`yToXHeartbeat`) rather than their nav-config entry,
     because it is the RATE LEG that has a provider cadence — the custom wrapper has no provider of its own.
     """
+    def _int_or_none(v):
+        """Never raise while ENUMERATING. A row this cannot parse is emitted with heartbeat=None and
+        reported by `_row_findings`; raising here would lose the whole chain's rows at once, which is
+        the same failure `findings` contains per row."""
+        if isinstance(v, bool) or v is None:
+            return None
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return None
+
     out: list[dict] = []
     nav = REPO / f"script/config/nav-config/assets-and-price-feeds/{chain_id}.json"
     if nav.exists():
-        for sym, entry in json.loads(nav.read_text()).items():
+        try:
+            assets = json.loads(nav.read_text()) or {}
+        except json.JSONDecodeError:
+            assets = {}
+        for sym, entry in assets.items():
             if not isinstance(entry, dict):
                 continue
             for kind in ("priceFeeds", "monitorFeeds"):
                 for i, fd in enumerate(entry.get(kind) or []):
-                    if fd.get("address") and isinstance(fd.get("heartbeat"), int):
+                    # An address with an UNUSABLE heartbeat is emitted, not dropped. Silently skipping
+                    # it would leave the feed unchecked while the run still reads as full coverage.
+                    if fd.get("address"):
                         out.append({"asset": sym, "role": f"{kind}[{i}]",
-                                    "address": fd["address"], "heartbeat": fd["heartbeat"],
+                                    "address": fd["address"],
+                                    "heartbeat": _int_or_none(fd.get("heartbeat")),
+                                    "heartbeat_raw": fd.get("heartbeat"),
                                     "where": f"nav-config/assets-and-price-feeds/{chain_id}.json"})
     dep = REPO / f"script/config/contracts-deployment-config/custom-price-feeds/{chain_id}.json"
     if dep.exists():
@@ -197,9 +216,10 @@ def registered_feeds(chain_id: str) -> list[dict]:
                 continue
             ctor = v.get("constructor") or {}
             addr, hb = ctor.get("yToXFeed"), ctor.get("yToXHeartbeat")
-            if addr and hb is not None:
+            if addr:
                 out.append({"asset": name, "role": "rate leg (yToXFeed)", "address": addr,
-                            "heartbeat": int(hb), "enabled": bool(v.get("enabled")),
+                            "heartbeat": _int_or_none(hb), "heartbeat_raw": hb,
+                            "enabled": bool(v.get("enabled")),
                             "where": f"contracts-deployment-config/custom-price-feeds/{chain_id}.json"})
     return out
 
@@ -215,6 +235,13 @@ def _row_findings(chain_id: str, r: dict, declared: dict) -> list[tuple[str, str
     # the moment someone flips `enabled`. Surfaced rather than filtered, so the queue stays honest.
     off = " (NOTE: this custom feed is currently enabled=false, so it will not be deployed yet — lower "\
           "priority, but it will bite the moment it is enabled.)" if r.get("enabled") is False else ""
+    if r.get("heartbeat") is None:
+        # Enumerated but unusable. Reported, never skipped: a feed this axis cannot check must not be
+        # indistinguishable from one it checked and cleared.
+        return [(WARN, f"asset '{r['asset']}' {r['role']} {r['address']} has NO usable integer "
+                       f"`heartbeat` in config (found {r.get('heartbeat_raw')!r}), so this feed is NOT "
+                       f"covered by the declared-margin guard. Fix the config value; until then this "
+                       f"feed is unchecked, not clean.{off}")]
     if rec is None:
         # Not a Chainlink-catalogue feed (RedStone/API3), or the snapshot predates this address.
         # Reported as actionable rather than passing silently — the two cases look identical here.
@@ -415,6 +442,19 @@ def refresh(allow_shrink: bool = False, fetch=None) -> int:
             total += len(prev_ent)
         print(f"  chain {chain_id}: {len(ent)} of {len(refs)} referenced addresses have a declared heartbeat")
 
+    # A chain the previous snapshot covers but DIRECTORY_FILES does not is never visited by the loop
+    # above, so it would be dropped by a SUCCESSFUL refresh — same silent data loss as the empty-`ent`
+    # case, reached by a different route, and invisible to the regression check because the chain is
+    # never compared at all. Carry it forward if config still references it, and treat "cannot be
+    # refreshed" as a failure: leaving it in under a today `fetched` stamp would re-certify data this
+    # run never fetched. If config no longer references it, dropping it is a legitimate shrink.
+    for cid in sorted(set(prev_chains) - set(DIRECTORY_FILES), key=str):
+        if registered_feeds(cid):
+            out["chains"][cid] = prev_chains[cid]
+            total += len(prev_chains[cid])
+            failures.append((cid, "no DIRECTORY_FILES entry — cannot be refreshed; add one so this "
+                                 "chain's declared heartbeats stay current"))
+
     if (failures or regressions) and not allow_shrink:
         print("\nREFUSING TO WRITE — the snapshot would be degraded, and a degraded snapshot stamped with "
               "today's date silently defeats the staleness guard:", file=sys.stderr)
@@ -439,6 +479,10 @@ def self_test() -> int:
     snapshot (read-only), then re-assert the signal-integrity properties found missing in review."""
     import contextlib
     import io
+
+    # Declared once, up front: several arms below rebind these module globals to drive synthetic input,
+    # and Python requires the declaration to precede any use within this scope.
+    global registered_feeds, REPO
 
     ok = True
 
@@ -582,6 +626,29 @@ def self_test() -> int:
     print(f"  [{'PASS' if n_mal == 1 else 'FAIL'}] ...and the malformed row is itself reported as an ERROR")
     ok = ok and n_mal == 1
 
+    # A config row whose `heartbeat` is not a usable int must be REPORTED, never silently dropped —
+    # otherwise an unchecked feed is indistinguishable from a checked-and-clean one. Driven against a
+    # synthetic config tree (tempdir) because the real config contains zero such rows, so an arm reading
+    # the committed config would pass whether or not the fix is present.
+    import tempfile
+    _real_repo = REPO
+    with tempfile.TemporaryDirectory() as _td:
+        _d = Path(_td) / "script/config/nav-config/assets-and-price-feeds"
+        _d.mkdir(parents=True)
+        # A numeric STRING ("86400") is coerced on purpose — the intent is unambiguous and checking it
+        # beats dropping it. The unusable cases are a missing or non-numeric value, like this one.
+        (_d / "1.json").write_text(json.dumps({"T": {"priceFeeds": [{"address": A}]}}))
+        REPO = Path(_td)
+        try:
+            _rows = registered_feeds("1")
+            _got = findings("1", snap)
+        finally:
+            REPO = _real_repo
+    _reported = [m for lvl, m in _got if "NO usable integer" in m]
+    print(f"  [{'PASS' if _rows and _reported else 'FAIL'}] a non-int `heartbeat` in config is REPORTED, "
+          f"not silently skipped")
+    ok = ok and bool(_rows) and bool(_reported)
+
     # The run's scope must come from CONFIG, so a degraded snapshot cannot shrink what gets audited.
     cfg_ids = configured_chain_ids()
     snap_only = sorted(({"fetched": "x", "chains": {}}.get("chains") or {}), key=int)
@@ -611,6 +678,41 @@ def self_test() -> int:
         print(f"  [{'PASS' if unchanged_empty else 'FAIL'}] ...rather than silently discarding every "
               f"recorded feed")
         ok = ok and bool(rc_fail) and unchanged_fail and bool(rc_empty) and unchanged_empty
+
+        # A chain the snapshot covers, config STILL references, and DIRECTORY_FILES cannot reach must
+        # not vanish on a SUCCESSFUL refresh. The per-chain loop never visits such a chain, so the
+        # regression check above is blind to it — this arm is the only thing covering that route.
+        planted = json.loads(before)
+        unmapped_id = next(c for c in ("130", "8217", "324") if c not in DIRECTORY_FILES)
+        planted["chains"][unmapped_id] = {"0x" + "cc" * 20: {"name": "P / USD", "declaredHeartbeat": 3600}}
+        planted_text = json.dumps(planted, indent=2) + "\n"
+        SNAPSHOT.write_text(planted_text)
+
+        _real_rf = registered_feeds
+
+        def _rf(cid):
+            if str(cid) == unmapped_id:  # pretend config references a feed on the unmapped chain
+                return [{"asset": "P", "role": "priceFeeds[0]", "address": "0x" + "cc" * 20,
+                         "heartbeat": 86400, "where": "x"}]
+            return _real_rf(cid)
+
+        def _full(fn):
+            return [{"proxyAddress": str(x["address"]), "name": "Y / USD", "heartbeat": 86400}
+                    for c in DIRECTORY_FILES for x in _real_rf(c)]
+
+        registered_feeds = _rf
+        try:
+            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+                rc_unmapped = refresh(fetch=_full)
+        finally:
+            registered_feeds = _real_rf
+        kept = SNAPSHOT.read_text() == planted_text   # refusal => the planted file is left as-is
+        SNAPSHOT.write_text(before)
+        print(f"  [{'PASS' if rc_unmapped else 'FAIL'}] refresh() returns non-zero for a still-referenced "
+              f"chain DIRECTORY_FILES cannot reach")
+        print(f"  [{'PASS' if kept else 'FAIL'}] ...instead of silently dropping it from the snapshot")
+        ok = ok and bool(rc_unmapped) and kept
+
     finally:
         # A self-test must never be able to dirty the working tree, even if an arm above regresses.
         if before is not None and SNAPSHOT.read_text() != before:

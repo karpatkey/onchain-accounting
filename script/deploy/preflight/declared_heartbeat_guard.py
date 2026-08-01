@@ -43,6 +43,32 @@ assets expected to be deviation-active. Those are UNMEASURED, not cleared, and t
 purpose — that is the to-measure queue, and an honest one. Do not convert a WARN to an allowlist entry without
 actually measuring it.
 
+WHAT THIS AXIS DOES NOT COVER — read this before trusting a silent chain. A `type: Custom` price feed is
+gated on TWO independently-registered heartbeats against the SAME provider cadence, and this axis checks at
+most one of them:
+
+  * the CONSTRUCTOR heartbeat, `<stem>Heartbeat` in contracts-deployment-config/custom-price-feeds/, applied
+    inside the feed (TwoFeedChainlinkPriceFeed: `block.timestamp - effRate >= RATE_HEARTBEAT`). CHECKED here,
+    as a `rate leg (...)` row.
+  * the NAV-SIDE heartbeat, `priceFeeds[i].heartbeat` on the nav-config entry, applied by
+    PriceFeedLib (`block.timestamp - effectiveTime >= cfg.chainlinkHeartbeat` -> the feed is dropped; if it
+    is the only primary the asset is stale and valued $0). NOT CHECKED here. It is gated against the same
+    provider cadence because a custom feed propagates its rate leg's timestamp, `min(rate, base)`.
+
+Concretely, of the 41 named-custom nav entries across the configured chains:
+  * 21 have a Chainlink rate leg -> their CONSTRUCTOR heartbeat is checked, their NAV-SIDE heartbeat is NOT.
+  * 20 have no Chainlink rate leg at all (they read an on-chain exchange rate) -> NOT CHECKED on this axis
+    at all. That set includes sUSDS, the feed whose 59/61-cycle staleness is cited above as this module's
+    motivating defect. Reaching it means following `baseAsset` into the NAV-sourced chain, which is the
+    derived-vs-base axis's territory (ADR 0019); it is deliberately out of scope here.
+
+The derived-vs-base axis does NOT close that gap either: it asserts `derived >= base` and explicitly treats
+LST feeds at 86400 against WETH's 3600 as correct. So no check in this repo compares a NAV-side custom-feed
+heartbeat to its provider's declared cadence. Today every named-custom entry happens to register the same
+value on both gates, so there are zero live holes — but that lockstep is an undocumented convention, not an
+invariant, and nothing enforces it. Silence from this module about a `type: Custom` asset means "not
+examined", never "examined and fine".
+
 usage:
   python3 declared_heartbeat_guard.py                # check every chain the CONFIG registers feeds for
   python3 declared_heartbeat_guard.py 1 8453
@@ -136,11 +162,29 @@ ALLOWLIST: dict[tuple[str, str], dict] = {
 def _fix_hint(chain_id: str, name: str, declared: int, where: str = "", hb_key: str = "") -> str:
     """Name BOTH legitimate exits. A guard that fires without saying how to satisfy it gets bypassed."""
     suggested = ((declared + 3600) // 3600) * 3600
+    nav_file = f"nav-config/assets-and-price-feeds/{chain_id}.json"
+    # THE HINT MUST NOT PRESCRIBE THE SILENCING EDIT. A custom feed is gated on TWO independently
+    # registered heartbeats against the same provider cadence: the constructor key this axis checks, and
+    # the NAV-side `priceFeeds[i].heartbeat` it does not. The feed propagates its rate leg's timestamp
+    # (min(rate, base)), so the NAV applies that second heartbeat to the same publish cadence — and it is
+    # the one that drops the feed and zeroes the asset. Raising only the key named below therefore makes
+    # this warning disappear while the defect it reported is still there, which is the exact shape of the
+    # historical --allow-shrink defect: the remedy re-creates what it was added to prevent.
+    two_gates = ""
+    if hb_key not in ("", "heartbeat"):
+        two_gates = (
+            f"        (1b) RAISE BOTH — this feed has TWO heartbeats and this axis checks only one. "
+            f"`{hb_key}` (above) is the constructor value; the NAV separately gates the same feed on "
+            f"`priceFeeds[i].heartbeat` in {nav_file}. A custom feed propagates its rate leg's timestamp, "
+            f"so that second value is applied to the SAME provider cadence and is the one that zeroes the "
+            f"asset. Editing only the constructor key SILENCES this warning without fixing anything — "
+            f"this guard cannot tell you when that has happened. PR #236 raised both, for OETH.\n")
     return (
         f"FIX — pick one:\n"
         f"        (1) RAISE the registered heartbeat above the declared value, with real margin. For "
         f"'{name}' declared {declared}, use >= {suggested} (declared + 1 h). Edit "
-        f"`{hb_key or 'heartbeat'}` in {where or f'nav-config/assets-and-price-feeds/{chain_id}.json'}.\n"
+        f"`{hb_key or 'heartbeat'}` in {where or nav_file}.\n"
+        f"{two_gates}"
         f"        (2) EXEMPT it WITH A MEASUREMENT, if the feed is deviation-active. Measure the "
         f"aggregator's AnswerUpdated gaps over >= 14 days and add an ALLOWLIST entry in "
         f"declared_heartbeat_guard.py recording intervals/breaches/max_gap_s/measured. `breaches` must be 0.\n"
@@ -179,6 +223,22 @@ def load_snapshot() -> dict:
     return json.loads(SNAPSHOT.read_text())
 
 
+class _NotAConfigObject(json.JSONDecodeError):
+    """A file that is valid JSON but not a config object. Raised as a JSONDecodeError subclass so the
+    existing `except json.JSONDecodeError` handlers report it identically — a top-level `[]`/`null`/`0`
+    used to slip through `or {}` and produce zero rows, which reads exactly like 'this chain has no feeds'.
+    """
+
+    def __init__(self, value):
+        super().__init__(f"top level is {type(value).__name__}, expected an object", "", 0)
+
+
+def _as_config_object(v):
+    if not isinstance(v, dict):
+        raise _NotAConfigObject(v)
+    return v
+
+
 def registered_feeds(chain_id: str) -> list[dict]:
     """Every (address, heartbeat) this chain registers, from both config shapes.
 
@@ -215,7 +275,7 @@ def registered_feeds(chain_id: str) -> list[dict]:
     nav = REPO / f"script/config/nav-config/assets-and-price-feeds/{chain_id}.json"
     if nav.exists():
         try:
-            assets = json.loads(nav.read_text()) or {}
+            assets = _as_config_object(json.loads(nav.read_text()))
         except json.JSONDecodeError as e:
             # NOT swallowed into {}. An unparseable config would otherwise yield zero rows, and zero rows
             # is indistinguishable from "this chain has no feeds" — so a corrupt config would report a
@@ -267,7 +327,7 @@ def registered_feeds(chain_id: str) -> list[dict]:
     dep = REPO / f"script/config/contracts-deployment-config/custom-price-feeds/{chain_id}.json"
     if dep.exists():
         try:
-            feeds = json.loads(dep.read_text()) or {}
+            feeds = _as_config_object(json.loads(dep.read_text()))
         except json.JSONDecodeError as e:
             feeds = {}
             out.append({"asset": "(config)", "role": "file", "address": str(dep.name),
@@ -330,6 +390,16 @@ def registered_feeds(chain_id: str) -> list[dict]:
                                 "unpaired_heartbeat": f"`{hb_key}` has no sibling address key starting "
                                                       f"with '{stem}'"})
     return out
+
+
+def _strict_int(v):
+    """`v` as an int only if it is genuinely an integer. `False == 0` and `isinstance(True, int)` are
+    both true in Python, and a float slips a `!= 0` test, so a bare comparison lets `breaches: False`
+    and `intervals: True` satisfy an evidence gate whose whole job is to catch authoring mistakes in
+    exemptions. The module already guards this in `_int_or_none` and in `refresh`'s recorder; the one
+    place where getting it wrong grants a PERMANENT exemption was the one place that omitted it.
+    """
+    return v if isinstance(v, int) and not isinstance(v, bool) else None
 
 
 def _hb_key(r: dict) -> str:
@@ -432,7 +502,7 @@ def _row_findings(chain_id: str, r: dict, declared: dict) -> list[tuple[str, str
         return []
     allow = ALLOWLIST.get((str(chain_id), key))
     if allow:
-        if allow.get("breaches", 1) != 0:
+        if _strict_int(allow.get("breaches")) != 0:
             return [(ERROR, f"asset '{r['asset']}' {r['role']} is allowlisted but its recorded evidence "
                             f"shows {allow.get('breaches', 'no `breaches` field')} — an allowlist entry "
                             f"must record 0 breaches. "
@@ -444,7 +514,7 @@ def _row_findings(chain_id: str, r: dict, declared: dict) -> list[tuple[str, str
         # THE EVIDENCE MUST ACTUALLY BE THERE. `breaches: 0` alone is not a measurement — an entry with
         # no interval count and no date asserts a conclusion while recording nothing that can be re-run,
         # which is precisely the "place to hide a real defect" the allowlist's own comment warns about.
-        if not isinstance(allow.get("intervals"), int) or allow["intervals"] <= 0:
+        if (_strict_int(allow.get("intervals")) or 0) <= 0:
             return [(ERROR, f"asset '{r['asset']}' {r['role']} is allowlisted but records no `intervals` "
                             f"count, so its `breaches: 0` rests on nothing re-runnable. An exemption "
                             f"without a measurement is not evidence.")]
@@ -477,6 +547,51 @@ def _row_findings(chain_id: str, r: dict, declared: dict) -> list[tuple[str, str
              f"publish cycle.{_consequence(r['role'])} Measured precedents: sUSDS 59/61 cycles (#211), "
              f"OETH 29/29 (#236).{off}\n"
              f"        {_fix_hint(str(chain_id), rec.get('name') or '?', dh, r.get('where', ''), _hb_key(r))}")]
+
+
+def coverage_census(chain_id: str) -> dict:
+    """What the CONFIG declares, counted independently of `registered_feeds`.
+
+    THE INVARIANT THIS EXISTS FOR: every configured feed entry must be ACCOUNTED FOR — it either produced
+    an enumerated row, or it is in the explicitly-counted exempt set. Nothing may simply disappear.
+
+    Every silent-coverage defect this module has had would have been caught by that one equality: nine
+    rate legs missed because only `yToXFeed` was matched, rows dropped for a non-int heartbeat, a non-dict
+    entry skipped, `if not refs: continue` deleting a chain, and a top-level `[]` config reading as zero
+    feeds. Each of them shows up here as `enumerated + exempt != configured`.
+
+    It is deliberately re-derived from the raw JSON rather than by calling `registered_feeds`, because a
+    census that shares the enumerator's code shares its blind spots and can only ever agree with it.
+    """
+    nav_entries = exempt_named_custom = leg_keys = 0
+    nav = REPO / f"script/config/nav-config/assets-and-price-feeds/{chain_id}.json"
+    if nav.exists():
+        raw = json.loads(nav.read_text())
+        if not isinstance(raw, dict):
+            raise _NotAConfigObject(raw)
+        for _sym, entry in raw.items():
+            if not isinstance(entry, dict):
+                nav_entries += 1          # malformed, but still a configured thing that must be accounted for
+                continue
+            for kind in ("priceFeeds", "monitorFeeds"):
+                for fd in entry.get(kind) or []:
+                    nav_entries += 1
+                    if (isinstance(fd, dict) and not fd.get("address")
+                            and fd.get("type") == "Custom" and fd.get("feed")):
+                        exempt_named_custom += 1
+    dep = REPO / f"script/config/contracts-deployment-config/custom-price-feeds/{chain_id}.json"
+    if dep.exists():
+        raw = json.loads(dep.read_text())
+        if not isinstance(raw, dict):
+            raise _NotAConfigObject(raw)
+        for _name, v in raw.items():
+            if not isinstance(v, dict):
+                continue
+            ctor = v.get("constructor") or {}
+            hb = [k for k in ctor if k.endswith("Heartbeat")]
+            leg_keys += len(hb) or (1 if isinstance(ctor.get("yToXFeed"), str) else 0)
+    return {"navEntries": nav_entries, "exemptNamedCustom": exempt_named_custom, "legKeys": leg_keys,
+            "expectedRows": nav_entries - exempt_named_custom + leg_keys}
 
 
 def findings(chain_id: str, snapshot: dict | None = None) -> list[tuple[str, str]]:
@@ -967,6 +1082,57 @@ def self_test() -> int:
     print(f"  [{'PASS' if not _named and _headless else 'FAIL'}] a `type: Custom` entry naming its feed "
           f"is SILENT (covered via its rate leg); an address-less non-custom entry is reported")
     ok = ok and not _named and bool(_headless)
+
+    # THE COVERAGE INVARIANT: enumerated rows + explicit exemptions == configured entries, per chain.
+    # This is the single check that would have caught every silent-coverage defect this module has had —
+    # the nine rate legs missed by a hard-coded key, the non-int-heartbeat drop, the non-dict-entry drop,
+    # `if not refs: continue`, and a top-level `[]` config reading as zero feeds. Anything that vanishes
+    # between config and enumeration shows up here as an inequality, whatever the mechanism.
+    _cov_bad = []
+    for _cid in configured_chain_ids():
+        _c = coverage_census(_cid)
+        _n = len(registered_feeds(_cid))
+        if _n != _c["expectedRows"]:
+            _cov_bad.append(f"chain {_cid}: enumerated {_n} != expected {_c['expectedRows']} "
+                            f"({_c['navEntries']} configured - {_c['exemptNamedCustom']} exempt "
+                            f"+ {_c['legKeys']} legs)")
+    print(f"  [{'PASS' if not _cov_bad else 'FAIL'}] COVERAGE INVARIANT: every configured feed entry is "
+          f"either enumerated or explicitly exempt, on all {len(configured_chain_ids())} chains")
+    for _b in _cov_bad:
+        print(f"           {_b}")
+    ok = ok and not _cov_bad
+
+    # ...and again over a SYNTHETIC tree that contains the shapes the committed config happens not to
+    # have. Run only against the real tree, this invariant is bounded by what that tree exercises: a
+    # mutation re-introducing the non-int-heartbeat drop passes, because there are zero such rows today.
+    # The dimension has to be present in the input before a check can be sensitive to it — the same
+    # under-dimensioned-input trap that let two wrong staleness placements look proved.
+    with tempfile.TemporaryDirectory() as _td6:
+        _n6 = Path(_td6) / "script/config/nav-config/assets-and-price-feeds"
+        _n6.mkdir(parents=True)
+        (_n6 / "1.json").write_text(json.dumps({
+            "IntHb": {"priceFeeds": [{"address": "0x" + "aa" * 20, "heartbeat": 3600}]},
+            "StrHb": {"priceFeeds": [{"address": "0x" + "bb" * 20, "heartbeat": "3600"}]},
+            "NoHb": {"priceFeeds": [{"address": "0x" + "cc" * 20}]},
+            "NotDict": {"priceFeeds": ["nonsense"]},
+            "NamedCustom": {"priceFeeds": [{"type": "Custom", "feed": "x", "heartbeat": 86400}]},
+        }))
+        _d6 = Path(_td6) / "script/config/contracts-deployment-config/custom-price-feeds"
+        _d6.mkdir(parents=True)
+        (_d6 / "1.json").write_text(json.dumps({
+            "x": {"enabled": True, "constructor": {"aToBChainlink": "0x" + "dd" * 20,
+                                                   "aToBHeartbeat": 3600}}}))
+        REPO = Path(_td6)
+        try:
+            _sc = coverage_census("1")
+            _sn = len(registered_feeds("1"))
+        finally:
+            REPO = _real_repo
+    _syn_ok = _sn == _sc["expectedRows"]
+    print(f"  [{'PASS' if _syn_ok else 'FAIL'}] ...and over a synthetic tree carrying the shapes the real "
+          f"config lacks (non-int heartbeat, missing heartbeat, non-dict entry): "
+          f"{_sn} enumerated == {_sc['expectedRows']} expected")
+    ok = ok and _syn_ok
 
     # The pairing heuristic must never GUESS an address. A bare "Heartbeat" key has an empty stem and
     # would prefix-match everything; two plausible siblings are ambiguous. Both must be reported, because

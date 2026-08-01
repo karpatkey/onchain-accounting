@@ -1,0 +1,429 @@
+{
+  "$comment": "Snapshot of each oracle's PROVIDER-DECLARED heartbeat, for the declared-heartbeat-margin guard in declared_heartbeat_guard.py. Committed on purpose: preflight must be DETERMINISTIC and must not depend on a third-party endpoint at deploy time \u2014 a network failure should not block a deploy, and a silently-changed remote should not change the verdict. Regenerate with: python3 declared_heartbeat_guard.py --refresh. Source: Chainlink reference-data-directory. Only addresses referenced by config are recorded; an unrecorded address is reported by the guard as actionable (run --refresh) rather than silently passing.",
+  "source": "https://reference-data-directory.vercel.app/",
+  "fetched": "2026-07-31",
+  "chains": {
+    "1": {
+      "0x04f84020fdf10d9ee64d1dcc2986edf2f556da11": {
+        "name": "EURC / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.3,
+        "feedCategory": "low"
+      },
+      "0x164b276057258d81941e97b0a900d4c7b358bce0": {
+        "name": "wstETH / USD Calculated",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
+        "feedCategory": "custom"
+      },
+      "0x2665701293fcbeb223d11a08d826563edcce423a": {
+        "name": "cbBTC / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 2,
+        "feedCategory": "low"
+      },
+      "0x26c46b7ad0012ca71f2298ada567dc9af14e7f2a": {
+        "name": "RLUSD / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.3,
+        "feedCategory": "low"
+      },
+      "0x3e7d1eab13ad0104d2750b8863b489d65364e32d": {
+        "name": "USDT / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.25,
+        "feedCategory": "low"
+      },
+      "0x3f12643d3f6f874d39c2a4c9f2cd6f2dbac877fc": {
+        "name": "GHO / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
+        "feedCategory": "medium"
+      },
+      "0x4e155ed98afe9034b7a5962f6c84c86d869daa9d": {
+        "name": "RPL / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 2,
+        "feedCategory": "medium"
+      },
+      "0x536218f9e9eb48863970252233c8f271f554c2d0": {
+        "name": "RETH / ETH",
+        "declaredHeartbeat": 86400,
+        "threshold": 2,
+        "feedCategory": "medium"
+      },
+      "0x547a514d5e3769680ce22b2361c10ea13619e8a9": {
+        "name": "AAVE / USD",
+        "declaredHeartbeat": 3600,
+        "threshold": 1,
+        "feedCategory": "low"
+      },
+      "0x553303d460ee0afb37edff9be42922d8ff63220e": {
+        "name": "UNI / USD",
+        "declaredHeartbeat": 3600,
+        "threshold": 1,
+        "feedCategory": "low"
+      },
+      "0x5c00128d4d1c2f4f652c267d7bcdd7ac99c16e16": {
+        "name": "ENS / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 2,
+        "feedCategory": "low"
+      },
+      "0x5f4ec3df9cbd43714fe2740f5e3616155c5b8419": {
+        "name": "ETH / USD",
+        "declaredHeartbeat": 3600,
+        "threshold": 0.5,
+        "feedCategory": "low"
+      },
+      "0x66ab900341c98de949ec31d11b3c4180743844f1": {
+        "name": "Calculated ETH+/USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
+        "feedCategory": "custom"
+      },
+      "0x703118c4cbcccbf2ab31913e0f8075fbbb15f563": {
+        "name": "OETH / ETH",
+        "declaredHeartbeat": 86400,
+        "threshold": 1,
+        "feedCategory": "high"
+      },
+      "0x86392dc19c0b719886221c78ab11eb8cf5c52812": {
+        "name": "STETH / ETH",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
+        "feedCategory": "medium"
+      },
+      "0x8fffffd4afb6115b954bd326cbe7b4ba576818f6": {
+        "name": "USDC / USD",
+        "declaredHeartbeat": 82800,
+        "threshold": 0.25,
+        "feedCategory": "low"
+      },
+      "0xa569d910839ae8865da8f8e70fffb0cba869f961": {
+        "name": "USDe / USD",
+        "declaredHeartbeat": 82800,
+        "threshold": 0.5,
+        "feedCategory": "low"
+      },
+      "0xaed0c38402a5d19df6e4c03f4e2dced6e29c1ee9": {
+        "name": "DAI / USD",
+        "declaredHeartbeat": 3600,
+        "threshold": 0.25,
+        "feedCategory": "low"
+      },
+      "0xc5f8c4ab091be1a899214c0c3636ca33dca0c547": {
+        "name": "ETHx / ETH",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
+        "feedCategory": "high"
+      },
+      "0xcd627aa160a6fa45eb793d19ef54f5062f20f33f": {
+        "name": "CRV / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 1,
+        "feedCategory": "low"
+      },
+      "0xcfe54b5cd566ab89272946f602d76ea879cab4a8": {
+        "name": "STETH / USD",
+        "declaredHeartbeat": 3600,
+        "threshold": 1,
+        "feedCategory": "medium"
+      },
+      "0xd962fc30a72a84ce50161031391756bf2876af5d": {
+        "name": "CVX / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 2,
+        "feedCategory": "low"
+      },
+      "0xdbd020caef83efd542f4de03e3cf0c28a4428bd5": {
+        "name": "COMP / USD",
+        "declaredHeartbeat": 3600,
+        "threshold": 1,
+        "feedCategory": "low"
+      },
+      "0xdf2917806e30300537aeb49a7663062f4d1f2b5f": {
+        "name": "BAL / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 2,
+        "feedCategory": "medium"
+      },
+      "0xe858728eb31a25c4accce17d01b68dcfc3a0ed2c": {
+        "name": "LsETH / ETH Exchange Rate",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.01,
+        "feedCategory": "custom"
+      },
+      "0xeef0c605546958c1f899b6fb336c20671f9cd49f": {
+        "name": "CRVUSD / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
+        "feedCategory": "medium"
+      },
+      "0xf2917e602c2dca458937fad715bb1e465305a4a1": {
+        "name": "EIGEN / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 2,
+        "feedCategory": "low"
+      },
+      "0xf4030086522a5beea4988f8ca5b36dbc97bee88c": {
+        "name": "BTC / USD",
+        "declaredHeartbeat": 3600,
+        "threshold": 0.5,
+        "feedCategory": "low"
+      },
+      "0xff30586cd0f29ed462364c7e81375fc0c71219b1": {
+        "name": "USDS / USD",
+        "declaredHeartbeat": 82800,
+        "threshold": 0.3,
+        "feedCategory": "medium"
+      },
+      "0xff3bc18ccbd5999ce63e788a1c250a88626ad099": {
+        "name": "sUSDe / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
+        "feedCategory": "low"
+      }
+    },
+    "10": {
+      "0x13e3ee699d1909e989722e753853ae30b17e08c5": {
+        "name": "ETH / USD",
+        "declaredHeartbeat": 1200,
+        "threshold": 0.15,
+        "feedCategory": "low"
+      },
+      "0x16a9fa2fda030272ce99b29cf780dfa30361e0f3": {
+        "name": "USDC / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.1,
+        "feedCategory": "low"
+      },
+      "0x698b585cbc4407e2d54aa898b2600b53c68958f7": {
+        "name": "WSTETH / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
+        "feedCategory": "medium"
+      },
+      "0xe1011160d78a80e2eebd60c228eef7af4dfcd4d7": {
+        "name": "COMP / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
+        "feedCategory": "low"
+      },
+      "0xecef79e109e997bca29c1c0897ec9d7b03647f5e": {
+        "name": "USDT / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.1,
+        "feedCategory": "low"
+      }
+    },
+    "56": {
+      "0x0567f2323251f0aab15c8dfb1967e4e8a7d42aee": {
+        "name": "BNB / USD",
+        "declaredHeartbeat": 27,
+        "threshold": 0.1,
+        "feedCategory": "low"
+      },
+      "0x51597f405303c4377e36123cbc172b13269ea163": {
+        "name": "USDC / USD",
+        "declaredHeartbeat": 900,
+        "threshold": 0.1,
+        "feedCategory": "low"
+      },
+      "0x9ef1b8c0e4f7dc8bf5719ea496883dc6401d5b2e": {
+        "name": "ETH / USD",
+        "declaredHeartbeat": 60,
+        "threshold": 0.1,
+        "feedCategory": "low"
+      },
+      "0xb6064ed41d4f67e353768aa239ca86f4f73665a1": {
+        "name": "CAKE / USD",
+        "declaredHeartbeat": 60,
+        "threshold": 0.2,
+        "feedCategory": "low"
+      },
+      "0xb97ad0e74fa7d920791e90258a6e2085088b4320": {
+        "name": "USDT / USD",
+        "declaredHeartbeat": 900,
+        "threshold": 0.1,
+        "feedCategory": "low"
+      }
+    },
+    "100": {
+      "0x22441d81416430a54336ab28765abd31a792ad37": {
+        "name": "GNO / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
+        "feedCategory": "medium"
+      },
+      "0x26c31ac71010af62e6b486d1132e266d6298857d": {
+        "name": "USDC / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
+        "feedCategory": "low"
+      },
+      "0x678df3415fc31947da4324ec63212874be5a82f8": {
+        "name": "DAI / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
+        "feedCategory": "low"
+      },
+      "0x68811d7df835b1c33e6eeae8e7c141ef48d48cc7": {
+        "name": "USDT / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
+        "feedCategory": "low"
+      },
+      "0x855193775ef2abb12cf95de3086229a14ab8e0e3": {
+        "name": "GHO / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
+        "feedCategory": "medium"
+      },
+      "0xa767f745331d267c7751297d982b050c93985627": {
+        "name": "ETH / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
+        "feedCategory": "low"
+      },
+      "0xab70bcb260073d036d1660201e9d5405f5829b7a": {
+        "name": "EUR / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.1,
+        "feedCategory": "low"
+      }
+    },
+    "137": {
+      "0x0a6513e40db6eb1b165753ad52e80663aea50545": {
+        "name": "USDT / USD",
+        "declaredHeartbeat": 27,
+        "threshold": 0.005,
+        "feedCategory": "low"
+      },
+      "0xab594600376ec9fd91f8e885dadf0ce036862de0": {
+        "name": "MATIC / USD",
+        "declaredHeartbeat": 27,
+        "threshold": 0.25,
+        "feedCategory": "low"
+      },
+      "0xf9680d99d6c9589e2a93a78a04a279e509205945": {
+        "name": "ETH / USD",
+        "declaredHeartbeat": 27,
+        "threshold": 0.1,
+        "feedCategory": "low"
+      },
+      "0xfe4a8cc5b5b2366c1b58bea3858e81843581b2f7": {
+        "name": "USDC / USD",
+        "declaredHeartbeat": 27,
+        "threshold": 0.005,
+        "feedCategory": "low"
+      }
+    },
+    "8453": {
+      "0x07da0e54543a844a80abe69c8a12f22b3aa59f9d": {
+        "name": "cbBTC / USD",
+        "declaredHeartbeat": 1200,
+        "threshold": 0.3,
+        "feedCategory": "low"
+      },
+      "0x42868efcee13c0e71af89c04ff7d96f5bec479b0": {
+        "name": "GHO / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.25,
+        "feedCategory": "medium"
+      },
+      "0x71041dddad3595f9ced3dccfbe3d1f4b0a16bb70": {
+        "name": "ETH / USD",
+        "declaredHeartbeat": 1200,
+        "threshold": 0.15,
+        "feedCategory": "low"
+      },
+      "0x7e860098f58bbfc8648a4311b374b1d669a2bc6b": {
+        "name": "USDC / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.3,
+        "feedCategory": "low"
+      },
+      "0x9dda783de64a9d1a60c49ca761ebe528c35ba428": {
+        "name": "COMP / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
+        "feedCategory": "low"
+      },
+      "0xd7818272b9e248357d13057aab0b417af31e817d": {
+        "name": "CBETH / USD",
+        "declaredHeartbeat": 1200,
+        "threshold": 0.15,
+        "feedCategory": "medium"
+      },
+      "0xe95e258bb6615d47515fc849f8542da651f12bf6": {
+        "name": "MORPHO / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
+        "feedCategory": "medium"
+      },
+      "0xf19d560eb8d2adf07bd6d13ed03e1d11215721f9": {
+        "name": "USDT / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.3,
+        "feedCategory": "low"
+      },
+      "0xfc1415403ebb0c693f9a7844b92ad2ff24775c65": {
+        "name": "weETH / ETH",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
+        "feedCategory": "medium"
+      }
+    },
+    "42161": {
+      "0x11e1836bff2ce9d6a5bec9ca79dc998210f3886d": {
+        "name": "ezETH / ETH",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
+        "feedCategory": "high"
+      },
+      "0x3c786e934f23375ca345c9b8d5ad54838796e8e7": {
+        "name": "GHO / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.2,
+        "feedCategory": "medium"
+      },
+      "0x3f3f5df88dc9f13eac63df89ec16ef6e7e25dde7": {
+        "name": "USDT / USD",
+        "declaredHeartbeat": 255,
+        "threshold": 0.1,
+        "feedCategory": "low"
+      },
+      "0x50834f3163758fcc1df9973b6e91f0f0f0434ad3": {
+        "name": "USDC / USD",
+        "declaredHeartbeat": 255,
+        "threshold": 0.1,
+        "feedCategory": "low"
+      },
+      "0x639fe6ab55c921f74e7fac1ee960c0b6293ba612": {
+        "name": "ETH / USD",
+        "declaredHeartbeat": 1755,
+        "threshold": 0.05,
+        "feedCategory": "low"
+      },
+      "0xb0ea543f9f8d4b818550365d13f66da747e1476a": {
+        "name": "RSETH / ETH",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
+        "feedCategory": "high"
+      },
+      "0xe141425bc1594b8039de6390db1cdaf4397ea22b": {
+        "name": "weETH / ETH",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
+        "feedCategory": "medium"
+      },
+      "0xe7c53ffd03eb6cef7d208bc4c13446c76d1e5884": {
+        "name": "COMP / USD",
+        "declaredHeartbeat": 3600,
+        "threshold": 0.5,
+        "feedCategory": "low"
+      }
+    }
+  }
+}

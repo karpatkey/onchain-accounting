@@ -18,6 +18,12 @@ reverting — a run "succeeds", writes nothing, and leaves a half-configured NAV
     clock of its own, so registering it with a heartbeat TIGHTER than its base's manufactures a stale
     verdict while the base is fresh — a $0 valuation that reads like an oracle outage rather than a
     config error. Nothing on-chain enforces the pairing. See `heartbeat_findings`.
+  * A feed registered at or below its PROVIDER'S declared heartbeat has zero margin, and publication lands
+    tens of seconds past the declared target — so the asset goes stale at the end of essentially every
+    publish cycle. This is a SECOND, independent heartbeat axis (the one above compares a derived feed to
+    its base; this compares any feed to the publisher it reads). It lives in `declared_heartbeat_guard.py`
+    because it carries a committed declared-heartbeat snapshot plus an evidence-bearing allowlist, and is
+    called from `check_chain` below. Measured instances: sUSDS 59/61 cycles (#211), OETH 29/29 (#236).
 
 usage:
   python3 preflight_config.py                 # all chains with a deployed proxy
@@ -28,6 +34,7 @@ usage:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import sys
 from collections import Counter
@@ -41,14 +48,61 @@ REQUIRED_CHAIN_FIELDS = ["chainId", "name", "rpc", "explorer", "chainlinkSequenc
 REQUIRED_ROLES = ["admin", "manager", "securityCouncil"]
 
 
+class ConfigParseError(ValueError):
+    """A per-chain config file could not be read as a config object."""
+
+
+# Recording is OPT-IN and SCOPED. Outside a `collect_config_errors()` block, `cfg`/`dcfg` RAISE — which is
+# the contract they had before this module started containing parse failures, and the contract every other
+# importer still depends on. `verify_step.py` imports `cfg`/`dcfg`/`counts` and certifies deploy
+# post-conditions on-chain from the sets they return; silently handing it `{}` turns "everything expected
+# is present" into a vacuous truth on a chain where nothing was registered. A record of parse errors that
+# only one of four importers reads is the same shape as the defects this file exists to catch, so the
+# containment is now something a caller must ASK for rather than something it inherits by importing.
+_COLLECTING: set[str] | None = None
+
+
+@contextlib.contextmanager
+def collect_config_errors():
+    """Within this block, a bad config file is RECORDED (deduped) instead of raised."""
+    global _COLLECTING
+    prev, _COLLECTING = _COLLECTING, set()
+    try:
+        yield _COLLECTING
+    finally:
+        _COLLECTING = prev
+
+
+def _bad_config(p, why: str) -> dict:
+    # A set, not a list: the same file is read more than once per chain (`_check_chain`, then `counts`),
+    # and appending per read inflated the run's headline ERROR count by however many times the file
+    # happened to be opened — a count a pre-deploy gate is reconciled against.
+    if _COLLECTING is None:
+        raise ConfigParseError(f"{p.name}: {why}")
+    _COLLECTING.add(f"{p.name}: {why}")
+    return {}
+
+
+def _load_json(p, chain_id: int) -> dict:
+    if not p.exists():
+        return {}
+    try:
+        v = json.loads(p.read_text())
+    except json.JSONDecodeError as e:
+        return _bad_config(p, str(e))
+    if not isinstance(v, dict):
+        # A top-level list/string/null parses fine but is not a config object. Returning it would make
+        # every downstream `.items()`/`.get()` raise far from the cause, or quietly read as empty.
+        return _bad_config(p, f"top level is {type(v).__name__}, expected an object")
+    return v
+
+
 def cfg(sub: str, chain_id: int) -> dict:
-    p = c.NAV_CONFIG_DIR / sub / f"{chain_id}.json"
-    return json.loads(p.read_text()) if p.exists() else {}
+    return _load_json(c.NAV_CONFIG_DIR / sub / f"{chain_id}.json", chain_id)
 
 
 def dcfg(sub: str, chain_id: int) -> dict:
-    p = c.CONTRACTS_CONFIG_DIR / sub / f"{chain_id}.json"
-    return json.loads(p.read_text()) if p.exists() else {}
+    return _load_json(c.CONTRACTS_CONFIG_DIR / sub / f"{chain_id}.json", chain_id)
 
 
 def enabled_keys(d: dict) -> list[str]:
@@ -173,7 +227,25 @@ def heartbeat_findings(chain_id: int, assets: dict, dep_feeds: dict) -> list[tup
     return f
 
 
+def _config_error_findings(chain_id: int, msgs) -> list[tuple[str, str]]:
+    return [(ERROR, f"config file {msg} — could not be read, so whatever it governs on chain "
+                    f"{chain_id} has NO preflight coverage. That is not the same as clean.")
+            for msg in sorted(msgs)]
+
+
 def check_chain(chain_id: int) -> list[tuple[str, str]]:
+    """Returns [(severity, message)] for one chain, plus an ERROR per config file that failed to parse.
+
+    Wraps `_check_chain` so the unparseable-file ERRORs are appended on EVERY exit path — `_check_chain`
+    returns early for an adapter-less chain, and an earlier version of this containment attached them at
+    one return only, which silently dropped them for exactly the chains that take the short path.
+    """
+    with collect_config_errors() as errs:
+        f = _check_chain(chain_id)
+    return f + _config_error_findings(chain_id, errs)
+
+
+def _check_chain(chain_id: int) -> list[tuple[str, str]]:
     """Returns [(severity, message)] for one chain."""
     f: list[tuple[str, str]] = []
     chain = c.chain_config(chain_id)
@@ -206,6 +278,33 @@ def check_chain(chain_id: int) -> list[tuple[str, str]]:
     if chain_id != 1 and seq == "0x" + "0" * 40:
         f.append((INFO, "chainlinkSequencerFeed is zero — L2 sequencer-uptime check disabled on "
                         "this chain (intentional where no feed exists)"))
+
+    # Run the declared-heartbeat axis BEFORE the adapter-config section, because that section
+    # returns early for a chain with no balance-adapter nav-config. This axis is about PRICE
+    # FEEDS and has nothing to do with balance adapters, so letting that early return skip it
+    # would silently give such a chain zero heartbeat coverage while the run still reads clean.
+    # The SECOND heartbeat axis: registered vs the PROVIDER'S DECLARED cadence. Independent of the one
+    # above — that compares a derived feed to its base, this compares any feed to the publisher it reads.
+    # Lives in its own module because it carries a committed declared-heartbeat snapshot and an
+    # evidence-bearing allowlist. Import is lazy + fail-soft: a missing/broken snapshot must not take out
+    # every other config check in this file.
+    try:
+        import declared_heartbeat_guard as dhg
+
+        # Snapshot-level findings are NOT emitted here — see `snapshot_findings` in main(). The
+        # snapshot's age is a property of the FILE, not of any chain, so emitting it from inside a
+        # per-chain call meant reasoning about a once-per-process latch across chains that may fail. Both
+        # spellings of that reasoning were wrong in 2 of 7 failure scenarios, one of them by LOSING the
+        # warning outright. Hoisting it above the loop is correct in all 7 and needs no latch at all.
+        f += dhg.findings(chain_id)
+    except SystemExit as e:  # snapshot absent — actionable, not fatal to the rest of preflight
+        f.append((WARN, f"declared-heartbeat guard skipped: {e}"))
+    except Exception as e:  # noqa: BLE001 - never let this axis mask the others
+        # Deliberately still fail-soft: this axis must not take out the other config checks. But say
+        # plainly that coverage was LOST, not that one small thing went wrong — `findings` contains each
+        # feed's failure per row, so reaching here means the whole axis produced nothing for this chain.
+        f.append((WARN, f"declared-heartbeat guard produced NO coverage for chain {chain_id} "
+                        f"(other checks unaffected): {e!r}"))
 
     # --- adapter config coherence (only chains that have nav-config) --------
     nav_plain = cfg("balance-adapters", chain_id)
@@ -428,6 +527,68 @@ def self_test() -> int:
               cfg("assets-and-price-feeds", 1)["wstETH"]["priceFeeds"][0]["heartbeat"]
               == real_assets["wstETH"]["priceFeeds"][0]["heartbeat"] != 1800)
 
+    # THE SNAPSHOT-STALENESS FAILURE MATRIX. The correct answer is exactly ONE emission in every cell.
+    # This path had no arm at all, in either direction, which is how two successive wrong placements —
+    # one duplicating the warning, one LOSING it — both shipped on a fully green suite. The dimension the
+    # signal lives on is (where a chain fails) x (which chain fails), and it needs THREE chains: with two,
+    # a non-first failure has no successor and the losing cell is unreachable, so a wrong fix looks proved.
+    import contextlib as _ctx
+    import io as _io
+
+    _MC = [1, 10, 8453]
+
+    def _emissions(where, idx):
+        real_counts, real_enabled, real_check = counts, enabled_keys, check_chain
+        real_resolve = c.resolve_chains
+        import declared_heartbeat_guard as _g
+        real_age = _g.snapshot_age_findings
+        _g.snapshot_age_findings = lambda snap: [(WARN, "MATRIX-STALE")]
+        _g._reset_snapshot_findings_once()
+        state = {}
+        try:
+            globals()["enabled_keys"] = lambda d: (_ for _ in ()).throw(
+                RuntimeError("matrix")) if where == "inside" and state.get("cid") == _MC[idx] \
+                else real_enabled(d)
+            globals()["counts"] = lambda cid: (_ for _ in ()).throw(
+                RuntimeError("matrix")) if where == "after" and cid == _MC[idx] else real_counts(cid)
+
+            def _cc(cid):
+                state["cid"] = cid
+                return real_check(cid)
+
+            globals()["check_chain"] = _cc
+            c.resolve_chains = lambda a: (_MC, "matrix")
+            buf = _io.StringIO()
+            with _ctx.redirect_stdout(buf), _ctx.redirect_stderr(buf):
+                import sys as _sys
+                argv = _sys.argv
+                _sys.argv = ["preflight_config.py"]
+                try:
+                    main()
+                except SystemExit:
+                    pass
+                finally:
+                    _sys.argv = argv
+            return buf.getvalue().count("MATRIX-STALE")
+        finally:
+            globals()["counts"], globals()["enabled_keys"] = real_counts, real_enabled
+            globals()["check_chain"] = real_check
+            c.resolve_chains = real_resolve
+            _g.snapshot_age_findings = real_age
+            _g._reset_snapshot_findings_once()
+
+    cells = [("no failure", None, 0)]
+    for _w in ("inside", "after"):
+        for _i, _lab in ((0, "1st"), (1, "2nd"), (2, "last")):
+            cells.append((f"raise {_w}, {_lab} chain", _w, _i))
+    bad_cells = [(lab, _emissions(w, i)) for lab, w, i in cells]
+    bad_cells = [(lab, n) for lab, n in bad_cells if n != 1]
+    print(f"  {'PASS' if not bad_cells else 'FAIL'}  snapshot-staleness matrix: exactly 1 emission in "
+          f"all {len(cells)} failure scenarios")
+    for lab, n in bad_cells:
+        print(f"           {lab}: {n} emissions ({'LOST' if n == 0 else 'DUPLICATED'})")
+        failures.append(f"staleness matrix: {lab}")
+
     print(f"\nself-test: {'all checks passed' if not failures else str(len(failures)) + ' FAILED'}")
     return 1 if failures else 0
 
@@ -449,19 +610,68 @@ def main() -> int:
     report, n_err, n_warn = {}, 0, 0
     totals = Counter()
 
+    # SNAPSHOT-LEVEL findings, emitted exactly once, before the loop and outside every per-chain guard.
+    # The snapshot's age is a property of the file, so it belongs to the RUN, not to a chain. Emitting it
+    # per-chain forced a once-per-process latch, and no condition over a chain's findings can answer
+    # "did THIS chain consume the latch and then lose the message?" — the information is not in there.
+    # Hoisting removes the question instead of answering it.
+    try:
+        import declared_heartbeat_guard as _dhg
+
+        snapshot_findings = _dhg.snapshot_findings_once()
+    except SystemExit as e:
+        snapshot_findings = [(WARN, f"declared-heartbeat snapshot unavailable: {e}")]
+    except Exception as e:  # noqa: BLE001 - must never take out the per-chain checks
+        snapshot_findings = [(WARN, f"declared-heartbeat snapshot could not be aged: {e!r}")]
+    for _sev, _msg in snapshot_findings:
+        print(f"  [{_sev}] {_msg}")
+        n_err += _sev == ERROR
+        n_warn += _sev == WARN
+    report["snapshot"] = [{"severity": s_, "message": m_} for s_, m_ in snapshot_findings]
+
     for cid in chains:
-        findings = check_chain(cid)
-        k = counts(cid)
+        # One chain must not be able to kill the run. `cfg`/`dcfg` call json.loads without a guard, so a
+        # single unparseable config file used to raise straight out of check_chain and abort every
+        # REMAINING chain — and it discarded the findings already computed for this one, including the
+        # declared-heartbeat guard's own "config could not be parsed" ERROR. The failure is now contained
+        # to its chain and reported as an ERROR, so the run still covers the others and still fails.
+        findings, k, degraded = [], None, False
+        try:
+            # EVERYTHING that reads config for this chain goes inside the guard, including `counts` and
+            # `chain_config`. Two earlier versions of this containment were defeated by a call left one
+            # line outside it, so the rule now is: nothing that can raise on config touches `cid` after
+            # this block. `findings` is APPENDED to, never reassigned — reassigning discarded every
+            # deploy-blocking finding check_chain had already computed.
+            findings += check_chain(cid)
+            # counts()/chain_config re-read config through the same loaders, so they get their own
+            # collecting scope — outside one they would RAISE, which is the contract other importers want.
+            with collect_config_errors() as errs:
+                k = counts(cid)
+                name = c.chain_config(cid).get("name", "?")
+            findings += _config_error_findings(cid, errs)
+        except Exception as e:  # noqa: BLE001 - a chain that cannot be checked is not a chain that passed
+            degraded = True
+            findings.append((ERROR, f"chain {cid} could NOT be fully checked ({e!r}) — its coverage is "
+                                    f"INCOMPLETE; that is not the same as clean."))
+            if k is None:
+                k = {"metaAdapters": 0, "metaInstances": 0, "plainAdapters": 0, "customFeeds": 0,
+                     "assets": 0}
+            name = "?"
+            # No staleness re-arm here, deliberately: the signal is emitted above the loop, so a chain
+            # that fails cannot consume, duplicate or lose it.
         for key, v in k.items():
             totals[key] += v
-        report[str(cid)] = {"name": c.chain_config(cid).get("name", "?"),
+        report[str(cid)] = {"name": name,
                             "counts": k,
+                            # Marked, so a zeroed row cannot be mistaken for a chain that really
+                            # configures nothing when reconciling the runbook's totals.
+                            "countsDegraded": degraded,
                             "findings": [{"severity": s, "message": m} for s, m in findings]}
         errs = [x for x in findings if x[0] == ERROR]
         warns = [x for x in findings if x[0] == WARN]
         n_err += len(errs)
         n_warn += len(warns)
-        head = (f"  {cid:8} {c.chain_config(cid).get('name','?'):16} "
+        head = (f"  {cid:8} {name:16} "
                 f"meta={k['metaAdapters']:<3} inst={k['metaInstances']:<4} "
                 f"plain={k['plainAdapters']:<3} feeds={k['customFeeds']:<3} assets={k['assets']:<3}")
         print(head + (f"  {len(errs)} ERROR {len(warns)} WARN" if findings else "  clean"))

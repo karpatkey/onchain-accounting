@@ -304,7 +304,7 @@ script/verify/verify-all.sh
 ## Key Features
 
 ### ✅ Security
-- **EOA deploy, Safe end-state** - Deploy/config (`01`–`07`) run from the deployer EOA; `07` hands `DEFAULT_ADMIN_ROLE` + `MANAGER` to the security-council Safe and renounces the deployer's roles
+- **EOA deploy, Safe end-state** - Deploy/config (`01`–`08`) run from the deployer EOA; `07` hands `DEFAULT_ADMIN_ROLE` + `MANAGER` to the security-council Safe and renounces the deployer's roles
 - **Canonical CREATE2** - Deterministic addresses via the canonical deployer (`0x4e59...`); a placeholder impl keeps proxy addresses identical across chains
 - **Role-Based Access** - `DEFAULT_ADMIN_ROLE` (admin) and `MANAGER` roles
 - **Upgrade Authorization** - Only admin can authorize upgrades (post-handoff, the council Safe)
@@ -327,7 +327,7 @@ script/verify/verify-all.sh
 ### ✅ Safe Transaction Integration (governance only)
 - The post-handoff scripts under `script/manage/` and `script/upgrade/` generate Safe-compatible JSON files
 - Import directly into Safe UI; batch transactions for efficiency
-- The deploy/config scripts (`01`–`07`) do **not** emit Safe TX JSON — they broadcast from the deployer EOA
+- The deploy/config scripts (`01`–`08`) do **not** emit Safe TX JSON — they broadcast from the deployer EOA
 
 ## Adapter Types
 
@@ -404,7 +404,7 @@ script/config/deployments/
 
 ### Safe Transactions (`safe-transactions/`)
 
-The deploy/config scripts (`01`–`07`) all broadcast from the deployer EOA and do **not** emit Safe-TX JSON. Safe transactions are produced only by the post-handoff governance scripts under `script/manage/` and `script/upgrade/`, for the council Safe to execute:
+The deploy/config scripts (`01`–`08`) all broadcast from the deployer EOA and do **not** emit Safe-TX JSON. Safe transactions are produced only by the post-handoff governance scripts under `script/manage/` and `script/upgrade/`, for the council Safe to execute:
 
 ```
 safe-transactions/
@@ -436,7 +436,7 @@ Note: Proxy deploy + init is done via EOA in `02_DeployProxies.s.sol` (no Safe T
 ### Manual Configuration Needed
 1. **Edit `script/config/chains/{chainId}.json`** for each chain: set `addresses.securityCouncil`, `addresses.admin`, `addresses.manager` (and optionally `chainlinkSequencerFeed`, `nativeTokenSymbol` for NAVCalculator)
 2. **Enable adapters** by setting `"enabled": true` in the relevant `contracts-deployment-config/{custom-price-feeds,balance-adapters,meta-balance-adapters,bridge-adapters}/{chainId}.json` files as needed
-3. **Execute Safe transactions** via Safe UI — only for **post-handoff governance** (`script/manage/`, `script/upgrade/`); deploy/config (`01`–`07`) is EOA broadcast, not Safe.
+3. **Execute Safe transactions** via Safe UI — only for **post-handoff governance** (`script/manage/`, `script/upgrade/`); deploy/config (`01`–`08`) is EOA broadcast, not Safe.
 4. No Create2Deployer step; canonical deployer is used. Config is updated by scripts when addresses are saved (no separate “update” step).
 
 ### Manual Execution Required

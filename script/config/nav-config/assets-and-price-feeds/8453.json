@@ -39,7 +39,7 @@
   },
   "wstETH": {
     "address": "0xc1CBa3fCea344f92D9239c08C0568f6F2F0ee452",
-    "$kindComment": "Wrapped stETH; balance static, its stETH redemption rate grows. The appreciating half of the stETH pair. Priced here off a Chainlink WSTETH/ETH MARKET feed (per feed config) - NOT an exchange-rate feed and not the mainnet stEthPerToken path; the kind describes the token, not the pricing path.",
+    "$kindComment": "Wrapped stETH; balance static, its stETH redemption rate grows. The appreciating half of the stETH pair (stETH itself is not a registered asset on this chain). Priced here off a Chainlink WSTETH/ETH MARKET feed (per feed config) - NOT an exchange-rate feed and not the mainnet stEthPerToken path; the kind describes the token, not the pricing path.",
     "accrualKind": "Appreciating",
     "divergenceToleranceBps": 250,
     "priceFeeds": [
@@ -80,7 +80,7 @@
   },
   "cbETH": {
     "address": "0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22",
-    "$kindComment": "Coinbase staked ETH; exchange rate grows, balance static.",
+    "$kindComment": "Coinbase staked ETH; exchange rate grows, balance static. On Base the rate is read from a Chainlink CBETH/ETH feed (per feed config) - the token's own exchangeRate() is the mainnet path and reverts on the bridged Base token.",
     "accrualKind": "Appreciating",
     "divergenceToleranceBps": 250,
     "priceFeeds": [

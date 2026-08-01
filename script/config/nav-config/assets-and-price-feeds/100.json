@@ -49,7 +49,7 @@
   },
   "wstETH": {
     "address": "0x6C76971f98945AE98dD7d4DFcA8711ebea946eA6",
-    "$kindComment": "Wrapped stETH; balance static, its stETH redemption rate grows. The appreciating half of the stETH pair. Priced here via a Chainlink wstETH/ETH exchange-rate feed (per feed config) - the stEthPerToken path is mainnet-only.",
+    "$kindComment": "Wrapped stETH; balance static, its stETH redemption rate grows. The appreciating half of the stETH pair (stETH itself is not a registered asset on this chain). Priced here via a Chainlink wstETH/ETH exchange-rate feed (per feed config) - the stEthPerToken path is mainnet-only.",
     "accrualKind": "Appreciating",
     "priceFeeds": [
       {

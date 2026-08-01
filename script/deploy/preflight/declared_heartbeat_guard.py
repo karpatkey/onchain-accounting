@@ -133,15 +133,14 @@ ALLOWLIST: dict[tuple[str, str], dict] = {
 }
 
 
-def _fix_hint(chain_id: str, name: str, declared: int) -> str:
+def _fix_hint(chain_id: str, name: str, declared: int, where: str = "", hb_key: str = "") -> str:
     """Name BOTH legitimate exits. A guard that fires without saying how to satisfy it gets bypassed."""
     suggested = ((declared + 3600) // 3600) * 3600
     return (
         f"FIX — pick one:\n"
         f"        (1) RAISE the registered heartbeat above the declared value, with real margin. For "
-        f"'{name}' declared {declared}, use >= {suggested} (declared + 1 h). Edit the `heartbeat` in "
-        f"nav-config/assets-and-price-feeds/{chain_id}.json (or `yToXHeartbeat` in "
-        f"contracts-deployment-config/custom-price-feeds/{chain_id}.json for a custom feed's rate leg).\n"
+        f"'{name}' declared {declared}, use >= {suggested} (declared + 1 h). Edit "
+        f"`{hb_key or 'heartbeat'}` in {where or f'nav-config/assets-and-price-feeds/{chain_id}.json'}.\n"
         f"        (2) EXEMPT it WITH A MEASUREMENT, if the feed is deviation-active. Measure the "
         f"aggregator's AnswerUpdated gaps over >= 14 days and add an ALLOWLIST entry in "
         f"declared_heartbeat_guard.py recording intervals/breaches/max_gap_s/measured. `breaches` must be 0.\n"
@@ -183,11 +182,23 @@ def load_snapshot() -> dict:
 def registered_feeds(chain_id: str) -> list[dict]:
     """Every (address, heartbeat) this chain registers, from both config shapes.
 
-    Custom feeds appear via their rate leg (`yToXFeed`/`yToXHeartbeat`) rather than their nav-config entry,
-    because it is the RATE LEG that has a provider cadence — the custom wrapper has no provider of its own.
+    Custom feeds appear via their RATE LEG rather than their nav-config entry, because it is the rate leg
+    that has a provider cadence — the custom wrapper has no provider of its own. Rate legs are discovered
+    BY SHAPE, not by one key name: every `<stem>Heartbeat` constructor key is paired with the
+    address-valued sibling sharing its stem. Matching only `yToXFeed`/`yToXHeartbeat` silently missed nine
+    enabled feeds whose leg is named for the pair it prices (`wstEthToEthChainlink`, `ldoToEth…`, …).
+    A heartbeat whose address cannot be identified, or which matches several, is REPORTED, never guessed.
     """
     def _is_address(v):
-        return isinstance(v, str) and v.startswith("0x") and len(v) == 42
+        # Hex-ness matters: without it a 42-character non-address string could be selected as a feed's
+        # rate-leg address, which is a wrong-address verdict rather than a missing one.
+        if not (isinstance(v, str) and v.startswith("0x") and len(v) == 42):
+            return False
+        try:
+            int(v, 16)
+        except ValueError:
+            return False
+        return True
 
     def _int_or_none(v):
         """Never raise while ENUMERATING. A row this cannot parse is emitted with heartbeat=None and
@@ -220,6 +231,21 @@ def registered_feeds(chain_id: str) -> list[dict]:
                 for i, fd in enumerate(entry.get(kind) or []):
                     # An address with an UNUSABLE heartbeat is emitted, not dropped. Silently skipping
                     # it would leave the feed unchecked while the run still reads as full coverage.
+                    if not isinstance(fd, dict):
+                        continue
+                    if not fd.get("address"):
+                        # A `type: Custom` entry names its feed (`"feed": "wstETH"`) instead of carrying
+                        # an address — the address lives in the deployment record. That shape is COVERED,
+                        # via the custom feed's rate leg in the deploy config below, so it must stay
+                        # silent here. Reporting it flagged 41 correct entries and would have been pure
+                        # cry-wolf. Anything else with no address genuinely cannot be looked up.
+                        if not (fd.get("type") == "Custom" and fd.get("feed")):
+                            out.append({"asset": sym, "role": f"{kind}[{i}]", "address": "-",
+                                        "heartbeat": None,
+                                        "where": f"nav-config/assets-and-price-feeds/{chain_id}.json",
+                                        "no_address": "the entry has no `address` and does not name a "
+                                                      "custom `feed`, so there is nothing to look up"})
+                        continue
                     if fd.get("address"):
                         out.append({"asset": sym, "role": f"{kind}[{i}]",
                                     "address": fd["address"],
@@ -246,7 +272,14 @@ def registered_feeds(chain_id: str) -> list[dict]:
             # LST-rate feeds this audit targeted, so the guard read as covering custom feeds while
             # checking a third of them. Every `<stem>Heartbeat` is paired with the address-valued key
             # that shares its stem; a heartbeat with no such partner is REPORTED, never dropped.
-            for hb_key in sorted(k for k in ctor if k.endswith("Heartbeat")):
+            hb_keys = sorted(k for k in ctor if k.endswith("Heartbeat"))
+            if not hb_keys and _is_address(ctor.get("yToXFeed")):
+                # An address with NO heartbeat key at all. Discovery is driven by heartbeat keys, so this
+                # shape would otherwise vanish entirely — the silent drop this module exists to prevent.
+                out.append({"asset": name, "role": "rate leg (yToXFeed)", "address": ctor["yToXFeed"],
+                            "heartbeat": None, "heartbeat_raw": None, "enabled": bool(v.get("enabled")),
+                            "where": f"contracts-deployment-config/custom-price-feeds/{chain_id}.json"})
+            for hb_key in hb_keys:
                 stem = hb_key[: -len("Heartbeat")]
                 # An EMPTY stem (a key named exactly "Heartbeat") would prefix-match every key in the
                 # constructor and pair the heartbeat with an arbitrary unrelated address — a confident
@@ -287,6 +320,16 @@ def registered_feeds(chain_id: str) -> list[dict]:
     return out
 
 
+def _hb_key(r: dict) -> str:
+    """The config key an operator must actually edit for this row — `heartbeat` for a nav-config feed,
+    or the real `<stem>Heartbeat` name for a custom feed's rate leg. Naming the wrong key sends the
+    operator to a field that does not exist, which is how a guard gets bypassed rather than satisfied."""
+    role = r.get("role", "")
+    if role.startswith("rate leg (") and role.endswith(")"):
+        return role[len("rate leg ("):-1]
+    return "heartbeat"
+
+
 def _consequence(role: str) -> str:
     """The consequence of going stale is NOT the same for a pricing feed and a monitor feed.
 
@@ -298,6 +341,13 @@ def _consequence(role: str) -> str:
     if role.startswith("monitorFeeds"):
         return (" This is a MONITOR feed, so it does not price the asset: staleness here does not zero "
                 "the valuation, it degrades the divergence check and surfaces as an unhealthy monitor.")
+    if role.startswith("rate leg"):
+        # A custom feed's rate leg may back a PRIMARY or a MONITOR registration — which one is not
+        # visible from this row. State the conditional rather than asserting the pricing consequence,
+        # because asserting it for a monitor-only feed would overstate the impact.
+        return (" This is a custom feed's RATE LEG: if that feed is registered as a primary it zeroes "
+                "the asset, and if it is registered only as a monitor it degrades the divergence check "
+                "instead. Check which the feed is registered as before triaging.")
     return " The asset is valued $0 and listed in `stalePriceAssets`."
 
 
@@ -312,6 +362,9 @@ def _row_findings(chain_id: str, r: dict, declared: dict) -> list[tuple[str, str
     # the moment someone flips `enabled`. Surfaced rather than filtered, so the queue stays honest.
     off = " (NOTE: this custom feed is currently enabled=false, so it will not be deployed yet — lower "\
           "priority, but it will bite the moment it is enabled.)" if r.get("enabled") is False else ""
+    if r.get("no_address"):
+        return [(WARN, f"asset '{r['asset']}' {r['role']}: {r['no_address']}, so this entry is NOT "
+                       f"covered by the declared-margin guard.{off}")]
     if r.get("unpaired_heartbeat"):
         # A heartbeat with no sibling address is NOT necessarily a defect: some custom feeds declare a
         # heartbeat for a non-Chainlink source (ETHPlus's `reserveProtocolHeartbeat` reads the Reserve
@@ -369,7 +422,8 @@ def _row_findings(chain_id: str, r: dict, declared: dict) -> list[tuple[str, str
     if allow:
         if allow.get("breaches", 1) != 0:
             return [(ERROR, f"asset '{r['asset']}' {r['role']} is allowlisted but its recorded evidence "
-                            f"shows {allow['breaches']} breaches — an allowlist entry must have 0. "
+                            f"shows {allow.get('breaches', 'no `breaches` field')} — an allowlist entry "
+                            f"must record 0 breaches. "
                             f"Fix the feed, do not exempt it.")]
         if allow.get("registered") != rh:
             return [(ERROR, f"asset '{r['asset']}' {r['role']} allowlist entry was measured against "
@@ -410,7 +464,7 @@ def _row_findings(chain_id: str, r: dict, declared: dict) -> list[tuple[str, str
              f"feed goes stale at the end of essentially every "
              f"publish cycle.{_consequence(r['role'])} Measured precedents: sUSDS 59/61 cycles (#211), "
              f"OETH 29/29 (#236).{off}\n"
-             f"        {_fix_hint(str(chain_id), rec.get('name') or '?', dh)}")]
+             f"        {_fix_hint(str(chain_id), rec.get('name') or '?', dh, r.get('where', ''), _hb_key(r))}")]
 
 
 def findings(chain_id: str, snapshot: dict | None = None) -> list[tuple[str, str]]:
@@ -759,7 +813,7 @@ def self_test() -> int:
         ALLOWLIST[key] = {"asset": "T", "registered": 86400, "breaches": 3, "measured": "2026-01-01"}
         case("allowlist entry WITH breaches errors", "1", snap,
              [{"asset": "T", "role": "priceFeeds[0]", "address": A, "heartbeat": 86400, "where": "x"}],
-             ERROR, "must have 0")
+             ERROR, "must record 0 breaches")
         # allowlist measured against a different registered value is stale
         ALLOWLIST[key] = {"asset": "T", "registered": 82800, "breaches": 0, "measured": "2026-01-01"}
         case("stale allowlist (registered changed) errors", "1", snap,
@@ -869,6 +923,28 @@ def self_test() -> int:
     print(f"  [{'PASS' if len(_non_ytox) >= 9 else 'FAIL'}] custom-feed rate legs are discovered by shape "
           f"({len(_legs)} legs, {len(_non_ytox)} of them NOT the yToXFeed spelling)")
     ok = ok and len(_non_ytox) >= 9
+
+    # A nav-config `type: Custom` entry names its feed instead of carrying an address, and is covered
+    # via that feed's rate leg. It must stay SILENT here. A draft of the no-address check flagged all 41
+    # of them — cry-wolf on correct config, which is the failure this module's severity ladder exists to
+    # avoid — so this arm pins both halves: named-custom silent, genuinely address-less reported.
+    with tempfile.TemporaryDirectory() as _td5:
+        _d5 = Path(_td5) / "script/config/nav-config/assets-and-price-feeds"
+        _d5.mkdir(parents=True)
+        (_d5 / "1.json").write_text(json.dumps({
+            "NamedCustom": {"priceFeeds": [{"type": "Custom", "feed": "wstETH", "heartbeat": 86400}]},
+            "Headless": {"priceFeeds": [{"type": "Chainlink", "heartbeat": 86400}]},
+        }))
+        REPO = Path(_td5)
+        try:
+            _na = findings("1", {"fetched": "2026-08-01", "chains": {"1": {}}})
+        finally:
+            REPO = _real_repo
+    _named = [m for lvl, m in _na if "NamedCustom" in m]
+    _headless = [m for lvl, m in _na if "Headless" in m and "nothing to look up" in m]
+    print(f"  [{'PASS' if not _named and _headless else 'FAIL'}] a `type: Custom` entry naming its feed "
+          f"is SILENT (covered via its rate leg); an address-less non-custom entry is reported")
+    ok = ok and not _named and bool(_headless)
 
     # The pairing heuristic must never GUESS an address. A bare "Heartbeat" key has an empty stem and
     # would prefix-match everything; two plausible siblings are ambiguous. Both must be reported, because

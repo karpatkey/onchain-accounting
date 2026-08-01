@@ -47,14 +47,29 @@ REQUIRED_CHAIN_FIELDS = ["chainId", "name", "rpc", "explorer", "chainlinkSequenc
 REQUIRED_ROLES = ["admin", "manager", "securityCouncil"]
 
 
+# Config files that failed to parse, per chain, recorded by `_load_json` and turned into ERRORs by
+# `check_chain`. Guarding at the SOURCE rather than at one call site: `cfg`/`dcfg` are called from
+# `check_chain`, from `counts`, and from `heartbeat_findings`, so wrapping any single caller leaves the
+# others able to raise — which is exactly how the first attempt at this containment failed.
+_CONFIG_ERRORS: dict[int, list[str]] = {}
+
+
+def _load_json(p, chain_id: int) -> dict:
+    if not p.exists():
+        return {}
+    try:
+        return json.loads(p.read_text())
+    except json.JSONDecodeError as e:
+        _CONFIG_ERRORS.setdefault(int(chain_id), []).append(f"{p.name}: {e}")
+        return {}
+
+
 def cfg(sub: str, chain_id: int) -> dict:
-    p = c.NAV_CONFIG_DIR / sub / f"{chain_id}.json"
-    return json.loads(p.read_text()) if p.exists() else {}
+    return _load_json(c.NAV_CONFIG_DIR / sub / f"{chain_id}.json", chain_id)
 
 
 def dcfg(sub: str, chain_id: int) -> dict:
-    p = c.CONTRACTS_CONFIG_DIR / sub / f"{chain_id}.json"
-    return json.loads(p.read_text()) if p.exists() else {}
+    return _load_json(c.CONTRACTS_CONFIG_DIR / sub / f"{chain_id}.json", chain_id)
 
 
 def enabled_keys(d: dict) -> list[str]:
@@ -180,6 +195,21 @@ def heartbeat_findings(chain_id: int, assets: dict, dep_feeds: dict) -> list[tup
 
 
 def check_chain(chain_id: int) -> list[tuple[str, str]]:
+    """Returns [(severity, message)] for one chain, plus an ERROR per config file that failed to parse.
+
+    Wraps `_check_chain` so the unparseable-file ERRORs are appended on EVERY exit path — `_check_chain`
+    returns early for an adapter-less chain, and an earlier version of this containment attached them at
+    one return only, which silently dropped them for exactly the chains that take the short path.
+    """
+    _CONFIG_ERRORS.pop(int(chain_id), None)
+    f = _check_chain(chain_id)
+    for msg in _CONFIG_ERRORS.get(int(chain_id), []):
+        f.append((ERROR, f"config file {msg} — could not be parsed, so whatever it governs on chain "
+                         f"{chain_id} has NO preflight coverage. That is not the same as clean."))
+    return f
+
+
+def _check_chain(chain_id: int) -> list[tuple[str, str]]:
     """Returns [(severity, message)] for one chain."""
     f: list[tuple[str, str]] = []
     chain = c.chain_config(chain_id)
@@ -489,10 +519,22 @@ def main() -> int:
         # to its chain and reported as an ERROR, so the run still covers the others and still fails.
         try:
             findings = check_chain(cid)
+            k = counts(cid)
         except Exception as e:  # noqa: BLE001 - a chain that cannot be checked is not a chain that passed
-            findings = [(ERROR, f"chain {cid} could NOT be checked ({e!r}) — its config is unreadable. "
-                                f"This chain has NO preflight coverage; that is not the same as clean.")]
-        k = counts(cid)
+            # `counts` is inside the guard too: it re-reads the same config files, so leaving it outside
+            # let the very failure this handler exists for escape one line later.
+            findings = [(ERROR, f"chain {cid} could NOT be checked ({e!r}) — this chain has NO preflight "
+                                f"coverage; that is not the same as clean.")]
+            k = {"metaAdapters": 0, "metaInstances": 0, "plainAdapters": 0, "customFeeds": 0, "assets": 0}
+            # The snapshot-staleness signal is emitted ONCE per process. If this chain consumed it and
+            # then died, nothing would re-emit it and the whole run would silently lose that signal —
+            # so re-arm it for the next chain.
+            try:
+                import declared_heartbeat_guard as _dhg
+
+                _dhg._reset_snapshot_findings_once()
+            except Exception:  # noqa: BLE001 - best effort; never let re-arming break the loop
+                pass
         for key, v in k.items():
             totals[key] += v
         report[str(cid)] = {"name": c.chain_config(cid).get("name", "?"),

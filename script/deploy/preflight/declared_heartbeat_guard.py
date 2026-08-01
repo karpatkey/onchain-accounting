@@ -156,9 +156,15 @@ def configured_chain_ids() -> list[str]:
 
     Deliberately NOT derived from the snapshot's own `chains` keys. Scoping the run to the snapshot lets
     the snapshot decide what gets audited, so a snapshot that lost a chain silently stops checking it and
-    an EMPTY snapshot checks nothing at all while printing `total ERRORs: 0` — a clean bill of health from
-    a guard that examined zero feeds. Config is the invariant; the snapshot is the evidence being tested
-    against it, and evidence must never get to choose its own scope.
+    an EMPTY snapshot examines ZERO FEEDS. Config is the invariant; the snapshot is the evidence being
+    tested against it, and evidence must never get to choose its own scope.
+
+    PRECISELY WHAT THIS BUYS, and what it does not: it guarantees every configured chain is EXAMINED, so
+    a degraded snapshot can no longer shrink the audit silently. It does NOT by itself make the run exit
+    non-zero — with an empty snapshot every feed reports "no declared heartbeat recorded", which is a
+    WARN, so `total ERRORs: 0` still holds. That is intended (an unrecorded address is not an evidence
+    contradiction), but it means the exit code alone must never be read as "coverage was good": read the
+    WARN count too.
     """
     ids: set[str] = set()
     for sub in ("nav-config/assets-and-price-feeds", "contracts-deployment-config/custom-price-feeds"):
@@ -180,6 +186,9 @@ def registered_feeds(chain_id: str) -> list[dict]:
     Custom feeds appear via their rate leg (`yToXFeed`/`yToXHeartbeat`) rather than their nav-config entry,
     because it is the RATE LEG that has a provider cadence — the custom wrapper has no provider of its own.
     """
+    def _is_address(v):
+        return isinstance(v, str) and v.startswith("0x") and len(v) == 42
+
     def _int_or_none(v):
         """Never raise while ENUMERATING. A row this cannot parse is emitted with heartbeat=None and
         reported by `_row_findings`; raising here would lose the whole chain's rows at once, which is
@@ -230,13 +239,46 @@ def registered_feeds(chain_id: str) -> list[dict]:
             if not isinstance(v, dict):
                 continue
             ctor = v.get("constructor") or {}
-            addr, hb = ctor.get("yToXFeed"), ctor.get("yToXHeartbeat")
-            if addr:
-                out.append({"asset": name, "role": "rate leg (yToXFeed)", "address": addr,
-                            "heartbeat": _int_or_none(hb), "heartbeat_raw": hb,
-                            "enabled": bool(v.get("enabled")),
-                            "where": f"contracts-deployment-config/custom-price-feeds/{chain_id}.json"})
+            # RATE LEGS ARE FOUND BY SHAPE, NOT BY ONE HARD-CODED KEY NAME. Matching only
+            # `yToXFeed`/`yToXHeartbeat` silently missed nine ENABLED custom feeds whose leg is named for
+            # the pair it prices — `wstEthToEthChainlink`/`wstEthToEthHeartbeat`,
+            # `ldoToEthChainlinkAddress`/`ldoToEthChainlinkHeartbeat`, and so on. Those are exactly the
+            # LST-rate feeds this audit targeted, so the guard read as covering custom feeds while
+            # checking a third of them. Every `<stem>Heartbeat` is paired with the address-valued key
+            # that shares its stem; a heartbeat with no such partner is REPORTED, never dropped.
+            for hb_key in sorted(k for k in ctor if k.endswith("Heartbeat")):
+                stem = hb_key[: -len("Heartbeat")]
+                addr = next((ctor[k] for k in sorted(ctor)
+                             if k != hb_key and k.startswith(stem) and _is_address(ctor.get(k))), None)
+                hb = ctor.get(hb_key)
+                row = {"asset": name, "role": f"rate leg ({hb_key})",
+                       "heartbeat": _int_or_none(hb), "heartbeat_raw": hb,
+                       "enabled": bool(v.get("enabled")),
+                       "where": f"contracts-deployment-config/custom-price-feeds/{chain_id}.json"}
+                if addr:
+                    out.append({**row, "address": addr})
+                else:
+                    # A heartbeat with no resolvable address is not "nothing to check" — it means the
+                    # pairing heuristic did not recognise this feed's shape, which is how coverage goes
+                    # missing quietly. Say so.
+                    out.append({**row, "address": "-",
+                                "unpaired_heartbeat": f"`{hb_key}` has no sibling address key starting "
+                                                      f"with '{stem}'"})
     return out
+
+
+def _consequence(role: str) -> str:
+    """The consequence of going stale is NOT the same for a pricing feed and a monitor feed.
+
+    A PRIMARY feed going stale values the asset at $0 and lists it in `stalePriceAssets`. A MONITOR feed
+    never prices — `getPriceDataNoDivergence` selects over the primary mapping only — so its staleness
+    surfaces as an unhealthy-monitor signal instead. Stating the pricing consequence for a monitor row
+    would overstate the impact, and overstated findings are how a guard loses its credibility.
+    """
+    if role.startswith("monitorFeeds"):
+        return (" This is a MONITOR feed, so it does not price the asset: staleness here does not zero "
+                "the valuation, it degrades the divergence check and surfaces as an unhealthy monitor.")
+    return " The asset is valued $0 and listed in `stalePriceAssets`."
 
 
 def _row_findings(chain_id: str, r: dict, declared: dict) -> list[tuple[str, str]]:
@@ -250,6 +292,16 @@ def _row_findings(chain_id: str, r: dict, declared: dict) -> list[tuple[str, str
     # the moment someone flips `enabled`. Surfaced rather than filtered, so the queue stays honest.
     off = " (NOTE: this custom feed is currently enabled=false, so it will not be deployed yet — lower "\
           "priority, but it will bite the moment it is enabled.)" if r.get("enabled") is False else ""
+    if r.get("unpaired_heartbeat"):
+        # A heartbeat with no sibling address is NOT necessarily a defect: some custom feeds declare a
+        # heartbeat for a non-Chainlink source (ETHPlus's `reserveProtocolHeartbeat` reads the Reserve
+        # protocol, not a Chainlink aggregator), and this axis only models Chainlink cadences. So it is a
+        # WARN — "this feed is not covered" — never an ERROR, which would cry wolf on a correct config
+        # and break the 0-ERRORs-on-a-clean-tree contract the severity ladder depends on.
+        return [(WARN, f"asset '{r['asset']}' {r['role']}: {r['unpaired_heartbeat']}, so no Chainlink "
+                       f"rate-leg address could be identified and this heartbeat is NOT covered by the "
+                       f"declared-margin guard. Expected when the heartbeat governs a non-Chainlink "
+                       f"source; otherwise the constructor key naming needs a look.{off}")]
     if r.get("config_error"):
         # The config file itself could not be read. ERROR, because the chain cannot be audited at all
         # and "no rows" would otherwise read exactly like "no feeds configured".
@@ -267,6 +319,14 @@ def _row_findings(chain_id: str, r: dict, declared: dict) -> list[tuple[str, str
         # Reported as actionable rather than passing silently — the two cases look identical here.
         # The remedy has to TERMINATE: --refresh only ever resolves Chainlink-catalogue addresses, so
         # telling the operator to keep running it would loop forever on a RedStone/API3 feed.
+        if str(chain_id) not in DIRECTORY_FILES:
+            # --refresh cannot reach this chain at all, so the usual "run it and see" advice would tell
+            # the operator to dismiss REAL Chainlink feeds as non-Chainlink. Name the actual blocker.
+            return [(WARN, f"asset '{r['asset']}' {r['role']} {r['address']} has NO declared heartbeat "
+                           f"recorded, and chain {chain_id} has NO entry in DIRECTORY_FILES — so "
+                           f"--refresh cannot resolve it and NOTHING on this chain is covered by this "
+                           f"axis. Do NOT read this as 'not a Chainlink feed': add the chain's "
+                           f"reference-data-directory filename to DIRECTORY_FILES, then --refresh.{off}")]
         return [(WARN, f"asset '{r['asset']}' {r['role']} {r['address']} has NO declared heartbeat "
                        f"recorded. Either it is not a Chainlink-catalogue feed (RedStone/API3 — expected, "
                        f"no action), or the snapshot is missing it. To distinguish: run --refresh once. A "
@@ -274,6 +334,15 @@ def _row_findings(chain_id: str, r: dict, declared: dict) -> list[tuple[str, str
                        f"survives a SUCCESSFUL refresh means 'not a Chainlink feed' and needs no "
                        f"action.{off}")]
     dh, rh = int(rec["declaredHeartbeat"]), int(r["heartbeat"])
+    if dh == 0:
+        # A declared heartbeat of 0 means "no heartbeat cadence" — a deviation-only feed. The margin rule
+        # genuinely does not apply, but staying SILENT would make that indistinguishable from a verified
+        # positive margin, which is the confusion this whole module exists to remove. Say which it is.
+        return [(WARN, f"asset '{r['asset']}' {r['role']} ({rec.get('name')}) has a provider-declared "
+                       f"heartbeat of 0 — a deviation-only feed with no heartbeat cadence, so the margin "
+                       f"rule does not apply. Reported rather than passed silently: silence here would "
+                       f"read exactly like a checked-and-fine positive margin. Its freshness depends "
+                       f"entirely on the deviation threshold, which this axis does not model.{off}")]
     if rh > dh:
         return []
     allow = ALLOWLIST.get((str(chain_id), key))
@@ -286,6 +355,26 @@ def _row_findings(chain_id: str, r: dict, declared: dict) -> list[tuple[str, str
             return [(ERROR, f"asset '{r['asset']}' {r['role']} allowlist entry was measured against "
                             f"registered={allow.get('registered')} but the config now says {rh}. "
                             f"Re-measure and update the entry; a stale exemption is not evidence.")]
+        # THE EVIDENCE MUST ACTUALLY BE THERE. `breaches: 0` alone is not a measurement — an entry with
+        # no interval count and no date asserts a conclusion while recording nothing that can be re-run,
+        # which is precisely the "place to hide a real defect" the allowlist's own comment warns about.
+        if not isinstance(allow.get("intervals"), int) or allow["intervals"] <= 0:
+            return [(ERROR, f"asset '{r['asset']}' {r['role']} is allowlisted but records no `intervals` "
+                            f"count, so its `breaches: 0` rests on nothing re-runnable. An exemption "
+                            f"without a measurement is not evidence.")]
+        age = _measurement_age_days(allow.get("measured"))
+        if age is None:
+            return [(ERROR, f"asset '{r['asset']}' {r['role']} is allowlisted but its `measured` date is "
+                            f"missing or unparseable ({allow.get('measured')!r}), so the evidence cannot "
+                            f"be aged and could be arbitrarily old.")]
+        if age > MEASUREMENT_STALE_DAYS:
+            # Emitted HERE, on the path preflight actually runs — not only in --self-test. Aging evidence
+            # solely inside the self-test would repeat this module's original defect exactly: a signal
+            # that fires when a human runs the tool by hand and never during the run that gates a deploy.
+            return [(WARN, f"asset '{r['asset']}' {r['role']} is exempt on evidence that is {age} days "
+                           f"old (>{MEASUREMENT_STALE_DAYS}). Publisher cadence drifts, so an old "
+                           f"measurement ages exactly like the snapshot does. Re-measure the "
+                           f"AnswerUpdated gaps and update `measured`, or drop the exemption.{off}")]
         return []
     # SEVERITY: WARN, not ERROR, and the distinction is load-bearing. At-or-below margin is a
     # *candidate*, not a defect — it only bites HEARTBEAT-DRIVEN feeds, and ~30 references on the
@@ -298,8 +387,9 @@ def _row_findings(chain_id: str, r: dict, declared: dict) -> list[tuple[str, str
              f"declared-heartbeat margin UNMEASURED: asset '{r['asset']}' {r['role']} ({rec.get('name')}) is "
              f"registered at {rh} but the provider declares {dh} — margin {rh - dh:+d}. A provider "
              f"publishes tens of seconds PAST its declared heartbeat, so at-or-below margin means the "
-             f"asset goes stale (valued $0, listed in stalePriceAssets) at the end of essentially every "
-             f"publish cycle. Measured precedents: sUSDS 59/61 cycles (#211), OETH 29/29 (#236).{off}\n"
+             f"feed goes stale at the end of essentially every "
+             f"publish cycle.{_consequence(r['role'])} Measured precedents: sUSDS 59/61 cycles (#211), "
+             f"OETH 29/29 (#236).{off}\n"
              f"        {_fix_hint(str(chain_id), rec.get('name') or '?', dh)}")]
 
 
@@ -452,6 +542,7 @@ def refresh(allow_shrink: bool = False, fetch=None) -> int:
         # `refs` — and more importantly, a chain whose config cannot be read has an UNKNOWN reference set,
         # so refresh cannot tell a genuine delisting from an unreadable file. That is a non-waivable
         # failure, not a shrink: guessing here would delete entries that are still referenced.
+        rows = [r for r in rows if not r.get("unpaired_heartbeat")]   # no address to fetch
         cfg_errs = [r for r in rows if r.get("config_error")]
         if cfg_errs:
             failures.append((chain_id, f"config unreadable ({cfg_errs[0]['config_error']}) — the set of "
@@ -553,6 +644,12 @@ def refresh(allow_shrink: bool = False, fetch=None) -> int:
             print("Pass --allow-shrink to accept this as a genuine delisting.", file=sys.stderr)
         return 1
 
+    if regressions:
+        # Waived, not invisible. This is the only place that names WHICH addresses are being dropped, and
+        # skipping it because the operator passed a flag would make --allow-shrink a silent delete.
+        print("\n--allow-shrink: accepting these drops as genuine delistings:", file=sys.stderr)
+        for cid, addrs in regressions:
+            print(f"  chain {cid}: dropping {len(addrs)} address(es) — {', '.join(addrs)}", file=sys.stderr)
     SNAPSHOT.write_text(json.dumps(out, indent=2) + "\n")
     print(f"wrote {SNAPSHOT} ({total} feeds)")
     return 0
@@ -564,6 +661,7 @@ def self_test() -> int:
     import contextlib
     import io
     import tempfile
+    from datetime import date
 
     # Declared once, up front: several arms below rebind these module globals to drive synthetic input,
     # and Python requires the declaration to precede any use within this scope.
@@ -632,7 +730,8 @@ def self_test() -> int:
         # nothing asserted it. If this ever regressed to a WARN, the allowlist would stop exempting and
         # the guard would cry wolf on six measured feeds; if it regressed the other way, a broken
         # exemption would go quiet. Both directions are covered by this arm plus the two ERROR arms.
-        ALLOWLIST[key] = {"asset": "T", "registered": 86400, "breaches": 0, "measured": "2026-01-01"}
+        ALLOWLIST[key] = {"asset": "T", "registered": 86400, "breaches": 0, "intervals": 300,
+                          "measured": date.today().isoformat()}
         case_silent("an EVIDENCED allowlist entry is SILENT (the measured-fine path)", "1", snap,
                     [{"asset": "T", "role": "priceFeeds[0]", "address": A, "heartbeat": 86400,
                       "where": "x"}])
@@ -740,6 +839,51 @@ def self_test() -> int:
     print(f"  [{'PASS' if _rows and _reported else 'FAIL'}] a non-int `heartbeat` in config is REPORTED, "
           f"not silently skipped")
     ok = ok and bool(_rows) and bool(_reported)
+
+    # Rate legs must be found BY SHAPE. Hard-coding `yToXFeed` missed nine enabled custom feeds whose
+    # leg is named for the pair it prices, so the guard read as covering custom feeds while checking a
+    # third of them.
+    _legs = [r for cid in configured_chain_ids() for r in registered_feeds(cid)
+             if "rate leg" in r.get("role", "")]
+    _non_ytox = [r for r in _legs if "yToX" not in r["role"] and r.get("address", "-").startswith("0x")]
+    print(f"  [{'PASS' if len(_non_ytox) >= 9 else 'FAIL'}] custom-feed rate legs are discovered by shape "
+          f"({len(_legs)} legs, {len(_non_ytox)} of them NOT the yToXFeed spelling)")
+    ok = ok and len(_non_ytox) >= 9
+
+    # An allowlist entry must carry re-runnable evidence, and that evidence must not be allowed to age
+    # forever. Both are checked on the DEPLOY path (findings), not only in this self-test — aging it only
+    # here would repeat this module's original defect exactly.
+    _A2 = "0xAAA0000000000000000000000000000000000001"
+    _snap2 = {"fetched": "2026-08-01", "chains": {"1": {_A2.lower(): {"name": "T / USD",
+                                                                     "declaredHeartbeat": 86400}}}}
+    _row = [{"asset": "T", "role": "priceFeeds[0]", "address": _A2, "heartbeat": 86400, "where": "x"}]
+    try:
+        ALLOWLIST[key] = {"asset": "T", "registered": 86400, "breaches": 0}          # no evidence at all
+        case("an allowlist entry with NO measurement is an ERROR", "1", _snap2, _row,
+             ERROR, "not evidence")
+        ALLOWLIST[key] = {"asset": "T", "registered": 86400, "breaches": 0, "intervals": 300,
+                          "measured": "2019-01-01"}                                  # ancient evidence
+        case("an allowlist entry whose evidence is stale WARNS on the deploy path", "1", _snap2, _row,
+             WARN, "days old")
+    finally:
+        ALLOWLIST.pop(key, None)
+
+    # A provider-declared heartbeat of 0 means "no cadence". Silence would be indistinguishable from a
+    # verified positive margin, so it must say which it is.
+    case("a declared heartbeat of 0 is reported, not silent", "1",
+         {"fetched": "2026-08-01", "chains": {"1": {_A2.lower(): {"name": "D / USD",
+                                                                 "declaredHeartbeat": 0}}}},
+         [{"asset": "D", "role": "priceFeeds[0]", "address": _A2, "heartbeat": 3600, "where": "x"}],
+         WARN, "deviation-only feed with no heartbeat cadence")
+
+    # A monitor feed does not price the asset, so it must not be told it will be valued $0.
+    _mon = case("a monitorFeeds row states the MONITOR consequence, not the $0 one", "1", _snap2,
+                [{"asset": "T", "role": "monitorFeeds[0]", "address": _A2, "heartbeat": 86400,
+                  "where": "x"}],
+                WARN, "does not zero the valuation")
+    print(f"  [{'PASS' if not [m for lvl, m in _mon if 'valued $0' in m] else 'FAIL'}] "
+          f"...and does NOT claim the asset is valued $0")
+    ok = ok and not [m for lvl, m in _mon if "valued $0" in m]
 
     # An unparseable config file must be an ERROR, not zero rows. Zero rows reads exactly like "this
     # chain has no feeds", so a corrupt config would report a clean chain.

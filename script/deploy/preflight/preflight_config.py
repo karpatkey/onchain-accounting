@@ -482,7 +482,16 @@ def main() -> int:
     totals = Counter()
 
     for cid in chains:
-        findings = check_chain(cid)
+        # One chain must not be able to kill the run. `cfg`/`dcfg` call json.loads without a guard, so a
+        # single unparseable config file used to raise straight out of check_chain and abort every
+        # REMAINING chain — and it discarded the findings already computed for this one, including the
+        # declared-heartbeat guard's own "config could not be parsed" ERROR. The failure is now contained
+        # to its chain and reported as an ERROR, so the run still covers the others and still fails.
+        try:
+            findings = check_chain(cid)
+        except Exception as e:  # noqa: BLE001 - a chain that cannot be checked is not a chain that passed
+            findings = [(ERROR, f"chain {cid} could NOT be checked ({e!r}) — its config is unreadable. "
+                                f"This chain has NO preflight coverage; that is not the same as clean.")]
         k = counts(cid)
         for key, v in k.items():
             totals[key] += v

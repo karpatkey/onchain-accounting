@@ -388,7 +388,9 @@ def refresh(allow_shrink: bool = False, fetch=None) -> int:
         module documents as expected for RedStone/API3, so total loss of coverage reads as normal.
 
     An exit code of 0 from this function therefore means "the committed snapshot is complete and freshly
-    fetched" and nothing else. Pass allow_shrink=True (CLI: --allow-shrink) to accept a genuine delisting.
+    fetched" and nothing else. allow_shrink=True (CLI: --allow-shrink) waives a genuine DELISTING — an
+    address the provider dropped — but never a fetch failure, because no flag can make data that was
+    never fetched fresh.
     """
     from datetime import date
     fetch = fetch or _fetch_directory
@@ -455,7 +457,11 @@ def refresh(allow_shrink: bool = False, fetch=None) -> int:
             failures.append((cid, "no DIRECTORY_FILES entry — cannot be refreshed; add one so this "
                                  "chain's declared heartbeats stay current"))
 
-    if (failures or regressions) and not allow_shrink:
+    # `allow_shrink` accepts a genuine DELISTING. It deliberately does NOT bypass a FAILURE: a fetch that
+    # never happened cannot be stamped fresh, and forcing one through would write carried-over entries
+    # under a today `fetched` date — precisely the laundering this function exists to prevent, just
+    # behind a flag. So failures always block; only regressions are waivable.
+    if failures or (regressions and not allow_shrink):
         print("\nREFUSING TO WRITE — the snapshot would be degraded, and a degraded snapshot stamped with "
               "today's date silently defeats the staleness guard:", file=sys.stderr)
         for cid, err in failures:
@@ -465,8 +471,12 @@ def refresh(allow_shrink: bool = False, fetch=None) -> int:
             print(f"  chain {cid}: {len(addrs)} still-referenced address(es) no longer resolve — {shown}",
                   file=sys.stderr)
         print(f"\n{SNAPSHOT.name} left UNCHANGED, so its `fetched` date stays honest and staleness keeps "
-              f"firing. Re-run when the source is reachable, or pass --allow-shrink to accept a genuine "
-              f"delisting.", file=sys.stderr)
+              f"firing.", file=sys.stderr)
+        if failures:
+            print("--allow-shrink does NOT bypass a failed fetch — data that was never fetched cannot be "
+                  "stamped fresh. Re-run when every source is reachable.", file=sys.stderr)
+        elif regressions:
+            print("Pass --allow-shrink to accept this as a genuine delisting.", file=sys.stderr)
         return 1
 
     SNAPSHOT.write_text(json.dumps(out, indent=2) + "\n")
@@ -712,6 +722,16 @@ def self_test() -> int:
               f"chain DIRECTORY_FILES cannot reach")
         print(f"  [{'PASS' if kept else 'FAIL'}] ...instead of silently dropping it from the snapshot")
         ok = ok and bool(rc_unmapped) and kept
+
+        # --allow-shrink must waive a DELISTING, never a failed fetch. Forcing a failure through would
+        # write carried-over entries under a today `fetched` stamp — the laundering, behind a flag.
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+            rc_forced = refresh(allow_shrink=True, fetch=_boom)
+            unchanged_forced = SNAPSHOT.read_text() == before
+        print(f"  [{'PASS' if rc_forced else 'FAIL'}] --allow-shrink does NOT bypass a failed fetch")
+        print(f"  [{'PASS' if unchanged_forced else 'FAIL'}] ...so stale data cannot be stamped fresh "
+              f"behind a flag")
+        ok = ok and bool(rc_forced) and unchanged_forced
 
     finally:
         # A self-test must never be able to dirty the working tree, even if an arm above regresses.

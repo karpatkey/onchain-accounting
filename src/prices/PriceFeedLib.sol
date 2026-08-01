@@ -339,6 +339,10 @@ library PriceFeedLib {
 
         // Absolute peg guard: primary vs $1 (= 10**NAV_DECIMALS). Enabled per-asset by a non-zero peg tolerance
         // (set only on assets whose fundamental value is $1, i.e. stablecoins). Independent of monitors.
+        //
+        // NOTE: `pegToleranceBps` has a SECOND consumer off this path — `AssetKindRegistry` derives `PegKind` from it
+        // (non-zero => Pegged). So it is not purely a local pricing knob any more; zeroing it also reclassifies the
+        // asset. See the warning on `NAVCalculator.setPegTolerance`.
         if (ap.pegToleranceBps > 0 && !primaryStale && primaryPrice8 > 0) {
             int256 one = int256(10 ** uint256(NAV_DECIMALS));
             int256 pegDiff = primaryPrice8 - one;

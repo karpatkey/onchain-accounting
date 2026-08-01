@@ -9,7 +9,8 @@ pragma solidity ^0.8;
 ///      The axis is not cosmetic: it predicts an operational property. A zero-heartbeat-margin staleness condition
 ///      bites `Pegged` feeds and not `Floating` ones, because a floating asset's divergence threshold fires long
 ///      before its heartbeat expires, while a pegged asset can sit quietly at its peg until the heartbeat lapses.
-///      An axis that predicts which feeds a class of failure reaches is an axis worth storing.
+///      An axis that predicts which feeds a class of failure reaches is an axis worth having. (It is not STORED: see
+///      the derivation note on {AccrualKind} — `AssetKindRegistry` computes it from the NAV's `pegToleranceBps`.)
 /// @author KPK
 enum PegKind {
     Pegged, // tracks the quote asset (USD): USDC, USDT, DAI, USDe, GHO
@@ -22,14 +23,14 @@ enum PegKind {
 ///      changes only with the market price.
 ///
 ///      Note that `Appreciating` is exactly the mechanism that makes an asset unpeggable: a growing redemption rate on
-///      a static balance moves the USD price off $1. Hence the empty `Pegged + Appreciating` cell below.
+///      a static balance moves the USD price off $1. Hence the `Pegged + Appreciating` cell being empty in practice.
 ///
 ///      **Why two axes and not one enum.** A single enum forces a wrong answer on assets this repo already
 ///      registers, because peg and accrual vary independently:
 ///
 ///      | | `None` | `Rebasing` | `Appreciating` |
 ///      |---|---|---|---|
-///      | `Pegged`   | USDC | aUSDC | *(unreachable — see below)* |
+///      | `Pegged`   | USDC | aUSDC | *(cannot be asserted — see below)* |
 ///      | `Floating` | WETH | stETH | wstETH, **sDAI**, sGHO, sUSDe, sUSDS |
 ///
 ///      **`sDAI` is `Floating`, not `Pegged`** — a yield-bearing wrapper has no peg. Its USD price is not $1 and rises
@@ -44,16 +45,26 @@ enum PegKind {
 ///      (`divergenceToleranceBps` + monitor feeds); sGHO, sUSDS and syrupUSDC carry neither, because no independent
 ///      market feed exists for them. And `sDAI` is not a mainnet-registered asset at all — it is configured only on
 ///      Gnosis (chain 100). So the shared fact is the ABSENCE of a peg tolerance, not the presence of divergence
-///      monitoring. `08_DeployAssetKindRegistry` asserts the two authorities agree (`Pegged` ⇔ `pegToleranceBps > 0`)
-///      so they can never silently diverge again.
+///      monitoring. There is no longer anything to keep in agreement: the peg axis is DERIVED from `pegToleranceBps`,
+///      so a classification contradicting the pricing layer is not merely detectable — the contradictory sentence is
+///      unwriteable. (An earlier revision asserted `Pegged` ⇔ `pegToleranceBps > 0` in `08`; that guard is deleted,
+///      because a guard against a state the type system cannot express is dead code that reads as protection.)
 ///
-///      **The two empty cells are empty for DIFFERENT reasons. Do not conflate them.**
-///      - `Pegged + Rebasing` — empty today but genuinely **REACHABLE**: an aToken for USDC has a growing balance at a
-///        $1 price. No aToken is currently registered, and the first such registration legitimately occupies this cell,
-///        so it is a supported combination and is covered by tests deliberately.
-///      - `Pegged + Appreciating` — arguably **UNREACHABLE**, not merely unoccupied. If the redemption rate grows while
-///        the balance is static, the USD price must rise above $1 — which is precisely what "not pegged" means. If you
-///        believe you have found a member, you have probably found a `Floating + Appreciating` asset.
+///      **`Pegged + Appreciating` can no longer be ASSERTED — but be precise about what that does and does not mean.**
+///      The peg axis is not stored, so there is no parameter with which to claim an appreciating asset is pegged; the
+///      contradiction that used to be expressible in config is now unwriteable. That is the real gain.
+///
+///      It is NOT the same as the cell being unreachable. If an operator sets a non-zero `pegToleranceBps` on an asset
+///      stored as `Appreciating`, the pair reads back `Pegged + Appreciating` — because the peg is computed from that
+///      tolerance. What changed is WHERE such a state comes from: it can only arise from a real pricing decision on the
+///      NAV, never from a mistyped classification, and it is then a true report of the NAV's own configuration rather
+///      than a second opinion contradicting it. Pinned by
+///      `test_peggedAppreciating_arisesOnlyFromAPegToleranceNotFromAClaim`.
+///
+///      **`Pegged + Rebasing` remains real and REACHABLE.** An aToken for USDC has a growing balance at a $1 price and
+///      carries a peg tolerance, so it derives `Pegged` and stores `Rebasing`. No aToken is registered today; the first
+///      one legitimately occupies this cell.
+///
 /// @author KPK
 enum AccrualKind {
     None, // no intrinsic accrual: WETH, USDC, WBTC, ARB

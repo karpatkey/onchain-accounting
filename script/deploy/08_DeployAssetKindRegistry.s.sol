@@ -6,14 +6,17 @@ import {ConfigReader} from "../utils/ConfigReader.sol";
 import {console2} from "forge-std/console2.sol";
 
 import {AssetKindRegistry} from "../../src/nav/AssetKindRegistry.sol";
-import {PegKind, AccrualKind} from "../../src/utils/AssetKind.sol";
+import {AccrualKind} from "../../src/utils/AssetKind.sol";
 
 /// @title 08_DeployAssetKindRegistry
 /// @author KPK
 /// @notice Deploys the per-chain {AssetKindRegistry} and classifies every asset in
 ///         `nav-config/assets-and-price-feeds/<chainId>.json` in a single batch call.
-/// @dev **Fail-closed at deploy time, deliberately.** Every configured asset MUST carry a valid `pegKind` and
-///      `accrualKind` string. An absent or unrecognized value ABORTS the deploy — it is not defaulted, not skipped and
+/// @dev **Fail-closed at deploy time, deliberately.** Every configured asset MUST carry a valid `accrualKind` string.
+///      (There is no `pegKind` in config: the peg axis is DERIVED on read from the NAV's `pegToleranceBps`, so it cannot
+///      be configured, cannot disagree with the pricing layer, and needs no cross-check here. An earlier revision of
+///      this script asserted `Pegged` ⇔ `pegToleranceBps > 0`; that guard is deleted rather than kept "just in case",
+///      because a guard against an unrepresentable state is dead code that reads as protection.) An absent or unrecognized value ABORTS the deploy — it is not defaulted, not skipped and
 ///      not warned about. The reasoning is the same as the pre-deploy rate-feed guard's: a default classification is
 ///      indistinguishable from a real one once it is on-chain, so the only safe place to notice the gap is before the
 ///      transaction. This script reverting is the guard working.
@@ -34,22 +37,17 @@ import {PegKind, AccrualKind} from "../../src/utils/AssetKind.sol";
 ///      second one — **but only with `PERSIST_DEPLOYMENTS=1`**, since the skip guard reads the record that flag gates.
 ///      See the warning at the guard itself.
 ///
-///      **The registry is EOA-owned deliberately FOR THIS DEPLOY, with a handover to the security-council Safe
-///      PLANNED.** This is a considered choice, not a defect — do not "fix" it by adding a handoff to `07` or a new
-///      numbered step. `DEFAULT_ADMIN_ROLE` and `MANAGER` both go to the deployer EOA: every chain config sets
-///      `addresses.admin` and `addresses.manager` to the same EOA, so one key governs the registry on each chain.
+///      **The registry has NO roles, so there is nothing to hand over.** It holds no `AccessControl`, no admin and no
+///      manager: every write gates on `NAV.hasRole(MANAGER, msg.sender)`, making authority exactly the NAV's MANAGER
+///      set. That retires three things this step previously had to document — the procedural-vs-enforced role
+///      separation, the EOA-ownership posture, and the manual council-handover procedure. `07` correctly does not know
+///      this contract exists, and now there is no reason it should.
 ///
-///      The handover **is expected to happen**, riding with the same deferred step-07 Safe-handoff work that was
-///      excluded from this wave — the registry is simply in the same position as the NAV and Bridge proxies. When it
-///      happens it is a **documented MANUAL operational step performed after the deploy, outside any script** — see
-///      "Handing the registry to the council (planned, manual)" in `script/deploy/README.md`. It is deliberately not
-///      scripted, which is why `07` does not enumerate this contract and why there is no `09`.
-///
-///      Until then, stated so it is not rediscovered as a surprise: that one key can re-classify any asset, and the
-///      only signal is the `AssetKindSet` event. Nothing consumes the registry today. Watch that event once something
-///      does.
+///      Registering an asset directly on the NAV remains possible for any MANAGER and is deliberately NOT blocked in
+///      code. Whether the facade becomes the ONLY path is a deploy-time role decision (revoke `MANAGER` from humans on
+///      the NAV), left to the operator so this step imposes no single point of failure on asset registration.
 contract DeployAssetKindRegistry is BaseDeployScript {
-    /// @notice Thrown when a configured asset has no valid `pegKind`/`accrualKind`. Aborts the deploy.
+    /// @notice Thrown when a configured asset has no valid `accrualKind`. Aborts the deploy.
     error AssetKindMissingOrInvalid(string symbol, string field);
 
     /// @notice Thrown when a configured asset has no resolvable token address.
@@ -60,17 +58,10 @@ contract DeployAssetKindRegistry is BaseDeployScript {
     ///         present-but-zero one.
     error AssetAddressZero(string symbol);
 
-    /// @notice Thrown when an asset's `pegKind` disagrees with its `pegToleranceBps` about whether the asset is worth
-    ///         $1. Carries both sides so the operator sees the disagreement, not just one half of it.
-    /// @dev This repo has TWO authorities on peggedness and they must not silently diverge. `pegToleranceBps` enables
-    ///      {PriceFeedLib}'s absolute peg guard and is documented there as set "only on assets whose fundamental value
-    ///      is $1"; `pegKind` is the new classification. The invariant is `Pegged` ⇔ `pegToleranceBps > 0`.
-    ///
-    ///      This guard exists because the divergence was found BY HAND during review: the matrix originally called sDAI
-    ///      `Pegged` while the pricing config gave it the wstETH treatment (`divergenceToleranceBps` + monitor feeds,
-    ///      no `pegToleranceBps`). Two authorities disagreeing in silence is the failure mode; this makes them disagree
-    ///      loudly, before the classification reaches a chain where it is indistinguishable from a correct one.
-    error PegKindContradictsPegTolerance(string symbol, bool pegged, uint256 pegToleranceBps);
+    /// @notice Thrown when the chain has no recorded `NAVCalculatorProxy`. The registry takes the NAV address in its
+    ///         constructor and derives ALL of its authority from it, so deploying against `address(0)` would produce a
+    ///         registry nobody can write to — caught here rather than on-chain.
+    error NavCalculatorNotDeployed(uint256 chainId);
 
     function run() public override {
         uint256 chainId = block.chainid;
@@ -81,7 +72,6 @@ contract DeployAssetKindRegistry is BaseDeployScript {
 
         // Resolve and VALIDATE the whole set before deploying anything, so a config gap costs nothing but a revert.
         address[] memory assets = new address[](symbols.length);
-        PegKind[] memory pegKinds = new PegKind[](symbols.length);
         AccrualKind[] memory accrualKinds = new AccrualKind[](symbols.length);
 
         for (uint256 i; i < symbols.length; ++i) {
@@ -110,37 +100,9 @@ contract DeployAssetKindRegistry is BaseDeployScript {
             // read this guard as making that check unnecessary.
             if (assets[i] == address(0)) revert AssetAddressZero(symbol);
 
-            (PegKind peg, bool pegValid) = ConfigReader.readAssetPegKind(vm, chainId, symbol);
-            if (!pegValid) revert AssetKindMissingOrInvalid(symbol, "pegKind");
-            pegKinds[i] = peg;
-
             (AccrualKind accrual, bool accrualValid) = ConfigReader.readAssetAccrualKind(vm, chainId, symbol);
             if (!accrualValid) revert AssetKindMissingOrInvalid(symbol, "accrualKind");
             accrualKinds[i] = accrual;
-
-            // Cross-check the two authorities on peggedness. See {PegKindContradictsPegTolerance}: `pegToleranceBps`
-            // already gates PriceFeedLib's absolute-$1 guard, so `pegKind == Pegged` must agree with it in BOTH
-            // directions. A `Pegged` asset with no peg tolerance is a classification the pricing layer contradicts; a
-            // peg-guarded asset marked `Floating` is the same disagreement mirrored.
-            //
-            // **DO NOT RELAX THIS TO A WARNING, AND DO NOT DELETE IT AS REDUNDANT.** It looks redundant precisely when
-            // it is working — the two authorities agree today (measured: 25 of 93 configured rows are `Pegged`, and
-            // exactly those 25 carry `pegToleranceBps`, zero violations). This is the guard that makes them fail LOUDLY
-            // rather than silently diverging, and that divergence is not hypothetical: it was already found once, by
-            // hand during review, when the kind matrix called sDAI `Pegged` while the pricing config gave it the wstETH
-            // treatment. A label that contradicts the live peg guard is indistinguishable from a correct one once it is
-            // on-chain, which is why this must abort the deploy rather than log.
-            //
-            // Known tension in the FORWARD direction (`Pegged` ⇒ tolerance set), for whoever hits it first: it makes a
-            // classification axis depend on an operational tolerance choice. A USD stablecoin priced off a fundamental
-            // $1 feed, where a peg guard would be redundant, is definitionally `Pegged` yet would legitimately carry no
-            // tolerance. No such asset exists across the seven configured chains today. If one appears, the right move
-            // is to reconsider this invariant deliberately — NOT to mislabel the asset `Floating` to silence the abort.
-            bool pegged = peg == PegKind.Pegged;
-            uint256 pegToleranceBps = ConfigReader.readAssetPegToleranceBps(vm, chainId, symbol);
-            if (pegged != (pegToleranceBps > 0)) {
-                revert PegKindContradictsPegTolerance(symbol, pegged, pegToleranceBps);
-            }
         }
 
         // Idempotent, like every sibling step (`03`'s per-feed guards, `04`'s adapters and assistants): re-run it and
@@ -173,18 +135,18 @@ contract DeployAssetKindRegistry is BaseDeployScript {
             registry = AssetKindRegistry(existing);
             console2.log("AssetKindRegistry already deployed at:", existing);
         } else {
-            // The deployer keeps MANAGER so the same deploy run — NOT the same transaction; under
-            // `vm.startBroadcast()` the constructor and `setAssetKinds` are two separate txs — can classify. Admin goes
-            // to the chain's configured admin, which is that same EOA on every chain. Both roles landing on the EOA is
-            // deliberate FOR THIS DEPLOY, and a handover to the council IS EXPECTED LATER (it rides the deferred
-            // step-07 Safe-handoff work). `07` deliberately does not know this contract exists, so that handover is a
-            // documented MANUAL post-deploy step, not a scripted one — see the docstring above and README.
-            registry = new AssetKindRegistry(chain.admin, msg.sender);
+            // The registry takes only the NAV address: it has NO roles of its own and gates every write on
+            // `NAV.hasRole(MANAGER, msg.sender)`. So there is nothing to grant here, nothing to hand over to the
+            // council later, and no second governance surface to keep in sync — authority is exactly the NAV's MANAGER
+            // set. The deployer can classify in this same run because it already holds the NAV's MANAGER.
+            address nav = ConfigReader.readDeployedAddress(vm, chainId, "NAVCalculatorProxy");
+            if (nav == address(0)) revert NavCalculatorNotDeployed(chainId);
+            registry = new AssetKindRegistry(nav);
         }
 
         // Re-classification is permitted and event-emitting by design, so this runs on both paths.
         if (assets.length > 0) {
-            registry.setAssetKinds(assets, pegKinds, accrualKinds);
+            registry.setAssetKinds(assets, accrualKinds);
         }
 
         vm.stopBroadcast();

@@ -2,11 +2,24 @@
 pragma solidity ^0.8;
 
 import {PegKind, AccrualKind} from "src/utils/AssetKind.sol";
+import {IPrices} from "src/prices/IPrices.sol";
 
 /// @title IAssetKindRegistry
 /// @author KPK
-/// @notice The two-axis kind classification for assets: what the price tracks ({PegKind}) and how value accrues
-///         ({AccrualKind}). A standalone, MANAGER-governed lookup, deliberately NOT part of `NAVCalculator`.
+/// @notice The two-axis kind classification for assets — what the price tracks ({PegKind}) and how value accrues
+///         ({AccrualKind}) — plus the ATOMIC write facade for registering an asset and classifying it in one call.
+/// @dev **Only ONE axis is stored.** `AccrualKind` is state; `PegKind` is DERIVED on read from the NAV's
+///      `pegToleranceBps`, the switch that enables the absolute-$1 price guard. So there is exactly one authority on
+///      whether an asset is worth $1, and a classification that contradicts the pricing layer is not merely detectable
+///      — it is unwriteable. `getAssetKind` still returns both axes, so callers see a complete classification.
+///
+///      **The facade is the point.** {registerAsset} takes the kinds as parameters of the register action, stores them,
+///      and forwards to `NAVCalculator.registerAsset` in the same transaction; {unregisterAsset} is symmetric. So a
+///      registered asset is always classified by construction. Callers use the same arguments they used on the NAV plus
+///      two, and call this address instead.
+///
+///      **No roles.** Implementations gate on `NAV.hasRole(MANAGER, msg.sender)` — authority is exactly the NAV's
+///      MANAGER set, and this contract has no admin, manager or owner of its own.
 /// @dev **Fail-closed by design.** There is no default classification. Reading an asset that has not been classified
 ///      REVERTS {AssetNotClassified} rather than returning the zero value, because `PegKind.Pegged` +
 ///      `AccrualKind.None` is a plausible-looking answer that is wrong for most assets — a silent default here would
@@ -18,15 +31,17 @@ import {PegKind, AccrualKind} from "src/utils/AssetKind.sol";
 ///      - `InvalidArguments()` — from `src/errors.sol`, a shared repo-wide error. Thrown by BOTH setters when
 ///        `asset == address(0)`, and by the constructor when either role holder is `address(0)`. Selector:
 ///        `bytes4(keccak256("InvalidArguments()"))`.
-///      - `AccessControlUnauthorizedAccount(address,bytes32)` and `AccessControlBadConfirmation()` — from OpenZeppelin
-///        `AccessControl`, thrown by the MANAGER gate on every mutator and by `renounceRole`.
+///      - `NotAuthorized()` — from `src/errors.sol`, thrown by the `NAV.hasRole(MANAGER, …)` gate on every mutator.
+///        Implementations hold no `AccessControl`, so the OpenZeppelin role errors do NOT appear here.
 ///
 ///      This note lives on the interface declaration rather than beside the error list because a NatSpec block that
 ///      floats between two members attaches to neither and is dropped from `devdoc` entirely — i.e. it would be absent
 ///      from exactly the generated documentation its audience reads.
 interface IAssetKindRegistry {
-    /// @notice Emitted when an asset's classification is set or changed.
-    event AssetKindSet(address indexed asset, PegKind pegKind, AccrualKind accrualKind);
+    /// @notice Emitted when an asset's STORED classification (the accrual axis) is set or changed.
+    /// @dev Carries only the stored axis. The peg axis is derived from the NAV on read and can legitimately change
+    ///      afterwards, so emitting it here would hand indexers a snapshot that silently goes stale.
+    event AssetKindSet(address indexed asset, AccrualKind accrualKind);
 
     /// @notice Emitted when an asset's classification is removed (e.g. the asset was unregistered upstream).
     event AssetKindCleared(address indexed asset);
@@ -38,18 +53,42 @@ interface IAssetKindRegistry {
     error AssetNotClassified(address asset);
 
     /// @notice A batch setter was given arrays of differing lengths.
-    error KindArrayLengthMismatch(uint256 assets, uint256 pegKinds, uint256 accrualKinds);
+    error KindArrayLengthMismatch(uint256 assets, uint256 accrualKinds);
+
+    /// @notice Registers an asset on the NAV **and** classifies it, atomically, in one call. Gated on the NAV's
+    ///         `MANAGER`. This is the intended entry point for adding an asset.
+    /// @dev The first four parameters are forwarded verbatim to `NAVCalculator.registerAsset`; the two kind parameters
+    ///      are stored here. There is no `try`/`catch` on this path, so if EITHER half reverts the whole transaction
+    ///      reverts and neither the registration nor the classification takes effect.
+    ///
+    ///      Calling `NAVCalculator.registerAsset` directly remains possible for any MANAGER and is not prevented in
+    ///      code. Whether it stays possible is a deploy-time role decision (revoking `MANAGER` from humans on the NAV
+    ///      makes this facade the only path, and the invariant structural rather than conventional) — deliberately not
+    ///      forced here, so the choice stays with the operator at zero cost.
+    function registerAsset(
+        address asset,
+        address priceFeed,
+        IPrices.PriceType priceType,
+        uint256 chainlinkHeartbeat,
+        AccrualKind accrualKind
+    ) external;
+
+    /// @notice Unregisters an asset from the NAV **and** clears its classification, atomically. The mirror of
+    ///         {registerAsset}. Gated on the NAV's `MANAGER`.
+    /// @dev Idempotent on the kind: an asset registered directly on the NAV has no classification, and this must still
+    ///      unregister it, so a missing kind is skipped rather than reverting. Contrast {clearAssetKind}, which DOES
+    ///      revert on an unclassified asset because there the clear is the caller's whole intent.
+    function unregisterAsset(address asset) external;
 
     /// @notice Classifies one asset. MANAGER-gated. Re-classification is allowed and emits again.
     /// @dev Reverts `InvalidArguments()` if `asset` is `address(0)` — this repo's USD-quote sentinel, never a
     ///      registered asset. That error is not declared in this interface; see the contract-level note.
-    function setAssetKind(address asset, PegKind pegKind, AccrualKind accrualKind) external;
+    function setAssetKind(address asset, AccrualKind accrualKind) external;
 
     /// @notice Classifies many assets in one call. MANAGER-gated. All three arrays must be the same length.
     /// @dev Reverts {KindArrayLengthMismatch} if the lengths differ, and `InvalidArguments()` on the first
     ///      `address(0)` entry. An empty batch is a no-op, not an error.
-    function setAssetKinds(address[] calldata assets, PegKind[] calldata pegKinds, AccrualKind[] calldata accrualKinds)
-        external;
+    function setAssetKinds(address[] calldata assets, AccrualKind[] calldata accrualKinds) external;
 
     /// @notice Removes an asset's classification, so subsequent reads fail closed again. MANAGER-gated.
     /// @dev Reverts {AssetNotClassified} if the asset had no classification to remove.

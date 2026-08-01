@@ -104,45 +104,16 @@ PERSIST_DEPLOYMENTS=1 \
 forge script script/deploy/08_DeployAssetKindRegistry.s.sol --chain-id 1 --broadcast --account $DEPLOYER_NAME
 ```
 
-### The registry is EOA-owned for now, by design — with a handover to come
+### The registry has no owner — nothing to hand over
 
-**Deliberate for this deploy, not an oversight, and not something to "fix" by extending `07` or adding an `09`.** `DEFAULT_ADMIN_ROLE` and `MANAGER` both go to the deployer EOA. Every chain config sets `addresses.admin` and `addresses.manager` to that same EOA, so one key governs the registry on each chain, and `07_TransferAdminToSecurityCouncil` intentionally does not enumerate this contract.
+`AssetKindRegistry` holds **no roles of its own**: no `AccessControl`, no admin, no manager. Every write gates on `NAV.hasRole(MANAGER, msg.sender)`, so authority is exactly the NAV's MANAGER set — one set of humans for the whole system, and one fewer governance surface to keep in sync.
 
-**Expect to hand it over later.** The transfer to the security-council Safe is planned, riding with the same deferred step-07 Safe-handoff work that was excluded from this wave — the registry is in the same position as the NAV and Bridge proxies, not in a special one. It is a known, planned follow-on rather than a permanent posture.
+Consequences worth stating, because earlier revisions of this file said the opposite: there is **no Safe handover owed for this contract** (`07` correctly does not enumerate it, and now there is no reason it should), no admin that can grant itself write access, and no sequence of renouncements that can freeze the classification map.
 
-Until it happens: that one key can re-classify any asset, and the only signal is the `AssetKindSet` event. Nothing consumes the registry today; watch that event once something does.
+### Registering an asset: use the registry, not the NAV
 
-### Handing the registry to the council (planned, manual)
+`AssetKindRegistry.registerAsset(asset, priceFeed, priceType, chainlinkHeartbeat, pegKind, accrualKind)` registers on the NAV **and** classifies, atomically, in one call — the same arguments you used on the NAV plus two, at a different address. `unregisterAsset(asset)` is symmetric. If either half reverts, neither takes effect.
 
-This is a step **you should expect to perform**, not an optional aside. It is a manual operational action taken after the deploy, outside any script — deliberately not automated, so it does not ride the numbered pipeline. Two council transactions from the deployer EOA, a verification, then two renouncements, mirroring what `07` does for the proxies:
-
-```bash
-RPC=$YOUR_MAINNET_RPC_URL                # cast defaults to localhost:8545 - always pass this
-DEPLOYER_EOA=0xYourDeployer               # the EOA that ran 08; needed for the renounce calls
-REGISTRY=$(jq -r '.AssetKindRegistry' script/config/deployments/1.json)
-COUNCIL=$(jq -r '.addresses.securityCouncil' script/config/chains/1.json)
-MANAGER_ROLE=$(cast keccak "MANAGER")     # DEFAULT_ADMIN_ROLE is 0x00…0
-
-# 1. grant both roles to the council
-cast send $REGISTRY "grantRole(bytes32,address)" \
-  0x0000000000000000000000000000000000000000000000000000000000000000 $COUNCIL \
-  --rpc-url $RPC --account $DEPLOYER_NAME
-cast send $REGISTRY "grantRole(bytes32,address)" $MANAGER_ROLE $COUNCIL \
-  --rpc-url $RPC --account $DEPLOYER_NAME
-
-# 2. verify BEFORE renouncing — a renounce with no council admin freezes the registry permanently
-cast call $REGISTRY "hasRole(bytes32,address)(bool)" \
-  0x0000000000000000000000000000000000000000000000000000000000000000 $COUNCIL --rpc-url $RPC
-cast call $REGISTRY "hasRole(bytes32,address)(bool)" $MANAGER_ROLE $COUNCIL --rpc-url $RPC
-
-# 3. only then drop the deployer's own roles
-cast send $REGISTRY "renounceRole(bytes32,address)" $MANAGER_ROLE $DEPLOYER_EOA \
-  --rpc-url $RPC --account $DEPLOYER_NAME
-cast send $REGISTRY "renounceRole(bytes32,address)" \
-  0x0000000000000000000000000000000000000000000000000000000000000000 $DEPLOYER_EOA \
-  --rpc-url $RPC --account $DEPLOYER_NAME
-```
-
-Step 2 is not optional. `AssetKindRegistry` is stock OZ `AccessControl` with no renounce restriction, so renouncing the last `DEFAULT_ADMIN_ROLE` before the council holds it leaves **no role admin at all**: the classification map keeps answering reads forever and can never be changed again. Because admin and manager are the same key, one misordered renounce loses both axes at once.
+Calling `NAVCalculator.registerAsset` directly still works and is deliberately not blocked. Whether it *should* is a deploy-time role decision: revoking `MANAGER` from humans on the NAV makes the facade the only path and the "always classified" invariant structural rather than conventional. That choice is left to the operator — the code does not force it, so the registry is not a required dependency for asset registration unless you decide it should be.
 
 > Note: `PERSIST_DEPLOYMENTS=1` gates the top-level impl/proxy address writes (`saveDeployedAddress` in 01/01_2/02/02_2 **and 08**) to the deployments file `script/config/deployments/{chainId}.json` — without it those only log. The per-adapter writes in 04 (`balanceAdapters.<Name>`) and 05 (`bridgeAdapters.<Name>`) go through `ConfigReader.writeAdapterAddress` and are NOT gated by this flag — they write on every run. **Careful: that exemption does not cover all of 04.** 04's three *assistants* (`NexusMutualStakingPoolsAssistant`, `EtherFiWithdrawalQueueAssistant`, `StakeWiseV3ExitQueueAssistant`) are top-level keys written through the **gated** `saveDeployedAddress`, and their skip-if-deployed guards read those same records — so running 04 without the flag records no assistants and a re-run deploys duplicates. Run 04 with `PERSIST_DEPLOYMENTS=1` too. Governance after handoff (upgrades) is council-Safe-driven via `script/upgrade/*`, which still produce Safe-TX JSON batches.

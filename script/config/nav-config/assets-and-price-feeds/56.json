@@ -1,7 +1,6 @@
 {
   "BNB": {
     "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
-    "pegKind": "Floating",
     "accrualKind": "None",
     "divergenceToleranceBps": 50,
     "priceFeeds": [
@@ -21,7 +20,6 @@
   },
   "WBNB": {
     "address": "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
-    "pegKind": "Floating",
     "accrualKind": "None",
     "divergenceToleranceBps": 50,
     "priceFeeds": [
@@ -41,7 +39,6 @@
   },
   "USDC": {
     "address": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
-    "pegKind": "Pegged",
     "accrualKind": "None",
     "pegToleranceBps": 100,
     "divergenceToleranceBps": 50,
@@ -62,7 +59,6 @@
   },
   "USDT": {
     "address": "0x55d398326f99059fF775485246999027B3197955",
-    "pegKind": "Pegged",
     "accrualKind": "None",
     "pegToleranceBps": 100,
     "divergenceToleranceBps": 50,
@@ -83,7 +79,6 @@
   },
   "ETH": {
     "address": "0x2170Ed0880ac9A755fd29B2688956BD959F933F8",
-    "pegKind": "Floating",
     "accrualKind": "None",
     "divergenceToleranceBps": 50,
     "priceFeeds": [
@@ -104,7 +99,6 @@
   },
   "CAKE": {
     "address": "0x0e09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82",
-    "pegKind": "Floating",
     "accrualKind": "None",
     "divergenceToleranceBps": 50,
     "priceFeeds": [

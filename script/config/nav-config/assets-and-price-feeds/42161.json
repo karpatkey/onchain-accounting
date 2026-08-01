@@ -1,7 +1,6 @@
 {
   "ETH": {
     "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
-    "pegKind": "Floating",
     "accrualKind": "None",
     "divergenceToleranceBps": 50,
     "priceFeeds": [
@@ -21,7 +20,6 @@
   },
   "WETH": {
     "address": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
-    "pegKind": "Floating",
     "accrualKind": "None",
     "divergenceToleranceBps": 50,
     "priceFeeds": [
@@ -42,7 +40,6 @@
   "wstETH": {
     "address": "0x5979d7b546e38e414f7e9822514be443a4800529",
     "$kindComment": "Wrapped stETH; balance static, its stETH redemption rate grows. The appreciating half of the stETH pair. Priced here off a Chainlink WSTETH/ETH MARKET feed (per feed config) - NOT an exchange-rate feed and not the mainnet stEthPerToken path; the kind describes the token, not the pricing path.",
-    "pegKind": "Floating",
     "accrualKind": "Appreciating",
     "divergenceToleranceBps": 250,
     "priceFeeds": [
@@ -64,7 +61,6 @@
   "weETH": {
     "address": "0x35751007a407ca6FEFfE80b3cB397736D2cf4dbe",
     "$kindComment": "Wrapped eETH; balance static, its eETH redemption rate grows. Priced here via a Chainlink weETH/eETH exchange-rate feed (per feed config) - the token's own getRate() is the mainnet path, and eETH itself is not a registered asset on this chain.",
-    "pegKind": "Floating",
     "accrualKind": "Appreciating",
     "divergenceToleranceBps": 250,
     "priceFeeds": [
@@ -85,7 +81,6 @@
   "ezETH": {
     "address": "0x2416092f143378750bb29b79eD961ab195CcEea5",
     "$kindComment": "Renzo ezETH; rate from xRenzoDeposit on Arbitrum (per feed config) - RestakeManager is the mainnet path.",
-    "pegKind": "Floating",
     "accrualKind": "Appreciating",
     "divergenceToleranceBps": 250,
     "priceFeeds": [
@@ -106,7 +101,6 @@
   "rsETH": {
     "address": "0x4186BFC76E2E237523CBC30FD220FE055156b41F",
     "$kindComment": "Kelp rsETH; priced via a Chainlink rsETH/ETH exchange-rate feed (per feed config) - the rateProvider path is mainnet-only.",
-    "pegKind": "Floating",
     "accrualKind": "Appreciating",
     "divergenceToleranceBps": 250,
     "priceFeeds": [
@@ -126,7 +120,6 @@
   },
   "USDC": {
     "address": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
-    "pegKind": "Pegged",
     "accrualKind": "None",
     "pegToleranceBps": 100,
     "divergenceToleranceBps": 50,
@@ -147,7 +140,6 @@
   },
   "USDT": {
     "address": "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9",
-    "pegKind": "Pegged",
     "accrualKind": "None",
     "pegToleranceBps": 100,
     "divergenceToleranceBps": 50,
@@ -168,7 +160,6 @@
   },
   "GHO": {
     "address": "0x7dfF72693f6A4149b17e7C6314655f6A9F7c8B33",
-    "pegKind": "Pegged",
     "accrualKind": "None",
     "pegToleranceBps": 100,
     "priceFeeds": [
@@ -181,8 +172,7 @@
   },
   "syrupUSDC": {
     "address": "0x41CA7586cC1311807B4605fBB748a3B8862b42b5",
-    "$kindComment": "Maple syrupUSDC share, USDC underlying; priced via a Chainlink syrupUSDC/USDC exchange-rate feed (per feed config) - the convertToAssets path is mainnet-only. Floating, NOT Pegged: it is yield-bearing, so its USD price is not $1 and rises with the accrued yield - the same rule that makes wstETH Floating (pegged means pegged to the NAV's quote asset, USD).",
-    "pegKind": "Floating",
+    "$kindComment": "Maple syrupUSDC share, USDC underlying; priced via a Chainlink syrupUSDC/USDC exchange-rate feed (per feed config) - the convertToAssets path is mainnet-only.",
     "accrualKind": "Appreciating",
     "priceFeeds": [
       {
@@ -194,7 +184,6 @@
   },
   "COMP": {
     "address": "0x354A6dA3fcde098F8389cad84b0182725c6C91dE",
-    "pegKind": "Floating",
     "accrualKind": "None",
     "priceFeeds": [
       {

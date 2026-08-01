@@ -1,7 +1,6 @@
 {
   "xDAI": {
     "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
-    "pegKind": "Pegged",
     "accrualKind": "None",
     "pegToleranceBps": 100,
     "priceFeeds": [
@@ -15,7 +14,6 @@
   "osGNO": {
     "address": "0xF490c80aAE5f2616d3e3BDa2483E30C4CB21d1A0",
     "$kindComment": "StakeWise osGNO on Gnosis; rate-based, GNO underlying which itself floats.",
-    "pegKind": "Floating",
     "accrualKind": "Appreciating",
     "priceFeeds": [
       {
@@ -28,7 +26,6 @@
   },
   "WXDAI": {
     "address": "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d",
-    "pegKind": "Pegged",
     "accrualKind": "None",
     "pegToleranceBps": 100,
     "priceFeeds": [
@@ -41,7 +38,6 @@
   },
   "WETH": {
     "address": "0x6A023CCd1ff6F2045C3309768eAd9E68F978f6e1",
-    "pegKind": "Floating",
     "accrualKind": "None",
     "priceFeeds": [
       {
@@ -54,7 +50,6 @@
   "wstETH": {
     "address": "0x6C76971f98945AE98dD7d4DFcA8711ebea946eA6",
     "$kindComment": "Wrapped stETH; balance static, its stETH redemption rate grows. The appreciating half of the stETH pair. Priced here via a Chainlink wstETH/ETH exchange-rate feed (per feed config) - the stEthPerToken path is mainnet-only.",
-    "pegKind": "Floating",
     "accrualKind": "Appreciating",
     "priceFeeds": [
       {
@@ -66,7 +61,6 @@
   },
   "USDCe": {
     "address": "0x2a22f9c3b484c3629090FeED35F17Ff8F88f76F0",
-    "pegKind": "Pegged",
     "accrualKind": "None",
     "pegToleranceBps": 100,
     "priceFeeds": [
@@ -80,8 +74,7 @@
   },
   "sDAI": {
     "address": "0xaf204776c7245bF4147c2612BF6e5972Ee483701",
-    "$kindComment": "Savings xDAI - ERC-4626 share over WXDAI earning the Gnosis savings rate; balance static, redemption rate grows. Not mainnet sDAI: the underlying is WXDAI (per feed config) and there is no DSR on Gnosis. Floating, NOT Pegged: it is yield-bearing, so its USD price is not $1 and rises with the accrued yield - the same rule that makes wstETH Floating (pegged means pegged to the NAV's quote asset, USD).",
-    "pegKind": "Floating",
+    "$kindComment": "Savings xDAI - ERC-4626 share over WXDAI earning the Gnosis savings rate; balance static, redemption rate grows. Not mainnet sDAI: the underlying is WXDAI (per feed config) and there is no DSR on Gnosis.",
     "accrualKind": "Appreciating",
     "priceFeeds": [
       {
@@ -93,7 +86,6 @@
   },
   "GHO": {
     "address": "0xfc421aD3C883Bf9E7C4f42dE845C4e4405799e73",
-    "pegKind": "Pegged",
     "accrualKind": "None",
     "pegToleranceBps": 100,
     "priceFeeds": [
@@ -106,7 +98,6 @@
   },
   "GNO": {
     "address": "0x9C58BAcC331c9aa871AFD802DB6379a98e80CEdb",
-    "pegKind": "Floating",
     "accrualKind": "None",
     "priceFeeds": [
       {
@@ -118,8 +109,7 @@
   },
   "EURe": {
     "address": "0xcB444e90D8198415266c6a2724b7900fb12FC56E",
-    "$kindComment": "FLAG: EUR stablecoin on Gnosis. Same ruling as EURC.",
-    "pegKind": "Floating",
+    "$kindComment": "FLAG: EUR stablecoin on Gnosis - hard-pegged, but to EUR and not to the NAV's quote asset, so its USD price moves with EUR/USD. Carries NO pegToleranceBps for the same reason as EURC; do not add one.",
     "accrualKind": "None",
     "priceFeeds": [
       {
@@ -132,7 +122,6 @@
   },
   "USDT": {
     "address": "0x4ECaBa5870353805a9F068101A40E0f32ed605C6",
-    "pegKind": "Pegged",
     "accrualKind": "None",
     "pegToleranceBps": 100,
     "priceFeeds": [

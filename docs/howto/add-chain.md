@@ -68,20 +68,35 @@ The repo no longer keeps a single `assets.json` or `balance-adapters.json` keyed
 | `script/config/contracts-deployment-config/meta-balance-adapters/<newChainId>.json` | `{ "<AdapterName>": { "enabled", "constructor": {…} } }` — **meta** adapters to **deploy** (no instances here) | `04_DeployBalanceAdapters.s.sol` |
 | `script/config/contracts-deployment-config/bridge-adapters/<newChainId>.json` | `{ "<AdapterName>": { "enabled", "initialize": {…} } }` — bridge adapters to **deploy** | `05_DeployBridgeAdapters.s.sol` |
 | `script/config/contracts-deployment-config/bridge-escrow/<newChainId>.json` | `{ "accounts": [ … ], "assets": { "<SYMBOL>": "0x…" } }` — accounts to authorize + assets to register on `BridgeEscrow` | `06_Configure.s.sol` → `authorizeAccount` + `registerAsset` |
-| `script/config/nav-config/assets-and-price-feeds/<newChainId>.json` | `{ "<SYMBOL>": { "address", "priceFeeds": [ … ] } }` — assets to **register** | `RegisterAssets.s.sol` |
+| `script/config/nav-config/assets-and-price-feeds/<newChainId>.json` | `{ "<SYMBOL>": { "address", "accrualKind", "priceFeeds": [ … ] } }` — assets to **register** | `RegisterAssets.s.sol` |
 | `script/config/nav-config/balance-adapters/<newChainId>.json` | `{ "<AdapterName>": { "enabled" } }` — **plain** adapters to add on NAV | `06_Configure.s.sol` → `addBalanceAdapters` |
 | `script/config/nav-config/meta-balance-adapters/<newChainId>.json` | `{ "<AdapterName>": { "enabled", "instances": […] \| "instancesRaw": […] } }` — **meta** adapters to add on NAV | `06_Configure.s.sol` → `addMetaBalanceAdapter` + add/removeMetaInstances |
 
 ### 3.1 Assets and price feeds
 
-Edit `script/config/nav-config/assets-and-price-feeds/<newChainId>.json`. Add a top-level entry for every asset you want priced on this chain. Each asset has an `address` and a `priceFeeds` array. Each feed entry has a `type` (`Chainlink` / `Custom` / `Redstone` / `API3`) and a `heartbeat`; Chainlink/Redstone/API3 feeds give an `address`, while a `Custom` feed references a deployed adapter by name (`"feed": "<name>"`). The **first** feed in the array registers the asset (`registerAsset`); any **additional** feeds are wired with `addPriceFeed`.
+Edit `script/config/nav-config/assets-and-price-feeds/<newChainId>.json`. Add a top-level entry for every asset you want priced on this chain. Each asset has an `address`, an `accrualKind` and a `priceFeeds` array. Each feed entry has a `type` (`Chainlink` / `Custom` / `Redstone` / `API3`) and a `heartbeat`; Chainlink/Redstone/API3 feeds give an `address`, while a `Custom` feed references a deployed adapter by name (`"feed": "<name>"`). The **first** feed in the array registers the asset (`registerAsset`); any **additional** feeds are wired with `addPriceFeed`.
 
 ```json
 {
-  "ETH":  { "address": "0xEee...EEeE", "priceFeeds": [ { "type": "Chainlink", "address": "0x...", "heartbeat": 3600 } ] },
-  "USDC": { "address": "0x...",         "priceFeeds": [ { "type": "Chainlink", "address": "0x...", "heartbeat": 86400 } ] }
+  "ETH":  { "address": "0xEee...EEeE", "accrualKind": "None",         "priceFeeds": [ { "type": "Chainlink", "address": "0x...", "heartbeat": 3600 } ] },
+  "USDC": { "address": "0x...",        "accrualKind": "None",         "priceFeeds": [ { "type": "Chainlink", "address": "0x...", "heartbeat": 86400 } ] },
+  "wstETH": { "address": "0x...",      "accrualKind": "Appreciating", "priceFeeds": [ { "type": "Custom", "feed": "wstETH", "heartbeat": 86400 } ] }
 }
 ```
+
+> **`accrualKind` is REQUIRED on every asset, with no default.** Exactly one of `"None"` | `"Rebasing"` |
+> `"Appreciating"`, case-sensitive — an absent, empty or unrecognized value **aborts that chain's `08` deploy**
+> rather than defaulting, because a defaulted classification is indistinguishable from a real one once it is
+> on-chain. Rule of thumb: balance grows → `Rebasing`; exchange rate grows → `Appreciating`; neither → `None`.
+>
+> **There is deliberately NO `pegKind` key — do not add one.** The peg axis is *derived*, not stored: an asset
+> is `Pegged` exactly when it carries a `pegToleranceBps > 0`. Nothing validates the field set, so a stray
+> `pegKind` would be **silently ignored** rather than rejected.
+>
+> Full semantics live in [`script/config/CONFIG_GUIDE.md`](../../script/config/CONFIG_GUIDE.md) — note that
+> its `accrualKind` section, like the key's consumer (`08_DeployAssetKindRegistry` and the `AccrualKind`
+> enum), lands with the AssetKindRegistry change (**#241/#242**) and is not on `main` today. Set the key now
+> regardless: it is read by nothing until that merges, and missing afterwards is an abort.
 
 For any custom price feed on this chain (sDAI, wstETH, etc.), add the deploy config under `script/config/contracts-deployment-config/custom-price-feeds/<newChainId>.json` keyed by feed name with `{ "enabled", "constructor" }`, then reference it from the asset via a `{ "type": "Custom", "feed": "<name>", "heartbeat": ... }` entry in that asset's `priceFeeds`. The feed's on-chain address is resolved post-deploy from `script/config/deployments/<newChainId>.json` (`.customPriceFeeds.<name>`). Many will use the `_L2_Price` variant — see [`src/prices/PRICE_ADAPTERS.md`](../../src/prices/PRICE_ADAPTERS.md) §8 for the right contract.
 

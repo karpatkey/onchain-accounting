@@ -322,11 +322,19 @@ def check_chain(chain_id: int) -> list[tuple[str, str]]:
     try:
         import declared_heartbeat_guard as dhg
 
+        # Snapshot-level first, and it must be here rather than only in the guard's own main(): the
+        # comparison is only as good as the snapshot's age, and this is the path the runbook actually
+        # runs. It self-dedupes, so a multi-chain run reports staleness once rather than per chain.
+        f += dhg.snapshot_findings_once()
         f += dhg.findings(chain_id)
     except SystemExit as e:  # snapshot absent — actionable, not fatal to the rest of preflight
         f.append((WARN, f"declared-heartbeat guard skipped: {e}"))
     except Exception as e:  # noqa: BLE001 - never let this axis mask the others
-        f.append((WARN, f"declared-heartbeat guard errored (other checks unaffected): {e!r}"))
+        # Deliberately still fail-soft: this axis must not take out the other config checks. But say
+        # plainly that coverage was LOST, not that one small thing went wrong — `findings` contains each
+        # feed's failure per row, so reaching here means the whole axis produced nothing for this chain.
+        f.append((WARN, f"declared-heartbeat guard produced NO coverage for chain {chain_id} "
+                        f"(other checks unaffected): {e!r}"))
 
     for fname, entry in dep_feeds.items():
         if entry.get("enabled") is not True:

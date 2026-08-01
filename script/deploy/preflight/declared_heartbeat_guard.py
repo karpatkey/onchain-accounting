@@ -53,7 +53,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -128,7 +127,7 @@ ALLOWLIST: dict[tuple[str, str], dict] = {
 }
 
 
-def _fix_hint(chain_id: str, addr: str, name: str, registered: int, declared: int) -> str:
+def _fix_hint(chain_id: str, name: str, declared: int) -> str:
     """Name BOTH legitimate exits. A guard that fires without saying how to satisfy it gets bypassed."""
     suggested = ((declared + 3600) // 3600) * 3600
     return (
@@ -144,6 +143,23 @@ def _fix_hint(chain_id: str, addr: str, name: str, registered: int, declared: in
         f"pairing too: raising a BASE asset's heartbeat can leave its DERIVED feed tighter than its base, "
         f"which is the separate invariant preflight_config.heartbeat_findings enforces."
     )
+
+
+def configured_chain_ids() -> list[str]:
+    """Every chain the CONFIG registers feeds for — the authority on what must be checked.
+
+    Deliberately NOT derived from the snapshot's own `chains` keys. Scoping the run to the snapshot lets
+    the snapshot decide what gets audited, so a snapshot that lost a chain silently stops checking it and
+    an EMPTY snapshot checks nothing at all while printing `total ERRORs: 0` — a clean bill of health from
+    a guard that examined zero feeds. Config is the invariant; the snapshot is the evidence being tested
+    against it, and evidence must never get to choose its own scope.
+    """
+    ids: set[str] = set()
+    for sub in ("nav-config/assets-and-price-feeds", "contracts-deployment-config/custom-price-feeds"):
+        d = REPO / "script/config" / sub
+        if d.is_dir():
+            ids.update(p.stem for p in d.glob("*.json") if p.stem.isdigit())
+    return sorted(ids, key=int)
 
 
 def load_snapshot() -> dict:
@@ -188,50 +204,118 @@ def registered_feeds(chain_id: str) -> list[dict]:
     return out
 
 
+def _row_findings(chain_id: str, r: dict, declared: dict) -> list[tuple[str, str]]:
+    """Verdict for ONE registered feed row. Split out of `findings` so a malformed row can be contained.
+
+    Raises only if the row or its snapshot entry is genuinely malformed; `findings` catches that per row.
+    """
+    key = str(r["address"]).lower()
+    rec = declared.get(key)
+    # A custom feed the deploy step will not deploy is lower priority, but it is not exempt — it bites
+    # the moment someone flips `enabled`. Surfaced rather than filtered, so the queue stays honest.
+    off = " (NOTE: this custom feed is currently enabled=false, so it will not be deployed yet — lower "\
+          "priority, but it will bite the moment it is enabled.)" if r.get("enabled") is False else ""
+    if rec is None:
+        # Not a Chainlink-catalogue feed (RedStone/API3), or the snapshot predates this address.
+        # Reported as actionable rather than passing silently — the two cases look identical here.
+        # The remedy has to TERMINATE: --refresh only ever resolves Chainlink-catalogue addresses, so
+        # telling the operator to keep running it would loop forever on a RedStone/API3 feed.
+        return [(WARN, f"asset '{r['asset']}' {r['role']} {r['address']} has NO declared heartbeat "
+                       f"recorded. Either it is not a Chainlink-catalogue feed (RedStone/API3 — expected, "
+                       f"no action), or the snapshot is missing it. To distinguish: run --refresh once. A "
+                       f"Chainlink feed gains an entry; a non-Chainlink one never will, so a WARN that "
+                       f"survives a SUCCESSFUL refresh means 'not a Chainlink feed' and needs no "
+                       f"action.{off}")]
+    dh, rh = int(rec["declaredHeartbeat"]), int(r["heartbeat"])
+    if rh > dh:
+        return []
+    allow = ALLOWLIST.get((str(chain_id), key))
+    if allow:
+        if allow.get("breaches", 1) != 0:
+            return [(ERROR, f"asset '{r['asset']}' {r['role']} is allowlisted but its recorded evidence "
+                            f"shows {allow['breaches']} breaches — an allowlist entry must have 0. "
+                            f"Fix the feed, do not exempt it.")]
+        if allow.get("registered") != rh:
+            return [(ERROR, f"asset '{r['asset']}' {r['role']} allowlist entry was measured against "
+                            f"registered={allow.get('registered')} but the config now says {rh}. "
+                            f"Re-measure and update the entry; a stale exemption is not evidence.")]
+        return []
+    # SEVERITY: WARN, not ERROR, and the distinction is load-bearing. At-or-below margin is a
+    # *candidate*, not a defect — it only bites HEARTBEAT-DRIVEN feeds, and ~30 references on the
+    # configured chains are deviation-active and genuinely fine. Erroring on all of them would block
+    # every deploy on feeds nobody has shown to be broken, and a guard that cries wolf gets bypassed
+    # rather than satisfied. So: unmeasured at-or-below margin is a WARN naming both exits (a
+    # to-measure queue), and ERROR is reserved for an evidence CONTRADICTION — an allowlist entry
+    # that records breaches, or one measured against a heartbeat the config has since changed.
+    return [(WARN,
+             f"declared-heartbeat margin UNMEASURED: asset '{r['asset']}' {r['role']} ({rec.get('name')}) is "
+             f"registered at {rh} but the provider declares {dh} — margin {rh - dh:+d}. A provider "
+             f"publishes tens of seconds PAST its declared heartbeat, so at-or-below margin means the "
+             f"asset goes stale (valued $0, listed in stalePriceAssets) at the end of essentially every "
+             f"publish cycle. Measured precedents: sUSDS 59/61 cycles (#211), OETH 29/29 (#236).{off}\n"
+             f"        {_fix_hint(str(chain_id), rec.get('name') or '?', dh)}")]
+
+
 def findings(chain_id: str, snapshot: dict | None = None) -> list[tuple[str, str]]:
-    """(level, message) for one chain. ERROR on zero/negative margin without an evidenced exemption."""
+    """(level, message) for one chain — the per-feed declared-margin verdicts.
+
+    Severity follows the three-state ladder in the module docstring: SILENT for positive margin or an
+    evidenced allowlist entry, WARN for an UNMEASURED at-or-below-margin feed (a to-measure queue, not a
+    blocker), and ERROR only for an evidence CONTRADICTION — an allowlist entry recording breaches, or one
+    measured against a heartbeat the config has since changed. It deliberately does NOT error on an
+    unmeasured feed; the module docstring explains why that split is load-bearing.
+
+    Snapshot-LEVEL findings (staleness) are deliberately NOT returned here, because they are not
+    per-chain. Every caller must ALSO call `snapshot_findings_once` — both entry points in this repo do.
+    """
     snap = snapshot if snapshot is not None else load_snapshot()
     declared = (snap.get("chains") or {}).get(str(chain_id), {})
     f: list[tuple[str, str]] = []
     for r in registered_feeds(str(chain_id)):
-        key = str(r["address"]).lower()
-        rec = declared.get(key)
-        if rec is None:
-            # Not a Chainlink-catalogue feed (RedStone/API3), or the snapshot predates this address.
-            # Reported as actionable rather than passing silently — the two cases look identical here.
-            f.append((WARN, f"asset '{r['asset']}' {r['role']} {r['address']} has NO declared heartbeat "
-                            f"recorded. Either it is not a Chainlink-catalogue feed (RedStone/API3 — expected, "
-                            f"no action), or the snapshot is missing it: run --refresh to distinguish."))
-            continue
-        dh, rh = int(rec["declaredHeartbeat"]), int(r["heartbeat"])
-        if rh > dh:
-            continue
-        allow = ALLOWLIST.get((str(chain_id), key))
-        if allow:
-            if allow.get("breaches", 1) != 0:
-                f.append((ERROR, f"asset '{r['asset']}' {r['role']} is allowlisted but its recorded evidence "
-                                 f"shows {allow['breaches']} breaches — an allowlist entry must have 0. "
-                                 f"Fix the feed, do not exempt it."))
-            elif allow.get("registered") != rh:
-                f.append((ERROR, f"asset '{r['asset']}' {r['role']} allowlist entry was measured against "
-                                 f"registered={allow.get('registered')} but the config now says {rh}. "
-                                 f"Re-measure and update the entry; a stale exemption is not evidence."))
-            continue
-        # SEVERITY: WARN, not ERROR, and the distinction is load-bearing. At-or-below margin is a
-        # *candidate*, not a defect — it only bites HEARTBEAT-DRIVEN feeds, and ~30 references on the
-        # configured chains are deviation-active and genuinely fine. Erroring on all of them would block
-        # every deploy on feeds nobody has shown to be broken, and a guard that cries wolf gets bypassed
-        # rather than satisfied. So: unmeasured at-or-below margin is a WARN naming both exits (a
-        # to-measure queue), and ERROR is reserved for an evidence CONTRADICTION — an allowlist entry
-        # that records breaches, or one measured against a heartbeat the config has since changed.
-        f.append((WARN,
-                  f"declared-heartbeat margin UNMEASURED: asset '{r['asset']}' {r['role']} ({rec.get('name')}) is "
-                  f"registered at {rh} but the provider declares {dh} — margin {rh - dh:+d}. A provider "
-                  f"publishes tens of seconds PAST its declared heartbeat, so at-or-below margin means the "
-                  f"asset goes stale (valued $0, listed in stalePriceAssets) at the end of essentially every "
-                  f"publish cycle. Measured precedents: sUSDS 59/61 cycles (#211), OETH 29/29 (#236).\n"
-                  f"        {_fix_hint(str(chain_id), r['address'], rec.get('name') or '?', rh, dh)}"))
+        # CONTAINMENT, per row. One malformed row must never discard the verdicts already computed for
+        # this chain. Without this, a single KeyError propagated out of findings(), and preflight_config's
+        # fail-soft `except Exception` collapsed the WHOLE chain — including a deploy-blocking ERROR it
+        # had already detected — into one WARN, so preflight exited 0 on a stale exemption.
+        try:
+            f += _row_findings(str(chain_id), r, declared)
+        except Exception as e:  # noqa: BLE001 - an unevaluatable row must not read as a clean one
+            f.append((ERROR, f"asset '{r.get('asset', '?')}' {r.get('role', '?')} "
+                             f"{r.get('address', '?')}: the guard could NOT evaluate this feed — its "
+                             f"snapshot entry or configured heartbeat is malformed ({e!r}). Its margin is "
+                             f"UNKNOWN, not fine. Regenerate with --refresh, or fix the entry by hand. "
+                             f"ERROR because a feed the guard cannot evaluate must not read as coverage."))
     return f
+
+
+_SNAPSHOT_FINDINGS_EMITTED = False
+
+
+def _reset_snapshot_findings_once() -> None:
+    """Test seam: re-arm `snapshot_findings_once` so an arm can assert both the emit AND the dedupe."""
+    global _SNAPSHOT_FINDINGS_EMITTED
+    _SNAPSHOT_FINDINGS_EMITTED = False
+
+
+def snapshot_findings_once(snap: dict | None = None) -> list[tuple[str, str]]:
+    """Snapshot-LEVEL findings (staleness), emitted at most once per process.
+
+    THE SINGLE ENTRY POINT FOR THE STALENESS SIGNAL, and it exists because that signal silently went
+    missing. `snapshot_age_findings` used to be reachable ONLY from this module's `main()`, so the
+    >180-day warning fired when a human ran the guard by hand and NEVER during an actual
+    `preflight_config.py` run — the path the deploy runbook actually uses. The module advertised the
+    check while the integrated path had none of it, which is the worst kind of gap: it reads as coverage.
+
+    Emitted ONCE because the snapshot's age is a property of the FILE, not of any one chain, while the
+    only integration point `preflight_config` offers is the per-chain `check_chain`. Per-chain emission
+    would repeat one warning on every chain checked; emission on neither path is the bug being fixed.
+    Both entry points now route through here, so the two paths cannot drift apart again.
+    """
+    global _SNAPSHOT_FINDINGS_EMITTED
+    if _SNAPSHOT_FINDINGS_EMITTED:
+        return []
+    out = snapshot_age_findings(snap if snap is not None else load_snapshot())
+    _SNAPSHOT_FINDINGS_EMITTED = True
+    return out
 
 
 def snapshot_age_findings(snap: dict) -> list[tuple[str, str]]:
@@ -250,25 +334,57 @@ def snapshot_age_findings(snap: dict) -> list[tuple[str, str]]:
     return []
 
 
-def refresh() -> int:
-    """Re-fetch declared heartbeats for every address config references. Needs network."""
+def _fetch_directory(fn: str) -> list:
+    """Fetch one reference-data-directory file. A seam, so --self-test can drive refresh()'s failure
+    paths without a network and without monkeypatching urllib globally."""
     import urllib.request
+    with urllib.request.urlopen(DIRECTORY_BASE + fn, timeout=120) as resp:
+        return json.load(resp)
+
+
+def refresh(allow_shrink: bool = False, fetch=None) -> int:
+    """Re-fetch declared heartbeats for every address config references. Needs network.
+
+    INTEGRITY RULE: this writes ONLY a snapshot it fully fetched. If any chain's fetch fails, or if an
+    address that WAS resolvable and is STILL referenced by config no longer resolves, the committed file
+    is left UNTOUCHED and this returns non-zero.
+
+    That rule is not defensive programming for its own sake — both alternatives silently defeat the
+    staleness guard this module advertises, and both were measured:
+
+      * Stamping `fetched` with today's date after a failed fetch RE-CERTIFIES months-old data as fresh.
+        Measured: with every fetch failing, a snapshot 1293 days old came back reporting ZERO staleness
+        findings and exit 0. The >180-day warning is then permanently silenced on data nobody re-fetched.
+      * Dropping a chain whose fetch SUCCEEDED but matched nothing — one renamed catalogue field is
+        enough — deletes the comparison basis outright. Measured: all 68 feeds silently discarded, exit 0.
+        The resulting "no declared heartbeat recorded" WARNs are indistinguishable from the ones this
+        module documents as expected for RedStone/API3, so total loss of coverage reads as normal.
+
+    An exit code of 0 from this function therefore means "the committed snapshot is complete and freshly
+    fetched" and nothing else. Pass allow_shrink=True (CLI: --allow-shrink) to accept a genuine delisting.
+    """
     from datetime import date
-    out = {"$comment": load_snapshot().get("$comment") if SNAPSHOT.exists() else "",
-           "source": DIRECTORY_BASE, "fetched": date.today().isoformat(), "chains": {}}
+    fetch = fetch or _fetch_directory
+    prev_snap = load_snapshot() if SNAPSHOT.exists() else {}
+    prev_chains = prev_snap.get("chains") or {}
+    out = {"$comment": prev_snap.get("$comment", ""), "source": DIRECTORY_BASE,
+           "fetched": date.today().isoformat(), "chains": {}}
     total = 0
+    failures: list[tuple[str, str]] = []
+    regressions: list[tuple[str, list[str]]] = []
     for chain_id, fn in DIRECTORY_FILES.items():
         refs = {str(r["address"]).lower() for r in registered_feeds(chain_id)}
         if not refs:
             continue
+        prev_ent = prev_chains.get(chain_id) or {}
         try:
-            with urllib.request.urlopen(DIRECTORY_BASE + fn, timeout=120) as resp:
-                cat = json.load(resp)
+            cat = fetch(fn)
         except Exception as e:  # noqa: BLE001 - a fetch failure must not look like "no feeds"
+            failures.append((chain_id, repr(e)))
             print(f"  chain {chain_id}: FETCH FAILED ({e}) — keeping any existing entries", file=sys.stderr)
-            prev = (load_snapshot().get("chains") or {}).get(chain_id) if SNAPSHOT.exists() else None
-            if prev:
-                out["chains"][chain_id] = prev
+            if prev_ent:
+                out["chains"][chain_id] = prev_ent
+                total += len(prev_ent)
             continue
         idx: dict[str, dict] = {}
         for rec in cat:
@@ -283,17 +399,47 @@ def refresh() -> int:
             if isinstance(hb, (int, float)) and hb:
                 ent[a] = {"name": rec.get("name"), "declaredHeartbeat": int(hb),
                           "threshold": rec.get("threshold"), "feedCategory": rec.get("feedCategory")}
+        # A REGRESSION is an address that resolved before, is STILL referenced by config, and resolves no
+        # more. An address the config simply stopped referencing is a legitimate shrink, not a regression
+        # — which is why this is keyed on `refs` and not on a bare count comparison.
+        regressed = sorted(a for a in refs if a in prev_ent and a not in ent)
+        if regressed:
+            regressions.append((chain_id, regressed))
         if ent:
             out["chains"][chain_id] = ent
             total += len(ent)
+        elif prev_ent:
+            # Fetch succeeded, nothing matched. Keep the previous block rather than deleting the chain's
+            # whole comparison basis; `regressed` above has already flagged it for the refusal below.
+            out["chains"][chain_id] = prev_ent
+            total += len(prev_ent)
         print(f"  chain {chain_id}: {len(ent)} of {len(refs)} referenced addresses have a declared heartbeat")
+
+    if (failures or regressions) and not allow_shrink:
+        print("\nREFUSING TO WRITE — the snapshot would be degraded, and a degraded snapshot stamped with "
+              "today's date silently defeats the staleness guard:", file=sys.stderr)
+        for cid, err in failures:
+            print(f"  chain {cid}: fetch FAILED — {err}", file=sys.stderr)
+        for cid, addrs in regressions:
+            shown = ", ".join(a[:10] + "…" for a in addrs[:5]) + (" …" if len(addrs) > 5 else "")
+            print(f"  chain {cid}: {len(addrs)} still-referenced address(es) no longer resolve — {shown}",
+                  file=sys.stderr)
+        print(f"\n{SNAPSHOT.name} left UNCHANGED, so its `fetched` date stays honest and staleness keeps "
+              f"firing. Re-run when the source is reachable, or pass --allow-shrink to accept a genuine "
+              f"delisting.", file=sys.stderr)
+        return 1
+
     SNAPSHOT.write_text(json.dumps(out, indent=2) + "\n")
     print(f"wrote {SNAPSHOT} ({total} feeds)")
     return 0
 
 
 def self_test() -> int:
-    """Prove each arm fires, then prove it by MUTATION against the real config."""
+    """Prove each severity arm fires on synthetic input, then AUDIT the real allowlist against the real
+    snapshot (read-only), then re-assert the signal-integrity properties found missing in review."""
+    import contextlib
+    import io
+
     ok = True
 
     def case(label, chain, snap, feeds, want_level, want_sub):
@@ -348,21 +494,34 @@ def self_test() -> int:
          [{"asset": "Z", "role": "priceFeeds[0]", "address": "0xdead00000000000000000000000000000000beef",
            "heartbeat": 10, "where": "x"}],
          WARN, "NO declared heartbeat")
-    # allowlist with a breach is itself an error
+    # These arms mutate the module-global ALLOWLIST, so they are wrapped: an arm that raises must not
+    # leave a synthetic exemption behind to corrupt every arm after it (and the real-config audit below).
     key = ("1", A.lower())
-    ALLOWLIST[key] = {"asset": "T", "registered": 86400, "breaches": 3, "measured": "2026-01-01"}
-    case("allowlist entry WITH breaches errors", "1", snap,
-         [{"asset": "T", "role": "priceFeeds[0]", "address": A, "heartbeat": 86400, "where": "x"}],
-         ERROR, "must have 0")
-    # allowlist measured against a different registered value is stale
-    ALLOWLIST[key] = {"asset": "T", "registered": 82800, "breaches": 0, "measured": "2026-01-01"}
-    case("stale allowlist (registered changed) errors", "1", snap,
-         [{"asset": "T", "role": "priceFeeds[0]", "address": A, "heartbeat": 86400, "where": "x"}],
-         ERROR, "stale exemption is not evidence")
-    del ALLOWLIST[key]
+    try:
+        # THE MEASURED-FINE PATH MUST BE SILENT. This is the arm the entire severity design rests on —
+        # an evidenced exemption is the only way a zero-margin feed is allowed to report nothing — and
+        # nothing asserted it. If this ever regressed to a WARN, the allowlist would stop exempting and
+        # the guard would cry wolf on six measured feeds; if it regressed the other way, a broken
+        # exemption would go quiet. Both directions are covered by this arm plus the two ERROR arms.
+        ALLOWLIST[key] = {"asset": "T", "registered": 86400, "breaches": 0, "measured": "2026-01-01"}
+        case_silent("an EVIDENCED allowlist entry is SILENT (the measured-fine path)", "1", snap,
+                    [{"asset": "T", "role": "priceFeeds[0]", "address": A, "heartbeat": 86400,
+                      "where": "x"}])
+        # allowlist with a breach is itself an error
+        ALLOWLIST[key] = {"asset": "T", "registered": 86400, "breaches": 3, "measured": "2026-01-01"}
+        case("allowlist entry WITH breaches errors", "1", snap,
+             [{"asset": "T", "role": "priceFeeds[0]", "address": A, "heartbeat": 86400, "where": "x"}],
+             ERROR, "must have 0")
+        # allowlist measured against a different registered value is stale
+        ALLOWLIST[key] = {"asset": "T", "registered": 82800, "breaches": 0, "measured": "2026-01-01"}
+        case("stale allowlist (registered changed) errors", "1", snap,
+             [{"asset": "T", "role": "priceFeeds[0]", "address": A, "heartbeat": 86400, "where": "x"}],
+             ERROR, "stale exemption is not evidence")
+    finally:
+        ALLOWLIST.pop(key, None)
 
-    # MUTATION against the real config: every real allowlist entry must currently be at-or-below margin,
-    # otherwise the exemption is dead weight hiding nothing and should be deleted.
+    # AUDIT of the real config (read-only — it mutates nothing): every real allowlist entry must currently
+    # be at-or-below margin, otherwise the exemption is dead weight hiding nothing and should be deleted.
     real = load_snapshot()
     for (cid, addr), ev in ALLOWLIST.items():
         rec = (real.get("chains") or {}).get(cid, {}).get(addr)
@@ -370,13 +529,93 @@ def self_test() -> int:
             print(f"  [WARN] allowlist ({cid},{addr[:10]}…) has no snapshot entry — cannot audit")
             continue
         reg = ev.get("registered")
-        if reg is not None and reg > int(rec["declaredHeartbeat"]):
+        if reg is None:
+            # Must FAIL, not print a reassuring PASS: `findings` already ERRORs on such an entry
+            # (`allow.get("registered") != rh`), so a PASS here would be a vacuous arm contradicting the
+            # implementation — the audit would bless exactly the entry the guard refuses to honour.
+            print(f"  [FAIL] allowlist ({cid},{addr[:10]}…) records no `registered` value, so it cannot be "
+                  f"audited and findings() will ERROR on it. Record the measured heartbeat.")
+            ok = False
+        elif reg > int(rec["declaredHeartbeat"]):
             print(f"  [WARN] allowlist ({cid},{addr[:10]}…) is unnecessary: registered {reg} already exceeds "
                   f"declared {rec['declaredHeartbeat']}. Delete the entry.")
         else:
             print(f"  [PASS] allowlist ({cid},{addr[:10]}…) {ev.get('asset')} genuinely needs the exemption "
                   f"(registered {reg} <= declared {rec['declaredHeartbeat']}), evidence "
                   f"{ev.get('breaches')} breaches / {ev.get('intervals')} intervals, measured {ev.get('measured')}")
+
+    # ----------------------------------------------------------------------------------------------
+    # REGRESSION ARMS for the defects found reviewing this PR. Each was verified to FAIL against the
+    # code as originally written — an arm that passes both with and without its fix asserts nothing.
+    # ----------------------------------------------------------------------------------------------
+    print("  --- signal-integrity arms ---")
+
+    # The staleness signal must reach the INTEGRATED path, not just this module's main().
+    _reset_snapshot_findings_once()
+    ancient = {"fetched": "2000-01-01", "chains": {}}
+    st = snapshot_findings_once(ancient)
+    hit = [m for lvl, m in st if "days old" in m]
+    print(f"  [{'PASS' if hit else 'FAIL'}] staleness surfaces through snapshot_findings_once "
+          f"(the entry point preflight_config uses)")
+    ok = ok and bool(hit)
+    # ...and exactly once per process, so a multi-chain run does not repeat it on every chain.
+    second = snapshot_findings_once(ancient)
+    print(f"  [{'PASS' if not second else 'FAIL'}] staleness is emitted once, not once per chain")
+    ok = ok and not second
+    _reset_snapshot_findings_once()
+
+    # One malformed row must not destroy the other rows' verdicts — least of all a deploy-blocking ERROR.
+    BAD = "0xBBB0000000000000000000000000000000000002"
+    bad_snap = {"fetched": "2026-07-31", "chains": {"1": {
+        A.lower(): {"name": "T / USD", "declaredHeartbeat": 86400},
+        BAD.lower(): {"name": "BAD / USD"},          # no declaredHeartbeat -> KeyError on this row only
+    }}}
+    rows = [{"asset": "T", "role": "priceFeeds[0]", "address": A, "heartbeat": 86400, "where": "x"},
+            {"asset": "BAD", "role": "priceFeeds[0]", "address": BAD, "heartbeat": 86400, "where": "x"}]
+    try:
+        ALLOWLIST[key] = {"asset": "T", "registered": 82800, "breaches": 0, "measured": "2026-01-01"}
+        got = case("a malformed row does NOT discard a real ERROR on another row", "1", bad_snap, rows,
+                   ERROR, "stale exemption is not evidence")
+    finally:
+        ALLOWLIST.pop(key, None)
+    n_mal = len([m for lvl, m in got if lvl == ERROR and "could NOT evaluate" in m])
+    print(f"  [{'PASS' if n_mal == 1 else 'FAIL'}] ...and the malformed row is itself reported as an ERROR")
+    ok = ok and n_mal == 1
+
+    # The run's scope must come from CONFIG, so a degraded snapshot cannot shrink what gets audited.
+    cfg_ids = configured_chain_ids()
+    snap_only = sorted(({"fetched": "x", "chains": {}}.get("chains") or {}), key=int)
+    print(f"  [{'PASS' if cfg_ids else 'FAIL'}] chain scope comes from config "
+          f"({len(cfg_ids)} chains), not from the snapshot's own keys (which would give "
+          f"{len(snap_only)} on an empty snapshot and print a clean verdict)")
+    ok = ok and bool(cfg_ids)
+
+    # refresh() must never leave a degraded snapshot behind, and must say so in its exit code.
+    before = SNAPSHOT.read_text() if SNAPSHOT.exists() else None
+    try:
+        def _boom(fn):
+            raise OSError("simulated network failure")
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+            rc_fail = refresh(fetch=_boom)
+            unchanged_fail = SNAPSHOT.read_text() == before
+            # 200 OK, valid JSON, plausible records — but the `heartbeat` field is gone (schema change).
+            rc_empty = refresh(fetch=lambda fn: [{"proxyAddress": "0x" + "11" * 20, "name": "X / USD"}])
+            unchanged_empty = SNAPSHOT.read_text() == before
+        print(f"  [{'PASS' if rc_fail else 'FAIL'}] refresh() returns non-zero when every fetch fails")
+        print(f"  [{'PASS' if unchanged_fail else 'FAIL'}] ...leaving the snapshot untouched, so `fetched` "
+              f"stays honest and staleness keeps firing")
+        print(f"  [{'PASS' if rc_empty else 'FAIL'}] refresh() returns non-zero on a 200-OK-but-unmatching "
+              f"catalogue")
+        print(f"  [{'PASS' if unchanged_empty else 'FAIL'}] ...rather than silently discarding every "
+              f"recorded feed")
+        ok = ok and bool(rc_fail) and unchanged_fail and bool(rc_empty) and unchanged_empty
+    finally:
+        # A self-test must never be able to dirty the working tree, even if an arm above regresses.
+        if before is not None and SNAPSHOT.read_text() != before:
+            SNAPSHOT.write_text(before)
+            print("  [note] snapshot restored after the refresh arms")
     return 0 if ok else 1
 
 
@@ -385,16 +624,27 @@ def main() -> int:
     ap.add_argument("chains", nargs="*", help="chain ids (default: all in the snapshot)")
     ap.add_argument("--self-test", action="store_true")
     ap.add_argument("--refresh", action="store_true")
+    ap.add_argument("--allow-shrink", action="store_true",
+                    help="with --refresh: accept a snapshot that loses still-referenced addresses")
     ap.add_argument("--json", metavar="PATH")
     a = ap.parse_args()
     if a.refresh:
-        return refresh()
+        return refresh(allow_shrink=a.allow_shrink)
     if a.self_test:
         return self_test()
     snap = load_snapshot()
-    ids = a.chains or sorted((snap.get("chains") or {}), key=int)
+    # Scope from CONFIG, never from the snapshot's own keys — see configured_chain_ids. A chain the
+    # snapshot has no entry for still gets checked, and reports every feed as "no declared heartbeat"
+    # rather than vanishing from the run.
+    ids = a.chains or configured_chain_ids() or sorted((snap.get("chains") or {}), key=int)
     report, errors = {}, 0
-    for lvl, msg in snapshot_age_findings(snap):
+    # Same entry point the integrated path uses, so the two cannot report different things. Exported to
+    # --json as well: a consumer that only reads the JSON would otherwise miss staleness entirely, which
+    # is the same "signal present on one path, absent on another" defect in a different disguise.
+    snap_f = snapshot_findings_once(snap)
+    report["snapshot"] = [{"level": l, "message": m} for l, m in snap_f]
+    errors += sum(1 for l, _ in snap_f if l == ERROR)
+    for lvl, msg in snap_f:
         print(f"  {lvl}: {msg}")
     for cid in ids:
         fs = findings(str(cid), snap)

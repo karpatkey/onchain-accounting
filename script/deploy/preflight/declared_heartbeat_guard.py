@@ -248,8 +248,28 @@ def registered_feeds(chain_id: str) -> list[dict]:
             # that shares its stem; a heartbeat with no such partner is REPORTED, never dropped.
             for hb_key in sorted(k for k in ctor if k.endswith("Heartbeat")):
                 stem = hb_key[: -len("Heartbeat")]
-                addr = next((ctor[k] for k in sorted(ctor)
-                             if k != hb_key and k.startswith(stem) and _is_address(ctor.get(k))), None)
+                # An EMPTY stem (a key named exactly "Heartbeat") would prefix-match every key in the
+                # constructor and pair the heartbeat with an arbitrary unrelated address — a confident
+                # verdict about the wrong feed, which is worse than no coverage. Require a real stem.
+                cands = [k for k in sorted(ctor)
+                         if stem and k != hb_key and k.startswith(stem) and _is_address(ctor.get(k))]
+                # Prefer an exact stem match, then a recognised rate-leg suffix. If that still leaves
+                # more than one candidate, REPORT the ambiguity instead of guessing: silently picking
+                # whichever sorts first is exactly how a wrong-address verdict would go unnoticed.
+                exact = [k for k in cands if k == stem]
+                suffixed = [k for k in cands
+                            if k[len(stem):] in ("Feed", "Chainlink", "ChainlinkAddress", "Address",
+                                                 "Oracle", "Aggregator", "PriceFeed")]
+                pick = exact or suffixed or cands
+                addr = ctor[pick[0]] if len(pick) == 1 else None
+                if len(pick) > 1:
+                    out.append({"asset": name, "role": f"rate leg ({hb_key})", "address": "-",
+                                "heartbeat": None, "enabled": bool(v.get("enabled")),
+                                "where": f"contracts-deployment-config/custom-price-feeds/{chain_id}.json",
+                                "unpaired_heartbeat": f"`{hb_key}` matches MORE THAN ONE address key "
+                                                      f"({', '.join(pick)}), so its rate leg is ambiguous "
+                                                      f"and was not guessed"})
+                    continue
                 hb = ctor.get(hb_key)
                 row = {"asset": name, "role": f"rate leg ({hb_key})",
                        "heartbeat": _int_or_none(hb), "heartbeat_raw": hb,
@@ -849,6 +869,29 @@ def self_test() -> int:
     print(f"  [{'PASS' if len(_non_ytox) >= 9 else 'FAIL'}] custom-feed rate legs are discovered by shape "
           f"({len(_legs)} legs, {len(_non_ytox)} of them NOT the yToXFeed spelling)")
     ok = ok and len(_non_ytox) >= 9
+
+    # The pairing heuristic must never GUESS an address. A bare "Heartbeat" key has an empty stem and
+    # would prefix-match everything; two plausible siblings are ambiguous. Both must be reported, because
+    # a confident verdict about the wrong feed is worse than admitting the shape was not recognised.
+    with tempfile.TemporaryDirectory() as _td4:
+        _d4 = Path(_td4) / "script/config/contracts-deployment-config/custom-price-feeds"
+        _d4.mkdir(parents=True)
+        (_d4 / "1.json").write_text(json.dumps({
+            "BareKey": {"enabled": True,
+                        "constructor": {"Heartbeat": 3600, "unrelated": "0x" + "55" * 20}},
+            "Ambiguous": {"enabled": True,
+                          "constructor": {"pToQAlpha": "0x" + "66" * 20, "pToQBeta": "0x" + "77" * 20,
+                                          "pToQHeartbeat": 3600}},
+        }))
+        REPO = Path(_td4)
+        try:
+            _pair = registered_feeds("1")
+        finally:
+            REPO = _real_repo
+    _guessed = [r for r in _pair if not r.get("unpaired_heartbeat") and r.get("address", "-") != "-"]
+    print(f"  [{'PASS' if len(_pair) == 2 and not _guessed else 'FAIL'}] the rate-leg pairing reports an "
+          f"empty stem and an ambiguous match instead of guessing an address")
+    ok = ok and len(_pair) == 2 and not _guessed
 
     # An allowlist entry must carry re-runnable evidence, and that evidence must not be allowed to age
     # forever. Both are checked on the DEPLOY path (findings), not only in this self-test — aging it only

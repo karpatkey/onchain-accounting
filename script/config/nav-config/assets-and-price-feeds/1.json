@@ -422,8 +422,8 @@
   },
   "sUSDe": {
     "address": "0x9D39A5DE30e57443BfF2A8307A4256c8797A3497",
-    "$kindComment": "Staked USDe share; balance static, rate grows with funding yield.",
-    "pegKind": "Pegged",
+    "$kindComment": "Staked USDe share; balance static, rate grows with funding yield. Floating, NOT Pegged: it is yield-bearing, so its USD price is not $1 and rises with the accrued yield - the same rule that makes wstETH Floating (pegged means pegged to the NAV's quote asset, USD).",
+    "pegKind": "Floating",
     "accrualKind": "Appreciating",
     "divergenceToleranceBps": 250,
     "priceFeeds": [
@@ -474,8 +474,8 @@
   },
   "sUSDS": {
     "address": "0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD",
-    "$kindComment": "ERC-4626 share of USDS; balance static, rate grows.",
-    "pegKind": "Pegged",
+    "$kindComment": "ERC-4626 share of USDS; balance static, rate grows. Floating, NOT Pegged: it is yield-bearing, so its USD price is not $1 and rises with the accrued yield - the same rule that makes wstETH Floating (pegged means pegged to the NAV's quote asset, USD).",
+    "pegKind": "Floating",
     "accrualKind": "Appreciating",
     "$comment": "Finding #8: heartbeat raised 82800 -> 86400 to match its own base asset USDS. Post-ADR-0019 this feed's latestRoundData().updatedAt IS the USDS/USD feed's timestamp (ERC4626VaultRatePriceFeed._compute -> NavBaseUsdLib.baseUsd), and _selectFeedCore gates that timestamp against the heartbeat registered HERE. So a derived feed gated tighter than its base cannot prevent a stale price - it can only manufacture a stale verdict while the base is still fresh. Measured on the USDS/USD aggregator 0x592700e4FcDd674dC54d2681DED3B63f54F63f9A over 58 days (61 intervals, rounds 2483-2544): the publisher is heartbeat-driven on a ~23h cadence and 59 of 61 intervals overshot 82800 by a median 24s (max 72s), so sUSDS was priced $0 and listed in stalePriceAssets for ~23s a day, on 97% of days, while USDS itself never went stale (max gap 82872 < 86400). 86400 restores the same 3600s of margin the base carries. sUSDS has a single primary feed, so there is no second feed to rescue the read. Do NOT tighten the reverse direction (wstETH/stETH/lsETH/weETH/eETH/OETH/LDO at 86400 over WETH's 3600): a looser derived heartbeat cannot over-report, because NavBaseUsdLib inherits the base's own staleness verdict regardless.",
     "priceFeeds": [
@@ -488,8 +488,8 @@
   },
   "syrupUSDC": {
     "address": "0x80ac24aA929eaF5013f6436cdA2a7ba190f5Cc0b",
-    "$kindComment": "Maple syrupUSDC share, USDC underlying; priced via convertToAssets (per feed config).",
-    "pegKind": "Pegged",
+    "$kindComment": "Maple syrupUSDC share, USDC underlying; priced via convertToAssets (per feed config). Floating, NOT Pegged: it is yield-bearing, so its USD price is not $1 and rises with the accrued yield - the same rule that makes wstETH Floating (pegged means pegged to the NAV's quote asset, USD).",
+    "pegKind": "Floating",
     "accrualKind": "Appreciating",
     "priceFeeds": [
       {
@@ -501,8 +501,8 @@
   },
   "RWIV": {
     "address": "0xCafEaa466736ac01e0AC9CA72644BeF348694731",
-    "$kindComment": "Nexus Mutual RWI Vault - ERC-4626 share, USDC underlying; priced USDC/USD x convertToAssets (per feed config).",
-    "pegKind": "Pegged",
+    "$kindComment": "Nexus Mutual RWI Vault - ERC-4626 share, USDC underlying; priced USDC/USD x convertToAssets (per feed config). Floating, NOT Pegged: it is yield-bearing, so its USD price is not $1 and rises with the accrued yield - the same rule that makes wstETH Floating (pegged means pegged to the NAV's quote asset, USD).",
+    "pegKind": "Floating",
     "accrualKind": "Appreciating",
     "priceFeeds": [
       {
@@ -514,8 +514,8 @@
   },
   "sGHO": {
     "address": "0xE1753F2e00940cC31213dd92013cF019DFE4ca1d",
-    "$kindComment": "Aave sGHO savings vault - ERC-4626 share, GHO underlying; priced GHO/USD x convertToAssets (per feed config).",
-    "pegKind": "Pegged",
+    "$kindComment": "Aave sGHO savings vault - ERC-4626 share, GHO underlying; priced GHO/USD x convertToAssets (per feed config). Floating, NOT Pegged: it is yield-bearing, so its USD price is not $1 and rises with the accrued yield - the same rule that makes wstETH Floating (pegged means pegged to the NAV's quote asset, USD).",
+    "pegKind": "Floating",
     "accrualKind": "Appreciating",
     "priceFeeds": [
       {

@@ -181,8 +181,8 @@
   },
   "syrupUSDC": {
     "address": "0x41CA7586cC1311807B4605fBB748a3B8862b42b5",
-    "$kindComment": "Maple syrupUSDC share, USDC underlying; priced via a Chainlink syrupUSDC/USDC exchange-rate feed (per feed config) - the convertToAssets path is mainnet-only.",
-    "pegKind": "Pegged",
+    "$kindComment": "Maple syrupUSDC share, USDC underlying; priced via a Chainlink syrupUSDC/USDC exchange-rate feed (per feed config) - the convertToAssets path is mainnet-only. Floating, NOT Pegged: it is yield-bearing, so its USD price is not $1 and rises with the accrued yield - the same rule that makes wstETH Floating (pegged means pegged to the NAV's quote asset, USD).",
+    "pegKind": "Floating",
     "accrualKind": "Appreciating",
     "priceFeeds": [
       {

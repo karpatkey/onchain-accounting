@@ -17,8 +17,14 @@ import "src/constants.sol";
 ///      not change block to block, it does not participate in valuation, and nothing on the NAV read path consumes
 ///      it. Neither of the two properties that would justify carrying a value inside the NAV read — atomicity with
 ///      the price, or derivation from live state — applies. A consumer makes two calls and caches the kinds
-///      indefinitely. So this contract costs `NAVCalculator` zero bytes, breaks no adapter ABI, and moves neither
-///      library pin.
+///      indefinitely. So this contract costs `NAVCalculator` zero bytes and breaks no adapter ABI.
+///
+///      **It DOES move a library pin, and the earlier claim that it moved neither was wrong.** Not through any
+///      dependency — nothing here references `PriceFeedLib` — but because this contract's mere PRESENCE under `src/`
+///      tipped the `via_ir` whole-program stack margin and forced the {PriceFeedLib._assignHealthArrays} extraction.
+///      That moved `PriceFeedLib` from `0xfc6AE534…` to `0x49C18627665562F4bEbae5208BA6eF7428039614` (it shrank 69
+///      bytes, 18,585 -> 18,516). `NAVRegistryLib` is genuinely unchanged and byte-identical. A pin regeneration IS
+///      owed for this feature — do not read "costs NAVCalculator zero bytes" as "costs nothing".
 ///
 ///      **It also would not have fit, which is worth recording so nobody re-attempts it.** `NAVCalculator` had 68
 ///      bytes of EIP-170 headroom when this was designed. Three surfaces were measured on clean builds: two fields on
@@ -53,8 +59,15 @@ contract AssetKindRegistry is AccessControl, IAssetKindRegistry {
     ///                The separation of duties is PROCEDURAL, not ENFORCED — do not rely on it as a control. Pinned by
     ///                `test_adminCanSelfGrantManager_soSeparationIsProceduralNotEnforced`.
     /// @param manager Receives `MANAGER` (classification writes). `08_DeployAssetKindRegistry` passes the deployer EOA
-    ///                here so it can classify in the same deploy run, and chain 1's config sets `admin` and `manager`
-    ///                to that same EOA — so on a fresh deploy both roles sit on ONE key until they are split.
+    ///                here so it can classify in the same deploy run, and EVERY chain config sets `admin` and `manager`
+    ///                to that same EOA — so a deployed registry is governed by one key per chain. **That is deliberate
+    ///                for this deploy, and a handover to the security-council Safe is PLANNED** — it rides with the
+    ///                same deferred step-07 Safe-handoff work excluded from this wave, so the registry sits where the
+    ///                NAV and Bridge proxies do. `07_TransferAdminToSecurityCouncil` deliberately does not know this
+    ///                contract exists; the handover is a documented MANUAL post-deploy step, not a scripted one. So
+    ///                "the separation is procedural, not enforced" and "the roles are deliberately on one EOA for now"
+    ///                are both true and consistent — there is no enforced separation to rely on today, and the fix for
+    ///                that is the planned handover rather than anything in this contract.
     constructor(address admin, address manager) {
         if (admin == address(0) || manager == address(0)) revert InvalidArguments();
         _grantRole(DEFAULT_ADMIN_ROLE, admin);

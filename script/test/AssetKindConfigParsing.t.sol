@@ -153,8 +153,13 @@ contract AssetKindConfigParsingTest is Test {
     ///
     ///      Uses a throwaway fixture rather than a real symbol on purpose: asserting against live config would flip
     ///      from invalid to valid the moment the classification data lands, so the test would be pinning the absence
-    ///      of the data rather than the behaviour of the reader. Fixture is removed BEFORE the assertions so a failure
-    ///      never leaves it behind — same discipline as `BridgeEscrowConfigRehearsal.fork.t.sol`.
+    ///      of the data rather than the behaviour of the reader.
+    ///
+    ///      The fixture is removed BEFORE the assertions, so an assertion FAILURE never leaves it behind — the same
+    ///      discipline as `BridgeEscrowConfigRehearsal.fork.t.sol`. **That is not total, and the limit is worth
+    ///      stating:** a revert between the write and the remove, or an interrupted / OOM-killed run, still leaves
+    ///      `assets-and-price-feeds/987654322.json` inside the git tree, where it is untracked, un-ignored, and breaks
+    ///      the clean-tree gate. If that ever happens, delete that file — it is test debris, never real config.
     function test_assetPresentButKindFieldAbsentIsInvalid() public {
         uint256 fixtureChainId = 987_654_322;
         string memory path = string(
@@ -165,6 +170,12 @@ contract AssetKindConfigParsingTest is Test {
                 ".json"
             )
         );
+        // Refuse to touch the path if anything is already there. `foundry.toml` grants read-write over all of
+        // `script/`, so a typo in the chain id above would otherwise let this test overwrite a REAL chain's committed
+        // asset config and then `vm.removeFile` it — and the assertions below would still pass, because they only
+        // check the reader's output. The literal id is the only thing separating the two, so assert on it.
+        assertFalse(vm.exists(path), "fixture path must be unoccupied - refusing to overwrite a real chain config");
+
         // USDC is present, has an address, has `pegKind` — and no `accrualKind`.
         vm.writeFile(path, '{"USDC":{"address":"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48","pegKind":"Pegged"}}');
 

@@ -95,11 +95,48 @@ Deploys the per-chain `AssetKindRegistry` and classifies every asset in `nav-con
 
 **Idempotent.** Re-running re-classifies the existing registry instead of deploying a second one, so it composes with the "re-run the numbered sequence" pattern like every other step.
 
-**⚠️ The registry is NOT handed off to the council.** `07` has no notion of this contract, so `DEFAULT_ADMIN_ROLE` and `MANAGER` both stay with the deployer EOA — and since chain configs set `admin` and `manager` to that same EOA, it is one key. Nothing consumes the registry yet; before anything does, either add it to `07` or make the EOA-governed end state a documented decision.
+**Run it with `PERSIST_DEPLOYMENTS=1`.** The idempotency above depends on the deployment record, and `saveDeployedAddress` only writes that record when the flag is set. A real `--broadcast` *without* it deploys a live registry and records nothing, so the next run deploys a second one. `08` uses plain `new` (CREATE), not CREATE2, so there is no deterministic address to fall back on.
 
 ```bash
 PERSIST_DEPLOYMENTS=1 \
 forge script script/deploy/08_DeployAssetKindRegistry.s.sol --chain-id 1 --broadcast --account $DEPLOYER_NAME
 ```
 
-> Note: `PERSIST_DEPLOYMENTS=1` gates the top-level impl/proxy address writes (`saveDeployedAddress` in 01/01_2/02/02_2) to the deployments file `script/config/deployments/{chainId}.json` — without it those only log. The per-adapter writes in 04 (`balanceAdapters.<Name>`) and 05 (`bridgeAdapters.<Name>`) go through `ConfigReader.writeAdapterAddress` and are NOT gated by this flag — they write on every run. Governance after handoff (upgrades) is council-Safe-driven via `script/upgrade/*`, which still produce Safe-TX JSON batches.
+### The registry is EOA-owned for now, by design — with a handover to come
+
+**Deliberate for this deploy, not an oversight, and not something to "fix" by extending `07` or adding an `09`.** `DEFAULT_ADMIN_ROLE` and `MANAGER` both go to the deployer EOA. Every chain config sets `addresses.admin` and `addresses.manager` to that same EOA, so one key governs the registry on each chain, and `07_TransferAdminToSecurityCouncil` intentionally does not enumerate this contract.
+
+**Expect to hand it over later.** The transfer to the security-council Safe is planned, riding with the same deferred step-07 Safe-handoff work that was excluded from this wave — the registry is in the same position as the NAV and Bridge proxies, not in a special one. It is a known, planned follow-on rather than a permanent posture.
+
+Until it happens: that one key can re-classify any asset, and the only signal is the `AssetKindSet` event. Nothing consumes the registry today; watch that event once something does.
+
+### Handing the registry to the council (planned, manual)
+
+This is a step **you should expect to perform**, not an optional aside. It is a manual operational action taken after the deploy, outside any script — deliberately not automated, so it does not ride the numbered pipeline. Two council transactions from the deployer EOA, a verification, then two renouncements, mirroring what `07` does for the proxies:
+
+```bash
+REGISTRY=$(jq -r '.AssetKindRegistry' script/config/deployments/1.json)
+COUNCIL=$(jq -r '.addresses.securityCouncil' script/config/chains/1.json)
+MANAGER_ROLE=$(cast keccak "MANAGER")   # DEFAULT_ADMIN_ROLE is 0x00…0
+
+# 1. grant both roles to the council
+cast send $REGISTRY "grantRole(bytes32,address)" \
+  0x0000000000000000000000000000000000000000000000000000000000000000 $COUNCIL \
+  --account $DEPLOYER_NAME
+cast send $REGISTRY "grantRole(bytes32,address)" $MANAGER_ROLE $COUNCIL --account $DEPLOYER_NAME
+
+# 2. verify BEFORE renouncing — a renounce with no council admin freezes the registry permanently
+cast call $REGISTRY "hasRole(bytes32,address)(bool)" \
+  0x0000000000000000000000000000000000000000000000000000000000000000 $COUNCIL
+cast call $REGISTRY "hasRole(bytes32,address)(bool)" $MANAGER_ROLE $COUNCIL
+
+# 3. only then drop the deployer's own roles
+cast send $REGISTRY "renounceRole(bytes32,address)" $MANAGER_ROLE $DEPLOYER_EOA --account $DEPLOYER_NAME
+cast send $REGISTRY "renounceRole(bytes32,address)" \
+  0x0000000000000000000000000000000000000000000000000000000000000000 $DEPLOYER_EOA \
+  --account $DEPLOYER_NAME
+```
+
+Step 2 is not optional. `AssetKindRegistry` is stock OZ `AccessControl` with no renounce restriction, so renouncing the last `DEFAULT_ADMIN_ROLE` before the council holds it leaves **no role admin at all**: the classification map keeps answering reads forever and can never be changed again. Because admin and manager are the same key, one misordered renounce loses both axes at once.
+
+> Note: `PERSIST_DEPLOYMENTS=1` gates the top-level impl/proxy address writes (`saveDeployedAddress` in 01/01_2/02/02_2 **and 08**) to the deployments file `script/config/deployments/{chainId}.json` — without it those only log. The per-adapter writes in 04 (`balanceAdapters.<Name>`) and 05 (`bridgeAdapters.<Name>`) go through `ConfigReader.writeAdapterAddress` and are NOT gated by this flag — they write on every run. Governance after handoff (upgrades) is council-Safe-driven via `script/upgrade/*`, which still produce Safe-TX JSON batches.

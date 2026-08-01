@@ -19,20 +19,34 @@ interface IAssetKindRegistry {
     /// @notice Emitted when an asset's classification is removed (e.g. the asset was unregistered upstream).
     event AssetKindCleared(address indexed asset);
 
-    /// @notice The asset has no classification. Reads fail closed rather than defaulting — see the contract note.
+    /// @notice The asset has no classification.
+    /// @dev Thrown on the READ path ({getAssetKind}, {getAssetKinds}) so reads fail closed rather than defaulting, AND
+    ///      on the WRITE path by {clearAssetKind} when the asset was never classified. Both, deliberately — clearing
+    ///      something that is not there is a config mistake worth surfacing, not a no-op.
     error AssetNotClassified(address asset);
 
     /// @notice A batch setter was given arrays of differing lengths.
     error KindArrayLengthMismatch(uint256 assets, uint256 pegKinds, uint256 accrualKinds);
 
+    /// @dev **Implementations also revert `InvalidArguments()` (from `src/errors.sol`), which is NOT declared in this
+    ///      interface** — it is a shared repo-wide error rather than a registry-specific one, so it does not appear in
+    ///      this ABI. A consumer generating handlers from this interface alone cannot decode it. It is thrown by both
+    ///      setters when `asset == address(0)`, and by the constructor when either role holder is `address(0)`.
+    ///      Selector: `bytes4(keccak256("InvalidArguments()"))`.
+
     /// @notice Classifies one asset. MANAGER-gated. Re-classification is allowed and emits again.
+    /// @dev Reverts `InvalidArguments()` if `asset` is `address(0)` — this repo's USD-quote sentinel, never a
+    ///      registered asset. See the note above on that error not being declared here.
     function setAssetKind(address asset, PegKind pegKind, AccrualKind accrualKind) external;
 
     /// @notice Classifies many assets in one call. MANAGER-gated. All three arrays must be the same length.
+    /// @dev Reverts {KindArrayLengthMismatch} if the lengths differ, and `InvalidArguments()` on the first
+    ///      `address(0)` entry. An empty batch is a no-op, not an error.
     function setAssetKinds(address[] calldata assets, PegKind[] calldata pegKinds, AccrualKind[] calldata accrualKinds)
         external;
 
     /// @notice Removes an asset's classification, so subsequent reads fail closed again. MANAGER-gated.
+    /// @dev Reverts {AssetNotClassified} if the asset had no classification to remove.
     function clearAssetKind(address asset) external;
 
     /// @notice One asset's classification. Reverts {AssetNotClassified} if it has none.

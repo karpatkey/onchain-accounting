@@ -27,13 +27,20 @@ import {PegKind, AccrualKind} from "../../src/utils/AssetKind.sol";
 ///      exists. Re-running is safe: the step is idempotent and re-classifies an existing registry rather than
 ///      deploying a second one.
 ///
-///      **⚠️ OPEN: the registry has no admin-handoff path.** `07_TransferAdminToSecurityCouncil` enumerates the
-///      NAV/Bridge proxies and the bridge adapters; it has no notion of `AssetKindRegistry`. So this contract joins the
-///      system MANAGER-governed and mutable with `DEFAULT_ADMIN_ROLE` and `MANAGER` both on the deployer EOA — and on
-///      chain 1 `admin` and `manager` are configured to the SAME EOA, so it is literally one key. Nothing consumes the
-///      registry yet, which is why this ships; once something does, a compromised or careless deployer key can silently
-///      re-classify assets and the only signal is `AssetKindSet`, which nothing watches. Either add this contract to
-///      `07`'s target list or make the EOA-governed end state a deliberate, documented decision.
+///      **The registry is EOA-owned deliberately FOR THIS DEPLOY, with a handover to the security-council Safe
+///      PLANNED.** This is a considered choice, not a defect — do not "fix" it by adding a handoff to `07` or a new
+///      numbered step. `DEFAULT_ADMIN_ROLE` and `MANAGER` both go to the deployer EOA: every chain config sets
+///      `addresses.admin` and `addresses.manager` to the same EOA, so one key governs the registry on each chain.
+///
+///      The handover **is expected to happen**, riding with the same deferred step-07 Safe-handoff work that was
+///      excluded from this wave — the registry is simply in the same position as the NAV and Bridge proxies. When it
+///      happens it is a **documented MANUAL operational step performed after the deploy, outside any script** — see
+///      "Handing the registry to the council (planned, manual)" in `script/deploy/README.md`. It is deliberately not
+///      scripted, which is why `07` does not enumerate this contract and why there is no `09`.
+///
+///      Until then, stated so it is not rediscovered as a surprise: that one key can re-classify any asset, and the
+///      only signal is the `AssetKindSet` event. Nothing consumes the registry today. Watch that event once something
+///      does.
 contract DeployAssetKindRegistry is BaseDeployScript {
     /// @notice Thrown when a configured asset has no valid `pegKind`/`accrualKind`. Aborts the deploy.
     error AssetKindMissingOrInvalid(string symbol, string field);
@@ -65,11 +72,16 @@ contract DeployAssetKindRegistry is BaseDeployScript {
             if (bytes(addrStr).length == 0) revert AssetAddressMissing(symbol);
             assets[i] = vm.parseAddress(addrStr);
             // `address(0)` must be rejected HERE, not left to `AssetKindRegistry._setAssetKind`. The registry does
-            // reject it, but from inside the broadcast and with a bare `InvalidArguments()` that names neither the
-            // symbol nor the field — the least useful error in a script whose whole purpose is to name the offending
-            // row. Rejecting it pre-broadcast also stops this script's correctness depending on `forge script`
-            // simulating before it sends: under `--skip-simulation` the deploy tx would land and only the
-            // classification would revert, leaving a deployed-but-unclassified registry.
+            // reject it, but with a bare `InvalidArguments()` naming neither the symbol nor the field — the least
+            // useful error in a script whose whole purpose is to name the offending row, and the only one of this
+            // script's three failure modes that would not tell the operator which config entry to fix.
+            //
+            // To be precise about what this does NOT protect against, since an earlier version of this comment got it
+            // wrong: it is NOT guarding a half-deploy. `vm.startBroadcast()` only RECORDS transactions — they are sent
+            // after `run()` returns — so a revert anywhere in this body aborts before anything is broadcast, and that
+            // holds under `--skip-simulation` too (which skips the on-chain simulation, not the local execution).
+            // There is no reachable "registry deployed but unclassified" state. This guard buys a named error and a
+            // script that is correct on its own terms rather than by virtue of how `forge script` sequences work.
             if (assets[i] == address(0)) revert AssetAddressZero(symbol);
 
             (PegKind peg, bool pegValid) = ConfigReader.readAssetPegKind(vm, chainId, symbol);
@@ -87,6 +99,14 @@ contract DeployAssetKindRegistry is BaseDeployScript {
         // you to repeat — deploys a fresh registry and overwrites the deployment record, leaving the first one live,
         // still holding MANAGER, still answering `getAssetKind`, and now unmaintained. Two plausible answers with
         // nothing to say which is authoritative is the worst shape available to a misreporting-sensitive system.
+        // ⚠️ **This idempotency is only as good as the deployment record, so it REQUIRES `PERSIST_DEPLOYMENTS=1`.**
+        // The two guards interact: `saveDeployedAddress` (below) writes only when `PERSIST_DEPLOYMENTS` is set, and this
+        // guard reads what that wrote. So a real `--broadcast` WITHOUT `PERSIST_DEPLOYMENTS=1` deploys a live registry
+        // and records nothing, and the next run deploys a second one — exactly the harm this guard exists to prevent.
+        // There is no fallback: `08` uses plain `new` (CREATE), not CREATE2, so unlike `04`/`05` there is no
+        // deterministic address to probe for code. `saveDeployedAddress` does log "NOT persisted to config" in that
+        // case, but that is one line in a wall of output, in a repo whose own rule is never to trust a deploy script's
+        // exit code. **Always run this step with `PERSIST_DEPLOYMENTS=1`** (the README example does).
         address existing = readDeployedAddress("AssetKindRegistry");
 
         vm.startBroadcast();
@@ -97,10 +117,10 @@ contract DeployAssetKindRegistry is BaseDeployScript {
             console2.log("AssetKindRegistry already deployed at:", existing);
         } else {
             // The deployer keeps MANAGER so the same deploy run — NOT the same transaction; under
-            // `vm.startBroadcast()` the constructor and `setAssetKinds` are two separate txs — can classify. Admin
-            // goes to the chain's configured admin. Matches the rest of the deploy flow, which is EOA-driven with a
-            // later handoff. NOTE: `07_TransferAdminToSecurityCouncil` does not know this contract exists, so both
-            // roles stay on the deployer EOA until that is addressed — see the docstring above.
+            // `vm.startBroadcast()` the constructor and `setAssetKinds` are two separate txs — can classify. Admin goes
+            // to the chain's configured admin, which is that same EOA on every chain. Both roles staying with the EOA
+            // is the INTENDED end state here, not a pending handoff: `07` deliberately does not know this contract
+            // exists, and moving the roles to the council is a manual post-deploy step. See the docstring above.
             registry = new AssetKindRegistry(chain.admin, msg.sender);
         }
 

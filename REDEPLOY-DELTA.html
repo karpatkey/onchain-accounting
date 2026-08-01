@@ -222,13 +222,17 @@ tree it was measured on and is now superseded.</p>
 The deploy is <strong>held</strong> — not blocked — while a further feature is attempted first: a two-axis per-asset
 classification, <code>PegKind{Pegged, Floating}</code> and <code>AccrualKind{None, Rebasing, Appreciating}</code>.</p>
 <p><strong>If it lands it is a <code>src/</code> change, so the pins are regenerated again</strong> against whatever tree actually
-ships, and <span class="addr">0xfc6AE534…</span> should be expected to move. Whether <code>NAVRegistryLib</code> holds a second
-time is an open question and must be measured, not assumed from its having held here.</p>
+ships, and <span class="addr">0xfc6AE534…</span> should be expected to move. Whether <code>NAVRegistryLib</code> holds again
+is an open question and must be measured, not assumed from its having held here.</p>
 <p><span class="chip blocker">Confirmed — it will move</span> <strong><code>PriceFeedLib</code>'s pin
 <em>will</em> move again. <span class="addr">0xfc6AE534…</span> is current-for-main and will not be the deploy-final
-value.</strong> The <code>AssetKindRegistry</code> work required extracting a function <em>out of</em>
-<code>PriceFeedLib</code> to relieve a whole-program <code>via_ir</code> stack limit — so the library's own source changed even
-though the classification itself never entered the NAV. Whether <code>NAVRegistryLib</code> holds a third time is unmeasured.</p>
+value.</strong> The <code>AssetKindRegistry</code> work — PR #241, <span class="mono">7aef70ec</span>,
+<strong>not yet merged</strong> — edits <code>PriceFeedLib</code> itself: it collapses the three inline health-array
+assignments in <code>computeNav</code> / <code>computeNavAndPositions</code> into a single new <code>private</code> helper,
+<code>_assignHealthArrays</code>, to relieve a whole-program <code>via_ir</code> stack limit. <strong>Note the direction: the
+helper is added <em>inside</em> the library and nothing is moved out of it</strong> — the library gains a function and its own
+source changes, even though the classification itself never enters the NAV. Whether <code>NAVRegistryLib</code> holds against
+the final merged tree is still unmeasured.</p>
 <p><span class="chip judge">Judgement</span> <strong>An earlier revision of this note reasoned that if the classification could
 not go into the NAV, then <span class="mono">6e5fa2e9</span> might turn out to be the shipping tree and both values might stand.
 That was wrong, and the way it was wrong is worth keeping.</strong> It inferred "the feature is not in the NAV" ⇒ "the NAV's tree
@@ -450,8 +454,9 @@ remaining room.</p>
 <span class="mono">6a5d3743</span> gave <span class="addr">0x02c26e5b…</span>. That figure was real but <em>pre-review</em>: the
 super-review round's commit <span class="mono">322db811</span> then edited <code>src/prices/PriceFeedLib.sol</code>
 (+32 / −14), moving the bytecode a second time. So <span class="addr">0x02c26e5b…</span> is <strong>not</strong> the pin and must
-not be treated as one — the settled value is #234's <span class="addr">0xfc6AE534f83A49071Eac35cCf97786Dd54b2eDf5</span>,
-above.</p>
+not be treated as one — the value #234 settled <em>for main</em> is <span class="addr">0xfc6AE534f83A49071Eac35cCf97786Dd54b2eDf5</span>,
+above, and that one is current-for-main rather than deploy-final: it moves again with the <code>AssetKindRegistry</code>
+work.</p>
 <p><span class="chip judge">Judgement</span> <strong>This is the whole argument for the sequencing rule in one example.</strong> A
 pin measured before a review round is not wrong so much as <em>expired</em>, and nothing about the number itself tells you which
 it is. That is why the gate is a clean build against the final tree rather than a value recorded in advance — including any
@@ -733,9 +738,9 @@ mid-stream is how a value becomes stale from birth.</p>
 NavRegistryLib <span class="addr">0x5f5D054E021A53E1DEF54B3Bda3c939ccD14fd90</span> — the values now in
 <code>foundry.toml [libraries]</code> and <code>script/utils/LibraryPins.sol</code>, confirmed by a clean local build with CI's
 clean-build job agreeing. CI is corroboration, not the gate. But the deploy is <strong>held</strong> for the
-<code>PegKind</code>/<code>AccrualKind</code> work — which may or may not prove deliverable on-chain — so
-<span class="mono">6e5fa2e9</span> cannot yet be assumed to be the tree that ships, and this gate must be re-run against
-whichever tree is.</p>
+<code>PegKind</code>/<code>AccrualKind</code> work — now settled as a standalone <code>AssetKindRegistry</code>, whose enabling
+edit to <code>PriceFeedLib</code> is itself a <code>src/</code> change — so <span class="mono">6e5fa2e9</span> is
+<strong>not</strong> the tree that ships, and this gate must be re-run against whichever tree is.</p>
 <p><span class="chip judge">Judgement</span> <strong>Re-run the clean build anyway if any commit lands before broadcasting, and
 treat a mismatch as "the tree moved", never as "edit the values until it goes green".</strong> Two superseded PriceFeedLib figures
 already appeared in this document's own history — <span class="addr">0x8b7e4fA9…</span> and
@@ -805,8 +810,9 @@ document reports: #231, #232, #233 and #234. All are labelled as such where they
 <ul class="tight">
 <li><strong>Deploy status: <span class="chip blocker">HELD</span></strong> — not blocked, deliberately deferred, now waiting on the
 <code>AssetKindRegistry</code> so the NAV and the registry ship as one event. Consequence for this document: the pin values below
-are current-for-main, and a second regeneration is now <strong>certain</strong> — the registry work extracted a function out of
-<code>PriceFeedLib</code> to relieve a <code>via_ir</code> stack limit, so that library's source has changed.</li>
+are current-for-main, and a second regeneration is now <strong>certain</strong> — the registry work (PR #241, not yet merged)
+adds a <code>private</code> helper <em>inside</em> <code>PriceFeedLib</code> to relieve a <code>via_ir</code> stack limit, so
+that library's own source changes with it.</li>
 <li><strong>Asset classification resolved — it does NOT go in the NAV.</strong> Earlier revisions of this document called it
 measurement-pending, and before that implied it was landing. The floor measurement closed it: the theoretical minimum shape is
 <strong>+92 against 68 free bytes</strong>, so no in-NAV variant fits. It ships as a standalone <code>AssetKindRegistry</code>

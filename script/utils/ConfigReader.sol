@@ -518,7 +518,11 @@ library ConfigReader {
     }
 
     /// @notice Maps an asset's config `accrualKind` string to the on-chain enum. `valid` is false for an absent, empty
-    ///         or unrecognized value — there is NO default, deliberately. See {readAssetPegKind}.
+    ///         or unrecognized value — there is NO default, deliberately.
+    /// @dev Strings rather than integers on purpose: a stale integer silently re-maps if the enum ever gains a member,
+    ///      whereas an unknown string fails loudly. This is the ONLY asset-kind reader — there is deliberately no peg
+    ///      counterpart, because the peg axis is derived on-chain from the NAV's `pegToleranceBps`. (An earlier revision
+    ///      of this line pointed at a `readAssetPegKind` that has since been deleted.)
     function readAssetAccrualKind(Vm vm, uint256 chainId, string memory symbol)
         internal
         view

@@ -122,7 +122,7 @@
   },
   "ETH+": {
     "address": "0xE72B141DF173b999AE7c1aDcbF60Cc9833Ce56a8",
-    "$kindComment": "Reserve RToken, basket of ETH LSTs. Measured on-chain 2026-07-31: basketsNeeded/totalSupply = 4162.403/3806.244 = 1.0936 (>1) and no rebase() entry point, so the balance is static and value accrues through the redemption rate. That single sample shows the level, not the trend - an RToken ratio also moves on issuance/redemption and can fall on a collateral haircut.",
+    "$kindComment": "Reserve RToken, basket of ETH LSTs. Measured on-chain 2026-07-31: basketsNeeded/totalSupply = 4162.403/3806.244 = 1.0936 (>1) and no rebase() entry point, so the balance is static and value accrues through the redemption rate. That single sample shows the level, not the trend, though the ratio is monotone in practice: measured 1.0912985 -> 1.0929479 -> 1.0935725 at blocks 25508413/25608413/25658413, rising across both an issuance and a redemption leg because basketsNeeded moves proportionally with supply. It can still fall on a collateral haircut.",
     "pegKind": "Floating",
     "accrualKind": "Appreciating",
     "priceFeeds": [
